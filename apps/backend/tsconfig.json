@@ -1,0 +1,63 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    /* Neutralisation des paths monorepo */
+    "baseUrl": "./",
+    "paths": {},
+
+    /* NestJS backend */
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2021",
+    "lib": ["ES2021"],
+
+    /* Structure */
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    /* Émission */
+    "sourceMap": true,
+    "declaration": false,
+    "removeComments": true,
+
+    /* Décorateurs (NestJS) */
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+
+    /* Interop */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Performance */
+    "incremental": true,
+    "skipLibCheck": true,
+
+    /* Typage (choix volontaire backend) */
+    "strict": false,
+    "strictNullChecks": true,
+    "noImplicitAny": false,
+
+    /* Sécurité */
+    "forceConsistentCasingInFileNames": true,
+
+    /* ⬅️ CRITIQUE : inclut les types Express étendus */
+    "types": ["node", "express"],
+
+    /* ⬅️ CRITIQUE : nécessaire pour ts-node + d.ts globaux */
+    "typeRoots": ["./node_modules/@types", "./src/types"]
+  },
+
+  "include": [
+    "src/**/*.ts",
+    "src/types/**/*.d.ts"
+  ],
+
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "**/*.spec.ts",
+    "**/*.e2e-spec.ts",
+    "prisma"
+  ]
+}

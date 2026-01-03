@@ -1,0 +1,128 @@
+############################################
+# Build outputs
+############################################
+
+/dist
+/build
+/out
+/.next
+
+############################################
+# Dependencies
+############################################
+
+/node_modules
+
+############################################
+# Logs
+############################################
+
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+############################################
+# OS
+############################################
+
+.DS_Store
+Thumbs.db
+
+############################################
+# Tests / Coverage
+############################################
+
+/coverage
+/.nyc_output
+
+############################################
+# IDEs and editors
+############################################
+
+.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+############################################
+# VS Code
+############################################
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+############################################
+# Environment variables
+############################################
+
+.env
+.env.*
+!.env.example
+
+############################################
+# Temporary / runtime
+############################################
+
+.temp
+.tmp
+.cache
+pids
+*.pid
+*.pid.lock
+
+############################################
+# TypeScript
+############################################
+
+*.tsbuildinfo
+tsconfig.build.tsbuildinfo
+
+############################################
+# Prisma
+############################################
+
+.prisma/
+prisma/seed.js
+prisma/seed.js.map
+
+############################################
+# Expo / React Native
+############################################
+
+.expo/
+.expo-shared/
+.metro-health-check*
+
+android/app/build/
+android/.gradle/
+android/local.properties
+android/.idea/
+
+ios/Pods/
+ios/build/
+ios/*.xcworkspace
+ios/.idea/
+
+############################################
+# Docker
+############################################
+
+docker-data/
+docker/volumes/
+
+############################################
+# Misc
+############################################
+
+*.tgz
+*.zip

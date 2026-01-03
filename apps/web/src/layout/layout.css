@@ -1,0 +1,121 @@
+/* apps/web/src/layout/layout.css */
+
+:root {
+  --maxw: 1100px;
+  --pad: 16px;
+  --bg: #ffffff;
+  --muted: #f6f7f9;
+  --border: rgba(0, 0, 0, 0.08);
+  --text: #0b0b0d;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.appShell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.mainArea {
+  flex: 1;
+  padding-bottom: 72px;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--pad);
+}
+
+.topBar {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  z-index: 10;
+}
+
+.topBarInner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 12px var(--pad);
+}
+
+.brand { font-weight: 800; }
+
+/* Rend les "chips" utilisables en <a> comme en <span> */
+.chip {
+  display: inline-block;
+  padding: 8px 10px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.chip:hover {
+  opacity: 0.95;
+}
+
+.bottomNav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  z-index: 20;
+}
+
+.bottomNavInner {
+  height: 100%;
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--pad);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.navItem {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
+  color: inherit;
+  font-size: 12px;
+  opacity: 0.9;
+  padding: 8px 6px;
+  border-radius: 10px;
+}
+
+.navItem:hover {
+  opacity: 1;
+}
+
+.navItemActive {
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+
+@media (min-width: 900px) {
+  .mainArea { padding-bottom: 0; }
+  .bottomNav { display: none; }
+}

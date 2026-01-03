@@ -1,0 +1,32 @@
+# Dépendances
+node_modules/
+
+# Production
+dist/
+build/
+
+# Environnement (TRÈS IMPORTANT pour tes mots de passe)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+
+# Mobile / Expo
+.expo/
+*.jks
+*.p12
+*.key
+*.mobileprovision
+
+# OS
+.DS_Store
+Thumbs.db

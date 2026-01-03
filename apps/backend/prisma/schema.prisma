@@ -1,0 +1,186 @@
+//apps/backend/prisma/schema.prisma
+// ==========================================================
+//  PRISMA SCHEMA — DIRECT TRANSF'AIR
+//  FULL PAYMENT & WITHDRAWAL SYSTEM (VALID)
+// ==========================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================== ENUMS =====================
+
+enum TransactionStatus {
+  PENDING
+  VALIDATED
+  PAID
+  CANCELLED
+}
+
+enum PayoutMethod {
+  CASH_PICKUP
+  BANK_DEPOSIT
+  MOBILE_MONEY
+  WALLET
+}
+
+enum PaymentMethod {
+  WALLET
+  ORANGE_MONEY
+  SENDWAVE
+  CARD
+}
+
+enum PaymentProvider {
+  DIRECT
+  ORANGE_MONEY
+  SENDWAVE
+}
+
+enum ProviderStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  APPROVED
+  PAID
+  REJECTED
+}
+
+// ===================== CLIENT =====================
+
+model Client {
+  id   Int    @id @default(autoincrement())
+  code String @unique
+  name String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  beneficiaries Beneficiary[]
+  transactions  Transaction[]
+  withdrawals   Withdrawal[]
+}
+
+// ===================== USER =====================
+
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+  role     String @default("USER")
+
+  firstName String?
+  lastName  String?
+  phone     String?
+
+  addressNumber String?
+  addressStreet String?
+  postalCode    String?
+  city          String?
+  country       String?
+
+  nationality String?
+  birthDate   String?
+  birthPlace  String?
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  transactions  Transaction[]
+  beneficiaries Beneficiary[]
+
+  processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ===================== BENEFICIARY =====================
+
+model Beneficiary {
+  id       String  @id @default(cuid())
+  fullName String
+  country  String
+  city     String
+  phone    String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ===================== TRANSACTION =====================
+
+model Transaction {
+  id        String @id @default(cuid())
+  reference String @unique
+
+  amount Decimal @db.Decimal(12, 2)
+  fees   Decimal @db.Decimal(12, 2)
+  total  Decimal @db.Decimal(12, 2)
+
+  currency String
+
+  status       TransactionStatus @default(PENDING)
+  payoutMethod PayoutMethod      @default(CASH_PICKUP)
+
+  paymentMethod  PaymentMethod    @default(WALLET)
+  provider       PaymentProvider?
+  providerRef    String?
+  providerStatus ProviderStatus?  @default(PENDING)
+
+  senderId String
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  beneficiaryId String
+  beneficiary   Beneficiary @relation(fields: [beneficiaryId], references: [id])
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  withdrawal Withdrawal?
+
+  paidAt      DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ===================== WITHDRAWAL =====================
+
+model Withdrawal {
+  id String @id @default(cuid())
+
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+
+  method PayoutMethod
+  status WithdrawalStatus @default(PENDING)
+
+  requestedAt DateTime  @default(now())
+  processedAt DateTime?
+
+  processedById String?
+  processedBy   User?   @relation("ProcessedWithdrawals", fields: [processedById], references: [id])
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+}

@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: directtransfair-db
+    restart: always
+    environment:
+      POSTGRES_USER: direct
+      POSTGRES_PASSWORD: direct
+      POSTGRES_DB: directtransfair
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
