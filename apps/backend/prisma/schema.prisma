@@ -1,4 +1,3 @@
-//apps/backend/prisma/schema.prisma
 // ==========================================================
 //  PRISMA SCHEMA — DIRECT TRANSF'AIR
 //  FULL PAYMENT & WITHDRAWAL SYSTEM (VALID)
@@ -77,28 +76,40 @@ model User {
   id       String @id @default(cuid())
   email    String @unique
   password String
-  role     String @default("USER")
+  role     String @default("USER") // "USER" | "ADMIN"
 
+  // --- Identité ---
   firstName String?
   lastName  String?
   phone     String?
+  
+  // ✅ NOUVEAU : Sexe et Profession
+  gender    String? // "M" ou "F"
+  jobTitle  String?
 
+  // --- Adresse ---
   addressNumber String?
   addressStreet String?
   postalCode    String?
   city          String?
   country       String?
 
+  // --- État Civil ---
   nationality String?
   birthDate   String?
   birthPlace  String?
 
+  // --- Financier ---
+  balance Decimal @default(0) @db.Decimal(12, 2)
+
+  // --- Relations ---
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
 
   transactions  Transaction[]
   beneficiaries Beneficiary[]
 
+  // Pour les agents/admins qui valident des retraits
   processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
 
   createdAt DateTime @default(now())

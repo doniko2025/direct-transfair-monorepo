@@ -1,5 +1,5 @@
 // apps/backend/src/auth/auth.service.ts
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import type { User } from '@prisma/client';
 
@@ -7,8 +7,10 @@ import { UsersService } from '../users/users.service';
 import { hashPassword, comparePassword } from '../common/password';
 import { RegisterDto, type UserRole } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { PrismaService } from '../prisma/prisma.service'; // ✅ Ajout pour updateProfile
 
-type PublicUser = {
+// Type de retour public (sans mot de passe)
+export type PublicUser = {
   id: string;
   email: string;
   role: string;
@@ -27,6 +29,9 @@ type PublicUser = {
   nationality?: string | null;
   birthDate?: string | null;
   birthPlace?: string | null;
+  
+  gender?: string | null;
+  jobTitle?: string | null;
 };
 
 function normalizeEmail(email: string): string {
@@ -41,6 +46,7 @@ function toPublicUser(user: User): PublicUser {
     role: String(user.role),
     clientId: user.clientId,
 
+    // Cast barbare mais fonctionnel si le modèle Prisma a ces champs
     firstName: (user as any).firstName ?? null,
     lastName: (user as any).lastName ?? null,
     phone: (user as any).phone ?? null,
@@ -54,6 +60,9 @@ function toPublicUser(user: User): PublicUser {
     nationality: (user as any).nationality ?? null,
     birthDate: (user as any).birthDate ?? null,
     birthPlace: (user as any).birthPlace ?? null,
+    
+    gender: (user as any).gender ?? null,
+    jobTitle: (user as any).jobTitle ?? null,
   };
 }
 
@@ -62,6 +71,7 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
+    private readonly prisma: PrismaService, // ✅ Ajout
   ) {}
 
   // ---------------------------------------------------------
@@ -139,7 +149,6 @@ export class AuthService {
 
   // ---------------------------------------------------------
   // 🔹 LOGIN
-  // - clientId optionnel : si fourni, on vérifie l'isolation tenant
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
@@ -165,5 +174,40 @@ export class AuthService {
 
     const accessToken = await this.jwt.signAsync(payload);
     return { access_token: accessToken, user: toPublicUser(user) };
+  }
+
+  // ---------------------------------------------------------
+  // ✅ GET PROFILE (Lecture fraîche)
+  // ---------------------------------------------------------
+  async getProfile(userId: string): Promise<PublicUser> {
+    const user = await this.prisma.user.findUnique({
+        where: { id: userId }
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return toPublicUser(user);
+  }
+
+  // ---------------------------------------------------------
+  // ✅ UPDATE PROFILE
+  // ---------------------------------------------------------
+  async updateProfile(userId: string, data: any): Promise<PublicUser> {
+    // 🔒 SÉCURITÉ : On retire les champs sensibles
+    delete data.id;
+    delete data.role;
+    delete data.password;
+    delete data.clientId;
+    delete data.balance; // Si tu as un solde
+
+    // Mise à jour via Prisma
+    const updated = await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+            ...data,
+            // Si besoin de parser des dates, fais-le ici :
+            // birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
+        }
+    });
+
+    return toPublicUser(updated);
   }
 }

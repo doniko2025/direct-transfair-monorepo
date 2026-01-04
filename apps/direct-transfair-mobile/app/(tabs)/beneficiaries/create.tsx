@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TextInput,
   Pressable,
-  Alert,
   ActivityIndicator,
   ScrollView,
 } from "react-native";
@@ -14,6 +13,8 @@ import { useRouter } from "expo-router";
 
 import { api } from "../../../services/api";
 import { colors } from "../../../theme/colors";
+// ✅ Import de notre utilitaire universel
+import { showAlert } from "../../../utils/alert";
 
 export default function BeneficiaryCreateScreen() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function BeneficiaryCreateScreen() {
 
   const handleCreate = async () => {
     if (!canSubmit) {
-      Alert.alert("Validation", "Merci de remplir au minimum nom, pays, ville.");
+      showAlert("Validation", "Merci de remplir au minimum nom, pays, ville.");
       return;
     }
 
@@ -43,12 +44,14 @@ export default function BeneficiaryCreateScreen() {
         phone: phone.trim().length > 0 ? phone.trim() : null,
       });
 
-      Alert.alert("Succès", "Bénéficiaire ajouté.", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
+      // ✅ Feedback visuel qui marche sur le Web + Redirection après clic
+      showAlert("Succès", "Bénéficiaire ajouté avec succès.", () => {
+        router.back();
+      });
+
     } catch (e) {
       console.error(e);
-      Alert.alert("Erreur", "Impossible d'ajouter le bénéficiaire.");
+      showAlert("Erreur", "Impossible d'ajouter le bénéficiaire.");
     } finally {
       setSubmitting(false);
     }
@@ -105,7 +108,7 @@ export default function BeneficiaryCreateScreen() {
           disabled={!canSubmit || submitting}
         >
           {submitting ? (
-            <ActivityIndicator />
+            <ActivityIndicator color="#FFF" />
           ) : (
             <Text style={styles.submitText}>Créer</Text>
           )}

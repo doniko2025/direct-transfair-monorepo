@@ -5,7 +5,6 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Pressable,
   TextInput,
   ScrollView,
@@ -16,6 +15,8 @@ import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { colors } from "../../../theme/colors";
+// ✅ Import des utilitaires universels
+import { showAlert, showConfirm } from "../../../utils/alert";
 
 function getIdParam(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.id;
@@ -50,10 +51,9 @@ export default function BeneficiaireDetailScreen() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // ✅ Évite de rester bloqué sur /beneficiaires/undefined au refresh web
   useEffect(() => {
     if (!id) {
-      router.replace("/(tabs)/beneficiaires");
+      router.replace("/(tabs)/beneficiaries");
     }
   }, [id, router]);
 
@@ -73,7 +73,7 @@ export default function BeneficiaireDetailScreen() {
       hydrateForm(b);
     } catch (e) {
       console.error(e);
-      Alert.alert("Erreur", "Impossible de charger le bénéficiaire.");
+      showAlert("Erreur", "Impossible de charger le bénéficiaire.");
     } finally {
       setLoading(false);
     }
@@ -95,7 +95,7 @@ export default function BeneficiaireDetailScreen() {
     if (!id || !item) return;
 
     if (!canSave) {
-      Alert.alert("Validation", "Merci de remplir au minimum nom, pays, ville.");
+      showAlert("Validation", "Merci de remplir au minimum nom, pays, ville.");
       return;
     }
 
@@ -112,10 +112,10 @@ export default function BeneficiaireDetailScreen() {
       setItem(updated);
       hydrateForm(updated);
       setEditing(false);
-      Alert.alert("Succès", "Bénéficiaire mis à jour.");
+      showAlert("Succès", "Bénéficiaire mis à jour.");
     } catch (e) {
       console.error(e);
-      Alert.alert("Erreur", "Impossible de mettre à jour le bénéficiaire.");
+      showAlert("Erreur", "Impossible de mettre à jour le bénéficiaire.");
     } finally {
       setSaving(false);
     }
@@ -124,30 +124,29 @@ export default function BeneficiaireDetailScreen() {
   const onDelete = async () => {
     if (!id) return;
 
-    Alert.alert("Confirmation", "Supprimer ce bénéficiaire ?", [
-      { text: "Annuler", style: "cancel" },
-      {
-        text: "Supprimer",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            setDeleting(true);
-            await api.deleteBeneficiary(id);
-            Alert.alert("Supprimé", "Bénéficiaire supprimé.", [
-              { text: "OK", onPress: () => router.back() },
-            ]);
-          } catch (e) {
-            console.error(e);
-            Alert.alert(
-              "Erreur",
-              "Impossible de supprimer le bénéficiaire. S'il est lié à des transactions, la suppression peut être bloquée."
-            );
-          } finally {
-            setDeleting(false);
-          }
-        },
-      },
-    ]);
+    // ✅ Utilisation de showConfirm compatible Web
+    showConfirm(
+      "Confirmation", 
+      "Voulez-vous vraiment supprimer ce bénéficiaire ?", 
+      async () => {
+        try {
+          setDeleting(true);
+          await api.deleteBeneficiary(id);
+          
+          showAlert("Supprimé", "Bénéficiaire supprimé avec succès.", () => {
+            router.back();
+          });
+        } catch (e) {
+          console.error(e);
+          showAlert(
+            "Erreur",
+            "Impossible de supprimer le bénéficiaire. S'il est lié à des transactions, la suppression peut être bloquée."
+          );
+        } finally {
+          setDeleting(false);
+        }
+      }
+    );
   };
 
   const onCancelEdit = () => {
@@ -156,7 +155,6 @@ export default function BeneficiaireDetailScreen() {
   };
 
   if (!id) {
-    // pendant la redirection
     return (
       <View style={styles.center}>
         <ActivityIndicator />
@@ -177,7 +175,7 @@ export default function BeneficiaireDetailScreen() {
     return (
       <View style={styles.center}>
         <Text style={styles.error}>Bénéficiaire introuvable.</Text>
-        <Pressable style={styles.btnOutline} onPress={() => router.replace("/(tabs)/beneficiaires")}>
+        <Pressable style={styles.btnOutline} onPress={() => router.replace("/(tabs)/beneficiaries")}>
           <Text style={styles.btnOutlineText}>Retour</Text>
         </Pressable>
       </View>
@@ -243,7 +241,7 @@ export default function BeneficiaireDetailScreen() {
             onPress={onSave}
             disabled={!canSave || saving || deleting}
           >
-            {saving ? <ActivityIndicator /> : <Text style={styles.btnPrimaryText}>Enregistrer</Text>}
+            {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnPrimaryText}>Enregistrer</Text>}
           </Pressable>
         )}
 
@@ -252,7 +250,7 @@ export default function BeneficiaireDetailScreen() {
           onPress={onDelete}
           disabled={saving || deleting}
         >
-          {deleting ? <ActivityIndicator /> : <Text style={styles.btnDangerText}>Supprimer</Text>}
+          {deleting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnDangerText}>Supprimer</Text>}
         </Pressable>
       </View>
 

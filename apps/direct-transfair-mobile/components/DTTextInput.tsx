@@ -9,6 +9,8 @@ type Props = {
   onChangeText: (val: string) => void;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'numeric' | 'email-address' | 'phone-pad';
+  // ✅ AJOUT : On autorise le placeholder
+  placeholder?: string;
 };
 
 export default function DTTextInput({
@@ -17,6 +19,7 @@ export default function DTTextInput({
   onChangeText,
   secureTextEntry = false,
   keyboardType = 'default',
+  placeholder, // ✅
 }: Props) {
   return (
     <View style={styles.container}>
@@ -27,6 +30,7 @@ export default function DTTextInput({
         secureTextEntry={secureTextEntry}
         keyboardType={keyboardType}
         style={styles.input}
+        placeholder={placeholder} // ✅
         placeholderTextColor={colors.muted}
       />
     </View>
@@ -51,10 +55,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.text,
-    shadowColor: '#111827',
-    shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 8,
+    // Ombre légère
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
     elevation: 2,
   },
 });

@@ -6,6 +6,7 @@ import {
   Req,
   BadRequestException,
   Get,
+  Patch, // ✅ Ajout
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -105,7 +106,7 @@ export class AuthController {
   }
 
   // ======================================================
-  // ✅ GET /auth/me — NOUVEAU (safe, multi-tenant, JWT)
+  // ✅ GET /auth/me — Lire le profil
   // ======================================================
   @Get('me')
   @UseGuards(JwtAuthGuard)
@@ -114,7 +115,23 @@ export class AuthController {
     if (!req.user) {
       throw new BadRequestException('User not found in request');
     }
+    // Optionnel : recharger depuis la DB pour avoir les dernières infos
+    return this.authService.getProfile(req.user.sub);
+  }
 
-    return req.user;
+  // ======================================================
+  // ✅ PATCH /auth/me — Mettre à jour le profil (NOUVEAU)
+  // ======================================================
+  @Patch('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  async updateMe(
+    @Req() req: Request & { user?: AuthUserPayload },
+    @Body() body: any,
+  ) {
+    if (!req.user) {
+      throw new BadRequestException('User not found');
+    }
+    return this.authService.updateProfile(req.user.sub, body);
   }
 }

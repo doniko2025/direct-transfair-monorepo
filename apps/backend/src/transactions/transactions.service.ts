@@ -1,4 +1,4 @@
-// src/transactions/transactions.service.ts
+// apps/backend/src/transactions/transactions.service.ts
 import {
   BadRequestException,
   ConflictException,
@@ -63,14 +63,18 @@ export class TransactionsService {
     }
 
     const amount = new Prisma.Decimal(dto.amount);
-    const fees = amount.mul(new Prisma.Decimal(0.03));
+    
+    // ✅ MODIFICATION : Frais à 1.5% (0.015)
+    const fees = amount.mul(new Prisma.Decimal(0.015));
+    
+    // Le total est ce que l'utilisateur paie (Montant envoyé + Frais)
     const total = amount.plus(fees);
 
     const data: Prisma.TransactionUncheckedCreateInput = {
       reference: this.generateReference(),
-      amount,
-      fees,
-      total,
+      amount, // Montant reçu par le bénéficiaire
+      fees,   // Frais gagnés par la plateforme
+      total,  // Montant débité au client
       currency: dto.currency,
       payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
       status: TransactionStatus.PENDING,
@@ -133,7 +137,7 @@ export class TransactionsService {
       throw new ConflictException('Annulation interdite: un retrait existe déjà pour cette transaction');
     }
 
-    // Règles de “PAID” selon provider (évite les ambiguïtés financières)
+    // Règles de “PAID” selon provider
     if (to === TransactionStatus.PAID) {
       if (from !== TransactionStatus.VALIDATED) {
         throw new BadRequestException('Marquage PAID interdit: la transaction doit être VALIDATED');
@@ -143,9 +147,6 @@ export class TransactionsService {
       if (tx.provider === PaymentProvider.ORANGE_MONEY && tx.providerStatus !== ProviderStatus.SUCCESS) {
         throw new BadRequestException('Marquage PAID interdit: Orange Money doit être SUCCESS via le flux paiement');
       }
-
-      // Sendwave: autorisé (paiement manuel confirmé par admin)
-      // Wallet/DIRECT: autorisé (paiement direct)
     }
 
     const now = new Date();
@@ -157,7 +158,6 @@ export class TransactionsService {
             status: TransactionStatus.VALIDATED,
             paidAt: null,
             cancelledAt: null,
-            // On garde provider/providerRef/providerStatus tels quels
           };
 
         case TransactionStatus.PAID:
@@ -165,7 +165,6 @@ export class TransactionsService {
             status: TransactionStatus.PAID,
             paidAt: now,
             cancelledAt: null,
-            // Si l’admin valide un paiement (ex: Sendwave), on fige providerStatus=SUCCESS
             providerStatus: ProviderStatus.SUCCESS,
           };
 
@@ -174,7 +173,6 @@ export class TransactionsService {
             status: TransactionStatus.CANCELLED,
             cancelledAt: now,
             paidAt: null,
-            // Optionnel: on pourrait mettre providerStatus=FAILED si un provider était engagé
           };
 
         default:
@@ -189,6 +187,7 @@ export class TransactionsService {
   }
 
   private generateReference(): string {
+    // Génère une référence simple (ex: TX-17099234-5678)
     const now = Date.now();
     const random = Math.floor(1000 + Math.random() * 9000);
     return `TX-${now}-${random}`;

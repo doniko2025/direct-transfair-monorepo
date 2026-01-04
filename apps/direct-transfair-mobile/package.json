@@ -139,6 +139,7 @@
     "client-only": "^0.0.1",
     "debug": "^4.3.4",
     "escape-string-regexp": "^4.0.0",
+    "expo-clipboard": "~8.0.8",
     "expo-router": "^6.0.15",
     "expo-secure-store": "^15.0.7",
     "expo-server": "^1.0.4",

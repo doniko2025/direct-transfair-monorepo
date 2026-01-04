@@ -1,0 +1,25 @@
+//apps/direct-transfair-mobile/utils/countries.ts
+export const COUNTRIES = [
+  "France",
+  "Sénégal",
+  "Mali",
+  "Côte d'Ivoire",
+  "Guinée",
+  "Cameroun",
+  "Maroc",
+  "Tunisie",
+  "Algérie",
+  "Bénin",
+  "Burkina Faso",
+  "Togo",
+  "Gabon",
+  "Congo",
+  "RDC",
+  "Belgique",
+  "Espagne",
+  "Italie",
+  "Allemagne",
+  "États-Unis",
+  "Canada",
+  "Autre"
+].sort(); // Trie alphabétiquement automatiquement

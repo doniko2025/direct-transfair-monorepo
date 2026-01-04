@@ -1,4 +1,6 @@
 // apps/direct-transfair-mobile/services/types.ts
+
+// --- AUTH & USER ---
 export type Role = "USER" | "ADMIN";
 
 export type AuthUser = {
@@ -6,22 +8,30 @@ export type AuthUser = {
   email: string;
   role: Role;
 
+  // Identité
   firstName?: string;
   lastName?: string;
   phone?: string;
 
+  // Adresse
   addressNumber?: string;
   addressStreet?: string;
   postalCode?: string;
   city?: string;
   country?: string;
 
+  // État Civil & Profession
+  gender?: "M" | "F";
   nationality?: string;
   birthDate?: string;
   birthPlace?: string;
+  jobTitle?: string;
 };
 
-export type LoginPayload = { email: string; password: string };
+export type LoginPayload = { 
+  email: string; 
+  password: string;
+};
 
 export type RegisterPayload = {
   email: string;
@@ -29,14 +39,7 @@ export type RegisterPayload = {
   firstName: string;
   lastName: string;
   phone?: string;
-  addressNumber?: string;
-  addressStreet?: string;
-  postalCode?: string;
-  city?: string;
-  country?: string;
-  nationality?: string;
-  birthDate?: string;
-  birthPlace?: string;
+  // Tu peux ajouter d'autres champs ici si tu les demandes à l'inscription
 };
 
 export type LoginResponse = {
@@ -44,6 +47,7 @@ export type LoginResponse = {
   user: AuthUser;
 };
 
+// --- BÉNÉFICIAIRES ---
 export type Beneficiary = {
   id: string;
   fullName: string;
@@ -51,7 +55,6 @@ export type Beneficiary = {
   city: string;
   phone?: string | null;
   createdAt?: string;
-
   clientId?: number;
 };
 
@@ -62,6 +65,7 @@ export type CreateBeneficiaryPayload = {
   phone?: string | null;
 };
 
+// --- TRANSACTIONS ---
 export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
 
 export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
@@ -69,15 +73,12 @@ export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WA
 export type Transaction = {
   id: string;
   reference: string;
-
   amount: string | number;
   fees: string | number;
   total: string | number;
   currency: string;
-
   status: TransactionStatus;
   payoutMethod: PayoutMethod;
-
   createdAt: string;
   paidAt?: string | null;
   cancelledAt?: string | null;
@@ -90,6 +91,7 @@ export type CreateTransactionPayload = {
   payoutMethod: PayoutMethod;
 };
 
+// --- PAIEMENTS & RETRAITS ---
 export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD";
 
 export type InitiatePaymentPayload = {

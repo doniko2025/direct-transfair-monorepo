@@ -1,165 +1,242 @@
 // apps/direct-transfair-mobile/app/(tabs)/withdraw.tsx
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Alert } from "react-native";
-import { Picker } from "@react-native-picker/picker";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 
 import { api } from "../../services/api";
-import { useAuth } from "../../providers/AuthProvider";
 import { colors } from "../../theme/colors";
 import DTTextInput from "../../components/DTTextInput";
-import DTButton from "../../components/DTButton";
-import type { Beneficiary } from "../../services/types";
+import DTButton from "../../components/DTButton"; // Assure-toi d'avoir ce composant (sinon utilise Button standard)
+import { Card } from "../../components/layout/Card"; 
+import type { Transaction } from "../../services/types";
+import { showConfirm, showAlert } from "../../utils/alert"; // Ton fichier alert.ts
 
-export default function WithdrawScreen() {
-  const { isAuthenticated } = useAuth();
-  const router = useRouter();
-
-  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
-  const [beneficiaryId, setBeneficiaryId] = useState<string | undefined>();
-  const [amount, setAmount] = useState("100");
-  const [currency, setCurrency] = useState("XOF");
+export default function AgentWithdrawScreen() {
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [transaction, setTransaction] = useState<Transaction | null>(null);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      // ✅ CORRECTION : Route explicite pour éviter les erreurs
-      router.replace("/(auth)/login");
-      return;
-    }
-    void load();
-  }, [isAuthenticated]);
-
-  const load = async () => {
-    try {
-      const list = await api.getBeneficiaries();
-
-      // 🔒 NORMALISATION ABSOLUE
-      const safeList: Beneficiary[] = Array.isArray(list) ? list : [];
-
-      setBeneficiaries(safeList);
-
-      if (safeList.length > 0) {
-        setBeneficiaryId(safeList[0].id);
-      }
-    } catch (e) {
-      console.error(e);
-      Alert.alert("Erreur", "Impossible de charger les bénéficiaires.");
-    }
-  };
-
-  const submit = async () => {
-    if (!beneficiaryId) {
-      Alert.alert("Info", "Choisis un bénéficiaire.");
-      return;
-    }
-
-    const value = Number(amount.replace(",", "."));
-    if (isNaN(value) || value <= 0) {
-      Alert.alert("Erreur", "Montant invalide.");
+  // 1. Chercher la transaction par son code
+  const handleSearch = async () => {
+    if (code.trim().length < 3) {
+      showAlert("Erreur", "Veuillez entrer un code valide.");
       return;
     }
 
     try {
       setLoading(true);
-
-      await api.createTransaction({
-        amount: value,
-        currency,
-        beneficiaryId,
-        payoutMethod: "CASH_PICKUP",
-      });
-
-      Alert.alert(
-        "Succès",
-        "Demande de retrait cash créée avec succès."
-      );
-      
-      // ✅ CORRECTION : Redirection explicite vers l'onglet transactions
-      router.push("/(tabs)/transactions");
+      setTransaction(null);
+      const result = await api.findTransactionByReference(code.trim());
+      setTransaction(result);
     } catch (e) {
       console.error(e);
-      Alert.alert("Erreur", "Impossible de créer le retrait.");
+      showAlert("Introuvable", "Aucune transaction trouvée avec ce code.");
     } finally {
       setLoading(false);
     }
   };
 
+  // 2. Valider le paiement (Donner le cash)
+  const handleProcessPayment = async () => {
+    if (!transaction) return;
+
+    showConfirm(
+      "Confirmation Retrait",
+      `Confirmez-vous remettre la somme de ${transaction.amount} ${transaction.currency} au client ?`,
+      async () => {
+        try {
+          setLoading(true);
+          await api.processCashWithdrawal(transaction.id);
+          
+          showAlert("Succès", "Retrait validé ! L'argent a été remis.", () => {
+            setCode("");
+            setTransaction(null);
+          });
+        } catch (e) {
+          console.error(e);
+          showAlert("Erreur", "Impossible de valider le retrait.");
+        } finally {
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  const renderStatusAction = (tx: Transaction) => {
+    // Cas 1 : Déjà payé
+    if (tx.status === "PAID") {
+      return (
+        <View style={[styles.statusBox, { backgroundColor: "#dcfce7" }]}>
+          <Text style={[styles.statusText, { color: "#166534" }]}>✅ DÉJÀ PAYÉ</Text>
+          <Text style={styles.statusSub}>Ce code a déjà été utilisé.</Text>
+        </View>
+      );
+    }
+
+    // Cas 2 : Annulé
+    if (tx.status === "CANCELLED") {
+      return (
+        <View style={[styles.statusBox, { backgroundColor: "#fee2e2" }]}>
+          <Text style={[styles.statusText, { color: "#991b1b" }]}>❌ ANNULÉE</Text>
+          <Text style={styles.statusSub}>Transaction annulée.</Text>
+        </View>
+      );
+    }
+
+    // Cas 3 : En attente (ex: > 200€ non validé par admin)
+    if (tx.status === "PENDING") {
+      return (
+        <View style={[styles.statusBox, { backgroundColor: "#ffedd5" }]}>
+          <Text style={[styles.statusText, { color: "#9a3412" }]}>⏳ EN ATTENTE ADMIN</Text>
+          <Text style={styles.statusSub}>
+            Cette transaction nécessite une validation administrative avant retrait.
+          </Text>
+        </View>
+      );
+    }
+
+    // Cas 4 : Validé (Prêt à payer)
+    if (tx.status === "VALIDATED") {
+      return (
+        <View>
+            <View style={[styles.statusBox, { backgroundColor: "#dbeafe" }]}>
+              <Text style={[styles.statusText, { color: "#1e40af" }]}>PRÊT À PAYER</Text>
+              <Text style={styles.statusSub}>Vérifiez l'identité et remettez les fonds.</Text>
+            </View>
+            <View style={{ marginTop: 20 }}>
+                <DTButton 
+                    label={loading ? "Traitement..." : "Valider le Retrait Cash"} 
+                    onPress={handleProcessPayment} 
+                    disabled={loading}
+                />
+            </View>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Retrait cash</Text>
+    <ScrollView contentContainerStyle={styles.container}>
+      <Text style={styles.header}>Guichet Retrait</Text>
+      <Text style={styles.subHeader}>Entrez le code de la transaction.</Text>
 
-      <Text style={styles.label}>Bénéficiaire</Text>
+      {/* Zone de Recherche */}
+      <View style={styles.searchSection}>
+        <DTTextInput
+          label="Code de transaction"
+          value={code}
+          onChangeText={setCode}
+          placeholder="Ex: TX-1767..."
+        />
+        <DTButton 
+            label={loading && !transaction ? "Recherche..." : "Vérifier le code"} 
+            onPress={handleSearch} 
+            disabled={loading} 
+        />
+      </View>
 
-      {beneficiaries.length === 0 ? (
-        <Text style={styles.info}>
-          Aucun bénéficiaire disponible.
-        </Text>
-      ) : (
-        <View style={styles.pickerWrapper}>
-          <Picker
-            selectedValue={beneficiaryId}
-            onValueChange={(v) => setBeneficiaryId(String(v))}
-          >
-            {beneficiaries.map((b) => (
-              <Picker.Item
-                key={b.id}
-                label={b.fullName}
-                value={b.id}
-              />
-            ))}
-          </Picker>
+      {/* Résultat */}
+      {transaction && (
+        <View style={styles.resultSection}>
+          <Text style={styles.sectionTitle}>Résultat</Text>
+          
+          <Card style={styles.ticket}>
+             <View style={styles.row}>
+                <Text style={styles.label}>Montant à payer</Text>
+                <Text style={styles.amount}>{transaction.amount} {transaction.currency}</Text>
+             </View>
+             
+             <View style={styles.divider} />
+             
+             <View style={styles.row}>
+                <Text style={styles.label}>Référence</Text>
+                <Text style={styles.value}>{transaction.reference}</Text>
+             </View>
+             
+             <View style={styles.divider} />
+
+             {renderStatusAction(transaction)}
+          </Card>
         </View>
       )}
-
-      <DTTextInput
-        label="Montant"
-        value={amount}
-        onChangeText={setAmount}
-        keyboardType="numeric"
-      />
-
-      <DTTextInput
-        label="Devise"
-        value={currency}
-        onChangeText={setCurrency}
-      />
-
-      <DTButton
-        label={loading ? "Création…" : "Créer le retrait"}
-        onPress={submit}
-        disabled={loading || beneficiaries.length === 0}
-      />
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    padding: 20,
     backgroundColor: colors.background,
-    paddingHorizontal: 16,
-    paddingTop: 40,
-    gap: 12,
+    flexGrow: 1,
   },
-  title: {
-    fontSize: 22,
-    fontWeight: "700",
+  header: {
+    fontSize: 24,
+    fontWeight: "800",
     color: colors.text,
+    marginBottom: 4,
+  },
+  subHeader: {
+    color: colors.muted,
+    marginBottom: 20,
+  },
+  searchSection: {
+    marginBottom: 30,
+  },
+  resultSection: {
+    marginTop: 10,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    marginBottom: 10,
+    color: colors.text,
+  },
+  ticket: {
+    padding: 20,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+  },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
   label: {
     fontSize: 14,
+    color: colors.muted,
+  },
+  value: {
+    fontSize: 16,
     fontWeight: "600",
     color: colors.text,
   },
-  info: {
-    fontSize: 13,
-    color: colors.muted,
+  amount: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: colors.primary,
   },
-  pickerWrapper: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    overflow: "hidden",
+  divider: {
+    height: 1,
+    backgroundColor: "#f3f4f6",
+    marginVertical: 16,
+  },
+  statusBox: {
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  statusText: {
+    fontWeight: "800",
+    fontSize: 14,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  statusSub: {
+    fontSize: 12,
+    color: "#4b5563",
   },
 });
