@@ -4,270 +4,282 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  TextInput,
   TouchableOpacity,
+  ScrollView,
   RefreshControl,
-  ActivityIndicator,
+  StatusBar,
+  SafeAreaView,
+  Platform,
+  ActivityIndicator
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-
 import { useAuth } from "../../providers/AuthProvider";
-import { api } from "../../services/api";
+import { api } from "../../services/api"; // ✅ Import de l'API pour le taux
 import { colors } from "../../theme/colors";
-import type { Transaction } from "../../services/types";
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [hideBalance, setHideBalance] = useState(false);
+  
+  // États pour la simulation
+  const [amount, setAmount] = useState("100");
+  
+  // ✅ Taux dynamique (par défaut 655.95 en attendant le chargement)
+  const [rate, setRate] = useState<number>(655.95);
+  const [loadingRate, setLoadingRate] = useState(true);
 
-  // Charger les transactions récentes
-  const loadData = useCallback(async () => {
+  // Charger le vrai taux depuis le backend
+  const fetchRate = async () => {
     try {
-      // On récupère tout, mais on ne gardera que les 3 dernières
-      const list = await api.getTransactions();
-      // Tri par date décroissante
-      const sorted = list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setRecentTransactions(sorted.slice(0, 3));
+        const rates = await api.getExchangeRates();
+        const pair = rates.find(r => r.pair === "EUR_XOF");
+        if (pair) {
+            setRate(pair.rate);
+        }
     } catch (e) {
-      console.error("Erreur chargement home", e);
+        console.log("Erreur chargement taux", e);
     } finally {
-      setLoading(false);
+        setLoadingRate(false);
     }
-  }, []);
+  };
 
-  // Recharge à chaque fois qu'on revient sur l'écran
+  // Charger à l'ouverture de l'écran
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [loadData])
+        fetchRate();
+    }, [])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
-    setRefreshing(false);
+    await fetchRate();
+    // Tu peux aussi ajouter ici le rechargement du user (solde)
+    setTimeout(() => setRefreshing(false), 1000);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "PAID": return "#16a34a"; // Vert
-      case "VALIDATED": return "#2563eb"; // Bleu
-      case "CANCELLED": return "#dc2626"; // Rouge
-      default: return "#d97706"; // Orange (Pending)
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-        case "PAID": return "Payée";
-        case "VALIDATED": return "Validée";
-        case "CANCELLED": return "Annulée";
-        default: return "En attente";
-      }
-  }
+  // Calcul automatique avec le taux dynamique
+  const receiveAmount = (parseFloat(amount || "0") * rate).toFixed(0);
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.container}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {/* HEADER DE BIENVENUE */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.welcomeLabel}>Bonjour,</Text>
-          <Text style={styles.welcomeName}>
-            {user?.firstName ? `${user.firstName} ${user.lastName}` : (user?.email || "Client")}
-          </Text>
-        </View>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => router.push("/(tabs)/profile")}>
-           <Text style={styles.profileInitials}>
-             {user?.firstName ? user.firstName[0].toUpperCase() : "U"}
-           </Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar backgroundColor={colors.primary} barStyle="light-content" />
+      
+      <ScrollView
+        contentContainerStyle={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.white]} tintColor={colors.white} />}
+      >
+        {/* --- HEADER BLEU/ORANGE --- */}
+        <View style={styles.header}>
+          <View style={styles.headerTop}>
+             <View style={styles.logoBadge}>
+                <Text style={styles.logoText}>DT</Text>
+             </View>
+             <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
+                <View style={styles.profileIcon}>
+                    <Text style={{fontWeight:'bold', color: colors.primary}}>
+                        {user?.firstName ? user.firstName[0] : "U"}
+                    </Text>
+                </View>
+             </TouchableOpacity>
+          </View>
 
-      {/* CARTE D'ACTION RAPIDE */}
-      <View style={styles.actionCard}>
-        <View>
-            <Text style={styles.cardTitle}>Envoyer de l'argent</Text>
-            <Text style={styles.cardSubtitle}>Rapide, sécurisé et à faibles frais.</Text>
-        </View>
-        <TouchableOpacity style={styles.sendBtn} onPress={() => router.push("/(tabs)/send")}>
-            <Text style={styles.sendBtnText}>Envoyer ›</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* ADMIN SHORTCUT (Visible seulement si Admin) */}
-      {user?.role === "ADMIN" && (
-        <TouchableOpacity 
-            style={styles.adminBanner} 
-            onPress={() => router.push("/(tabs)/admin/transactions")}
-        >
-            <Ionicons name="shield-checkmark" size={20} color="#b45309" />
-            <Text style={styles.adminText}>Espace Admin : Gérer les transactions</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* RACCORCIS */}
-      <View style={styles.shortcuts}>
-        <ShortcutItem 
-            icon="people" 
-            label="Bénéficiaires" 
-            color="#e0f2fe" 
-            iconColor="#0284c7"
-            onPress={() => router.push("/(tabs)/beneficiaries")} 
-        />
-        <ShortcutItem 
-            icon="time" 
-            label="Historique" 
-            color="#f3e8ff" 
-            iconColor="#9333ea"
-            onPress={() => router.push("/(tabs)/transactions")} 
-        />
-        <ShortcutItem 
-            icon="cash" 
-            label="Retrait" 
-            color="#ecfccb" 
-            iconColor="#65a30d"
-            onPress={() => router.push("/(tabs)/withdraw")} 
-        />
-        <ShortcutItem 
-            icon="settings" 
-            label="Profil" 
-            color="#f1f5f9" 
-            iconColor="#475569"
-            onPress={() => router.push("/(tabs)/profile")} 
-        />
-      </View>
-
-      {/* ACTIVITÉ RÉCENTE */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Activités récentes</Text>
-        <TouchableOpacity onPress={() => router.push("/(tabs)/transactions")}>
-            <Text style={styles.seeAll}>Voir tout</Text>
-        </TouchableOpacity>
-      </View>
-
-      {loading && !refreshing ? (
-        <ActivityIndicator style={{ marginTop: 20 }} color={colors.primary} />
-      ) : recentTransactions.length === 0 ? (
-        <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Aucune transaction récente.</Text>
-            <TouchableOpacity onPress={() => router.push("/(tabs)/send")}>
-                <Text style={styles.emptyLink}>Faire un premier envoi</Text>
+          <View style={styles.balanceContainer}>
+            <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={styles.eyeBtn}>
+                <Ionicons name={hideBalance ? "eye-off-outline" : "eye-outline"} size={20} color="rgba(255,255,255,0.8)" />
             </TouchableOpacity>
+            <Text style={styles.balanceLabel}>Mon solde</Text>
+            <Text style={styles.balanceValue}>
+                {hideBalance ? "••••••" : "0.00"} <Text style={{fontSize: 20}}>EUR</Text>
+            </Text>
+          </View>
         </View>
-      ) : (
-        <View style={styles.list}>
-            {recentTransactions.map((tx) => (
-                <View key={tx.id} style={styles.txItem}>
-                    <View style={styles.txIcon}>
-                        <Text style={styles.txIconText}>💸</Text>
-                    </View>
-                    <View style={styles.txContent}>
-                        <Text style={styles.txRef}>{tx.reference}</Text>
-                        <Text style={[styles.txStatus, { color: getStatusColor(tx.status) }]}>
-                            {getStatusLabel(tx.status)}
-                        </Text>
-                    </View>
-                    <View style={styles.txRight}>
-                        <Text style={styles.txAmount}>
-                            {Number(tx.amount).toFixed(2)} {tx.currency}
-                        </Text>
-                        <Text style={styles.txDate}>
-                            {new Date(tx.createdAt).toLocaleDateString("fr-FR", {day: "2-digit", month:"2-digit"})}
-                        </Text>
+
+        {/* --- CORPS BLANC ARRONDI --- */}
+        <View style={styles.body}>
+            
+            {/* CARTE TAUX DE CHANGE (DYNAMIQUE) */}
+            <View style={styles.rateCard}>
+                <View>
+                    <Text style={styles.rateTitle}>Taux de change du jour</Text>
+                    {loadingRate ? (
+                        <ActivityIndicator size="small" color="#0C4A6E" />
+                    ) : (
+                        <Text style={styles.rateValue}>1 EUR = {rate} XOF</Text>
+                    )}
+                </View>
+                <Ionicons name="sunny" size={32} color="#FDB813" />
+            </View>
+
+            <Text style={styles.limitText}>
+                Vous pouvez envoyer jusqu'à <Text style={{fontWeight: 'bold', textDecorationLine: 'underline'}}>2 000€ par jour</Text>
+            </Text>
+
+            {/* SIMULATEUR */}
+            <View style={styles.simulator}>
+                
+                {/* Montant à envoyer */}
+                <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Montant à envoyer</Text>
+                    <View style={styles.inputRow}>
+                        <TextInput 
+                            style={styles.input}
+                            value={amount}
+                            onChangeText={setAmount}
+                            keyboardType="numeric"
+                            placeholder="0"
+                        />
+                        <View style={styles.currencyBadge}>
+                            <Text style={styles.currencyText}>EUR 🇪🇺</Text>
+                        </View>
                     </View>
                 </View>
-            ))}
-        </View>
-      )}
 
-      <View style={{ height: 40 }} />
-    </ScrollView>
+                {/* Montant reçu */}
+                <View style={[styles.inputGroup, { marginTop: 16 }]}>
+                    <Text style={styles.inputLabel}>Montant reçu</Text>
+                    <View style={styles.inputRow}>
+                        <TextInput 
+                            style={[styles.input, { color: colors.text }]} 
+                            value={receiveAmount}
+                            editable={false}
+                        />
+                        <View style={[styles.currencyBadge, { backgroundColor: '#F3F4F6' }]}>
+                            <Text style={styles.currencyText}>XOF 🇸🇳</Text>
+                        </View>
+                    </View>
+                </View>
+
+                <View style={styles.promoTag}>
+                    <Text style={styles.promoText}>🎉 NOUVEAU : Frais réduits à 1.5% !</Text>
+                </View>
+
+                {/* BOUTON ACTION */}
+                <TouchableOpacity 
+                    style={styles.ctaButton}
+                    onPress={() => router.push("/(tabs)/send")}
+                >
+                    <Text style={styles.ctaText}>C'EST PARTI</Text>
+                    <Ionicons name="arrow-forward" size={24} color="#FFF" />
+                </TouchableOpacity>
+
+            </View>
+
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// Composant Helper pour les boutons ronds
-function ShortcutItem({ icon, label, color, iconColor, onPress }: any) {
-    return (
-        <TouchableOpacity style={styles.shortcut} onPress={onPress}>
-            <View style={[styles.iconCircle, { backgroundColor: color }]}>
-                <Ionicons name={icon} size={24} color={iconColor} /> 
-            </View>
-            <Text style={styles.shortcutLabel}>{label}</Text>
-        </TouchableOpacity>
-    )
-}
-
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: "#F8F9FA", padding: 20 },
+  safeArea: { flex: 1, backgroundColor: colors.primary },
+  container: { flexGrow: 1, backgroundColor: colors.background },
   
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24, marginTop: 10 },
-  welcomeLabel: { fontSize: 14, color: "#666" },
-  welcomeName: { fontSize: 20, fontWeight: "800", color: "#333" },
-  profileBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary, justifyContent: "center", alignItems: "center" },
-  profileInitials: { color: "#fff", fontWeight: "bold", fontSize: 16 },
-
-  actionCard: {
+  // Header
+  header: {
     backgroundColor: colors.primary,
+    paddingTop: Platform.OS === 'android' ? 40 : 20,
+    paddingBottom: 80, 
+    paddingHorizontal: 20,
+  },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  logoBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  logoText: { color: '#FFF', fontWeight: '900', fontSize: 18 },
+  profileIcon: { backgroundColor: '#FFF', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+
+  balanceContainer: { alignItems: 'center' },
+  eyeBtn: { marginBottom: 8 },
+  balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 14 },
+  balanceValue: { color: '#FFF', fontSize: 36, fontWeight: '800' },
+
+  // Body
+  body: {
+    backgroundColor: colors.background,
+    marginTop: -40,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    paddingHorizontal: 20,
+    paddingTop: 30,
+    paddingBottom: 100,
+    flex: 1,
+  },
+
+  // Rate Card
+  rateCard: {
+    backgroundColor: '#E0F2FE', 
     borderRadius: 16,
     padding: 20,
-    marginBottom: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  rateTitle: { fontSize: 14, color: '#0369A1', fontWeight: '600', marginBottom: 4 },
+  rateValue: { fontSize: 20, color: '#0C4A6E', fontWeight: '800' },
+
+  limitText: { textAlign: 'center', color: colors.textLight, fontSize: 12, marginBottom: 24 },
+
+  // Simulator
+  simulator: {
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  inputGroup: {},
+  inputLabel: { color: colors.primary, fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  inputRow: {
+    flexDirection: 'row',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    height: 60,
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  input: {
+    flex: 1,
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.text,
+    paddingHorizontal: 16,
+    height: '100%',
+  },
+  currencyBadge: {
+    height: '100%',
+    paddingHorizontal: 20,
+    backgroundColor: '#F9FAFB',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#E5E7EB',
+  },
+  currencyText: { fontSize: 16, fontWeight: '700', color: colors.text },
+
+  promoTag: { alignSelf: 'center', marginTop: 20, marginBottom: 10 },
+  promoText: { color: '#16A34A', fontWeight: '600', fontSize: 13 },
+
+  ctaButton: {
+    backgroundColor: colors.primary,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 18,
+    borderRadius: 30,
+    gap: 10,
+    marginTop: 10,
     shadowColor: colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
   },
-  cardTitle: { color: "#fff", fontSize: 18, fontWeight: "800", marginBottom: 4 },
-  cardSubtitle: { color: "rgba(255,255,255,0.9)", fontSize: 12, maxWidth: 180 },
-  sendBtn: { backgroundColor: "#fff", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20 },
-  sendBtnText: { color: colors.primary, fontWeight: "700", fontSize: 14 },
-
-  adminBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fffbeb',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#fcd34d',
-    gap: 10
-  },
-  adminText: { color: '#b45309', fontWeight: '700', fontSize: 13 },
-
-  shortcuts: { flexDirection: "row", justifyContent: "space-between", marginBottom: 30 },
-  shortcut: { alignItems: "center", width: "22%" },
-  iconCircle: { width: 56, height: 56, borderRadius: 28, justifyContent: "center", alignItems: "center", marginBottom: 8 },
-  shortcutLabel: { fontSize: 11, fontWeight: "600", color: "#333", textAlign: 'center' },
-
-  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
-  seeAll: { color: colors.primary, fontWeight: "600", fontSize: 14 },
-
-  list: { gap: 12 },
-  txItem: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 16, borderRadius: 16, borderWidth: 1, borderColor: "#f1f5f9" },
-  txIcon: { width: 40, height: 40, backgroundColor: "#f8fafc", borderRadius: 20, justifyContent: "center", alignItems: "center", marginRight: 12 },
-  txIconText: { fontSize: 18 },
-  txContent: { flex: 1 },
-  txRef: { fontSize: 13, fontWeight: "700", color: "#333", marginBottom: 2 },
-  txStatus: { fontSize: 11, fontWeight: "600" },
-  txRight: { alignItems: "flex-end" },
-  txAmount: { fontSize: 16, fontWeight: "800", color: "#333" },
-  txDate: { fontSize: 11, color: "#999", marginTop: 2 },
-
-  emptyState: { alignItems: "center", paddingVertical: 20 },
-  emptyText: { color: "#999", marginBottom: 8 },
-  emptyLink: { color: colors.primary, fontWeight: "700" },
+  ctaText: { color: '#FFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 },
 });

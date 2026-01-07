@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Beneficiary } from '@prisma/client';
-
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import type { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
@@ -14,14 +13,15 @@ import type { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 export class BeneficiariesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(userId: string, dto: CreateBeneficiaryDto): Promise<Beneficiary> {
-    // On récupère le user pour connaître son clientId
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
+  // ✅ On accepte maintenant clientId en argument
+  async create(userId: string, clientId: number, dto: CreateBeneficiaryDto): Promise<Beneficiary> {
+    
+    // Sécurité : Vérifier que le clientId existe (si nécessaire, ou on fait confiance au Guard)
+    if (!clientId) {
+        // Fallback: chercher le user en DB si le JWT ne contenait pas le clientId
+        const user = await this.prisma.user.findUnique({ where: { id: userId } });
+        if (!user || !user.clientId) throw new BadRequestException('Impossible de déterminer la société.');
+        clientId = user.clientId;
     }
 
     const { fullName, country, city, phone } = dto;
@@ -36,7 +36,7 @@ export class BeneficiariesService {
           connect: { id: userId },
         },
         client: {
-          connect: { id: user.clientId },
+          connect: { id: clientId }, // ✅ Liaison propre avec la société
         },
       },
     });
@@ -53,31 +53,15 @@ export class BeneficiariesService {
     const beneficiary = await this.prisma.beneficiary.findFirst({
       where: { id, userId },
     });
-
-    if (!beneficiary) {
-      throw new NotFoundException('Beneficiary not found');
-    }
-
+    if (!beneficiary) throw new NotFoundException('Beneficiary not found');
     return beneficiary;
   }
 
-  async updateForUser(
-    id: string,
-    userId: string,
-    dto: UpdateBeneficiaryDto,
-  ): Promise<Beneficiary> {
-    // Vérifie appartenance user
+  async updateForUser(id: string, userId: string, dto: UpdateBeneficiaryDto): Promise<Beneficiary> {
     const existing = await this.findOneForUser(id, userId);
-
-    const hasAny =
-      dto.fullName !== undefined ||
-      dto.country !== undefined ||
-      dto.city !== undefined ||
-      dto.phone !== undefined;
-
-    if (!hasAny) {
-      throw new BadRequestException('No fields provided to update');
-    }
+    
+    const hasAny = dto.fullName !== undefined || dto.country !== undefined || dto.city !== undefined || dto.phone !== undefined;
+    if (!hasAny) throw new BadRequestException('No fields provided');
 
     return this.prisma.beneficiary.update({
       where: { id: existing.id },
@@ -85,36 +69,21 @@ export class BeneficiariesService {
         fullName: dto.fullName ?? undefined,
         country: dto.country ?? undefined,
         city: dto.city ?? undefined,
-        // phone:
-        // - undefined => ne touche pas
-        // - null => efface
-        // - string => update
         phone: dto.phone === undefined ? undefined : dto.phone,
       },
     });
   }
 
-  async deleteForUser(
-    id: string,
-    userId: string,
-  ): Promise<{ deleted: true; id: string }> {
+  async deleteForUser(id: string, userId: string): Promise<{ deleted: true; id: string }> {
     const existing = await this.findOneForUser(id, userId);
 
-    // Sécurité: empêcher suppression si déjà utilisé dans des transactions
     const txCount = await this.prisma.transaction.count({
       where: { beneficiaryId: existing.id },
     });
 
-    if (txCount > 0) {
-      throw new BadRequestException(
-        'Cannot delete beneficiary linked to existing transactions',
-      );
-    }
+    if (txCount > 0) throw new BadRequestException('Cannot delete beneficiary linked to transactions');
 
-    await this.prisma.beneficiary.delete({
-      where: { id: existing.id },
-    });
-
+    await this.prisma.beneficiary.delete({ where: { id: existing.id } });
     return { deleted: true, id: existing.id };
   }
 }

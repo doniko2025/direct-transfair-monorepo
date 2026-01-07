@@ -1,8 +1,11 @@
 //apps/backend/src/withdrawals/dto/update-withdrawal-status.dto.ts
-import { IsEnum } from 'class-validator';
-import { WithdrawalStatus } from '@prisma/client';
+import { IsEnum, IsNotEmpty } from 'class-validator';
+import { WithdrawalStatus } from '@prisma/client'; // ✅ Import Prisma
 
 export class UpdateWithdrawalStatusDto {
-  @IsEnum(WithdrawalStatus)
-  status!: WithdrawalStatus;
+  @IsNotEmpty()
+  @IsEnum(WithdrawalStatus, {
+    message: `status must be one of: ${Object.values(WithdrawalStatus).join(', ')}`,
+  })
+  status: WithdrawalStatus;
 }

@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/services/types.ts
 
 // --- AUTH & USER ---
-export type Role = "USER" | "ADMIN";
+// ✅ Rôles mis à jour pour le SaaS
+export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
 export type AuthUser = {
   id: string;
@@ -14,7 +15,6 @@ export type AuthUser = {
   phone?: string;
 
   // Adresse
-  addressNumber?: string;
   addressStreet?: string;
   postalCode?: string;
   city?: string;
@@ -26,6 +26,11 @@ export type AuthUser = {
   birthDate?: string;
   birthPlace?: string;
   jobTitle?: string;
+
+  // ✅ SaaS
+  clientId: number;   
+  agencyId?: string;  
+  balance?: number;   
 };
 
 export type LoginPayload = { 
@@ -39,7 +44,6 @@ export type RegisterPayload = {
   firstName: string;
   lastName: string;
   phone?: string;
-  // Tu peux ajouter d'autres champs ici si tu les demandes à l'inscription
 };
 
 export type LoginResponse = {
@@ -67,7 +71,6 @@ export type CreateBeneficiaryPayload = {
 
 // --- TRANSACTIONS ---
 export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
-
 export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
 
 export type Transaction = {
@@ -92,7 +95,7 @@ export type CreateTransactionPayload = {
 };
 
 // --- PAIEMENTS & RETRAITS ---
-export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD";
+export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "CASH";
 
 export type InitiatePaymentPayload = {
   transactionId: string;
@@ -110,4 +113,10 @@ export type WithdrawalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
 
 export type UpdateWithdrawalStatusPayload = {
   status: WithdrawalStatus;
+};
+
+// --- TAUX DE CHANGE ---
+export type ExchangeRate = {
+    pair: string;
+    rate: number;
 };

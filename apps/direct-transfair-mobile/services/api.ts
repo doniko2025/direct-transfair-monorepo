@@ -1,4 +1,4 @@
-// apps/direct-transfair-mobile/services/api.ts
+//apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -6,8 +6,7 @@ import axios, {
 } from "axios";
 import { Platform } from "react-native";
 
-// ⚠️ CHANGE CECI si tu testes sur un VRAI téléphone (ex: "192.168.1.15")
-// Si tu es sur émulateur ou web, laisse "localhost"
+// ⚠️ CHANGE CECI si tu testes sur un VRAI téléphone
 const LOCAL_IP = "localhost"; 
 
 import type {
@@ -25,16 +24,13 @@ import type {
 } from "./types";
 
 function getBaseUrl(): string {
-  // 1. Variable d'environnement (Priorité max)
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim().length > 0) return envUrl.trim();
 
-  // 2. Android Emulator (Android Studio)
   if (Platform.OS === "android") {
      return "http://10.0.2.2:3000"; 
   }
 
-  // 3. iOS ou Web ou Vrai Device (via LOCAL_IP)
   return `http://${LOCAL_IP}:3000`;
 }
 
@@ -48,16 +44,15 @@ function ensureAxiosHeaders(
 class API {
   private http: AxiosInstance;
   private token: string | null = null;
-  private tenant = "DONIKO";
+  private tenant = "DONIKO"; // Par défaut
 
   constructor() {
     this.http = axios.create({
       baseURL: getBaseUrl(),
-      timeout: 30000, // 30 secondes pour éviter les timeout sur mobile lent
+      timeout: 30000,
       headers: { "Content-Type": "application/json" },
     });
 
-    // Intercepteur de REQUÊTE : Injecte le Token et le Tenant ID
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
       if (this.token) {
@@ -68,7 +63,6 @@ class API {
       return config;
     });
 
-    // Intercepteur de RÉPONSE : Log les erreurs proprement
     this.http.interceptors.response.use(
       (response) => response,
       (error) => {
@@ -82,21 +76,19 @@ class API {
     );
   }
 
-  // ========================
-  // CONFIGURATION
-  // ========================
   setToken(token: string) { this.token = token; }
   clearToken() { this.token = null; }
   setTenant(tenant: string) { this.tenant = tenant; }
 
-  // ========================
-  // AUTHENTIFICATION & PROFIL
-  // ========================
+  // AUTH
   async register(data: RegisterPayload): Promise<void> {
     await this.http.post("/auth/register", data);
   }
 
-  async login(data: LoginPayload): Promise<LoginResponse> {
+  async login(data: LoginPayload, tenantCode?: string): Promise<LoginResponse> {
+    if (tenantCode) {
+        this.setTenant(tenantCode);
+    }
     const res = await this.http.post<LoginResponse>("/auth/login", data);
     return res.data;
   }
@@ -106,15 +98,12 @@ class API {
     return res.data;
   }
 
-  // ✅ AJOUT : Mise à jour du profil (Nom, Prénom, Tel)
   async updateProfile(data: Partial<AuthUser>): Promise<AuthUser> {
     const res = await this.http.patch<AuthUser>("/auth/me", data);
     return res.data;
   }
 
-  // ========================
   // BÉNÉFICIAIRES
-  // ========================
   async getBeneficiaries(): Promise<Beneficiary[]> {
     const res = await this.http.get<Beneficiary[]>("/beneficiaries");
     return Array.isArray(res.data) ? res.data : [];
@@ -140,9 +129,7 @@ class API {
     return res.data;
   }
 
-  // ========================
-  // TRANSACTIONS (CLIENT & ADMIN)
-  // ========================
+  // TRANSACTIONS
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> {
     const res = await this.http.post<Transaction>("/transactions", data);
     return res.data;
@@ -166,29 +153,19 @@ class API {
     return res.data;
   }
 
-  // ========================
-  // GUICHET / AGENT (RETRAITS CASH)
-  // ========================
-
-  // ✅ Rechercher une transaction par son CODE (Référence)
+  // GUICHET / AGENT
   async findTransactionByReference(reference: string): Promise<Transaction> {
-    // On charge toutes les transactions (admin) et on filtre côté client
-    // (Dans une vraie prod, on ferait une route API dédiée /search?ref=...)
     const all = await this.adminGetTransactions();
     const found = all.find(t => t.reference.trim().toUpperCase() === reference.trim().toUpperCase());
-    
     if (!found) throw new Error("Transaction introuvable");
     return found;
   }
 
-  // ✅ Valider le retrait cash (Passe le statut à PAID)
   async processCashWithdrawal(transactionId: string): Promise<Transaction> {
     return this.adminUpdateTransactionStatus(transactionId, "PAID");
   }
 
-  // ========================
-  // AUTRES (PAIEMENTS & RETRAITS COMPTE)
-  // ========================
+  // PAIEMENTS & RETRAITS
   async initiatePayment(data: InitiatePaymentPayload): Promise<unknown> {
     const res = await this.http.post("/payments/initiate", data);
     return res.data;
@@ -216,6 +193,54 @@ class API {
 
   async adminUpdateWithdrawal(id: string, payload: UpdateWithdrawalStatusPayload): Promise<unknown> {
     const res = await this.http.patch(`/admin/withdrawals/${id}`, payload);
+    return res.data;
+  }
+
+  // TAUX DE CHANGE (ADMIN)
+  async getExchangeRates(): Promise<{ pair: string; rate: number }[]> {
+    const res = await this.http.get("/rates");
+    return res.data;
+  }
+
+  async updateExchangeRate(pair: string, rate: number): Promise<void> {
+    await this.http.post("/rates", { pair, rate });
+  }
+
+  // ✅ SUPER ADMIN (CLIENTS / SOCIÉTÉS)
+  async getClients() {
+    const response = await this.http.get("/clients");
+    return response.data;
+  }
+
+  async createClient(data: any) {
+    const response = await this.http.post("/clients", data);
+    return response.data;
+  }
+
+  // ACTIONS ADMIN (Update, Delete, Status)
+  async updateClient(id: number, data: any) {
+    const response = await this.http.patch(`/clients/${id}`, data);
+    return response.data;
+  }
+
+  async deleteClient(id: number) { 
+    const response = await this.http.delete(`/clients/${id}`);
+    return response.data;
+  }
+  
+  async updateClientStatus(id: number, status: string) { 
+    const response = await this.http.patch(`/clients/${id}/status`, { status }); 
+    return response.data;
+  }
+
+  // ✅ GESTION UTILISATEURS (Ce sont les méthodes qui manquaient !)
+  async getUsers() {
+    const res = await this.http.get("/users");
+    return res.data;
+  }
+
+  async createUser(data: any) {
+    const res = await this.http.post("/users", data);
     return res.data;
   }
 }

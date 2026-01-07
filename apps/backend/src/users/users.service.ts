@@ -1,15 +1,14 @@
 // apps/backend/src/users/users.service.ts
 import { Injectable } from '@nestjs/common';
-import type { User } from '@prisma/client';
-
+import { User, Role } from '@prisma/client'; 
 import { PrismaService } from '../prisma/prisma.service';
-import type { UserRole } from '../auth/dto/register.dto';
 
 type UserExtraFields = {
   firstName?: string;
   lastName?: string;
   phone?: string;
-  addressNumber?: string;
+  gender?: string;
+  jobTitle?: string;
   addressStreet?: string;
   postalCode?: string;
   city?: string;
@@ -27,9 +26,24 @@ function normalizeEmail(email: string): string {
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ---------------------------------------------------------
-  // 🔹 FIND BY EMAIL
-  // ---------------------------------------------------------
+  // 🔹 Lister (avec filtre)
+  async findAll(whereClause: any) {
+    return this.prisma.user.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' },
+        select: {
+            id: true, 
+            email: true, 
+            firstName: true, 
+            lastName: true, 
+            role: true, 
+            createdAt: true,
+            client: { select: { name: true } }
+        }
+    });
+  }
+
+  // 🔹 Trouver par Email
   findByEmail(email: string): Promise<User | null> {
     const normalizedEmail = normalizeEmail(email);
     return this.prisma.user.findUnique({
@@ -37,23 +51,18 @@ export class UsersService {
     });
   }
 
-  // ---------------------------------------------------------
-  // 🔹 FIND BY ID
-  // ---------------------------------------------------------
   findById(id: string): Promise<User | null> {
     return this.prisma.user.findUnique({
       where: { id },
     });
   }
 
-  // ---------------------------------------------------------
-  // 🔹 CREATE USER (avec éventuels champs KYC)
-  // ---------------------------------------------------------
+  // 🔹 Créer
   create(
     email: string,
     passwordHash: string,
-    role: UserRole,
-    clientId: number,
+    role: Role, 
+    clientId: number, // ✅ L'argument crucial
     extra: UserExtraFields = {},
   ): Promise<User> {
     const normalizedEmail = normalizeEmail(email);
@@ -63,7 +72,7 @@ export class UsersService {
         email: normalizedEmail,
         password: passwordHash,
         role,
-        clientId,
+        clientId, // ✅ Liaison correcte
         ...extra,
       },
     });

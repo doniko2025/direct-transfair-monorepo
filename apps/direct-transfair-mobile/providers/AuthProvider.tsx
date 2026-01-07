@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
+// apps/direct-transfair-mobile/providers/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -8,14 +9,14 @@ import type { AuthUser, LoginPayload, RegisterPayload, LoginResponse } from "../
 type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
-  loading: boolean;   // Chargement initial (Splash screen)
-  isLoading: boolean; // Chargement d'actions (Login/Register)
+  loading: boolean;
+  isLoading: boolean;
   isAuthenticated: boolean;
-  login: (data: LoginPayload) => Promise<void>;
+  // ✅ UPDATE: Accepte tenantCode
+  login: (data: LoginPayload, tenantCode?: string) => Promise<void>; 
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
-  // ✅ AJOUT INDISPENSABLE pour le profil
-  refreshUser: () => Promise<void>; 
+  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -24,10 +25,10 @@ const TOKEN_KEY = "dt_token";
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);   // Au démarrage : true
-  const [isLoading, setIsLoading] = useState(false); // Actions : false
+  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // --- HELPER STORAGE (Web & Mobile) ---
+  // --- HELPER STORAGE ---
   const setStorage = async (val: string) => {
     if (Platform.OS === 'web') localStorage.setItem(TOKEN_KEY, val);
     else await SecureStore.setItemAsync(TOKEN_KEY, val);
@@ -43,24 +44,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await SecureStore.getItemAsync(TOKEN_KEY);
   };
 
-  // --- BOOTSTRAP (Chargement initial) ---
+  // --- BOOTSTRAP ---
   useEffect(() => {
     const bootstrap = async () => {
       try {
-        api.setTenant("DONIKO"); // Configuration par défaut
+        api.setTenant("DONIKO"); // Défaut
         const stored = await getStorage();
         
         if (stored) {
           setToken(stored);
           api.setToken(stored);
-          
-          // On vérifie si le token est encore valide en récupérant l'user
           const me = await api.getMe();
           setUser(me);
         }
       } catch (error) {
-        console.log("Session expirée ou invalide");
-        await logout(); // Nettoyage propre
+        console.log("Session expirée");
+        await logout();
       } finally {
         setLoading(false);
       }
@@ -70,19 +69,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // --- ACTIONS ---
 
-  const login = async (data: LoginPayload) => {
+  // ✅ Login mis à jour pour accepter tenantCode
+  const login = async (data: LoginPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      const res: LoginResponse = await api.login(data);
+      // On passe le tenantCode à l'API
+      const res: LoginResponse = await api.login(data, tenantCode);
       const accessToken = res.access_token;
 
-      // 1. Mise à jour API & Stockage
       setToken(accessToken);
       api.setToken(accessToken);
       await setStorage(accessToken);
 
-      // 2. Récupération immédiate du profil complet
-      // (Parfois le login ne renvoie pas tout l'objet user, donc on assure avec getMe)
       const me = await api.getMe();
       setUser(me);
     } finally {
@@ -94,7 +92,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       await api.register(data);
-      // Auto-login après inscription
       await login({ email: data.email, password: data.password });
     } finally {
       setIsLoading(false);
@@ -108,31 +105,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
   };
 
-  // ✅ FONCTION AJOUTÉE : Rafraîchir les données de l'utilisateur sans se déconnecter
-  // Utilisée après une mise à jour de profil
   const refreshUser = async () => {
     if (!token) return;
     try {
       const updatedUser = await api.getMe();
       setUser(updatedUser);
-      console.log("Profil utilisateur mis à jour dans le contexte.");
     } catch (e) {
-      console.error("Erreur lors du rafraîchissement utilisateur", e);
+      console.error("Erreur refreshUser", e);
     }
   };
 
   return (
     <AuthContext.Provider 
       value={{ 
-        user, 
-        token, 
-        loading, 
-        isLoading, 
+        user, token, loading, isLoading, 
         isAuthenticated: !!user, 
-        login, 
-        register, 
-        logout,
-        refreshUser // Exporté ici
+        login, register, logout, refreshUser 
       }}
     >
       {children}
@@ -140,7 +128,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Hook personnalisé pour utiliser le contexte
 export const useAuth = () => {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

@@ -5,9 +5,9 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  IsEnum, // ✅ Ajout
 } from 'class-validator';
-
-export type UserRole = 'USER' | 'ADMIN';
+import { Role } from '@prisma/client'; // ✅ Import Prisma
 
 export class RegisterDto {
   // 🔹 Identité
@@ -28,19 +28,20 @@ export class RegisterDto {
   @MinLength(6)
   password: string;
 
+  // ✅ 🔹 Rôle (optionnel, par défaut USER)
+  @IsOptional()
+  @IsEnum(Role)
+  role?: Role;
+
   // 🔹 Contact
   @IsString()
   @IsOptional()
   phone?: string;
 
-  // 🔹 Adresse
+  // 🔹 Adresse (Mise à jour SaaS)
   @IsString()
   @IsOptional()
-  addressNumber?: string; // N° de rue
-
-  @IsString()
-  @IsOptional()
-  addressStreet?: string; // Libellé de rue
+  addressStreet?: string;
 
   @IsString()
   @IsOptional()
@@ -52,7 +53,7 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
-  country?: string; // Pays de résidence
+  country?: string;
 
   // 🔹 Infos KYC
   @IsString()
@@ -61,9 +62,9 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
-  birthDate?: string; // JJ/MM/AAAA (on garde en string pour l’instant)
+  birthDate?: string;
 
   @IsString()
   @IsOptional()
-  birthPlace?: string; // Lieu de naissance
+  birthPlace?: string;
 }

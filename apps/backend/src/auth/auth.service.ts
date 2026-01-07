@@ -1,27 +1,31 @@
 // apps/backend/src/auth/auth.service.ts
-import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import type { User } from '@prisma/client';
+import { Role, User } from '@prisma/client'; // ✅ Import des types Prisma officiels
+import * as bcrypt from 'bcryptjs';
 
 import { UsersService } from '../users/users.service';
-import { hashPassword, comparePassword } from '../common/password';
-import { RegisterDto, type UserRole } from './dto/register.dto';
+import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { PrismaService } from '../prisma/prisma.service'; // ✅ Ajout pour updateProfile
+import { PrismaService } from '../prisma/prisma.service';
 
-// Type de retour public (sans mot de passe)
+// ✅ Type PublicUser mis à jour (SANS mot de passe, SANS addressNumber)
 export type PublicUser = {
   id: string;
   email: string;
-  role: string;
+  role: Role; // C'est maintenant un Enum
   clientId: number;
 
   firstName?: string | null;
   lastName?: string | null;
   phone?: string | null;
 
-  addressNumber?: string | null;
-  addressStreet?: string | null;
+  addressStreet?: string | null; // Remplacement de addressNumber
   postalCode?: string | null;
   city?: string | null;
   country?: string | null;
@@ -32,37 +36,39 @@ export type PublicUser = {
   
   gender?: string | null;
   jobTitle?: string | null;
+  
+  agencyId?: string | null; // Nouveau champ SaaS
 };
 
 function normalizeEmail(email: string): string {
   return String(email ?? '').trim().toLowerCase();
 }
 
+// Convertisseur User Prisma -> PublicUser
 function toPublicUser(user: User): PublicUser {
-  // IMPORTANT: jamais renvoyer user.password
   return {
     id: user.id,
     email: user.email,
-    role: String(user.role),
+    role: user.role,
     clientId: user.clientId,
 
-    // Cast barbare mais fonctionnel si le modèle Prisma a ces champs
-    firstName: (user as any).firstName ?? null,
-    lastName: (user as any).lastName ?? null,
-    phone: (user as any).phone ?? null,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    phone: user.phone,
 
-    addressNumber: (user as any).addressNumber ?? null,
-    addressStreet: (user as any).addressStreet ?? null,
-    postalCode: (user as any).postalCode ?? null,
-    city: (user as any).city ?? null,
-    country: (user as any).country ?? null,
+    addressStreet: user.addressStreet,
+    postalCode: user.postalCode,
+    city: user.city,
+    country: user.country,
 
-    nationality: (user as any).nationality ?? null,
-    birthDate: (user as any).birthDate ?? null,
-    birthPlace: (user as any).birthPlace ?? null,
+    nationality: user.nationality,
+    birthDate: user.birthDate,
+    birthPlace: user.birthPlace,
     
-    gender: (user as any).gender ?? null,
-    jobTitle: (user as any).jobTitle ?? null,
+    gender: user.gender,
+    jobTitle: user.jobTitle,
+    
+    agencyId: user.agencyId,
   };
 }
 
@@ -71,80 +77,67 @@ export class AuthService {
   constructor(
     private readonly users: UsersService,
     private readonly jwt: JwtService,
-    private readonly prisma: PrismaService, // ✅ Ajout
+    private readonly prisma: PrismaService,
   ) {}
 
   // ---------------------------------------------------------
-  // 🔹 REGISTER USER
+  // 🔹 REGISTER (Point d'entrée unique et robuste)
   // ---------------------------------------------------------
-  async registerUser(
-    dto: RegisterDto,
-    clientId: number,
-  ): Promise<{ message: string; user: User }> {
-    return this.registerWithRole(dto, 'USER', clientId);
-  }
-
-  // ---------------------------------------------------------
-  // 🔹 REGISTER ADMIN
-  // ---------------------------------------------------------
-  async registerAdmin(
-    dto: RegisterDto,
-    clientId: number,
-  ): Promise<{ message: string; user: User }> {
-    return this.registerWithRole(dto, 'ADMIN', clientId);
-  }
-
-  // ---------------------------------------------------------
-  // 🔹 Méthode interne commune
-  // ---------------------------------------------------------
-  private async registerWithRole(
-    dto: RegisterDto,
-    role: UserRole,
-    clientId: number,
-  ): Promise<{ message: string; user: User }> {
+  async register(dto: RegisterDto) {
+    // 1. Vérif email
     const email = normalizeEmail(dto.email);
-
-    const existing = await this.users.findByEmail(email);
-    if (existing) {
-      throw new UnauthorizedException('Email already used');
+    const existingUser = await this.users.findByEmail(email);
+    if (existingUser) {
+      throw new ConflictException('Cet email est déjà utilisé.');
     }
 
-    const hashed = await hashPassword(dto.password);
+    // 2. Hash password
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    const user = await this.users.create(email, hashed, role, clientId, {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      phone: dto.phone,
-      addressNumber: dto.addressNumber,
-      addressStreet: dto.addressStreet,
-      postalCode: dto.postalCode,
-      city: dto.city,
-      country: dto.country,
-      nationality: dto.nationality,
-      birthDate: dto.birthDate,
-      birthPlace: dto.birthPlace,
-    });
+    // 3. ✅ MAPPING INTELLIGENT DES RÔLES
+    // L'app mobile envoie peut-être encore "ADMIN" ou "USER" en string.
+    // On doit convertir ça en Enum Prisma compatible.
+    let userRole: Role = Role.USER;
 
-    const message = role === 'ADMIN' ? 'Admin created' : 'User created';
-    return { message, user };
-  }
+    // Si le DTO demande "ADMIN", on lui donne le rôle "COMPANY_ADMIN"
+    if ((dto.role as any) === 'ADMIN' || dto.role === 'COMPANY_ADMIN') {
+        userRole = Role.COMPANY_ADMIN;
+    } 
+    // Si c'est SUPER_ADMIN (cas rare via API publique)
+    else if ((dto.role as any) === 'SUPER_ADMIN') {
+        userRole = Role.SUPER_ADMIN;
+    } 
+    // Sinon par défaut USER
+    else {
+        userRole = Role.USER;
+    }
 
-  // ---------------------------------------------------------
-  // 🔹 VALIDATE USER (login)
-  // ---------------------------------------------------------
-  private async validateUser(
-    email: string,
-    password: string,
-  ): Promise<User | null> {
-    const normalizedEmail = normalizeEmail(email);
+    // 4. Client par défaut (DONIKO = 1)
+    const defaultClientId = 1;
 
-    const user = await this.users.findByEmail(normalizedEmail);
-    if (!user) return null;
+    // 5. Création via UsersService
+    const newUser = await this.users.create(
+      email,
+      hashedPassword,
+      userRole, // Ici on passe bien un Role Enum
+      defaultClientId,
+      {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        phone: dto.phone,
+        // On mappe les champs d'adresse correctement
+        addressStreet: dto.addressStreet || (dto as any).addressNumber, // Fallback si l'ancien champ est envoyé
+        postalCode: dto.postalCode,
+        city: dto.city,
+        country: dto.country,
+        nationality: dto.nationality,
+        birthDate: dto.birthDate,
+        birthPlace: dto.birthPlace,
+      },
+    );
 
-    const valid = await comparePassword(password, user.password);
-    if (!valid) return null;
-
-    return user;
+    // 6. Connexion automatique
+    return this.login({ email: dto.email, password: dto.password });
   }
 
   // ---------------------------------------------------------
@@ -157,12 +150,12 @@ export class AuthService {
     const user = await this.validateUser(dto.email, dto.password);
 
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // Multi-tenant (optionnel, mais recommandé)
+    // Vérification Multi-tenant
     if (typeof clientId === 'number' && user.clientId !== clientId) {
-      throw new UnauthorizedException('Invalid tenant');
+      throw new UnauthorizedException('Société invalide');
     }
 
     const payload = {
@@ -177,13 +170,31 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------
-  // ✅ GET PROFILE (Lecture fraîche)
+  // 🔹 VALIDATE USER (Interne)
+  // ---------------------------------------------------------
+  private async validateUser(
+    email: string,
+    password: string,
+  ): Promise<User | null> {
+    const normalizedEmail = normalizeEmail(email);
+
+    const user = await this.users.findByEmail(normalizedEmail);
+    if (!user) return null;
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) return null;
+
+    return user;
+  }
+
+  // ---------------------------------------------------------
+  // ✅ GET PROFILE
   // ---------------------------------------------------------
   async getProfile(userId: string): Promise<PublicUser> {
     const user = await this.prisma.user.findUnique({
         where: { id: userId }
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
     return toPublicUser(user);
   }
 
@@ -191,23 +202,30 @@ export class AuthService {
   // ✅ UPDATE PROFILE
   // ---------------------------------------------------------
   async updateProfile(userId: string, data: any): Promise<PublicUser> {
-    // 🔒 SÉCURITÉ : On retire les champs sensibles
+    // 🔒 SÉCURITÉ : Nettoyage des champs interdits
     delete data.id;
     delete data.role;
     delete data.password;
     delete data.clientId;
-    delete data.balance; // Si tu as un solde
+    delete data.balance; 
+    delete data.email;
 
-    // Mise à jour via Prisma
+    // Mise à jour
     const updated = await this.prisma.user.update({
         where: { id: userId },
-        data: {
-            ...data,
-            // Si besoin de parser des dates, fais-le ici :
-            // birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
-        }
+        data: { ...data }
     });
 
     return toPublicUser(updated);
+  }
+
+  // Ces méthodes sont gardées pour compatibilité si ton Controller les appelle encore,
+  // mais elles redirigent vers la méthode principale "register".
+  async registerUser(dto: RegisterDto, clientId: number) {
+      return this.register({ ...dto, role: 'USER' } as any);
+  }
+
+  async registerAdmin(dto: RegisterDto, clientId: number) {
+      return this.register({ ...dto, role: 'ADMIN' } as any);
   }
 }

@@ -1,91 +1,83 @@
 // apps/backend/prisma/seed.ts
-/* eslint-disable @typescript-eslint/no-var-requires */
-
-// CommonJS strict — compatible Prisma + NestJS
-const { PrismaClient } = require("@prisma/client");
+const { PrismaClient } = require('@prisma/client');
+const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-function hashPassword(plain: string): Promise<string> {
-  try {
-    const bcrypt = require("bcrypt");
-    return bcrypt.hash(plain, 10);
-  } catch {
-    const bcryptjs = require("bcryptjs");
-    return bcryptjs.hash(plain, 10);
-  }
-}
+// Définition manuelle des Enums pour éviter les erreurs d'import
+const Role = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  COMPANY_ADMIN: 'COMPANY_ADMIN',
+  AGENT: 'AGENT',
+  USER: 'USER',
+};
+
+const SubscriptionType = {
+  RENTAL: 'RENTAL',
+  PURCHASE: 'PURCHASE',
+};
+
+const SubscriptionStatus = {
+  ACTIVE: 'ACTIVE',
+  EXPIRED: 'EXPIRED',
+  SUSPENDED: 'SUSPENDED',
+};
 
 async function main() {
-  const tenantCode = "DONIKO";
-  const tenantName = "DONIKO";
+  console.log('🌱 Début du seeding SaaS (Mode robuste)...');
 
-  // 1) Client / Tenant
-  const client = await prisma.client.upsert({
-    where: { code: tenantCode },
-    update: { name: tenantName },
-    create: { code: tenantCode, name: tenantName },
+  // 1. Créer la Société Mère (DONIKO)
+  const doniko = await prisma.client.upsert({
+    where: { code: 'DONIKO' },
+    update: {},
+    create: {
+      code: 'DONIKO',
+      name: 'Doniko Transfert',
+      primaryColor: '#F7931E',
+      subscriptionType: SubscriptionType.PURCHASE,
+      subscriptionStatus: SubscriptionStatus.ACTIVE,
+    },
   });
+  console.log('🏢 Société créée :', doniko.name);
 
-  // 2) Comptes
-  const adminEmail = "admin@doniko.local";
-  const userEmail = "user@doniko.local";
-
-  const adminHash = await hashPassword("Admin2025!");
-  const userHash = await hashPassword("User2025!");
-
+  // 2. Créer le Super Admin
+  const password = await bcrypt.hash('123456', 10);
+  
   const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: {
-      role: "ADMIN",
-      clientId: client.id,
-      firstName: "Admin",
-      lastName: "DONIKO",
-      password: adminHash,
+    where: { email: 'admin@doniko.com' },
+    update: { 
+        role: Role.SUPER_ADMIN,
+        clientId: doniko.id 
     },
     create: {
-      email: adminEmail,
-      password: adminHash,
-      role: "ADMIN",
-      clientId: client.id,
-      firstName: "Admin",
-      lastName: "DONIKO",
+      email: 'admin@doniko.com',
+      password,
+      firstName: 'Admin',
+      lastName: 'Principal',
+      role: Role.SUPER_ADMIN,
+      clientId: doniko.id,
+      nationality: 'France',
+      country: 'France',
     },
   });
+  console.log('👤 Super Admin créé :', admin.email);
 
-  const user = await prisma.user.upsert({
-    where: { email: userEmail },
-    update: {
-      role: "USER",
-      clientId: client.id,
-      firstName: "User",
-      lastName: "DONIKO",
-      password: userHash,
-    },
-    create: {
-      email: userEmail,
-      password: userHash,
-      role: "USER",
-      clientId: client.id,
-      firstName: "User",
-      lastName: "DONIKO",
-    },
+  // 3. Taux de change par défaut
+  await prisma.exchangeRate.upsert({
+    where: { pair: 'EUR_XOF' },
+    update: { rate: 655.95 },
+    create: { pair: 'EUR_XOF', rate: 655.95 },
   });
+  console.log('💱 Taux EUR_XOF initialisé (655.95)');
 
-  console.log("✅ Seed OK");
-  console.table({
-    tenant: client.code,
-    admin: admin.email,
-    user: user.email,
-  });
+  console.log('✅ Seeding terminé avec succès !');
 }
 
 main()
-  .catch((e: unknown) => {
-    console.error("❌ Seed error:", e);
+  .catch((e) => {
+    console.error('❌ Erreur durant le seed:', e);
     process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();
   });
-//npx prisma db seed

@@ -13,6 +13,8 @@ import { BeneficiariesModule } from './beneficiaries/beneficiaries.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { PaymentsModule } from './payments/payments.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
+// ✅ AJOUT : Module des Taux
+import { RatesModule } from './rates/rates.module';
 
 import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.middleware';
 
@@ -31,6 +33,7 @@ import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.mi
     TransactionsModule,
     PaymentsModule,
     WithdrawalsModule,
+    RatesModule, // ✅ AJOUT ICI
   ],
 })
 export class AppModule implements NestModule {

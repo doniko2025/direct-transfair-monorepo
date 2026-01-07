@@ -6,18 +6,18 @@ import {
   Req,
   BadRequestException,
   Get,
-  Patch, // ✅ Ajout
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 import { ApiHeader, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 
-import { AuthService } from './auth.service';
+import { AuthService, PublicUser } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from '../prisma/prisma.service';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import type { AuthUserPayload } from './types/auth-user-payload.type';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthUserPayload } from './jwt.strategy'; // Import depuis la stratégie corrigée
 
 @Controller('auth')
 @ApiTags('Auth')
@@ -27,77 +27,35 @@ export class AuthController {
     private readonly prisma: PrismaService,
   ) {}
 
-  /**
-   * convertit x-tenant-id en clientId
-   * - Supporte : "DONIKO" (code) ou "1" (id)
-   * - Normalise les codes en uppercase
-   */
+  // --- Helper Tenant ---
   private async resolveClientId(headerValue: unknown): Promise<number> {
-    if (headerValue === undefined || headerValue === null) {
-      throw new BadRequestException('Missing x-tenant-id header');
-    }
-
+    if (!headerValue) throw new BadRequestException('Missing x-tenant-id');
     const raw = String(headerValue).trim();
-    if (!raw) {
-      throw new BadRequestException('Missing x-tenant-id header');
-    }
-
-    // 1) Header numérique → ID direct (mais on vérifie qu'il existe)
+    
+    // 1. ID numérique
     if (/^\d+$/.test(raw)) {
       const id = Number(raw);
-      if (!Number.isFinite(id) || id <= 0) {
-        throw new BadRequestException('Invalid tenant id');
-      }
-
-      const exists = await this.prisma.client.findUnique({
-        where: { id },
-        select: { id: true },
-      });
-
-      if (!exists) {
-        throw new BadRequestException(`Unknown tenant id: ${id}`);
-      }
-
+      const exists = await this.prisma.client.findUnique({ where: { id } });
+      if (!exists) throw new BadRequestException(`Unknown tenant id: ${id}`);
       return exists.id;
     }
 
-    // 2) Sinon → code (ex: DONIKO)
-    const code = raw.toUpperCase();
-
-    const client = await this.prisma.client.findUnique({
-      where: { code },
-      select: { id: true },
-    });
-
-    if (!client) {
-      throw new BadRequestException(`Unknown tenant code: ${code}`);
-    }
-
+    // 2. Code (DONIKO)
+    const client = await this.prisma.client.findUnique({ where: { code: raw.toUpperCase() } });
+    if (!client) throw new BadRequestException(`Unknown tenant code: ${raw}`);
     return client.id;
   }
 
-  @ApiHeader({
-    name: 'x-tenant-id',
-    description: 'Tenant identifier (ex: DONIKO or 1)',
-    required: true,
-  })
+  // --- REGISTER ---
+  @ApiHeader({ name: 'x-tenant-id', required: true })
   @Post('register')
   async register(@Req() req: Request, @Body() dto: RegisterDto) {
-    const clientId = await this.resolveClientId(req.headers['x-tenant-id']);
-    return this.authService.registerUser(dto, clientId);
+    // On valide le tenant (même si on force 1 dans le service pour l'instant)
+    await this.resolveClientId(req.headers['x-tenant-id']);
+    return this.authService.register(dto);
   }
 
-  @ApiHeader({
-    name: 'x-tenant-id',
-    description: 'Tenant identifier (ex: DONIKO or 1)',
-    required: true,
-  })
-  @Post('register-admin')
-  async registerAdmin(@Req() req: Request, @Body() dto: RegisterDto) {
-    const clientId = await this.resolveClientId(req.headers['x-tenant-id']);
-    return this.authService.registerAdmin(dto, clientId);
-  }
-
+  // --- LOGIN ---
   @Post('login')
   async login(@Req() req: Request, @Body() dto: LoginDto) {
     const header = req.headers['x-tenant-id'];
@@ -105,23 +63,16 @@ export class AuthController {
     return this.authService.login(dto, clientId);
   }
 
-  // ======================================================
-  // ✅ GET /auth/me — Lire le profil
-  // ======================================================
+  // --- ME ---
   @Get('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   async me(@Req() req: Request & { user?: AuthUserPayload }) {
-    if (!req.user) {
-      throw new BadRequestException('User not found in request');
-    }
-    // Optionnel : recharger depuis la DB pour avoir les dernières infos
+    if (!req.user) throw new BadRequestException('User not found');
     return this.authService.getProfile(req.user.sub);
   }
 
-  // ======================================================
-  // ✅ PATCH /auth/me — Mettre à jour le profil (NOUVEAU)
-  // ======================================================
+  // --- UPDATE ME ---
   @Patch('me')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -129,9 +80,7 @@ export class AuthController {
     @Req() req: Request & { user?: AuthUserPayload },
     @Body() body: any,
   ) {
-    if (!req.user) {
-      throw new BadRequestException('User not found');
-    }
+    if (!req.user) throw new BadRequestException('User not found');
     return this.authService.updateProfile(req.user.sub, body);
   }
 }

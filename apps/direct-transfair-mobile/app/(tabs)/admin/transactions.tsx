@@ -1,205 +1,147 @@
 //apps/direct-transfair-mobile/app/(tabs)/admin/transactions.tsx
-import React, { useCallback, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  RefreshControl,
-} from "react-native";
-// ✅ IMPORT IMPORTANT
-import { useFocusEffect } from "expo-router"; 
-
-import { api } from "../../../services/api";
-import type { Transaction, TransactionStatus } from "../../../services/types";
+import React, { useState, useCallback } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Alert, SafeAreaView } from "react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../../services/api"; // Assure-toi que le chemin est bon
+import { Transaction } from "../../../services/types";
 import { colors } from "../../../theme/colors";
 
 export default function AdminTransactionsScreen() {
-  const [items, setItems] = useState<Transaction[]>([]);
+  const router = useRouter();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const loadTransactions = useCallback(async () => {
     try {
-      // Petite astuce : on ne met le loading true que si la liste est vide
-      // pour éviter le clignotement si on a déjà des données
-      if (items.length === 0) setLoading(true);
-      
+      setLoading(true);
       const data = await api.adminGetTransactions();
-      setItems(data);
-    } catch (e) {
-      console.error(e);
-      // On évite l'alerte bloquante à chaque focus, un log suffit souvent
+      setTransactions(data);
+    } catch (error) {
+      console.error(error);
     } finally {
       setLoading(false);
     }
-  }, [items.length]);
+  }, []);
 
-  // ✅ CORRECTION MAJEURE : Rechargement automatique à chaque visite
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      loadTransactions();
+    }, [loadTransactions])
   );
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
-
-  const updateStatus = async (id: string, status: TransactionStatus) => {
+  const handleUpdateStatus = async (id: string, newStatus: string) => {
     try {
-      setUpdatingId(id);
-      await api.adminUpdateTransactionStatus(id, status);
-      // On recharge la liste après la modif pour voir le changement de couleur
-      const data = await api.adminGetTransactions(); 
-      setItems(data);
-    } catch (e) {
-      console.error(e);
-      Alert.alert("Erreur", "Mise à jour impossible.");
-    } finally {
-      setUpdatingId(null);
+      await api.adminUpdateTransactionStatus(id, newStatus);
+      Alert.alert("Succès", `Transaction ${newStatus}`);
+      loadTransactions();
+    } catch (error) {
+      Alert.alert("Erreur", "Impossible de mettre à jour le statut");
     }
   };
 
-  const renderItem = ({ item }: { item: Transaction }) => {
-    const date = new Date(item.createdAt);
+  const renderItem = ({ item }: { item: Transaction }) => (
+    <View style={styles.card}>
+      <View style={styles.rowBetween}>
+        <Text style={styles.ref}>{item.reference}</Text>
+        <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString()}</Text>
+      </View>
 
-    return (
-      <View style={styles.card}>
-        <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-            <Text style={styles.reference}>{item.reference}</Text>
-            <Text style={styles.amount}>{item.total} {item.currency}</Text>
-        </View>
+      <Text style={styles.amount}>
+        {item.amount} {item.currency}
+      </Text>
+      <Text style={styles.fees}>Frais: {item.fees} {item.currency}</Text>
 
-        <Text style={[styles.status, styles[`status_${item.status}` as keyof typeof styles]]}>
-          {item.status}
-        </Text>
+      <View style={styles.statusRow}>
+        <StatusBadge status={item.status} />
+      </View>
 
-        <Text style={styles.date}>
-          {date.toLocaleDateString("fr-FR")}{" "}
-          {date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
-        </Text>
-
-        {/* LOGIQUE MÉTIER : 
-            L'admin ne devrait intervenir que pour débloquer (PENDING -> VALIDATED)
-            Le passage à PAID se fait normalement via le retrait par code, 
-            mais on garde le bouton "Payée" ici pour le dépannage manuel.
-        */}
+      {item.status === "PENDING" && (
         <View style={styles.actions}>
-          {item.status === "PENDING" && (
-             <ActionButton
-                label="Valider (Anti-Fraude)"
-                loading={updatingId === item.id}
-                onPress={() => updateStatus(item.id, "VALIDATED")}
-             />
-          )}
-
-          {item.status === "VALIDATED" && (
-             <ActionButton
-                label="Marquer Payée (Force)"
-                loading={updatingId === item.id}
-                onPress={() => updateStatus(item.id, "PAID")}
-             />
-          )}
-
-          {item.status !== "PAID" && item.status !== "CANCELLED" && (
-             <ActionButton
-                label="Annuler"
-                danger
-                loading={updatingId === item.id}
-                onPress={() => updateStatus(item.id, "CANCELLED")}
-             />
-          )}
+          <TouchableOpacity 
+            style={[styles.btn, styles.btnReject]} 
+            onPress={() => handleUpdateStatus(item.id, "CANCELLED")}
+          >
+            <Ionicons name="close" size={16} color="#B00020" />
+            <Text style={styles.btnTextReject}>Rejeter</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.btn, styles.btnValidate]}
+            onPress={() => handleUpdateStatus(item.id, "VALIDATED")}
+          >
+            <Ionicons name="checkmark" size={16} color="#FFF" />
+            <Text style={styles.btnTextValidate}>Valider</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-    );
-  };
-
-  if (loading && items.length === 0) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-  }
+      )}
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={items}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListEmptyComponent={
-          <Text style={styles.empty}>Aucune transaction à gérer.</Text>
-        }
-        contentContainerStyle={{paddingBottom: 20}}
-      />
-    </View>
+    <SafeAreaView style={styles.container}>
+      {/* Header Interne avec bouton retour */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Gestion Transactions</Text>
+        <View style={{width: 24}} />
+      </View>
+
+      {loading ? (
+        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 20 }} />
+      ) : (
+        <FlatList
+          data={transactions}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ padding: 16 }}
+          ListEmptyComponent={<Text style={styles.empty}>Aucune transaction</Text>}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
-/* ------------------ UI Components ------------------ */
-
-function ActionButton(props: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  danger?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={props.onPress}
-      disabled={props.disabled || props.loading}
-      style={[
-        styles.btn,
-        props.danger ? styles.btnDanger : styles.btnPrimary,
-        (props.disabled || props.loading) && styles.btnDisabled,
-      ]}
-    >
-      {props.loading ? (
-        <ActivityIndicator color="#fff" size="small" />
-      ) : (
-        <Text style={styles.btnText}>{props.label}</Text>
-      )}
-    </Pressable>
-  );
+function StatusBadge({ status }: { status: string }) {
+    let color = "#666";
+    let bg = "#EEE";
+    let label = status;
+  
+    if (status === "PENDING") { color = "#B45309"; bg = "#FEF3C7"; label = "EN ATTENTE"; }
+    else if (status === "VALIDATED") { color = "#065F46"; bg = "#D1FAE5"; label = "VALIDÉE"; }
+    else if (status === "PAID") { color = "#115E59"; bg = "#CCFBF1"; label = "PAYÉE"; }
+    else if (status === "CANCELLED") { color = "#991B1B"; bg = "#FEE2E2"; label = "ANNULÉE"; }
+  
+    return (
+      <View style={[styles.badge, { backgroundColor: bg }]}>
+        <Text style={[styles.badgeText, { color }]}>{label}</Text>
+      </View>
+    );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  empty: { textAlign: "center", marginTop: 40, color: colors.muted },
-  card: {
-    backgroundColor: colors.card,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  reference: { fontWeight: "800", marginBottom: 4, color: colors.text },
-  amount: { fontWeight: "800", color: colors.primary },
-  date: { fontSize: 12, color: colors.muted, marginTop: 4 },
-  status: { fontWeight: "800", marginTop: 6, fontSize: 12, textTransform: 'uppercase' },
-  status_PENDING: { color: "#f59e0b" },
-  status_VALIDATED: { color: "#3b82f6" },
-  status_PAID: { color: "#16a34a" },
-  status_CANCELLED: { color: "#dc2626" },
-  actions: { flexDirection: "row", marginTop: 12, gap: 8 },
-  btn: { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: "center", justifyContent: 'center' },
-  btnPrimary: { backgroundColor: colors.primary },
-  btnDanger: { backgroundColor: colors.danger },
-  btnDisabled: { opacity: 0.5 },
-  btnText: { color: "#fff", fontWeight: "700", fontSize: 11 },
+  container: { flex: 1, backgroundColor: "#F9FAFB" },
+  header: { backgroundColor: "#1F2937", padding: 16, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle: { color: "#FFF", fontSize: 16, fontWeight: "700" },
+  
+  card: { backgroundColor: "#FFF", padding: 16, marginBottom: 12, borderRadius: 8, elevation: 1 },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
+  ref: { fontSize: 12, color: "#999" },
+  date: { fontSize: 12, color: "#999" },
+  amount: { fontSize: 20, fontWeight: "800", color: "#000" },
+  fees: { fontSize: 12, color: "#666", marginBottom: 8 },
+  
+  statusRow: { flexDirection: "row", marginBottom: 12 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  badgeText: { fontSize: 10, fontWeight: "800" },
+  
+  actions: { flexDirection: "row", gap: 10 },
+  btn: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", padding: 12, borderRadius: 6 },
+  btnReject: { backgroundColor: "#FEE2E2" },
+  btnValidate: { backgroundColor: "#10B981" },
+  btnTextReject: { color: "#B00020", fontWeight: "700", marginLeft: 6 },
+  btnTextValidate: { color: "#FFF", fontWeight: "700", marginLeft: 6 },
+  
+  empty: { textAlign: "center", marginTop: 40, color: "#888" },
 });
