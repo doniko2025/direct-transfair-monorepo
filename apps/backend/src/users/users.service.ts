@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { User, Role } from '@prisma/client'; 
 import { PrismaService } from '../prisma/prisma.service';
 
+// Types pour les champs supplémentaires
 type UserExtraFields = {
   firstName?: string;
   lastName?: string;
@@ -18,15 +19,11 @@ type UserExtraFields = {
   birthPlace?: string;
 };
 
-function normalizeEmail(email: string): string {
-  return String(email ?? '').trim().toLowerCase();
-}
-
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // 🔹 Lister (avec filtre)
+  // 🔹 Lister
   async findAll(whereClause: any) {
     return this.prisma.user.findMany({
         where: whereClause,
@@ -43,36 +40,27 @@ export class UsersService {
     });
   }
 
-  // 🔹 Trouver par Email
-  findByEmail(email: string): Promise<User | null> {
-    const normalizedEmail = normalizeEmail(email);
+  // 🔹 Trouver par email
+  async findByEmail(email: string): Promise<User | null> {
     return this.prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-  }
-
-  findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { id },
+      where: { email: email.trim().toLowerCase() },
     });
   }
 
   // 🔹 Créer
-  create(
+  async create(
     email: string,
     passwordHash: string,
     role: Role, 
-    clientId: number, // ✅ L'argument crucial
+    clientId: number,
     extra: UserExtraFields = {},
   ): Promise<User> {
-    const normalizedEmail = normalizeEmail(email);
-
     return this.prisma.user.create({
       data: {
-        email: normalizedEmail,
+        email: email.trim().toLowerCase(),
         password: passwordHash,
         role,
-        clientId, // ✅ Liaison correcte
+        clientId,
         ...extra,
       },
     });

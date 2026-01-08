@@ -1,88 +1,104 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
-// apps/direct-transfair-mobile/providers/AuthProvider.tsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import { useRouter, useSegments } from "expo-router"; // ✅ Ajout du router pour redirection
 import { api } from "../services/api";
 import type { AuthUser, LoginPayload, RegisterPayload, LoginResponse } from "../services/types";
 
 type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
-  loading: boolean;
   isLoading: boolean;
-  isAuthenticated: boolean;
-  // ✅ UPDATE: Accepte tenantCode
-  login: (data: LoginPayload, tenantCode?: string) => Promise<void>; 
+  login: (data: LoginPayload, tenantCode?: string) => Promise<void>;
   register: (data: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const TOKEN_KEY = "dt_token";
+const USER_KEY = "dt_user"; // ✅ On garde aussi le user en cache pour l'affichage immédiat
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const router = useRouter();
+  const segments = useSegments();
 
-  // --- HELPER STORAGE ---
-  const setStorage = async (val: string) => {
-    if (Platform.OS === 'web') localStorage.setItem(TOKEN_KEY, val);
-    else await SecureStore.setItemAsync(TOKEN_KEY, val);
+  // --- STORAGE HELPERS ---
+  const setStorage = async (key: string, val: string) => {
+    if (Platform.OS === 'web') localStorage.setItem(key, val);
+    else await SecureStore.setItemAsync(key, val);
   };
   
-  const removeStorage = async () => {
-    if (Platform.OS === 'web') localStorage.removeItem(TOKEN_KEY);
-    else await SecureStore.deleteItemAsync(TOKEN_KEY);
+  const removeStorage = async (key: string) => {
+    if (Platform.OS === 'web') localStorage.removeItem(key);
+    else await SecureStore.deleteItemAsync(key);
   };
 
-  const getStorage = async () => {
-    if (Platform.OS === 'web') return localStorage.getItem(TOKEN_KEY);
-    return await SecureStore.getItemAsync(TOKEN_KEY);
+  const getStorage = async (key: string) => {
+    if (Platform.OS === 'web') return localStorage.getItem(key);
+    return await SecureStore.getItemAsync(key);
   };
 
-  // --- BOOTSTRAP ---
+  // --- INITIALISATION ---
   useEffect(() => {
-    const bootstrap = async () => {
+    const initAuth = async () => {
       try {
-        api.setTenant("DONIKO"); // Défaut
-        const stored = await getStorage();
-        
-        if (stored) {
-          setToken(stored);
-          api.setToken(stored);
-          const me = await api.getMe();
-          setUser(me);
+        const storedToken = await getStorage(TOKEN_KEY);
+        const storedUser = await getStorage(USER_KEY);
+
+        if (storedToken && storedUser) {
+          api.setToken(storedToken);
+          setToken(storedToken);
+          setUser(JSON.parse(storedUser));
+          
+          // Vérification silencieuse en arrière-plan (ne bloque pas l'UI)
+          api.getMe().catch(() => logout()); 
         }
-      } catch (error) {
-        console.log("Session expirée");
-        await logout();
+      } catch (e) {
+        console.log("Erreur chargement session", e);
       } finally {
-        setLoading(false);
+        setIsLoading(false);
       }
     };
-    bootstrap();
+    initAuth();
   }, []);
 
-  // --- ACTIONS ---
+  // --- REDIRECTION AUTOMATIQUE ---
+  useEffect(() => {
+    if (isLoading) return;
 
-  // ✅ Login mis à jour pour accepter tenantCode
+    const inAuthGroup = segments[0] === "(auth)";
+    
+    if (!user && !inAuthGroup) {
+      // Pas connecté -> Login
+      router.replace("/(auth)/login");
+    } else if (user && inAuthGroup) {
+      // Connecté -> Accueil
+      router.replace("/(tabs)/home");
+    }
+  }, [user, isLoading, segments]);
+
+
+  // --- ACTIONS ---
   const login = async (data: LoginPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      // On passe le tenantCode à l'API
+      if (tenantCode) api.setTenant(tenantCode);
+      
       const res: LoginResponse = await api.login(data, tenantCode);
-      const accessToken = res.access_token;
+      
+      api.setToken(res.access_token);
+      setToken(res.access_token);
+      setUser(res.user);
 
-      setToken(accessToken);
-      api.setToken(accessToken);
-      await setStorage(accessToken);
-
-      const me = await api.getMe();
-      setUser(me);
+      await setStorage(TOKEN_KEY, res.access_token);
+      await setStorage(USER_KEY, JSON.stringify(res.user));
+      
+      // La redirection sera gérée par le useEffect
     } finally {
       setIsLoading(false);
     }
@@ -99,30 +115,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await removeStorage();
     api.clearToken();
-    setUser(null);
     setToken(null);
-  };
-
-  const refreshUser = async () => {
-    if (!token) return;
-    try {
-      const updatedUser = await api.getMe();
-      setUser(updatedUser);
-    } catch (e) {
-      console.error("Erreur refreshUser", e);
-    }
+    setUser(null);
+    await removeStorage(TOKEN_KEY);
+    await removeStorage(USER_KEY);
   };
 
   return (
-    <AuthContext.Provider 
-      value={{ 
-        user, token, loading, isLoading, 
-        isAuthenticated: !!user, 
-        login, register, logout, refreshUser 
-      }}
-    >
+    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

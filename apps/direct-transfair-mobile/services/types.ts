@@ -1,10 +1,11 @@
 // apps/direct-transfair-mobile/services/types.ts
 
-// --- AUTH & USER ---
+// --- ENUMS & TYPES DE BASE ---
 // ✅ Rôles mis à jour pour le SaaS
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
-export type AuthUser = {
+// --- AUTHENTIFICATION & UTILISATEUR ---
+export interface AuthUser {
   id: string;
   email: string;
   role: Role;
@@ -27,32 +28,40 @@ export type AuthUser = {
   birthPlace?: string;
   jobTitle?: string;
 
-  // ✅ SaaS
+  // ✅ SaaS (Données Techniques)
   clientId: number;   
   agencyId?: string;  
   balance?: number;   
-};
 
-export type LoginPayload = { 
+  // ✅ C'EST ICI LA CORRECTION : L'objet client complet (Société)
+  // Indispensable pour afficher "user.client.name" dans le Dashboard
+  client?: {
+    name: string;
+    code: string;
+    primaryColor?: string;
+  };
+}
+
+export interface LoginPayload { 
   email: string; 
   password: string;
-};
+}
 
-export type RegisterPayload = {
+export interface RegisterPayload {
   email: string;
   password: string;
   firstName: string;
   lastName: string;
   phone?: string;
-};
+}
 
-export type LoginResponse = {
+export interface LoginResponse {
   access_token: string;
   user: AuthUser;
-};
+}
 
 // --- BÉNÉFICIAIRES ---
-export type Beneficiary = {
+export interface Beneficiary {
   id: string;
   fullName: string;
   country: string;
@@ -60,63 +69,69 @@ export type Beneficiary = {
   phone?: string | null;
   createdAt?: string;
   clientId?: number;
-};
+  userId: string;
+}
 
-export type CreateBeneficiaryPayload = {
+export interface CreateBeneficiaryPayload {
   fullName: string;
   country: string;
   city: string;
   phone?: string | null;
-};
+}
 
 // --- TRANSACTIONS ---
 export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
 export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
 
-export type Transaction = {
+export interface Transaction {
   id: string;
   reference: string;
-  amount: string | number;
-  fees: string | number;
-  total: string | number;
+  amount: number;
+  fees: number;
+  total: number;
   currency: string;
   status: TransactionStatus;
   payoutMethod: PayoutMethod;
   createdAt: string;
   paidAt?: string | null;
   cancelledAt?: string | null;
-};
+  beneficiaryId?: string;
+  senderId?: string;
+}
 
-export type CreateTransactionPayload = {
+export interface CreateTransactionPayload {
   amount: number;
   currency: string;
   beneficiaryId: string;
   payoutMethod: PayoutMethod;
-};
+}
 
 // --- PAIEMENTS & RETRAITS ---
 export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "CASH";
 
-export type InitiatePaymentPayload = {
-  transactionId: string;
-  paymentMethod: PaymentMethod;
-};
+export interface InitiatePaymentPayload {
+  amount: number;
+  currency: string;
+  method: string; // 'ORANGE_MONEY', 'WAVE', etc.
+  phone: string;
+  transactionId?: string;
+}
 
 export type WithdrawalMethod = "CASH_PICKUP" | "MOBILE_MONEY" | "WALLET";
 
-export type CreateWithdrawalPayload = {
-  transactionId: string;
-  method: WithdrawalMethod;
-};
+export interface CreateWithdrawalPayload {
+  amount: number;
+  transactionReference: string;
+}
 
 export type WithdrawalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
 
-export type UpdateWithdrawalStatusPayload = {
+export interface UpdateWithdrawalStatusPayload {
   status: WithdrawalStatus;
-};
+}
 
 // --- TAUX DE CHANGE ---
-export type ExchangeRate = {
+export interface ExchangeRate {
     pair: string;
     rate: number;
-};
+}

@@ -1,285 +1,162 @@
-// apps/direct-transfair-mobile/app/(tabs)/home.tsx
-import React, { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  RefreshControl,
-  StatusBar,
-  SafeAreaView,
-  Platform,
-  ActivityIndicator
-} from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+//apps/direct-transfair-mobile/app/(tabs)/home.tsx
+import React from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, SafeAreaView } from "react-native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
-import { api } from "../../services/api"; // ✅ Import de l'API pour le taux
 import { colors } from "../../theme/colors";
 
 export default function HomeScreen() {
-  const router = useRouter();
   const { user } = useAuth();
-  
-  const [refreshing, setRefreshing] = useState(false);
-  const [hideBalance, setHideBalance] = useState(false);
-  
-  // États pour la simulation
-  const [amount, setAmount] = useState("100");
-  
-  // ✅ Taux dynamique (par défaut 655.95 en attendant le chargement)
-  const [rate, setRate] = useState<number>(655.95);
-  const [loadingRate, setLoadingRate] = useState(true);
+  const router = useRouter();
 
-  // Charger le vrai taux depuis le backend
-  const fetchRate = async () => {
-    try {
-        const rates = await api.getExchangeRates();
-        const pair = rates.find(r => r.pair === "EUR_XOF");
-        if (pair) {
-            setRate(pair.rate);
-        }
-    } catch (e) {
-        console.log("Erreur chargement taux", e);
-    } finally {
-        setLoadingRate(false);
-    }
-  };
+  if (!user) return null;
 
-  // Charger à l'ouverture de l'écran
-  useFocusEffect(
-    useCallback(() => {
-        fetchRate();
-    }, [])
-  );
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchRate();
-    // Tu peux aussi ajouter ici le rechargement du user (solde)
-    setTimeout(() => setRefreshing(false), 1000);
-  };
-
-  // Calcul automatique avec le taux dynamique
-  const receiveAmount = (parseFloat(amount || "0") * rate).toFixed(0);
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor={colors.primary} barStyle="light-content" />
-      
-      <ScrollView
-        contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.white]} tintColor={colors.white} />}
-      >
-        {/* --- HEADER BLEU/ORANGE --- */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-             <View style={styles.logoBadge}>
-                <Text style={styles.logoText}>DT</Text>
-             </View>
-             <TouchableOpacity onPress={() => router.push("/(tabs)/profile")}>
-                <View style={styles.profileIcon}>
-                    <Text style={{fontWeight:'bold', color: colors.primary}}>
-                        {user?.firstName ? user.firstName[0] : "U"}
-                    </Text>
-                </View>
-             </TouchableOpacity>
-          </View>
-
-          <View style={styles.balanceContainer}>
-            <TouchableOpacity onPress={() => setHideBalance(!hideBalance)} style={styles.eyeBtn}>
-                <Ionicons name={hideBalance ? "eye-off-outline" : "eye-outline"} size={20} color="rgba(255,255,255,0.8)" />
+  // ============================================================
+  // 1. CLIENT (Wallet Personnel)
+  // ============================================================
+  if (user.role === 'USER') {
+    return (
+      <DashboardLayout title={`Bonjour ${user.firstName}`} subtitle="Mon Portefeuille" badge="wallet" badgeColor={colors.primary}>
+         {/* Carte Solde */}
+         <View style={styles.balanceCard}>
+            <Text style={styles.balanceLabel}>Solde disponible</Text>
+            <Text style={styles.balanceValue}>0 FCFA</Text>
+            <TouchableOpacity style={styles.topUpBtn}>
+                <Ionicons name="add-circle" size={18} color="#FFF" />
+                <Text style={styles.topUpText}>Recharger mon compte</Text>
             </TouchableOpacity>
-            <Text style={styles.balanceLabel}>Mon solde</Text>
-            <Text style={styles.balanceValue}>
-                {hideBalance ? "••••••" : "0.00"} <Text style={{fontSize: 20}}>EUR</Text>
-            </Text>
-          </View>
+         </View>
+         
+         <Text style={styles.sectionTitle}>Actions Rapides</Text>
+         <View style={styles.grid}>
+            <MenuCard title="Envoyer" subtitle="Vers un proche" icon="paper-plane" color="#F59E0B" onPress={() => router.push("/(tabs)/send")} />
+            <MenuCard title="Bénéficiaires" subtitle="Mes contacts" icon="people" color="#3B82F6" onPress={() => router.push("/(tabs)/beneficiaries")} />
+            <MenuCard title="Parrainer" subtitle="Gagner des bonus" icon="gift" color="#EC4899" onPress={() => {}} />
+         </View>
+      </DashboardLayout>
+    );
+  }
+
+  // ============================================================
+  // 2. AGENT (Guichetier)
+  // ============================================================
+  if (user.role === 'AGENT') {
+    return (
+      <DashboardLayout title="Espace Guichet" subtitle={`Agence: ${user.client?.name}`} badge="storefront" badgeColor="#10B981">
+        <View style={[styles.balanceCard, {backgroundColor: '#064E3B'}]}>
+            <Text style={styles.balanceLabel}>Solde Caisse (Virtuel)</Text>
+            <Text style={styles.balanceValue}>5 000 000 FCFA</Text>
+            <Text style={styles.balanceLabel}>Commissions: 12 500 FCFA</Text>
         </View>
 
-        {/* --- CORPS BLANC ARRONDI --- */}
-        <View style={styles.body}>
-            
-            {/* CARTE TAUX DE CHANGE (DYNAMIQUE) */}
-            <View style={styles.rateCard}>
-                <View>
-                    <Text style={styles.rateTitle}>Taux de change du jour</Text>
-                    {loadingRate ? (
-                        <ActivityIndicator size="small" color="#0C4A6E" />
-                    ) : (
-                        <Text style={styles.rateValue}>1 EUR = {rate} XOF</Text>
-                    )}
-                </View>
-                <Ionicons name="sunny" size={32} color="#FDB813" />
-            </View>
-
-            <Text style={styles.limitText}>
-                Vous pouvez envoyer jusqu'à <Text style={{fontWeight: 'bold', textDecorationLine: 'underline'}}>2 000€ par jour</Text>
-            </Text>
-
-            {/* SIMULATEUR */}
-            <View style={styles.simulator}>
-                
-                {/* Montant à envoyer */}
-                <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Montant à envoyer</Text>
-                    <View style={styles.inputRow}>
-                        <TextInput 
-                            style={styles.input}
-                            value={amount}
-                            onChangeText={setAmount}
-                            keyboardType="numeric"
-                            placeholder="0"
-                        />
-                        <View style={styles.currencyBadge}>
-                            <Text style={styles.currencyText}>EUR 🇪🇺</Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Montant reçu */}
-                <View style={[styles.inputGroup, { marginTop: 16 }]}>
-                    <Text style={styles.inputLabel}>Montant reçu</Text>
-                    <View style={styles.inputRow}>
-                        <TextInput 
-                            style={[styles.input, { color: colors.text }]} 
-                            value={receiveAmount}
-                            editable={false}
-                        />
-                        <View style={[styles.currencyBadge, { backgroundColor: '#F3F4F6' }]}>
-                            <Text style={styles.currencyText}>XOF 🇸🇳</Text>
-                        </View>
-                    </View>
-                </View>
-
-                <View style={styles.promoTag}>
-                    <Text style={styles.promoText}>🎉 NOUVEAU : Frais réduits à 1.5% !</Text>
-                </View>
-
-                {/* BOUTON ACTION */}
-                <TouchableOpacity 
-                    style={styles.ctaButton}
-                    onPress={() => router.push("/(tabs)/send")}
-                >
-                    <Text style={styles.ctaText}>C'EST PARTI</Text>
-                    <Ionicons name="arrow-forward" size={24} color="#FFF" />
-                </TouchableOpacity>
-
-            </View>
-
+        <Text style={styles.sectionTitle}>Opérations Client</Text>
+        <View style={styles.grid}>
+            <MenuCard title="Envoi Client" subtitle="Client sans compte" icon="send" color="#3B82F6" onPress={() => {}} />
+            <MenuCard title="Dépôt (Cash-In)" subtitle="Recharger un Wallet" icon="arrow-down-circle" color="#10B981" onPress={() => {}} />
+            <MenuCard title="Retrait (Cash-Out)" subtitle="Donner du cash" icon="arrow-up-circle" color="#EF4444" onPress={() => {}} />
+            <MenuCard title="Recharge Tiers" subtitle="Orange Money / Wave" icon="phone-portrait" color="#F97316" onPress={() => {}} />
         </View>
-      </ScrollView>
-    </SafeAreaView>
+      </DashboardLayout>
+    );
+  }
+
+  // ============================================================
+  // 3. ADMIN SOCIÉTÉ (Gestionnaire)
+  // ============================================================
+  if (user.role === 'COMPANY_ADMIN') {
+    return (
+      <DashboardLayout title={user.client?.name || "Administration"} subtitle="Pilotage Agences" badge="business" badgeColor="#F59E0B">
+        <Text style={styles.sectionTitle}>Gestion</Text>
+        <View style={styles.grid}>
+            <MenuCard title="Mes Agences" subtitle="Créer / Modifier" icon="storefront" color="#8B5CF6" onPress={() => {}} />
+            <MenuCard title="Taux & Frais" subtitle="Configuration" icon="settings" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
+            <MenuCard title="Utilisateurs" subtitle="Staff & Clients" icon="people" color="#3B82F6" onPress={() => router.push("/(tabs)/admin/users")} />
+        </View>
+
+        <Text style={styles.sectionTitle}>Rapports</Text>
+        <View style={styles.grid}>
+            <MenuCard title="Comptabilité" subtitle="Soldes et profits" icon="calculator" color="#10B981" onPress={() => {}} />
+            <MenuCard title="Exports" subtitle="PDF / Excel" icon="document-text" color="#EF4444" onPress={() => {}} />
+        </View>
+      </DashboardLayout>
+    );
+  }
+
+  // ============================================================
+  // 4. SUPER ADMIN (Propriétaire Plateforme)
+  // ============================================================
+  return (
+      <DashboardLayout title="Super Admin" subtitle="Direct Transf'air" badge="shield-checkmark" badgeColor="#FFD700">
+        <Text style={styles.sectionTitle}>SaaS Management</Text>
+        <View style={styles.grid}>
+            <MenuCard title="Sociétés" subtitle="Gestion des Clients" icon="briefcase" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/super-dashboard")} />
+            <MenuCard title="Paiements" subtitle="Encaissements Loyer" icon="card" color="#10B981" onPress={() => {}} />
+            <MenuCard title="Contrats" subtitle="Générer documents" icon="document-attach" color="#3B82F6" onPress={() => {}} />
+            <MenuCard title="Config Globale" subtitle="Devises & Taux" icon="globe" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
+        </View>
+      </DashboardLayout>
   );
 }
 
+// --- UI COMPONENTS ---
+
+function DashboardLayout({ title, subtitle, badge, badgeColor, children }: any) {
+    return (
+        <SafeAreaView style={styles.safeArea}>
+            <StatusBar backgroundColor="#1F2937" barStyle="light-content" />
+            <View style={styles.header}>
+                <View>
+                    <Text style={styles.headerTitle}>{title}</Text>
+                    <Text style={styles.headerSubtitle}>{subtitle}</Text>
+                </View>
+                <View style={[styles.badge, { backgroundColor: badgeColor + '20' }]}>
+                    <Ionicons name={badge} size={24} color={badgeColor} />
+                </View>
+            </View>
+            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+                {children}
+            </ScrollView>
+        </SafeAreaView>
+    );
+}
+
+function MenuCard({ title, subtitle, icon, color, onPress }: any) {
+    return (
+        <TouchableOpacity style={styles.card} onPress={onPress}>
+            <View style={[styles.iconBox, { backgroundColor: color + '15' }]}>
+                <Ionicons name={icon} size={26} color={color} />
+            </View>
+            <View style={{flex:1}}>
+                <Text style={styles.cardTitle}>{title}</Text>
+                <Text style={styles.cardSubtitle}>{subtitle}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#E5E7EB" />
+        </TouchableOpacity>
+    )
+}
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: colors.primary },
-  container: { flexGrow: 1, backgroundColor: colors.background },
+  safeArea: { flex: 1, backgroundColor: "#1F2937" },
+  header: { backgroundColor: "#1F2937", padding: 20, paddingBottom: 25, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle: { color: "#FFF", fontSize: 20, fontWeight: "800" },
+  headerSubtitle: { color: "#9CA3AF", fontSize: 13, marginTop:2 },
+  badge: { padding: 8, borderRadius: 12 },
   
-  // Header
-  header: {
-    backgroundColor: colors.primary,
-    paddingTop: Platform.OS === 'android' ? 40 : 20,
-    paddingBottom: 80, 
-    paddingHorizontal: 20,
-  },
-  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  logoBadge: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  logoText: { color: '#FFF', fontWeight: '900', fontSize: 18 },
-  profileIcon: { backgroundColor: '#FFF', width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  container: { flexGrow: 1, backgroundColor: "#F9FAFB", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingTop: 25 },
+  
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#374151', marginTop: 10 },
+  grid: { gap: 10 },
 
-  balanceContainer: { alignItems: 'center' },
-  eyeBtn: { marginBottom: 8 },
-  balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 14 },
-  balanceValue: { color: '#FFF', fontSize: 36, fontWeight: '800' },
+  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 14, borderRadius: 14, marginBottom: 2, borderWidth:1, borderColor:'#F3F4F6', shadowColor: "#000", shadowOpacity: 0.02, elevation: 1 },
+  iconBox: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
+  cardSubtitle: { fontSize: 11, color: "#6B7280" },
 
-  // Body
-  body: {
-    backgroundColor: colors.background,
-    marginTop: -40,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 20,
-    paddingTop: 30,
-    paddingBottom: 100,
-    flex: 1,
-  },
-
-  // Rate Card
-  rateCard: {
-    backgroundColor: '#E0F2FE', 
-    borderRadius: 16,
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  rateTitle: { fontSize: 14, color: '#0369A1', fontWeight: '600', marginBottom: 4 },
-  rateValue: { fontSize: 20, color: '#0C4A6E', fontWeight: '800' },
-
-  limitText: { textAlign: 'center', color: colors.textLight, fontSize: 12, marginBottom: 24 },
-
-  // Simulator
-  simulator: {
-    backgroundColor: '#FFF',
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  inputGroup: {},
-  inputLabel: { color: colors.primary, fontSize: 12, fontWeight: '700', marginBottom: 8 },
-  inputRow: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    height: 60,
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  input: {
-    flex: 1,
-    fontSize: 24,
-    fontWeight: '700',
-    color: colors.text,
-    paddingHorizontal: 16,
-    height: '100%',
-  },
-  currencyBadge: {
-    height: '100%',
-    paddingHorizontal: 20,
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
-    borderLeftWidth: 1,
-    borderLeftColor: '#E5E7EB',
-  },
-  currencyText: { fontSize: 16, fontWeight: '700', color: colors.text },
-
-  promoTag: { alignSelf: 'center', marginTop: 20, marginBottom: 10 },
-  promoText: { color: '#16A34A', fontWeight: '600', fontSize: 13 },
-
-  ctaButton: {
-    backgroundColor: colors.primary,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 18,
-    borderRadius: 30,
-    gap: 10,
-    marginTop: 10,
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  ctaText: { color: '#FFF', fontSize: 18, fontWeight: '800', letterSpacing: 1 },
+  // Client Balance Card
+  balanceCard: { backgroundColor: colors.primary, padding: 20, borderRadius: 18, marginBottom: 25, alignItems:'center', shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
+  balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginBottom: 4, fontWeight:'500' },
+  balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800', marginBottom:12 },
+  topUpBtn: { flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:12, paddingVertical:6, borderRadius:20 },
+  topUpText: { color:'#FFF', fontWeight:'600', fontSize:12, marginLeft:6 }
 });

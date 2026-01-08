@@ -1,10 +1,9 @@
-// apps/backend/prisma/seed.ts
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
-// Définition manuelle des Enums pour éviter les erreurs d'import
+// Définition manuelle des Enums
 const Role = {
   SUPER_ADMIN: 'SUPER_ADMIN',
   COMPANY_ADMIN: 'COMPANY_ADMIN',
@@ -19,65 +18,132 @@ const SubscriptionType = {
 
 const SubscriptionStatus = {
   ACTIVE: 'ACTIVE',
-  EXPIRED: 'EXPIRED',
   SUSPENDED: 'SUSPENDED',
 };
 
 async function main() {
-  console.log('🌱 Début du seeding SaaS (Mode robuste)...');
+  console.log('🔥 DESTRUCTION DE LA BASE (Nettoyage)...');
+  // On supprime dans l'ordre pour respecter les contraintes de clés étrangères
+  await prisma.transaction.deleteMany().catch(() => {});
+  await prisma.beneficiary.deleteMany().catch(() => {});
+  await prisma.user.deleteMany().catch(() => {});
+  await prisma.client.deleteMany().catch(() => {});
+  await prisma.exchangeRate.deleteMany().catch(() => {});
+  
+  console.log('🌱 DÉBUT DU SEEDING (4 COMPTES SÉPARÉS)...');
 
-  // 1. Créer la Société Mère (DONIKO)
-  const doniko = await prisma.client.upsert({
-    where: { code: 'DONIKO' },
-    update: {},
-    create: {
+  const password = await bcrypt.hash('123456', 10);
+
+  // ====================================================
+  // 1. SUPER ADMIN (Le Dieu) - Chez "DONIKO"
+  // ====================================================
+  const doniko = await prisma.client.create({
+    data: {
       code: 'DONIKO',
-      name: 'Doniko Transfert',
-      primaryColor: '#F7931E',
+      name: 'Doniko SAS (Siège)',
+      primaryColor: '#111827', // Noir
       subscriptionType: SubscriptionType.PURCHASE,
       subscriptionStatus: SubscriptionStatus.ACTIVE,
     },
   });
-  console.log('🏢 Société créée :', doniko.name);
 
-  // 2. Créer le Super Admin
-  const password = await bcrypt.hash('123456', 10);
-  
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@doniko.com' },
-    update: { 
-        role: Role.SUPER_ADMIN,
-        clientId: doniko.id 
-    },
-    create: {
-      email: 'admin@doniko.com',
+  await prisma.user.create({
+    data: {
+      email: 'super@doniko.com', // LOGIN: super@doniko.com / 123456
       password,
-      firstName: 'Admin',
-      lastName: 'Principal',
+      firstName: 'Super',
+      lastName: 'Admin',
       role: Role.SUPER_ADMIN,
       clientId: doniko.id,
-      nationality: 'France',
       country: 'France',
     },
   });
-  console.log('👤 Super Admin créé :', admin.email);
+  console.log('✅ COMPTE 1 : SUPER ADMIN (super@doniko.com / DONIKO)');
 
-  // 3. Taux de change par défaut
+
+  // ====================================================
+  // 2. ADMIN SOCIÉTÉ (Le Client SaaS) - Chez "FLASH TRANSFERT"
+  // ====================================================
+  const flash = await prisma.client.create({
+    data: {
+      code: 'FLASH2026',
+      name: 'Flash Transfert',
+      primaryColor: '#F59E0B', // Orange
+      subscriptionType: SubscriptionType.RENTAL,
+      subscriptionStatus: SubscriptionStatus.ACTIVE,
+    },
+  });
+
+  await prisma.user.create({
+    data: {
+      email: 'admin@flash.com', // LOGIN: admin@flash.com / 123456 (CODE: FLASH2026)
+      password,
+      firstName: 'Patron',
+      lastName: 'Flash',
+      role: Role.COMPANY_ADMIN,
+      clientId: flash.id,
+      country: 'Sénégal',
+    },
+  });
+  console.log('✅ COMPTE 2 : ADMIN SOCIÉTÉ (admin@flash.com / FLASH2026)');
+
+
+  // ====================================================
+  // 3. AGENCE / GUICHETIER (L'Employé) - Chez "FLASH TRANSFERT"
+  // ====================================================
+  await prisma.user.create({
+    data: {
+      email: 'agent@flash.com', // LOGIN: agent@flash.com / 123456 (CODE: FLASH2026)
+      password,
+      firstName: 'Guichetier',
+      lastName: 'Dakar',
+      role: Role.AGENT,
+      clientId: flash.id,
+      country: 'Sénégal',
+    },
+  });
+  console.log('✅ COMPTE 3 : AGENT GUICHET (agent@flash.com / FLASH2026)');
+
+
+  // ====================================================
+  // 4. CLIENT FINAL (Wallet) - Chez "FLASH TRANSFERT"
+  // ====================================================
+  await prisma.user.create({
+    data: {
+      email: 'client@flash.com', // LOGIN: client@flash.com / 123456 (CODE: FLASH2026)
+      password,
+      firstName: 'Mamadou',
+      lastName: 'Client',
+      role: Role.USER,
+      clientId: flash.id,
+      country: 'Sénégal',
+    },
+  });
+  console.log('✅ COMPTE 4 : CLIENT WALLET (client@flash.com / FLASH2026)');
+
+
+  // ====================================================
+  // CONFIGURATION GLOBALE
+  // ====================================================
   await prisma.exchangeRate.upsert({
     where: { pair: 'EUR_XOF' },
     update: { rate: 655.95 },
     create: { pair: 'EUR_XOF', rate: 655.95 },
   });
-  console.log('💱 Taux EUR_XOF initialisé (655.95)');
+  console.log('💱 Taux de change initialisé.');
 
-  console.log('✅ Seeding terminé avec succès !');
+  console.log('🚀 SEEDING TERMINÉ ! Tu peux tester tes 4 comptes.');
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Erreur durant le seed:', e);
+    console.error('❌ Erreur:', e);
     process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();
   });
+  //client@flash.com
+  //agent@flash.com
+  //admin@flash.com
+  //super@doniko.com
