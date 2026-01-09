@@ -1,34 +1,48 @@
 //apps/backend/src/tenants/tenant.guard.ts
-import {
-  CanActivate,
-  ExecutionContext,
-  Injectable,
-  UnauthorizedException,
+import { 
+  CanActivate, 
+  ExecutionContext, 
+  Injectable, 
+  BadRequestException, 
+  Logger 
 } from '@nestjs/common';
-import type { Request } from 'express';
-
-import type { TenantContext } from './tenant-context';
-import { TenantResolverService } from './tenant-resolver.service';
-
-type ReqWithTenant = Request & { tenantContext?: TenantContext };
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class TenantGuard implements CanActivate {
-  constructor(private readonly resolver: TenantResolverService) {}
+  private readonly logger = new Logger(TenantGuard.name);
+
+  constructor(private prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest<ReqWithTenant>();
+    const request = context.switchToHttp().getRequest();
+    
+    const tenantIdHeader = request.headers['x-tenant-id'];
 
-    if (!req.tenantContext?.code) {
-      throw new UnauthorizedException('TenantContext missing');
+    if (!tenantIdHeader) {
+      this.logger.error('❌ Header x-tenant-id manquant');
+      throw new BadRequestException('Tenant header (x-tenant-id) is missing');
     }
 
-    // Déjà résolu ? (évite double hit DB)
-    if (typeof req.tenantContext.clientId === 'number' && req.tenantContext.clientId > 0) {
-      return true;
+    const tenantCode = String(tenantIdHeader).trim().toUpperCase();
+
+    const client = await this.prisma.client.findUnique({
+      where: { code: tenantCode },
+    });
+
+    if (!client) {
+      this.logger.error(`❌ Tenant introuvable en DB: ${tenantCode}`);
+      throw new BadRequestException(`Société introuvable: ${tenantCode} (Base de données vide ?)`);
     }
 
-    await this.resolver.resolve(req);
+    // ✅ CORRECTION : On compare uniquement avec l'Enum 'ACTIVE' (Majuscules)
+    if (client.subscriptionStatus !== 'ACTIVE') {
+       this.logger.error(`❌ Tenant inactif: ${tenantCode} (Status: ${client.subscriptionStatus})`);
+       throw new BadRequestException(`Société inactive: ${tenantCode}`);
+    }
+
+    request.user = { ...request.user, clientId: client.id };
+    
     return true;
   }
 }

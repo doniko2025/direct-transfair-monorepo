@@ -6,17 +6,20 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { JwtStrategy } from './jwt.strategy';
-import { JwtAuthGuard } from './jwt-auth.guard';
+
+// ✅ CORRECTION DES CHEMINS (Dossiers strategies et guards)
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 import { UsersModule } from '../users/users.module';
 import { PrismaModule } from '../prisma/prisma.module';
 
+// Fonction utilitaire pour gérer la durée du token (ex: "1d", "3600s")
 function parseExpiresToSeconds(raw: unknown): number {
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
 
   const s = typeof raw === 'string' ? raw.trim() : '';
-  if (!s) return 86400;
+  if (!s) return 86400; // Par défaut 1 jour
 
   if (/^\d+$/.test(s)) {
     const n = Number(s);
@@ -49,7 +52,7 @@ function parseExpiresToSeconds(raw: unknown): number {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') ?? '',
+        secret: config.get<string>('JWT_SECRET') ?? 'SUPER_SECRET_KEY', // Fallback de sécurité
         signOptions: {
           expiresIn: parseExpiresToSeconds(
             config.get<string>('JWT_EXPIRES_IN') ??
@@ -61,12 +64,13 @@ function parseExpiresToSeconds(raw: unknown): number {
     }),
   ],
   controllers: [AuthController],
+  // ✅ On déclare bien la JwtStrategy ici
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
   exports: [
     AuthService,
     JwtModule,
     PassportModule,
-    JwtAuthGuard, // ⬅️ CRITIQUE
+    JwtAuthGuard, 
   ],
 })
 export class AuthModule {}

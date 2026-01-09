@@ -54,7 +54,6 @@ enum PaymentMethod {
   CASH // Pour les dépôts en agence
 }
 
-// ✅ CES ENUMS MANQUAIENT DANS LA VERSION PRÉCÉDENTE
 enum PaymentProvider {
   DIRECT
   ORANGE_MONEY
@@ -81,51 +80,50 @@ model Client {
   code String @unique // Ex: "DONIKO", "WARI", "WESTERN"
   name String
 
-  // --- Configuration Visuelle (Phase 1) ---
+  // --- Configuration Visuelle ---
   logoUrl      String?
   primaryColor String? @default("#F7931E")
   
-  // --- Infos Légales & Représentant ---
+  // --- Infos Légales ---
   address            String?
   phone              String?
   email              String?
   representativeName String?
-  representativeDocs String? // URL vers PDF
+  representativeDocs String?
 
-  // --- Module Abonnement (Phase 1) ---
+  // --- Abonnement ---
   subscriptionType   SubscriptionType   @default(RENTAL)
   subscriptionStatus SubscriptionStatus @default(ACTIVE)
-  subscriptionEnd    DateTime?          // Date fin d'abonnement
+  subscriptionEnd    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
-  agencies      Agency[]      // Une société a plusieurs agences
+  users        User[]
+  agencies     Agency[]
   beneficiaries Beneficiary[]
-  transactions  Transaction[]
-  withdrawals   Withdrawal[]
+  transactions Transaction[]
+  withdrawals  Withdrawal[]
 }
 
 // ===================== AGENCY (L'AGENCE PHYSIQUE) =====================
 
 model Agency {
-  id        String @id @default(cuid())
-  name      String // Ex: "Agence Paris 18"
-  city      String
-  address   String
-  phone     String?
+  id      String @id @default(cuid())
+  name    String // Ex: "Agence Paris 18"
+  city    String
+  address String
+  phone   String?
   
-  // Solde de l'agence
-  balance       Decimal @default(0) @db.Decimal(12, 2)
-  creditLimit   Decimal @default(0) @db.Decimal(12, 2) // Découvert autorisé
+  balance      Decimal @default(0) @db.Decimal(12, 2)
+  creditLimit  Decimal @default(0) @db.Decimal(12, 2)
 
-  isActive      Boolean @default(true)
+  isActive     Boolean @default(true)
 
-  clientId  Int
-  client    Client @relation(fields: [clientId], references: [id])
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
 
-  agents    User[]  @relation("AgencyAgents") // Les employés de cette agence
+  agents   User[]  @relation("AgencyAgents")
   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -157,21 +155,19 @@ model User {
   birthDate   String?
   birthPlace  String?
 
-  // --- Financier (Client Final) ---
+  // --- Financier ---
   balance Decimal @default(0) @db.Decimal(12, 2)
 
   // --- Relations ---
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
 
-  // Si c'est un AGENT, il appartient à une agence
   agencyId  String?
   agency    Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
 
   transactions  Transaction[]
   beneficiaries Beneficiary[]
 
-  // Pour les agents/admins qui valident des opérations
   processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
 
   createdAt DateTime @default(now())
@@ -216,7 +212,6 @@ model Transaction {
 
   paymentMethod  PaymentMethod    @default(WALLET)
   
-  // Utilisation des enums ajoutés
   provider       PaymentProvider?
   providerRef    String?
   providerStatus ProviderStatus?  @default(PENDING)
@@ -248,7 +243,6 @@ model Withdrawal {
   transaction   Transaction @relation(fields: [transactionId], references: [id])
 
   method PayoutMethod
-  // Utilisation de l'enum ajouté
   status WithdrawalStatus @default(PENDING)
 
   requestedAt DateTime  @default(now())

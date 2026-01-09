@@ -1,7 +1,7 @@
 // apps/direct-transfair-mobile/services/types.ts
+// apps/direct-transfair-mobile/services/types.ts
 
 // --- ENUMS & TYPES DE BASE ---
-// ✅ Rôles mis à jour pour le SaaS
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
 // --- AUTHENTIFICATION & UTILISATEUR ---
@@ -28,13 +28,12 @@ export interface AuthUser {
   birthPlace?: string;
   jobTitle?: string;
 
-  // ✅ SaaS (Données Techniques)
+  // Données SaaS
   clientId: number;   
   agencyId?: string;  
   balance?: number;   
 
-  // ✅ C'EST ICI LA CORRECTION : L'objet client complet (Société)
-  // Indispensable pour afficher "user.client.name" dans le Dashboard
+  // Objet Client (Société)
   client?: {
     name: string;
     code: string;
@@ -72,8 +71,9 @@ export interface Beneficiary {
   userId: string;
 }
 
+// ✅ On garde fullName ici pour compatibilité avec le Backend actuel
 export interface CreateBeneficiaryPayload {
-  fullName: string;
+  fullName: string; 
   country: string;
   city: string;
   phone?: string | null;
@@ -112,7 +112,7 @@ export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "C
 export interface InitiatePaymentPayload {
   amount: number;
   currency: string;
-  method: string; // 'ORANGE_MONEY', 'WAVE', etc.
+  method: string;
   phone: string;
   transactionId?: string;
 }

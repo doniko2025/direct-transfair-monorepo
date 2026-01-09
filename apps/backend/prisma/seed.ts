@@ -1,3 +1,4 @@
+//apps/backend/prisma/seed.ts
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 
@@ -146,4 +147,5 @@ main()
   //client@flash.com
   //agent@flash.com
   //admin@flash.com
+  //super@doniko.com
   //super@doniko.com

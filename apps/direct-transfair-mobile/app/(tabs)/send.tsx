@@ -1,235 +1,319 @@
-// apps/direct-transfair-mobile/app/(tabs)/send.tsx
-import React, { useState, useCallback, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
+import React, { useState, useCallback } from "react";
+import { 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, Pressable,
+  ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView, Alert 
 } from "react-native";
-import { Picker } from "@react-native-picker/picker";
-import { useFocusEffect, useRouter } from "expo-router";
-
-import { api } from "../../services/api";
+import { useRouter, useFocusEffect } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../services/api"; 
+import { useAuth } from "../../providers/AuthProvider"; 
+import { colors } from "../../theme/colors"; 
 import type { Beneficiary } from "../../services/types";
-import { colors } from "../../theme/colors";
-import { showAlert } from "../../utils/alert";
-// ✅ Import de notre utilitaire de devise
-import { getCurrencyForCountry } from "../../utils/currency";
 
 export default function SendMoneyScreen() {
   const router = useRouter();
+  const { user, refreshUser } = useAuth();
   
-  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   
-  const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("EUR");
-  
+  const [selectedBeneficiaryId, setSelectedBeneficiaryId] = useState<string | null>(null);
+  const [rate, setRate] = useState<number>(655.95); 
+  const [amount, setAmount] = useState("0"); 
   const [sending, setSending] = useState(false);
 
-  // --- CALCULS AUTOMATIQUES ---
-  const numericAmount = parseFloat(amount.replace(",", ".")) || 0;
-  // 1.5% de frais
-  const fees = numericAmount * 0.015; 
-  const totalToPay = numericAmount + fees;
-
-  // Charger la liste
+  // 1. Chargement des données au focus
   useFocusEffect(
     useCallback(() => {
-      loadBeneficiaries();
+        const init = async () => {
+            try {
+                // Rafraîchir le solde utilisateur
+                if (refreshUser) await refreshUser();
+
+                const rates = await api.getExchangeRates();
+                const eurXof = rates.find(r => r.pair === 'EUR_XOF');
+                if (eurXof) setRate(eurXof.rate);
+
+                const list = await api.getBeneficiaries();
+                setBeneficiaries(list);
+                
+                if (list.length > 0 && !selectedBeneficiaryId) {
+                    setSelectedBeneficiaryId(list[0].id);
+                }
+            } catch (e) {
+                console.log("Erreur chargement données", e);
+            } finally {
+                setLoading(false);
+            }
+        };
+        init();
     }, [])
   );
 
-  const loadBeneficiaries = async () => {
-    try {
-      const list = await api.getBeneficiaries();
-      setBeneficiaries(list);
+  // 2. Calculs Temps Réel
+  const sendAmount = parseFloat(amount) || 0;
+  const receiveAmount = (sendAmount * rate).toFixed(0); 
+  const fees = (sendAmount * 0.015).toFixed(2);
+  const totalPayRaw = sendAmount + parseFloat(fees);
+  const totalPay = totalPayRaw.toFixed(2);
 
-      // Sélectionner le premier par défaut
-      if (list.length > 0 && !selectedBeneficiaryId) {
-        setSelectedBeneficiaryId(list[0].id);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
+  const currentBalance = user?.balance ? Number(user.balance) : 0;
+  
+  // ✅ DÉTECTION DE SOLDE INSUFFISANT
+  const isInsufficientFunds = totalPayRaw > currentBalance;
+  
+  const handleAction = async () => {
+    // Cas 1 : Solde Insuffisant -> Redirection
+    if (isInsufficientFunds) {
+        Alert.alert(
+            "Solde insuffisant",
+            `Il vous manque ${(totalPayRaw - currentBalance).toFixed(2)} EUR. Voulez-vous recharger ?`,
+            [
+                { text: "Annuler", style: "cancel" },
+                { text: "Recharger", onPress: () => router.push("/topup") } // Redirection vers topup.tsx
+            ]
+        );
+        return;
     }
-  };
 
-  // ✅ EFFET : Quand on change de bénéficiaire, on met à jour la devise
-  useEffect(() => {
-    if (selectedBeneficiaryId && beneficiaries.length > 0) {
-        const selected = beneficiaries.find(b => b.id === selectedBeneficiaryId);
-        if (selected && selected.country) {
-            const autoCurrency = getCurrencyForCountry(selected.country);
-            setCurrency(autoCurrency);
-        }
-    }
-  }, [selectedBeneficiaryId, beneficiaries]);
-
-  const handleSend = async () => {
+    // Cas 2 : Envoi Normal
     if (!selectedBeneficiaryId) {
-      showAlert("Attention", "Veuillez sélectionner un bénéficiaire.");
-      return;
+        Alert.alert("Bénéficiaire manquant", "Veuillez sélectionner un bénéficiaire.");
+        return;
     }
-    
-    if (numericAmount <= 0) {
-      showAlert("Erreur", "Le montant doit être supérieur à 0.");
-      return;
+    if (sendAmount <= 0) {
+        Alert.alert("Montant invalide", "Veuillez entrer un montant supérieur à 0.");
+        return;
     }
 
     try {
-      setSending(true);
-      
-      // On envoie le montant "principal". 
-      // Le backend peut recalculer les frais pour confirmation, 
-      // mais ici on affiche ce que l'utilisateur va payer.
-      await api.createTransaction({
-        beneficiaryId: selectedBeneficiaryId,
-        amount: numericAmount,
-        currency: currency,
-        payoutMethod: "CASH_PICKUP",
-      });
-
-      setAmount(""); 
-      showAlert("Succès", `Transaction de ${numericAmount} ${currency} (+ ${fees.toFixed(2)} frais) envoyée !`, () => {
-        router.push("/(tabs)/transactions");
-      });
-
-    } catch (e) {
-      console.error(e);
-      showAlert("Echec", "Impossible de créer la transaction.");
+        setSending(true);
+        await api.createTransaction({
+            amount: sendAmount,
+            currency: 'EUR', 
+            beneficiaryId: selectedBeneficiaryId,
+            payoutMethod: 'MOBILE_MONEY' 
+        });
+        
+        Alert.alert("Succès", `Transfert de ${sendAmount}€ initié !`, [
+            { text: "OK", onPress: () => router.push("/(tabs)/transactions") }
+        ]);
+        
+    } catch (e: any) {
+        console.error(e);
+        const msg = e.response?.data?.message || "Échec de la transaction.";
+        Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
     } finally {
-      setSending(false);
+        setSending(false);
     }
-  };
-
-  const goToAddBeneficiary = () => {
-    router.push("/(tabs)/beneficiaries/create");
   };
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.loaderContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  if (beneficiaries.length === 0) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.emptyTitle}>Aucun bénéficiaire</Text>
-        <Text style={styles.emptyText}>Ajoutez un bénéficiaire pour commencer.</Text>
-        <TouchableOpacity style={styles.btnAdd} onPress={goToAddBeneficiary}>
-            <Text style={styles.btnAddText}>Ajouter un bénéficiaire</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.headerTitle}>Envoyer de l'argent</Text>
-      
-      <View style={styles.card}>
-        <Text style={styles.label}>Bénéficiaire</Text>
-        <View style={styles.pickerContainer}>
-            <Picker
-                selectedValue={selectedBeneficiaryId}
-                onValueChange={(itemValue) => setSelectedBeneficiaryId(itemValue)}
-                style={styles.picker}
-            >
-                {beneficiaries.map((b) => (
-                    <Picker.Item key={b.id} label={`${b.fullName} (${b.country})`} value={b.id} />
+    <SafeAreaView style={styles.container}>
+      {/* HEADER ORANGE */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <Ionicons name="arrow-back" size={24} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Envoyer de l'argent</Text>
+            <View style={{width: 24}} /> 
+        </View>
+        
+        <View style={styles.balanceContainer}>
+            <Text style={styles.balanceLabel}>Solde disponible</Text>
+            <Text style={styles.balanceValue}>{currentBalance.toFixed(2)} EUR</Text>
+        </View>
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        
+        {/* SÉLECTEUR BÉNÉFICIAIRE */}
+        <Text style={styles.sectionLabel}>POUR QUI ?</Text>
+        {beneficiaries.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.beneficiaryList}>
+                {beneficiaries.map(b => (
+                    <TouchableOpacity 
+                        key={b.id} 
+                        style={[styles.beneficiaryCard, selectedBeneficiaryId === b.id && styles.beneficiarySelected]}
+                        onPress={() => setSelectedBeneficiaryId(b.id)}
+                    >
+                        <View style={styles.avatar}>
+                            <Text style={styles.avatarText}>{b.fullName.charAt(0)}</Text>
+                        </View>
+                        <Text style={styles.beneficiaryName} numberOfLines={1}>{b.fullName}</Text>
+                        {selectedBeneficiaryId === b.id && (
+                            <View style={styles.checkBadge}>
+                                <Ionicons name="checkmark" size={12} color="#FFF" />
+                            </View>
+                        )}
+                    </TouchableOpacity>
                 ))}
-            </Picker>
-        </View>
-        <TouchableOpacity onPress={goToAddBeneficiary}>
-            <Text style={styles.linkText}>+ Ajouter un nouveau bénéficiaire</Text>
-        </TouchableOpacity>
+                <TouchableOpacity style={styles.addBeneficiaryCard} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
+                    <Ionicons name="add" size={24} color={colors.primary} />
+                    <Text style={styles.addText}>Nouveau</Text>
+                </TouchableOpacity>
+            </ScrollView>
+        ) : (
+            <TouchableOpacity style={styles.emptyBeneficiary} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
+                <Text style={{color:'#666'}}>Aucun bénéficiaire. </Text>
+                <Text style={{color:colors.primary, fontWeight:'bold'}}>En créer un ?</Text>
+            </TouchableOpacity>
+        )}
 
-        <Text style={[styles.label, { marginTop: 20 }]}>Montant à envoyer</Text>
-        <View style={styles.amountRow}>
-            <TextInput
-                style={styles.inputAmount}
-                value={amount}
-                onChangeText={setAmount}
-                placeholder="0.00"
-                keyboardType="numeric"
-            />
-            {/* Affichage fixe de la devise détectée */}
-            <View style={styles.currencyBadge}>
-                <Text style={styles.currencyText}>{currency}</Text>
+        {/* TAUX */}
+        <View style={styles.rateCard}>
+            <View style={{flexDirection:'row', alignItems:'center'}}>
+                <Ionicons name="trending-up" size={20} color="#3B82F6" />
+                <Text style={styles.rateLabel}> Taux actuel</Text>
             </View>
+            <Text style={styles.rateValue}>1 EUR = {rate} XOF</Text>
         </View>
 
-        {/* ✅ INFO FRAIS CALCULÉS */}
-        <View style={styles.infoBox}>
-            <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Montant envoyé :</Text>
-                <Text style={styles.infoValue}>{numericAmount.toFixed(2)} {currency}</Text>
-            </View>
-            <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Frais (1.5%) :</Text>
-                <Text style={styles.infoValue}>+ {fees.toFixed(2)} {currency}</Text>
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.infoRow}>
-                <Text style={styles.totalLabel}>TOTAL À PAYER :</Text>
-                <Text style={styles.totalValue}>{totalToPay.toFixed(2)} {currency}</Text>
+        {/* CALCULATEUR */}
+        <Text style={styles.sectionLabel}>COMBIEN ?</Text>
+        <View style={styles.inputGroup}>
+            <View style={styles.inputContainer}>
+                <TextInput 
+                    style={styles.input}
+                    value={amount}
+                    onChangeText={setAmount}
+                    keyboardType="numeric"
+                    placeholder="0"
+                />
+                <Text style={styles.currencyText}>EUR 🇪🇺</Text>
             </View>
         </View>
 
-        <TouchableOpacity 
-            style={[styles.sendButton, sending && styles.disabledButton]} 
-            onPress={handleSend}
-            disabled={sending}
+        <View style={styles.inputGroup}>
+            <View style={[styles.inputContainer, {backgroundColor: '#F9FAFB'}]}>
+                <TextInput 
+                    style={[styles.input, {color: '#1F2937'}]}
+                    value={receiveAmount}
+                    editable={false} 
+                />
+                <Text style={styles.currencyText}>XOF 🇸🇳</Text>
+            </View>
+        </View>
+
+        {/* RÉSUMÉ */}
+        <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Frais d'envoi</Text>
+                <Text style={styles.summaryValue}>{fees} EUR</Text>
+            </View>
+            <View style={styles.summaryRow}>
+                <Text style={styles.totalLabel}>TOTAL À PAYER</Text>
+                <Text style={[styles.totalValue, isInsufficientFunds && {color: colors.danger}]}>
+                    {totalPay} EUR
+                </Text>
+            </View>
+            
+            {/* ALERTE VISUELLE */}
+            {isInsufficientFunds && (
+                 <View style={styles.errorContainer}>
+                    <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                    <Text style={styles.errorText}>Solde insuffisant (Manque {(totalPayRaw - currentBalance).toFixed(2)}€)</Text>
+                 </View>
+            )}
+        </View>
+
+        {/* BOUTON D'ACTION INTELLIGENT */}
+        <Pressable 
+            style={({pressed}) => [
+                styles.submitBtn, 
+                // Si solde insuffisant, on change la couleur pour indiquer une action différente (recharger)
+                isInsufficientFunds && { backgroundColor: '#F59E0B' }, // Orange un peu différent pour "Attention"
+                (!selectedBeneficiaryId || sending) && !isInsufficientFunds && styles.btnDisabled,
+                pressed && {opacity: 0.9}
+            ]} 
+            onPress={handleAction}
+            // On ne désactive PAS le bouton si solde insuffisant, on veut qu'il clique pour recharger !
+            disabled={!selectedBeneficiaryId || sending} 
         >
             {sending ? (
-                <ActivityIndicator color="#fff" />
+                <ActivityIndicator color="#FFF" />
             ) : (
-                <Text style={styles.sendButtonText}>Confirmer l'envoi</Text>
+                <>
+                    <Text style={styles.submitText}>
+                        {isInsufficientFunds ? "RECHARGER MON COMPTE" : "CONFIRMER L'ENVOI"}
+                    </Text>
+                    <Ionicons 
+                        name={isInsufficientFunds ? "card" : "arrow-forward"} 
+                        size={20} color="#FFF" style={{marginLeft: 10}} 
+                    />
+                </>
             )}
-        </TouchableOpacity>
+        </Pressable>
 
-      </View>
-    </ScrollView>
+      </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 20, backgroundColor: colors.background },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  emptyTitle: { fontSize: 20, fontWeight: "bold", color: colors.text, marginBottom: 10 },
-  emptyText: { textAlign: "center", color: colors.muted, marginBottom: 20 },
-  btnAdd: { backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 8 },
-  btnAddText: { color: "#fff", fontWeight: "bold" },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: colors.primary, marginBottom: 20 },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 20, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
-  label: { fontSize: 14, fontWeight: "600", color: colors.text, marginBottom: 8, textTransform: "uppercase" },
-  pickerContainer: { borderWidth: 1, borderColor: "#ddd", borderRadius: 8, marginBottom: 8, backgroundColor: "#fafafa" },
-  picker: { height: 50, width: "100%" },
-  linkText: { color: colors.primary, fontWeight: "600", fontSize: 14, marginBottom: 10 },
-  amountRow: { flexDirection: "row", alignItems: "center" },
-  inputAmount: { flex: 1, borderWidth: 1, borderColor: "#ddd", borderTopLeftRadius: 8, borderBottomLeftRadius: 8, padding: 12, fontSize: 18, backgroundColor: "#fff", height: 50 },
-  currencyBadge: { backgroundColor: "#eee", paddingHorizontal: 16, height: 50, justifyContent: "center", borderTopRightRadius: 8, borderBottomRightRadius: 8, borderWidth: 1, borderLeftWidth: 0, borderColor: "#ddd" },
-  currencyText: { fontWeight: "bold", color: "#555" },
+  container: { flex: 1, backgroundColor: "#F3F4F6" },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary },
   
-  // Styles pour la boite de calcul
-  infoBox: { backgroundColor: "#f0f9ff", padding: 15, borderRadius: 8, marginTop: 20, borderWidth: 1, borderColor: "#bae6fd" },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  infoLabel: { color: "#0369a1", fontSize: 14 },
-  infoValue: { color: "#0369a1", fontWeight: "600", fontSize: 14 },
-  divider: { height: 1, backgroundColor: "#bae6fd", marginVertical: 8 },
-  totalLabel: { color: "#0c4a6e", fontWeight: "800", fontSize: 16 },
-  totalValue: { color: "#0c4a6e", fontWeight: "800", fontSize: 18 },
+  header: { backgroundColor: colors.primary, paddingTop: Platform.OS === 'android' ? 40 : 10, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
+  backBtn: { padding: 5, cursor: 'pointer' } as any,
+  
+  balanceContainer: { alignItems: 'center' },
+  balanceLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, marginBottom: 4 },
+  balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800' },
 
-  sendButton: { backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 10, alignItems: "center", marginTop: 24 },
-  disabledButton: { opacity: 0.7 },
-  sendButtonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  content: { padding: 20 },
+  sectionLabel: { fontSize: 12, fontWeight: '700', color: '#64748B', marginBottom: 10, marginTop:10 },
+
+  // Beneficiaries
+  beneficiaryList: { flexDirection: 'row', marginBottom: 20 },
+  beneficiaryCard: { width: 80, alignItems: 'center', marginRight: 15, padding: 10, backgroundColor:'#FFF', borderRadius:12, borderWidth:2, borderColor:'transparent', cursor: 'pointer' } as any,
+  beneficiarySelected: { borderColor: colors.primary, backgroundColor:'#FFF7ED' },
+  avatar: { width: 45, height: 45, borderRadius: 25, backgroundColor: '#E0F2FE', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  avatarText: { color: '#0369A1', fontWeight: 'bold', fontSize: 18 },
+  beneficiaryName: { fontSize: 12, fontWeight: '600', color: '#334155', textAlign:'center' },
+  checkBadge: { position:'absolute', top:-5, right:-5, backgroundColor:colors.primary, borderRadius:10, width:20, height:20, justifyContent:'center', alignItems:'center' },
+  
+  addBeneficiaryCard: { width: 80, height: 95, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 12, borderStyle:'dashed', cursor: 'pointer' } as any,
+  addText: { fontSize: 12, color: '#64748B', marginTop: 4 },
+  emptyBeneficiary: { padding: 20, backgroundColor:'#FFF', borderRadius:12, alignItems:'center', marginBottom:20, cursor: 'pointer' } as any,
+
+  // Rates
+  rateCard: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#E0F2FE', padding: 12, borderRadius: 10, marginBottom: 20, borderWidth: 1, borderColor: '#BAE6FD' },
+  rateLabel: { color: '#0369A1', fontWeight: '600' },
+  rateValue: { color: '#0369A1', fontWeight: '700' },
+
+  // Inputs
+  inputGroup: { marginBottom: 12 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: '#E2E8F0', paddingHorizontal: 15, height: 60 },
+  input: { flex: 1, fontSize: 24, fontWeight: 'bold', color: '#1E293B' },
+  currencyText: { fontWeight: '700', color: '#64748B', fontSize: 16 },
+
+  // Summary
+  summaryCard: { backgroundColor: '#FFF', padding: 15, borderRadius: 12, marginTop: 10, marginBottom: 25 },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  summaryLabel: { color: '#64748B' },
+  summaryValue: { color: '#1E293B', fontWeight: '600' },
+  totalLabel: { color: '#1E293B', fontWeight: '800', fontSize: 16 },
+  totalValue: { color: colors.primary, fontWeight: '800', fontSize: 18 },
+  
+  errorContainer: { flexDirection: 'row', alignItems:'center', marginTop: 10, padding: 8, backgroundColor: '#FEF2F2', borderRadius: 8 },
+  errorText: { color: colors.danger, fontSize: 12, marginLeft: 6, fontWeight: '600' },
+
+  // Button
+  submitBtn: { backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: 14, shadowColor: colors.primary, shadowOpacity: 0.3, elevation: 4, cursor: 'pointer' } as any,
+  btnDisabled: { backgroundColor: '#94A3B8', shadowOpacity: 0, cursor: 'not-allowed' } as any,
+  submitText: { color: "#FFF", fontSize: 16, fontWeight: "800" },
 });

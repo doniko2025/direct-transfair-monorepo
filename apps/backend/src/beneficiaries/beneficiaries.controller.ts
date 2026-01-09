@@ -10,34 +10,50 @@ import {
   Req,
   UnauthorizedException,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'; // ⚠️ Vérifie ton chemin d'import (auth/guards vs auth/jwt-auth.guard)
-// Si ton fichier est à la racine de auth, laisse comme tu avais. Sinon utilise auth/guards/jwt-auth.guard
-// Pour éviter les erreurs, je remets ton import original s'il marchait, ou le standard :
-// import { JwtAuthGuard } from '../auth/jwt-auth.guard'; 
-
+// Assure-toi que ces imports pointent vers tes fichiers existants
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../tenants/tenant.guard';
 
+@ApiTags('Beneficiaries')
+@ApiBearerAuth()
 @UseGuards(TenantGuard, JwtAuthGuard)
 @Controller('beneficiaries')
 export class BeneficiariesController {
+  private readonly logger = new Logger(BeneficiariesController.name);
+
   constructor(private readonly beneficiariesService: BeneficiariesService) {}
 
+  // --- Helper pour extraire l'utilisateur proprement ---
   private getUserInfo(req: any) {
     const user = req.user;
-    if (!user?.id) throw new UnauthorizedException('User missing');
-    return { userId: user.id, clientId: user.clientId };
+    
+    // Debug pour voir ce que le serveur reçoit
+    // this.logger.log(`User Payload: ${JSON.stringify(user)}`);
+
+    // On accepte 'id' (standard) ou 'sub' (JWT brut) ou 'userId'
+    const userId = user?.id || user?.sub || user?.userId;
+    const clientId = user?.clientId;
+
+    if (!userId) {
+      this.logger.error('❌ User ID missing in request context');
+      throw new UnauthorizedException('Utilisateur non identifié (User ID missing)');
+    }
+
+    return { userId, clientId };
   }
 
   @Post()
   async create(@Req() req: any, @Body() dto: CreateBeneficiaryDto) {
     const { userId, clientId } = this.getUserInfo(req);
-    // ✅ On passe le clientId pour lier le bénéficiaire à la société
+    // On passe le clientId (qui peut être undefined pour un admin global, mais requis pour un tenant)
     return this.beneficiariesService.create(userId, clientId, dto);
   }
 
@@ -54,7 +70,11 @@ export class BeneficiariesController {
   }
 
   @Patch(':id')
-  async update(@Req() req: any, @Param('id') id: string, @Body() dto: UpdateBeneficiaryDto) {
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateBeneficiaryDto,
+  ) {
     const { userId } = this.getUserInfo(req);
     return this.beneficiariesService.updateForUser(id, userId, dto);
   }

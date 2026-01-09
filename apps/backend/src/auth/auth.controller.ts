@@ -12,12 +12,14 @@ import {
 import { ApiHeader, ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 
-import { AuthService, PublicUser } from './auth.service';
+import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { AuthUserPayload } from './jwt.strategy'; // Import depuis la stratégie corrigée
+
+// ✅ CORRECTION DE L'IMPORT : On pointe vers le dossier 'strategies'
+import { AuthUserPayload } from './strategies/jwt.strategy'; 
 
 @Controller('auth')
 @ApiTags('Auth')
@@ -40,7 +42,7 @@ export class AuthController {
       return exists.id;
     }
 
-    // 2. Code (DONIKO)
+    // 2. Code (ex: FLASH2026)
     const client = await this.prisma.client.findUnique({ where: { code: raw.toUpperCase() } });
     if (!client) throw new BadRequestException(`Unknown tenant code: ${raw}`);
     return client.id;
@@ -50,7 +52,6 @@ export class AuthController {
   @ApiHeader({ name: 'x-tenant-id', required: true })
   @Post('register')
   async register(@Req() req: Request, @Body() dto: RegisterDto) {
-    // On valide le tenant (même si on force 1 dans le service pour l'instant)
     await this.resolveClientId(req.headers['x-tenant-id']);
     return this.authService.register(dto);
   }
@@ -59,6 +60,7 @@ export class AuthController {
   @Post('login')
   async login(@Req() req: Request, @Body() dto: LoginDto) {
     const header = req.headers['x-tenant-id'];
+    // Le clientID est optionnel au login (sauf si stratégie stricte), mais utile pour vérifier
     const clientId = header ? await this.resolveClientId(header) : undefined;
     return this.authService.login(dto, clientId);
   }
@@ -69,7 +71,8 @@ export class AuthController {
   @ApiBearerAuth()
   async me(@Req() req: Request & { user?: AuthUserPayload }) {
     if (!req.user) throw new BadRequestException('User not found');
-    return this.authService.getProfile(req.user.sub);
+    // ✅ Utilisation de 'id' (plus propre que sub)
+    return this.authService.getProfile(req.user.id);
   }
 
   // --- UPDATE ME ---
@@ -81,6 +84,7 @@ export class AuthController {
     @Body() body: any,
   ) {
     if (!req.user) throw new BadRequestException('User not found');
-    return this.authService.updateProfile(req.user.sub, body);
+    // ✅ Utilisation de 'id'
+    return this.authService.updateProfile(req.user.id, body);
   }
 }
