@@ -6,7 +6,6 @@ import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
 import type { AuthUser, LoginPayload, RegisterPayload, LoginResponse } from "../services/types";
 
-// ✅ 1. On ajoute refreshUser ici
 type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
@@ -20,6 +19,7 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const TOKEN_KEY = "dt_token";
 const USER_KEY = "dt_user"; 
+const TENANT_KEY = "dt_tenant"; // ✅ Nouvelle clé pour stocker la société
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -44,16 +44,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return await SecureStore.getItemAsync(key);
   };
 
+  // --- INITIALISATION AU DÉMARRAGE ---
   useEffect(() => {
     const initAuth = async () => {
       try {
         const storedToken = await getStorage(TOKEN_KEY);
         const storedUser = await getStorage(USER_KEY);
+        const storedTenant = await getStorage(TENANT_KEY); // ✅ On récupère le code société
+
+        // ✅ Si on a un code société stocké, on le configure dans l'API immédiatement
+        if (storedTenant) {
+            api.setTenant(storedTenant);
+            console.log("Tenant restauré:", storedTenant);
+        }
 
         if (storedToken && storedUser) {
           api.setToken(storedToken);
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
+          // On vérifie si le token est toujours valide
           api.getMe().catch(() => logout()); 
         }
       } catch (e) {
@@ -65,26 +74,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, []);
 
+  // --- PROTECTION DES ROUTES ---
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
+    
     if (!user && !inAuthGroup) {
+      // Pas connecté -> Login
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
+      // Connecté -> Home
       router.replace("/(tabs)/home");
     }
   }, [user, isLoading, segments]);
 
+  // --- LOGIN ---
   const login = async (data: LoginPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      if (tenantCode) api.setTenant(tenantCode);
-      const res: LoginResponse = await api.login(data, tenantCode);
+      // 1. Configurer le Tenant
+      const codeToUse = tenantCode || "DONIKO"; // Valeur par défaut si vide
+      api.setTenant(codeToUse);
+      
+      // 2. Appel API Login
+      const res: LoginResponse = await api.login(data, codeToUse);
+      
+      // 3. Sauvegarde des données
       api.setToken(res.access_token);
       setToken(res.access_token);
       setUser(res.user);
+      
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(res.user));
+      await setStorage(TENANT_KEY, codeToUse); // ✅ Sauvegarde du Tenant
+      
     } finally {
       setIsLoading(false);
     }
@@ -102,19 +125,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     api.clearToken();
+    api.setTenant("DONIKO"); // Reset au défaut
     setToken(null);
     setUser(null);
     await removeStorage(TOKEN_KEY);
     await removeStorage(USER_KEY);
+    await removeStorage(TENANT_KEY); // ✅ Nettoyage
   };
 
-  // ✅ 2. La fonction qui recharge le profil depuis l'API
   const refreshUser = async () => {
     try {
         const updatedUser = await api.getMe(); 
         setUser(updatedUser);
         await setStorage(USER_KEY, JSON.stringify(updatedUser));
-        console.log("Solde mis à jour:", updatedUser.balance);
+        console.log("Profil mis à jour");
     } catch (e) {
         console.log("Impossible de rafraîchir l'utilisateur", e);
     }
