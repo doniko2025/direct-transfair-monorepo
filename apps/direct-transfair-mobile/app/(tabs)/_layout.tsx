@@ -1,10 +1,39 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 import React from "react";
+import { View, Text, StyleSheet, Platform, TouchableOpacity, ActivityIndicator } from "react-native";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { colors } from "../../theme/colors";
-import { ActivityIndicator, View, Platform } from "react-native";
+
+// --- BOUTON FLOTTANT (Gros bouton orange) ---
+const CustomTabBarButton = ({ children, onPress }: any) => (
+  <TouchableOpacity
+    style={{
+      top: -30,
+      justifyContent: "center",
+      alignItems: "center",
+      ...styles.shadow,
+    }}
+    onPress={onPress}
+    activeOpacity={0.8}
+  >
+    <View
+      style={{
+        width: 70,
+        height: 70,
+        borderRadius: 35,
+        backgroundColor: colors.primary,
+        borderWidth: 4,
+        borderColor: "#F3F4F6", // Doit matcher la couleur de fond de l'écran
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    >
+      {children}
+    </View>
+  </TouchableOpacity>
+);
 
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
@@ -19,112 +48,148 @@ export default function TabLayout() {
 
   const role = user.role;
 
-  // Helper pour cacher/montrer les onglets selon le rôle
-  const showFor = (roles: string[]) => roles.includes(role) ? undefined : null;
-
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: role === 'USER' ? colors.primary : '#1F2937', // Orange pour client, Sombre pour Pros
-        tabBarInactiveTintColor: "#9CA3AF",
+        tabBarShowLabel: false,
         tabBarStyle: {
-          backgroundColor: "#FFF",
+          position: "absolute",
+          bottom: 25,
+          left: 20,
+          right: 20,
+          backgroundColor: "#ffffff",
+          borderRadius: 20,
+          height: 80, // Hauteur suffisante
           borderTopWidth: 0,
-          elevation: 15,
-          shadowColor: "#000",
-          shadowOpacity: 0.1,
-          shadowRadius: 10,
-          height: Platform.OS === 'ios' ? 85 : 65,
-          paddingBottom: Platform.OS === 'ios' ? 25 : 10,
-          paddingTop: 10,
+          ...styles.shadow, // Ombre unique (inclut elevation)
         },
-        tabBarLabelStyle: { fontWeight: "600", fontSize: 10 },
       }}
     >
-      {/* --- 1. ACCUEIL (Tout le monde a un accueil différent) --- */}
+      {/* 1. ACCUEIL */}
       <Tabs.Screen
         name="home"
         options={{
-          title: "Accueil",
-          tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} />,
-        }}
-      />
-
-      {/* --- 2. FONCTIONNALITÉS SPÉCIFIQUES (Onglet 2) --- */}
-      
-      {/* CLIENT : Bouton ENVOYER (Central/Flottant) */}
-      <Tabs.Screen
-        name="send"
-        options={{
-          title: "Envoyer",
-          href: showFor(['USER']),
-          tabBarIcon: ({ color }) => (
-            <View style={{
-                backgroundColor: colors.primary, width: 50, height: 50, borderRadius: 25,
-                justifyContent: 'center', alignItems: 'center', marginBottom: 20,
-                shadowColor: colors.primary, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5
-            }}>
-              <Ionicons name="paper-plane" size={24} color="#FFF" style={{ marginLeft: -2 }} />
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.iconContainer}>
+              <Ionicons name={focused ? "home" : "home-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Accueil</Text>
             </View>
           ),
-          tabBarLabel: () => null, // Pas de texte
         }}
       />
 
-      {/* AGENT : Onglet GUICHET (Dépôt/Retrait) */}
+      {/* 2. ENVOYER (Visible seulement pour USER) */}
       <Tabs.Screen
-        name="withdraw" // On utilisera cette route pour le "Guichet" général
-        options={{
-          title: "Guichet",
-          href: showFor(['AGENT']),
-          tabBarIcon: ({ color }) => <Ionicons name="storefront" size={24} color={color} />,
-        }}
+        name="send"
+        options={
+          role === 'USER'
+            ? {
+                // Si c'est un USER, on affiche le bouton personnalisé
+                tabBarIcon: () => (
+                  <Ionicons name="paper-plane" size={30} color="#FFF" style={{ marginLeft: -2, marginTop: 2 }} />
+                ),
+                tabBarButton: (props) => <CustomTabBarButton {...props} />,
+              }
+            : {
+                // Sinon, on cache l'onglet complètement
+                href: null,
+              }
+        }
       />
 
-      {/* ADMIN SOCIÉTÉ : Onglet AGENCES */}
+      {/* 3. GUICHET (Visible seulement pour AGENT) */}
       <Tabs.Screen
-        name="agencies" // Créer ce fichier plus tard (liste des agences)
-        options={{
-          title: "Agences",
-          href: showFor(['COMPANY_ADMIN']),
-          tabBarIcon: ({ color }) => <Ionicons name="business" size={24} color={color} />,
-        }}
+        name="withdraw"
+        options={
+          role === 'AGENT'
+            ? {
+                tabBarIcon: ({ focused }) => (
+                   <Ionicons name="storefront" size={28} color="#FFF" />
+                ),
+                tabBarButton: (props) => <CustomTabBarButton {...props} />,
+              }
+            : { href: null }
+        }
       />
 
-      {/* SUPER ADMIN : Onglet SOCIÉTÉS */}
+      {/* 4. AGENCES (Visible seulement pour COMPANY_ADMIN) */}
       <Tabs.Screen
-        name="admin" // Route existante admin/index
+        name="agencies"
         options={{
-          title: "Sociétés",
-          href: showFor(['SUPER_ADMIN']),
-          tabBarIcon: ({ color }) => <Ionicons name="briefcase" size={24} color={color} />,
+          href: role === 'COMPANY_ADMIN' ? undefined : null,
+          tabBarIcon: ({ focused }) => (
+             <View style={styles.iconContainer}>
+                <Ionicons name="business" size={24} color={focused ? colors.primary : "#9CA3AF"} />
+                <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Agences</Text>
+             </View>
+          ),
         }}
       />
 
+      {/* 5. ADMIN (Visible seulement pour SUPER_ADMIN) */}
+      <Tabs.Screen
+        name="admin"
+        options={{
+          href: role === 'SUPER_ADMIN' ? undefined : null,
+          tabBarIcon: ({ focused }) => (
+             <View style={styles.iconContainer}>
+                <Ionicons name="briefcase" size={24} color={focused ? colors.primary : "#9CA3AF"} />
+                <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Sociétés</Text>
+             </View>
+          ),
+        }}
+      />
 
-      {/* --- 3. HISTORIQUE / TRANSACTIONS (Onglet 3) --- */}
+      {/* 6. HISTORIQUE */}
       <Tabs.Screen
         name="transactions"
         options={{
-          title: role === 'SUPER_ADMIN' ? "Finances" : "Historique",
-          href: showFor(['USER', 'AGENT', 'COMPANY_ADMIN', 'SUPER_ADMIN']), // Tout le monde
-          tabBarIcon: ({ color }) => <Ionicons name={role === 'SUPER_ADMIN' ? "pie-chart" : "time"} size={24} color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.iconContainer}>
+              <Ionicons name={focused ? "time" : "time-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Historique</Text>
+            </View>
+          ),
         }}
       />
 
-      {/* --- 4. COMPTE / PROFIL (Onglet 4) --- */}
+      {/* 7. COMPTE */}
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Compte",
-          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <View style={styles.iconContainer}>
+              <Ionicons name={focused ? "person" : "person-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Compte</Text>
+            </View>
+          ),
         }}
       />
 
-      {/* --- ROUTES CACHÉES (Pas dans la barre) --- */}
+      {/* --- ROUTES MASQUÉES (Navigation interne) --- */}
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="beneficiaries" options={{ href: null }} /> 
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  shadow: {
+    shadowColor: "#7F5DF0",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.5,
+    elevation: 5,
+  },
+  iconContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    top: 0,
+  },
+  label: {
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: "600",
+  },
+});

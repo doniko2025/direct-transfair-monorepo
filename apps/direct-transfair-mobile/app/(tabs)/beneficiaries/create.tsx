@@ -53,8 +53,7 @@ export default function BeneficiaryCreateScreen() {
   // --- Helpers Sélection ---
   const handleSelectAddressCountry = (country: CountryData) => {
     setAddressCountry(country);
-    // On met à jour l'indicatif par défaut pour correspondre au pays,
-    // mais l'utilisateur pourra le changer manuellement ensuite.
+    // On met à jour l'indicatif par défaut
     setPhoneCountry(country);
     setCity(""); 
     setShowCountryModal(false);
@@ -66,7 +65,6 @@ export default function BeneficiaryCreateScreen() {
   };
 
   const handleSelectPhoneCode = (country: CountryData) => {
-    // Ici, on ne change QUE l'indicatif, pas le pays de résidence
     setPhoneCountry(country);
     setShowPhoneCodeModal(false);
   };
@@ -91,7 +89,7 @@ export default function BeneficiaryCreateScreen() {
 
       await api.createBeneficiary({
         fullName: fullName,
-        country: addressCountry.name, // Pays de résidence
+        country: addressCountry.name,
         city: city.trim(),
         phone: fullPhone,
       });
@@ -109,14 +107,14 @@ export default function BeneficiaryCreateScreen() {
     }
   };
 
-  // --- Composant Sélecteur (Pressable pour meilleure compatibilité Web) ---
+  // --- Composant Sélecteur ---
   const renderSelector = (label: string, value: string, onPress: () => void, placeholder: string, icon?: string) => (
     <View style={styles.inputGroup}>
       <Text style={styles.label}>{label}</Text>
       <Pressable 
         style={({ pressed }) => [
             styles.selectorBtn, 
-            pressed && { backgroundColor: '#E5E7EB' } // Feedback visuel au clic
+            pressed && { backgroundColor: '#E5E7EB' } 
         ]} 
         onPress={onPress}
       >
@@ -179,28 +177,23 @@ export default function BeneficiaryCreateScreen() {
                 "Choisir une ville"
             )}
 
-            {/* Téléphone (INDICATIF SÉPARÉ) */}
+            {/* Téléphone */}
             <View style={styles.inputGroup}>
                 <Text style={styles.label}>Téléphone (Mobile Money)</Text>
                 
                 <View style={styles.phoneContainer}>
-                    {/* Bouton Indicatif (Pressable pour que ça clique bien partout) */}
                     <Pressable 
                         style={({pressed}) => [
                             styles.dialBtn,
                             pressed && { backgroundColor: '#E5E7EB' }
                         ]} 
-                        onPress={() => {
-                            console.log("Ouverture modale indicatif"); // Debug
-                            setShowPhoneCodeModal(true);
-                        }}
+                        onPress={() => setShowPhoneCodeModal(true)}
                     >
                         <Text style={{marginRight:5, fontSize:16}}>{phoneCountry.flag}</Text>
                         <Text style={{fontWeight:'700', color:'#374151'}}>{phoneCountry.dialCode}</Text>
                         <Ionicons name="chevron-down" size={14} color="#6B7280" style={{marginLeft:4}}/>
                     </Pressable>
                     
-                    {/* Champ de saisie */}
                     <TextInput 
                         style={styles.phoneInput} 
                         placeholder="77 000 00 00" 
@@ -277,7 +270,7 @@ export default function BeneficiaryCreateScreen() {
 
 // Composant Modale Générique
 const SelectionModal = ({ visible, onClose, title, data, renderItem }: any) => (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                 <View style={styles.modalHeader}>
@@ -318,7 +311,7 @@ const styles = StyleSheet.create({
     borderRadius: 10, 
     padding: 12, 
     backgroundColor: "#F9FAFB",
-    // @ts-ignore (Web specific)
+    // @ts-ignore
     cursor: 'pointer'
   },
   selectorText: { fontSize: 16, color: "#1F2937" },
@@ -351,11 +344,45 @@ const styles = StyleSheet.create({
   disabledBtn: { opacity: 0.5 },
   submitText: { fontWeight: "700", color: "#FFF" },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: "#FFF", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '70%', padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  // --- STYLES MODALE (CORRIGÉS) ---
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+    justifyContent: 'center', // ✅ Centré verticalement
+    alignItems: 'center',      // ✅ Centré horizontalement
+    padding: 20 
+  },
+  modalContent: { 
+    backgroundColor: "#FFF", 
+    borderRadius: 16, 
+    maxHeight: '80%', 
+    width: '100%',
+    maxWidth: 500, // Limite la largeur sur les grands écrans
+    padding: 20,
+    shadowColor: "#000", 
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 10
+  },
+  modalHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    paddingBottom: 10
+  },
   modalTitle: { fontSize: 18, fontWeight: "700", color: "#1F2937" },
   closeBtn: { padding: 5, backgroundColor: "#F3F4F6", borderRadius: 20, cursor: 'pointer' } as any,
-  modalItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "#F3F4F6", cursor: 'pointer' } as any,
+  modalItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingVertical: 15, 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#F3F4F6", 
+    cursor: 'pointer' 
+  } as any,
   modalItemText: { fontSize: 16, color: "#374151", fontWeight: "500" },
 });

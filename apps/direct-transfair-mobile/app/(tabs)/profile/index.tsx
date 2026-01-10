@@ -43,8 +43,11 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* BANNIÈRE PARRAINAGE */}
-        <View style={styles.referralCard}>
+        {/* ✅ BANNIÈRE PARRAINAGE CORRIGÉE (Cliquable) */}
+        <TouchableOpacity 
+            style={styles.referralCard} 
+            onPress={() => router.push("/referral")}
+        >
             <View style={styles.referralIcon}>
                 <Ionicons name="people" size={24} color="#2563EB" />
             </View>
@@ -55,7 +58,7 @@ export default function ProfileScreen() {
                 </Text>
             </View>
             <Ionicons name="arrow-forward" size={20} color="#2563EB" />
-        </View>
+        </TouchableOpacity>
 
         {/* MENU */}
         <View style={styles.menuContainer}>
@@ -81,7 +84,6 @@ export default function ProfileScreen() {
                 label="Trouver un point Direct Transf'AIR" 
                 color="#F3E8FF"
                 iconColor="#9333EA"
-                // ✅ Vers Locations
                 onPress={() => router.push("/(tabs)/profile/locations")} 
             />
 
@@ -90,16 +92,14 @@ export default function ProfileScreen() {
                 label="Mes moyens de paiements" 
                 color="#DCFCE7"
                 iconColor="#16A34A"
-                // ✅ Vers Paiements
                 onPress={() => router.push("/(tabs)/profile/payment-methods")} 
             />
 
             <MenuCard 
                 icon="stats-chart" 
                 label="Mes plafonds" 
-                color="#FEF3C7" // Jaune clair
+                color="#FEF3C7"
                 iconColor="#D97706"
-                // ✅ Vers Plafonds
                 onPress={() => router.push("/(tabs)/profile/limits")} 
             />
 

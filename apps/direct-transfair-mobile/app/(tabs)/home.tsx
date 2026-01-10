@@ -21,8 +21,13 @@ export default function HomeScreen() {
          {/* Carte Solde */}
          <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Solde disponible</Text>
-            <Text style={styles.balanceValue}>0 FCFA</Text>
-            <TouchableOpacity style={styles.topUpBtn}>
+            
+            {/* ✅ CORRECTION : Affichage dynamique + Fix Erreur TypeScript (as any) */}
+            <Text style={styles.balanceValue}>
+                {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} {(user as any).currency || 'EUR'}
+            </Text>
+            
+            <TouchableOpacity style={styles.topUpBtn} onPress={() => router.push("/topup")}>
                 <Ionicons name="add-circle" size={18} color="#FFF" />
                 <Text style={styles.topUpText}>Recharger mon compte</Text>
             </TouchableOpacity>
@@ -32,7 +37,9 @@ export default function HomeScreen() {
          <View style={styles.grid}>
             <MenuCard title="Envoyer" subtitle="Vers un proche" icon="paper-plane" color="#F59E0B" onPress={() => router.push("/(tabs)/send")} />
             <MenuCard title="Bénéficiaires" subtitle="Mes contacts" icon="people" color="#3B82F6" onPress={() => router.push("/(tabs)/beneficiaries")} />
-            <MenuCard title="Parrainer" subtitle="Gagner des bonus" icon="gift" color="#EC4899" onPress={() => {}} />
+            
+            {/* ✅ LIEN VERS PARRAINAGE ACTIVÉ */}
+            <MenuCard title="Parrainer" subtitle="Gagner des bonus" icon="gift" color="#EC4899" onPress={() => router.push("/referral")} />
          </View>
       </DashboardLayout>
     );
@@ -153,7 +160,6 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: "700", color: "#1F2937" },
   cardSubtitle: { fontSize: 11, color: "#6B7280" },
 
-  // Client Balance Card
   balanceCard: { backgroundColor: colors.primary, padding: 20, borderRadius: 18, marginBottom: 25, alignItems:'center', shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
   balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginBottom: 4, fontWeight:'500' },
   balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800', marginBottom:12 },
