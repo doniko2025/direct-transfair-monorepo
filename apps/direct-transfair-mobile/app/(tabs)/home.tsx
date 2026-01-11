@@ -69,62 +69,113 @@ export default function HomeScreen() {
         <Text style={styles.sectionTitle}>Opérations Guichet</Text>
         <View style={styles.grid}>
             <View style={styles.row}>
-                <MenuCard 
-                    title="Envoi Espèces" 
-                    subtitle="Client de passage" 
-                    icon="paper-plane" 
-                    color="#3B82F6" 
-                    onPress={() => router.push("/agent/send-cash")} 
-                    fullWidth={false}
-                />
-                <MenuCard 
-                    title="Retrait / Cash-Out" 
-                    subtitle="Payer un code" 
-                    icon="wallet" 
-                    color="#EF4444" 
-                    onPress={() => router.push("/agent/withdraw")} 
-                    fullWidth={false}
-                />
+                <MenuCard title="Envoi Espèces" subtitle="Client de passage" icon="paper-plane" color="#3B82F6" onPress={() => router.push("/agent/send-cash")} fullWidth={false}/>
+                <MenuCard title="Retrait / Cash-Out" subtitle="Payer un code" icon="wallet" color="#EF4444" onPress={() => router.push("/agent/withdraw")} fullWidth={false}/>
             </View>
-
             <View style={styles.row}>
+                <MenuCard title="Dépôt / Cash-In" subtitle="Recharger un client" icon="arrow-down-circle" color="#10B981" onPress={() => router.push("/agent/deposit")} fullWidth={false}/>
+                <MenuCard title="Recharger Caisse" subtitle="Via OM / Wave" icon="add-circle" color="#F59E0B" onPress={() => router.push("/topup")} fullWidth={false}/>
+            </View>
+            <MenuCard title="Mes Transactions" subtitle="Historique de la journée" icon="list" color="#6B7280" onPress={() => router.push("/(tabs)/transactions")} />
+        </View>
+      </DashboardLayout>
+    );
+  }
+
+  // ============================================================
+  // 3. ADMIN SOCIÉTÉ (Gestionnaire) - ✅ CORRECTION ICI
+  // ============================================================
+  if (user.role === 'COMPANY_ADMIN') {
+    return (
+      <DashboardLayout title={user.client?.name || "Administration"} subtitle="Pilotage Agences" badge="business" badgeColor="#F59E0B">
+        
+        {/* Résumé Financier Admin */}
+        <View style={[styles.balanceCard, {backgroundColor: '#1E293B'}]}>
+            <Text style={styles.balanceLabel}>Trésorerie Globale</Text>
+            <Text style={styles.balanceValue}>15 450 000 FCFA</Text>
+            <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginTop:10}}>
+                <View>
+                    <Text style={{color:'#94A3B8', fontSize:11}}>Commissions Mois</Text>
+                    <Text style={{color:'#34D399', fontWeight:'bold'}}>+ 1 250 000 FCFA</Text>
+                </View>
+                <View>
+                    <Text style={{color:'#94A3B8', fontSize:11}}>Volume Transactions</Text>
+                    <Text style={{color:'#FFF', fontWeight:'bold'}}>450 M FCFA</Text>
+                </View>
+            </View>
+        </View>
+
+        <Text style={styles.sectionTitle}>Réseau & Agences</Text>
+        <View style={styles.grid}>
+            {/* Création d'agence (Partenaire/Privée) */}
+            <MenuCard 
+                title="Créer une Agence" 
+                subtitle="Privée ou Partenaire" 
+                icon="add-circle" 
+                color="#8B5CF6" 
+                onPress={() => router.push("/(tabs)/admin/agencies/create")} 
+            />
+            
+            <View style={styles.row}>
+                {/* ✅ LIEN ACTIVÉ POUR VOIR LA LISTE DES AGENCES */}
                 <MenuCard 
-                    title="Dépôt / Cash-In" 
-                    subtitle="Recharger un client" 
-                    icon="arrow-down-circle" 
-                    color="#10B981" 
-                    // ✅ CÂBLAGE DU BOUTON DÉPÔT
-                    onPress={() => router.push("/agent/deposit")} 
-                    fullWidth={false}
+                    title="Mes Agences" 
+                    subtitle="Liste & Soldes" 
+                    icon="storefront" 
+                    color="#3B82F6" 
+                    onPress={() => router.push("/(tabs)/admin/agencies")} 
+                    fullWidth={false} 
                 />
+                
                 <MenuCard 
-                    title="Recharger Caisse" 
-                    subtitle="Via OM / Wave" 
-                    icon="add-circle" 
+                    title="Utilisateurs" 
+                    subtitle="Agents & Staff" 
+                    icon="people" 
                     color="#F59E0B" 
-                    onPress={() => router.push("/topup")} 
-                    fullWidth={false}
+                    onPress={() => router.push("/(tabs)/admin/users")} 
+                    fullWidth={false} 
                 />
             </View>
-            
+        </View>
+
+        <Text style={styles.sectionTitle}>Finance & Commissions</Text>
+        <View style={styles.grid}>
+            {/* Configuration des commissions */}
             <MenuCard 
-                title="Mes Transactions" 
-                subtitle="Historique de la journée" 
-                icon="list" 
-                color="#6B7280" 
-                onPress={() => router.push("/(tabs)/transactions")} 
+                title="Config. Commissions" 
+                subtitle="Répartition Partenaires" 
+                icon="pie-chart" 
+                color="#EF4444" 
+                onPress={() => router.push("/(tabs)/admin/commissions/config")} 
+            />
+            
+            {/* Historique des gains */}
+            <MenuCard 
+                title="Journal des Gains" 
+                subtitle="Qui a gagné quoi ?" 
+                icon="cash" 
+                color="#10B981" 
+                onPress={() => router.push("/(tabs)/admin/commissions/history")} 
             />
         </View>
       </DashboardLayout>
     );
   }
 
-  // ... (Code Admin inchangé)
-  if (user.role === 'COMPANY_ADMIN' || user.role === 'SUPER_ADMIN') {
-      return <DashboardLayout title="Admin" subtitle="Administration" badge="business" badgeColor="#F59E0B"><Text>Mode Admin</Text></DashboardLayout>;
-  }
-
-  return null;
+  // ============================================================
+  // 4. SUPER ADMIN (Propriétaire Plateforme)
+  // ============================================================
+  return (
+      <DashboardLayout title="Super Admin" subtitle="Direct Transf'air" badge="shield-checkmark" badgeColor="#FFD700">
+        <Text style={styles.sectionTitle}>SaaS Management</Text>
+        <View style={styles.grid}>
+            <MenuCard title="Sociétés" subtitle="Gestion des Clients" icon="briefcase" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/super-dashboard")} />
+            <MenuCard title="Paiements" subtitle="Encaissements Loyer" icon="card" color="#10B981" onPress={() => {}} />
+            <MenuCard title="Contrats" subtitle="Générer documents" icon="document-attach" color="#3B82F6" onPress={() => {}} />
+            <MenuCard title="Config Globale" subtitle="Devises & Taux" icon="globe" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
+        </View>
+      </DashboardLayout>
+  );
 }
 
 // --- UI COMPONENTS ---
@@ -155,7 +206,6 @@ function MenuCard({ title, subtitle, icon, color, onPress, fullWidth = true }: a
                 <Ionicons name={icon} size={26} color={color} />
             </View>
             <View style={{flex:1}}>
-                {/* ✅ CORRECTION ICI : Suppression de numberOfLines={1} pour éviter la coupure */}
                 <Text style={styles.cardTitle}>{title}</Text>
                 <Text style={styles.cardSubtitle}>{subtitle}</Text>
             </View>
@@ -174,7 +224,7 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, backgroundColor: "#F9FAFB", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingTop: 25 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#374151', marginTop: 10 },
   grid: { gap: 10 },
-  row: { flexDirection: 'row', gap: 10 }, // Alignement horizontal
+  row: { flexDirection: 'row', gap: 10 },
 
   card: { 
     flexDirection: 'row', 
@@ -188,15 +238,15 @@ const styles = StyleSheet.create({
     shadowColor: "#000", 
     shadowOpacity: 0.02, 
     elevation: 1,
-    minHeight: 80 // Hauteur minimale pour accommoder 2 lignes si besoin
+    minHeight: 80 
   },
   iconBox: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#1F2937", flexWrap: 'wrap' }, // Permet le retour à la ligne
+  cardTitle: { fontSize: 14, fontWeight: "700", color: "#1F2937", flexWrap: 'wrap' }, 
   cardSubtitle: { fontSize: 11, color: "#6B7280", marginTop: 2, flexWrap: 'wrap' },
 
-  balanceCard: { backgroundColor: colors.primary, padding: 20, borderRadius: 18, marginBottom: 25, alignItems:'center', shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
+  balanceCard: { backgroundColor: colors.primary, padding: 20, borderRadius: 18, marginBottom: 25, shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
   balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginBottom: 4, fontWeight:'500' },
-  balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800', marginBottom:12 },
-  topUpBtn: { flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:12, paddingVertical:6, borderRadius:20 },
+  balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800', marginBottom:5 },
+  topUpBtn: { flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:12, paddingVertical:6, borderRadius:20, alignSelf:'flex-start' },
   topUpText: { color:'#FFF', fontWeight:'600', fontSize:12, marginLeft:6 }
 });

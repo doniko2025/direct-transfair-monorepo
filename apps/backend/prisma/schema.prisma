@@ -28,6 +28,7 @@ enum SubscriptionType {
 
 enum SubscriptionStatus {
   ACTIVE
+  INACTIVE  // ✅ AJOUTÉ : Pour correspondre à ton frontend
   EXPIRED
   SUSPENDED
 }
@@ -83,11 +84,25 @@ model Client {
   // --- Configuration Visuelle ---
   logoUrl      String?
   primaryColor String? @default("#F7931E")
+   
+  // --- Infos Légales & Contact (Modifié pour correspondre au Frontend) ---
+  address            String? // Adresse du siège
+  phone              String? // Téléphone général
+  email              String? // Email général
   
-  // --- Infos Légales ---
-  address            String?
-  phone              String?
-  email              String?
+  // ✅ CHAMPS AJOUTÉS POUR CORRIGER L'ERREUR 500
+  activitySector     String? // Secteur d'activité
+  contactPhone       String? // Téléphone contact direct
+  contactEmail       String? // Email contact direct
+  
+  // --- Infos Demandeur / Gérant (AJOUTÉS) ---
+  ownerFirstName     String?
+  ownerLastName      String?
+  ownerBirthDate     String? // Format String pour accepter "JJ/MM/AAAA" ou ISO
+  ownerBirthPlace    String?
+  ownerCountry       String? // Pays de résidence
+  ownerAddress       String? // Adresse personnelle
+
   representativeName String?
   representativeDocs String?
 
@@ -114,7 +129,7 @@ model Agency {
   city    String
   address String
   phone   String?
-  
+   
   balance      Decimal @default(0) @db.Decimal(12, 2)
   creditLimit  Decimal @default(0) @db.Decimal(12, 2)
 
@@ -124,7 +139,7 @@ model Agency {
   client   Client @relation(fields: [clientId], references: [id])
 
   agents   User[]  @relation("AgencyAgents")
-  
+   
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -159,8 +174,8 @@ model User {
   balance Decimal @default(0) @db.Decimal(12, 2)
 
   // --- Relations ---
-  clientId Int
-  client   Client @relation(fields: [clientId], references: [id])
+  clientId Int? // Optionnel pour Super Admin
+  client   Client? @relation(fields: [clientId], references: [id])
 
   agencyId  String?
   agency    Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
@@ -210,12 +225,12 @@ model Transaction {
   status       TransactionStatus @default(PENDING)
   payoutMethod PayoutMethod      @default(CASH_PICKUP)
 
-  paymentMethod  PaymentMethod    @default(WALLET)
-  
+  paymentMethod  PaymentMethod     @default(WALLET)
+   
   provider       PaymentProvider?
   providerRef    String?
   providerStatus ProviderStatus?  @default(PENDING)
-  
+   
   senderId String
   sender   User   @relation(fields: [senderId], references: [id])
 

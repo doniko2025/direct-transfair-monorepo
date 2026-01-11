@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Role, User } from '@prisma/client'; // ✅ Import des types Prisma officiels
+import { Role, User } from '@prisma/client'; 
 import * as bcrypt from 'bcryptjs';
 
 import { UsersService } from '../users/users.service';
@@ -14,18 +14,18 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
-// ✅ Type PublicUser mis à jour (SANS mot de passe, SANS addressNumber)
+// ✅ CORRECTION ICI : clientId accepte maintenant 'number | null'
 export type PublicUser = {
   id: string;
   email: string;
-  role: Role; // C'est maintenant un Enum
-  clientId: number;
+  role: Role;
+  clientId: number | null; // <--- C'était 'number', maintenant 'number | null'
 
   firstName?: string | null;
   lastName?: string | null;
   phone?: string | null;
 
-  addressStreet?: string | null; // Remplacement de addressNumber
+  addressStreet?: string | null;
   postalCode?: string | null;
   city?: string | null;
   country?: string | null;
@@ -37,7 +37,7 @@ export type PublicUser = {
   gender?: string | null;
   jobTitle?: string | null;
   
-  agencyId?: string | null; // Nouveau champ SaaS
+  agencyId?: string | null;
 };
 
 function normalizeEmail(email: string): string {
@@ -50,7 +50,7 @@ function toPublicUser(user: User): PublicUser {
     id: user.id,
     email: user.email,
     role: user.role,
-    clientId: user.clientId,
+    clientId: user.clientId, // TypeScript est content car PublicUser accepte null
 
     firstName: user.firstName,
     lastName: user.lastName,
@@ -81,52 +81,41 @@ export class AuthService {
   ) {}
 
   // ---------------------------------------------------------
-  // 🔹 REGISTER (Point d'entrée unique et robuste)
+  // 🔹 REGISTER
   // ---------------------------------------------------------
   async register(dto: RegisterDto) {
-    // 1. Vérif email
     const email = normalizeEmail(dto.email);
     const existingUser = await this.users.findByEmail(email);
     if (existingUser) {
       throw new ConflictException('Cet email est déjà utilisé.');
     }
 
-    // 2. Hash password
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    // 3. ✅ MAPPING INTELLIGENT DES RÔLES
-    // L'app mobile envoie peut-être encore "ADMIN" ou "USER" en string.
-    // On doit convertir ça en Enum Prisma compatible.
     let userRole: Role = Role.USER;
 
-    // Si le DTO demande "ADMIN", on lui donne le rôle "COMPANY_ADMIN"
     if ((dto.role as any) === 'ADMIN' || dto.role === 'COMPANY_ADMIN') {
         userRole = Role.COMPANY_ADMIN;
-    } 
-    // Si c'est SUPER_ADMIN (cas rare via API publique)
-    else if ((dto.role as any) === 'SUPER_ADMIN') {
+    } else if ((dto.role as any) === 'SUPER_ADMIN') {
         userRole = Role.SUPER_ADMIN;
-    } 
-    // Sinon par défaut USER
-    else {
+    } else {
         userRole = Role.USER;
     }
 
-    // 4. Client par défaut (DONIKO = 1)
-    const defaultClientId = 1;
+    // Par défaut on lie au client 1 (Doniko). 
+    // Pour un Super Admin sans client, on pourrait passer null ici si UsersService l'accepte.
+    const defaultClientId = 1; 
 
-    // 5. Création via UsersService
     const newUser = await this.users.create(
       email,
       hashedPassword,
-      userRole, // Ici on passe bien un Role Enum
+      userRole,
       defaultClientId,
       {
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
-        // On mappe les champs d'adresse correctement
-        addressStreet: dto.addressStreet || (dto as any).addressNumber, // Fallback si l'ancien champ est envoyé
+        addressStreet: dto.addressStreet || (dto as any).addressNumber,
         postalCode: dto.postalCode,
         city: dto.city,
         country: dto.country,
@@ -136,7 +125,6 @@ export class AuthService {
       },
     );
 
-    // 6. Connexion automatique
     return this.login({ email: dto.email, password: dto.password });
   }
 
@@ -153,8 +141,8 @@ export class AuthService {
       throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // Vérification Multi-tenant
-    if (typeof clientId === 'number' && user.clientId !== clientId) {
+    // Vérification Multi-tenant (seulement si user a un clientId)
+    if (typeof clientId === 'number' && user.clientId && user.clientId !== clientId) {
       throw new UnauthorizedException('Société invalide');
     }
 
@@ -162,7 +150,8 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
-      clientId: user.clientId,
+      // ✅ Si null, on envoie null explicitement
+      clientId: user.clientId ?? null, 
     };
 
     const accessToken = await this.jwt.signAsync(payload);
@@ -202,7 +191,6 @@ export class AuthService {
   // ✅ UPDATE PROFILE
   // ---------------------------------------------------------
   async updateProfile(userId: string, data: any): Promise<PublicUser> {
-    // 🔒 SÉCURITÉ : Nettoyage des champs interdits
     delete data.id;
     delete data.role;
     delete data.password;
@@ -210,7 +198,6 @@ export class AuthService {
     delete data.balance; 
     delete data.email;
 
-    // Mise à jour
     const updated = await this.prisma.user.update({
         where: { id: userId },
         data: { ...data }
@@ -219,8 +206,7 @@ export class AuthService {
     return toPublicUser(updated);
   }
 
-  // Ces méthodes sont gardées pour compatibilité si ton Controller les appelle encore,
-  // mais elles redirigent vers la méthode principale "register".
+  // Méthodes de compatibilité
   async registerUser(dto: RegisterDto, clientId: number) {
       return this.register({ ...dto, role: 'USER' } as any);
   }

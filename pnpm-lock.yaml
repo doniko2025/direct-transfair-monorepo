@@ -141,6 +141,9 @@ importers:
       '@radix-ui/react-tabs':
         specifier: ^1.1.12
         version: 1.1.13(@types/react-dom@19.1.11(@types/react@19.1.17))(@types/react@19.1.17)(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
+      '@react-native-async-storage/async-storage':
+        specifier: 2.2.0
+        version: 2.2.0(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))
       '@react-native-picker/picker':
         specifier: ^2.11.1
         version: 2.11.1(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)
@@ -174,6 +177,9 @@ importers:
       expo-constants:
         specifier: ^18.0.10
         version: 18.0.11(expo@54.0.27)(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))
+      expo-image-picker:
+        specifier: ~17.0.10
+        version: 17.0.10(expo@54.0.27)
       expo-linking:
         specifier: ^8.0.9
         version: 8.0.10(expo@54.0.27)(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)
@@ -1863,6 +1869,11 @@ packages:
       '@types/react':
         optional: true
 
+  '@react-native-async-storage/async-storage@2.2.0':
+    resolution: {integrity: sha512-gvRvjR5JAaUZF8tv2Kcq/Gbt3JHwbKFYfmb445rhOj6NUMx3qPLixmDx5pZAyb9at1bYvJ4/eTUipU5aki45xw==}
+    peerDependencies:
+      react-native: ^0.0.0-0 || >=0.65 <1.0
+
   '@react-native-picker/picker@2.11.1':
     resolution: {integrity: sha512-ThklnkK4fV3yynnIIRBkxxjxR4IFbdMNJVF6tlLdOJ/zEFUEFUEdXY0KmH0iYzMwY8W4/InWsLiA7AkpAbnexA==}
     peerDependencies:
@@ -3430,6 +3441,16 @@ packages:
       react: '*'
       react-native: '*'
 
+  expo-image-loader@6.0.0:
+    resolution: {integrity: sha512-nKs/xnOGw6ACb4g26xceBD57FKLFkSwEUTDXEDF3Gtcu3MqF3ZIYd3YM+sSb1/z9AKV1dYT7rMSGVNgsveXLIQ==}
+    peerDependencies:
+      expo: '*'
+
+  expo-image-picker@17.0.10:
+    resolution: {integrity: sha512-a2xrowp2trmvXyUWgX3O6Q2rZaa2C59AqivKI7+bm+wLvMfTEbZgldLX4rEJJhM8xtmEDTNU+lzjtObwzBRGaw==}
+    peerDependencies:
+      expo: '*'
+
   expo-keep-awake@15.0.8:
     resolution: {integrity: sha512-YK9M1VrnoH1vLJiQzChZgzDvVimVoriibiDIFLbQMpjYBnvyfUeHJcin/Gx1a+XgupNXy92EQJLgI/9ZuXajYQ==}
     peerDependencies:
@@ -3948,6 +3969,10 @@ packages:
     resolution: {integrity: sha512-yvkRyxmFKEOQ4pNXCmJG5AEQNlXJS5LaONXo5/cLdTZdWvsZ1ioJEonLGAosKlMWE8lwUy/bJzMjcw8az73+Fg==}
     engines: {node: '>=0.10.0'}
 
+  is-plain-obj@2.1.0:
+    resolution: {integrity: sha512-YWnfyRwxL/+SsrWYfOpUtz5b3YD+nyfkHvjbcanzk8zgyO4ASD67uVMRt8k5bM4lLMDnXfriRhOpemw+NfT1eA==}
+    engines: {node: '>=8'}
+
   is-stream@2.0.1:
     resolution: {integrity: sha512-hFoiJiTl63nn+kstHGBtewWSKnQLpyb155KHheA1l39uvtO9nWIop1p3udqPcUd/xbF1VLMO4n7OI6p7RbngDg==}
     engines: {node: '>=8'}
@@ -4441,6 +4466,10 @@ packages:
 
   merge-descriptors@1.0.3:
     resolution: {integrity: sha512-gaNvAS7TZ897/rVaZ0nMtAyxNyi/pdbjbAwUpFQpN70GqnVfOiXpeUUMKRBmzXaSQ8DdTX4/0ms62r2K+hE6mQ==}
+
+  merge-options@3.0.4:
+    resolution: {integrity: sha512-2Sug1+knBjkaMsMgf1ctR1Ujx+Ayku4EdJN4Z+C2+JzoeF7A3OZ9KM2GY0CpQS51NR61LTurMJrRKPhSs3ZRTQ==}
+    engines: {node: '>=10'}
 
   merge-stream@2.0.0:
     resolution: {integrity: sha512-abv/qOcuPfk3URPfDzmZU1LKmuw8kT+0nIHvKrKgFrwifol/doWcdA4ZqsWQ8ENrFKkd67Mfpo/LovbIUsbt3w==}
@@ -8107,6 +8136,11 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.1.17
 
+  '@react-native-async-storage/async-storage@2.2.0(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))':
+    dependencies:
+      merge-options: 3.0.4
+      react-native: 0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1)
+
   '@react-native-picker/picker@2.11.1(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)':
     dependencies:
       react: 19.2.1
@@ -9856,6 +9890,15 @@ snapshots:
       react: 19.2.1
       react-native: 0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1)
 
+  expo-image-loader@6.0.0(expo@54.0.27):
+    dependencies:
+      expo: 54.0.27(@babel/core@7.28.5)(@expo/metro-runtime@6.1.2)(expo-router@6.0.17)(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)
+
+  expo-image-picker@17.0.10(expo@54.0.27):
+    dependencies:
+      expo: 54.0.27(@babel/core@7.28.5)(@expo/metro-runtime@6.1.2)(expo-router@6.0.17)(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)
+      expo-image-loader: 6.0.0(expo@54.0.27)
+
   expo-keep-awake@15.0.8(expo@54.0.27)(react@19.2.1):
     dependencies:
       expo: 54.0.27(@babel/core@7.28.5)(@expo/metro-runtime@6.1.2)(expo-router@6.0.17)(react-native@0.82.1(@babel/core@7.28.5)(@types/react@19.1.17)(react@19.2.1))(react@19.2.1)
@@ -10486,6 +10529,8 @@ snapshots:
   is-number@7.0.0: {}
 
   is-plain-obj@1.1.0: {}
+
+  is-plain-obj@2.1.0: {}
 
   is-stream@2.0.1:
     optional: true
@@ -11208,6 +11253,10 @@ snapshots:
       yargs-parser: 20.2.9
 
   merge-descriptors@1.0.3: {}
+
+  merge-options@3.0.4:
+    dependencies:
+      is-plain-obj: 2.1.0
 
   merge-stream@2.0.0: {}
 

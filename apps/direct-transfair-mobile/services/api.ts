@@ -76,11 +76,15 @@ class API {
     );
   }
 
-  setToken(token: string) { this.token = token; }
+  // --- GESTION SESSION ---
+  setToken(token: string | null) { this.token = token; }
+  
+  // ✅ LA MÉTHODE QUI MANQUAIT
   clearToken() { this.token = null; }
+  
   setTenant(tenant: string) { this.tenant = tenant; }
 
-  // AUTH
+  // --- AUTH ---
   async register(data: RegisterPayload): Promise<void> {
     await this.http.post("/auth/register", data);
   }
@@ -103,7 +107,7 @@ class API {
     return res.data;
   }
 
-  // BÉNÉFICIAIRES
+  // --- BÉNÉFICIAIRES ---
   async getBeneficiaries(): Promise<Beneficiary[]> {
     const res = await this.http.get<Beneficiary[]>("/beneficiaries");
     return Array.isArray(res.data) ? res.data : [];
@@ -129,7 +133,7 @@ class API {
     return res.data;
   }
 
-  // TRANSACTIONS
+  // --- TRANSACTIONS ---
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> {
     const res = await this.http.post<Transaction>("/transactions", data);
     return res.data;
@@ -153,7 +157,7 @@ class API {
     return res.data;
   }
 
-  // GUICHET / AGENT
+  // --- GUICHET / AGENT ---
   async findTransactionByReference(reference: string): Promise<Transaction> {
     const all = await this.adminGetTransactions();
     const found = all.find(t => t.reference.trim().toUpperCase() === reference.trim().toUpperCase());
@@ -165,7 +169,7 @@ class API {
     return this.adminUpdateTransactionStatus(transactionId, "PAID");
   }
 
-  // PAIEMENTS & RETRAITS
+  // --- PAIEMENTS & RETRAITS ---
   async initiatePayment(data: InitiatePaymentPayload): Promise<unknown> {
     const res = await this.http.post("/payments/initiate", data);
     return res.data;
@@ -196,7 +200,7 @@ class API {
     return res.data;
   }
 
-  // TAUX DE CHANGE (ADMIN)
+  // --- TAUX DE CHANGE (ADMIN) ---
   async getExchangeRates(): Promise<{ pair: string; rate: number }[]> {
     const res = await this.http.get("/rates");
     return res.data;
@@ -206,18 +210,27 @@ class API {
     await this.http.post("/rates", { pair, rate });
   }
 
-  // ✅ SUPER ADMIN (CLIENTS / SOCIÉTÉS)
+  // --- CLIENTS / AGENCES (Super Admin) ---
   async getClients() {
     const response = await this.http.get("/clients");
     return response.data;
+  }
+
+  async getAgencies() {
+      return this.getClients();
   }
 
   async createClient(data: any) {
     const response = await this.http.post("/clients", data);
     return response.data;
   }
+  
+  // ✅ CORRECTION IMPORTANTE : Appel vers /agencies pour éviter les erreurs de validation Client
+  async createAgency(data: any) {
+      const response = await this.http.post("/agencies", data);
+      return response.data;
+  }
 
-  // ACTIONS ADMIN (Update, Delete, Status)
   async updateClient(id: number, data: any) {
     const response = await this.http.patch(`/clients/${id}`, data);
     return response.data;
@@ -233,7 +246,7 @@ class API {
     return response.data;
   }
 
-  // ✅ GESTION UTILISATEURS (Ce sont les méthodes qui manquaient !)
+  // --- USERS ---
   async getUsers() {
     const res = await this.http.get("/users");
     return res.data;

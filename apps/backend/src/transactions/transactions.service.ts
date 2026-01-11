@@ -51,6 +51,10 @@ export class TransactionsService {
     const user = await this.prisma.user.findUnique({ where: { id: senderId } });
     if (!user) throw new NotFoundException('User not found');
 
+    // ✅ CORRECTION : On vérifie que le user a bien un clientId
+    if (!user.clientId) {
+        throw new ForbiddenException('User must belong to a client/company to create transactions');
+    }
     const clientId = user.clientId;
 
     const beneficiary = await this.prisma.beneficiary.findFirst({
@@ -63,25 +67,20 @@ export class TransactionsService {
     }
 
     const amount = new Prisma.Decimal(dto.amount);
-    
-    // ✅ MODIFICATION : Frais à 1.5% (0.015)
     const fees = amount.mul(new Prisma.Decimal(0.015));
-    
-    // Le total est ce que l'utilisateur paie (Montant envoyé + Frais)
     const total = amount.plus(fees);
 
     const data: Prisma.TransactionUncheckedCreateInput = {
       reference: this.generateReference(),
-      amount, // Montant reçu par le bénéficiaire
-      fees,   // Frais gagnés par la plateforme
-      total,  // Montant débité au client
+      amount, 
+      fees,   
+      total,  
       currency: dto.currency,
       payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
       status: TransactionStatus.PENDING,
       senderId,
       beneficiaryId: beneficiary.id,
-      clientId,
-      // paymentMethod/provider/providerStatus ont des defaults Prisma
+      clientId, 
     };
 
     return this.prisma.transaction.create({ data });
@@ -105,8 +104,18 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new NotFoundException('Admin user not found');
 
+    // ✅ CORRECTION TYPESCRIPT : Gestion du clientId null
+    // Si c'est un Super Admin (pas de client), il voit TOUT (optionnel) ou RIEN (sécurité)
+    // Ici, on suppose qu'un admin sans client ne gère pas de transactions spécifiques.
+    if (!admin.clientId) {
+        // Option A : Retourner vide
+        return []; 
+        // Option B : Si Super Admin, retourner tout :
+        // if (admin.role === 'SUPER_ADMIN') return this.prisma.transaction.findMany(...)
+    }
+
     return this.prisma.transaction.findMany({
-      where: { clientId: admin.clientId },
+      where: { clientId: admin.clientId }, // TypeScript est content car on a vérifié !admin.clientId avant
       orderBy: { createdAt: 'desc' },
       include: { sender: true, beneficiary: true, client: true, withdrawal: true },
     });
@@ -121,6 +130,10 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new NotFoundException('Admin user not found');
 
+    if (!admin.clientId) {
+        throw new ForbiddenException("Cet admin n'est rattaché à aucune société.");
+    }
+
     const tx = await this.prisma.transaction.findFirst({
       where: { id, clientId: admin.clientId },
       include: { withdrawal: { select: { id: true, status: true } } },
@@ -132,18 +145,14 @@ export class TransactionsService {
 
     assertTxTransition(from, to);
 
-    // Règle: on ne peut pas annuler si un retrait existe déjà
     if (to === TransactionStatus.CANCELLED && tx.withdrawal?.id) {
       throw new ConflictException('Annulation interdite: un retrait existe déjà pour cette transaction');
     }
 
-    // Règles de “PAID” selon provider
     if (to === TransactionStatus.PAID) {
       if (from !== TransactionStatus.VALIDATED) {
         throw new BadRequestException('Marquage PAID interdit: la transaction doit être VALIDATED');
       }
-
-      // Orange Money: statut PAID doit provenir du flux paiement (provider SUCCESS)
       if (tx.provider === PaymentProvider.ORANGE_MONEY && tx.providerStatus !== ProviderStatus.SUCCESS) {
         throw new BadRequestException('Marquage PAID interdit: Orange Money doit être SUCCESS via le flux paiement');
       }
@@ -187,7 +196,6 @@ export class TransactionsService {
   }
 
   private generateReference(): string {
-    // Génère une référence simple (ex: TX-17099234-5678)
     const now = Date.now();
     const random = Math.floor(1000 + Math.random() * 9000);
     return `TX-${now}-${random}`;

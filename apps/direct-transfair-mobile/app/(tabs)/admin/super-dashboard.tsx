@@ -2,12 +2,17 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, Alert,
-  FlatList, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator
+  FlatList, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Switch
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from 'expo-image-picker'; 
 import { api } from "../../../services/api";
 import { colors } from "../../../theme/colors";
+
+const ACTIVITY_SECTORS = [
+    "Transfert d'argent", "Commerce Général", "Télécoms & Services", "Micro-Finance", "Transport & Logistique", "Autre"
+];
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
@@ -17,13 +22,21 @@ export default function SuperAdminDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
 
+  // --- ÉTATS FORMULAIRE ---
   const [form, setForm] = useState({
-    name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL",
+    name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL", status: "ACTIVE",
     email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "",
+    // Nouveaux champs
+    logoUrl: null as string | null,
+    ownerAddress: "", ownerBirthDate: "", ownerBirthPlace: "", ownerCountry: "",
+    contactPhone: "", activitySector: ACTIVITY_SECTORS[0]
   });
+
+  const [showActivityModal, setShowActivityModal] = useState(false);
 
   const loadClients = useCallback(async () => {
     try {
+      setLoading(true);
       const data = await api.getClients();
       setClients(data);
     } catch (e) {
@@ -49,10 +62,27 @@ export default function SuperAdminDashboard() {
     else Alert.alert("Info", msg);
   };
 
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!result.canceled) {
+      setForm({ ...form, logoUrl: result.assets[0].uri });
+    }
+  };
+
   const openCreateModal = () => {
     setIsEditing(false);
     setEditingId(null);
-    setForm({ name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL", email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "" });
+    setForm({ 
+        name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL", status: "ACTIVE",
+        email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "",
+        logoUrl: null, ownerAddress: "", ownerBirthDate: "", ownerBirthPlace: "", ownerCountry: "",
+        contactPhone: "", activitySector: ACTIVITY_SECTORS[0]
+    });
     setModalVisible(true);
   };
 
@@ -60,27 +90,83 @@ export default function SuperAdminDashboard() {
     setIsEditing(true);
     setEditingId(client.id);
     setForm({
-        name: client.name, code: client.code, primaryColor: client.primaryColor, subscriptionType: client.subscriptionType,
-        email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "" 
+        name: client.name, 
+        code: client.code, 
+        primaryColor: client.primaryColor || "#F7931E", 
+        subscriptionType: client.subscriptionType || "RENTAL",
+        // Mappe subscriptionStatus vers status pour le formulaire local
+        status: client.subscriptionStatus || client.status || "ACTIVE", 
+        email: client.email || "", 
+        adminFirstName: client.ownerFirstName || "", 
+        adminLastName: client.ownerLastName || "", 
+        adminEmail: client.contactEmail || "", 
+        adminPassword: "", 
+        logoUrl: client.logoUrl || null,
+        ownerAddress: client.ownerAddress || "",
+        ownerBirthDate: client.ownerBirthDate ? new Date(client.ownerBirthDate).toLocaleDateString('fr-FR') : "",
+        ownerBirthPlace: client.ownerBirthPlace || "",
+        ownerCountry: client.ownerCountry || "",
+        contactPhone: client.contactPhone || "",
+        activitySector: client.activitySector || ACTIVITY_SECTORS[0]
     });
     setModalVisible(true);
   };
 
+  // Convertisseur de date pour le backend
+  const formatDateForBackend = (dateStr: string) => {
+      if (!dateStr) return undefined;
+      const parts = dateStr.split('/');
+      if (parts.length === 3) {
+          return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])).toISOString();
+      }
+      return undefined; 
+  };
+
   const handleSave = async () => {
     if (!form.name || !form.code) { notify("Nom et Code requis"); return; }
+    
+    // Construction du payload propre
+    const isoDate = formatDateForBackend(form.ownerBirthDate);
+    
+    // ✅ CORRECTION ICI : On utilise 'subscriptionStatus' au lieu de 'status'
+    // car c'est le nom du champ dans ton schema.prisma
+    const payload: any = {
+        name: form.name, 
+        code: form.code, 
+        primaryColor: form.primaryColor, 
+        subscriptionType: form.subscriptionType,
+        subscriptionStatus: form.status, // <--- CHANGEMENT MAJEUR ICI (Rename status -> subscriptionStatus)
+        // Champs enrichis
+        logoUrl: form.logoUrl,
+        ownerFirstName: form.adminFirstName,
+        ownerLastName: form.adminLastName,
+        contactEmail: form.adminEmail,
+        contactPhone: form.contactPhone,
+        ownerAddress: form.ownerAddress,
+        ownerBirthPlace: form.ownerBirthPlace,
+        ownerCountry: form.ownerCountry,
+        activitySector: form.activitySector,
+    };
+
+    if (isoDate) payload.ownerBirthDate = isoDate;
+
     try {
         setLoading(true);
         if (isEditing && editingId) {
-            await api.updateClient(editingId, { name: form.name, code: form.code, primaryColor: form.primaryColor, subscriptionType: form.subscriptionType });
+            await api.updateClient(editingId, payload);
             notify("Société modifiée !");
         } else {
-            if (!form.adminEmail || !form.adminPassword) { notify("Admin requis pour création"); setLoading(false); return; }
-            await api.createClient(form);
+            // En création, on ajoute le mot de passe admin si fourni
+            if (form.adminPassword) payload.adminPassword = form.adminPassword;
+            if (!form.adminEmail && !isEditing) { notify("Email Admin requis"); setLoading(false); return; }
+            
+            await api.createClient(payload);
             notify("Société créée !");
         }
         setModalVisible(false);
         loadClients();
     } catch (e: any) {
+        console.error(e);
         notify("Erreur : " + (e.response?.data?.message || "Action impossible"));
     } finally {
         setLoading(false);
@@ -101,7 +187,8 @@ export default function SuperAdminDashboard() {
     confirmAction(`Changer statut de ${client.name} ?`, async () => {
         try {
             setLoading(true);
-            const newStatus = client.subscriptionStatus === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
+            const currentStatus = client.subscriptionStatus || client.status;
+            const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
             await api.updateClientStatus(client.id, newStatus);
             loadClients();
         } catch(e) { notify("Statut inchangé"); setLoading(false); }
@@ -109,21 +196,26 @@ export default function SuperAdminDashboard() {
   };
 
   const renderClientItem = ({ item }: { item: any }) => {
-    const isSuspended = item.subscriptionStatus === 'SUSPENDED';
+    // Lecture sécurisée du statut (soit status, soit subscriptionStatus)
+    const isActive = (item.subscriptionStatus === 'ACTIVE' || item.status === 'ACTIVE');
     return (
-        <View style={[styles.card, isSuspended && styles.cardSuspended]}>
+        <View style={[styles.card, !isActive && styles.cardSuspended]}>
           <View style={[styles.colorIndicator, { backgroundColor: item.primaryColor || '#999' }]} />
           <View style={{ flex: 1, paddingVertical: 4 }}>
             <Text style={styles.cardTitle}>{item.name}</Text>
             <Text style={styles.cardSubtitle}>Code: {item.code}</Text>
             <View style={{flexDirection:'row', alignItems:'center', marginTop:4, gap:6}}>
                  <View style={styles.tag}><Text style={styles.tagText}>{item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOC'}</Text></View>
-                 {isSuspended && <View style={[styles.tag, {backgroundColor:'#FEE2E2'}]}><Text style={[styles.tagText, {color:'#B91C1C'}]}>SUSPENDU</Text></View>}
+                 <View style={[styles.tag, isActive ? {backgroundColor:'#D1FAE5'} : {backgroundColor:'#FEE2E2'}]}>
+                     <Text style={[styles.tagText, isActive ? {color:'#065F46'} : {color:'#B91C1C'}]}>
+                         {isActive ? 'ACTIF' : 'INACTIF'}
+                     </Text>
+                 </View>
             </View>
           </View>
           <View style={styles.actions}>
             <TouchableOpacity onPress={() => openEditModal(item)} style={styles.actionBtn}><Ionicons name="pencil" size={20} color="#3B82F6" /></TouchableOpacity>
-            <TouchableOpacity onPress={() => handleToggleStatus(item)} style={styles.actionBtn}><Ionicons name={isSuspended ? "play" : "pause"} size={20} color={isSuspended ? "#10B981" : "#F59E0B"} /></TouchableOpacity>
+            <TouchableOpacity onPress={() => handleToggleStatus(item)} style={styles.actionBtn}><Ionicons name={isActive ? "pause" : "play"} size={20} color={isActive ? "#F59E0B" : "#10B981"} /></TouchableOpacity>
             <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionBtn}><Ionicons name="trash" size={20} color="#EF4444" /></TouchableOpacity>
           </View>
         </View>
@@ -139,7 +231,7 @@ export default function SuperAdminDashboard() {
       </View>
       <FlatList data={clients} keyExtractor={(item) => item.id.toString()} renderItem={renderClientItem} contentContainerStyle={styles.list} refreshing={loading} onRefresh={loadClients} ListEmptyComponent={<Text style={styles.emptyText}>Aucune société.</Text>} />
       
-      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" transparent={false}>
+      <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#FFF' }}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
               <View style={styles.modalHeader}>
@@ -147,29 +239,84 @@ export default function SuperAdminDashboard() {
                 <TouchableOpacity onPress={() => setModalVisible(false)}><Ionicons name="close" size={24} color="#333" /></TouchableOpacity>
               </View>
               <ScrollView contentContainerStyle={styles.formContainer}>
-                <Text style={styles.label}>Nom</Text><TextInput style={styles.input} value={form.name} onChangeText={t => setForm({...form, name: t})} />
-                <Text style={styles.label}>Code</Text><TextInput style={styles.input} value={form.code} onChangeText={t => setForm({...form, code: t})} />
+                
+                {/* LOGO */}
+                <View style={{alignItems:'center', marginBottom:15}}>
+                    <TouchableOpacity onPress={pickImage} style={styles.logoPlaceholder}>
+                        {form.logoUrl ? (
+                            <Image source={{ uri: form.logoUrl }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+                        ) : (
+                            <>
+                                <Ionicons name="camera-outline" size={30} color="#CCC" />
+                                <Text style={{color:'#999', fontSize:10, marginTop:5}}>Logo</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                </View>
+
+                <Text style={styles.label}>Nom Société</Text><TextInput style={styles.input} value={form.name} onChangeText={t => setForm({...form, name: t})} />
+                <Text style={styles.label}>Code Unique</Text><TextInput style={styles.input} value={form.code} onChangeText={t => setForm({...form, code: t})} />
                 <Text style={styles.label}>Couleur (Hex)</Text><TextInput style={styles.input} value={form.primaryColor} onChangeText={t => setForm({...form, primaryColor: t})} />
-                <Text style={styles.label}>Type</Text>
+                
+                <Text style={styles.label}>Type & Statut</Text>
                 <View style={styles.row}>
                     <TouchableOpacity style={[styles.radioBtn, form.subscriptionType === 'RENTAL' && styles.radioBtnActive]} onPress={() => setForm({...form, subscriptionType: 'RENTAL'})}><Text style={[styles.radioText, form.subscriptionType === 'RENTAL' && styles.radioTextActive]}>Location</Text></TouchableOpacity>
                     <TouchableOpacity style={[styles.radioBtn, form.subscriptionType === 'PURCHASE' && styles.radioBtnActive]} onPress={() => setForm({...form, subscriptionType: 'PURCHASE'})}><Text style={[styles.radioText, form.subscriptionType === 'PURCHASE' && styles.radioTextActive]}>Achat</Text></TouchableOpacity>
                 </View>
+                <View style={[styles.row, {marginTop:10, alignItems:'center', justifyContent:'space-between', backgroundColor:'#F9FAFB', padding:10, borderRadius:8}]}>
+                    <Text style={{fontWeight:'600', color: form.status === 'ACTIVE' ? '#10B981' : '#F59E0B'}}>{form.status === 'ACTIVE' ? 'COMPTE ACTIF' : 'INACTIF'}</Text>
+                    <Switch value={form.status === 'ACTIVE'} onValueChange={v => setForm({...form, status: v ? 'ACTIVE' : 'INACTIVE'})} trackColor={{false: '#EEE', true: '#10B981'}} />
+                </View>
+
+                <View style={styles.separator} />
+                <Text style={styles.sectionHeader}>Infos Demandeur (Admin)</Text>
+                
+                <View style={styles.row}>
+                    <View style={{flex:1}}><Text style={styles.label}>Prénom</Text><TextInput style={styles.input} value={form.adminFirstName} onChangeText={t => setForm({...form, adminFirstName: t})} /></View>
+                    <View style={{flex:1}}><Text style={styles.label}>Nom</Text><TextInput style={styles.input} value={form.adminLastName} onChangeText={t => setForm({...form, adminLastName: t})} /></View>
+                </View>
+
+                <Text style={styles.label}>Secteur Activité</Text>
+                <TouchableOpacity style={[styles.input, {justifyContent:'center'}]} onPress={() => setShowActivityModal(true)}>
+                    <Text>{form.activitySector}</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.label}>Téléphone</Text><TextInput style={styles.input} keyboardType="phone-pad" value={form.contactPhone} onChangeText={t => setForm({...form, contactPhone: t})} />
+                <Text style={styles.label}>Email</Text><TextInput style={styles.input} keyboardType="email-address" autoCapitalize="none" value={form.adminEmail} onChangeText={t => setForm({...form, adminEmail: t})} />
+                
                 {!isEditing && (
-                    <>
-                        <View style={styles.separator} />
-                        <Text style={styles.sectionHeader}>Admin</Text>
-                        <TextInput style={styles.input} placeholder="Prénom" value={form.adminFirstName} onChangeText={t => setForm({...form, adminFirstName: t})} />
-                        <TextInput style={[styles.input, {marginTop:10}]} placeholder="Nom" value={form.adminLastName} onChangeText={t => setForm({...form, adminLastName: t})} />
-                        <TextInput style={[styles.input, {marginTop:10}]} placeholder="Email" value={form.adminEmail} onChangeText={t => setForm({...form, adminEmail: t})} />
-                        <TextInput style={[styles.input, {marginTop:10}]} placeholder="Mot de passe" secureTextEntry value={form.adminPassword} onChangeText={t => setForm({...form, adminPassword: t})} />
-                    </>
+                    <><Text style={styles.label}>Mot de passe</Text><TextInput style={styles.input} secureTextEntry value={form.adminPassword} onChangeText={t => setForm({...form, adminPassword: t})} /></>
                 )}
+
+                <View style={styles.row}>
+                    <View style={{flex:1}}><Text style={styles.label}>Date Naissance</Text><TextInput style={styles.input} placeholder="JJ/MM/AAAA" value={form.ownerBirthDate} onChangeText={t => setForm({...form, ownerBirthDate: t})} /></View>
+                    <View style={{flex:1}}><Text style={styles.label}>Lieu</Text><TextInput style={styles.input} value={form.ownerBirthPlace} onChangeText={t => setForm({...form, ownerBirthPlace: t})} /></View>
+                </View>
+
+                <Text style={styles.label}>Pays de Résidence</Text><TextInput style={styles.input} value={form.ownerCountry} onChangeText={t => setForm({...form, ownerCountry: t})} />
+                <Text style={styles.label}>Adresse Complète</Text><TextInput style={styles.input} multiline value={form.ownerAddress} onChangeText={t => setForm({...form, ownerAddress: t})} />
+
                 <TouchableOpacity style={styles.submitBtn} onPress={handleSave}><Text style={styles.submitText}>ENREGISTRER</Text></TouchableOpacity>
                 <View style={{height: 50}} />
               </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
+
+        {/* Modale Activité */}
+        <Modal visible={showActivityModal} transparent animationType="fade">
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalSmall}>
+                    <Text style={{fontWeight:'bold', fontSize:16, marginBottom:10}}>Choisir une activité</Text>
+                    <FlatList data={ACTIVITY_SECTORS} keyExtractor={item => item} renderItem={({item}) => (
+                        <TouchableOpacity style={{paddingVertical:12, borderBottomWidth:1, borderColor:'#EEE'}} onPress={() => {setForm({...form, activitySector: item}); setShowActivityModal(false)}}>
+                            <Text>{item}</Text>
+                        </TouchableOpacity>
+                    )}/>
+                    <TouchableOpacity style={{marginTop:10, alignSelf:'flex-end'}} onPress={() => setShowActivityModal(false)}><Text style={{color:'red'}}>Fermer</Text></TouchableOpacity>
+                </View>
+            </View>
+        </Modal>
+
       </Modal>
       {loading && <View style={styles.loaderOverlay}><ActivityIndicator size="large" color="#FFF" /></View>}
     </SafeAreaView>
@@ -200,5 +347,8 @@ const styles = StyleSheet.create({
   radioTextActive: { color: '#FFF' },
   submitBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 30 },
   submitText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
-  loaderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 999 }
+  loaderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  logoPlaceholder: { width:80, height:80, borderRadius:40, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', borderWidth:1, borderColor:'#E5E7EB', borderStyle:'dashed', overflow: 'hidden' },
+  modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding:30 },
+  modalSmall: { backgroundColor:'#FFF', borderRadius:12, padding:20 }
 });
