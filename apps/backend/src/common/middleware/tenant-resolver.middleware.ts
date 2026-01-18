@@ -39,12 +39,35 @@ export class TenantResolverMiddleware implements NestMiddleware {
     const platformDbUrl = this.config.get<string>('DATABASE_URL_PLATFORM')?.trim();
     const defaultDbUrl = this.config.get<string>('DATABASE_URL')?.trim();
 
+    const attach = (ctx: TenantContext) => {
+      req.tenantCode = tenantCode;
+      req.tenantContext = ctx;
+      next();
+    };
+
+    // Helper: resolve clientId in single-db mode (Client table exists in DATABASE_URL)
+    const resolveClientIdSingleDb = async (): Promise<number> => {
+      if (!defaultDbUrl) throw new UnauthorizedException('Missing DATABASE_URL');
+      const prisma = this.prismaManager.getClient({
+        tenantCode: '__SINGLE__',
+        databaseUrl: defaultDbUrl,
+      });
+
+      const client = await prisma.client.findUnique({
+        where: { code: tenantCode },
+        select: { id: true },
+      });
+
+      if (!client) throw new UnauthorizedException(`Unknown tenant: ${tenantCode}`);
+      return client.id;
+    };
+
     // ==========================================================
     // PHASE 2 — platform DB active => resolve tenant registry
+    // (avec fallback Phase 1 si tenant absent en platform)
     // ==========================================================
     if (platformDbUrl) {
       void (async () => {
-        // Connexion lazy (ne bloque pas le boot)
         await this.platform.connect();
 
         const tenant = await this.platform.tenant.findUnique({
@@ -52,14 +75,28 @@ export class TenantResolverMiddleware implements NestMiddleware {
           select: { code: true, databaseUrl: true, isActive: true },
         });
 
+        // --- FALLBACK: si platform ne connaît pas le tenant, on tente Phase 1 (Client table)
+        // Cela évite le 401 "Unknown or inactive tenant" quand tu es encore en single-db
+        // mais que DATABASE_URL_PLATFORM est configuré.
         if (!tenant || !tenant.isActive) {
-          throw new UnauthorizedException(`Unknown or inactive tenant: ${tenantCode}`);
+          // Phase 1 fallback
+          const clientId = await resolveClientIdSingleDb();
+
+          const ctx: TenantContext = {
+            code: tenantCode,
+            clientId,
+            databaseUrl: defaultDbUrl!, // safe: resolveClientIdSingleDb() a validé
+            mode: 'single-db',
+          };
+
+          attach(ctx);
+          return;
         }
 
         // Priorité aux overrides locaux (pratique en dev)
         const overrideUrl = this.config.get<string>(`DATABASE_URL__${tenantCode}`)?.trim();
 
-        const tenantDbUrl = overrideUrl || tenant.databaseUrl || defaultDbUrl;
+        const tenantDbUrl = (overrideUrl || tenant.databaseUrl || defaultDbUrl)?.trim();
         if (!tenantDbUrl) {
           throw new UnauthorizedException(`Missing database URL for tenant ${tenantCode}`);
         }
@@ -67,19 +104,18 @@ export class TenantResolverMiddleware implements NestMiddleware {
         const mode: TenantContext['mode'] =
           defaultDbUrl && tenantDbUrl === defaultDbUrl ? 'single-db' : 'multi-db';
 
+        // En single-db: on récupère le vrai clientId depuis Client (évite le "1" en dur)
+        // En multi-db: clientId n'est pas fiable globalement => 0
+        const clientId = mode === 'single-db' ? await resolveClientIdSingleDb() : 0;
+
         const ctx: TenantContext = {
           code: tenantCode,
-          // En multi-db, le clientId n'est pas fiable globalement => on met 0
-          // (et ton JwtAuthGuard ne fera pas de "tenant mismatch" sur clientId)
-          clientId: mode === 'multi-db' ? 0 : 1,
+          clientId,
           databaseUrl: tenantDbUrl,
           mode,
         };
 
-        req.tenantCode = tenantCode;
-        req.tenantContext = ctx;
-
-        next();
+        attach(ctx);
       })().catch((err) => next(err));
 
       return;
@@ -93,32 +129,17 @@ export class TenantResolverMiddleware implements NestMiddleware {
       return;
     }
 
-    const prisma = this.prismaManager.getClient({
-      tenantCode: '__SINGLE__',
-      databaseUrl: defaultDbUrl,
-    });
-
     void (async () => {
-      const client = await prisma.client.findUnique({
-        where: { code: tenantCode },
-        select: { id: true },
-      });
-
-      if (!client) {
-        throw new UnauthorizedException(`Unknown tenant: ${tenantCode}`);
-      }
+      const clientId = await resolveClientIdSingleDb();
 
       const ctx: TenantContext = {
         code: tenantCode,
-        clientId: client.id,
+        clientId,
         databaseUrl: defaultDbUrl,
         mode: 'single-db',
       };
 
-      req.tenantCode = tenantCode;
-      req.tenantContext = ctx;
-
-      next();
+      attach(ctx);
     })().catch((err) => next(err));
   }
 }

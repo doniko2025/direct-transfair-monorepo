@@ -4,31 +4,33 @@ import { IsEmail, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 export class CreateAgencyDto {
   @IsNotEmpty()
   @IsString()
-  name: string;
+  name!: string;
 
   @IsNotEmpty()
   @IsString()
-  city: string;
+  city!: string;
 
   @IsNotEmpty()
   @IsString()
-  address: string;
+  address!: string;
 
-  @IsNotEmpty()
+  // Prisma: phone est optionnel, donc DTO doit tolérer.
+  @IsOptional()
   @IsString()
-  phone: string;
+  phone?: string;
 
   @IsNotEmpty()
   @IsEmail()
-  email: string; // Email de l'agent guichetier
+  email!: string;
+
+  // ✅ CHAMPS REQUIS pour la création de l'agent
+  @IsOptional()
+  @IsString()
+  country?: string;
 
   @IsOptional()
   @IsString()
-  adminPassword?: string; // Mot de passe de l'agent (facultatif)
-
-  @IsOptional()
-  @IsString()
-  managerName?: string; // Nom complet du gérant pour créer l'agent
+  managerName?: string;
 
   @IsOptional()
   @IsString()
@@ -37,4 +39,21 @@ export class CreateAgencyDto {
   @IsOptional()
   @IsString()
   adminLastName?: string;
+
+  @IsOptional()
+  @IsString()
+  adminPassword?: string;
+
+  // ✅ CHAMPS TOLÉRÉS (envoyés par le front mais ignorés ou gérés ailleurs)
+  @IsOptional()
+  @IsString()
+  code?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  subscriptionType?: string;
 }

@@ -6,8 +6,8 @@ import axios, {
 } from "axios";
 import { Platform } from "react-native";
 
-// ⚠️ CHANGE CECI si tu testes sur un VRAI téléphone
-const LOCAL_IP = "localhost"; 
+// ⚠️ Adaptez l'IP si besoin
+const LOCAL_IP = "localhost";
 
 import type {
   LoginPayload,
@@ -21,6 +21,8 @@ import type {
   CreateWithdrawalPayload,
   UpdateWithdrawalStatusPayload,
   AuthUser,
+  Agency,
+  CreateAgencyPayload,
 } from "./types";
 
 function getBaseUrl(): string {
@@ -28,7 +30,7 @@ function getBaseUrl(): string {
   if (envUrl && envUrl.trim().length > 0) return envUrl.trim();
 
   if (Platform.OS === "android") {
-     return "http://10.0.2.2:3000"; 
+    return "http://10.0.2.2:3000";
   }
 
   return `http://${LOCAL_IP}:3000`;
@@ -44,7 +46,7 @@ function ensureAxiosHeaders(
 class API {
   private http: AxiosInstance;
   private token: string | null = null;
-  private tenant = "DONIKO"; // Par défaut
+  private tenant = "DONIKO";
 
   constructor() {
     this.http = axios.create({
@@ -67,9 +69,11 @@ class API {
       (response) => response,
       (error) => {
         if (error.response) {
-            console.error(`[API Error] ${error.response.status} - ${error.response.config.url}`);
+          console.error(
+            `[API Error] ${error.response.status} - ${error.response.config.url}`
+          );
         } else {
-            console.error(`[API Error] Network Error - ${error.message}`);
+          console.error(`[API Error] Network Error - ${error.message}`);
         }
         return Promise.reject(error);
       }
@@ -77,12 +81,15 @@ class API {
   }
 
   // --- GESTION SESSION ---
-  setToken(token: string | null) { this.token = token; }
-  
-  // ✅ LA MÉTHODE QUI MANQUAIT
-  clearToken() { this.token = null; }
-  
-  setTenant(tenant: string) { this.tenant = tenant; }
+  setToken(token: string | null) {
+    this.token = token;
+  }
+  clearToken() {
+    this.token = null;
+  }
+  setTenant(tenant: string) {
+    this.tenant = tenant;
+  }
 
   // --- AUTH ---
   async register(data: RegisterPayload): Promise<void> {
@@ -90,9 +97,7 @@ class API {
   }
 
   async login(data: LoginPayload, tenantCode?: string): Promise<LoginResponse> {
-    if (tenantCode) {
-        this.setTenant(tenantCode);
-    }
+    if (tenantCode) this.setTenant(tenantCode);
     const res = await this.http.post<LoginResponse>("/auth/login", data);
     return res.data;
   }
@@ -113,7 +118,9 @@ class API {
     return Array.isArray(res.data) ? res.data : [];
   }
 
-  async createBeneficiary(data: CreateBeneficiaryPayload): Promise<Beneficiary> {
+  async createBeneficiary(
+    data: CreateBeneficiaryPayload
+  ): Promise<Beneficiary> {
     const res = await this.http.post<Beneficiary>("/beneficiaries", data);
     return res.data;
   }
@@ -123,13 +130,23 @@ class API {
     return res.data;
   }
 
-  async updateBeneficiary(id: string, data: Partial<CreateBeneficiaryPayload>): Promise<Beneficiary> {
-    const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}`, data);
+  async updateBeneficiary(
+    id: string,
+    data: Partial<CreateBeneficiaryPayload>
+  ): Promise<Beneficiary> {
+    const res = await this.http.patch<Beneficiary>(
+      `/beneficiaries/${id}`,
+      data
+    );
     return res.data;
   }
 
-  async deleteBeneficiary(id: string): Promise<{ deleted: true; id: string }> {
-    const res = await this.http.delete<{ deleted: true; id: string }>(`/beneficiaries/${id}`);
+  async deleteBeneficiary(
+    id: string
+  ): Promise<{ deleted: true; id: string }> {
+    const res = await this.http.delete<{ deleted: true; id: string }>(
+      `/beneficiaries/${id}`
+    );
     return res.data;
   }
 
@@ -149,7 +166,10 @@ class API {
     return Array.isArray(res.data) ? res.data : [];
   }
 
-  async adminUpdateTransactionStatus(id: string, status: string): Promise<Transaction> {
+  async adminUpdateTransactionStatus(
+    id: string,
+    status: string
+  ): Promise<Transaction> {
     const res = await this.http.patch<Transaction>(
       `/transactions/admin/status/${id}`,
       { status }
@@ -157,10 +177,12 @@ class API {
     return res.data;
   }
 
-  // --- GUICHET / AGENT ---
   async findTransactionByReference(reference: string): Promise<Transaction> {
     const all = await this.adminGetTransactions();
-    const found = all.find(t => t.reference.trim().toUpperCase() === reference.trim().toUpperCase());
+    const found = all.find(
+      (t) =>
+        t.reference.trim().toUpperCase() === reference.trim().toUpperCase()
+    );
     if (!found) throw new Error("Transaction introuvable");
     return found;
   }
@@ -195,12 +217,15 @@ class API {
     return res.data;
   }
 
-  async adminUpdateWithdrawal(id: string, payload: UpdateWithdrawalStatusPayload): Promise<unknown> {
+  async adminUpdateWithdrawal(
+    id: string,
+    payload: UpdateWithdrawalStatusPayload
+  ): Promise<unknown> {
     const res = await this.http.patch(`/admin/withdrawals/${id}`, payload);
     return res.data;
   }
 
-  // --- TAUX DE CHANGE (ADMIN) ---
+  // --- TAUX DE CHANGE ---
   async getExchangeRates(): Promise<{ pair: string; rate: number }[]> {
     const res = await this.http.get("/rates");
     return res.data;
@@ -210,25 +235,15 @@ class API {
     await this.http.post("/rates", { pair, rate });
   }
 
-  // --- CLIENTS / AGENCES (Super Admin) ---
+  // --- CLIENTS (SOCIÉTÉS) ---
   async getClients() {
     const response = await this.http.get("/clients");
     return response.data;
   }
 
-  async getAgencies() {
-      return this.getClients();
-  }
-
   async createClient(data: any) {
     const response = await this.http.post("/clients", data);
     return response.data;
-  }
-  
-  // ✅ CORRECTION IMPORTANTE : Appel vers /agencies pour éviter les erreurs de validation Client
-  async createAgency(data: any) {
-      const response = await this.http.post("/agencies", data);
-      return response.data;
   }
 
   async updateClient(id: number, data: any) {
@@ -236,13 +251,24 @@ class API {
     return response.data;
   }
 
-  async deleteClient(id: number) { 
+  async deleteClient(id: number) {
     const response = await this.http.delete(`/clients/${id}`);
     return response.data;
   }
-  
-  async updateClientStatus(id: number, status: string) { 
-    const response = await this.http.patch(`/clients/${id}/status`, { status }); 
+
+  async updateClientStatus(id: number, status: string) {
+    const response = await this.http.patch(`/clients/${id}/status`, { status });
+    return response.data;
+  }
+
+  // --- AGENCES ---
+  async getAgencies(): Promise<Agency[]> {
+    const response = await this.http.get<Agency[]>("/agencies");
+    return Array.isArray(response.data) ? response.data : [];
+  }
+
+  async createAgency(data: CreateAgencyPayload): Promise<unknown> {
+    const response = await this.http.post("/agencies", data);
     return response.data;
   }
 

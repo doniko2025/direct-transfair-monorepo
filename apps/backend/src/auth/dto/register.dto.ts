@@ -1,15 +1,20 @@
-// src/auth/dto/register.dto.ts
+// apps/backend/src/auth/dto/register.dto.ts
 import {
   IsEmail,
   IsNotEmpty,
   IsOptional,
   IsString,
   MinLength,
-  IsEnum, // ✅ Ajout
+  IsEnum,
 } from 'class-validator';
-import { Role } from '@prisma/client'; // ✅ Import Prisma
+import { Role } from '@prisma/client';
 
 export class RegisterDto {
+  // 🔹 Code Société (Pour s'inscrire dans un Tenant spécifique)
+  @IsString()
+  @IsOptional()
+  tenantCode?: string;
+
   // 🔹 Identité
   @IsString()
   @IsNotEmpty()
@@ -28,7 +33,6 @@ export class RegisterDto {
   @MinLength(6)
   password: string;
 
-  // ✅ 🔹 Rôle (optionnel, par défaut USER)
   @IsOptional()
   @IsEnum(Role)
   role?: Role;
@@ -38,7 +42,15 @@ export class RegisterDto {
   @IsOptional()
   phone?: string;
 
-  // 🔹 Adresse (Mise à jour SaaS)
+  // 🔹 Adresse & Lieu
+  @IsString()
+  @IsOptional()
+  country?: string; // Pays de résidence
+
+  @IsString()
+  @IsOptional()
+  city?: string;    // Ville de résidence
+
   @IsString()
   @IsOptional()
   addressStreet?: string;
@@ -47,24 +59,24 @@ export class RegisterDto {
   @IsOptional()
   postalCode?: string;
 
-  @IsString()
-  @IsOptional()
-  city?: string;
-
-  @IsString()
-  @IsOptional()
-  country?: string;
-
-  // 🔹 Infos KYC
+  // 🔹 KYC / État Civil
   @IsString()
   @IsOptional()
   nationality?: string;
 
   @IsString()
   @IsOptional()
-  birthDate?: string;
+  birthDate?: string;    // ISO Date ou String
 
   @IsString()
   @IsOptional()
-  birthPlace?: string;
+  birthCountry?: string; // ✅ Nouveau
+
+  @IsString()
+  @IsOptional()
+  birthCity?: string;    // ✅ Nouveau
+
+  @IsString()
+  @IsOptional()
+  birthPlace?: string;   // (Garder pour compatibilité)
 }

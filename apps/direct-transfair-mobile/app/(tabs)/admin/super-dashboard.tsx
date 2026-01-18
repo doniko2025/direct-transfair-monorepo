@@ -1,14 +1,15 @@
 //apps/direct-transfair-mobile/app/(tabs)/admin/super-dashboard.tsx
 import React, { useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Modal, Alert,
-  FlatList, SafeAreaView, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Switch
+import { 
+  View, Text, StyleSheet, TextInput, Pressable, ScrollView, 
+  Switch, Modal, FlatList, TouchableOpacity, Alert, SafeAreaView, ActivityIndicator, Image, Platform,
+  KeyboardAvoidingView // ✅ AJOUT DE L'IMPORT MANQUANT
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from 'expo-image-picker'; 
-import { api } from "../../../services/api";
 import { colors } from "../../../theme/colors";
+import { api } from "../../../services/api";
 
 const ACTIVITY_SECTORS = [
     "Transfert d'argent", "Commerce Général", "Télécoms & Services", "Micro-Finance", "Transport & Logistique", "Autre"
@@ -18,48 +19,45 @@ export default function SuperAdminDashboard() {
   const router = useRouter();
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // --- ÉTATS FORMULAIRE ---
-  const [form, setForm] = useState({
-    name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL", status: "ACTIVE",
-    email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "",
-    // Nouveaux champs
-    logoUrl: null as string | null,
-    ownerAddress: "", ownerBirthDate: "", ownerBirthPlace: "", ownerCountry: "",
-    contactPhone: "", activitySector: ACTIVITY_SECTORS[0]
-  });
+  // --- ÉTATS MODALE ---
+  const [modalVisible, setModalVisible] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+
+  // Champs Formulaire
+  const [logo, setLogo] = useState<string | null>(null); 
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [color, setColor] = useState("#F59E0B");
+  const [contractType, setContractType] = useState<'RENT' | 'BUY'>('RENT');
+  const [isActive, setIsActive] = useState(false);
+
+  // Champs Demandeur (Admin)
+  const [ownerFirstName, setOwnerFirstName] = useState("");
+  const [ownerLastName, setOwnerLastName] = useState("");
+  const [ownerAddress, setOwnerAddress] = useState("");
+  const [ownerBirthDate, setOwnerBirthDate] = useState("");
+  const [ownerBirthPlace, setOwnerBirthPlace] = useState("");
+  const [ownerCountry, setOwnerCountry] = useState(""); 
+  const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [activitySector, setActivitySector] = useState(ACTIVITY_SECTORS[0]);
+  
+  // Champ Mot de passe (Uniquement pour la création)
+  const [adminPassword, setAdminPassword] = useState("");
 
   const [showActivityModal, setShowActivityModal] = useState(false);
 
-  const loadClients = useCallback(async () => {
+  useFocusEffect(useCallback(() => { loadClients(); }, []));
+
+  const loadClients = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const data = await api.getClients();
-      setClients(data);
-    } catch (e) {
-      console.log("Erreur loading", e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(useCallback(() => { loadClients(); }, [loadClients]));
-
-  // --- ACTIONS ---
-  const confirmAction = (msg: string, action: () => void) => {
-    if (Platform.OS === 'web') {
-        if (window.confirm(msg)) action();
-    } else {
-        Alert.alert("Confirmation", msg, [{ text: "Annuler", style: "cancel" }, { text: "Oui", onPress: action }]);
-    }
-  };
-
-  const notify = (msg: string) => {
-    if (Platform.OS === 'web') window.alert(msg);
-    else Alert.alert("Info", msg);
+        const data = await api.getClients();
+        if (Array.isArray(data)) setClients(data);
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const pickImage = async () => {
@@ -70,49 +68,58 @@ export default function SuperAdminDashboard() {
       quality: 0.5,
     });
     if (!result.canceled) {
-      setForm({ ...form, logoUrl: result.assets[0].uri });
+      setLogo(result.assets[0].uri);
     }
   };
 
-  const openCreateModal = () => {
-    setIsEditing(false);
-    setEditingId(null);
-    setForm({ 
-        name: "", code: "", primaryColor: "#F7931E", subscriptionType: "RENTAL", status: "ACTIVE",
-        email: "", adminFirstName: "", adminLastName: "", adminEmail: "", adminPassword: "",
-        logoUrl: null, ownerAddress: "", ownerBirthDate: "", ownerBirthPlace: "", ownerCountry: "",
-        contactPhone: "", activitySector: ACTIVITY_SECTORS[0]
-    });
-    setModalVisible(true);
+  const showUniversalAlert = (title: string, msg: string) => {
+      if (Platform.OS === 'web') {
+          window.alert(`${title}\n${msg}`);
+      } else {
+          Alert.alert(title, msg);
+      }
   };
 
-  const openEditModal = (client: any) => {
-    setIsEditing(true);
-    setEditingId(client.id);
-    setForm({
-        name: client.name, 
-        code: client.code, 
-        primaryColor: client.primaryColor || "#F7931E", 
-        subscriptionType: client.subscriptionType || "RENTAL",
-        // Mappe subscriptionStatus vers status pour le formulaire local
-        status: client.subscriptionStatus || client.status || "ACTIVE", 
-        email: client.email || "", 
-        adminFirstName: client.ownerFirstName || "", 
-        adminLastName: client.ownerLastName || "", 
-        adminEmail: client.contactEmail || "", 
-        adminPassword: "", 
-        logoUrl: client.logoUrl || null,
-        ownerAddress: client.ownerAddress || "",
-        ownerBirthDate: client.ownerBirthDate ? new Date(client.ownerBirthDate).toLocaleDateString('fr-FR') : "",
-        ownerBirthPlace: client.ownerBirthPlace || "",
-        ownerCountry: client.ownerCountry || "",
-        contactPhone: client.contactPhone || "",
-        activitySector: client.activitySector || ACTIVITY_SECTORS[0]
-    });
-    setModalVisible(true);
+  const openModal = (client?: any) => {
+      if (client) {
+          setIsEditMode(true);
+          setSelectedClientId(client.id);
+          setName(client.name);
+          setCode(client.code);
+          setColor(client.primaryColor || "#F59E0B");
+          setContractType(client.subscriptionType === 'PURCHASE' ? 'BUY' : 'RENT'); 
+          setIsActive(client.subscriptionStatus === 'ACTIVE');
+          setLogo(client.logoUrl || null);
+          
+          // Mapping des infos existantes
+          setOwnerFirstName(client.ownerFirstName || "");
+          setOwnerLastName(client.ownerLastName || "");
+          setContactPhone(client.contactPhone || "");
+          setContactEmail(client.contactEmail || client.email || ""); 
+          setOwnerCountry(client.ownerCountry || ""); 
+          setOwnerAddress(client.ownerAddress || client.address || "");
+          setOwnerBirthDate(client.ownerBirthDate ? new Date(client.ownerBirthDate).toLocaleDateString('fr-FR') : "");
+          setOwnerBirthPlace(client.ownerBirthPlace || "");
+          setActivitySector(client.activitySector || ACTIVITY_SECTORS[0]);
+          setAdminPassword(""); 
+      } else {
+          setIsEditMode(false);
+          setSelectedClientId(null);
+          resetForm();
+          setCode("SOC" + Math.floor(Math.random() * 10000));
+          // Mot de passe par défaut généré
+          setAdminPassword("Pass" + Math.floor(1000 + Math.random() * 9000));
+      }
+      setModalVisible(true);
   };
 
-  // Convertisseur de date pour le backend
+  const resetForm = () => {
+      setName(""); setCode(""); setColor("#F59E0B"); setIsActive(false); setLogo(null);
+      setOwnerFirstName(""); setOwnerLastName(""); setOwnerAddress("");
+      setContactPhone(""); setContactEmail(""); setOwnerCountry("");
+      setOwnerBirthDate(""); setOwnerBirthPlace(""); setAdminPassword("");
+  };
+
   const formatDateForBackend = (dateStr: string) => {
       if (!dateStr) return undefined;
       const parts = dateStr.split('/');
@@ -123,232 +130,343 @@ export default function SuperAdminDashboard() {
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.code) { notify("Nom et Code requis"); return; }
-    
-    // Construction du payload propre
-    const isoDate = formatDateForBackend(form.ownerBirthDate);
-    
-    // ✅ CORRECTION ICI : On utilise 'subscriptionStatus' au lieu de 'status'
-    // car c'est le nom du champ dans ton schema.prisma
-    const payload: any = {
-        name: form.name, 
-        code: form.code, 
-        primaryColor: form.primaryColor, 
-        subscriptionType: form.subscriptionType,
-        subscriptionStatus: form.status, // <--- CHANGEMENT MAJEUR ICI (Rename status -> subscriptionStatus)
-        // Champs enrichis
-        logoUrl: form.logoUrl,
-        ownerFirstName: form.adminFirstName,
-        ownerLastName: form.adminLastName,
-        contactEmail: form.adminEmail,
-        contactPhone: form.contactPhone,
-        ownerAddress: form.ownerAddress,
-        ownerBirthPlace: form.ownerBirthPlace,
-        ownerCountry: form.ownerCountry,
-        activitySector: form.activitySector,
-    };
+      if (!name || !code) {
+          showUniversalAlert("Erreur", "Le nom et le code société sont obligatoires.");
+          return;
+      }
+      
+      // Validation Email Admin en création
+      if (!isEditMode && !contactEmail) {
+          showUniversalAlert("Erreur", "L'email du demandeur (Admin) est obligatoire.");
+          return;
+      }
 
-    if (isoDate) payload.ownerBirthDate = isoDate;
+      setSubmitting(true);
 
-    try {
-        setLoading(true);
-        if (isEditing && editingId) {
-            await api.updateClient(editingId, payload);
-            notify("Société modifiée !");
-        } else {
-            // En création, on ajoute le mot de passe admin si fourni
-            if (form.adminPassword) payload.adminPassword = form.adminPassword;
-            if (!form.adminEmail && !isEditing) { notify("Email Admin requis"); setLoading(false); return; }
-            
-            await api.createClient(payload);
-            notify("Société créée !");
-        }
-        setModalVisible(false);
-        loadClients();
-    } catch (e: any) {
-        console.error(e);
-        notify("Erreur : " + (e.response?.data?.message || "Action impossible"));
-    } finally {
-        setLoading(false);
-    }
+      const isoDate = formatDateForBackend(ownerBirthDate);
+
+      // ✅ CONSTRUCTION DU PAYLOAD CORRECT (Match le DTO backend)
+      const payload: any = {
+          name,
+          code: code.trim().toUpperCase(),
+          primaryColor: color,
+          
+          // Mapping vers les Enums Backend
+          subscriptionType: contractType === 'BUY' ? 'PURCHASE' : 'RENTAL',
+          status: isActive ? 'ACTIVE' : 'INACTIVE', 
+          
+          // ✅ CHAMPS ADMIN OBLIGATOIRES (Ceux qui manquaient !)
+          adminEmail: contactEmail, 
+          adminFirstName: ownerFirstName,
+          adminLastName: ownerLastName,
+          // Mot de passe seulement si fourni (ou en création)
+          ...(adminPassword ? { adminPassword } : {}),
+
+          // Autres infos
+          logoUrl: logo,
+          contactPhone,
+          contactEmail, 
+          activitySector,
+          ownerAddress, 
+          ownerCountry,
+          ownerBirthPlace,
+          ...(isoDate && { ownerBirthDate: isoDate }),
+          
+          // Champs redondants pour assurer la compatibilité
+          ownerFirstName,
+          ownerLastName,
+      };
+
+      console.log("Payload envoyé:", payload);
+
+      try {
+          if (isEditMode && selectedClientId) {
+              await api.updateClient(selectedClientId, payload);
+              showUniversalAlert("Succès", "Société mise à jour !");
+          } else {
+              await api.createClient(payload);
+              showUniversalAlert("Succès", `Société créée !\nLogin Admin: ${contactEmail}\nPass: ${adminPassword}`);
+          }
+          
+          setModalVisible(false);
+          loadClients(); 
+
+      } catch (e: any) {
+          console.error("Erreur API:", e);
+          const errorMsg = e.response?.data?.message || "Erreur serveur.";
+          showUniversalAlert("Erreur", Array.isArray(errorMsg) ? errorMsg[0] : errorMsg);
+      } finally {
+          setSubmitting(false);
+      }
   };
 
-  const handleDelete = (client: any) => {
-    confirmAction(`Supprimer ${client.name} ?`, async () => {
-        try {
-            setLoading(true);
-            await api.deleteClient(client.id);
-            loadClients();
-        } catch(e) { notify("Suppression échouée"); setLoading(false); }
-    });
-  };
-
-  const handleToggleStatus = (client: any) => {
-    confirmAction(`Changer statut de ${client.name} ?`, async () => {
-        try {
-            setLoading(true);
-            const currentStatus = client.subscriptionStatus || client.status;
-            const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
-            await api.updateClientStatus(client.id, newStatus);
-            loadClients();
-        } catch(e) { notify("Statut inchangé"); setLoading(false); }
-    });
-  };
-
-  const renderClientItem = ({ item }: { item: any }) => {
-    // Lecture sécurisée du statut (soit status, soit subscriptionStatus)
-    const isActive = (item.subscriptionStatus === 'ACTIVE' || item.status === 'ACTIVE');
+  const renderClientItem = ({ item }: any) => {
+    const isActive = item.subscriptionStatus === 'ACTIVE';
     return (
-        <View style={[styles.card, !isActive && styles.cardSuspended]}>
-          <View style={[styles.colorIndicator, { backgroundColor: item.primaryColor || '#999' }]} />
-          <View style={{ flex: 1, paddingVertical: 4 }}>
-            <Text style={styles.cardTitle}>{item.name}</Text>
-            <Text style={styles.cardSubtitle}>Code: {item.code}</Text>
-            <View style={{flexDirection:'row', alignItems:'center', marginTop:4, gap:6}}>
-                 <View style={styles.tag}><Text style={styles.tagText}>{item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOC'}</Text></View>
-                 <View style={[styles.tag, isActive ? {backgroundColor:'#D1FAE5'} : {backgroundColor:'#FEE2E2'}]}>
-                     <Text style={[styles.tagText, isActive ? {color:'#065F46'} : {color:'#B91C1C'}]}>
-                         {isActive ? 'ACTIF' : 'INACTIF'}
-                     </Text>
-                 </View>
+        <View style={styles.clientCard}>
+            <View style={[styles.statusIndicator, { backgroundColor: isActive ? '#10B981' : '#F59E0B' }]} />
+            <View style={{flex: 1, paddingLeft: 10}}>
+                <Text style={styles.clientName}>{item.name}</Text>
+                <Text style={styles.clientCode}>Code: {item.code}</Text>
+                <View style={styles.tags}>
+                    <View style={styles.tag}>
+                        <Text style={styles.tagText}>{item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOCATION'}</Text>
+                    </View>
+                    <View style={[styles.tag, isActive ? {backgroundColor:'#D1FAE5'} : {backgroundColor:'#FEF3C7'}]}>
+                        <Text style={[styles.tagText, isActive ? {color:'#065F46'} : {color:'#92400E'}]}>
+                            {isActive ? 'ACTIF' : 'INACTIF'}
+                        </Text>
+                    </View>
+                </View>
             </View>
-          </View>
-          <View style={styles.actions}>
-            <TouchableOpacity onPress={() => openEditModal(item)} style={styles.actionBtn}><Ionicons name="pencil" size={20} color="#3B82F6" /></TouchableOpacity>
-            <TouchableOpacity onPress={() => handleToggleStatus(item)} style={styles.actionBtn}><Ionicons name={isActive ? "pause" : "play"} size={20} color={isActive ? "#F59E0B" : "#10B981"} /></TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(item)} style={styles.actionBtn}><Ionicons name="trash" size={20} color="#EF4444" /></TouchableOpacity>
-          </View>
+            <TouchableOpacity onPress={() => openModal(item)} style={styles.actionBtn}>
+                <Ionicons name="pencil" size={20} color="#3B82F6" />
+            </TouchableOpacity>
         </View>
-      );
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
-        <Text style={styles.headerTitle}>Gestion Sociétés</Text>
-        <TouchableOpacity onPress={openCreateModal} style={styles.addBtn}><Ionicons name="add" size={24} color={colors.primary} /></TouchableOpacity>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </Pressable>
+        <Text style={styles.title}>Gestion Sociétés</Text>
+        <TouchableOpacity style={styles.addBtn} onPress={() => openModal()}>
+            <Ionicons name="add" size={24} color="#333" />
+        </TouchableOpacity>
       </View>
-      <FlatList data={clients} keyExtractor={(item) => item.id.toString()} renderItem={renderClientItem} contentContainerStyle={styles.list} refreshing={loading} onRefresh={loadClients} ListEmptyComponent={<Text style={styles.emptyText}>Aucune société.</Text>} />
-      
+
+      <FlatList
+        data={clients}
+        keyExtractor={(item) => item.id.toString()}
+        renderItem={renderClientItem}
+        contentContainerStyle={{padding: 20}}
+        ListEmptyComponent={<Text style={{textAlign:'center', marginTop:50, color:'#999'}}>Aucune société.</Text>}
+        refreshing={loading}
+        onRefresh={loadClients}
+      />
+
+      {/* --- MODALE --- */}
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFF' }}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{isEditing ? "Modifier Société" : "Nouvelle Société"}</Text>
-                <TouchableOpacity onPress={() => setModalVisible(false)}><Ionicons name="close" size={24} color="#333" /></TouchableOpacity>
-              </View>
-              <ScrollView contentContainerStyle={styles.formContainer}>
-                
-                {/* LOGO */}
-                <View style={{alignItems:'center', marginBottom:15}}>
-                    <TouchableOpacity onPress={pickImage} style={styles.logoPlaceholder}>
-                        {form.logoUrl ? (
-                            <Image source={{ uri: form.logoUrl }} style={{ width: 80, height: 80, borderRadius: 40 }} />
-                        ) : (
-                            <>
-                                <Ionicons name="camera-outline" size={30} color="#CCC" />
-                                <Text style={{color:'#999', fontSize:10, marginTop:5}}>Logo</Text>
-                            </>
-                        )}
-                    </TouchableOpacity>
-                </View>
-
-                <Text style={styles.label}>Nom Société</Text><TextInput style={styles.input} value={form.name} onChangeText={t => setForm({...form, name: t})} />
-                <Text style={styles.label}>Code Unique</Text><TextInput style={styles.input} value={form.code} onChangeText={t => setForm({...form, code: t})} />
-                <Text style={styles.label}>Couleur (Hex)</Text><TextInput style={styles.input} value={form.primaryColor} onChangeText={t => setForm({...form, primaryColor: t})} />
-                
-                <Text style={styles.label}>Type & Statut</Text>
-                <View style={styles.row}>
-                    <TouchableOpacity style={[styles.radioBtn, form.subscriptionType === 'RENTAL' && styles.radioBtnActive]} onPress={() => setForm({...form, subscriptionType: 'RENTAL'})}><Text style={[styles.radioText, form.subscriptionType === 'RENTAL' && styles.radioTextActive]}>Location</Text></TouchableOpacity>
-                    <TouchableOpacity style={[styles.radioBtn, form.subscriptionType === 'PURCHASE' && styles.radioBtnActive]} onPress={() => setForm({...form, subscriptionType: 'PURCHASE'})}><Text style={[styles.radioText, form.subscriptionType === 'PURCHASE' && styles.radioTextActive]}>Achat</Text></TouchableOpacity>
-                </View>
-                <View style={[styles.row, {marginTop:10, alignItems:'center', justifyContent:'space-between', backgroundColor:'#F9FAFB', padding:10, borderRadius:8}]}>
-                    <Text style={{fontWeight:'600', color: form.status === 'ACTIVE' ? '#10B981' : '#F59E0B'}}>{form.status === 'ACTIVE' ? 'COMPTE ACTIF' : 'INACTIF'}</Text>
-                    <Switch value={form.status === 'ACTIVE'} onValueChange={v => setForm({...form, status: v ? 'ACTIVE' : 'INACTIVE'})} trackColor={{false: '#EEE', true: '#10B981'}} />
-                </View>
-
-                <View style={styles.separator} />
-                <Text style={styles.sectionHeader}>Infos Demandeur (Admin)</Text>
-                
-                <View style={styles.row}>
-                    <View style={{flex:1}}><Text style={styles.label}>Prénom</Text><TextInput style={styles.input} value={form.adminFirstName} onChangeText={t => setForm({...form, adminFirstName: t})} /></View>
-                    <View style={{flex:1}}><Text style={styles.label}>Nom</Text><TextInput style={styles.input} value={form.adminLastName} onChangeText={t => setForm({...form, adminLastName: t})} /></View>
-                </View>
-
-                <Text style={styles.label}>Secteur Activité</Text>
-                <TouchableOpacity style={[styles.input, {justifyContent:'center'}]} onPress={() => setShowActivityModal(true)}>
-                    <Text>{form.activitySector}</Text>
+        <SafeAreaView style={{flex:1, backgroundColor:'#F9FAFB'}}>
+            <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{isEditMode ? "Modifier Société" : "Nouvelle Société"}</Text>
+                <TouchableOpacity onPress={() => setModalVisible(false)}>
+                    <Ionicons name="close" size={28} color="#333" />
                 </TouchableOpacity>
+            </View>
 
-                <Text style={styles.label}>Téléphone</Text><TextInput style={styles.input} keyboardType="phone-pad" value={form.contactPhone} onChangeText={t => setForm({...form, contactPhone: t})} />
-                <Text style={styles.label}>Email</Text><TextInput style={styles.input} keyboardType="email-address" autoCapitalize="none" value={form.adminEmail} onChangeText={t => setForm({...form, adminEmail: t})} />
+            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
+            <ScrollView contentContainerStyle={styles.modalContent}>
                 
-                {!isEditing && (
-                    <><Text style={styles.label}>Mot de passe</Text><TextInput style={styles.input} secureTextEntry value={form.adminPassword} onChangeText={t => setForm({...form, adminPassword: t})} /></>
-                )}
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeader}>IDENTITÉ VISUELLE</Text>
+                    <View style={{alignItems:'center', marginBottom:15}}>
+                        <TouchableOpacity onPress={pickImage} style={styles.logoPlaceholder}>
+                            {logo ? (
+                                <Image source={{ uri: logo }} style={{ width: 80, height: 80, borderRadius: 40 }} />
+                            ) : (
+                                <>
+                                    <Ionicons name="camera-outline" size={30} color="#CCC" />
+                                    <Text style={{color:'#999', fontSize:10, marginTop:5}}>Ajouter logo</Text>
+                                </>
+                            )}
+                        </TouchableOpacity>
+                    </View>
 
-                <View style={styles.row}>
-                    <View style={{flex:1}}><Text style={styles.label}>Date Naissance</Text><TextInput style={styles.input} placeholder="JJ/MM/AAAA" value={form.ownerBirthDate} onChangeText={t => setForm({...form, ownerBirthDate: t})} /></View>
-                    <View style={{flex:1}}><Text style={styles.label}>Lieu</Text><TextInput style={styles.input} value={form.ownerBirthPlace} onChangeText={t => setForm({...form, ownerBirthPlace: t})} /></View>
+                    <Text style={styles.label}>Nom de la société</Text>
+                    <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Ex: Flash Transfert" />
+
+                    <Text style={styles.label}>Code Unique (Identifiant)</Text>
+                    <TextInput 
+                        style={[styles.input, {backgroundColor:'#F3F4F6'}]} 
+                        value={code} 
+                        onChangeText={setCode} 
+                        editable={!isEditMode} 
+                    />
                 </View>
 
-                <Text style={styles.label}>Pays de Résidence</Text><TextInput style={styles.input} value={form.ownerCountry} onChangeText={t => setForm({...form, ownerCountry: t})} />
-                <Text style={styles.label}>Adresse Complète</Text><TextInput style={styles.input} multiline value={form.ownerAddress} onChangeText={t => setForm({...form, ownerAddress: t})} />
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeader}>CONTRAT & ACCÈS</Text>
+                    <View style={styles.rowSwitch}>
+                        <View style={{flex:1}}>
+                            <Text style={styles.label}>Statut du compte</Text>
+                            <Text style={{color: isActive ? '#10B981' : '#F59E0B', fontWeight:'bold', fontSize:12}}>
+                                {isActive ? "COMPTE ACTIF" : "COMPTE INACTIF"}
+                            </Text>
+                        </View>
+                        <Switch 
+                            value={isActive} 
+                            onValueChange={setIsActive} 
+                            trackColor={{ false: "#E5E7EB", true: "#10B981" }}
+                        />
+                    </View>
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSave}><Text style={styles.submitText}>ENREGISTRER</Text></TouchableOpacity>
-                <View style={{height: 50}} />
-              </ScrollView>
+                    <Text style={styles.label}>Type d'offre</Text>
+                    <View style={{flexDirection:'row', gap:10, marginTop:5}}>
+                        <TouchableOpacity 
+                            style={[styles.typeBtn, contractType === 'RENT' && styles.typeBtnActive]} 
+                            onPress={() => setContractType('RENT')}
+                        >
+                            <Text style={[styles.typeText, contractType === 'RENT' && {color:'#FFF'}]}>Location (SaaS)</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.typeBtn, contractType === 'BUY' && styles.typeBtnActive]} 
+                            onPress={() => setContractType('BUY')}
+                        >
+                            <Text style={[styles.typeText, contractType === 'BUY' && {color:'#FFF'}]}>Achat (Licence)</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                <View style={styles.section}>
+                    <Text style={styles.sectionHeader}>INFORMATIONS DU DEMANDEUR (ADMIN)</Text>
+                    
+                    <View style={{flexDirection:'row', gap:10}}>
+                        <View style={{flex:1}}>
+                            <Text style={styles.label}>Prénom</Text>
+                            <TextInput style={styles.input} value={ownerFirstName} onChangeText={setOwnerFirstName} placeholder="Prénom" />
+                        </View>
+                        <View style={{flex:1}}>
+                            <Text style={styles.label}>Nom</Text>
+                            <TextInput style={styles.input} value={ownerLastName} onChangeText={setOwnerLastName} placeholder="Nom" />
+                        </View>
+                    </View>
+
+                    <Text style={styles.label}>Email (Sera l'identifiant de connexion)</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        value={contactEmail} 
+                        onChangeText={setContactEmail} 
+                        keyboardType="email-address" 
+                        autoCapitalize="none" 
+                        placeholder="admin@societe.com"
+                    />
+
+                    {!isEditMode && (
+                        <>
+                            <Text style={styles.label}>Mot de passe (Admin)</Text>
+                            <TextInput 
+                                style={styles.input} 
+                                value={adminPassword} 
+                                onChangeText={setAdminPassword} 
+                                secureTextEntry
+                                placeholder="******" 
+                            />
+                        </>
+                    )}
+
+                    <Text style={styles.label}>Téléphone</Text>
+                    <TextInput style={styles.input} value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" placeholder="+221..." />
+
+                    <Text style={styles.label}>Secteur d'activité</Text>
+                    <TouchableOpacity style={styles.selectInput} onPress={() => setShowActivityModal(true)}>
+                        <Text>{activitySector}</Text>
+                        <Ionicons name="chevron-down" size={20} color="#666" />
+                    </TouchableOpacity>
+
+                    <View style={{flexDirection:'row', gap:10}}>
+                        <View style={{flex:1}}>
+                            <Text style={styles.label}>Date Naissance</Text>
+                            <TextInput style={styles.input} value={ownerBirthDate} onChangeText={setOwnerBirthDate} placeholder="JJ/MM/AAAA" />
+                        </View>
+                        <View style={{flex:1}}>
+                            <Text style={styles.label}>Lieu</Text>
+                            <TextInput style={styles.input} value={ownerBirthPlace} onChangeText={setOwnerBirthPlace} />
+                        </View>
+                    </View>
+
+                    <Text style={styles.label}>Pays de résidence</Text>
+                    <TextInput style={styles.input} value={ownerCountry} onChangeText={setOwnerCountry} placeholder="Sénégal" />
+
+                    <Text style={styles.label}>Adresse complète</Text>
+                    <TextInput style={styles.input} value={ownerAddress} onChangeText={setOwnerAddress} multiline />
+                </View>
+
+                <TouchableOpacity 
+                    style={[styles.saveBtn, submitting && {opacity: 0.7}]} 
+                    onPress={handleSave}
+                    disabled={submitting}
+                >
+                    {submitting ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <Text style={styles.saveText}>ENREGISTRER</Text>
+                    )}
+                </TouchableOpacity>
+                <View style={{height:100}} />
+
+            </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
 
-        {/* Modale Activité */}
-        <Modal visible={showActivityModal} transparent animationType="fade">
+        <Modal visible={showActivityModal} transparent animationType="fade" onRequestClose={() => setShowActivityModal(false)}>
             <View style={styles.modalOverlay}>
                 <View style={styles.modalSmall}>
                     <Text style={{fontWeight:'bold', fontSize:16, marginBottom:10}}>Choisir une activité</Text>
-                    <FlatList data={ACTIVITY_SECTORS} keyExtractor={item => item} renderItem={({item}) => (
-                        <TouchableOpacity style={{paddingVertical:12, borderBottomWidth:1, borderColor:'#EEE'}} onPress={() => {setForm({...form, activitySector: item}); setShowActivityModal(false)}}>
-                            <Text>{item}</Text>
-                        </TouchableOpacity>
-                    )}/>
-                    <TouchableOpacity style={{marginTop:10, alignSelf:'flex-end'}} onPress={() => setShowActivityModal(false)}><Text style={{color:'red'}}>Fermer</Text></TouchableOpacity>
+                    <FlatList 
+                        data={ACTIVITY_SECTORS}
+                        keyExtractor={item => item}
+                        renderItem={({item}) => (
+                            <TouchableOpacity style={{paddingVertical:12, borderBottomWidth:1, borderColor:'#EEE'}} onPress={() => {setActivitySector(item); setShowActivityModal(false)}}>
+                                <Text>{item}</Text>
+                            </TouchableOpacity>
+                        )}
+                    />
+                    <TouchableOpacity style={{marginTop:10, alignSelf:'flex-end'}} onPress={() => setShowActivityModal(false)}>
+                        <Text style={{color:'red'}}>Fermer</Text>
+                    </TouchableOpacity>
                 </View>
             </View>
         </Modal>
 
       </Modal>
-      {loading && <View style={styles.loaderOverlay}><ActivityIndicator size="large" color="#FFF" /></View>}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F3F4F6" },
-  header: { backgroundColor: "#1F2937", padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
-  backBtn: { padding: 4 }, addBtn: { backgroundColor: "#FFF", padding: 8, borderRadius: 20 },
-  list: { padding: 16 }, emptyText: { textAlign: 'center', marginTop: 50, color: '#666' },
-  card: { backgroundColor: "#FFF", borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
-  cardSuspended: { opacity: 0.7, backgroundColor: '#F9FAFB' },
-  colorIndicator: { width: 4, height: '80%', borderRadius: 2, marginRight: 12 },
-  cardTitle: { fontSize: 16, fontWeight: "700" }, cardSubtitle: { fontSize: 13, color: "#666" },
-  tag: { backgroundColor: '#E5E7EB', paddingHorizontal:6, paddingVertical:2, borderRadius:4 }, tagText: { fontSize: 10, fontWeight:'700', color:'#4B5563' },
-  actions: { flexDirection: 'row', marginLeft: 10 }, actionBtn: { padding: 10, backgroundColor:'#F9FAFB', borderRadius:8, marginLeft:6, borderWidth:1, borderColor:'#EEE' },
-  modalHeader: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#EEE', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF' },
-  modalTitle: { fontSize: 18, fontWeight: '800' }, formContainer: { padding: 20 },
-  sectionHeader: { fontSize: 16, fontWeight: '700', marginTop: 10, marginBottom: 4 }, separator: { height: 1, backgroundColor: '#EEE', marginVertical: 20 },
-  label: { fontSize: 14, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 10 },
-  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, padding: 12, fontSize: 16 },
-  row: { flexDirection: 'row', gap: 10 }, 
-  radioBtn: { flex: 1, padding: 12, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 8, alignItems: 'center' },
-  radioBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  radioText: { color: '#374151', fontWeight: '600' },
-  radioTextActive: { color: '#FFF' },
-  submitBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 30 },
-  submitText: { color: '#FFF', fontSize: 16, fontWeight: '800' },
-  loaderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  logoPlaceholder: { width:80, height:80, borderRadius:40, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', borderWidth:1, borderColor:'#E5E7EB', borderStyle:'dashed', overflow: 'hidden' },
-  modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding:30 },
-  modalSmall: { backgroundColor:'#FFF', borderRadius:12, padding:20 }
+    container: { flex: 1, backgroundColor: '#F3F4F6' },
+    header: { backgroundColor: '#1E293B', padding: 20, paddingTop: 40, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+    title: { color: "#FFF", fontSize: 18, fontWeight: "700" },
+    backBtn: { padding: 5 },
+    addBtn: { backgroundColor: '#FFF', padding: 8, borderRadius: 20 },
+
+    clientCard: { flexDirection:'row', backgroundColor:'#FFF', marginHorizontal:20, marginBottom:10, borderRadius:12, padding:15, alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, elevation:2 },
+    statusIndicator: { width:4, height:'100%', borderRadius:2, marginRight:10 },
+    clientName: { fontSize:16, fontWeight:'bold', color:'#1F2937' },
+    clientCode: { fontSize:12, color:'#6B7280', marginBottom:5 },
+    tags: { flexDirection:'row', gap:5 },
+    tag: { backgroundColor:'#F3F4F6', paddingHorizontal:6, paddingVertical:2, borderRadius:4 },
+    tagText: { fontSize:10, fontWeight:'700', color:'#4B5563' },
+    actions: { flexDirection:'row', gap:10 },
+    actionBtn: { padding:8, backgroundColor:'#EFF6FF', borderRadius:8 },
+
+    // Styles Modale
+    modalHeader: { flexDirection:'row', justifyContent:'space-between', padding:20, borderBottomWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFF' },
+    modalTitle: { fontSize:18, fontWeight:'800', color:'#1F2937' },
+    modalContent: { padding:20 },
+    
+    section: { backgroundColor:'#FFF', borderRadius:12, padding:15, marginBottom:20, borderWidth:1, borderColor:'#E5E7EB' },
+    sectionHeader: { fontSize:12, fontWeight:'800', color:'#9CA3AF', marginBottom:15, letterSpacing:1 },
+
+    label: { fontSize:13, fontWeight:'600', color:'#374151', marginBottom:6, marginTop:10 },
+    input: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, fontSize:15, backgroundColor:'#FFF' },
+    selectInput: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
+
+    logoPlaceholder: { width:80, height:80, borderRadius:40, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', borderWidth:1, borderColor:'#E5E7EB', borderStyle:'dashed', overflow: 'hidden' },
+
+    rowSwitch: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15, backgroundColor:'#F9FAFB', padding:10, borderRadius:8 },
+    
+    typeBtn: { flex:1, padding:12, borderRadius:8, borderWidth:1, borderColor:'#E5E7EB', alignItems:'center', backgroundColor:'#FFF' },
+    typeBtnActive: { backgroundColor:'#F59E0B', borderColor:'#F59E0B' },
+    typeText: { fontWeight:'700', color:'#374151' },
+
+    saveBtn: { backgroundColor:'#F59E0B', padding:18, borderRadius:12, alignItems:'center', marginTop:10, zIndex: 999, elevation: 5 },
+    saveText: { color:'#FFF', fontWeight:'800', fontSize:16 },
+
+    modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding:30 },
+    modalSmall: { backgroundColor:'#FFF', borderRadius:12, padding:20 }
 });

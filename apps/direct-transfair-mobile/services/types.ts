@@ -27,9 +27,9 @@ export interface AuthUser {
   jobTitle?: string;
 
   // Données SaaS
-  clientId: number;   
-  agencyId?: string;  
-  balance?: number;   
+  clientId: number;
+  agencyId?: string;
+  balance?: number;
 
   // Objet Client (Société)
   client?: {
@@ -39,8 +39,8 @@ export interface AuthUser {
   };
 }
 
-export interface LoginPayload { 
-  email: string; 
+export interface LoginPayload {
+  email: string;
   password: string;
 }
 
@@ -71,7 +71,7 @@ export interface Beneficiary {
 
 // ✅ On garde fullName ici pour compatibilité avec le Backend actuel
 export interface CreateBeneficiaryPayload {
-  fullName: string; 
+  fullName: string;
   country: string;
   city: string;
   phone?: string | null;
@@ -130,61 +130,88 @@ export interface UpdateWithdrawalStatusPayload {
 
 // --- TAUX DE CHANGE ---
 export interface ExchangeRate {
-    pair: string;
-    rate: number;
+  pair: string;
+  rate: number;
 }
 
 // ============================================================
-// ✅ NOUVELLE SECTION : AGENCES & COMMISSIONS
+// ✅ AGENCES & COMMISSIONS
 // ============================================================
 
-// 1. Type d'agence
-export type AgencyType = 'PRIVATE' | 'PARTNER';
+// Le backend n'a pas de champ "type" dans Prisma Agency.
+// On le garde côté front pour l'UI, mais il n'est pas garanti au retour.
+export type AgencyType = "PRIVATE" | "PARTNER";
 
 export interface Agency {
-    id: string;
-    name: string;
-    city: string;
-    type: AgencyType;
-    balance: number; // Solde caisse virtuelle
-    clientId: number; // Lié à la société mère
-    createdAt: string;
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  phone?: string | null;
+
+  // compat UI (peut être absent selon backend)
+  type?: AgencyType;
+
+  // Prisma Decimal => peut remonter en string selon sérialisation
+  balance: number | string;
+
+  clientId: number;
+  createdAt: string;
 }
 
+// ✅ DOIT matcher CreateAgencyDto (backend)
 export interface CreateAgencyPayload {
-    name: string;
-    city: string;
-    type: AgencyType;
+  name: string;
+  city: string;
+  address: string;
+
+  // backend accepte optionnel
+  phone?: string;
+
+  // backend exige email (login agent)
+  email: string;
+
+  // options agent
+  country?: string;
+  managerName?: string;
+  adminFirstName?: string;
+  adminLastName?: string;
+  adminPassword?: string;
+
+  // champs tolérés
+  code?: string;
+  status?: string;
+  subscriptionType?: string;
+
+  // compat UI
+  type?: AgencyType;
 }
 
 // 2. Configuration des commissions (Règles de partage)
 export interface CommissionConfig {
-    senderPart: number;   // % pour l'agence qui envoie (ex: 20%)
-    payerPart: number;    // % pour l'agence qui paie le retrait (ex: 20%)
-    platformPart: number; // % restant pour la société (ex: 60%)
+  senderPart: number;
+  payerPart: number;
+  platformPart: number;
 }
 
 // 3. Historique des commissions (Traçabilité)
 export interface CommissionLog {
-    id: string;
-    transactionId: string;
-    transactionReference: string;
-    totalFee: number; // Le montant total des frais payés par le client
-    
-    // Part Expéditeur
-    senderAgencyId?: string;
-    senderAgencyName?: string;
-    senderAgencyType?: AgencyType;
-    senderCommission: number; // Montant gagné
+  id: string;
+  transactionId: string;
+  transactionReference: string;
+  totalFee: number;
 
-    // Part Payeur (si retrait effectué)
-    payerAgencyId?: string;
-    payerAgencyName?: string;
-    payerAgencyType?: AgencyType;
-    payerCommission: number; // Montant gagné
+  senderAgencyId?: string;
+  senderAgencyName?: string;
+  senderAgencyType?: AgencyType;
+  senderCommission: number;
 
-    // Part Plateforme
-    platformCommission: number; // Montant gagné par la société
-    
-    createdAt: string;
+  payerAgencyId?: string;
+  payerAgencyName?: string;
+  payerAgencyType?: AgencyType;
+  payerCommission: number;
+
+  platformCommission: number;
+
+  createdAt: string;
 }

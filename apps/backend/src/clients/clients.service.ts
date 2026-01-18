@@ -9,9 +9,8 @@ import { Role, SubscriptionStatus, Prisma } from '@prisma/client';
 export class ClientsService {
   constructor(private prisma: PrismaService) {}
 
-  // 1. CRÉATION (Avec transaction pour l'admin)
+  // 1. CRÉATION
   async create(dto: CreateClientDto) {
-    // Vérifs unicité
     const existingCode = await this.prisma.client.findUnique({ where: { code: dto.code.toUpperCase() } });
     if (existingCode) throw new ConflictException(`Le code "${dto.code}" est déjà pris.`);
 
@@ -21,7 +20,7 @@ export class ClientsService {
     const hashedPassword = await bcrypt.hash(dto.adminPassword, 10);
 
     return this.prisma.$transaction(async (tx) => {
-        // Création Société
+        // ✅ CORRECTION : On retire 'country' car il n'existe pas sur Client
         const client = await tx.client.create({
             data: {
                 code: dto.code.toUpperCase(),
@@ -30,18 +29,16 @@ export class ClientsService {
                 subscriptionType: dto.subscriptionType,
                 subscriptionStatus: SubscriptionStatus.ACTIVE,
                 
-                // ✅ CORRECTION : Pas de champ 'country' ici !
-                // On utilise les champs qui existent vraiment dans le schéma :
                 logoUrl: dto.logoUrl,
                 email: dto.adminEmail, 
                 phone: dto.contactPhone,
-                address: dto.ownerAddress, // On met l'adresse complète ici
+                address: dto.ownerAddress, // Adresse complète
                 
                 ownerFirstName: dto.adminFirstName,
                 ownerLastName: dto.adminLastName,
                 ownerBirthDate: dto.ownerBirthDate,
                 ownerBirthPlace: dto.ownerBirthPlace,
-                ownerCountry: dto.ownerCountry, // ✅ C'est ici qu'on met le pays du gérant
+                ownerCountry: dto.ownerCountry, // C'est le bon champ
                 ownerAddress: dto.ownerAddress,
                 
                 contactEmail: dto.contactEmail || dto.adminEmail,
@@ -59,7 +56,7 @@ export class ClientsService {
                 lastName: dto.adminLastName,
                 role: Role.COMPANY_ADMIN,
                 clientId: client.id,
-                country: dto.ownerCountry, // Le User a bien un champ country
+                country: dto.ownerCountry, // Ici 'country' est valide sur User
                 phone: dto.contactPhone,
                 addressStreet: dto.ownerAddress,
             }
@@ -80,28 +77,28 @@ export class ClientsService {
     return this.prisma.client.findUnique({ where: { id }, include: { users: true } });
   }
 
-  // ✅ C'EST CETTE MÉTHODE QUI MANQUAIT POUR LE TENANT SERVICE
   async findByCode(code: string) {
-    const client = await this.prisma.client.findUnique({
-        where: { code: code.toUpperCase() },
-    });
-    // On ne throw pas forcément ici pour laisser le middleware gérer, 
-    // mais si c'est null, le middleware renverra une 404.
-    return client;
+    return this.prisma.client.findUnique({ where: { code: code.toUpperCase() } });
   }
 
+  // ✅ CORRECTION UPDATE : Nettoyage strict des champs
   async update(id: number, data: any) {
     const updateData: any = { ...data };
     
-    // Nettoyage pour éviter l'erreur "Unknown argument 'status'"
+    // On retire 'country' s'il est présent
+    if (updateData.country) delete updateData.country;
+    
+    // On retire 'status' et on mappe vers 'subscriptionStatus'
     if (data.status) {
         updateData.subscriptionStatus = data.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE';
         delete updateData.status;
     }
-    // Nettoyage pour éviter l'erreur "Unknown argument 'country'"
-    if (data.country) {
-        delete updateData.country; // On le supprime car il n'existe pas sur Client
-    }
+
+    // On retire les champs admin sensibles qui ne sont pas sur le modèle Client
+    delete updateData.adminEmail;
+    delete updateData.adminFirstName;
+    delete updateData.adminLastName;
+    delete updateData.adminPassword;
 
     return this.prisma.client.update({
         where: { id },
