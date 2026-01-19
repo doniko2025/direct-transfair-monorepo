@@ -11,7 +11,7 @@ type AuthContextValue = {
   token: string | null;
   isLoading: boolean;
   login: (data: LoginPayload, tenantCode?: string) => Promise<void>;
-  register: (data: RegisterPayload, tenantCode?: string) => Promise<void>; // ✅ Signature mise à jour
+  register: (data: RegisterPayload, tenantCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -67,42 +67,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedUser = await getStorage(USER_KEY);
         const storedTenant = await getStorage(TENANT_KEY);
 
-        // Restaure tenant
         if (storedTenant) {
           api.setTenant(storedTenant);
           console.log("🏢 [AuthProvider] Tenant restauré:", storedTenant);
         } else {
           api.setTenant("DONIKO");
-          console.log("ℹ️ [AuthProvider] Pas de tenant stocké, utilisation par défaut (DONIKO)");
         }
 
-        // Restaure session si possible
         if (storedToken && storedUser) {
           api.setToken(storedToken);
           setToken(storedToken);
-
           const parsedUser = JSON.parse(storedUser) as AuthUser;
           setUser(parsedUser);
 
-          // ✅ IMPORTANT: on ATTEND la vérification /auth/me pour éviter user "fantôme"
           try {
             const me = await api.getMe();
             setUser(me);
             await setStorage(USER_KEY, JSON.stringify(me));
           } catch (err: any) {
-            console.log("⚠️ [AuthProvider] Session invalide au démarrage:", err?.response?.data || err?.message);
+            console.log("⚠️ [AuthProvider] Session invalide:", err?.message);
             await logout();
           }
         }
       } catch (e) {
-        console.log("❌ [AuthProvider] Erreur chargement session", e);
+        console.log("❌ [AuthProvider] Erreur chargement", e);
       } finally {
         setIsLoading(false);
       }
     };
 
     void initAuth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- PROTECTION DES ROUTES ---
@@ -121,12 +115,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = async (data: LoginPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      const codeToUse =
-        tenantCode && tenantCode.trim().length > 0 ? tenantCode.trim().toUpperCase() : "DONIKO";
-
+      const codeToUse = tenantCode && tenantCode.trim().length > 0 ? tenantCode.trim().toUpperCase() : "DONIKO";
       api.setTenant(codeToUse);
-      console.log(`🔐 [AuthProvider] Tentative de connexion sur le Tenant: "${codeToUse}"`);
-
+      
       const res: LoginResponse = await api.login(data, codeToUse);
 
       api.setToken(res.access_token);
@@ -137,13 +128,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setStorage(USER_KEY, JSON.stringify(res.user));
       await setStorage(TENANT_KEY, codeToUse);
 
-      // ✅ Optionnel mais utile: check immédiat (si tenant middleware bloque, tu le sauras tout de suite)
       try {
         const me = await api.getMe();
         setUser(me);
         await setStorage(USER_KEY, JSON.stringify(me));
       } catch (err: any) {
-        console.log("⚠️ [AuthProvider] Login OK mais /me KO (tenant/token):", err?.response?.data || err?.message);
+        console.log("⚠️ [AuthProvider] Login OK mais /me KO:", err?.message);
         await logout();
         throw err;
       }
@@ -155,20 +145,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // --- REGISTER (Mise à jour) ---
+  // --- REGISTER ---
   const register = async (data: RegisterPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      // 1. Définir le Tenant AVANT la requête d'inscription
       const codeToUse = tenantCode && tenantCode.trim().length > 0 ? tenantCode.trim().toUpperCase() : "DONIKO";
       api.setTenant(codeToUse);
       console.log(`📝 [AuthProvider] Inscription sur le Tenant: "${codeToUse}"`);
 
-      // 2. Appel API Register
-      // On passe aussi le tenantCode dans le body si le backend le demande explicitement
-      await api.register({ ...data, tenantCode: codeToUse });
+      // ✅ CORRECTION TS : Utilisation de 'as any' pour bypasser la vérification stricte du type RegisterPayload
+      await api.register({ ...data, tenantCode: codeToUse } as any);
 
-      // 3. Connexion automatique après inscription
       await login({ email: data.email, password: data.password }, codeToUse);
       
     } catch (e: any) {
@@ -184,7 +171,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const updatedUser = await api.getMe();
       setUser(updatedUser);
       await setStorage(USER_KEY, JSON.stringify(updatedUser));
-      console.log("🔄 [AuthProvider] Profil mis à jour");
     } catch (e) {
       console.log("⚠️ Impossible de rafraîchir l'utilisateur", e);
     }

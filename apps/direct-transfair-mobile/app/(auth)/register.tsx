@@ -9,125 +9,133 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { colors } from "../../theme/colors";
 
-// Import des données (Assurez-vous que ces fichiers existent)
 import { countriesList, CountryData } from "../../data/countries";
 import { citiesByCountry } from "../../data/cities";
 
 export default function RegisterScreen() {
   const { register, isLoading } = useAuth();
 
-  // --- ÉTATS FORMULAIRE ---
-  const [tenantCode, setTenantCode] = useState(""); // Code Société
+  // --- ÉTATS ---
+  const [tenantCode, setTenantCode] = useState("FLASH2026"); // Pré-rempli pour tester
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
 
-  // Sélection Résidence
   const [residenceCountry, setResidenceCountry] = useState<CountryData | null>(null);
   const [residenceCity, setResidenceCity] = useState("");
 
-  // Sélection Naissance
-  const [nationality, setNationality] = useState<CountryData | null>(null); // Pays Nationalité
+  const [nationality, setNationality] = useState<CountryData | null>(null); 
   const [birthCountry, setBirthCountry] = useState<CountryData | null>(null);
   const [birthCity, setBirthCity] = useState("");
   
-  // Date Naissance (Format JJ/MM/AAAA)
   const [birthDay, setBirthDay] = useState("");
   const [birthMonth, setBirthMonth] = useState("");
   const [birthYear, setBirthYear] = useState("");
 
-  // --- MODALES ---
-  const [modalType, setModalType] = useState<
-    'RESIDENCE_COUNTRY' | 'RESIDENCE_CITY' | 
-    'NATIONALITY' | 
-    'BIRTH_COUNTRY' | 'BIRTH_CITY' | null
-  >(null);
+  const [modalType, setModalType] = useState<string | null>(null);
 
-  // Reset des villes si le pays change
   useEffect(() => { setResidenceCity(""); }, [residenceCountry]);
   useEffect(() => { setBirthCity(""); }, [birthCountry]);
 
-  // --- SOUMISSION ---
+  // --- SOUMISSION AVEC LOGS ---
   const onSubmit = async () => {
+    console.log("👉 Bouton cliqué !"); // Log 1
+
     if (!firstName || !lastName || !email || !password) {
-      Alert.alert("Champs requis", "Veuillez remplir les informations de base.");
+      console.log("❌ Champs manquants");
+      showWebAlert("Champs requis", "Remplissez les champs obligatoires.");
       return;
     }
 
-    // Reconstruction de la date
     let formattedBirthDate = undefined;
     if (birthDay && birthMonth && birthYear) {
         formattedBirthDate = `${birthYear}-${birthMonth.padStart(2,'0')}-${birthDay.padStart(2,'0')}T00:00:00.000Z`;
     }
 
-    try {
-      const payload = {
+    const payload = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
         password,
         phone: phone ? `+${residenceCountry?.dialCode || ''}${phone}` : undefined,
-        
-        // Adresses
         country: residenceCountry?.name,
         city: residenceCity,
-        
-        // KYC
         nationality: nationality?.name,
         birthCountry: birthCountry?.name,
         birthCity: birthCity,
         birthDate: formattedBirthDate,
-        birthPlace: birthCity + ", " + (birthCountry?.name || ""), // Fallback
-      };
+        birthPlace: birthCity + (birthCountry ? ", " + birthCountry.name : ""),
+    };
 
-      // On passe le payload ET le code société
+    console.log("📤 Envoi Payload:", payload);
+    console.log("🏢 Tenant:", tenantCode);
+
+    try {
       await register(payload, tenantCode);
-
-      // La redirection est gérée par l'AuthProvider (via login automatique)
+      console.log("✅ Inscription réussie !");
+      // La redirection est gérée par l'AuthProvider
     } catch (e: any) {
-      const msg = e.response?.data?.message || "Vérifiez vos données.";
-      Alert.alert("Inscription impossible", Array.isArray(msg) ? msg[0] : msg);
+      console.error("❌ Erreur Inscription (Catch):", e);
+      const msg = e.response?.data?.message || e.message || "Erreur inconnue.";
+      showWebAlert("Echec", Array.isArray(msg) ? msg[0] : msg);
     }
   };
 
-  // --- RENDU ITEMS MODALE ---
-  const renderCountryItem = ({ item }: { item: CountryData }) => (
-    <TouchableOpacity 
-      style={styles.modalItem} 
-      onPress={() => {
-        if (modalType === 'RESIDENCE_COUNTRY') setResidenceCountry(item);
-        if (modalType === 'NATIONALITY') setNationality(item);
-        if (modalType === 'BIRTH_COUNTRY') setBirthCountry(item);
-        setModalType(null);
-      }}
-    >
-      <Text style={styles.flag}>{item.flag}</Text>
-      <Text style={styles.modalText}>{item.name}</Text>
-      <Text style={styles.code}>+{item.dialCode}</Text>
-    </TouchableOpacity>
-  );
+  // Helper pour les alertes Web
+  const showWebAlert = (title: string, msg: string) => {
+      if (Platform.OS === 'web') {
+          window.alert(`${title}\n\n${msg}`);
+      } else {
+          Alert.alert(title, msg);
+      }
+  };
 
-  const renderCityItem = ({ item }: { item: string }) => (
-    <TouchableOpacity 
-      style={styles.modalItem} 
-      onPress={() => {
-        if (modalType === 'RESIDENCE_CITY') setResidenceCity(item);
-        if (modalType === 'BIRTH_CITY') setBirthCity(item);
-        setModalType(null);
-      }}
-    >
-      <Text style={styles.modalText}>{item}</Text>
-      <Ionicons name="chevron-forward" size={16} color="#CCC" />
-    </TouchableOpacity>
-  );
+  // --- RENDU ---
+  const renderItem = ({ item }: { item: any }) => {
+    if (typeof item === 'string') {
+        return (
+            <TouchableOpacity 
+              style={styles.modalItem} 
+              onPress={() => {
+                if (modalType === 'RESIDENCE_CITY') setResidenceCity(item);
+                if (modalType === 'BIRTH_CITY') setBirthCity(item);
+                setModalType(null);
+              }}
+            >
+              <Text style={styles.modalText}>{item}</Text>
+              <Ionicons name="chevron-forward" size={16} color="#CCC" />
+            </TouchableOpacity>
+        );
+    }
+    return (
+        <TouchableOpacity 
+          style={styles.modalItem} 
+          onPress={() => {
+            if (modalType === 'RESIDENCE_COUNTRY') setResidenceCountry(item);
+            if (modalType === 'NATIONALITY') setNationality(item);
+            if (modalType === 'BIRTH_COUNTRY') setBirthCountry(item);
+            setModalType(null);
+          }}
+        >
+          <Text style={styles.flag}>{item.flag}</Text>
+          <Text style={styles.modalText}>{item.name}</Text>
+          <Text style={styles.code}>+{item.dialCode}</Text>
+        </TouchableOpacity>
+    );
+  };
 
-  // Données dynamiques pour la modale
   const getModalData = () => {
-    if (modalType?.includes('COUNTRY') || modalType === 'NATIONALITY') return countriesList;
-    if (modalType === 'RESIDENCE_CITY') return citiesByCountry[residenceCountry?.name || ""] || [];
-    if (modalType === 'BIRTH_CITY') return citiesByCountry[birthCountry?.name || ""] || [];
+    if (modalType === 'RESIDENCE_COUNTRY' || modalType === 'NATIONALITY' || modalType === 'BIRTH_COUNTRY') {
+        return countriesList;
+    }
+    if (modalType === 'RESIDENCE_CITY') {
+        return residenceCountry ? (citiesByCountry[residenceCountry.name] || []) : [];
+    }
+    if (modalType === 'BIRTH_CITY') {
+        return birthCountry ? (citiesByCountry[birthCountry.name] || []) : [];
+    }
     return [];
   };
 
@@ -136,7 +144,6 @@ export default function RegisterScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.headerTitle}>Créer un compte</Text>
       
-      {/* 1. LIEN SOCIÉTÉ */}
       <View style={styles.sectionBox}>
         <Text style={styles.sectionLabel}>Lien Société</Text>
         <TextInput 
@@ -146,10 +153,9 @@ export default function RegisterScreen() {
           onChangeText={setTenantCode}
           autoCapitalize="characters"
         />
-        <Text style={styles.hint}>Laisser vide pour s'inscrire sur la plateforme globale.</Text>
+        <Text style={styles.hint}>Laissez vide pour la plateforme globale.</Text>
       </View>
 
-      {/* 2. IDENTIFIANTS */}
       <Text style={styles.groupTitle}>IDENTIFIANTS</Text>
       <View style={styles.row}>
         <TextInput style={[styles.input, {flex:1, marginRight:8}]} placeholder="Prénom *" value={firstName} onChangeText={setFirstName} />
@@ -158,10 +164,8 @@ export default function RegisterScreen() {
       <TextInput style={styles.input} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
       <TextInput style={styles.input} placeholder="Mot de passe *" secureTextEntry value={password} onChangeText={setPassword} />
 
-      {/* 3. LOCALISATION & CONTACT */}
       <Text style={styles.groupTitle}>RÉSIDENCE & CONTACT</Text>
       
-      {/* Sélecteur Pays Résidence */}
       <TouchableOpacity style={styles.selectInput} onPress={() => setModalType('RESIDENCE_COUNTRY')}>
         {residenceCountry ? (
              <View style={{flexDirection:'row', alignItems:'center'}}>
@@ -172,33 +176,23 @@ export default function RegisterScreen() {
         <Ionicons name="chevron-down" size={20} color="#999" />
       </TouchableOpacity>
 
-      {/* Ville Résidence */}
       <TouchableOpacity style={styles.selectInput} onPress={() => {
-          if(!residenceCountry) Alert.alert("Info", "Sélectionnez d'abord un pays.");
+          if(!residenceCountry) showWebAlert("Info", "Sélectionnez d'abord un pays.");
           else setModalType('RESIDENCE_CITY');
       }}>
         <Text style={residenceCity ? styles.inputText : styles.placeholder}>{residenceCity || "Ville de résidence"}</Text>
         <Ionicons name="chevron-down" size={20} color="#999" />
       </TouchableOpacity>
 
-      {/* Téléphone avec Indicatif */}
       <View style={{flexDirection:'row', gap:8}}>
         <View style={styles.phoneCodeBox}>
             <Text style={{fontWeight:'bold'}}>{residenceCountry ? `+${residenceCountry.dialCode}` : "+ ??"}</Text>
         </View>
-        <TextInput 
-            style={[styles.input, {flex:1}]} 
-            placeholder="Numéro téléphone" 
-            keyboardType="phone-pad" 
-            value={phone} 
-            onChangeText={setPhone} 
-        />
+        <TextInput style={[styles.input, {flex:1}]} placeholder="Numéro téléphone" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
       </View>
 
-      {/* 4. ÉTAT CIVIL (KYC) */}
       <Text style={styles.groupTitle}>ÉTAT CIVIL (KYC)</Text>
 
-      {/* Nationalité */}
       <TouchableOpacity style={styles.selectInput} onPress={() => setModalType('NATIONALITY')}>
         <Text style={styles.labelSmall}>Nationalité</Text>
         <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginTop:4}}>
@@ -207,7 +201,6 @@ export default function RegisterScreen() {
         </View>
       </TouchableOpacity>
 
-      {/* Date de Naissance (3 champs simples) */}
       <Text style={[styles.labelSmall, {marginTop:10, marginBottom:4}]}>Date de Naissance</Text>
       <View style={styles.row}>
         <TextInput style={[styles.input, {flex:1, marginRight:5}]} placeholder="JJ" keyboardType="numeric" maxLength={2} value={birthDay} onChangeText={setBirthDay} />
@@ -215,17 +208,14 @@ export default function RegisterScreen() {
         <TextInput style={[styles.input, {flex:1.5}]} placeholder="AAAA" keyboardType="numeric" maxLength={4} value={birthYear} onChangeText={setBirthYear} />
       </View>
 
-      {/* Lieu de Naissance */}
       <View style={styles.row}>
-        {/* Pays Naissance */}
         <TouchableOpacity style={[styles.selectInput, {flex:1, marginRight:8}]} onPress={() => setModalType('BIRTH_COUNTRY')}>
              <Text style={styles.labelSmall}>Pays Naissance</Text>
              <Text style={[birthCountry ? styles.inputText : styles.placeholder, {marginTop:4}]} numberOfLines={1}>{birthCountry?.name || "Choisir"}</Text>
         </TouchableOpacity>
 
-        {/* Ville Naissance */}
         <TouchableOpacity style={[styles.selectInput, {flex:1}]} onPress={() => {
-             if(!birthCountry) Alert.alert("Info", "Pays de naissance requis.");
+             if(!birthCountry) showWebAlert("Info", "Pays de naissance requis.");
              else setModalType('BIRTH_CITY');
         }}>
              <Text style={styles.labelSmall}>Ville Naissance</Text>
@@ -233,8 +223,6 @@ export default function RegisterScreen() {
         </TouchableOpacity>
       </View>
 
-
-      {/* BOUTON */}
       <Pressable style={styles.button} onPress={onSubmit} disabled={isLoading}>
         {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>CRÉER MON COMPTE</Text>}
       </Pressable>
@@ -245,11 +233,9 @@ export default function RegisterScreen() {
             <TouchableOpacity><Text style={styles.link}>Se connecter</Text></TouchableOpacity>
         </Link>
       </View>
-
       <View style={{height:50}} />
     </ScrollView>
 
-    {/* MODALE UNIQUE */}
     <Modal visible={!!modalType} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
@@ -259,11 +245,11 @@ export default function RegisterScreen() {
                         <Ionicons name="close" size={24} color="#333" />
                     </TouchableOpacity>
                 </View>
-                <FlatList 
+                <FlatList<any>
                     data={getModalData()}
                     keyExtractor={(item: any, i) => (item.code || item) + i}
-                    renderItem={modalType?.includes('CITY') ? renderCityItem : renderCountryItem}
-                    ListEmptyComponent={<Text style={{padding:20, textAlign:'center'}}>Aucune donnée disponible.</Text>}
+                    renderItem={renderItem}
+                    ListEmptyComponent={<Text style={{padding:20, textAlign:'center', color:'#888'}}>Aucune donnée pour ce choix.</Text>}
                 />
             </View>
         </View>
@@ -275,31 +261,22 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: { padding: 20, backgroundColor: "#F8FAFC", paddingBottom: 50 },
   headerTitle: { fontSize: 24, fontWeight: "900", color: colors.primary, marginBottom: 20, textAlign: "center" },
-  
   sectionBox: { backgroundColor: "#FFF", padding: 15, borderRadius: 12, borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 20 },
   sectionLabel: { fontSize: 12, fontWeight: "700", color: "#64748B", marginBottom: 5, textTransform: 'uppercase' },
   inputHighlight: { backgroundColor: "#F0F9FF", borderWidth: 1, borderColor: colors.primary, borderRadius: 8, padding: 12, fontSize: 16, fontWeight: 'bold', color: colors.primary },
   hint: { fontSize: 11, color: "#94A3B8", marginTop: 4, fontStyle: 'italic' },
-
   groupTitle: { fontSize: 12, fontWeight: "800", color: "#94A3B8", marginTop: 10, marginBottom: 8, letterSpacing: 1 },
-  
   row: { flexDirection: "row", marginBottom: 12 },
   input: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 14, fontSize: 15, color: "#333", marginBottom: 12 },
-  
   selectInput: { backgroundColor: "#FFF", borderWidth: 1, borderColor: "#E2E8F0", borderRadius: 10, padding: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   inputText: { fontSize: 15, color: "#333" },
   placeholder: { fontSize: 15, color: "#94A3B8" },
   labelSmall: { fontSize: 10, color: "#64748B", fontWeight: '700', textTransform:'uppercase' },
-
   phoneCodeBox: { backgroundColor: "#E2E8F0", borderRadius: 10, width: 60, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-
   button: { backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: "center", marginTop: 20, shadowColor: colors.primary, shadowOpacity: 0.3, shadowRadius: 5, elevation: 3 },
   buttonText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
-
   footer: { flexDirection: "row", justifyContent: "center", marginTop: 20 },
   link: { color: colors.primary, fontWeight: "800" },
-
-  // Styles Modale
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: "#FFF", borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '70%', padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingBottom: 15, borderBottomWidth: 1, borderBottomColor: '#EEE' },

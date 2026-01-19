@@ -17,8 +17,6 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-
-// ✅ CORRECTION DE L'IMPORT : On pointe vers le dossier 'strategies'
 import { AuthUserPayload } from './strategies/jwt.strategy'; 
 
 @Controller('auth')
@@ -29,40 +27,24 @@ export class AuthController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // --- Helper Tenant ---
-  private async resolveClientId(headerValue: unknown): Promise<number> {
-    if (!headerValue) throw new BadRequestException('Missing x-tenant-id');
-    const raw = String(headerValue).trim();
-    
-    // 1. ID numérique
-    if (/^\d+$/.test(raw)) {
-      const id = Number(raw);
-      const exists = await this.prisma.client.findUnique({ where: { id } });
-      if (!exists) throw new BadRequestException(`Unknown tenant id: ${id}`);
-      return exists.id;
-    }
-
-    // 2. Code (ex: FLASH2026)
-    const client = await this.prisma.client.findUnique({ where: { code: raw.toUpperCase() } });
-    if (!client) throw new BadRequestException(`Unknown tenant code: ${raw}`);
-    return client.id;
-  }
-
   // --- REGISTER ---
-  @ApiHeader({ name: 'x-tenant-id', required: true })
+  // On ne force pas le header x-tenant-id ici car le tenantCode est dans le DTO
   @Post('register')
-  async register(@Req() req: Request, @Body() dto: RegisterDto) {
-    await this.resolveClientId(req.headers['x-tenant-id']);
+  async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
   // --- LOGIN ---
   @Post('login')
   async login(@Req() req: Request, @Body() dto: LoginDto) {
-    const header = req.headers['x-tenant-id'];
-    // Le clientID est optionnel au login (sauf si stratégie stricte), mais utile pour vérifier
-    const clientId = header ? await this.resolveClientId(header) : undefined;
-    return this.authService.login(dto, clientId);
+    // On récupère le tenantCode depuis le header (envoyé par le front)
+    const rawHeader = req.headers['x-tenant-id'];
+    
+    // On s'assure que c'est une string ou undefined
+    const tenantCode = typeof rawHeader === 'string' ? rawHeader : undefined;
+
+    // ✅ On passe le CODE (string) au service, pas l'ID numérique
+    return this.authService.login(dto, tenantCode);
   }
 
   // --- ME ---
@@ -71,7 +53,6 @@ export class AuthController {
   @ApiBearerAuth()
   async me(@Req() req: Request & { user?: AuthUserPayload }) {
     if (!req.user) throw new BadRequestException('User not found');
-    // ✅ Utilisation de 'id' (plus propre que sub)
     return this.authService.getProfile(req.user.id);
   }
 
@@ -84,7 +65,6 @@ export class AuthController {
     @Body() body: any,
   ) {
     if (!req.user) throw new BadRequestException('User not found');
-    // ✅ Utilisation de 'id'
     return this.authService.updateProfile(req.user.id, body);
   }
 }

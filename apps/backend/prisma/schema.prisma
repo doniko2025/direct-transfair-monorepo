@@ -15,20 +15,20 @@ datasource db {
 // ===================== ENUMS =====================
 
 enum Role {
-  SUPER_ADMIN    // Toi (Gère les sociétés)
-  COMPANY_ADMIN  // Le patron d'une société cliente (Gère ses agences)
-  AGENT          // L'employé dans une agence (Fait les dépôts/retraits)
-  USER           // Le client final (Envoie de l'argent depuis son canapé)
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  AGENT
+  USER
 }
 
 enum SubscriptionType {
-  RENTAL   // Location mensuelle/trimestrielle
-  PURCHASE // Achat définitif
+  RENTAL
+  PURCHASE
 }
 
 enum SubscriptionStatus {
   ACTIVE
-  INACTIVE  // ✅ AJOUTÉ : Pour correspondre à ton frontend
+  INACTIVE
   EXPIRED
   SUSPENDED
 }
@@ -52,7 +52,7 @@ enum PaymentMethod {
   ORANGE_MONEY
   SENDWAVE
   CARD
-  CASH // Pour les dépôts en agence
+  CASH
 }
 
 enum PaymentProvider {
@@ -78,44 +78,43 @@ enum WithdrawalStatus {
 
 model Client {
   id   Int    @id @default(autoincrement())
-  code String @unique // Ex: "DONIKO", "WARI", "WESTERN"
+  code String @unique 
   name String
 
   // --- Configuration Visuelle ---
   logoUrl      String?
   primaryColor String? @default("#F7931E")
+    
+  // --- Infos Légales & Contact ---
+  address             String?
+  phone               String?
+  email               String?
    
-  // --- Infos Légales & Contact (Modifié pour correspondre au Frontend) ---
-  address            String? // Adresse du siège
-  phone              String? // Téléphone général
-  email              String? // Email général
-  
-  // ✅ CHAMPS AJOUTÉS POUR CORRIGER L'ERREUR 500
-  activitySector     String? // Secteur d'activité
-  contactPhone       String? // Téléphone contact direct
-  contactEmail       String? // Email contact direct
-  
-  // --- Infos Demandeur / Gérant (AJOUTÉS) ---
-  ownerFirstName     String?
-  ownerLastName      String?
-  ownerBirthDate     String? // Format String pour accepter "JJ/MM/AAAA" ou ISO
-  ownerBirthPlace    String?
-  ownerCountry       String? // Pays de résidence
-  ownerAddress       String? // Adresse personnelle
+  activitySector      String?
+  contactPhone        String?
+  contactEmail        String?
+   
+  // --- Infos Demandeur / Gérant ---
+  ownerFirstName      String?
+  ownerLastName       String?
+  ownerBirthDate      String?
+  ownerBirthPlace     String?
+  ownerCountry        String?
+  ownerAddress        String?
 
   representativeName String?
   representativeDocs String?
 
   // --- Abonnement ---
-  subscriptionType   SubscriptionType   @default(RENTAL)
+  subscriptionType    SubscriptionType    @default(RENTAL)
   subscriptionStatus SubscriptionStatus @default(ACTIVE)
-  subscriptionEnd    DateTime?
+  subscriptionEnd     DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users        User[]
-  agencies     Agency[]
+  users         User[]
+  agencies      Agency[]
   beneficiaries Beneficiary[]
   transactions Transaction[]
   withdrawals  Withdrawal[]
@@ -125,21 +124,21 @@ model Client {
 
 model Agency {
   id      String @id @default(cuid())
-  name    String // Ex: "Agence Paris 18"
+  name    String
   city    String
   address String
   phone   String?
-   
+    
   balance      Decimal @default(0) @db.Decimal(12, 2)
   creditLimit  Decimal @default(0) @db.Decimal(12, 2)
 
-  isActive     Boolean @default(true)
+  isActive      Boolean @default(true)
 
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
 
   agents   User[]  @relation("AgencyAgents")
-   
+    
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -147,10 +146,10 @@ model Agency {
 // ===================== USER (ACTEURS) =====================
 
 model User {
-  id       String @id @default(cuid())
-  email    String @unique
+  id        String @id @default(cuid())
+  email     String @unique
   password String
-  role     Role   @default(USER)
+  role      Role   @default(USER)
 
   // --- Identité ---
   firstName String?
@@ -165,16 +164,18 @@ model User {
   city          String?
   country       String?
 
-  // --- État Civil ---
-  nationality String?
-  birthDate   String?
-  birthPlace  String?
+  // --- État Civil (KYC Complet) ---
+  nationality  String?
+  birthDate    String? // Stocké en String pour simplifier le format ISO/Texte
+  birthPlace   String?
+  birthCountry String? // ✅ Ce champ est bien là
+  birthCity    String? // ✅ Ce champ aussi
 
   // --- Financier ---
   balance Decimal @default(0) @db.Decimal(12, 2)
 
   // --- Relations ---
-  clientId Int? // Optionnel pour Super Admin
+  clientId Int? 
   client   Client? @relation(fields: [clientId], references: [id])
 
   agencyId  String?
@@ -192,11 +193,11 @@ model User {
 // ===================== BENEFICIARY =====================
 
 model Beneficiary {
-  id       String  @id @default(cuid())
+  id        String  @id @default(cuid())
   fullName String
   country  String
-  city     String
-  phone    String?
+  city      String
+  phone     String?
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -222,15 +223,15 @@ model Transaction {
 
   currency String
 
-  status       TransactionStatus @default(PENDING)
+  status        TransactionStatus @default(PENDING)
   payoutMethod PayoutMethod      @default(CASH_PICKUP)
 
   paymentMethod  PaymentMethod     @default(WALLET)
-   
-  provider       PaymentProvider?
-  providerRef    String?
+    
+  provider        PaymentProvider?
+  providerRef     String?
   providerStatus ProviderStatus?  @default(PENDING)
-   
+    
   senderId String
   sender   User   @relation(fields: [senderId], references: [id])
 

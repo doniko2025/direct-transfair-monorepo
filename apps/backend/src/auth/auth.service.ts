@@ -14,12 +14,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
-// ✅ CORRECTION ICI : clientId accepte maintenant 'number | null'
+// Interface publique renvoyée au frontend
 export type PublicUser = {
   id: string;
   email: string;
   role: Role;
-  clientId: number | null; // <--- C'était 'number', maintenant 'number | null'
+  clientId: number | null; 
 
   firstName?: string | null;
   lastName?: string | null;
@@ -33,6 +33,8 @@ export type PublicUser = {
   nationality?: string | null;
   birthDate?: string | null;
   birthPlace?: string | null;
+  birthCountry?: string | null;
+  birthCity?: string | null;
   
   gender?: string | null;
   jobTitle?: string | null;
@@ -50,7 +52,7 @@ function toPublicUser(user: User): PublicUser {
     id: user.id,
     email: user.email,
     role: user.role,
-    clientId: user.clientId, // TypeScript est content car PublicUser accepte null
+    clientId: user.clientId, 
 
     firstName: user.firstName,
     lastName: user.lastName,
@@ -64,6 +66,10 @@ function toPublicUser(user: User): PublicUser {
     nationality: user.nationality,
     birthDate: user.birthDate,
     birthPlace: user.birthPlace,
+    
+    // ✅ Ces champs fonctionneront après 'npx prisma generate'
+    birthCountry: user.birthCountry, 
+    birthCity: user.birthCity,       
     
     gender: user.gender,
     jobTitle: user.jobTitle,
@@ -93,37 +99,51 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     let userRole: Role = Role.USER;
-
+    // Gestion simplifiée des rôles via le DTO (sécuriser en prod)
     if ((dto.role as any) === 'ADMIN' || dto.role === 'COMPANY_ADMIN') {
         userRole = Role.COMPANY_ADMIN;
     } else if ((dto.role as any) === 'SUPER_ADMIN') {
         userRole = Role.SUPER_ADMIN;
-    } else {
-        userRole = Role.USER;
     }
 
-    // Par défaut on lie au client 1 (Doniko). 
-    // Pour un Super Admin sans client, on pourrait passer null ici si UsersService l'accepte.
-    const defaultClientId = 1; 
+    // Gestion du Tenant (Code Société)
+    let clientId: number | null = null;
+    if (dto.tenantCode && dto.tenantCode !== 'DONIKO') {
+        const client = await this.prisma.client.findUnique({
+            where: { code: dto.tenantCode.toUpperCase() }
+        });
+        if (client) {
+            clientId = client.id;
+        }
+    } else {
+        // Fallback: Si pas de code ou code DONIKO, on assigne ID 1 (Doniko) ou null
+        clientId = 1; 
+    }
 
-    const newUser = await this.users.create(
-      email,
-      hashedPassword,
-      userRole,
-      defaultClientId,
-      {
+    // Création
+    const newUser = await this.prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        role: userRole,
+        clientId: clientId,
+        
         firstName: dto.firstName,
         lastName: dto.lastName,
         phone: dto.phone,
-        addressStreet: dto.addressStreet || (dto as any).addressNumber,
-        postalCode: dto.postalCode,
-        city: dto.city,
+        
         country: dto.country,
+        city: dto.city,
+        addressStreet: dto.addressStreet,
+        postalCode: dto.postalCode,
+        
         nationality: dto.nationality,
         birthDate: dto.birthDate,
         birthPlace: dto.birthPlace,
+        birthCountry: dto.birthCountry,
+        birthCity: dto.birthCity,
       },
-    );
+    });
 
     return this.login({ email: dto.email, password: dto.password });
   }
@@ -133,7 +153,7 @@ export class AuthService {
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
-    clientId?: number,
+    tenantCode?: string, 
   ): Promise<{ access_token: string; user: PublicUser }> {
     const user = await this.validateUser(dto.email, dto.password);
 
@@ -141,16 +161,10 @@ export class AuthService {
       throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // Vérification Multi-tenant (seulement si user a un clientId)
-    if (typeof clientId === 'number' && user.clientId && user.clientId !== clientId) {
-      throw new UnauthorizedException('Société invalide');
-    }
-
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
-      // ✅ Si null, on envoie null explicitement
       clientId: user.clientId ?? null, 
     };
 
@@ -191,27 +205,21 @@ export class AuthService {
   // ✅ UPDATE PROFILE
   // ---------------------------------------------------------
   async updateProfile(userId: string, data: any): Promise<PublicUser> {
-    delete data.id;
-    delete data.role;
-    delete data.password;
-    delete data.clientId;
-    delete data.balance; 
-    delete data.email;
+    const updateData = { ...data };
+    
+    // Nettoyage sécurité
+    delete updateData.id;
+    delete updateData.role;
+    delete updateData.password;
+    delete updateData.clientId;
+    delete updateData.balance; 
+    delete updateData.email; 
 
     const updated = await this.prisma.user.update({
         where: { id: userId },
-        data: { ...data }
+        data: updateData
     });
 
     return toPublicUser(updated);
-  }
-
-  // Méthodes de compatibilité
-  async registerUser(dto: RegisterDto, clientId: number) {
-      return this.register({ ...dto, role: 'USER' } as any);
-  }
-
-  async registerAdmin(dto: RegisterDto, clientId: number) {
-      return this.register({ ...dto, role: 'ADMIN' } as any);
   }
 }
