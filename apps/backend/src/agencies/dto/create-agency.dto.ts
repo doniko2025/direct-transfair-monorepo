@@ -28,6 +28,11 @@ export class CreateAgencyDto {
   @IsString()
   country?: string;
 
+  // ✅ AJOUT DEVISE
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
   @IsOptional()
   @IsString()
   managerName?: string;
@@ -44,7 +49,7 @@ export class CreateAgencyDto {
   @IsString()
   adminPassword?: string;
 
-  // ✅ CHAMPS TOLÉRÉS (envoyés par le front mais ignorés ou gérés ailleurs)
+  // ✅ CHAMPS TOLÉRÉS
   @IsOptional()
   @IsString()
   code?: string;

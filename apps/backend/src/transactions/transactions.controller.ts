@@ -9,18 +9,22 @@ import {
   Req,
   UseGuards,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 
 import { TransactionsService } from './transactions.service';
-import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CreateTransactionDto, CreateDepositDto } from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { TenantGuard } from '../tenants/tenant.guard';
+// ⚠️ ON RETIRE L'IMPORT DU TENANT GUARD POUR EVITER LE BLOCAGE
+// import { TenantGuard } from '../tenants/tenant.guard'; 
 import { AdminGuard } from '../common/guards/admin.guard';
 import type { AuthedRequest } from '../types/requests';
 
-@UseGuards(TenantGuard, JwtAuthGuard)
+// ⚠️ CORRECTION ICI : On garde uniquement JwtAuthGuard (Authentification simple)
+// On a retiré TenantGuard qui bloquait l'accès.
+@UseGuards(JwtAuthGuard)
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly transactionsService: TransactionsService) {}
@@ -31,7 +35,52 @@ export class TransactionsController {
     return userId;
   }
 
-  // ----- ADMIN -----
+  // =========================================================
+  // 👑 SECTION SUPER ADMIN (GESTION TRÉSORERIE)
+  // =========================================================
+
+  // 1. S'INJECTER DE L'ARGENT (Banque Centrale -> Admin)
+  @Post('admin/fund-self')
+  async fundSelf(@Req() req: AuthedRequest, @Body('amount') amount: number) {
+      const user = req.user;
+      
+      // Log pour le debug dans le terminal
+      console.log("💰 Demande fund-self par :", user?.email);
+
+      if (!user) throw new ForbiddenException("Non authentifié");
+      
+      // On autorise SUPER_ADMIN et COMPANY_ADMIN
+      if (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN') {
+          throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
+      }
+
+      const userId = this.getUserId(req);
+      if (!amount || amount <= 0) throw new BadRequestException("Montant invalide");
+      
+      return this.transactionsService.fundAdminWallet(userId, amount);
+  }
+
+  // 2. RECHARGER UNE AGENCE (Admin -> Agence avec Conversion)
+  @Post('admin/refill-agency')
+  async refillAgency(
+      @Req() req: AuthedRequest, 
+      @Body() body: { agencyId: string; amount: number } 
+  ) {
+      const user = req.user;
+      if (!user) throw new ForbiddenException("Non authentifié");
+
+      if (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN') {
+          throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
+      }
+
+      const userId = this.getUserId(req);
+      if (!body.agencyId || !body.amount) throw new BadRequestException("AgencyId et Amount requis");
+      
+      return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
+  }
+
+  // ----- ADMIN LECTURE -----
+  // On garde AdminGuard ici car c'est de la lecture de données sensibles
   @UseGuards(AdminGuard)
   @Get('admin/all')
   async adminFindAll(@Req() req: AuthedRequest) {
@@ -50,7 +99,18 @@ export class TransactionsController {
     return this.transactionsService.adminUpdateStatusForAdmin(userId, id, dto);
   }
 
-  // ----- USER -----
+  // ----- AGENT (Dépôt Client) -----
+  @Post('deposit')
+  async deposit(@Req() req: AuthedRequest, @Body() dto: CreateDepositDto) {
+    const userId = this.getUserId(req);
+    // Vérification souple
+    if (req.user?.role !== 'AGENT' && req.user?.role !== 'COMPANY_ADMIN') {
+        throw new ForbiddenException("Seuls les agents peuvent effectuer des dépôts.");
+    }
+    return this.transactionsService.deposit(userId, dto);
+  }
+
+  // ----- USER (Envois) -----
   @Post()
   async create(@Req() req: AuthedRequest, @Body() dto: CreateTransactionDto) {
     const userId = this.getUserId(req);

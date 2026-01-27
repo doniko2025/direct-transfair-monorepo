@@ -9,6 +9,7 @@ import {
   Post,
   Req,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -32,47 +33,65 @@ type ReqWithAuth = Request & {
 export class WithdrawalsController {
   constructor(private readonly withdrawals: WithdrawalsService) {}
 
+  // --- CLIENT : Demander un retrait ---
   @Post('withdrawals')
   async create(@Req() req: ReqWithAuth, @Body() dto: CreateWithdrawalDto) {
     const clientId = req.tenantContext?.clientId;
-    if (typeof clientId !== 'number' || clientId <= 0) {
-      throw new ForbiddenException('Tenant not resolved');
-    }
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
+    if (!req.user?.id) throw new ForbiddenException('Not authenticated');
 
-    const user = req.user;
-    if (!user?.id) {
-      throw new ForbiddenException('Not authenticated');
-    }
-
-    return this.withdrawals.create(clientId, user.id, dto);
+    return this.withdrawals.create(clientId, req.user.id, dto);
   }
 
+  // --- CLIENT : Mes retraits ---
   @Get('withdrawals/me')
   async mine(@Req() req: ReqWithAuth) {
     const clientId = req.tenantContext?.clientId;
-    if (typeof clientId !== 'number' || clientId <= 0) {
-      throw new ForbiddenException('Tenant not resolved');
-    }
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
+    if (!req.user?.id) throw new ForbiddenException('Not authenticated');
 
-    const user = req.user;
-    if (!user?.id) {
-      throw new ForbiddenException('Not authenticated');
-    }
-
-    return this.withdrawals.listMine(clientId, user.id);
+    return this.withdrawals.listMine(clientId, req.user.id);
   }
 
+  // --- AGENT : Vérifier un code de retrait ---
+  // ✅ NOUVELLE ROUTE
+  @Post('withdrawals/agent/check')
+  async agentCheckCode(@Req() req: ReqWithAuth, @Body('code') code: string) {
+    const clientId = req.tenantContext?.clientId;
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
+    
+    // Vérif rôle Agent
+    if (req.user?.role !== 'AGENT' && req.user?.role !== 'COMPANY_ADMIN') {
+        throw new ForbiddenException("Réservé aux agents");
+    }
+
+    return this.withdrawals.agentCheckCode(clientId, code);
+  }
+
+  // --- AGENT : Valider le paiement (Cash-Out) ---
+  // ✅ NOUVELLE ROUTE
+  @Post('withdrawals/agent/pay')
+  async agentProcessPayment(@Req() req: ReqWithAuth, @Body('code') code: string) {
+    const clientId = req.tenantContext?.clientId;
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
+    
+    if (req.user?.role !== 'AGENT' && req.user?.role !== 'COMPANY_ADMIN') {
+        throw new ForbiddenException("Réservé aux agents");
+    }
+
+    return this.withdrawals.agentProcessPayment(clientId, req.user!.id, code);
+  }
+
+  // --- ADMIN : Lister tout ---
   @UseGuards(AdminGuard)
   @Get('admin/withdrawals')
   async adminAll(@Req() req: ReqWithAuth) {
     const clientId = req.tenantContext?.clientId;
-    if (typeof clientId !== 'number' || clientId <= 0) {
-      throw new ForbiddenException('Tenant not resolved');
-    }
-
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
     return this.withdrawals.adminListAll(clientId);
   }
 
+  // --- ADMIN : Update manuel ---
   @UseGuards(AdminGuard)
   @Patch('admin/withdrawals/:id')
   async adminUpdate(
@@ -81,15 +100,9 @@ export class WithdrawalsController {
     @Body() dto: UpdateWithdrawalStatusDto,
   ) {
     const clientId = req.tenantContext?.clientId;
-    if (typeof clientId !== 'number' || clientId <= 0) {
-      throw new ForbiddenException('Tenant not resolved');
-    }
+    if (!clientId) throw new ForbiddenException('Tenant not resolved');
+    if (!req.user?.id) throw new ForbiddenException('Not authenticated');
 
-    const user = req.user;
-    if (!user?.id) {
-      throw new ForbiddenException('Not authenticated');
-    }
-
-    return this.withdrawals.adminUpdateStatus(clientId, user.id, id, dto);
+    return this.withdrawals.adminUpdateStatus(clientId, req.user.id, id, dto);
   }
 }

@@ -13,10 +13,11 @@ import {
   Transaction,
   TransactionStatus,
   PayoutMethod,
+  PaymentMethod,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateTransactionDto } from './dto/create-transaction.dto';
+import { CreateTransactionDto, CreateDepositDto } from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 
 const TERMINAL_TX: TransactionStatus[] = [
@@ -26,11 +27,8 @@ const TERMINAL_TX: TransactionStatus[] = [
 
 function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   if (from === to) return;
-
-  if (TERMINAL_TX.includes(from)) {
-    throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
-  }
-
+  if (TERMINAL_TX.includes(from)) throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
+  
   const allowed: Record<TransactionStatus, TransactionStatus[]> = {
     PENDING: [TransactionStatus.VALIDATED, TransactionStatus.CANCELLED],
     VALIDATED: [TransactionStatus.PAID, TransactionStatus.CANCELLED],
@@ -38,43 +36,202 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
     CANCELLED: [],
   };
 
-  const ok = allowed[from]?.includes(to);
-  if (!ok) throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
+  if (!allowed[from]?.includes(to)) throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
 }
 
 @Injectable()
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // USER — Création transaction
+  // =================================================================
+  // 💰 GESTION TRÉSORERIE ADMIN & MULTI-DEVISES
+  // =================================================================
+
+  // 1. TAUX DE CHANGE (Hardcodé pour la démo, à connecter à une API plus tard)
+  private getExchangeRate(from: string, to: string): number {
+      if (from === to) return 1;
+      
+      const rates: Record<string, number> = {
+          'EUR_XOF': 655.957,
+          'XOF_EUR': 0.001524,
+          
+          'EUR_GNF': 9500, // Approx
+          'GNF_EUR': 0.000105,
+
+          'XOF_GNF': 14.5, // 1 FCFA = 14.5 GNF (Exemple)
+          'GNF_XOF': 0.069,
+      };
+
+      const key = `${from}_${to}`;
+      if (rates[key]) return rates[key];
+
+      throw new BadRequestException(`Taux de change introuvable pour ${from} -> ${to}`);
+  }
+
+  // 2. FUND SELF (S'injecter de l'argent)
+  async fundAdminWallet(adminId: string, amount: number) {
+      const amountDecimal = new Prisma.Decimal(amount);
+      
+      const updatedAdmin = await this.prisma.user.update({
+          where: { id: adminId },
+          data: { balance: { increment: amountDecimal } }
+      });
+
+      return { 
+          message: "Compte Admin alimenté avec succès", 
+          newBalance: updatedAdmin.balance,
+          currency: "XOF" // On suppose que l'admin est en XOF pour l'instant
+      };
+  }
+
+  // 3. REFILL AGENCY (Admin envoie XOF -> Agence reçoit GNF)
+  async refillAgency(adminId: string, agencyId: string, amountToSend: number) {
+      // A. Récupérer Admin et Agence
+      const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
+      const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
+
+      if (!admin) throw new NotFoundException("Admin introuvable");
+      if (!agency) throw new NotFoundException("Agence introuvable");
+
+      // B. Vérifier Solde Admin
+      const amountOut = new Prisma.Decimal(amountToSend);
+      if (admin.balance.lessThan(amountOut)) {
+          throw new ForbiddenException(`Solde Admin insuffisant (${admin.balance} < ${amountOut})`);
+      }
+
+      // C. Conversion Devises
+      // On suppose que l'admin est en XOF (ou une devise par défaut stockée sur le Client)
+      const adminCurrency = "XOF"; 
+      const agencyCurrency = agency.currency || "XOF";
+      
+      const rate = this.getExchangeRate(adminCurrency, agencyCurrency);
+      
+      // Montant reçu par l'agence = Montant envoyé * Taux
+      // Ex: 1.000.000 XOF * 14.5 = 14.500.000 GNF
+      const amountIn = amountOut.mul(rate);
+
+      // D. Transaction Atomique (Débit Admin / Crédit Agence)
+      await this.prisma.$transaction([
+          // 1. Débiter Admin
+          this.prisma.user.update({
+              where: { id: adminId },
+              data: { balance: { decrement: amountOut } }
+          }),
+          // 2. Créditer Agence
+          this.prisma.agency.update({
+              where: { id: agencyId },
+              data: { balance: { increment: amountIn } }
+          }),
+          // 3. Créer Historique (Type: REFILL)
+          this.prisma.transaction.create({
+              data: {
+                  reference: `REFILL-${Date.now()}`,
+                  amount: amountOut, // Montant débité
+                  fees: new Prisma.Decimal(0),
+                  total: amountOut,
+                  currency: adminCurrency, // Devise de départ
+                  status: TransactionStatus.PAID,
+                  payoutMethod: PayoutMethod.BANK_DEPOSIT, // Détourné pour dire "Interne"
+                  senderId: adminId,
+                  recipientId: null, // C'est une agence, pas un user
+                  clientId: admin.clientId!,
+                  // On pourrait stocker le montant reçu et la devise cible dans des champs meta JSON si besoin
+              }
+          })
+      ]);
+
+      return {
+          status: "SUCCESS",
+          sent: `${amountOut} ${adminCurrency}`,
+          rate: rate,
+          received: `${amountIn} ${agencyCurrency}`,
+          agencyNewBalance: (await this.prisma.agency.findUnique({where: {id: agencyId}}))?.balance
+      };
+  }
+
+  // =================================================================
+  // ✅ DÉPÔT / CASH-IN (Agent -> Client)
+  // =================================================================
+  async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
+    const agent = await this.prisma.user.findUnique({
+        where: { id: agentId },
+        include: { agency: true }
+    });
+
+    if (!agent || !agent.agencyId || !agent.agency) throw new ForbiddenException("Agent sans agence.");
+    if (!agent.clientId) throw new ForbiddenException("Agent sans société.");
+
+    const amountDecimal = new Prisma.Decimal(dto.amount);
+    
+    // Vérification Solde Agence
+    if (agent.agency.balance.lessThan(amountDecimal)) {
+        throw new ForbiddenException(`Solde caisse agence insuffisant (${agent.agency.balance} ${agent.agency.currency})`);
+    }
+
+    const cleanPhone = dto.userPhone.replace(/\s/g, '').replace('+', ''); 
+    const clientUser = await this.prisma.user.findFirst({
+        where: { phone: { contains: cleanPhone }, clientId: agent.clientId }
+    });
+
+    if (!clientUser) throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
+
+    return this.prisma.$transaction(async (tx) => {
+        // 1. Débiter l'Agence
+        await tx.agency.update({
+            where: { id: agent.agencyId! },
+            data: { balance: { decrement: amountDecimal } }
+        });
+
+        // 2. Créditer le Client
+        await tx.user.update({
+            where: { id: clientUser.id },
+            data: { balance: { increment: amountDecimal } }
+        });
+
+        // 3. Historique
+        const txData: Prisma.TransactionUncheckedCreateInput = {
+            reference: this.generateReference(),
+            amount: amountDecimal,
+            fees: new Prisma.Decimal(0),
+            total: amountDecimal,
+            // L'agence envoie sa propre devise
+            currency: agent.agency!.currency || "XOF", 
+            status: TransactionStatus.PAID,
+            payoutMethod: PayoutMethod.WALLET,
+            paymentMethod: PaymentMethod.CASH,
+            senderId: agent.id,
+            recipientId: clientUser.id,
+            clientId: agent.clientId!,
+            paidAt: new Date(),
+        };
+
+        return tx.transaction.create({ data: txData });
+    });
+  }
+
+  // =================================================================
+  // TRANSFERT STANDARD (Client -> Bénéficiaire)
+  // =================================================================
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({ where: { id: senderId } });
     if (!user) throw new NotFoundException('User not found');
-
-    // ✅ CORRECTION : On vérifie que le user a bien un clientId
-    if (!user.clientId) {
-        throw new ForbiddenException('User must belong to a client/company to create transactions');
-    }
+    if (!user.clientId) throw new ForbiddenException('User must belong to a client');
+    
     const clientId = user.clientId;
-
     const beneficiary = await this.prisma.beneficiary.findFirst({
       where: { id: dto.beneficiaryId, userId: senderId },
     });
-    if (!beneficiary) throw new NotFoundException('Beneficiary not found for this user');
-
-    if (beneficiary.clientId !== clientId) {
-      throw new ForbiddenException('Beneficiary does not belong to this client');
-    }
+    if (!beneficiary) throw new NotFoundException('Beneficiary not found');
 
     const amount = new Prisma.Decimal(dto.amount);
     const fees = amount.mul(new Prisma.Decimal(0.015));
     const total = amount.plus(fees);
 
+    if (user.balance.lessThan(total)) throw new ForbiddenException("Solde insuffisant.");
+
     const data: Prisma.TransactionUncheckedCreateInput = {
       reference: this.generateReference(),
-      amount, 
-      fees,   
-      total,  
+      amount, fees, total,
       currency: dto.currency,
       payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
       status: TransactionStatus.PENDING,
@@ -88,7 +245,7 @@ export class TransactionsService {
 
   async findForUser(senderId: string): Promise<Transaction[]> {
     return this.prisma.transaction.findMany({
-      where: { senderId },
+      where: { OR: [{ senderId }, { recipientId: senderId }] },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -99,40 +256,19 @@ export class TransactionsService {
     return tx;
   }
 
-  // ADMIN — Liste
   async adminFindAllForAdmin(adminId: string): Promise<Transaction[]> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-    if (!admin) throw new NotFoundException('Admin user not found');
-
-    // ✅ CORRECTION TYPESCRIPT : Gestion du clientId null
-    // Si c'est un Super Admin (pas de client), il voit TOUT (optionnel) ou RIEN (sécurité)
-    // Ici, on suppose qu'un admin sans client ne gère pas de transactions spécifiques.
-    if (!admin.clientId) {
-        // Option A : Retourner vide
-        return []; 
-        // Option B : Si Super Admin, retourner tout :
-        // if (admin.role === 'SUPER_ADMIN') return this.prisma.transaction.findMany(...)
-    }
-
+    if (!admin?.clientId) return []; 
     return this.prisma.transaction.findMany({
-      where: { clientId: admin.clientId }, // TypeScript est content car on a vérifié !admin.clientId avant
+      where: { clientId: admin.clientId },
       orderBy: { createdAt: 'desc' },
       include: { sender: true, beneficiary: true, client: true, withdrawal: true },
     });
   }
 
-  // ADMIN — Changement statut transaction (verrouillé)
-  async adminUpdateStatusForAdmin(
-    adminId: string,
-    id: string,
-    dto: UpdateTransactionStatusDto,
-  ): Promise<Transaction> {
+  async adminUpdateStatusForAdmin(adminId: string, id: string, dto: UpdateTransactionStatusDto): Promise<Transaction> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-    if (!admin) throw new NotFoundException('Admin user not found');
-
-    if (!admin.clientId) {
-        throw new ForbiddenException("Cet admin n'est rattaché à aucune société.");
-    }
+    if (!admin?.clientId) throw new ForbiddenException("Admin sans société.");
 
     const tx = await this.prisma.transaction.findFirst({
       where: { id, clientId: admin.clientId },
@@ -140,59 +276,19 @@ export class TransactionsService {
     });
     if (!tx) throw new NotFoundException('Transaction not found');
 
-    const from = tx.status;
-    const to = dto.status;
+    assertTxTransition(tx.status, dto.status);
 
-    assertTxTransition(from, to);
-
-    if (to === TransactionStatus.CANCELLED && tx.withdrawal?.id) {
-      throw new ConflictException('Annulation interdite: un retrait existe déjà pour cette transaction');
-    }
-
-    if (to === TransactionStatus.PAID) {
-      if (from !== TransactionStatus.VALIDATED) {
-        throw new BadRequestException('Marquage PAID interdit: la transaction doit être VALIDATED');
-      }
-      if (tx.provider === PaymentProvider.ORANGE_MONEY && tx.providerStatus !== ProviderStatus.SUCCESS) {
-        throw new BadRequestException('Marquage PAID interdit: Orange Money doit être SUCCESS via le flux paiement');
-      }
+    if (dto.status === TransactionStatus.CANCELLED && tx.withdrawal?.id) {
+      throw new ConflictException('Impossible d\'annuler : retrait déjà initié');
     }
 
     const now = new Date();
+    const data: Prisma.TransactionUpdateInput = 
+        dto.status === TransactionStatus.PAID ? { status: TransactionStatus.PAID, paidAt: now, providerStatus: ProviderStatus.SUCCESS } :
+        dto.status === TransactionStatus.CANCELLED ? { status: TransactionStatus.CANCELLED, cancelledAt: now } :
+        { status: dto.status };
 
-    const data: Prisma.TransactionUpdateInput = (() => {
-      switch (to) {
-        case TransactionStatus.VALIDATED:
-          return {
-            status: TransactionStatus.VALIDATED,
-            paidAt: null,
-            cancelledAt: null,
-          };
-
-        case TransactionStatus.PAID:
-          return {
-            status: TransactionStatus.PAID,
-            paidAt: now,
-            cancelledAt: null,
-            providerStatus: ProviderStatus.SUCCESS,
-          };
-
-        case TransactionStatus.CANCELLED:
-          return {
-            status: TransactionStatus.CANCELLED,
-            cancelledAt: now,
-            paidAt: null,
-          };
-
-        default:
-          throw new BadRequestException(`Statut non supporté: ${String(to)}`);
-      }
-    })();
-
-    return this.prisma.transaction.update({
-      where: { id },
-      data,
-    });
+    return this.prisma.transaction.update({ where: { id }, data });
   }
 
   private generateReference(): string {

@@ -5,16 +5,28 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import type { AuthRequest } from '../types/auth-request';
+import { Role } from '@prisma/client';
+
+// Typage léger de la requête (évite any)
+type AuthRequest = {
+  user?: {
+    id: string;
+    role?: Role | string;
+    clientId?: number | null;
+  };
+};
 
 @Injectable()
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<AuthRequest>();
-
     const role = String(req.user?.role ?? '').toUpperCase();
-    if (role === 'ADMIN' || role === 'SUPER_ADMIN') return true;
 
-    throw new ForbiddenException('Accès admin requis');
+    // ✅ Autorisés : SUPER_ADMIN et COMPANY_ADMIN
+    if (role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN') {
+      return true;
+    }
+
+    throw new ForbiddenException('Accès administrateur requis');
   }
 }

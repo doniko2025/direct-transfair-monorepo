@@ -42,6 +42,9 @@ export default function SendMoneyScreen() {
   // ✅ NOUVEAU : État pour masquer/afficher le solde
   const [showBalance, setShowBalance] = useState(true);
 
+  // ✅ NOUVEAU : État pour le mode (WALLET vs CASH)
+  const [mode, setMode] = useState<'WALLET' | 'CASH'>('WALLET');
+
   useFocusEffect(
     useCallback(() => {
         const init = async () => {
@@ -75,10 +78,10 @@ export default function SendMoneyScreen() {
   );
 
   useEffect(() => {
-    if (selectedBeneficiaryId && beneficiaries.length > 0) {
+    if (selectedBeneficiaryId && beneficiaries.length > 0 && mode === 'WALLET') {
         updateCurrencyContext(selectedBeneficiaryId, beneficiaries, allRates);
     }
-  }, [selectedBeneficiaryId, beneficiaries, allRates]);
+  }, [selectedBeneficiaryId, beneficiaries, allRates, mode]);
 
   const updateCurrencyContext = (benId: string, benList: Beneficiary[], ratesList: ExchangeRate[]) => {
       const beneficiary = benList.find(b => b.id === benId);
@@ -113,27 +116,37 @@ export default function SendMoneyScreen() {
         return;
     }
 
-    if (!selectedBeneficiaryId) {
-        Alert.alert("Bénéficiaire manquant", "Veuillez sélectionner un bénéficiaire.");
-        return;
-    }
     if (sendAmount <= 0) {
         Alert.alert("Montant invalide", "Veuillez entrer un montant supérieur à 0.");
         return;
     }
 
+    if (mode === 'WALLET' && !selectedBeneficiaryId) {
+        Alert.alert("Bénéficiaire manquant", "Veuillez sélectionner un bénéficiaire.");
+        return;
+    }
+
+    setSending(true);
     try {
-        setSending(true);
-        await api.createTransaction({
-            amount: sendAmount,
-            currency: 'EUR', 
-            beneficiaryId: selectedBeneficiaryId,
-            payoutMethod: 'MOBILE_MONEY' 
-        });
-        
-        Alert.alert("Succès", `Transfert de ${sendAmount}€ initié vers ${targetCurrency} !`, [
-            { text: "OK", onPress: () => router.push("/(tabs)/transactions") }
-        ]);
+        if (mode === 'WALLET') {
+            await api.createTransaction({
+                amount: sendAmount,
+                currency: 'EUR', 
+                beneficiaryId: selectedBeneficiaryId!,
+                payoutMethod: 'MOBILE_MONEY' 
+            });
+            Alert.alert("Succès", `Transfert de ${sendAmount}€ initié vers ${targetCurrency} !`, [
+                { text: "OK", onPress: () => router.push("/(tabs)/transactions") }
+            ]);
+        } else {
+            // ✅ MODE RETRAIT CASH
+            await api.requestWithdrawal({ 
+                amount: sendAmount
+            });
+            Alert.alert("Succès", "Code de retrait généré ! Vous pouvez le retrouver dans l'historique.", [
+                { text: "OK", onPress: () => router.push("/(tabs)/transactions") } // ou une page dédiée aux retraits
+            ]);
+        }
         
     } catch (e: any) {
         console.error(e);
@@ -144,7 +157,7 @@ export default function SendMoneyScreen() {
     }
   };
 
-  const isButtonDisabled = (!selectedBeneficiaryId && !isInsufficientFunds) || sending;
+  const isButtonDisabled = (mode === 'WALLET' && !selectedBeneficiaryId && !isInsufficientFunds) || sending;
 
   if (loading) {
     return (
@@ -161,7 +174,7 @@ export default function SendMoneyScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                 <Ionicons name="arrow-back" size={24} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Envoyer de l'argent</Text>
+            <Text style={styles.headerTitle}>Envoyer / Retirer</Text>
             <View style={{width: 24}} /> 
         </View>
         
@@ -186,48 +199,68 @@ export default function SendMoneyScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         
-        <Text style={styles.sectionLabel}>POUR QUI ?</Text>
-        {beneficiaries.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.beneficiaryList}>
-                {beneficiaries.map(b => (
-                    <TouchableOpacity 
-                        key={b.id} 
-                        style={[styles.beneficiaryCard, selectedBeneficiaryId === b.id && styles.beneficiarySelected]}
-                        onPress={() => setSelectedBeneficiaryId(b.id)}
-                    >
-                        <View style={styles.avatar}>
-                            <Text style={styles.avatarText}>{b.fullName.charAt(0)}</Text>
-                        </View>
-                        <Text style={styles.beneficiaryName} numberOfLines={1}>{b.fullName}</Text>
-                        {selectedBeneficiaryId === b.id && (
-                            <View style={styles.checkBadge}>
-                                <Ionicons name="checkmark" size={12} color="#FFF" />
-                            </View>
-                        )}
-                        <Text style={{position:'absolute', bottom: 5, right: 5, fontSize:10}}>
-                             {getCurrencyForCountry(b.country).flag}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-                <TouchableOpacity style={styles.addBeneficiaryCard} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
-                    <Ionicons name="add" size={24} color={colors.primary} />
-                    <Text style={styles.addText}>Nouveau</Text>
-                </TouchableOpacity>
-            </ScrollView>
-        ) : (
-            <TouchableOpacity style={styles.emptyBeneficiary} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
-                <Text style={{color:'#666'}}>Aucun bénéficiaire. </Text>
-                <Text style={{color:colors.primary, fontWeight:'bold'}}>En créer un ?</Text>
+        {/* ✅ SÉLECTEUR DE MODE */}
+        <View style={styles.tabs}>
+            <TouchableOpacity 
+                style={[styles.tab, mode === 'WALLET' && styles.activeTab]} 
+                onPress={() => setMode('WALLET')}
+            >
+                <Text style={[styles.tabText, mode === 'WALLET' && styles.activeTabText]}>Vers un Wallet</Text>
             </TouchableOpacity>
-        )}
-
-        <View style={styles.rateCard}>
-            <View style={{flexDirection:'row', alignItems:'center'}}>
-                <Ionicons name="trending-up" size={20} color="#3B82F6" />
-                <Text style={styles.rateLabel}> Taux actuel</Text>
-            </View>
-            <Text style={styles.rateValue}>1 EUR = {rate} {targetCurrency}</Text>
+            <TouchableOpacity 
+                style={[styles.tab, mode === 'CASH' && styles.activeTab]} 
+                onPress={() => setMode('CASH')}
+            >
+                <Text style={[styles.tabText, mode === 'CASH' && styles.activeTabText]}>Retrait Cash</Text>
+            </TouchableOpacity>
         </View>
+
+        {mode === 'WALLET' && (
+            <>
+                <Text style={styles.sectionLabel}>POUR QUI ?</Text>
+                {beneficiaries.length > 0 ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.beneficiaryList}>
+                        {beneficiaries.map(b => (
+                            <TouchableOpacity 
+                                key={b.id} 
+                                style={[styles.beneficiaryCard, selectedBeneficiaryId === b.id && styles.beneficiarySelected]}
+                                onPress={() => setSelectedBeneficiaryId(b.id)}
+                            >
+                                <View style={styles.avatar}>
+                                    <Text style={styles.avatarText}>{b.fullName.charAt(0)}</Text>
+                                </View>
+                                <Text style={styles.beneficiaryName} numberOfLines={1}>{b.fullName}</Text>
+                                {selectedBeneficiaryId === b.id && (
+                                    <View style={styles.checkBadge}>
+                                        <Ionicons name="checkmark" size={12} color="#FFF" />
+                                    </View>
+                                )}
+                                <Text style={{position:'absolute', bottom: 5, right: 5, fontSize:10}}>
+                                     {getCurrencyForCountry(b.country).flag}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity style={styles.addBeneficiaryCard} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
+                            <Ionicons name="add" size={24} color={colors.primary} />
+                            <Text style={styles.addText}>Nouveau</Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+                ) : (
+                    <TouchableOpacity style={styles.emptyBeneficiary} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
+                        <Text style={{color:'#666'}}>Aucun bénéficiaire. </Text>
+                        <Text style={{color:colors.primary, fontWeight:'bold'}}>En créer un ?</Text>
+                    </TouchableOpacity>
+                )}
+
+                <View style={styles.rateCard}>
+                    <View style={{flexDirection:'row', alignItems:'center'}}>
+                        <Ionicons name="trending-up" size={20} color="#3B82F6" />
+                        <Text style={styles.rateLabel}> Taux actuel</Text>
+                    </View>
+                    <Text style={styles.rateValue}>1 EUR = {rate} {targetCurrency}</Text>
+                </View>
+            </>
+        )}
 
         <Text style={styles.sectionLabel}>COMBIEN ?</Text>
         <View style={styles.inputGroup}>
@@ -243,20 +276,22 @@ export default function SendMoneyScreen() {
             </View>
         </View>
 
-        <View style={styles.inputGroup}>
-            <View style={[styles.inputContainer, {backgroundColor: '#F9FAFB'}]}>
-                <TextInput 
-                    style={[styles.input, {color: '#1F2937'}]}
-                    value={receiveAmount}
-                    editable={false} 
-                />
-                <Text style={styles.currencyText}>{targetCurrency} {targetFlag}</Text>
+        {mode === 'WALLET' && (
+            <View style={styles.inputGroup}>
+                <View style={[styles.inputContainer, {backgroundColor: '#F9FAFB'}]}>
+                    <TextInput 
+                        style={[styles.input, {color: '#1F2937'}]}
+                        value={receiveAmount}
+                        editable={false} 
+                    />
+                    <Text style={styles.currencyText}>{targetCurrency} {targetFlag}</Text>
+                </View>
             </View>
-        </View>
+        )}
 
         <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Frais d'envoi</Text>
+                <Text style={styles.summaryLabel}>Frais {mode === 'CASH' ? 'de retrait' : "d'envoi"}</Text>
                 <Text style={styles.summaryValue}>{fees} EUR</Text>
             </View>
             <View style={styles.summaryRow}>
@@ -289,7 +324,7 @@ export default function SendMoneyScreen() {
             ) : (
                 <>
                     <Text style={styles.submitText}>
-                        {isInsufficientFunds ? "RECHARGER MON COMPTE" : "CONFIRMER L'ENVOI"}
+                        {isInsufficientFunds ? "RECHARGER MON COMPTE" : (mode === 'CASH' ? "GÉNÉRER CODE DE RETRAIT" : "CONFIRMER L'ENVOI")}
                     </Text>
                     <Ionicons 
                         name={isInsufficientFunds ? "card" : "arrow-forward"} 
@@ -320,6 +355,13 @@ const styles = StyleSheet.create({
 
   content: { padding: 20, paddingBottom: 120 },
   
+  // Tabs for Mode Selection
+  tabs: { flexDirection: 'row', marginBottom: 20, backgroundColor: '#E5E7EB', borderRadius: 10, padding: 4 },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+  activeTab: { backgroundColor: '#FFF', shadowColor:'#000', shadowOpacity:0.1, elevation: 2 },
+  tabText: { fontWeight: '600', color: '#6B7280' },
+  activeTabText: { color: colors.primary },
+
   sectionLabel: { fontSize: 12, fontWeight: '700', color: '#64748B', marginBottom: 10, marginTop:10 },
 
   beneficiaryList: { flexDirection: 'row', marginBottom: 20 },

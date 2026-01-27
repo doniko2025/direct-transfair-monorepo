@@ -1,111 +1,117 @@
 //apps/direct-transfair-mobile/app/agent/deposit.tsx
 import React, { useState } from "react";
-import { 
-  View, Text, StyleSheet, TextInput, Pressable, 
-  ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView 
-} from "react-native";
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../services/api";
+import { colors } from "../../theme/colors";
 
 export default function AgentDepositScreen() {
   const router = useRouter();
-  
-  const [clientPhone, setClientPhone] = useState("");
+  const [phone, setPhone] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleDeposit = () => {
-    if (!clientPhone || !amount) {
-        return Alert.alert("Erreur", "Veuillez remplir le numéro du client et le montant.");
+  const handleDeposit = async () => {
+    if (!phone.trim() || !amount.trim()) {
+        Alert.alert("Erreur", "Veuillez remplir le numéro et le montant.");
+        return;
     }
 
     setLoading(true);
-    // Simulation API
-    setTimeout(() => {
+    try {
+        await api.depositAgent({
+            userPhone: phone.trim(),
+            amount: parseFloat(amount)
+        });
+        
+        // Succès
+        if (Platform.OS === 'web') {
+            window.alert("Dépôt effectué avec succès !");
+            router.back();
+        } else {
+            Alert.alert("Succès", "Dépôt effectué avec succès !", [
+                { text: "OK", onPress: () => router.back() }
+            ]);
+        }
+        
+    } catch (e: any) {
+        const msg = e.response?.data?.message || "Le dépôt a échoué.";
+        if (Platform.OS === 'web') {
+            window.alert("Erreur: " + msg);
+        } else {
+            Alert.alert("Erreur", msg);
+        }
+    } finally {
         setLoading(false);
-        Alert.alert(
-            "Dépôt Réussi ✅",
-            `Le compte du client (+221 ${clientPhone}) a été rechargé de ${amount} FCFA avec succès.`,
-            [{ text: "OK", onPress: () => router.back() }]
-        );
-    }, 1500);
+    }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#FFF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Dépôt / Cash-In</Text>
-        <View style={{width: 24}} /> 
-      </View>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
-      <ScrollView contentContainerStyle={styles.content}>
-        
-        <View style={styles.infoBox}>
-            <Ionicons name="information-circle" size={24} color="#065F46" />
-            <Text style={styles.infoText}>
-                Vous allez recharger le compte virtuel d'un client. Assurez-vous d'avoir reçu les espèces.
-            </Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
+        <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+                <Ionicons name="arrow-back" size={24} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Dépôt Client (Cash-In)</Text>
+            <View style={{width:24}} />
         </View>
 
-        {/* --- CLIENT --- */}
-        <Text style={styles.label}>Numéro du Client</Text>
-        <View style={styles.inputWrap}>
-            <Ionicons name="phone-portrait-outline" size={20} color="#6B7280" style={{marginRight:10}} />
-            <TextInput 
-                style={styles.input} 
-                placeholder="Ex: 77 000 00 00" 
-                keyboardType="phone-pad"
-                value={clientPhone}
-                onChangeText={setClientPhone}
-            />
+        <View style={styles.content}>
+            <View style={styles.card}>
+                <Text style={styles.label}>Numéro du client</Text>
+                <TextInput 
+                    style={styles.input} 
+                    placeholder="Ex: 770000000" 
+                    placeholderTextColor="#999"
+                    keyboardType="phone-pad" 
+                    value={phone} 
+                    onChangeText={setPhone} 
+                />
+
+                <Text style={styles.label}>Montant à créditer</Text>
+                <TextInput 
+                    style={styles.input} 
+                    placeholder="Ex: 5000" 
+                    placeholderTextColor="#999"
+                    keyboardType="numeric" 
+                    value={amount} 
+                    onChangeText={setAmount} 
+                />
+
+                <View style={styles.infoBox}>
+                    <Ionicons name="information-circle" size={20} color="#3B82F6" />
+                    <Text style={styles.infoText}>
+                        Le client recevra les fonds instantanément sur son Wallet.
+                    </Text>
+                </View>
+
+                <TouchableOpacity style={styles.btn} onPress={handleDeposit} disabled={loading}>
+                    {loading ? (
+                        <ActivityIndicator color="#FFF" />
+                    ) : (
+                        <Text style={styles.btnText}>VALIDER LE DÉPÔT</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
         </View>
-
-        {/* --- MONTANT --- */}
-        <Text style={styles.label}>Montant à déposer</Text>
-        <View style={styles.inputWrap}>
-            <Text style={styles.currency}>FCFA</Text>
-            <TextInput 
-                style={[styles.input, {fontSize: 20, fontWeight:'bold'}]} 
-                placeholder="0" 
-                keyboardType="numeric" 
-                value={amount}
-                onChangeText={setAmount}
-            />
-        </View>
-
-        <Pressable 
-            style={({pressed}) => [styles.btn, pressed && {opacity: 0.9}]} 
-            onPress={handleDeposit} 
-            disabled={loading}
-        >
-            {loading ? <ActivityIndicator color="#FFF"/> : <Text style={styles.btnText}>Valider le Dépôt</Text>}
-        </Pressable>
-
-      </ScrollView>
-      </KeyboardAvoidingView>
+    </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F9FAFB' },
-    header: { backgroundColor: '#064E3B', padding: 20, paddingTop: Platform.OS==='android'?40:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-    headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
+    container: { flex: 1, backgroundColor: '#F3F4F6' },
+    header: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', padding:20, backgroundColor:'#FFF', borderBottomWidth:1, borderBottomColor:'#E5E7EB' },
     backBtn: { padding: 5 },
-    content: { padding: 20 },
-
-    infoBox: { flexDirection:'row', backgroundColor:'#D1FAE5', padding:15, borderRadius:12, marginBottom:25, alignItems:'center' },
-    infoText: { marginLeft:10, color:'#065F46', flex:1, fontSize:13 },
-
-    label: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 8 },
-    inputWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', borderRadius: 12, paddingHorizontal: 15, height: 55, marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB' },
-    input: { flex: 1, fontSize: 16, color: '#1F2937' },
-    currency: { fontSize: 16, fontWeight: '700', color: '#9CA3AF', marginRight: 10 },
-
-    btn: { backgroundColor: '#10B981', padding: 18, borderRadius: 12, alignItems: 'center', marginTop: 20, shadowColor: "#10B981", shadowOpacity: 0.3, elevation: 5 },
-    btnText: { color: '#FFF', fontSize: 18, fontWeight: '800' }
+    title: { fontSize:18, fontWeight:'800', color:'#111827' },
+    content: { padding:20 },
+    card: { backgroundColor:'#FFF', padding:20, borderRadius:16, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+    label: { fontWeight:'700', marginBottom:8, color:'#374151', fontSize:14 },
+    input: { backgroundColor:'#F9FAFB', borderWidth:1, borderColor:'#E5E7EB', borderRadius:10, padding:14, marginBottom:20, fontSize:16, color:'#1F2937' },
+    btn: { backgroundColor: colors.primary, padding:16, borderRadius:12, alignItems:'center', marginTop: 10 },
+    btnText: { color:'#FFF', fontWeight:'800', fontSize:16 },
+    infoBox: { flexDirection:'row', backgroundColor:'#EFF6FF', padding:12, borderRadius:10, marginBottom:20, alignItems:'center' },
+    infoText: { color:'#1E40AF', marginLeft:10, flex:1, fontSize:13, lineHeight: 18 }
 });

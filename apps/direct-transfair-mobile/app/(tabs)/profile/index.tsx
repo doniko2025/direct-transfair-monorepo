@@ -8,6 +8,8 @@ import {
   ScrollView,
   SafeAreaView,
   StatusBar,
+  Alert,
+  Platform, // ✅ Import Platform
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,7 +18,7 @@ import { colors } from "../../../theme/colors";
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, logout } = useAuth(); 
 
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName}`.toUpperCase()
@@ -25,6 +27,32 @@ export default function ProfileScreen() {
   const initials = user?.firstName
     ? user.firstName[0].toUpperCase() + (user.lastName ? user.lastName[0].toUpperCase() : "")
     : "DT";
+
+  // ✅ GESTIONNAIRE DE DÉCONNEXION COMPATIBLE WEB
+  const handleLogout = () => {
+      if (Platform.OS === 'web') {
+          // Sur PC, Alert.alert ne marche pas toujours bien, on utilise window.confirm
+          if (window.confirm("Voulez-vous vraiment vous déconnecter ?")) {
+              logout();
+          }
+      } else {
+          // Sur Mobile
+          Alert.alert(
+              "Déconnexion", 
+              "Voulez-vous vraiment vous déconnecter ?",
+              [
+                  { text: "Annuler", style: "cancel" },
+                  { 
+                      text: "Me déconnecter", 
+                      style: "destructive", 
+                      onPress: async () => {
+                          await logout();
+                      }
+                  }
+              ]
+          );
+      }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -40,81 +68,57 @@ export default function ProfileScreen() {
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{displayName}</Text>
             <Text style={styles.userPhone}>{user?.phone || user?.email}</Text>
+            <Text style={styles.userId}>ID Client : {user?.id?.substring(0, 8).toUpperCase()}</Text>
           </View>
         </View>
 
-        {/* ✅ BANNIÈRE PARRAINAGE CORRIGÉE (Cliquable) */}
-        <TouchableOpacity 
-            style={styles.referralCard} 
-            onPress={() => router.push("/referral")}
-        >
-            <View style={styles.referralIcon}>
-                <Ionicons name="people" size={24} color="#2563EB" />
-            </View>
-            <View style={styles.referralContent}>
-                <Text style={styles.referralTitle}>Parrainez vos amis</Text>
-                <Text style={styles.referralText}>
-                    Offrez 10 EUR et gagnez 10 EUR pour chaque ami parrainé !
-                </Text>
-            </View>
-            <Ionicons name="arrow-forward" size={20} color="#2563EB" />
-        </TouchableOpacity>
-
-        {/* MENU */}
+        {/* MENU PRINCIPAL */}
         <View style={styles.menuContainer}>
             
             <MenuCard 
-                icon="person-settings" 
-                label="Mon compte" 
-                color="#DBEAFE"
-                iconColor="#2563EB"
+                icon="person-outline" 
+                label="Mes informations personnelles" 
                 onPress={() => router.push("/(tabs)/profile/account")} 
             />
 
             <MenuCard 
-                icon="people" 
-                label="Mes bénéficiaires" 
-                color="#E0E7FF"
-                iconColor="#4F46E5"
-                onPress={() => router.push("/(tabs)/beneficiaries")} 
-            />
-
-            <MenuCard 
-                icon="storefront" 
-                label="Trouver un point Direct Transf'AIR" 
-                color="#F3E8FF"
-                iconColor="#9333EA"
-                onPress={() => router.push("/(tabs)/profile/locations")} 
-            />
-
-            <MenuCard 
-                icon="card" 
-                label="Mes moyens de paiements" 
-                color="#DCFCE7"
-                iconColor="#16A34A"
-                onPress={() => router.push("/(tabs)/profile/payment-methods")} 
-            />
-
-            <MenuCard 
-                icon="stats-chart" 
-                label="Mes plafonds" 
-                color="#FEF3C7"
-                iconColor="#D97706"
-                onPress={() => router.push("/(tabs)/profile/limits")} 
-            />
-
-            <MenuCard 
-                icon="help-circle" 
-                label="J'ai besoin d'aide" 
-                color="#F3F4F6"
-                iconColor="#4B5563"
+                icon="phone-portrait-outline" 
+                label="Mes appareils" 
                 onPress={() => {}} 
             />
 
+            <MenuCard 
+                icon="keypad-outline" 
+                label="Modifier mon code secret" 
+                onPress={() => {}} 
+            />
+
+             {/* Sections Admin si nécessaire */}
+             {(user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') && (
+                <MenuCard 
+                    icon="business-outline" 
+                    label="Gérer mes agences" 
+                    color="#F0FDF4"
+                    onPress={() => router.push("/(tabs)/admin/agencies")} 
+                />
+             )}
+
+        </View>
+
+        {/* ✅ BOUTON DÉCONNEXION */}
+        <View style={styles.logoutContainer}>
+            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                <Ionicons name="log-out-outline" size={20} color={colors.danger} style={{marginRight: 8}} />
+                <Text style={styles.logoutText}>ME DÉCONNECTER</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.deleteLink} onPress={() => Alert.alert("Attention", "Contactez le support pour supprimer votre compte.")}>
+                <Ionicons name="warning-outline" size={14} color="#9CA3AF" />
+                <Text style={styles.deleteText}>Supprimer mon compte</Text>
+            </TouchableOpacity>
         </View>
 
         <View style={styles.footer}>
-            <Text style={styles.footerText}>Conditions générales d'utilisation et de vente</Text>
             <Text style={styles.version}>Version 2.1.0</Text>
         </View>
 
@@ -123,40 +127,42 @@ export default function ProfileScreen() {
   );
 }
 
-function MenuCard({ icon, label, color, iconColor, onPress }: any) {
+function MenuCard({ icon, label, color = "#FFF", onPress }: any) {
     return (
-        <TouchableOpacity style={styles.card} onPress={onPress}>
-            <View style={[styles.iconBox, { backgroundColor: color }]}>
-                <Ionicons name={icon} size={22} color={iconColor} />
+        <TouchableOpacity style={[styles.card, {backgroundColor: color}]} onPress={onPress}>
+            <View style={styles.row}>
+                <Ionicons name={icon} size={22} color="#F59E0B" style={{marginRight: 15}} />
+                <Text style={styles.cardLabel}>{label}</Text>
             </View>
-            <Text style={styles.cardLabel}>{label}</Text>
-            <View style={styles.chevronBox}>
-                <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-            </View>
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
         </TouchableOpacity>
     );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#F3F4F6" },
+  safeArea: { flex: 1, backgroundColor: "#F9FAFB" },
   container: { padding: 20, paddingBottom: 40 },
-  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, marginTop: 10 },
-  avatarContainer: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#DBEAFE', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  avatarText: { fontSize: 24, fontWeight: '700', color: '#2563EB' },
+  
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 30, backgroundColor: colors.primary, padding: 20, borderRadius: 16 },
+  avatarContainer: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  avatarText: { fontSize: 24, fontWeight: '800', color: colors.primary },
   userInfo: { flex: 1 },
-  userName: { fontSize: 18, fontWeight: '800', color: '#1F2937', marginBottom: 4 },
-  userPhone: { fontSize: 14, color: '#6B7280' },
-  referralCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#2563EB', borderRadius: 12, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  referralIcon: { marginRight: 12 },
-  referralContent: { flex: 1, marginRight: 8 },
-  referralTitle: { fontSize: 14, fontWeight: '700', color: '#1F2937', marginBottom: 2 },
-  referralText: { fontSize: 12, color: '#4B5563', lineHeight: 16 },
-  menuContainer: { gap: 12 },
-  card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  iconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  cardLabel: { flex: 1, fontSize: 16, fontWeight: '600', color: '#1F2937' },
-  chevronBox: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F9FAFB', justifyContent: 'center', alignItems: 'center' },
-  footer: { marginTop: 40, alignItems: 'center' },
-  footerText: { fontSize: 12, color: '#9CA3AF', marginBottom: 6 },
+  userName: { fontSize: 18, fontWeight: '800', color: '#FFF', marginBottom: 4 },
+  userPhone: { fontSize: 14, color: 'rgba(255,255,255,0.9)' },
+  userId: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
+
+  menuContainer: { gap: 12, marginBottom: 40 },
+  card: { borderRadius: 12, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', shadowColor: "#000", shadowOpacity: 0.05, elevation: 1, backgroundColor:'#FFF' },
+  row: { flexDirection: 'row', alignItems: 'center' },
+  cardLabel: { fontSize: 15, fontWeight: '600', color: '#1F2937' },
+
+  logoutContainer: { marginTop: 10, gap: 15 },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.danger, backgroundColor: '#FEF2F2' },
+  logoutText: { color: colors.danger, fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
+
+  deleteLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  deleteText: { color: '#9CA3AF', fontSize: 12, textDecorationLine: 'underline' },
+
+  footer: { marginTop: 30, alignItems: 'center' },
   version: { fontSize: 12, color: '#D1D5DB' },
 });

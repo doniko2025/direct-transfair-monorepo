@@ -7,7 +7,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 
-// ✅ CORRECTION DES CHEMINS (Dossiers strategies et guards)
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
@@ -33,11 +32,16 @@ function parseExpiresToSeconds(raw: unknown): number {
   if (!Number.isFinite(qty) || qty <= 0) return 86400;
 
   switch (m[2].toLowerCase()) {
-    case 's': return qty;
-    case 'm': return qty * 60;
-    case 'h': return qty * 3600;
-    case 'd': return qty * 86400;
-    default: return 86400;
+    case 's':
+      return qty;
+    case 'm':
+      return qty * 60;
+    case 'h':
+      return qty * 3600;
+    case 'd':
+      return qty * 86400;
+    default:
+      return 86400;
   }
 }
 
@@ -52,25 +56,19 @@ function parseExpiresToSeconds(raw: unknown): number {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get<string>('JWT_SECRET') ?? 'SUPER_SECRET_KEY', // Fallback de sécurité
+        secret: config.get<string>('JWT_SECRET') ?? 'SUPER_SECRET_KEY',
         signOptions: {
           expiresIn: parseExpiresToSeconds(
             config.get<string>('JWT_EXPIRES_IN') ??
-            config.get<string>('JWT_EXPIRES') ??
-            '1d',
+              config.get<string>('JWT_EXPIRES') ??
+              '1d',
           ),
         },
       }),
     }),
   ],
   controllers: [AuthController],
-  // ✅ On déclare bien la JwtStrategy ici
   providers: [AuthService, JwtStrategy, JwtAuthGuard],
-  exports: [
-    AuthService,
-    JwtModule,
-    PassportModule,
-    JwtAuthGuard, 
-  ],
+  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard],
 })
 export class AuthModule {}

@@ -1,12 +1,18 @@
 // apps/backend/src/withdrawals/dto/create-withdrawal.dto.ts
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { IsOptional, IsString, IsNumber, IsPositive, IsEnum } from 'class-validator';
 import { PayoutMethod } from '@prisma/client';
 
 export class CreateWithdrawalDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  transactionId!: string; // ✅ Transaction.id est string
+  transactionId?: string;
 
+  @IsOptional()
+  @IsNumber()
+  @IsPositive()
+  amount?: number;
+
+  @IsOptional()
   @IsEnum(PayoutMethod)
-  method!: PayoutMethod; // ✅ champ requis dans Prisma Withdrawal.method
+  method?: PayoutMethod;
 }

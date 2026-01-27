@@ -5,12 +5,15 @@ import {
   Get,
   Param,
   Post,
+  Patch,
+  Delete, // ✅ Import indispensable
   Req,
   UseGuards,
   BadRequestException,
 } from '@nestjs/common';
 import { AgenciesService } from './agencies.service';
 import { CreateAgencyDto } from './dto/create-agency.dto';
+import { UpdateAgencyDto } from './dto/update-agency.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -29,23 +32,31 @@ type AuthedReq = {
 export class AgenciesController {
   constructor(private readonly agenciesService: AgenciesService) {}
 
-  // ✅ Création Agence (Admin Société)
   @Post()
   @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
   async create(@Req() req: AuthedReq, @Body() dto: CreateAgencyDto) {
-    const user = req.user;
-    const clientId = user?.clientId ?? null;
-
-    if (!clientId) {
-      throw new BadRequestException(
-        "Impossible de créer une agence : Aucun client (Société) associé à ce compte.",
-      );
-    }
-
+    const clientId = req.user?.clientId ?? null;
+    if (!clientId) throw new BadRequestException("Aucun client associé");
     return this.agenciesService.create(clientId, dto);
   }
 
-  // ✅ Liste des Agences
+  @Patch(':id')
+  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
+  async update(@Req() req: AuthedReq, @Param('id') id: string, @Body() dto: UpdateAgencyDto) {
+      const clientId = req.user?.clientId ?? null;
+      if (!clientId) throw new BadRequestException("Aucun client associé");
+      return this.agenciesService.update(id, clientId, dto);
+  }
+
+  // ✅ Route de suppression
+  @Delete(':id')
+  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
+  async remove(@Req() req: AuthedReq, @Param('id') id: string) {
+      const clientId = req.user?.clientId ?? null;
+      if (!clientId) throw new BadRequestException("Aucun client associé");
+      return this.agenciesService.remove(id, clientId);
+  }
+
   @Get()
   @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.AGENT)
   async findAll(@Req() req: AuthedReq) {
@@ -54,7 +65,6 @@ export class AgenciesController {
     return this.agenciesService.findAllByClient(clientId);
   }
 
-  // ✅ Détail Agence
   @Get(':id')
   @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.AGENT)
   async findOne(@Req() req: AuthedReq, @Param('id') id: string) {

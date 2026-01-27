@@ -29,37 +29,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
 
+  // ✅ CORRECTION 1 : Gestion explicite du Storage WEB vs MOBILE
   const setStorage = async (key: string, val: string) => {
-    if (Platform.OS === "web") localStorage.setItem(key, val);
-    else await SecureStore.setItemAsync(key, val);
+    if (Platform.OS === "web") {
+        try { localStorage.setItem(key, val); } catch (e) { console.error("LocalStorage error", e); }
+    } else {
+        await SecureStore.setItemAsync(key, val);
+    }
   };
 
   const removeStorage = async (key: string) => {
-    if (Platform.OS === "web") localStorage.removeItem(key);
-    else await SecureStore.deleteItemAsync(key);
+    if (Platform.OS === "web") {
+        try { localStorage.removeItem(key); } catch (e) {}
+    } else {
+        await SecureStore.deleteItemAsync(key);
+    }
   };
 
   const getStorage = async (key: string) => {
-    if (Platform.OS === "web") return localStorage.getItem(key);
-    return await SecureStore.getItemAsync(key);
+    if (Platform.OS === "web") {
+        try { return localStorage.getItem(key); } catch (e) { return null; }
+    } else {
+        return await SecureStore.getItemAsync(key);
+    }
   };
 
+  // ✅ LOGOUT
   const logout = async () => {
     try {
       console.log("👋 [AuthProvider] Déconnexion...");
-      api.clearToken();
-      api.setTenant("DONIKO"); // Reset au défaut
+      
+      api.clearToken(); 
+      api.setTenant("DONIKO");
+
       setToken(null);
       setUser(null);
       await removeStorage(TOKEN_KEY);
       await removeStorage(USER_KEY);
       await removeStorage(TENANT_KEY);
+
+      router.replace("/(auth)/login");
     } catch (e) {
-      console.error("Erreur lors du logout", e);
+      console.error("Erreur critique logout", e);
+      setUser(null);
+      router.replace("/(auth)/login");
     }
   };
 
-  // --- INITIALISATION AU DÉMARRAGE ---
+  // ✅ INITIALISATION AU DÉMARRAGE (CRUCIAL POUR LE WEB)
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -67,39 +84,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const storedUser = await getStorage(USER_KEY);
         const storedTenant = await getStorage(TENANT_KEY);
 
-        if (storedTenant) {
-          api.setTenant(storedTenant);
-          console.log("🏢 [AuthProvider] Tenant restauré:", storedTenant);
-        } else {
-          api.setTenant("DONIKO");
-        }
+        // 1. Restaurer le Tenant
+        if (storedTenant) api.setTenant(storedTenant);
+        else api.setTenant("DONIKO");
 
+        // 2. Restaurer le Token et l'injecter dans l'API
         if (storedToken && storedUser) {
-          api.setToken(storedToken);
+          console.log("🔑 Token trouvé (Restoration session)...");
+          
+          // C'EST ICI QUE CA SE JOUE : On donne le token à Axios immédiatement
+          api.setToken(storedToken); 
           setToken(storedToken);
+          
           const parsedUser = JSON.parse(storedUser) as AuthUser;
           setUser(parsedUser);
 
+          // 3. Vérifier si le token est encore valide
           try {
             const me = await api.getMe();
             setUser(me);
             await setStorage(USER_KEY, JSON.stringify(me));
           } catch (err: any) {
-            console.log("⚠️ [AuthProvider] Session invalide:", err?.message);
+            console.log("⚠️ Session expirée ou invalide:", err?.message);
             await logout();
           }
         }
       } catch (e) {
-        console.log("❌ [AuthProvider] Erreur chargement", e);
+        console.log("Erreur init auth", e);
       } finally {
         setIsLoading(false);
       }
     };
 
-    void initAuth();
+    initAuth();
   }, []);
 
-  // --- PROTECTION DES ROUTES ---
+  // Protection des routes
   useEffect(() => {
     if (isLoading) return;
     const inAuthGroup = segments[0] === "(auth)";
@@ -109,57 +129,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (user && inAuthGroup) {
       router.replace("/(tabs)/home");
     }
-  }, [user, isLoading, segments, router]);
+  }, [user, isLoading, segments]);
 
-  // --- LOGIN ---
   const login = async (data: LoginPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
       const codeToUse = tenantCode && tenantCode.trim().length > 0 ? tenantCode.trim().toUpperCase() : "DONIKO";
-      api.setTenant(codeToUse);
       
+      // 1. Configurer l'API
+      api.setTenant(codeToUse);
       const res: LoginResponse = await api.login(data, codeToUse);
 
+      // 2. Sauvegarder Token dans l'instance API
       api.setToken(res.access_token);
+      
+      // 3. Sauvegarder dans le State React
       setToken(res.access_token);
       setUser(res.user);
 
+      // 4. Persister (Web ou Mobile)
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(res.user));
       await setStorage(TENANT_KEY, codeToUse);
 
+      // 5. Rafraîchir pour être sûr d'avoir le bon solde
       try {
         const me = await api.getMe();
         setUser(me);
         await setStorage(USER_KEY, JSON.stringify(me));
       } catch (err: any) {
-        console.log("⚠️ [AuthProvider] Login OK mais /me KO:", err?.message);
         await logout();
         throw err;
       }
     } catch (e: any) {
-      console.error("❌ [AuthProvider] Erreur Login:", e?.response?.data || e?.message);
+      console.error("Erreur Login:", e?.response?.data || e?.message);
       throw e;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- REGISTER ---
   const register = async (data: RegisterPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
       const codeToUse = tenantCode && tenantCode.trim().length > 0 ? tenantCode.trim().toUpperCase() : "DONIKO";
       api.setTenant(codeToUse);
-      console.log(`📝 [AuthProvider] Inscription sur le Tenant: "${codeToUse}"`);
-
-      // ✅ CORRECTION TS : Utilisation de 'as any' pour bypasser la vérification stricte du type RegisterPayload
       await api.register({ ...data, tenantCode: codeToUse } as any);
-
       await login({ email: data.email, password: data.password }, codeToUse);
-      
     } catch (e: any) {
-        console.error("❌ Erreur Register:", e);
+        console.error("Erreur Register:", e);
         throw e;
     } finally {
       setIsLoading(false);
@@ -168,11 +186,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = async () => {
     try {
+      // ✅ Si pas de token dans l'API, on tente de le remettre depuis le state
+      if (!api.http.defaults.headers["Authorization"] && token) {
+         api.setToken(token);
+      }
       const updatedUser = await api.getMe();
       setUser(updatedUser);
       await setStorage(USER_KEY, JSON.stringify(updatedUser));
+      console.log("🔄 User rafraîchi via API, nouveau solde :", updatedUser.balance);
     } catch (e) {
-      console.log("⚠️ Impossible de rafraîchir l'utilisateur", e);
+      console.log("Impossible de rafraîchir l'utilisateur", e);
     }
   };
 

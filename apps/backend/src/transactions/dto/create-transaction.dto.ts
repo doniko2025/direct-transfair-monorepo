@@ -22,5 +22,16 @@ export class CreateTransactionDto {
 
   @IsString()
   @IsNotEmpty()
-  beneficiaryId: string; // on ne met pas IsUUID pour ne pas bloquer les tests si l'ID est foireux
+  beneficiaryId: string;
+}
+
+// ✅ NOUVEAU : DTO pour le Dépôt
+export class CreateDepositDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @IsString()
+  @IsNotEmpty()
+  userPhone: string; // Le téléphone du client à recharger
 }

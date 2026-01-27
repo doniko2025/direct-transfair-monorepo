@@ -7,36 +7,27 @@ export interface AuthUser {
   id: string;
   email: string;
   role: Role;
-
-  // Identité
   firstName?: string;
   lastName?: string;
   phone?: string;
-
-  // Adresse
   addressStreet?: string;
   postalCode?: string;
   city?: string;
   country?: string;
-
-  // État Civil & Profession
   gender?: "M" | "F";
   nationality?: string;
   birthDate?: string;
   birthPlace?: string;
   jobTitle?: string;
-
-  // Données SaaS
   clientId: number;
   agencyId?: string;
   balance?: number;
-
-  // Objet Client (Société)
   client?: {
     name: string;
     code: string;
     primaryColor?: string;
   };
+  agency?: Agency;
 }
 
 export interface LoginPayload {
@@ -50,6 +41,9 @@ export interface RegisterPayload {
   firstName: string;
   lastName: string;
   phone?: string;
+  tenantCode?: string;
+  country?: string;
+  city?: string;
 }
 
 export interface LoginResponse {
@@ -69,7 +63,6 @@ export interface Beneficiary {
   userId: string;
 }
 
-// ✅ On garde fullName ici pour compatibilité avec le Backend actuel
 export interface CreateBeneficiaryPayload {
   fullName: string;
   country: string;
@@ -95,31 +88,30 @@ export interface Transaction {
   cancelledAt?: string | null;
   beneficiaryId?: string;
   senderId?: string;
+  senderName?: string;
 }
 
 export interface CreateTransactionPayload {
   amount: number;
   currency: string;
   beneficiaryId: string;
-  payoutMethod: PayoutMethod;
+  payoutMethod: string;
 }
 
 // --- PAIEMENTS & RETRAITS ---
 export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "CASH";
 
 export interface InitiatePaymentPayload {
-  amount: number;
-  currency: string;
-  method: string;
+  transactionId: string;
+  provider: 'ORANGE_MONEY' | 'WAVE';
   phone: string;
-  transactionId?: string;
 }
 
 export type WithdrawalMethod = "CASH_PICKUP" | "MOBILE_MONEY" | "WALLET";
 
 export interface CreateWithdrawalPayload {
-  amount: number;
-  transactionReference: string;
+  amount?: number;
+  transactionId?: string;
 }
 
 export type WithdrawalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
@@ -135,83 +127,68 @@ export interface ExchangeRate {
 }
 
 // ============================================================
-// ✅ AGENCES & COMMISSIONS
+// ✅ AGENCES
 // ============================================================
 
-// Le backend n'a pas de champ "type" dans Prisma Agency.
-// On le garde côté front pour l'UI, mais il n'est pas garanti au retour.
 export type AgencyType = "PRIVATE" | "PARTNER";
 
 export interface Agency {
-  id: string;
+  id: string | number;
   name: string;
   city: string;
   address: string;
   phone?: string | null;
-
-  // compat UI (peut être absent selon backend)
+  
+  // ✅ Ces champs sont indispensables pour l'écran Edit
+  email?: string;
+  code?: string;
+  isActive?: boolean;
+  
   type?: AgencyType;
-
-  // Prisma Decimal => peut remonter en string selon sérialisation
-  balance: number | string;
-
+  balance?: number;
   clientId: number;
-  createdAt: string;
+  createdAt?: string;
+  agents?: AuthUser[];
 }
 
-// ✅ DOIT matcher CreateAgencyDto (backend)
 export interface CreateAgencyPayload {
   name: string;
   city: string;
   address: string;
-
-  // backend accepte optionnel
-  phone?: string;
-
-  // backend exige email (login agent)
   email: string;
-
-  // options agent
+  phone?: string;
+  code?: string;
   country?: string;
   managerName?: string;
   adminFirstName?: string;
   adminLastName?: string;
   adminPassword?: string;
-
-  // champs tolérés
-  code?: string;
   status?: string;
   subscriptionType?: string;
-
-  // compat UI
   type?: AgencyType;
 }
 
-// 2. Configuration des commissions (Règles de partage)
+// 2. Configuration des commissions
 export interface CommissionConfig {
   senderPart: number;
   payerPart: number;
   platformPart: number;
 }
 
-// 3. Historique des commissions (Traçabilité)
+// 3. Historique des commissions
 export interface CommissionLog {
   id: string;
   transactionId: string;
   transactionReference: string;
   totalFee: number;
-
   senderAgencyId?: string;
   senderAgencyName?: string;
   senderAgencyType?: AgencyType;
   senderCommission: number;
-
   payerAgencyId?: string;
   payerAgencyName?: string;
   payerAgencyType?: AgencyType;
   payerCommission: number;
-
   platformCommission: number;
-
   createdAt: string;
 }

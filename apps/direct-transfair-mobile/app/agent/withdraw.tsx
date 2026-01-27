@@ -6,45 +6,49 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../services/api"; // ✅ Utilisation de l'API réelle
 
 export default function AgentWithdrawScreen() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [checking, setChecking] = useState(false);
-  const [transaction, setTransaction] = useState<any>(null); // Stocker la transaction trouvée
+  const [transaction, setTransaction] = useState<any>(null);
 
-  // 1. Vérifier le code
-  const handleCheckCode = () => {
-    if (code.length < 5) return Alert.alert("Erreur", "Code invalide");
-    
+  // 1. VÉRIFIER LE CODE (Appel API)
+  const handleCheckCode = async () => {
+    if (code.length < 5) return Alert.alert("Erreur", "Code trop court");
+
     setChecking(true);
-    // Simulation API
-    setTimeout(() => {
+    try {
+        // ✅ Appel de la nouvelle route 'check'
+        // Il faut ajouter checkWithdrawalCode dans api.ts si pas fait
+        // Sinon appel axios direct ou via méthode générique
+        const res = await api.http.post('/withdrawals/agent/check', { code });
+        setTransaction(res.data);
+    } catch (e: any) {
+        Alert.alert("Erreur", e.response?.data?.message || "Code invalide");
+        setTransaction(null);
+    } finally {
         setChecking(false);
-        // On simule une transaction trouvée
-        setTransaction({
-            id: 'TX-12345',
-            sender: 'Mamadou Diallo',
-            amount: 50000,
-            currency: 'FCFA',
-            status: 'PENDING'
-        });
-    }, 1500);
+    }
   };
 
-  // 2. Valider le paiement (Donner le cash)
+  // 2. VALIDER LE PAIEMENT (Appel API)
   const handlePayOut = () => {
       Alert.alert(
           "Confirmation", 
           `Confirmez-vous avoir remis ${transaction.amount} ${transaction.currency} au client ?`,
           [
               { text: "Annuler", style: 'cancel' },
-              { text: "CONFIRMER", onPress: () => {
-                  // Ici, on appellerait l'API pour valider le retrait
-                  // Et le solde virtuel de l'agent augmenterait
-                  Alert.alert("Succès", "Retrait validé. Votre solde virtuel a été crédité.", [
-                      { text: "OK", onPress: () => router.back() }
-                  ]);
+              { text: "CONFIRMER (IRRÉVERSIBLE)", onPress: async () => {
+                  try {
+                      await api.http.post('/withdrawals/agent/pay', { code });
+                      Alert.alert("Succès", "Paiement validé !", [
+                          { text: "OK", onPress: () => router.back() }
+                      ]);
+                  } catch (e: any) {
+                      Alert.alert("Erreur", e.response?.data?.message || "Echec validation");
+                  }
               }}
           ]
       );
@@ -61,13 +65,12 @@ export default function AgentWithdrawScreen() {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1, padding: 20}}>
-        
-        {/* ÉTAPE 1 : SAISIE DU CODE */}
+
         {!transaction ? (
             <View style={styles.centerBox}>
                 <Ionicons name="qr-code-outline" size={60} color="#EF4444" style={{marginBottom: 20}} />
                 <Text style={styles.label}>Entrez le code de retrait du client</Text>
-                
+
                 <TextInput 
                     style={styles.codeInput} 
                     placeholder="DT-XXXXXX" 
@@ -81,20 +84,19 @@ export default function AgentWithdrawScreen() {
                 </Pressable>
             </View>
         ) : (
-            // ÉTAPE 2 : CONFIRMATION
             <View style={styles.resultBox}>
                 <View style={styles.successIcon}>
                     <Ionicons name="checkmark" size={40} color="#FFF" />
                 </View>
                 <Text style={styles.resultTitle}>Code Valide !</Text>
-                
+
                 <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Montant à payer :</Text>
                     <Text style={styles.detailValue}>{transaction.amount} {transaction.currency}</Text>
                 </View>
                 <View style={styles.detailRow}>
                     <Text style={styles.detailLabel}>Expéditeur :</Text>
-                    <Text style={styles.detailValue}>{transaction.sender}</Text>
+                    <Text style={styles.detailValue}>{transaction.senderName}</Text>
                 </View>
 
                 <View style={styles.warningBox}>
@@ -104,7 +106,7 @@ export default function AgentWithdrawScreen() {
                 <Pressable style={[styles.btn, {backgroundColor: '#10B981'}]} onPress={handlePayOut}>
                     <Text style={styles.btnText}>Confirmer le paiement</Text>
                 </Pressable>
-                
+
                 <Pressable style={{marginTop: 20}} onPress={() => setTransaction(null)}>
                     <Text style={{color: '#6B7280'}}>Annuler</Text>
                 </Pressable>
@@ -121,22 +123,17 @@ const styles = StyleSheet.create({
     header: { backgroundColor: '#064E3B', padding: 20, paddingTop: Platform.OS==='android'?40:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
     headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
     backBtn: { padding: 5 },
-
     centerBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     label: { fontSize: 16, color: '#374151', marginBottom: 15 },
     codeInput: { fontSize: 24, fontWeight: 'bold', borderBottomWidth: 2, borderBottomColor: '#EF4444', width: '80%', textAlign: 'center', padding: 10, marginBottom: 30, color: '#1F2937' },
-
     resultBox: { flex: 1, alignItems: 'center', paddingTop: 40 },
     successIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     resultTitle: { fontSize: 24, fontWeight: '800', color: '#065F46', marginBottom: 30 },
-    
     detailRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15, paddingHorizontal: 20 },
     detailLabel: { fontSize: 16, color: '#6B7280' },
     detailValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
-
     warningBox: { backgroundColor: '#FEF2F2', padding: 15, borderRadius: 10, marginVertical: 30 },
     warningText: { color: '#B91C1C', fontWeight: '600' },
-
     btn: { backgroundColor: '#EF4444', padding: 18, borderRadius: 12, alignItems: 'center', width: '100%', shadowColor: "#000", shadowOpacity: 0.1, elevation: 5 },
     btnText: { color: '#FFF', fontSize: 18, fontWeight: '800' }
 });

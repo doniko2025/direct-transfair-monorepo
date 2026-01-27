@@ -1,14 +1,42 @@
 //apps/direct-transfair-mobile/app/(tabs)/home.tsx
-import React from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, SafeAreaView } from "react-native";
-import { useRouter } from "expo-router";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, SafeAreaView, RefreshControl } from "react-native";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { colors } from "../../theme/colors";
+import { api } from "../../services/api";
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // Données spécifiques pour l'agent
+  const [agencyData, setAgencyData] = useState<any>(null);
+
+  // Recharger les données quand on arrive sur l'écran
+  useFocusEffect(
+    React.useCallback(() => {
+      loadData();
+    }, [user?.id])
+  );
+
+  const loadData = async () => {
+      setRefreshing(true);
+      try {
+          await refreshUser(); // Met à jour le solde utilisateur (Admin ou Agent)
+          
+          if (user?.role === 'AGENT' && user?.agencyId) {
+              const data = await api.getAgency(user.agencyId);
+              setAgencyData(data);
+          }
+      } catch (e) {
+          console.log("Erreur chargement données", e);
+      } finally {
+          setRefreshing(false);
+      }
+  };
 
   if (!user) return null;
 
@@ -17,11 +45,17 @@ export default function HomeScreen() {
   // ============================================================
   if (user.role === 'USER') {
     return (
-      <DashboardLayout title={`Bonjour ${user.firstName}`} subtitle="Mon Portefeuille" badge="wallet" badgeColor={colors.primary}>
+      <DashboardLayout 
+        title={`Bonjour ${user.firstName}`} 
+        subtitle="Mon Portefeuille" 
+        badge="wallet" 
+        badgeColor={colors.primary}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}
+      >
          <View style={styles.balanceCard}>
             <Text style={styles.balanceLabel}>Solde disponible</Text>
             <Text style={styles.balanceValue}>
-                {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} {(user as any).currency || 'EUR'}
+                {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} {(user as any).currency || 'XOF'}
             </Text>
             <TouchableOpacity style={styles.topUpBtn} onPress={() => router.push("/topup")}>
                 <Ionicons name="add-circle" size={18} color="#FFF" />
@@ -46,23 +80,35 @@ export default function HomeScreen() {
   // 2. AGENT (Guichetier)
   // ============================================================
   if (user.role === 'AGENT') {
+    const currency = agencyData?.currency || "XOF"; 
+    const creditLimit = agencyData?.creditLimit ? Number(agencyData.creditLimit) : 0;
+    
     return (
-      <DashboardLayout title="Espace Guichet" subtitle={`Agence: ${user.client?.name || 'Principale'}`} badge="storefront" badgeColor="#10B981">
-        
+      <DashboardLayout 
+        title="Espace Guichet" 
+        subtitle={`Agence: ${user.client?.name || 'Principale'}`} 
+        badge="storefront" 
+        badgeColor="#10B981"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}
+      >
         <View style={[styles.balanceCard, {backgroundColor: '#064E3B'}]}>
             <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginBottom: 10}}>
                 <Text style={styles.balanceLabel}>Solde Caisse (Virtuel)</Text>
                 <View style={{alignItems:'flex-end'}}>
                     <Text style={{color:'#A7F3D0', fontSize:10, fontWeight:'700'}}>PLAFOND</Text>
-                    <Text style={{color:'#FFF', fontSize:12, fontWeight:'700'}}>5 000 000 FCFA</Text>
+                    <Text style={{color:'#FFF', fontSize:12, fontWeight:'700'}}>
+                        {creditLimit.toLocaleString()} {currency}
+                    </Text>
                 </View>
             </View>
             <Text style={styles.balanceValue}>
-                {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "2 500 000"} FCFA
+                {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} {currency}
             </Text>
             <View style={{flexDirection:'row', backgroundColor:'rgba(255,255,255,0.1)', padding:8, borderRadius:20, marginTop:5}}>
                 <Ionicons name="trending-up" size={16} color="#34D399" style={{marginRight:5}} />
-                <Text style={{color:'#FFF', fontSize:12, fontWeight:'600'}}>Commissions du jour: 12 500 FCFA</Text>
+                <Text style={{color:'#FFF', fontSize:12, fontWeight:'600'}}>
+                    Commissions du jour: 0 {currency}
+                </Text>
             </View>
         </View>
 
@@ -83,31 +129,50 @@ export default function HomeScreen() {
   }
 
   // ============================================================
-  // 3. ADMIN SOCIÉTÉ (Gestionnaire) - ✅ CORRECTION ICI
+  // 3. ADMIN SOCIÉTÉ (Gestionnaire) - ✅ ECRAN CORRIGÉ
   // ============================================================
   if (user.role === 'COMPANY_ADMIN') {
     return (
-      <DashboardLayout title={user.client?.name || "Administration"} subtitle="Pilotage Agences" badge="business" badgeColor="#F59E0B">
+      <DashboardLayout 
+        title={user.client?.name || "Administration"} 
+        subtitle="Pilotage Agences" 
+        badge="business" 
+        badgeColor="#F59E0B"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}
+      >
         
-        {/* Résumé Financier Admin */}
-        <View style={[styles.balanceCard, {backgroundColor: '#1E293B'}]}>
-            <Text style={styles.balanceLabel}>Trésorerie Globale</Text>
-            <Text style={styles.balanceValue}>15 450 000 FCFA</Text>
-            <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginTop:10}}>
-                <View>
-                    <Text style={{color:'#94A3B8', fontSize:11}}>Commissions Mois</Text>
-                    <Text style={{color:'#34D399', fontWeight:'bold'}}>+ 1 250 000 FCFA</Text>
+        {/* ✅ CLIC SUR LA CARTE -> DIRECTION "SUPER DASHBOARD" POUR GÉRER L'ARGENT */}
+        <TouchableOpacity 
+            activeOpacity={0.9}
+            onPress={() => router.push("/(tabs)/admin/super-dashboard")}
+        >
+            <View style={[styles.balanceCard, {backgroundColor: '#1E293B'}]}>
+                <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center'}}>
+                    <Text style={styles.balanceLabel}>Trésorerie Globale (Admin)</Text>
+                    <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                 </View>
-                <View>
-                    <Text style={{color:'#94A3B8', fontSize:11}}>Volume Transactions</Text>
-                    <Text style={{color:'#FFF', fontWeight:'bold'}}>450 M FCFA</Text>
+                
+                {/* ✅ SOLDE RÉEL VENANT DE LA BASE DE DONNÉES */}
+                <Text style={styles.balanceValue}>
+                    {user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF
+                </Text>
+                
+                <View style={{flexDirection:'row', justifyContent:'space-between', width:'100%', marginTop:10, borderTopWidth:1, borderTopColor:'rgba(255,255,255,0.1)', paddingTop:10}}>
+                    <View>
+                        <Text style={{color:'#94A3B8', fontSize:11}}>Commissions Mois</Text>
+                        <Text style={{color:'#34D399', fontWeight:'bold'}}>+ 0 XOF</Text>
+                    </View>
+                    <View style={{alignItems:'flex-end'}}>
+                        <Text style={{color:'#94A3B8', fontSize:11}}>Volume Transactions</Text>
+                        <Text style={{color:'#FFF', fontWeight:'bold'}}>0 XOF</Text>
+                    </View>
                 </View>
             </View>
-        </View>
+        </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>Réseau & Agences</Text>
         <View style={styles.grid}>
-            {/* Création d'agence (Partenaire/Privée) */}
+            {/* Création d'agence */}
             <MenuCard 
                 title="Créer une Agence" 
                 subtitle="Privée ou Partenaire" 
@@ -117,7 +182,6 @@ export default function HomeScreen() {
             />
             
             <View style={styles.row}>
-                {/* ✅ LIEN ACTIVÉ POUR VOIR LA LISTE DES AGENCES */}
                 <MenuCard 
                     title="Mes Agences" 
                     subtitle="Liste & Soldes" 
@@ -140,7 +204,6 @@ export default function HomeScreen() {
 
         <Text style={styles.sectionTitle}>Finance & Commissions</Text>
         <View style={styles.grid}>
-            {/* Configuration des commissions */}
             <MenuCard 
                 title="Config. Commissions" 
                 subtitle="Répartition Partenaires" 
@@ -148,8 +211,6 @@ export default function HomeScreen() {
                 color="#EF4444" 
                 onPress={() => router.push("/(tabs)/admin/commissions/config")} 
             />
-            
-            {/* Historique des gains */}
             <MenuCard 
                 title="Journal des Gains" 
                 subtitle="Qui a gagné quoi ?" 
@@ -163,15 +224,13 @@ export default function HomeScreen() {
   }
 
   // ============================================================
-  // 4. SUPER ADMIN (Propriétaire Plateforme)
+  // 4. SUPER ADMIN
   // ============================================================
   return (
       <DashboardLayout title="Super Admin" subtitle="Direct Transf'air" badge="shield-checkmark" badgeColor="#FFD700">
         <Text style={styles.sectionTitle}>SaaS Management</Text>
         <View style={styles.grid}>
             <MenuCard title="Sociétés" subtitle="Gestion des Clients" icon="briefcase" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/super-dashboard")} />
-            <MenuCard title="Paiements" subtitle="Encaissements Loyer" icon="card" color="#10B981" onPress={() => {}} />
-            <MenuCard title="Contrats" subtitle="Générer documents" icon="document-attach" color="#3B82F6" onPress={() => {}} />
             <MenuCard title="Config Globale" subtitle="Devises & Taux" icon="globe" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
         </View>
       </DashboardLayout>
@@ -179,7 +238,7 @@ export default function HomeScreen() {
 }
 
 // --- UI COMPONENTS ---
-function DashboardLayout({ title, subtitle, badge, badgeColor, children }: any) {
+function DashboardLayout({ title, subtitle, badge, badgeColor, children, refreshControl }: any) {
     return (
         <SafeAreaView style={styles.safeArea}>
             <StatusBar backgroundColor="#1F2937" barStyle="light-content" />
@@ -192,7 +251,12 @@ function DashboardLayout({ title, subtitle, badge, badgeColor, children }: any) 
                     <Ionicons name={badge} size={24} color={badgeColor} />
                 </View>
             </View>
-            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+            {/* ✅ PADDING BOTTOM AJOUTÉ POUR EVITER QUE LE CONTENU SOIT MASQUÉ */}
+            <ScrollView 
+                contentContainerStyle={[styles.container, { paddingBottom: 120 }]} 
+                showsVerticalScrollIndicator={false} 
+                refreshControl={refreshControl}
+            >
                 {children}
             </ScrollView>
         </SafeAreaView>
