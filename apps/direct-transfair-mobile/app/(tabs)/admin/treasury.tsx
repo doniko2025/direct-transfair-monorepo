@@ -23,6 +23,7 @@ export default function TreasuryScreen() {
   const [amount, setAmount] = useState("");
   const [processing, setProcessing] = useState(false);
 
+  // Charger les données à l'arrivée sur l'écran
   useFocusEffect(
     useCallback(() => { loadData(); }, [])
   );
@@ -30,7 +31,7 @@ export default function TreasuryScreen() {
   const loadData = async () => {
       setLoading(true);
       try {
-          await refreshUser();
+          await refreshUser(); // Met à jour le solde Admin affiché en haut
           const data = await api.getAgencies();
           setAgencies(data);
       } catch (e) {
@@ -39,6 +40,11 @@ export default function TreasuryScreen() {
           setLoading(false);
           setRefreshing(false);
       }
+  };
+
+  const handleRefresh = async () => {
+      setRefreshing(true);
+      await loadData();
   };
 
   const handleOpenFundSelf = () => {
@@ -54,8 +60,9 @@ export default function TreasuryScreen() {
   };
 
   const handleSubmit = async () => {
-      if (!amount || isNaN(Number(amount))) {
-          alert("Montant invalide");
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+          if (Platform.OS === 'web') alert("Montant invalide");
+          else Alert.alert("Erreur", "Veuillez saisir un montant valide et positif.");
           return;
       }
       
@@ -64,19 +71,29 @@ export default function TreasuryScreen() {
 
       try {
           if (targetAgency) {
+              // 1. Recharger une agence
               const res = await api.adminRefillAgency(targetAgency.id, val);
               const msg = `Envoyé: ${res.sent}\nReçu: ${res.received}\nTaux: ${res.rate}`;
-              Platform.OS === 'web' ? alert(msg) : Alert.alert("Succès", msg);
+              
+              if (Platform.OS === 'web') alert(msg);
+              else Alert.alert("Succès", msg);
+
           } else {
+              // 2. S'alimenter soi-même (Admin)
               await api.adminFundSelf(val);
-              await refreshUser(); 
-              Platform.OS === 'web' ? alert("Compte alimenté !") : Alert.alert("Succès", "Fonds ajoutés au compte Admin.");
+              
+              if (Platform.OS === 'web') alert("Compte alimenté !");
+              else Alert.alert("Succès", "Fonds ajoutés au compte Admin.");
           }
+
           setModalVisible(false);
-          loadData(); 
+          // 🚀 Rafraîchissement automatique après succès
+          setTimeout(() => loadData(), 500); 
+
       } catch (e: any) {
           const err = e.response?.data?.message || "Erreur technique";
-          Platform.OS === 'web' ? alert(err) : Alert.alert("Erreur", err);
+          if (Platform.OS === 'web') alert(err);
+          else Alert.alert("Erreur", Array.isArray(err) ? err[0] : err);
       } finally {
           setProcessing(false);
       }
@@ -88,6 +105,7 @@ export default function TreasuryScreen() {
     if(countryName.includes("Guinée")) return "🇬🇳";
     if(countryName.includes("France")) return "🇫🇷";
     if(countryName.includes("Mali")) return "🇲🇱";
+    if(countryName.includes("Côte")) return "🇨🇮";
     return "🏳️";
   }
 
@@ -103,13 +121,14 @@ export default function TreasuryScreen() {
 
       <ScrollView 
         contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor="#FFF"/>}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#FFF"/>}
       >
+        {/* CARTE PRINCIPALE ADMIN */}
         <View style={styles.adminCard}>
             <View>
                 <Text style={styles.adminLabel}>Ma Trésorerie (Admin)</Text>
                 <Text style={styles.adminBalance}>
-                    {user?.balance ? Number(user.balance).toLocaleString() : "0"} XOF
+                    {user?.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF
                 </Text>
             </View>
             <TouchableOpacity style={styles.fundBtn} onPress={handleOpenFundSelf}>
@@ -120,7 +139,11 @@ export default function TreasuryScreen() {
 
         <Text style={styles.sectionTitle}>Réseau d'Agences</Text>
 
-        {loading && <ActivityIndicator color="#FFF" style={{marginTop:20}} />}
+        {loading && !refreshing && <ActivityIndicator color="#FFF" style={{marginTop:20}} />}
+
+        {!loading && agencies.length === 0 && (
+            <Text style={{color:'#6B7280', textAlign:'center', marginTop:20}}>Aucune agence trouvée.</Text>
+        )}
 
         {!loading && agencies.map((agency) => (
             <View key={agency.id} style={styles.agencyCard}>
@@ -135,7 +158,7 @@ export default function TreasuryScreen() {
                     <View style={{alignItems:'flex-end'}}>
                         <Text style={styles.agencyBalanceLabel}>Solde Caisse</Text>
                         <Text style={styles.agencyBalance}>
-                            {Number(agency.balance).toLocaleString()} {agency.currency}
+                            {Number(agency.balance).toLocaleString('fr-FR')} {agency.currency}
                         </Text>
                     </View>
                 </View>
@@ -151,23 +174,39 @@ export default function TreasuryScreen() {
         <View style={{height: 100}} />
       </ScrollView>
 
+      {/* MODAL TRANSACTION */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>
                       {targetAgency ? `Recharger ${targetAgency.name}` : "Alimenter mon compte"}
                   </Text>
-                  {targetAgency && (
+                  
+                  {targetAgency ? (
                       <Text style={styles.modalSubtitle}>
                           Vous envoyez des <Text style={{fontWeight:'bold'}}>FCFA</Text>. 
                           L'agence recevra des <Text style={{fontWeight:'bold'}}>{targetAgency.currency}</Text>.
                       </Text>
+                  ) : (
+                      <Text style={styles.modalSubtitle}>
+                          Injection de fonds depuis la Banque Centrale (Virtuel).
+                      </Text>
                   )}
+
                   <Text style={styles.inputLabel}>Montant à envoyer (FCFA)</Text>
-                  <TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Ex: 5000000" autoFocus />
+                  <TextInput 
+                    style={styles.input} 
+                    value={amount} 
+                    onChangeText={setAmount} 
+                    keyboardType="numeric" 
+                    placeholder="Ex: 5000000" 
+                    autoFocus 
+                  />
+
                   <TouchableOpacity style={styles.confirmBtn} onPress={handleSubmit} disabled={processing}>
                       {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmText}>VALIDER LA TRANSACTION</Text>}
                   </TouchableOpacity>
+                  
                   <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)} disabled={processing}>
                       <Text style={styles.cancelText}>Annuler</Text>
                   </TouchableOpacity>

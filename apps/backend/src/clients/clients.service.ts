@@ -66,8 +66,13 @@ export class ClientsService {
     });
   }
 
+  // ✅ CORRECTION ICI : On filtre pour ne PAS renvoyer le Super Admin (DONIKO)
   async findAll() {
     return this.prisma.client.findMany({
+      where: {
+          // On exclut le code "DONIKO" ou tout code système réservé
+          code: { not: 'DONIKO' },
+      },
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { users: true, agencies: true } } },
     });
@@ -111,6 +116,12 @@ export class ClientsService {
   }
 
   async remove(id: number) {
+    // Protection ultime : Empêcher de supprimer le Super Client par API
+    const client = await this.prisma.client.findUnique({ where: { id } });
+    if (client?.code === 'DONIKO') {
+        throw new ConflictException("Impossible de supprimer la société système DONIKO.");
+    }
+
     await this.prisma.user.deleteMany({ where: { clientId: id } });
     return this.prisma.client.delete({ where: { id } });
   }

@@ -1,7 +1,7 @@
 // apps/backend/src/clients/clients.controller.ts
-import { Controller, Get, Post, Body, Param, UseGuards, ParseIntPipe, Delete, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, ParseIntPipe, Delete, Patch, ForbiddenException, Req } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Role, SubscriptionStatus, SubscriptionType } from '@prisma/client';
+import { Role, SubscriptionStatus } from '@prisma/client';
 
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
@@ -24,25 +24,36 @@ export class ClientsController {
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN) // 🔒 Sécurité : Seul le Super Admin voit la liste globale
   @ApiOperation({ summary: 'Lister les sociétés' })
   findAll() {
+    // Le service filtrera automatiquement "DONIKO" pour ne pas l'afficher
     return this.clientsService.findAll();
   }
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
-  findOne(@Param('id', ParseIntPipe) id: number) {
+  @ApiOperation({ summary: 'Voir une société spécifique' })
+  async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    const user = req.user;
+
+    // 🔒 SÉCURITÉ : Un Admin Société ne peut voir QUE sa propre société
+    if (user.role === Role.COMPANY_ADMIN && user.clientId !== id) {
+        throw new ForbiddenException("Vous ne pouvez pas accéder aux données d'une autre société.");
+    }
+
     return this.clientsService.findOne(id);
   }
 
-  // ✅ ROUTE MODIFIER (PATCH) - Indispensable pour le bouton crayon
+  // ✅ ROUTE MODIFIER (PATCH) - Mise à jour complète
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Mettre à jour les infos' })
   update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() data: { name?: string; code?: string; primaryColor?: string; subscriptionType?: SubscriptionType }
+    // ⚠️ On utilise 'any' ou un DTO partiel complet pour ne pas perdre de données
+    // Le formulaire frontend envoie beaucoup de champs (adresse, contact, couleurs...)
+    @Body() data: any 
   ) {
     return this.clientsService.update(id, data);
   }

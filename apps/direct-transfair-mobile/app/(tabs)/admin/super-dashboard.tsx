@@ -10,6 +10,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from 'expo-image-picker'; 
 import { colors } from "../../../theme/colors";
 import { api } from "../../../services/api";
+import { useAuth } from "../../../providers/AuthProvider"; // ✅ Import Auth
 
 const ACTIVITY_SECTORS = [
     "Transfert d'argent", "Commerce Général", "Télécoms & Services", "Micro-Finance", "Transport & Logistique", "Autre"
@@ -17,6 +18,7 @@ const ACTIVITY_SECTORS = [
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
+  const { user } = useAuth(); // ✅ Récupération user
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -24,11 +26,6 @@ export default function SuperAdminDashboard() {
   // --- ÉTATS MODALE & MODES ---
   const [modalVisible, setModalVisible] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
-  
-  // NOUVEAU : Gestion des modes d'affichage
-  // 'CREATE' = Création (Tout vide, bouton Enregistrer)
-  // 'VIEW' = Lecture seule (Boutons Modifier / Supprimer)
-  // 'EDIT' = Modification (Champs ouverts, bouton Enregistrer)
   const [mode, setMode] = useState<'CREATE' | 'VIEW' | 'EDIT'>('CREATE');
 
   // Champs Formulaire
@@ -53,13 +50,26 @@ export default function SuperAdminDashboard() {
   const [adminPassword, setAdminPassword] = useState("");
   const [showActivityModal, setShowActivityModal] = useState(false);
 
-  useFocusEffect(useCallback(() => { loadClients(); }, []));
+  useFocusEffect(useCallback(() => { 
+      // 🚨 SECURITE : Si pas Super Admin, on dégage
+      if (user && user.role !== 'SUPER_ADMIN') {
+          Alert.alert("Accès refusé", "Zone réservée au Super Admin.");
+          router.replace("/(tabs)/home");
+          return;
+      }
+      loadClients(); 
+  }, [user]));
 
   const loadClients = async () => {
     setLoading(true);
     try {
         const data = await api.getClients();
-        if (Array.isArray(data)) setClients(data);
+        if (Array.isArray(data)) {
+            // ✅ FILTRAGE : On cache la société "DONIKO" (Super Admin)
+            // On suppose que le code est "DONIKO" ou l'ID est 1
+            const filtered = data.filter(c => c.code !== 'DONIKO' && c.name !== 'Doniko SAS');
+            setClients(filtered);
+        }
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -217,7 +227,6 @@ export default function SuperAdminDashboard() {
   const renderClientItem = ({ item }: any) => {
     const isActive = item.subscriptionStatus === 'ACTIVE';
     return (
-        // ✅ ON REND LA CARTE CLIQUABLE POUR OUVRIR LE DÉTAIL
         <TouchableOpacity 
             style={styles.clientCard} 
             activeOpacity={0.7}
@@ -241,13 +250,11 @@ export default function SuperAdminDashboard() {
                 </View>
             </View>
             
-            {/* ✅ PLUS DE BOUTONS ICI, JUSTE UNE FLÈCHE POUR INDIQUER QU'ON PEUT CLIQUER */}
             <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
         </TouchableOpacity>
     );
   };
 
-  // Helper pour savoir si les champs sont éditables
   const isReadOnly = mode === 'VIEW';
 
   return (
@@ -280,7 +287,6 @@ export default function SuperAdminDashboard() {
                     <Text style={styles.modalTitle}>
                         {mode === 'CREATE' ? "Nouvelle Société" : (mode === 'EDIT' ? "Modifier Société" : "Détails Société")}
                     </Text>
-                    {/* Fil d'ariane visuel */}
                     {mode !== 'CREATE' && (
                         <Text style={{fontSize:10, color: mode === 'VIEW' ? '#6B7280' : '#F59E0B', fontWeight:'700', marginTop:2}}>
                             {mode === 'VIEW' ? 'LECTURE SEULE' : 'MODIFICATION EN COURS...'}
@@ -323,7 +329,7 @@ export default function SuperAdminDashboard() {
                         style={[styles.input, {backgroundColor:'#F3F4F6'}]} 
                         value={code} 
                         onChangeText={setCode} 
-                        editable={mode === 'CREATE'} // Editable seulement en création
+                        editable={mode === 'CREATE'} 
                     />
                 </View>
 
@@ -388,7 +394,6 @@ export default function SuperAdminDashboard() {
                         placeholder="admin@societe.com"
                     />
 
-                    {/* Le mot de passe n'est visible/modifiable qu'à la création */}
                     {mode === 'CREATE' && (
                         <>
                             <Text style={styles.label}>Mot de passe (Admin)</Text>
@@ -436,7 +441,6 @@ export default function SuperAdminDashboard() {
                 {/* --- BARRE D'ACTIONS --- */}
                 {mode === 'VIEW' ? (
                     <View style={styles.actionButtonsContainer}>
-                        {/* BOUTON MODIFIER */}
                         <TouchableOpacity 
                             style={styles.modifyBtn} 
                             onPress={() => setMode('EDIT')}
@@ -445,7 +449,6 @@ export default function SuperAdminDashboard() {
                             <Text style={styles.saveText}>MODIFIER LES INFOS</Text>
                         </TouchableOpacity>
 
-                        {/* BOUTON SUPPRIMER */}
                         <TouchableOpacity 
                             style={styles.deleteBtn} 
                             onPress={handleDeleteClient}
@@ -456,7 +459,6 @@ export default function SuperAdminDashboard() {
                     </View>
                 ) : (
                     <View style={styles.actionButtonsContainer}>
-                        {/* BOUTON ENREGISTRER */}
                         <TouchableOpacity 
                             style={[styles.saveBtn, submitting && {opacity: 0.7}]} 
                             onPress={handleSave}
@@ -469,12 +471,10 @@ export default function SuperAdminDashboard() {
                             )}
                         </TouchableOpacity>
 
-                        {/* BOUTON ANNULER (Seulement si on est en mode Edit, pas Create) */}
                         {mode === 'EDIT' && (
                              <TouchableOpacity 
                                 style={styles.cancelBtn} 
                                 onPress={() => {
-                                    // Retour en mode VIEW sans sauvegarder
                                     const client = clients.find(c => c.id === selectedClientId);
                                     if(client) openModal(client);
                                 }}
@@ -522,7 +522,6 @@ const styles = StyleSheet.create({
     title: { color: "#FFF", fontSize: 18, fontWeight: "700" },
     backBtn: { padding: 5 },
     addBtn: { backgroundColor: '#FFF', padding: 8, borderRadius: 20 },
-
     clientCard: { flexDirection:'row', backgroundColor:'#FFF', marginBottom:12, borderRadius:12, padding:15, alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, elevation:2 },
     statusIndicator: { width:4, height:'100%', borderRadius:2, marginRight:10 },
     clientName: { fontSize:16, fontWeight:'bold', color:'#1F2937' },
@@ -530,43 +529,28 @@ const styles = StyleSheet.create({
     tags: { flexDirection:'row', gap:5 },
     tag: { backgroundColor:'#F3F4F6', paddingHorizontal:6, paddingVertical:2, borderRadius:4 },
     tagText: { fontSize:10, fontWeight:'700', color:'#4B5563' },
-    
-    // Style Modale
     modalHeader: { flexDirection:'row', justifyContent:'space-between', padding:20, borderBottomWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFF' },
     modalTitle: { fontSize:18, fontWeight:'800', color:'#1F2937' },
     modalContent: { padding:20 },
-    
     section: { backgroundColor:'#FFF', borderRadius:12, padding:15, marginBottom:20, borderWidth:1, borderColor:'#E5E7EB' },
     sectionHeader: { fontSize:12, fontWeight:'800', color:'#9CA3AF', marginBottom:15, letterSpacing:1 },
-
     label: { fontSize:13, fontWeight:'600', color:'#374151', marginBottom:6, marginTop:10 },
     input: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, fontSize:15, backgroundColor:'#FFF', color: '#000' },
-    inputDisabled: { backgroundColor: '#F3F4F6', color: '#6B7280' }, // Style pour input désactivé
-
+    inputDisabled: { backgroundColor: '#F3F4F6', color: '#6B7280' },
     selectInput: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-
     logoPlaceholder: { width:80, height:80, borderRadius:40, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', borderWidth:1, borderColor:'#E5E7EB', borderStyle:'dashed', overflow: 'hidden' },
-
     rowSwitch: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:15, backgroundColor:'#F9FAFB', padding:10, borderRadius:8 },
-    
     typeBtn: { flex:1, padding:12, borderRadius:8, borderWidth:1, borderColor:'#E5E7EB', alignItems:'center', backgroundColor:'#FFF' },
     typeBtnActive: { backgroundColor:'#F59E0B', borderColor:'#F59E0B' },
     typeText: { fontWeight:'700', color:'#374151' },
-
-    // Boutons d'action
     actionButtonsContainer: { gap: 10, marginTop: 10 },
-    
     saveBtn: { backgroundColor:'#F59E0B', padding:18, borderRadius:12, alignItems:'center', zIndex: 999, elevation: 5 },
     saveText: { color:'#FFF', fontWeight:'800', fontSize:16, marginLeft: 8 },
-
     modifyBtn: { backgroundColor:'#2563EB', padding:18, borderRadius:12, alignItems:'center', flexDirection:'row', justifyContent:'center' },
-    
     deleteBtn: { backgroundColor:'#FEF2F2', padding:18, borderRadius:12, alignItems:'center', flexDirection:'row', justifyContent:'center', borderWidth:1, borderColor:'#FECACA' },
     deleteText: { color:'#DC2626', fontWeight:'800', fontSize:16, marginLeft: 8 },
-
     cancelBtn: { padding:15, alignItems:'center' },
     cancelText: { color:'#6B7280', fontWeight:'600' },
-
     modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding:30 },
     modalSmall: { backgroundColor:'#FFF', borderRadius:12, padding:20 }
 });

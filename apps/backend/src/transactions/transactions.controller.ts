@@ -33,7 +33,7 @@ export class TransactionsController {
   }
 
   // =========================================================
-  // 👑 SECTION TRÉSORERIE (SUPER ADMIN & ADMIN SOCIÉTÉ)
+  // 👑 TRÉSORERIE (ADMIN SOCIÉTÉ PRIORITAIRE)
   // =========================================================
 
   @Post('admin/fund-self')
@@ -44,13 +44,15 @@ export class TransactionsController {
 
       if (!user) throw new ForbiddenException("Non authentifié");
       
-      // On autorise SUPER_ADMIN et COMPANY_ADMIN
-      if (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN') {
-          throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
+      // ✅ ON AUTORISE EXPLICITEMENT L'ADMIN SOCIÉTÉ
+      if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
+          throw new ForbiddenException("Accès réservé aux Administrateurs.");
       }
 
       const userId = this.getUserId(req);
-      if (!amount || amount <= 0) throw new BadRequestException("Montant invalide");
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+          throw new BadRequestException("Montant invalide");
+      }
       
       return this.transactionsService.fundAdminWallet(userId, amount);
   }
@@ -63,7 +65,8 @@ export class TransactionsController {
       const user = req.user;
       if (!user) throw new ForbiddenException("Non authentifié");
 
-      if (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN') {
+      // ✅ ON AUTORISE L'ADMIN SOCIÉTÉ
+      if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
           throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
       }
 
@@ -78,7 +81,6 @@ export class TransactionsController {
   @Get('admin/all')
   async adminFindAll(@Req() req: AuthedRequest) {
     const user = req.user;
-    // Vérification stricte pour TypeScript
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN')) {
         throw new ForbiddenException("Accès refusé");
     }

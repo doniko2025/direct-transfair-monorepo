@@ -10,13 +10,17 @@ import type { Request } from 'express';
 import { TenantResolverService } from './tenant-resolver.service';
 import type { RequestWithTenant } from './tenant.middleware';
 
-function isPublicTenantPath(url: string): boolean {
+function isPublicOrAdminPath(url: string): boolean {
   return (
     url.startsWith('/swagger') ||
     url.startsWith('/auth/login') ||
     url.startsWith('/auth/register') ||
     url.startsWith('/auth/refresh') ||
-    url.startsWith('/health')
+    url.startsWith('/health') ||
+    // ✅ CORRECTION CRITIQUE ICI
+    // On autorise les routes de trésorerie admin à passer SANS contexte tenant obligatoire.
+    // C'est le JwtAuthGuard (Controller) qui sécurisera l'accès.
+    url.includes('/transactions/admin/') 
   );
 }
 
@@ -36,18 +40,26 @@ export class TenantGuard implements CanActivate {
       (req as unknown as Request).url ??
       '';
 
-    // ✅ LOGIN / REGISTER / SWAGGER → PAS de tenant requis
-    if (isPublicTenantPath(url)) {
+    // ✅ Si c'est public OU une route admin spéciale, on laisse passer
+    if (isPublicOrAdminPath(url)) {
       return true;
     }
 
-    // 🚨 toutes les autres routes DOIVENT avoir un tenant
+    // 🚨 Pour les autres routes (clients/agences standards), on exige un tenant
     if (!req.tenantContext) {
-      throw new UnauthorizedException('Missing tenant context');
+      // On tente une dernière résolution si le middleware a échoué silencieusement
+      try {
+          await this.tenantResolver.resolve(req);
+      } catch (e) {
+          // Si vraiment impossible, on rejette
+          throw new UnauthorizedException('Missing tenant context (Guard Blocked)');
+      }
+      
+      // Si après tentative c'est toujours vide
+      if (!req.tenantContext) {
+          throw new UnauthorizedException('Missing tenant context');
+      }
     }
-
-    // 🔥 Résolution DB réelle ici
-    await this.tenantResolver.resolve(req);
 
     return true;
   }

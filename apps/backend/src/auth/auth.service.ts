@@ -150,7 +150,7 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------
-  // 🔐 LOGIN
+  // 🔐 LOGIN (Version Corrigée)
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
@@ -161,9 +161,11 @@ export class AuthService {
       throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // ✅ SECURISATION PAYLOAD
-    // On s'assure que clientId est un nombre ou null, jamais undefined
-    const safeClientId = typeof user.clientId === 'number' ? user.clientId : null;
+    // ✅ SECURISATION DU CLIENT ID
+    // On s'assure qu'on n'envoie jamais 'undefined', mais null ou un nombre
+    const safeClientId = (user.clientId !== undefined && user.clientId !== null) 
+      ? user.clientId 
+      : null;
 
     const payload = {
       sub: user.id, 

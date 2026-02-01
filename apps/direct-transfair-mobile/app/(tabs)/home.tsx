@@ -36,7 +36,7 @@ export default function HomeScreen() {
 
   if (!user) return null;
 
-  // --- CLIENT ---
+  // --- CLIENT (USER) ---
   if (user.role === 'USER') {
     return (
       <DashboardLayout title={`Bonjour ${user.firstName}`} subtitle="Mon Portefeuille" badge="wallet" badgeColor={colors.primary} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}>
@@ -149,16 +149,21 @@ export default function HomeScreen() {
   }
 
   // --- SUPER ADMIN ---
-  return (
-      <DashboardLayout title="Super Admin" subtitle="Direct Transf'air" badge="shield-checkmark" badgeColor="#FFD700">
-        <Text style={styles.sectionTitle}>SaaS Management</Text>
-        <View style={styles.grid}>
-            <MenuCard title="Sociétés" subtitle="Gestion Clients" icon="briefcase" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/super-dashboard")} />
-            <MenuCard title="Trésorerie" subtitle="Recharges & Fonds" icon="cash" color="#10B981" onPress={() => router.push("/(tabs)/admin/treasury")} />
-            <MenuCard title="Config Globale" subtitle="Taux & Devises" icon="globe" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
-        </View>
-      </DashboardLayout>
-  );
+  if (user.role === 'SUPER_ADMIN') {
+    return (
+        <DashboardLayout title="Super Admin" subtitle="Direct Transf'air" badge="shield-checkmark" badgeColor="#FFD700" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}>
+          <Text style={styles.sectionTitle}>SaaS Management</Text>
+          <View style={styles.grid}>
+              <MenuCard title="Sociétés" subtitle="Gestion Clients" icon="briefcase" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/super-dashboard")} />
+              <MenuCard title="Trésorerie" subtitle="Recharges & Fonds" icon="cash" color="#10B981" onPress={() => router.push("/(tabs)/admin/treasury")} />
+              <MenuCard title="Config Globale" subtitle="Taux & Devises" icon="globe" color="#6B7280" onPress={() => router.push("/(tabs)/admin/rates")} />
+          </View>
+        </DashboardLayout>
+    );
+  }
+
+  // Fallback si rôle inconnu
+  return null;
 }
 
 // --- UI HELPERS ---

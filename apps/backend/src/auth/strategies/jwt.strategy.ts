@@ -48,9 +48,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: unknown): Promise<AuthUserPayload> {
-    // 🔍 DEBUG LOG : Pour voir ce qui arrive
-    // this.logger.debug(`Validating payload: ${JSON.stringify(payload)}`);
-
     const p = (payload ?? {}) as JwtPayloadLike;
 
     const sub =
@@ -65,7 +62,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // ✅ FALLBACK ROLE : Si pas de rôle, on met USER par défaut
     const role = isRole(p.role) ? p.role : Role.USER;
 
-    // ✅ CONVERSION CLIENT ID
+    // ✅ CONVERSION SECURISÉE CLIENT ID
     let clientId: number | null = null;
     if (typeof p.clientId === 'number') {
         clientId = p.clientId;
