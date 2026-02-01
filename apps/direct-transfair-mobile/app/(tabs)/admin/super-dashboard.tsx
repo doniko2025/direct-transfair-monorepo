@@ -3,7 +3,7 @@ import React, { useState, useCallback } from "react";
 import { 
   View, Text, StyleSheet, TextInput, Pressable, ScrollView, 
   Switch, Modal, FlatList, TouchableOpacity, Alert, SafeAreaView, ActivityIndicator, Image, Platform,
-  KeyboardAvoidingView // ✅ AJOUT DE L'IMPORT MANQUANT
+  KeyboardAvoidingView 
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,10 +21,15 @@ export default function SuperAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // --- ÉTATS MODALE ---
+  // --- ÉTATS MODALE & MODES ---
   const [modalVisible, setModalVisible] = useState(false);
-  const [isEditMode, setIsEditMode] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState<number | null>(null);
+  
+  // NOUVEAU : Gestion des modes d'affichage
+  // 'CREATE' = Création (Tout vide, bouton Enregistrer)
+  // 'VIEW' = Lecture seule (Boutons Modifier / Supprimer)
+  // 'EDIT' = Modification (Champs ouverts, bouton Enregistrer)
+  const [mode, setMode] = useState<'CREATE' | 'VIEW' | 'EDIT'>('CREATE');
 
   // Champs Formulaire
   const [logo, setLogo] = useState<string | null>(null); 
@@ -45,9 +50,7 @@ export default function SuperAdminDashboard() {
   const [contactEmail, setContactEmail] = useState("");
   const [activitySector, setActivitySector] = useState(ACTIVITY_SECTORS[0]);
   
-  // Champ Mot de passe (Uniquement pour la création)
   const [adminPassword, setAdminPassword] = useState("");
-
   const [showActivityModal, setShowActivityModal] = useState(false);
 
   useFocusEffect(useCallback(() => { loadClients(); }, []));
@@ -61,6 +64,7 @@ export default function SuperAdminDashboard() {
   };
 
   const pickImage = async () => {
+    if (mode === 'VIEW') return; // Bloquer en mode lecture
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -80,10 +84,38 @@ export default function SuperAdminDashboard() {
       }
   };
 
+  // ✅ LOGIQUE DE SUPPRESSION (Déplacée dans la modale)
+  const handleDeleteClient = () => {
+      const confirmMsg = `Voulez-vous vraiment supprimer la société "${name}" ?\nCette action est irréversible.`;
+      
+      const executeDelete = async () => {
+          try {
+              if (selectedClientId) await api.deleteClient(selectedClientId);
+              showUniversalAlert("Succès", "Société supprimée.");
+              setModalVisible(false);
+              loadClients();
+          } catch (e) {
+              console.error(e);
+              showUniversalAlert("Erreur", "Impossible de supprimer cette société.");
+          }
+      };
+
+      if (Platform.OS === 'web') {
+          if (window.confirm(confirmMsg)) executeDelete();
+      } else {
+          Alert.alert("Confirmation", confirmMsg, [
+              { text: "Annuler", style: "cancel" },
+              { text: "SUPPRIMER", style: "destructive", onPress: executeDelete }
+          ]);
+      }
+  };
+
   const openModal = (client?: any) => {
       if (client) {
-          setIsEditMode(true);
+          // MODE LECTURE (VIEW)
+          setMode('VIEW');
           setSelectedClientId(client.id);
+          
           setName(client.name);
           setCode(client.code);
           setColor(client.primaryColor || "#F59E0B");
@@ -91,7 +123,6 @@ export default function SuperAdminDashboard() {
           setIsActive(client.subscriptionStatus === 'ACTIVE');
           setLogo(client.logoUrl || null);
           
-          // Mapping des infos existantes
           setOwnerFirstName(client.ownerFirstName || "");
           setOwnerLastName(client.ownerLastName || "");
           setContactPhone(client.contactPhone || "");
@@ -103,11 +134,11 @@ export default function SuperAdminDashboard() {
           setActivitySector(client.activitySector || ACTIVITY_SECTORS[0]);
           setAdminPassword(""); 
       } else {
-          setIsEditMode(false);
+          // MODE CRÉATION
+          setMode('CREATE');
           setSelectedClientId(null);
           resetForm();
           setCode("SOC" + Math.floor(Math.random() * 10000));
-          // Mot de passe par défaut généré
           setAdminPassword("Pass" + Math.floor(1000 + Math.random() * 9000));
       }
       setModalVisible(true);
@@ -134,35 +165,24 @@ export default function SuperAdminDashboard() {
           showUniversalAlert("Erreur", "Le nom et le code société sont obligatoires.");
           return;
       }
-      
-      // Validation Email Admin en création
-      if (!isEditMode && !contactEmail) {
+      if (mode === 'CREATE' && !contactEmail) {
           showUniversalAlert("Erreur", "L'email du demandeur (Admin) est obligatoire.");
           return;
       }
 
       setSubmitting(true);
-
       const isoDate = formatDateForBackend(ownerBirthDate);
 
-      // ✅ CONSTRUCTION DU PAYLOAD CORRECT (Match le DTO backend)
       const payload: any = {
           name,
           code: code.trim().toUpperCase(),
           primaryColor: color,
-          
-          // Mapping vers les Enums Backend
           subscriptionType: contractType === 'BUY' ? 'PURCHASE' : 'RENTAL',
           status: isActive ? 'ACTIVE' : 'INACTIVE', 
-          
-          // ✅ CHAMPS ADMIN OBLIGATOIRES (Ceux qui manquaient !)
           adminEmail: contactEmail, 
           adminFirstName: ownerFirstName,
           adminLastName: ownerLastName,
-          // Mot de passe seulement si fourni (ou en création)
           ...(adminPassword ? { adminPassword } : {}),
-
-          // Autres infos
           logoUrl: logo,
           contactPhone,
           contactEmail, 
@@ -171,26 +191,20 @@ export default function SuperAdminDashboard() {
           ownerCountry,
           ownerBirthPlace,
           ...(isoDate && { ownerBirthDate: isoDate }),
-          
-          // Champs redondants pour assurer la compatibilité
           ownerFirstName,
           ownerLastName,
       };
 
-      console.log("Payload envoyé:", payload);
-
       try {
-          if (isEditMode && selectedClientId) {
+          if ((mode === 'EDIT' || mode === 'VIEW') && selectedClientId) {
               await api.updateClient(selectedClientId, payload);
               showUniversalAlert("Succès", "Société mise à jour !");
           } else {
               await api.createClient(payload);
               showUniversalAlert("Succès", `Société créée !\nLogin Admin: ${contactEmail}\nPass: ${adminPassword}`);
           }
-          
           setModalVisible(false);
           loadClients(); 
-
       } catch (e: any) {
           console.error("Erreur API:", e);
           const errorMsg = e.response?.data?.message || "Erreur serveur.";
@@ -203,11 +217,18 @@ export default function SuperAdminDashboard() {
   const renderClientItem = ({ item }: any) => {
     const isActive = item.subscriptionStatus === 'ACTIVE';
     return (
-        <View style={styles.clientCard}>
+        // ✅ ON REND LA CARTE CLIQUABLE POUR OUVRIR LE DÉTAIL
+        <TouchableOpacity 
+            style={styles.clientCard} 
+            activeOpacity={0.7}
+            onPress={() => openModal(item)}
+        >
             <View style={[styles.statusIndicator, { backgroundColor: isActive ? '#10B981' : '#F59E0B' }]} />
+            
             <View style={{flex: 1, paddingLeft: 10}}>
                 <Text style={styles.clientName}>{item.name}</Text>
                 <Text style={styles.clientCode}>Code: {item.code}</Text>
+                
                 <View style={styles.tags}>
                     <View style={styles.tag}>
                         <Text style={styles.tagText}>{item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOCATION'}</Text>
@@ -219,12 +240,15 @@ export default function SuperAdminDashboard() {
                     </View>
                 </View>
             </View>
-            <TouchableOpacity onPress={() => openModal(item)} style={styles.actionBtn}>
-                <Ionicons name="pencil" size={20} color="#3B82F6" />
-            </TouchableOpacity>
-        </View>
+            
+            {/* ✅ PLUS DE BOUTONS ICI, JUSTE UNE FLÈCHE POUR INDIQUER QU'ON PEUT CLIQUER */}
+            <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
+        </TouchableOpacity>
     );
   };
+
+  // Helper pour savoir si les champs sont éditables
+  const isReadOnly = mode === 'VIEW';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -252,7 +276,17 @@ export default function SuperAdminDashboard() {
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <SafeAreaView style={{flex:1, backgroundColor:'#F9FAFB'}}>
             <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{isEditMode ? "Modifier Société" : "Nouvelle Société"}</Text>
+                <View>
+                    <Text style={styles.modalTitle}>
+                        {mode === 'CREATE' ? "Nouvelle Société" : (mode === 'EDIT' ? "Modifier Société" : "Détails Société")}
+                    </Text>
+                    {/* Fil d'ariane visuel */}
+                    {mode !== 'CREATE' && (
+                        <Text style={{fontSize:10, color: mode === 'VIEW' ? '#6B7280' : '#F59E0B', fontWeight:'700', marginTop:2}}>
+                            {mode === 'VIEW' ? 'LECTURE SEULE' : 'MODIFICATION EN COURS...'}
+                        </Text>
+                    )}
+                </View>
                 <TouchableOpacity onPress={() => setModalVisible(false)}>
                     <Ionicons name="close" size={28} color="#333" />
                 </TouchableOpacity>
@@ -264,7 +298,7 @@ export default function SuperAdminDashboard() {
                 <View style={styles.section}>
                     <Text style={styles.sectionHeader}>IDENTITÉ VISUELLE</Text>
                     <View style={{alignItems:'center', marginBottom:15}}>
-                        <TouchableOpacity onPress={pickImage} style={styles.logoPlaceholder}>
+                        <TouchableOpacity onPress={pickImage} disabled={isReadOnly} style={[styles.logoPlaceholder, isReadOnly && {opacity: 0.7}]}>
                             {logo ? (
                                 <Image source={{ uri: logo }} style={{ width: 80, height: 80, borderRadius: 40 }} />
                             ) : (
@@ -277,14 +311,19 @@ export default function SuperAdminDashboard() {
                     </View>
 
                     <Text style={styles.label}>Nom de la société</Text>
-                    <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Ex: Flash Transfert" />
+                    <TextInput 
+                        style={[styles.input, isReadOnly && styles.inputDisabled]} 
+                        value={name} onChangeText={setName} 
+                        editable={!isReadOnly}
+                        placeholder="Ex: Flash Transfert" 
+                    />
 
                     <Text style={styles.label}>Code Unique (Identifiant)</Text>
                     <TextInput 
                         style={[styles.input, {backgroundColor:'#F3F4F6'}]} 
                         value={code} 
                         onChangeText={setCode} 
-                        editable={!isEditMode} 
+                        editable={mode === 'CREATE'} // Editable seulement en création
                     />
                 </View>
 
@@ -300,6 +339,7 @@ export default function SuperAdminDashboard() {
                         <Switch 
                             value={isActive} 
                             onValueChange={setIsActive} 
+                            disabled={isReadOnly}
                             trackColor={{ false: "#E5E7EB", true: "#10B981" }}
                         />
                     </View>
@@ -307,14 +347,16 @@ export default function SuperAdminDashboard() {
                     <Text style={styles.label}>Type d'offre</Text>
                     <View style={{flexDirection:'row', gap:10, marginTop:5}}>
                         <TouchableOpacity 
-                            style={[styles.typeBtn, contractType === 'RENT' && styles.typeBtnActive]} 
-                            onPress={() => setContractType('RENT')}
+                            style={[styles.typeBtn, contractType === 'RENT' && styles.typeBtnActive, isReadOnly && {opacity:0.6}]} 
+                            onPress={() => !isReadOnly && setContractType('RENT')}
+                            activeOpacity={isReadOnly ? 1 : 0.7}
                         >
                             <Text style={[styles.typeText, contractType === 'RENT' && {color:'#FFF'}]}>Location (SaaS)</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
-                            style={[styles.typeBtn, contractType === 'BUY' && styles.typeBtnActive]} 
-                            onPress={() => setContractType('BUY')}
+                            style={[styles.typeBtn, contractType === 'BUY' && styles.typeBtnActive, isReadOnly && {opacity:0.6}]} 
+                            onPress={() => !isReadOnly && setContractType('BUY')}
+                            activeOpacity={isReadOnly ? 1 : 0.7}
                         >
                             <Text style={[styles.typeText, contractType === 'BUY' && {color:'#FFF'}]}>Achat (Licence)</Text>
                         </TouchableOpacity>
@@ -327,17 +369,18 @@ export default function SuperAdminDashboard() {
                     <View style={{flexDirection:'row', gap:10}}>
                         <View style={{flex:1}}>
                             <Text style={styles.label}>Prénom</Text>
-                            <TextInput style={styles.input} value={ownerFirstName} onChangeText={setOwnerFirstName} placeholder="Prénom" />
+                            <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerFirstName} onChangeText={setOwnerFirstName} placeholder="Prénom" />
                         </View>
                         <View style={{flex:1}}>
                             <Text style={styles.label}>Nom</Text>
-                            <TextInput style={styles.input} value={ownerLastName} onChangeText={setOwnerLastName} placeholder="Nom" />
+                            <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerLastName} onChangeText={setOwnerLastName} placeholder="Nom" />
                         </View>
                     </View>
 
                     <Text style={styles.label}>Email (Sera l'identifiant de connexion)</Text>
                     <TextInput 
-                        style={styles.input} 
+                        style={[styles.input, isReadOnly && styles.inputDisabled]} 
+                        editable={!isReadOnly}
                         value={contactEmail} 
                         onChangeText={setContactEmail} 
                         keyboardType="email-address" 
@@ -345,7 +388,8 @@ export default function SuperAdminDashboard() {
                         placeholder="admin@societe.com"
                     />
 
-                    {!isEditMode && (
+                    {/* Le mot de passe n'est visible/modifiable qu'à la création */}
+                    {mode === 'CREATE' && (
                         <>
                             <Text style={styles.label}>Mot de passe (Admin)</Text>
                             <TextInput 
@@ -359,43 +403,88 @@ export default function SuperAdminDashboard() {
                     )}
 
                     <Text style={styles.label}>Téléphone</Text>
-                    <TextInput style={styles.input} value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" placeholder="+221..." />
+                    <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" placeholder="+221..." />
 
                     <Text style={styles.label}>Secteur d'activité</Text>
-                    <TouchableOpacity style={styles.selectInput} onPress={() => setShowActivityModal(true)}>
-                        <Text>{activitySector}</Text>
-                        <Ionicons name="chevron-down" size={20} color="#666" />
+                    <TouchableOpacity 
+                        style={[styles.selectInput, isReadOnly && {backgroundColor: '#F3F4F6'}]} 
+                        onPress={() => !isReadOnly && setShowActivityModal(true)}
+                        activeOpacity={isReadOnly ? 1 : 0.7}
+                    >
+                        <Text style={{color: isReadOnly ? '#6B7280' : '#000'}}>{activitySector}</Text>
+                        {!isReadOnly && <Ionicons name="chevron-down" size={20} color="#666" />}
                     </TouchableOpacity>
 
                     <View style={{flexDirection:'row', gap:10}}>
                         <View style={{flex:1}}>
                             <Text style={styles.label}>Date Naissance</Text>
-                            <TextInput style={styles.input} value={ownerBirthDate} onChangeText={setOwnerBirthDate} placeholder="JJ/MM/AAAA" />
+                            <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerBirthDate} onChangeText={setOwnerBirthDate} placeholder="JJ/MM/AAAA" />
                         </View>
                         <View style={{flex:1}}>
                             <Text style={styles.label}>Lieu</Text>
-                            <TextInput style={styles.input} value={ownerBirthPlace} onChangeText={setOwnerBirthPlace} />
+                            <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerBirthPlace} onChangeText={setOwnerBirthPlace} />
                         </View>
                     </View>
 
                     <Text style={styles.label}>Pays de résidence</Text>
-                    <TextInput style={styles.input} value={ownerCountry} onChangeText={setOwnerCountry} placeholder="Sénégal" />
+                    <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerCountry} onChangeText={setOwnerCountry} placeholder="Sénégal" />
 
                     <Text style={styles.label}>Adresse complète</Text>
-                    <TextInput style={styles.input} value={ownerAddress} onChangeText={setOwnerAddress} multiline />
+                    <TextInput style={[styles.input, isReadOnly && styles.inputDisabled]} editable={!isReadOnly} value={ownerAddress} onChangeText={setOwnerAddress} multiline />
                 </View>
 
-                <TouchableOpacity 
-                    style={[styles.saveBtn, submitting && {opacity: 0.7}]} 
-                    onPress={handleSave}
-                    disabled={submitting}
-                >
-                    {submitting ? (
-                        <ActivityIndicator color="#FFF" />
-                    ) : (
-                        <Text style={styles.saveText}>ENREGISTRER</Text>
-                    )}
-                </TouchableOpacity>
+                {/* --- BARRE D'ACTIONS --- */}
+                {mode === 'VIEW' ? (
+                    <View style={styles.actionButtonsContainer}>
+                        {/* BOUTON MODIFIER */}
+                        <TouchableOpacity 
+                            style={styles.modifyBtn} 
+                            onPress={() => setMode('EDIT')}
+                        >
+                            <Ionicons name="create-outline" size={20} color="#FFF" />
+                            <Text style={styles.saveText}>MODIFIER LES INFOS</Text>
+                        </TouchableOpacity>
+
+                        {/* BOUTON SUPPRIMER */}
+                        <TouchableOpacity 
+                            style={styles.deleteBtn} 
+                            onPress={handleDeleteClient}
+                        >
+                            <Ionicons name="trash-outline" size={20} color="#DC2626" />
+                            <Text style={styles.deleteText}>SUPPRIMER</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.actionButtonsContainer}>
+                        {/* BOUTON ENREGISTRER */}
+                        <TouchableOpacity 
+                            style={[styles.saveBtn, submitting && {opacity: 0.7}]} 
+                            onPress={handleSave}
+                            disabled={submitting}
+                        >
+                            {submitting ? (
+                                <ActivityIndicator color="#FFF" />
+                            ) : (
+                                <Text style={styles.saveText}>ENREGISTRER</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* BOUTON ANNULER (Seulement si on est en mode Edit, pas Create) */}
+                        {mode === 'EDIT' && (
+                             <TouchableOpacity 
+                                style={styles.cancelBtn} 
+                                onPress={() => {
+                                    // Retour en mode VIEW sans sauvegarder
+                                    const client = clients.find(c => c.id === selectedClientId);
+                                    if(client) openModal(client);
+                                }}
+                            >
+                                <Text style={styles.cancelText}>Annuler</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
+                
                 <View style={{height:100}} />
 
             </ScrollView>
@@ -434,17 +523,15 @@ const styles = StyleSheet.create({
     backBtn: { padding: 5 },
     addBtn: { backgroundColor: '#FFF', padding: 8, borderRadius: 20 },
 
-    clientCard: { flexDirection:'row', backgroundColor:'#FFF', marginHorizontal:20, marginBottom:10, borderRadius:12, padding:15, alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, elevation:2 },
+    clientCard: { flexDirection:'row', backgroundColor:'#FFF', marginBottom:12, borderRadius:12, padding:15, alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, elevation:2 },
     statusIndicator: { width:4, height:'100%', borderRadius:2, marginRight:10 },
     clientName: { fontSize:16, fontWeight:'bold', color:'#1F2937' },
     clientCode: { fontSize:12, color:'#6B7280', marginBottom:5 },
     tags: { flexDirection:'row', gap:5 },
     tag: { backgroundColor:'#F3F4F6', paddingHorizontal:6, paddingVertical:2, borderRadius:4 },
     tagText: { fontSize:10, fontWeight:'700', color:'#4B5563' },
-    actions: { flexDirection:'row', gap:10 },
-    actionBtn: { padding:8, backgroundColor:'#EFF6FF', borderRadius:8 },
-
-    // Styles Modale
+    
+    // Style Modale
     modalHeader: { flexDirection:'row', justifyContent:'space-between', padding:20, borderBottomWidth:1, borderColor:'#E5E7EB', backgroundColor:'#FFF' },
     modalTitle: { fontSize:18, fontWeight:'800', color:'#1F2937' },
     modalContent: { padding:20 },
@@ -453,7 +540,9 @@ const styles = StyleSheet.create({
     sectionHeader: { fontSize:12, fontWeight:'800', color:'#9CA3AF', marginBottom:15, letterSpacing:1 },
 
     label: { fontSize:13, fontWeight:'600', color:'#374151', marginBottom:6, marginTop:10 },
-    input: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, fontSize:15, backgroundColor:'#FFF' },
+    input: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, fontSize:15, backgroundColor:'#FFF', color: '#000' },
+    inputDisabled: { backgroundColor: '#F3F4F6', color: '#6B7280' }, // Style pour input désactivé
+
     selectInput: { borderWidth:1, borderColor:'#D1D5DB', borderRadius:8, padding:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
 
     logoPlaceholder: { width:80, height:80, borderRadius:40, backgroundColor:'#F3F4F6', justifyContent:'center', alignItems:'center', borderWidth:1, borderColor:'#E5E7EB', borderStyle:'dashed', overflow: 'hidden' },
@@ -464,8 +553,19 @@ const styles = StyleSheet.create({
     typeBtnActive: { backgroundColor:'#F59E0B', borderColor:'#F59E0B' },
     typeText: { fontWeight:'700', color:'#374151' },
 
-    saveBtn: { backgroundColor:'#F59E0B', padding:18, borderRadius:12, alignItems:'center', marginTop:10, zIndex: 999, elevation: 5 },
-    saveText: { color:'#FFF', fontWeight:'800', fontSize:16 },
+    // Boutons d'action
+    actionButtonsContainer: { gap: 10, marginTop: 10 },
+    
+    saveBtn: { backgroundColor:'#F59E0B', padding:18, borderRadius:12, alignItems:'center', zIndex: 999, elevation: 5 },
+    saveText: { color:'#FFF', fontWeight:'800', fontSize:16, marginLeft: 8 },
+
+    modifyBtn: { backgroundColor:'#2563EB', padding:18, borderRadius:12, alignItems:'center', flexDirection:'row', justifyContent:'center' },
+    
+    deleteBtn: { backgroundColor:'#FEF2F2', padding:18, borderRadius:12, alignItems:'center', flexDirection:'row', justifyContent:'center', borderWidth:1, borderColor:'#FECACA' },
+    deleteText: { color:'#DC2626', fontWeight:'800', fontSize:16, marginLeft: 8 },
+
+    cancelBtn: { padding:15, alignItems:'center' },
+    cancelText: { color:'#6B7280', fontWeight:'600' },
 
     modalOverlay: { flex:1, backgroundColor:'rgba(0,0,0,0.5)', justifyContent:'center', padding:30 },
     modalSmall: { backgroundColor:'#FFF', borderRadius:12, padding:20 }

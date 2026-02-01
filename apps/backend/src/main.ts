@@ -3,41 +3,59 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { TenantGuard } from './tenants/tenant.guard';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  // Validation globale des DTOs
+  // Validation globale des DTO
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Supprime les champs qui ne sont pas dans le DTO
-      transform: true, // Convertit automatiquement les types (ex: string "10" -> number 10)
+      whitelist: true,
+      transform: true,
     }),
   );
 
-  // ✅ ACTIVATION CORS ROBUSTE (Corrige le problème du bouton qui ne réagit pas)
+  // CORS
   app.enableCors({
-    origin: true, // Autorise dynamiquement l'origine de la requête (localhost:8081, IP mobile, etc.)
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    origin: true,
     credentials: true,
-    // On autorise explicitement tous les headers nécessaires, y compris x-tenant-id
-    allowedHeaders: 'Content-Type, Authorization, x-tenant-id, Accept, Origin, X-Requested-With',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders:
+      'Content-Type, Authorization, x-tenant-id, Accept, Origin, X-Requested-With',
   });
 
-  // Configuration Swagger (Documentation API)
+  // ✅ Guard tenant GLOBAL (skip swagger / swagger-json automatiquement)
+  app.useGlobalGuards(app.get(TenantGuard));
+
+  // 🔐 Swagger : Bearer + x-tenant-id (multi-tenant)
   const config = new DocumentBuilder()
     .setTitle("Direct Transf'air API")
     .setDescription('Documentation officielle du backend Direct Transf’air')
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
+      'access-token',
+    )
+    .addApiKey(
+      {
+        type: 'apiKey',
+        name: 'x-tenant-id',
+        in: 'header',
+      },
+      'x-tenant-id',
+    )
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, document);
 
-  const port = process.env.PORT ? Number(process.env.PORT) : 3000;
-  
-  // Écoute sur 0.0.0.0 pour être accessible depuis le réseau local (téléphone réel)
+  const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
 
   // eslint-disable-next-line no-console

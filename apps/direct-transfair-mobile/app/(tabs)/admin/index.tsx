@@ -4,17 +4,16 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Sta
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../../theme/colors";
-import { useAuth } from "../../../providers/AuthProvider"; // ✅ Import User
+import { useAuth } from "../../../providers/AuthProvider";
 
 export default function AdminDashboardScreen() {
   const router = useRouter();
-  const { user } = useAuth(); // ✅ Récupération du User
+  const { user } = useAuth();
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar backgroundColor="#111827" barStyle="light-content" />
       
-      {/* HEADER SOMBRE "PRO" */}
       <View style={styles.header}>
         <View>
             <Text style={styles.headerTitle}>Espace Administrateur</Text>
@@ -31,32 +30,39 @@ export default function AdminDashboardScreen() {
 
         <View style={styles.grid}>
             
-            {/* ✅ BOUTON SUPER ADMIN (VISIBLE SEULEMENT POUR TOI) */}
+            {/* ✅ BOUTON SUPER ADMIN (Gestion SaaS) */}
             {user?.role === 'SUPER_ADMIN' && (
                 <AdminCard 
                     title="Gérer Sociétés" 
                     subtitle="Créer clients SaaS" 
                     icon="business" 
-                    color="#F59E0B" // Orange
+                    color="#F59E0B" 
                     onPress={() => router.push("/(tabs)/admin/super-dashboard")}
                 />
             )}
 
-            {/* BOUTON TRANSACTIONS */}
+            {/* ✅ BOUTON TRÉSORERIE (CORRIGÉ) */}
+            <AdminCard 
+                title="Trésorerie" 
+                subtitle="Recharger Agences" 
+                icon="cash" 
+                color="#10B981" 
+                onPress={() => router.push("/(tabs)/admin/treasury")} // C'est ici que ça doit pointer
+            />
+
             <AdminCard 
                 title="Transactions" 
                 subtitle="Valider les envois" 
                 icon="swap-horizontal" 
-                color="#3B82F6" // Bleu
+                color="#3B82F6" 
                 onPress={() => router.push("/(tabs)/admin/transactions")}
             />
 
-            {/* BOUTON TAUX */}
             <AdminCard 
                 title="Taux de Change" 
                 subtitle="Modifier EUR/XOF" 
                 icon="trending-up" 
-                color="#10B981" // Vert
+                color="#8B5CF6" 
                 onPress={() => router.push("/(tabs)/admin/rates")}
             />
 
@@ -64,16 +70,8 @@ export default function AdminDashboardScreen() {
                 title="Utilisateurs" 
                 subtitle="Gérer les comptes" 
                 icon="people" 
-                color="#8B5CF6" // Violet
-                onPress={() => {}}
-            />
-
-            <AdminCard 
-                title="Retraits" 
-                subtitle="Suivi agences" 
-                icon="cash" 
-                color="#F59E0B" // Orange
-                onPress={() => {}}
+                color="#6B7280" 
+                onPress={() => router.push("/(tabs)/admin/users")}
             />
         </View>
 

@@ -23,7 +23,11 @@ export class TenantResolverService {
       );
     }
 
+    // 🔥 Hydratation COMPLÈTE du contexte
     req.tenantContext.clientId = client.id;
+    req.tenantContext.databaseUrl = process.env.DATABASE_URL ?? '';
+    req.tenantContext.mode = 'single-db';
+
     return req.tenantContext;
   }
 }

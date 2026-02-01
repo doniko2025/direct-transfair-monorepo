@@ -9,7 +9,7 @@ import {
   Patch,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 import type { Request } from 'express';
 
 import { AuthService } from './auth.service';
@@ -23,14 +23,11 @@ import type { AuthUserPayload } from './strategies/jwt.strategy';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // --- REGISTER ---
-  // On ne force pas le header x-tenant-id ici car le tenantCode est dans le DTO
   @Post('register')
   async register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
   }
 
-  // --- LOGIN ---
   @Post('login')
   async login(@Req() req: Request, @Body() dto: LoginDto) {
     const rawHeader = req.headers['x-tenant-id'];
@@ -42,19 +39,19 @@ export class AuthController {
     return this.authService.login(dto, tenantCode);
   }
 
-  // --- ME ---
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
+  @ApiSecurity('x-tenant-id')
   async me(@Req() req: Request & { user?: AuthUserPayload }) {
     if (!req.user) throw new BadRequestException('User not found');
     return this.authService.getProfile(req.user.id);
   }
 
-  // --- UPDATE ME ---
   @Patch('me')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @ApiBearerAuth('access-token')
+  @ApiSecurity('x-tenant-id')
   async updateMe(
     @Req() req: Request & { user?: AuthUserPayload },
     @Body() body: unknown,

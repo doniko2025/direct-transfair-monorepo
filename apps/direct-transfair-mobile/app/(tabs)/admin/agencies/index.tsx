@@ -7,16 +7,17 @@ import { colors } from "../../../../theme/colors";
 import { api } from "../../../../services/api";
 
 type Agency = {
-    id: string | number;
-    name: string;
-    city: string;
-    address?: string;
-    phone?: string;
-    email?: string;
-    type: 'PARTNER' | 'PRIVATE'; // ou RENTAL/PURCHASE selon backend
-    balance?: number;
-    status?: 'ACTIVE' | 'INACTIVE';
-    managerName?: string;
+  id: string | number;
+  name: string;
+  city: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  type: 'PARTNER' | 'PRIVATE';
+  balance?: number;
+  status?: 'ACTIVE' | 'INACTIVE';
+  managerName?: string;
+  currency?: string; // ✅ Ajout du champ devise
 };
 
 export default function AgenciesListScreen() {
@@ -38,13 +39,13 @@ export default function AgenciesListScreen() {
           const res = await api.getAgencies(); 
           const list = Array.isArray(res) ? res : [];
           
-          // Mapping pour sécuriser l'affichage
           const formatted: Agency[] = list.map((a: any) => ({
               ...a,
-              type: a.subscriptionType === 'PURCHASE' ? 'PARTNER' : 'PRIVATE', // Adapter selon logique backend
+              type: a.subscriptionType === 'PURCHASE' ? 'PARTNER' : 'PRIVATE',
               balance: a.balance || 0,
               phone: a.phone || 'Non renseigné',
-              status: a.status || 'ACTIVE'
+              status: a.status || 'ACTIVE',
+              currency: a.currency || 'XOF' // ✅ Récupération devise ou fallback
           }));
           
           setAgencies(formatted);
@@ -73,6 +74,7 @@ export default function AgenciesListScreen() {
   const renderItem = ({ item }: { item: Agency }) => (
       <TouchableOpacity 
         style={styles.card}
+        activeOpacity={0.9}
         onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/details", params: { id: item.id } })}
       >
           <View style={styles.cardHeader}>
@@ -87,11 +89,17 @@ export default function AgenciesListScreen() {
                   <Text style={styles.name}>{item.name}</Text>
                   <Text style={styles.details}>{item.city} • {item.phone}</Text>
               </View>
-              <View style={[styles.badge, item.status === 'ACTIVE' ? styles.badgeActive : styles.badgeInactive]}>
-                  <Text style={[styles.badgeText, item.status === 'ACTIVE' ? {color:'#065F46'} : {color:'#991B1B'}]}>
-                      {item.status === 'ACTIVE' ? 'ACTIF' : 'INACTIF'}
-                  </Text>
-              </View>
+              
+              {/* ✅ BOUTON MODIFIER */}
+              <TouchableOpacity 
+                style={styles.editIconBtn}
+                onPress={(e) => {
+                    e.stopPropagation();
+                    router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: item.id } });
+                }}
+              >
+                 <Ionicons name="pencil" size={18} color="#4B5563" />
+              </TouchableOpacity>
           </View>
           
           <View style={styles.divider} />
@@ -103,8 +111,17 @@ export default function AgenciesListScreen() {
               </View>
               <View style={{alignItems:'flex-end'}}>
                   <Text style={styles.label}>Solde Caisse</Text>
-                  <Text style={styles.balanceValue}>{(item.balance || 0).toLocaleString('fr-FR')} FCFA</Text>
+                  {/* ✅ AFFICHAGE DYNAMIQUE DE LA DEVISE */}
+                  <Text style={styles.balanceValue}>
+                      {(item.balance || 0).toLocaleString('fr-FR')} {item.currency}
+                  </Text>
               </View>
+          </View>
+
+          <View style={[styles.badge, item.status === 'ACTIVE' ? styles.badgeActive : styles.badgeInactive]}>
+             <Text style={[styles.badgeText, item.status === 'ACTIVE' ? {color:'#065F46'} : {color:'#991B1B'}]}>
+                 {item.status === 'ACTIVE' ? 'ACTIF' : 'INACTIF'}
+             </Text>
           </View>
       </TouchableOpacity>
   );
@@ -172,20 +189,22 @@ const styles = StyleSheet.create({
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     empty: { alignItems:'center', marginTop: 100 },
 
-    card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
+    card: { backgroundColor: '#FFF', borderRadius: 16, padding: 16, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2, position: 'relative' },
     cardHeader: { flexDirection: 'row', alignItems: 'center' },
     
     iconBox: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
     bgPrivate: { backgroundColor: '#D1FAE5' },
     bgPartner: { backgroundColor: '#DBEAFE' },
     
-    name: { fontSize: 16, fontWeight: '700', color: '#1F2937' },
+    name: { fontSize: 16, fontWeight: '700', color: '#1F2937', paddingRight: 30 },
     details: { fontSize: 13, color: '#6B7280', marginTop: 2 },
 
-    badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    editIconBtn: { padding: 8, backgroundColor: '#F3F4F6', borderRadius: 8 },
+
+    badge: { position:'absolute', top: 16, right: 16, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
     badgeActive: { backgroundColor: '#D1FAE5' },
     badgeInactive: { backgroundColor: '#FEE2E2' },
-    badgeText: { fontSize: 10, fontWeight: '800' },
+    badgeText: { fontSize: 9, fontWeight: '800' },
 
     divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 12 },
 

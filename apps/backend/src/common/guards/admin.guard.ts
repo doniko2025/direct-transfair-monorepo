@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
-// Typage léger de la requête (évite any)
 type AuthRequest = {
   user?: {
     id: string;
@@ -20,13 +19,18 @@ type AuthRequest = {
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<AuthRequest>();
-    const role = String(req.user?.role ?? '').toUpperCase();
+    
+    if (!req.user) {
+        throw new ForbiddenException('Utilisateur non authentifié');
+    }
+
+    const role = String(req.user.role ?? '').toUpperCase();
 
     // ✅ Autorisés : SUPER_ADMIN et COMPANY_ADMIN
     if (role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN') {
       return true;
     }
 
-    throw new ForbiddenException('Accès administrateur requis');
+    throw new ForbiddenException(`Accès administrateur requis (Rôle actuel: ${role})`);
   }
 }

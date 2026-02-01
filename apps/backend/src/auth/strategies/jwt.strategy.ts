@@ -1,11 +1,10 @@
 // apps/backend/src/auth/strategies/jwt.strategy.ts
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Role } from '@prisma/client';
 
-// ✅ Type exporté (utilisé par AuthController)
 export interface AuthUserPayload {
   id: string;
   sub: string;
@@ -32,8 +31,14 @@ function isRole(value: unknown): value is Role {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(configService: ConfigService) {
-    const secret = configService.get<string>('JWT_SECRET') || 'SUPER_SECRET_KEY';
+    const secret = configService.get<string>('JWT_SECRET');
+
+    if (!secret) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
 
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -43,18 +48,31 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: unknown): Promise<AuthUserPayload> {
+    // 🔍 DEBUG LOG : Pour voir ce qui arrive
+    // this.logger.debug(`Validating payload: ${JSON.stringify(payload)}`);
+
     const p = (payload ?? {}) as JwtPayloadLike;
 
-    const sub = typeof p.sub === 'string' && p.sub.trim().length > 0 ? p.sub : null;
-    if (!sub) throw new UnauthorizedException();
+    const sub =
+      typeof p.sub === 'string' && p.sub.trim().length > 0 ? p.sub : null;
+    
+    if (!sub) {
+        this.logger.error('Invalid JWT payload (sub missing)');
+        throw new UnauthorizedException('Invalid JWT');
+    }
 
     const email = typeof p.email === 'string' ? p.email : '';
+    // ✅ FALLBACK ROLE : Si pas de rôle, on met USER par défaut
     const role = isRole(p.role) ? p.role : Role.USER;
 
-    const clientId =
-      typeof p.clientId === 'number' && Number.isFinite(p.clientId)
-        ? p.clientId
-        : null;
+    // ✅ CONVERSION CLIENT ID
+    let clientId: number | null = null;
+    if (typeof p.clientId === 'number') {
+        clientId = p.clientId;
+    } else if (typeof p.clientId === 'string') {
+        const parsed = parseInt(p.clientId, 10);
+        clientId = isNaN(parsed) ? null : parsed;
+    }
 
     return {
       id: sub,

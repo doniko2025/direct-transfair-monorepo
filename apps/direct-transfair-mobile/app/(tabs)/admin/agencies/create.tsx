@@ -62,7 +62,7 @@ export default function CreateAgencyScreen() {
           const autoCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
           const subscriptionType = isPartner ? 'PURCHASE' : 'RENTAL';
 
-          // ✅ RÉCUPÉRATION DEVISE PAYS
+          // ✅ C'est ici que la devise du pays est récupérée (Ex: GNF pour Guinée)
           const agencyCurrency = selectedCountry.currency || "XOF"; 
 
           const newAgency = {
@@ -78,8 +78,7 @@ export default function CreateAgencyScreen() {
               
               managerName: fullManagerName, 
               country: selectedCountry.name,
-              // ✅ ENVOI DEVISE
-              currency: agencyCurrency, 
+              currency: agencyCurrency, // ✅ Devise correctement envoyée
               
               city: selectedCity,
               subscriptionType, 
@@ -160,7 +159,7 @@ export default function CreateAgencyScreen() {
 
         <Text style={styles.sectionHeader}>ADRESSE & LOCALISATION</Text>
         <View style={styles.card}>
-            <InputLabel label="Pays" req />
+            <InputLabel label="Pays (Définit la devise)" req />
             <TouchableOpacity style={styles.selectBtn} onPress={() => setShowCountryModal(true)}>
                 <View style={{flexDirection:'row', alignItems:'center'}}>
                     <Text style={{fontSize:20, marginRight:10}}>{selectedCountry.flag}</Text>

@@ -27,7 +27,7 @@ export default function EditAgencyScreen() {
           const data = await api.getAgency(id as string);
           setName(data.name);
           setCity(data.city);
-          setAddress(data.address);
+          setAddress(data.address || "");
           setPhone(data.phone || "");
           setEmail(data.email || "");
           setCode(data.code || "");
@@ -42,14 +42,16 @@ export default function EditAgencyScreen() {
   const handleUpdate = async () => {
       if (!name || !email) return Alert.alert("Erreur", "Nom et Email requis");
       
-      console.log("Envoi mise à jour pour ID:", id); // LOG DE DEBUG
-      
       setSaving(true);
       try {
-          // Appel de la méthode qui existe maintenant dans api.ts
-          await api.updateAgency(id as string, { name, city, address, phone, email, code });
+          await api.updateAgency(id as string, { name, city, address, phone, email, code } as any);
           
-          Alert.alert("Succès", "Agence modifiée !", [{ text: "OK", onPress: () => router.back() }]);
+          if (Platform.OS === 'web') {
+              alert("Agence modifiée avec succès !");
+              router.back();
+          } else {
+              Alert.alert("Succès", "Agence modifiée !", [{ text: "OK", onPress: () => router.back() }]);
+          }
       } catch (e: any) {
           console.error(e);
           const msg = e.response?.data?.message || "Erreur lors de la modification";
@@ -73,16 +75,19 @@ export default function EditAgencyScreen() {
       <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.alertBox}>
               <Ionicons name="information-circle" size={20} color="#1E40AF" />
-              <Text style={styles.alertText}>Modifier l'email changera aussi l'identifiant de connexion du responsable.</Text>
+              <Text style={styles.alertText}>Attention : Modifier l'email changera aussi l'identifiant de connexion du responsable de l'agence.</Text>
           </View>
 
           <View style={styles.card}>
               <Text style={styles.label}>Nom de l'agence</Text>
               <TextInput style={styles.input} value={name} onChangeText={setName} />
-              <Text style={styles.label}>Code Agence</Text>
+              
+              <Text style={styles.label}>Code Agence (Unique)</Text>
               <TextInput style={styles.input} value={code} onChangeText={setCode} />
-              <Text style={styles.label}>Email (Login Agent)</Text>
+              
+              <Text style={styles.label}>Email (Login Responsable)</Text>
               <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
+              
               <Text style={styles.label}>Téléphone</Text>
               <TextInput style={styles.input} value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
           </View>
@@ -90,12 +95,13 @@ export default function EditAgencyScreen() {
           <View style={styles.card}>
               <Text style={styles.label}>Ville</Text>
               <TextInput style={styles.input} value={city} onChangeText={setCity} />
-              <Text style={styles.label}>Adresse</Text>
-              <TextInput style={styles.input} value={address} onChangeText={setAddress} />
+              
+              <Text style={styles.label}>Adresse Complète</Text>
+              <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="Quartier, Rue..." />
           </View>
 
           <TouchableOpacity style={styles.saveBtn} onPress={handleUpdate} disabled={saving}>
-              {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>ENREGISTRER</Text>}
+              {saving ? <ActivityIndicator color="#FFF" /> : <Text style={styles.saveText}>ENREGISTRER LES MODIFICATIONS</Text>}
           </TouchableOpacity>
 
           <View style={{height: 100}} /> 

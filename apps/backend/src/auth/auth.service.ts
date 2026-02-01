@@ -4,7 +4,6 @@ import {
   UnauthorizedException,
   ConflictException,
   NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Role, User } from '@prisma/client';
@@ -70,7 +69,7 @@ function decimalToNumber(value: unknown): number {
 }
 
 function toPublicUser(user: User): PublicUser {
-  const balanceNumber = decimalToNumber((user as unknown as { balance?: unknown }).balance);
+  const balanceNumber = decimalToNumber((user as any).balance);
   return {
     id: user.id,
     email: user.email,
@@ -111,11 +110,8 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
     let userRole: Role = Role.USER;
-    if ((dto.role as unknown) === 'ADMIN' || dto.role === 'COMPANY_ADMIN') {
-      userRole = Role.COMPANY_ADMIN;
-    } else if ((dto.role as unknown) === 'SUPER_ADMIN') {
-      userRole = Role.SUPER_ADMIN;
-    }
+    if (dto.role === 'COMPANY_ADMIN') userRole = Role.COMPANY_ADMIN;
+    if (dto.role === 'SUPER_ADMIN') userRole = Role.SUPER_ADMIN;
 
     const tenantCode = normalizeTenantCode(dto.tenantCode);
     let clientId: number | null = null;
@@ -124,7 +120,7 @@ export class AuthService {
       const client = await this.prisma.client.findUnique({
         where: { code: tenantCode },
       });
-      clientId = client ? client.id : 1; 
+      clientId = client ? client.id : 1;
     } else {
       clientId = 1;
     }
@@ -154,28 +150,26 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------
-  // 🔹 LOGIN (CORRIGÉ ET SIMPLIFIÉ)
+  // 🔐 LOGIN
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
-    tenantCode?: string,
+    _tenantCode?: string,
   ): Promise<{ access_token: string; user: PublicUser }> {
-    
-    // 1. On vérifie UNIQUEMENT Email et Mot de passe
     const user = await this.validateUser(dto.email, dto.password);
-    
     if (!user) {
-        throw new UnauthorizedException('Identifiants incorrects');
+      throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // 🚀 ON IGNORE LE CODE SOCIÉTÉ
-    // Plus aucune vérification ici. Si le mot de passe est bon, on entre.
+    // ✅ SECURISATION PAYLOAD
+    // On s'assure que clientId est un nombre ou null, jamais undefined
+    const safeClientId = typeof user.clientId === 'number' ? user.clientId : null;
 
     const payload = {
-      sub: user.id,
+      sub: user.id, 
       email: user.email,
       role: user.role,
-      clientId: user.clientId ?? null,
+      clientId: safeClientId,
     };
 
     const accessToken = await this.jwt.signAsync(payload);
