@@ -6,20 +6,12 @@ import axios, {
 } from "axios";
 import { Platform } from "react-native";
 
-// ⚠️ Adaptez l'IP si besoin (ex: votre IP locale)
+// ⚠️ Adaptez l'IP si besoin
 const LOCAL_IP = "localhost";
 
 import type {
-  LoginPayload,
-  LoginResponse,
-  RegisterPayload,
-  Beneficiary,
-  CreateBeneficiaryPayload,
-  Transaction,
-  CreateTransactionPayload,
-  AuthUser,
-  Agency,
-  CreateAgencyPayload,
+  LoginPayload, LoginResponse, RegisterPayload, Beneficiary, CreateBeneficiaryPayload,
+  Transaction, CreateTransactionPayload, AuthUser, Agency, CreateAgencyPayload,
 } from "./types";
 
 function getBaseUrl(): string {
@@ -50,9 +42,19 @@ class API {
 
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
+
       if (this.token && this.token.trim().length > 0) {
-        headers.set("Authorization", `Bearer ${this.token}`);
+        // 🚨 CORRECTION "DOUBLE STRINGIFICATION"
+        // On enlève les guillemets éventuels au début et à la fin
+        // Ex: "eyJ..." devient eyJ...
+        const cleanToken = this.token.replace(/^"|"$/g, '');
+        
+        // 🔍 DEBUG (Regardez votre console Web/Mobile)
+        // console.log(`🚀 [API] Token envoyé (clean): ${cleanToken.substring(0, 10)}...`);
+
+        headers.set("Authorization", `Bearer ${cleanToken}`);
       }
+
       headers.set("x-tenant-id", this.tenant);
       config.headers = headers;
       return config;
@@ -63,6 +65,7 @@ class API {
   clearToken() { this.token = null; }
   setTenant(tenant: string) { this.tenant = tenant; }
 
+  // ... (LE RESTE DE VOS MÉTHODES RESTE INCHANGÉ - Copiez-collez vos méthodes existantes ici)
   // --- AUTH ---
   async register(data: RegisterPayload): Promise<void> { await this.http.post("/auth/register", data); }
   async login(data: LoginPayload, tenantCode?: string): Promise<LoginResponse> {
@@ -100,36 +103,18 @@ class API {
 
   async getExchangeRates(): Promise<{ pair: string; rate: number }[]> { const res = await this.http.get("/rates"); return res.data; }
   async updateExchangeRate(pair: string, rate: number): Promise<void> { await this.http.post("/rates", { pair, rate }); }
-  
+
   // --- GESTION UTILISATEURS ---
   async getUsers() { const res = await this.http.get("/users"); return res.data; }
   async createUser(data: any) { const res = await this.http.post("/users", data); return res.data; }
 
-  // --- RETRAITS (Guichet) ---
+  // --- RETRAITS ---
   async requestWithdrawal(data: { amount?: number; transactionId?: string }): Promise<unknown> { const res = await this.http.post("/withdrawals", data); return res.data; }
-  
-  // ✅ CORRECTION ICI : Ajout des méthodes manquantes pour withdraw.tsx
-  
-  // Appelé par withdraw.tsx (recherche par code)
-  async findTransactionByReference(code: string): Promise<Transaction> { 
-      // Cette route doit exister côté backend, sinon utilisez checkWithdrawalCode
-      const res = await this.http.post('/withdrawals/agent/check', { code }); 
-      return res.data; 
-  }
-
-  // Appelé par withdraw.tsx (validation paiement)
-  async processCashWithdrawal(transactionId: string): Promise<any> { 
-      // On suppose que l'API backend attend un ID ou un code pour payer
-      // Si votre backend attend un code, il faudra adapter ici.
-      // Pour l'instant, je mappe vers la route existante 'pay'
-      const res = await this.http.post('/withdrawals/agent/pay', { transactionId }); 
-      return res.data; 
-  }
-
-  // Méthodes originales (si utilisées ailleurs)
+  async findTransactionByReference(code: string): Promise<Transaction> { const res = await this.http.post('/withdrawals/agent/check', { code }); return res.data; }
+  async processCashWithdrawal(transactionId: string): Promise<any> { const res = await this.http.post('/withdrawals/agent/pay', { transactionId }); return res.data; }
   async checkWithdrawalCode(code: string): Promise<any> { const res = await this.http.post('/withdrawals/agent/check', { code }); return res.data; }
   async processWithdrawalPayment(code: string): Promise<any> { const res = await this.http.post('/withdrawals/agent/pay', { code }); return res.data; }
-  
+
   // --- SAAS CLIENTS ---
   async getClients() { const response = await this.http.get("/clients"); return response.data; }
   async createClient(data: any) { const response = await this.http.post("/clients", data); return response.data; }
