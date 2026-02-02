@@ -150,7 +150,7 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------
-  // 🔐 LOGIN (Version Corrigée)
+  // 🔐 LOGIN
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
@@ -162,7 +162,6 @@ export class AuthService {
     }
 
     // ✅ SECURISATION DU CLIENT ID
-    // On s'assure qu'on n'envoie jamais 'undefined', mais null ou un nombre
     const safeClientId = (user.clientId !== undefined && user.clientId !== null) 
       ? user.clientId 
       : null;
@@ -187,10 +186,24 @@ export class AuthService {
     return user;
   }
 
+  // ✅ CORRECTION ICI : On inclut l'Agence et le Client pour l'affichage frontend
   async getProfile(userId: string): Promise<PublicUser> {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ 
+        where: { id: userId },
+        include: { 
+            client: { select: { name: true, code: true } }, 
+            agency: { select: { id: true, name: true, currency: true } } 
+        }
+    });
+    
     if (!user) throw new NotFoundException('Utilisateur introuvable');
-    return toPublicUser(user);
+    
+    // On force le typage pour inclure les objets imbriqués dans la réponse JSON
+    const publicUser: any = toPublicUser(user);
+    publicUser.client = (user as any).client;
+    publicUser.agency = (user as any).agency;
+    
+    return publicUser;
   }
 
   async updateProfile(userId: string, data: unknown): Promise<PublicUser> {

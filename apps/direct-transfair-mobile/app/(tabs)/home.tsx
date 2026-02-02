@@ -60,12 +60,28 @@ export default function HomeScreen() {
   // --- AGENT ---
   if (user.role === 'AGENT') {
     const currency = agencyData?.currency || "XOF"; 
+    
+    // ✅ CORRECTION DU TITRE "UNDEFINED"
+    // On cherche le nom dans l'objet user.client (envoyé par le nouveau backend) ou agencyData
+    const agencyName = (user as any).client?.name || agencyData?.name || "Agence";
+
     return (
-      <DashboardLayout title="Espace Guichet" subtitle={`Agence: ${user.client?.name}`} badge="storefront" badgeColor="#10B981" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}>
+      <DashboardLayout 
+        title="Espace Guichet" 
+        subtitle={`Agence: ${agencyName}`} 
+        badge="storefront" 
+        badgeColor="#10B981" 
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}
+      >
         <View style={[styles.balanceCard, {backgroundColor: '#064E3B'}]}>
-            <Text style={styles.balanceLabel}>Solde Caisse</Text>
-            <Text style={styles.balanceValue}>{user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} {currency}</Text>
+            <Text style={styles.balanceLabel}>Solde Caisse (Agence)</Text>
+            
+            {/* ✅ CORRECTION MAJEURE : On affiche le solde de l'AGENCE, pas du USER */}
+            <Text style={styles.balanceValue}>
+                {agencyData?.balance ? Number(agencyData.balance).toLocaleString('fr-FR') : "0"} {currency}
+            </Text>
         </View>
+        
         <Text style={styles.sectionTitle}>Guichet</Text>
         <View style={styles.grid}>
             <MenuCard title="Envoi Espèces" subtitle="Client de passage" icon="paper-plane" color="#3B82F6" onPress={() => router.push("/agent/send-cash")} />
@@ -94,7 +110,6 @@ export default function HomeScreen() {
         {/* SECTION RÉSEAU & AGENCES */}
         <Text style={styles.sectionTitle}>Réseau & Agences</Text>
         <View style={styles.grid}>
-            {/* Créer une agence (Large) */}
             <MenuCard 
                 title="Créer une Agence" 
                 subtitle="Privée ou Partenaire" 
@@ -104,7 +119,6 @@ export default function HomeScreen() {
             />
             
             <View style={styles.row}>
-                {/* Mes Agences */}
                 <MenuCard 
                     title="Mes Agences" 
                     subtitle="Liste & Soldes" 
@@ -114,7 +128,6 @@ export default function HomeScreen() {
                     fullWidth={false} 
                 />
                 
-                {/* Utilisateurs */}
                 <MenuCard 
                     title="Utilisateurs" 
                     subtitle="Agents & Staff" 
@@ -162,7 +175,6 @@ export default function HomeScreen() {
     );
   }
 
-  // Fallback si rôle inconnu
   return null;
 }
 
@@ -209,9 +221,9 @@ const styles = StyleSheet.create({
   headerSubtitle: { color: "#9CA3AF", fontSize: 13, marginTop:2 },
   badge: { padding: 8, borderRadius: 12 },
   container: { flexGrow: 1, backgroundColor: "#F9FAFB", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingTop: 25 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#374151', marginTop: 20 }, // Plus d'espace
+  sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#374151', marginTop: 20 },
   grid: { gap: 10 },
-  row: { flexDirection: 'row', gap: 10 }, // Pour aligner 2 cartes
+  row: { flexDirection: 'row', gap: 10 },
   card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 14, borderRadius: 14, marginBottom: 2, borderWidth:1, borderColor:'#F3F4F6', shadowColor: "#000", shadowOpacity: 0.02, elevation: 1, minHeight: 80 },
   iconBox: { width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
   cardTitle: { fontSize: 14, fontWeight: "700", color: "#1F2937" }, 
