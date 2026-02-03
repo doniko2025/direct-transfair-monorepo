@@ -9,11 +9,11 @@ import {
   ActivityIndicator,
   Share,
   Platform,
-  Alert,
+  Alert, // ✅ Vérifie que c'est bien importé de react-native
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import * as Clipboard from 'expo-clipboard'; // Optionnel, sinon retire le bouton copier
+import * as Clipboard from 'expo-clipboard'; 
 
 import { api } from "../../../services/api";
 import type { Transaction } from "../../../services/types";
@@ -25,6 +25,7 @@ export default function TransactionDetailScreen() {
   
   const [transaction, setTransaction] = useState<Transaction | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cancelling, setCancelling] = useState(false); 
 
   useEffect(() => {
     loadTransaction();
@@ -32,7 +33,6 @@ export default function TransactionDetailScreen() {
 
   const loadTransaction = async () => {
     try {
-      // On récupère la liste et on filtre (méthode simple et robuste)
       const list = await api.getTransactions();
       const found = list.find((t) => t.id === id);
       setTransaction(found || null);
@@ -58,6 +58,53 @@ export default function TransactionDetailScreen() {
         await Clipboard.setStringAsync(transaction.reference);
         Alert.alert("Copié", "Code copié dans le presse-papier");
     }
+  };
+
+  // --- LOGIQUE D'ANNULATION ---
+  const handleCancel = () => {
+      console.log("Clic sur Annuler"); // 🔍 DEBUG
+      
+      // Sur Web, Alert.alert est parfois bloqué, on utilise window.confirm
+      if (Platform.OS === 'web') {
+          const confirm = window.confirm("Êtes-vous sûr de vouloir annuler et rembourser cette transaction ?");
+          if (confirm) processCancel();
+          return;
+      }
+
+      Alert.alert(
+          "Annuler la transaction",
+          "Êtes-vous sûr de vouloir annuler et rembourser cette transaction ? Cette action est irréversible.",
+          [
+              { text: "Non", style: "cancel", onPress: () => console.log("Annulation annulée") },
+              { text: "Oui, Annuler", style: "destructive", onPress: processCancel }
+          ]
+      );
+  };
+
+  const processCancel = async () => {
+      console.log("Lancement processCancel..."); // 🔍 DEBUG
+      setCancelling(true);
+      try {
+          await api.cancelTransaction(transaction!.id);
+          console.log("Annulation réussie API"); // 🔍 DEBUG
+          
+          if (Platform.OS === 'web') {
+              alert("Succès : Transaction annulée et remboursée.");
+              loadTransaction();
+          } else {
+              Alert.alert("Succès", "Transaction annulée avec succès. Les fonds ont été remboursés.", [
+                  { text: "OK", onPress: loadTransaction } 
+              ]);
+          }
+      } catch (e: any) {
+          console.error("Erreur annulation", e); // 🔍 DEBUG
+          const msg = e.response?.data?.message || "Impossible d'annuler.";
+          
+          if (Platform.OS === 'web') alert(`Erreur: ${msg}`);
+          else Alert.alert("Erreur", msg);
+      } finally {
+          setCancelling(false);
+      }
   };
 
   const getStatusInfo = (status: string) => {
@@ -90,6 +137,8 @@ export default function TransactionDetailScreen() {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
   });
 
+  const canCancel = transaction.status === 'PENDING' || transaction.status === 'VALIDATED';
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
       {/* HEADER NAVIGATION */}
@@ -121,7 +170,9 @@ export default function TransactionDetailScreen() {
         <View style={styles.codeSection}>
             <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
             <TouchableOpacity style={styles.codeBox} onPress={handleCopyCode}>
-                <Text style={styles.codeText}>{transaction.reference}</Text>
+                <Text style={[styles.codeText, transaction.status === 'CANCELLED' && {textDecorationLine:'line-through', color:'#CCC'}]}>
+                    {transaction.reference}
+                </Text>
                 <Ionicons name="copy-outline" size={20} color={colors.primary} />
             </TouchableOpacity>
             <Text style={styles.codeHint}>Transmettez ce code uniquement au bénéficiaire.</Text>
@@ -133,9 +184,6 @@ export default function TransactionDetailScreen() {
         <View style={styles.detailsSection}>
             <DetailRow label="Date" value={date} />
             <DetailRow label="Bénéficiaire" value="Voir liste bénéficiaires" /> 
-            {/* Note: L'objet transaction API ne renvoie pas toujours le nom du bénéficiaire directement, 
-                il faudrait faire un include dans le backend ou le récupérer via ID. 
-                Pour l'instant, on affiche l'info disponible. */}
             <DetailRow label="Méthode" value={transaction.payoutMethod.replace("_", " ")} />
         </View>
 
@@ -152,11 +200,29 @@ export default function TransactionDetailScreen() {
 
       </View>
 
-      {/* BOUTON PARTAGER */}
+      {/* ACTIONS */}
       <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
         <Ionicons name="share-social" size={20} color="#fff" />
         <Text style={styles.shareBtnText}>Partager le reçu</Text>
       </TouchableOpacity>
+
+      {/* BOUTON ANNULER (Rouge) */}
+      {canCancel && (
+          <TouchableOpacity 
+            style={[styles.cancelBtn, cancelling && {opacity: 0.6}]} 
+            onPress={handleCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? (
+                <ActivityIndicator color="#FFF" />
+            ) : (
+                <>
+                    <Ionicons name="close-circle" size={20} color="#fff" />
+                    <Text style={styles.cancelBtnText}>Annuler et Rembourser</Text>
+                </>
+            )}
+          </TouchableOpacity>
+      )}
 
       <View style={{height: 40}} />
     </ScrollView>
@@ -216,4 +282,7 @@ const styles = StyleSheet.create({
 
   shareBtn: { flexDirection: 'row', backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 24, gap: 10, shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
   shareBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+
+  cancelBtn: { flexDirection: 'row', backgroundColor: '#EF4444', paddingVertical: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginTop: 12, gap: 10 },
+  cancelBtnText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

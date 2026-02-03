@@ -54,7 +54,6 @@ export class WithdrawalsController {
   }
 
   // --- AGENT : Vérifier un code de retrait ---
-  // ✅ NOUVELLE ROUTE
   @Post('withdrawals/agent/check')
   async agentCheckCode(@Req() req: ReqWithAuth, @Body('code') code: string) {
     const clientId = req.tenantContext?.clientId;
@@ -69,7 +68,6 @@ export class WithdrawalsController {
   }
 
   // --- AGENT : Valider le paiement (Cash-Out) ---
-  // ✅ NOUVELLE ROUTE
   @Post('withdrawals/agent/pay')
   async agentProcessPayment(@Req() req: ReqWithAuth, @Body('code') code: string) {
     const clientId = req.tenantContext?.clientId;

@@ -45,13 +45,7 @@ class API {
 
       if (this.token && this.token.trim().length > 0) {
         // 🚨 CORRECTION "DOUBLE STRINGIFICATION"
-        // On enlève les guillemets éventuels au début et à la fin
-        // Ex: "eyJ..." devient eyJ...
         const cleanToken = this.token.replace(/^"|"$/g, '');
-        
-        // 🔍 DEBUG (Regardez votre console Web/Mobile)
-        // console.log(`🚀 [API] Token envoyé (clean): ${cleanToken.substring(0, 10)}...`);
-
         headers.set("Authorization", `Bearer ${cleanToken}`);
       }
 
@@ -65,7 +59,6 @@ class API {
   clearToken() { this.token = null; }
   setTenant(tenant: string) { this.tenant = tenant; }
 
-  // ... (LE RESTE DE VOS MÉTHODES RESTE INCHANGÉ - Copiez-collez vos méthodes existantes ici)
   // --- AUTH ---
   async register(data: RegisterPayload): Promise<void> { await this.http.post("/auth/register", data); }
   async login(data: LoginPayload, tenantCode?: string): Promise<LoginResponse> {
@@ -91,6 +84,13 @@ class API {
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions", data); return res.data; }
   async depositAgent(data: { amount: number; userPhone: string }): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions/deposit", data); return res.data; }
   async getTransactions(): Promise<Transaction[]> { const res = await this.http.get<Transaction[]>("/transactions"); return Array.isArray(res.data) ? res.data : []; }
+  
+  // ✅ NOUVELLE MÉTHODE ANNULATION
+  async cancelTransaction(id: string): Promise<Transaction> { 
+      const res = await this.http.patch<Transaction>(`/transactions/${id}/cancel`); 
+      return res.data; 
+  }
+
   async adminGetTransactions(): Promise<Transaction[]> { const res = await this.http.get<Transaction[]>("/transactions/admin/all"); return Array.isArray(res.data) ? res.data : []; }
   async adminUpdateTransactionStatus(id: string, status: string): Promise<Transaction> { const res = await this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }); return res.data; }
 

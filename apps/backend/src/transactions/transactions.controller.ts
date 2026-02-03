@@ -17,7 +17,6 @@ import { CreateTransactionDto, CreateDepositDto } from './dto/create-transaction
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-// On utilise AdminGuard uniquement sur les routes de lecture admin
 import { AdminGuard } from '../common/guards/admin.guard';
 import type { AuthedRequest } from '../types/requests';
 
@@ -33,50 +32,36 @@ export class TransactionsController {
   }
 
   // =========================================================
-  // 👑 TRÉSORERIE (ADMIN SOCIÉTÉ PRIORITAIRE)
+  // 👑 TRÉSORERIE
   // =========================================================
 
   @Post('admin/fund-self')
   async fundSelf(@Req() req: AuthedRequest, @Body('amount') amount: number) {
       const user = req.user;
-      
-      console.log("💰 Demande fund-self par :", user?.email);
-
       if (!user) throw new ForbiddenException("Non authentifié");
-      
-      // ✅ ON AUTORISE EXPLICITEMENT L'ADMIN SOCIÉTÉ
       if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
           throw new ForbiddenException("Accès réservé aux Administrateurs.");
       }
-
       const userId = this.getUserId(req);
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
           throw new BadRequestException("Montant invalide");
       }
-      
       return this.transactionsService.fundAdminWallet(userId, amount);
   }
 
   @Post('admin/refill-agency')
-  async refillAgency(
-      @Req() req: AuthedRequest, 
-      @Body() body: { agencyId: string; amount: number } 
-  ) {
+  async refillAgency(@Req() req: AuthedRequest, @Body() body: { agencyId: string; amount: number }) {
       const user = req.user;
       if (!user) throw new ForbiddenException("Non authentifié");
-
-      // ✅ ON AUTORISE L'ADMIN SOCIÉTÉ
       if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
           throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
       }
-
       const userId = this.getUserId(req);
       if (!body.agencyId || !body.amount) throw new BadRequestException("AgencyId et Amount requis");
-      
       return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
   }
 
-  // ----- LECTURE ADMIN -----
+  // ----- ADMIN -----
   @UseGuards(AdminGuard)
   @Get('admin/all')
   async adminFindAll(@Req() req: AuthedRequest) {
@@ -103,25 +88,33 @@ export class TransactionsController {
     return this.transactionsService.adminUpdateStatusForAdmin(userId, id, dto);
   }
 
-  // ----- AGENT (Dépôt Client) -----
+  // ----- AGENT -----
   @Post('deposit')
   async deposit(@Req() req: AuthedRequest, @Body() dto: CreateDepositDto) {
     const user = req.user;
     const userId = this.getUserId(req);
-    
     if (!user || (user.role !== 'AGENT' && user.role !== 'COMPANY_ADMIN')) {
         throw new ForbiddenException("Seuls les agents peuvent effectuer des dépôts.");
     }
     return this.transactionsService.deposit(userId, dto);
   }
 
-  // ----- USER (Envois classiques) -----
+  // ----- USER (ACTIONS) -----
+  
   @Post()
   async create(@Req() req: AuthedRequest, @Body() dto: CreateTransactionDto) {
     const userId = this.getUserId(req);
     return this.transactionsService.create(userId, dto);
   }
 
+  // ✅ NOUVELLE ROUTE : ANNULER
+  @Patch(':id/cancel')
+  async cancel(@Req() req: AuthedRequest, @Param('id') id: string) {
+    const userId = this.getUserId(req);
+    return this.transactionsService.cancel(userId, id);
+  }
+
+  // ----- LECTURE -----
   @Get()
   async findMine(@Req() req: AuthedRequest) {
     const userId = this.getUserId(req);

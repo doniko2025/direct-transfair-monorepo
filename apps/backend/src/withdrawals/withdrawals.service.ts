@@ -44,7 +44,6 @@ export class WithdrawalsService {
             });
 
             // B. Créer la Transaction parente (PENDING)
-            // On utilise UncheckedCreateInput pour éviter les erreurs TS sur les relations optionnelles
             const txData: Prisma.TransactionUncheckedCreateInput = {
                 reference: `WD-${Date.now()}`,
                 amount,
@@ -56,8 +55,7 @@ export class WithdrawalsService {
                 paymentMethod: PaymentMethod.WALLET,
                 senderId: userId,
                 clientId,
-                providerRef: withdrawalCode,
-                // Pas de beneficiaryId
+                providerRef: withdrawalCode, // Le fameux code DT-XXXXXX
             };
 
             const transaction = await tx.transaction.create({ data: txData });
@@ -78,7 +76,6 @@ export class WithdrawalsService {
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) throw new BadRequestException('Montant ou TransactionId requis');
     
-    // (Logique legacy conservée au cas où)
     const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
     if (!tx) throw new NotFoundException('Transaction introuvable');
     
@@ -145,7 +142,7 @@ export class WithdrawalsService {
           // A. Créditer Solde Virtuel de l'Agence (Elle a donné du cash, elle gagne du virtuel)
           await prismaTx.agency.update({
               where: { id: agent.agencyId! },
-              data: { balance: { increment: tx.total } } // Ou tx.amount selon règles commissions
+              data: { balance: { increment: tx.total } } 
           });
 
           // B. Marquer Transaction comme PAYÉE
@@ -172,7 +169,6 @@ export class WithdrawalsService {
       });
   }
 
-  // ... (Méthodes adminListAll, listMine existantes conservées ou simplifiées pour brièveté)
   async listMine(clientId: number, userId: string) {
     return this.prisma.withdrawal.findMany({
       where: { clientId, transaction: { senderId: userId } },
