@@ -2,56 +2,80 @@
 import React, { useState } from "react";
 import { 
   View, Text, StyleSheet, TextInput, Pressable, 
-  ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform 
+  ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "../../services/api"; // ✅ Utilisation de l'API réelle
+import { api } from "../../services/api"; 
 
 export default function AgentWithdrawScreen() {
   const router = useRouter();
   const [code, setCode] = useState("");
   const [checking, setChecking] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
 
-  // 1. VÉRIFIER LE CODE (Appel API)
+  // Helper pour les alertes Web/Mobile
+  const showAlert = (title: string, msg: string) => {
+      if (Platform.OS === 'web') alert(`${title}: ${msg}`);
+      else Alert.alert(title, msg);
+  };
+
+  // 1. VÉRIFIER LE CODE
   const handleCheckCode = async () => {
-    if (code.length < 5) return Alert.alert("Erreur", "Code trop court");
+    if (code.length < 5) {
+        showAlert("Erreur", "Code trop court");
+        return;
+    }
 
     setChecking(true);
+    setTransaction(null);
     try {
-        // ✅ Appel de la nouvelle route 'check'
-        // Il faut ajouter checkWithdrawalCode dans api.ts si pas fait
-        // Sinon appel axios direct ou via méthode générique
         const res = await api.http.post('/withdrawals/agent/check', { code });
         setTransaction(res.data);
     } catch (e: any) {
-        Alert.alert("Erreur", e.response?.data?.message || "Code invalide");
-        setTransaction(null);
+        const msg = e.response?.data?.message || "Code invalide ou introuvable";
+        showAlert("Erreur", msg);
     } finally {
         setChecking(false);
     }
   };
 
-  // 2. VALIDER LE PAIEMENT (Appel API)
+  // 2. VALIDER LE PAIEMENT
   const handlePayOut = () => {
-      Alert.alert(
-          "Confirmation", 
-          `Confirmez-vous avoir remis ${transaction.amount} ${transaction.currency} au client ?`,
-          [
+      const msg = `Confirmez-vous avoir remis ${transaction.amount} ${transaction.currency} au client ?`;
+      
+      if (Platform.OS === 'web') {
+          if (window.confirm(`CONFIRMATION\n\n${msg}`)) {
+              processPayment();
+          }
+      } else {
+          Alert.alert("Confirmation", msg, [
               { text: "Annuler", style: 'cancel' },
-              { text: "CONFIRMER (IRRÉVERSIBLE)", onPress: async () => {
-                  try {
-                      await api.http.post('/withdrawals/agent/pay', { code });
-                      Alert.alert("Succès", "Paiement validé !", [
-                          { text: "OK", onPress: () => router.back() }
-                      ]);
-                  } catch (e: any) {
-                      Alert.alert("Erreur", e.response?.data?.message || "Echec validation");
-                  }
-              }}
-          ]
-      );
+              { text: "CONFIRMER", onPress: processPayment }
+          ]);
+      }
+  };
+
+  const processPayment = async () => {
+      setPaying(true);
+      try {
+          await api.http.post('/withdrawals/agent/pay', { code });
+          
+          if (Platform.OS === 'web') {
+              alert("Succès : Paiement validé !");
+              router.back();
+          } else {
+              Alert.alert("Succès", "Paiement validé !", [
+                  { text: "OK", onPress: () => router.back() }
+              ]);
+          }
+      } catch (e: any) {
+          const msg = e.response?.data?.message || "Echec validation";
+          showAlert("Erreur", msg);
+      } finally {
+          setPaying(false);
+      }
   };
 
   return (
@@ -64,22 +88,28 @@ export default function AgentWithdrawScreen() {
         <View style={{width: 24}} /> 
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1, padding: 20}}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
+      <ScrollView contentContainerStyle={{padding: 20, flexGrow: 1, justifyContent: 'center'}}>
 
         {!transaction ? (
             <View style={styles.centerBox}>
-                <Ionicons name="qr-code-outline" size={60} color="#EF4444" style={{marginBottom: 20}} />
+                <Ionicons name="qr-code-outline" size={80} color="#065F46" style={{marginBottom: 20, opacity: 0.8}} />
                 <Text style={styles.label}>Entrez le code de retrait du client</Text>
 
                 <TextInput 
                     style={styles.codeInput} 
                     placeholder="DT-XXXXXX" 
+                    placeholderTextColor="#CBD5E1"
                     value={code}
                     onChangeText={text => setCode(text.toUpperCase())}
                     autoCapitalize="characters"
                 />
 
-                <Pressable style={styles.btn} onPress={handleCheckCode} disabled={checking}>
+                <Pressable 
+                    style={({pressed}) => [styles.btn, pressed && {opacity:0.9}]} 
+                    onPress={handleCheckCode} 
+                    disabled={checking}
+                >
                     {checking ? <ActivityIndicator color="#FFF"/> : <Text style={styles.btnText}>Vérifier le code</Text>}
                 </Pressable>
             </View>
@@ -90,29 +120,45 @@ export default function AgentWithdrawScreen() {
                 </View>
                 <Text style={styles.resultTitle}>Code Valide !</Text>
 
-                <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Montant à payer :</Text>
-                    <Text style={styles.detailValue}>{transaction.amount} {transaction.currency}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Expéditeur :</Text>
-                    <Text style={styles.detailValue}>{transaction.senderName}</Text>
+                <View style={styles.card}>
+                    <View style={styles.detailRow}>
+                        {/* ✅ Style 'detailLabel' corrigé ci-dessous */}
+                        <Text style={styles.detailLabel}>Montant à payer</Text>
+                        <Text style={styles.amountValue}>{transaction.amount} <Text style={{fontSize:16}}>{transaction.currency}</Text></Text>
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Expéditeur</Text>
+                        <Text style={styles.detailValueSmall}>{transaction.senderName}</Text>
+                    </View>
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Statut</Text>
+                        <View style={{backgroundColor:'#DBEAFE', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>
+                            <Text style={{color:'#1E40AF', fontWeight:'bold', fontSize:12}}>{transaction.status}</Text>
+                        </View>
+                    </View>
                 </View>
 
                 <View style={styles.warningBox}>
-                    <Text style={styles.warningText}>⚠️ Vérifiez l'identité du client avant de remettre les fonds.</Text>
+                    <Ionicons name="warning" size={20} color="#B45309" style={{marginBottom:5}} />
+                    <Text style={styles.warningText}>Vérifiez l'identité du client avant de remettre les fonds.</Text>
                 </View>
 
-                <Pressable style={[styles.btn, {backgroundColor: '#10B981'}]} onPress={handlePayOut}>
-                    <Text style={styles.btnText}>Confirmer le paiement</Text>
+                <Pressable 
+                    style={[styles.btn, {backgroundColor: '#10B981', marginTop: 20}]} 
+                    onPress={handlePayOut}
+                    disabled={paying}
+                >
+                    {paying ? <ActivityIndicator color="#FFF"/> : <Text style={styles.btnText}>Confirmer le paiement</Text>}
                 </Pressable>
 
-                <Pressable style={{marginTop: 20}} onPress={() => setTransaction(null)}>
-                    <Text style={{color: '#6B7280'}}>Annuler</Text>
+                <Pressable style={{marginTop: 20, padding: 10}} onPress={() => setTransaction(null)}>
+                    <Text style={{color: '#6B7280', textDecorationLine: 'underline'}}>Annuler / Retour</Text>
                 </Pressable>
             </View>
         )}
 
+      </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -123,17 +169,37 @@ const styles = StyleSheet.create({
     header: { backgroundColor: '#064E3B', padding: 20, paddingTop: Platform.OS==='android'?40:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
     headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
     backBtn: { padding: 5 },
-    centerBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    label: { fontSize: 16, color: '#374151', marginBottom: 15 },
-    codeInput: { fontSize: 24, fontWeight: 'bold', borderBottomWidth: 2, borderBottomColor: '#EF4444', width: '80%', textAlign: 'center', padding: 10, marginBottom: 30, color: '#1F2937' },
-    resultBox: { flex: 1, alignItems: 'center', paddingTop: 40 },
-    successIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-    resultTitle: { fontSize: 24, fontWeight: '800', color: '#065F46', marginBottom: 30 },
-    detailRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 15, paddingHorizontal: 20 },
-    detailLabel: { fontSize: 16, color: '#6B7280' },
-    detailValue: { fontSize: 18, fontWeight: 'bold', color: '#1F2937' },
-    warningBox: { backgroundColor: '#FEF2F2', padding: 15, borderRadius: 10, marginVertical: 30 },
-    warningText: { color: '#B91C1C', fontWeight: '600' },
-    btn: { backgroundColor: '#EF4444', padding: 18, borderRadius: 12, alignItems: 'center', width: '100%', shadowColor: "#000", shadowOpacity: 0.1, elevation: 5 },
+    
+    centerBox: { alignItems: 'center', width: '100%' },
+    label: { fontSize: 16, color: '#475569', marginBottom: 20, fontWeight: '500' },
+    
+    codeInput: { 
+        fontSize: 28, fontWeight: 'bold', 
+        borderWidth: 2, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#FFF',
+        width: '100%', textAlign: 'center', padding: 15, marginBottom: 30, color: '#1F2937' 
+    },
+    
+    resultBox: { alignItems: 'center', width: '100%' },
+    successIcon: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center', marginBottom: 15, shadowColor: "#10B981", shadowOpacity: 0.4, elevation: 5 },
+    resultTitle: { fontSize: 24, fontWeight: '800', color: '#065F46', marginBottom: 20 },
+    
+    card: { backgroundColor: '#FFF', width: '100%', borderRadius: 16, padding: 20, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
+    
+    // ✅ STYLE AJOUTÉ : detailLabel
+    detailLabel: { fontSize: 14, color: '#64748B', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
+    
+    detailRow: { alignItems: 'center', marginBottom: 15 },
+    amountValue: { fontSize: 32, fontWeight: '900', color: '#1F2937' },
+    
+    divider: { height: 1, backgroundColor: '#F1F5F9', width: '100%', marginVertical: 15 },
+    
+    detailRowSmall: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+    detailLabelSmall: { fontSize: 14, color: '#64748B' },
+    detailValueSmall: { fontSize: 16, fontWeight: '600', color: '#334155' },
+
+    warningBox: { backgroundColor: '#FFFBEB', padding: 15, borderRadius: 10, marginTop: 20, width: '100%', borderWidth: 1, borderColor: '#FCD34D', alignItems: 'center' },
+    warningText: { color: '#B45309', fontWeight: '600', textAlign: 'center', fontSize: 13 },
+    
+    btn: { backgroundColor: '#064E3B', padding: 18, borderRadius: 14, alignItems: 'center', width: '100%', shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
     btnText: { color: '#FFF', fontSize: 18, fontWeight: '800' }
 });

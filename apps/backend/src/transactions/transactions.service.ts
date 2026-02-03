@@ -48,9 +48,7 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // =================================================================
-  // 🛑 ANNULATION & REMBOURSEMENT (NOUVEAU)
-  // =================================================================
+  // ... (Cancel method remains unchanged) ...
   async cancel(userId: string, transactionId: string): Promise<Transaction> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -59,12 +57,10 @@ export class TransactionsService {
 
     if (!tx) throw new NotFoundException('Transaction introuvable');
 
-    // Sécurité : Seul l'émetteur peut annuler (ou un admin via une autre route)
     if (tx.senderId !== userId) {
       throw new ForbiddenException('Vous ne pouvez annuler que vos propres transactions');
     }
 
-    // Vérifier si annulable
     if (tx.status === TransactionStatus.PAID) {
       throw new ConflictException("Impossible d'annuler : Le client a déjà retiré l'argent !");
     }
@@ -74,39 +70,35 @@ export class TransactionsService {
 
     return this.prisma.$transaction(async (prismaTx) => {
       // 1. REMBOURSEMENT (RE-CRÉDIT)
-      // Si l'envoyeur était un agent lié à une agence -> On recrédite l'agence
       if (tx.sender?.role === 'AGENT' && tx.sender.agencyId) {
         await prismaTx.agency.update({
           where: { id: tx.sender.agencyId },
-          data: { balance: { increment: tx.total } }, // montant + frais
+          data: { 
+              balance: { increment: tx.total },
+              // Optionnel: Si on annule un envoi, on doit rendre le cash au client ? 
+              // Si oui, la caisse baisse : cash: { decrement: tx.total }
+              // À décider selon votre politique de remboursement (cash immédiat ou crédit).
+          }, 
         });
-      }
-      // Sinon (Client standard) -> On recrédite son wallet perso
-      else {
+      } else {
         await prismaTx.user.update({
           where: { id: tx.senderId },
           data: { balance: { increment: tx.total } },
         });
       }
 
-      // 2. MAJ STATUT TRANSACTION
       const updatedTx = await prismaTx.transaction.update({
         where: { id: transactionId },
         data: {
           status: TransactionStatus.CANCELLED,
           cancelledAt: new Date(),
-          // ✅ FIX: on utilise bien l'enum Prisma ProviderStatus
           providerStatus: ProviderStatus.CANCELLED,
         },
       });
 
-      // 3. MAJ STATUT RETRAIT (SI EXISTANT)
       await prismaTx.withdrawal.updateMany({
         where: { transactionId },
-        data: {
-          // ✅ FIX strict Prisma (au lieu de 'CANCELLED')
-          status: WithdrawalStatus.CANCELLED,
-        },
+        data: { status: WithdrawalStatus.CANCELLED },
       });
 
       return updatedTx;
@@ -114,7 +106,7 @@ export class TransactionsService {
   }
 
   // =================================================================
-  // 🚀 CRÉATION TRANSACTION (DÉBIT AGENCE OU USER + AUTO-VALIDATION)
+  // 🚀 CRÉATION TRANSACTION (ENVOI)
   // =================================================================
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
@@ -138,14 +130,19 @@ export class TransactionsService {
     return this.prisma.$transaction(async (tx) => {
       let currency = dto.currency;
 
-      // CAS 1 : AGENT -> Débit Agence
+      // CAS 1 : AGENT -> Débit Agence (CASH-IN)
       if (user.role === 'AGENT' && user.agencyId && user.agency) {
         if (user.agency.balance.lessThan(total)) {
           throw new ForbiddenException(`Solde Agence insuffisant (${user.agency.balance} < ${total})`);
         }
+        
+        // ✅ CORRECTION : Mise à jour du physique ET du virtuel
         await tx.agency.update({
           where: { id: user.agencyId },
-          data: { balance: { decrement: total } },
+          data: { 
+              balance: { decrement: total }, // Le virtuel baisse (transfert sortant)
+              cash: { increment: total }     // Le physique augmente (encaissement client)
+          },
         });
         currency = user.agency.currency || 'XOF';
       }
@@ -160,7 +157,6 @@ export class TransactionsService {
         });
       }
 
-      // --- LOGIQUE AUTOMATISATION VALIDATION ---
       const validationThreshold = new Prisma.Decimal(500000);
       const initialStatus = amount.lte(validationThreshold)
         ? TransactionStatus.VALIDATED
@@ -183,6 +179,8 @@ export class TransactionsService {
     });
   }
 
+  // ... (Rest of the file: deposit, adminFundSelf, etc. remain unchanged) ...
+  
   // =================================================================
   // 💰 DEPOT / CASH-IN
   // =================================================================
@@ -212,9 +210,13 @@ export class TransactionsService {
     const clientId = agent.clientId!;
 
     return this.prisma.$transaction(async (tx) => {
+      // ✅ CORRECTION DEPOT : L'agent prend du cash et donne du virtuel
       await tx.agency.update({
         where: { id: agencyId },
-        data: { balance: { decrement: amountDecimal } },
+        data: { 
+            balance: { decrement: amountDecimal },
+            cash: { increment: amountDecimal } // Encaissement physique
+        },
       });
 
       await tx.user.update({
@@ -281,7 +283,13 @@ export class TransactionsService {
       }),
     ]);
 
-    return { status: 'SUCCESS' };
+    // ✅ FIX : On retourne les données attendues par le frontend
+    return { 
+        status: 'SUCCESS',
+        sent: amountToSend,
+        received: amountToSend,
+        rate: 1 
+    };
   }
 
   async findForUser(senderId: string): Promise<Transaction[]> {
