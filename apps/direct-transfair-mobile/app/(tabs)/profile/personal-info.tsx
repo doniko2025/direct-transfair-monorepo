@@ -37,6 +37,8 @@ export default function PersonalInfoScreen() {
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("France");
   const [jobTitle, setJobTitle] = useState("");
+  // ✅ AJOUT : État pour le téléphone (même si on ne le modifie pas)
+  const [phone, setPhone] = useState("");
 
   // Init data
   useEffect(() => {
@@ -52,6 +54,8 @@ export default function PersonalInfoScreen() {
         setCity(user.city || "");
         setCountry(user.country || "France");
         setJobTitle(user.jobTitle || "");
+        // ✅ AJOUT : Initialisation du téléphone
+        setPhone(user.phone || "");
     }
   }, [user]);
 
@@ -139,6 +143,9 @@ export default function PersonalInfoScreen() {
             </Picker>
         </View>
 
+        {/* ✅ AJOUT : Affichage du téléphone (Non modifiable) */}
+        <FloatingInput label="Numéro de téléphone" value={phone} onChange={() => {}} editable={false} keyboardType="phone-pad" />
+
         <FloatingInput label="Adresse e-mail" value={user?.email || ""} onChange={() => {}} editable={false} />
 
         <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Mon adresse</Text>
@@ -180,7 +187,7 @@ function FloatingInput({ label, value, onChange, placeholder, editable = true, k
         <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>{label}</Text>
             <TextInput 
-                style={[styles.input, !editable && { backgroundColor: '#F3F4F6', color: '#999' }]}
+                style={[styles.input, !editable && { backgroundColor: '#F3F4F6', color: '#6B7280' }]}
                 value={value}
                 onChangeText={onChange}
                 placeholder={placeholder}

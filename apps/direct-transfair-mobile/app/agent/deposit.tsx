@@ -1,9 +1,12 @@
 //apps/direct-transfair-mobile/app/agent/deposit.tsx
 import React, { useState } from "react";
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView } from "react-native";
+import { 
+  View, Text, StyleSheet, TextInput, TouchableOpacity, 
+  ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform 
+} from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { api } from "../../services/api";
+import { api } from "../../services/api"; 
 import { colors } from "../../theme/colors";
 
 export default function AgentDepositScreen() {
@@ -14,42 +17,52 @@ export default function AgentDepositScreen() {
 
   const handleDeposit = async () => {
     if (!phone.trim() || !amount.trim()) {
-        Alert.alert("Erreur", "Veuillez remplir le numéro et le montant.");
+        if(Platform.OS === 'web') alert("Erreur: Veuillez remplir le numéro et le montant.");
+        else Alert.alert("Erreur", "Veuillez remplir le numéro et le montant.");
         return;
     }
 
-    setLoading(true);
-    try {
-        await api.depositAgent({
-            userPhone: phone.trim(),
-            amount: parseFloat(amount)
-        });
-        
-        // Succès
-        if (Platform.OS === 'web') {
-            window.alert("Dépôt effectué avec succès !");
-            router.back();
-        } else {
-            Alert.alert("Succès", "Dépôt effectué avec succès !", [
-                { text: "OK", onPress: () => router.back() }
-            ]);
-        }
-        
-    } catch (e: any) {
-        const msg = e.response?.data?.message || "Le dépôt a échoué.";
-        if (Platform.OS === 'web') {
-            window.alert("Erreur: " + msg);
-        } else {
-            Alert.alert("Erreur", msg);
-        }
-    } finally {
-        setLoading(false);
+    const confirmMsg = `Confirmez-vous le dépôt de ${amount} sur le compte ${phone} ?`;
+
+    if (Platform.OS === 'web') {
+        if (confirm(confirmMsg)) processDeposit();
+    } else {
+        Alert.alert("Confirmation Dépôt", confirmMsg, [
+            { text: "Annuler", style: "cancel" },
+            { text: "CONFIRMER", onPress: processDeposit }
+        ]);
     }
+  };
+
+  const processDeposit = async () => {
+      setLoading(true);
+      try {
+          // Note: Assurez-vous que votre api.ts a bien une méthode depositAgent ou un appel POST générique
+          await api.http.post('/transactions/deposit', {
+              userPhone: phone.trim(),
+              amount: parseFloat(amount)
+          });
+          
+          if (Platform.OS === 'web') {
+              alert("Succès : Dépôt effectué !");
+              router.back();
+          } else {
+              Alert.alert("Succès", "Dépôt effectué avec succès !", [
+                  { text: "OK", onPress: () => router.back() }
+              ]);
+          }
+      } catch (e: any) {
+          const msg = e.response?.data?.message || "Le dépôt a échoué.";
+          if (Platform.OS === 'web') alert(`Erreur: ${msg}`);
+          else Alert.alert("Erreur", msg);
+      } finally {
+          setLoading(false);
+      }
   };
 
   return (
     <SafeAreaView style={styles.container}>
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
         <View style={styles.header}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                 <Ionicons name="arrow-back" size={24} color="#333" />
@@ -96,7 +109,7 @@ export default function AgentDepositScreen() {
                 </TouchableOpacity>
             </View>
         </View>
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

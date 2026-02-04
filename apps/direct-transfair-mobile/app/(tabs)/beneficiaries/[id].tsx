@@ -202,6 +202,22 @@ export default function BeneficiaireDetailScreen() {
     setEditing(false);
   };
 
+  // ✅ ACTIONS D'ENVOI RAPIDE
+  const goSendWallet = () => {
+      if (!item?.phone) {
+          showAlert("Info", "Ce bénéficiaire n'a pas de numéro de téléphone enregistré.");
+          return;
+      }
+      // On redirige vers send avec des params (à gérer dans send.tsx si besoin, ou juste pour l'UX ici)
+      // Pour l'instant, on redirige simple, l'idéal serait de pré-remplir
+      router.push({ pathname: "/(tabs)/send", params: { mode: 'WALLET', phone: item.phone } });
+  };
+
+  const goSendCash = () => {
+      router.push({ pathname: "/(tabs)/send", params: { mode: 'CASH', beneficiaryId: item?.id } });
+  };
+
+
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.primary} /></View>;
   if (!item) return <View style={styles.center}><Text>Bénéficiaire introuvable.</Text></View>;
 
@@ -235,16 +251,44 @@ export default function BeneficiaireDetailScreen() {
       </View>
 
       {!editing ? (
-        <View style={styles.card}>
-            <View style={styles.readOnlyRow}>
-                <View style={[styles.avatar, {backgroundColor: '#E0F2FE'}]}>
-                    <Text style={[styles.avatarText, {color: colors.primary}]}>{item.fullName.charAt(0)}</Text>
+        <View>
+            <View style={styles.card}>
+                <View style={styles.readOnlyRow}>
+                    <View style={[styles.avatar, {backgroundColor: '#E0F2FE'}]}>
+                        <Text style={[styles.avatarText, {color: colors.primary}]}>{item.fullName.charAt(0)}</Text>
+                    </View>
+                    <View>
+                        <Text style={styles.name}>{item.fullName}</Text>
+                        <Text style={styles.line}>{item.city}, {item.country}</Text>
+                        {item.phone && <Text style={styles.line}>{item.phone}</Text>}
+                    </View>
                 </View>
-                <View>
-                    <Text style={styles.name}>{item.fullName}</Text>
-                    <Text style={styles.line}>{item.city}, {item.country}</Text>
-                    {item.phone && <Text style={styles.line}>{item.phone}</Text>}
-                </View>
+            </View>
+
+            {/* ✅ BOUTONS D'ACTION RAPIDE */}
+            <View style={styles.quickActions}>
+                <Text style={styles.sectionTitle}>Envoyer de l'argent</Text>
+                <TouchableOpacity style={styles.actionBtn} onPress={goSendWallet}>
+                    <View style={[styles.iconCircle, {backgroundColor:'#ECFDF5'}]}>
+                        <Ionicons name="wallet" size={24} color="#10B981" />
+                    </View>
+                    <View style={{flex:1}}>
+                        <Text style={styles.actionTitle}>Vers un Wallet</Text>
+                        <Text style={styles.actionSub}>Transfert direct sans frais</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionBtn} onPress={goSendCash}>
+                    <View style={[styles.iconCircle, {backgroundColor:'#EFF6FF'}]}>
+                        <Ionicons name="cash" size={24} color="#3B82F6" />
+                    </View>
+                    <View style={{flex:1}}>
+                        <Text style={styles.actionTitle}>Envoi d'argent</Text>
+                        <Text style={styles.actionSub}>Retrait en agence</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+                </TouchableOpacity>
             </View>
         </View>
       ) : (
@@ -286,11 +330,11 @@ export default function BeneficiaireDetailScreen() {
         </View>
       )}
 
-      {/* --- ACTIONS --- */}
+      {/* --- ACTIONS DE MODIFICATION --- */}
       <View style={styles.actions}>
         {!editing ? (
-          <Pressable style={styles.btnPrimary} onPress={() => setEditing(true)}>
-            <Text style={styles.btnPrimaryText}>Modifier</Text>
+          <Pressable style={styles.btnOutline} onPress={() => setEditing(true)}>
+            <Text style={styles.btnOutlineText}>Modifier les infos</Text>
           </Pressable>
         ) : (
           <View style={{gap: 10, width:'100%'}}>
@@ -399,6 +443,13 @@ const styles = StyleSheet.create({
   name: { fontSize: 18, fontWeight: "800", color: "#1F2937" },
   line: { color: "#6B7280", marginTop: 2 },
 
+  quickActions: { marginTop: 20 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: '#64748B', marginBottom: 10, textTransform: 'uppercase' },
+  actionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', padding: 15, borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0', gap: 15 },
+  iconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  actionTitle: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
+  actionSub: { fontSize: 12, color: '#64748B' },
+
   inputGroup: { marginBottom: 15 },
   label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 },
   input: { borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, padding: 12, fontSize: 16, backgroundColor: "#F9FAFB" },
@@ -411,20 +462,23 @@ const styles = StyleSheet.create({
   dialBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#F3F4F6", paddingHorizontal: 12, borderRightWidth: 1, borderRightColor: "#E5E7EB", cursor: 'pointer' } as any,
   phoneInput: { flex: 1, padding: 12, fontSize: 16 },
 
-  actions: { alignItems: 'center', gap: 15 },
+  actions: { alignItems: 'center', gap: 15, marginTop: 10 },
   
   btnPrimary: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: colors.primary, cursor: 'pointer' } as any,
   btnPrimaryText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
   
-  btnDanger: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#EF4444", cursor: 'pointer' } as any,
-  btnDangerText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
+  btnOutline: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", borderWidth: 2, borderColor: colors.primary, cursor: 'pointer' } as any,
+  btnOutlineText: { color: colors.primary, fontWeight: "800", fontSize: 16 },
+
+  btnDanger: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#FEE2E2", cursor: 'pointer' } as any,
+  btnDangerText: { color: "#EF4444", fontWeight: "800", fontSize: 16 },
   
   cancelEdit: { width:'100%', paddingVertical: 15, alignItems: "center", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, backgroundColor:'#FFF', cursor: 'pointer' } as any,
   cancelEditText: { color: "#6B7280", fontWeight: "700" },
 
   btnDisabled: { opacity: 0.6, cursor: 'not-allowed' } as any,
 
-  // --- STYLES MODALE (CORRIGÉS) ---
+  // --- STYLES MODALE ---
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.6)', 

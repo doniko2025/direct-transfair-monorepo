@@ -48,7 +48,9 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ... (Cancel method remains unchanged) ...
+  // =================================================================
+  // 🛑 ANNULATION & REMBOURSEMENT
+  // =================================================================
   async cancel(userId: string, transactionId: string): Promise<Transaction> {
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
@@ -73,12 +75,7 @@ export class TransactionsService {
       if (tx.sender?.role === 'AGENT' && tx.sender.agencyId) {
         await prismaTx.agency.update({
           where: { id: tx.sender.agencyId },
-          data: { 
-              balance: { increment: tx.total },
-              // Optionnel: Si on annule un envoi, on doit rendre le cash au client ? 
-              // Si oui, la caisse baisse : cash: { decrement: tx.total }
-              // À décider selon votre politique de remboursement (cash immédiat ou crédit).
-          }, 
+          data: { balance: { increment: tx.total } }, 
         });
       } else {
         await prismaTx.user.update({
@@ -106,7 +103,7 @@ export class TransactionsService {
   }
 
   // =================================================================
-  // 🚀 CRÉATION TRANSACTION (ENVOI)
+  // 🚀 CRÉATION TRANSACTION (ENVOI) - CORRIGÉ
   // =================================================================
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
@@ -123,31 +120,44 @@ export class TransactionsService {
     });
     if (!beneficiary) throw new NotFoundException('Beneficiary not found');
 
+    // ✅ FRAIS INTELLIGENTS : 0 si Wallet, 1.5% sinon
+    const isWalletTransfer = dto.payoutMethod === PayoutMethod.MOBILE_MONEY || dto.payoutMethod === PayoutMethod.WALLET;
+    const feeRate = isWalletTransfer ? 0 : 0.015;
+
     const amount = new Prisma.Decimal(dto.amount);
-    const fees = amount.mul(new Prisma.Decimal(0.015)); // 1.5% frais
+    const fees = amount.mul(new Prisma.Decimal(feeRate)); 
     const total = amount.plus(fees);
+
+    // ✅ CORRECTION 1 : On type explicitement recipientUser avec 'any' pour éviter l'erreur "type never"
+    let recipientUser: any = null;
+    
+    // Si la méthode est MOBILE_MONEY (Wallet), on cherche le compte User associé
+    if (isWalletTransfer) {
+        // ✅ NETTOYAGE ROBUSTE DU NUMÉRO (Garde uniquement les chiffres)
+        const cleanPhone = beneficiary.phone?.replace(/[^0-9]/g, '') || '';
+        
+        recipientUser = await this.prisma.user.findFirst({
+            where: { phone: { contains: cleanPhone }, clientId }
+        });
+    }
 
     return this.prisma.$transaction(async (tx) => {
       let currency = dto.currency;
 
-      // CAS 1 : AGENT -> Débit Agence (CASH-IN)
+      // 1. DÉBIT DE L'EXPÉDITEUR
       if (user.role === 'AGENT' && user.agencyId && user.agency) {
         if (user.agency.balance.lessThan(total)) {
           throw new ForbiddenException(`Solde Agence insuffisant (${user.agency.balance} < ${total})`);
         }
-        
-        // ✅ CORRECTION : Mise à jour du physique ET du virtuel
         await tx.agency.update({
           where: { id: user.agencyId },
           data: { 
-              balance: { decrement: total }, // Le virtuel baisse (transfert sortant)
-              cash: { increment: total }     // Le physique augmente (encaissement client)
+              balance: { decrement: total }, 
+              cash: { increment: total } 
           },
         });
         currency = user.agency.currency || 'XOF';
-      }
-      // CAS 2 : USER -> Débit Wallet Perso
-      else {
+      } else {
         if (user.balance.lessThan(total)) {
           throw new ForbiddenException(`Solde insuffisant (${user.balance} < ${total})`);
         }
@@ -157,33 +167,55 @@ export class TransactionsService {
         });
       }
 
-      const validationThreshold = new Prisma.Decimal(500000);
-      const initialStatus = amount.lte(validationThreshold)
-        ? TransactionStatus.VALIDATED
-        : TransactionStatus.PENDING;
+      // ✅ CORRECTION 2, 3 & 4 : On type explicitement ces variables pour que TypeScript accepte les changements de valeurs
+      let status: TransactionStatus = TransactionStatus.PENDING;
+      let providerStatus: ProviderStatus = ProviderStatus.PENDING;
+      let paidAt: Date | null = null;
+      let withdrawalCode: string | null = null;
 
+      if (recipientUser) {
+          // ✅ C'EST UN WALLET-TO-WALLET
+          await tx.user.update({
+              where: { id: recipientUser.id },
+              data: { balance: { increment: amount } } // Crédit du montant sans frais
+          });
+          
+          status = TransactionStatus.PAID;
+          providerStatus = ProviderStatus.SUCCESS;
+          paidAt = new Date();
+      } else {
+          // ⚠️ C'EST DU CASH PICKUP
+          const validationThreshold = new Prisma.Decimal(500000);
+          status = amount.lte(validationThreshold) ? TransactionStatus.VALIDATED : TransactionStatus.PENDING;
+          withdrawalCode = this.generateReference(); 
+      }
+
+      // 3. ENREGISTREMENT TRANSACTION
       const data: Prisma.TransactionUncheckedCreateInput = {
-        reference: this.generateReference(),
+        reference: `TX-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
         amount,
         fees,
         total,
         currency,
         payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
-        status: initialStatus,
+        status: status,
         senderId,
         beneficiaryId: beneficiary.id,
+        recipientId: recipientUser ? recipientUser.id : null,
         clientId,
+        providerRef: withdrawalCode, 
+        providerStatus: providerStatus,
+        paidAt: paidAt
       };
 
-      return tx.transaction.create({ data });
+      const transaction = await tx.transaction.create({ data });
+
+      return transaction;
     });
   }
 
-  // ... (Rest of the file: deposit, adminFundSelf, etc. remain unchanged) ...
+  // ... (Reste inchangé) ...
   
-  // =================================================================
-  // 💰 DEPOT / CASH-IN
-  // =================================================================
   async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
     const agent = await this.prisma.user.findUnique({
       where: { id: agentId },
@@ -196,10 +228,10 @@ export class TransactionsService {
 
     const amountDecimal = new Prisma.Decimal(dto.amount);
     if (agent.agency.balance.lessThan(amountDecimal)) {
-      throw new ForbiddenException('Solde caisse agence insuffisant');
+      throw new ForbiddenException('Solde virtuel agence insuffisant pour effectuer ce dépôt.');
     }
 
-    const cleanPhone = dto.userPhone.replace(/\s/g, '').replace('+', '');
+    const cleanPhone = dto.userPhone.replace(/[^0-9]/g, ''); // Nettoyage amélioré
     const clientUser = await this.prisma.user.findFirst({
       where: { phone: { contains: cleanPhone }, clientId: agent.clientId },
     });
@@ -210,12 +242,11 @@ export class TransactionsService {
     const clientId = agent.clientId!;
 
     return this.prisma.$transaction(async (tx) => {
-      // ✅ CORRECTION DEPOT : L'agent prend du cash et donne du virtuel
       await tx.agency.update({
         where: { id: agencyId },
         data: { 
             balance: { decrement: amountDecimal },
-            cash: { increment: amountDecimal } // Encaissement physique
+            cash: { increment: amountDecimal }
         },
       });
 
@@ -237,6 +268,7 @@ export class TransactionsService {
         recipientId: clientUser.id,
         clientId,
         paidAt: new Date(),
+        providerStatus: ProviderStatus.SUCCESS,
       };
 
       return tx.transaction.create({ data: txData });
@@ -283,7 +315,6 @@ export class TransactionsService {
       }),
     ]);
 
-    // ✅ FIX : On retourne les données attendues par le frontend
     return { 
         status: 'SUCCESS',
         sent: amountToSend,
@@ -294,8 +325,19 @@ export class TransactionsService {
 
   async findForUser(senderId: string): Promise<Transaction[]> {
     return this.prisma.transaction.findMany({
-      where: { OR: [{ senderId }, { recipientId: senderId }] },
+      where: { 
+          OR: [
+              { senderId }, 
+              { recipientId: senderId },
+              { withdrawal: { processedById: senderId } }
+          ] 
+      },
       orderBy: { createdAt: 'desc' },
+      include: { 
+          withdrawal: true,
+          sender: { select: { firstName: true, lastName: true, phone: true } },
+          beneficiary: true
+      }
     });
   }
 

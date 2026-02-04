@@ -60,9 +60,6 @@ export default function HomeScreen() {
   // --- AGENT ---
   if (user.role === 'AGENT') {
     const currency = agencyData?.currency || "XOF"; 
-    
-    // ✅ CORRECTION DU TITRE "UNDEFINED"
-    // On cherche le nom dans l'objet user.client (envoyé par le nouveau backend) ou agencyData
     const agencyName = (user as any).client?.name || agencyData?.name || "Agence";
 
     return (
@@ -75,8 +72,6 @@ export default function HomeScreen() {
       >
         <View style={[styles.balanceCard, {backgroundColor: '#064E3B'}]}>
             <Text style={styles.balanceLabel}>Solde Caisse (Agence)</Text>
-            
-            {/* ✅ CORRECTION MAJEURE : On affiche le solde de l'AGENCE, pas du USER */}
             <Text style={styles.balanceValue}>
                 {agencyData?.balance ? Number(agencyData.balance).toLocaleString('fr-FR') : "0"} {currency}
             </Text>
@@ -84,6 +79,9 @@ export default function HomeScreen() {
         
         <Text style={styles.sectionTitle}>Guichet</Text>
         <View style={styles.grid}>
+            {/* ✅ BOUTON DÉPÔT AJOUTÉ ICI */}
+            <MenuCard title="Dépôt Client" subtitle="Recharger un compte" icon="arrow-down-circle" color="#10B981" onPress={() => router.push("/agent/deposit")} />
+            
             <MenuCard title="Envoi Espèces" subtitle="Client de passage" icon="paper-plane" color="#3B82F6" onPress={() => router.push("/agent/send-cash")} />
             <MenuCard title="Retrait" subtitle="Payer un code" icon="wallet" color="#EF4444" onPress={() => router.push("/agent/withdraw")} />
         </View>

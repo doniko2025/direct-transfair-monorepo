@@ -12,7 +12,7 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../services/api";
-import { useAuth } from "../../../providers/AuthProvider"; // ✅ Import Auth
+import { useAuth } from "../../../providers/AuthProvider"; 
 import { colors } from "../../../theme/colors";
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
@@ -24,7 +24,7 @@ const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> =
 
 export default function TransactionsScreen() {
   const router = useRouter(); 
-  const { user } = useAuth(); // ✅ Récupérer l'utilisateur
+  const { user } = useAuth(); 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -34,16 +34,13 @@ export default function TransactionsScreen() {
       if (transactions.length === 0) setLoading(true);
       
       let res;
-      // ✅ LOGIQUE INTELLIGENTE :
-      // Si Admin Société => Voir TOUTES les transactions (pour valider)
-      // Sinon (Agent/User) => Voir MES transactions
       if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
           res = await api.adminGetTransactions();
       } else {
           res = await api.getTransactions();
       }
 
-      // Tri : Plus récent en haut
+      // Tri par date décroissante
       const sorted = res.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setTransactions(sorted);
     } catch (e) { 
@@ -60,8 +57,6 @@ export default function TransactionsScreen() {
   const renderItem = ({ item }: { item: any }) => {
     const date = new Date(item.createdAt);
     const statusStyle = STATUS_MAP[item.status] || { label: item.status, color: "#6B7280", bg: "#F3F4F6" };
-    
-    // Si Admin et en attente, on met un fond légèrement jaune pour attirer l'attention
     const isActionRequired = (user?.role === 'COMPANY_ADMIN') && item.status === 'PENDING';
 
     return (
@@ -81,7 +76,10 @@ export default function TransactionsScreen() {
             <Ionicons name="chevron-forward" size={16} color="#DDD" />
         </View>
         <View style={styles.rowBottom}>
-            <Text style={styles.amount}>{Number(item.amount).toLocaleString('fr-FR')} <Text style={{fontSize:12, color:'#999'}}>{item.currency}</Text></Text>
+            {/* ✅ Affiche la devise réelle enregistrée pour la transaction */}
+            <Text style={styles.amount}>
+                {Number(item.amount).toLocaleString('fr-FR')} <Text style={{fontSize:14, color:'#6B7280', fontWeight:'600'}}>{item.currency}</Text>
+            </Text>
             <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}><Text style={[styles.badgeText, { color: statusStyle.color }]}>{statusStyle.label}</Text></View>
         </View>
       </TouchableOpacity>
