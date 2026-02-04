@@ -15,16 +15,15 @@ export default function AgentWithdrawScreen() {
   const [paying, setPaying] = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
 
-  // Helper pour les alertes Web/Mobile
   const showAlert = (title: string, msg: string) => {
       if (Platform.OS === 'web') alert(`${title}: ${msg}`);
       else Alert.alert(title, msg);
   };
 
-  // 1. VÉRIFIER LE CODE
   const handleCheckCode = async () => {
-    if (code.length < 5) {
-        showAlert("Erreur", "Code trop court");
+    // ✅ Code à 9 chiffres uniquement
+    if (code.length !== 9) {
+        showAlert("Erreur", "Le code doit contenir 9 chiffres");
         return;
     }
 
@@ -41,10 +40,9 @@ export default function AgentWithdrawScreen() {
     }
   };
 
-  // 2. VALIDER LE PAIEMENT
   const handlePayOut = () => {
       const msg = `Confirmez-vous avoir remis ${transaction.amount} ${transaction.currency} au client ?`;
-      
+
       if (Platform.OS === 'web') {
           if (window.confirm(`CONFIRMATION\n\n${msg}`)) {
               processPayment();
@@ -61,7 +59,7 @@ export default function AgentWithdrawScreen() {
       setPaying(true);
       try {
           await api.http.post('/withdrawals/agent/pay', { code });
-          
+
           if (Platform.OS === 'web') {
               alert("Succès : Paiement validé !");
               router.back();
@@ -94,15 +92,16 @@ export default function AgentWithdrawScreen() {
         {!transaction ? (
             <View style={styles.centerBox}>
                 <Ionicons name="qr-code-outline" size={80} color="#065F46" style={{marginBottom: 20, opacity: 0.8}} />
-                <Text style={styles.label}>Entrez le code de retrait du client</Text>
+                <Text style={styles.label}>Entrez le code de retrait (9 chiffres)</Text>
 
                 <TextInput 
                     style={styles.codeInput} 
-                    placeholder="DT-XXXXXX" 
+                    placeholder="123456789" 
                     placeholderTextColor="#CBD5E1"
                     value={code}
-                    onChangeText={text => setCode(text.toUpperCase())}
-                    autoCapitalize="characters"
+                    onChangeText={setCode}
+                    keyboardType="number-pad"
+                    maxLength={9}
                 />
 
                 <Pressable 
@@ -121,16 +120,35 @@ export default function AgentWithdrawScreen() {
                 <Text style={styles.resultTitle}>Code Valide !</Text>
 
                 <View style={styles.card}>
+                    {/* MONTANT À PAYER */}
                     <View style={styles.detailRow}>
-                        {/* ✅ Style 'detailLabel' corrigé ci-dessous */}
                         <Text style={styles.detailLabel}>Montant à payer</Text>
                         <Text style={styles.amountValue}>{transaction.amount} <Text style={{fontSize:16}}>{transaction.currency}</Text></Text>
                     </View>
                     <View style={styles.divider} />
+                    
+                    {/* INFO EXPÉDITEUR */}
                     <View style={styles.detailRowSmall}>
                         <Text style={styles.detailLabelSmall}>Expéditeur</Text>
                         <Text style={styles.detailValueSmall}>{transaction.senderName}</Text>
                     </View>
+
+                    {/* ✅ AJOUT : PAYS D'ORIGINE */}
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Pays d'origine</Text>
+                        <View style={{flexDirection:'row', alignItems:'center'}}>
+                            <Ionicons name="flag" size={14} color="#64748B" style={{marginRight:5}} />
+                            <Text style={styles.detailValueSmall}>{transaction.originCountry || "Sénégal"}</Text> 
+                        </View>
+                    </View>
+
+                    {/* ✅ AJOUT : NUMÉRO TRANSACTION */}
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Réf. Transaction</Text>
+                        <Text style={[styles.detailValueSmall, {fontSize: 12, color: '#64748B'}]}>TX-{code}</Text>
+                    </View>
+
+                    {/* STATUT */}
                     <View style={styles.detailRowSmall}>
                         <Text style={styles.detailLabelSmall}>Statut</Text>
                         <View style={{backgroundColor:'#DBEAFE', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>
@@ -169,37 +187,36 @@ const styles = StyleSheet.create({
     header: { backgroundColor: '#064E3B', padding: 20, paddingTop: Platform.OS==='android'?40:10, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
     headerTitle: { color: "#FFF", fontSize: 18, fontWeight: "700" },
     backBtn: { padding: 5 },
-    
+
     centerBox: { alignItems: 'center', width: '100%' },
     label: { fontSize: 16, color: '#475569', marginBottom: 20, fontWeight: '500' },
-    
+
     codeInput: { 
         fontSize: 28, fontWeight: 'bold', 
         borderWidth: 2, borderColor: '#E2E8F0', borderRadius: 12, backgroundColor: '#FFF',
         width: '100%', textAlign: 'center', padding: 15, marginBottom: 30, color: '#1F2937' 
     },
-    
+
     resultBox: { alignItems: 'center', width: '100%' },
     successIcon: { width: 70, height: 70, borderRadius: 35, backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center', marginBottom: 15, shadowColor: "#10B981", shadowOpacity: 0.4, elevation: 5 },
     resultTitle: { fontSize: 24, fontWeight: '800', color: '#065F46', marginBottom: 20 },
-    
+
     card: { backgroundColor: '#FFF', width: '100%', borderRadius: 16, padding: 20, shadowColor: "#000", shadowOpacity: 0.05, elevation: 2 },
-    
-    // ✅ STYLE AJOUTÉ : detailLabel
+
     detailLabel: { fontSize: 14, color: '#64748B', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-    
+
     detailRow: { alignItems: 'center', marginBottom: 15 },
     amountValue: { fontSize: 32, fontWeight: '900', color: '#1F2937' },
-    
+
     divider: { height: 1, backgroundColor: '#F1F5F9', width: '100%', marginVertical: 15 },
-    
-    detailRowSmall: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+
+    detailRowSmall: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }, // Espace augmenté
     detailLabelSmall: { fontSize: 14, color: '#64748B' },
     detailValueSmall: { fontSize: 16, fontWeight: '600', color: '#334155' },
 
     warningBox: { backgroundColor: '#FFFBEB', padding: 15, borderRadius: 10, marginTop: 20, width: '100%', borderWidth: 1, borderColor: '#FCD34D', alignItems: 'center' },
     warningText: { color: '#B45309', fontWeight: '600', textAlign: 'center', fontSize: 13 },
-    
+
     btn: { backgroundColor: '#064E3B', padding: 18, borderRadius: 14, alignItems: 'center', width: '100%', shadowColor: "#000", shadowOpacity: 0.1, elevation: 4 },
     btnText: { color: '#FFF', fontSize: 18, fontWeight: '800' }
 });

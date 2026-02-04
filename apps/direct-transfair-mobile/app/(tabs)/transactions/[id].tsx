@@ -35,7 +35,7 @@ export default function TransactionDetailScreen() {
 
   const handleShare = async () => {
     if (!transaction) return;
-    try { await Share.share({ message: `Reçu Transf'air\nCode: ${transaction.reference}\nMontant: ${transaction.amount} ${transaction.currency}` }); } catch (error) {}
+    try { await Share.share({ message: `Reçu Transf'air\nRef: TX-${transaction.reference}\nMontant: ${transaction.amount} ${transaction.currency}` }); } catch (error) {}
   };
 
   const handleCopyCode = async () => {
@@ -46,7 +46,6 @@ export default function TransactionDetailScreen() {
     }
   };
 
-  // --- FONCTION UTILITAIRE POUR CONFIRMATION (WEB & MOBILE) ---
   const confirmAction = (title: string, message: string, onConfirm: () => void) => {
       if (Platform.OS === 'web') {
           if (window.confirm(`${title}\n\n${message}`)) {
@@ -60,7 +59,6 @@ export default function TransactionDetailScreen() {
       }
   };
 
-  // --- ACTIONS ---
   const handleCancelUser = () => {
       confirmAction(
           "Annuler la transaction ?", 
@@ -118,7 +116,6 @@ export default function TransactionDetailScreen() {
     }
   };
 
-  // ✅ CORRECTION NAVIGATION : Force le retour vers l'historique
   const handleGoBack = () => {
       router.navigate('/(tabs)/transactions');
   };
@@ -127,13 +124,20 @@ export default function TransactionDetailScreen() {
   if (!transaction) return <View style={styles.center}><Text>Introuvable.</Text></View>;
 
   const status = getStatusInfo(transaction.status);
-  
   const isAdmin = user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN';
   const isPending = transaction.status === 'PENDING';
   const canUserCancel = !isAdmin && (transaction.status === 'PENDING' || transaction.status === 'VALIDATED');
 
+  // ✅ LOGIQUE : On affiche le code de retrait UNIQUEMENT si providerRef existe (donc pas pour Wallet)
+  const showWithdrawalCode = !!transaction.providerRef;
+
+  // Affichage propre de la référence
+  const displayReference = transaction.reference.startsWith('TX-') 
+      ? transaction.reference 
+      : `TX-${transaction.reference}`;
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 150 }]}>
       <View style={styles.navBar}>
         <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#333" />
@@ -152,18 +156,26 @@ export default function TransactionDetailScreen() {
             </View>
         </View>
         
-        <View style={styles.codeSection}>
-            <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
-            <TouchableOpacity style={styles.codeBox} onPress={handleCopyCode}>
-                <Text style={[styles.codeText, transaction.status === 'CANCELLED' && {textDecorationLine:'line-through', color:'#CCC'}]}>{transaction.reference}</Text>
-                <Ionicons name="copy-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
-        </View>
+        {/* ✅ CONDITION : On cache ce bloc si c'est un transfert Wallet (pas de providerRef) */}
+        {showWithdrawalCode && (
+            <View style={styles.codeSection}>
+                <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
+                <TouchableOpacity style={styles.codeBox} onPress={handleCopyCode}>
+                    <Text style={[styles.codeText, transaction.status === 'CANCELLED' && {textDecorationLine:'line-through', color:'#CCC'}]}>{transaction.reference}</Text>
+                    <Ionicons name="copy-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
+            </View>
+        )}
 
         <View style={styles.detailsSection}>
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString()} />
             <DetailRow label="Expéditeur" value={transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi"} />
             <DetailRow label="Bénéficiaire" value={transaction.beneficiary?.fullName || "Non spécifié"} />
+            
+            <DetailRow label="Pays destination" value={transaction.beneficiary?.country || "Sénégal"} />
+            <DetailRow label="Réf. Unique" value={displayReference} />
+            
+            <View style={styles.divider} />
             <DetailRow label="Total payé" value={`${transaction.total} ${transaction.currency}`} bold />
         </View>
       </View>
@@ -190,9 +202,13 @@ export default function TransactionDetailScreen() {
           </TouchableOpacity>
       )}
       
-      {!isAdmin && <TouchableOpacity style={styles.shareBtn} onPress={handleShare}><Text style={styles.shareBtnText}>Partager le reçu</Text></TouchableOpacity>}
+      {/* BOUTON PARTAGER LE REÇU */}
+      {!isAdmin && (
+          <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
+              <Text style={styles.shareBtnText}>Partager le reçu</Text>
+          </TouchableOpacity>
+      )}
 
-      <View style={{height: 40}} />
     </ScrollView>
   );
 }
@@ -222,12 +238,11 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between' },
   rowLabel: { color: '#666' },
   rowValue: { color: '#333', fontWeight: '500' },
+  divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 5 },
   shareBtn: { backgroundColor: colors.primary, padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
   shareBtnText: { color: '#fff', fontWeight: '700' },
   cancelBtn: { backgroundColor: '#EF4444', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 20 },
   cancelBtnText: { color: '#fff', fontWeight: '700' },
-  
-  // Styles Admin
   adminActions: { marginTop: 20, backgroundColor: '#FFF', padding: 15, borderRadius: 15, elevation:2 },
   adminTitle: { fontWeight: '700', marginBottom: 10, color: '#374151' },
   actionBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center' },

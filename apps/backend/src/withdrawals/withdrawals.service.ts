@@ -34,7 +34,8 @@ export class WithdrawalsService {
 
       if (user.balance.lessThan(total)) throw new BadRequestException('Solde insuffisant');
 
-      const withdrawalCode = `DT-${Math.floor(100000 + Math.random() * 900000)}`;
+      // ✅ MODIFICATION : Code à 9 chiffres uniquement
+      const withdrawalCode = Math.floor(100000000 + Math.random() * 900000000).toString();
 
       return this.prisma.$transaction(async (tx) => {
         await tx.user.update({

@@ -131,8 +131,9 @@ export default function SendMoneyScreen() {
   const feesRate = mode === 'WALLET' ? 0 : 0.015;
   const feesRaw = sendAmount * feesRate;
   
-  // ✅ CORRECTION DU FORMATAGE : On autorise jusqu'à 2 décimales pour être précis comme l'accueil
-  const formatMoney = (val: number) => val.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  // ✅ CORRECTION DU FORMATAGE : Même méthode que home.tsx (toLocaleString simple)
+  // Cela garantit que 3714.9 s'affiche 3 714,9
+  const formatMoney = (val: number) => val.toLocaleString('fr-FR');
 
   const totalPayRaw = sendAmount + feesRaw;
   const fees = formatMoney(feesRaw);
@@ -147,7 +148,8 @@ export default function SendMoneyScreen() {
         return;
     }
     if (sendAmount <= 0) {
-        Alert.alert("Montant invalide", "Veuillez entrer un montant supérieur à 0.");
+        const msg = "Veuillez entrer un montant supérieur à 0.";
+        if (Platform.OS === 'web') alert(msg); else Alert.alert("Montant invalide", msg);
         return;
     }
 
@@ -160,7 +162,11 @@ export default function SendMoneyScreen() {
 
         if (mode === 'WALLET') {
             if (!detectedBeneficiary) {
-                Alert.alert("Erreur", "Destinataire inconnu.");
+                // ✅ FIX WEB : Alert.alert ne marche pas sur le web, il faut alert()
+                const msg = "Destinataire inconnu ou numéro non trouvé.";
+                if (Platform.OS === 'web') alert(msg); 
+                else Alert.alert("Erreur", msg);
+                
                 setSending(false);
                 return;
             }
@@ -169,11 +175,22 @@ export default function SendMoneyScreen() {
                 beneficiaryId: detectedBeneficiary.id, 
                 payoutMethod: 'MOBILE_MONEY' 
             });
-            Alert.alert("Succès", `Envoyé à ${detectedBeneficiary.fullName} !`, [{ text: "OK", onPress: () => router.push("/(tabs)/transactions") }]);
+            
+            const msg = `Transfert instantané envoyé à ${detectedBeneficiary.fullName} !`;
+            if (Platform.OS === 'web') { 
+                alert(msg); 
+                router.push("/(tabs)/transactions"); 
+            } else { 
+                Alert.alert("Succès", msg, [{ text: "OK", onPress: () => router.push("/(tabs)/transactions") }]); 
+            }
 
         } else {
             if (!selectedCashBeneficiaryId) {
-                Alert.alert("Erreur", "Sélectionnez un bénéficiaire.");
+                // ✅ FIX WEB ICI AUSSI
+                const msg = "Veuillez sélectionner un bénéficiaire.";
+                if (Platform.OS === 'web') alert(msg); 
+                else Alert.alert("Erreur", msg);
+                
                 setSending(false);
                 return;
             }
@@ -182,11 +199,20 @@ export default function SendMoneyScreen() {
                 beneficiaryId: selectedCashBeneficiaryId,
                 payoutMethod: 'CASH_PICKUP'
             });
-            Alert.alert("Succès", "Code de retrait généré !", [{ text: "OK", onPress: () => router.push("/(tabs)/transactions") }]);
+            
+            const msg = "Code de retrait généré avec succès !";
+            if (Platform.OS === 'web') { 
+                alert(msg); 
+                router.push("/(tabs)/transactions"); 
+            } else { 
+                Alert.alert("Succès", msg, [{ text: "OK", onPress: () => router.push("/(tabs)/transactions") }]); 
+            }
         }
     } catch (e: any) {
+        console.error(e);
         const msg = e.response?.data?.message || "Erreur transaction.";
-        Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+        if (Platform.OS === 'web') alert(msg); 
+        else Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
     } finally {
         setSending(false);
     }
@@ -210,7 +236,7 @@ export default function SendMoneyScreen() {
             <Text style={styles.balanceLabel}>Solde disponible</Text>
             <View style={{flexDirection: 'row', alignItems: 'center'}}>
                 <Text style={styles.balanceValue}>
-                    {/* ✅ AFFICHAGE CORRIGÉ : IDENTIQUE À L'ACCUEIL */}
+                    {/* ✅ AFFICHAGE HARMONISÉ */}
                     {showBalance ? `${formatMoney(currentBalance)} ${userCurrency}` : "••••••"}
                 </Text>
                 <TouchableOpacity onPress={() => setShowBalance(!showBalance)} style={{marginLeft: 10}}>
