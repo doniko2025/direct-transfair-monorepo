@@ -39,9 +39,16 @@ export class TransactionsController {
   async fundSelf(@Req() req: AuthedRequest, @Body('amount') amount: number) {
       const user = req.user;
       if (!user) throw new ForbiddenException("Non authentifié");
-      if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
-          throw new ForbiddenException("Accès réservé aux Administrateurs.");
+      
+      // 🛑 MODIFICATION : SUPER_ADMIN EXCLU
+      if (user.role === 'SUPER_ADMIN') {
+          throw new ForbiddenException("Le Super Admin ne peut pas s'auto-alimenter. Veuillez recevoir un paiement B2B.");
       }
+      
+      if (user.role !== 'COMPANY_ADMIN') {
+          throw new ForbiddenException("Accès réservé aux Admins Société.");
+      }
+
       const userId = this.getUserId(req);
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
           throw new BadRequestException("Montant invalide");
@@ -60,6 +67,33 @@ export class TransactionsController {
       if (!body.agencyId || !body.amount) throw new BadRequestException("AgencyId et Amount requis");
       return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
   }
+
+  // =========================================================
+  // 🏦 FLUX B2B (NOUVEAU)
+  // =========================================================
+
+  // ✅ 1. Déclarer un virement (Admin Société)
+  @Post('b2b/declare')
+  async declareTransfer(@Req() req: AuthedRequest, @Body() body: { amount: number, ref: string }) {
+      const user = req.user;
+      if (user?.role !== 'COMPANY_ADMIN') throw new ForbiddenException("Réservé aux sociétés.");
+      if (!body.amount || !body.ref) throw new BadRequestException("Montant et Référence requis");
+      
+      return this.transactionsService.declareBankTransfer(user.id, body.amount, body.ref);
+  }
+
+  // ✅ 2. Valider un virement (Super Admin)
+  @UseGuards(AdminGuard) // Sécurité Admin
+  @Patch('b2b/validate/:id')
+  async validateTransfer(@Req() req: AuthedRequest, @Param('id') id: string) {
+      const user = req.user;
+      if (user?.role !== 'SUPER_ADMIN') throw new ForbiddenException("Réservé au Super Admin.");
+      return this.transactionsService.validateBankTransfer(user.id, id);
+  }
+
+  // =========================================================
+  // AUTRES ROUTES
+  // =========================================================
 
   // ----- ADMIN -----
   @UseGuards(AdminGuard)
@@ -107,7 +141,6 @@ export class TransactionsController {
     return this.transactionsService.create(userId, dto);
   }
 
-  // ✅ NOUVELLE ROUTE : ANNULER
   @Patch(':id/cancel')
   async cancel(@Req() req: AuthedRequest, @Param('id') id: string) {
     const userId = this.getUserId(req);

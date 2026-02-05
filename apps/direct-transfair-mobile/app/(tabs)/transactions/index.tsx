@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
+// apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Platform,
+  Alert
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -28,61 +30,104 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [validating, setValidating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      if (transactions.length === 0) setLoading(true);
+      if (transactions.length === 0 && !refreshing) setLoading(true);
       
       let res;
+      // Sélection de la méthode API selon le rôle
       if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
           res = await api.adminGetTransactions();
       } else {
           res = await api.getTransactions();
       }
 
+      // ✅ SÉCURITÉ : Empêcher le crash si res est undefined
+      const safeList = Array.isArray(res) ? res : [];
+
       // Tri par date décroissante
-      const sorted = res.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const sorted = safeList.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setTransactions(sorted);
     } catch (e) { 
         console.log("Erreur chargement transactions", e); 
+        setTransactions([]);
     } finally { 
         setLoading(false); 
+        setRefreshing(false);
     }
-  }, [user?.role, transactions.length]);
+  }, [user?.role, refreshing, transactions.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await load(); };
+
+  const handleValidateB2B = async (id: string) => {
+      setValidating(id);
+      try {
+          await api.validateBankTransfer(id);
+          if (Platform.OS === 'web') alert("Virement validé !");
+          else Alert.alert("Succès", "Virement validé, solde de la société débité.");
+          onRefresh(); // Recharger la liste
+      } catch (e: any) {
+          const err = e.response?.data?.message || "Erreur validation";
+          if (Platform.OS === 'web') alert(err);
+          else Alert.alert("Erreur", err);
+      } finally {
+          setValidating(null);
+      }
+  };
 
   const renderItem = ({ item }: { item: any }) => {
     const date = new Date(item.createdAt);
     const statusStyle = STATUS_MAP[item.status] || { label: item.status, color: "#6B7280", bg: "#F3F4F6" };
-    const isActionRequired = (user?.role === 'COMPANY_ADMIN') && item.status === 'PENDING';
+    
+    // Logique spéciale pour le bouton de validation B2B (Super Admin uniquement)
+    const isB2B = item.type === 'SERVICE_PAYMENT';
+    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+    const canValidateB2B = isB2B && isSuperAdmin && item.status === 'PENDING';
 
     return (
+      <View style={styles.cardWrapper}>
       <TouchableOpacity 
-        style={[styles.card, isActionRequired && { borderColor: '#F59E0B', borderWidth: 1.5 }]} 
+        style={styles.card} 
         activeOpacity={0.7} 
         onPress={() => router.push(`/(tabs)/transactions/${item.id}`)}
       >
         <View style={styles.rowTop}>
             <View style={{flexDirection:'row', alignItems:'center'}}>
-                <View style={styles.iconBox}><Ionicons name="receipt" size={16} color={colors.primary} /></View>
+                <View style={[styles.iconBox, isB2B && {backgroundColor:'#DBEAFE'}]}>
+                    <Ionicons name={isB2B ? "briefcase" : "receipt"} size={16} color={isB2B ? "#1E3A8A" : colors.primary} />
+                </View>
                 <View>
-                    <Text style={styles.reference}>{item.reference}</Text>
+                    <Text style={styles.reference}>
+                        {item.reference} {isB2B ? <Text style={{fontWeight:'800', color: '#1E3A8A'}}>(B2B)</Text> : ''}
+                    </Text>
                     <Text style={styles.date}>{date.toLocaleDateString('fr-FR')} • {date.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</Text>
                 </View>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#DDD" />
         </View>
         <View style={styles.rowBottom}>
-            {/* ✅ Affiche la devise réelle enregistrée pour la transaction */}
             <Text style={styles.amount}>
                 {Number(item.amount).toLocaleString('fr-FR')} <Text style={{fontSize:14, color:'#6B7280', fontWeight:'600'}}>{item.currency}</Text>
             </Text>
             <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}><Text style={[styles.badgeText, { color: statusStyle.color }]}>{statusStyle.label}</Text></View>
         </View>
       </TouchableOpacity>
+
+      {/* BOUTON VALIDATION RAPIDE */}
+      {canValidateB2B && (
+          <TouchableOpacity 
+            style={styles.validateBtn} 
+            onPress={() => handleValidateB2B(item.id)}
+            disabled={validating === item.id}
+          >
+              {validating === item.id ? <ActivityIndicator size="small" color="#FFF"/> : <Text style={styles.validateText}>Valider le Paiement</Text>}
+          </TouchableOpacity>
+      )}
+      </View>
     );
   };
 
@@ -98,12 +143,16 @@ export default function TransactionsScreen() {
         ListHeaderComponent={
             <View style={{margin: 20, marginBottom: 10}}>
                 <Text style={styles.title}>
-                    {user?.role === 'COMPANY_ADMIN' ? "Supervision Transactions" : "Historique"}
+                    {user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN' ? "Supervision Transactions" : "Historique"}
                 </Text>
-                {user?.role === 'COMPANY_ADMIN' && <Text style={{color:'#666', fontSize:12}}>Validez les envois en attente ici.</Text>}
             </View>
         }
-        ListEmptyComponent={<View style={styles.center}><Ionicons name="document-text-outline" size={48} color="#DDD" /><Text style={styles.empty}>Aucune transaction.</Text></View>}
+        ListEmptyComponent={
+            <View style={styles.center}>
+                <Ionicons name="document-text-outline" size={48} color="#DDD" />
+                <Text style={styles.empty}>Aucune transaction trouvée.</Text>
+            </View>
+        }
         contentContainerStyle={{ paddingBottom: 20 }}
       />
     </View>
@@ -115,7 +164,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
   title: { fontSize: 24, fontWeight: "800", color: '#1F2937' },
   empty: { textAlign: "center", color: "#9CA3AF", marginTop: 10, fontSize: 14 },
-  card: { marginHorizontal: 20, marginBottom: 10, padding: 15, borderRadius: 16, backgroundColor: "#fff", borderWidth: 1, borderColor: "#F3F4F6", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 2 },
+  cardWrapper: { marginHorizontal: 20, marginBottom: 10 },
+  card: { padding: 15, borderRadius: 16, backgroundColor: "#fff", borderWidth: 1, borderColor: "#F3F4F6", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 2 },
   rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems:'center', marginBottom: 12, borderBottomWidth:1, borderBottomColor:'#F9FAFB', paddingBottom:10 },
   iconBox: { width:32, height:32, borderRadius:10, backgroundColor:'#F0FDF4', justifyContent:'center', alignItems:'center', marginRight:10 },
   reference: { fontWeight: "700", color: "#374151", fontSize: 13 },
@@ -124,4 +174,6 @@ const styles = StyleSheet.create({
   amount: { fontSize: 18, fontWeight: "800", color: '#111827' },
   badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   badgeText: { fontWeight: "700", fontSize: 10, textTransform:'uppercase', letterSpacing:0.5 },
+  validateBtn: { backgroundColor: '#10B981', padding: 12, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, marginTop: -5, alignItems: 'center', zIndex: -1 },
+  validateText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 }
 });

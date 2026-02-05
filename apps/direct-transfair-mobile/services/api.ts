@@ -44,7 +44,6 @@ class API {
       const headers = ensureAxiosHeaders(config.headers);
 
       if (this.token && this.token.trim().length > 0) {
-        // 🚨 CORRECTION "DOUBLE STRINGIFICATION"
         const cleanToken = this.token.replace(/^"|"$/g, '');
         headers.set("Authorization", `Bearer ${cleanToken}`);
       }
@@ -80,12 +79,15 @@ class API {
   async adminFundSelf(amount: number): Promise<any> { const res = await this.http.post("/transactions/admin/fund-self", { amount }); return res.data; }
   async adminRefillAgency(agencyId: string, amount: number): Promise<any> { const res = await this.http.post("/transactions/admin/refill-agency", { agencyId, amount }); return res.data; }
 
+  // --- 🏦 B2B PAIEMENTS ---
+  async declareBankTransfer(amount: number, ref: string): Promise<any> { const res = await this.http.post("/transactions/b2b/declare", { amount, ref }); return res.data; }
+  async validateBankTransfer(id: string): Promise<any> { const res = await this.http.patch(`/transactions/b2b/validate/${id}`); return res.data; }
+
   // --- TRANSACTIONS ---
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions", data); return res.data; }
   async depositAgent(data: { amount: number; userPhone: string }): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions/deposit", data); return res.data; }
   async getTransactions(): Promise<Transaction[]> { const res = await this.http.get<Transaction[]>("/transactions"); return Array.isArray(res.data) ? res.data : []; }
   
-  // ✅ NOUVELLE MÉTHODE ANNULATION
   async cancelTransaction(id: string): Promise<Transaction> { 
       const res = await this.http.patch<Transaction>(`/transactions/${id}/cancel`); 
       return res.data; 

@@ -53,6 +53,7 @@ enum PaymentMethod {
   SENDWAVE
   CARD
   CASH
+  BANK_TRANSFER // ✅ AJOUTÉ : Pour les virements B2B
 }
 
 enum PaymentProvider {
@@ -61,7 +62,6 @@ enum PaymentProvider {
   SENDWAVE
 }
 
-// ✅ CORRECTION ICI : Ajout de CANCELLED
 enum ProviderStatus {
   PENDING
   SUCCESS
@@ -69,7 +69,6 @@ enum ProviderStatus {
   CANCELLED
 }
 
-// ✅ CORRECTION ICI : Ajout de FAILED et CANCELLED
 enum WithdrawalStatus {
   PENDING
   APPROVED
@@ -77,6 +76,14 @@ enum WithdrawalStatus {
   REJECTED
   FAILED
   CANCELLED
+}
+
+// ✅ AJOUTÉ : Pour distinguer les types de flux
+enum TransactionType {
+  TRANSFER        // Envoi client
+  DEPOSIT         // Dépôt
+  WITHDRAWAL      // Retrait
+  SERVICE_PAYMENT // Paiement B2B (Société -> SuperAdmin)
 }
 
 // ===================== CLIENT (LA SOCIÉTÉ) =====================
@@ -141,12 +148,9 @@ model Agency {
   country  String?
   currency String @default("XOF")
 
-  // ✅ solde électronique (float / e-wallet interne)
   balance     Decimal @default(0) @db.Decimal(12, 2)
   creditLimit Decimal @default(0) @db.Decimal(12, 2)
-
-  // ✅ cash physique (coffre / caisse)
-  cash Decimal @default(0) @db.Decimal(12, 2)
+  cash        Decimal @default(0) @db.Decimal(12, 2)
 
   isActive Boolean @default(true)
 
@@ -167,30 +171,25 @@ model User {
   password String
   role     Role   @default(USER)
 
-  // --- Identité ---
   firstName String?
   lastName  String?
   phone     String?
   gender    String?
   jobTitle  String?
 
-  // --- Adresse ---
   addressStreet String?
   postalCode    String?
   city          String?
   country       String?
 
-  // --- État Civil (KYC Complet) ---
   nationality  String?
   birthDate    String?
   birthPlace   String?
   birthCountry String?
   birthCity    String?
 
-  // --- Financier ---
   balance Decimal @default(0) @db.Decimal(12, 2)
 
-  // --- Relations ---
   clientId Int?
   client   Client? @relation(fields: [clientId], references: [id])
 
@@ -235,11 +234,19 @@ model Transaction {
   id        String @id @default(cuid())
   reference String @unique
 
+  // ✅ AJOUT DU TYPE
+  type TransactionType @default(TRANSFER)
+
   amount Decimal @db.Decimal(12, 2)
   fees   Decimal @db.Decimal(12, 2)
   total  Decimal @db.Decimal(12, 2)
 
-  currency String
+  currency String 
+
+  // Champs de conversion
+  targetCurrency String?   
+  exchangeRate   Float?    
+  receivedAmount Decimal?  @db.Decimal(12, 2) 
 
   status       TransactionStatus @default(PENDING)
   payoutMethod PayoutMethod      @default(CASH_PICKUP)
@@ -300,5 +307,4 @@ model ExchangeRate {
   rate      Float
   updatedAt DateTime @updatedAt
 }
-
 //npx prisma db push

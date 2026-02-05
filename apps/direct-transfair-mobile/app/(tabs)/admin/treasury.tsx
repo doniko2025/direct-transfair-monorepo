@@ -21,9 +21,14 @@ export default function TreasuryScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [targetAgency, setTargetAgency] = useState<any>(null); 
   const [amount, setAmount] = useState("");
+  const [refBancaire, setRefBancaire] = useState(""); 
+  
+  // Types : FUND_SELF (Admin->Lui-même), REFILL (Vers Agence), PAY_SUPER (Vers SuperAdmin)
+  const [modalType, setModalType] = useState<'FUND_SELF' | 'REFILL_AGENCY' | 'PAY_SUPER'>('FUND_SELF');
   const [processing, setProcessing] = useState(false);
 
-  // Charger les données à l'arrivée sur l'écran
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
   useFocusEffect(
     useCallback(() => { loadData(); }, [])
   );
@@ -31,7 +36,7 @@ export default function TreasuryScreen() {
   const loadData = async () => {
       setLoading(true);
       try {
-          await refreshUser(); // Met à jour le solde Admin affiché en haut
+          await refreshUser();
           const data = await api.getAgencies();
           setAgencies(data);
       } catch (e) {
@@ -42,27 +47,36 @@ export default function TreasuryScreen() {
       }
   };
 
-  const handleRefresh = async () => {
-      setRefreshing(true);
-      await loadData();
+  const handleRefresh = async () => { setRefreshing(true); await loadData(); };
+
+  // --- OUVERTURE MODALES ---
+
+  const handleOpenPaySuperAdmin = () => {
+      setAmount("");
+      setRefBancaire("");
+      setModalType('PAY_SUPER');
+      setModalVisible(true);
+  }
+
+  const handleOpenRefill = (agency: any) => {
+      setTargetAgency(agency);
+      setAmount("");
+      setModalType('REFILL_AGENCY');
+      setModalVisible(true);
   };
 
   const handleOpenFundSelf = () => {
       setTargetAgency(null);
       setAmount("");
+      setModalType('FUND_SELF');
       setModalVisible(true);
   };
 
-  const handleOpenRefill = (agency: any) => {
-      setTargetAgency(agency);
-      setAmount("");
-      setModalVisible(true);
-  };
+  // --- SOUMISSION ---
 
   const handleSubmit = async () => {
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-          if (Platform.OS === 'web') alert("Montant invalide");
-          else Alert.alert("Erreur", "Veuillez saisir un montant valide et positif.");
+          Alert.alert("Erreur", "Montant invalide");
           return;
       }
       
@@ -70,30 +84,41 @@ export default function TreasuryScreen() {
       setProcessing(true);
 
       try {
-          if (targetAgency) {
-              // 1. Recharger une agence
+          // 1. PAIEMENT VERS SUPER ADMIN (B2B)
+          if (modalType === 'PAY_SUPER') {
+              if (!refBancaire) throw new Error("Référence bancaire requise");
+              
+              await api.declareBankTransfer(val, refBancaire);
+              
+              const msg = "Paiement envoyé ! En attente de validation par le Super Admin.";
+              if (Platform.OS === 'web') alert(msg);
+              else Alert.alert("Succès", msg);
+          } 
+          
+          // 2. RECHARGER UNE AGENCE
+          else if (modalType === 'REFILL_AGENCY' && targetAgency) {
               const res = await api.adminRefillAgency(targetAgency.id, val);
-              const msg = `Envoyé: ${res.sent}\nReçu: ${res.received}\nTaux: ${res.rate}`;
+              // Vérification pour éviter 'undefined'
+              const sent = res?.sent || val;
+              const msg = `Agence rechargée de ${sent} XOF avec succès.`;
               
               if (Platform.OS === 'web') alert(msg);
               else Alert.alert("Succès", msg);
+          }
 
-          } else {
-              // 2. S'alimenter soi-même (Admin)
-              await api.adminFundSelf(val);
-              
-              if (Platform.OS === 'web') alert("Compte alimenté !");
-              else Alert.alert("Succès", "Fonds ajoutés au compte Admin.");
+          // 3. AUTO-ALIMENTATION (Admin Société seulement)
+          else if (modalType === 'FUND_SELF') {
+             await api.adminFundSelf(val);
+             if (Platform.OS === 'web') alert("Compte alimenté !");
+             else Alert.alert("Succès", "Fonds ajoutés.");
           }
 
           setModalVisible(false);
-          // 🚀 Rafraîchissement automatique après succès
           setTimeout(() => loadData(), 500); 
 
       } catch (e: any) {
           const err = e.response?.data?.message || "Erreur technique";
-          if (Platform.OS === 'web') alert(err);
-          else Alert.alert("Erreur", Array.isArray(err) ? err[0] : err);
+          Alert.alert("Erreur", Array.isArray(err) ? err[0] : err);
       } finally {
           setProcessing(false);
       }
@@ -103,9 +128,6 @@ export default function TreasuryScreen() {
     if(!countryName) return "🌍";
     if(countryName.includes("Sénégal")) return "🇸🇳";
     if(countryName.includes("Guinée")) return "🇬🇳";
-    if(countryName.includes("France")) return "🇫🇷";
-    if(countryName.includes("Mali")) return "🇲🇱";
-    if(countryName.includes("Côte")) return "🇨🇮";
     return "🏳️";
   }
 
@@ -123,18 +145,34 @@ export default function TreasuryScreen() {
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#FFF"/>}
       >
-        {/* CARTE PRINCIPALE ADMIN */}
+        {/* CARTE PRINCIPALE */}
         <View style={styles.adminCard}>
             <View>
-                <Text style={styles.adminLabel}>Ma Trésorerie (Admin)</Text>
+                <Text style={styles.adminLabel}>Trésorerie ({isSuperAdmin ? 'Super Admin' : 'Admin Société'})</Text>
                 <Text style={styles.adminBalance}>
                     {user?.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF
                 </Text>
             </View>
-            <TouchableOpacity style={styles.fundBtn} onPress={handleOpenFundSelf}>
-                <Ionicons name="add" size={20} color="#1E1B4B" />
-                <Text style={styles.fundText}>S'alimenter</Text>
-            </TouchableOpacity>
+            
+            {/* BOUTONS D'ACTION */}
+            <View style={{flexDirection:'column', gap: 8}}>
+                
+                {/* BOUTON: Payer le Super Admin (Visible seulement pour Admin Société) */}
+                {!isSuperAdmin && (
+                    <TouchableOpacity style={[styles.fundBtn, {backgroundColor:'#DBEAFE'}]} onPress={handleOpenPaySuperAdmin}>
+                        <Ionicons name="card-outline" size={18} color="#1E3A8A" />
+                        <Text style={[styles.fundText, {color:'#1E3A8A'}]}>Payer Service</Text>
+                    </TouchableOpacity>
+                )}
+
+                {/* BOUTON: Auto-alimentation (Visible seulement pour Admin Société) */}
+                {!isSuperAdmin && (
+                    <TouchableOpacity style={styles.fundBtn} onPress={handleOpenFundSelf}>
+                        <Ionicons name="add-circle-outline" size={18} color="#1E1B4B" />
+                        <Text style={styles.fundText}>Auto-Alim.</Text>
+                    </TouchableOpacity>
+                )}
+            </View>
         </View>
 
         <Text style={styles.sectionTitle}>Réseau d'Agences</Text>
@@ -153,7 +191,7 @@ export default function TreasuryScreen() {
                     </View>
                     <View style={{flex:1}}>
                         <Text style={styles.agencyName}>{agency.name}</Text>
-                        <Text style={styles.agencyLocation}>{agency.city} • {agency.currency}</Text>
+                        <Text style={styles.agencyLocation}>{agency.city}</Text>
                     </View>
                     <View style={{alignItems:'flex-end'}}>
                         <Text style={styles.agencyBalanceLabel}>Solde Caisse</Text>
@@ -166,7 +204,7 @@ export default function TreasuryScreen() {
                 <View style={styles.actionsRow}>
                     <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenRefill(agency)}>
                         <Ionicons name="paper-plane-outline" size={16} color="#2563EB" />
-                        <Text style={styles.actionText}>Envoyer des fonds</Text>
+                        <Text style={styles.actionText}>Recharger Agence</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -174,37 +212,46 @@ export default function TreasuryScreen() {
         <View style={{height: 100}} />
       </ScrollView>
 
-      {/* MODAL TRANSACTION */}
+      {/* MODAL UNIQUE */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
                   <Text style={styles.modalTitle}>
-                      {targetAgency ? `Recharger ${targetAgency.name}` : "Alimenter mon compte"}
+                      {modalType === 'REFILL_AGENCY' ? `Recharger ${targetAgency?.name}` : 
+                       modalType === 'PAY_SUPER' ? "Payer le Super Admin" : 
+                       "Alimenter mon compte"}
                   </Text>
                   
-                  {targetAgency ? (
-                      <Text style={styles.modalSubtitle}>
-                          Vous envoyez des <Text style={{fontWeight:'bold'}}>FCFA</Text>. 
-                          L'agence recevra des <Text style={{fontWeight:'bold'}}>{targetAgency.currency}</Text>.
-                      </Text>
-                  ) : (
-                      <Text style={styles.modalSubtitle}>
-                          Injection de fonds depuis la Banque Centrale (Virtuel).
-                      </Text>
-                  )}
+                  <Text style={styles.modalSubtitle}>
+                      {modalType === 'REFILL_AGENCY' ? "Envoi de fonds vers une agence du réseau." :
+                       modalType === 'PAY_SUPER' ? "Règlement de frais de service ou location." :
+                       "Injection de fonds virtuels (Cash-In)."}
+                  </Text>
 
-                  <Text style={styles.inputLabel}>Montant à envoyer (FCFA)</Text>
+                  <Text style={styles.inputLabel}>Montant (FCFA)</Text>
                   <TextInput 
                     style={styles.input} 
                     value={amount} 
                     onChangeText={setAmount} 
                     keyboardType="numeric" 
-                    placeholder="Ex: 5000000" 
-                    autoFocus 
+                    placeholder="Ex: 500000" 
+                    autoFocus={modalType !== 'PAY_SUPER'} 
                   />
 
+                  {modalType === 'PAY_SUPER' && (
+                      <>
+                        <Text style={styles.inputLabel}>Référence du Virement (Preuve)</Text>
+                        <TextInput 
+                            style={styles.input} 
+                            value={refBancaire} 
+                            onChangeText={setRefBancaire} 
+                            placeholder="Ex: REF-BANQUE-123" 
+                        />
+                      </>
+                  )}
+
                   <TouchableOpacity style={styles.confirmBtn} onPress={handleSubmit} disabled={processing}>
-                      {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmText}>VALIDER LA TRANSACTION</Text>}
+                      {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmText}>VALIDER</Text>}
                   </TouchableOpacity>
                   
                   <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)} disabled={processing}>
@@ -222,10 +269,10 @@ const styles = StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
     headerTitle: { fontSize: 20, fontWeight: '700', color: '#FFF' },
     container: { padding: 20 },
-    adminCard: { backgroundColor: '#F59E0B', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
+    adminCard: { backgroundColor: '#F59E0B', borderRadius: 16, padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 30 },
     adminLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600' },
     adminBalance: { color: '#FFF', fontSize: 24, fontWeight: '800', marginTop: 4 },
-    fundBtn: { backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+    fundBtn: { backgroundColor: '#FFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, marginBottom: 5 },
     fundText: { color: '#1E1B4B', fontWeight: '700', fontSize: 12, marginLeft: 4 },
     sectionTitle: { color: '#9CA3AF', fontSize: 13, fontWeight: '700', marginBottom: 15, textTransform: 'uppercase', letterSpacing: 1 },
     agencyCard: { backgroundColor: '#1F2937', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#374151' },

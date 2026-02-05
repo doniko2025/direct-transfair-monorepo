@@ -1,6 +1,9 @@
 //apps/direct-transfair-mobile/app/(tabs)/home.tsx
 import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, StatusBar, SafeAreaView, RefreshControl } from "react-native";
+import { 
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
+  StatusBar, SafeAreaView, RefreshControl, Modal, TextInput, ActivityIndicator, Alert, Platform 
+} from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
@@ -12,6 +15,12 @@ export default function HomeScreen() {
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [agencyData, setAgencyData] = useState<any>(null);
+
+  // Etats pour la modal de déclaration PAIEMENT SERVICE
+  const [modalVisible, setModalVisible] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [refBancaire, setRefBancaire] = useState("");
+  const [processing, setProcessing] = useState(false);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -31,6 +40,43 @@ export default function HomeScreen() {
           console.log("Erreur chargement", e);
       } finally {
           setRefreshing(false);
+      }
+  };
+
+  const handleOpenDeclare = () => {
+      setAmount("");
+      setRefBancaire("");
+      setModalVisible(true);
+  };
+
+  const handleSubmitDeclare = async () => {
+      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+          if (Platform.OS === 'web') alert("Montant invalide");
+          else Alert.alert("Erreur", "Montant invalide");
+          return;
+      }
+      if (!refBancaire) {
+          if (Platform.OS === 'web') alert("Référence requise");
+          else Alert.alert("Erreur", "La référence du virement est requise");
+          return;
+      }
+
+      setProcessing(true);
+      try {
+          await api.declareBankTransfer(Number(amount), refBancaire);
+          setModalVisible(false);
+          
+          const msg = "Paiement déclaré. Votre solde sera débité après validation par le Super Admin.";
+          if (Platform.OS === 'web') alert(msg);
+          else Alert.alert("Succès", msg);
+          
+          loadData(); // Rafraîchir
+      } catch (e: any) {
+          const err = e.response?.data?.message || "Erreur technique";
+          if (Platform.OS === 'web') alert(err);
+          else Alert.alert("Erreur", err);
+      } finally {
+          setProcessing(false);
       }
   };
 
@@ -79,9 +125,7 @@ export default function HomeScreen() {
         
         <Text style={styles.sectionTitle}>Guichet</Text>
         <View style={styles.grid}>
-            {/* ✅ BOUTON DÉPÔT AJOUTÉ ICI */}
             <MenuCard title="Dépôt Client" subtitle="Recharger un compte" icon="arrow-down-circle" color="#10B981" onPress={() => router.push("/agent/deposit")} />
-            
             <MenuCard title="Envoi Espèces" subtitle="Client de passage" icon="paper-plane" color="#3B82F6" onPress={() => router.push("/agent/send-cash")} />
             <MenuCard title="Retrait" subtitle="Payer un code" icon="wallet" color="#EF4444" onPress={() => router.push("/agent/withdraw")} />
         </View>
@@ -102,10 +146,15 @@ export default function HomeScreen() {
                     <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                 </View>
                 <Text style={styles.balanceValue}>{user.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF</Text>
+                
+                {/* ✅ BOUTON PAIEMENT SERVICE (Visible et clair) */}
+                <TouchableOpacity style={styles.fundBtn} onPress={handleOpenDeclare}>
+                    <Ionicons name="card" size={20} color="#1E293B" />
+                    <Text style={styles.fundText}>Payer Facture / Service</Text>
+                </TouchableOpacity>
             </View>
         </TouchableOpacity>
 
-        {/* SECTION RÉSEAU & AGENCES */}
         <Text style={styles.sectionTitle}>Réseau & Agences</Text>
         <View style={styles.grid}>
             <MenuCard 
@@ -137,24 +186,52 @@ export default function HomeScreen() {
             </View>
         </View>
 
-        {/* SECTION FINANCE & COMMISSIONS */}
         <Text style={styles.sectionTitle}>Finance & Commissions</Text>
         <View style={styles.grid}>
-            <MenuCard 
-                title="Config. Commissions" 
-                subtitle="Répartition Partenaires" 
-                icon="pie-chart" 
-                color="#EF4444" 
-                onPress={() => router.push("/(tabs)/admin/commissions/config")} 
-            />
-            <MenuCard 
-                title="Journal des Gains" 
-                subtitle="Qui a gagné quoi ?" 
-                icon="cash" 
-                color="#10B981" 
-                onPress={() => router.push("/(tabs)/admin/commissions/history")} 
-            />
+            <MenuCard title="Config. Commissions" subtitle="Répartition Partenaires" icon="pie-chart" color="#EF4444" onPress={() => router.push("/(tabs)/admin/commissions/config")} />
+            <MenuCard title="Journal des Gains" subtitle="Qui a gagné quoi ?" icon="cash" color="#10B981" onPress={() => router.push("/(tabs)/admin/commissions/history")} />
         </View>
+
+        {/* MODAL DECLARATION PAIEMENT */}
+        <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>Payer une Facture</Text>
+                  <Text style={styles.modalSubtitle}>
+                      Déclarez ici le virement effectué au Super Admin pour régler les frais de service ou la location du système.
+                  </Text>
+
+                  <Text style={styles.inputLabel}>Montant Payé (FCFA)</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    value={amount} 
+                    onChangeText={setAmount} 
+                    keyboardType="numeric" 
+                    placeholder="Ex: 500000" 
+                    placeholderTextColor="#9CA3AF"
+                    autoFocus
+                  />
+
+                  <Text style={styles.inputLabel}>Référence du Virement</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    value={refBancaire} 
+                    onChangeText={setRefBancaire} 
+                    placeholder="Ex: REF-BANQUE-123"
+                    placeholderTextColor="#9CA3AF" 
+                  />
+
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleSubmitDeclare} disabled={processing}>
+                      {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.confirmText}>VALIDER LE PAIEMENT</Text>}
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setModalVisible(false)} disabled={processing}>
+                      <Text style={styles.cancelText}>Annuler</Text>
+                  </TouchableOpacity>
+              </View>
+          </View>
+        </Modal>
+
       </DashboardLayout>
     );
   }
@@ -230,5 +307,32 @@ const styles = StyleSheet.create({
   balanceLabel: { color: 'rgba(255,255,255,0.9)', fontSize: 12, marginBottom: 4, fontWeight:'500' },
   balanceValue: { color: '#FFF', fontSize: 28, fontWeight: '800', marginBottom:5 },
   topUpBtn: { flexDirection:'row', alignItems:'center', backgroundColor:'rgba(255,255,255,0.2)', paddingHorizontal:12, paddingVertical:6, borderRadius:20, alignSelf:'flex-start' },
-  topUpText: { color:'#FFF', fontWeight:'600', fontSize:12, marginLeft:6 }
+  topUpText: { color:'#FFF', fontWeight:'600', fontSize:12, marginLeft:6 },
+  
+  // Style Bouton Payer Facture (Blanc, arrondi)
+  fundBtn: { 
+      backgroundColor: '#FFF', 
+      paddingHorizontal: 16, 
+      paddingVertical: 12, 
+      borderRadius: 12, 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      alignSelf: 'flex-start', 
+      marginTop: 15,
+      shadowColor: "#000", 
+      shadowOpacity: 0.1, 
+      elevation: 2 
+  },
+  fundText: { color: '#1E293B', fontWeight: '700', fontSize: 13, marginLeft: 8 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, minHeight: 350 },
+  modalTitle: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 8 },
+  modalSubtitle: { fontSize: 13, color: '#6B7280', marginBottom: 20, lineHeight: 18 },
+  inputLabel: { fontSize: 13, fontWeight: '700', color: '#374151', marginBottom: 8 },
+  input: { backgroundColor: '#F3F4F6', borderRadius: 12, padding: 16, fontSize: 18, fontWeight: '700', color: '#111827', marginBottom: 24 },
+  confirmBtn: { backgroundColor: colors.primary, padding: 18, borderRadius: 14, alignItems: 'center', marginBottom: 12 },
+  confirmText: { color: '#FFF', fontWeight: '800', fontSize: 16 },
+  cancelBtn: { padding: 16, alignItems: 'center' },
+  cancelText: { color: '#6B7280', fontWeight: '600' }
 });

@@ -4,6 +4,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { AuthModule } from '../auth/auth.module';
+// ✅ IMPORT DU MODULE DE TAUX (Indispensable pour la conversion)
+import { RatesModule } from '../rates/rates.module';
 
 import { TransactionsController } from './transactions.controller';
 import { AdminTransactionsController } from './admin-transactions.controller';
@@ -14,10 +16,11 @@ import { TransactionsService } from './transactions.service';
     PrismaModule,
     TenantsModule,
     AuthModule,
+    RatesModule, // ✅ AJOUTÉ ICI : Rend RatesService accessible à TransactionsService
   ],
   controllers: [
     TransactionsController,
-    AdminTransactionsController, // 👈 OBLIGATOIRE
+    AdminTransactionsController,
   ],
   providers: [TransactionsService],
   exports: [TransactionsService],

@@ -70,7 +70,7 @@ export default function TransactionDetailScreen() {
   const handleAdminValidate = () => {
       confirmAction(
           "Valider la transaction ?", 
-          "Le code sera activé et le bénéficiaire pourra retirer les fonds dans n'importe quelle agence.", 
+          "Le montant sera transféré et le statut mis à jour.", 
           () => performAction('VALIDATED')
       );
   };
@@ -86,7 +86,12 @@ export default function TransactionDetailScreen() {
   const performAction = async (newStatus: string) => {
       setProcessing(true);
       try {
-          if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
+          // Gestion spéciale pour la validation B2B (Paiement Service)
+          if (transaction.type === 'SERVICE_PAYMENT' && newStatus === 'VALIDATED') {
+              await api.validateBankTransfer(transaction.id);
+          } 
+          // Gestion standard pour tout le reste (Rejet B2B ou Validation/Rejet Client)
+          else if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
               await api.adminUpdateTransactionStatus(transaction.id, newStatus);
           } else {
               await api.cancelTransaction(transaction.id);
@@ -128,10 +133,11 @@ export default function TransactionDetailScreen() {
   const isPending = transaction.status === 'PENDING';
   const canUserCancel = !isAdmin && (transaction.status === 'PENDING' || transaction.status === 'VALIDATED');
 
-  // ✅ LOGIQUE : On affiche le code de retrait UNIQUEMENT si providerRef existe (donc pas pour Wallet)
-  const showWithdrawalCode = !!transaction.providerRef;
+  // ✅ CORRECTION ICI : Masquer le code de retrait pour les paiements B2B (Service Payment)
+  const isB2B = transaction.type === 'SERVICE_PAYMENT';
+  // On affiche le code SEULEMENT si ce n'est PAS un paiement B2B ET qu'il y a une référence fournisseur
+  const showWithdrawalCode = !isB2B && !!transaction.providerRef;
 
-  // Affichage propre de la référence
   const displayReference = transaction.reference.startsWith('TX-') 
       ? transaction.reference 
       : `TX-${transaction.reference}`;
@@ -156,7 +162,7 @@ export default function TransactionDetailScreen() {
             </View>
         </View>
         
-        {/* ✅ CONDITION : On cache ce bloc si c'est un transfert Wallet (pas de providerRef) */}
+        {/* ✅ Utilisation de la nouvelle condition showWithdrawalCode */}
         {showWithdrawalCode && (
             <View style={styles.codeSection}>
                 <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
@@ -169,8 +175,12 @@ export default function TransactionDetailScreen() {
 
         <View style={styles.detailsSection}>
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString()} />
-            <DetailRow label="Expéditeur" value={transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi"} />
-            <DetailRow label="Bénéficiaire" value={transaction.beneficiary?.fullName || "Non spécifié"} />
+            
+            {/* Si B2B, on affiche "Admin Société" au lieu de l'expéditeur standard */}
+            <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : (transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi")} />
+            
+            {/* Si B2B, on affiche "Super Admin" au lieu de "Non spécifié" */}
+            <DetailRow label="Bénéficiaire" value={isB2B ? "Super Admin" : (transaction.beneficiary?.fullName || "Non spécifié")} />
             
             <DetailRow label="Pays destination" value={transaction.beneficiary?.country || "Sénégal"} />
             <DetailRow label="Réf. Unique" value={displayReference} />
