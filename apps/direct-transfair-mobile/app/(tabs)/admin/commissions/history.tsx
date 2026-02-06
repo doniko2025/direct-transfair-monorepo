@@ -3,10 +3,10 @@ import React from "react";
 import { View, Text, StyleSheet, FlatList, SafeAreaView } from "react-native";
 import { colors } from "../../../../theme/colors";
 
-// Données simulées
+// Données simulées (En attendant le module de calcul réel)
 const COMMISSIONS = [
     { id: '1', tx: 'TX-9485', total: 5000, type: 'Envoi', role: 'PARTNER', agency: 'Boutique A', amount: 1250, date: '12:30' },
-    { id: '2', tx: 'TX-9485', total: 5000, type: 'Retrait', role: 'PRIVATE', agency: 'Siège Direct', amount: 0, date: '12:45' }, // 0 car privé -> va à la plateforme
+    { id: '2', tx: 'TX-9485', total: 5000, type: 'Retrait', role: 'PRIVATE', agency: 'Siège Direct', amount: 0, date: '12:45' },
     { id: '3', tx: 'TX-9485', total: 5000, type: 'Plateforme', role: 'ADMIN', agency: 'Direct Transfair', amount: 3750, date: '12:45' },
 ];
 

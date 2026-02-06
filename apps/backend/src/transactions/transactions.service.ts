@@ -15,11 +15,17 @@ import {
   PaymentMethod,
   WithdrawalStatus,
   TransactionType, // ✅ Assurez-vous que cet enum est bien dans votre schema.prisma
+  AgencyType,           // ✅ AJOUT : Pour les commissions
+  CommissionSourceType, // ✅ AJOUT : Pour les commissions
+  CommissionDestType    // ✅ AJOUT : Pour les commissions
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 // ✅ IMPORT DU SERVICE DE TAUX
 import { RatesService } from '../rates/rates.service';
+// ✅ IMPORT DU SERVICE COMMISSIONS
+import { CommissionsService } from '../commissions/commissions.service'; 
+
 import { CreateTransactionDto, CreateDepositDto } from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 import type { AuthUserPayload } from '../auth/strategies/jwt.strategy';
@@ -51,7 +57,8 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
 export class TransactionsService {
   constructor(
       private readonly prisma: PrismaService,
-      private readonly ratesService: RatesService
+      private readonly ratesService: RatesService,
+      private readonly commissionsService: CommissionsService // ✅ INJECTION
   ) {}
 
   // =================================================================
@@ -108,14 +115,12 @@ export class TransactionsService {
 
       return this.prisma.$transaction(async (prismaTx) => {
           // A. DÉBIT Admin Société (Celui qui a envoyé l'argent)
-          // ✅ C'est ici que le solde de la société baisse
           await prismaTx.user.update({
               where: { id: tx.senderId },
               data: { balance: { decrement: tx.amount } }
           });
 
           // B. CRÉDIT Super Admin (Celui qui reçoit l'argent)
-          // ✅ C'est ici que le solde du Super Admin augmente (C'était manquant)
           await prismaTx.user.update({
               where: { id: superAdminId },
               data: { balance: { increment: tx.amount } }
@@ -190,7 +195,7 @@ export class TransactionsService {
   }
 
   // =================================================================
-  // 🚀 CRÉATION TRANSACTION (ENVOI) AVEC CONVERSION
+  // 🚀 CRÉATION TRANSACTION (ENVOI) AVEC CONVERSION ET COMMISSIONS
   // =================================================================
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
@@ -224,6 +229,7 @@ export class TransactionsService {
 
     return this.prisma.$transaction(async (tx) => {
       let currency = dto.currency; 
+      let sourceType: CommissionSourceType = CommissionSourceType.WALLET; // Par défaut
 
       // 1. Débit Expéditeur
       if (user.role === 'AGENT' && user.agencyId && user.agency) {
@@ -238,6 +244,12 @@ export class TransactionsService {
           },
         });
         currency = user.agency.currency || 'XOF';
+
+        // ✅ Détermination type Agence pour commission (PARTNER ou SUBSIDIARY)
+        sourceType = user.agency.type === AgencyType.PARTNER 
+            ? CommissionSourceType.PARTNER 
+            : CommissionSourceType.SUBSIDIARY;
+
       } else {
         if (user.balance.lessThan(total)) {
           throw new ForbiddenException(`Solde insuffisant (${user.balance} < ${total})`);
@@ -246,7 +258,42 @@ export class TransactionsService {
           where: { id: senderId },
           data: { balance: { decrement: total } },
         });
+        // Si User normal -> Source WALLET
+        sourceType = CommissionSourceType.WALLET;
       }
+
+      // =================================================================
+      // ✅ 1.5. LOGIQUE COMMISSION (CALCUL & DISTRIBUTION IMMÉDIATE)
+      // =================================================================
+      // On cherche la règle qui correspond à (Source -> Destination).
+      // Comme on ne connait pas encore le payeur, on utilise une règle par défaut (ex: vers SUBSIDIARY)
+      // pour déterminer la part de l'émetteur.
+      
+      if (!recipientUser && fees.gt(0)) {
+          const rule = await tx.commissionConfig.findUnique({
+              where: {
+                  clientId_sourceType_destType: {
+                      clientId,
+                      sourceType: sourceType,
+                      destType: CommissionDestType.SUBSIDIARY // On utilise SUBSIDIARY comme référence par défaut pour l'envoi
+                  }
+              }
+          });
+
+          // Si une règle existe et que l'agence d'envoi a droit à une part > 0
+          if (rule && rule.senderShare > 0 && user.agencyId) {
+              const senderCommission = fees.mul(new Prisma.Decimal(rule.senderShare)).div(100);
+              
+              if (senderCommission.gt(0)) {
+                  // CRÉDIT IMMÉDIAT A L'AGENCE
+                  await tx.agency.update({
+                      where: { id: user.agencyId },
+                      data: { balance: { increment: senderCommission } }
+                  });
+              }
+          }
+      }
+      // =================================================================
 
       // ✅ 2. LOGIQUE DE CONVERSION AUTOMATIQUE
       let targetCurrency = currency;

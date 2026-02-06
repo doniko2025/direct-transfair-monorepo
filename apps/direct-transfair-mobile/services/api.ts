@@ -83,6 +83,10 @@ class API {
   async declareBankTransfer(amount: number, ref: string): Promise<any> { const res = await this.http.post("/transactions/b2b/declare", { amount, ref }); return res.data; }
   async validateBankTransfer(id: string): Promise<any> { const res = await this.http.patch(`/transactions/b2b/validate/${id}`); return res.data; }
 
+  // --- 💰 COMMISSIONS (NOUVEAU) ---
+  async getCommissionRules(): Promise<any[]> { const res = await this.http.get("/commissions"); return res.data; }
+  async saveCommissionRule(data: any): Promise<any> { const res = await this.http.post("/commissions", data); return res.data; }
+
   // --- TRANSACTIONS ---
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions", data); return res.data; }
   async depositAgent(data: { amount: number; userPhone: string }): Promise<Transaction> { const res = await this.http.post<Transaction>("/transactions/deposit", data); return res.data; }

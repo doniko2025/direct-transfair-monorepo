@@ -18,6 +18,9 @@ import { RatesModule } from './rates/rates.module';
 // ✅ AJOUT : Module Agencies (pour exposer /agencies)
 import { AgenciesModule } from './agencies/agencies.module';
 
+// ✅ AJOUT : Module Commissions (Nouveau)
+import { CommissionsModule } from './commissions/commissions.module';
+
 import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.middleware';
 
 @Module({
@@ -37,7 +40,8 @@ import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.mi
     WithdrawalsModule,
     RatesModule,
 
-    AgenciesModule, // ✅ AJOUT ICI
+    AgenciesModule, // ✅ Module Agences
+    CommissionsModule, // ✅ Module Commissions
   ],
 })
 export class AppModule implements NestModule {

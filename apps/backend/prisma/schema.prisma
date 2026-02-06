@@ -1,6 +1,6 @@
 // ==========================================================
 //  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION)
-//  CORRECTED & COMPLETE
+//  UPDATED: COMMISSION MANAGEMENT
 // ==========================================================
 
 generator client {
@@ -53,7 +53,7 @@ enum PaymentMethod {
   SENDWAVE
   CARD
   CASH
-  BANK_TRANSFER // ✅ AJOUTÉ : Pour les virements B2B
+  BANK_TRANSFER 
 }
 
 enum PaymentProvider {
@@ -78,12 +78,30 @@ enum WithdrawalStatus {
   CANCELLED
 }
 
-// ✅ AJOUTÉ : Pour distinguer les types de flux
 enum TransactionType {
-  TRANSFER        // Envoi client
-  DEPOSIT         // Dépôt
-  WITHDRAWAL      // Retrait
-  SERVICE_PAYMENT // Paiement B2B (Société -> SuperAdmin)
+  TRANSFER        
+  DEPOSIT         
+  WITHDRAWAL      
+  SERVICE_PAYMENT 
+}
+
+// ✅ NOUVEAU : Type d'agence pour les règles de commission
+enum AgencyType {
+  SUBSIDIARY // Filiale (Appartient à la société)
+  PARTNER    // Partenaire (Agence tierce)
+}
+
+// ✅ NOUVEAU : Source de la transaction pour les commissions
+enum CommissionSourceType {
+  SUBSIDIARY // Agence Filiale
+  PARTNER    // Agence Partenaire
+  WALLET     // Client Wallet (App Mobile)
+}
+
+// ✅ NOUVEAU : Destination pour les commissions (Qui paie ?)
+enum CommissionDestType {
+  SUBSIDIARY // Agence Filiale
+  PARTNER    // Agence Partenaire
 }
 
 // ===================== CLIENT (LA SOCIÉTÉ) =====================
@@ -94,13 +112,13 @@ model Client {
   name  String
 
   // --- Configuration Visuelle ---
-  logoUrl      String?
+  logoUrl       String?
   primaryColor String? @default("#F7931E")
 
   // --- Infos Légales & Contact ---
-  address      String?
-  phone        String?
-  email        String?
+  address       String?
+  phone         String?
+  email         String?
 
   activitySector String?
   contactPhone   String?
@@ -125,11 +143,37 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
-  agencies      Agency[]
-  beneficiaries Beneficiary[]
-  transactions  Transaction[]
-  withdrawals   Withdrawal[]
+  users            User[]
+  agencies         Agency[]
+  beneficiaries    Beneficiary[]
+  transactions     Transaction[]
+  withdrawals      Withdrawal[]
+  
+  // ✅ Lien vers les règles de commission
+  commissionConfigs CommissionConfig[]
+}
+
+// ===================== COMMISSION CONFIGURATION =====================
+// Cette table stocke les règles de partage définies par l'Admin Société
+model CommissionConfig {
+  id        String   @id @default(cuid())
+  
+  clientId  Int
+  client    Client   @relation(fields: [clientId], references: [id])
+
+  // Le Scénario (Ex: WALLET vers PARTENAIRE)
+  sourceType      CommissionSourceType
+  destType        CommissionDestType
+
+  // Les Parts en Pourcentage (0 à 100)
+  senderShare     Float @default(0) // Part de l'agence d'envoi (0 si Wallet)
+  payerShare      Float @default(0) // Part de l'agence qui paie
+  platformShare   Float @default(100) // Part de la Société (Reste)
+
+  updatedAt DateTime @updatedAt
+
+  // Une seule règle par paire Source/Destination pour un client donné
+  @@unique([clientId, sourceType, destType])
 }
 
 // ===================== AGENCY (L'AGENCE PHYSIQUE) =====================
@@ -139,6 +183,9 @@ model Agency {
   name    String
   city    String
   address String
+
+  // ✅ NOUVEAU : Type d'agence (Filiale ou Partenaire)
+  type    AgencyType @default(SUBSIDIARY)
 
   code  String? @unique
   email String?
@@ -196,7 +243,7 @@ model User {
   agencyId String?
   agency   Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
 
-  sentTransactions     Transaction[] @relation("Sender")
+  sentTransactions      Transaction[] @relation("Sender")
   receivedTransactions Transaction[] @relation("Recipient")
 
   beneficiaries Beneficiary[]
@@ -234,7 +281,6 @@ model Transaction {
   id        String @id @default(cuid())
   reference String @unique
 
-  // ✅ AJOUT DU TYPE
   type TransactionType @default(TRANSFER)
 
   amount Decimal @db.Decimal(12, 2)
@@ -244,8 +290,8 @@ model Transaction {
   currency String 
 
   // Champs de conversion
-  targetCurrency String?   
-  exchangeRate   Float?    
+  targetCurrency String?    
+  exchangeRate   Float?     
   receivedAmount Decimal?  @db.Decimal(12, 2) 
 
   status       TransactionStatus @default(PENDING)
@@ -253,8 +299,8 @@ model Transaction {
 
   paymentMethod PaymentMethod @default(WALLET)
 
-  provider       PaymentProvider?
-  providerRef    String?
+  provider        PaymentProvider?
+  providerRef     String?
   providerStatus ProviderStatus? @default(PENDING)
 
   senderId String
