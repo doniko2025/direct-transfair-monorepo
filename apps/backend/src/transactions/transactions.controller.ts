@@ -151,6 +151,10 @@ export class TransactionsController {
   @Get()
   async findMine(@Req() req: AuthedRequest) {
     const userId = this.getUserId(req);
+    
+    // ✅ LOG AJOUTÉ ICI POUR LE DÉBOGAGE
+    console.log(`[CONTROLLER] GET /transactions called by user ${userId}`);
+    
     return this.transactionsService.findForUser(userId);
   }
 

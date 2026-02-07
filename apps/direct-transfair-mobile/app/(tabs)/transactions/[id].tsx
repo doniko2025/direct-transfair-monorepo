@@ -122,7 +122,12 @@ export default function TransactionDetailScreen() {
   };
 
   const handleGoBack = () => {
-      router.navigate('/(tabs)/transactions');
+      // Si on vient de l'historique agent, on retourne en arrière simplement
+      if (router.canGoBack()) {
+          router.back();
+      } else {
+          router.navigate('/(tabs)/transactions');
+      }
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
@@ -135,7 +140,6 @@ export default function TransactionDetailScreen() {
 
   // ✅ CORRECTION ICI : Masquer le code de retrait pour les paiements B2B (Service Payment)
   const isB2B = transaction.type === 'SERVICE_PAYMENT';
-  // On affiche le code SEULEMENT si ce n'est PAS un paiement B2B ET qu'il y a une référence fournisseur
   const showWithdrawalCode = !isB2B && !!transaction.providerRef;
 
   const displayReference = transaction.reference.startsWith('TX-') 
@@ -162,7 +166,6 @@ export default function TransactionDetailScreen() {
             </View>
         </View>
         
-        {/* ✅ Utilisation de la nouvelle condition showWithdrawalCode */}
         {showWithdrawalCode && (
             <View style={styles.codeSection}>
                 <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
@@ -176,10 +179,8 @@ export default function TransactionDetailScreen() {
         <View style={styles.detailsSection}>
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString()} />
             
-            {/* Si B2B, on affiche "Admin Société" au lieu de l'expéditeur standard */}
             <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : (transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi")} />
             
-            {/* Si B2B, on affiche "Super Admin" au lieu de "Non spécifié" */}
             <DetailRow label="Bénéficiaire" value={isB2B ? "Super Admin" : (transaction.beneficiary?.fullName || "Non spécifié")} />
             
             <DetailRow label="Pays destination" value={transaction.beneficiary?.country || "Sénégal"} />

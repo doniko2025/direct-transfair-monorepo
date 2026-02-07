@@ -4,6 +4,9 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { TenantsModule } from '../tenants/tenants.module';
 
+// ✅ IMPORT DU MODULE COMMISSIONS
+import { CommissionsModule } from '../commissions/commissions.module';
+
 import { WithdrawalsController } from './withdrawals.controller';
 import { WithdrawalsService } from './withdrawals.service';
 import { AdminGuard } from '../common/guards/admin.guard';
@@ -12,7 +15,8 @@ import { AdminGuard } from '../common/guards/admin.guard';
   imports: [
     PrismaModule,
     AuthModule,
-    TenantsModule, // ✅ OBLIGATOIRE pour TenantGuard
+    TenantsModule, 
+    CommissionsModule, // ✅ AJOUTÉ ICI
   ],
   controllers: [WithdrawalsController],
   providers: [

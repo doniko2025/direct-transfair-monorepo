@@ -1,5 +1,5 @@
 //apps/backend/src/commissions/commissions.controller.ts
-import { Body, Controller, Get, Post, UseGuards, Request, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Request, ForbiddenException, Query } from '@nestjs/common';
 import { CommissionsService } from './commissions.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UpdateCommissionDto } from './dto/update-commission.dto';
@@ -17,10 +17,21 @@ export class CommissionsController {
   async getMyRules(@Request() req) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user || !user.clientId || user.role !== 'COMPANY_ADMIN') {
-        // Seul l'admin société gère ça
         throw new ForbiddenException("Accès réservé à l'Admin Société.");
     }
     return this.commissionsService.getClientRules(user.clientId);
+  }
+
+  // ✅ NOUVELLE ROUTE : Historique filtré
+  @Get('history')
+  async getHistory(@Request() req, @Query('period') period: string = 'TODAY') {
+      const user = await this.prisma.user.findUnique({ where: { id: req.user.id } });
+      if (!user || !user.clientId) {
+          throw new ForbiddenException("Utilisateur non autorisé.");
+      }
+      // Note: On pourrait filtrer ici si c'est un AGENT pour ne montrer que SES commissions
+      // Pour l'instant c'est pour l'Admin Société.
+      return this.commissionsService.getHistory(user.clientId, period);
   }
 
   @Post()

@@ -74,21 +74,52 @@ export interface CreateBeneficiaryPayload {
 export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
 export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
 
+export type PaymentMethod =
+  | "WALLET"
+  | "ORANGE_MONEY"
+  | "SENDWAVE"
+  | "CARD"
+  | "CASH"
+  | "BANK_TRANSFER";
+
+export type WithdrawalStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "PAID"
+  | "REJECTED"
+  | "FAILED"
+  | "CANCELLED";
+
 export interface Transaction {
   id: string;
   reference: string;
+
+  // montants
   amount: number;
   fees: number;
   total: number;
+
   currency: string;
   status: TransactionStatus;
   payoutMethod: PayoutMethod;
+
   createdAt: string;
   paidAt?: string | null;
   cancelledAt?: string | null;
+
   beneficiaryId?: string;
   senderId?: string;
-  senderName?: string;
+
+  // relations possibles renvoyées par l’API
+  beneficiary?: Beneficiary | null;
+  withdrawal?: {
+    id: string;
+    status: WithdrawalStatus;
+    method: PayoutMethod;
+    processedById?: string | null;
+    processedAt?: string | null;
+    requestedAt?: string;
+  } | null;
 }
 
 export interface CreateTransactionPayload {
@@ -99,11 +130,9 @@ export interface CreateTransactionPayload {
 }
 
 // --- PAIEMENTS & RETRAITS ---
-export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "CASH";
-
 export interface InitiatePaymentPayload {
   transactionId: string;
-  provider: 'ORANGE_MONEY' | 'WAVE';
+  provider: "ORANGE_MONEY" | "WAVE";
   phone: string;
 }
 
@@ -113,8 +142,6 @@ export interface CreateWithdrawalPayload {
   amount?: number;
   transactionId?: string;
 }
-
-export type WithdrawalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED";
 
 export interface UpdateWithdrawalStatusPayload {
   status: WithdrawalStatus;
@@ -130,7 +157,9 @@ export interface ExchangeRate {
 // ✅ AGENCES
 // ============================================================
 
-export type AgencyType = "PRIVATE" | "PARTNER";
+// Prisma: SUBSIDIARY | PARTNER
+// On garde PRIVATE pour ne pas casser si tu l’avais déjà en front
+export type AgencyType = "SUBSIDIARY" | "PARTNER" | "PRIVATE";
 
 export interface Agency {
   id: string | number;
@@ -138,12 +167,11 @@ export interface Agency {
   city: string;
   address: string;
   phone?: string | null;
-  
-  // ✅ Ces champs sont indispensables pour l'écran Edit
+
   email?: string;
   code?: string;
   isActive?: boolean;
-  
+
   type?: AgencyType;
   balance?: number;
   clientId: number;

@@ -13,6 +13,9 @@ import {
   PayoutMethod,
   PaymentMethod,
   ProviderStatus,
+  AgencyType,
+  CommissionSourceType,
+  CommissionDestType,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -34,7 +37,6 @@ export class WithdrawalsService {
 
       if (user.balance.lessThan(total)) throw new BadRequestException('Solde insuffisant');
 
-      // ✅ MODIFICATION : Code à 9 chiffres uniquement
       const withdrawalCode = Math.floor(100000000 + Math.random() * 900000000).toString();
 
       return this.prisma.$transaction(async (tx) => {
@@ -117,12 +119,16 @@ export class WithdrawalsService {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
 
+    // ✅ On inclut withdrawal (peut être null) + sender.agency pour la source
     const tx = await this.prisma.transaction.findFirst({
       where: {
         clientId,
         OR: [{ reference: cleanCode }, { providerRef: cleanCode }],
       },
-      include: { withdrawal: true },
+      include: {
+        withdrawal: true,
+        sender: { include: { agency: true } },
+      },
     });
 
     if (!tx) throw new NotFoundException('Code introuvable');
@@ -147,15 +153,55 @@ export class WithdrawalsService {
     if (!agent || !agent.agencyId) throw new ForbiddenException('Agent sans agence');
 
     return this.prisma.$transaction(async (prismaTx) => {
-      // ✅ Mise à jour des soldes : Virtuel augmente, Physique baisse
-      await prismaTx.agency.update({
-        where: { id: agent.agencyId! },
-        data: { 
-            balance: { increment: tx.total }, 
-            cash: { decrement: tx.amount }    
+      // =================================================================
+      // 💰 LOGIQUE CALCUL COMMISSION (PAYEUR)
+      // =================================================================
+      let commissionPayer = new Prisma.Decimal(0);
+
+      // 1) Source
+      let sourceType: CommissionSourceType = CommissionSourceType.WALLET;
+      if (tx.sender?.agency) {
+        sourceType =
+          tx.sender.agency.type === AgencyType.PARTNER
+            ? CommissionSourceType.PARTNER
+            : CommissionSourceType.SUBSIDIARY;
+      }
+
+      // 2) Destination (agence du payeur)
+      const destType: CommissionDestType =
+        agent.agency!.type === AgencyType.PARTNER ? CommissionDestType.PARTNER : CommissionDestType.SUBSIDIARY;
+
+      // 3) Règle
+      const rule = await prismaTx.commissionConfig.findUnique({
+        where: {
+          clientId_sourceType_destType: {
+            clientId,
+            sourceType,
+            destType,
+          },
         },
       });
 
+      // 4) Commission payeur
+      if (rule && rule.payerShare > 0 && tx.fees.gt(0)) {
+        const sharePercent = new Prisma.Decimal(rule.payerShare).div(100);
+        commissionPayer = tx.fees.mul(sharePercent);
+      }
+
+      // 5) Crédit agence (remboursement + commission)
+      const amountToCredit = tx.amount.plus(commissionPayer);
+
+      await prismaTx.agency.update({
+        where: { id: agent.agencyId! },
+        data: {
+          balance: { increment: amountToCredit },
+          cash: { decrement: tx.amount },
+        },
+      });
+
+      // =================================================================
+      // ✅ IMPORTANT: marquer transaction payée
+      // =================================================================
       await prismaTx.transaction.update({
         where: { id: tx.id },
         data: {
@@ -165,6 +211,10 @@ export class WithdrawalsService {
         },
       });
 
+      // =================================================================
+      // ✅ FIX: s’assurer qu’une ligne Withdrawal existe TOUJOURS
+      //     (sinon processedById n’est jamais enregistré => historique agent vide)
+      // =================================================================
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
@@ -174,9 +224,20 @@ export class WithdrawalsService {
             processedAt: new Date(),
           },
         });
+      } else {
+        await prismaTx.withdrawal.create({
+          data: {
+            clientId,
+            transactionId: tx.id,
+            method: tx.payoutMethod,
+            status: WithdrawalStatus.PAID,
+            processedById: agentId,
+            processedAt: new Date(),
+          },
+        });
       }
 
-      return { success: true, message: 'Retrait validé avec succès' };
+      return { success: true, message: 'Retrait validé avec succès. Commission créditée.' };
     });
   }
 
