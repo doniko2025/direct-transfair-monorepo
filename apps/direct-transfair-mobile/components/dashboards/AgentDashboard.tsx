@@ -45,15 +45,21 @@ export default function AgentDashboard() {
               {agencyData?.balance ? Number(agencyData.balance).toLocaleString('fr-FR') : "0"} {currency}
           </Text>
       </View>
-      
+
       <Text style={styles.sectionTitle}>Opérations Guichet</Text>
       <View style={styles.grid}>
           <MenuCard title="Dépôt Client" subtitle="Recharger un compte" icon="arrow-down-circle" color="#10B981" onPress={() => router.push("/agent/deposit")} />
           <MenuCard title="Retrait Espèces" subtitle="Payer un code" icon="wallet" color="#EF4444" onPress={() => router.push("/agent/withdraw")} />
           <MenuCard title="Envoi Espèces" subtitle="Client de passage" icon="paper-plane" color="#3B82F6" onPress={() => router.push("/agent/send-cash")} />
-          
-          {/* ✅ LE BOUTON AJOUTÉ ICI */}
-          <MenuCard title="Historique & Coms" subtitle="Mes gains & logs" icon="time" color="#D97706" onPress={() => router.push("/agent/transactions")} />
+
+          {/* ✅ SÉPARATION CLAIRE : HISTORIQUE vs STATISTIQUES */}
+          <View style={{flexDirection:'row', gap:10}}>
+             {/* Liste simple des transactions */}
+             <MenuCard title="Historique" subtitle="Journal" icon="list" color="#64748B" onPress={() => router.push("/agent/transactions")} fullWidth={false} />
+             
+             {/* Nouvelle page avec Filtres & Totaux */}
+             <MenuCard title="Mes Gains" subtitle="Commissions" icon="stats-chart" color="#D97706" onPress={() => router.push("/agent/commissions")} fullWidth={false} />
+          </View>
       </View>
     </DashboardLayout>
   );

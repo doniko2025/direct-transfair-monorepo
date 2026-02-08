@@ -1,6 +1,6 @@
 //components/dashboards/CompanyDashboard.tsx
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, Modal, TextInput, ActivityIndicator, Alert, Platform } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, Modal, TextInput, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
@@ -11,7 +11,7 @@ export default function CompanyDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // Modal States
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState("");
@@ -25,7 +25,6 @@ export default function CompanyDashboard() {
   };
 
   const handleSubmitDeclare = async () => {
-      // (Même logique que ton ancien fichier)
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return alert("Montant invalide");
       setProcessing(true);
       try {
@@ -56,7 +55,7 @@ export default function CompanyDashboard() {
               </TouchableOpacity>
           </View>
           <Text style={styles.balanceValue}>{user?.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF</Text>
-          
+
           <TouchableOpacity style={styles.fundBtn} onPress={() => setModalVisible(true)}>
               <Ionicons name="card" size={20} color="#1E293B" />
               <Text style={styles.fundText}>Payer Facture / Service</Text>
@@ -66,11 +65,25 @@ export default function CompanyDashboard() {
       <Text style={styles.sectionTitle}>Gestion</Text>
       <View style={styles.grid}>
           <MenuCard title="Créer une Agence" subtitle="Ajout réseau" icon="add-circle" color="#8B5CF6" onPress={() => router.push("/(tabs)/admin/agencies/create")} />
+          
           <View style={{flexDirection:'row', gap:10}}>
             <MenuCard title="Mes Agences" subtitle="Liste" icon="storefront" color="#3B82F6" onPress={() => router.push("/(tabs)/admin/agencies")} fullWidth={false} />
             <MenuCard title="Utilisateurs" subtitle="Staff" icon="people" color="#F59E0B" onPress={() => router.push("/(tabs)/admin/users")} fullWidth={false} />
           </View>
-          <MenuCard title="Commissions" subtitle="Configs & Historique" icon="pie-chart" color="#EF4444" onPress={() => router.push("/(tabs)/admin/commissions/config")} />
+
+          {/* ✅ NOUVEAU BLOC COMMISSIONS (CONFIG + SUIVI) */}
+          <Text style={[styles.sectionTitle, {marginTop: 10}]}>Commissions & Finance</Text>
+          <View style={{flexDirection:'row', gap:10}}>
+             {/* Configuration des taux */}
+             <MenuCard title="Config. Règles" subtitle="Taux %" icon="settings" color="#64748B" onPress={() => router.push("/(tabs)/admin/commissions/config")} fullWidth={false} />
+             
+             {/* Le nouveau bouton vers le tableau de bord financier */}
+             <MenuCard title="Suivi Global" subtitle="Audit & Gains" icon="pie-chart" color="#EF4444" onPress={() => router.push("/admin/commissions")} fullWidth={false} />
+          </View>
+          
+          {/* ✅ NOUVEAU : Configuration des Taux de Change */}
+          <MenuCard title="Taux de Change" subtitle="Devises & Conversion" icon="cash" color="#059669" onPress={() => router.push("/(tabs)/admin/rates")} />
+
       </View>
 
       {/* MODAL */}
@@ -80,7 +93,7 @@ export default function CompanyDashboard() {
                 <Text style={styles.modalTitle}>Payer une Facture</Text>
                 <TextInput style={styles.input} value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Montant (FCFA)" />
                 <TextInput style={styles.input} value={refBancaire} onChangeText={setRefBancaire} placeholder="Référence Virement" />
-                
+
                 <TouchableOpacity style={styles.confirmBtn} onPress={handleSubmitDeclare} disabled={processing}>
                     {processing ? <ActivityIndicator color="#FFF"/> : <Text style={styles.confirmText}>VALIDER</Text>}
                 </TouchableOpacity>
@@ -102,8 +115,6 @@ const styles = StyleSheet.create({
   fundText: { color: '#1E293B', fontWeight: '700', fontSize: 13, marginLeft: 8 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 12, color: '#374151', marginTop: 20 },
   grid: { gap: 10 },
-  
-  // Modal Styles simplifiés
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20 },

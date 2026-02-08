@@ -32,14 +32,11 @@ function getBaseUrl(): string {
 function ensureAxiosHeaders(
   headers: InternalAxiosRequestConfig["headers"]
 ): AxiosHeaders {
-  // ✅ Robustesse : headers peut être undefined selon Axios + plateformes
   if (!headers) return new AxiosHeaders();
   if (headers instanceof AxiosHeaders) return headers;
   return new AxiosHeaders(headers as Record<string, string>);
 }
 
-// ✅ Robustesse : certains endpoints peuvent renvoyer soit un tableau,
-// soit un wrapper { data: [...] } (selon intercepteurs/middlewares)
 function unwrapArray<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
   if (
@@ -58,7 +55,6 @@ function toNumberSafe(value: unknown): number {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
   }
-  // Prisma Decimal peut arriver déjà "stringifié" via toJSON, sinon fallback :
   try {
     const asAny = value as any;
     if (asAny && typeof asAny === "object" && typeof asAny.toString === "function") {
@@ -71,8 +67,6 @@ function toNumberSafe(value: unknown): number {
   return 0;
 }
 
-// ✅ Normalisation non destructive : conserve tous les champs,
-// mais garantit amount/fees/total en number (utile UI)
 function normalizeTransaction(t: any): Transaction {
   return {
     ...t,
@@ -82,7 +76,6 @@ function normalizeTransaction(t: any): Transaction {
   } as Transaction;
 }
 
-// ✅ Compat AgencyType : ancien "PRIVATE" côté app → nouveau "SUBSIDIARY" côté Prisma
 function normalizeAgencyPayload(data: CreateAgencyPayload): CreateAgencyPayload {
   const type = (data as any)?.type;
   if (type === "PRIVATE") {
@@ -94,7 +87,7 @@ function normalizeAgencyPayload(data: CreateAgencyPayload): CreateAgencyPayload 
 class API {
   public http: AxiosInstance;
   private token: string | null = null;
-  private tenant = "DONIKO";
+  private tenant = "DONIKO"; 
 
   constructor() {
     this.http = axios.create({
@@ -131,11 +124,15 @@ class API {
   async register(data: RegisterPayload): Promise<void> {
     await this.http.post("/auth/register", data);
   }
-  async login(data: LoginPayload, tenantCode?: string): Promise<LoginResponse> {
-    if (tenantCode) this.setTenant(tenantCode);
+  
+  // ✅ MODIFICATION : Suppression du paramètre tenantCode
+  async login(data: LoginPayload): Promise<LoginResponse> {
+    // On n'a plus besoin du code société ici.
+    // Le backend identifie l'utilisateur via son email.
     const res = await this.http.post<LoginResponse>("/auth/login", data);
     return res.data;
   }
+  
   async getMe(): Promise<AuthUser> {
     const res = await this.http.get<AuthUser>("/auth/me");
     return res.data;
@@ -207,7 +204,6 @@ class API {
     return res.data;
   }
 
-  // ✅ NOUVELLE MÉTHODE AJOUTÉE : Historique filtré par période
   async getCommissionHistory(period: string): Promise<any[]> {
     const res = await this.http.get(`/commissions/history?period=${period}`);
     return unwrapArray<any>(res.data);

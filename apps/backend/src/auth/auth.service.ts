@@ -104,7 +104,8 @@ export class AuthService {
 
   async register(dto: RegisterDto) {
     const email = normalizeEmail(dto.email);
-    const existingUser = await this.users.findByEmail(email);
+    // On vérifie l'email globalement (SaaS)
+    const existingUser = await this.prisma.user.findUnique({ where: { email } });
     if (existingUser) throw new ConflictException('Cet email est déjà utilisé.');
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -154,14 +155,14 @@ export class AuthService {
   // ---------------------------------------------------------
   async login(
     dto: LoginDto,
-    _tenantCode?: string,
+    _tenantCode?: string, // On garde le paramètre pour la compatibilité mais on l'ignore
   ): Promise<{ access_token: string; user: PublicUser }> {
     const user = await this.validateUser(dto.email, dto.password);
     if (!user) {
       throw new UnauthorizedException('Identifiants incorrects');
     }
 
-    // ✅ SECURISATION DU CLIENT ID
+    // ✅ SÉCURISATION DU CLIENT ID
     const safeClientId = (user.clientId !== undefined && user.clientId !== null) 
       ? user.clientId 
       : null;
@@ -179,10 +180,18 @@ export class AuthService {
 
   private async validateUser(email: string, password: string): Promise<User | null> {
     const normalizedEmail = normalizeEmail(email);
-    const user = await this.users.findByEmail(normalizedEmail);
+    
+    // ✅ Logique SaaS : On cherche l'utilisateur globalement par email.
+    // L'email doit être unique dans la table User pour que cela fonctionne parfaitement.
+    const user = await this.prisma.user.findUnique({
+        where: { email: normalizedEmail }
+    });
+
     if (!user) return null;
+    
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) return null;
+    
     return user;
   }
 
@@ -195,14 +204,14 @@ export class AuthService {
             agency: { select: { id: true, name: true, currency: true } } 
         }
     });
-    
+
     if (!user) throw new NotFoundException('Utilisateur introuvable');
-    
+
     // On force le typage pour inclure les objets imbriqués dans la réponse JSON
     const publicUser: any = toPublicUser(user);
     publicUser.client = (user as any).client;
     publicUser.agency = (user as any).agency;
-    
+
     return publicUser;
   }
 

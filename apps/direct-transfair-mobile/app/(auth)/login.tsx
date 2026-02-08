@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/(auth)/login.tsx
+// apps/direct-transfair-mobile/app/(auth)/login.tsx
 import React, { useState } from "react";
 import {
   View,
@@ -22,7 +22,6 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantCode, setTenantCode] = useState("");
 
   const showAlert = (title: string, msg: string) => {
     if (Platform.OS === "web") window.alert(`${title}: ${msg}`);
@@ -36,12 +35,12 @@ export default function LoginScreen() {
     }
 
     try {
-      // ✅ IMPORTANT : si vide => undefined (ne pas forcer DONIKO ici)
-      const code = tenantCode.trim().toUpperCase();
-      await login({ email: email.trim(), password }, code.length ? code : undefined);
-      // Pas besoin de router.replace, l'AuthProvider le fait
+      // ✅ SIMPLIFIÉ : Plus besoin de code société (tenantCode).
+      // Le backend trouve l'utilisateur par email.
+      // Si votre fonction login attend toujours 2 arguments, on passe undefined pour le second.
+      await login({ email: email.trim(), password });
     } catch (e: any) {
-      const msg = e.response?.data?.message || "Identifiants ou Code Société incorrects.";
+      const msg = e.response?.data?.message || "Identifiants incorrects.";
       showAlert("Erreur de connexion", Array.isArray(msg) ? msg[0] : msg);
     }
   };
@@ -56,20 +55,7 @@ export default function LoginScreen() {
           <Text style={styles.title}>Direct Transf'air</Text>
           <Text style={styles.subtitle}>Connexion SaaS</Text>
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Code Société (Optionnel)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: FLASH2026"
-              placeholderTextColor="#94A3B8"
-              autoCapitalize="characters"
-              value={tenantCode}
-              onChangeText={setTenantCode}
-            />
-            <Text style={styles.hint}>
-              Laissez vide pour Super-Admin. Pour une société, le code sera détecté automatiquement après login.
-            </Text>
-          </View>
+          {/* ❌ CHAMP CODE SOCIÉTÉ SUPPRIMÉ ICI */}
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Email</Text>
