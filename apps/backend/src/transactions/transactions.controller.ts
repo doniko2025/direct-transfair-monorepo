@@ -40,7 +40,6 @@ export class TransactionsController {
       const user = req.user;
       if (!user) throw new ForbiddenException("Non authentifié");
       
-      // 🛑 MODIFICATION : SUPER_ADMIN EXCLU
       if (user.role === 'SUPER_ADMIN') {
           throw new ForbiddenException("Le Super Admin ne peut pas s'auto-alimenter. Veuillez recevoir un paiement B2B.");
       }
@@ -69,10 +68,9 @@ export class TransactionsController {
   }
 
   // =========================================================
-  // 🏦 FLUX B2B (NOUVEAU)
+  // 🏦 FLUX B2B
   // =========================================================
 
-  // ✅ 1. Déclarer un virement (Admin Société)
   @Post('b2b/declare')
   async declareTransfer(@Req() req: AuthedRequest, @Body() body: { amount: number, ref: string }) {
       const user = req.user;
@@ -82,8 +80,7 @@ export class TransactionsController {
       return this.transactionsService.declareBankTransfer(user.id, body.amount, body.ref);
   }
 
-  // ✅ 2. Valider un virement (Super Admin)
-  @UseGuards(AdminGuard) // Sécurité Admin
+  @UseGuards(AdminGuard) 
   @Patch('b2b/validate/:id')
   async validateTransfer(@Req() req: AuthedRequest, @Param('id') id: string) {
       const user = req.user;
@@ -95,7 +92,6 @@ export class TransactionsController {
   // AUTRES ROUTES
   // =========================================================
 
-  // ----- ADMIN -----
   @UseGuards(AdminGuard)
   @Get('admin/all')
   async adminFindAll(@Req() req: AuthedRequest) {
@@ -122,7 +118,6 @@ export class TransactionsController {
     return this.transactionsService.adminUpdateStatusForAdmin(userId, id, dto);
   }
 
-  // ----- AGENT -----
   @Post('deposit')
   async deposit(@Req() req: AuthedRequest, @Body() dto: CreateDepositDto) {
     const user = req.user;
@@ -132,8 +127,6 @@ export class TransactionsController {
     }
     return this.transactionsService.deposit(userId, dto);
   }
-
-  // ----- USER (ACTIONS) -----
   
   @Post()
   async create(@Req() req: AuthedRequest, @Body() dto: CreateTransactionDto) {
@@ -147,14 +140,9 @@ export class TransactionsController {
     return this.transactionsService.cancel(userId, id);
   }
 
-  // ----- LECTURE -----
   @Get()
   async findMine(@Req() req: AuthedRequest) {
     const userId = this.getUserId(req);
-    
-    // ✅ LOG AJOUTÉ ICI POUR LE DÉBOGAGE
-    console.log(`[CONTROLLER] GET /transactions called by user ${userId}`);
-    
     return this.transactionsService.findForUser(userId);
   }
 

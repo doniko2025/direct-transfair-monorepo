@@ -21,9 +21,8 @@ export default function AgentWithdrawScreen() {
   };
 
   const handleCheckCode = async () => {
-    // ✅ Code à 9 chiffres uniquement
-    if (code.length !== 9) {
-        showAlert("Erreur", "Le code doit contenir 9 chiffres");
+    if (code.length < 9) {
+        showAlert("Erreur", "Le code doit contenir au moins 9 chiffres");
         return;
     }
 
@@ -40,8 +39,24 @@ export default function AgentWithdrawScreen() {
     }
   };
 
+  const getAmountData = () => {
+      if (!transaction) return { val: 0, curr: '' };
+      // ✅ PRIORITÉ AU MONTANT CONVERTI (GNF)
+      if (transaction.receivedAmount && Number(transaction.receivedAmount) > 0) {
+          return { 
+              val: Number(transaction.receivedAmount).toLocaleString('fr-FR', {maximumFractionDigits: 0}), 
+              curr: transaction.targetCurrency || 'GNF' 
+          };
+      }
+      return { 
+          val: Number(transaction.amount).toLocaleString('fr-FR'), 
+          curr: transaction.currency 
+      };
+  };
+
   const handlePayOut = () => {
-      const msg = `Confirmez-vous avoir remis ${transaction.amount} ${transaction.currency} au client ?`;
+      const { val, curr } = getAmountData();
+      const msg = `Confirmez-vous avoir remis ${val} ${curr} au client ?`;
 
       if (Platform.OS === 'web') {
           if (window.confirm(`CONFIRMATION\n\n${msg}`)) {
@@ -92,7 +107,7 @@ export default function AgentWithdrawScreen() {
         {!transaction ? (
             <View style={styles.centerBox}>
                 <Ionicons name="qr-code-outline" size={80} color="#065F46" style={{marginBottom: 20, opacity: 0.8}} />
-                <Text style={styles.label}>Entrez le code de retrait (9 chiffres)</Text>
+                <Text style={styles.label}>Entrez le code de retrait</Text>
 
                 <TextInput 
                     style={styles.codeInput} 
@@ -101,7 +116,7 @@ export default function AgentWithdrawScreen() {
                     value={code}
                     onChangeText={setCode}
                     keyboardType="number-pad"
-                    maxLength={9}
+                    maxLength={12}
                 />
 
                 <Pressable 
@@ -123,43 +138,58 @@ export default function AgentWithdrawScreen() {
                     {/* MONTANT À PAYER */}
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Montant à payer</Text>
-                        <Text style={styles.amountValue}>{transaction.amount} <Text style={{fontSize:16}}>{transaction.currency}</Text></Text>
+                        <Text style={styles.amountValue}>
+                            {getAmountData().val} <Text style={{fontSize:16}}>{getAmountData().curr}</Text>
+                        </Text>
                     </View>
                     <View style={styles.divider} />
                     
-                    {/* INFO EXPÉDITEUR */}
+                    {/* ✅ SECTION BÉNÉFICIAIRE (NOUVEAU) */}
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Bénéficiaire (Vérifier ID)</Text>
+                    </View>
                     <View style={styles.detailRowSmall}>
-                        <Text style={styles.detailLabelSmall}>Expéditeur</Text>
-                        <Text style={styles.detailValueSmall}>{transaction.senderName}</Text>
+                        <Text style={styles.detailLabelSmall}>Nom complet</Text>
+                        <Text style={styles.detailValueSmall}>{transaction.beneficiary?.fullName || "Non spécifié"}</Text>
+                    </View>
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Téléphone</Text>
+                        <Text style={styles.detailValueSmall}>{transaction.beneficiary?.phone || "-"}</Text>
                     </View>
 
-                    {/* ✅ AJOUT : PAYS D'ORIGINE */}
+                    <View style={styles.divider} />
+
+                    {/* SECTION EXPÉDITEUR */}
+                    <View style={styles.sectionHeader}>
+                        <Text style={styles.sectionTitle}>Expéditeur</Text>
+                    </View>
+                    <View style={styles.detailRowSmall}>
+                        <Text style={styles.detailLabelSmall}>Nom</Text>
+                        <Text style={styles.detailValueSmall}>{transaction.senderName}</Text>
+                    </View>
                     <View style={styles.detailRowSmall}>
                         <Text style={styles.detailLabelSmall}>Pays d'origine</Text>
                         <View style={{flexDirection:'row', alignItems:'center'}}>
                             <Ionicons name="flag" size={14} color="#64748B" style={{marginRight:5}} />
-                            <Text style={styles.detailValueSmall}>{transaction.originCountry || "Sénégal"}</Text> 
+                            {/* ✅ CORRECTION PAYS : Affiche Sénégal si XOF */}
+                            <Text style={styles.detailValueSmall}>{transaction.originCountry}</Text> 
                         </View>
                     </View>
 
-                    {/* ✅ AJOUT : NUMÉRO TRANSACTION */}
-                    <View style={styles.detailRowSmall}>
-                        <Text style={styles.detailLabelSmall}>Réf. Transaction</Text>
-                        <Text style={[styles.detailValueSmall, {fontSize: 12, color: '#64748B'}]}>TX-{code}</Text>
-                    </View>
+                    <View style={[styles.divider, {marginTop:10}]} />
 
-                    {/* STATUT */}
+                    {/* INFO TECH */}
                     <View style={styles.detailRowSmall}>
-                        <Text style={styles.detailLabelSmall}>Statut</Text>
-                        <View style={{backgroundColor:'#DBEAFE', paddingHorizontal:8, paddingVertical:2, borderRadius:4}}>
-                            <Text style={{color:'#1E40AF', fontWeight:'bold', fontSize:12}}>{transaction.status}</Text>
-                        </View>
+                        <Text style={styles.detailLabelSmall}>Réf.</Text>
+                        <Text style={[styles.detailValueSmall, {fontSize: 12, color: '#64748B'}]}>
+                            {transaction.reference}
+                        </Text>
                     </View>
                 </View>
 
                 <View style={styles.warningBox}>
                     <Ionicons name="warning" size={20} color="#B45309" style={{marginBottom:5}} />
-                    <Text style={styles.warningText}>Vérifiez l'identité du client avant de remettre les fonds.</Text>
+                    <Text style={styles.warningText}>Vérifiez la pièce d'identité du bénéficiaire.</Text>
                 </View>
 
                 <Pressable 
@@ -208,11 +238,14 @@ const styles = StyleSheet.create({
     detailRow: { alignItems: 'center', marginBottom: 15 },
     amountValue: { fontSize: 32, fontWeight: '900', color: '#1F2937' },
 
-    divider: { height: 1, backgroundColor: '#F1F5F9', width: '100%', marginVertical: 15 },
+    divider: { height: 1, backgroundColor: '#F1F5F9', width: '100%', marginVertical: 10 },
 
-    detailRowSmall: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }, // Espace augmenté
+    sectionHeader: { marginBottom: 8, marginTop: 5 },
+    sectionTitle: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase' },
+
+    detailRowSmall: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }, 
     detailLabelSmall: { fontSize: 14, color: '#64748B' },
-    detailValueSmall: { fontSize: 16, fontWeight: '600', color: '#334155' },
+    detailValueSmall: { fontSize: 15, fontWeight: '600', color: '#334155' },
 
     warningBox: { backgroundColor: '#FFFBEB', padding: 15, borderRadius: 10, marginTop: 20, width: '100%', borderWidth: 1, borderColor: '#FCD34D', alignItems: 'center' },
     warningText: { color: '#B45309', fontWeight: '600', textAlign: 'center', fontSize: 13 },

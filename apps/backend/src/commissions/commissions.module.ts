@@ -1,4 +1,4 @@
-//apps/backend/src/commissions/commissions.module.ts
+// apps/backend/src/commissions/commissions.module.ts
 import { Module } from '@nestjs/common';
 import { CommissionsService } from './commissions.service';
 import { CommissionsController } from './commissions.controller';
@@ -8,6 +8,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [CommissionsController],
   providers: [CommissionsService],
-  exports: [CommissionsService], // 👈 C'EST CETTE LIGNE QUI AUTORISE LES AUTRES MODULES À L'UTILISER
+  exports: [CommissionsService],
 })
 export class CommissionsModule {}

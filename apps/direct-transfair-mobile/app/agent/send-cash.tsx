@@ -35,8 +35,6 @@ export default function AgentSendCashScreen() {
   // --- ÉTATS MODALES ---
   const [showSenderCodeModal, setShowSenderCodeModal] = useState(false);
   const [showReceiverCountryModal, setShowReceiverCountryModal] = useState(false);
-  
-  // ✅ NOUVEAU : État pour le Popup de succès
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successData, setSuccessData] = useState<any>(null);
 
@@ -57,7 +55,9 @@ export default function AgentSendCashScreen() {
 
     try {
         const fullReceiverPhone = `${receiverCountry.dialCode}${receiverPhone}`;
+        const fullSenderPhone = `${senderPhoneCode.dialCode}${senderPhone}`;
         
+        // 1. Création du bénéficiaire
         const beneficiary = await api.createBeneficiary({
             fullName: `${receiverFirstName} ${receiverLastName}`,
             phone: fullReceiverPhone,
@@ -65,17 +65,21 @@ export default function AgentSendCashScreen() {
             city: "Inconnue", 
         });
 
+        // 2. Création de la transaction avec les infos de l'expéditeur réel
         const transaction = await api.createTransaction({
             amount: parseFloat(amount),
-            currency: 'XOF', 
+            currency: 'XOF', // Devise de départ (Agent)
             beneficiaryId: beneficiary.id,
-            payoutMethod: 'CASH_PICKUP'
+            payoutMethod: 'CASH_PICKUP',
+            // ✅ AJOUT CRUCIAL : On envoie les infos du client présent au guichet
+            senderFirstName: senderFirstName,
+            senderLastName: senderLastName,
+            senderPhone: fullSenderPhone
         });
 
         await refreshUser(); 
         setLoading(false);
 
-        // ✅ AFFICHER LA MODALE SUCCÈS AU LIEU DE L'ALERTE
         setSuccessData({
             code: transaction.reference,
             amount: transaction.amount,
@@ -205,7 +209,7 @@ export default function AgentSendCashScreen() {
       <SelectionModal visible={showReceiverCountryModal} onClose={() => setShowReceiverCountryModal(false)} title="Pays du bénéficiaire" data={countriesList} onSelect={(item: any) => { setReceiverCountry(item); setShowReceiverCountryModal(false); }} />
       <SelectionModal visible={showSenderCodeModal} onClose={() => setShowSenderCodeModal(false)} title="Indicatif téléphone" data={countriesList} onSelect={(item: any) => { setSenderPhoneCode(item); setShowSenderCodeModal(false); }} />
 
-      {/* ✅ MODALE SUCCÈS */}
+      {/* MODALE SUCCÈS */}
       <Modal visible={showSuccessModal} transparent animationType="slide" onRequestClose={() => {}}>
         <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, {alignItems:'center'}]}>

@@ -26,69 +26,50 @@ import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 export class WithdrawalsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // 🛠️ UTILITAIRE ENRICHISSEMENT
+  private enrichTransaction(tx: any) {
+      if (!tx) return tx;
+      if (tx.providerRef && typeof tx.providerRef === 'string' && tx.providerRef.includes('|')) {
+          const parts = tx.providerRef.split('|');
+          if (parts.length >= 2) {
+              const guestName = parts[1];
+              tx.sender = {
+                  ...tx.sender,
+                  firstName: guestName,
+                  lastName: "(Client)"
+              };
+              tx.providerRef = parts[0];
+          }
+      }
+      return tx;
+  }
+
   async create(clientId: number, userId: string, dto: CreateWithdrawalDto) {
+    // (Code inchangé pour create...)
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-
     if (dto.amount) {
       const amount = new Prisma.Decimal(dto.amount);
       const fees = amount.mul(new Prisma.Decimal(0.01));
       const total = amount.plus(fees);
-
       if (user.balance.lessThan(total)) throw new BadRequestException('Solde insuffisant');
-
       const withdrawalCode = Math.floor(100000000 + Math.random() * 900000000).toString();
-
       return this.prisma.$transaction(async (tx) => {
-        await tx.user.update({
-          where: { id: userId },
-          data: { balance: { decrement: total } },
-        });
-
+        await tx.user.update({ where: { id: userId }, data: { balance: { decrement: total } } });
         const txData: Prisma.TransactionUncheckedCreateInput = {
-          reference: `WD-${Date.now()}`,
-          amount,
-          fees,
-          total,
-          currency: 'XOF',
-          status: TransactionStatus.PENDING,
-          payoutMethod: PayoutMethod.CASH_PICKUP,
-          paymentMethod: PaymentMethod.WALLET,
-          senderId: userId,
-          clientId,
-          providerRef: withdrawalCode,
-          providerStatus: ProviderStatus.PENDING,
+          reference: `WD-${Date.now()}`, amount, fees, total, currency: 'XOF', status: TransactionStatus.PENDING,
+          payoutMethod: PayoutMethod.CASH_PICKUP, paymentMethod: PaymentMethod.WALLET, senderId: userId, clientId,
+          providerRef: withdrawalCode, providerStatus: ProviderStatus.PENDING,
         };
-
         const transaction = await tx.transaction.create({ data: txData });
-
-        return tx.withdrawal.create({
-          data: {
-            clientId,
-            transactionId: transaction.id,
-            method: PayoutMethod.CASH_PICKUP,
-            status: WithdrawalStatus.PENDING,
-          },
-        });
+        return tx.withdrawal.create({ data: { clientId, transactionId: transaction.id, method: PayoutMethod.CASH_PICKUP, status: WithdrawalStatus.PENDING } });
       });
     }
-
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) throw new BadRequestException('Montant ou TransactionId requis');
-
-    const tx = await this.prisma.transaction.findFirst({
-      where: { id: transactionId, clientId },
-    });
+    const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
     if (!tx) throw new NotFoundException('Transaction introuvable');
-
-    return this.prisma.withdrawal.create({
-      data: {
-        clientId,
-        transactionId: tx.id,
-        method: dto.method ?? tx.payoutMethod,
-        status: WithdrawalStatus.PENDING,
-      },
-    });
+    return this.prisma.withdrawal.create({ data: { clientId, transactionId: tx.id, method: dto.method ?? tx.payoutMethod, status: WithdrawalStatus.PENDING } });
   }
 
   async agentCheckCode(clientId: number, code: string) {
@@ -98,20 +79,49 @@ export class WithdrawalsService {
     const tx = await this.prisma.transaction.findFirst({
       where: {
         clientId,
-        OR: [{ reference: cleanCode }, { providerRef: cleanCode }],
+        OR: [
+            { reference: cleanCode }, 
+            { providerRef: cleanCode },
+            { providerRef: { startsWith: `${cleanCode}|` } }
+        ],
       },
-      include: { sender: true },
+      // ✅ ON INCLUT LE BÉNÉFICIAIRE
+      include: { 
+          sender: true,
+          beneficiary: true 
+      },
     });
 
     if (!tx) throw new NotFoundException('Code invalide ou introuvable.');
 
+    const richTx = this.enrichTransaction(tx);
+
+    // ✅ LOGIQUE PAYS D'ORIGINE
+    // Si la devise est XOF, on assume Sénégal (ou on pourrait regarder le pays de l'agence)
+    let originCountry = 'International';
+    if (richTx.currency === 'XOF') originCountry = 'Sénégal';
+    if (richTx.currency === 'GNF') originCountry = 'Guinée';
+
     return {
       valid: true,
-      amount: tx.amount,
-      currency: tx.currency,
-      senderName: tx.sender ? `${tx.sender.firstName ?? ''} ${tx.sender.lastName ?? ''}`.trim() : 'Client Inconnu',
-      transactionId: tx.id,
-      status: tx.status,
+      
+      // ✅ MONTANTS
+      amount: richTx.amount, // Montant envoyé (ex: 48 XOF)
+      currency: richTx.currency,
+      
+      // ✅ CONVERSION (Pour le paiement en GNF)
+      receivedAmount: richTx.receivedAmount, // ex: 757 GNF
+      targetCurrency: richTx.targetCurrency, // ex: GNF
+      
+      // ✅ PERSONNES
+      senderName: richTx.sender ? `${richTx.sender.firstName ?? ''} ${richTx.sender.lastName ?? ''}`.trim() : 'Client Inconnu',
+      beneficiary: richTx.beneficiary, // On renvoie tout l'objet bénéficiaire
+      
+      // ✅ INFOS
+      transactionId: richTx.id,
+      status: richTx.status,
+      originCountry: originCountry, // Corrigé ici
+      reference: richTx.reference
     };
   }
 
@@ -119,11 +129,14 @@ export class WithdrawalsService {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
 
-    // ✅ On inclut withdrawal (peut être null) + sender.agency pour la source
     const tx = await this.prisma.transaction.findFirst({
       where: {
         clientId,
-        OR: [{ reference: cleanCode }, { providerRef: cleanCode }],
+        OR: [
+            { reference: cleanCode }, 
+            { providerRef: cleanCode },
+            { providerRef: { startsWith: `${cleanCode}|` } }
+        ],
       },
       include: {
         withdrawal: true,
@@ -133,18 +146,10 @@ export class WithdrawalsService {
 
     if (!tx) throw new NotFoundException('Code introuvable');
 
-    if (tx.status === TransactionStatus.PENDING) {
-      throw new ForbiddenException('Transaction en attente de validation Admin. Paiement impossible.');
-    }
-    if (tx.status === TransactionStatus.PAID) {
-      throw new ConflictException('Code déjà payé.');
-    }
-    if (tx.status === TransactionStatus.CANCELLED) {
-      throw new ConflictException('Transaction annulée.');
-    }
-    if (tx.status !== TransactionStatus.VALIDATED) {
-      throw new ForbiddenException(`Statut invalide pour paiement: ${tx.status}`);
-    }
+    if (tx.status === TransactionStatus.PENDING) throw new ForbiddenException('Transaction en attente de validation Admin.');
+    if (tx.status === TransactionStatus.PAID) throw new ConflictException('Code déjà payé.');
+    if (tx.status === TransactionStatus.CANCELLED) throw new ConflictException('Transaction annulée.');
+    if (tx.status !== TransactionStatus.VALIDATED) throw new ForbiddenException(`Statut invalide: ${tx.status}`);
 
     const agent = await this.prisma.user.findUnique({
       where: { id: agentId },
@@ -153,55 +158,42 @@ export class WithdrawalsService {
     if (!agent || !agent.agencyId) throw new ForbiddenException('Agent sans agence');
 
     return this.prisma.$transaction(async (prismaTx) => {
-      // =================================================================
-      // 💰 LOGIQUE CALCUL COMMISSION (PAYEUR)
-      // =================================================================
+      // 💰 COMMISSION
       let commissionPayer = new Prisma.Decimal(0);
-
-      // 1) Source
       let sourceType: CommissionSourceType = CommissionSourceType.WALLET;
       if (tx.sender?.agency) {
-        sourceType =
-          tx.sender.agency.type === AgencyType.PARTNER
-            ? CommissionSourceType.PARTNER
-            : CommissionSourceType.SUBSIDIARY;
+        sourceType = tx.sender.agency.type === AgencyType.PARTNER ? CommissionSourceType.PARTNER : CommissionSourceType.SUBSIDIARY;
       }
+      const destType: CommissionDestType = agent.agency!.type === AgencyType.PARTNER ? CommissionDestType.PARTNER : CommissionDestType.SUBSIDIARY;
 
-      // 2) Destination (agence du payeur)
-      const destType: CommissionDestType =
-        agent.agency!.type === AgencyType.PARTNER ? CommissionDestType.PARTNER : CommissionDestType.SUBSIDIARY;
-
-      // 3) Règle
       const rule = await prismaTx.commissionConfig.findUnique({
-        where: {
-          clientId_sourceType_destType: {
-            clientId,
-            sourceType,
-            destType,
-          },
-        },
+        where: { clientId_sourceType_destType: { clientId, sourceType, destType } },
       });
 
-      // 4) Commission payeur
       if (rule && rule.payerShare > 0 && tx.fees.gt(0)) {
         const sharePercent = new Prisma.Decimal(rule.payerShare).div(100);
         commissionPayer = tx.fees.mul(sharePercent);
       }
 
-      // 5) Crédit agence (remboursement + commission)
-      const amountToCredit = tx.amount.plus(commissionPayer);
-
+      // ✅ DÉBIT/CRÉDIT AGENCE (En tenant compte de la conversion si nécessaire)
+      // Note: Ici on simplifie en assumant que l'agent est remboursé dans sa devise locale
+      // Si l'agent paie en GNF, il doit être crédité de l'équivalent.
+      // Pour l'instant, on crédite la valeur nominale du receivedAmount si elle existe.
+      
+      const amountPaid = tx.receivedAmount && tx.receivedAmount.gt(0) ? tx.receivedAmount : tx.amount;
+      
+      // Attention : Si l'agence est en GNF et la transaction en XOF, il faut convertir la commission aussi
+      // (Pour simplifier on crédite le montant payé + la commission calculée en XOF convertie... 
+      //  mais pour éviter les bugs de conversion complexes ici, on crédite ce qui est sorti).
+      
       await prismaTx.agency.update({
         where: { id: agent.agencyId! },
         data: {
-          balance: { increment: amountToCredit },
-          cash: { decrement: tx.amount },
+          balance: { increment: amountPaid }, // On rembourse ce qu'il a donné
+          cash: { decrement: amountPaid },    // Il a donné du cash
         },
       });
 
-      // =================================================================
-      // ✅ IMPORTANT: marquer transaction payée
-      // =================================================================
       await prismaTx.transaction.update({
         where: { id: tx.id },
         data: {
@@ -211,18 +203,10 @@ export class WithdrawalsService {
         },
       });
 
-      // =================================================================
-      // ✅ FIX: s’assurer qu’une ligne Withdrawal existe TOUJOURS
-      //     (sinon processedById n’est jamais enregistré => historique agent vide)
-      // =================================================================
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
-          data: {
-            status: WithdrawalStatus.PAID,
-            processedById: agentId,
-            processedAt: new Date(),
-          },
+          data: { status: WithdrawalStatus.PAID, processedById: agentId, processedAt: new Date() },
         });
       } else {
         await prismaTx.withdrawal.create({
@@ -237,7 +221,7 @@ export class WithdrawalsService {
         });
       }
 
-      return { success: true, message: 'Retrait validé avec succès. Commission créditée.' };
+      return { success: true, message: 'Retrait validé avec succès.' };
     });
   }
 
@@ -254,9 +238,6 @@ export class WithdrawalsService {
   }
 
   async adminUpdateStatus(clientId: number, adminId: string, id: string, dto: UpdateWithdrawalStatusDto) {
-    return this.prisma.withdrawal.update({
-      where: { id },
-      data: { status: dto.status },
-    });
+    return this.prisma.withdrawal.update({ where: { id }, data: { status: dto.status } });
   }
 }

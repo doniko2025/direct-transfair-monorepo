@@ -57,7 +57,47 @@ export class TransactionsService {
   ) {}
 
   // =================================================================
-  // 🏦 PAIEMENT B2B (SOCIÉTÉ -> SUPER ADMIN)
+  // 🛠️ UTILITAIRE : ENRICHIR LA TRANSACTION AVEC LE NOM CACHÉ
+  // =================================================================
+  // ✅ FIX TS (sans changer la logique): ne pas muter l'objet Prisma,
+  // on clone la transaction + sender avant enrichissement.
+  private enrichTransaction(tx: any): any {
+    if (!tx) return tx;
+
+    // ✅ clone shallow + clone sender (si présent) pour éviter mutation Prisma
+    const cloned: any = {
+      ...tx,
+      sender: tx.sender ? { ...tx.sender } : tx.sender,
+    };
+
+    // Si providerRef contient un "|" (ex: "123456|Moussa Diop")
+    if (
+      cloned.providerRef &&
+      typeof cloned.providerRef === 'string' &&
+      cloned.providerRef.includes('|')
+    ) {
+      const parts = cloned.providerRef.split('|');
+      if (parts.length >= 2) {
+        const guestName = parts[1]; // "Moussa Diop"
+
+        // On simule un objet sender avec le nom du client
+        cloned.sender = {
+          ...cloned.sender,
+          firstName: guestName,
+          lastName: '(Client)',
+          agency: cloned.sender?.agency,
+        };
+
+        // On nettoie la référence pour l'affichage
+        cloned.providerRef = parts[0];
+      }
+    }
+
+    return cloned;
+  }
+
+  // =================================================================
+  // 🏦 PAIEMENT B2B
   // =================================================================
 
   async declareBankTransfer(
@@ -70,12 +110,8 @@ export class TransactionsService {
       throw new ForbiddenException('Admin société introuvable');
 
     const amountDec = new Prisma.Decimal(amount);
-
-    if (admin.balance.lessThan(amountDec)) {
-      throw new ForbiddenException(
-        'Solde insuffisant pour régler les frais de service.',
-      );
-    }
+    if (admin.balance.lessThan(amountDec))
+      throw new ForbiddenException('Solde insuffisant.');
 
     return this.prisma.transaction.create({
       data: {
@@ -123,7 +159,7 @@ export class TransactionsService {
         data: { balance: { increment: tx.amount } },
       });
 
-      const validatedTx = await prismaTx.transaction.update({
+      return prismaTx.transaction.update({
         where: { id: transactionId },
         data: {
           status: TransactionStatus.PAID,
@@ -131,8 +167,6 @@ export class TransactionsService {
           providerStatus: ProviderStatus.SUCCESS,
         },
       });
-
-      return validatedTx;
     });
   }
 
@@ -196,18 +230,22 @@ export class TransactionsService {
   // =================================================================
   // 🚀 CRÉATION TRANSACTION (ENVOI)
   // =================================================================
-  async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
+  async create(
+    senderId: string,
+    dto: CreateTransactionDto,
+  ): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
       where: { id: senderId },
       include: { agency: true },
     });
 
     if (!user) throw new NotFoundException('User not found');
-    if (!user.clientId) throw new ForbiddenException('User must belong to a client');
+    if (!user.clientId)
+      throw new ForbiddenException('User must belong to a client');
 
     const clientId = user.clientId;
     const beneficiary = await this.prisma.beneficiary.findFirst({
-      where: { id: dto.beneficiaryId, userId: senderId },
+      where: { id: dto.beneficiaryId },
     });
     if (!beneficiary) throw new NotFoundException('Beneficiary not found');
 
@@ -239,10 +277,7 @@ export class TransactionsService {
         }
         await tx.agency.update({
           where: { id: user.agencyId },
-          data: {
-            balance: { decrement: total },
-            cash: { increment: total },
-          },
+          data: { balance: { decrement: total }, cash: { increment: total } },
         });
         currency = user.agency.currency || 'XOF';
       } else {
@@ -257,11 +292,19 @@ export class TransactionsService {
         });
       }
 
+      // --- DEVISE ---
       let targetCurrency = currency;
-      const paysCible = beneficiary.country?.toLowerCase().trim();
-
-      if (paysCible === 'guinée' || paysCible === 'guinea' || paysCible === 'gn') {
+      const paysCible = beneficiary.country?.toLowerCase().trim() || '';
+      if (
+        paysCible.includes('guin') ||
+        paysCible === 'gn' ||
+        paysCible === 'conakry'
+      ) {
         targetCurrency = 'GNF';
+      } else if (
+        ['senegal', 'mali', 'benin', 'togo', "cote d'ivoire"].includes(paysCible)
+      ) {
+        targetCurrency = 'XOF';
       }
 
       const convertedAmountVal = await this.ratesService.convert(
@@ -276,8 +319,8 @@ export class TransactionsService {
       let status: TransactionStatus = TransactionStatus.PENDING;
       let providerStatus: ProviderStatus = ProviderStatus.PENDING;
       let paidAt: Date | null = null;
-      const transactionRef = this.generateReference();
       let withdrawalCode: string | null = null;
+      const transactionRef = this.generateReference();
 
       if (recipientUser) {
         await tx.user.update({
@@ -287,7 +330,6 @@ export class TransactionsService {
         status = TransactionStatus.PAID;
         providerStatus = ProviderStatus.SUCCESS;
         paidAt = new Date();
-        withdrawalCode = null;
       } else {
         const validationThreshold = new Prisma.Decimal(500000);
         status = amount.lte(validationThreshold)
@@ -296,34 +338,41 @@ export class TransactionsService {
         withdrawalCode = transactionRef;
       }
 
+      // ✅ STOCKAGE NOM CACHÉ
+      let storedProviderRef = withdrawalCode;
+      if (withdrawalCode && dto.senderFirstName) {
+        const senderFullName = `${dto.senderFirstName} ${dto.senderLastName}`;
+        storedProviderRef = `${withdrawalCode}|${senderFullName}`;
+      }
+
       const data: Prisma.TransactionUncheckedCreateInput = {
         reference: transactionRef,
         amount,
         fees,
         total,
         currency,
-
         targetCurrency,
         receivedAmount,
         exchangeRate,
-
         payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
         status: status,
         senderId,
         beneficiaryId: beneficiary.id,
         recipientId: recipientUser ? recipientUser.id : null,
         clientId,
-        providerRef: withdrawalCode,
+        providerRef: storedProviderRef,
         providerStatus: providerStatus,
         paidAt: paidAt,
       };
 
       const transaction = await tx.transaction.create({ data });
-
       return transaction;
     });
   }
 
+  // =================================================================
+  // 📥 DEPOT
+  // =================================================================
   async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
     const agent = await this.prisma.user.findUnique({
       where: { id: agentId },
@@ -335,13 +384,12 @@ export class TransactionsService {
     }
 
     const amountDecimal = new Prisma.Decimal(dto.amount);
+
     if (agent.agency.balance.lessThan(amountDecimal)) {
-      throw new ForbiddenException(
-        'Solde virtuel agence insuffisant pour effectuer ce dépôt.',
-      );
+      throw new ForbiddenException('Solde virtuel agence insuffisant.');
     }
 
-    const cleanPhone = dto.userPhone.replace(/[^0-9]/g, '');
+    const cleanPhone = (dto.userPhone || '').replace(/[^0-9]/g, '');
     const clientUser = await this.prisma.user.findFirst({
       where: { phone: { contains: cleanPhone }, clientId: agent.clientId },
     });
@@ -351,7 +399,9 @@ export class TransactionsService {
     }
 
     const agencyId = agent.agencyId;
-    const clientId = agent.clientId!;
+    const clientId = agent.clientId;
+
+    if (!clientId) throw new ForbiddenException('Agence sans client associé');
 
     return this.prisma.$transaction(async (tx) => {
       await tx.agency.update({
@@ -378,9 +428,10 @@ export class TransactionsService {
         paymentMethod: PaymentMethod.CASH,
         senderId: agent.id,
         recipientId: clientUser.id,
-        clientId,
+        clientId: clientId,
         paidAt: new Date(),
         providerStatus: ProviderStatus.SUCCESS,
+        providerRef: `DEP-${Date.now()}`,
       };
 
       return tx.transaction.create({ data: txData });
@@ -389,8 +440,6 @@ export class TransactionsService {
 
   async adminFundSelf(user: AuthUserPayload, amount: number) {
     if (!user?.id) throw new BadRequestException('Utilisateur invalide');
-    if (!Number.isFinite(amount) || amount <= 0)
-      throw new BadRequestException('Montant positif requis');
     return this.fundAdminWallet(user.id, amount);
   }
 
@@ -403,7 +452,9 @@ export class TransactionsService {
   }
 
   async refillAgency(adminId: string, agencyId: string, amountToSend: number) {
-    const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
     const agency = await this.prisma.agency.findUnique({
       where: { id: agencyId },
     });
@@ -445,33 +496,24 @@ export class TransactionsService {
     };
   }
 
-  // ✅ CORRECTION MAJEURE : inclut aussi les transactions dont le retrait a été
-  // payé/traité par cet agent via Withdrawal.processedById.
-  async findForUser(userId: string): Promise<Transaction[]> {
+  // ✅ CORRECTION ICI : "Promise<any[]>" permet d'accepter les objets enrichis
+  async findForUser(userId: string): Promise<any[]> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, clientId: true },
     });
     if (!user) throw new NotFoundException('User not found');
 
-    // Sécurité multi-tenant : si pas SUPER_ADMIN, on filtre au clientId.
     const clientFilter =
       user.role === 'SUPER_ADMIN' ? {} : { clientId: user.clientId ?? -1 };
 
-    return this.prisma.transaction.findMany({
+    const transactions = await this.prisma.transaction.findMany({
       where: {
         ...clientFilter,
         OR: [
-          { senderId: userId }, // j'ai envoyé
-          { recipientId: userId }, // j'ai reçu (wallet)
-          {
-            // ✅ j'ai payé le retrait (agent)
-            withdrawal: {
-              is: {
-                processedById: userId,
-              },
-            },
-          },
+          { senderId: userId },
+          { recipientId: userId },
+          { withdrawal: { is: { processedById: userId } } },
         ],
       },
       orderBy: { createdAt: 'desc' },
@@ -481,13 +523,12 @@ export class TransactionsService {
         beneficiary: true,
       },
     });
+
+    return transactions.map((tx) => this.enrichTransaction(tx));
   }
 
-  // ✅ CORRECTION : autorise lecture si :
-  // - senderId = userId
-  // - recipientId = userId
-  // - withdrawal.processedById = userId (agent payeur)
-  async findOneForUser(id: string, userId: string): Promise<Transaction> {
+  // ✅ CORRECTION ICI : "Promise<any>" permet d'accepter l'objet enrichi
+  async findOneForUser(id: string, userId: string): Promise<any> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, role: true, clientId: true },
@@ -504,11 +545,7 @@ export class TransactionsService {
         OR: [
           { senderId: userId },
           { recipientId: userId },
-          {
-            withdrawal: {
-              is: { processedById: userId },
-            },
-          },
+          { withdrawal: { is: { processedById: userId } } },
         ],
       },
       include: {
@@ -519,26 +556,30 @@ export class TransactionsService {
     });
 
     if (!tx) throw new NotFoundException('Transaction not found');
-    return tx;
+    return this.enrichTransaction(tx);
   }
 
-  async adminFindAllForAdmin(adminId: string): Promise<Transaction[]> {
-    const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
+  // ✅ CORRECTION ICI : "Promise<any[]>"
+  async adminFindAllForAdmin(adminId: string): Promise<any[]> {
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
 
+    let transactions: any[] = [];
     if (admin?.role === 'SUPER_ADMIN') {
-      return this.prisma.transaction.findMany({
+      transactions = await this.prisma.transaction.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: { sender: true, beneficiary: true, client: true, withdrawal: true },
+      });
+    } else if (admin?.clientId) {
+      transactions = await this.prisma.transaction.findMany({
+        where: { clientId: admin.clientId },
         orderBy: { createdAt: 'desc' },
         include: { sender: true, beneficiary: true, client: true, withdrawal: true },
       });
     }
 
-    if (!admin?.clientId) return [];
-
-    return this.prisma.transaction.findMany({
-      where: { clientId: admin.clientId },
-      orderBy: { createdAt: 'desc' },
-      include: { sender: true, beneficiary: true, client: true, withdrawal: true },
-    });
+    return transactions.map((tx) => this.enrichTransaction(tx));
   }
 
   async adminUpdateStatusForAdmin(
@@ -547,7 +588,6 @@ export class TransactionsService {
     dto: UpdateTransactionStatusDto,
   ): Promise<Transaction> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-
     if (!admin) throw new ForbiddenException('Utilisateur inconnu');
 
     const tx = await this.prisma.transaction.findUnique({ where: { id } });

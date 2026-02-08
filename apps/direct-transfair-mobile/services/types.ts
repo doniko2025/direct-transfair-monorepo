@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/services/types.ts
+
 // --- ENUMS & TYPES DE BASE ---
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
@@ -22,6 +23,8 @@ export interface AuthUser {
   clientId: number;
   agencyId?: string;
   balance?: number;
+  
+  // Relations
   client?: {
     name: string;
     code: string;
@@ -29,6 +32,9 @@ export interface AuthUser {
   };
   agency?: Agency;
 }
+
+// Alias utile si d'autres fichiers importent "User"
+export type User = AuthUser;
 
 export interface LoginPayload {
   email: string;
@@ -94,10 +100,14 @@ export interface Transaction {
   id: string;
   reference: string;
 
-  // montants
+  // Montants
   amount: number;
   fees: number;
   total: number;
+
+  // Champs calculés pour l'affichage (Conversion)
+  receivedAmount?: number;
+  targetCurrency?: string;
 
   currency: string;
   status: TransactionStatus;
@@ -109,9 +119,12 @@ export interface Transaction {
 
   beneficiaryId?: string;
   senderId?: string;
+  recipientId?: string;
 
-  // relations possibles renvoyées par l’API
+  // Relations
+  sender?: AuthUser; // Pour afficher le nom du client expéditeur
   beneficiary?: Beneficiary | null;
+  
   withdrawal?: {
     id: string;
     status: WithdrawalStatus;
@@ -119,6 +132,7 @@ export interface Transaction {
     processedById?: string | null;
     processedAt?: string | null;
     requestedAt?: string;
+    code?: string; // Code de retrait
   } | null;
 }
 
@@ -127,6 +141,17 @@ export interface CreateTransactionPayload {
   currency: string;
   beneficiaryId: string;
   payoutMethod: string;
+
+  // ✅ CORRECTIF : Champs optionnels pour l'expéditeur (Guest/Guichet)
+  senderFirstName?: string;
+  senderLastName?: string;
+  senderPhone?: string;
+}
+
+// ✅ AJOUT : Payload pour le dépôt
+export interface CreateDepositPayload {
+  amount: number;
+  userPhone: string;
 }
 
 // --- PAIEMENTS & RETRAITS ---
@@ -151,14 +176,13 @@ export interface UpdateWithdrawalStatusPayload {
 export interface ExchangeRate {
   pair: string;
   rate: number;
+  updatedAt?: string;
 }
 
 // ============================================================
 // ✅ AGENCES
 // ============================================================
 
-// Prisma: SUBSIDIARY | PARTNER
-// On garde PRIVATE pour ne pas casser si tu l’avais déjà en front
 export type AgencyType = "SUBSIDIARY" | "PARTNER" | "PRIVATE";
 
 export interface Agency {
@@ -173,6 +197,7 @@ export interface Agency {
   isActive?: boolean;
 
   type?: AgencyType;
+  currency?: string; // ex: GNF, XOF
   balance?: number;
   clientId: number;
   createdAt?: string;
@@ -196,14 +221,13 @@ export interface CreateAgencyPayload {
   type?: AgencyType;
 }
 
-// 2. Configuration des commissions
+// --- COMMISSIONS ---
 export interface CommissionConfig {
   senderPart: number;
   payerPart: number;
   platformPart: number;
 }
 
-// 3. Historique des commissions
 export interface CommissionLog {
   id: string;
   transactionId: string;

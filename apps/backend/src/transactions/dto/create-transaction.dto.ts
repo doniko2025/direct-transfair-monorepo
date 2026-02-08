@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsOptional,
   IsPositive,
   IsString,
 } from 'class-validator';
@@ -23,9 +24,22 @@ export class CreateTransactionDto {
   @IsString()
   @IsNotEmpty()
   beneficiaryId: string;
+
+  // ✅ AJOUTS : Infos de l'expéditeur réel (Client invité)
+  // Optionnels car les utilisateurs de l'app mobile (Clients) ne les envoient pas
+  @IsOptional()
+  @IsString()
+  senderFirstName?: string;
+
+  @IsOptional()
+  @IsString()
+  senderLastName?: string;
+
+  @IsOptional()
+  @IsString()
+  senderPhone?: string;
 }
 
-// ✅ NOUVEAU : DTO pour le Dépôt
 export class CreateDepositDto {
   @IsNumber()
   @IsPositive()
@@ -33,5 +47,5 @@ export class CreateDepositDto {
 
   @IsString()
   @IsNotEmpty()
-  userPhone: string; // Le téléphone du client à recharger
+  userPhone: string;
 }

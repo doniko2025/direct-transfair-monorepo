@@ -19,7 +19,6 @@ export default function AgentHistoryScreen() {
 
   const loadTransactions = useCallback(async () => {
     try {
-      // Sécurité : ne rien charger si l'utilisateur n'est pas prêt
       if (!user?.id) {
         setTransactions([]);
         setLoading(false);
@@ -44,19 +43,19 @@ export default function AgentHistoryScreen() {
   const onRefresh = () => { setRefreshing(true); loadTransactions(); };
 
   const renderItem = ({ item }: { item: Transaction }) => {
-    // Utilisation de cast 'any' temporaire pour éviter de casser les types si incomplets
-    const withdrawal = (item as any)?.withdrawal as { processedById?: string } | undefined;
-    const beneficiary = (item as any)?.beneficiary as { fullName?: string; firstName?: string } | undefined;
-    const sender = (item as any)?.sender as { firstName?: string; lastName?: string } | undefined;
+    // Cast 'any' pour accéder aux propriétés enrichies (receivedAmount, targetCurrency, etc.)
+    const tx = item as any;
+    const withdrawal = tx.withdrawal as { processedById?: string } | undefined;
+    const beneficiary = tx.beneficiary as { fullName?: string; firstName?: string } | undefined;
+    const sender = tx.sender as { firstName?: string; lastName?: string } | undefined;
 
     const myId = String(user?.id || "N/A");
-    const senderId = String((item as any)?.senderId || "N/A");
+    const senderId = String(tx.senderId || "N/A");
     const processorId = withdrawal?.processedById ? String(withdrawal.processedById) : "NULL";
 
-    const isMyWithdrawal = (processorId === myId);
-    const isSending = (senderId === myId);
+    const isMyWithdrawal = (processorId === myId); // C'est moi qui ai payé (Retrait)
+    const isSending = (senderId === myId);         // C'est moi qui ai envoyé (Dépôt)
 
-    // On n'affiche QUE les transactions qui concernent l'agent (Envoi ou Retrait traité)
     if (!isMyWithdrawal && !isSending) return null;
 
     let iconName: any = "paper-plane";
@@ -64,7 +63,11 @@ export default function AgentHistoryScreen() {
     let bgColor = "#FEE2E2";
     let title = "Envoi d'argent";
     let subTitle = `Vers ${beneficiary?.fullName || beneficiary?.firstName || 'Inconnu'}`;
-    let amountColor = "#1F2937"; // Noir par défaut
+    let amountColor = "#1F2937"; 
+
+    // ✅ LOGIQUE MONTANT
+    let finalAmount = tx.amount;
+    let finalCurrency = tx.currency;
 
     if (isMyWithdrawal) {
       iconName = "wallet"; 
@@ -72,7 +75,13 @@ export default function AgentHistoryScreen() {
       bgColor = "#D1FAE5";
       title = "Retrait Effectué";
       subTitle = `Client: ${sender?.firstName || 'Inconnu'} ${sender?.lastName || ''}`;
-      amountColor = "#059669"; // Montant en vert pour signifier un succès/gain
+      amountColor = "#059669";
+
+      // ✅ SI RETRAIT : On affiche le montant PAYÉ (Converti)
+      if (tx.receivedAmount && Number(tx.receivedAmount) > 0) {
+          finalAmount = tx.receivedAmount;
+          finalCurrency = tx.targetCurrency || 'GNF';
+      }
     }
 
     return (
@@ -87,8 +96,9 @@ export default function AgentHistoryScreen() {
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
               <Text style={styles.title}>{title}</Text>
+              {/* ✅ AFFICHAGE CORRIGÉ */}
               <Text style={[styles.amount, { color: amountColor }]}>
-                {(item as any)?.amount} {(item as any)?.currency}
+                {Number(finalAmount).toLocaleString('fr-FR', {maximumFractionDigits: 0})} {finalCurrency}
               </Text>
             </View>
             
@@ -150,9 +160,9 @@ export default function AgentHistoryScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F3F4F6" },
   header: {
-    backgroundColor: '#064E3B', // Vert Agence Officiel
+    backgroundColor: '#064E3B', 
     padding: 16,
-    paddingTop: 10, // Ajuster selon Platform.OS si besoin
+    paddingTop: 10, 
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'

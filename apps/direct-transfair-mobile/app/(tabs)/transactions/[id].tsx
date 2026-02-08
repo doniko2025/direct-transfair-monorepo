@@ -48,9 +48,7 @@ export default function TransactionDetailScreen() {
 
   const confirmAction = (title: string, message: string, onConfirm: () => void) => {
       if (Platform.OS === 'web') {
-          if (window.confirm(`${title}\n\n${message}`)) {
-              onConfirm();
-          }
+          if (window.confirm(`${title}\n\n${message}`)) onConfirm();
       } else {
           Alert.alert(title, message, [
               { text: "Non", style: "cancel" },
@@ -68,48 +66,34 @@ export default function TransactionDetailScreen() {
   };
 
   const handleAdminValidate = () => {
-      confirmAction(
-          "Valider la transaction ?", 
-          "Le montant sera transféré et le statut mis à jour.", 
-          () => performAction('VALIDATED')
-      );
+      confirmAction("Valider la transaction ?", "Le montant sera transféré.", () => performAction('VALIDATED'));
   };
 
   const handleAdminReject = () => {
-      confirmAction(
-          "Rejeter la transaction ?", 
-          "La transaction sera annulée et l'argent remboursé à l'expéditeur.", 
-          () => performAction('CANCELLED')
-      );
+      confirmAction("Rejeter la transaction ?", "La transaction sera annulée.", () => performAction('CANCELLED'));
   };
 
   const performAction = async (newStatus: string) => {
       setProcessing(true);
       try {
-          // Gestion spéciale pour la validation B2B (Paiement Service)
           if (transaction.type === 'SERVICE_PAYMENT' && newStatus === 'VALIDATED') {
               await api.validateBankTransfer(transaction.id);
-          } 
-          // Gestion standard pour tout le reste (Rejet B2B ou Validation/Rejet Client)
-          else if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
+          } else if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
               await api.adminUpdateTransactionStatus(transaction.id, newStatus);
           } else {
               await api.cancelTransaction(transaction.id);
           }
-          
           if (Platform.OS === 'web') {
-              alert(`Succès : Statut mis à jour vers ${newStatus}`);
+              alert(`Succès : Statut mis à jour`);
               loadTransaction();
           } else {
-              Alert.alert("Succès", `Statut mis à jour : ${newStatus}`, [{ text: "OK", onPress: loadTransaction }]);
+              Alert.alert("Succès", `Statut mis à jour`, [{ text: "OK", onPress: loadTransaction }]);
           }
       } catch (e: any) { 
-          const msg = e.response?.data?.message || "Erreur lors de l'action";
+          const msg = e.response?.data?.message || "Erreur";
           if (Platform.OS === 'web') alert(`Erreur: ${msg}`);
           else Alert.alert("Erreur", msg); 
-      } finally { 
-          setProcessing(false); 
-      }
+      } finally { setProcessing(false); }
   };
 
   const getStatusInfo = (status: string) => {
@@ -122,12 +106,8 @@ export default function TransactionDetailScreen() {
   };
 
   const handleGoBack = () => {
-      // Si on vient de l'historique agent, on retourne en arrière simplement
-      if (router.canGoBack()) {
-          router.back();
-      } else {
-          router.navigate('/(tabs)/transactions');
-      }
+      if (router.canGoBack()) router.back();
+      else router.navigate('/(tabs)/transactions');
   };
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
@@ -137,14 +117,22 @@ export default function TransactionDetailScreen() {
   const isAdmin = user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN';
   const isPending = transaction.status === 'PENDING';
   const canUserCancel = !isAdmin && (transaction.status === 'PENDING' || transaction.status === 'VALIDATED');
-
-  // ✅ CORRECTION ICI : Masquer le code de retrait pour les paiements B2B (Service Payment)
   const isB2B = transaction.type === 'SERVICE_PAYMENT';
   const showWithdrawalCode = !isB2B && !!transaction.providerRef;
+  const displayReference = transaction.reference.startsWith('TX-') ? transaction.reference : `TX-${transaction.reference}`;
 
-  const displayReference = transaction.reference.startsWith('TX-') 
-      ? transaction.reference 
-      : `TX-${transaction.reference}`;
+  // Logique d'affichage
+  const displayAmount = (transaction.receivedAmount && Number(transaction.receivedAmount) > 0) 
+      ? transaction.receivedAmount 
+      : transaction.amount;
+  const displayCurrency = transaction.targetCurrency || transaction.currency;
+
+  const senderName = transaction.senderFirstName && transaction.senderLastName 
+      ? `${transaction.senderFirstName} ${transaction.senderLastName}`
+      : (transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi");
+
+  // Pays d'origine
+  const originCountry = transaction.currency === 'XOF' ? 'Sénégal' : 'International';
 
   return (
     <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 150 }]}>
@@ -158,8 +146,11 @@ export default function TransactionDetailScreen() {
 
       <View style={styles.ticket}>
         <View style={styles.headerSection}>
-            <Text style={styles.amountLabel}>Montant envoyé</Text>
-            <Text style={styles.bigAmount}>{Number(transaction.amount).toFixed(2)} <Text style={styles.currency}>{transaction.currency}</Text></Text>
+            <Text style={styles.amountLabel}>Montant à Payer</Text>
+            <Text style={styles.bigAmount}>
+                {Number(displayAmount).toLocaleString('fr-FR', {maximumFractionDigits: 0})} 
+                <Text style={styles.currency}>{displayCurrency}</Text>
+            </Text>
             <View style={[styles.statusBadge, { backgroundColor: status.color + '20' }]}>
                 <Ionicons name={status.icon as any} size={16} color={status.color} />
                 <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
@@ -179,19 +170,39 @@ export default function TransactionDetailScreen() {
         <View style={styles.detailsSection}>
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString()} />
             
-            <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : (transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName}` : "Moi")} />
+            <View style={styles.divider} />
             
+            {/* EXPÉDITEUR */}
+            <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : senderName} />
+            {transaction.sender?.phone && (
+                <DetailRow label="Tél. Expéditeur" value={transaction.sender.phone} sub />
+            )}
+            <DetailRow label="Pays d'origine" value={originCountry} />
+
+            <View style={styles.divider} />
+
+            {/* BÉNÉFICIAIRE */}
             <DetailRow label="Bénéficiaire" value={isB2B ? "Super Admin" : (transaction.beneficiary?.fullName || "Non spécifié")} />
-            
+            {transaction.beneficiary?.phone && (
+                <DetailRow label="Tél. Bénéficiaire" value={transaction.beneficiary.phone} sub />
+            )}
             <DetailRow label="Pays destination" value={transaction.beneficiary?.country || "Sénégal"} />
+            
+            <View style={styles.divider} />
+
             <DetailRow label="Réf. Unique" value={displayReference} />
             
             <View style={styles.divider} />
-            <DetailRow label="Total payé" value={`${transaction.total} ${transaction.currency}`} bold />
+            
+            {/* DÉTAIL FINANCIER COMPLET */}
+            <Text style={styles.sectionHeader}>Détail Financier (Origine)</Text>
+            <DetailRow label="Montant envoyé" value={`${Number(transaction.amount).toLocaleString('fr-FR')} ${transaction.currency}`} />
+            <DetailRow label="Frais/Commissions" value={`${Number(transaction.fees).toLocaleString('fr-FR')} ${transaction.currency}`} />
+            <DetailRow label="Total payé par l'exp." value={`${Number(transaction.total).toLocaleString('fr-FR')} ${transaction.currency}`} bold />
         </View>
       </View>
 
-      {/* ACTIONS ADMIN */}
+      {/* ACTIONS (inchangées) */}
       {isAdmin && isPending && (
           <View style={styles.adminActions}>
               <Text style={styles.adminTitle}>Action Requise (Admin)</Text>
@@ -206,14 +217,12 @@ export default function TransactionDetailScreen() {
           </View>
       )}
 
-      {/* ACTIONS USER */}
       {canUserCancel && (
           <TouchableOpacity style={[styles.cancelBtn, processing && {opacity: 0.6}]} onPress={handleCancelUser} disabled={processing}>
             {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.cancelBtnText}>Annuler et Rembourser</Text>}
           </TouchableOpacity>
       )}
       
-      {/* BOUTON PARTAGER LE REÇU */}
       {!isAdmin && (
           <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
               <Text style={styles.shareBtnText}>Partager le reçu</Text>
@@ -224,8 +233,13 @@ export default function TransactionDetailScreen() {
   );
 }
 
-function DetailRow({ label, value, bold }: any) {
-    return <View style={styles.row}><Text style={styles.rowLabel}>{label}</Text><Text style={[styles.rowValue, bold && {fontWeight:'800', color:colors.primary}]}>{value}</Text></View>;
+function DetailRow({ label, value, bold, sub }: any) {
+    return (
+        <View style={[styles.row, sub && { marginTop: -5 }]}>
+            <Text style={[styles.rowLabel, sub && { fontSize: 12, color: '#9CA3AF' }]}>{label}</Text>
+            <Text style={[styles.rowValue, bold && {fontWeight:'800', color:colors.primary}, sub && { fontSize: 13 }]}>{value}</Text>
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
@@ -246,7 +260,8 @@ const styles = StyleSheet.create({
   codeBox: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   codeText: { fontSize: 20, fontWeight: '800', color: '#333', letterSpacing: 1 },
   detailsSection: { gap: 10, marginTop: 10 },
-  row: { flexDirection: 'row', justifyContent: 'space-between' },
+  sectionHeader: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', textTransform: 'uppercase', marginTop: 5, marginBottom: 5 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   rowLabel: { color: '#666' },
   rowValue: { color: '#333', fontWeight: '500' },
   divider: { height: 1, backgroundColor: '#F3F4F6', marginVertical: 5 },
