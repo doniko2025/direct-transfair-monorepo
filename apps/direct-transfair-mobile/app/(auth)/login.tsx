@@ -20,7 +20,8 @@ export default function LoginScreen() {
   const { login, isLoading } = useAuth();
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
+  // On utilise "identifier" au lieu de "email" car ça peut être un téléphone
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
 
   const showAlert = (title: string, msg: string) => {
@@ -29,16 +30,15 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      showAlert("Champs requis", "Veuillez entrer votre email et mot de passe.");
+    if (!identifier.trim() || !password.trim()) {
+      showAlert("Champs requis", "Veuillez entrer vos identifiants.");
       return;
     }
 
     try {
-      // ✅ SIMPLIFIÉ : Plus besoin de code société (tenantCode).
-      // Le backend trouve l'utilisateur par email.
-      // Si votre fonction login attend toujours 2 arguments, on passe undefined pour le second.
-      await login({ email: email.trim(), password });
+      // On envoie "email" dans le payload car l'API attend ce champ par convention,
+      // mais le backend traitera la valeur comme un identifiant (email ou phone)
+      await login({ email: identifier.trim(), password });
     } catch (e: any) {
       const msg = e.response?.data?.message || "Identifiants incorrects.";
       showAlert("Erreur de connexion", Array.isArray(msg) ? msg[0] : msg);
@@ -53,20 +53,20 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <Text style={styles.title}>Direct Transf'air</Text>
-          <Text style={styles.subtitle}>Connexion SaaS</Text>
-
-          {/* ❌ CHAMP CODE SOCIÉTÉ SUPPRIMÉ ICI */}
+          <Text style={styles.subtitle}>Espace Sécurisé</Text>
 
           <View style={styles.inputContainer}>
-            <Text style={styles.label}>Email</Text>
+            {/* Label mis à jour */}
+            <Text style={styles.label}>Email ou N° de téléphone</Text>
             <TextInput
               style={styles.input}
-              placeholder="client@flash.com"
+              placeholder="ex: +224 620... ou client@mail.com"
               placeholderTextColor="#94A3B8"
               autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
+              // On retire le type email-address strict pour permettre le téléphone
+              keyboardType="default" 
+              value={identifier}
+              onChangeText={setIdentifier}
             />
           </View>
 
@@ -80,6 +80,17 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
             />
+          </View>
+
+          {/* Lien Mot de passe oublié ajouté */}
+          <View style={{ alignItems: 'flex-end', marginBottom: 20 }}>
+            <Link href="/(auth)/forgot-password" asChild>
+                <TouchableOpacity>
+                    <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
+                        Mot de passe oublié ?
+                    </Text>
+                </TouchableOpacity>
+            </Link>
           </View>
 
           <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
@@ -128,14 +139,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#1E293B",
   },
-  hint: { marginTop: 6, fontSize: 11, color: "#94A3B8" },
 
   button: {
     backgroundColor: colors.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: 10,
+    marginTop: 0, // Ajusté car on a ajouté le lien "forgot password" au dessus
     shadowColor: colors.primary,
     shadowOpacity: 0.4,
     shadowRadius: 8,

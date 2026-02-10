@@ -59,12 +59,10 @@ export class TransactionsService {
   // =================================================================
   // 🛠️ UTILITAIRE : ENRICHIR LA TRANSACTION AVEC LE NOM CACHÉ
   // =================================================================
-  // ✅ FIX TS (sans changer la logique): ne pas muter l'objet Prisma,
-  // on clone la transaction + sender avant enrichissement.
   private enrichTransaction(tx: any): any {
     if (!tx) return tx;
 
-    // ✅ clone shallow + clone sender (si présent) pour éviter mutation Prisma
+    // Clone shallow + clone sender pour éviter mutation Prisma
     const cloned: any = {
       ...tx,
       sender: tx.sender ? { ...tx.sender } : tx.sender,
@@ -97,7 +95,7 @@ export class TransactionsService {
   }
 
   // =================================================================
-  // 🏦 PAIEMENT B2B
+  // 🏦 PAIEMENT B2B (MODIFIÉ : DÉBIT IMMÉDIAT)
   // =================================================================
 
   async declareBankTransfer(
@@ -110,24 +108,36 @@ export class TransactionsService {
       throw new ForbiddenException('Admin société introuvable');
 
     const amountDec = new Prisma.Decimal(amount);
-    if (admin.balance.lessThan(amountDec))
-      throw new ForbiddenException('Solde insuffisant.');
 
-    return this.prisma.transaction.create({
-      data: {
-        reference: `BILL-${Date.now()}`,
-        type: TransactionType.SERVICE_PAYMENT,
-        amount: amountDec,
-        fees: new Prisma.Decimal(0),
-        total: amountDec,
-        currency: 'XOF',
-        status: TransactionStatus.PENDING,
-        paymentMethod: PaymentMethod.BANK_TRANSFER,
-        payoutMethod: PayoutMethod.WALLET,
-        senderId: adminId,
-        clientId: admin.clientId,
-        providerRef: proofReference,
-      },
+    // Vérification stricte avant transaction
+    if (admin.balance.lessThan(amountDec))
+      throw new ForbiddenException('Solde insuffisant pour effectuer ce virement.');
+
+    // ✅ NOUVELLE LOGIQUE : On débite tout de suite via une transaction atomique
+    return this.prisma.$transaction(async (prismaTx) => {
+      // 1. Débit immédiat de l'Admin Société
+      await prismaTx.user.update({
+        where: { id: adminId },
+        data: { balance: { decrement: amountDec } },
+      });
+
+      // 2. Création de la transaction (Statut PENDING)
+      return prismaTx.transaction.create({
+        data: {
+          reference: `BILL-${Date.now()}`,
+          type: TransactionType.SERVICE_PAYMENT,
+          amount: amountDec,
+          fees: new Prisma.Decimal(0),
+          total: amountDec,
+          currency: 'XOF',
+          status: TransactionStatus.PENDING,
+          paymentMethod: PaymentMethod.BANK_TRANSFER,
+          payoutMethod: PayoutMethod.WALLET,
+          senderId: adminId,
+          clientId: admin.clientId!, // Utilisation de ! car vérifié plus haut
+          providerRef: proofReference,
+        },
+      });
     });
   }
 
@@ -140,25 +150,23 @@ export class TransactionsService {
 
     const tx = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
-      include: { sender: true },
     });
 
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT)
       throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING)
-      throw new ConflictException('Déjà traitée');
+      throw new ConflictException('Transaction déjà traitée ou annulée');
 
     return this.prisma.$transaction(async (prismaTx) => {
-      await prismaTx.user.update({
-        where: { id: tx.senderId },
-        data: { balance: { decrement: tx.amount } },
-      });
+      // ✅ NOUVELLE LOGIQUE : On ne touche PAS au sender (déjà débité).
 
+      // 1. On crédite le Super Admin
       await prismaTx.user.update({
         where: { id: superAdminId },
         data: { balance: { increment: tx.amount } },
       });
 
+      // 2. On valide la transaction
       return prismaTx.transaction.update({
         where: { id: transactionId },
         data: {
@@ -170,8 +178,37 @@ export class TransactionsService {
     });
   }
 
+  // ✅ NOUVEAU : Méthode de rejet (Pour rembourser l'Admin si le Super Admin refuse)
+  async rejectBankTransfer(superAdminId: string, transactionId: string) {
+    const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
+    if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Accès refusé');
+
+    const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
+
+    if (!tx || tx.status !== TransactionStatus.PENDING)
+      throw new ConflictException('Transaction impossible à rejeter (déjà traitée ?)');
+
+    return this.prisma.$transaction(async (prismaTx) => {
+      // 1. Remboursement de l'Admin Société
+      await prismaTx.user.update({
+        where: { id: tx.senderId },
+        data: { balance: { increment: tx.amount } },
+      });
+
+      // 2. Annulation de la transaction
+      return prismaTx.transaction.update({
+        where: { id: transactionId },
+        data: {
+          status: TransactionStatus.CANCELLED,
+          cancelledAt: new Date(),
+          providerStatus: ProviderStatus.FAILED,
+        },
+      });
+    });
+  }
+
   // =================================================================
-  // 🛑 ANNULATION & REMBOURSEMENT
+  // 🛑 ANNULATION & REMBOURSEMENT (Utilisateur standard)
   // =================================================================
   async cancel(userId: string, transactionId: string): Promise<Transaction> {
     const tx = await this.prisma.transaction.findUnique({
@@ -496,7 +533,6 @@ export class TransactionsService {
     };
   }
 
-  // ✅ CORRECTION ICI : "Promise<any[]>" permet d'accepter les objets enrichis
   async findForUser(userId: string): Promise<any[]> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -527,7 +563,6 @@ export class TransactionsService {
     return transactions.map((tx) => this.enrichTransaction(tx));
   }
 
-  // ✅ CORRECTION ICI : "Promise<any>" permet d'accepter l'objet enrichi
   async findOneForUser(id: string, userId: string): Promise<any> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -559,7 +594,6 @@ export class TransactionsService {
     return this.enrichTransaction(tx);
   }
 
-  // ✅ CORRECTION ICI : "Promise<any[]>"
   async adminFindAllForAdmin(adminId: string): Promise<any[]> {
     const admin = await this.prisma.user.findUnique({
       where: { id: adminId },
@@ -573,7 +607,7 @@ export class TransactionsService {
       });
     } else if (admin?.clientId) {
       transactions = await this.prisma.transaction.findMany({
-        where: { clientId: admin.clientId },
+        where: { clientId: admin.clientId as number },
         orderBy: { createdAt: 'desc' },
         include: { sender: true, beneficiary: true, client: true, withdrawal: true },
       });
@@ -598,6 +632,53 @@ export class TransactionsService {
     }
 
     assertTxTransition(tx.status, dto.status);
+
+    // ✅ CORRECTION PRINCIPALE :
+    // Si on annule depuis l'admin/status, il faut rembourser (sinon "annulé" mais solde inchangé)
+    if (dto.status === TransactionStatus.CANCELLED) {
+      return this.prisma.$transaction(async (prismaTx) => {
+        // 1) Remboursement (si senderId présent)
+        if (tx.senderId) {
+          const sender = await prismaTx.user.findUnique({
+            where: { id: tx.senderId },
+            select: { id: true, role: true, agencyId: true },
+          });
+
+          if (sender?.role === 'AGENT' && sender.agencyId) {
+            await prismaTx.agency.update({
+              where: { id: sender.agencyId },
+              data: { balance: { increment: tx.total } },
+            });
+          } else {
+            await prismaTx.user.update({
+              where: { id: tx.senderId },
+              data: { balance: { increment: tx.total } },
+            });
+          }
+        }
+
+        // 2) Annulation transaction
+        const updatedTx = await prismaTx.transaction.update({
+          where: { id },
+          data: {
+            status: TransactionStatus.CANCELLED,
+            cancelledAt: new Date(),
+            providerStatus:
+              tx.type === TransactionType.SERVICE_PAYMENT
+                ? ProviderStatus.FAILED
+                : ProviderStatus.CANCELLED,
+          },
+        });
+
+        // 3) Annuler withdrawal lié
+        await prismaTx.withdrawal.updateMany({
+          where: { transactionId: id },
+          data: { status: WithdrawalStatus.CANCELLED },
+        });
+
+        return updatedTx;
+      });
+    }
 
     const data: Prisma.TransactionUpdateInput =
       dto.status === TransactionStatus.PAID

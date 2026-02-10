@@ -39,8 +39,6 @@ async function main() {
       subscriptionStatus: SubscriptionStatus.ACTIVE,
       email: 'contact@doniko.com',
       phone: '+33600000000',
-      // ❌ J'ai retiré "country: 'France'" car ce champ n'existe pas dans le modèle Client
-      // Si tu veux mettre une adresse, utilise le champ 'address' :
       address: 'Paris, France',
     },
   });
@@ -48,18 +46,19 @@ async function main() {
   // 2. CRÉATION DU SUPER ADMIN
   await prisma.user.create({
     data: {
-      email: 'super@doniko.com', // LOGIN
+      email: 'super@doniko.com', // LOGIN DÉFINI ICI
       password,                  // PASS: 123456
       firstName: 'Super',
       lastName: 'Admin',
       role: Role.SUPER_ADMIN,
       clientId: doniko.id,
-      country: 'France', // ICI c'est bon, car le User a bien un champ country
+      country: 'France', 
       jobTitle: 'Directeur Technique',
     },
   });
 
   console.log('✅ SUPER ADMIN CRÉÉ AVEC SUCCÈS');
+  // CORRECTION ICI : Le log doit correspondre à ce qui a été créé au-dessus
   console.log('   👉 Email: super@doniko.com');
   console.log('   👉 Pass : 123456');
 
@@ -83,3 +82,4 @@ main()
     await prisma.$disconnect();
   });
   //super@doniko.com
+  //npx prisma db seed

@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/components/layout/useBreakpoint.ts
+//apps/direct-transfair-mobile/components/layout/useBreakpoint.ts
 import { useMemo } from "react";
 import { useWindowDimensions } from "react-native";
 

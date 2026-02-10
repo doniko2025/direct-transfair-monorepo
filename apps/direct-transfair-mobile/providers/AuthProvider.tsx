@@ -10,8 +10,8 @@ type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
   isLoading: boolean;
-  login: (data: LoginPayload) => Promise<void>; // ✅ Signature simplifiée (1 argument)
-  register: (data: RegisterPayload) => Promise<void>;
+  login: (data: LoginPayload) => Promise<void>;
+  register: (data: RegisterPayload, tenantCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
 };
@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
 
-  // --- PERSISTENCE HELPERS ---
+  // --- STORAGE HELPERS ---
   const setStorage = async (key: string, val: string) => {
     if (Platform.OS === "web") {
       try { localStorage.setItem(key, val); } catch {}
@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // --- LOGOUT ---
   const logout = async () => {
     try {
-      console.log("👋 [AuthProvider] Déconnexion...");
+      console.log("👋 Déconnexion...");
       api.clearToken();
       setToken(null);
       setUser(null);
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // --- INITIALISATION ---
+  // --- INIT SESSION ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -80,12 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
 
-          // Rafraîchissement silencieux
           try {
             const me = await api.getMe();
             setUser(me);
             await setStorage(USER_KEY, JSON.stringify(me));
-          } catch (err) {
+          } catch {
             console.log("Session expirée");
             await logout();
           }
@@ -100,11 +99,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
   }, []);
 
-  // --- ROUTING GUARD ---
+  // --- ROUTE GUARD ---
   useEffect(() => {
     if (isLoading) return;
+
     const inAuthGroup = segments[0] === "(auth)";
-    
+
     if (!user && !inAuthGroup) {
       router.replace("/(auth)/login");
     } else if (user && inAuthGroup) {
@@ -112,12 +112,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, isLoading, segments]);
 
-  // --- LOGIN (CORRIGÉ : 1 seul argument) ---
+  // --- LOGIN ---
   const login = async (data: LoginPayload) => {
     setIsLoading(true);
     try {
-      // ✅ Appel API standard (email/password)
-      // Si api.login attendait un 2ème argument "tenant", on l'a supprimé ici pour éviter l'erreur TS
       const res: LoginResponse = await api.login(data);
 
       api.setToken(res.access_token);
@@ -126,24 +124,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(res.user));
-
     } catch (e: any) {
       console.error("Erreur Login:", e?.response?.data || e?.message);
-      throw e; // Laisse l'UI gérer l'erreur (ex: afficher l'alerte)
+      throw e;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // --- REGISTER ---
-  const register = async (data: RegisterPayload) => {
+  // ✅ REGISTER FIXÉ
+  const register = async (data: RegisterPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      await api.register(data);
-      // Auto-login après inscription
+      const payload = {
+        ...data,
+        tenantCode,
+      };
+
+      await api.register(payload);
       await login({ email: data.email, password: data.password });
     } catch (e: any) {
-      console.error("Erreur Register:", e);
+      console.error("Erreur Register:", e?.response?.data || e?.message);
       throw e;
     } finally {
       setIsLoading(false);
@@ -153,8 +154,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // --- REFRESH USER ---
   const refreshUser = async () => {
     try {
-      if (token) api.setToken(token);
+      if (!token) return;
+
+      api.setToken(token);
+
       const updatedUser = await api.getMe();
+
       setUser(updatedUser);
       await setStorage(USER_KEY, JSON.stringify(updatedUser));
     } catch (e) {
@@ -163,7 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider
+      value={{ user, token, isLoading, login, register, logout, refreshUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

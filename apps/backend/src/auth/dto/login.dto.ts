@@ -1,8 +1,9 @@
 // apps/backend/src/auth/dto/login.dto.ts
-import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class LoginDto {
-  @IsEmail()
+  // email OU téléphone (on garde le nom "email" pour compat front)
+  @IsString()
   @IsNotEmpty()
   email!: string;
 

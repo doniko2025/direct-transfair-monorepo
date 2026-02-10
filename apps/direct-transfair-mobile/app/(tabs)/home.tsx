@@ -2,12 +2,13 @@
 import React from "react";
 import { useAuth } from "../../providers/AuthProvider";
 
-// Import des Dashboards spécifiques
+// Import des Dashboards
 import ClientDashboard from "../../components/dashboards/ClientDashboard";
 import AgentDashboard from "../../components/dashboards/AgentDashboard";
 import CompanyDashboard from "../../components/dashboards/CompanyDashboard";
-// Si tu as déjà le fichier SuperAdmin, importe-le ici, sinon je mets un placeholder
-// import SuperAdminDashboard from "../../components/dashboards/SuperAdminDashboard";
+
+// ✅ On importe les Stats (Le fichier qu'on vient de créer)
+import SuperAdminOverview from "../../components/dashboards/SuperAdminOverview"; 
 
 export default function HomeScreen() {
   const { user } = useAuth();
@@ -25,8 +26,8 @@ export default function HomeScreen() {
       return <CompanyDashboard />;
     
     case 'SUPER_ADMIN':
-      // Si tu n'as pas encore le fichier, tu peux laisser ton ancien code SuperAdmin ici temporairement
-      return null; // Remplace par <SuperAdminDashboard /> quand tu l'auras
+      // ✅ C'est ici qu'on affiche les Stats/Boutons colorés
+      return <SuperAdminOverview />;
       
     default:
       return null;

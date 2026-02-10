@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/services/types.ts
-
 // --- ENUMS & TYPES DE BASE ---
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
@@ -8,22 +7,30 @@ export interface AuthUser {
   id: string;
   email: string;
   role: Role;
+
   firstName?: string;
   lastName?: string;
   phone?: string;
+
   addressStreet?: string;
   postalCode?: string;
   city?: string;
   country?: string;
+
   gender?: "M" | "F";
   nationality?: string;
   birthDate?: string;
   birthPlace?: string;
+
   jobTitle?: string;
+
+  // ✅ AJOUT ADMIN (corrige ton erreur TS)
+  agencyName?: string;
+
   clientId: number;
   agencyId?: string;
   balance?: number;
-  
+
   // Relations
   client?: {
     name: string;
@@ -77,8 +84,17 @@ export interface CreateBeneficiaryPayload {
 }
 
 // --- TRANSACTIONS ---
-export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
-export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
+export type TransactionStatus =
+  | "PENDING"
+  | "VALIDATED"
+  | "PAID"
+  | "CANCELLED";
+
+export type PayoutMethod =
+  | "CASH_PICKUP"
+  | "BANK_DEPOSIT"
+  | "MOBILE_MONEY"
+  | "WALLET";
 
 export type PaymentMethod =
   | "WALLET"
@@ -87,6 +103,13 @@ export type PaymentMethod =
   | "CARD"
   | "CASH"
   | "BANK_TRANSFER";
+
+// ✅ Ajout UI
+export type TransactionType =
+  | "SERVICE_PAYMENT"
+  | "TRANSFER"
+  | "DEPOSIT"
+  | "WITHDRAWAL";
 
 export type WithdrawalStatus =
   | "PENDING"
@@ -100,14 +123,18 @@ export interface Transaction {
   id: string;
   reference: string;
 
+  // UI optionnels
+  type?: TransactionType | string;
+  paymentMethod?: PaymentMethod | string;
+
   // Montants
   amount: number;
   fees: number;
   total: number;
 
-  // Champs calculés pour l'affichage (Conversion)
   receivedAmount?: number;
   targetCurrency?: string;
+  exchangeRate?: number;
 
   currency: string;
   status: TransactionStatus;
@@ -121,19 +148,26 @@ export interface Transaction {
   senderId?: string;
   recipientId?: string;
 
+  providerRef?: string | null;
+
+  senderFirstName?: string;
+  senderLastName?: string;
+
   // Relations
-  sender?: AuthUser; // Pour afficher le nom du client expéditeur
+  sender?: AuthUser;
   beneficiary?: Beneficiary | null;
-  
-  withdrawal?: {
-    id: string;
-    status: WithdrawalStatus;
-    method: PayoutMethod;
-    processedById?: string | null;
-    processedAt?: string | null;
-    requestedAt?: string;
-    code?: string; // Code de retrait
-  } | null;
+
+  withdrawal?:
+    | {
+        id: string;
+        status: WithdrawalStatus;
+        method: PayoutMethod;
+        processedById?: string | null;
+        processedAt?: string | null;
+        requestedAt?: string;
+        code?: string;
+      }
+    | null;
 }
 
 export interface CreateTransactionPayload {
@@ -142,13 +176,11 @@ export interface CreateTransactionPayload {
   beneficiaryId: string;
   payoutMethod: string;
 
-  // ✅ CORRECTIF : Champs optionnels pour l'expéditeur (Guest/Guichet)
   senderFirstName?: string;
   senderLastName?: string;
   senderPhone?: string;
 }
 
-// ✅ AJOUT : Payload pour le dépôt
 export interface CreateDepositPayload {
   amount: number;
   userPhone: string;
@@ -161,7 +193,10 @@ export interface InitiatePaymentPayload {
   phone: string;
 }
 
-export type WithdrawalMethod = "CASH_PICKUP" | "MOBILE_MONEY" | "WALLET";
+export type WithdrawalMethod =
+  | "CASH_PICKUP"
+  | "MOBILE_MONEY"
+  | "WALLET";
 
 export interface CreateWithdrawalPayload {
   amount?: number;
@@ -180,10 +215,13 @@ export interface ExchangeRate {
 }
 
 // ============================================================
-// ✅ AGENCES
+// AGENCES
 // ============================================================
 
-export type AgencyType = "SUBSIDIARY" | "PARTNER" | "PRIVATE";
+export type AgencyType =
+  | "SUBSIDIARY"
+  | "PARTNER"
+  | "PRIVATE";
 
 export interface Agency {
   id: string | number;
@@ -197,7 +235,7 @@ export interface Agency {
   isActive?: boolean;
 
   type?: AgencyType;
-  currency?: string; // ex: GNF, XOF
+  currency?: string;
   balance?: number;
   clientId: number;
   createdAt?: string;

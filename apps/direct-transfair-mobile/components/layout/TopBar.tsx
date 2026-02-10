@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/components/layout/TopBar.tsx
+//apps/direct-transfair-mobile/components/layout/TopBar.tsx
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
 

@@ -13,7 +13,10 @@ import {
 } from '@nestjs/common';
 
 import { TransactionsService } from './transactions.service';
-import { CreateTransactionDto, CreateDepositDto } from './dto/create-transaction.dto';
+import {
+  CreateTransactionDto,
+  CreateDepositDto,
+} from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -37,34 +40,40 @@ export class TransactionsController {
 
   @Post('admin/fund-self')
   async fundSelf(@Req() req: AuthedRequest, @Body('amount') amount: number) {
-      const user = req.user;
-      if (!user) throw new ForbiddenException("Non authentifié");
-      
-      if (user.role === 'SUPER_ADMIN') {
-          throw new ForbiddenException("Le Super Admin ne peut pas s'auto-alimenter. Veuillez recevoir un paiement B2B.");
-      }
-      
-      if (user.role !== 'COMPANY_ADMIN') {
-          throw new ForbiddenException("Accès réservé aux Admins Société.");
-      }
+    const user = req.user;
+    if (!user) throw new ForbiddenException('Non authentifié');
 
-      const userId = this.getUserId(req);
-      if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-          throw new BadRequestException("Montant invalide");
-      }
-      return this.transactionsService.fundAdminWallet(userId, amount);
+    if (user.role === 'SUPER_ADMIN') {
+      throw new ForbiddenException(
+        "Le Super Admin ne peut pas s'auto-alimenter. Veuillez recevoir un paiement B2B.",
+      );
+    }
+
+    if (user.role !== 'COMPANY_ADMIN') {
+      throw new ForbiddenException('Accès réservé aux Admins Société.');
+    }
+
+    const userId = this.getUserId(req);
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      throw new BadRequestException('Montant invalide');
+    }
+    return this.transactionsService.fundAdminWallet(userId, amount);
   }
 
   @Post('admin/refill-agency')
-  async refillAgency(@Req() req: AuthedRequest, @Body() body: { agencyId: string; amount: number }) {
-      const user = req.user;
-      if (!user) throw new ForbiddenException("Non authentifié");
-      if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
-          throw new ForbiddenException("Accès refusé : Rôle Admin requis.");
-      }
-      const userId = this.getUserId(req);
-      if (!body.agencyId || !body.amount) throw new BadRequestException("AgencyId et Amount requis");
-      return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
+  async refillAgency(
+    @Req() req: AuthedRequest,
+    @Body() body: { agencyId: string; amount: number },
+  ) {
+    const user = req.user;
+    if (!user) throw new ForbiddenException('Non authentifié');
+    if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Accès refusé : Rôle Admin requis.');
+    }
+    const userId = this.getUserId(req);
+    if (!body.agencyId || !body.amount)
+      throw new BadRequestException('AgencyId et Amount requis');
+    return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
   }
 
   // =========================================================
@@ -72,20 +81,36 @@ export class TransactionsController {
   // =========================================================
 
   @Post('b2b/declare')
-  async declareTransfer(@Req() req: AuthedRequest, @Body() body: { amount: number, ref: string }) {
-      const user = req.user;
-      if (user?.role !== 'COMPANY_ADMIN') throw new ForbiddenException("Réservé aux sociétés.");
-      if (!body.amount || !body.ref) throw new BadRequestException("Montant et Référence requis");
-      
-      return this.transactionsService.declareBankTransfer(user.id, body.amount, body.ref);
+  async declareTransfer(
+    @Req() req: AuthedRequest,
+    @Body() body: { amount: number; ref: string },
+  ) {
+    const user = req.user;
+    if (user?.role !== 'COMPANY_ADMIN')
+      throw new ForbiddenException('Réservé aux sociétés.');
+    if (!body.amount || !body.ref)
+      throw new BadRequestException('Montant et Référence requis');
+
+    return this.transactionsService.declareBankTransfer(user.id, body.amount, body.ref);
   }
 
-  @UseGuards(AdminGuard) 
+  @UseGuards(AdminGuard)
   @Patch('b2b/validate/:id')
   async validateTransfer(@Req() req: AuthedRequest, @Param('id') id: string) {
-      const user = req.user;
-      if (user?.role !== 'SUPER_ADMIN') throw new ForbiddenException("Réservé au Super Admin.");
-      return this.transactionsService.validateBankTransfer(user.id, id);
+    const user = req.user;
+    if (user?.role !== 'SUPER_ADMIN')
+      throw new ForbiddenException('Réservé au Super Admin.');
+    return this.transactionsService.validateBankTransfer(user.id, id);
+  }
+
+  // ✅ NOUVEAU : rejet B2B (remboursement + CANCELLED)
+  @UseGuards(AdminGuard)
+  @Patch('b2b/reject/:id')
+  async rejectTransfer(@Req() req: AuthedRequest, @Param('id') id: string) {
+    const user = req.user;
+    if (user?.role !== 'SUPER_ADMIN')
+      throw new ForbiddenException('Réservé au Super Admin.');
+    return this.transactionsService.rejectBankTransfer(user.id, id);
   }
 
   // =========================================================
@@ -97,7 +122,7 @@ export class TransactionsController {
   async adminFindAll(@Req() req: AuthedRequest) {
     const user = req.user;
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN')) {
-        throw new ForbiddenException("Accès refusé");
+      throw new ForbiddenException('Accès refusé');
     }
     const userId = this.getUserId(req);
     return this.transactionsService.adminFindAllForAdmin(userId);
@@ -112,7 +137,7 @@ export class TransactionsController {
   ) {
     const user = req.user;
     if (!user || (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN')) {
-        throw new ForbiddenException("Accès refusé");
+      throw new ForbiddenException('Accès refusé');
     }
     const userId = this.getUserId(req);
     return this.transactionsService.adminUpdateStatusForAdmin(userId, id, dto);
@@ -123,11 +148,11 @@ export class TransactionsController {
     const user = req.user;
     const userId = this.getUserId(req);
     if (!user || (user.role !== 'AGENT' && user.role !== 'COMPANY_ADMIN')) {
-        throw new ForbiddenException("Seuls les agents peuvent effectuer des dépôts.");
+      throw new ForbiddenException('Seuls les agents peuvent effectuer des dépôts.');
     }
     return this.transactionsService.deposit(userId, dto);
   }
-  
+
   @Post()
   async create(@Req() req: AuthedRequest, @Body() dto: CreateTransactionDto) {
     const userId = this.getUserId(req);

@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/super-dashboard.tsx
+//apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 import React, { useState, useCallback } from "react";
 import { 
   View, Text, StyleSheet, TextInput, Pressable, ScrollView, 
@@ -8,9 +8,9 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from 'expo-image-picker'; 
-import { colors } from "../../../theme/colors";
-import { api } from "../../../services/api";
-import { useAuth } from "../../../providers/AuthProvider"; // ✅ Import Auth
+import { colors } from "../../theme/colors"; // Correction import
+import { api } from "../../services/api";     // Correction import
+import { useAuth } from "../../providers/AuthProvider"; // Correction import
 
 const ACTIVITY_SECTORS = [
     "Transfert d'argent", "Commerce Général", "Télécoms & Services", "Micro-Finance", "Transport & Logistique", "Autre"
@@ -18,7 +18,7 @@ const ACTIVITY_SECTORS = [
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
-  const { user } = useAuth(); // ✅ Récupération user
+  const { user } = useAuth();
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -51,22 +51,15 @@ export default function SuperAdminDashboard() {
   const [showActivityModal, setShowActivityModal] = useState(false);
 
   useFocusEffect(useCallback(() => { 
-      // 🚨 SECURITE : Si pas Super Admin, on dégage
-      if (user && user.role !== 'SUPER_ADMIN') {
-          Alert.alert("Accès refusé", "Zone réservée au Super Admin.");
-          router.replace("/(tabs)/home");
-          return;
-      }
+      // Pas besoin de vérifier le rôle ici, c'est fait dans home.tsx
       loadClients(); 
-  }, [user]));
+  }, []));
 
   const loadClients = async () => {
     setLoading(true);
     try {
         const data = await api.getClients();
         if (Array.isArray(data)) {
-            // ✅ FILTRAGE : On cache la société "DONIKO" (Super Admin)
-            // On suppose que le code est "DONIKO" ou l'ID est 1
             const filtered = data.filter(c => c.code !== 'DONIKO' && c.name !== 'Doniko SAS');
             setClients(filtered);
         }
@@ -74,7 +67,7 @@ export default function SuperAdminDashboard() {
   };
 
   const pickImage = async () => {
-    if (mode === 'VIEW') return; // Bloquer en mode lecture
+    if (mode === 'VIEW') return;
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
@@ -94,7 +87,6 @@ export default function SuperAdminDashboard() {
       }
   };
 
-  // ✅ LOGIQUE DE SUPPRESSION (Déplacée dans la modale)
   const handleDeleteClient = () => {
       const confirmMsg = `Voulez-vous vraiment supprimer la société "${name}" ?\nCette action est irréversible.`;
       
@@ -122,17 +114,14 @@ export default function SuperAdminDashboard() {
 
   const openModal = (client?: any) => {
       if (client) {
-          // MODE LECTURE (VIEW)
           setMode('VIEW');
           setSelectedClientId(client.id);
-          
           setName(client.name);
           setCode(client.code);
           setColor(client.primaryColor || "#F59E0B");
           setContractType(client.subscriptionType === 'PURCHASE' ? 'BUY' : 'RENT'); 
           setIsActive(client.subscriptionStatus === 'ACTIVE');
           setLogo(client.logoUrl || null);
-          
           setOwnerFirstName(client.ownerFirstName || "");
           setOwnerLastName(client.ownerLastName || "");
           setContactPhone(client.contactPhone || "");
@@ -144,7 +133,6 @@ export default function SuperAdminDashboard() {
           setActivitySector(client.activitySector || ACTIVITY_SECTORS[0]);
           setAdminPassword(""); 
       } else {
-          // MODE CRÉATION
           setMode('CREATE');
           setSelectedClientId(null);
           resetForm();
@@ -233,11 +221,9 @@ export default function SuperAdminDashboard() {
             onPress={() => openModal(item)}
         >
             <View style={[styles.statusIndicator, { backgroundColor: isActive ? '#10B981' : '#F59E0B' }]} />
-            
             <View style={{flex: 1, paddingLeft: 10}}>
                 <Text style={styles.clientName}>{item.name}</Text>
                 <Text style={styles.clientCode}>Code: {item.code}</Text>
-                
                 <View style={styles.tags}>
                     <View style={styles.tag}>
                         <Text style={styles.tagText}>{item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOCATION'}</Text>
@@ -249,7 +235,6 @@ export default function SuperAdminDashboard() {
                     </View>
                 </View>
             </View>
-            
             <Ionicons name="chevron-forward" size={20} color="#D1D5DB" />
         </TouchableOpacity>
     );
@@ -260,9 +245,8 @@ export default function SuperAdminDashboard() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color="#FFF" />
-        </Pressable>
+        {/* On cache le bouton retour car on est sur l'accueil */}
+        <View style={{width: 24}} /> 
         <Text style={styles.title}>Gestion Sociétés</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => openModal()}>
             <Ionicons name="add" size={24} color="#333" />
@@ -273,7 +257,7 @@ export default function SuperAdminDashboard() {
         data={clients}
         keyExtractor={(item) => item.id.toString()}
         renderItem={renderClientItem}
-        contentContainerStyle={{padding: 20}}
+        contentContainerStyle={{padding: 20, paddingBottom: 100}}
         ListEmptyComponent={<Text style={{textAlign:'center', marginTop:50, color:'#999'}}>Aucune société.</Text>}
         refreshing={loading}
         onRefresh={loadClients}
@@ -301,6 +285,8 @@ export default function SuperAdminDashboard() {
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
             <ScrollView contentContainerStyle={styles.modalContent}>
                 
+                {/* ... (Contenu du formulaire identique) ... */}
+                {/* Je réutilise ton formulaire tel quel */}
                 <View style={styles.section}>
                     <Text style={styles.sectionHeader}>IDENTITÉ VISUELLE</Text>
                     <View style={{alignItems:'center', marginBottom:15}}>
@@ -520,7 +506,6 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F3F4F6' },
     header: { backgroundColor: '#1E293B', padding: 20, paddingTop: 40, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
     title: { color: "#FFF", fontSize: 18, fontWeight: "700" },
-    backBtn: { padding: 5 },
     addBtn: { backgroundColor: '#FFF', padding: 8, borderRadius: 20 },
     clientCard: { flexDirection:'row', backgroundColor:'#FFF', marginBottom:12, borderRadius:12, padding:15, alignItems:'center', shadowColor:'#000', shadowOpacity:0.05, elevation:2 },
     statusIndicator: { width:4, height:'100%', borderRadius:2, marginRight:10 },

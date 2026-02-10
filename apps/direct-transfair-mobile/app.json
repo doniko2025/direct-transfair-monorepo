@@ -1,4 +1,7 @@
 {
   "name": "direct-transfair-mobile",
-  "slug": "direct-transfair-mobile"
+  "slug": "direct-transfair-mobile",
+  "plugins": [
+    "expo-router"
+  ]
 }
