@@ -11,9 +11,6 @@ import { Role, User } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as nodemailer from 'nodemailer';
 
-// Si tu as installé Twilio, décommente ceci :
-// import { Twilio } from 'twilio';
-
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -39,20 +36,25 @@ function normalizeEmail(email: string): string {
 
 function normalizePhone(phone?: string): string | null {
   if (!phone) return null;
-  return phone.replace(/\s+/g, ''); // Enlève les espaces
+  return phone.replace(/\s+/g, '');
+}
+
+function normalizeTenantCode(code?: string | null): string | null {
+  const c = String(code ?? '').trim();
+  if (!c) return null;
+  return c.toUpperCase();
 }
 
 @Injectable()
 export class AuthService {
   private transporter: nodemailer.Transporter;
-  // private twilioClient: Twilio;
 
   constructor(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
   ) {
-    // Config Nodemailer (Gmail ou SMTP)
     this.transporter = nodemailer.createTransport({
       host: process.env.MAIL_HOST,
       port: Number(process.env.MAIL_PORT) || 587,
@@ -69,7 +71,7 @@ export class AuthService {
   // ---------------------------------------------------------
   async login(dto: LoginDto): Promise<{ access_token: string; user: PublicUser }> {
     const user = await this.validateUser(dto.email, dto.password);
-    
+
     if (!user) {
       throw new UnauthorizedException('Identifiants incorrects');
     }
@@ -90,9 +92,10 @@ export class AuthService {
     let user: User | null = null;
 
     if (isEmail) {
-      user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(identifier) } });
+      user = await this.prisma.user.findUnique({
+        where: { email: normalizeEmail(identifier) },
+      });
     } else {
-      // Recherche par téléphone (nettoyé)
       const phone = normalizePhone(identifier);
       if (phone) {
         user = await this.prisma.user.findFirst({ where: { phone } });
@@ -106,9 +109,9 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------
-  // 📝 REGISTER
+  // 📝 REGISTER (tenant auto via x-tenant-id)
   // ---------------------------------------------------------
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, tenantFromHeader?: string | null) {
     const email = normalizeEmail(dto.email);
     const phone = normalizePhone(dto.phone);
 
@@ -116,16 +119,27 @@ export class AuthService {
     if (existingEmail) throw new ConflictException('Cet email est déjà utilisé.');
 
     if (phone) {
-        const existingPhone = await this.prisma.user.findFirst({ where: { phone } });
-        if (existingPhone) throw new ConflictException('Ce numéro est déjà utilisé.');
+      const existingPhone = await this.prisma.user.findFirst({ where: { phone } });
+      if (existingPhone) throw new ConflictException('Ce numéro est déjà utilisé.');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    
-    let clientId = 1; // Par défaut (Doniko)
-    if (dto.tenantCode && dto.tenantCode !== 'DONIKO') {
-        const client = await this.prisma.client.findUnique({ where: { code: dto.tenantCode } });
-        if (client) clientId = client.id;
+
+    // ✅ IMPORTANT : le tenant est pris automatiquement depuis x-tenant-id
+    // (fallback compat: dto.tenantCode, puis DONIKO)
+    const resolvedTenantCode =
+      normalizeTenantCode(tenantFromHeader) ??
+      normalizeTenantCode(dto.tenantCode) ??
+      'DONIKO';
+
+    const client = await this.prisma.client.findUnique({
+      where: { code: resolvedTenantCode },
+    });
+
+    if (!client) {
+      throw new BadRequestException(
+        `Société introuvable (tenant "${resolvedTenantCode}"). Vérifie le lien société / x-tenant-id.`,
+      );
     }
 
     const user = await this.prisma.user.create({
@@ -133,12 +147,19 @@ export class AuthService {
         email,
         phone,
         password: hashedPassword,
-        role: dto.role === 'AGENT' ? Role.AGENT : Role.USER, // Simplifié
-        clientId,
+        role: dto.role === 'AGENT' ? Role.AGENT : Role.USER,
+        clientId: client.id,
         firstName: dto.firstName,
         lastName: dto.lastName,
         country: dto.country,
         city: dto.city,
+        addressStreet: dto.addressStreet,
+        postalCode: dto.postalCode,
+        nationality: dto.nationality,
+        birthDate: dto.birthDate,
+        birthCountry: dto.birthCountry,
+        birthCity: dto.birthCity,
+        birthPlace: dto.birthPlace,
       },
     });
 
@@ -151,13 +172,14 @@ export class AuthService {
   // ---------------------------------------------------------
   // 🛡️ SECURITÉ : OTP & RESET PASSWORD
   // ---------------------------------------------------------
-
   async findAccount(identifier: string) {
     const isEmail = identifier.includes('@');
     let user: User | null = null;
 
     if (isEmail) {
-      user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(identifier) } });
+      user = await this.prisma.user.findUnique({
+        where: { email: normalizeEmail(identifier) },
+      });
     } else {
       const phone = normalizePhone(identifier);
       if (phone) {
@@ -167,9 +189,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('Compte introuvable');
 
-    // ✅ CORRECTION ICI : On définit explicitement le type du tableau
-    const channels: string[] = []; 
-    
+    const channels: string[] = [];
     if (user.email) channels.push('EMAIL');
     if (user.phone) channels.push('PHONE');
 
@@ -180,33 +200,36 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6 chiffres
-    const expires = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
 
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         otpCode: code,
         otpExpiresAt: expires,
-        otpType: channel === 'EMAIL' ? 'EMAIL_VERIFY' : 'PHONE_VERIFY' 
-      }
+        otpType: channel === 'EMAIL' ? 'EMAIL_VERIFY' : 'PHONE_VERIFY',
+      },
     });
 
     if (channel === 'EMAIL' && user.email) {
+      // eslint-disable-next-line no-console
       console.log(`📧 Envoi Email à ${user.email} : Code ${code}`);
       try {
         await this.transporter.sendMail({
-            from: process.env.MAIL_FROM,
-            to: user.email,
-            subject: 'Votre code de vérification Direct Transf\'air',
-            text: `Votre code est : ${code}. Il expire dans 15 minutes.`
+          from: process.env.MAIL_FROM,
+          to: user.email,
+          subject: "Votre code de vérification Direct Transf'air",
+          text: `Votre code est : ${code}. Il expire dans 15 minutes.`,
         });
       } catch (e) {
-          console.error("Erreur envoi email:", e);
+        // eslint-disable-next-line no-console
+        console.error('Erreur envoi email:', e);
       }
     } else if (channel === 'PHONE' && user.phone) {
-       console.log(`📱 Envoi SMS à ${user.phone} : Code ${code}`);
-       // Intégrer Twilio ici
+      // eslint-disable-next-line no-console
+      console.log(`📱 Envoi SMS à ${user.phone} : Code ${code}`);
+      // Intégrer Twilio ici
     }
 
     return { success: true };
@@ -215,39 +238,37 @@ export class AuthService {
   async verifyOtp(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.otpCode !== code) throw new BadRequestException('Code invalide');
-    
-    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) throw new BadRequestException('Code expiré');
+
+    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
+      throw new BadRequestException('Code expiré');
+    }
 
     await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-            otpCode: null,
-            otpExpiresAt: null,
-            isEmailVerified: user.otpType === 'EMAIL_VERIFY' ? true : user.isEmailVerified,
-            isPhoneVerified: user.otpType === 'PHONE_VERIFY' ? true : user.isPhoneVerified
-        }
+      where: { id: userId },
+      data: {
+        otpCode: null,
+        otpExpiresAt: null,
+        isEmailVerified: user.otpType === 'EMAIL_VERIFY' ? true : user.isEmailVerified,
+        isPhoneVerified: user.otpType === 'PHONE_VERIFY' ? true : user.isPhoneVerified,
+      },
     });
 
     return { success: true };
   }
 
   async resetPassword(userId: string, code: string, newPass: string) {
-    // Vérification simplifiée : on vérifie si le code match (même si déjà vérifié)
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    
-    // Note : Dans un vrai flow strict, on utiliserait un token temporaire après verifyOtp.
-    // Ici, on accepte le code s'il est bon OU si on vient juste de le vérifier.
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
     const hashedPassword = await bcrypt.hash(newPass, 10);
-    
+
     await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-            password: hashedPassword,
-            otpCode: null,
-            otpExpiresAt: null
-        }
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+        otpCode: null,
+        otpExpiresAt: null,
+      },
     });
 
     return { success: true };
@@ -268,14 +289,14 @@ export class AuthService {
       agencyId: user.agencyId,
       balance: Number(user.balance),
       isEmailVerified: user.isEmailVerified,
-      isPhoneVerified: user.isPhoneVerified
+      isPhoneVerified: user.isPhoneVerified,
     };
   }
 
   async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
-        where: { id: userId },
-        include: { client: true, agency: true }
+      where: { id: userId },
+      include: { client: true, agency: true },
     });
     if (!user) throw new NotFoundException('User not found');
     return this.toPublicUser(user);
@@ -286,12 +307,12 @@ export class AuthService {
     delete updateData.id;
     delete updateData.role;
     delete updateData.password;
-    
+
     await this.prisma.user.update({
       where: { id: userId },
       data: updateData,
     });
-    
+
     return this.getProfile(userId);
   }
 }

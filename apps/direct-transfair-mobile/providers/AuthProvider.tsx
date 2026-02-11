@@ -1,10 +1,16 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+import * as Linking from "expo-linking";
 import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
-import type { AuthUser, LoginPayload, RegisterPayload, LoginResponse } from "../services/types";
+import type {
+  AuthUser,
+  LoginPayload,
+  RegisterPayload,
+  LoginResponse,
+} from "../services/types";
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -20,6 +26,66 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const TOKEN_KEY = "dt_token";
 const USER_KEY = "dt_user";
+const TENANT_KEY = "dt_tenant";
+
+const RESERVED_HOST_PREFIXES = new Set(["www", "app", "mobile"]);
+
+function normalizeTenant(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+
+  const upper = raw.toUpperCase();
+  const cleaned = upper.replace(/[^A-Z0-9_-]/g, "");
+  if (!cleaned) return null;
+
+  return cleaned;
+}
+
+function extractTenantFromUrl(url: string): string | null {
+  try {
+    const parsed = Linking.parse(url);
+
+    const qp = parsed.queryParams ?? {};
+    const candidates: unknown[] = [
+      qp["tenant"],
+      qp["tenantCode"],
+      qp["t"],
+      qp["code"],
+      qp["company"],
+      qp["x-tenant-id"],
+    ];
+
+    for (const c of candidates) {
+      const t = normalizeTenant(c);
+      if (t) return t;
+    }
+
+    const host = typeof parsed.hostname === "string" ? parsed.hostname : "";
+    if (host) {
+      const firstLabel = host.split(".")[0] ?? "";
+      const lower = firstLabel.toLowerCase();
+      if (firstLabel && !RESERVED_HOST_PREFIXES.has(lower)) {
+        const t = normalizeTenant(firstLabel);
+        if (t) return t;
+      }
+    }
+
+    // ⚠️ On évite d'interpréter n'importe quel path comme tenant (risque /auth/login etc.)
+    const path = typeof parsed.path === "string" ? parsed.path : "";
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length >= 2) {
+      const head = parts[0]?.toLowerCase();
+      if (head === "t" || head === "tenant") {
+        const t = normalizeTenant(parts[1]);
+        if (t) return t;
+      }
+    }
+  } catch {
+    // noop
+  }
+  return null;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -29,10 +95,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const segments = useSegments();
 
+  const tenantReadyRef = useRef(false);
+
   // --- STORAGE HELPERS ---
   const setStorage = async (key: string, val: string) => {
     if (Platform.OS === "web") {
-      try { localStorage.setItem(key, val); } catch {}
+      try {
+        localStorage.setItem(key, val);
+      } catch {}
     } else {
       await SecureStore.setItemAsync(key, val);
     }
@@ -40,7 +110,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const removeStorage = async (key: string) => {
     if (Platform.OS === "web") {
-      try { localStorage.removeItem(key); } catch {}
+      try {
+        localStorage.removeItem(key);
+      } catch {}
     } else {
       await SecureStore.deleteItemAsync(key);
     }
@@ -48,14 +120,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const getStorage = async (key: string) => {
     if (Platform.OS === "web") {
-      try { return localStorage.getItem(key); } catch { return null; }
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
     }
     return await SecureStore.getItemAsync(key);
+  };
+
+  // --- TENANT INIT / RESOLVE ---
+  const applyTenant = async (nextTenant: string): Promise<void> => {
+    const normalized = normalizeTenant(nextTenant);
+    if (!normalized) return;
+
+    const prev = api.getTenant();
+    if (prev === normalized) return;
+
+    api.setTenant(normalized);
+    await setStorage(TENANT_KEY, normalized);
+  };
+
+  const ensureTenantReady = async (): Promise<void> => {
+    if (tenantReadyRef.current) return;
+
+    // 1) Tenant depuis URL initiale
+    let initialUrl: string | null = null;
+    try {
+      initialUrl = await Linking.getInitialURL();
+    } catch {
+      initialUrl = null;
+    }
+
+    let fromUrl: string | null = null;
+    if (initialUrl) {
+      fromUrl = extractTenantFromUrl(initialUrl);
+    } else if (Platform.OS === "web") {
+      try {
+        const href =
+          typeof window !== "undefined" ? String(window.location.href ?? "") : "";
+        fromUrl = href ? extractTenantFromUrl(href) : null;
+      } catch {
+        fromUrl = null;
+      }
+    }
+
+    // 2) Sinon tenant persisté
+    const stored = normalizeTenant(await getStorage(TENANT_KEY));
+
+    // 3) Choix final
+    const finalTenant = fromUrl ?? stored ?? null;
+    if (finalTenant) {
+      await applyTenant(finalTenant);
+    } else {
+      // Rien à faire: api a déjà un tenant par défaut (env ou DONIKO)
+      tenantReadyRef.current = true;
+      return;
+    }
+
+    tenantReadyRef.current = true;
   };
 
   // --- LOGOUT ---
   const logout = async () => {
     try {
+      // eslint-disable-next-line no-console
       console.log("👋 Déconnexion...");
       api.clearToken();
       setToken(null);
@@ -64,39 +193,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await removeStorage(USER_KEY);
       router.replace("/(auth)/login");
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.error("Erreur logout", e);
     }
   };
+
+  // --- TENANT LISTENER (si on ouvre un nouveau lien société pendant que l'app tourne) ---
+  useEffect(() => {
+    const sub = Linking.addEventListener("url", ({ url }) => {
+      const t = extractTenantFromUrl(url);
+      if (!t) return;
+
+      const prev = api.getTenant();
+      const next = normalizeTenant(t);
+      if (!next || next === prev) return;
+
+      // Important: on change de tenant => on nettoie session (sécurité/consistance)
+      void (async () => {
+        await applyTenant(next);
+        if (user) {
+          await logout();
+        }
+      })();
+    });
+
+    return () => {
+      sub.remove();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // --- INIT SESSION ---
   useEffect(() => {
     const initAuth = async () => {
       try {
+        await ensureTenantReady();
+
         const storedToken = await getStorage(TOKEN_KEY);
         const storedUser = await getStorage(USER_KEY);
 
         if (storedToken && storedUser) {
           api.setToken(storedToken);
           setToken(storedToken);
-          setUser(JSON.parse(storedUser));
+          setUser(JSON.parse(storedUser) as AuthUser);
 
           try {
             const me = await api.getMe();
             setUser(me);
             await setStorage(USER_KEY, JSON.stringify(me));
           } catch {
+            // eslint-disable-next-line no-console
             console.log("Session expirée");
             await logout();
           }
         }
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.log("Erreur init auth", e);
       } finally {
         setIsLoading(false);
       }
     };
 
-    initAuth();
+    void initAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // --- ROUTE GUARD ---
@@ -110,12 +270,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } else if (user && inAuthGroup) {
       router.replace("/(tabs)/home");
     }
-  }, [user, isLoading, segments]);
+  }, [user, isLoading, segments, router]);
 
   // --- LOGIN ---
   const login = async (data: LoginPayload) => {
     setIsLoading(true);
     try {
+      await ensureTenantReady();
+
       const res: LoginResponse = await api.login(data);
 
       api.setToken(res.access_token);
@@ -124,27 +286,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(res.user));
-    } catch (e: any) {
-      console.error("Erreur Login:", e?.response?.data || e?.message);
+    } catch (e: unknown) {
+      // eslint-disable-next-line no-console
+      console.error("Erreur Login:", (e as any)?.response?.data || (e as any)?.message);
       throw e;
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ✅ REGISTER FIXÉ
+  // --- REGISTER ---
   const register = async (data: RegisterPayload, tenantCode?: string) => {
     setIsLoading(true);
     try {
-      const payload = {
+      await ensureTenantReady();
+
+      const activeTenant = normalizeTenant(tenantCode) ?? normalizeTenant(api.getTenant());
+
+      const payload: RegisterPayload & { tenantCode?: string } = {
         ...data,
-        tenantCode,
+        // ✅ tenantCode automatique si on n'est pas sur DONIKO
+        ...(activeTenant && activeTenant !== "DONIKO" ? { tenantCode: activeTenant } : {}),
       };
 
-      await api.register(payload);
-      await login({ email: data.email, password: data.password });
-    } catch (e: any) {
-      console.error("Erreur Register:", e?.response?.data || e?.message);
+      // ✅ Le backend renvoie déjà {access_token, user} dans ton code actuel
+      const res = await api.register(payload);
+
+      if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
+        api.setToken(res.access_token);
+        setToken(res.access_token);
+        setUser(res.user);
+
+        await setStorage(TOKEN_KEY, res.access_token);
+        await setStorage(USER_KEY, JSON.stringify(res.user));
+        return;
+      }
+
+      // Fallback (si un jour ton backend change)
+      await login({ email: data.email, password: (data as any).password });
+    } catch (e: unknown) {
+      // eslint-disable-next-line no-console
+      console.error("Erreur Register:", (e as any)?.response?.data || (e as any)?.message);
       throw e;
     } finally {
       setIsLoading(false);
@@ -157,12 +339,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!token) return;
 
       api.setToken(token);
-
       const updatedUser = await api.getMe();
 
       setUser(updatedUser);
       await setStorage(USER_KEY, JSON.stringify(updatedUser));
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.log("Erreur refresh user", e);
     }
   };

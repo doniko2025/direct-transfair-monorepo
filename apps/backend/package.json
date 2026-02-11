@@ -11,13 +11,13 @@
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed": "ts-node --transpile-only --compiler-options {\"module\":\"CommonJS\",\"verbatimModuleSyntax\":false} prisma/seed.ts",
     "prisma:platform:generate": "prisma generate --schema prisma-platform/schema.prisma",
     "prisma:platform:migrate": "prisma migrate dev --schema prisma-platform/schema.prisma",
     "prisma:platform:deploy": "prisma migrate deploy --schema prisma-platform/schema.prisma"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "ts-node --transpile-only --compiler-options {\"module\":\"CommonJS\",\"verbatimModuleSyntax\":false} prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

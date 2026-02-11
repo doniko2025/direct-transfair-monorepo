@@ -10,12 +10,15 @@ import {
 import { Role } from '@prisma/client';
 
 export class RegisterDto {
-  // 🔹 Code Société (Pour s'inscrire dans un Tenant spécifique)
+  /**
+   * ✅ Compat uniquement:
+   * - En SaaS "un lien par société", le tenant est résolu via x-tenant-id
+   * - Donc le client n'a plus à saisir ce champ.
+   */
   @IsString()
   @IsOptional()
   tenantCode?: string;
 
-  // 🔹 Identité
   @IsString()
   @IsNotEmpty()
   firstName: string;
@@ -24,7 +27,6 @@ export class RegisterDto {
   @IsNotEmpty()
   lastName: string;
 
-  // 🔹 Auth
   @IsEmail()
   @IsNotEmpty()
   email: string;
@@ -37,19 +39,17 @@ export class RegisterDto {
   @IsEnum(Role)
   role?: Role;
 
-  // 🔹 Contact
   @IsString()
   @IsOptional()
   phone?: string;
 
-  // 🔹 Adresse & Lieu
   @IsString()
   @IsOptional()
-  country?: string; // Pays de résidence
+  country?: string;
 
   @IsString()
   @IsOptional()
-  city?: string;    // Ville de résidence
+  city?: string;
 
   @IsString()
   @IsOptional()
@@ -59,24 +59,23 @@ export class RegisterDto {
   @IsOptional()
   postalCode?: string;
 
-  // 🔹 KYC / État Civil
   @IsString()
   @IsOptional()
   nationality?: string;
 
   @IsString()
   @IsOptional()
-  birthDate?: string;    // ISO Date ou String
+  birthDate?: string;
 
   @IsString()
   @IsOptional()
-  birthCountry?: string; // ✅ Nouveau
+  birthCountry?: string;
 
   @IsString()
   @IsOptional()
-  birthCity?: string;    // ✅ Nouveau
+  birthCity?: string;
 
   @IsString()
   @IsOptional()
-  birthPlace?: string;   // (Garder pour compatibilité)
+  birthPlace?: string;
 }

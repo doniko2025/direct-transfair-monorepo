@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/:tenant", "destination": "/[tenant]" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

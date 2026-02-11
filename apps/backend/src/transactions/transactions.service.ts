@@ -26,6 +26,19 @@ import {
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 import type { AuthUserPayload } from '../auth/strategies/jwt.strategy';
 
+// ===================== NOTIFICATIONS & MAILS =====================
+// ✅ Imports Services de Notification (Base de données)
+import { WalletNotifierService } from '../notifications/channels/wallet-notifier.service';
+import { CompanyNotifierService } from '../notifications/channels/company-notifier.service';
+import { AgentNotifierService } from '../notifications/channels/agent-notifier.service';
+import { AdminNotifierService } from '../notifications/channels/admin-notifier.service';
+
+// ✅ Imports Services d'Email (Gmail)
+import { WalletMailService } from '../mail/channels/wallet-mail.service';
+import { AgentMailService } from '../mail/channels/agent-mail.service';
+import { CompanyMailService } from '../mail/channels/company-mail.service';
+import { AdminMailService } from '../mail/channels/admin-mail.service';
+
 const TERMINAL_TX: TransactionStatus[] = [
   TransactionStatus.PAID,
   TransactionStatus.CANCELLED,
@@ -54,6 +67,18 @@ export class TransactionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ratesService: RatesService,
+
+    // ✅ Injections Notifications
+    private readonly walletNotifier: WalletNotifierService,
+    private readonly companyNotifier: CompanyNotifierService,
+    private readonly agentNotifier: AgentNotifierService,
+    private readonly adminNotifier: AdminNotifierService,
+
+    // ✅ Injections Mails
+    private readonly walletMail: WalletMailService,
+    private readonly agentMail: AgentMailService,
+    private readonly companyMail: CompanyMailService,
+    private readonly adminMail: AdminMailService,
   ) {}
 
   // =================================================================
@@ -62,23 +87,19 @@ export class TransactionsService {
   private enrichTransaction(tx: any): any {
     if (!tx) return tx;
 
-    // Clone shallow + clone sender pour éviter mutation Prisma
+    // Clone pour éviter mutation Prisma
     const cloned: any = {
       ...tx,
       sender: tx.sender ? { ...tx.sender } : tx.sender,
     };
 
-    // Si providerRef contient un "|" (ex: "123456|Moussa Diop")
-    if (
-      cloned.providerRef &&
-      typeof cloned.providerRef === 'string' &&
-      cloned.providerRef.includes('|')
-    ) {
-      const parts = cloned.providerRef.split('|');
-      if (parts.length >= 2) {
-        const guestName = parts[1]; // "Moussa Diop"
+    const ref = cloned.providerRef;
 
-        // On simule un objet sender avec le nom du client
+    if (ref && typeof ref === 'string' && ref.includes('|')) {
+      const parts = ref.split('|');
+      if (parts.length >= 2) {
+        const guestName = parts[1];
+
         cloned.sender = {
           ...cloned.sender,
           firstName: guestName,
@@ -86,7 +107,6 @@ export class TransactionsService {
           agency: cloned.sender?.agency,
         };
 
-        // On nettoie la référence pour l'affichage
         cloned.providerRef = parts[0];
       }
     }
@@ -109,19 +129,15 @@ export class TransactionsService {
 
     const amountDec = new Prisma.Decimal(amount);
 
-    // Vérification stricte avant transaction
     if (admin.balance.lessThan(amountDec))
       throw new ForbiddenException('Solde insuffisant pour effectuer ce virement.');
 
-    // ✅ NOUVELLE LOGIQUE : On débite tout de suite via une transaction atomique
-    return this.prisma.$transaction(async (prismaTx) => {
-      // 1. Débit immédiat de l'Admin Société
+    const result = await this.prisma.$transaction(async (prismaTx) => {
       await prismaTx.user.update({
         where: { id: adminId },
         data: { balance: { decrement: amountDec } },
       });
 
-      // 2. Création de la transaction (Statut PENDING)
       return prismaTx.transaction.create({
         data: {
           reference: `BILL-${Date.now()}`,
@@ -134,11 +150,18 @@ export class TransactionsService {
           paymentMethod: PaymentMethod.BANK_TRANSFER,
           payoutMethod: PayoutMethod.WALLET,
           senderId: adminId,
-          clientId: admin.clientId!, // Utilisation de ! car vérifié plus haut
+          clientId: admin.clientId!,
           providerRef: proofReference,
         },
       });
     });
+
+    await this.companyNotifier.notifyB2BTransferSent(adminId, `${amount} XOF`);
+    if (admin.email) {
+      await this.companyMail.sendB2BRequestSent(admin.email, `${amount} XOF`, proofReference);
+    }
+
+    return result;
   }
 
   async validateBankTransfer(superAdminId: string, transactionId: string) {
@@ -157,16 +180,12 @@ export class TransactionsService {
     if (tx.status !== TransactionStatus.PENDING)
       throw new ConflictException('Transaction déjà traitée ou annulée');
 
-    return this.prisma.$transaction(async (prismaTx) => {
-      // ✅ NOUVELLE LOGIQUE : On ne touche PAS au sender (déjà débité).
-
-      // 1. On crédite le Super Admin
+    const result = await this.prisma.$transaction(async (prismaTx) => {
       await prismaTx.user.update({
         where: { id: superAdminId },
         data: { balance: { increment: tx.amount } },
       });
 
-      // 2. On valide la transaction
       return prismaTx.transaction.update({
         where: { id: transactionId },
         data: {
@@ -176,9 +195,17 @@ export class TransactionsService {
         },
       });
     });
+
+    await this.companyNotifier.notifyB2BTransferValidated(tx.senderId, `${tx.amount} XOF`);
+
+    const sender = await this.prisma.user.findUnique({ where: { id: tx.senderId } });
+    if (sender?.email) {
+      await this.companyMail.sendB2BValidated(sender.email, `${tx.amount} XOF`);
+    }
+
+    return result;
   }
 
-  // ✅ NOUVEAU : Méthode de rejet (Pour rembourser l'Admin si le Super Admin refuse)
   async rejectBankTransfer(superAdminId: string, transactionId: string) {
     const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Accès refusé');
@@ -188,14 +215,12 @@ export class TransactionsService {
     if (!tx || tx.status !== TransactionStatus.PENDING)
       throw new ConflictException('Transaction impossible à rejeter (déjà traitée ?)');
 
-    return this.prisma.$transaction(async (prismaTx) => {
-      // 1. Remboursement de l'Admin Société
+    const result = await this.prisma.$transaction(async (prismaTx) => {
       await prismaTx.user.update({
         where: { id: tx.senderId },
         data: { balance: { increment: tx.amount } },
       });
 
-      // 2. Annulation de la transaction
       return prismaTx.transaction.update({
         where: { id: transactionId },
         data: {
@@ -205,6 +230,10 @@ export class TransactionsService {
         },
       });
     });
+
+    await this.companyNotifier.notifyB2BRejected(tx.senderId, `${tx.amount} XOF`);
+
+    return result;
   }
 
   // =================================================================
@@ -219,25 +248,27 @@ export class TransactionsService {
     if (!tx) throw new NotFoundException('Transaction introuvable');
 
     if (tx.senderId !== userId) {
-      throw new ForbiddenException(
-        'Vous ne pouvez annuler que vos propres transactions',
-      );
+      throw new ForbiddenException('Vous ne pouvez annuler que vos propres transactions');
     }
 
     if (tx.status === TransactionStatus.PAID) {
-      throw new ConflictException(
-        "Impossible d'annuler : Le client a déjà retiré l'argent !",
-      );
+      throw new ConflictException("Impossible d'annuler : Le client a déjà retiré l'argent !");
     }
     if (tx.status === TransactionStatus.CANCELLED) {
       throw new ConflictException('Cette transaction est déjà annulée.');
     }
 
     return this.prisma.$transaction(async (prismaTx) => {
+      // ✅ NOUVELLE RÈGLE AGENT (refund)
+      // - à l’envoi agent : balance -= amount ; cash += total
+      // - à l’annulation  : balance += amount ; cash -= total
       if (tx.sender?.role === 'AGENT' && tx.sender.agencyId) {
         await prismaTx.agency.update({
           where: { id: tx.sender.agencyId },
-          data: { balance: { increment: tx.total } },
+          data: {
+            balance: { increment: tx.amount },
+            cash: { decrement: tx.total },
+          },
         });
       } else {
         await prismaTx.user.update({
@@ -267,18 +298,14 @@ export class TransactionsService {
   // =================================================================
   // 🚀 CRÉATION TRANSACTION (ENVOI)
   // =================================================================
-  async create(
-    senderId: string,
-    dto: CreateTransactionDto,
-  ): Promise<Transaction> {
+  async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
       where: { id: senderId },
       include: { agency: true },
     });
 
     if (!user) throw new NotFoundException('User not found');
-    if (!user.clientId)
-      throw new ForbiddenException('User must belong to a client');
+    if (!user.clientId) throw new ForbiddenException('User must belong to a client');
 
     const clientId = user.clientId;
     const beneficiary = await this.prisma.beneficiary.findFirst({
@@ -303,25 +330,30 @@ export class TransactionsService {
       });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const transaction = await this.prisma.$transaction(async (tx) => {
       let currency = dto.currency;
 
       if (user.role === 'AGENT' && user.agencyId && user.agency) {
-        if (user.agency.balance.lessThan(total)) {
+        // ✅ NOUVELLE RÈGLE AGENT (envoi)
+        // balance doit couvrir amount (pas total)
+        if (user.agency.balance.lessThan(amount)) {
           throw new ForbiddenException(
-            `Solde Agence insuffisant (${user.agency.balance} < ${total})`,
+            `Solde Agence insuffisant (${user.agency.balance} < ${amount})`,
           );
         }
+
         await tx.agency.update({
           where: { id: user.agencyId },
-          data: { balance: { decrement: total }, cash: { increment: total } },
+          data: {
+            balance: { decrement: amount }, // ✅ - amount
+            cash: { increment: total },     // ✅ + total (amount + fees)
+          },
         });
+
         currency = user.agency.currency || 'XOF';
       } else {
         if (user.balance.lessThan(total)) {
-          throw new ForbiddenException(
-            `Solde insuffisant (${user.balance} < ${total})`,
-          );
+          throw new ForbiddenException(`Solde insuffisant (${user.balance} < ${total})`);
         }
         await tx.user.update({
           where: { id: senderId },
@@ -332,15 +364,9 @@ export class TransactionsService {
       // --- DEVISE ---
       let targetCurrency = currency;
       const paysCible = beneficiary.country?.toLowerCase().trim() || '';
-      if (
-        paysCible.includes('guin') ||
-        paysCible === 'gn' ||
-        paysCible === 'conakry'
-      ) {
+      if (paysCible.includes('guin') || paysCible === 'gn' || paysCible === 'conakry') {
         targetCurrency = 'GNF';
-      } else if (
-        ['senegal', 'mali', 'benin', 'togo', "cote d'ivoire"].includes(paysCible)
-      ) {
+      } else if (['senegal', 'mali', 'benin', 'togo', "cote d'ivoire"].includes(paysCible)) {
         targetCurrency = 'XOF';
       }
 
@@ -350,8 +376,7 @@ export class TransactionsService {
         targetCurrency,
       );
       const receivedAmount = new Prisma.Decimal(convertedAmountVal);
-      const exchangeRate =
-        Number(amount) > 0 ? convertedAmountVal / Number(amount) : 1;
+      const exchangeRate = Number(amount) > 0 ? convertedAmountVal / Number(amount) : 1;
 
       let status: TransactionStatus = TransactionStatus.PENDING;
       let providerStatus: ProviderStatus = ProviderStatus.PENDING;
@@ -375,7 +400,7 @@ export class TransactionsService {
         withdrawalCode = transactionRef;
       }
 
-      // ✅ STOCKAGE NOM CACHÉ
+      // STOCKAGE NOM CACHÉ
       let storedProviderRef = withdrawalCode;
       if (withdrawalCode && dto.senderFirstName) {
         const senderFullName = `${dto.senderFirstName} ${dto.senderLastName}`;
@@ -402,9 +427,34 @@ export class TransactionsService {
         paidAt: paidAt,
       };
 
-      const transaction = await tx.transaction.create({ data });
-      return transaction;
+      const created = await tx.transaction.create({ data });
+      return created;
     });
+
+    // 🔔 NOTIFICATIONS
+    await this.walletNotifier.notifyTransferSent(
+      senderId,
+      beneficiary.fullName,
+      `${amount} ${dto.currency}`,
+    );
+
+    if (recipientUser) {
+      await this.walletNotifier.notifyTransferReceived(
+        recipientUser.id,
+        `${user.firstName} ${user.lastName}`,
+        `${transaction.receivedAmount} ${transaction.targetCurrency}`,
+      );
+
+      if (recipientUser.email) {
+        await this.walletMail.sendMoneyReceived(
+          recipientUser.email,
+          `${user.firstName} ${user.lastName}`,
+          `${transaction.receivedAmount} ${transaction.targetCurrency}`,
+        );
+      }
+    }
+
+    return transaction;
   }
 
   // =================================================================
@@ -440,7 +490,7 @@ export class TransactionsService {
 
     if (!clientId) throw new ForbiddenException('Agence sans client associé');
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       await tx.agency.update({
         where: { id: agencyId },
         data: {
@@ -473,6 +523,27 @@ export class TransactionsService {
 
       return tx.transaction.create({ data: txData });
     });
+
+    await this.walletNotifier.notifyDepositReceived(clientUser.id, `${dto.amount} XOF`);
+    if (clientUser.email) {
+      await this.walletMail.sendMoneyReceived(clientUser.email, 'Agence', `${dto.amount} XOF`);
+    }
+
+    await this.agentNotifier.notifyDepositProcessed(
+      agentId,
+      `${dto.amount} XOF`,
+      `${clientUser.firstName} ${clientUser.lastName}`,
+    );
+
+    const updatedAgency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
+    if (updatedAgency && updatedAgency.balance.toNumber() < 50000) {
+      await this.agentNotifier.notifyLowBalance(agentId, updatedAgency.balance.toNumber());
+      if (agent.email) {
+        await this.agentMail.sendLowBalanceAlert(agent.email, `${updatedAgency.balance} XOF`);
+      }
+    }
+
+    return result;
   }
 
   async adminFundSelf(user: AuthUserPayload, amount: number) {
@@ -489,17 +560,12 @@ export class TransactionsService {
   }
 
   async refillAgency(adminId: string, agencyId: string, amountToSend: number) {
-    const admin = await this.prisma.user.findUnique({
-      where: { id: adminId },
-    });
-    const agency = await this.prisma.agency.findUnique({
-      where: { id: agencyId },
-    });
+    const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
+    const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!admin || !agency) throw new NotFoundException('Introuvable');
 
     const amountOut = new Prisma.Decimal(amountToSend);
-    if (admin.balance.lessThan(amountOut))
-      throw new ForbiddenException('Solde Admin insuffisant');
+    if (admin.balance.lessThan(amountOut)) throw new ForbiddenException('Solde Admin insuffisant');
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -525,12 +591,7 @@ export class TransactionsService {
       }),
     ]);
 
-    return {
-      status: 'SUCCESS',
-      sent: amountToSend,
-      received: amountToSend,
-      rate: 1,
-    };
+    return { status: 'SUCCESS', sent: amountToSend, received: amountToSend, rate: 1 };
   }
 
   async findForUser(userId: string): Promise<any[]> {
@@ -560,7 +621,7 @@ export class TransactionsService {
       },
     });
 
-    return transactions.map((tx) => this.enrichTransaction(tx));
+    return transactions.map((t) => this.enrichTransaction(t));
   }
 
   async findOneForUser(id: string, userId: string): Promise<any> {
@@ -595,9 +656,7 @@ export class TransactionsService {
   }
 
   async adminFindAllForAdmin(adminId: string): Promise<any[]> {
-    const admin = await this.prisma.user.findUnique({
-      where: { id: adminId },
-    });
+    const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
 
     let transactions: any[] = [];
     if (admin?.role === 'SUPER_ADMIN') {
@@ -613,7 +672,7 @@ export class TransactionsService {
       });
     }
 
-    return transactions.map((tx) => this.enrichTransaction(tx));
+    return transactions.map((t) => this.enrichTransaction(t));
   }
 
   async adminUpdateStatusForAdmin(
@@ -633,21 +692,22 @@ export class TransactionsService {
 
     assertTxTransition(tx.status, dto.status);
 
-    // ✅ CORRECTION PRINCIPALE :
-    // Si on annule depuis l'admin/status, il faut rembourser (sinon "annulé" mais solde inchangé)
     if (dto.status === TransactionStatus.CANCELLED) {
       return this.prisma.$transaction(async (prismaTx) => {
-        // 1) Remboursement (si senderId présent)
         if (tx.senderId) {
           const sender = await prismaTx.user.findUnique({
             where: { id: tx.senderId },
             select: { id: true, role: true, agencyId: true },
           });
 
+          // ✅ NOUVELLE RÈGLE AGENT (refund admin)
           if (sender?.role === 'AGENT' && sender.agencyId) {
             await prismaTx.agency.update({
               where: { id: sender.agencyId },
-              data: { balance: { increment: tx.total } },
+              data: {
+                balance: { increment: tx.amount },
+                cash: { decrement: tx.total },
+              },
             });
           } else {
             await prismaTx.user.update({
@@ -657,7 +717,6 @@ export class TransactionsService {
           }
         }
 
-        // 2) Annulation transaction
         const updatedTx = await prismaTx.transaction.update({
           where: { id },
           data: {
@@ -670,7 +729,6 @@ export class TransactionsService {
           },
         });
 
-        // 3) Annuler withdrawal lié
         await prismaTx.withdrawal.updateMany({
           where: { transactionId: id },
           data: { status: WithdrawalStatus.CANCELLED },

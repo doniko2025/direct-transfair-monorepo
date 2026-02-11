@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { Platform } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage'; // ✅ Import ajouté
 
 import type {
   LoginPayload,
@@ -20,6 +21,7 @@ import type {
 } from "./types";
 
 // ⚠️ Mets ici TON IP LAN uniquement pour tests sur téléphone (si tu n'as pas d'env)
+// Exemple : "192.168.1.15"
 const LOCAL_IP_FALLBACK = "10.205.10.61";
 
 function getBaseUrl(): string {
@@ -30,7 +32,10 @@ function getBaseUrl(): string {
   if (Platform.OS === "web") return "http://localhost:3000";
 
   // ✅ Android Emulator
-  if (Platform.OS === "android") return "http://10.0.2.2:3000";
+  if (Platform.OS === "android") {
+     // Si tu es sur un VRAI téléphone, utilise l'IP Fallback
+     return `http://${LOCAL_IP_FALLBACK}:3000`;
+  }
 
   // ✅ iOS simulator (souvent localhost OK)
   if (Platform.OS === "ios") return "http://localhost:3000";
@@ -91,9 +96,13 @@ function normalizeTransaction(t: unknown): Transaction {
     fees: toNumberSafe(tx?.fees),
     total: toNumberSafe(tx?.total),
     receivedAmount:
-      tx?.receivedAmount !== undefined ? toNumberSafe(tx?.receivedAmount) : tx?.receivedAmount,
+      tx?.receivedAmount !== undefined
+        ? toNumberSafe(tx?.receivedAmount)
+        : tx?.receivedAmount,
     exchangeRate:
-      tx?.exchangeRate !== undefined ? toNumberSafe(tx?.exchangeRate) : tx?.exchangeRate,
+      tx?.exchangeRate !== undefined
+        ? toNumberSafe(tx?.exchangeRate)
+        : tx?.exchangeRate,
   } as Transaction;
 }
 
@@ -119,9 +128,11 @@ class API {
       headers: { "Content-Type": "application/json" },
     });
 
-    // (optionnel mais utile) log en dev
     // eslint-disable-next-line no-console
     console.log("🌐 API baseURL =", baseURL, "| tenant =", this.tenant);
+    
+    // ✅ Initialisation du tenant depuis le stockage (pour les liens profonds)
+    this.loadPersistedTenant();
 
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
@@ -139,6 +150,19 @@ class API {
     });
   }
 
+  // ✅ Charge le tenant sauvegardé par le Deep Linking
+  private async loadPersistedTenant() {
+    try {
+      const savedTenant = await AsyncStorage.getItem('PREFERRED_TENANT');
+      if (savedTenant) {
+        console.log('🔄 Restauration du contexte société :', savedTenant);
+        this.tenant = savedTenant;
+      }
+    } catch (e) {
+      console.warn('Impossible de lire le tenant sauvegardé');
+    }
+  }
+
   setToken(token: string | null) {
     this.token = token;
   }
@@ -151,9 +175,15 @@ class API {
     this.tenant = tenant;
   }
 
+  getTenant(): string {
+    return this.tenant;
+  }
+
   // --- AUTH ---
-  async register(data: RegisterPayload): Promise<void> {
-    await this.http.post("/auth/register", data);
+  // ✅ On retourne LoginResponse si le backend renvoie déjà {access_token, user}
+  async register(data: RegisterPayload): Promise<LoginResponse> {
+    const res = await this.http.post<LoginResponse>("/auth/register", data);
+    return res.data;
   }
 
   async login(data: LoginPayload): Promise<LoginResponse> {
@@ -255,14 +285,16 @@ class API {
   }
 
   async validateBankTransfer(id: string): Promise<Transaction> {
-    const res = await this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`);
+    const res = await this.http.patch<Transaction>(
+      `/transactions/b2b/validate/${id}`,
+    );
     return normalizeTransaction(res.data);
   }
 
-  // ✅ AJOUT : rejet B2B (remboursement admin société + annulation)
-  // ⚠️ Route supposée: /transactions/b2b/reject/:id (alignée avec validate)
   async rejectBankTransfer(id: string): Promise<Transaction> {
-    const res = await this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`);
+    const res = await this.http.patch<Transaction>(
+      `/transactions/b2b/reject/${id}`,
+    );
     return normalizeTransaction(res.data);
   }
 
@@ -288,10 +320,7 @@ class API {
     return normalizeTransaction(res.data);
   }
 
-  async depositAgent(data: {
-    amount: number;
-    userPhone: string;
-  }): Promise<Transaction> {
+  async depositAgent(data: { amount: number; userPhone: string }): Promise<Transaction> {
     const res = await this.http.post<Transaction>("/transactions/deposit", data);
     return normalizeTransaction(res.data);
   }
@@ -313,13 +342,9 @@ class API {
     return list.map(normalizeTransaction);
   }
 
-  async adminUpdateTransactionStatus(
-    id: string,
-    status: string,
-  ): Promise<Transaction> {
+  async adminUpdateTransactionStatus(id: string, status: string): Promise<Transaction> {
     const res = await this.http.patch<Transaction>(
       `/transactions/admin/status/${id}`,
-      { status },
     );
     return normalizeTransaction(res.data);
   }
@@ -327,9 +352,7 @@ class API {
   // --- BÉNÉFICIAIRES ---
   async getBeneficiaries(): Promise<Beneficiary[]> {
     const res = await this.http.get<Beneficiary[]>("/beneficiaries");
-    return Array.isArray(res.data)
-      ? res.data
-      : unwrapArray<Beneficiary>(res.data);
+    return Array.isArray(res.data) ? res.data : unwrapArray<Beneficiary>(res.data);
   }
 
   async getBeneficiary(id: string): Promise<Beneficiary> {
@@ -337,9 +360,7 @@ class API {
     return res.data;
   }
 
-  async createBeneficiary(
-    data: CreateBeneficiaryPayload,
-  ): Promise<Beneficiary> {
+  async createBeneficiary(data: CreateBeneficiaryPayload): Promise<Beneficiary> {
     const res = await this.http.post<Beneficiary>("/beneficiaries", data);
     return res.data;
   }
@@ -380,10 +401,7 @@ class API {
   }
 
   // --- RETRAITS ---
-  async requestWithdrawal(data: {
-    amount?: number;
-    transactionId?: string;
-  }): Promise<unknown> {
+  async requestWithdrawal(data: { amount?: number; transactionId?: string }): Promise<unknown> {
     const res = await this.http.post("/withdrawals", data);
     return res.data;
   }

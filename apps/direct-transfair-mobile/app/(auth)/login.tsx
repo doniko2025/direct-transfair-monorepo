@@ -1,5 +1,5 @@
 // apps/direct-transfair-mobile/app/(auth)/login.tsx
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,17 +12,28 @@ import {
   Platform,
   ScrollView,
 } from "react-native";
-import { useRouter, Link } from "expo-router";
+import { Link, useFocusEffect } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { colors } from "../../theme/colors";
+import { api } from "../../services/api";
 
 export default function LoginScreen() {
   const { login, isLoading } = useAuth();
-  const router = useRouter();
 
-  // On utilise "identifier" au lieu de "email" car ça peut être un téléphone
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  
+  // State pour stocker le tenant actuel et l'afficher dynamiquement
+  const [currentTenant, setCurrentTenant] = useState(api.getTenant());
+
+  // ✅ Met à jour l'affichage quand on revient sur l'écran (après un lien profond par exemple)
+  useFocusEffect(
+    useCallback(() => {
+      setCurrentTenant(api.getTenant());
+    }, [])
+  );
+
+  const tenantLabel = currentTenant && currentTenant !== "DONIKO" ? currentTenant : "Plateforme globale";
 
   const showAlert = (title: string, msg: string) => {
     if (Platform.OS === "web") window.alert(`${title}: ${msg}`);
@@ -36,11 +47,24 @@ export default function LoginScreen() {
     }
 
     try {
-      // On envoie "email" dans le payload car l'API attend ce champ par convention,
-      // mais le backend traitera la valeur comme un identifiant (email ou phone)
+      console.log("Tentative de connexion vers:", api.http.defaults.baseURL);
       await login({ email: identifier.trim(), password });
     } catch (e: any) {
-      const msg = e.response?.data?.message || "Identifiants incorrects.";
+      console.error("Erreur Login compléte:", e);
+      
+      let msg = "Une erreur est survenue.";
+
+      if (e.response) {
+        // Le serveur a répondu (donc on l'a atteint), mais avec une erreur (ex: 401, 400)
+        msg = e.response?.data?.message || "Identifiants incorrects.";
+      } else if (e.request) {
+        // La requête est partie mais pas de réponse (Serveur éteint ou mauvaise IP)
+        msg = "Impossible de joindre le serveur. Vérifiez votre connexion internet ou l'adresse IP.";
+      } else {
+        // Erreur de configuration
+        msg = e.message;
+      }
+
       showAlert("Erreur de connexion", Array.isArray(msg) ? msg[0] : msg);
     }
   };
@@ -50,21 +74,27 @@ export default function LoginScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={{ flex: 1, backgroundColor: "#E0F2FE" }}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.card}>
           <Text style={styles.title}>Direct Transf'air</Text>
           <Text style={styles.subtitle}>Espace Sécurisé</Text>
 
+          <View style={styles.tenantBox}>
+            <Text style={styles.tenantLabel}>Société</Text>
+            <Text style={styles.tenantValue}>{tenantLabel}</Text>
+          </View>
+
           <View style={styles.inputContainer}>
-            {/* Label mis à jour */}
             <Text style={styles.label}>Email ou N° de téléphone</Text>
             <TextInput
               style={styles.input}
               placeholder="ex: +224 620... ou client@mail.com"
               placeholderTextColor="#94A3B8"
               autoCapitalize="none"
-              // On retire le type email-address strict pour permettre le téléphone
-              keyboardType="default" 
+              keyboardType="default"
               value={identifier}
               onChangeText={setIdentifier}
             />
@@ -82,19 +112,32 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Lien Mot de passe oublié ajouté */}
-          <View style={{ alignItems: 'flex-end', marginBottom: 20 }}>
+          <View style={{ alignItems: "flex-end", marginBottom: 20 }}>
             <Link href="/(auth)/forgot-password" asChild>
-                <TouchableOpacity>
-                    <Text style={{ color: colors.primary, fontWeight: '600', fontSize: 13 }}>
-                        Mot de passe oublié ?
-                    </Text>
-                </TouchableOpacity>
+              <TouchableOpacity>
+                <Text
+                  style={{
+                    color: colors.primary,
+                    fontWeight: "600",
+                    fontSize: 13,
+                  }}
+                >
+                  Mot de passe oublié ?
+                </Text>
+              </TouchableOpacity>
             </Link>
           </View>
 
-          <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={isLoading}>
-            {isLoading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Se connecter</Text>}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.buttonText}>Se connecter</Text>
+            )}
           </TouchableOpacity>
 
           <View style={styles.footer}>
@@ -125,11 +168,39 @@ const styles = StyleSheet.create({
     width: "100%",
     alignSelf: "center",
   },
-  title: { fontSize: 28, fontWeight: "900", color: colors.primary, textAlign: "center", marginBottom: 5 },
-  subtitle: { fontSize: 16, color: "#64748B", textAlign: "center", marginBottom: 30 },
+  title: {
+    fontSize: 28,
+    fontWeight: "900",
+    color: colors.primary,
+    textAlign: "center",
+    marginBottom: 5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#64748B",
+    textAlign: "center",
+    marginBottom: 18,
+  },
+
+  tenantBox: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+  },
+  tenantLabel: { fontSize: 11, fontWeight: "800", color: "#64748B", textTransform: "uppercase" },
+  tenantValue: { marginTop: 4, fontSize: 14, fontWeight: "800", color: "#1E293B" },
 
   inputContainer: { marginBottom: 16 },
-  label: { fontSize: 13, fontWeight: "600", color: "#475569", marginBottom: 6, marginLeft: 2 },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+    marginLeft: 2,
+  },
   input: {
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
@@ -145,7 +216,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: 0, // Ajusté car on a ajouté le lien "forgot password" au dessus
+    marginTop: 0,
     shadowColor: colors.primary,
     shadowOpacity: 0.4,
     shadowRadius: 8,

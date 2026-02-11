@@ -1,28 +1,24 @@
-//apps/direct-transfair-mobile/tsconfig.json
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "jsx": "react-jsx",
-
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "allowJs": false,
     "isolatedModules": true,
     "noEmit": true,
-
     "module": "ESNext",
     "verbatimModuleSyntax": false,
-
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
-
-    // ⬇️ FIX CRITIQUE : permet l’usage de process.env
-    "types": ["react", "react-native", "node"],
-
+    "types": [
+      "react",
+      "react-native",
+      "node"
+    ],
     "baseUrl": "."
   },
-
   "include": [
     "app",
     "assets",
@@ -30,9 +26,10 @@
     "providers",
     "components",
     "theme",
-    "utils"
+    "utils",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
   ],
-
   "exclude": [
     "node_modules",
     "_old_routes",

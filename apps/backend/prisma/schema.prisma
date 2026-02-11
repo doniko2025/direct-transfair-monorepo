@@ -1,6 +1,6 @@
 // ==========================================================
 //  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION)
-//  UPDATED: SECURITY & MFA & TENANT SUPPORT
+//  UPDATED: SECURITY & MFA & NOTIFICATIONS
 // ==========================================================
 
 generator client {
@@ -53,7 +53,7 @@ enum PaymentMethod {
   SENDWAVE
   CARD
   CASH
-  BANK_TRANSFER 
+  BANK_TRANSFER
 }
 
 enum PaymentProvider {
@@ -79,10 +79,10 @@ enum WithdrawalStatus {
 }
 
 enum TransactionType {
-  TRANSFER        
-  DEPOSIT         
-  WITHDRAWAL      
-  SERVICE_PAYMENT 
+  TRANSFER
+  DEPOSIT
+  WITHDRAWAL
+  SERVICE_PAYMENT
 }
 
 enum AgencyType {
@@ -101,14 +101,20 @@ enum CommissionDestType {
   PARTNER
 }
 
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
 // ===================== TENANT (PLATEFORME MULTI-SOCIÉTÉS) =====================
-// ✅ AJOUT INDISPENSABLE POUR NEON & GESTION SAAS
 
 model Tenant {
   id          Int      @id @default(autoincrement())
   code        String   @unique
   name        String
-  databaseUrl String?  // Optionnel pour permettre la cohabitation
+  databaseUrl String? // Optionnel pour permettre la cohabitation
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -119,27 +125,27 @@ model Tenant {
 // ===================== CLIENT (LA SOCIÉTÉ) =====================
 
 model Client {
-  id    Int    @id @default(autoincrement())
-  code  String @unique
-  name  String
+  id   Int    @id @default(autoincrement())
+  code String @unique
+  name String
 
-  logoUrl        String?
-  primaryColor   String? @default("#F7931E")
+  logoUrl      String?
+  primaryColor String? @default("#F7931E")
 
-  address        String?
-  phone          String?
-  email          String?
+  address String?
+  phone   String?
+  email   String?
 
   activitySector String?
   contactPhone   String?
   contactEmail   String?
 
-  ownerFirstName   String?
-  ownerLastName    String?
-  ownerBirthDate   String?
-  ownerBirthPlace  String?
-  ownerCountry     String?
-  ownerAddress     String?
+  ownerFirstName  String?
+  ownerLastName   String?
+  ownerBirthDate  String?
+  ownerBirthPlace String?
+  ownerCountry    String?
+  ownerAddress    String?
 
   representativeName String?
   representativeDocs String?
@@ -151,29 +157,29 @@ model Client {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations
   users             User[]
   agencies          Agency[]
   beneficiaries     Beneficiary[]
   transactions      Transaction[]
   withdrawals       Withdrawal[]
-   
   commissionConfigs CommissionConfig[]
 }
 
 // ===================== COMMISSION CONFIGURATION =====================
 
 model CommissionConfig {
-  id        String   @id @default(cuid())
-   
-  clientId  Int
-  client    Client   @relation(fields: [clientId], references: [id])
+  id String @id @default(cuid())
 
-  sourceType      CommissionSourceType
-  destType        CommissionDestType
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
 
-  senderShare     Float @default(0)
-  payerShare      Float @default(0)
-  platformShare   Float @default(100)
+  sourceType CommissionSourceType
+  destType   CommissionDestType
+
+  senderShare   Float @default(0)
+  payerShare    Float @default(0)
+  platformShare Float @default(100)
 
   updatedAt DateTime @updatedAt
 
@@ -188,7 +194,7 @@ model Agency {
   city    String
   address String
 
-  type    AgencyType @default(SUBSIDIARY)
+  type AgencyType @default(SUBSIDIARY)
 
   code  String? @unique
   email String?
@@ -196,7 +202,7 @@ model Agency {
   phone String?
 
   country  String?
-  currency String @default("XOF")
+  currency String  @default("XOF")
 
   balance     Decimal @default(0) @db.Decimal(12, 2)
   creditLimit Decimal @default(0) @db.Decimal(12, 2)
@@ -216,14 +222,13 @@ model Agency {
 // ===================== USER (ACTEURS) =====================
 
 model User {
-  id        String @id @default(cuid())
-  email     String @unique
-  password  String
-  role      Role   @default(USER)
+  id       String @id @default(cuid())
+  email    String @unique
+  password String
+  role     Role   @default(USER)
 
-  // ✅ MODIFIÉ : Le téléphone doit être unique pour servir d'identifiant
-  phone     String? @unique 
-   
+  phone String? @unique
+
   firstName String?
   lastName  String?
   gender    String?
@@ -242,27 +247,30 @@ model User {
 
   balance Decimal @default(0) @db.Decimal(12, 2)
 
-  // ✅ NOUVEAU : Champs de Sécurité (MFA & Vérification)
+  // Champs de Sécurité (MFA & Vérification)
   isEmailVerified Boolean @default(false)
   isPhoneVerified Boolean @default(false)
-   
-  otpCode        String?   // Code OTP temporaire
-  otpExpiresAt   DateTime? // Expiration du code
-  otpType        String?   // 'EMAIL_VERIFY', 'PHONE_VERIFY', 'PASSWORD_RESET'
 
-  // Relations existantes
+  otpCode      String? // Code OTP temporaire
+  otpExpiresAt DateTime? // Expiration du code
+  otpType      String? // 'EMAIL_VERIFY', 'PHONE_VERIFY', 'PASSWORD_RESET'
+
+  // Relations
   clientId Int?
   client   Client? @relation(fields: [clientId], references: [id])
 
   agencyId String?
   agency   Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
 
-  sentTransactions      Transaction[] @relation("Sender")
-  receivedTransactions  Transaction[] @relation("Recipient")
+  sentTransactions     Transaction[] @relation("Sender")
+  receivedTransactions Transaction[] @relation("Recipient")
 
   beneficiaries Beneficiary[]
 
   processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
+
+  // ✅ CORRECTION ICI : Ajout de la relation inverse pour les Notifications
+  notifications Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -271,14 +279,14 @@ model User {
 // ===================== BENEFICIARY =====================
 
 model Beneficiary {
-  id        String @id @default(cuid())
-  fullName  String
-  country   String
-  city      String
-  phone     String?
+  id       String  @id @default(cuid())
+  fullName String
+  country  String
+  city     String
+  phone    String?
 
   userId String
-  user   User @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
 
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
@@ -301,26 +309,26 @@ model Transaction {
   fees   Decimal @db.Decimal(12, 2)
   total  Decimal @db.Decimal(12, 2)
 
-  currency String 
+  currency String
 
-  targetCurrency String?    
-  exchangeRate   Float?     
-  receivedAmount Decimal?  @db.Decimal(12, 2) 
+  targetCurrency String?
+  exchangeRate   Float?
+  receivedAmount Decimal? @db.Decimal(12, 2)
 
   status       TransactionStatus @default(PENDING)
   payoutMethod PayoutMethod      @default(CASH_PICKUP)
 
   paymentMethod PaymentMethod @default(WALLET)
 
-  provider         PaymentProvider?
-  providerRef      String?
-  providerStatus   ProviderStatus? @default(PENDING)
+  provider       PaymentProvider?
+  providerRef    String?
+  providerStatus ProviderStatus?  @default(PENDING)
 
   senderId String
-  sender   User @relation("Sender", fields: [senderId], references: [id])
+  sender   User   @relation("Sender", fields: [senderId], references: [id])
 
   recipientId String?
-  recipient   User? @relation("Recipient", fields: [recipientId], references: [id])
+  recipient   User?   @relation("Recipient", fields: [recipientId], references: [id])
 
   beneficiaryId String?
   beneficiary   Beneficiary? @relation(fields: [beneficiaryId], references: [id])
@@ -352,7 +360,7 @@ model Withdrawal {
   processedAt DateTime?
 
   processedById String?
-  processedBy   User? @relation("ProcessedWithdrawals", fields: [processedById], references: [id])
+  processedBy   User?   @relation("ProcessedWithdrawals", fields: [processedById], references: [id])
 
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
@@ -361,9 +369,28 @@ model Withdrawal {
 // ===================== TAUX DE CHANGE =====================
 
 model ExchangeRate {
-  id        String @id @default(cuid())
-  pair      String @unique
+  id        String   @id @default(cuid())
+  pair      String   @unique
   rate      Float
   updatedAt DateTime @updatedAt
 }
+
+// ===================== NOTIFICATIONS =====================
+
+model Notification {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  title   String
+  message String
+  type    NotificationType @default(INFO)
+  isRead  Boolean          @default(false)
+
+  metadata Json? // Ex: { transactionId: "..." }
+
+  createdAt DateTime @default(now())
+}
+
 //npx prisma db push

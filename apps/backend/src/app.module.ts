@@ -15,13 +15,14 @@ import { PaymentsModule } from './payments/payments.module';
 import { WithdrawalsModule } from './withdrawals/withdrawals.module';
 import { RatesModule } from './rates/rates.module';
 
-// ✅ AJOUT : Module Agencies (pour exposer /agencies)
 import { AgenciesModule } from './agencies/agencies.module';
-
-// ✅ AJOUT : Module Commissions (Nouveau)
 import { CommissionsModule } from './commissions/commissions.module';
 
 import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.middleware';
+
+// ✅ AJOUT : modules globaux "channels"
+import { NotificationsModule } from './notifications/notifications.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -29,6 +30,10 @@ import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.mi
 
     PrismaModule,
     PlatformModule,
+
+    // ✅ Important : importés au moins 1 fois pour activer @Global()
+    NotificationsModule,
+    MailModule,
 
     UsersModule,
     ClientsModule,
@@ -40,8 +45,8 @@ import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.mi
     WithdrawalsModule,
     RatesModule,
 
-    AgenciesModule, // ✅ Module Agences
-    CommissionsModule, // ✅ Module Commissions
+    AgenciesModule,
+    CommissionsModule,
   ],
 })
 export class AppModule implements NestModule {

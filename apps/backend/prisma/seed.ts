@@ -11,7 +11,7 @@ const SubscriptionStatus = { ACTIVE: 'ACTIVE' };
 
 async function main() {
   console.log('🔥 NETTOYAGE COMPLET DE LA BASE DE DONNÉES...');
-  
+
   // Suppression en cascade (ordre important pour éviter les erreurs de clés étrangères)
   try {
     await prisma.withdrawal.deleteMany();
@@ -19,15 +19,39 @@ async function main() {
     await prisma.beneficiary.deleteMany();
     await prisma.user.deleteMany();
     await prisma.agency.deleteMany();
+
+    // ✅ important (FK vers Client)
+    if (prisma.commissionConfig) {
+      await prisma.commissionConfig.deleteMany();
+    }
+
     await prisma.client.deleteMany();
+
+    // ✅ si tu utilises le module tenants/guard
+    if (prisma.tenant) {
+      await prisma.tenant.deleteMany();
+    }
+
     await prisma.exchangeRate.deleteMany();
   } catch (e) {
     console.log('Note: Tables déjà vides ou erreur mineure de nettoyage.');
   }
-  
+
   console.log('🌱 DÉBUT DU SEEDING (SUPER ADMIN UNIQUEMENT)...');
 
   const password = await bcrypt.hash('123456', 10);
+
+  // ✅ Tenant système (utile si ton x-tenant-id est vérifié via table tenants)
+  if (prisma.tenant) {
+    await prisma.tenant.create({
+      data: {
+        code: 'DONIKO',
+        name: 'Tenant Doniko (Platform)',
+        isActive: true,
+      },
+    });
+    console.log('✅ TENANT DONIKO créé.');
+  }
 
   // 1. CRÉATION DU CLIENT "PLATEFORME" (Support du Super Admin)
   const doniko = await prisma.client.create({
@@ -46,19 +70,18 @@ async function main() {
   // 2. CRÉATION DU SUPER ADMIN
   await prisma.user.create({
     data: {
-      email: 'super@doniko.com', // LOGIN DÉFINI ICI
-      password,                  // PASS: 123456
+      email: 'super@doniko.com',
+      password,
       firstName: 'Super',
       lastName: 'Admin',
       role: Role.SUPER_ADMIN,
       clientId: doniko.id,
-      country: 'France', 
+      country: 'France',
       jobTitle: 'Directeur Technique',
     },
   });
 
   console.log('✅ SUPER ADMIN CRÉÉ AVEC SUCCÈS');
-  // CORRECTION ICI : Le log doit correspondre à ce qui a été créé au-dessus
   console.log('   👉 Email: super@doniko.com');
   console.log('   👉 Pass : 123456');
 
@@ -81,5 +104,5 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-  //super@doniko.com
+
   //npx prisma db seed
