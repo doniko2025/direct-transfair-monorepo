@@ -1,18 +1,16 @@
 // apps/backend/prisma-platform/seed-platform.ts
 const { PrismaClient } = require('../src/platform/generated/platform-client');
-
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🚀 Seeding Platform DB (Tenants Registry)...');
+  console.log('🚀 Initialisation du registre DONIKO sur Railway...');
 
-  // En local, on pointe sur la même DB. 
-  // En prod, cela sera l'URL spécifique du client.
-  const dbUrl = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/directtransfair?schema=public";
+  // On utilise l'URL de la base de données de production
+  const dbUrl = process.env.DATABASE_URL;
 
   const doniko = await prisma.tenant.upsert({
     where: { code: 'DONIKO' },
-    update: {},
+    update: { databaseUrl: dbUrl }, // Mise à jour de l'URL au cas où
     create: {
       code: 'DONIKO',
       name: 'Doniko Transfert',
@@ -21,14 +19,15 @@ async function main() {
     },
   });
 
-  console.log(`✅ Tenant Platform created: ${doniko.name} (ID: ${doniko.id})`);
+  console.log(`✅ Registre prêt : ${doniko.name} (Code: ${doniko.code})`);
 }
 
 main()
   .catch((e) => {
-    console.error('❌ Platform Seed Error:', e);
+    console.error('❌ Erreur Seed Platform:', e);
     process.exit(1);
   })
   .finally(async () => {
     await prisma.$disconnect();
   });
+  //npx ts-node prisma-platform/seed-platform.ts
