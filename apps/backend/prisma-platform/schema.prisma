@@ -1,10 +1,12 @@
+// apps/backend/prisma-platform/schema.prisma
 // ==========================================================
-// PRISMA SCHEMA — PLATFORM DB (TENANT REGISTRY)
-// One schema = "platform"
+//  PRISMA SCHEMA — PLATFORM DB (TENANT REGISTRY)
+//  One row per enterprise/tenant
 // ==========================================================
 
 generator client {
   provider = "prisma-client-js"
+  // Génère un client distinct pour la Platform DB
   output   = "../src/platform/generated/platform-client"
 }
 
