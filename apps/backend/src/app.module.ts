@@ -18,9 +18,10 @@ import { RatesModule } from './rates/rates.module';
 import { AgenciesModule } from './agencies/agencies.module';
 import { CommissionsModule } from './commissions/commissions.module';
 
-import { TenantResolverMiddleware } from './common/middleware/tenant-resolver.middleware';
+// ✅ LE BON middleware
+import { TenantMiddleware } from './tenants/tenant.middleware';
 
-// ✅ AJOUT : modules globaux "channels"
+// modules globaux
 import { NotificationsModule } from './notifications/notifications.module';
 import { MailModule } from './mail/mail.module';
 
@@ -31,7 +32,6 @@ import { MailModule } from './mail/mail.module';
     PrismaModule,
     PlatformModule,
 
-    // ✅ Important : importés au moins 1 fois pour activer @Global()
     NotificationsModule,
     MailModule,
 
@@ -44,7 +44,6 @@ import { MailModule } from './mail/mail.module';
     PaymentsModule,
     WithdrawalsModule,
     RatesModule,
-
     AgenciesModule,
     CommissionsModule,
   ],
@@ -52,17 +51,14 @@ import { MailModule } from './mail/mail.module';
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(TenantResolverMiddleware)
+      .apply(TenantMiddleware) // ✅ FIX CRITIQUE
       .exclude(
-        // publiques
         'swagger',
         'swagger/(.*)',
         'auth/login',
         'auth/register',
         'auth/refresh',
         'health',
-
-        // provisioning platform (pas de tenant requis)
         'admin/tenants',
         'admin/tenants/(.*)',
       )

@@ -10,55 +10,95 @@ import type { Request } from 'express';
 import { TenantResolverService } from './tenant-resolver.service';
 import type { RequestWithTenant } from './tenant.middleware';
 
-function isPublicOrAdminPath(url: string): boolean {
+function stripQuery(url: string): string {
+  const i = url.indexOf('?');
+  return i >= 0 ? url.slice(0, i) : url;
+}
+
+/**
+ * Normalise le path pour gérer le globalPrefix "api".
+ * Ex: "/api/auth/login" -> "/auth/login"
+ */
+function normalizePath(rawUrl: string): string {
+  const url = stripQuery(rawUrl || '');
+  const withSlash = url.startsWith('/') ? url : `/${url}`;
+  return withSlash.replace(/^\/api(?=\/|$)/, '') || '/';
+}
+
+function isPublicOrAdminPath(path: string): boolean {
   return (
-    url.startsWith('/swagger') ||
-    url.startsWith('/auth/login') ||
-    url.startsWith('/auth/register') ||
-    url.startsWith('/auth/refresh') ||
-    url.startsWith('/health') ||
-    // ✅ CORRECTION CRITIQUE ICI
-    // On autorise les routes de trésorerie admin à passer SANS contexte tenant obligatoire.
-    // C'est le JwtAuthGuard (Controller) qui sécurisera l'accès.
-    url.includes('/transactions/admin/') 
+    // Swagger / health
+    path.startsWith('/swagger') ||
+    path.startsWith('/health') ||
+
+    // Auth public
+    path.startsWith('/auth/login') ||
+    path.startsWith('/auth/register') ||
+    path.startsWith('/auth/refresh') ||
+    path.startsWith('/auth/find-account') ||
+    path.startsWith('/auth/send-otp') ||
+    path.startsWith('/auth/verify-otp') ||
+    path.startsWith('/auth/reset-password') ||
+
+    // Exception admin (si tu l’assumes)
+    path.includes('/transactions/admin/')
   );
+}
+
+function normalizeTenantHeader(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim().toUpperCase();
+  if (!t) return null;
+  // ton “bug tenant=10”
+  if (t === '10') return 'DONIKO';
+  return t;
 }
 
 @Injectable()
 export class TenantGuard implements CanActivate {
-  constructor(
-    private readonly tenantResolver: TenantResolverService,
-  ) {}
+  constructor(private readonly tenantResolver: TenantResolverService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context
-      .switchToHttp()
-      .getRequest<RequestWithTenant>();
+    const req = context.switchToHttp().getRequest<RequestWithTenant>();
 
-    const url =
+    const rawUrl =
       (req as unknown as Request).originalUrl ??
       (req as unknown as Request).url ??
       '';
 
-    // ✅ Si c'est public OU une route admin spéciale, on laisse passer
-    if (isPublicOrAdminPath(url)) {
+    const path = normalizePath(rawUrl);
+
+    // ✅ Public routes : on laisse passer
+    if (isPublicOrAdminPath(path)) {
       return true;
     }
 
-    // 🚨 Pour les autres routes (clients/agences standards), on exige un tenant
+    // ✅ Déjà résolu par middleware/service
+    if (req.tenantContext) {
+      return true;
+    }
+
+    // ✅ Fallback 1 : header x-tenant-id (le mobile l’envoie)
+    const headerTenant =
+      normalizeTenantHeader((req.headers as any)['x-tenant-id']) ??
+      normalizeTenantHeader((req.headers as any)['x-tenant-id'.toUpperCase()]);
+
+    if (headerTenant) {
+      // On renseigne au minimum pour que le reste de l’app fonctionne
+      (req as any).tenantCode = headerTenant;
+      (req as any).tenantContext = { code: headerTenant };
+      return true;
+    }
+
+    // ✅ Fallback 2 : tentative de résolution via service (si tu as d’autres mécanismes)
+    try {
+      await this.tenantResolver.resolve(req);
+    } catch {
+      throw new UnauthorizedException('Missing tenant context (Guard Blocked)');
+    }
+
     if (!req.tenantContext) {
-      // On tente une dernière résolution si le middleware a échoué silencieusement
-      try {
-          await this.tenantResolver.resolve(req);
-      } catch (e) {
-          // Si vraiment impossible, on rejette
-          throw new UnauthorizedException('Missing tenant context (Guard Blocked)');
-      }
-      
-      // Si après tentative c'est toujours vide
-      if (!req.tenantContext) {
-          throw new UnauthorizedException('Missing tenant context');
-      }
+      throw new UnauthorizedException('Missing tenant context (Guard Blocked)');
     }
 
     return true;
