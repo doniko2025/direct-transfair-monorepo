@@ -37,7 +37,8 @@
         {
           "origin": "https://directtransfair.app"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

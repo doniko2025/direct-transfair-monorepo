@@ -2,17 +2,21 @@
 import axios, { AxiosInstance } from "axios";
 import { Platform } from "react-native";
 
-// ⚠️ Mets l’IP locale de ton PC pour Expo Go
-const LOCAL_IP = "http://192.168.1.40:3000";
-const WEB_URL = "http://localhost:3000";
+const stripTrailingSlash = (url: string) => url.replace(/\/+$/, "");
 
-// Web → localhost ; Mobile → IP locale
-const API_URL = Platform.OS === "web" ? WEB_URL : LOCAL_IP;
+const fallbackLocalApiUrl =
+  Platform.OS === "web"
+    ? "http://localhost:3000"
+    : "http://192.168.1.40:3000"; // utile uniquement si tu testes en local via Expo Go
 
-const TENANT_CODE = "DONIKO";
+const API_URL = stripTrailingSlash(
+  process.env.EXPO_PUBLIC_API_URL ?? fallbackLocalApiUrl
+);
+
+const TENANT_CODE = process.env.EXPO_PUBLIC_TENANT_ID ?? "DONIKO";
 
 // ==================================================
-// 🔥 Client Axios (typé !)
+// 🔥 Client Axios (typé)
 // ==================================================
 export const api: AxiosInstance = axios.create({
   baseURL: API_URL,

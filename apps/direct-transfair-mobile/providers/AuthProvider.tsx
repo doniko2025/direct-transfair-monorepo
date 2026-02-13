@@ -71,7 +71,7 @@ function extractTenantFromUrl(url: string): string | null {
       }
     }
 
-    // ⚠️ On évite d'interpréter n'importe quel path comme tenant (risque /auth/login etc.)
+    // On évite d'interpréter n'importe quel path comme tenant
     const path = typeof parsed.path === "string" ? parsed.path : "";
     const parts = path.split("/").filter(Boolean);
     if (parts.length >= 2) {
@@ -173,7 +173,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (finalTenant) {
       await applyTenant(finalTenant);
     } else {
-      // Rien à faire: api a déjà un tenant par défaut (env ou DONIKO)
       tenantReadyRef.current = true;
       return;
     }
@@ -184,7 +183,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // --- LOGOUT ---
   const logout = async () => {
     try {
-      // eslint-disable-next-line no-console
       console.log("👋 Déconnexion...");
       api.clearToken();
       setToken(null);
@@ -193,12 +191,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await removeStorage(USER_KEY);
       router.replace("/(auth)/login");
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error("Erreur logout", e);
     }
   };
 
-  // --- TENANT LISTENER (si on ouvre un nouveau lien société pendant que l'app tourne) ---
+  // --- TENANT LISTENER ---
   useEffect(() => {
     const sub = Linking.addEventListener("url", ({ url }) => {
       const t = extractTenantFromUrl(url);
@@ -208,7 +205,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const next = normalizeTenant(t);
       if (!next || next === prev) return;
 
-      // Important: on change de tenant => on nettoie session (sécurité/consistance)
       void (async () => {
         await applyTenant(next);
         if (user) {
@@ -242,13 +238,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(me);
             await setStorage(USER_KEY, JSON.stringify(me));
           } catch {
-            // eslint-disable-next-line no-console
             console.log("Session expirée");
             await logout();
           }
         }
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.log("Erreur init auth", e);
       } finally {
         setIsLoading(false);
@@ -287,7 +281,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(res.user));
     } catch (e: unknown) {
-      // eslint-disable-next-line no-console
       console.error("Erreur Login:", (e as any)?.response?.data || (e as any)?.message);
       throw e;
     } finally {
@@ -305,11 +298,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const payload: RegisterPayload & { tenantCode?: string } = {
         ...data,
-        // ✅ tenantCode automatique si on n'est pas sur DONIKO
         ...(activeTenant && activeTenant !== "DONIKO" ? { tenantCode: activeTenant } : {}),
       };
 
-      // ✅ Le backend renvoie déjà {access_token, user} dans ton code actuel
       const res = await api.register(payload);
 
       if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
@@ -322,10 +313,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Fallback (si un jour ton backend change)
       await login({ email: data.email, password: (data as any).password });
     } catch (e: unknown) {
-      // eslint-disable-next-line no-console
       console.error("Erreur Register:", (e as any)?.response?.data || (e as any)?.message);
       throw e;
     } finally {
@@ -344,7 +333,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(updatedUser);
       await setStorage(USER_KEY, JSON.stringify(updatedUser));
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.log("Erreur refresh user", e);
     }
   };

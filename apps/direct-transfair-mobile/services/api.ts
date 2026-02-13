@@ -5,7 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from "axios";
 import { Platform } from "react-native";
-import AsyncStorage from '@react-native-async-storage/async-storage'; // ✅ Import ajouté
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type {
   LoginPayload,
@@ -21,38 +21,30 @@ import type {
 } from "./types";
 
 // ⚠️ Mets ici TON IP LAN uniquement pour tests sur téléphone (si tu n'as pas d'env)
-// Exemple : "192.168.1.15"
 const LOCAL_IP_FALLBACK = "10.205.10.61";
 
 function getBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   if (envUrl && envUrl.trim().length > 0) return envUrl.trim();
 
-  // ✅ WEB: backend sur la même machine
   if (Platform.OS === "web") return "http://localhost:3000";
-
-  // ✅ Android Emulator
-  if (Platform.OS === "android") {
-     // Si tu es sur un VRAI téléphone, utilise l'IP Fallback
-     return `http://${LOCAL_IP_FALLBACK}:3000`;
-  }
-
-  // ✅ iOS simulator (souvent localhost OK)
+  if (Platform.OS === "android") return `http://${LOCAL_IP_FALLBACK}:3000`;
   if (Platform.OS === "ios") return "http://localhost:3000";
-
-  // ✅ Fallback device (rare)
+  
   return `http://${LOCAL_IP_FALLBACK}:3000`;
 }
 
 function getTenantId(): string {
   const envTenant = process.env.EXPO_PUBLIC_TENANT_ID;
-  if (envTenant && envTenant.trim().length > 0) return envTenant.trim();
-  return "DONIKO";
+  // 🛡️ SÉCURITÉ : Si l'env est vide ou vaut "10", on force "DONIKO"
+  if (!envTenant || envTenant.trim() === "" || envTenant.trim() === "10") {
+    return "DONIKO";
+  }
+  return envTenant.trim();
 }
 
-function ensureAxiosHeaders(
-  headers: InternalAxiosRequestConfig["headers"],
-): AxiosHeaders {
+// ... (Les fonctions utilitaires ensureAxiosHeaders, unwrapArray, etc. restent identiques) ...
+function ensureAxiosHeaders(headers: InternalAxiosRequestConfig["headers"]): AxiosHeaders {
   if (!headers) return new AxiosHeaders();
   if (headers instanceof AxiosHeaders) return headers;
   return new AxiosHeaders(headers as Record<string, string>);
@@ -60,11 +52,7 @@ function ensureAxiosHeaders(
 
 function unwrapArray<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
-  if (
-    payload &&
-    typeof payload === "object" &&
-    Array.isArray((payload as { data?: unknown }).data)
-  ) {
+  if (payload && typeof payload === "object" && Array.isArray((payload as { data?: unknown }).data)) {
     return (payload as { data: T[] }).data;
   }
   return [];
@@ -82,9 +70,7 @@ function toNumberSafe(value: unknown): number {
       const n = Number(asAny.toString());
       return Number.isFinite(n) ? n : 0;
     }
-  } catch {
-    // noop
-  }
+  } catch {}
   return 0;
 }
 
@@ -95,14 +81,8 @@ function normalizeTransaction(t: unknown): Transaction {
     amount: toNumberSafe(tx?.amount),
     fees: toNumberSafe(tx?.fees),
     total: toNumberSafe(tx?.total),
-    receivedAmount:
-      tx?.receivedAmount !== undefined
-        ? toNumberSafe(tx?.receivedAmount)
-        : tx?.receivedAmount,
-    exchangeRate:
-      tx?.exchangeRate !== undefined
-        ? toNumberSafe(tx?.exchangeRate)
-        : tx?.exchangeRate,
+    receivedAmount: tx?.receivedAmount !== undefined ? toNumberSafe(tx?.receivedAmount) : tx?.receivedAmount,
+    exchangeRate: tx?.exchangeRate !== undefined ? toNumberSafe(tx?.exchangeRate) : tx?.exchangeRate,
   } as Transaction;
 }
 
@@ -128,17 +108,18 @@ class API {
       headers: { "Content-Type": "application/json" },
     });
 
-    // eslint-disable-next-line no-console
     console.log("🌐 API baseURL =", baseURL, "| tenant =", this.tenant);
     
-    // ✅ Initialisation du tenant depuis le stockage (pour les liens profonds)
+    // ✅ Initialisation + Nettoyage automatique du tenant
     this.loadPersistedTenant();
 
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
-      // Tenant toujours envoyé (même si /auth/login est public, ça ne gêne pas)
-      headers.set("x-tenant-id", this.tenant);
+      // 🛡️ ULTRA SÉCURITÉ : On vérifie une dernière fois avant d'envoyer
+      const safeTenant = (this.tenant === "10" || !this.tenant) ? "DONIKO" : this.tenant;
+      
+      headers.set("x-tenant-id", safeTenant);
 
       if (this.token && this.token.trim().length > 0) {
         const cleanToken = this.token.replace(/^"|"$/g, "");
@@ -150,37 +131,31 @@ class API {
     });
   }
 
-  // ✅ Charge le tenant sauvegardé par le Deep Linking
+  // ✅ Charge le tenant ET corrige le problème du "10"
   private async loadPersistedTenant() {
     try {
       const savedTenant = await AsyncStorage.getItem('PREFERRED_TENANT');
       if (savedTenant) {
-        console.log('🔄 Restauration du contexte société :', savedTenant);
-        this.tenant = savedTenant;
+        if (savedTenant === "10") {
+            console.log('⚠️ Correction automatique : Tenant 10 -> DONIKO');
+            this.tenant = "DONIKO";
+            await AsyncStorage.setItem('PREFERRED_TENANT', "DONIKO"); // On corrige le stockage
+        } else {
+            console.log('🔄 Restauration du contexte société :', savedTenant);
+            this.tenant = savedTenant;
+        }
       }
     } catch (e) {
       console.warn('Impossible de lire le tenant sauvegardé');
     }
   }
 
-  setToken(token: string | null) {
-    this.token = token;
-  }
-
-  clearToken() {
-    this.token = null;
-  }
-
-  setTenant(tenant: string) {
-    this.tenant = tenant;
-  }
-
-  getTenant(): string {
-    return this.tenant;
-  }
+  setToken(token: string | null) { this.token = token; }
+  clearToken() { this.token = null; }
+  setTenant(tenant: string) { this.tenant = tenant; }
+  getTenant(): string { return this.tenant === "10" ? "DONIKO" : this.tenant; }
 
   // --- AUTH ---
-  // ✅ On retourne LoginResponse si le backend renvoie déjà {access_token, user}
   async register(data: RegisterPayload): Promise<LoginResponse> {
     const res = await this.http.post<LoginResponse>("/auth/register", data);
     return res.data;
@@ -191,9 +166,7 @@ class API {
     return res.data;
   }
 
-  async findAccount(
-    identifier: string,
-  ): Promise<{ userId: string; channels: string[] }> {
+  async findAccount(identifier: string): Promise<{ userId: string; channels: string[] }> {
     const res = await this.http.post("/auth/find-account", { identifier });
     return res.data;
   }
@@ -202,19 +175,11 @@ class API {
     await this.http.post("/auth/send-otp", { userId, channel });
   }
 
-  async verifyOtp(
-    userId: string,
-    code: string,
-    type: string = "PASSWORD_RESET",
-  ): Promise<void> {
+  async verifyOtp(userId: string, code: string, type: string = "PASSWORD_RESET"): Promise<void> {
     await this.http.post("/auth/verify-otp", { userId, code, type });
   }
 
-  async resetPassword(
-    userId: string,
-    code: string,
-    newPassword: string,
-  ): Promise<void> {
+  async resetPassword(userId: string, code: string, newPassword: string): Promise<void> {
     await this.http.post("/auth/reset-password", { userId, code, newPassword });
   }
 
@@ -245,14 +210,8 @@ class API {
     return res.data;
   }
 
-  async updateAgency(
-    id: string,
-    data: Partial<CreateAgencyPayload>,
-  ): Promise<unknown> {
-    const safe =
-      data && (data as any).type
-        ? normalizeAgencyPayload(data as CreateAgencyPayload)
-        : data;
+  async updateAgency(id: string, data: Partial<CreateAgencyPayload>): Promise<unknown> {
+    const safe = data && (data as any).type ? normalizeAgencyPayload(data as CreateAgencyPayload) : data;
     const res = await this.http.patch(`/agencies/${id}`, safe);
     return res.data;
   }
@@ -268,33 +227,23 @@ class API {
   }
 
   async adminRefillAgency(agencyId: string, amount: number): Promise<any> {
-    const res = await this.http.post("/transactions/admin/refill-agency", {
-      agencyId,
-      amount,
-    });
+    const res = await this.http.post("/transactions/admin/refill-agency", { agencyId, amount });
     return res.data;
   }
 
   // --- 🏦 B2B PAIEMENTS ---
   async declareBankTransfer(amount: number, ref: string): Promise<Transaction> {
-    const res = await this.http.post<Transaction>("/transactions/b2b/declare", {
-      amount,
-      ref,
-    });
+    const res = await this.http.post<Transaction>("/transactions/b2b/declare", { amount, ref });
     return normalizeTransaction(res.data);
   }
 
   async validateBankTransfer(id: string): Promise<Transaction> {
-    const res = await this.http.patch<Transaction>(
-      `/transactions/b2b/validate/${id}`,
-    );
+    const res = await this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`);
     return normalizeTransaction(res.data);
   }
 
   async rejectBankTransfer(id: string): Promise<Transaction> {
-    const res = await this.http.patch<Transaction>(
-      `/transactions/b2b/reject/${id}`,
-    );
+    const res = await this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`);
     return normalizeTransaction(res.data);
   }
 
@@ -343,9 +292,7 @@ class API {
   }
 
   async adminUpdateTransactionStatus(id: string, status: string): Promise<Transaction> {
-    const res = await this.http.patch<Transaction>(
-      `/transactions/admin/status/${id}`,
-    );
+    const res = await this.http.patch<Transaction>(`/transactions/admin/status/${id}`);
     return normalizeTransaction(res.data);
   }
 
@@ -365,18 +312,13 @@ class API {
     return res.data;
   }
 
-  async updateBeneficiary(
-    id: string,
-    data: Partial<CreateBeneficiaryPayload>,
-  ): Promise<Beneficiary> {
+  async updateBeneficiary(id: string, data: Partial<CreateBeneficiaryPayload>): Promise<Beneficiary> {
     const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}`, data);
     return res.data;
   }
 
   async deleteBeneficiary(id: string): Promise<{ deleted: true; id: string }> {
-    const res = await this.http.delete<{ deleted: true; id: string }>(
-      `/beneficiaries/${id}`,
-    );
+    const res = await this.http.delete<{ deleted: true; id: string }>(`/beneficiaries/${id}`);
     return res.data;
   }
 

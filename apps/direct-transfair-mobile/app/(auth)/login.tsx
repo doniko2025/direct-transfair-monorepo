@@ -1,4 +1,4 @@
-// apps/direct-transfair-mobile/app/(auth)/login.tsx
+/////// apps/direct-transfair-mobile/app/(auth)/login.tsx
 import React, { useState, useCallback } from "react";
 import {
   View,
@@ -23,17 +23,22 @@ export default function LoginScreen() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   
-  // State pour stocker le tenant actuel et l'afficher dynamiquement
-  const [currentTenant, setCurrentTenant] = useState(api.getTenant());
+  // State pour stocker le tenant actuel
+  const [currentTenant, setCurrentTenant] = useState("DONIKO");
 
-  // ✅ Met à jour l'affichage quand on revient sur l'écran (après un lien profond par exemple)
+  // Met à jour l'affichage quand on revient sur l'écran
   useFocusEffect(
     useCallback(() => {
-      setCurrentTenant(api.getTenant());
+      let t = api.getTenant();
+      // Correction visuelle immédiate si "10" traîne encore
+      if (t === "10") t = "DONIKO";
+      setCurrentTenant(t);
     }, [])
   );
 
-  const tenantLabel = currentTenant && currentTenant !== "DONIKO" ? currentTenant : "Plateforme globale";
+  // LOGIQUE D'AFFICHAGE INTELLIGENTE
+  const isDefaultTenant = currentTenant === "DONIKO" || !currentTenant;
+  const tenantLabel = isDefaultTenant ? "Plateforme Globale" : currentTenant.toUpperCase();
 
   const showAlert = (title: string, msg: string) => {
     if (Platform.OS === "web") window.alert(`${title}: ${msg}`);
@@ -55,13 +60,10 @@ export default function LoginScreen() {
       let msg = "Une erreur est survenue.";
 
       if (e.response) {
-        // Le serveur a répondu (donc on l'a atteint), mais avec une erreur (ex: 401, 400)
         msg = e.response?.data?.message || "Identifiants incorrects.";
       } else if (e.request) {
-        // La requête est partie mais pas de réponse (Serveur éteint ou mauvaise IP)
-        msg = "Impossible de joindre le serveur. Vérifiez votre connexion internet ou l'adresse IP.";
+        msg = "Impossible de joindre le serveur. Vérifiez votre connexion internet.";
       } else {
-        // Erreur de configuration
         msg = e.message;
       }
 
@@ -82,8 +84,9 @@ export default function LoginScreen() {
           <Text style={styles.title}>Direct Transf'air</Text>
           <Text style={styles.subtitle}>Espace Sécurisé</Text>
 
+          {/* Affichage du Tenant (Société) */}
           <View style={styles.tenantBox}>
-            <Text style={styles.tenantLabel}>Société</Text>
+            <Text style={styles.tenantLabel}>SOCIÉTÉ</Text>
             <Text style={styles.tenantValue}>{tenantLabel}</Text>
           </View>
 
@@ -94,7 +97,7 @@ export default function LoginScreen() {
               placeholder="ex: +224 620... ou client@mail.com"
               placeholderTextColor="#94A3B8"
               autoCapitalize="none"
-              keyboardType="default"
+              keyboardType="email-address"
               value={identifier}
               onChangeText={setIdentifier}
             />
@@ -106,7 +109,7 @@ export default function LoginScreen() {
               style={styles.input}
               placeholder="••••••"
               placeholderTextColor="#94A3B8"
-              secureTextEntry
+              secureTextEntry={true} 
               value={password}
               onChangeText={setPassword}
             />
@@ -115,15 +118,7 @@ export default function LoginScreen() {
           <View style={{ alignItems: "flex-end", marginBottom: 20 }}>
             <Link href="/(auth)/forgot-password" asChild>
               <TouchableOpacity>
-                <Text
-                  style={{
-                    color: colors.primary,
-                    fontWeight: "600",
-                    fontSize: 13,
-                  }}
-                >
-                  Mot de passe oublié ?
-                </Text>
+                <Text style={styles.forgotPass}>Mot de passe oublié ?</Text>
               </TouchableOpacity>
             </Link>
           </View>
@@ -131,10 +126,10 @@ export default function LoginScreen() {
           <TouchableOpacity
             style={styles.button}
             onPress={handleLogin}
-            disabled={isLoading}
+            disabled={!!isLoading}
           >
             {isLoading ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator animating={true} color="#FFF" />
             ) : (
               <Text style={styles.buttonText}>Se connecter</Text>
             )}
@@ -189,9 +184,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 12,
     marginBottom: 18,
+    alignItems: "center",
   },
-  tenantLabel: { fontSize: 11, fontWeight: "800", color: "#64748B", textTransform: "uppercase" },
-  tenantValue: { marginTop: 4, fontSize: 14, fontWeight: "800", color: "#1E293B" },
+  tenantLabel: { fontSize: 10, fontWeight: "800", color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1 },
+  tenantValue: { marginTop: 2, fontSize: 16, fontWeight: "800", color: "#334155" },
 
   inputContainer: { marginBottom: 16 },
   label: {
@@ -209,6 +205,11 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     color: "#1E293B",
+  },
+  forgotPass: {
+    color: colors.primary,
+    fontWeight: "600",
+    fontSize: 13,
   },
 
   button: {
