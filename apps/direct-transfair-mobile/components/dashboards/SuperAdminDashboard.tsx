@@ -2,7 +2,8 @@
 import React, { useState, useCallback } from "react";
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  SafeAreaView, StatusBar, FlatList, ActivityIndicator, Platform, Alert 
+  SafeAreaView, StatusBar, FlatList, ActivityIndicator, 
+  Platform, Alert, Clipboard 
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,24 +17,40 @@ export default function SuperAdminDashboard() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Charger les sociétés (Clients SaaS)
-  const loadClients = async () => {
+  // --- CHARGEMENT DES DONNÉES ---
+  const loadData = async () => {
     setLoading(true);
     try {
       const data = await api.getClients();
       if (Array.isArray(data)) {
-        // On filtre pour ne pas afficher la société mère si besoin
-        const filtered = data.filter(c => c.code !== 'DONIKO');
-        setClients(filtered);
+        // Filtre la société technique de base
+        setClients(data.filter(c => c.code !== 'DONIKO'));
       }
     } catch (e) {
-      console.error("Erreur chargement sociétés:", e);
+      console.error("Erreur de rafraîchissement :", e);
     } finally {
       setLoading(false);
     }
   };
 
-  useFocusEffect(useCallback(() => { loadClients(); }, []));
+  useFocusEffect(useCallback(() => { loadData(); }, []));
+
+  // --- FONCTION DE CRÉATION AVEC GÉNÉRATION AUTO ---
+  const handleAddNewSociety = () => {
+    // Génération automatique du code et du mot de passe
+    const randomCode = "SOC" + Math.floor(1000 + Math.random() * 9000);
+    const tempPassword = "Pass-" + Math.floor(1000 + Math.random() * 9000);
+
+    // On copie immédiatement les infos générées pour ne pas les perdre
+    const infoToCopy = `Société: ${randomCode}\nPass: ${tempPassword}`;
+    Clipboard.setString(infoToCopy);
+    
+    Alert.alert(
+      "Initialisation Nouvelle Société",
+      `${infoToCopy}\n\nLes identifiants ont été copiés dans votre presse-papier.`,
+      [{ text: "Continuer vers le formulaire", onPress: () => router.push("/(tabs)/admin") }]
+    );
+  };
 
   const renderClientItem = ({ item }: any) => {
     const isActive = item.subscriptionStatus === 'ACTIVE';
@@ -42,117 +59,120 @@ export default function SuperAdminDashboard() {
         style={styles.clientCard} 
         onPress={() => router.push({ pathname: "/(tabs)/admin", params: { id: item.id } })}
       >
-        <View style={[styles.statusIndicator, { backgroundColor: isActive ? '#10B981' : '#F59E0B' }]} />
+        <View style={[styles.statusDot, { backgroundColor: isActive ? '#10B981' : '#F59E0B' }]} />
         <View style={{ flex: 1 }}>
           <Text style={styles.clientName}>{item.name}</Text>
-          <Text style={styles.clientCode}>Code: {item.code} • {item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOCATION'}</Text>
+          <Text style={styles.clientSubtitle}>Code: {item.code} • {item.subscriptionType === 'PURCHASE' ? 'ACHAT' : 'LOCATION'}</Text>
         </View>
-        <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
+        <View style={styles.cardActions}>
+            <Ionicons name="settings-outline" size={18} color="#9CA3AF" />
+        </View>
       </TouchableOpacity>
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#111827" barStyle="light-content" />
+      <StatusBar backgroundColor="#0F172A" barStyle="light-content" />
       
-      {/* HEADER PRO */}
+      {/* HEADER MODERNE */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Espace Administrateur</Text>
-          <Text style={styles.headerSubtitle}>Pilotage de l'activité globale</Text>
+          <Text style={styles.headerTitle}>Super Console</Text>
+          <Text style={styles.headerSubtitle}>Direct Transf'air Cloud</Text>
         </View>
-        <TouchableOpacity style={styles.addBtn} onPress={() => router.push("/(tabs)/admin")}>
-          <Ionicons name="add-circle" size={32} color={colors.primary} />
+        <TouchableOpacity style={styles.profileBadge}>
+            <Ionicons name="shield-checkmark" size={24} color="#FFD700" />
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
-        {/* ACTIONS RAPIDES (Fusion de Overview) */}
-        <Text style={styles.sectionTitle}>Actions Rapides</Text>
-        <View style={styles.grid}>
-          <QuickAction 
-            title="Trésorerie" 
-            icon="cash-outline" 
-            color="#10B981" 
-            onPress={() => router.push("/(tabs)/admin/treasury")} 
-          />
-          <QuickAction 
-            title="Taux Change" 
-            icon="trending-up-outline" 
-            color="#8B5CF6" 
-            onPress={() => router.push("/(tabs)/admin/rates")} 
-          />
-          <QuickAction 
-            title="Transactions" 
-            icon="swap-horizontal-outline" 
-            color="#3B82F6" 
-            onPress={() => router.push("/(tabs)/admin/transactions")} 
-          />
-          <QuickAction 
-            title="Utilisateurs" 
-            icon="people-outline" 
-            color="#6B7280" 
-            onPress={() => router.push("/(tabs)/admin/users")} 
-          />
+        {/* STATS DE HAUT NIVEAU */}
+        <View style={styles.statsRow}>
+            <View style={styles.statBox}>
+                <Text style={styles.statLabel}>SOCIÉTÉS</Text>
+                <Text style={styles.statValue}>{clients.length}</Text>
+            </View>
+            <View style={[styles.statBox, { borderLeftWidth: 1, borderLeftColor: '#E2E8F0' }]}>
+                <Text style={styles.statLabel}>FLUX GLOBAL</Text>
+                <Text style={styles.statValue}>12.4k €</Text>
+            </View>
         </View>
 
-        {/* LISTE DES SOCIÉTÉS (Fusion de Dashboard) */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Sociétés (Clients SaaS)</Text>
-          <TouchableOpacity onPress={loadClients}>
-            <Ionicons name="refresh" size={18} color="#6B7280" />
+        {/* ACTIONS DE PILOTAGE */}
+        <Text style={styles.sectionLabel}>PILOTAGE RÉSEAU</Text>
+        <View style={styles.grid}>
+          <PilotCard title="Trésorerie" icon="wallet-outline" color="#10B981" onPress={() => router.push("/(tabs)/admin/treasury")} />
+          <PilotCard title="Taux EUR" icon="trending-up-outline" color="#8B5CF6" onPress={() => router.push("/(tabs)/admin/rates")} />
+          <PilotCard title="Audit Transac" icon="analytics-outline" color="#3B82F6" onPress={() => router.push("/(tabs)/admin/transactions")} />
+          <PilotCard title="Gestion Users" icon="people-outline" color="#64748B" onPress={() => router.push("/(tabs)/admin/users")} />
+        </View>
+
+        {/* GESTION DES SOCIÉTÉS (SaaS) */}
+        <View style={styles.sectionTitleRow}>
+          <Text style={styles.sectionLabel}>CLIENTS SAAS (SOCIÉTÉS)</Text>
+          <TouchableOpacity style={styles.plusButton} onPress={handleAddNewSociety}>
+            <Ionicons name="add" size={24} color="#FFF" />
           </TouchableOpacity>
         </View>
 
         {loading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />
+          <ActivityIndicator color={colors.primary} style={{ marginTop: 30 }} />
         ) : (
-          clients.map((item) => <View key={item.id}>{renderClientItem({ item })}</View>)
+          <View style={styles.listContainer}>
+            {clients.map((item) => <View key={item.id}>{renderClientItem({ item })}</View>)}
+            {clients.length === 0 && <Text style={styles.emptyText}>Aucun client SaaS actif.</Text>}
+          </View>
         )}
 
-        {clients.length === 0 && !loading && (
-          <Text style={styles.emptyText}>Aucune société créée pour le moment.</Text>
-        )}
-
-        <View style={{ height: 100 }} />
+        <View style={{ height: 120 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// Sous-composant pour les tuiles
-function QuickAction({ title, icon, color, onPress }: any) {
+// --- SOUS-COMPOSANTS ---
+function PilotCard({ title, icon, color, onPress }: any) {
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress}>
-      <View style={[styles.iconBox, { backgroundColor: color + '20' }]}>
-        <Ionicons name={icon} size={24} color={color} />
+    <TouchableOpacity style={styles.pCard} onPress={onPress}>
+      <View style={[styles.pIconBox, { backgroundColor: color + '15' }]}>
+        <Ionicons name={icon} size={22} color={color} />
       </View>
-      <Text style={styles.cardTitle}>{title}</Text>
+      <Text style={styles.pTitle}>{title}</Text>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#111827" },
-  header: { padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: "#FFF", fontSize: 20, fontWeight: "800" },
-  headerSubtitle: { color: "#9CA3AF", fontSize: 13, marginTop: 4 },
-  addBtn: { backgroundColor: '#FFF', borderRadius: 20 },
+  safeArea: { flex: 1, backgroundColor: "#0F172A" },
+  header: { padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#0F172A' },
+  headerTitle: { color: "#FFF", fontSize: 22, fontWeight: "800" },
+  headerSubtitle: { color: "#94A3B8", fontSize: 13, fontWeight: "500" },
+  profileBadge: { backgroundColor: 'rgba(255,255,255,0.1)', padding: 10, borderRadius: 15 },
   
-  scrollContainer: { backgroundColor: "#F3F4F6", borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 24, minHeight: '100%' },
-  sectionTitle: { fontSize: 16, fontWeight: "700", color: "#1F2937", marginBottom: 15 },
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 10 },
+  scrollContent: { backgroundColor: "#F8FAFC", borderTopLeftRadius: 35, borderTopRightRadius: 35, padding: 20, minHeight: '100%' },
+  
+  statsRow: { flexDirection: 'row', backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 25, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05 },
+  statBox: { flex: 1, alignItems: 'center' },
+  statLabel: { fontSize: 10, color: '#94A3B8', fontWeight: '800', letterSpacing: 1 },
+  statValue: { fontSize: 20, fontWeight: '800', color: '#1E293B', marginTop: 5 },
 
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
-  card: { width: '48%', backgroundColor: '#FFF', padding: 15, borderRadius: 16, marginBottom: 5, elevation: 2 },
-  iconBox: { width: 40, height: 40, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#1F2937" },
+  sectionLabel: { fontSize: 12, fontWeight: "800", color: "#64748B", letterSpacing: 1.5, marginBottom: 15, marginLeft: 5 },
+  sectionTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25 },
+  
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 12 },
+  pCard: { width: '48%', backgroundColor: '#FFF', padding: 15, borderRadius: 18, elevation: 1, marginBottom: 5 },
+  pIconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
+  pTitle: { fontSize: 14, fontWeight: "700", color: "#334155" },
 
-  clientCard: { flexDirection: 'row', backgroundColor: '#FFF', padding: 15, borderRadius: 12, marginBottom: 10, alignItems: 'center', elevation: 1 },
-  statusIndicator: { width: 4, height: 30, borderRadius: 2, marginRight: 12 },
-  clientName: { fontSize: 15, fontWeight: '700', color: '#1F2937' },
-  clientCode: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  emptyText: { textAlign: 'center', color: '#9CA3AF', marginTop: 20, fontSize: 13 }
+  plusButton: { backgroundColor: '#F59E0B', width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', elevation: 4, shadowColor: '#F59E0B', shadowOpacity: 0.3 },
+
+  listContainer: { marginTop: 15 },
+  clientCard: { flexDirection: 'row', backgroundColor: '#FFF', padding: 18, borderRadius: 20, marginBottom: 12, alignItems: 'center', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02 },
+  statusDot: { width: 5, height: 35, borderRadius: 10, marginRight: 15 },
+  clientName: { fontSize: 16, fontWeight: '700', color: '#1E293B' },
+  clientSubtitle: { fontSize: 12, color: '#64748B', marginTop: 4 },
+  cardActions: { padding: 5 },
+  emptyText: { textAlign: 'center', color: '#94A3B8', marginTop: 40, fontSize: 14, fontWeight: '500' }
 });
