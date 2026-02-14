@@ -20,7 +20,7 @@ export default function AgentHistoryScreen() {
   const loadTransactions = useCallback(async () => {
     try {
       if (!user?.id) {
-        setTransactions([]);
+        setTransactions([]); 
         setLoading(false);
         setRefreshing(false);
         return;

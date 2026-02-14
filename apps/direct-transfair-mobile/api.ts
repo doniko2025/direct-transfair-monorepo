@@ -1,38 +1,29 @@
 // apps/direct-transfair-mobile/api.ts
-import axios, { AxiosInstance } from "axios";
-import { Platform } from "react-native";
+// ------------------------------------------------------------
+// Compat layer (CommonJS) to avoid TS errors with
+// "verbatimModuleSyntax" when this file is treated as CommonJS.
+//
+// This file re-exports an AxiosInstance "api" (like the old file)
+// and exposes "setAuthToken".
+// Internally it reuses the real implementation from ./services/api
+// so you keep ONE source of truth.
+// ------------------------------------------------------------
 
-const stripTrailingSlash = (url: string) => url.replace(/\/+$/, "");
+declare const require: (id: string) => any;
+declare const module: { exports: any };
 
-const fallbackLocalApiUrl =
-  Platform.OS === "web"
-    ? "http://localhost:3000"
-    : "http://192.168.1.40:3000"; // utile uniquement si tu testes en local via Expo Go
+type AxiosInstance = import("axios").AxiosInstance;
 
-const API_URL = stripTrailingSlash(
-  process.env.EXPO_PUBLIC_API_URL ?? fallbackLocalApiUrl
-);
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const services = require("./services/api") as typeof import("./services/api");
 
-const TENANT_CODE = process.env.EXPO_PUBLIC_TENANT_ID ?? "DONIKO";
+// `services.api` is your API class instance (from services/api.ts)
+// `services.api.http` is the Axios instance actually used for requests.
+const api: AxiosInstance = services.api.http;
 
-// ==================================================
-// 🔥 Client Axios (typé)
-// ==================================================
-export const api: AxiosInstance = axios.create({
-  baseURL: API_URL,
-  headers: {
-    "Content-Type": "application/json",
-    "x-tenant-id": TENANT_CODE,
-  },
-});
-
-// ==================================================
-// 🔐 Token manager
-// ==================================================
-export function setAuthToken(token: string | null) {
-  if (token) {
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common.Authorization;
-  }
+function setAuthToken(token: string | null): void {
+  services.api.setToken(token);
 }
+
+// CommonJS exports (no "export" keyword => fixes verbatimModuleSyntax errors)
+module.exports = { api, setAuthToken };

@@ -3,8 +3,7 @@ import React from "react";
 import SuperAdminDashboard from "./SuperAdminDashboard";
 
 /**
- * Ce composant sert désormais de passerelle vers le Dashboard fusionné.
- * Cela évite de casser les imports ailleurs dans le projet.
+ * Passerelle vers le Dashboard fusionné (évite de casser les imports existants).
  */
 export default function SuperAdminOverview() {
   return <SuperAdminDashboard />;

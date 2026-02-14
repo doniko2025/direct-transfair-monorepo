@@ -19,23 +19,37 @@ export default function CommissionHistoryScreen() {
   const [loading, setLoading] = useState(false);
   const [totals, setTotals] = useState({ platform: 0, fees: 0 });
 
+  // ✅ CORRECTION : L'effet ne doit pas être asynchrone directement
   useEffect(() => {
-      fetchHistory();
-  }, [period]); // Recharge quand la période change
+    const initFetch = async () => {
+      await fetchHistory();
+    };
+    initFetch();
+  }, [period]); 
 
   const fetchHistory = async () => {
       setLoading(true);
       try {
+          // ✅ SÉCURITÉ : Vérifie si la méthode existe dans l'API
+          if (typeof api.getCommissionHistory !== 'function') {
+              console.warn("Méthode getCommissionHistory manquante dans api.ts");
+              return;
+          }
+
           const data = await api.getCommissionHistory(period);
-          setHistory(data);
+          const safeData = Array.isArray(data) ? data : [];
+          setHistory(safeData);
           
-          // Calcul des totaux locaux pour l'affichage
-          const totalFees = data.reduce((acc: number, item: any) => acc + item.fees, 0);
-          const totalPlatform = data.reduce((acc: number, item: any) => acc + item.breakdown.platform.amount, 0);
+          // ✅ CALCULS SÉCURISÉS (évite les erreurs sur données nulles)
+          const totalFees = safeData.reduce((acc: number, item: any) => acc + (item.fees || 0), 0);
+          const totalPlatform = safeData.reduce((acc: number, item: any) => {
+              return acc + (item.breakdown?.platform?.amount || 0);
+          }, 0);
+          
           setTotals({ fees: totalFees, platform: totalPlatform });
 
       } catch (e) {
-          console.error(e);
+          console.error("Erreur historique commissions:", e);
       } finally {
           setLoading(false);
       }
@@ -49,28 +63,30 @@ export default function CommissionHistoryScreen() {
                     <Ionicons name={item.status === 'PAID' ? "checkmark" : "time"} size={14} color={item.status === 'PAID' ? "#059669" : "#D97706"} />
                 </View>
                 <View>
-                    <Text style={styles.ref}>{item.reference}</Text>
-                    <Text style={styles.date}>{new Date(item.date).toLocaleDateString()} • {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
+                    <Text style={styles.ref}>{item.reference || 'REF-N/A'}</Text>
+                    <Text style={styles.date}>
+                        {item.date ? new Date(item.date).toLocaleDateString() : '--'} • 
+                        {item.date ? new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '--'}
+                    </Text>
                 </View>
             </View>
-            <Text style={styles.fees}>Frais: {item.fees} F</Text>
+            <Text style={styles.fees}>{item.fees || 0} F</Text>
         </View>
 
         <View style={styles.divider} />
 
-        {/* Répartition */}
         <View style={styles.breakdown}>
             <View style={styles.part}>
-                <Text style={styles.label}>Envoyeur ({item.breakdown.sender.name.substring(0, 10)}..)</Text>
-                <Text style={styles.value}>+{item.breakdown.sender.amount.toFixed(0)} F</Text>
+                <Text style={styles.label}>Envoyeur</Text>
+                <Text style={styles.value}>+{(item.breakdown?.sender?.amount || 0).toFixed(0)} F</Text>
             </View>
             <View style={styles.part}>
-                <Text style={styles.label}>Payeur ({item.breakdown.payer.substring(0, 10)}..)</Text>
-                <Text style={styles.value}>+{item.breakdown.payer.amount.toFixed(0)} F</Text>
+                <Text style={styles.label}>Payeur</Text>
+                <Text style={styles.value}>+{(item.breakdown?.payer?.amount || 0).toFixed(0)} F</Text>
             </View>
             <View style={styles.part}>
-                <Text style={[styles.label, {fontWeight:'bold', color:colors.primary}]}>Société</Text>
-                <Text style={[styles.value, {fontWeight:'bold', color:colors.primary}]}>+{item.breakdown.platform.amount.toFixed(0)} F</Text>
+                <Text style={[styles.label, {fontWeight:'bold', color:colors.primary}]}>Plateforme</Text>
+                <Text style={[styles.value, {fontWeight:'bold', color:colors.primary}]}>+{(item.breakdown?.platform?.amount || 0).toFixed(0)} F</Text>
             </View>
         </View>
     </View>
@@ -82,7 +98,6 @@ export default function CommissionHistoryScreen() {
             <Text style={styles.headerTitle}>Historique Commissions</Text>
         </View>
 
-        {/* BARRE DE FILTRES */}
         <View style={styles.filterContainer}>
             <FlatList 
                 horizontal 
@@ -101,25 +116,23 @@ export default function CommissionHistoryScreen() {
             />
         </View>
 
-        {/* RÉSUMÉ PÉRIODE */}
         <View style={styles.summary}>
             <View>
-                <Text style={styles.summaryLabel}>Total Frais Générés</Text>
+                <Text style={styles.summaryLabel}>Total Frais</Text>
                 <Text style={styles.summaryValue}>{totals.fees.toLocaleString()} F</Text>
             </View>
             <View style={{alignItems:'flex-end'}}>
-                <Text style={styles.summaryLabel}>Gain Société Net</Text>
+                <Text style={styles.summaryLabel}>Gain Plateforme</Text>
                 <Text style={[styles.summaryValue, {color:'#10B981'}]}>+{totals.platform.toLocaleString()} F</Text>
             </View>
         </View>
 
-        {/* LISTE */}
         {loading ? (
             <ActivityIndicator size="large" color={colors.primary} style={{marginTop: 50}} />
         ) : (
             <FlatList
                 data={history}
-                keyExtractor={item => item.id}
+                keyExtractor={(item, index) => item.id?.toString() || index.toString()}
                 contentContainerStyle={{padding: 15, paddingBottom: 100}}
                 renderItem={renderItem}
                 ListEmptyComponent={<Text style={{textAlign:'center', marginTop: 50, color:'#9CA3AF'}}>Aucune commission sur cette période.</Text>}
@@ -133,16 +146,13 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#F3F4F6' },
     header: { padding: 20, backgroundColor: '#1E293B' },
     headerTitle: { fontSize: 20, fontWeight: '800', color: '#FFF' },
-    
-    filterContainer: { backgroundColor: '#1E293B', paddingBottom: 15 },
-    filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#334155' },
+    filterContainer: { backgroundColor: '#1E2937', paddingBottom: 15 },
+    filterChip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, backgroundColor: '#334155', marginRight: 8 },
     activeChip: { backgroundColor: colors.primary },
     filterText: { color: '#CBD5E1', fontSize: 12, fontWeight: '600' },
-
     summary: { flexDirection:'row', justifyContent:'space-between', backgroundColor:'#FFF', margin:15, padding:15, borderRadius:12, elevation:2 },
     summaryLabel: { fontSize: 11, color:'#64748B', textTransform:'uppercase', fontWeight:'700' },
     summaryValue: { fontSize: 20, fontWeight:'800', color:'#1E293B' },
-
     card: { backgroundColor: '#FFF', borderRadius: 12, padding: 15, marginBottom: 10, elevation: 1 },
     rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
     iconBox: { width: 24, height: 24, borderRadius: 12, justifyContent:'center', alignItems:'center' },
@@ -150,7 +160,6 @@ const styles = StyleSheet.create({
     date: { color: '#94A3B8', fontSize: 11 },
     fees: { fontWeight: '700', color: '#64748B' },
     divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 10 },
-    
     breakdown: { flexDirection: 'row', justifyContent: 'space-between' },
     part: { alignItems: 'center', flex: 1 },
     label: { fontSize: 10, color: '#94A3B8', marginBottom: 2 },

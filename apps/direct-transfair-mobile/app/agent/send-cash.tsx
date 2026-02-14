@@ -11,7 +11,7 @@ import { colors } from "../../theme/colors";
 import { countriesList, CountryData } from "../../data/countries"; 
 import { api } from "../../services/api"; 
 
-export default function AgentSendCashScreen() {
+export default function AgentSendCashScreen() { 
   const router = useRouter();
   const { user, refreshUser } = useAuth();
   

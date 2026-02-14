@@ -11,7 +11,7 @@ import { api } from "../../services/api";
 export default function AgentWithdrawScreen() {
   const router = useRouter();
   const [code, setCode] = useState("");
-  const [checking, setChecking] = useState(false);
+  const [checking, setChecking] = useState(false); 
   const [paying, setPaying] = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
 

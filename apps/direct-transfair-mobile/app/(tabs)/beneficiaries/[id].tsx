@@ -16,8 +16,7 @@ import {
   Platform,
   Alert
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router"; // ✅ Correction de l'import ici
 import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "../../../services/api";
@@ -202,14 +201,11 @@ export default function BeneficiaireDetailScreen() {
     setEditing(false);
   };
 
-  // ✅ ACTIONS D'ENVOI RAPIDE
   const goSendWallet = () => {
       if (!item?.phone) {
           showAlert("Info", "Ce bénéficiaire n'a pas de numéro de téléphone enregistré.");
           return;
       }
-      // On redirige vers send avec des params (à gérer dans send.tsx si besoin, ou juste pour l'UX ici)
-      // Pour l'instant, on redirige simple, l'idéal serait de pré-remplir
       router.push({ pathname: "/(tabs)/send", params: { mode: 'WALLET', phone: item.phone } });
   };
 
@@ -265,7 +261,6 @@ export default function BeneficiaireDetailScreen() {
                 </View>
             </View>
 
-            {/* ✅ BOUTONS D'ACTION RAPIDE */}
             <View style={styles.quickActions}>
                 <Text style={styles.sectionTitle}>Envoyer de l'argent</Text>
                 <TouchableOpacity style={styles.actionBtn} onPress={goSendWallet}>
@@ -330,7 +325,6 @@ export default function BeneficiaireDetailScreen() {
         </View>
       )}
 
-      {/* --- ACTIONS DE MODIFICATION --- */}
       <View style={styles.actions}>
         {!editing ? (
           <Pressable style={styles.btnOutline} onPress={() => setEditing(true)}>
@@ -339,7 +333,7 @@ export default function BeneficiaireDetailScreen() {
         ) : (
           <View style={{gap: 10, width:'100%'}}>
               <Pressable style={styles.cancelEdit} onPress={onCancelEdit}>
-                 <Text style={styles.cancelEditText}>Annuler</Text>
+                  <Text style={styles.cancelEditText}>Annuler</Text>
               </Pressable>
               
               <Pressable 
@@ -364,7 +358,6 @@ export default function BeneficiaireDetailScreen() {
     </ScrollView>
     </KeyboardAvoidingView>
 
-    {/* --- MODALES --- */}
     <SelectionModal
         visible={showCountryModal}
         onClose={() => setShowCountryModal(false)}
@@ -454,31 +447,30 @@ const styles = StyleSheet.create({
   label: { fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 6 },
   input: { borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, padding: 12, fontSize: 16, backgroundColor: "#F9FAFB" },
   
-  selectorBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, padding: 12, backgroundColor: "#F9FAFB", cursor: 'pointer' } as any,
+  selectorBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, padding: 12, backgroundColor: "#F9FAFB" } as any,
   selectorText: { fontSize: 16, color: "#1F2937" },
   placeholderText: { color: "#9CA3AF" },
 
   phoneContainer: { flexDirection: 'row', borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, backgroundColor: "#F9FAFB", overflow:'hidden' },
-  dialBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#F3F4F6", paddingHorizontal: 12, borderRightWidth: 1, borderRightColor: "#E5E7EB", cursor: 'pointer' } as any,
+  dialBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#F3F4F6", paddingHorizontal: 12, borderRightWidth: 1, borderRightColor: "#E5E7EB" } as any,
   phoneInput: { flex: 1, padding: 12, fontSize: 16 },
 
   actions: { alignItems: 'center', gap: 15, marginTop: 10 },
   
-  btnPrimary: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: colors.primary, cursor: 'pointer' } as any,
+  btnPrimary: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: colors.primary } as any,
   btnPrimaryText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
   
-  btnOutline: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", borderWidth: 2, borderColor: colors.primary, cursor: 'pointer' } as any,
+  btnOutline: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", borderWidth: 2, borderColor: colors.primary } as any,
   btnOutlineText: { color: colors.primary, fontWeight: "800", fontSize: 16 },
 
-  btnDanger: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#FEE2E2", cursor: 'pointer' } as any,
+  btnDanger: { width:'100%', paddingVertical: 15, borderRadius: 10, alignItems: "center", backgroundColor: "#FEE2E2" } as any,
   btnDangerText: { color: "#EF4444", fontWeight: "800", fontSize: 16 },
   
-  cancelEdit: { width:'100%', paddingVertical: 15, alignItems: "center", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, backgroundColor:'#FFF', cursor: 'pointer' } as any,
+  cancelEdit: { width:'100%', paddingVertical: 15, alignItems: "center", borderWidth: 1, borderColor: "#E5E7EB", borderRadius: 10, backgroundColor:'#FFF' } as any,
   cancelEditText: { color: "#6B7280", fontWeight: "700" },
 
-  btnDisabled: { opacity: 0.6, cursor: 'not-allowed' } as any,
+  btnDisabled: { opacity: 0.6 } as any,
 
-  // --- STYLES MODALE ---
   modalOverlay: { 
     flex: 1, 
     backgroundColor: 'rgba(0,0,0,0.6)', 
@@ -509,14 +501,13 @@ const styles = StyleSheet.create({
     paddingBottom: 10
   },
   modalTitle: { fontSize: 18, fontWeight: "700", color: "#1F2937" },
-  closeBtn: { padding: 5, backgroundColor: "#F3F4F6", borderRadius: 20, cursor: 'pointer' } as any,
+  closeBtn: { padding: 5, backgroundColor: "#F3F4F6", borderRadius: 20 } as any,
   modalItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     paddingVertical: 15, 
     borderBottomWidth: 1, 
-    borderBottomColor: "#F3F4F6", 
-    cursor: 'pointer' 
+    borderBottomColor: "#F3F4F6" 
   } as any,
   modalItemText: { fontSize: 16, color: "#374151", fontWeight: "500" },
 });
