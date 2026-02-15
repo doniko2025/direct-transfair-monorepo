@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
+// apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 import React, { useState, useCallback } from "react";
 import { 
   View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, 
@@ -9,6 +9,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { colors } from "../../../theme/colors";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
+
+type RefillResponse = {
+  sent?: number;
+  amount?: number;
+};
 
 export default function TreasuryScreen() {
   const router = useRouter();
@@ -23,7 +28,6 @@ export default function TreasuryScreen() {
   const [amount, setAmount] = useState("");
   const [refBancaire, setRefBancaire] = useState(""); 
   
-  // Types : FUND_SELF (Admin->Lui-même), REFILL (Vers Agence), PAY_SUPER (Vers SuperAdmin)
   const [modalType, setModalType] = useState<'FUND_SELF' | 'REFILL_AGENCY' | 'PAY_SUPER'>('FUND_SELF');
   const [processing, setProcessing] = useState(false);
 
@@ -84,7 +88,6 @@ export default function TreasuryScreen() {
       setProcessing(true);
 
       try {
-          // 1. PAIEMENT VERS SUPER ADMIN (B2B)
           if (modalType === 'PAY_SUPER') {
               if (!refBancaire) throw new Error("Référence bancaire requise");
               
@@ -95,18 +98,22 @@ export default function TreasuryScreen() {
               else Alert.alert("Succès", msg);
           } 
           
-          // 2. RECHARGER UNE AGENCE
           else if (modalType === 'REFILL_AGENCY' && targetAgency) {
-              const res = await api.adminRefillAgency(targetAgency.id, val);
-              // Vérification pour éviter 'undefined'
-              const sent = res?.sent || val;
+              const res = await api.adminRefillAgency(targetAgency.id, val) as RefillResponse | undefined;
+
+              const sent =
+                typeof res?.sent === "number"
+                  ? res.sent
+                  : typeof res?.amount === "number"
+                  ? res.amount
+                  : val;
+
               const msg = `Agence rechargée de ${sent} XOF avec succès.`;
               
               if (Platform.OS === 'web') alert(msg);
               else Alert.alert("Succès", msg);
           }
 
-          // 3. AUTO-ALIMENTATION (Admin Société seulement)
           else if (modalType === 'FUND_SELF') {
              await api.adminFundSelf(val);
              if (Platform.OS === 'web') alert("Compte alimenté !");
@@ -117,7 +124,7 @@ export default function TreasuryScreen() {
           setTimeout(() => loadData(), 500); 
 
       } catch (e: any) {
-          const err = e.response?.data?.message || "Erreur technique";
+          const err = e?.response?.data?.message || e?.message || "Erreur technique";
           Alert.alert("Erreur", Array.isArray(err) ? err[0] : err);
       } finally {
           setProcessing(false);
@@ -145,7 +152,6 @@ export default function TreasuryScreen() {
         contentContainerStyle={styles.container}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#FFF"/>}
       >
-        {/* CARTE PRINCIPALE */}
         <View style={styles.adminCard}>
             <View>
                 <Text style={styles.adminLabel}>Trésorerie ({isSuperAdmin ? 'Super Admin' : 'Admin Société'})</Text>
@@ -154,10 +160,7 @@ export default function TreasuryScreen() {
                 </Text>
             </View>
             
-            {/* BOUTONS D'ACTION */}
             <View style={{flexDirection:'column', gap: 8}}>
-                
-                {/* BOUTON: Payer le Super Admin (Visible seulement pour Admin Société) */}
                 {!isSuperAdmin && (
                     <TouchableOpacity style={[styles.fundBtn, {backgroundColor:'#DBEAFE'}]} onPress={handleOpenPaySuperAdmin}>
                         <Ionicons name="card-outline" size={18} color="#1E3A8A" />
@@ -165,7 +168,6 @@ export default function TreasuryScreen() {
                     </TouchableOpacity>
                 )}
 
-                {/* BOUTON: Auto-alimentation (Visible seulement pour Admin Société) */}
                 {!isSuperAdmin && (
                     <TouchableOpacity style={styles.fundBtn} onPress={handleOpenFundSelf}>
                         <Ionicons name="add-circle-outline" size={18} color="#1E1B4B" />
@@ -212,7 +214,6 @@ export default function TreasuryScreen() {
         <View style={{height: 100}} />
       </ScrollView>
 
-      {/* MODAL UNIQUE */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
           <View style={styles.modalOverlay}>
               <View style={styles.modalContent}>
