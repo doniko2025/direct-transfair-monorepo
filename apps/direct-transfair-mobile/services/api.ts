@@ -40,33 +40,41 @@ const STORAGE_KEYS = {
 // ============================================================
 
 function normalizeBaseUrl(input: string): string {
-  const trimmed = input.trim();
+  const trimmed = (input ?? "").trim();
+
   // retire trailing slash
-  const noTrailingSlash = trimmed.replace(/\/+$/, "");
-  // retire trailing "/api" si l'utilisateur le met dans l'env
-  return noTrailingSlash.replace(/\/api$/, "");
+  let url = trimmed.replace(/\/+$/, "");
+
+  // ✅ FIX DÉFINITIF: retire /api autant de fois que nécessaire (évite /api/api)
+  // ex: https://x/api -> https://x
+  // ex: https://x/api/api -> https://x
+  url = url.replace(/(\/api)+$/i, "");
+
+  return url;
+}
+
+function buildApiBaseUrl(rawBase: string): string {
+  const base = normalizeBaseUrl(rawBase);
+  return `${base}/api`;
 }
 
 function getBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
 
-  // ✅ PRIORITÉ ABSOLUE À L'ENV (prod-safe)
+  // ✅ PRIORITÉ ABSOLUE À L'ENV
   if (envUrl && envUrl.trim().length > 0) {
     return normalizeBaseUrl(envUrl);
   }
 
   // ✅ Fallback DEV uniquement
-  // (si l'env saute sur un build EAS, on ne veut pas tomber sur du LAN en prod)
   if (__DEV__) {
     if (Platform.OS === "web") return "http://localhost:3000";
-    // Android emulator -> host machine
     if (Platform.OS === "android") return "http://10.0.2.2:3000";
-    // iOS simulator
     if (Platform.OS === "ios") return "http://localhost:3000";
   }
 
   // ✅ Sécurité PROD
-  return PROD_FALLBACK_BASE_URL;
+  return normalizeBaseUrl(PROD_FALLBACK_BASE_URL);
 }
 
 function getInitialTenantId(): string {
@@ -121,7 +129,6 @@ function toNumberSafe(value: unknown): number {
 function normalizeTransaction(t: unknown): Transaction {
   const tx = (isRecord(t) ? t : {}) as Record<string, unknown>;
 
-  // On conserve tout, mais on force les champs numériques à être des numbers
   return {
     ...(tx as unknown as Transaction),
     amount: toNumberSafe(tx.amount),
@@ -148,7 +155,6 @@ function normalizeExchangeRate(r: unknown): ExchangeRate {
 }
 
 function normalizeAgencyPayload(data: CreateAgencyPayload): CreateAgencyPayload {
-  // mapping legacy "PRIVATE" -> "SUBSIDIARY"
   const type = (data as unknown as { type?: string }).type;
   if (type === "PRIVATE") {
     return { ...data, type: "SUBSIDIARY" as CreateAgencyPayload["type"] };
@@ -170,7 +176,6 @@ function extractAxiosErrorMessage(err: unknown): string {
   const status = err.response?.status;
   const data = err.response?.data;
 
-  // backends: { message: string | string[] } ou { error: ... } etc.
   if (isRecord(data)) {
     const msg = data.message;
     if (typeof msg === "string" && msg.trim()) {
@@ -200,7 +205,6 @@ async function tryMany<T>(
       return await fn();
     } catch (e) {
       lastErr = e;
-      // on tente la suivante uniquement si c'est un 404
       if (!isAxios404(e)) break;
     }
   }
@@ -221,7 +225,8 @@ class API {
   private tenant: string = getInitialTenantId();
 
   constructor() {
-    const baseURL = `${getBaseUrl()}/api`;
+    // ✅ baseURL robuste, impossible d'avoir /api/api même si env est mal formée
+    const baseURL = buildApiBaseUrl(getBaseUrl());
 
     this.http = axios.create({
       baseURL,
@@ -238,11 +243,9 @@ class API {
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
-      // 🛡️ protection double
       const safeTenant =
         !this.tenant || this.tenant === "10" ? "DONIKO" : this.tenant;
 
-      // ⚠️ important: ce header est celui "par défaut" pour toutes les routes
       headers.set("x-tenant-id", safeTenant);
 
       if (this.token && this.token.trim().length > 0) {
@@ -325,7 +328,6 @@ class API {
     return res.data;
   }
 
-  // (optionnel) OTP / reset password - OK si ton backend les expose
   async findAccount(
     identifier: string,
   ): Promise<{ userId: string; channels: Array<"EMAIL" | "PHONE"> }> {
@@ -354,75 +356,54 @@ class API {
   }
 
   // ==========================================================
-  // ✅ USERS (ADMIN) — AJOUTÉ POUR users.tsx
+  // USERS (ADMIN)
   // ==========================================================
 
   async getUsers(): Promise<unknown[]> {
-    // backends possibles : /users, /admin/users
     const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/users"),
-        async () => this.http.get<unknown>("/admin/users"),
-      ],
+      [async () => this.http.get<unknown>("/users"), async () => this.http.get<unknown>("/admin/users")],
       "getUsers",
     );
-
     return unwrapArray<unknown>(data.data);
   }
 
   async createUser(payload: unknown): Promise<unknown> {
-    // backends possibles : /users, /admin/users
     const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.post<unknown>("/users", payload),
-        async () => this.http.post<unknown>("/admin/users", payload),
-      ],
+      [async () => this.http.post<unknown>("/users", payload), async () => this.http.post<unknown>("/admin/users", payload)],
       "createUser",
     );
-
     return data.data;
   }
 
   // ==========================================================
-  // ✅ TREASURY (ADMIN) — AJOUTÉ POUR treasury.tsx
+  // TREASURY (ADMIN)
   // ==========================================================
 
   async adminRefillAgency(agencyId: string, amount: number): Promise<unknown> {
     const payload = { amount };
-
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        // variantes probables
-        async () =>
-          this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/admin/agencies/refill/${agencyId}`, payload),
+        async () => this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
+        async () => this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
+        async () => this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
+        async () => this.http.post<unknown>(`/admin/agencies/refill/${agencyId}`, payload),
       ],
       "adminRefillAgency",
     );
-
     return data.data;
   }
 
   async adminFundSelf(amount: number): Promise<unknown> {
     const payload = { amount };
-
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        // variantes probables
         async () => this.http.post<unknown>("/admin/fund-self", payload),
-        async () =>
-          this.http.post<unknown>("/admin/treasury/fund-self", payload),
+        async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
         async () => this.http.post<unknown>("/wallet/fund", payload),
         async () => this.http.post<unknown>("/treasury/fund-self", payload),
       ],
       "adminFundSelf",
     );
-
     return data.data;
   }
 
@@ -487,10 +468,7 @@ class API {
     id: string,
     data: Partial<CreateBeneficiaryPayload>,
   ): Promise<Beneficiary> {
-    const res = await this.http.patch<Beneficiary>(
-      `/beneficiaries/${id}`,
-      data,
-    );
+    const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}`, data);
     return res.data;
   }
 
@@ -517,7 +495,6 @@ class API {
   }
 
   async cancelTransaction(id: string): Promise<Transaction> {
-    // fallback si endpoints divergents
     return tryMany<Transaction>(
       [
         async () => {
@@ -558,7 +535,6 @@ class API {
   }
 
   async checkWithdrawalCode(code: string): Promise<unknown> {
-    // certains backends utilisent /withdrawals/agent/check
     return tryMany<unknown>(
       [
         async () => {
@@ -591,7 +567,7 @@ class API {
   }
 
   // ==========================================================
-  // ADMIN TRANSACTIONS (SUPER ADMIN / COMPANY ADMIN)
+  // ADMIN TRANSACTIONS
   // ==========================================================
 
   async adminGetTransactions(): Promise<Transaction[]> {
@@ -599,8 +575,7 @@ class API {
       [
         async () => this.http.get<unknown>("/transactions/admin"),
         async () => this.http.get<unknown>("/transactions/admin/all"),
-        async () =>
-          this.http.get<unknown>("/transactions/admin/all-transactions"),
+        async () => this.http.get<unknown>("/transactions/admin/all-transactions"),
       ],
       "adminGetTransactions",
     );
@@ -615,16 +590,9 @@ class API {
   ): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
-        async () =>
-          this.http.patch<Transaction>(`/transactions/admin/status/${id}`, {
-            status,
-          }),
-        async () =>
-          this.http.patch<Transaction>(`/transactions/admin/${id}/status`, {
-            status,
-          }),
+        async () => this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
+        async () => this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }),
+        async () => this.http.patch<Transaction>(`/transactions/admin/${id}/status`, { status }),
       ],
       "adminUpdateTransactionStatus",
     );
@@ -632,12 +600,10 @@ class API {
     return normalizeTransaction(data.data);
   }
 
-  // Spécial B2B (SERVICE_PAYMENT) : validate/reject
   async validateBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
+        async () => this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
         async () => this.http.post<Transaction>(`/transactions/${id}/validate`),
         async () => this.http.patch<Transaction>(`/transactions/${id}/validate`),
       ],
@@ -650,8 +616,7 @@ class API {
   async rejectBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
+        async () => this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
         async () => this.http.post<Transaction>(`/transactions/${id}/reject`),
         async () => this.http.patch<Transaction>(`/transactions/${id}/reject`),
       ],
@@ -662,7 +627,7 @@ class API {
   }
 
   // ==========================================================
-  // ✅ B2B / FACTURES : Déclaration de virement
+  // B2B / FACTURES
   // ==========================================================
 
   async declareBankTransfer(
@@ -671,7 +636,6 @@ class API {
   ): Promise<unknown> {
     const reference = (refBancaire ?? "").trim();
 
-    // payload tolérant (diff backends)
     const payload = {
       amount,
       refBancaire: reference,
@@ -682,18 +646,11 @@ class API {
 
     const res = await tryMany<AxiosResponse<unknown>>(
       [
-        // variantes les plus probables
         async () => this.http.post<unknown>("/transactions/b2b/declare", payload),
-        async () =>
-          this.http.post<unknown>(
-            "/transactions/b2b/declare-bank-transfer",
-            payload,
-          ),
-        async () =>
-          this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
+        async () => this.http.post<unknown>("/transactions/b2b/declare-bank-transfer", payload),
+        async () => this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
         async () => this.http.post<unknown>("/bank-transfers/declare", payload),
-        async () =>
-          this.http.post<unknown>("/payments/bank-transfer/declare", payload),
+        async () => this.http.post<unknown>("/payments/bank-transfer/declare", payload),
       ],
       "declareBankTransfer",
     );
@@ -773,14 +730,8 @@ class API {
   async getCommissionHistory(period: string): Promise<unknown[]> {
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        async () =>
-          this.http.get<unknown>(
-            `/commissions/history?period=${encodeURIComponent(period)}`,
-          ),
-        async () =>
-          this.http.get<unknown>(
-            `/commissions/logs?period=${encodeURIComponent(period)}`,
-          ),
+        async () => this.http.get<unknown>(`/commissions/history?period=${encodeURIComponent(period)}`),
+        async () => this.http.get<unknown>(`/commissions/logs?period=${encodeURIComponent(period)}`),
       ],
       "getCommissionHistory",
     );
@@ -797,16 +748,8 @@ class API {
     return unwrapArray<unknown>(res.data);
   }
 
-  /**
-   * ✅ FIX DÉFINITIF : la création d'une société SaaS doit se faire sur le tenant "plateforme"
-   * (DONIKO). Sinon, selon le tenant courant, la route peut être inexistante / interdite.
-   *
-   * Stratégie:
-   * - Forcer x-tenant-id = DONIKO UNIQUEMENT pour cette action
-   * - Essayer plusieurs endpoints probables (selon variations backend)
-   * - Si échec, on remonte un message clair avec le status
-   */
   async createClient(data: unknown): Promise<unknown> {
+    // ✅ la création SaaS doit passer par le tenant "plateforme"
     const headers = { "x-tenant-id": "DONIKO" };
 
     try {
@@ -814,8 +757,7 @@ class API {
         [
           async () => this.http.post<unknown>("/clients", data, { headers }),
           async () => this.http.post<unknown>("/admin/clients", data, { headers }),
-          async () =>
-            this.http.post<unknown>("/super-admin/clients", data, { headers }),
+          async () => this.http.post<unknown>("/super-admin/clients", data, { headers }),
           async () => this.http.post<unknown>("/saas/clients", data, { headers }),
         ],
         "createClient",

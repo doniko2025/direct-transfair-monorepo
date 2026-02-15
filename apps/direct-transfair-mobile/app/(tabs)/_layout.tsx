@@ -28,7 +28,7 @@ const CustomTabBarButton = ({ children, onPress }: any) => (
         borderColor: "#F3F4F6",
         justifyContent: "center",
         alignItems: "center",
-        elevation: 5
+        elevation: 5,
       }}
     >
       {children}
@@ -57,7 +57,7 @@ export default function TabLayout() {
         tabBarShowLabel: false,
         tabBarStyle: {
           position: "absolute",
-          bottom: Platform.OS === 'ios' ? 25 : 15,
+          bottom: Platform.OS === "ios" ? 25 : 15,
           left: 15,
           right: 15,
           backgroundColor: "#ffffff",
@@ -68,58 +68,66 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* 1. ACCUEIL (Pour TOUS) */}
+      {/* ACCUEIL */}
       <Tabs.Screen
         name="home"
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons name={focused ? "home" : "home-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Accueil</Text>
+              <Ionicons
+                name={focused ? "home" : "home-outline"}
+                size={24}
+                color={focused ? colors.primary : "#9CA3AF"}
+              />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
+                Accueil
+              </Text>
             </View>
           ),
         }}
       />
 
-      {/* 2. HISTORIQUE / ACTIVITÉ (Pour TOUS) */}
+      {/* ACTIVITÉ */}
       <Tabs.Screen
         name="transactions"
         options={{
-          // On cache l'onglet historique standard pour les Admins s'ils ont leur propre dashboard, sinon on laisse visible
-          // Ici je laisse visible pour simplifier, sauf si tu veux le cacher
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons name={focused ? "time" : "time-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Activité</Text>
+              <Ionicons
+                name={focused ? "time" : "time-outline"}
+                size={24}
+                color={focused ? colors.primary : "#9CA3AF"}
+              />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
+                Activité
+              </Text>
             </View>
           ),
         }}
       />
 
-      {/* --- BOUTONS CENTRAUX (Conditionnels) --- */}
-      {/* CORRECTIF : On sépare complètement les objets options pour éviter le conflit href/tabBarButton */}
-
-      {/* USER: Envoyer */}
+      {/* USER: ENVOI */}
       <Tabs.Screen
         name="send"
         options={
-          role === 'USER'
+          role === "USER"
             ? {
-                tabBarIcon: () => <Ionicons name="paper-plane" size={28} color="#FFF" style={{ marginLeft: -2, marginTop: 2 }} />,
+                tabBarIcon: () => (
+                  <Ionicons name="paper-plane" size={28} color="#FFF" style={{ marginLeft: -2, marginTop: 2 }} />
+                ),
                 tabBarButton: (props) => <CustomTabBarButton {...props} />,
               }
-            : { href: null } // Si pas USER, on cache et on ne définit PAS de bouton
+            : { href: null }
         }
       />
 
-      {/* AGENT: Guichet */}
+      {/* AGENT: GUICHET */}
       <Tabs.Screen
         name="withdraw"
         options={
-          role === 'AGENT'
+          role === "AGENT"
             ? {
                 tabBarIcon: () => <Ionicons name="storefront" size={28} color="#FFF" />,
-                // Redirection forcée vers l'écran Guichet de l'agent
                 tabBarButton: (props) => (
                   <CustomTabBarButton {...props} onPress={() => router.push("/agent/withdraw")} />
                 ),
@@ -128,11 +136,11 @@ export default function TabLayout() {
         }
       />
 
-      {/* ADMIN: Dashboard */}
+      {/* ADMIN: DASHBOARD */}
       <Tabs.Screen
         name="admin"
         options={
-          role.includes('ADMIN')
+          role.includes("ADMIN")
             ? {
                 tabBarIcon: () => <Ionicons name="stats-chart" size={28} color="#FFF" />,
                 tabBarButton: (props) => <CustomTabBarButton {...props} />,
@@ -141,18 +149,22 @@ export default function TabLayout() {
         }
       />
 
-      {/* --- AUTRES ONGLETS --- */}
-
-      {/* CONTACTS (User seulement) */}
+      {/* CONTACTS */}
       <Tabs.Screen
         name="beneficiaries"
         options={
-          role === 'USER'
+          role === "USER"
             ? {
                 tabBarIcon: ({ focused }) => (
                   <View style={styles.iconContainer}>
-                    <Ionicons name={focused ? "people" : "people-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
-                    <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Contacts</Text>
+                    <Ionicons
+                      name={focused ? "people" : "people-outline"}
+                      size={24}
+                      color={focused ? colors.primary : "#9CA3AF"}
+                    />
+                    <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
+                      Contacts
+                    </Text>
                   </View>
                 ),
               }
@@ -160,23 +172,29 @@ export default function TabLayout() {
         }
       />
 
-      {/* AGENCES (MASQUÉ POUR TOUS - Route technique accessible via dashboard admin) */}
-      <Tabs.Screen name="agencies" options={{ href: null }} />
+      {/* ✅ FIX: agencies/index (route réelle) */}
+      <Tabs.Screen name="agencies/index" options={{ href: null }} />
 
-      {/* COMPTE (Pour TOUS) */}
+      {/* COMPTE */}
       <Tabs.Screen
         name="profile"
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons name={focused ? "person" : "person-outline"} size={24} color={focused ? colors.primary : "#9CA3AF"} />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>Compte</Text>
+              <Ionicons
+                name={focused ? "person" : "person-outline"}
+                size={24}
+                color={focused ? colors.primary : "#9CA3AF"}
+              />
+              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
+                Compte
+              </Text>
             </View>
           ),
         }}
       />
 
-      {/* Index masqué */}
+      {/* index masqué */}
       <Tabs.Screen name="index" options={{ href: null }} />
     </Tabs>
   );
