@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/services/api.ts
-// apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -31,7 +30,7 @@ import type {
 const PROD_FALLBACK_BASE_URL =
   "https://direct-transfair-monorepo-production.up.railway.app";
 
-const DEFAULT_TENANT_CODE = "DONIKO" as const;
+const PLATFORM_TENANT = "DONIKO";
 
 // Clés AsyncStorage
 const STORAGE_KEYS = {
@@ -55,23 +54,47 @@ function getBaseUrl(): string {
     return normalizeBaseUrl(envUrl);
   }
 
+  // ⚠️ FIX CRITIQUE : On force Railway même en DEV pour éviter le problème "localhost:3000"
+  // qui fait tourner le spinner indéfiniment si le backend n'est pas lancé en local sur le PC.
+  /*
   if (__DEV__) {
     if (Platform.OS === "web") return "http://localhost:3000";
     if (Platform.OS === "android") return "http://10.0.2.2:3000";
     if (Platform.OS === "ios") return "http://localhost:3000";
   }
+  */
 
   return PROD_FALLBACK_BASE_URL;
 }
 
-function normalizeTenantCode(input: string | null | undefined): string {
-  const t = (input ?? "").trim().toUpperCase();
-  if (!t || t === "10") return DEFAULT_TENANT_CODE;
-  return t;
+/**
+ * Nettoie le code société.
+ * Transforme "LOCALHOST", "127.0.0.1", "10" ou les tunnels bizarres en "DONIKO".
+ */
+function normalizeTenant(input: string | null | undefined): string {
+  const raw = (input ?? "").trim();
+  
+  // Liste noire des valeurs qui cassent l'app
+  const blackList = [
+    "10", 
+    "LOCALHOST", 
+    "127.0.0.1", 
+    "192.168",
+    "DFTRANSFER", // Ton tunnel
+    "UNDEFINED",
+    "NULL"
+  ];
+
+  // Si c'est vide ou dans la liste noire (insensible à la casse)
+  if (!raw || blackList.some(bad => raw.toUpperCase().includes(bad))) {
+    return PLATFORM_TENANT;
+  }
+  
+  return raw.toUpperCase();
 }
 
 function getInitialTenantId(): string {
-  return normalizeTenantCode(process.env.EXPO_PUBLIC_TENANT_ID);
+  return normalizeTenant(process.env.EXPO_PUBLIC_TENANT_ID);
 }
 
 function ensureAxiosHeaders(
@@ -88,33 +111,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function unwrapArray<T>(payload: unknown): T[] {
   if (Array.isArray(payload)) return payload as T[];
-
   if (isRecord(payload) && Array.isArray(payload.data)) {
     return payload.data as T[];
   }
-
   return [];
 }
 
 function toNumberSafe(value: unknown): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-
   if (typeof value === "string") {
     const n = Number(value);
     return Number.isFinite(n) ? n : 0;
   }
-
   if (isRecord(value) && typeof value.toString === "function") {
     const n = Number(value.toString());
     return Number.isFinite(n) ? n : 0;
   }
-
   return 0;
 }
 
 function normalizeTransaction(t: unknown): Transaction {
   const tx = (isRecord(t) ? t : {}) as Record<string, unknown>;
-
   return {
     ...(tx as unknown as Transaction),
     amount: toNumberSafe(tx.amount),
@@ -158,24 +175,16 @@ function isAxios404(err: unknown): boolean {
 
 function extractAxiosErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return String(err);
-
   const status = err.response?.status;
   const data = err.response?.data;
 
   if (isRecord(data)) {
     const msg = data.message;
-    if (typeof msg === "string" && msg.trim()) {
-      return status ? `${status} - ${msg}` : msg;
-    }
-    if (Array.isArray(msg) && typeof msg[0] === "string" && msg[0].trim()) {
-      return status ? `${status} - ${msg[0]}` : msg[0];
-    }
+    if (typeof msg === "string" && msg.trim()) return status ? `${status} - ${msg}` : msg;
+    if (Array.isArray(msg) && typeof msg[0] === "string") return status ? `${status} - ${msg[0]}` : msg[0];
     const errTxt = data.error;
-    if (typeof errTxt === "string" && errTxt.trim()) {
-      return status ? `${status} - ${errTxt}` : errTxt;
-    }
+    if (typeof errTxt === "string") return status ? `${status} - ${errTxt}` : errTxt;
   }
-
   const fallback = err.message || "Erreur réseau";
   return status ? `${status} - ${fallback}` : fallback;
 }
@@ -185,7 +194,6 @@ async function tryMany<T>(
   label: string,
 ): Promise<T> {
   let lastErr: unknown;
-
   for (const fn of fns) {
     try {
       return await fn();
@@ -194,8 +202,6 @@ async function tryMany<T>(
       if (!isAxios404(e)) break;
     }
   }
-
-  // eslint-disable-next-line no-console
   console.error(`API tryMany failed (${label})`, lastErr);
   throw lastErr;
 }
@@ -206,7 +212,6 @@ async function tryMany<T>(
 
 class API {
   public http: AxiosInstance;
-
   private token: string | null = null;
   private tenant: string = getInitialTenantId();
 
@@ -219,32 +224,16 @@ class API {
       headers: { "Content-Type": "application/json" },
     });
 
-    // eslint-disable-next-line no-console
-    console.log("🌐 API Init | baseURL:", baseURL, "| tenant:", this.tenant);
+    console.log("🌐 API Init | URL:", baseURL, "| Tenant:", this.tenant);
 
-    // Charger tenant persisté (non bloquant)
     void this.loadPersistedTenant();
 
     this.http.interceptors.request.use((config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
-      /**
-       * ✅ FIX DÉFINITIF
-       * Si l'appelant a déjà fourni x-tenant-id (ex: DONIKO forcé pour SaaS),
-       * on NE DOIT PAS l'écraser ici.
-       */
-      const existingTenantHeader = headers.get("x-tenant-id");
-      const existingTenant =
-        typeof existingTenantHeader === "string"
-          ? existingTenantHeader.trim()
-          : "";
-
-      if (!existingTenant) {
-        const safeTenant = normalizeTenantCode(this.tenant);
-        headers.set("x-tenant-id", safeTenant);
-      } else {
-        // normalisation "soft" : majuscules, mais on respecte la valeur fournie
-        headers.set("x-tenant-id", existingTenant.toUpperCase());
+      // Si le header n'est pas explicitement défini (ex: pour createClient), on met le tenant courant
+      if (!headers.has("x-tenant-id")) {
+        headers.set("x-tenant-id", normalizeTenant(this.tenant));
       }
 
       if (this.token && this.token.trim().length > 0) {
@@ -266,39 +255,33 @@ class API {
       const savedTenant = await AsyncStorage.getItem(
         STORAGE_KEYS.PREFERRED_TENANT,
       );
-
-      this.tenant = normalizeTenantCode(savedTenant);
-
-      if (!savedTenant || savedTenant.trim() === "" || savedTenant === "10") {
-        await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, this.tenant);
+      // On nettoie la valeur lue du stockage
+      this.tenant = normalizeTenant(savedTenant);
+      // On sauvegarde la version propre pour la prochaine fois
+      if (this.tenant !== savedTenant) {
+         await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, this.tenant);
       }
     } catch {
-      // eslint-disable-next-line no-console
       console.warn("AsyncStorage tenant read error");
     }
   }
 
   async setTenant(tenant: string): Promise<void> {
-    const safeTenant = normalizeTenantCode(tenant);
-    this.tenant = safeTenant;
-
+    this.tenant = normalizeTenant(tenant);
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, safeTenant);
+      await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, this.tenant);
     } catch {
       // noop
     }
   }
 
-  getTenant(): string {
-    return this.tenant;
-  }
+  getTenant(): string { return this.tenant; }
+  setToken(token: string | null): void { this.token = token; }
+  clearToken(): void { this.token = null; }
 
-  setToken(token: string | null): void {
-    this.token = token;
-  }
-
-  clearToken(): void {
-    this.token = null;
+  // Helper pour forcer DONIKO (Plateforme)
+  private platformHeaders(): Record<string, string> {
+    return { "x-tenant-id": PLATFORM_TENANT };
   }
 
   // ==========================================================
@@ -325,9 +308,7 @@ class API {
     return res.data;
   }
 
-  async findAccount(
-    identifier: string,
-  ): Promise<{ userId: string; channels: Array<"EMAIL" | "PHONE"> }> {
+  async findAccount(identifier: string): Promise<{ userId: string; channels: Array<"EMAIL" | "PHONE"> }> {
     const res = await this.http.post("/auth/find-account", { identifier });
     return res.data as { userId: string; channels: Array<"EMAIL" | "PHONE"> };
   }
@@ -336,19 +317,11 @@ class API {
     await this.http.post("/auth/send-otp", { userId, channel });
   }
 
-  async verifyOtp(
-    userId: string,
-    code: string,
-    type: string = "PASSWORD_RESET",
-  ): Promise<void> {
+  async verifyOtp(userId: string, code: string, type: string = "PASSWORD_RESET"): Promise<void> {
     await this.http.post("/auth/verify-otp", { userId, code, type });
   }
 
-  async resetPassword(
-    userId: string,
-    code: string,
-    newPassword: string,
-  ): Promise<void> {
+  async resetPassword(userId: string, code: string, newPassword: string): Promise<void> {
     await this.http.post("/auth/reset-password", { userId, code, newPassword });
   }
 
@@ -364,7 +337,6 @@ class API {
       ],
       "getUsers",
     );
-
     return unwrapArray<unknown>(data.data);
   }
 
@@ -376,7 +348,6 @@ class API {
       ],
       "createUser",
     );
-
     return data.data;
   }
 
@@ -386,38 +357,27 @@ class API {
 
   async adminRefillAgency(agencyId: string, amount: number): Promise<unknown> {
     const payload = { amount };
-
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        async () =>
-          this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
-        async () =>
-          this.http.post<unknown>(`/admin/agencies/refill/${agencyId}`, payload),
+        async () => this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
+        async () => this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
+        async () => this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
       ],
       "adminRefillAgency",
     );
-
     return data.data;
   }
 
   async adminFundSelf(amount: number): Promise<unknown> {
     const payload = { amount };
-
     const data = await tryMany<AxiosResponse<unknown>>(
       [
         async () => this.http.post<unknown>("/admin/fund-self", payload),
-        async () =>
-          this.http.post<unknown>("/admin/treasury/fund-self", payload),
+        async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
         async () => this.http.post<unknown>("/wallet/fund", payload),
-        async () => this.http.post<unknown>("/treasury/fund-self", payload),
       ],
       "adminFundSelf",
     );
-
     return data.data;
   }
 
@@ -441,14 +401,8 @@ class API {
     return res.data;
   }
 
-  async updateAgency(
-    id: string,
-    data: Partial<CreateAgencyPayload>,
-  ): Promise<unknown> {
-    const safe =
-      (data as unknown as { type?: string })?.type !== undefined
-        ? normalizeAgencyPayload(data as CreateAgencyPayload)
-        : data;
+  async updateAgency(id: string, data: Partial<CreateAgencyPayload>): Promise<unknown> {
+    const safe = (data as unknown as { type?: string })?.type !== undefined ? normalizeAgencyPayload(data as CreateAgencyPayload) : data;
     const res = await this.http.patch(`/agencies/${id}`, safe);
     return res.data;
   }
@@ -471,30 +425,23 @@ class API {
     return res.data;
   }
 
-  async createBeneficiary(
-    data: CreateBeneficiaryPayload,
-  ): Promise<Beneficiary> {
+  async createBeneficiary(data: CreateBeneficiaryPayload): Promise<Beneficiary> {
     const res = await this.http.post<Beneficiary>("/beneficiaries", data);
     return res.data;
   }
 
-  async updateBeneficiary(
-    id: string,
-    data: Partial<CreateBeneficiaryPayload>,
-  ): Promise<Beneficiary> {
+  async updateBeneficiary(id: string, data: Partial<CreateBeneficiaryPayload>): Promise<Beneficiary> {
     const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}`, data);
     return res.data;
   }
 
   async deleteBeneficiary(id: string): Promise<{ deleted: true; id: string }> {
-    const res = await this.http.delete<{ deleted: true; id: string }>(
-      `/beneficiaries/${id}`,
-    );
+    const res = await this.http.delete<{ deleted: true; id: string }>(`/beneficiaries/${id}`);
     return res.data;
   }
 
   // ==========================================================
-  // TRANSACTIONS (USER)
+  // TRANSACTIONS
   // ==========================================================
 
   async createTransaction(data: CreateTransactionPayload): Promise<Transaction> {
@@ -512,15 +459,11 @@ class API {
     return tryMany<Transaction>(
       [
         async () => {
-          const res = await this.http.patch<Transaction>(
-            `/transactions/${id}/cancel`,
-          );
+          const res = await this.http.patch<Transaction>(`/transactions/${id}/cancel`);
           return normalizeTransaction(res.data);
         },
         async () => {
-          const res = await this.http.post<Transaction>(
-            `/transactions/${id}/cancel`,
-          );
+          const res = await this.http.post<Transaction>(`/transactions/${id}/cancel`);
           return normalizeTransaction(res.data);
         },
       ],
@@ -528,22 +471,16 @@ class API {
     );
   }
 
-  async depositAgent(data: {
-    amount: number;
-    userPhone: string;
-  }): Promise<Transaction> {
+  async depositAgent(data: { amount: number; userPhone: string }): Promise<Transaction> {
     const res = await this.http.post<Transaction>("/transactions/deposit", data);
     return normalizeTransaction(res.data);
   }
 
   // ==========================================================
-  // WITHDRAWALS (AGENT)
+  // WITHDRAWALS
   // ==========================================================
 
-  async requestWithdrawal(data: {
-    amount?: number;
-    transactionId?: string;
-  }): Promise<unknown> {
+  async requestWithdrawal(data: { amount?: number; transactionId?: string }): Promise<unknown> {
     const res = await this.http.post("/withdrawals", data);
     return res.data;
   }
@@ -589,104 +526,61 @@ class API {
       [
         async () => this.http.get<unknown>("/transactions/admin"),
         async () => this.http.get<unknown>("/transactions/admin/all"),
-        async () =>
-          this.http.get<unknown>("/transactions/admin/all-transactions"),
       ],
       "adminGetTransactions",
     );
-
     const list = unwrapArray<unknown>(data.data);
     return list.map(normalizeTransaction);
   }
 
-  async adminUpdateTransactionStatus(
-    id: string,
-    status: TransactionStatus | string,
-  ): Promise<Transaction> {
+  async adminUpdateTransactionStatus(id: string, status: TransactionStatus | string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
-        async () =>
-          this.http.patch<Transaction>(`/transactions/admin/status/${id}`, {
-            status,
-          }),
-        async () =>
-          this.http.patch<Transaction>(`/transactions/admin/${id}/status`, {
-            status,
-          }),
+        async () => this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
+        async () => this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }),
       ],
       "adminUpdateTransactionStatus",
     );
-
     return normalizeTransaction(data.data);
   }
 
   async validateBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
+        async () => this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
         async () => this.http.post<Transaction>(`/transactions/${id}/validate`),
-        async () =>
-          this.http.patch<Transaction>(`/transactions/${id}/validate`),
       ],
       "validateBankTransfer",
     );
-
     return normalizeTransaction(data.data);
   }
 
   async rejectBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () =>
-          this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
+        async () => this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
         async () => this.http.post<Transaction>(`/transactions/${id}/reject`),
-        async () => this.http.patch<Transaction>(`/transactions/${id}/reject`),
       ],
       "rejectBankTransfer",
     );
-
     return normalizeTransaction(data.data);
   }
 
-  async declareBankTransfer(
-    amount: number,
-    refBancaire?: string,
-  ): Promise<unknown> {
+  async declareBankTransfer(amount: number, refBancaire?: string): Promise<unknown> {
     const reference = (refBancaire ?? "").trim();
-
-    const payload = {
-      amount,
-      refBancaire: reference,
-      reference,
-      method: "BANK_TRANSFER",
-      paymentMethod: "BANK_TRANSFER",
-    };
-
+    const payload = { amount, refBancaire: reference, reference, method: "BANK_TRANSFER", paymentMethod: "BANK_TRANSFER" };
     const res = await tryMany<AxiosResponse<unknown>>(
       [
         async () => this.http.post<unknown>("/transactions/b2b/declare", payload),
-        async () =>
-          this.http.post<unknown>(
-            "/transactions/b2b/declare-bank-transfer",
-            payload,
-          ),
-        async () =>
-          this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
-        async () => this.http.post<unknown>("/bank-transfers/declare", payload),
-        async () =>
-          this.http.post<unknown>("/payments/bank-transfer/declare", payload),
+        async () => this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
       ],
       "declareBankTransfer",
     );
-
     return res.data;
   }
 
   // ==========================================================
-  // EXCHANGE RATES (ADMIN)
+  // EXCHANGE RATES & COMMISSIONS
   // ==========================================================
 
   async getExchangeRates(): Promise<ExchangeRate[]> {
@@ -694,11 +588,9 @@ class API {
       [
         async () => this.http.get<unknown>("/rates"),
         async () => this.http.get<unknown>("/exchange-rates"),
-        async () => this.http.get<unknown>("/fx/rates"),
       ],
       "getExchangeRates",
     );
-
     const list = unwrapArray<unknown>(data.data);
     return list.map(normalizeExchangeRate);
   }
@@ -706,23 +598,12 @@ class API {
   async updateExchangeRate(pair: string, rate: number): Promise<void> {
     await tryMany<void>(
       [
-        async () => {
-          await this.http.post("/rates", { pair, rate });
-        },
-        async () => {
-          await this.http.patch(`/rates/${pair}`, { rate });
-        },
-        async () => {
-          await this.http.post("/exchange-rates", { pair, rate });
-        },
+        async () => { await this.http.post("/rates", { pair, rate }); },
+        async () => { await this.http.patch(`/rates/${pair}`, { rate }); },
       ],
       "updateExchangeRate",
     );
   }
-
-  // ==========================================================
-  // COMMISSIONS (ADMIN)
-  // ==========================================================
 
   async getCommissionRules(): Promise<unknown[]> {
     const data = await tryMany<AxiosResponse<unknown>>(
@@ -732,104 +613,68 @@ class API {
       ],
       "getCommissionRules",
     );
-
     return unwrapArray<unknown>(data.data);
   }
 
-  async saveCommissionRule(payload: {
-    sourceType: string;
-    destType: string;
-    senderShare: number;
-    payerShare: number;
-  }): Promise<unknown> {
+  async saveCommissionRule(payload: any): Promise<unknown> {
     const data = await tryMany<AxiosResponse<unknown>>(
       [
         async () => this.http.post<unknown>("/commissions", payload),
         async () => this.http.post<unknown>("/commissions/rules", payload),
-        async () => this.http.patch<unknown>("/commissions", payload),
       ],
       "saveCommissionRule",
     );
-
     return data.data;
   }
 
   async getCommissionHistory(period: string): Promise<unknown[]> {
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        async () =>
-          this.http.get<unknown>(
-            `/commissions/history?period=${encodeURIComponent(period)}`,
-          ),
-        async () =>
-          this.http.get<unknown>(
-            `/commissions/logs?period=${encodeURIComponent(period)}`,
-          ),
+        async () => this.http.get<unknown>(`/commissions/history?period=${encodeURIComponent(period)}`),
       ],
       "getCommissionHistory",
     );
-
     return unwrapArray<unknown>(data.data);
   }
 
   // ==========================================================
-  // SAAS CLIENTS (SOCIÉTÉS)
+  // ✅ SAAS CLIENTS (Gestion Multi-routes et Tenant)
   // ==========================================================
 
-  /**
-   * ✅ Dashboard SuperAdmin : doit se faire sur le tenant plateforme (DONIKO)
-   * + fallback endpoints (évite 404 si ton controller est préfixé autrement).
-   */
   async getClients(): Promise<unknown[]> {
-    const headers = { "x-tenant-id": DEFAULT_TENANT_CODE };
-
-    const res = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/clients", { headers }),
-        async () => this.http.get<unknown>("/admin/clients", { headers }),
-        async () => this.http.get<unknown>("/super-admin/clients", { headers }),
-        async () => this.http.get<unknown>("/saas/clients", { headers }),
-      ],
-      "getClients",
-    );
-
-    return unwrapArray<unknown>(res.data);
+    const headers = this.platformHeaders();
+    const res = await tryMany<AxiosResponse<unknown>>([
+      () => this.http.get("/clients", { headers }),
+      () => this.http.get("/admin/clients", { headers }),
+      () => this.http.get("/saas/clients", { headers })
+    ], "getClients");
+    return unwrapArray(res.data);
   }
 
-  /**
-   * ✅ Création SaaS : doit se faire sur DONIKO.
-   * IMPORTANT : grâce au FIX interceptor, ce header ne sera plus écrasé.
-   */
   async createClient(data: unknown): Promise<unknown> {
-    const headers = { "x-tenant-id": DEFAULT_TENANT_CODE };
-
+    const headers = this.platformHeaders();
     try {
-      const res = await tryMany<AxiosResponse<unknown>>(
-        [
-          async () => this.http.post<unknown>("/clients", data, { headers }),
-          async () => this.http.post<unknown>("/admin/clients", data, { headers }),
-          async () =>
-            this.http.post<unknown>("/super-admin/clients", data, { headers }),
-          async () => this.http.post<unknown>("/saas/clients", data, { headers }),
-        ],
-        "createClient",
-      );
-
+      const res = await tryMany<AxiosResponse<unknown>>([
+        () => this.http.post("/clients", data, { headers }),
+        () => this.http.post("/admin/clients", data, { headers }),
+        () => this.http.post("/saas/clients", data, { headers })
+      ], "createClient");
       return res.data;
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error("createClient failed:", extractAxiosErrorMessage(e));
       throw e;
     }
   }
 
-  async updateClient(id: number, data: unknown): Promise<unknown> {
-    const res = await this.http.patch(`/clients/${id}`, data);
+  async updateClient(id: number | string, data: unknown): Promise<unknown> {
+    const headers = this.platformHeaders();
+    const res = await this.http.patch(`/clients/${id}`, data, { headers });
     return res.data;
   }
 
-  async deleteClient(id: number): Promise<unknown> {
-    const res = await this.http.delete(`/clients/${id}`);
+  async deleteClient(id: number | string): Promise<unknown> {
+    const headers = this.platformHeaders();
+    const res = await this.http.delete(`/clients/${id}`, { headers });
     return res.data;
   }
 }
