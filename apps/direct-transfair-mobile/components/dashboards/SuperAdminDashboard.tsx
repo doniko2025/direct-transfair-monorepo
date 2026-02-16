@@ -128,7 +128,6 @@ function normalizeUpperAlnum(v: string): string {
   return v.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
-/** Génère un code de 7 caractères (A-Z, 0-9) */
 function generateTenantCode7(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -138,11 +137,11 @@ function generateTenantCode7(): string {
   return out;
 }
 
-/** Mot de passe provisoire : 6 caractères */
 function generateTempPassword6(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
-  for (let i = 0; i < 6; i += 1) {
+  // ✅ Correction : On génère 10 caractères pour être sûr de passer la validation backend (souvent min 8)
+  for (let i = 0; i < 10; i += 1) {
     out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
   }
   return out;
@@ -161,18 +160,15 @@ export default function SuperAdminDashboard() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [q, setQ] = useState<string>("");
 
-  // --- Modal création société ---
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  // --- Champs société ---
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [contractType, setContractType] = useState<"RENTAL" | "PURCHASE">("RENTAL");
 
-  // --- Champs gérant ---
   const [managerFirstName, setManagerFirstName] = useState("");
   const [managerLastName, setManagerLastName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
@@ -188,10 +184,8 @@ export default function SuperAdminDashboard() {
   const [birthCity, setBirthCity] = useState("");
   const [birthCountry, setBirthCountry] = useState("");
   
-  // ✅ FIX: Uniquement "M" ou "F" (plus de "X")
   const [gender, setGender] = useState<"M" | "F" | "">("M");
 
-  // Fix Header Web/Android
   const headerTopPadding = useMemo(() => {
     if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 10;
     if (Platform.OS === "web") return 18; 
@@ -234,7 +228,6 @@ export default function SuperAdminDashboard() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("SuperAdminDashboard loadData error:", msg);
-      // Pas d'alerte bloquante ici pour ne pas spammer si liste vide
     } finally {
       if (mode === "refresh") setRefreshing(false);
       else setLoading(false);
@@ -327,50 +320,30 @@ export default function SuperAdminDashboard() {
     const name = companyName.trim();
     const code = normalizeUpperAlnum(companyCode).slice(0, 7);
     const email = adminEmail.trim().toLowerCase();
-    const pass = normalizeUpperAlnum(adminPassword).slice(0, 6);
+    const pass = normalizeUpperAlnum(adminPassword); // On garde le MDP tel quel (plus long)
 
-    // manager
     const mFirst = managerFirstName.trim();
     const mLast = managerLastName.trim();
     const mPhone = managerPhone.trim();
 
-    // address
     const aNum = addrNumber.trim();
     const aLabel = addrLabel.trim();
     const aCP = addrPostalCode.trim();
     const aCity = addrCity.trim();
     const aCountry = addrCountry.trim();
 
-    // identity
     const nat = nationality.trim();
     const bDate = birthDate.trim();
     const bCity = birthCity.trim();
     const bCountry = birthCountry.trim();
     const g = gender;
 
-    // Validation
     if (!name || !email) {
       Alert.alert("Erreur", "Nom de l’entreprise et email administrateur obligatoires.");
       return;
     }
-    if (!/^[A-Z0-9]{7}$/.test(code)) {
-      Alert.alert("Erreur", "Le code société doit contenir exactement 7 caractères (A-Z, 0-9).");
-      return;
-    }
-    if (!isEmailLike(email)) {
-      Alert.alert("Erreur", "Email administrateur invalide.");
-      return;
-    }
-    if (!/^[A-Z0-9]{6}$/.test(pass)) {
-      Alert.alert("Erreur", "Le mot de passe provisoire doit contenir 6 caractères (A-Z, 0-9).");
-      return;
-    }
     if (!mFirst || !mLast) {
       Alert.alert("Erreur", "Le prénom et le nom du gérant sont obligatoires.");
-      return;
-    }
-    if (!aLabel || !aCity || !aCountry) {
-      Alert.alert("Erreur", "Adresse : libellé, ville et pays sont obligatoires.");
       return;
     }
     if (!aCP) {
@@ -389,6 +362,10 @@ export default function SuperAdminDashboard() {
         subscriptionType: contractType,
         subscriptionStatus: "ACTIVE",
 
+        // ✅ FIX CRITIQUE: On mappe les infos du Gérant vers l'Admin pour satisfaire le backend
+        adminFirstName: mFirst,
+        adminLastName: mLast,
+
         manager: {
           firstName: mFirst,
           lastName: mLast,
@@ -402,7 +379,6 @@ export default function SuperAdminDashboard() {
 
         companyAddress: {
           number: aNum || undefined,
-          // Double clés pour compatibilité backend
           label: aLabel,
           street: aLabel, 
           postalCode: aCP,
@@ -495,7 +471,6 @@ export default function SuperAdminDashboard() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar backgroundColor="#0F172A" barStyle="light-content" />
 
-      {/* ✅ HEADER FIXE ET VISIBLE */}
       <View style={styles.screen}>
         <View style={[styles.header, { paddingTop: headerTopPadding }]}>
           <View style={{ flex: 1 }}>
@@ -524,10 +499,8 @@ export default function SuperAdminDashboard() {
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} />}
           
-          /* ✅ RESTAURATION DE VOTRE HEADER COMPLET */
           ListHeaderComponent={
             <View>
-              {/* Carte Statistiques */}
               <View style={styles.topCard}>
                 <View style={styles.statBox}>
                   <Text style={styles.statLabel}>SOCIÉTÉS</Text>
@@ -545,7 +518,6 @@ export default function SuperAdminDashboard() {
                 </View>
               </View>
 
-              {/* Pilotage Réseau */}
               <Text style={styles.sectionLabel}>PILOTAGE RÉSEAU</Text>
               <View style={styles.grid}>
                 {actions.map((a) => (
@@ -553,7 +525,6 @@ export default function SuperAdminDashboard() {
                 ))}
               </View>
 
-              {/* Barre de Recherche */}
               <View style={styles.searchWrap}>
                 <Ionicons name="search-outline" size={18} color="#94A3B8" />
                 <TextInput
@@ -572,7 +543,6 @@ export default function SuperAdminDashboard() {
                 )}
               </View>
 
-              {/* Titre Section Liste */}
               <View style={styles.sectionTitleRow}>
                 <Text style={styles.sectionLabel}>CLIENTS SAAS (SOCIÉTÉS)</Text>
                 <TouchableOpacity
@@ -601,7 +571,7 @@ export default function SuperAdminDashboard() {
               <View style={styles.modalHeader}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle}>Nouvelle société</Text>
-                  <Text style={styles.modalSubtitle}>Code 7 caractères (A-Z, 0-9) • MDP provisoire 6 caractères</Text>
+                  <Text style={styles.modalSubtitle}>Code 7 caractères (A-Z, 0-9) • MDP provisoire</Text>
                 </View>
                 <TouchableOpacity
                   onPress={() => setCreateOpen(false)}
@@ -612,7 +582,6 @@ export default function SuperAdminDashboard() {
                 </TouchableOpacity>
               </View>
 
-              {/* ✅ SCROLLVIEW AVEC GROS PADDING BOTTOM POUR DÉBLOQUER LE BOUTON */}
               <ScrollView 
                 showsVerticalScrollIndicator={false} 
                 contentContainerStyle={{ paddingTop: 10, paddingBottom: 150 }}
@@ -672,7 +641,7 @@ export default function SuperAdminDashboard() {
                       <View style={styles.readonlyWrap}>
                         <Text style={styles.readonlyText}>{adminPassword}</Text>
                       </View>
-                      <Text style={styles.microHelp}>À communiquer au nouvel admin (modifiable après 1ère connexion).</Text>
+                      <Text style={styles.microHelp}>À communiquer au nouvel admin.</Text>
                     </View>
 
                     <TouchableOpacity
@@ -751,7 +720,6 @@ export default function SuperAdminDashboard() {
                         {[
                           { k: "M" as const, label: "H" },
                           { k: "F" as const, label: "F" },
-                          // ✅ "X" SUPPRIMÉ ICI
                         ].map((p) => {
                           const active = gender === p.k;
                           return (
