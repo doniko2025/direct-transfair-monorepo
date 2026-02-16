@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/services/types.ts
+
 // --- ENUMS & TYPES DE BASE ---
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
@@ -84,40 +85,16 @@ export interface CreateBeneficiaryPayload {
 }
 
 // --- TRANSACTIONS ---
-export type TransactionStatus =
-  | "PENDING"
-  | "VALIDATED"
-  | "PAID"
-  | "CANCELLED";
+export type TransactionStatus = "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
 
-export type PayoutMethod =
-  | "CASH_PICKUP"
-  | "BANK_DEPOSIT"
-  | "MOBILE_MONEY"
-  | "WALLET";
+export type PayoutMethod = "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "WALLET";
 
-export type PaymentMethod =
-  | "WALLET"
-  | "ORANGE_MONEY"
-  | "SENDWAVE"
-  | "CARD"
-  | "CASH"
-  | "BANK_TRANSFER";
+export type PaymentMethod = "WALLET" | "ORANGE_MONEY" | "SENDWAVE" | "CARD" | "CASH" | "BANK_TRANSFER";
 
 // ✅ Ajout UI
-export type TransactionType =
-  | "SERVICE_PAYMENT"
-  | "TRANSFER"
-  | "DEPOSIT"
-  | "WITHDRAWAL";
+export type TransactionType = "SERVICE_PAYMENT" | "TRANSFER" | "DEPOSIT" | "WITHDRAWAL";
 
-export type WithdrawalStatus =
-  | "PENDING"
-  | "APPROVED"
-  | "PAID"
-  | "REJECTED"
-  | "FAILED"
-  | "CANCELLED";
+export type WithdrawalStatus = "PENDING" | "APPROVED" | "PAID" | "REJECTED" | "FAILED" | "CANCELLED";
 
 export interface Transaction {
   id: string;
@@ -193,10 +170,7 @@ export interface InitiatePaymentPayload {
   phone: string;
 }
 
-export type WithdrawalMethod =
-  | "CASH_PICKUP"
-  | "MOBILE_MONEY"
-  | "WALLET";
+export type WithdrawalMethod = "CASH_PICKUP" | "MOBILE_MONEY" | "WALLET";
 
 export interface CreateWithdrawalPayload {
   amount?: number;
@@ -218,10 +192,7 @@ export interface ExchangeRate {
 // AGENCES
 // ============================================================
 
-export type AgencyType =
-  | "SUBSIDIARY"
-  | "PARTNER"
-  | "PRIVATE";
+export type AgencyType = "SUBSIDIARY" | "PARTNER" | "PRIVATE";
 
 export interface Agency {
   id: string | number;
@@ -281,4 +252,33 @@ export interface CommissionLog {
   payerCommission: number;
   platformCommission: number;
   createdAt: string;
+}
+
+// ============================================================
+// ✅ SAAS CLIENTS (Sociétés)
+// ============================================================
+
+export type ClientSubscriptionStatus = "ACTIVE" | "INACTIVE" | "EXPIRED" | "SUSPENDED" | string;
+export type ClientSubscriptionType = "RENTAL" | "PURCHASE" | string;
+
+export interface Client {
+  id: number;
+  name: string;
+  code: string;
+
+  subscriptionStatus?: ClientSubscriptionStatus;
+  subscriptionType?: ClientSubscriptionType;
+
+  primaryColor?: string | null;
+
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+
+  createdAt?: string;
+
+  _count?: {
+    users?: number;
+    agencies?: number;
+  };
 }

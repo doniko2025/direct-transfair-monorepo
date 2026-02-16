@@ -128,6 +128,7 @@ function normalizeUpperAlnum(v: string): string {
   return v.toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
 
+/** Génère un code de 7 caractères (A-Z, 0-9) */
 function generateTenantCode7(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -137,14 +138,45 @@ function generateTenantCode7(): string {
   return out;
 }
 
+/** Mot de passe provisoire : 10 caractères pour passer la sécurité */
 function generateTempPassword6(): string {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
-  // ✅ Correction : On génère 10 caractères pour être sûr de passer la validation backend (souvent min 8)
   for (let i = 0; i < 10; i += 1) {
     out += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
   }
   return out;
+}
+
+function formatCompanyAddress(args: {
+  number?: string;
+  label?: string;
+  postalCode?: string;
+  city?: string;
+  country?: string;
+}): string {
+  const parts = [
+    [args.number?.trim(), args.label?.trim()].filter(Boolean).join(" "),
+    args.postalCode?.trim(),
+    args.city?.trim(),
+    args.country?.trim(),
+  ].filter((x) => !!x && x.length > 0);
+  return parts.join(", ");
+}
+
+function getCreateErrorMessage(e: unknown): string {
+  if (!isRecord(e)) return "Création impossible.";
+  const resp = e.response;
+  if (isRecord(resp)) {
+    const data = resp.data;
+    if (isRecord(data)) {
+      const msg = data.message;
+      if (typeof msg === "string" && msg.trim()) return msg;
+      if (Array.isArray(msg) && typeof msg[0] === "string") return msg[0];
+    }
+  }
+  const msg = (e as { message?: unknown }).message;
+  return typeof msg === "string" && msg.trim() ? msg : "Création impossible.";
 }
 
 // --- Composant Principal ---
@@ -160,15 +192,18 @@ export default function SuperAdminDashboard() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [q, setQ] = useState<string>("");
 
+  // --- Modal création société ---
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // --- Champs société ---
   const [companyName, setCompanyName] = useState("");
   const [companyCode, setCompanyCode] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [contractType, setContractType] = useState<"RENTAL" | "PURCHASE">("RENTAL");
 
+  // --- Champs gérant ---
   const [managerFirstName, setManagerFirstName] = useState("");
   const [managerLastName, setManagerLastName] = useState("");
   const [managerPhone, setManagerPhone] = useState("");
@@ -180,16 +215,18 @@ export default function SuperAdminDashboard() {
   const [addrCountry, setAddrCountry] = useState("");
 
   const [nationality, setNationality] = useState("");
-  const [birthDate, setBirthDate] = useState(""); 
+  const [birthDate, setBirthDate] = useState("");
   const [birthCity, setBirthCity] = useState("");
   const [birthCountry, setBirthCountry] = useState("");
-  
+
+  // ✅ FIX: Uniquement "M" ou "F" (plus de "X")
   const [gender, setGender] = useState<"M" | "F" | "">("M");
 
+  // Fix Header Web/Android
   const headerTopPadding = useMemo(() => {
     if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 10;
-    if (Platform.OS === "web") return 18; 
-    return 12; 
+    if (Platform.OS === "web") return 18;
+    return 12;
   }, []);
 
   const resetCreateForm = useCallback(() => {
@@ -228,6 +265,7 @@ export default function SuperAdminDashboard() {
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("SuperAdminDashboard loadData error:", msg);
+      // Pas d'alerte bloquante ici pour ne pas spammer si liste vide
     } finally {
       if (mode === "refresh") setRefreshing(false);
       else setLoading(false);
@@ -294,7 +332,7 @@ export default function SuperAdminDashboard() {
 
   const openClient = useCallback(
     (client: ClientSaas) => {
-      router.push({ pathname: "/(tabs)/admin", params: { id: client.id } });
+      router.push({ pathname: "/(tabs)/admin/clients/details", params: { id: client.id } });
     },
     [router],
   );
@@ -309,8 +347,6 @@ export default function SuperAdminDashboard() {
   }, [isSuperAdmin, resetCreateForm]);
 
   const handleCreateCompany = useCallback(async () => {
-    console.log("--- CLIC CREATION ---");
-    
     if (!isSuperAdmin) {
       Alert.alert("Accès refusé", "Seul le Super Admin peut créer une société.");
       return;
@@ -320,26 +356,34 @@ export default function SuperAdminDashboard() {
     const name = companyName.trim();
     const code = normalizeUpperAlnum(companyCode).slice(0, 7);
     const email = adminEmail.trim().toLowerCase();
-    const pass = normalizeUpperAlnum(adminPassword); // On garde le MDP tel quel (plus long)
+    const pass = normalizeUpperAlnum(adminPassword);
 
+    // manager
     const mFirst = managerFirstName.trim();
     const mLast = managerLastName.trim();
     const mPhone = managerPhone.trim();
 
+    // address
     const aNum = addrNumber.trim();
     const aLabel = addrLabel.trim();
     const aCP = addrPostalCode.trim();
     const aCity = addrCity.trim();
     const aCountry = addrCountry.trim();
 
+    // identity
     const nat = nationality.trim();
     const bDate = birthDate.trim();
     const bCity = birthCity.trim();
     const bCountry = birthCountry.trim();
     const g = gender;
 
-    if (!name || !email) {
-      Alert.alert("Erreur", "Nom de l’entreprise et email administrateur obligatoires.");
+    // Validation
+    if (!name) {
+      Alert.alert("Erreur", "Nom de l’entreprise obligatoire.");
+      return;
+    }
+    if (!email || !isEmailLike(email)) {
+      Alert.alert("Erreur", "Email administrateur invalide.");
       return;
     }
     if (!mFirst || !mLast) {
@@ -354,6 +398,14 @@ export default function SuperAdminDashboard() {
     setCreating(true);
 
     try {
+      const addressText = formatCompanyAddress({
+        number: aNum,
+        label: aLabel,
+        postalCode: aCP,
+        city: aCity,
+        country: aCountry,
+      });
+
       const payload = {
         name,
         code,
@@ -362,7 +414,11 @@ export default function SuperAdminDashboard() {
         subscriptionType: contractType,
         subscriptionStatus: "ACTIVE",
 
-        // ✅ FIX CRITIQUE: On mappe les infos du Gérant vers l'Admin pour satisfaire le backend
+        // ✅ Compat: certains backends attendent un phone/address flat
+        phone: mPhone || undefined,
+        address: addressText || undefined,
+
+        // ✅ FIX : On envoie bien adminFirstName et adminLastName au backend
         adminFirstName: mFirst,
         adminLastName: mLast,
 
@@ -380,7 +436,7 @@ export default function SuperAdminDashboard() {
         companyAddress: {
           number: aNum || undefined,
           label: aLabel,
-          street: aLabel, 
+          street: aLabel,
           postalCode: aCP,
           zip: aCP,
           city: aCity,
@@ -400,9 +456,9 @@ export default function SuperAdminDashboard() {
       );
 
       void loadData("refresh");
-    } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || "Création impossible.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : JSON.stringify(msg));
+    } catch (e: unknown) {
+      const msg = getCreateErrorMessage(e);
+      Alert.alert("Erreur", msg);
     } finally {
       setCreating(false);
     }
@@ -498,7 +554,6 @@ export default function SuperAdminDashboard() {
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} />}
-          
           ListHeaderComponent={
             <View>
               <View style={styles.topCard}>
@@ -562,7 +617,6 @@ export default function SuperAdminDashboard() {
         />
       </View>
 
-      {/* --- MODAL CRÉATION --- */}
       <Modal visible={createOpen} transparent animationType="slide" onRequestClose={() => setCreateOpen(false)}>
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%", height: "92%" }}>
@@ -573,21 +627,16 @@ export default function SuperAdminDashboard() {
                   <Text style={styles.modalTitle}>Nouvelle société</Text>
                   <Text style={styles.modalSubtitle}>Code 7 caractères (A-Z, 0-9) • MDP provisoire</Text>
                 </View>
-                <TouchableOpacity
-                  onPress={() => setCreateOpen(false)}
-                  style={styles.modalCloseBtn}
-                  disabled={creating}
-                >
+                <TouchableOpacity onPress={() => setCreateOpen(false)} style={styles.modalCloseBtn} disabled={creating}>
                   <Ionicons name="close" size={22} color="#0F172A" />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView 
-                showsVerticalScrollIndicator={false} 
+              <ScrollView
+                showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingTop: 10, paddingBottom: 150 }}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Bloc Société */}
                 <View style={styles.formCard}>
                   <Text style={styles.blockTitle}>Société</Text>
 
@@ -673,7 +722,6 @@ export default function SuperAdminDashboard() {
                   </View>
                 </View>
 
-                {/* Bloc Gérant */}
                 <View style={styles.formCard}>
                   <Text style={styles.blockTitle}>Gérant</Text>
 
@@ -785,7 +833,6 @@ export default function SuperAdminDashboard() {
                   />
                 </View>
 
-                {/* Bloc Adresse société */}
                 <View style={styles.formCard}>
                   <Text style={styles.blockTitle}>Adresse Société</Text>
 
@@ -904,7 +951,6 @@ const styles = StyleSheet.create({
 
   header: {
     paddingHorizontal: 22,
-    // paddingTop injecté dynamiquement
     paddingBottom: 14,
     flexDirection: "row",
     alignItems: "center",

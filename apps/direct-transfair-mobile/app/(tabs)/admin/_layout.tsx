@@ -1,4 +1,4 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/_layout.tsx
+// apps/direct-transfair-mobile/app/(tabs)/admin/_layout.tsx
 import { Stack } from "expo-router";
 
 export default function AdminLayout() {
@@ -10,31 +10,22 @@ export default function AdminLayout() {
       }}
     >
       {/* 1. Le Menu Principal (Dashboard) */}
-      <Stack.Screen 
-        name="index" 
-        options={{ title: "Admin Dashboard" }} 
-      />
+      <Stack.Screen name="index" options={{ title: "Admin Dashboard" }} />
 
       {/* 2. La Liste des Transactions */}
-      <Stack.Screen 
-        name="transactions" 
-        options={{ title: "Transactions" }} 
-      />
+      <Stack.Screen name="transactions" options={{ title: "Transactions" }} />
 
       {/* 3. La Création de Sociétés (Super Admin) */}
-      <Stack.Screen 
-        name="super-dashboard" 
-        options={{ 
-            presentation: "modal", // S'ouvrira comme une pop-up/modal
-            title: "Super Admin" 
-        }} 
+      <Stack.Screen
+        name="super-dashboard"
+        options={{
+          presentation: "modal", // S'ouvrira comme une pop-up/modal
+          title: "Super Admin",
+        }}
       />
-      
+
       {/* 4. Les Taux de change */}
-      <Stack.Screen 
-        name="rates" 
-        options={{ title: "Taux de Change" }} 
-      />
+      <Stack.Screen name="rates" options={{ title: "Taux de Change" }} />
     </Stack>
   );
 }
