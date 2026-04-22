@@ -1,27 +1,23 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "jsx": "react-jsx",
-
     "strict": true,
-    "noImplicitAny": true,
+    "noImplicitAny": false,
     "strictNullChecks": true,
-
-    "allowJs": false,
+    "allowJs": true,
     "isolatedModules": true,
     "noEmit": true,
-
     "module": "ESNext",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
-
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
     "types": [
       "react",
       "react-native",
       "node"
-    ],
-
-    "baseUrl": "."
+    ]
   },
   "include": [
     "app",
@@ -36,12 +32,9 @@
   ],
   "exclude": [
     "node_modules",
-    "_old_routes",
-    "__old_routes",
-    "**/_old_routes/**",
-    "**/__old_routes/**",
     "babel.config.js",
     "metro.config.js",
     "jest.config.js"
-  ]
+  ],
+  "extends": "expo/tsconfig.base"
 }

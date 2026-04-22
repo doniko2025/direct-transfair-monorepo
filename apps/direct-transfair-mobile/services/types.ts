@@ -25,7 +25,7 @@ export interface AuthUser {
 
   jobTitle?: string;
 
-  // ✅ AJOUT ADMIN (corrige ton erreur TS)
+  // ✅ AJOUT ADMIN
   agencyName?: string;
 
   clientId: number;
@@ -274,10 +274,21 @@ export interface Client {
   email?: string | null;
   phone?: string | null;
   address?: string | null;
+  
+  contactEmail?: string | null;
+  contactPhone?: string | null;
+  activitySector?: string | null;
+  
+  ownerFirstName?: string | null;
+  ownerLastName?: string | null;
+  ownerBirthDate?: string | null;
+  ownerBirthPlace?: string | null;
+  ownerCountry?: string | null;
+  ownerAddress?: string | null; // ✅ Correction appliquée
 
   createdAt?: string;
 
-  _count?: {
+  _count?: { 
     users?: number;
     agencies?: number;
   };

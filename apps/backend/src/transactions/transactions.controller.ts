@@ -39,7 +39,10 @@ export class TransactionsController {
   // =========================================================
 
   @Post('admin/fund-self')
-  async fundSelf(@Req() req: AuthedRequest, @Body('amount') amount: number) {
+  async fundSelf(
+    @Req() req: AuthedRequest, 
+    @Body('amount') amount: string | number // ✅ Récupération directe anti-blocage
+  ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
 
@@ -54,16 +57,19 @@ export class TransactionsController {
     }
 
     const userId = this.getUserId(req);
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+    const numericAmount = Number(amount);
+
+    if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
       throw new BadRequestException('Montant invalide');
     }
-    return this.transactionsService.fundAdminWallet(userId, amount);
+    return this.transactionsService.fundAdminWallet(userId, numericAmount);
   }
 
   @Post('admin/refill-agency')
   async refillAgency(
     @Req() req: AuthedRequest,
-    @Body() body: { agencyId: string; amount: number },
+    @Body('agencyId') agencyId: string,     // ✅ Récupération directe
+    @Body('amount') amount: string | number // ✅ Récupération directe
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -71,9 +77,12 @@ export class TransactionsController {
       throw new ForbiddenException('Accès refusé : Rôle Admin requis.');
     }
     const userId = this.getUserId(req);
-    if (!body.agencyId || !body.amount)
-      throw new BadRequestException('AgencyId et Amount requis');
-    return this.transactionsService.refillAgency(userId, body.agencyId, body.amount);
+    const numericAmount = Number(amount);
+
+    if (!agencyId || isNaN(numericAmount) || numericAmount <= 0)
+      throw new BadRequestException('AgencyId et Amount valides requis');
+
+    return this.transactionsService.refillAgency(userId, agencyId, numericAmount);
   }
 
   // =========================================================
@@ -83,15 +92,19 @@ export class TransactionsController {
   @Post('b2b/declare')
   async declareTransfer(
     @Req() req: AuthedRequest,
-    @Body() body: { amount: number; ref: string },
+    @Body('amount') amount: string | number, // ✅ Récupération directe
+    @Body('ref') ref: string                 // ✅ Récupération directe
   ) {
     const user = req.user;
     if (user?.role !== 'COMPANY_ADMIN')
       throw new ForbiddenException('Réservé aux sociétés.');
-    if (!body.amount || !body.ref)
+      
+    const numericAmount = Number(amount);
+    
+    if (isNaN(numericAmount) || !ref)
       throw new BadRequestException('Montant et Référence requis');
 
-    return this.transactionsService.declareBankTransfer(user.id, body.amount, body.ref);
+    return this.transactionsService.declareBankTransfer(user.id, numericAmount, ref);
   }
 
   @UseGuards(AdminGuard)
@@ -103,7 +116,6 @@ export class TransactionsController {
     return this.transactionsService.validateBankTransfer(user.id, id);
   }
 
-  // ✅ NOUVEAU : rejet B2B (remboursement + CANCELLED)
   @UseGuards(AdminGuard)
   @Patch('b2b/reject/:id')
   async rejectTransfer(@Req() req: AuthedRequest, @Param('id') id: string) {

@@ -1,5 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { 
   View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, 
   StatusBar, Alert, Platform, Modal, TextInput, ActivityIndicator, RefreshControl 
@@ -23,6 +23,7 @@ export default function TreasuryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [localBalance, setLocalBalance] = useState<number>(0);
   const [modalVisible, setModalVisible] = useState(false);
   const [targetAgency, setTargetAgency] = useState<any>(null); 
   const [amount, setAmount] = useState("");
@@ -32,6 +33,12 @@ export default function TreasuryScreen() {
   const [processing, setProcessing] = useState(false);
 
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+
+  useEffect(() => {
+      if (user?.balance !== undefined) {
+          setLocalBalance(Number(user.balance));
+      }
+  }, [user?.balance]);
 
   useFocusEffect(
     useCallback(() => { loadData(); }, [])
@@ -52,8 +59,6 @@ export default function TreasuryScreen() {
   };
 
   const handleRefresh = async () => { setRefreshing(true); await loadData(); };
-
-  // --- OUVERTURE MODALES ---
 
   const handleOpenPaySuperAdmin = () => {
       setAmount("");
@@ -76,11 +81,10 @@ export default function TreasuryScreen() {
       setModalVisible(true);
   };
 
-  // --- SOUMISSION ---
-
   const handleSubmit = async () => {
       if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-          Alert.alert("Erreur", "Montant invalide");
+          if (Platform.OS === 'web') alert("Montant invalide");
+          else Alert.alert("Erreur", "Montant invalide");
           return;
       }
       
@@ -90,42 +94,51 @@ export default function TreasuryScreen() {
       try {
           if (modalType === 'PAY_SUPER') {
               if (!refBancaire) throw new Error("Référence bancaire requise");
-              
               await api.declareBankTransfer(val, refBancaire);
-              
+              setLocalBalance(prev => prev - val);
+
               const msg = "Paiement envoyé ! En attente de validation par le Super Admin.";
               if (Platform.OS === 'web') alert(msg);
               else Alert.alert("Succès", msg);
           } 
-          
           else if (modalType === 'REFILL_AGENCY' && targetAgency) {
               const res = await api.adminRefillAgency(targetAgency.id, val) as RefillResponse | undefined;
-
-              const sent =
-                typeof res?.sent === "number"
-                  ? res.sent
-                  : typeof res?.amount === "number"
-                  ? res.amount
-                  : val;
+              const sent = typeof res?.sent === "number" ? res.sent : typeof res?.amount === "number" ? res.amount : val;
+              
+              setLocalBalance(prev => prev - sent);
 
               const msg = `Agence rechargée de ${sent} XOF avec succès.`;
-              
               if (Platform.OS === 'web') alert(msg);
               else Alert.alert("Succès", msg);
           }
-
           else if (modalType === 'FUND_SELF') {
-             await api.adminFundSelf(val);
-             if (Platform.OS === 'web') alert("Compte alimenté !");
+             const res = await api.adminFundSelf(val) as any;
+             
+             if (res && res.newBalance !== undefined) {
+                 setLocalBalance(Number(res.newBalance));
+             } else {
+                 setLocalBalance(prev => prev + val);
+             }
+
+             if (Platform.OS === 'web') alert("Compte alimenté avec succès !");
              else Alert.alert("Succès", "Fonds ajoutés.");
           }
 
           setModalVisible(false);
-          setTimeout(() => loadData(), 500); 
+          await loadData();
 
       } catch (e: any) {
+          console.error("Erreur API :", e);
+          
+          // ✅ CORRECTIF WEB: Affichage forcé de l'erreur pour ne plus jamais bloquer silencieusement
           const err = e?.response?.data?.message || e?.message || "Erreur technique";
-          Alert.alert("Erreur", Array.isArray(err) ? err[0] : err);
+          const errMsg = Array.isArray(err) ? err.join(", ") : String(err);
+          
+          if (Platform.OS === 'web') {
+              alert(`❌ Échec de l'opération : ${errMsg}`);
+          } else {
+              Alert.alert("Erreur", errMsg);
+          }
       } finally {
           setProcessing(false);
       }
@@ -156,7 +169,7 @@ export default function TreasuryScreen() {
             <View>
                 <Text style={styles.adminLabel}>Trésorerie ({isSuperAdmin ? 'Super Admin' : 'Admin Société'})</Text>
                 <Text style={styles.adminBalance}>
-                    {user?.balance ? Number(user.balance).toLocaleString('fr-FR') : "0"} XOF
+                    {localBalance.toLocaleString('fr-FR')} XOF
                 </Text>
             </View>
             

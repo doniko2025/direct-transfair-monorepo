@@ -260,8 +260,6 @@ export class TransactionsService {
 
     return this.prisma.$transaction(async (prismaTx) => {
       // ✅ NOUVELLE RÈGLE AGENT (refund)
-      // - à l’envoi agent : balance -= amount ; cash += total
-      // - à l’annulation  : balance += amount ; cash -= total
       if (tx.sender?.role === 'AGENT' && tx.sender.agencyId) {
         await prismaTx.agency.update({
           where: { id: tx.sender.agencyId },
@@ -334,8 +332,6 @@ export class TransactionsService {
       let currency = dto.currency;
 
       if (user.role === 'AGENT' && user.agencyId && user.agency) {
-        // ✅ NOUVELLE RÈGLE AGENT (envoi)
-        // balance doit couvrir amount (pas total)
         if (user.agency.balance.lessThan(amount)) {
           throw new ForbiddenException(
             `Solde Agence insuffisant (${user.agency.balance} < ${amount})`,
@@ -345,8 +341,8 @@ export class TransactionsService {
         await tx.agency.update({
           where: { id: user.agencyId },
           data: {
-            balance: { decrement: amount }, // ✅ - amount
-            cash: { increment: total },     // ✅ + total (amount + fees)
+            balance: { decrement: amount },
+            cash: { increment: total },
           },
         });
 
@@ -546,16 +542,24 @@ export class TransactionsService {
     return result;
   }
 
-  async adminFundSelf(user: AuthUserPayload, amount: number) {
+  // =================================================================
+  // 🟢 AUTO-ALIMENTATION (Admin Société)
+  // =================================================================
+  async adminFundSelf(user: AuthUserPayload, amount: number | string) {
     if (!user?.id) throw new BadRequestException('Utilisateur invalide');
     return this.fundAdminWallet(user.id, amount);
   }
 
-  async fundAdminWallet(adminId: string, amount: number) {
+  async fundAdminWallet(adminId: string, amount: number | string) {
+    // ✅ CORRECTION CHIRURGICALE : Sécurité absolue sur le type de la donnée
+    // Prisma convertira parfaitement que ce soit un Nombre ou une Chaîne de texte
+    const amountDec = new Prisma.Decimal(amount);
+
     const updatedAdmin = await this.prisma.user.update({
       where: { id: adminId },
-      data: { balance: { increment: amount } },
+      data: { balance: { increment: amountDec } },
     });
+    
     return { message: 'Succès', newBalance: updatedAdmin.balance };
   }
 

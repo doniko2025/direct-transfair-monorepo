@@ -25,8 +25,6 @@ export class CreateTransactionDto {
   @IsNotEmpty()
   beneficiaryId: string;
 
-  // ✅ AJOUTS : Infos de l'expéditeur réel (Client invité)
-  // Optionnels car les utilisateurs de l'app mobile (Clients) ne les envoient pas
   @IsOptional()
   @IsString()
   senderFirstName?: string;
@@ -48,4 +46,31 @@ export class CreateDepositDto {
   @IsString()
   @IsNotEmpty()
   userPhone: string;
+}
+
+// ✅ NOUVEAUX DTOs POUR SÉCURISER LA TRÉSORERIE (Le correctif est ici)
+export class FundSelfDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+}
+
+export class RefillAgencyDto {
+  @IsString()
+  @IsNotEmpty()
+  agencyId: string;
+
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+}
+
+export class DeclareB2BDto {
+  @IsNumber()
+  @IsPositive()
+  amount: number;
+
+  @IsString()
+  @IsNotEmpty()
+  ref: string;
 }

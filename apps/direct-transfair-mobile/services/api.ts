@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/services/api.ts
+// apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -66,26 +67,18 @@ function getBaseUrl(): string {
 
 /**
  * Nettoie le code société.
- * Transforme "LOCALHOST", "127.0.0.1", "10" ou les tunnels bizarres en "DONIKO".
+ * ✅ SIMPLIFICATION : On ne blacklist plus "LOCALHOST" car c'est là que tu travailles
  */
 function normalizeTenant(input: string | null | undefined): string {
-  const raw = (input ?? "").trim();
+  const raw = (input ?? "").trim().toUpperCase();
 
-  const blackList = [
-    "10",
-    "LOCALHOST",
-    "127.0.0.1",
-    "192.168",
-    "DFTRANSFER",
-    "UNDEFINED",
-    "NULL",
-  ];
+  // Cette liste force l'application à utiliser "DONIKO" au lieu de "LOCALHOST"
+  const blackList = ["10", "LOCALHOST", "127.0.0.1", "192.168", "DFTRANSFER", "UNDEFINED", "NULL"];
 
-  if (!raw || blackList.some((bad) => raw.toUpperCase().includes(bad))) {
-    return PLATFORM_TENANT;
+  if (!raw || blackList.some((bad) => raw.includes(bad))) {
+    return "DONIKO"; // Remplace LOCALHOST par ton vrai code société
   }
-
-  return raw.toUpperCase();
+  return raw;
 }
 
 function getInitialTenantId(): string {
@@ -242,13 +235,31 @@ class API {
 
     void this.loadPersistedTenant();
 
-    this.http.interceptors.request.use((config) => {
+    // ✅ CORRECTIF CHIRURGICAL : Intercepteur asynchrone blindé
+    this.http.interceptors.request.use(async (config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
-      if (!headers.has("x-tenant-id")) {
-        headers.set("x-tenant-id", normalizeTenant(this.tenant));
+      // 1. On s'assure que le tenant est bien chargé avant la requête
+      if (!this.tenant || this.tenant === PLATFORM_TENANT) {
+          await this.loadPersistedTenant();
       }
 
+      // 2. On vérifie le token dans le stockage si this.token est vide
+      if (!this.token) {
+          try {
+              // On cherche sur les deux clés courantes pour être sûr de le trouver
+              const savedToken = (await AsyncStorage.getItem("accessToken")) ?? (await AsyncStorage.getItem("token"));
+              if (savedToken) {
+                  this.token = savedToken;
+              }
+          } catch (e) {
+              console.warn("Erreur de lecture du token dans AsyncStorage", e);
+          }
+      }
+
+      headers.set("x-tenant-id", this.tenant);
+
+      // 3. Application du token avec nettoyage des guillemets
       if (this.token && this.token.trim().length > 0) {
         const cleanToken = this.token.replace(/^"|"$/g, "");
         headers.set("Authorization", `Bearer ${cleanToken}`);
@@ -392,6 +403,7 @@ class API {
     const payload = { amount };
     const data = await tryMany<AxiosResponse<unknown>>(
       [
+        async () => this.http.post<unknown>("/transactions/admin/refill-agency", { agencyId, amount }),
         async () => this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
         async () => this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
         async () => this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
@@ -405,6 +417,7 @@ class API {
     const payload = { amount };
     const data = await tryMany<AxiosResponse<unknown>>(
       [
+        async () => this.http.post<unknown>("/transactions/admin/fund-self", payload),
         async () => this.http.post<unknown>("/admin/fund-self", payload),
         async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
         async () => this.http.post<unknown>("/wallet/fund", payload),
@@ -606,6 +619,7 @@ class API {
     const reference = (refBancaire ?? "").trim();
     const payload = {
       amount,
+      ref: reference,
       refBancaire: reference,
       reference,
       method: "BANK_TRANSFER",

@@ -32,7 +32,7 @@
     "incremental": true,
     "skipLibCheck": true,
 
-    /* Typage (choix volontaire backend) */
+    /* Typage */
     "strict": false,
     "strictNullChecks": true,
     "noImplicitAny": false,
@@ -40,11 +40,16 @@
     /* Sécurité */
     "forceConsistentCasingInFileNames": true,
 
-    /* ⬅️ CRITIQUE : inclut les types Express étendus */
     "types": ["node", "express"],
-
-    /* ⬅️ CRITIQUE : nécessaire pour ts-node + d.ts globaux */
     "typeRoots": ["./node_modules/@types", "./src/types"]
+  },
+
+  /* ✅ AJOUT CRITIQUE : Force ts-node (Prisma) à utiliser les bons réglages */
+  "ts-node": {
+    "compilerOptions": {
+      "module": "commonjs",
+      "moduleResolution": "node"
+    }
   },
 
   "include": [
