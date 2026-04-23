@@ -1,4 +1,3 @@
-// apps/backend/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -19,13 +18,26 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // CORS
+  // ✅ CORS TOTALEMENT DÉBLOQUÉ POUR LE DEV LOCAL (Vite, Next, Expo)
   app.enableCors({
-    origin: true,
+    origin: [
+      'http://localhost:8081', // Port Expo
+      'http://localhost:5173', // Port Vite (si tu fais un front web natif)
+      'http://localhost:3000', // Port Next.js
+      'https://direct-transfair-monorepo-production.up.railway.app',
+      'https://direct-transfair-monorepo-backend.vercel.app'
+    ],
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders:
-      'Content-Type, Authorization, x-tenant-id, Accept, Origin, X-Requested-With',
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-tenant-id',
+      'Accept',
+      'Origin',
+      'X-Requested-With'
+    ],
+    exposedHeaders: ['Authorization'],
   });
 
   // ✅ Guard tenant GLOBAL

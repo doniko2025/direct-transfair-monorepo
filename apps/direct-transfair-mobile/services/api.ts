@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/services/api.ts
-// apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,

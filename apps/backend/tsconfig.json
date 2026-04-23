@@ -44,7 +44,7 @@
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
 
-  /* ✅ AJOUT CRITIQUE : Force ts-node (Prisma) à utiliser les bons réglages */
+  /* Force ts-node (Prisma) à utiliser les bons réglages */
   "ts-node": {
     "compilerOptions": {
       "module": "commonjs",
@@ -64,5 +64,8 @@
     "**/*.spec.ts",
     "**/*.e2e-spec.ts",
     "prisma"
-  ]
+  ],
+
+  /* ✅ PLACEMENT CHIRURGICAL : À la racine pour faire taire VS Code sans faire planter Prisma */
+  "ignoreDeprecations": "5.0"
 }
