@@ -1,6 +1,7 @@
 // ==========================================================
-//  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION)
-//  UPDATED: SECURITY & MFA & NOTIFICATIONS
+//  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION v2)
+//  ENRICHED: KYC, AuditLog, Sessions, Promotions, Alerts
+//  FIXED: Surgical merge to prevent data loss on existing tables
 // ==========================================================
 
 generator client {
@@ -38,6 +39,8 @@ enum TransactionStatus {
   VALIDATED
   PAID
   CANCELLED
+  FAILED
+  REFUNDED
 }
 
 enum PayoutMethod {
@@ -83,6 +86,8 @@ enum TransactionType {
   DEPOSIT
   WITHDRAWAL
   SERVICE_PAYMENT
+  INTERNAL_TRANSFER
+  FEE_COLLECTION
 }
 
 enum AgencyType {
@@ -108,29 +113,111 @@ enum NotificationType {
   ERROR
 }
 
-// ===================== TENANT (PLATEFORME MULTI-SOCIÉTÉS) =====================
+enum KycStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+enum KycDocumentType {
+  NATIONAL_ID
+  PASSPORT
+  DRIVER_LICENSE
+  RESIDENCE_PERMIT
+  SELFIE
+  PROOF_OF_ADDRESS
+}
+
+enum AuditAction {
+  // Auth
+  LOGIN
+  LOGOUT
+  PASSWORD_CHANGE
+  OTP_REQUEST
+  OTP_VERIFY
+  ACCOUNT_LOCKED
+  // Transactions
+  TRANSACTION_CREATE
+  TRANSACTION_UPDATE
+  TRANSACTION_CANCEL
+  TRANSACTION_REFUND
+  WITHDRAWAL_PROCESS
+  // Admin
+  USER_CREATE
+  USER_UPDATE
+  USER_DELETE
+  USER_ROLE_CHANGE
+  AGENCY_CREATE
+  AGENCY_UPDATE
+  CLIENT_CREATE
+  CLIENT_UPDATE
+  // Finance
+  COMMISSION_CONFIG_UPDATE
+  EXCHANGE_RATE_UPDATE
+  BALANCE_ADJUSTMENT
+  // Security
+  SUSPICIOUS_ACTIVITY
+  API_KEY_GENERATE
+}
+
+enum AlertType {
+  SUSPICIOUS_TRANSACTION
+  LARGE_WITHDRAWAL
+  MULTIPLE_FAILED_LOGIN
+  LOW_AGENCY_BALANCE
+  SUBSCRIPTION_EXPIRY
+  KYC_EXPIRED
+}
+
+enum AlertSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PromotionType {
+  FREE_TRANSFER
+  REDUCED_FEE
+  BONUS_CREDIT
+  REFERRAL_BONUS
+}
+
+enum SessionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+// ===================== TENANT =====================
 
 model Tenant {
   id          Int      @id @default(autoincrement())
   code        String   @unique
   name        String
-  databaseUrl String? // Optionnel pour permettre la cohabitation
+  databaseUrl String?
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@map("tenants")
+  @@map("tenants") // Laissé tel quel car il y était dans la V1
 }
 
-// ===================== CLIENT (LA SOCIÉTÉ) =====================
+// ===================== CLIENT (SOCIÉTÉ SAAS) =====================
 
 model Client {
   id   Int    @id @default(autoincrement())
   code String @unique
   name String
 
-  logoUrl      String?
-  primaryColor String? @default("#F7931E")
+  logoUrl        String?
+  primaryColor   String? @default("#F7931E")
+  secondaryColor String? @default("#1E40AF")
+  timezone       String? @default("Africa/Conakry")
+  locale         String? @default("fr-GN")
+  defaultCurrency String? @default("GNF")
 
   address String?
   phone   String?
@@ -152,7 +239,14 @@ model Client {
 
   subscriptionType   SubscriptionType   @default(RENTAL)
   subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  subscriptionStart  DateTime?
   subscriptionEnd    DateTime?
+
+  // Limits & Config
+  maxDailyTransferAmount  Decimal? @db.Decimal(14, 2)
+  maxTransactionAmount    Decimal? @db.Decimal(14, 2)
+  requireKyc              Boolean  @default(false)
+  kycLevel                Int      @default(1) // 1=basic, 2=enhanced, 3=full
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -164,9 +258,16 @@ model Client {
   transactions      Transaction[]
   withdrawals       Withdrawal[]
   commissionConfigs CommissionConfig[]
+  promotions        Promotion[]
+  alerts            Alert[]
+  auditLogs         AuditLog[]        @relation("ClientAuditLogs")
+  apiKeys           ApiKey[]
+
+  @@index([subscriptionStatus])
+  // @@map retiré pour préserver les données existantes
 }
 
-// ===================== COMMISSION CONFIGURATION =====================
+// ===================== COMMISSION CONFIG =====================
 
 model CommissionConfig {
   id String @id @default(cuid())
@@ -181,12 +282,33 @@ model CommissionConfig {
   payerShare    Float @default(0)
   platformShare Float @default(100)
 
+  // Tiered commissions
+  tiers CommissionTier[]
+
+  isActive  Boolean  @default(true)
   updatedAt DateTime @updatedAt
 
   @@unique([clientId, sourceType, destType])
+  // @@map retiré pour préserver les données existantes
 }
 
-// ===================== AGENCY (L'AGENCE PHYSIQUE) =====================
+// Paliers de commission par montant
+model CommissionTier {
+  id String @id @default(cuid())
+
+  configId String
+  config   CommissionConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  minAmount     Decimal @db.Decimal(14, 2)
+  maxAmount     Decimal? @db.Decimal(14, 2)
+  senderShare   Float
+  payerShare    Float
+  platformShare Float
+
+  @@map("commission_tiers") // Nouvelle table, le @@map est safe
+}
+
+// ===================== AGENCY =====================
 
 model Agency {
   id      String @id @default(cuid())
@@ -198,15 +320,20 @@ model Agency {
 
   code  String? @unique
   email String?
-
   phone String?
 
   country  String?
   currency String  @default("XOF")
 
-  balance     Decimal @default(0) @db.Decimal(12, 2)
-  creditLimit Decimal @default(0) @db.Decimal(12, 2)
-  cash        Decimal @default(0) @db.Decimal(12, 2)
+  balance     Decimal @default(0) @db.Decimal(14, 2)
+  creditLimit Decimal @default(0) @db.Decimal(14, 2)
+  cash        Decimal @default(0) @db.Decimal(14, 2)
+
+  // Horaires d'ouverture (JSON: { mon: "08:00-18:00", ... })
+  openingHours Json?
+
+  latitude  Float?
+  longitude Float?
 
   isActive Boolean @default(true)
 
@@ -217,9 +344,12 @@ model Agency {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  // @@map retiré pour préserver les données existantes
 }
 
-// ===================== USER (ACTEURS) =====================
+// ===================== USER =====================
 
 model User {
   id       String @id @default(cuid())
@@ -245,15 +375,39 @@ model User {
   birthCountry String?
   birthCity    String?
 
-  balance Decimal @default(0) @db.Decimal(12, 2)
+  balance Decimal @default(0) @db.Decimal(14, 2)
+  dailySentAmount Decimal @default(0) @db.Decimal(14, 2) // reset each day
 
-  // Champs de Sécurité (MFA & Vérification)
-  isEmailVerified Boolean @default(false)
-  isPhoneVerified Boolean @default(false)
+  profilePictureUrl String?
+  preferredLanguage String? @default("fr")
 
-  otpCode      String? // Code OTP temporaire
-  otpExpiresAt DateTime? // Expiration du code
-  otpType      String? // 'EMAIL_VERIFY', 'PHONE_VERIFY', 'PASSWORD_RESET'
+  // Security
+  isEmailVerified Boolean  @default(false)
+  isPhoneVerified Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  isSuspended     Boolean  @default(false)
+  suspendedReason String?
+  suspendedAt     DateTime?
+
+  otpCode      String?
+  otpExpiresAt DateTime?
+  otpType      String?
+
+  failedLoginAttempts Int       @default(0)
+  lastFailedLoginAt   DateTime?
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  lastLoginIp         String?
+
+  // MFA
+  mfaEnabled  Boolean @default(false)
+  mfaSecret   String? // TOTP secret (encrypted)
+
+  // Referral
+  referralCode String?  @unique
+  referredById String?
+  referredBy   User?    @relation("Referrals", fields: [referredById], references: [id])
+  referrals    User[]   @relation("Referrals")
 
   // Relations
   clientId Int?
@@ -269,11 +423,71 @@ model User {
 
   processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
 
-  // ✅ CORRECTION ICI : Ajout de la relation inverse pour les Notifications
   notifications Notification[]
+
+  sessions     UserSession[]
+  auditLogs    AuditLog[]
+  kyc          KycDocument[]
+  alerts       Alert[]       @relation("AlertUser")
+  promotionsUsed PromotionUse[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([agencyId])
+  @@index([role])
+  // @@map retiré pour préserver les données existantes
+}
+
+// ===================== KYC =====================
+
+model KycDocument {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type        KycDocumentType
+  status      KycStatus       @default(PENDING)
+  documentUrl String
+  backUrl     String?          // Recto-verso
+
+  documentNumber String?
+  expiryDate     DateTime?
+  issuedCountry  String?
+
+  rejectionReason String?
+  reviewedAt      DateTime?
+  reviewedById    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status])
+  @@map("kyc_documents") // Nouvelle table, le @@map est safe
+}
+
+// ===================== USER SESSION =====================
+
+model UserSession {
+  id String @id @default(cuid())
+
+  userId    String
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String   @unique
+  status    SessionStatus @default(ACTIVE)
+  device    String?   // "iPhone 14", "Chrome/Windows"
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, status])
+  @@map("user_sessions") // Nouvelle table, le @@map est safe
 }
 
 // ===================== BENEFICIARY =====================
@@ -284,6 +498,15 @@ model Beneficiary {
   country  String
   city     String
   phone    String?
+  email    String?
+
+  // Infos bancaires (chiffrées)
+  bankName          String?
+  bankAccount       String?
+  mobileMoneyOperator String?
+  mobileMoneyNumber   String?
+
+  isFavorite Boolean @default(false)
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -295,6 +518,9 @@ model Beneficiary {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  // @@map retiré pour préserver les données existantes
 }
 
 // ===================== TRANSACTION =====================
@@ -305,24 +531,33 @@ model Transaction {
 
   type TransactionType @default(TRANSFER)
 
-  amount Decimal @db.Decimal(12, 2)
-  fees   Decimal @db.Decimal(12, 2)
-  total  Decimal @db.Decimal(12, 2)
+  amount Decimal @db.Decimal(14, 2)
+  fees   Decimal @db.Decimal(14, 2)
+  total  Decimal @db.Decimal(14, 2)
 
-  currency String
-
+  currency       String
   targetCurrency String?
   exchangeRate   Float?
-  receivedAmount Decimal? @db.Decimal(12, 2)
+  receivedAmount Decimal? @db.Decimal(14, 2)
+
+  // Commission breakdown
+  senderCommission   Decimal? @db.Decimal(14, 2)
+  payerCommission    Decimal? @db.Decimal(14, 2)
+  platformCommission Decimal? @db.Decimal(14, 2)
 
   status       TransactionStatus @default(PENDING)
   payoutMethod PayoutMethod      @default(CASH_PICKUP)
-
-  paymentMethod PaymentMethod @default(WALLET)
+  paymentMethod PaymentMethod    @default(WALLET)
 
   provider       PaymentProvider?
   providerRef    String?
   providerStatus ProviderStatus?  @default(PENDING)
+
+  // Optionnel: note / motif
+  note String?
+  // Code de retrait cash
+  pickupCode   String?
+  pickupExpiry DateTime?
 
   senderId String
   sender   User   @relation("Sender", fields: [senderId], references: [id])
@@ -338,11 +573,21 @@ model Transaction {
 
   withdrawal Withdrawal?
 
+  // Promo appliquée
+  promotionId   String?
+  promotion     Promotion? @relation(fields: [promotionId], references: [id])
+
   paidAt      DateTime?
   cancelledAt DateTime?
+  failedAt    DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([clientId, status])
+  @@index([senderId])
+  @@index([createdAt])
+  // @@map retiré pour préserver les données existantes
 }
 
 // ===================== WITHDRAWAL =====================
@@ -364,15 +609,22 @@ model Withdrawal {
 
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
+
+  // @@map retiré pour préserver les données existantes
 }
 
-// ===================== TAUX DE CHANGE =====================
+// ===================== EXCHANGE RATE =====================
 
 model ExchangeRate {
   id        String   @id @default(cuid())
   pair      String   @unique
   rate      Float
+  source    String?  @default("manual") // "manual" | "api"
+  validFrom DateTime @default(now())
+  validTo   DateTime?
   updatedAt DateTime @updatedAt
+
+  // @@map retiré pour préserver les données existantes
 }
 
 // ===================== NOTIFICATIONS =====================
@@ -388,9 +640,148 @@ model Notification {
   type    NotificationType @default(INFO)
   isRead  Boolean          @default(false)
 
-  metadata Json? // Ex: { transactionId: "..." }
+  // Deep link
+  actionUrl String?
+  actionLabel String?
+
+  metadata Json?
 
   createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  // @@map retiré pour préserver les données existantes
 }
 
+// ===================== AUDIT LOG =====================
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  userId   String?
+  user     User?   @relation(fields: [userId], references: [id])
+
+  clientId Int?
+  client   Client? @relation("ClientAuditLogs", fields: [clientId], references: [id])
+
+  action     AuditAction
+  entity     String?      // "Transaction", "User", etc.
+  entityId   String?
+  details    Json?        // diff avant/après, paramètres
+  ipAddress  String?
+  userAgent  String?
+  successful Boolean      @default(true)
+  errorMsg   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, action])
+  @@index([clientId, createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs") // Nouvelle table, le @@map est safe
+}
+
+// ===================== ALERTS =====================
+
+model Alert {
+  id String @id @default(cuid())
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  userId String?
+  user   User?   @relation("AlertUser", fields: [userId], references: [id])
+
+  type     AlertType
+  severity AlertSeverity @default(MEDIUM)
+  title    String
+  message  String
+  metadata Json?
+
+  isResolved Boolean   @default(false)
+  resolvedAt DateTime?
+  resolvedBy String?
+
+  createdAt DateTime @default(now())
+
+  @@index([clientId, isResolved])
+  @@map("alerts") // Nouvelle table, le @@map est safe
+}
+
+// ===================== PROMOTIONS =====================
+
+model Promotion {
+  id   String @id @default(cuid())
+  code String @unique
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  type        PromotionType
+  title       String
+  description String?
+
+  discountValue   Float   @default(0) // % or fixed amount
+  isPercentage    Boolean @default(true)
+
+  minAmount    Decimal? @db.Decimal(14, 2)
+  maxDiscount  Decimal? @db.Decimal(14, 2)
+
+  usageLimit   Int?     // null = unlimited
+  usageCount   Int      @default(0)
+  perUserLimit Int      @default(1)
+
+  validFrom DateTime
+  validTo   DateTime
+
+  isActive Boolean @default(true)
+
+  transactions Transaction[]
+  uses         PromotionUse[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([code, isActive])
+  @@map("promotions") // Nouvelle table, le @@map est safe
+}
+
+model PromotionUse {
+  id String @id @default(cuid())
+
+  promotionId String
+  promotion   Promotion @relation(fields: [promotionId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  usedAt DateTime @default(now())
+
+  @@unique([promotionId, userId])
+  @@map("promotion_uses") // Nouvelle table, le @@map est safe
+}
+
+// ===================== API KEYS =====================
+
+model ApiKey {
+  id String @id @default(cuid())
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  name      String
+  keyHash   String   @unique // bcrypt hash
+  keyPrefix String           // e.g. "dtf_live_xxxx" (shown in UI)
+
+  scopes    String[]  // ["transactions:read", "rates:write", ...]
+  isActive  Boolean   @default(true)
+
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@map("api_keys") // Nouvelle table, le @@map est safe
+}
 //npx prisma db push

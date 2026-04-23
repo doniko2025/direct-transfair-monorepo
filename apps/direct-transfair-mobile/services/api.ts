@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/services/api.ts
+// apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -66,16 +67,27 @@ function getBaseUrl(): string {
 
 /**
  * Nettoie le code société.
- * ✅ SIMPLIFICATION : On ne blacklist plus "LOCALHOST" car c'est là que tu travailles
+ * ✅ CORRECTION CHIRURGICALE : Ajout des mots-clés Vercel pour bloquer
+ * la récupération automatique des sous-domaines de preview.
  */
 function normalizeTenant(input: string | null | undefined): string {
   const raw = (input ?? "").trim().toUpperCase();
 
-  // Cette liste force l'application à utiliser "DONIKO" au lieu de "LOCALHOST"
-  const blackList = ["10", "LOCALHOST", "127.0.0.1", "192.168", "DFTRANSFER", "UNDEFINED", "NULL"];
+  // Cette liste force l'application à utiliser "DONIKO" au lieu des URLs de dev/preview
+  const blackList = [
+    "10", 
+    "LOCALHOST", 
+    "127.0.0.1", 
+    "192.168", 
+    "DFTRANSFER", 
+    "UNDEFINED", 
+    "NULL",
+    "VERCEL",
+    "DIRECT-TRANSFAIR-MONOREPO" // Bloque le nom généré par Vercel
+  ];
 
   if (!raw || blackList.some((bad) => raw.includes(bad))) {
-    return "DONIKO"; // Remplace LOCALHOST par ton vrai code société
+    return "DONIKO"; 
   }
   return raw;
 }
@@ -234,19 +246,15 @@ class API {
 
     void this.loadPersistedTenant();
 
-    // ✅ CORRECTIF CHIRURGICAL : Intercepteur asynchrone blindé
     this.http.interceptors.request.use(async (config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
-      // 1. On s'assure que le tenant est bien chargé avant la requête
       if (!this.tenant || this.tenant === PLATFORM_TENANT) {
           await this.loadPersistedTenant();
       }
 
-      // 2. On vérifie le token dans le stockage si this.token est vide
       if (!this.token) {
           try {
-              // On cherche sur les deux clés courantes pour être sûr de le trouver
               const savedToken = (await AsyncStorage.getItem("accessToken")) ?? (await AsyncStorage.getItem("token"));
               if (savedToken) {
                   this.token = savedToken;
@@ -258,7 +266,6 @@ class API {
 
       headers.set("x-tenant-id", this.tenant);
 
-      // 3. Application du token avec nettoyage des guillemets
       if (this.token && this.token.trim().length > 0) {
         const cleanToken = this.token.replace(/^"|"$/g, "");
         headers.set("Authorization", `Bearer ${cleanToken}`);
@@ -268,7 +275,6 @@ class API {
       return config;
     });
 
-    // ✅ LOG EXACT de l'URL en cas d'erreur (404 inclus)
     this.http.interceptors.response.use(
       (res) => res,
       (err: unknown) => {
@@ -320,7 +326,6 @@ class API {
     this.token = null;
   }
 
-  // Helper pour forcer DONIKO (Plateforme)
   private platformHeaders(): Record<string, string> {
     return { "x-tenant-id": PLATFORM_TENANT };
   }
@@ -711,7 +716,6 @@ class API {
     return unwrapArray(res.data);
   }
 
-  // ✅ Détails d'un client (Société)
   async getClient(id: number): Promise<Client> {
     const headers = this.platformHeaders();
     const res = await tryMany<AxiosResponse<Client>>(
@@ -749,7 +753,6 @@ class API {
     return res.data;
   }
 
-  // ✅ Toggle statut (ACTIVE/SUSPENDED) – robuste multi-routes
   async updateClientStatus(id: number, status: ClientSubscriptionStatus): Promise<Client> {
     const headers = this.platformHeaders();
     const payloadA = { status };

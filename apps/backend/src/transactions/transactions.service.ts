@@ -42,6 +42,8 @@ import { AdminMailService } from '../mail/channels/admin-mail.service';
 const TERMINAL_TX: TransactionStatus[] = [
   TransactionStatus.PAID,
   TransactionStatus.CANCELLED,
+  TransactionStatus.FAILED,
+  TransactionStatus.REFUNDED,
 ];
 
 function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
@@ -51,10 +53,12 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   }
 
   const allowed: Record<TransactionStatus, TransactionStatus[]> = {
-    PENDING: [TransactionStatus.VALIDATED, TransactionStatus.CANCELLED],
-    VALIDATED: [TransactionStatus.PAID, TransactionStatus.CANCELLED],
+    PENDING: [TransactionStatus.VALIDATED, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
+    VALIDATED: [TransactionStatus.PAID, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
     PAID: [],
     CANCELLED: [],
+    FAILED: [],
+    REFUNDED: [],
   };
 
   if (!allowed[from]?.includes(to)) {

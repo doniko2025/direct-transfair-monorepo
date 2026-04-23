@@ -1,48 +1,253 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // SuperAdminDashboard.tsx
+// components/dashboards/SuperAdminDashboard.tsx
 import React, { useCallback, useMemo, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-  StatusBar, FlatList, ActivityIndicator, TextInput, RefreshControl, Alert, Platform
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  SafeAreaView,
+  StatusBar,
+  FlatList,
+  ActivityIndicator,
+  TextInput,
+  RefreshControl,
+  Alert,
+  Platform,
+  Dimensions,
+  Animated,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
-import { colors } from "../../theme/colors";
-
-// Imports depuis les fichiers extraits
-import { ClientSaas, QuickAction, normalizeClients, statusColor, statusLabel, subscriptionLabel } from "./SuperAdmin.utils";
+import {
+  ClientSaas,
+  QuickAction,
+  normalizeClients,
+  statusColor,
+  statusLabel,
+  subscriptionLabel,
+} from "./SuperAdmin.utils";
 import CreateCompanyModal from "./CreateCompanyModal";
 
+const { width: SCREEN_W } = Dimensions.get("window");
+const IS_WEB = Platform.OS === "web";
+
+// ─── Palette tokens ────────────────────────────────────────────────────────
+const C = {
+  bg: "#080C14",
+  surface: "#0F1623",
+  surfaceHigh: "#141D2C",
+  border: "rgba(255,255,255,0.07)",
+  borderActive: "rgba(255,255,255,0.14)",
+  accent: "#3B82F6",
+  accentMid: "#60A5FA",
+  accentSoft: "rgba(59,130,246,0.12)",
+  success: "#10B981",
+  successSoft: "rgba(16,185,129,0.12)",
+  warning: "#F59E0B",
+  warningSoft: "rgba(245,158,11,0.12)",
+  danger: "#EF4444",
+  dangerSoft: "rgba(239,68,68,0.12)",
+  purple: "#8B5CF6",
+  purpleSoft: "rgba(139,92,246,0.12)",
+  text: "#F0F4FF",
+  textMuted: "#8B95A8",
+  textFaint: "#4A5568",
+  gold: "#F7C948",
+};
+
+const ACTION_PALETTE = [
+  { gradient: ["#1A2B4A", "#0F1E36"], icon: "#3B82F6", dot: C.accent },
+  { gradient: ["#2A1A4A", "#1A0F36"], icon: "#8B5CF6", dot: C.purple },
+  { gradient: ["#0D2B22", "#071A15"], icon: "#10B981", dot: C.success },
+  { gradient: ["#2B1A0D", "#1A0F07"], icon: "#F59E0B", dot: C.warning },
+];
+
+// ─── Stat Card ──────────────────────────────────────────────────────────────
+function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+  return (
+    <View style={[statStyles.card, { borderColor: `${color}22` }]}>
+      <View style={[statStyles.iconWrap, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon as any} size={16} color={color} />
+      </View>
+      <Text style={[statStyles.value, { color }]}>{value}</Text>
+      <Text style={statStyles.label}>{label}</Text>
+    </View>
+  );
+}
+
+const statStyles = StyleSheet.create({
+  card: {
+    flex: 1,
+    backgroundColor: C.surfaceHigh,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 14,
+    alignItems: "center",
+    gap: 6,
+  },
+  iconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  value: { fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
+  label: { fontSize: 10, color: C.textMuted, fontWeight: "700", letterSpacing: 0.8 },
+});
+
+// ─── Quick Action Card ───────────────────────────────────────────────────────
+function QuickActionCard({ action, palette }: { action: QuickAction; palette: typeof ACTION_PALETTE[0] }) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 50 }).start();
+  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
+
+  return (
+    <Animated.View style={{ transform: [{ scale }], flex: 1 }}>
+      <TouchableOpacity
+        onPress={action.onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        activeOpacity={1}
+        style={quickStyles.card}
+      >
+        <View style={[quickStyles.iconWrap, { backgroundColor: `${palette.icon}18` }]}>
+          <Ionicons name={action.icon as any} size={20} color={palette.icon} />
+        </View>
+        <Text style={quickStyles.title}>{action.title}</Text>
+        {!!action.subtitle && <Text style={quickStyles.sub}>{action.subtitle}</Text>}
+        <View style={[quickStyles.dot, { backgroundColor: palette.dot }]} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const quickStyles = StyleSheet.create({
+  card: {
+    backgroundColor: C.surfaceHigh,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    gap: 6,
+    overflow: "hidden",
+  },
+  iconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  title: { fontSize: 13, fontWeight: "800", color: C.text },
+  sub: { fontSize: 11, color: C.textMuted, fontWeight: "600" },
+  dot: { position: "absolute", top: 12, right: 12, width: 6, height: 6, borderRadius: 3 },
+});
+
+// ─── Client Row Card ─────────────────────────────────────────────────────────
+function ClientCard({ item, onPress }: { item: ClientSaas; onPress: () => void }) {
+  const dot = statusColor(item.subscriptionStatus);
+  const isActive = (item.subscriptionStatus ?? "").toUpperCase() === "ACTIVE";
+
+  return (
+    <TouchableOpacity style={clientStyles.card} onPress={onPress} activeOpacity={0.85}>
+      {/* Avatar */}
+      <View style={[clientStyles.avatar, { backgroundColor: `${dot}18` }]}>
+        <Text style={[clientStyles.avatarText, { color: dot }]}>
+          {(item.name ?? "?")[0].toUpperCase()}
+        </Text>
+      </View>
+
+      <View style={{ flex: 1 }}>
+        <Text style={clientStyles.name} numberOfLines={1}>{item.name}</Text>
+        <View style={clientStyles.metaRow}>
+          <Text style={clientStyles.code}>{item.code}</Text>
+          <View style={[clientStyles.pill, { backgroundColor: `${dot}18`, borderColor: `${dot}40` }]}>
+            <View style={[clientStyles.pillDot, { backgroundColor: dot }]} />
+            <Text style={[clientStyles.pillText, { color: dot }]}>{statusLabel(item.subscriptionStatus)}</Text>
+          </View>
+          <View style={[clientStyles.pill, { backgroundColor: C.surfaceHigh, borderColor: C.border }]}>
+            <Text style={[clientStyles.pillText, { color: C.textMuted }]}>{subscriptionLabel(item.subscriptionType)}</Text>
+          </View>
+        </View>
+      </View>
+
+      <Ionicons name="chevron-forward" size={16} color={C.textFaint} style={{ marginLeft: 8 }} />
+    </TouchableOpacity>
+  );
+}
+
+const clientStyles = StyleSheet.create({
+  card: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surface,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.border,
+    padding: 14,
+    marginBottom: 10,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  avatarText: { fontSize: 18, fontWeight: "900" },
+  name: { fontSize: 15, fontWeight: "800", color: C.text, marginBottom: 6 },
+  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
+  code: { fontSize: 11, color: C.textMuted, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 99,
+    borderWidth: 1,
+  },
+  pillDot: { width: 5, height: 5, borderRadius: 99 },
+  pillText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
+});
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const isSuperAdmin = (user?.role ?? "") === "SUPER_ADMIN";
 
   const [clients, setClients] = useState<ClientSaas[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [q, setQ] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [q, setQ] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
   const headerTopPadding = useMemo(() => {
-    if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 10;
-    if (Platform.OS === "web") return 18;
-    return 12;
+    if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 8;
+    if (IS_WEB) return 16;
+    return 8;
   }, []);
 
   const loadData = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true);
     else setLoading(true);
-
     try {
       const raw = await api.getClients();
-      const normalized = normalizeClients(raw).filter((c) => c.code !== "DONIKO");
-      setClients(normalized);
-    } catch (e: unknown) {
-      console.error("SuperAdminDashboard loadData error:", e);
+      setClients(normalizeClients(raw).filter((c) => c.code !== "DONIKO"));
+    } catch (e) {
+      console.error(e);
     } finally {
       if (mode === "refresh") setRefreshing(false);
       else setLoading(false);
@@ -52,9 +257,11 @@ export default function SuperAdminDashboard() {
   useFocusEffect(useCallback(() => { void loadData("init"); return () => {}; }, [loadData]));
 
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return clients;
-    return clients.filter((c) => `${c.name} ${c.code} ${c.subscriptionStatus ?? ""} ${c.subscriptionType ?? ""}`.toLowerCase().includes(needle));
+    const n = q.trim().toLowerCase();
+    if (!n) return clients;
+    return clients.filter((c) =>
+      `${c.name} ${c.code} ${c.subscriptionStatus ?? ""} ${c.subscriptionType ?? ""}`.toLowerCase().includes(n)
+    );
   }, [clients, q]);
 
   const stats = useMemo(() => {
@@ -64,146 +271,268 @@ export default function SuperAdminDashboard() {
   }, [clients]);
 
   const actions: QuickAction[] = useMemo(() => [
-    { title: "Trésorerie", subtitle: "Super admin", icon: "wallet-outline", color: "#10B981", onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux EUR", subtitle: "Change", icon: "trending-up-outline", color: "#8B5CF6", onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Audit Transac", subtitle: "Contrôle", icon: "analytics-outline", color: "#3B82F6", onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Gestion Users", subtitle: "Comptes", icon: "people-outline", color: "#64748B", onPress: () => router.push("/(tabs)/admin/users") },
+    { title: "Trésorerie", subtitle: "Global", icon: "wallet-outline", color: C.accent, onPress: () => router.push("/(tabs)/admin/treasury") },
+    { title: "Taux EUR", subtitle: "Change", icon: "trending-up-outline", color: C.purple, onPress: () => router.push("/(tabs)/admin/rates") },
+    { title: "Transactions", subtitle: "Audit", icon: "analytics-outline", color: C.success, onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs", subtitle: "Comptes", icon: "people-outline", color: C.warning, onPress: () => router.push("/(tabs)/admin/users") },
   ], [router]);
 
-  const handleAddNewSociety = useCallback(() => {
+  const handleAddSociety = useCallback(() => {
     if (!isSuperAdmin) return Alert.alert("Accès refusé", "Seul le Super Admin peut créer une société.");
     setCreateOpen(true);
   }, [isSuperAdmin]);
 
-  const renderClientItem = useCallback(({ item }: { item: ClientSaas }) => {
-    const dot = statusColor(item.subscriptionStatus);
-    return (
-      <TouchableOpacity style={styles.clientCard} onPress={() => router.push({ pathname: "/(tabs)/admin/clients/details", params: { id: item.id } })} activeOpacity={0.9}>
-        <View style={[styles.statusDot, { backgroundColor: dot }]} />
-        <View style={{ flex: 1 }}>
-          <Text style={styles.clientName} numberOfLines={1}>{item.name}</Text>
-          <View style={styles.metaRow}>
-            <Text style={styles.clientMeta} numberOfLines={1}>Code: <Text style={styles.clientMetaStrong}>{item.code}</Text></Text>
-            <View style={[styles.badge, { borderColor: dot }]}><Text style={[styles.badgeText, { color: dot }]}>{statusLabel(item.subscriptionStatus)}</Text></View>
-            <View style={[styles.badge, { borderColor: "#E2E8F0" }]}><Text style={[styles.badgeText, { color: "#334155" }]}>{subscriptionLabel(item.subscriptionType)}</Text></View>
-          </View>
-        </View>
-        <View style={styles.cardActions}><Ionicons name="chevron-forward" size={18} color="#94A3B8" /></View>
-      </TouchableOpacity>
-    );
-  }, [router]);
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#0F172A" barStyle="light-content" />
-      <View style={styles.screen}>
-        <View style={[styles.header, { paddingTop: headerTopPadding }]}>
+    <SafeAreaView style={s.safe}>
+      <StatusBar backgroundColor={C.bg} barStyle="light-content" />
+      <View style={s.screen}>
+
+        {/* ── Header ── */}
+        <View style={[s.header, { paddingTop: headerTopPadding }]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Super Console</Text>
-            <Text style={styles.headerSubtitle}>Direct Transf’air Cloud • {user?.firstName ? `${user.firstName}` : "SUPER_ADMIN"}</Text>
+            <View style={s.headerBadge}>
+              <Ionicons name="shield-checkmark" size={11} color={C.gold} />
+              <Text style={s.headerBadgeText}>SUPER ADMIN</Text>
+            </View>
+            <Text style={s.headerTitle}>Super Console</Text>
+            <Text style={s.headerSub}>
+              {user?.firstName ? `${user.firstName} · ` : ""}Direct Transf'air Cloud
+            </Text>
           </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerIconBtn} onPress={() => void loadData("refresh")}><Ionicons name="refresh-outline" size={20} color="#E2E8F0" /></TouchableOpacity>
-            <TouchableOpacity style={styles.profileBadge} activeOpacity={0.9}><Ionicons name="shield-checkmark" size={22} color="#FFD700" /></TouchableOpacity>
+          <View style={s.headerActions}>
+            <TouchableOpacity style={s.iconBtn} onPress={() => void loadData("refresh")}>
+              <Ionicons name="refresh-outline" size={18} color={C.textMuted} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
+              <Ionicons name="notifications-outline" size={18} color={C.textMuted} />
+              <View style={s.notifDot} />
+            </TouchableOpacity>
           </View>
         </View>
 
+        {/* ── Scrollable content ── */}
         <FlatList
           data={filtered}
-          keyExtractor={(item) => item.id}
-          renderItem={renderClientItem}
-          contentContainerStyle={styles.listContent}
+          keyExtractor={(i) => i.id}
+          renderItem={({ item }) => (
+            <ClientCard
+              item={item}
+              onPress={() => router.push({ pathname: "/(tabs)/admin/clients/details", params: { id: item.id } })}
+            />
+          )}
+          contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadData("refresh")}
+              tintColor={C.accent}
+            />
+          }
           ListHeaderComponent={
             <View>
-              <View style={styles.topCard}>
-                <View style={styles.statBox}><Text style={styles.statLabel}>SOCIÉTÉS</Text><Text style={styles.statValue}>{stats.total}</Text></View>
-                <View style={styles.dividerV} />
-                <View style={styles.statBox}><Text style={styles.statLabel}>ACTIVES</Text><Text style={styles.statValue}>{stats.active}</Text></View>
-                <View style={styles.dividerV} />
-                <View style={styles.statBox}><Text style={styles.statLabel}>INACTIVES</Text><Text style={styles.statValue}>{stats.inactive}</Text></View>
+              {/* Stats row */}
+              <View style={s.statsRow}>
+                <StatCard label="SOCIÉTÉS" value={stats.total} color={C.accent} icon="business-outline" />
+                <StatCard label="ACTIVES" value={stats.active} color={C.success} icon="checkmark-circle-outline" />
+                <StatCard label="INACTIVES" value={stats.inactive} color={C.danger} icon="close-circle-outline" />
               </View>
 
-              <Text style={styles.sectionLabel}>PILOTAGE RÉSEAU</Text>
-              <View style={styles.grid}>{actions.map((a) => <QuickActionCard key={a.title} action={a} />)}</View>
-
-              <View style={styles.searchWrap}>
-                <Ionicons name="search-outline" size={18} color="#94A3B8" />
-                <TextInput value={q} onChangeText={setQ} placeholder="Rechercher une société (nom, code, statut...)" placeholderTextColor="#94A3B8" style={styles.searchInput} autoCapitalize="none" autoCorrect={false} />
-                {!!q && <TouchableOpacity onPress={() => setQ("")} style={styles.clearBtn}><Ionicons name="close" size={18} color="#64748B" /></TouchableOpacity>}
+              {/* Quick actions */}
+              <Text style={s.sectionLabel}>PILOTAGE RÉSEAU</Text>
+              <View style={s.actionsGrid}>
+                {actions.map((a, i) => (
+                  <QuickActionCard key={a.title} action={a} palette={ACTION_PALETTE[i]} />
+                ))}
               </View>
 
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionLabel}>CLIENTS SAAS (SOCIÉTÉS)</Text>
-                <TouchableOpacity style={[styles.plusButton, !isSuperAdmin && { opacity: 0.55 }]} onPress={handleAddNewSociety} activeOpacity={0.9}>
-                  <Ionicons name="add" size={22} color="#FFFFFF" />
+              {/* Search */}
+              <View style={s.searchRow}>
+                <Ionicons name="search-outline" size={16} color={C.textMuted} />
+                <TextInput
+                  value={q}
+                  onChangeText={setQ}
+                  placeholder="Nom, code, statut…"
+                  placeholderTextColor={C.textFaint}
+                  style={s.searchInput}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {!!q && (
+                  <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
+                    <Ionicons name="close" size={14} color={C.textMuted} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Section title + Add */}
+              <View style={s.sectionRow}>
+                <Text style={s.sectionLabel}>CLIENTS SAAS</Text>
+                <TouchableOpacity
+                  style={[s.addBtn, !isSuperAdmin && { opacity: 0.4 }]}
+                  onPress={handleAddSociety}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="add" size={18} color="#FFF" />
                 </TouchableOpacity>
               </View>
 
-              {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 18, marginBottom: 10 }} />}
+              {loading && (
+                <ActivityIndicator color={C.accent} style={{ marginVertical: 20 }} />
+              )}
             </View>
           }
-          ListEmptyComponent={!loading ? <Text style={styles.emptyText}>Aucun client SaaS trouvé.</Text> : null}
-          ListFooterComponent={<View style={{ height: 110 }} />}
+          ListEmptyComponent={
+            !loading ? (
+              <View style={s.empty}>
+                <Ionicons name="business-outline" size={40} color={C.textFaint} />
+                <Text style={s.emptyText}>Aucun client SaaS trouvé</Text>
+              </View>
+            ) : null
+          }
+          ListFooterComponent={<View style={{ height: 120 }} />}
         />
       </View>
 
-      <CreateCompanyModal 
-        visible={createOpen} 
-        onClose={() => setCreateOpen(false)} 
-        onSuccess={() => void loadData("refresh")} 
-        isSuperAdmin={isSuperAdmin} 
+      <CreateCompanyModal
+        visible={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSuccess={() => void loadData("refresh")}
+        isSuperAdmin={isSuperAdmin}
       />
     </SafeAreaView>
   );
 }
 
-function QuickActionCard({ action }: { action: QuickAction }) {
-  return (
-    <TouchableOpacity style={styles.pCard} onPress={action.onPress} activeOpacity={0.9}>
-      <View style={[styles.pIconBox, { backgroundColor: "rgba(15, 23, 42, 0.04)" }]}><Ionicons name={action.icon} size={22} color={action.color} /></View>
-      <Text style={styles.pTitle}>{action.title}</Text>
-      {!!action.subtitle && <Text style={styles.pSubtitle}>{action.subtitle}</Text>}
-    </TouchableOpacity>
-  );
-}
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.bg },
+  screen: { flex: 1, backgroundColor: C.bg },
 
-const styles = StyleSheet.create({
-  // Conserve ici UNIQUEMENT les styles du layout principal (safeArea, header, listContent, topCard, clientCard, etc.)
-  safeArea: { flex: 1, backgroundColor: "#0F172A" },
-  screen: { flex: 1, backgroundColor: "#0F172A" },
-  header: { paddingHorizontal: 22, paddingBottom: 14, flexDirection: "row", alignItems: "center", backgroundColor: "#0F172A" },
-  headerTitle: { color: "#FFFFFF", fontSize: 22, fontWeight: "800" },
-  headerSubtitle: { color: "#94A3B8", fontSize: 13, fontWeight: "500", marginTop: 3 },
-  headerRight: { flexDirection: "row", alignItems: "center", gap: 10 },
-  headerIconBtn: { width: 40, height: 40, borderRadius: 14, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(255,255,255,0.08)" },
-  profileBadge: { width: 44, height: 44, borderRadius: 16, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(255,255,255,0.10)" },
-  listContent: { paddingTop: 16, paddingHorizontal: 18, backgroundColor: "#F8FAFC", borderTopLeftRadius: 28, borderTopRightRadius: 28, minHeight: "100%" },
-  topCard: { backgroundColor: "#FFFFFF", borderRadius: 20, paddingVertical: 16, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18, elevation: 2 },
-  statBox: { flex: 1, alignItems: "center" },
-  statLabel: { fontSize: 10, color: "#94A3B8", fontWeight: "800", letterSpacing: 1 },
-  statValue: { fontSize: 20, fontWeight: "900", color: "#1E293B", marginTop: 6 },
-  dividerV: { width: 1, height: 38, backgroundColor: "#E2E8F0" },
-  sectionLabel: { fontSize: 12, fontWeight: "900", color: "#64748B", letterSpacing: 1.4, marginBottom: 12, marginLeft: 4 },
-  sectionTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18, marginBottom: 10 },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 12 },
-  pCard: { width: "48%", backgroundColor: "#FFFFFF", padding: 14, borderRadius: 18, elevation: 1, marginBottom: 12 },
-  pIconBox: { width: 42, height: 42, borderRadius: 14, justifyContent: "center", alignItems: "center", marginBottom: 10 },
-  pTitle: { fontSize: 14, fontWeight: "800", color: "#1E293B" },
-  pSubtitle: { marginTop: 3, fontSize: 12, color: "#64748B", fontWeight: "600" },
-  searchWrap: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10, marginTop: 6, marginBottom: 16, borderWidth: 1, borderColor: "#E2E8F0" },
-  searchInput: { flex: 1, paddingLeft: 10, fontSize: 13, color: "#0F172A", fontWeight: "600" },
-  clearBtn: { width: 32, height: 32, borderRadius: 12, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(148,163,184,0.15)" },
-  plusButton: { backgroundColor: "#F59E0B", width: 40, height: 40, borderRadius: 14, justifyContent: "center", alignItems: "center", elevation: 4 },
-  clientCard: { flexDirection: "row", backgroundColor: "#FFFFFF", padding: 16, borderRadius: 18, marginBottom: 12, alignItems: "center", elevation: 1 },
-  statusDot: { width: 6, height: 46, borderRadius: 999, marginRight: 14 },
-  clientName: { fontSize: 16, fontWeight: "900", color: "#0F172A" },
-  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 6, gap: 8 },
-  clientMeta: { fontSize: 12, color: "#64748B", fontWeight: "600" },
-  clientMetaStrong: { color: "#334155", fontWeight: "900" },
-  badge: { borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: "rgba(248,250,252,0.7)" },
-  badgeText: { fontSize: 11, fontWeight: "900", letterSpacing: 0.3 },
-  cardActions: { paddingLeft: 10 },
-  emptyText: { textAlign: "center", color: "#94A3B8", marginTop: 22, fontSize: 14, fontWeight: "700" }
+  // Header
+  header: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  headerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(247,201,72,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(247,201,72,0.2)",
+    borderRadius: 99,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+    marginBottom: 6,
+  },
+  headerBadgeText: { fontSize: 9, fontWeight: "900", color: C.gold, letterSpacing: 1.2 },
+  headerTitle: { fontSize: 24, fontWeight: "900", color: C.text, letterSpacing: -0.5 },
+  headerSub: { fontSize: 12, color: C.textMuted, marginTop: 2, fontWeight: "600" },
+  headerActions: { flexDirection: "row", gap: 8, paddingBottom: 4 },
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surfaceHigh,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  notifDot: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+    backgroundColor: C.danger,
+    borderWidth: 1.5,
+    borderColor: C.bg,
+  },
+
+  // List
+  list: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+  },
+
+  // Stats
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 24,
+  },
+
+  // Section
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    color: C.textFaint,
+    letterSpacing: 1.5,
+    marginBottom: 12,
+    marginLeft: 2,
+  },
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 20,
+    marginBottom: 14,
+  },
+
+  // Actions grid
+  actionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 20,
+  },
+
+  // Add button
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: C.accent,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Search
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: C.surfaceHigh,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    gap: 10,
+    marginBottom: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: C.text,
+    fontWeight: "600",
+  },
+  clearBtn: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: C.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Empty
+  empty: { alignItems: "center", paddingVertical: 40, gap: 10 },
+  emptyText: { color: C.textMuted, fontSize: 14, fontWeight: "700" },
 });
