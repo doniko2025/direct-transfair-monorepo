@@ -8,7 +8,7 @@ import { TenantGuard } from './tenants/tenant.guard';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  // ✅ AJOUT DU PRÉFIXE GLOBAL (Indispensable pour correspondre au mobile)
+  // ✅ AJOUT DU PRÉFIXE GLOBAL
   app.setGlobalPrefix('api');
 
   // Validation globale des DTO
@@ -19,17 +19,31 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // ✅ CORS TOTALEMENT DÉBLOQUÉ (Local + Vercel Prod/Preview)
+  // ✅ CORS BLINDÉ ET DYNAMIQUE
   app.enableCors({
-    origin: [
-      'http://localhost:8081', // Port Expo
-      'http://localhost:5173', // Port Vite (si tu fais un front web natif)
-      'http://localhost:3000', // Port Next.js
-      'https://direct-transfair-monorepo-production.up.railway.app',
-      'https://direct-transfair-monorepo-backend.vercel.app', // Ton backend
-      'https://direct-transfair-monorepo-direct-tr.vercel.app', // Ton frontend principal
-      /\.vercel\.app$/, // Accepte toutes les sous-URLs Vercel (utile pour les previews)
-    ],
+    origin: (origin, callback) => {
+      // 1. Autoriser les requêtes sans origine (ex: Postman, App mobile native)
+      if (!origin) return callback(null, true);
+
+      // 2. Liste blanche stricte
+      const allowedOrigins = [
+        'http://localhost:8081',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://direct-transfair-monorepo-production.up.railway.app',
+        'https://direct-transfair-monorepo-backend.vercel.app',
+        'https://direct-transfair-monorepo-direct-tr.vercel.app',
+      ];
+
+      // 3. Validation dynamique : Accepte si dans la liste OU si c'est un sous-domaine Vercel
+      if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+        return callback(null, true);
+      }
+
+      // 4. Blocage avec log explicite pour t'aider à débugger côté serveur
+      console.error(`🚨 CORS BLOQUÉ POUR L'ORIGINE : ${origin}`);
+      return callback(null, false);
+    },
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     allowedHeaders: [
@@ -62,14 +76,12 @@ async function bootstrap(): Promise<void> {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  // On rend swagger accessible sur /swagger (sans le préfixe /api)
   SwaggerModule.setup('swagger', app, document);
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Backend running: http://localhost:${port}/api`);
-  console.log(`📑 Swagger: http://localhost:${port}/swagger`);
 }
 
 void bootstrap();
