@@ -1,3 +1,4 @@
+//apps/backend/src/main.ts
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -18,14 +19,16 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  // ✅ CORS TOTALEMENT DÉBLOQUÉ POUR LE DEV LOCAL (Vite, Next, Expo)
+  // ✅ CORS TOTALEMENT DÉBLOQUÉ (Local + Vercel Prod/Preview)
   app.enableCors({
     origin: [
       'http://localhost:8081', // Port Expo
       'http://localhost:5173', // Port Vite (si tu fais un front web natif)
       'http://localhost:3000', // Port Next.js
       'https://direct-transfair-monorepo-production.up.railway.app',
-      'https://direct-transfair-monorepo-backend.vercel.app'
+      'https://direct-transfair-monorepo-backend.vercel.app', // Ton backend
+      'https://direct-transfair-monorepo-direct-tr.vercel.app', // Ton frontend principal
+      /\.vercel\.app$/, // Accepte toutes les sous-URLs Vercel (utile pour les previews)
     ],
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
