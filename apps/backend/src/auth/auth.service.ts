@@ -28,6 +28,13 @@ export type PublicUser = {
   balance?: number;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
+  birthDate?: string | null;
+  birthPlace?: string | null;
+  nationality?: string | null;
+  addressStreet?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
+  country?: string | null;
 };
 
 function normalizeEmail(email: string): string {
@@ -50,7 +57,6 @@ export class AuthService {
   private transporter: nodemailer.Transporter;
 
   constructor(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
@@ -66,15 +72,9 @@ export class AuthService {
     });
   }
 
-  // ---------------------------------------------------------
-  // 🔐 LOGIN (Email OU Téléphone)
-  // ---------------------------------------------------------
   async login(dto: LoginDto): Promise<{ access_token: string; user: PublicUser }> {
     const user = await this.validateUser(dto.email, dto.password);
-
-    if (!user) {
-      throw new UnauthorizedException('Identifiants incorrects');
-    }
+    if (!user) throw new UnauthorizedException('Identifiants incorrects');
 
     const payload = {
       sub: user.id,
@@ -102,15 +102,10 @@ export class AuthService {
       }
     }
 
-    if (user && (await bcrypt.compare(pass, user.password))) {
-      return user;
-    }
+    if (user && (await bcrypt.compare(pass, user.password))) return user;
     return null;
   }
 
-  // ---------------------------------------------------------
-  // 📝 REGISTER (tenant auto via x-tenant-id)
-  // ---------------------------------------------------------
   async register(dto: RegisterDto, tenantFromHeader?: string | null) {
     const email = normalizeEmail(dto.email);
     const phone = normalizePhone(dto.phone);
@@ -125,8 +120,6 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
 
-    // ✅ IMPORTANT : le tenant est pris automatiquement depuis x-tenant-id
-    // (fallback compat: dto.tenantCode, puis DONIKO)
     const resolvedTenantCode =
       normalizeTenantCode(tenantFromHeader) ??
       normalizeTenantCode(dto.tenantCode) ??
@@ -136,11 +129,7 @@ export class AuthService {
       where: { code: resolvedTenantCode },
     });
 
-    if (!client) {
-      throw new BadRequestException(
-        `Société introuvable (tenant "${resolvedTenantCode}"). Vérifie le lien société / x-tenant-id.`,
-      );
-    }
+    if (!client) throw new BadRequestException(`Société introuvable (${resolvedTenantCode}).`);
 
     const user = await this.prisma.user.create({
       data: {
@@ -163,37 +152,8 @@ export class AuthService {
       },
     });
 
-    // Envoi automatique d'un OTP par email à l'inscription
     await this.sendOtp(user.id, 'EMAIL');
-
     return this.login({ email: dto.email, password: dto.password });
-  }
-
-  // ---------------------------------------------------------
-  // 🛡️ SECURITÉ : OTP & RESET PASSWORD
-  // ---------------------------------------------------------
-  async findAccount(identifier: string) {
-    const isEmail = identifier.includes('@');
-    let user: User | null = null;
-
-    if (isEmail) {
-      user = await this.prisma.user.findUnique({
-        where: { email: normalizeEmail(identifier) },
-      });
-    } else {
-      const phone = normalizePhone(identifier);
-      if (phone) {
-        user = await this.prisma.user.findFirst({ where: { phone } });
-      }
-    }
-
-    if (!user) throw new NotFoundException('Compte introuvable');
-
-    const channels: string[] = [];
-    if (user.email) channels.push('EMAIL');
-    if (user.phone) channels.push('PHONE');
-
-    return { userId: user.id, channels };
   }
 
   async sendOtp(userId: string, channel: 'EMAIL' | 'PHONE') {
@@ -213,8 +173,6 @@ export class AuthService {
     });
 
     if (channel === 'EMAIL' && user.email) {
-      // eslint-disable-next-line no-console
-      console.log(`📧 Envoi Email à ${user.email} : Code ${code}`);
       try {
         await this.transporter.sendMail({
           from: process.env.MAIL_FROM,
@@ -223,25 +181,16 @@ export class AuthService {
           text: `Votre code est : ${code}. Il expire dans 15 minutes.`,
         });
       } catch (e) {
-        // eslint-disable-next-line no-console
         console.error('Erreur envoi email:', e);
       }
-    } else if (channel === 'PHONE' && user.phone) {
-      // eslint-disable-next-line no-console
-      console.log(`📱 Envoi SMS à ${user.phone} : Code ${code}`);
-      // Intégrer Twilio ici
     }
-
     return { success: true };
   }
 
   async verifyOtp(userId: string, code: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.otpCode !== code) throw new BadRequestException('Code invalide');
-
-    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
-      throw new BadRequestException('Code expiré');
-    }
+    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) throw new BadRequestException('Code expiré');
 
     await this.prisma.user.update({
       where: { id: userId },
@@ -252,31 +201,18 @@ export class AuthService {
         isPhoneVerified: user.otpType === 'PHONE_VERIFY' ? true : user.isPhoneVerified,
       },
     });
-
     return { success: true };
   }
 
   async resetPassword(userId: string, code: string, newPass: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('Utilisateur introuvable');
-
     const hashedPassword = await bcrypt.hash(newPass, 10);
-
     await this.prisma.user.update({
       where: { id: userId },
-      data: {
-        password: hashedPassword,
-        otpCode: null,
-        otpExpiresAt: null,
-      },
+      data: { password: hashedPassword, otpCode: null, otpExpiresAt: null },
     });
-
     return { success: true };
   }
 
-  // ---------------------------------------------------------
-  // 🛠️ UTILS
-  // ---------------------------------------------------------
   private toPublicUser(user: User): PublicUser {
     return {
       id: user.id,
@@ -290,6 +226,13 @@ export class AuthService {
       balance: Number(user.balance),
       isEmailVerified: user.isEmailVerified,
       isPhoneVerified: user.isPhoneVerified,
+      birthDate: user.birthDate,
+      birthPlace: user.birthPlace,
+      nationality: user.nationality,
+      addressStreet: user.addressStreet,
+      postalCode: user.postalCode,
+      city: user.city,
+      country: user.country,
     };
   }
 
@@ -304,14 +247,28 @@ export class AuthService {
 
   async updateProfile(userId: string, data: any) {
     const updateData: any = { ...data };
+    
+    // Protection des champs sensibles
     delete updateData.id;
     delete updateData.role;
     delete updateData.password;
+    delete updateData.email; // On ne change pas l'email ici pour sécurité
+    delete updateData.balance;
 
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-    });
+    // ✅ Normalisation du téléphone si présent
+    if (updateData.phone) {
+      updateData.phone = normalizePhone(updateData.phone);
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+    } catch (e: any) {
+      if (e.code === 'P2002') throw new ConflictException('Ce numéro de téléphone est déjà utilisé.');
+      throw new BadRequestException('Erreur lors de la mise à jour du profil.');
+    }
 
     return this.getProfile(userId);
   }

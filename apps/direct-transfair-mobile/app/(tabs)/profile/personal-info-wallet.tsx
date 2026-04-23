@@ -65,6 +65,7 @@ export default function PersonalInfoWallet() {
       await api.updateProfile({
         firstName,
         lastName,
+        phone, // ✅ Désormais envoyé au backend
         birthDate,
         birthPlace,
         nationality,
@@ -79,8 +80,9 @@ export default function PersonalInfoWallet() {
       Alert.alert("Succès", "Profil mis à jour", [
         { text: "OK", onPress: () => router.back() }
       ]);
-    } catch {
-      Alert.alert("Erreur", "Impossible d’enregistrer");
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || "Impossible d’enregistrer";
+      Alert.alert("Erreur", msg);
     } finally {
       setLoading(false);
     }
@@ -105,7 +107,14 @@ export default function PersonalInfoWallet() {
           <Input label="Prénom" value={firstName} onChange={setFirstName} />
           <Input label="Nom" value={lastName} onChange={setLastName} />
 
-          <Input label="Téléphone" value={phone} editable={false} />
+          {/* ✅ Champ Téléphone déverrouillé */}
+          <Input 
+            label="Téléphone" 
+            value={phone} 
+            onChange={setPhone} 
+            editable={true} 
+          />
+          
           <Input label="Email" value={email} editable={false} />
 
           <Input label="Date naissance" value={birthDate} onChange={setBirthDate} />
@@ -182,11 +191,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16
   },
   title: { color: "#fff", fontWeight: "700", fontSize: 16 },
-
   content: { padding: 20, paddingBottom: 80 },
-
   row: { flexDirection: "row" },
-
   inputBox: {
     borderWidth: 1,
     borderColor: "#DDD",
@@ -203,7 +209,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#111"
   },
-
   saveBtn: {
     backgroundColor: colors.primary,
     padding: 16,
