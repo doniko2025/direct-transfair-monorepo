@@ -66,13 +66,9 @@ export class ClientsService {
     });
   }
 
-  // ✅ CORRECTION ICI : On filtre pour ne PAS renvoyer le Super Admin (DONIKO)
+  // ✅ CORRECTION ICI : On retire le filtre pour afficher tous les clients, y compris "DONIKO"
   async findAll() {
     return this.prisma.client.findMany({
-      where: {
-          // On exclut le code "DONIKO" ou tout code système réservé
-          code: { not: 'DONIKO' },
-      },
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { users: true, agencies: true } } },
     });

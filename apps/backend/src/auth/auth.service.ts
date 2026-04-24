@@ -156,6 +156,30 @@ export class AuthService {
     return this.login({ email: dto.email, password: dto.password });
   }
 
+  async findAccount(identifier: string) {
+    const isEmail = identifier.includes('@');
+    let user: User | null = null;
+
+    if (isEmail) {
+      user = await this.prisma.user.findUnique({
+        where: { email: normalizeEmail(identifier) },
+      });
+    } else {
+      const phone = normalizePhone(identifier);
+      if (phone) {
+        user = await this.prisma.user.findFirst({ where: { phone } });
+      }
+    }
+
+    if (!user) throw new NotFoundException('Compte introuvable');
+
+    const channels: string[] = [];
+    if (user.email) channels.push('EMAIL');
+    if (user.phone) channels.push('PHONE');
+
+    return { userId: user.id, channels };
+  }
+
   async sendOtp(userId: string, channel: 'EMAIL' | 'PHONE') {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
@@ -252,7 +276,7 @@ export class AuthService {
     delete updateData.id;
     delete updateData.role;
     delete updateData.password;
-    delete updateData.email; // On ne change pas l'email ici pour sécurité
+    delete updateData.email; 
     delete updateData.balance;
 
     // ✅ Normalisation du téléphone si présent

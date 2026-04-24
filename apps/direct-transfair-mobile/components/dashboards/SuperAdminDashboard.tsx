@@ -1,6 +1,4 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
-// SuperAdminDashboard.tsx
-// components/dashboards/SuperAdminDashboard.tsx
 import React, { useCallback, useMemo, useState } from "react";
 import {
   View,
@@ -15,66 +13,34 @@ import {
   RefreshControl,
   Alert,
   Platform,
-  Dimensions,
   Animated,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
-import {
-  ClientSaas,
-  QuickAction,
-  normalizeClients,
-  statusColor,
-  statusLabel,
-  subscriptionLabel,
-} from "./SuperAdmin.utils";
 import CreateCompanyModal from "./CreateCompanyModal";
 
-const { width: SCREEN_W } = Dimensions.get("window");
 const IS_WEB = Platform.OS === "web";
 
-// ─── Palette tokens ────────────────────────────────────────────────────────
-const C = {
-  bg: "#080C14",
-  surface: "#0F1623",
-  surfaceHigh: "#141D2C",
-  border: "rgba(255,255,255,0.07)",
-  borderActive: "rgba(255,255,255,0.14)",
-  accent: "#3B82F6",
-  accentMid: "#60A5FA",
-  accentSoft: "rgba(59,130,246,0.12)",
-  success: "#10B981",
-  successSoft: "rgba(16,185,129,0.12)",
-  warning: "#F59E0B",
-  warningSoft: "rgba(245,158,11,0.12)",
-  danger: "#EF4444",
-  dangerSoft: "rgba(239,68,68,0.12)",
-  purple: "#8B5CF6",
-  purpleSoft: "rgba(139,92,246,0.12)",
-  text: "#F0F4FF",
-  textMuted: "#8B95A8",
-  textFaint: "#4A5568",
-  gold: "#F7C948",
+// ─── THÈMES & TYPOGRAPHIES ──────────────────────────────────────────────
+const THEMES = {
+  SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2", text: "#450A0A" },
+  COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF", text: "#1E3A8A" },
 };
 
-const ACTION_PALETTE = [
-  { gradient: ["#1A2B4A", "#0F1E36"], icon: "#3B82F6", dot: C.accent },
-  { gradient: ["#2A1A4A", "#1A0F36"], icon: "#8B5CF6", dot: C.purple },
-  { gradient: ["#0D2B22", "#071A15"], icon: "#10B981", dot: C.success },
-  { gradient: ["#2B1A0D", "#1A0F07"], icon: "#F59E0B", dot: C.warning },
-];
+const FONTS = {
+  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
+  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
+};
 
 // ─── Stat Card ──────────────────────────────────────────────────────────────
 function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
   return (
-    <View style={[statStyles.card, { borderColor: `${color}22` }]}>
-      <View style={[statStyles.iconWrap, { backgroundColor: `${color}18` }]}>
-        <Ionicons name={icon as any} size={16} color={color} />
+    <View style={statStyles.card}>
+      <View style={[statStyles.iconWrap, { backgroundColor: `${color}15` }]}>
+        <Ionicons name={icon as any} size={20} color={color} />
       </View>
       <Text style={[statStyles.value, { color }]}>{value}</Text>
       <Text style={statStyles.label}>{label}</Text>
@@ -85,60 +51,16 @@ function StatCard({ label, value, color, icon }: { label: string; value: number;
 const statStyles = StyleSheet.create({
   card: {
     flex: 1,
-    backgroundColor: C.surfaceHigh,
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
-    borderWidth: 1,
-    padding: 14,
+    padding: 16,
     alignItems: "center",
-    gap: 6,
-  },
-  iconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  value: { fontSize: 22, fontWeight: "800", letterSpacing: -0.5 },
-  label: { fontSize: 10, color: C.textMuted, fontWeight: "700", letterSpacing: 0.8 },
-});
-
-// ─── Quick Action Card ───────────────────────────────────────────────────────
-function QuickActionCard({ action, palette }: { action: QuickAction; palette: typeof ACTION_PALETTE[0] }) {
-  const scale = React.useRef(new Animated.Value(1)).current;
-
-  const onPressIn = () => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 50 }).start();
-  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
-
-  return (
-    <Animated.View style={{ transform: [{ scale }], flex: 1 }}>
-      <TouchableOpacity
-        onPress={action.onPress}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        activeOpacity={1}
-        style={quickStyles.card}
-      >
-        <View style={[quickStyles.iconWrap, { backgroundColor: `${palette.icon}18` }]}>
-          <Ionicons name={action.icon as any} size={20} color={palette.icon} />
-        </View>
-        <Text style={quickStyles.title}>{action.title}</Text>
-        {!!action.subtitle && <Text style={quickStyles.sub}>{action.subtitle}</Text>}
-        <View style={[quickStyles.dot, { backgroundColor: palette.dot }]} />
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
-const quickStyles = StyleSheet.create({
-  card: {
-    backgroundColor: C.surfaceHigh,
-    borderRadius: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: C.border,
-    padding: 14,
-    gap: 6,
-    overflow: "hidden",
+    borderColor: "#F8FAFC",
   },
   iconWrap: {
     width: 40,
@@ -146,42 +68,101 @@ const quickStyles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 10,
   },
-  title: { fontSize: 13, fontWeight: "800", color: C.text },
-  sub: { fontSize: 11, color: C.textMuted, fontWeight: "600" },
-  dot: { position: "absolute", top: 12, right: 12, width: 6, height: 6, borderRadius: 3 },
+  value: { fontSize: 26, fontFamily: FONTS.heading, fontWeight: "800", marginBottom: 2 },
+  label: { fontSize: 11, fontFamily: FONTS.body, color: "#64748B", fontWeight: "700", letterSpacing: 0.5 },
 });
 
-// ─── Client Row Card ─────────────────────────────────────────────────────────
-function ClientCard({ item, onPress }: { item: ClientSaas; onPress: () => void }) {
-  const dot = statusColor(item.subscriptionStatus);
-  const isActive = (item.subscriptionStatus ?? "").toUpperCase() === "ACTIVE";
+// ─── Quick Action Card (Grille 2x2) ─────────────────────────────────────────
+function QuickActionCard({ action }: { action: any }) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+
+  const onPressIn = () => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start();
+  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start();
 
   return (
-    <TouchableOpacity style={clientStyles.card} onPress={onPress} activeOpacity={0.85}>
-      {/* Avatar */}
-      <View style={[clientStyles.avatar, { backgroundColor: `${dot}18` }]}>
-        <Text style={[clientStyles.avatarText, { color: dot }]}>
-          {(item.name ?? "?")[0].toUpperCase()}
-        </Text>
+    <Animated.View style={{ transform: [{ scale }], width: '48%', marginBottom: 16 }}>
+      <TouchableOpacity
+        onPress={action.onPress}
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        activeOpacity={0.9}
+        style={[quickStyles.card, { borderColor: `${action.color}30` }]}
+      >
+        <View style={[quickStyles.iconWrap, { backgroundColor: `${action.color}15` }]}>
+          <Ionicons name={action.icon as any} size={24} color={action.color} />
+        </View>
+        <Text style={quickStyles.title} numberOfLines={1} adjustsFontSizeToFit>{action.title}</Text>
+        <Text style={quickStyles.sub} numberOfLines={1}>{action.subtitle}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const quickStyles = StyleSheet.create({
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+  },
+  iconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  title: { fontSize: 15, fontFamily: FONTS.body, fontWeight: "800", color: "#1E293B", marginBottom: 4, textAlign: "center" },
+  sub: { fontSize: 12, fontFamily: FONTS.body, color: "#94A3B8", fontWeight: "600", textAlign: "center" },
+});
+
+// ─── Helpers ─────────────────────────────────────────────────────────────
+const getStatusColor = (status: string) => {
+  const s = (status || "").toUpperCase();
+  if (s === "ACTIVE") return "#10B981";
+  if (s === "SUSPENDED") return "#F59E0B";
+  if (s === "INACTIVE" || s === "EXPIRED") return "#EF4444";
+  return "#64748B";
+};
+
+// ─── Client Row Card ─────────────────────────────────────────────────────────
+function ClientCard({ item, onPress, themePrimary }: { item: any; onPress: () => void; themePrimary: string }) {
+  const dot = getStatusColor(item.subscriptionStatus);
+
+  return (
+    <TouchableOpacity style={clientStyles.card} onPress={onPress} activeOpacity={0.8}>
+      <View style={[clientStyles.avatar, { backgroundColor: `${themePrimary}15` }]}>
+        <Ionicons name="business" size={26} color={themePrimary} />
       </View>
 
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, justifyContent: "center" }}>
         <Text style={clientStyles.name} numberOfLines={1}>{item.name}</Text>
         <View style={clientStyles.metaRow}>
           <Text style={clientStyles.code}>{item.code}</Text>
-          <View style={[clientStyles.pill, { backgroundColor: `${dot}18`, borderColor: `${dot}40` }]}>
+          <View style={[clientStyles.pill, { backgroundColor: `${dot}15` }]}>
             <View style={[clientStyles.pillDot, { backgroundColor: dot }]} />
-            <Text style={[clientStyles.pillText, { color: dot }]}>{statusLabel(item.subscriptionStatus)}</Text>
-          </View>
-          <View style={[clientStyles.pill, { backgroundColor: C.surfaceHigh, borderColor: C.border }]}>
-            <Text style={[clientStyles.pillText, { color: C.textMuted }]}>{subscriptionLabel(item.subscriptionType)}</Text>
+            <Text style={[clientStyles.pillText, { color: dot }]}>{item.subscriptionStatus}</Text>
           </View>
         </View>
       </View>
 
-      <Ionicons name="chevron-forward" size={16} color={C.textFaint} style={{ marginLeft: 8 }} />
+      <View style={clientStyles.rightSide}>
+        <View style={[clientStyles.pill, { backgroundColor: "#F1F5F9", marginBottom: 6 }]}>
+          <Text style={[clientStyles.pillText, { color: "#64748B" }]}>
+            {item.subscriptionType === "PURCHASE" ? "Achat" : "Location"}
+          </Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -189,55 +170,60 @@ function ClientCard({ item, onPress }: { item: ClientSaas; onPress: () => void }
 const clientStyles = StyleSheet.create({
   card: {
     flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surface,
-    borderRadius: 18,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: C.border,
-    padding: 14,
-    marginBottom: 10,
+    borderColor: "#F8FAFC",
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+    width: 56,
+    height: 56,
+    borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 14,
+    marginRight: 16,
   },
-  avatarText: { fontSize: 18, fontWeight: "900" },
-  name: { fontSize: 15, fontWeight: "800", color: C.text, marginBottom: 6 },
-  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6 },
-  code: { fontSize: 11, color: C.textMuted, fontWeight: "700", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  name: { fontSize: 17, fontFamily: FONTS.heading, fontWeight: "700", color: "#0F172A", marginBottom: 6 },
+  metaRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10 },
+  code: { fontSize: 12, fontFamily: FONTS.body, color: "#64748B", fontWeight: "800", letterSpacing: 0.5 },
   pill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 99,
-    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    gap: 6,
   },
-  pillDot: { width: 5, height: 5, borderRadius: 99 },
-  pillText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
+  pillDot: { width: 6, height: 6, borderRadius: 3 },
+  pillText: { fontSize: 10, fontFamily: FONTS.body, fontWeight: "800", letterSpacing: 0.5 },
+  rightSide: { alignItems: "flex-end", justifyContent: "space-between" },
 });
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
-  const isSuperAdmin = (user?.role ?? "") === "SUPER_ADMIN";
+  
+  const role = user?.role || "SUPER_ADMIN";
+  const theme = THEMES[role as keyof typeof THEMES] || THEMES.SUPER_ADMIN;
+  const isSuperAdmin = role === "SUPER_ADMIN";
 
-  const [clients, setClients] = useState<ClientSaas[]>([]);
+  const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [q, setQ] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
 
   const headerTopPadding = useMemo(() => {
-    if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 8;
-    if (IS_WEB) return 16;
-    return 8;
+    if (Platform.OS === "android") return (StatusBar.currentHeight ?? 0) + 16;
+    if (IS_WEB) return 24;
+    return 16;
   }, []);
 
   const loadData = useCallback(async (mode: "init" | "refresh" = "init") => {
@@ -245,9 +231,25 @@ export default function SuperAdminDashboard() {
     else setLoading(true);
     try {
       const raw = await api.getClients();
-      setClients(normalizeClients(raw).filter((c) => c.code !== "DONIKO"));
-    } catch (e) {
+      
+      // ✅ COURT-CIRCUIT : On bypass les utilitaires qui filtrent silencieusement
+      let list = Array.isArray(raw) ? raw : (raw as any)?.data;
+      if (!Array.isArray(list)) list = [];
+
+      const formatted = list.map((c: any) => ({
+        id: c.id?.toString(),
+        name: c.name || "Client Sans Nom",
+        code: c.code || "N/A",
+        subscriptionStatus: c.subscriptionStatus || c.status || "ACTIVE",
+        subscriptionType: c.subscriptionType || "RENTAL",
+        ...c
+      }));
+
+      setClients(formatted);
+      
+    } catch (e: any) {
       console.error(e);
+      Alert.alert("Erreur réseau", e?.response?.data?.message || "Impossible de charger les sociétés.");
     } finally {
       if (mode === "refresh") setRefreshing(false);
       else setLoading(false);
@@ -260,21 +262,21 @@ export default function SuperAdminDashboard() {
     const n = q.trim().toLowerCase();
     if (!n) return clients;
     return clients.filter((c) =>
-      `${c.name} ${c.code} ${c.subscriptionStatus ?? ""} ${c.subscriptionType ?? ""}`.toLowerCase().includes(n)
+      `${c.name} ${c.code} ${c.subscriptionStatus} ${c.subscriptionType}`.toLowerCase().includes(n)
     );
   }, [clients, q]);
 
   const stats = useMemo(() => {
     const total = clients.length;
-    const active = clients.filter((c) => (c.subscriptionStatus ?? "").toUpperCase() === "ACTIVE").length;
+    const active = clients.filter((c) => (c.subscriptionStatus || "").toUpperCase() === "ACTIVE").length;
     return { total, active, inactive: total - active };
   }, [clients]);
 
-  const actions: QuickAction[] = useMemo(() => [
-    { title: "Trésorerie", subtitle: "Global", icon: "wallet-outline", color: C.accent, onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux EUR", subtitle: "Change", icon: "trending-up-outline", color: C.purple, onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Transactions", subtitle: "Audit", icon: "analytics-outline", color: C.success, onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs", subtitle: "Comptes", icon: "people-outline", color: C.warning, onPress: () => router.push("/(tabs)/admin/users") },
+  const actions = useMemo(() => [
+    { title: "Trésorerie", subtitle: "Supervision globale", icon: "wallet", color: "#3B82F6", onPress: () => router.push("/(tabs)/admin/treasury") },
+    { title: "Taux & Devises", subtitle: "Gestion de change", icon: "trending-up", color: "#8B5CF6", onPress: () => router.push("/(tabs)/admin/rates") },
+    { title: "Transactions", subtitle: "Audit temps réel", icon: "analytics", color: "#10B981", onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs", subtitle: "Comptes & Accès", icon: "people", color: "#F59E0B", onPress: () => router.push("/(tabs)/admin/users") },
   ], [router]);
 
   const handleAddSociety = useCallback(() => {
@@ -284,15 +286,15 @@ export default function SuperAdminDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor={C.bg} barStyle="light-content" />
+      <StatusBar backgroundColor={theme.primary} barStyle="light-content" />
+      
       <View style={s.screen}>
-
-        {/* ── Header ── */}
-        <View style={[s.header, { paddingTop: headerTopPadding }]}>
+        {/* ── Header coloré ── */}
+        <View style={[s.header, { paddingTop: headerTopPadding, backgroundColor: theme.primary }]}>
           <View style={{ flex: 1 }}>
             <View style={s.headerBadge}>
-              <Ionicons name="shield-checkmark" size={11} color={C.gold} />
-              <Text style={s.headerBadgeText}>SUPER ADMIN</Text>
+              <Ionicons name="shield-checkmark" size={14} color="#FCD34D" />
+              <Text style={s.headerBadgeText}>{role.replace("_", " ")}</Text>
             </View>
             <Text style={s.headerTitle}>Super Console</Text>
             <Text style={s.headerSub}>
@@ -301,22 +303,23 @@ export default function SuperAdminDashboard() {
           </View>
           <View style={s.headerActions}>
             <TouchableOpacity style={s.iconBtn} onPress={() => void loadData("refresh")}>
-              <Ionicons name="refresh-outline" size={18} color={C.textMuted} />
+              <Ionicons name="refresh" size={22} color="#FFF" />
             </TouchableOpacity>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
-              <Ionicons name="notifications-outline" size={18} color={C.textMuted} />
+              <Ionicons name="notifications" size={22} color="#FFF" />
               <View style={s.notifDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Scrollable content ── */}
+        {/* ── Contenu Scrollable ── */}
         <FlatList
           data={filtered}
           keyExtractor={(i) => i.id}
           renderItem={({ item }) => (
             <ClientCard
               item={item}
+              themePrimary={theme.primary}
               onPress={() => router.push({ pathname: "/(tabs)/admin/clients/details", params: { id: item.id } })}
             />
           )}
@@ -326,67 +329,70 @@ export default function SuperAdminDashboard() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={() => void loadData("refresh")}
-              tintColor={C.accent}
+              tintColor={theme.primary}
             />
           }
           ListHeaderComponent={
             <View>
               {/* Stats row */}
               <View style={s.statsRow}>
-                <StatCard label="SOCIÉTÉS" value={stats.total} color={C.accent} icon="business-outline" />
-                <StatCard label="ACTIVES" value={stats.active} color={C.success} icon="checkmark-circle-outline" />
-                <StatCard label="INACTIVES" value={stats.inactive} color={C.danger} icon="close-circle-outline" />
+                <StatCard label="SOCIÉTÉS" value={stats.total} color="#3B82F6" icon="business" />
+                <StatCard label="ACTIVES" value={stats.active} color="#10B981" icon="checkmark-circle" />
+                <StatCard label="INACTIVES" value={stats.inactive} color="#EF4444" icon="close-circle" />
               </View>
 
-              {/* Quick actions */}
+              {/* Quick actions (Grille 2x2 Premium) */}
               <Text style={s.sectionLabel}>PILOTAGE RÉSEAU</Text>
               <View style={s.actionsGrid}>
                 {actions.map((a, i) => (
-                  <QuickActionCard key={a.title} action={a} palette={ACTION_PALETTE[i]} />
+                  <QuickActionCard key={a.title} action={a} />
                 ))}
               </View>
 
               {/* Search */}
               <View style={s.searchRow}>
-                <Ionicons name="search-outline" size={16} color={C.textMuted} />
+                <Ionicons name="search" size={22} color="#94A3B8" />
                 <TextInput
                   value={q}
                   onChangeText={setQ}
-                  placeholder="Nom, code, statut…"
-                  placeholderTextColor={C.textFaint}
+                  placeholder="Rechercher un client SaaS..."
+                  placeholderTextColor="#94A3B8"
                   style={s.searchInput}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
                 {!!q && (
                   <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-                    <Ionicons name="close" size={14} color={C.textMuted} />
+                    <Ionicons name="close" size={18} color="#64748B" />
                   </TouchableOpacity>
                 )}
               </View>
 
               {/* Section title + Add */}
               <View style={s.sectionRow}>
-                <Text style={s.sectionLabel}>CLIENTS SAAS</Text>
+                <Text style={s.sectionLabel}>CLIENTS SAAS ({filtered.length})</Text>
                 <TouchableOpacity
-                  style={[s.addBtn, !isSuperAdmin && { opacity: 0.4 }]}
+                  style={[s.addBtn, { backgroundColor: theme.primary }, !isSuperAdmin && { opacity: 0.5 }]}
                   onPress={handleAddSociety}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="add" size={18} color="#FFF" />
+                  <Ionicons name="add" size={24} color="#FFF" />
                 </TouchableOpacity>
               </View>
 
               {loading && (
-                <ActivityIndicator color={C.accent} style={{ marginVertical: 20 }} />
+                <ActivityIndicator color={theme.primary} style={{ marginVertical: 30 }} size="large" />
               )}
             </View>
           }
           ListEmptyComponent={
             !loading ? (
               <View style={s.empty}>
-                <Ionicons name="business-outline" size={40} color={C.textFaint} />
-                <Text style={s.emptyText}>Aucun client SaaS trouvé</Text>
+                <View style={s.emptyIconBg}>
+                  <Ionicons name="business" size={48} color="#94A3B8" />
+                </View>
+                <Text style={s.emptyText}>Aucun client trouvé</Text>
+                <Text style={s.emptySubtext}>Modifiez votre recherche ou ajoutez un nouveau client SaaS.</Text>
               </View>
             ) : null
           }
@@ -405,134 +411,73 @@ export default function SuperAdminDashboard() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  screen: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, backgroundColor: "#F8FAFC" },
+  screen: { flex: 1, backgroundColor: "#F8FAFC" },
 
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 15,
+    elevation: 8,
+    zIndex: 10,
   },
   headerBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(247,201,72,0.1)",
-    borderWidth: 1,
-    borderColor: "rgba(247,201,72,0.2)",
-    borderRadius: 99,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    alignSelf: "flex-start",
-    marginBottom: 6,
-  },
-  headerBadgeText: { fontSize: 9, fontWeight: "900", color: C.gold, letterSpacing: 1.2 },
-  headerTitle: { fontSize: 24, fontWeight: "900", color: C.text, letterSpacing: -0.5 },
-  headerSub: { fontSize: 12, color: C.textMuted, marginTop: 2, fontWeight: "600" },
-  headerActions: { flexDirection: "row", gap: 8, paddingBottom: 4 },
-  iconBtn: {
-    width: 38,
-    height: 38,
+    gap: 8,
+    backgroundColor: "rgba(0,0,0,0.2)",
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-    backgroundColor: C.surfaceHigh,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignSelf: "flex-start",
+    marginBottom: 10,
+  },
+  headerBadgeText: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "800", color: "#FCD34D", letterSpacing: 1 },
+  headerTitle: { fontSize: 32, fontFamily: FONTS.heading, fontWeight: "700", color: "#FFF", marginBottom: 2 },
+  headerSub: { fontSize: 14, fontFamily: FONTS.body, color: "rgba(255,255,255,0.85)", fontWeight: "600" },
+  headerActions: { flexDirection: "row", gap: 12, paddingBottom: 6 },
+  iconBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.2)",
     justifyContent: "center",
     alignItems: "center",
   },
   notifDot: {
     position: "absolute",
-    top: 8,
-    right: 8,
-    width: 7,
-    height: 7,
-    borderRadius: 99,
-    backgroundColor: C.danger,
-    borderWidth: 1.5,
-    borderColor: C.bg,
+    top: 12,
+    right: 12,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#EF4444",
+    borderWidth: 2,
+    borderColor: "#FFF",
   },
 
-  // List
-  list: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-  },
+  list: { paddingHorizontal: 20, paddingTop: 20 },
+  statsRow: { flexDirection: "row", gap: 12, marginBottom: 28 },
 
-  // Stats
-  statsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 24,
-  },
+  sectionLabel: { fontSize: 13, fontFamily: FONTS.body, fontWeight: "900", color: "#64748B", letterSpacing: 1.5, marginBottom: 16, marginLeft: 4 },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24, marginBottom: 16 },
 
-  // Section
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: "900",
-    color: C.textFaint,
-    letterSpacing: 1.5,
-    marginBottom: 12,
-    marginLeft: 2,
-  },
-  sectionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 20,
-    marginBottom: 14,
-  },
+  actionsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 10 },
 
-  // Actions grid
-  actionsGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 20,
-  },
+  addBtn: { width: 44, height: 44, borderRadius: 14, justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 4 },
 
-  // Add button
-  addBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    backgroundColor: C.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 18, paddingHorizontal: 18, height: 60, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 10, elevation: 2, borderWidth: 1, borderColor: "#F1F5F9" },
+  searchInput: { flex: 1, marginLeft: 12, fontSize: 16, fontFamily: FONTS.body, color: "#0F172A", fontWeight: "600" },
+  clearBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
 
-  // Search
-  searchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: C.surfaceHigh,
-    borderWidth: 1,
-    borderColor: C.border,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    gap: 10,
-    marginBottom: 4,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: C.text,
-    fontWeight: "600",
-  },
-  clearBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: C.border,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // Empty
-  empty: { alignItems: "center", paddingVertical: 40, gap: 10 },
-  emptyText: { color: C.textMuted, fontSize: 14, fontWeight: "700" },
+  empty: { alignItems: "center", paddingVertical: 60, gap: 16 },
+  emptyIconBg: { width: 90, height: 90, borderRadius: 45, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
+  emptyText: { color: "#1E293B", fontFamily: FONTS.heading, fontSize: 22, fontWeight: "700" },
+  emptySubtext: { color: "#94A3B8", fontFamily: FONTS.body, fontSize: 14, textAlign: "center", paddingHorizontal: 20, lineHeight: 20 },
 });

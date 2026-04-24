@@ -4,31 +4,38 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform }
 import { Tabs, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
-import { colors } from "../../theme/colors";
+
+// ─── THÈMES DYNAMIQUES ──────────────────────────────────────────────────
+const THEMES = {
+  SUPER_ADMIN: { primary: "#7F1D1D" }, // Bordeaux
+  COMPANY_ADMIN: { primary: "#1E3A8A" }, // Bleu
+  AGENT: { primary: "#78350F" }, // Brun
+  USER: { primary: "#065F46" }, // Vert
+};
 
 // --- BOUTON CENTRAL FLOTTANT ---
-const CustomTabBarButton = ({ children, onPress }: any) => (
+const CustomTabBarButton = ({ children, onPress, themeColor }: any) => (
   <TouchableOpacity
     style={{
-      top: -25,
+      top: -20,
       justifyContent: "center",
       alignItems: "center",
       ...styles.shadow,
     }}
     onPress={onPress}
-    activeOpacity={0.8}
+    activeOpacity={0.9}
   >
     <View
       style={{
-        width: 65,
-        height: 65,
-        borderRadius: 32.5,
-        backgroundColor: colors.primary,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: themeColor,
         borderWidth: 4,
-        borderColor: "#F3F4F6",
+        borderColor: "#FFFFFF", // Bordure blanche pure pour détacher le bouton
         justifyContent: "center",
         alignItems: "center",
-        elevation: 5,
+        elevation: 6,
       }}
     >
       {children}
@@ -42,13 +49,14 @@ export default function TabLayout() {
 
   if (isLoading || !user) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F9FAFB" }}>
+        <ActivityIndicator size="large" color="#111" />
       </View>
     );
   }
 
-  const role = user.role;
+  const role = user.role || "USER";
+  const theme = THEMES[role as keyof typeof THEMES] || THEMES.USER;
 
   return (
     <Tabs
@@ -58,11 +66,11 @@ export default function TabLayout() {
         tabBarStyle: {
           position: "absolute",
           bottom: Platform.OS === "ios" ? 25 : 15,
-          left: 15,
-          right: 15,
-          backgroundColor: "#ffffff",
-          borderRadius: 20,
-          height: 70,
+          left: 20,
+          right: 20,
+          backgroundColor: "#FFFFFF",
+          borderRadius: 24,
+          height: 65,
           borderTopWidth: 0,
           ...styles.shadow,
         },
@@ -74,14 +82,8 @@ export default function TabLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons
-                name={focused ? "home" : "home-outline"}
-                size={24}
-                color={focused ? colors.primary : "#9CA3AF"}
-              />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
-                Accueil
-              </Text>
+              <Ionicons name={focused ? "home" : "home-outline"} size={22} color={focused ? theme.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? theme.primary : "#9CA3AF" }]}>Accueil</Text>
             </View>
           ),
         }}
@@ -93,14 +95,8 @@ export default function TabLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons
-                name={focused ? "time" : "time-outline"}
-                size={24}
-                color={focused ? colors.primary : "#9CA3AF"}
-              />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
-                Activité
-              </Text>
+              <Ionicons name={focused ? "time" : "time-outline"} size={22} color={focused ? theme.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? theme.primary : "#9CA3AF" }]}>Activité</Text>
             </View>
           ),
         }}
@@ -112,10 +108,8 @@ export default function TabLayout() {
         options={
           role === "USER"
             ? {
-                tabBarIcon: () => (
-                  <Ionicons name="paper-plane" size={28} color="#FFF" style={{ marginLeft: -2, marginTop: 2 }} />
-                ),
-                tabBarButton: (props) => <CustomTabBarButton {...props} />,
+                tabBarIcon: () => <Ionicons name="paper-plane" size={24} color="#FFF" style={{ marginLeft: -2, marginTop: 2 }} />,
+                tabBarButton: (props) => <CustomTabBarButton {...props} themeColor={theme.primary} />,
               }
             : { href: null }
         }
@@ -127,29 +121,35 @@ export default function TabLayout() {
         options={
           role === "AGENT"
             ? {
-                tabBarIcon: () => <Ionicons name="storefront" size={28} color="#FFF" />,
+                tabBarIcon: () => <Ionicons name="storefront" size={24} color="#FFF" />,
                 tabBarButton: (props) => (
-                  <CustomTabBarButton {...props} onPress={() => router.push("/agent/withdraw")} />
+                  <CustomTabBarButton {...props} themeColor={theme.primary} onPress={() => router.push("/agent/withdraw")} />
                 ),
               }
             : { href: null }
         }
       />
 
-      {/* ADMIN: DASHBOARD */}
+      {/* ADMIN: AGENCES (Bouton central dynamique) */}
       <Tabs.Screen
         name="admin"
         options={
           role.includes("ADMIN")
             ? {
-                tabBarIcon: () => <Ionicons name="stats-chart" size={28} color="#FFF" />,
-                tabBarButton: (props) => <CustomTabBarButton {...props} />,
+                tabBarIcon: () => <Ionicons name="stats-chart" size={24} color="#FFF" />,
+                tabBarButton: (props) => (
+                  <CustomTabBarButton 
+                    {...props} 
+                    themeColor={theme.primary} 
+                    onPress={() => router.push("/(tabs)/admin/agencies")} 
+                  />
+                ),
               }
             : { href: null }
         }
       />
 
-      {/* CONTACTS */}
+      {/* CONTACTS (User uniquement) */}
       <Tabs.Screen
         name="beneficiaries"
         options={
@@ -157,14 +157,8 @@ export default function TabLayout() {
             ? {
                 tabBarIcon: ({ focused }) => (
                   <View style={styles.iconContainer}>
-                    <Ionicons
-                      name={focused ? "people" : "people-outline"}
-                      size={24}
-                      color={focused ? colors.primary : "#9CA3AF"}
-                    />
-                    <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
-                      Contacts
-                    </Text>
+                    <Ionicons name={focused ? "people" : "people-outline"} size={22} color={focused ? theme.primary : "#9CA3AF"} />
+                    <Text style={[styles.label, { color: focused ? theme.primary : "#9CA3AF" }]}>Contacts</Text>
                   </View>
                 ),
               }
@@ -172,7 +166,7 @@ export default function TabLayout() {
         }
       />
 
-      {/* ✅ FIX: agencies/index (route réelle) */}
+      {/* AGENCES CACHÉES */}
       <Tabs.Screen name="agencies/index" options={{ href: null }} />
 
       {/* COMPTE */}
@@ -181,20 +175,13 @@ export default function TabLayout() {
         options={{
           tabBarIcon: ({ focused }) => (
             <View style={styles.iconContainer}>
-              <Ionicons
-                name={focused ? "person" : "person-outline"}
-                size={24}
-                color={focused ? colors.primary : "#9CA3AF"}
-              />
-              <Text style={[styles.label, { color: focused ? colors.primary : "#9CA3AF" }]}>
-                Compte
-              </Text>
+              <Ionicons name={focused ? "person" : "person-outline"} size={22} color={focused ? theme.primary : "#9CA3AF"} />
+              <Text style={[styles.label, { color: focused ? theme.primary : "#9CA3AF" }]}>Compte</Text>
             </View>
           ),
         }}
       />
 
-      {/* index masqué */}
       <Tabs.Screen name="index" options={{ href: null }} />
     </Tabs>
   );
@@ -202,20 +189,12 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   shadow: {
-    shadowColor: "#7F5DF0",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.5,
-    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  iconContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    top: 0,
-  },
-  label: {
-    fontSize: 10,
-    marginTop: 4,
-    fontWeight: "600",
-  },
+  iconContainer: { alignItems: "center", justifyContent: "center", top: 2 },
+  label: { fontSize: 10, marginTop: 4, fontWeight: "600" },
 });
