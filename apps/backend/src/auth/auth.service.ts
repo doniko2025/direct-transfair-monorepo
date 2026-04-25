@@ -305,4 +305,29 @@ export class AuthService {
 
     return this.getProfile(userId);
   }
+  // ... (tout ton code existant, updateProfile etc.) ...
+
+  // ✅ NOUVELLE FONCTION : CHANGEMENT DE MOT DE PASSE
+  async changePassword(userId: string, oldPass: string, newPass: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    // 1. Vérifier l'ancien mot de passe
+    const isMatch = await bcrypt.compare(oldPass, user.password);
+    if (!isMatch) throw new BadRequestException('Ancien code secret incorrect.');
+
+    // 2. Vérifier la longueur du nouveau mot de passe
+    if (newPass.length < 6) throw new BadRequestException('Le nouveau code doit faire au moins 6 caractères.');
+
+    // 3. Hasher le nouveau
+    const hashedNewPassword = await bcrypt.hash(newPass, 10);
+
+    // 4. Mettre à jour
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedNewPassword },
+    });
+
+    return { success: true, message: 'Mot de passe mis à jour avec succès' };
+  }
 }

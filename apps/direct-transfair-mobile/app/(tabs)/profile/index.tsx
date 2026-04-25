@@ -16,16 +16,16 @@ import { useAuth } from "../../../providers/AuthProvider";
 
 // ─── THÈMES DYNAMIQUES ──────────────────────────────────────────────────
 const THEMES = {
-  SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2", text: "#450A0A" }, // Bordeaux élégant
-  COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF", text: "#1E3A8A" }, // Bleu Navy
-  AGENT: { primary: "#78350F", light: "#FFF7ED", text: "#451A03" }, // Brun/Cuivre
-  USER: { primary: "#065F46", light: "#ECFDF5", text: "#064E3B" }, // Vert Émeraude
+  SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2", text: "#450A0A" },
+  COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF", text: "#1E3A8A" },
+  AGENT: { primary: "#78350F", light: "#FFF7ED", text: "#451A03" },
+  USER: { primary: "#065F46", light: "#ECFDF5", text: "#064E3B" },
 };
 
 // ─── TYPOGRAPHIES ───────────────────────────────────────────────────────
 const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif', // Fallback en attendant Cormorant Garamond
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif', // Fallback en attendant Sora
+  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
+  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
 };
 
 export default function SuperProfileScreen() {
@@ -46,26 +46,35 @@ export default function SuperProfileScreen() {
   // ─── ACTIONS ──────────────────────────────────────────────────────────
   const handleLogout = () => {
     if (Platform.OS === 'web') {
-      // Toast Web moderne stylisé
+      // ✅ Toast Web moderne CENTRÉ avec un fond flouté
+      const overlayDiv = document.createElement("div");
+      overlayDiv.style.cssText = "position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(15,23,42,0.5); z-index:9998; backdrop-filter:blur(4px);";
+      
       const confirmDiv = document.createElement("div");
       confirmDiv.innerHTML = `
-        <div style="position:fixed; top:20px; right:20px; background:${theme.primary}; color:white; padding:16px 24px; border-radius:12px; font-family:${FONTS.body}; z-index:9999; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
-          <p style="margin:0 0 12px 0; font-weight:600;">Voulez-vous vous déconnecter ?</p>
-          <div style="display:flex; gap:10px; justify-content:flex-end;">
-            <button id="cancel-btn" style="background:transparent; border:none; color:rgba(255,255,255,0.8); cursor:pointer;">Annuler</button>
-            <button id="confirm-btn" style="background:white; color:${theme.primary}; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">Oui</button>
+        <div style="position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); background:${theme.primary}; color:white; padding:24px; border-radius:20px; font-family:${FONTS.body}; z-index:9999; box-shadow:0 20px 40px rgba(0,0,0,0.3); text-align:center; min-width: 280px;">
+          <p style="margin:0 0 20px 0; font-weight:800; font-size:16px;">Voulez-vous vous déconnecter ?</p>
+          <div style="display:flex; gap:12px; justify-content:center;">
+            <button id="cancel-btn" style="flex:1; background:rgba(255,255,255,0.2); border:none; color:white; padding:12px; border-radius:12px; font-weight:bold; cursor:pointer;">Annuler</button>
+            <button id="confirm-btn" style="flex:1; background:white; color:${theme.primary}; border:none; padding:12px; border-radius:12px; font-weight:bold; cursor:pointer;">Oui</button>
           </div>
         </div>
       `;
+      
+      document.body.appendChild(overlayDiv);
       document.body.appendChild(confirmDiv);
 
-      document.getElementById("cancel-btn")?.addEventListener("click", () => confirmDiv.remove());
-      document.getElementById("confirm-btn")?.addEventListener("click", () => {
+      const cleanup = () => {
         confirmDiv.remove();
+        overlayDiv.remove();
+      };
+
+      document.getElementById("cancel-btn")?.addEventListener("click", cleanup);
+      document.getElementById("confirm-btn")?.addEventListener("click", () => {
+        cleanup();
         logout();
       });
     } else {
-      // Alert Native Custom
       import("react-native").then(({ Alert }) => {
         Alert.alert(
           "Déconnexion sécurisée",
@@ -83,7 +92,7 @@ export default function SuperProfileScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.primary }}>
       <StatusBar barStyle="light-content" backgroundColor={theme.primary} />
 
-      <ScrollView contentContainerStyle={styles.container} bounces={false}>
+      <ScrollView contentContainerStyle={styles.container} bounces={false} showsVerticalScrollIndicator={false}>
         
         {/* ─── HEADER IDENTITÉ ─── */}
         <View style={[styles.header, { backgroundColor: theme.primary }]}>
@@ -143,7 +152,7 @@ export default function SuperProfileScreen() {
             />
             <MenuRow 
               icon="keypad-outline" label="Modifier mon code secret" color={theme.primary}
-              onPress={() => router.push("/(tabs)/profile/security")}
+              onPress={() => router.push("/(tabs)/profile/security")} 
             />
             <MenuRow 
               icon="finger-print-outline" label="Biométrie (Face ID / Touch ID)" color={theme.primary}
@@ -154,7 +163,7 @@ export default function SuperProfileScreen() {
           </View>
 
           {/* DÉCONNEXION */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
             <Ionicons name="power-outline" size={20} color="#DC2626" />
             <Text style={styles.logoutText}>Fermer la session</Text>
           </TouchableOpacity>
@@ -191,7 +200,8 @@ const styles = StyleSheet.create({
   roleBadge: { alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, marginTop: 8 },
   roleText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
   
-  body: { flex: 1, backgroundColor: "#F9FAFB", borderTopLeftRadius: 30, borderTopRightRadius: 30, marginTop: -20, padding: 24 },
+  // ✅ CORRECTION ICI : paddingBottom à 120 pour faire de la place à la barre de navigation
+  body: { flex: 1, backgroundColor: "#F9FAFB", borderTopLeftRadius: 30, borderTopRightRadius: 30, marginTop: -20, padding: 24, paddingBottom: 120 },
   
   securityBox: { backgroundColor: "#FFF", borderRadius: 16, padding: 16, marginBottom: 30, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 10, elevation: 2 },
   secHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
@@ -209,8 +219,8 @@ const styles = StyleSheet.create({
   toggle: { width: 44, height: 24, borderRadius: 12, justifyContent: "center", paddingHorizontal: 2 },
   toggleKnob: { width: 20, height: 20, borderRadius: 10, backgroundColor: "#FFF", alignSelf: "flex-end" },
 
-  logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 16, borderRadius: 12, backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FCA5A5", marginTop: 10 },
-  logoutText: { color: "#DC2626", fontFamily: FONTS.body, fontWeight: "700", fontSize: 15, marginLeft: 8 },
+  logoutBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 18, borderRadius: 16, backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA", marginTop: 10 },
+  logoutText: { color: "#DC2626", fontFamily: FONTS.body, fontWeight: "800", fontSize: 15, marginLeft: 8 },
   
   version: { textAlign: "center", marginTop: 24, fontSize: 11, color: "#D1D5DB", fontFamily: FONTS.body },
 });

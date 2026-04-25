@@ -93,4 +93,18 @@ export class AuthController {
     if (!req.user) throw new BadRequestException('User not found');
     return this.authService.updateProfile(req.user.id, body);
   }
+
+  // ✅ NOUVELLE ROUTE : CHANGEMENT DE MOT DE PASSE DEPUIS LE PROFIL
+  @Patch('change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async changePassword(
+    @Req() req: Request & { user?: AuthUserPayload },
+    @Body() body: { oldPass: string; newPass: string }
+  ) {
+    if (!req.user) throw new BadRequestException('Utilisateur non trouvé');
+    if (!body.oldPass || !body.newPass) throw new BadRequestException('Champs manquants');
+    
+    return this.authService.changePassword(req.user.id, body.oldPass, body.newPass);
+  }
 }

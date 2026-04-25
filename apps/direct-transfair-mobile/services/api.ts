@@ -349,7 +349,7 @@ class API {
   async login(data: LoginPayload): Promise<LoginResponse> {
     // 🛡️ Force la suppression d'un éventuel vieux token corrompu avant de tenter le login
     this.token = null;
-
+    
     // 🚀 Tentative de connexion
     const res = await this.http.post<LoginResponse>("/auth/login", data);
 
@@ -401,6 +401,11 @@ class API {
 
   async resetPassword(userId: string, code: string, newPassword: string): Promise<void> {
     await this.http.post("/auth/reset-password", { userId, code, newPassword });
+  }
+
+  // ✅ NOUVELLE FONCTION : Changement de mot de passe depuis le profil
+  async changePassword(oldPass: string, newPass: string): Promise<void> {
+    await this.http.patch("/auth/change-password", { oldPass, newPass });
   }
 
   // ==========================================================

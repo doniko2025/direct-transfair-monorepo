@@ -1,57 +1,81 @@
 {
   "extends": "../../tsconfig.base.json",
+
   "compilerOptions": {
-    /* Neutralisation des paths monorepo */
+    /* =========================
+     * BASE
+     * ========================= */
     "baseUrl": "./",
     "paths": {},
 
-    /* NestJS backend */
-    "module": "commonjs",
-    "moduleResolution": "node",
+    /* =========================
+     * NESTJS (STABLE CJS)
+     * ========================= */
+    "module": "CommonJS",
+    "moduleResolution": "node16",
     "target": "ES2021",
     "lib": ["ES2021"],
 
-    /* Structure */
+    /* =========================
+     * STRUCTURE
+     * ========================= */
     "rootDir": "./src",
     "outDir": "./dist",
 
-    /* Émission */
+    /* =========================
+     * EMIT
+     * ========================= */
     "sourceMap": true,
     "declaration": false,
     "removeComments": true,
 
-    /* Décorateurs (NestJS) */
+    /* =========================
+     * DECORATORS (NestJS)
+     * ========================= */
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
 
-    /* Interop */
+    /* =========================
+     * INTEROP
+     * ========================= */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
 
-    /* Performance */
+    /* =========================
+     * PERF
+     * ========================= */
     "incremental": true,
     "skipLibCheck": true,
 
-    /* Typage */
+    /* =========================
+     * TYPES
+     * ========================= */
     "strict": false,
     "strictNullChecks": true,
     "noImplicitAny": false,
 
-    /* Sécurité */
+    /* =========================
+     * SECURITE
+     * ========================= */
     "forceConsistentCasingInFileNames": true,
 
     "types": ["node", "express"],
     "typeRoots": ["./node_modules/@types", "./src/types"]
   },
 
-  /* Force ts-node (Prisma) à utiliser les bons réglages */
+  /* =========================
+   * TS-NODE (PRISMA / SEED)
+   * ========================= */
   "ts-node": {
     "compilerOptions": {
-      "module": "commonjs",
-      "moduleResolution": "node"
+      "module": "CommonJS",
+      "moduleResolution": "node16"
     }
   },
 
+  /* =========================
+   * INCLUDE / EXCLUDE
+   * ========================= */
   "include": [
     "src/**/*.ts",
     "src/types/**/*.d.ts"
@@ -66,6 +90,6 @@
     "prisma"
   ],
 
-  /* ✅ PLACEMENT CHIRURGICAL : À la racine pour faire taire VS Code sans faire planter Prisma */
-  "ignoreDeprecations": "5.0"
+  /* ✅ FIX TS 5.6+ WARNINGS */
+  "ignoreDeprecations": "6.0"
 }
