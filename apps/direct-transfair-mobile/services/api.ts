@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/services/api.ts
-// apps/direct-transfair-mobile/services/api.ts
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -34,60 +33,46 @@ const PROD_FALLBACK_BASE_URL =
 
 const PLATFORM_TENANT = "DONIKO";
 
-// Permet de gérer backend avec ou sans préfixe "/api".
-// - Par défaut: "/api"
-// - Si ton backend n'a PAS de prefix, mets: EXPO_PUBLIC_API_PREFIX= (vide)
 const DEFAULT_API_PREFIX = "/api";
 
-// Clés AsyncStorage
 const STORAGE_KEYS = {
   PREFERRED_TENANT: "PREFERRED_TENANT",
 } as const;
 
 // ============================================================
-// HELPERS (strict, no exotic deps)
+// HELPERS
 // ============================================================
 
 function normalizeBaseUrl(input: string): string {
   const trimmed = input.trim();
   const noTrailingSlash = trimmed.replace(/\/+$/, "");
-  // On enlève "/api" si l'utilisateur l'a déjà mis dans EXPO_PUBLIC_API_URL
   return noTrailingSlash.replace(/\/api$/, "");
 }
 
 function getBaseUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
-
   if (envUrl && envUrl.trim().length > 0) {
     return normalizeBaseUrl(envUrl);
   }
-
   return PROD_FALLBACK_BASE_URL;
 }
 
-/**
- * Nettoie le code société.
- * ✅ CORRECTION CHIRURGICALE : Ajout des mots-clés Vercel pour bloquer
- * la récupération automatique des sous-domaines de preview.
- */
 function normalizeTenant(input: string | null | undefined): string {
   const raw = (input ?? "").trim().toUpperCase();
-
-  // Cette liste force l'application à utiliser "DONIKO" au lieu des URLs de dev/preview
   const blackList = [
-    "10", 
-    "LOCALHOST", 
-    "127.0.0.1", 
-    "192.168", 
-    "DFTRANSFER", 
-    "UNDEFINED", 
+    "10",
+    "LOCALHOST",
+    "127.0.0.1",
+    "192.168",
+    "DFTRANSFER",
+    "UNDEFINED",
     "NULL",
     "VERCEL",
-    "DIRECT-TRANSFAIR-MONOREPO" // Bloque le nom généré par Vercel
+    "DIRECT-TRANSFAIR-MONOREPO",
   ];
 
   if (!raw || blackList.some((bad) => raw.includes(bad))) {
-    return "DONIKO"; 
+    return "DONIKO";
   }
   return raw;
 }
@@ -98,16 +83,14 @@ function getInitialTenantId(): string {
 
 function getApiPrefix(): string {
   const envPrefix = (process.env.EXPO_PUBLIC_API_PREFIX ?? "").trim();
-  if (envPrefix.length === 0) return DEFAULT_API_PREFIX; // par défaut
-  return envPrefix; // peut être "/api" ou "" (vide)
+  if (envPrefix.length === 0) return DEFAULT_API_PREFIX;
+  return envPrefix;
 }
 
 function buildApiBaseURL(): string {
-  const base = getBaseUrl(); // sans trailing slash
+  const base = getBaseUrl();
   const prefix = getApiPrefix();
-
   if (!prefix) return base;
-
   const normalizedPrefix = prefix.startsWith("/") ? prefix : `/${prefix}`;
   return `${base}${normalizedPrefix}`;
 }
@@ -217,7 +200,7 @@ async function tryMany<T>(
       return await fn();
     } catch (e) {
       lastErr = e;
-      if (!isAxios404(e)) break; // si ce n'est pas 404, on stop et on remonte
+      if (!isAxios404(e)) break;
     }
   }
   console.error(`API tryMany failed (${label})`, extractAxiosErrorMessage(lastErr));
@@ -246,23 +229,38 @@ class API {
 
     void this.loadPersistedTenant();
 
+    // ─── REQUEST INTERCEPTOR (bloc mis à jour) ───────────────
     this.http.interceptors.request.use(async (config) => {
       const headers = ensureAxiosHeaders(config.headers);
 
       if (!this.tenant || this.tenant === PLATFORM_TENANT) {
-          await this.loadPersistedTenant();
+        await this.loadPersistedTenant();
       }
 
       if (!this.token) {
-          try {
-              const savedToken = (await AsyncStorage.getItem("accessToken")) ?? (await AsyncStorage.getItem("token"));
-              if (savedToken) {
-                  this.token = savedToken;
-              }
-          } catch (e) {
-              console.warn("Erreur de lecture du token dans AsyncStorage", e);
+        try {
+          const savedToken =
+            (await AsyncStorage.getItem("accessToken")) ??
+            (await AsyncStorage.getItem("token"));
+          if (savedToken) {
+            this.token = savedToken;
           }
+        } catch (e) {
+          console.warn("Erreur de lecture du token dans AsyncStorage", e);
+        }
       }
+
+      // 🔍 LOG DE DIAGNOSTIC CHIRURGICAL
+      console.log("------------------------------------------");
+      console.log("🚀 ENVOI REQUÊTE :", config.method?.toUpperCase(), config.url);
+      console.log("🆔 TENANT ACTUEL :", this.tenant);
+      console.log(
+        "🔑 TOKEN PRÉSENT :",
+        this.token
+          ? "OUI (Commence par: " + this.token.substring(0, 10) + "...)"
+          : "NON",
+      );
+      console.log("------------------------------------------");
 
       headers.set("x-tenant-id", this.tenant);
 
@@ -282,7 +280,15 @@ class API {
           const method = (err.config?.method ?? "GET").toUpperCase();
           const fullUrl = `${err.config?.baseURL ?? ""}${err.config?.url ?? ""}`;
           const status = err.response?.status;
-          console.error("❌ HTTP ERROR", method, fullUrl, "| status:", status, "| msg:", extractAxiosErrorMessage(err));
+          console.error(
+            "❌ HTTP ERROR",
+            method,
+            fullUrl,
+            "| status:",
+            status,
+            "| msg:",
+            extractAxiosErrorMessage(err),
+          );
         } else {
           console.error("❌ HTTP ERROR (non-axios)", String(err));
         }
@@ -339,13 +345,37 @@ class API {
     return res.data;
   }
 
+  // ─── LOGIN (bloc mis à jour) ──────────────────────────────
   async login(data: LoginPayload): Promise<LoginResponse> {
+    // 🛡️ Force la suppression d'un éventuel vieux token corrompu avant de tenter le login
+    this.token = null;
+
+    // 🚀 Tentative de connexion
     const res = await this.http.post<LoginResponse>("/auth/login", data);
+
+    if (res.data?.access_token) {
+      this.token = res.data.access_token;
+      // ✅ On mémorise immédiatement le nouveau token
+      await AsyncStorage.setItem("accessToken", res.data.access_token);
+
+      // ✅ SYNC TENANT : Si le user renvoyé a un code client, on l'utilise DIRECTEMENT
+      if (res.data?.user?.client?.code) {
+        console.log("🎯 Nouveau Tenant détecté :", res.data.user.client.code);
+        await this.setTenant(res.data.user.client.code);
+      }
+    }
+
     return res.data;
   }
 
   async getMe(): Promise<AuthUser> {
     const res = await this.http.get<AuthUser>("/auth/me");
+
+    // ✅ On s'assure que le tenant est toujours à jour au redémarrage
+    if (res.data?.client?.code) {
+      await this.setTenant(res.data.client.code);
+    }
+
     return res.data;
   }
 
@@ -404,10 +434,10 @@ class API {
   // ==========================================================
 
   async adminRefillAgency(agencyId: string, amount: number): Promise<unknown> {
-    const payload = { amount };
+    const payload = { agencyId, amount };
     const data = await tryMany<AxiosResponse<unknown>>(
       [
-        async () => this.http.post<unknown>("/transactions/admin/refill-agency", { agencyId, amount }),
+        async () => this.http.post<unknown>("/transactions/admin/refill-agency", payload),
         async () => this.http.post<unknown>(`/admin/agencies/${agencyId}/refill`, payload),
         async () => this.http.post<unknown>(`/agencies/${agencyId}/refill`, payload),
         async () => this.http.post<unknown>(`/admin/agency/${agencyId}/refill`, payload),
@@ -483,13 +513,18 @@ class API {
     return res.data;
   }
 
-  async updateBeneficiary(id: string, data: Partial<CreateBeneficiaryPayload>): Promise<Beneficiary> {
+  async updateBeneficiary(
+    id: string,
+    data: Partial<CreateBeneficiaryPayload>,
+  ): Promise<Beneficiary> {
     const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}`, data);
     return res.data;
   }
 
   async deleteBeneficiary(id: string): Promise<{ deleted: true; id: string }> {
-    const res = await this.http.delete<{ deleted: true; id: string }>(`/beneficiaries/${id}`);
+    const res = await this.http.delete<{ deleted: true; id: string }>(
+      `/beneficiaries/${id}`,
+    );
     return res.data;
   }
 
@@ -533,7 +568,10 @@ class API {
   // WITHDRAWALS
   // ==========================================================
 
-  async requestWithdrawal(data: { amount?: number; transactionId?: string }): Promise<unknown> {
+  async requestWithdrawal(data: {
+    amount?: number;
+    transactionId?: string;
+  }): Promise<unknown> {
     const res = await this.http.post("/withdrawals", data);
     return res.data;
   }
@@ -586,11 +624,16 @@ class API {
     return list.map(normalizeTransaction);
   }
 
-  async adminUpdateTransactionStatus(id: string, status: TransactionStatus | string): Promise<Transaction> {
+  async adminUpdateTransactionStatus(
+    id: string,
+    status: TransactionStatus | string,
+  ): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () => this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
-        async () => this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }),
+        async () =>
+          this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
+        async () =>
+          this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }),
       ],
       "adminUpdateTransactionStatus",
     );
@@ -632,7 +675,8 @@ class API {
     const res = await tryMany<AxiosResponse<unknown>>(
       [
         async () => this.http.post<unknown>("/transactions/b2b/declare", payload),
-        async () => this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
+        async () =>
+          this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
       ],
       "declareBankTransfer",
     );
@@ -693,14 +737,19 @@ class API {
 
   async getCommissionHistory(period: string): Promise<unknown[]> {
     const data = await tryMany<AxiosResponse<unknown>>(
-      [async () => this.http.get<unknown>(`/commissions/history?period=${encodeURIComponent(period)}`)],
+      [
+        async () =>
+          this.http.get<unknown>(
+            `/commissions/history?period=${encodeURIComponent(period)}`,
+          ),
+      ],
       "getCommissionHistory",
     );
     return unwrapArray<unknown>(data.data);
   }
 
   // ==========================================================
-  // ✅ SAAS CLIENTS (Gestion Multi-routes et Tenant)
+  // SAAS CLIENTS (Sociétés)
   // ==========================================================
 
   async getClients(): Promise<unknown[]> {
@@ -753,7 +802,10 @@ class API {
     return res.data;
   }
 
-  async updateClientStatus(id: number, status: ClientSubscriptionStatus): Promise<Client> {
+  async updateClientStatus(
+    id: number,
+    status: ClientSubscriptionStatus,
+  ): Promise<Client> {
     const headers = this.platformHeaders();
     const payloadA = { status };
     const payloadB = { subscriptionStatus: status, status };
@@ -761,9 +813,10 @@ class API {
     const res = await tryMany<AxiosResponse<Client>>(
       [
         () => this.http.patch<Client>(`/clients/${id}/status`, payloadA, { headers }),
-        () => this.http.patch<Client>(`/admin/clients/${id}/status`, payloadA, { headers }),
-        () => this.http.patch<Client>(`/saas/clients/${id}/status`, payloadA, { headers }),
-
+        () =>
+          this.http.patch<Client>(`/admin/clients/${id}/status`, payloadA, { headers }),
+        () =>
+          this.http.patch<Client>(`/saas/clients/${id}/status`, payloadA, { headers }),
         () => this.http.patch<Client>(`/clients/${id}`, payloadB, { headers }),
         () => this.http.patch<Client>(`/admin/clients/${id}`, payloadB, { headers }),
         () => this.http.patch<Client>(`/saas/clients/${id}`, payloadB, { headers }),

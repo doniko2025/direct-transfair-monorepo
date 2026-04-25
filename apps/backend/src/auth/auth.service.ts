@@ -35,6 +35,9 @@ export type PublicUser = {
   postalCode?: string | null;
   city?: string | null;
   country?: string | null;
+  // ✅ AJOUTS CRUCIAUX POUR LE FRONTEND
+  client?: any;
+  agency?: any;
 };
 
 function normalizeEmail(email: string): string {
@@ -87,18 +90,22 @@ export class AuthService {
     return { access_token: accessToken, user: this.toPublicUser(user) };
   }
 
-  async validateUser(identifier: string, pass: string): Promise<User | null> {
+  async validateUser(identifier: string, pass: string): Promise<any | null> {
     const isEmail = identifier.includes('@');
-    let user: User | null = null;
+    let user: any = null;
 
     if (isEmail) {
       user = await this.prisma.user.findUnique({
         where: { email: normalizeEmail(identifier) },
+        include: { client: true, agency: true } // ✅ INCLUSION ICI
       });
     } else {
       const phone = normalizePhone(identifier);
       if (phone) {
-        user = await this.prisma.user.findFirst({ where: { phone } });
+        user = await this.prisma.user.findFirst({ 
+          where: { phone },
+          include: { client: true, agency: true } // ✅ INCLUSION ICI
+        });
       }
     }
 
@@ -237,7 +244,7 @@ export class AuthService {
     return { success: true };
   }
 
-  private toPublicUser(user: User): PublicUser {
+  private toPublicUser(user: any): PublicUser {
     return {
       id: user.id,
       email: user.email,
@@ -257,6 +264,9 @@ export class AuthService {
       postalCode: user.postalCode,
       city: user.city,
       country: user.country,
+      // ✅ AJOUT DES DONNÉES CLÉS POUR LE FRONTEND
+      client: user.client ? { id: user.client.id, code: user.client.code, name: user.client.name } : undefined,
+      agency: user.agency ? { id: user.agency.id, name: user.agency.name } : undefined,
     };
   }
 
@@ -279,7 +289,6 @@ export class AuthService {
     delete updateData.email; 
     delete updateData.balance;
 
-    // ✅ Normalisation du téléphone si présent
     if (updateData.phone) {
       updateData.phone = normalizePhone(updateData.phone);
     }

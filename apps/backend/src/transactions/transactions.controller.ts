@@ -41,7 +41,7 @@ export class TransactionsController {
   @Post('admin/fund-self')
   async fundSelf(
     @Req() req: AuthedRequest, 
-    @Body('amount') amount: string | number // ✅ Récupération directe anti-blocage
+    @Body('amount') amount: string | number // ✅ Acceptation fluide des strings/numbers
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -68,8 +68,8 @@ export class TransactionsController {
   @Post('admin/refill-agency')
   async refillAgency(
     @Req() req: AuthedRequest,
-    @Body('agencyId') agencyId: string,     // ✅ Récupération directe
-    @Body('amount') amount: string | number // ✅ Récupération directe
+    @Body('agencyId') agencyId: string,
+    @Body('amount') amount: string | number 
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -92,8 +92,8 @@ export class TransactionsController {
   @Post('b2b/declare')
   async declareTransfer(
     @Req() req: AuthedRequest,
-    @Body('amount') amount: string | number, // ✅ Récupération directe
-    @Body('ref') ref: string                 // ✅ Récupération directe
+    @Body('amount') amount: string | number,
+    @Body('ref') ref: string                
   ) {
     const user = req.user;
     if (user?.role !== 'COMPANY_ADMIN')

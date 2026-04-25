@@ -10,14 +10,12 @@ import { AdminGuard } from '../common/guards/admin.guard';
 @ApiTags('Transactions (Admin)')
 @ApiBearerAuth('access-token')
 @ApiSecurity('x-tenant-id')
-@Controller('transactions/admin')
+// ✅ CORRECTION CHIRURGICALE : 
+// On change le chemin du contrôleur pour éviter que NestJS ne "hijack" (détourne) 
+// les requêtes destinées à `transactions.controller.ts` qui, lui, gère vraiment /transactions/admin/fund-self
+@Controller('deprecated-admin-transactions') 
 @UseGuards(JwtAuthGuard, TenantGuard, AdminGuard)
 export class AdminTransactionsController {
-  constructor(
-    private readonly transactionsService: TransactionsService,
-  ) {}
-
-  // 🛑 ROUTE SUPPRIMÉE CAR ELLE CRÉAIT UN CONFLIT DÉSASTREUX
-  // La route POST /transactions/admin/fund-self est déjà gérée
-  // parfaitement dans transactions.controller.ts avec les bonnes vérifications de rôles.
+  
+  // Les routes sont vides, la gestion est faite dans transactions.controller.ts
 }
