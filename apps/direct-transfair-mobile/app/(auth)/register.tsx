@@ -1,31 +1,37 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Modal,
-  FlatList,
-  TouchableOpacity,
-  Platform,
-  KeyboardAvoidingView,
+  View, Text, TextInput, StyleSheet, TouchableOpacity, ActivityIndicator,
+  Alert, ScrollView, Modal, FlatList, Platform, KeyboardAvoidingView, SafeAreaView, useWindowDimensions
 } from "react-native";
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
-import { colors } from "../../theme/colors";
 
 import { countriesList, CountryData } from "../../data/countries";
 import { citiesByCountry } from "../../data/cities";
 import { api } from "../../services/api";
 
+const FONTS = {
+  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
+  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
+};
+
+const THEME = {
+  primary: "#059669",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  border: "#E2E8F0",
+  inputBg: "#F1F5F9",
+  text: "#0F172A",
+  muted: "#64748B",
+};
+
 export default function RegisterScreen() {
   const { register, isLoading } = useAuth();
+  const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
 
   // --- ÉTATS ---
   const [firstName, setFirstName] = useState("");
@@ -34,9 +40,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
 
-  const [residenceCountry, setResidenceCountry] = useState<CountryData | null>(
-    null,
-  );
+  const [residenceCountry, setResidenceCountry] = useState<CountryData | null>(null);
   const [residenceCity, setResidenceCity] = useState("");
 
   const [nationality, setNationality] = useState<CountryData | null>(null);
@@ -49,490 +53,242 @@ export default function RegisterScreen() {
 
   const [modalType, setModalType] = useState<string | null>(null);
 
-  useEffect(() => {
-    setResidenceCity("");
-  }, [residenceCountry]);
+  useEffect(() => { setResidenceCity(""); }, [residenceCountry]);
+  useEffect(() => { setBirthCity(""); }, [birthCountry]);
 
-  useEffect(() => {
-    setBirthCity("");
-  }, [birthCountry]);
-
-  // Helper pour les alertes Web
   const showWebAlert = (title: string, msg: string) => {
-    if (Platform.OS === "web") {
-      window.alert(`${title}\n\n${msg}`);
-    } else {
-      Alert.alert(title, msg);
-    }
+    if (Platform.OS === "web") window.alert(`${title}\n\n${msg}`);
+    else Alert.alert(title, msg);
   };
 
   const tenant = api.getTenant();
-  const tenantLabel =
-    tenant && tenant !== "DONIKO" ? tenant : "Plateforme globale";
+  const tenantLabel = tenant && tenant !== "DONIKO" ? tenant : "Plateforme globale";
 
-  // --- SOUMISSION ---
   const onSubmit = async () => {
     if (!firstName || !lastName || !email || !password) {
-      showWebAlert("Champs requis", "Remplissez les champs obligatoires.");
+      showWebAlert("Champs requis", "Veuillez remplir les champs obligatoires (*).");
       return;
     }
 
     let formattedBirthDate: string | undefined = undefined;
     if (birthDay && birthMonth && birthYear) {
-      formattedBirthDate = `${birthYear}-${birthMonth.padStart(
-        2,
-        "0",
-      )}-${birthDay.padStart(2, "0")}T00:00:00.000Z`;
+      formattedBirthDate = `${birthYear}-${birthMonth.padStart(2, "0")}-${birthDay.padStart(2, "0")}T00:00:00.000Z`;
     }
 
     const payload = {
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim(),
-      password,
-      phone: phone
-        ? `+${residenceCountry?.dialCode || ""}${phone}`
-        : undefined,
-      country: residenceCountry?.name,
-      city: residenceCity,
-      nationality: nationality?.name,
-      birthCountry: birthCountry?.name,
-      birthCity: birthCity,
+      firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), password,
+      phone: phone ? `+${residenceCountry?.dialCode || ""}${phone}` : undefined,
+      country: residenceCountry?.name, city: residenceCity,
+      nationality: nationality?.name, birthCountry: birthCountry?.name, birthCity: birthCity,
       birthDate: formattedBirthDate,
       birthPlace: birthCity + (birthCountry ? ", " + birthCountry.name : ""),
     };
 
     try {
-      // ✅ IMPORTANT : on NE demande plus le code société à l'utilisateur.
-      // Le tenant est envoyé automatiquement par AuthProvider (tenantCode = tenant actif).
       await register(payload);
+      showWebAlert("Succès", "Compte créé ! Veuillez vous connecter.");
+      router.replace("/(auth)/login");
     } catch (e: any) {
       const msg = e.response?.data?.message || e.message || "Erreur inconnue.";
       showWebAlert("Echec", Array.isArray(msg) ? msg[0] : msg);
     }
   };
 
-  // --- RENDU ---
-  const renderItem = ({ item }: { item: any }) => {
-    if (typeof item === "string") {
-      return (
-        <TouchableOpacity
-          style={styles.modalItem}
-          onPress={() => {
-            if (modalType === "RESIDENCE_CITY") setResidenceCity(item);
-            if (modalType === "BIRTH_CITY") setBirthCity(item);
-            setModalType(null);
-          }}
-        >
-          <Text style={styles.modalText}>{item}</Text>
-          <Ionicons name="chevron-forward" size={16} color="#CCC" />
-        </TouchableOpacity>
-      );
-    }
-    return (
-      <TouchableOpacity
-        style={styles.modalItem}
-        onPress={() => {
-          if (modalType === "RESIDENCE_COUNTRY") setResidenceCountry(item);
-          if (modalType === "NATIONALITY") setNationality(item);
-          if (modalType === "BIRTH_COUNTRY") setBirthCountry(item);
-          setModalType(null);
-        }}
-      >
-        <Text style={styles.flag}>{item.flag}</Text>
-        <Text style={styles.modalText}>{item.name}</Text>
-        <Text style={styles.code}>+{item.dialCode}</Text>
-      </TouchableOpacity>
-    );
-  };
-
+  // --- MODAL ---
   const getModalData = () => {
-    if (
-      modalType === "RESIDENCE_COUNTRY" ||
-      modalType === "NATIONALITY" ||
-      modalType === "BIRTH_COUNTRY"
-    ) {
-      return countriesList;
-    }
-    if (modalType === "RESIDENCE_CITY") {
-      return residenceCountry
-        ? citiesByCountry[residenceCountry.name] || []
-        : [];
-    }
-    if (modalType === "BIRTH_CITY") {
-      return birthCountry ? citiesByCountry[birthCountry.name] || [] : [];
-    }
+    if (["RESIDENCE_COUNTRY", "NATIONALITY", "BIRTH_COUNTRY"].includes(modalType || "")) return countriesList;
+    if (modalType === "RESIDENCE_CITY") return residenceCountry ? citiesByCountry[residenceCountry.name] || [] : [];
+    if (modalType === "BIRTH_CITY") return birthCountry ? citiesByCountry[birthCountry.name] || [] : [];
     return [];
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={{ flex: 1 }}
-    >
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.headerTitle}>Créer un compte</Text>
+    <SafeAreaView style={s.safeArea}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={[s.scrollContent, isDesktop && s.scrollContentDesktop]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          
+          {/* ✅ CORRECTION : Redirection explicite vers le login au lieu de router.back() */}
+          <TouchableOpacity style={s.backBtn} onPress={() => router.replace("/(auth)/login")}>
+            <Ionicons name="arrow-back" size={24} color={THEME.text} />
+          </TouchableOpacity>
 
-        <View style={styles.sectionBox}>
-          <Text style={styles.sectionLabel}>Société</Text>
-          <View style={styles.tenantPill}>
-            <Text style={styles.tenantText}>{tenantLabel}</Text>
-          </View>
-          <Text style={styles.hint}>
-            Détectée automatiquement via votre lien société.
-          </Text>
-        </View>
+          <Text style={s.headerTitle}>Créer un compte</Text>
+          <Text style={s.headerSub}>Rejoignez Direct Transf'air en quelques étapes.</Text>
 
-        <Text style={styles.groupTitle}>IDENTIFIANTS</Text>
-        <View style={styles.row}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginRight: 8 }]}
-            placeholder="Prénom *"
-            value={firstName}
-            onChangeText={setFirstName}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Nom *"
-            value={lastName}
-            onChangeText={setLastName}
-          />
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder="Email *"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          value={email}
-          onChangeText={setEmail}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder="Mot de passe *"
-          secureTextEntry
-          value={password}
-          onChangeText={setPassword}
-        />
-
-        <Text style={styles.groupTitle}>RÉSIDENCE & CONTACT</Text>
-
-        <TouchableOpacity
-          style={styles.selectInput}
-          onPress={() => setModalType("RESIDENCE_COUNTRY")}
-        >
-          {residenceCountry ? (
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={{ fontSize: 20, marginRight: 8 }}>
-                {residenceCountry.flag}
-              </Text>
-              <Text style={styles.inputText}>{residenceCountry.name}</Text>
+          <View style={s.sectionBox}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.sectionLabel}>SOCIÉTÉ LIÉE</Text>
+              <Text style={s.tenantText}>{tenantLabel}</Text>
             </View>
-          ) : (
-            <Text style={styles.placeholder}>Pays de résidence</Text>
-          )}
-          <Ionicons name="chevron-down" size={20} color="#999" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.selectInput}
-          onPress={() => {
-            if (!residenceCountry)
-              showWebAlert("Info", "Sélectionnez d'abord un pays.");
-            else setModalType("RESIDENCE_CITY");
-          }}
-        >
-          <Text style={residenceCity ? styles.inputText : styles.placeholder}>
-            {residenceCity || "Ville de résidence"}
-          </Text>
-          <Ionicons name="chevron-down" size={20} color="#999" />
-        </TouchableOpacity>
-
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <View style={styles.phoneCodeBox}>
-            <Text style={{ fontWeight: "bold" }}>
-              {residenceCountry ? `+${residenceCountry.dialCode}` : "+ ??"}
-            </Text>
+            <Ionicons name="business" size={32} color={THEME.primary} style={{ opacity: 0.2 }} />
           </View>
-          <TextInput
-            style={[styles.input, { flex: 1 }]}
-            placeholder="Numéro téléphone"
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
-          />
-        </View>
 
-        <Text style={styles.groupTitle}>ÉTAT CIVIL (KYC)</Text>
-
-        <TouchableOpacity
-          style={styles.selectInput}
-          onPress={() => setModalType("NATIONALITY")}
-        >
-          <Text style={styles.labelSmall}>Nationalité</Text>
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: 4,
-            }}
-          >
-            <Text style={nationality ? styles.inputText : styles.placeholder}>
-              {nationality?.name || "Sélectionner"}
-            </Text>
-            <Ionicons name="chevron-down" size={20} color="#999" />
+          {/* 1. IDENTIFIANTS */}
+          <Text style={s.groupTitle}>1. IDENTIFIANTS</Text>
+          <View style={s.card}>
+            <View style={s.row}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={s.label}>Prénom *</Text>
+                <TextInput style={s.input} placeholder="Ex: Jean" value={firstName} onChangeText={setFirstName} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Nom *</Text>
+                <TextInput style={s.input} placeholder="Ex: Dupont" value={lastName} onChangeText={setLastName} />
+              </View>
+            </View>
+            <Text style={s.label}>Email *</Text>
+            <TextInput style={s.input} placeholder="jean@email.com" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <Text style={s.label}>Mot de passe *</Text>
+            <TextInput style={s.input} placeholder="Min. 6 caractères" secureTextEntry value={password} onChangeText={setPassword} />
           </View>
-        </TouchableOpacity>
 
-        <Text style={[styles.labelSmall, { marginTop: 10, marginBottom: 4 }]}>
-          Date de Naissance
-        </Text>
-        <View style={styles.row}>
-          <TextInput
-            style={[styles.input, { flex: 1, marginRight: 5 }]}
-            placeholder="JJ"
-            keyboardType="numeric"
-            maxLength={2}
-            value={birthDay}
-            onChangeText={setBirthDay}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1, marginRight: 5 }]}
-            placeholder="MM"
-            keyboardType="numeric"
-            maxLength={2}
-            value={birthMonth}
-            onChangeText={setBirthMonth}
-          />
-          <TextInput
-            style={[styles.input, { flex: 1.5 }]}
-            placeholder="AAAA"
-            keyboardType="numeric"
-            maxLength={4}
-            value={birthYear}
-            onChangeText={setBirthYear}
-          />
-        </View>
-
-        <View style={styles.row}>
-          <TouchableOpacity
-            style={[styles.selectInput, { flex: 1, marginRight: 8 }]}
-            onPress={() => setModalType("BIRTH_COUNTRY")}
-          >
-            <Text style={styles.labelSmall}>Pays Naissance</Text>
-            <Text
-              style={[
-                birthCountry ? styles.inputText : styles.placeholder,
-                { marginTop: 4 },
-              ]}
-              numberOfLines={1}
-            >
-              {birthCountry?.name || "Choisir"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.selectInput, { flex: 1 }]}
-            onPress={() => {
-              if (!birthCountry) showWebAlert("Info", "Pays de naissance requis.");
-              else setModalType("BIRTH_CITY");
-            }}
-          >
-            <Text style={styles.labelSmall}>Ville Naissance</Text>
-            <Text
-              style={[
-                birthCity ? styles.inputText : styles.placeholder,
-                { marginTop: 4 },
-              ]}
-              numberOfLines={1}
-            >
-              {birthCity || "Choisir"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Pressable style={styles.button} onPress={onSubmit} disabled={isLoading}>
-          {isLoading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.buttonText}>CRÉER MON COMPTE</Text>
-          )}
-        </Pressable>
-
-        <View style={styles.footer}>
-          <Text style={{ color: "#666" }}>Déjà inscrit ? </Text>
-          <Link href="/(auth)/login" asChild>
-            <TouchableOpacity>
-              <Text style={styles.link}>Se connecter</Text>
+          {/* 2. RÉSIDENCE */}
+          <Text style={s.groupTitle}>2. RÉSIDENCE & CONTACT</Text>
+          <View style={s.card}>
+            <Text style={s.label}>Pays de résidence</Text>
+            <TouchableOpacity style={s.selectInput} onPress={() => setModalType("RESIDENCE_COUNTRY")}>
+              {residenceCountry ? (
+                <View style={{ flexDirection: "row", alignItems: "center" }}><Text style={{ fontSize: 20, marginRight: 8 }}>{residenceCountry.flag}</Text><Text style={s.inputText}>{residenceCountry.name}</Text></View>
+              ) : <Text style={s.placeholder}>Sélectionner un pays</Text>}
+              <Ionicons name="chevron-down" size={20} color={THEME.muted} />
             </TouchableOpacity>
-          </Link>
-        </View>
 
-        <View style={{ height: 50 }} />
-      </ScrollView>
+            <Text style={s.label}>Ville de résidence</Text>
+            <TouchableOpacity style={s.selectInput} onPress={() => !residenceCountry ? showWebAlert("Info", "Sélectionnez d'abord un pays.") : setModalType("RESIDENCE_CITY")}>
+              <Text style={residenceCity ? s.inputText : s.placeholder}>{residenceCity || "Sélectionner une ville"}</Text>
+              <Ionicons name="chevron-down" size={20} color={THEME.muted} />
+            </TouchableOpacity>
 
-      <Modal visible={!!modalType} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Faites votre choix</Text>
-              <TouchableOpacity onPress={() => setModalType(null)}>
-                <Ionicons name="close" size={24} color="#333" />
-              </TouchableOpacity>
+            <Text style={s.label}>Téléphone</Text>
+            <View style={s.row}>
+              <View style={s.phoneCodeBox}><Text style={s.phoneCodeText}>{residenceCountry ? `+${residenceCountry.dialCode}` : "+ ??"}</Text></View>
+              <TextInput style={[s.input, { flex: 1, marginBottom: 0 }]} placeholder="612345678" keyboardType="phone-pad" value={phone} onChangeText={setPhone} />
             </View>
-            <FlatList<any>
-              data={getModalData()}
+          </View>
+
+          {/* 3. KYC */}
+          <Text style={s.groupTitle}>3. ÉTAT CIVIL (KYC)</Text>
+          <View style={s.card}>
+            <Text style={s.label}>Nationalité</Text>
+            <TouchableOpacity style={s.selectInput} onPress={() => setModalType("NATIONALITY")}>
+              <Text style={nationality ? s.inputText : s.placeholder}>{nationality?.name || "Sélectionner"}</Text>
+              <Ionicons name="chevron-down" size={20} color={THEME.muted} />
+            </TouchableOpacity>
+
+            <Text style={s.label}>Date de Naissance (JJ / MM / AAAA)</Text>
+            <View style={s.dateRow}>
+              <TextInput style={[s.input, s.dateInput]} placeholder="JJ" keyboardType="numeric" maxLength={2} value={birthDay} onChangeText={setBirthDay} />
+              <TextInput style={[s.input, s.dateInput]} placeholder="MM" keyboardType="numeric" maxLength={2} value={birthMonth} onChangeText={setBirthMonth} />
+              <TextInput style={[s.input, s.dateInput, { flex: 1.2 }]} placeholder="AAAA" keyboardType="numeric" maxLength={4} value={birthYear} onChangeText={setBirthYear} />
+            </View>
+
+            <View style={s.row}>
+              <View style={{ flex: 1, marginRight: 10 }}>
+                <Text style={s.label}>Pays Naissance</Text>
+                <TouchableOpacity style={s.selectInput} onPress={() => setModalType("BIRTH_COUNTRY")}>
+                  <Text style={birthCountry ? s.inputText : s.placeholder} numberOfLines={1}>{birthCountry?.name || "Choisir"}</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.label}>Ville Naissance</Text>
+                <TouchableOpacity style={s.selectInput} onPress={() => !birthCountry ? showWebAlert("Info", "Pays requis.") : setModalType("BIRTH_CITY")}>
+                  <Text style={birthCity ? s.inputText : s.placeholder} numberOfLines={1}>{birthCity || "Choisir"}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={[s.button, isLoading && { opacity: 0.7 }]} onPress={onSubmit} disabled={isLoading}>
+            {isLoading ? <ActivityIndicator color="#FFF" /> : <><Text style={s.buttonText}>CRÉER MON COMPTE</Text><Ionicons name="checkmark-circle" size={20} color="#FFF" /></>}
+          </TouchableOpacity>
+
+          <View style={s.footer}>
+            <Text style={s.footerText}>Déjà inscrit ? </Text>
+            <TouchableOpacity onPress={() => router.replace("/(auth)/login")}><Text style={s.link}>Se connecter</Text></TouchableOpacity>
+          </View>
+
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* --- MODALE DE SÉLECTION --- */}
+      <Modal visible={!!modalType} animationType="slide" transparent>
+        <View style={s.modalOverlay}>
+          <View style={s.modalContent}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Faites votre choix</Text>
+              <TouchableOpacity onPress={() => setModalType(null)} style={s.closeBtn}><Ionicons name="close" size={24} color={THEME.text} /></TouchableOpacity>
+            </View>
+            <FlatList<any> 
+              data={getModalData()} 
               keyExtractor={(item: any, i) => (item.code || item) + i}
-              renderItem={renderItem}
-              ListEmptyComponent={
-                <Text style={{ padding: 20, textAlign: "center", color: "#888" }}>
-                  Aucune donnée pour ce choix.
-                </Text>
-              }
+              renderItem={({ item }: { item: any }) => {
+                if (typeof item === "string") {
+                  return (
+                    <TouchableOpacity style={s.modalItem} onPress={() => { if (modalType === "RESIDENCE_CITY") setResidenceCity(item); if (modalType === "BIRTH_CITY") setBirthCity(item); setModalType(null); }}>
+                      <Text style={s.modalText}>{item}</Text><Ionicons name="chevron-forward" size={18} color={THEME.muted} />
+                    </TouchableOpacity>
+                  );
+                }
+                return (
+                  <TouchableOpacity style={s.modalItem} onPress={() => { if (modalType === "RESIDENCE_COUNTRY") setResidenceCountry(item); if (modalType === "NATIONALITY") setNationality(item); if (modalType === "BIRTH_COUNTRY") setBirthCountry(item); setModalType(null); }}>
+                    <Text style={s.flag}>{item.flag}</Text><Text style={s.modalText}>{item.name}</Text><Text style={s.code}>+{item.dialCode}</Text>
+                  </TouchableOpacity>
+                );
+              }}
+              ListEmptyComponent={<Text style={s.emptyModal}>Aucune donnée disponible.</Text>}
             />
           </View>
         </View>
       </Modal>
-    </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { padding: 20, backgroundColor: "#F8FAFC", paddingBottom: 50 },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: colors.primary,
-    marginBottom: 20,
-    textAlign: "center",
-  },
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: THEME.bg },
+  scrollContent: { flexGrow: 1, padding: 24, paddingBottom: 60 },
+  scrollContentDesktop: { maxWidth: 600, alignSelf: 'center', width: '100%', paddingVertical: 40 },
+  
+  backBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: THEME.surface, justifyContent: 'center', alignItems: 'center', shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 5, elevation: 2, marginBottom: 20 },
+  headerTitle: { fontSize: 32, fontFamily: FONTS.heading, fontWeight: "800", color: THEME.text, marginBottom: 4 },
+  headerSub: { fontSize: 14, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "600", marginBottom: 24 },
 
-  sectionBox: {
-    backgroundColor: "#FFF",
-    padding: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: 20,
-  },
-  sectionLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#64748B",
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  tenantPill: {
-    backgroundColor: "#F0F9FF",
-    borderWidth: 1,
-    borderColor: colors.primary,
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  tenantText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: colors.primary,
-  },
-  hint: {
-    fontSize: 11,
-    color: "#94A3B8",
-    marginTop: 6,
-    fontStyle: "italic",
-  },
+  sectionBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#E0F2FE", padding: 18, borderRadius: 20, marginBottom: 24, borderWidth: 1, borderColor: "#BAE6FD" },
+  sectionLabel: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: "#0284C7", letterSpacing: 1, marginBottom: 4 },
+  tenantText: { fontSize: 18, fontFamily: FONTS.heading, fontWeight: "800", color: "#0369A1" },
 
-  groupTitle: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#94A3B8",
-    marginTop: 10,
-    marginBottom: 8,
-    letterSpacing: 1,
-  },
-  row: { flexDirection: "row", marginBottom: 12 },
-  input: {
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 15,
-    color: "#333",
-    marginBottom: 12,
-  },
-  selectInput: {
-    backgroundColor: "#FFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    padding: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  inputText: { fontSize: 15, color: "#333" },
-  placeholder: { fontSize: 15, color: "#94A3B8" },
-  labelSmall: {
-    fontSize: 10,
-    color: "#64748B",
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  phoneCodeBox: {
-    backgroundColor: "#E2E8F0",
-    borderRadius: 10,
-    width: 60,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 20,
-    shadowColor: colors.primary,
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  buttonText: { color: "#FFF", fontWeight: "800", fontSize: 16 },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: 20 },
-  link: { color: colors.primary, fontWeight: "800" },
+  groupTitle: { fontSize: 12, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.5, marginBottom: 12, marginLeft: 4, marginTop: 10 },
+  card: { backgroundColor: THEME.surface, borderRadius: 24, padding: 20, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 10, elevation: 2, borderWidth: 1, borderColor: THEME.border, marginBottom: 20 },
 
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#FFF",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    height: "70%",
-    padding: 20,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-    paddingBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#EEE",
-  },
-  modalTitle: { fontSize: 18, fontWeight: "700" },
-  modalItem: {
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F8FAFC",
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  flag: { fontSize: 24, marginRight: 15 },
-  modalText: { fontSize: 16, color: "#333", flex: 1 },
-  code: { color: "#94A3B8", fontWeight: "600" },
+  row: { flexDirection: "row" },
+  
+  dateRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  dateInput: { flex: 1, marginBottom: 0, paddingHorizontal: 10, textAlign: "center", minWidth: 0 },
+  
+  label: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "800", color: THEME.muted, marginBottom: 8, letterSpacing: 0.5 },
+  input: { backgroundColor: THEME.inputBg, borderWidth: 1, borderColor: "transparent", borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 15, fontFamily: FONTS.body, color: THEME.text, fontWeight: "600", marginBottom: 16 },
+  selectInput: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: THEME.inputBg, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 16 },
+  inputText: { fontSize: 15, fontFamily: FONTS.body, color: THEME.text, fontWeight: "600" },
+  placeholder: { fontSize: 15, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "500" },
+  
+  phoneCodeBox: { backgroundColor: THEME.border, borderRadius: 14, width: 70, justifyContent: "center", alignItems: "center", marginRight: 10 },
+  phoneCodeText: { fontSize: 15, fontFamily: FONTS.body, fontWeight: "800", color: THEME.text },
+
+  button: { backgroundColor: THEME.primary, borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 10, shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
+  buttonText: { color: "#FFF", fontFamily: FONTS.body, fontWeight: "800", fontSize: 15, letterSpacing: 0.5 },
+  
+  footer: { flexDirection: "row", justifyContent: "center", marginTop: 24 },
+  footerText: { fontSize: 14, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "600" },
+  link: { fontSize: 14, fontFamily: FONTS.body, color: THEME.primary, fontWeight: "800" },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.6)", justifyContent: "flex-end" },
+  modalContent: { backgroundColor: THEME.surface, borderTopLeftRadius: 30, borderTopRightRadius: 30, height: "80%", padding: 24 },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: THEME.border },
+  modalTitle: { fontSize: 20, fontFamily: FONTS.heading, fontWeight: "800", color: THEME.text },
+  closeBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: THEME.bg, justifyContent: 'center', alignItems: 'center' },
+  modalItem: { paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: THEME.bg, flexDirection: "row", alignItems: "center" },
+  flag: { fontSize: 24, marginRight: 16 },
+  modalText: { fontSize: 16, fontFamily: FONTS.body, fontWeight: "600", color: THEME.text, flex: 1 },
+  code: { fontSize: 14, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "800" },
+  emptyModal: { textAlign: "center", color: THEME.muted, marginTop: 40, fontFamily: FONTS.body, fontSize: 15 },
 });

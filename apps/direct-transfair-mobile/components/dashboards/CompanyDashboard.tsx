@@ -1,37 +1,28 @@
 // components/dashboards/CompanyDashboard.tsx
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
   Modal, TextInput, ActivityIndicator, Alert, KeyboardAvoidingView,
-  Platform, Animated, ScrollView, SafeAreaView, StatusBar,
+  Platform, Animated, ScrollView, SafeAreaView, StatusBar, useWindowDimensions
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
-const C = {
-  bg: "#F5F7FA",
-  white: "#FFFFFF",
-  surface: "#FFFFFF",
-  border: "#E8ECF2",
-  accent: "#1E40AF",
-  accentMid: "#3B82F6",
-  accentSoft: "#EFF6FF",
-  amber: "#D97706",
-  amberSoft: "#FFFBEB",
-  success: "#059669",
-  successSoft: "#ECFDF5",
-  danger: "#DC2626",
-  dangerSoft: "#FEF2F2",
-  purple: "#7C3AED",
-  purpleSoft: "#F5F3FF",
-  teal: "#0891B2",
-  tealSoft: "#ECFEFF",
+const FONTS = {
+  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
+  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
+};
+
+const THEME = {
+  primary: "#1E3A8A", // Bleu Nuit
+  light: "#EFF6FF",
   text: "#0F172A",
-  textSub: "#475569",
-  textMuted: "#94A3B8",
-  textFaint: "#CBD5E1",
+  muted: "#64748B",
+  bg: "#F8FAFC",
+  surface: "#FFFFFF",
+  border: "#E2E8F0",
 };
 
 function toNum(v: unknown): number {
@@ -39,47 +30,33 @@ function toNum(v: unknown): number {
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
   return 0;
 }
-function fmtCurrency(v: unknown, currency = "XOF"): string {
-  return `${toNum(v).toLocaleString("fr-FR")} ${currency}`;
-}
-function getErr(e: unknown): string {
-  if (typeof e === "object" && e !== null) {
-    const x = e as { response?: { data?: { message?: string } }; message?: string };
-    return x.response?.data?.message ?? x.message ?? "Erreur technique.";
-  }
-  return "Erreur technique.";
-}
 
-function MenuCard({
-  title, subtitle, icon, color, bgColor, onPress, wide = false, badge,
-}: {
-  title: string; subtitle: string; icon: string; color: string; bgColor: string;
-  onPress: () => void; wide?: boolean; badge?: string;
-}) {
+// ─── CARTE MENU (Mise à jour : 2 par ligne, texte fin, disposition verticale) ───
+function MenuCard({ title, subtitle, icon, color, bgColor, onPress, badge }: any) {
   const scale = React.useRef(new Animated.Value(1)).current;
   return (
-    <Animated.View style={[{ transform: [{ scale }] }, wide ? { width: "100%" } : { flex: 1, minWidth: 0 }]}>
+    <Animated.View style={{ width: '48%', marginBottom: 14, transform: [{ scale }] }}>
       <TouchableOpacity
         style={s.menuCard}
         onPress={onPress}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
-        activeOpacity={1}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start()}
+        activeOpacity={0.9}
       >
-        <View style={[s.menuIcon, { backgroundColor: bgColor }]}>
-          <Ionicons name={icon as any} size={19} color={color} />
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.menuTitle} numberOfLines={1}>{title}</Text>
-          <Text style={s.menuSub} numberOfLines={1}>{subtitle}</Text>
-        </View>
-        {badge ? (
-          <View style={[s.badge, { backgroundColor: bgColor }]}>
-            <Text style={[s.badgeText, { color }]}>{badge}</Text>
+        <View style={s.menuHeaderRow}>
+          <View style={[s.menuIcon, { backgroundColor: bgColor }]}>
+            <Ionicons name={icon as any} size={24} color={color} />
           </View>
-        ) : (
-          <Ionicons name="chevron-forward" size={14} color={C.textFaint} />
-        )}
+          {badge && (
+            <View style={[s.badge, { backgroundColor: color }]}>
+              <Text style={s.badgeText}>{badge}</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ width: '100%' }}>
+          <Text style={s.menuTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
+          <Text style={s.menuSub} numberOfLines={2}>{subtitle}</Text>
+        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -88,6 +65,9 @@ function MenuCard({
 export default function CompanyDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isDesktop = width > 768;
+
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [amount, setAmount] = useState("");
@@ -96,227 +76,213 @@ export default function CompanyDashboard() {
 
   const clientName = useMemo(() => user?.client?.name || "Mon Entreprise", [user?.client?.name]);
   const currency = useMemo(() => (user as any)?.currency || "XOF", [user]);
+  const balance = toNum(user?.balance);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setRefreshing(true);
     try { await refreshUser(); } finally { setRefreshing(false); }
-  };
+  }, [refreshUser]);
 
-  const closeModal = () => { setModalVisible(false); setAmount(""); setRefBancaire(""); };
+  useFocusEffect(useCallback(() => { void loadData(); }, [loadData]));
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setAmount("");
+    setRefBancaire("");
+  };
 
   const handlePay = async () => {
     const n = Number(amount);
-    if (!amount || isNaN(n) || n <= 0) return Alert.alert("Montant invalide", "Saisis un montant valide.");
+    if (!amount || isNaN(n) || n <= 0) {
+        if(Platform.OS === 'web') return alert("Saisissez un montant valide.");
+        return Alert.alert("Erreur", "Saisissez un montant valide.");
+    }
     setProcessing(true);
     try {
       await api.declareBankTransfer(n, refBancaire);
       closeModal();
-      Alert.alert("✓ Succès", "Paiement déclaré avec succès.");
+      const msg = "Déclaration envoyée. En attente de validation.";
+      Platform.OS === 'web' ? alert(msg) : Alert.alert("Succès", msg);
       await loadData();
-    } catch (e) {
-      Alert.alert("Erreur", getErr(e));
+    } catch (e: any) {
+      const err = e?.response?.data?.message || e?.message || "Erreur technique";
+      Platform.OS === 'web' ? alert(err) : Alert.alert("Erreur", err);
     } finally { setProcessing(false); }
   };
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={THEME.primary} />
 
-      {/* Header */}
-      <View style={s.header}>
+      {/* HEADER COLORÉ */}
+      <View style={[s.header, { backgroundColor: THEME.primary }]}>
         <View style={s.headerAvatar}>
-          <Text style={s.headerAvatarText}>{(clientName[0] ?? "C").toUpperCase()}</Text>
+          <Text style={s.headerAvatarText}>{(clientName[0] ?? "E").toUpperCase()}</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={s.headerTitle} numberOfLines={1}>{clientName}</Text>
-          <Text style={s.headerSub}>Pilotage Société</Text>
+          <View style={s.headerBadgeWrap}><Text style={s.headerBadge}>PILOTAGE SOCIÉTÉ</Text></View>
+          <Text style={s.headerTitle} numberOfLines={1} adjustsFontSizeToFit>{clientName}</Text>
         </View>
-        <TouchableOpacity style={s.headerBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
-          <Ionicons name="notifications-outline" size={20} color={C.textSub} />
-          <View style={s.notifDot} />
-        </TouchableOpacity>
-        <TouchableOpacity style={s.headerBtn} onPress={loadData}>
-          <Ionicons name="refresh-outline" size={20} color={C.textSub} />
-        </TouchableOpacity>
+        <View style={s.headerRight}>
+          <TouchableOpacity style={s.headerBtn} onPress={loadData}>
+            <Ionicons name="refresh" size={20} color="#FFF" />
+          </TouchableOpacity>
+          <TouchableOpacity style={s.headerBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
+            <Ionicons name="notifications" size={20} color="#FFF" />
+            <View style={s.notifDot} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={s.content}
+        contentContainerStyle={[s.content, isDesktop && s.contentDesktop]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.accentMid} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={THEME.primary} />}
       >
-        {/* Hero Balance */}
+        {/* CARTE TRÉSORERIE */}
         <View style={s.hero}>
           <View style={s.heroDeco1} />
           <View style={s.heroDeco2} />
           <View style={s.heroTop}>
-            <View>
-              <Text style={s.heroLabel}>Trésorerie Globale</Text>
-              <Text style={s.heroAmount}>{fmtCurrency(user?.balance, currency)}</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={s.heroLabel}>TRÉSORERIE GLOBALE</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 6 }}>
+                <Text style={s.heroAmount} numberOfLines={1} adjustsFontSizeToFit>{balance.toLocaleString('fr-FR')}</Text>
+                <Text style={s.heroCurrency}> {currency}</Text>
+              </View>
             </View>
             <TouchableOpacity style={s.heroArrow} onPress={() => router.push("/(tabs)/admin/treasury")}>
-              <Ionicons name="arrow-forward" size={16} color="#FFF" />
+              <Ionicons name="wallet" size={20} color="#FFF" />
             </TouchableOpacity>
           </View>
+          
           <View style={s.heroDivider} />
+          
           <View style={s.heroBottom}>
             <View style={s.heroStatus}>
               <View style={s.greenDot} />
-              <Text style={s.heroStatusText}>Compte actif</Text>
+              <Text style={s.heroStatusText}>Compte opérationnel</Text>
             </View>
             <TouchableOpacity style={s.payBtn} onPress={() => setModalVisible(true)}>
-              <Ionicons name="card-outline" size={13} color={C.accent} />
-              <Text style={s.payBtnText}>Payer une facture</Text>
+              <Ionicons name="document-text" size={14} color={THEME.primary} />
+              <Text style={s.payBtnText}>Déclarer Virement</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Stats Strip */}
-        <View style={s.strip}>
-          {[
-            { icon: "storefront-outline", val: "—", lbl: "Agences", color: C.accentMid },
-            { icon: "people-outline", val: "—", lbl: "Staff", color: C.purple },
-            { icon: "checkmark-circle-outline", val: "Actif", lbl: "Statut", color: C.success },
-          ].map((item, i) => (
-            <View key={item.lbl} style={[s.stripChip, i < 2 && s.stripBorder]}>
-              <Ionicons name={item.icon as any} size={16} color={item.color} />
-              <Text style={[s.stripVal, { color: item.color }]}>{item.val}</Text>
-              <Text style={s.stripLbl}>{item.lbl}</Text>
-            </View>
-          ))}
+        {/* RÉSEAU */}
+        <Text style={s.sectionLabel}>MON RÉSEAU</Text>
+        <View style={s.grid}>
+          <MenuCard title="Créer Agence" subtitle="Ajouter un point" icon="add-circle" color="#7C3AED" bgColor="#F5F3FF" onPress={() => router.push("/(tabs)/admin/agencies/create")} badge="Nouveau" />
+          <MenuCard title="Agences" subtitle="Supervision & Caisses" icon="storefront" color="#2563EB" bgColor="#EFF6FF" onPress={() => router.push("/(tabs)/admin/agencies")} />
+          <MenuCard title="Utilisateurs" subtitle="Gestion des accès" icon="people" color="#059669" bgColor="#ECFDF5" onPress={() => router.push("/(tabs)/admin/users")} />
         </View>
 
-        {/* Réseau */}
-        <Text style={s.sectionLabel}>RÉSEAU</Text>
-        <View style={s.section}>
-          <MenuCard title="Créer une Agence" subtitle="Étendre votre réseau physique"
-            icon="add-circle-outline" color={C.purple} bgColor={C.purpleSoft}
-            onPress={() => router.push("/(tabs)/admin/agencies/create")} wide badge="Nouveau" />
-          <View style={s.row}>
-            <MenuCard title="Agences" subtitle="Voir la liste"
-              icon="storefront-outline" color={C.accentMid} bgColor={C.accentSoft}
-              onPress={() => router.push("/(tabs)/admin/agencies")} />
-            <MenuCard title="Utilisateurs" subtitle="Staff & agents"
-              icon="people-outline" color={C.amber} bgColor={C.amberSoft}
-              onPress={() => router.push("/(tabs)/admin/users")} />
-          </View>
-        </View>
-
-        {/* Finance */}
-        <Text style={[s.sectionLabel, { marginTop: 18 }]}>FINANCE & COMMISSIONS</Text>
-        <View style={s.section}>
-          <View style={s.row}>
-            <MenuCard title="Config. Règles" subtitle="Taux & paliers"
-              icon="settings-outline" color={C.teal} bgColor={C.tealSoft}
-              onPress={() => router.push("/(tabs)/admin/commissions/config")} />
-            <MenuCard title="Suivi Global" subtitle="Gains & audit"
-              icon="pie-chart-outline" color={C.danger} bgColor={C.dangerSoft}
-              onPress={() => router.push("/admin/commissions")} />
-          </View>
-          <MenuCard title="Taux de Change" subtitle="Devises & conversions en temps réel"
-            icon="cash-outline" color={C.success} bgColor={C.successSoft}
-            onPress={() => router.push("/(tabs)/admin/rates")} wide />
+        {/* FINANCE */}
+        <Text style={[s.sectionLabel, { marginTop: 12 }]}>FINANCE & CONFIGURATION</Text>
+        <View style={s.grid}>
+          <MenuCard title="Suivi Global" subtitle="Audit & Transactions" icon="pie-chart" color="#DC2626" bgColor="#FEF2F2" onPress={() => router.push("/(tabs)/admin/transactions")} />
+          <MenuCard title="Commissions" subtitle="Taux & Paliers" icon="settings" color="#0891B2" bgColor="#ECFEFF" onPress={() => router.push("/(tabs)/admin/commissions/config")} />
+          <MenuCard title="Change" subtitle="Devises en temps réel" icon="cash" color="#D97706" bgColor="#FFFBEB" onPress={() => router.push("/(tabs)/admin/rates")} />
         </View>
 
         <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* Modal Paiement */}
+      {/* MODALE PAIEMENT B2B */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
-        <KeyboardAvoidingView style={s.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-          <View style={s.modalSheet}>
-            <View style={s.modalHandle} />
-            <Text style={s.modalTitle}>Payer une Facture</Text>
-            <Text style={s.modalSub}>Déclaration de virement bancaire</Text>
-
-            <View style={s.inputWrap}>
-              <Text style={s.inputLabel}>Montant (FCFA)</Text>
-              <View style={s.inputRow}>
-                <Ionicons name="cash-outline" size={18} color={C.textMuted} style={{ marginRight: 8 }} />
-                <TextInput style={s.input} value={amount} onChangeText={setAmount}
-                  keyboardType="numeric" placeholder="Ex: 500 000" placeholderTextColor={C.textFaint} />
+        <View style={s.modalOverlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
+            <View style={s.modalSheet}>
+              <View style={s.modalHandle} />
+              <View style={s.modalHeaderRow}>
+                <View style={[s.modalIconBox, { backgroundColor: THEME.light }]}><Ionicons name="document-text" size={24} color={THEME.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.modalTitle}>Déclarer un Virement</Text>
+                  <Text style={s.modalSub}>Alimentation de compte B2B</Text>
+                </View>
               </View>
-            </View>
 
-            <View style={s.inputWrap}>
-              <Text style={s.inputLabel}>Référence virement <Text style={{ color: C.textMuted, fontWeight: "500" }}>(optionnel)</Text></Text>
-              <View style={s.inputRow}>
-                <Ionicons name="document-text-outline" size={18} color={C.textMuted} style={{ marginRight: 8 }} />
-                <TextInput style={s.input} value={refBancaire} onChangeText={setRefBancaire}
-                  placeholder="REF-2024-XXXX" placeholderTextColor={C.textFaint} autoCapitalize="characters" />
+              <View style={s.inputWrap}>
+                <Text style={s.inputLabel}>MONTANT ENVOYÉ (XOF)</Text>
+                <TextInput style={s.input} value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Ex: 500000" placeholderTextColor={THEME.muted} autoFocus />
               </View>
-            </View>
 
-            <TouchableOpacity style={[s.confirmBtn, processing && { opacity: 0.7 }]} onPress={handlePay} disabled={processing}>
-              {processing ? <ActivityIndicator color="#FFF" /> : (
-                <><Ionicons name="checkmark-circle-outline" size={18} color="#FFF" />
-                  <Text style={s.confirmText}>VALIDER LE PAIEMENT</Text></>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity onPress={closeModal} style={s.cancelBtn} disabled={processing}>
-              <Text style={s.cancelText}>Annuler</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
+              <View style={s.inputWrap}>
+                <Text style={s.inputLabel}>RÉFÉRENCE BANCAIRE</Text>
+                <TextInput style={s.input} value={refBancaire} onChangeText={setRefBancaire} placeholder="REF-VIREMENT-1234" placeholderTextColor={THEME.muted} autoCapitalize="characters" />
+              </View>
+
+              <TouchableOpacity style={[s.confirmBtn, { backgroundColor: THEME.primary }, processing && { opacity: 0.7 }]} onPress={handlePay} disabled={processing}>
+                {processing ? <ActivityIndicator color="#FFF" /> : <Text style={s.confirmText}>ENVOYER POUR VALIDATION</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={closeModal} style={s.cancelBtn} disabled={processing}>
+                <Text style={s.cancelText}>Annuler</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  header: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 16,
-    paddingVertical: 12, backgroundColor: C.white, borderBottomWidth: 1,
-    borderBottomColor: C.border, gap: 10,
-  },
-  headerAvatar: { width: 40, height: 40, borderRadius: 13, backgroundColor: C.accentSoft, justifyContent: "center", alignItems: "center" },
-  headerAvatarText: { color: C.accent, fontSize: 16, fontWeight: "900" },
-  headerTitle: { fontSize: 15, fontWeight: "800", color: C.text },
-  headerSub: { fontSize: 11, color: C.textMuted, fontWeight: "600", marginTop: 1 },
-  headerBtn: { width: 38, height: 38, borderRadius: 12, backgroundColor: C.bg, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: C.border },
-  notifDot: { position: "absolute", top: 8, right: 8, width: 7, height: 7, borderRadius: 99, backgroundColor: C.danger, borderWidth: 1.5, borderColor: C.white },
-  content: { padding: 16 },
-  hero: { backgroundColor: C.accent, borderRadius: 24, padding: 22, marginBottom: 14, overflow: "hidden" },
+  safe: { flex: 1, backgroundColor: THEME.bg },
+  header: { paddingHorizontal: 20, paddingVertical: 16, paddingTop: Platform.OS === 'android' ? 40 : 16, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, flexDirection: "row", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, elevation: 8, zIndex: 10 },
+  headerAvatar: { width: 44, height: 44, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginRight: 12 },
+  headerAvatarText: { color: "#FFF", fontSize: 20, fontFamily: FONTS.heading, fontWeight: "900" },
+  headerBadgeWrap: { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginBottom: 2 },
+  headerBadge: { color: "#FFF", fontSize: 9, fontFamily: FONTS.body, fontWeight: "900", letterSpacing: 1 },
+  headerTitle: { fontSize: 20, fontFamily: FONTS.heading, fontWeight: "700", color: "#FFF" },
+  headerRight: { flexDirection: "row", gap: 8 },
+  headerBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
+  notifDot: { position: "absolute", top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: THEME.primary },
+  content: { padding: 16, paddingTop: 20 },
+  contentDesktop: { maxWidth: 1000, alignSelf: 'center', width: '100%' },
+
+  hero: { backgroundColor: THEME.primary, borderRadius: 20, padding: 20, marginBottom: 20, overflow: "hidden", shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   heroDeco1: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(255,255,255,0.06)", top: -40, right: -40 },
   heroDeco2: { position: "absolute", width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.05)", bottom: -10, left: 40 },
-  heroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 18 },
-  heroLabel: { color: "rgba(255,255,255,0.7)", fontSize: 12, fontWeight: "600", marginBottom: 6 },
-  heroAmount: { color: "#FFF", fontSize: 28, fontWeight: "900", letterSpacing: -0.8 },
-  heroArrow: { width: 36, height: 36, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
-  heroDivider: { height: 1, backgroundColor: "rgba(255,255,255,0.12)", marginBottom: 16 },
+  heroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 },
+  heroLabel: { color: "rgba(255,255,255,0.7)", fontSize: 10, fontFamily: FONTS.body, fontWeight: "900", letterSpacing: 1 },
+  heroAmount: { color: "#FFF", fontSize: 32, fontFamily: FONTS.heading, fontWeight: "800" },
+  heroCurrency: { color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: FONTS.body, fontWeight: "700" },
+  heroArrow: { width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  heroDivider: { height: 1, backgroundColor: "rgba(255,255,255,0.15)", marginBottom: 14 },
   heroBottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   heroStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
-  greenDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: "#34D399" },
-  heroStatusText: { color: "rgba(255,255,255,0.8)", fontSize: 12, fontWeight: "600" },
-  payBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#FFF", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 99 },
-  payBtnText: { color: C.accent, fontSize: 11, fontWeight: "800" },
-  strip: { flexDirection: "row", backgroundColor: C.surface, borderRadius: 16, borderWidth: 1, borderColor: C.border, marginBottom: 20, overflow: "hidden" },
-  stripChip: { flex: 1, alignItems: "center", paddingVertical: 14, gap: 3 },
-  stripBorder: { borderRightWidth: 1, borderRightColor: C.border },
-  stripVal: { fontSize: 14, fontWeight: "900" },
-  stripLbl: { fontSize: 10, color: C.textMuted, fontWeight: "700", letterSpacing: 0.5 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: C.textMuted, letterSpacing: 1.4, marginBottom: 10, marginLeft: 2 },
-  section: { gap: 10 },
-  row: { flexDirection: "row", gap: 10 },
-  menuCard: { flexDirection: "row", alignItems: "center", backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 14, gap: 12 },
-  menuIcon: { width: 42, height: 42, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  menuTitle: { fontSize: 13, fontWeight: "800", color: C.text },
-  menuSub: { fontSize: 11, color: C.textMuted, fontWeight: "600", marginTop: 1 },
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 },
-  badgeText: { fontSize: 10, fontWeight: "900" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.55)", justifyContent: "flex-end" },
-  modalSheet: { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: Platform.OS === "ios" ? 40 : 24 },
-  modalHandle: { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 20 },
-  modalTitle: { fontSize: 20, fontWeight: "900", color: C.text, marginBottom: 4 },
-  modalSub: { fontSize: 13, color: C.textMuted, fontWeight: "600", marginBottom: 22 },
+  greenDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#34D399" },
+  heroStatusText: { color: "rgba(255,255,255,0.9)", fontSize: 11, fontFamily: FONTS.body, fontWeight: "700" },
+  payBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
+  payBtnText: { color: THEME.primary, fontSize: 11, fontFamily: FONTS.body, fontWeight: "800" },
+
+  sectionLabel: { fontSize: 12, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.5, marginBottom: 12, marginLeft: 4 },
+  
+  /* --- MISE A JOUR DE LA GRILLE : 2 Cartes par ligne --- */
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  
+  menuCard: { backgroundColor: THEME.surface, borderRadius: 20, borderWidth: 1, borderColor: THEME.border, padding: 16, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+  menuHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+  menuIcon: { width: 46, height: 46, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  menuTitle: { fontSize: 14, fontFamily: FONTS.body, fontWeight: "800", color: THEME.text, marginBottom: 4 },
+  menuSub: { fontSize: 12, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "400", lineHeight: 16 }, // RETRAIT DU GRAS
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
+  badgeText: { fontSize: 9, fontFamily: FONTS.body, fontWeight: "900", color: "#FFF", letterSpacing: 0.5 },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.6)", justifyContent: "flex-end" },
+  modalSheet: { backgroundColor: THEME.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === "ios" ? 40 : 24, shadowColor: "#000", shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 },
+  modalHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: THEME.border, alignSelf: "center", marginBottom: 20 },
+  modalHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
+  modalIconBox: { width: 48, height: 48, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  modalTitle: { fontSize: 20, fontFamily: FONTS.heading, fontWeight: "700", color: THEME.text },
+  modalSub: { fontSize: 12, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "600", marginTop: 2 },
   inputWrap: { marginBottom: 16 },
-  inputLabel: { fontSize: 12, fontWeight: "700", color: C.textSub, marginBottom: 8 },
-  inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 13 },
-  input: { flex: 1, fontSize: 15, color: C.text, fontWeight: "600" },
-  confirmBtn: { backgroundColor: C.accent, borderRadius: 16, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 6 },
-  confirmText: { color: "#FFF", fontWeight: "800", fontSize: 14, letterSpacing: 0.4 },
-  cancelBtn: { alignItems: "center", paddingVertical: 14 },
-  cancelText: { color: C.textMuted, fontWeight: "700", fontSize: 14 },
+  inputLabel: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, marginBottom: 6, letterSpacing: 0.5 },
+  input: { backgroundColor: THEME.bg, borderWidth: 1, borderColor: THEME.border, borderRadius: 14, padding: 14, fontSize: 15, fontFamily: FONTS.body, color: THEME.text, fontWeight: "700" },
+  confirmBtn: { borderRadius: 14, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 8, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  confirmText: { color: "#FFF", fontFamily: FONTS.body, fontWeight: "800", fontSize: 13, letterSpacing: 1 },
+  cancelBtn: { alignItems: "center", paddingVertical: 14, marginTop: 4 },
+  cancelText: { color: THEME.muted, fontFamily: FONTS.body, fontWeight: "800", fontSize: 14 },
 });
