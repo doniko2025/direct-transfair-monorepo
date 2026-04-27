@@ -1,36 +1,14 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity, 
-  ActivityIndicator,
-  Share,
-  Alert,
-  Platform,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Share, Alert, Platform, SafeAreaView, StatusBar } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
-import { colors } from "../../../theme/colors";
-import type { Transaction } from "../../../services/types";
 
-function webAlert(message: string) {
-  const fn = (globalThis as any)?.alert;
-  if (typeof fn === "function") fn(message);
-  else Alert.alert("Info", message);
-}
-
-function webConfirm(message: string): boolean {
-  const fn = (globalThis as any)?.confirm;
-  if (typeof fn === "function") return Boolean(fn(message));
-  // fallback mobile-style: on ne peut pas bloquer => on refuse par défaut
-  return false;
-}
+const FONTS = { heading: Platform.OS === 'ios' ? 'Cochin' : 'serif', body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif' };
+const THEMES = { SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2", bg: "#F8FAFC" }, COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF", bg: "#F8FAFC" }, AGENT: { primary: "#78350F", light: "#FFF7ED", bg: "#F8FAFC" }, USER: { primary: "#059669", light: "#ECFDF5", bg: "#F8FAFC" } };
 
 export default function TransactionDetailScreen() {
   const params = useLocalSearchParams<{ id?: string | string[] }>();
@@ -38,472 +16,258 @@ export default function TransactionDetailScreen() {
 
   const router = useRouter();
   const { user } = useAuth();
+  
+  const role = user?.role || "USER";
+  const theme = THEMES[role as keyof typeof THEMES] || THEMES.USER;
 
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [transaction, setTransaction] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    loadTransaction();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idParam]);
+  useEffect(() => { loadTransaction(); }, [idParam]);
 
   const loadTransaction = async () => {
     try {
       setLoading(true);
-
-      if (!idParam) {
-        setTransaction(null);
-        return;
-      }
-
-      const list =
-        user?.role === "COMPANY_ADMIN" || user?.role === "SUPER_ADMIN"
-          ? await api.adminGetTransactions()
-          : await api.getTransactions();
-
-      const found = list.find((t) => String(t.id) === String(idParam));
+      if (!idParam) return setTransaction(null);
+      let list;
+      try { list = await api.adminGetTransactions(); } catch { list = await api.getTransactions(); }
+      const found = list.find((t: any) => String(t.id) === String(idParam));
       setTransaction(found || null);
-    } catch (e) {
-      console.error(e);
-      setTransaction(null);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { setTransaction(null); } finally { setLoading(false); }
   };
 
   const handleShare = async () => {
     if (!transaction) return;
     try {
-      const ref = transaction.reference?.startsWith("TX-")
-        ? transaction.reference
-        : `TX-${transaction.reference}`;
-      await Share.share({
-        message: `Reçu Transf'air\nRef: ${ref}\nMontant: ${transaction.amount} ${transaction.currency}`,
-      });
-    } catch {
-      // noop
-    }
+      const ref = transaction.reference?.startsWith("TX-") ? transaction.reference : `TX-${transaction.reference}`;
+      await Share.share({ message: `Reçu Transf'air\nRef: ${ref}\nMontant: ${transaction.amount} ${transaction.currency}` });
+    } catch {}
   };
 
   const handleCopyCode = async () => {
     if (transaction?.reference) {
       await Clipboard.setStringAsync(transaction.reference);
-      if (Platform.OS === "web") webAlert("Code copié !");
-      else Alert.alert("Copié", "Code copié");
+      Platform.OS === "web" ? alert("Code copié !") : Alert.alert("Copié", "Code copié");
     }
   };
 
-  const confirmAction = (title: string, message: string, onConfirm: () => void) => {
-    if (Platform.OS === "web") {
-      if (webConfirm(`${title}\n\n${message}`)) onConfirm();
-    } else {
-      Alert.alert(title, message, [
-        { text: "Non", style: "cancel" },
-        { text: "Oui", onPress: onConfirm, style: "destructive" },
-      ]);
-    }
-  };
-
-  const handleCancelUser = () => {
-    confirmAction(
-      "Annuler la transaction ?",
-      "Cette action est irréversible. Le montant sera remboursé immédiatement.",
-      () => performAction("CANCELLED"),
-    );
-  };
-
-  const handleAdminValidate = () => {
-    confirmAction("Valider la transaction ?", "Le montant sera transféré.", () =>
-      performAction("VALIDATED"),
-    );
-  };
-
-  const handleAdminReject = () => {
-    confirmAction("Rejeter la transaction ?", "La transaction sera annulée.", () =>
-      performAction("CANCELLED"),
-    );
-  };
+  const handleCancelUser = () => performAction("CANCELLED");
+  const handleAdminValidate = () => performAction("VALIDATED");
+  const handleAdminReject = () => performAction("CANCELLED");
 
   const performAction = async (newStatus: "VALIDATED" | "CANCELLED") => {
     if (!transaction) return;
-
     setProcessing(true);
     try {
       const isB2B = transaction.type === "SERVICE_PAYMENT";
+      if (isB2B && newStatus === "VALIDATED") await api.validateBankTransfer(transaction.id);
+      else if (isB2B && newStatus === "CANCELLED" && user?.role === "SUPER_ADMIN") await api.rejectBankTransfer(transaction.id);
+      else if (user?.role === "COMPANY_ADMIN" || user?.role === "SUPER_ADMIN") await api.adminUpdateTransactionStatus(transaction.id, newStatus);
+      else await api.cancelTransaction(transaction.id);
 
-      // ✅ B2B : endpoints dédiés
-      if (isB2B && newStatus === "VALIDATED") {
-        await api.validateBankTransfer(transaction.id);
-      } else if (isB2B && newStatus === "CANCELLED" && user?.role === "SUPER_ADMIN") {
-        // ✅ Super Admin rejette => remboursement admin société côté backend
-        await api.rejectBankTransfer(transaction.id);
-      } else if (user?.role === "COMPANY_ADMIN" || user?.role === "SUPER_ADMIN") {
-        await api.adminUpdateTransactionStatus(transaction.id, newStatus);
-      } else {
-        await api.cancelTransaction(transaction.id);
-      }
-
-      const successMsg = "Statut mis à jour avec succès";
-      if (Platform.OS === "web") {
-        webAlert(successMsg);
-        loadTransaction();
-      } else {
-        Alert.alert("Succès", successMsg, [{ text: "OK", onPress: loadTransaction }]);
-      }
+      Platform.OS === "web" ? alert("Statut mis à jour") : Alert.alert("Succès", "Statut mis à jour");
+      loadTransaction();
     } catch (e: any) {
-      const msg = e?.response?.data?.message || "Erreur lors du traitement";
-      if (Platform.OS === "web") webAlert(`Erreur: ${msg}`);
-      else Alert.alert("Erreur", msg);
-    } finally {
-      setProcessing(false);
-    }
+      Platform.OS === "web" ? alert(`Erreur: ${e?.response?.data?.message}`) : Alert.alert("Erreur", e?.response?.data?.message || "Erreur.");
+    } finally { setProcessing(false); }
   };
+
+  if (loading) return <SafeAreaView style={s.center}><ActivityIndicator size="large" color={theme.primary} /></SafeAreaView>;
+  if (!transaction) return <SafeAreaView style={s.center}><Text style={s.notFoundText}>Transaction introuvable.</Text></SafeAreaView>;
 
   const getStatusInfo = (status: string) => {
     switch (status) {
-      case "PAID":
-        return { label: "PAYÉE", color: "#16a34a", icon: "checkmark-circle" };
-      case "VALIDATED":
-        return { label: "DISPONIBLE", color: "#2563eb", icon: "shield-checkmark" };
-      case "CANCELLED":
-        return { label: "ANNULÉE", color: "#dc2626", icon: "close-circle" };
-      default:
-        return { label: "EN ATTENTE", color: "#d97706", icon: "time" };
+      case "PAID": return { label: "PAYÉE", color: "#059669", bg: "#D1FAE5", icon: "checkmark-circle" };
+      case "VALIDATED": return { label: "DISPONIBLE", color: "#2563EB", bg: "#DBEAFE", icon: "shield-checkmark" };
+      case "CANCELLED": return { label: "ANNULÉE", color: "#DC2626", bg: "#FEE2E2", icon: "close-circle" };
+      default: return { label: "EN ATTENTE", color: "#D97706", bg: "#FEF3C7", icon: "time" };
     }
   };
 
-  const handleGoBack = () => {
-    if (router.canGoBack()) router.back();
-    else router.navigate("/(tabs)/transactions");
-  };
-
-  if (loading)
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
-
-  if (!transaction)
-    return (
-      <View style={styles.center}>
-        <Text>Transaction introuvable.</Text>
-      </View>
-    );
-
   const status = getStatusInfo(transaction.status);
-
-  // --- LOGIQUE D'AFFICHAGE DES BOUTONS ---
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isCompanyAdmin = user?.role === "COMPANY_ADMIN";
   const isPending = transaction.status === "PENDING";
-  const isB2B = transaction.type === "SERVICE_PAYMENT";
+  
+  // ─── LOGIQUE D'IDENTIFICATION ───
+  const typeStr = String(transaction.type || '').toUpperCase();
+  const isB2B = typeStr === "SERVICE_PAYMENT";
+  const isRefill = typeStr === "REFILL" || typeStr === "AGENCY_REFILL";
+  const isWithdrawal = typeStr === 'WITHDRAWAL' || transaction.payoutMethod === 'CASH_PICKUP';
+  const isDeposit = typeStr === "DEPOSIT" || typeStr === "TOP_UP" || (!transaction.beneficiaryId && !isWithdrawal && !isB2B && !isRefill);
 
-  // 1. Le Super Admin voit "Valider / Rejeter" si c'est en attente
+  const isIncoming = isDeposit || transaction.beneficiaryId === user?.id || (isRefill && transaction.agencyId === user?.agencyId);
+  const isMobileMoney = transaction.payoutMethod === "MOBILE_MONEY";
+  const hasBeneficiary = Boolean(transaction.beneficiary || transaction.beneficiaryId);
+
+  // Le code de retrait est UNIQUEMENT affiché s'il s'agit d'un vrai retrait
+  const showWithdrawalCode = !isB2B && !isRefill && !isDeposit && (isWithdrawal || (hasBeneficiary && !isMobileMoney));
+
   const showSuperAdminActions = Boolean(isSuperAdmin && isPending);
-
-  // 2. L'utilisateur (ou Admin Société pour ses propres virements) peut annuler
-  // si c'est PENDING (ou VALIDATED pour les transferts classiques)
-  // ET qu'il n'est PAS Super Admin (le super admin a ses propres boutons)
-  const canUserCancel =
-    !isSuperAdmin &&
-    (transaction.status === "PENDING" || transaction.status === "VALIDATED");
-
-  const showWithdrawalCode = !isB2B && Boolean(transaction.providerRef);
-  const displayReference = transaction.reference?.startsWith("TX-")
-    ? transaction.reference
-    : `TX-${transaction.reference}`;
-
-  const displayAmount =
-    transaction.receivedAmount && Number(transaction.receivedAmount) > 0
-      ? transaction.receivedAmount
-      : transaction.amount;
-  const displayCurrency = transaction.targetCurrency || transaction.currency;
-
-  const senderName =
-    transaction.senderFirstName && transaction.senderLastName
-      ? `${transaction.senderFirstName} ${transaction.senderLastName}`
-      : transaction.sender?.firstName
-        ? `${transaction.sender.firstName} ${transaction.sender.lastName ?? ""}`.trim()
-        : "Moi";
-
-  const originCountry = transaction.currency === "XOF" ? "Sénégal" : "International";
+  const canUserCancel = !isSuperAdmin && (transaction.status === "PENDING" || transaction.status === "VALIDATED");
+  
+  const displayReference = transaction.reference?.startsWith("TX-") ? transaction.reference : `TX-${transaction.reference}`;
+  
+  const senderName = transaction.senderFirstName && transaction.senderLastName ? `${transaction.senderFirstName} ${transaction.senderLastName}` : transaction.sender?.firstName ? `${transaction.sender.firstName} ${transaction.sender.lastName ?? ""}`.trim() : "Moi";
+  const originCountry = transaction.currency === "XOF" ? "Sénégal" : "France";
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: 150 }]}>
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.navTitle}>Détail Transaction</Text>
-        <View style={{ width: 24 }} />
-      </View>
+    <SafeAreaView style={s.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
+      <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        <View style={s.navBar}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}><Ionicons name="close" size={26} color="#0F172A" /></TouchableOpacity>
+        </View>
 
-      <View style={styles.ticket}>
-        <View style={styles.headerSection}>
-          <Text style={styles.amountLabel}>Montant à Payer</Text>
-          <Text style={styles.bigAmount}>
-            {Number(displayAmount).toLocaleString("fr-FR", {
-              maximumFractionDigits: 0,
-            })}
-            <Text style={styles.currency}> {displayCurrency}</Text>
-          </Text>
-          <View style={[styles.statusBadge, { backgroundColor: status.color + "20" }]}>
-            <Ionicons name={status.icon as any} size={16} color={status.color} />
-            <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
+        <View style={s.ticket}>
+          <View style={[s.statusBadge, { backgroundColor: status.bg }]}>
+            <Ionicons name={status.icon as any} size={14} color={status.color} />
+            <Text style={[s.statusText, { color: status.color }]}>{status.label}</Text>
+          </View>
+
+          {showWithdrawalCode && (
+            <View style={s.codeSection}>
+              <Text style={s.codeLabel}>CODE DE RETRAIT</Text>
+              <TouchableOpacity style={s.codeBox} onPress={handleCopyCode} activeOpacity={0.7}>
+                <Text style={[s.codeText, transaction.status === "CANCELLED" && s.codeStrikethrough]}>{transaction.reference}</Text>
+                <Ionicons name="copy-outline" size={20} color="#D97706" />
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <View style={s.detailsSection}>
+            <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString("fr-FR")} />
+            <View style={s.divider} />
+            
+            {isDeposit ? (
+              // ✅ DÉTAILS D'UN DÉPÔT EN AGENCE (Montant REÇU)
+              <>
+                <DetailRow label="Type d'opération" value="Dépôt en agence" bold color={theme.primary} />
+                <View style={s.divider} />
+                {transaction.agency ? (
+                   <>
+                     <DetailRow label="Agence de dépôt" value={transaction.agency.name} />
+                     {transaction.agency.managerName && <DetailRow label="Gérant de l'agence" value={transaction.agency.managerName} sub />}
+                     <DetailRow label="Ville de l'agence" value={`${transaction.agency.city || ''}`} sub />
+                   </>
+                ) : (
+                   <DetailRow label="Agent déposant" value={senderName} />
+                )}
+                <DetailRow label="Bénéficiaire" value="Mon Wallet Personnel" sub />
+              </>
+            ) : isRefill ? (
+              // ✅ ALIMENTATION CAISSE B2B
+              <>
+                <DetailRow label="Type d'opération" value="Alimentation de Caisse" bold color={theme.primary} />
+                <DetailRow label="Initiateur" value={senderName} />
+                {transaction.agency && (
+                  <>
+                    <View style={s.divider} />
+                    <DetailRow label="Agence Bénéficiaire" value={transaction.agency.name} />
+                    <DetailRow label="Localisation" value={`${transaction.agency.city || ''}, ${transaction.agency.country || 'Sénégal'}`} sub />
+                  </>
+                )}
+              </>
+            ) : (
+              // ✅ DÉTAILS D'UN ENVOI D'ARGENT CLASSIQUE
+              <>
+                <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : senderName} />
+                {transaction.sender?.phone && <DetailRow label="Tél. Expéditeur" value={transaction.sender.phone} sub />}
+                <DetailRow label="Pays d'origine" value={originCountry} sub />
+                <View style={s.divider} />
+                <DetailRow label="Bénéficiaire" value={isB2B ? "Super Admin" : transaction.beneficiary?.fullName || "Non spécifié"} />
+                {transaction.beneficiary?.phone && <DetailRow label="Tél. Bénéficiaire" value={transaction.beneficiary.phone} sub />}
+                <DetailRow label="Pays destination" value={transaction.beneficiary?.country || "Sénégal"} sub />
+              </>
+            )}
+
+            <View style={s.divider} />
+            <DetailRow label="Réf. Unique" value={displayReference} />
+          </View>
+
+          <View style={s.financeSection}>
+            <Text style={s.financeHeader}>DÉTAIL FINANCIER</Text>
+            <DetailRow label="Montant principal" value={`${Number(transaction.amount).toLocaleString("fr-FR")} ${transaction.currency}`} />
+            
+            {/* Si c'est un dépôt, il n'y a généralement pas de frais pour l'utilisateur, ou alors on l'affiche explicitement */}
+            {(!isDeposit && !isRefill) && (
+                <DetailRow label="Frais d'envoi" value={`${Number(transaction.fees).toLocaleString("fr-FR")} ${transaction.currency}`} />
+            )}
+            
+            <DetailRow label={isIncoming ? "Montant crédité" : "Total payé"} value={`${Number(transaction.total || transaction.amount).toLocaleString("fr-FR")} ${transaction.currency}`} bold color={theme.primary} />
           </View>
         </View>
 
-        {showWithdrawalCode && (
-          <View style={styles.codeSection}>
-            <Text style={styles.codeLabel}>CODE DE RETRAIT</Text>
-            <TouchableOpacity style={styles.codeBox} onPress={handleCopyCode}>
-              <Text
-                style={[
-                  styles.codeText,
-                  transaction.status === "CANCELLED" && {
-                    textDecorationLine: "line-through",
-                    color: "#CCC",
-                  },
-                ]}
-              >
-                {transaction.reference}
-              </Text>
-              <Ionicons name="copy-outline" size={20} color={colors.primary} />
-            </TouchableOpacity>
+        {!isSuperAdmin && !isCompanyAdmin && (
+          <TouchableOpacity style={[s.shareBtn, { backgroundColor: theme.primary }]} onPress={handleShare} activeOpacity={0.9}>
+            <Text style={s.shareBtnText}>Partager le reçu</Text>
+          </TouchableOpacity>
+        )}
+
+        {showSuperAdminActions && (
+          <View style={s.adminActions}>
+            <Text style={s.adminTitle}>Action Requise (Super Admin)</Text>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FECACA" }]} onPress={handleAdminReject} disabled={processing}>
+                {processing ? <ActivityIndicator color="#DC2626" /> : <Text style={[s.btnText, { color: "#DC2626" }]}>Rejeter</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.actionBtn, { backgroundColor: "#10B981" }]} onPress={handleAdminValidate} disabled={processing}>
+                {processing ? <ActivityIndicator color="#FFF" /> : <Text style={s.btnText}>Valider le Paiement</Text>}
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
-        <View style={styles.detailsSection}>
-          <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString("fr-FR")} />
+        {canUserCancel && (
+          <TouchableOpacity style={[s.cancelBtn, processing && { opacity: 0.6 }]} onPress={handleCancelUser} disabled={processing}>
+            {processing ? <ActivityIndicator color="#EF4444" /> : <Text style={s.cancelBtnText}>Annuler la transaction</Text>}
+          </TouchableOpacity>
+        )}
 
-          <View style={styles.divider} />
-
-          {/* EXPÉDITEUR */}
-          <DetailRow label="Expéditeur" value={isB2B ? "Admin Société" : senderName} />
-          {transaction.sender?.phone && (
-            <DetailRow label="Tél. Expéditeur" value={transaction.sender.phone} sub />
-          )}
-          <DetailRow label="Pays d'origine" value={originCountry} />
-
-          <View style={styles.divider} />
-
-          {/* BÉNÉFICIAIRE */}
-          <DetailRow
-            label="Bénéficiaire"
-            value={isB2B ? "Super Admin" : transaction.beneficiary?.fullName || "Non spécifié"}
-          />
-          {transaction.beneficiary?.phone && (
-            <DetailRow label="Tél. Bénéficiaire" value={transaction.beneficiary.phone} sub />
-          )}
-          <DetailRow
-            label="Pays destination"
-            value={transaction.beneficiary?.country || "Sénégal"}
-          />
-
-          <View style={styles.divider} />
-
-          <DetailRow label="Réf. Unique" value={displayReference} />
-
-          <View style={styles.divider} />
-
-          {/* DÉTAIL FINANCIER COMPLET */}
-          <Text style={styles.sectionHeader}>Détail Financier (Origine)</Text>
-          <DetailRow
-            label="Montant envoyé"
-            value={`${Number(transaction.amount).toLocaleString("fr-FR")} ${transaction.currency}`}
-          />
-          <DetailRow
-            label="Frais/Commissions"
-            value={`${Number(transaction.fees).toLocaleString("fr-FR")} ${transaction.currency}`}
-          />
-          <DetailRow
-            label="Total payé par l'exp."
-            value={`${Number(transaction.total).toLocaleString("fr-FR")} ${transaction.currency}`}
-            bold
-          />
-        </View>
-      </View>
-
-      {/* --- ACTIONS --- */}
-
-      {/* CAS 1 : SUPER ADMIN (Validation / Rejet) */}
-      {showSuperAdminActions && (
-        <View style={styles.adminActions}>
-          <Text style={styles.adminTitle}>Action Requise (Super Admin)</Text>
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#EF4444" }]}
-              onPress={handleAdminReject}
-              disabled={processing}
-            >
-              {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Rejeter</Text>}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: "#10B981" }]}
-              onPress={handleAdminValidate}
-              disabled={processing}
-            >
-              {processing ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>Valider</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* CAS 2 : ADMIN SOCIÉTÉ OU UTILISATEUR LAMBDA (Annulation uniquement) */}
-      {canUserCancel && (
-        <TouchableOpacity
-          style={[styles.cancelBtn, processing && { opacity: 0.6 }]}
-          onPress={handleCancelUser}
-          disabled={processing}
-        >
-          {processing ? (
-            <ActivityIndicator color="#FFF" />
-          ) : (
-            <Text style={styles.cancelBtnText}>Annuler et Rembourser</Text>
-          )}
-        </TouchableOpacity>
-      )}
-
-      {!isSuperAdmin && !isCompanyAdmin && (
-        <TouchableOpacity style={styles.shareBtn} onPress={handleShare}>
-          <Text style={styles.shareBtnText}>Partager le reçu</Text>
-        </TouchableOpacity>
-      )}
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-function DetailRow({
-  label,
-  value,
-  bold,
-  sub,
-}: {
-  label: string;
-  value: string;
-  bold?: boolean;
-  sub?: boolean;
-}) {
+function DetailRow({ label, value, bold, sub, color }: any) {
   return (
-    <View style={[styles.row, sub && { marginTop: -5 }]}>
-      <Text style={[styles.rowLabel, sub && { fontSize: 12, color: "#9CA3AF" }]}>
-        {label}
-      </Text>
-      <Text
-        style={[
-          styles.rowValue,
-          bold && { fontWeight: "800", color: colors.primary },
-          sub && { fontSize: 13 },
-        ]}
-      >
-        {value}
-      </Text>
+    <View style={[s.row, sub && { marginTop: 4 }]}>
+      <Text style={[s.rowLabel, sub && { fontSize: 12, color: "#94A3B8" }]}>{label}</Text>
+      <Text style={[s.rowValue, bold && { fontWeight: "900", color: color || "#0F172A", fontSize: 15 }, sub && { fontSize: 13, color: "#475569" }]}>{value}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flexGrow: 1, backgroundColor: "#f3f4f6", padding: 20 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  navBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 20,
-    marginTop: 10,
-  },
-  backBtn: { padding: 8, backgroundColor: "#fff", borderRadius: 20 },
-  navTitle: { fontSize: 18, fontWeight: "700", color: "#333" },
-  ticket: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    shadowOpacity: 0.05,
-    elevation: 3,
-  },
-  headerSection: { alignItems: "center", paddingBottom: 20 },
-  amountLabel: {
-    fontSize: 12,
-    color: "#666",
-    textTransform: "uppercase",
-    marginBottom: 5,
-  },
-  bigAmount: { fontSize: 32, fontWeight: "900", color: colors.text },
-  currency: { fontSize: 18, color: "#999" },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    marginTop: 10,
-    gap: 5,
-  },
-  statusText: { fontWeight: "800", fontSize: 12 },
-  codeSection: {
-    padding: 20,
-    alignItems: "center",
-    backgroundColor: "#fafafa",
-    borderRadius: 10,
-    marginVertical: 10,
-  },
-  codeLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#999",
-    marginBottom: 5,
-  },
-  codeBox: { flexDirection: "row", alignItems: "center", gap: 10 },
-  codeText: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#333",
-    letterSpacing: 1,
-  },
-  detailsSection: { gap: 10, marginTop: 10 },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#9CA3AF",
-    textTransform: "uppercase",
-    marginTop: 5,
-    marginBottom: 5,
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  rowLabel: { color: "#666" },
-  rowValue: { color: "#333", fontWeight: "500" },
-  divider: { height: 1, backgroundColor: "#F3F4F6", marginVertical: 5 },
-  shareBtn: {
-    backgroundColor: colors.primary,
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  shareBtnText: { color: "#fff", fontWeight: "700" },
-  cancelBtn: {
-    backgroundColor: "#EF4444",
-    padding: 15,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  cancelBtnText: { color: "#fff", fontWeight: "700" },
-  adminActions: {
-    marginTop: 20,
-    backgroundColor: "#FFF",
-    padding: 15,
-    borderRadius: 15,
-    elevation: 2,
-  },
-  adminTitle: { fontWeight: "700", marginBottom: 10, color: "#374151" },
-  actionBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: "center" },
-  btnText: { color: "#FFF", fontWeight: "800" },
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: "#F8FAFC" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFC" },
+  scrollContent: { flexGrow: 1, padding: 24, paddingBottom: 80 },
+  notFoundText: { fontFamily: FONTS.body, fontSize: 16, color: "#64748B" },
+  navBar: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginBottom: 20, marginTop: Platform.OS === 'android' ? 20 : 0 },
+  backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E2E8F0", justifyContent: 'center', alignItems: 'center' },
+  ticket: { backgroundColor: "#FFFFFF", borderRadius: 24, padding: 24, paddingTop: 40, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 15, elevation: 4, position: 'relative' },
+  statusBadge: { position: 'absolute', top: -14, alignSelf: 'center', flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 6, borderWidth: 2, borderColor: "#FFF" },
+  statusText: { fontFamily: FONTS.body, fontWeight: "900", fontSize: 12, letterSpacing: 0.5 },
+  codeSection: { backgroundColor: "#F8FAFC", borderRadius: 16, padding: 20, alignItems: "center", marginBottom: 24, borderWidth: 1, borderColor: "#F1F5F9" },
+  codeLabel: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: "#94A3B8", letterSpacing: 1, marginBottom: 8 },
+  codeBox: { flexDirection: "row", alignItems: "center", gap: 12 },
+  codeText: { fontSize: 28, fontFamily: FONTS.heading, fontWeight: "900", color: "#0F172A", letterSpacing: 2 },
+  codeStrikethrough: { textDecorationLine: "line-through", color: "#CBD5E1" },
+  detailsSection: { gap: 14 },
+  row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  rowLabel: { fontSize: 14, fontFamily: FONTS.body, color: "#64748B", fontWeight: "600" },
+  rowValue: { fontSize: 14, fontFamily: FONTS.body, color: "#0F172A", fontWeight: "700" },
+  divider: { height: 1, backgroundColor: "#F1F5F9", marginVertical: 4 },
+  financeSection: { backgroundColor: "#F8FAFC", borderRadius: 16, padding: 20, marginTop: 24, gap: 12, borderWidth: 1, borderColor: "#F1F5F9" },
+  financeHeader: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: "#94A3B8", letterSpacing: 1, marginBottom: 4 },
+  shareBtn: { paddingVertical: 18, borderRadius: 16, alignItems: "center", marginTop: 30, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },
+  shareBtnText: { color: "#FFF", fontFamily: FONTS.body, fontWeight: "900", fontSize: 15, letterSpacing: 0.5 },
+  cancelBtn: { backgroundColor: "transparent", borderWidth: 2, borderColor: "#FEE2E2", paddingVertical: 16, borderRadius: 16, alignItems: "center", marginTop: 20 },
+  cancelBtnText: { color: "#EF4444", fontFamily: FONTS.body, fontWeight: "800", fontSize: 14 },
+  adminActions: { marginTop: 30, backgroundColor: "#FFF", padding: 20, borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0" },
+  adminTitle: { fontSize: 12, fontFamily: FONTS.body, fontWeight: "900", color: "#64748B", marginBottom: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
+  actionBtn: { flex: 1, paddingVertical: 16, borderRadius: 14, alignItems: "center" },
+  btnText: { color: "#FFF", fontFamily: FONTS.body, fontWeight: "900", fontSize: 14 },
 });

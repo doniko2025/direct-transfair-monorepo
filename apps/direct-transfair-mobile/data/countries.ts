@@ -2,178 +2,61 @@
 export interface CountryData {
   name: string;
   code: string;
-  cities: string[];
   dialCode: string;
   flag: string;
-  currency: string; // ✅ AJOUT
+  currency: string;
 }
 
 export const countriesList: CountryData[] = [
-  // --- AFRIQUE DE L'OUEST ---
-  {
-    name: "Sénégal",
-    code: "SN",
-    cities: ["Dakar", "Touba", "Thiès", "Rufisque", "Kaolack", "Saint-Louis", "Ziguinchor"],
-    dialCode: "+221",
-    flag: "🇸🇳",
-    currency: "XOF"
-  },
-  {
-    name: "Guinée",
-    code: "GN",
-    cities: ["Conakry", "Nzérékoré", "Kankan", "Labé", "Mamou", "Kindia", "Boké"],
-    dialCode: "+224",
-    flag: "🇬🇳",
-    currency: "GNF" // ✅ La Guinée aura GNF
-  },
-  {
-    name: "Côte d'Ivoire",
-    code: "CI",
-    cities: ["Abidjan", "Bouaké", "Daloa", "Yamoussoukro", "San-Pédro", "Korhogo"],
-    dialCode: "+225",
-    flag: "🇨🇮",
-    currency: "XOF"
-  },
-  {
-    name: "Mali",
-    code: "ML",
-    cities: ["Bamako", "Sikasso", "Mopti", "Koutiala", "Kayes", "Ségou"],
-    dialCode: "+223",
-    flag: "🇲🇱",
-    currency: "XOF"
-  },
-  {
-    name: "Gambie",
-    code: "GM",
-    cities: ["Banjul", "Serekunda", "Brikama", "Bakau"],
-    dialCode: "+220",
-    flag: "🇬🇲",
-    currency: "GMD"
-  },
-  {
-    name: "Guinée-Bissau",
-    code: "GW",
-    cities: ["Bissau", "Bafatá", "Gabú", "Bissorã"],
-    dialCode: "+245",
-    flag: "🇬🇼",
-    currency: "XOF"
-  },
-  {
-    name: "Liberia",
-    code: "LR",
-    cities: ["Monrovia", "Gbarnga", "Buchanan", "Ganta"],
-    dialCode: "+231",
-    flag: "🇱🇷",
-    currency: "LRD"
-  },
-  {
-    name: "Sierra Leone",
-    code: "SL",
-    cities: ["Freetown", "Bo", "Kenema", "Makeni"],
-    dialCode: "+232",
-    flag: "🇸🇱",
-    currency: "SLL"
-  },
+  // --- AFRIQUE DE L'OUEST (UEMOA - XOF) ---
+  { name: "Sénégal", code: "SN", dialCode: "221", flag: "🇸🇳", currency: "XOF" },
+  { name: "Côte d'Ivoire", code: "CI", dialCode: "225", flag: "🇨🇮", currency: "XOF" },
+  { name: "Mali", code: "ML", dialCode: "223", flag: "🇲🇱", currency: "XOF" },
+  { name: "Guinée-Bissau", code: "GW", dialCode: "245", flag: "🇬🇼", currency: "XOF" },
+  { name: "Burkina Faso", code: "BF", dialCode: "226", flag: "🇧🇫", currency: "XOF" },
+  { name: "Togo", code: "TG", dialCode: "228", flag: "🇹🇬", currency: "XOF" },
+  { name: "Bénin", code: "BJ", dialCode: "229", flag: "🇧🇯", currency: "XOF" },
+  { name: "Niger", code: "NE", dialCode: "227", flag: "🇳🇪", currency: "XOF" },
 
-  // --- AUTRES AFRIQUE ---
-  {
-    name: "Cameroun",
-    code: "CM",
-    cities: ["Douala", "Yaoundé", "Garoua", "Bamenda", "Maroua"],
-    dialCode: "+237",
-    flag: "🇨🇲",
-    currency: "XAF"
-  },
-  {
-    name: "Maroc",
-    code: "MA",
-    cities: ["Casablanca", "Rabat", "Fès", "Tanger", "Marrakech", "Agadir"],
-    dialCode: "+212",
-    flag: "🇲🇦",
-    currency: "MAD"
-  },
-  {
-    name: "Angola",
-    code: "AO",
-    cities: ["Luanda", "Cabinda", "Huambo", "Lubango"],
-    dialCode: "+244",
-    flag: "🇦🇴",
-    currency: "AOA"
-  },
+  // --- AFRIQUE (AUTRES DEVISES) ---
+  { name: "Guinée", code: "GN", dialCode: "224", flag: "🇬🇳", currency: "GNF" },
+  { name: "Gambie", code: "GM", dialCode: "220", flag: "🇬🇲", currency: "GMD" },
+  { name: "Liberia", code: "LR", dialCode: "231", flag: "🇱🇷", currency: "LRD" },
+  { name: "Sierra Leone", code: "SL", dialCode: "232", flag: "🇸🇱", currency: "SLL" },
+  { name: "Cameroun", code: "CM", dialCode: "237", flag: "🇨🇲", currency: "XAF" },
+  { name: "Maroc", code: "MA", dialCode: "212", flag: "🇲🇦", currency: "MAD" },
+  { name: "Algérie", code: "DZ", dialCode: "213", flag: "🇩🇿", currency: "DZD" },
+  { name: "Tunisie", code: "TN", dialCode: "216", flag: "🇹🇳", currency: "TND" },
+  { name: "Angola", code: "AO", dialCode: "244", flag: "🇦🇴", currency: "AOA" },
+  { name: "Mauritanie", code: "MR", dialCode: "222", flag: "🇲🇷", currency: "MRU" },
 
-  // --- EUROPE ---
-  {
-    name: "France",
-    code: "FR",
-    cities: ["Paris", "Marseille", "Lyon", "Toulouse", "Nice", "Bordeaux"],
-    dialCode: "+33",
-    flag: "🇫🇷",
-    currency: "EUR"
-  },
-  {
-    name: "Belgique",
-    code: "BE",
-    cities: ["Bruxelles", "Anvers", "Gand", "Charleroi", "Liège"],
-    dialCode: "+32",
-    flag: "🇧🇪",
-    currency: "EUR"
-  },
-  {
-    name: "Allemagne",
-    code: "DE",
-    cities: ["Berlin", "Munich", "Hambourg", "Francfort", "Cologne"],
-    dialCode: "+49",
-    flag: "🇩🇪",
-    currency: "EUR"
-  },
-  {
-    name: "Espagne",
-    code: "ES",
-    cities: ["Madrid", "Barcelone", "Valence", "Séville", "Bilbao"],
-    dialCode: "+34",
-    flag: "🇪🇸",
-    currency: "EUR"
-  },
-  {
-    name: "Italie",
-    code: "IT",
-    cities: ["Rome", "Milan", "Naples", "Turin", "Palerme"],
-    dialCode: "+39",
-    flag: "🇮🇹",
-    currency: "EUR"
-  },
-  {
-    name: "Royaume-Uni",
-    code: "GB",
-    cities: ["Londres", "Manchester", "Birmingham", "Liverpool", "Édimbourg"],
-    dialCode: "+44",
-    flag: "🇬🇧",
-    currency: "GBP"
-  },
+  // --- EUROPE (ZONE EURO - EUR) ---
+  { name: "France", code: "FR", dialCode: "33", flag: "🇫🇷", currency: "EUR" },
+  { name: "Belgique", code: "BE", dialCode: "32", flag: "🇧🇪", currency: "EUR" },
+  { name: "Allemagne", code: "DE", dialCode: "49", flag: "🇩🇪", currency: "EUR" },
+  { name: "Espagne", code: "ES", dialCode: "34", flag: "🇪🇸", currency: "EUR" },
+  { name: "Italie", code: "IT", dialCode: "39", flag: "🇮🇹", currency: "EUR" },
+  { name: "Portugal", code: "PT", dialCode: "351", flag: "🇵🇹", currency: "EUR" },
+  { name: "Luxembourg", code: "LU", dialCode: "352", flag: "🇱🇺", currency: "EUR" },
+
+  // --- EUROPE (HORS EURO) ---
+  { name: "Suisse", code: "CH", dialCode: "41", flag: "🇨🇭", currency: "CHF" },
+  { name: "Royaume-Uni", code: "GB", dialCode: "44", flag: "🇬🇧", currency: "GBP" },
 
   // --- AMÉRIQUE & ASIE ---
-  {
-    name: "États-Unis",
-    code: "US",
-    cities: ["New York", "Los Angeles", "Chicago", "Houston", "Miami"],
-    dialCode: "+1",
-    flag: "🇺🇸",
-    currency: "USD"
-  },
-  {
-    name: "Canada",
-    code: "CA",
-    cities: ["Montréal", "Toronto", "Vancouver", "Ottawa", "Québec"],
-    dialCode: "+1",
-    flag: "🇨🇦",
-    currency: "CAD"
-  },
-  {
-    name: "Chine",
-    code: "CN",
-    cities: ["Pékin", "Shanghai", "Shenzhen", "Guangzhou", "Chengdu"],
-    dialCode: "+86",
-    flag: "🇨🇳",
-    currency: "CNY"
-  },
+  { name: "États-Unis", code: "US", dialCode: "1", flag: "🇺🇸", currency: "USD" },
+  { name: "Canada", code: "CA", dialCode: "1", flag: "🇨🇦", currency: "CAD" },
+  { name: "Émirats Arabes Unis", code: "AE", dialCode: "971", flag: "🇦🇪", currency: "AED" },
+  { name: "Chine", code: "CN", dialCode: "86", flag: "🇨🇳", currency: "CNY" },
 ];
+
+export const getCountryByName = (name: string): CountryData | undefined => {
+  if (!name) return undefined;
+  const normalized = name.toLowerCase().trim();
+  return countriesList.find(c => c.name.toLowerCase() === normalized);
+};
+
+export const getCurrencyByCountry = (countryName: string, fallback = "XOF"): string => {
+  const country = getCountryByName(countryName);
+  return country ? country.currency : fallback;
+};

@@ -1,27 +1,19 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
-import React, { useState, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  TouchableOpacity,
-  Platform,
-  Alert
-} from "react-native";
+import React, { useState, useCallback, useMemo } from "react";
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, TouchableOpacity, Platform, SafeAreaView, StatusBar, TextInput } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider"; 
-import { colors } from "../../../theme/colors";
+
+const FONTS = { heading: Platform.OS === 'ios' ? 'Cochin' : 'serif', body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif' };
+const THEME_CLIENT = { primary: "#059669", light: "#ECFDF5", bg: "#F8FAFC", surface: "#FFFFFF", text: "#0F172A", muted: "#64748B", border: "#E2E8F0" };
 
 const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
-    PENDING: { label: "En attente", color: "#D97706", bg: "#FEF3C7" },
-    VALIDATED: { label: "Disponible", color: "#2563EB", bg: "#DBEAFE" },
-    PAID: { label: "Payé", color: "#059669", bg: "#D1FAE5" },
-    CANCELLED: { label: "Annulé", color: "#DC2626", bg: "#FEE2E2" },
+    PENDING: { label: "EN ATTENTE", color: "#D97706", bg: "#FEF3C7" },
+    VALIDATED: { label: "DISPONIBLE", color: "#2563EB", bg: "#DBEAFE" },
+    PAID: { label: "PAYÉ", color: "#059669", bg: "#D1FAE5" },
+    CANCELLED: { label: "ANNULÉ", color: "#DC2626", bg: "#FEE2E2" },
 };
 
 export default function TransactionsScreen() {
@@ -30,150 +22,120 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [validating, setValidating] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const load = useCallback(async () => {
     try {
       if (transactions.length === 0 && !refreshing) setLoading(true);
-      
-      let res;
-      // Sélection de la méthode API selon le rôle
-      if (user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN') {
-          res = await api.adminGetTransactions();
-      } else {
-          res = await api.getTransactions();
-      }
-
-      // ✅ SÉCURITÉ : Empêcher le crash si res est undefined
+      const res = await api.getTransactions();
       const safeList = Array.isArray(res) ? res : [];
-
-      // Tri par date décroissante
       const sorted = safeList.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setTransactions(sorted);
-    } catch (e) { 
-        console.log("Erreur chargement transactions", e); 
-        setTransactions([]);
-    } finally { 
-        setLoading(false); 
-        setRefreshing(false);
-    }
-  }, [user?.role, refreshing, transactions.length]);
+    } catch (e) { setTransactions([]); } finally { setLoading(false); setRefreshing(false); }
+  }, [refreshing, transactions.length]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
-
   const onRefresh = async () => { setRefreshing(true); await load(); };
 
-  const handleValidateB2B = async (id: string) => {
-      setValidating(id);
-      try {
-          await api.validateBankTransfer(id);
-          if (Platform.OS === 'web') alert("Virement validé !");
-          else Alert.alert("Succès", "Virement validé, solde de la société débité.");
-          onRefresh(); // Recharger la liste
-      } catch (e: any) {
-          const err = e.response?.data?.message || "Erreur validation";
-          if (Platform.OS === 'web') alert(err);
-          else Alert.alert("Erreur", err);
-      } finally {
-          setValidating(null);
-      }
-  };
+  const filteredTransactions = useMemo(() => {
+    if (!searchQuery.trim()) return transactions;
+    const q = searchQuery.toLowerCase();
+    return transactions.filter(t => {
+      const bName = t.beneficiary?.fullName?.toLowerCase() || "";
+      const bPhone = t.beneficiary?.phone || "";
+      const sName = (t.senderFirstName && t.senderLastName) ? `${t.senderFirstName} ${t.senderLastName}`.toLowerCase() : "";
+      return bName.includes(q) || bPhone.includes(q) || sName.includes(q) || t.reference?.toLowerCase().includes(q);
+    });
+  }, [transactions, searchQuery]);
 
   const renderItem = ({ item }: { item: any }) => {
     const date = new Date(item.createdAt);
-    const statusStyle = STATUS_MAP[item.status] || { label: item.status, color: "#6B7280", bg: "#F3F4F6" };
+    const statusStyle = STATUS_MAP[item.status] || { label: item.status, color: "#64748B", bg: "#F1F5F9" };
+
+    const isRefill = item.type === 'REFILL' || item.type === 'AGENCY_REFILL';
+    const isDeposit = item.type === 'DEPOSIT';
+    const isIncoming = item.beneficiaryId === user?.id || isDeposit || (isRefill && item.agencyId === user?.agencyId);
     
-    // Logique spéciale pour le bouton de validation B2B (Super Admin uniquement)
-    const isB2B = item.type === 'SERVICE_PAYMENT';
-    const isSuperAdmin = user?.role === 'SUPER_ADMIN';
-    const canValidateB2B = isB2B && isSuperAdmin && item.status === 'PENDING';
+    let titleLabel = "Envoi d'argent";
+    let sign = "-";
+    let amountColor = THEME_CLIENT.text; 
+    let icon = "paper-plane";
+    let iconColor = "#D97706"; 
+    let iconBg = "#FFFBEB";
+    let detailText = "";
+
+    if (isRefill) {
+        titleLabel = "Alimentation Caisse"; sign = "+"; amountColor = THEME_CLIENT.primary; icon = "download"; iconColor = THEME_CLIENT.primary; iconBg = THEME_CLIENT.light;
+    } else if (isIncoming) {
+        titleLabel = isDeposit ? "Dépôt en agence" : "Transfert reçu"; sign = "+"; amountColor = THEME_CLIENT.primary; icon = "arrow-down"; iconColor = THEME_CLIENT.primary; iconBg = THEME_CLIENT.light;
+        if (item.senderFirstName && item.senderLastName) detailText = `${item.senderFirstName} ${item.senderLastName}`;
+    } else {
+        if (item.beneficiary) detailText = item.beneficiary.fullName || item.beneficiary.phone;
+    }
 
     return (
-      <View style={styles.cardWrapper}>
-      <TouchableOpacity 
-        style={styles.card} 
-        activeOpacity={0.7} 
-        onPress={() => router.push(`/(tabs)/transactions/${item.id}`)}
-      >
-        <View style={styles.rowTop}>
-            <View style={{flexDirection:'row', alignItems:'center'}}>
-                <View style={[styles.iconBox, isB2B && {backgroundColor:'#DBEAFE'}]}>
-                    <Ionicons name={isB2B ? "briefcase" : "receipt"} size={16} color={isB2B ? "#1E3A8A" : colors.primary} />
-                </View>
-                <View>
-                    <Text style={styles.reference}>
-                        {item.reference} {isB2B ? <Text style={{fontWeight:'800', color: '#1E3A8A'}}>(B2B)</Text> : ''}
-                    </Text>
-                    <Text style={styles.date}>{date.toLocaleDateString('fr-FR')} • {date.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'})}</Text>
-                </View>
+      <View style={s.cardWrapper}>
+        <TouchableOpacity style={s.card} activeOpacity={0.8} onPress={() => router.push(`/(tabs)/transactions/${item.id}`)}>
+          <View style={s.cardMain}>
+            <View style={[s.iconBox, {backgroundColor: iconBg}]}><Ionicons name={icon as any} size={22} color={iconColor} /></View>
+            <View style={s.infoContainer}>
+                <Text style={s.title} numberOfLines={1}>{titleLabel}</Text>
+                {detailText ? <Text style={s.details} numberOfLines={1}>{detailText}</Text> : null}
+                <Text style={s.dateSubtitle} numberOfLines={1}>{date.toLocaleDateString('fr-FR')} • Réf: {item.reference?.substring(0, 10) || "N/A"}</Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color="#DDD" />
-        </View>
-        <View style={styles.rowBottom}>
-            <Text style={styles.amount}>
-                {Number(item.amount).toLocaleString('fr-FR')} <Text style={{fontSize:14, color:'#6B7280', fontWeight:'600'}}>{item.currency}</Text>
-            </Text>
-            <View style={[styles.badge, { backgroundColor: statusStyle.bg }]}><Text style={[styles.badgeText, { color: statusStyle.color }]}>{statusStyle.label}</Text></View>
-        </View>
-      </TouchableOpacity>
-
-      {/* BOUTON VALIDATION RAPIDE */}
-      {canValidateB2B && (
-          <TouchableOpacity 
-            style={styles.validateBtn} 
-            onPress={() => handleValidateB2B(item.id)}
-            disabled={validating === item.id}
-          >
-              {validating === item.id ? <ActivityIndicator size="small" color="#FFF"/> : <Text style={styles.validateText}>Valider le Paiement</Text>}
-          </TouchableOpacity>
-      )}
+            <View style={s.amountContainer}>
+                <Text style={[s.amount, {color: amountColor}]} adjustsFontSizeToFit numberOfLines={1}>{sign} {Number(item.amount).toLocaleString('fr-FR')} <Text style={s.currency}>{item.currency}</Text></Text>
+                <View style={[s.badge, { backgroundColor: statusStyle.bg }]}><Text style={[s.badgeText, { color: statusStyle.color }]}>{statusStyle.label}</Text></View>
+            </View>
+          </View>
+        </TouchableOpacity>
       </View>
     );
   };
 
-  if (loading && !refreshing && transactions.length === 0) return <View style={styles.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
-
   return (
-    <View style={styles.container}>
-      <FlatList
-        data={transactions}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />}
-        ListHeaderComponent={
-            <View style={{margin: 20, marginBottom: 10}}>
-                <Text style={styles.title}>
-                    {user?.role === 'COMPANY_ADMIN' || user?.role === 'SUPER_ADMIN' ? "Supervision Transactions" : "Historique"}
-                </Text>
-            </View>
-        }
-        ListEmptyComponent={
-            <View style={styles.center}>
-                <Ionicons name="document-text-outline" size={48} color="#DDD" />
-                <Text style={styles.empty}>Aucune transaction trouvée.</Text>
-            </View>
-        }
-        contentContainerStyle={{ paddingBottom: 20 }}
-      />
-    </View>
+    <SafeAreaView style={s.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor={THEME_CLIENT.bg} />
+      <View style={s.header}>
+        <Text style={s.pageTitle}>Historique</Text>
+        <View style={s.searchContainer}>
+          <Ionicons name="search" size={20} color={THEME_CLIENT.muted} />
+          <TextInput style={s.searchInput} value={searchQuery} onChangeText={setSearchQuery} placeholder="Tél., Réf., Nom de contact" placeholderTextColor={THEME_CLIENT.muted} />
+        </View>
+      </View>
+      <View style={s.container}>
+        {loading && !refreshing && transactions.length === 0 ? (
+          <ActivityIndicator size="large" color={THEME_CLIENT.primary} style={{ marginTop: 40 }} />
+        ) : (
+          <FlatList data={filteredTransactions} keyExtractor={(item) => item.id.toString()} renderItem={renderItem} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={THEME_CLIENT.primary} />} contentContainerStyle={s.listContainer} ListEmptyComponent={<View style={s.empty}><View style={s.emptyIconBg}><Ionicons name="document-text" size={40} color={THEME_CLIENT.border} /></View><Text style={s.emptyText}>Aucune transaction trouvée.</Text></View>} />
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F9FA" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 20 },
-  title: { fontSize: 24, fontWeight: "800", color: '#1F2937' },
-  empty: { textAlign: "center", color: "#9CA3AF", marginTop: 10, fontSize: 14 },
-  cardWrapper: { marginHorizontal: 20, marginBottom: 10 },
-  card: { padding: 15, borderRadius: 16, backgroundColor: "#fff", borderWidth: 1, borderColor: "#F3F4F6", shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 2 },
-  rowTop: { flexDirection: "row", justifyContent: "space-between", alignItems:'center', marginBottom: 12, borderBottomWidth:1, borderBottomColor:'#F9FAFB', paddingBottom:10 },
-  iconBox: { width:32, height:32, borderRadius:10, backgroundColor:'#F0FDF4', justifyContent:'center', alignItems:'center', marginRight:10 },
-  reference: { fontWeight: "700", color: "#374151", fontSize: 13 },
-  date: { fontSize: 11, color: "#9CA3AF", marginTop:2 },
-  rowBottom: { flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  amount: { fontSize: 18, fontWeight: "800", color: '#111827' },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  badgeText: { fontWeight: "700", fontSize: 10, textTransform:'uppercase', letterSpacing:0.5 },
-  validateBtn: { backgroundColor: '#10B981', padding: 12, borderBottomLeftRadius: 16, borderBottomRightRadius: 16, marginTop: -5, alignItems: 'center', zIndex: -1 },
-  validateText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 }
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: THEME_CLIENT.bg },
+  container: { flex: 1 },
+  header: { padding: 24, paddingBottom: 16, paddingTop: Platform.OS === 'android' ? 40 : 20 },
+  pageTitle: { fontSize: 32, fontFamily: FONTS.heading, fontWeight: "800", color: THEME_CLIENT.text },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME_CLIENT.surface, borderRadius: 16, paddingHorizontal: 16, height: 50, marginTop: 20, borderWidth: 1, borderColor: THEME_CLIENT.border, shadowColor: THEME_CLIENT.text, shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+  searchInput: { flex: 1, marginLeft: 12, fontSize: 15, fontFamily: FONTS.body, color: THEME_CLIENT.text, fontWeight: '600' },
+  listContainer: { paddingHorizontal: 20, paddingBottom: 100 },
+  cardWrapper: { marginBottom: 12 },
+  card: { backgroundColor: THEME_CLIENT.surface, borderRadius: 20, padding: 16, borderWidth: 1, borderColor: THEME_CLIENT.border, shadowColor: THEME_CLIENT.text, shadowOpacity: 0.03, shadowRadius: 10, elevation: 2 },
+  cardMain: { flexDirection: "row", alignItems: "center" },
+  iconBox: { width: 48, height: 48, borderRadius: 16, justifyContent:'center', alignItems:'center' },
+  infoContainer: { flex: 1, marginLeft: 14, marginRight: 8, justifyContent: 'center' },
+  title: { fontSize: 16, fontFamily: FONTS.heading, fontWeight: "800", color: THEME_CLIENT.text, marginBottom: 2 },
+  details: { fontSize: 13, fontFamily: FONTS.body, color: THEME_CLIENT.text, fontWeight: "700", marginBottom: 2 },
+  dateSubtitle: { fontSize: 11, fontFamily: FONTS.body, color: THEME_CLIENT.muted, fontWeight: "600" },
+  amountContainer: { alignItems: 'flex-end', justifyContent: 'center' },
+  amount: { fontSize: 16, fontFamily: FONTS.heading, fontWeight: "900", marginBottom: 6 },
+  currency: { fontSize: 12, fontFamily: FONTS.body, fontWeight: '700' },
+  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  badgeText: { fontFamily: FONTS.body, fontWeight: "900", fontSize: 9, letterSpacing: 0.5 },
+  empty: { flex: 1, justifyContent: "center", alignItems: "center", marginTop: 60, paddingHorizontal: 40 },
+  emptyIconBg: { width: 80, height: 80, borderRadius: 40, backgroundColor: THEME_CLIENT.surface, justifyContent: 'center', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: THEME_CLIENT.border },
+  emptyText: { fontFamily: FONTS.body, color: THEME_CLIENT.muted, fontSize: 16, fontWeight: "600", textAlign: 'center' },
 });

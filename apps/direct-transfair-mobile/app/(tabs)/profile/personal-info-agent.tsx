@@ -1,26 +1,19 @@
+//apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-agent.tsx
 import React, { useEffect, useState } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView, Platform, StatusBar } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-
 import { useAuth } from "../../../providers/AuthProvider";
 import { api } from "../../../services/api";
-import { colors } from "../../../theme/colors";
+
+const FONTS = { heading: Platform.OS === 'ios' ? 'Cochin' : 'serif', body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif' };
+const THEME = { primary: "#78350F", light: "#FFF7ED", bg: "#F8FAFC", surface: "#FFFFFF", text: "#0F172A", muted: "#64748B", border: "#E2E8F0" };
 
 export default function PersonalInfoAgent() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
-
   const [loading, setLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -31,116 +24,80 @@ export default function PersonalInfoAgent() {
 
   useEffect(() => {
     if (!user) return;
-
-    setFirstName(user.firstName || "");
-    setLastName(user.lastName || "");
-    setPhone(user.phone || "");
-    setCity(user.city || "");
-    setCountry(user.country || "");
-    setAgencyName(user.agency?.name || user.agencyName || "");
+    setFirstName(user.firstName || ""); setLastName(user.lastName || "");
+    setPhone(user.phone || ""); setCity(user.city || "");
+    setCountry(user.country || ""); setAgencyName(user.agency?.name || user.agencyName || "");
   }, [user]);
 
   const save = async () => {
     try {
       setLoading(true);
-
-      await api.updateProfile({
-        firstName,
-        lastName,
-        city,
-        country,
-      });
-
+      await api.updateProfile({ firstName: firstName.trim(), lastName: lastName.trim(), city, country });
       await refreshUser?.();
-
-      Alert.alert("Succès", "Profil agent mis à jour", [
-        { text: "OK", onPress: () => router.back() },
-      ]);
-    } catch (e) {
+      setIsEditing(false);
+      Platform.OS === 'web' ? alert("Profil mis à jour") : Alert.alert("Succès", "Profil agent mis à jour");
+    } catch {
       Alert.alert("Erreur", "Impossible de sauvegarder");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <View style={styles.container}>
-      <Header router={router} title="Profil Agent" />
-
-      <ScrollView contentContainerStyle={styles.content}>
-        <Field label="Prénom" value={firstName} onChange={setFirstName} />
-        <Field label="Nom" value={lastName} onChange={setLastName} />
-        <Field label="Téléphone" value={phone} editable={false} />
-        <Field label="Agence" value={agencyName} editable={false} />
-        <Field label="Ville" value={city} onChange={setCity} />
-        <Field label="Pays" value={country} onChange={setCountry} />
-
-        <TouchableOpacity style={styles.btn} onPress={save}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.btnText}>Enregistrer</Text>
+    <SafeAreaView style={s.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor={THEME.primary} />
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <View style={s.header}>
+          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}><Ionicons name="arrow-back" size={24} color="#FFF" /></TouchableOpacity>
+          <Text style={s.title}>Profil Agent</Text>
+          <TouchableOpacity onPress={() => setIsEditing(!isEditing)} style={s.editBtn}><Ionicons name={isEditing ? "close" : "pencil"} size={22} color="#FFF" /></TouchableOpacity>
+        </View>
+        <ScrollView contentContainerStyle={s.content}>
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>IDENTITÉ</Text>
+            <View style={s.row}>
+              <Input label="Prénom *" value={firstName} onChange={setFirstName} editable={isEditing} style={{flex:1, marginRight:10}} />
+              <Input label="Nom *" value={lastName} onChange={setLastName} editable={isEditing} style={{flex:1}} />
+            </View>
+            <Input label="Téléphone (Lecture seule)" value={phone} editable={false} />
+            <Input label="Agence affectée" value={agencyName} editable={false} />
+          </View>
+          <View style={s.card}>
+            <Text style={s.sectionTitle}>LOCALISATION</Text>
+            <Input label="Ville" value={city} onChange={setCity} editable={isEditing} />
+            <Input label="Pays" value={country} onChange={setCountry} editable={isEditing} />
+          </View>
+          {isEditing && (
+            <TouchableOpacity style={[s.saveBtn, loading && { opacity: 0.7 }]} onPress={save} disabled={loading}>
+              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={s.saveText}>Enregistrer</Text>}
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-function Header({ router, title }: any) {
+function Input({ label, value, onChange, editable = true, style }: any) {
   return (
-    <View style={styles.header}>
-      <TouchableOpacity onPress={() => router.back()}>
-        <Ionicons name="chevron-back" size={26} color="#FFF" />
-      </TouchableOpacity>
-      <Text style={styles.headerTitle}>{title}</Text>
-      <View style={{ width: 26 }} />
+    <View style={[s.inputBox, !editable && s.inputDisabled, style]}>
+      <Text style={s.inputLabel}>{label}</Text>
+      <TextInput value={value} onChangeText={onChange} editable={editable} style={s.input} />
     </View>
   );
 }
 
-function Field({ label, value, onChange, editable = true }: any) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      <TextInput
-        style={[styles.input, !editable && styles.disabled]}
-        value={value}
-        onChangeText={onChange}
-        editable={editable}
-      />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: {
-    height: 60,
-    backgroundColor: colors.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-  },
-  headerTitle: { color: "#FFF", fontWeight: "700", fontSize: 16 },
-  content: { padding: 20 },
-  field: { marginBottom: 16 },
-  label: { fontSize: 12, color: "#666", marginBottom: 4 },
-  input: {
-    borderWidth: 1,
-    borderColor: "#DDD",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  disabled: { backgroundColor: "#F3F4F6", color: "#999" },
-  btn: {
-    backgroundColor: colors.primary,
-    padding: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  btnText: { color: "#FFF", fontWeight: "bold" },
+const s = StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: THEME.primary },
+  header: { height: 70, backgroundColor: THEME.primary, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
+  backBtn: { padding: 5 }, editBtn: { padding: 5, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 10 },
+  title: { color: "#FFF", fontFamily: FONTS.heading, fontWeight: "800", fontSize: 20 },
+  content: { padding: 20, backgroundColor: THEME.bg, borderTopLeftRadius: 30, borderTopRightRadius: 30, minHeight: '100%', paddingTop: 24 },
+  card: { backgroundColor: THEME.surface, borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: THEME.border, shadowColor: "#000", shadowOpacity: 0.02, elevation: 1 },
+  sectionTitle: { fontSize: 12, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.5, marginBottom: 16 },
+  row: { flexDirection: "row" },
+  inputBox: { borderWidth: 1, borderColor: THEME.border, borderRadius: 14, marginBottom: 16, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: THEME.surface },
+  inputDisabled: { backgroundColor: "#F1F5F9", borderColor: "transparent" },
+  inputLabel: { fontSize: 11, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "800", marginBottom: 4 },
+  input: { fontSize: 16, fontFamily: FONTS.body, color: THEME.text, fontWeight: "600", padding: 0 },
+  saveBtn: { backgroundColor: THEME.primary, paddingVertical: 18, borderRadius: 16, alignItems: "center", marginTop: 10 },
+  saveText: { color: "#FFF", fontFamily: FONTS.body, fontWeight: "800", fontSize: 15 },
 });

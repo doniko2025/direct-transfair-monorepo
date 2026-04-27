@@ -1,26 +1,23 @@
 //apps/direct-transfair-mobile/components/CommissionFilter.tsx
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { colors } from '../theme/colors';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Platform } from 'react-native';
+
+const FONTS = {
+  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
+};
 
 const FILTERS = [
-  { key: 'TODAY', label: 'Jour' },
-  { key: 'WEEK', label: 'Hebdo' },
-  { key: 'MONTH', label: 'Mensuel' },
+  { key: 'TODAY', label: "Aujourd'hui" },
+  { key: 'WEEK', label: '7 Jours' },
+  { key: 'MONTH', label: 'Ce Mois' },
   { key: 'QUARTER', label: 'Trimestre' },
-  { key: 'YEAR', label: 'Annuel' },
+  { key: 'YEAR', label: 'Cette Année' },
 ];
 
-export default function CommissionFilter({
-  selected,
-  onSelect
-}: {
-  selected: string;
-  onSelect: (k: string) => void;
-}) {
+export default function CommissionFilter({ selected, onSelect }: { selected: string; onSelect: (k: string) => void; }) {
   return (
     <View style={styles.container}>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
         {FILTERS.map((f) => {
           const isActive = selected === f.key;
           return (
@@ -28,10 +25,9 @@ export default function CommissionFilter({
               key={f.key}
               style={[styles.pill, isActive && styles.pillActive]}
               onPress={() => onSelect(f.key)}
+              activeOpacity={0.8}
             >
-              <Text style={[styles.text, isActive && styles.textActive]}>
-                {f.label}
-              </Text>
+              <Text style={[styles.text, isActive && styles.textActive]}>{f.label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -41,15 +37,26 @@ export default function CommissionFilter({
 }
 
 const styles = StyleSheet.create({
-  container: { paddingVertical: 15, backgroundColor: '#F8F9FA' },
+  container: { paddingVertical: 16, backgroundColor: '#F8FAFC' },
   pill: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: '#E5E7EB',
-    marginRight: 10
+    backgroundColor: '#FFFFFF',
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    shadowColor: "#000",
+    shadowOpacity: 0.02,
+    elevation: 1
   },
-  pillActive: { backgroundColor: colors.primary },
-  text: { color: '#4B5563', fontWeight: '600', fontSize: 13 },
-  textActive: { color: '#FFF' }
+  pillActive: { 
+    backgroundColor: '#1E3A8A', // THEME.primary
+    borderColor: '#1E3A8A',
+    shadowColor: '#1E3A8A',
+    shadowOpacity: 0.2,
+    elevation: 3
+  },
+  text: { color: '#64748B', fontFamily: FONTS.body, fontWeight: '700', fontSize: 13 },
+  textActive: { color: '#FFFFFF', fontWeight: '900' }
 });

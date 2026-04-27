@@ -10,20 +10,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
-const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
-};
-
-const THEME = {
-  primary: "#1E3A8A", // Bleu Nuit
-  light: "#EFF6FF",
-  text: "#0F172A",
-  muted: "#64748B",
-  bg: "#F8FAFC",
-  surface: "#FFFFFF",
-  border: "#E2E8F0",
-};
+const FONTS = { heading: Platform.OS === 'ios' ? 'Cochin' : 'serif', body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif' };
+const THEME = { primary: "#1E3A8A", light: "#EFF6FF", text: "#0F172A", muted: "#64748B", bg: "#F8FAFC", surface: "#FFFFFF", border: "#E2E8F0" };
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -31,27 +19,14 @@ function toNum(v: unknown): number {
   return 0;
 }
 
-// ─── CARTE MENU (Mise à jour : 2 par ligne, texte fin, disposition verticale) ───
 function MenuCard({ title, subtitle, icon, color, bgColor, onPress, badge }: any) {
   const scale = React.useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ width: '48%', marginBottom: 14, transform: [{ scale }] }}>
-      <TouchableOpacity
-        style={s.menuCard}
-        onPress={onPress}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start()}
-        activeOpacity={0.9}
-      >
+      <TouchableOpacity style={s.menuCard} onPress={onPress} onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start()} onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start()} activeOpacity={0.9}>
         <View style={s.menuHeaderRow}>
-          <View style={[s.menuIcon, { backgroundColor: bgColor }]}>
-            <Ionicons name={icon as any} size={24} color={color} />
-          </View>
-          {badge && (
-            <View style={[s.badge, { backgroundColor: color }]}>
-              <Text style={s.badgeText}>{badge}</Text>
-            </View>
-          )}
+          <View style={[s.menuIcon, { backgroundColor: bgColor }]}><Ionicons name={icon as any} size={24} color={color} /></View>
+          {badge && <View style={[s.badge, { backgroundColor: color }]}><Text style={s.badgeText}>{badge}</Text></View>}
         </View>
         <View style={{ width: '100%' }}>
           <Text style={s.menuTitle} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
@@ -85,62 +60,38 @@ export default function CompanyDashboard() {
 
   useFocusEffect(useCallback(() => { void loadData(); }, [loadData]));
 
-  const closeModal = () => {
-    setModalVisible(false);
-    setAmount("");
-    setRefBancaire("");
-  };
+  const closeModal = () => { setModalVisible(false); setAmount(""); setRefBancaire(""); };
 
   const handlePay = async () => {
     const n = Number(amount);
-    if (!amount || isNaN(n) || n <= 0) {
-        if(Platform.OS === 'web') return alert("Saisissez un montant valide.");
-        return Alert.alert("Erreur", "Saisissez un montant valide.");
-    }
+    if (!amount || isNaN(n) || n <= 0) return Platform.OS === 'web' ? alert("Saisissez un montant valide.") : Alert.alert("Erreur", "Saisissez un montant valide.");
     setProcessing(true);
     try {
       await api.declareBankTransfer(n, refBancaire);
       closeModal();
-      const msg = "Déclaration envoyée. En attente de validation.";
-      Platform.OS === 'web' ? alert(msg) : Alert.alert("Succès", msg);
+      Platform.OS === 'web' ? alert("Déclaration envoyée. En attente de validation.") : Alert.alert("Succès", "Déclaration envoyée. En attente de validation.");
       await loadData();
     } catch (e: any) {
-      const err = e?.response?.data?.message || e?.message || "Erreur technique";
-      Platform.OS === 'web' ? alert(err) : Alert.alert("Erreur", err);
+      Platform.OS === 'web' ? alert(e?.response?.data?.message || "Erreur technique") : Alert.alert("Erreur", e?.response?.data?.message || "Erreur technique");
     } finally { setProcessing(false); }
   };
 
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={THEME.primary} />
-
-      {/* HEADER COLORÉ */}
       <View style={[s.header, { backgroundColor: THEME.primary }]}>
-        <View style={s.headerAvatar}>
-          <Text style={s.headerAvatarText}>{(clientName[0] ?? "E").toUpperCase()}</Text>
-        </View>
+        <View style={s.headerAvatar}><Text style={s.headerAvatarText}>{(clientName[0] ?? "E").toUpperCase()}</Text></View>
         <View style={{ flex: 1 }}>
           <View style={s.headerBadgeWrap}><Text style={s.headerBadge}>PILOTAGE SOCIÉTÉ</Text></View>
           <Text style={s.headerTitle} numberOfLines={1} adjustsFontSizeToFit>{clientName}</Text>
         </View>
         <View style={s.headerRight}>
-          <TouchableOpacity style={s.headerBtn} onPress={loadData}>
-            <Ionicons name="refresh" size={20} color="#FFF" />
-          </TouchableOpacity>
-          <TouchableOpacity style={s.headerBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
-            <Ionicons name="notifications" size={20} color="#FFF" />
-            <View style={s.notifDot} />
-          </TouchableOpacity>
+          <TouchableOpacity style={s.headerBtn} onPress={loadData}><Ionicons name="refresh" size={20} color="#FFF" /></TouchableOpacity>
+          <TouchableOpacity style={s.headerBtn} onPress={() => router.push("/(tabs)/admin/notifications")}><Ionicons name="notifications" size={20} color="#FFF" /><View style={s.notifDot} /></TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={[s.content, isDesktop && s.contentDesktop]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={THEME.primary} />}
-      >
-        {/* CARTE TRÉSORERIE */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[s.content, isDesktop && s.contentDesktop]} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={THEME.primary} />}>
         <View style={s.hero}>
           <View style={s.heroDeco1} />
           <View style={s.heroDeco2} />
@@ -152,26 +103,15 @@ export default function CompanyDashboard() {
                 <Text style={s.heroCurrency}> {currency}</Text>
               </View>
             </View>
-            <TouchableOpacity style={s.heroArrow} onPress={() => router.push("/(tabs)/admin/treasury")}>
-              <Ionicons name="wallet" size={20} color="#FFF" />
-            </TouchableOpacity>
+            <TouchableOpacity style={s.heroArrow} onPress={() => router.push("/(tabs)/admin/treasury")}><Ionicons name="wallet" size={20} color="#FFF" /></TouchableOpacity>
           </View>
-          
           <View style={s.heroDivider} />
-          
           <View style={s.heroBottom}>
-            <View style={s.heroStatus}>
-              <View style={s.greenDot} />
-              <Text style={s.heroStatusText}>Compte opérationnel</Text>
-            </View>
-            <TouchableOpacity style={s.payBtn} onPress={() => setModalVisible(true)}>
-              <Ionicons name="document-text" size={14} color={THEME.primary} />
-              <Text style={s.payBtnText}>Déclarer Virement</Text>
-            </TouchableOpacity>
+            <View style={s.heroStatus}><View style={s.greenDot} /><Text style={s.heroStatusText}>Compte opérationnel</Text></View>
+            <TouchableOpacity style={s.payBtn} onPress={() => setModalVisible(true)}><Ionicons name="document-text" size={14} color={THEME.primary} /><Text style={s.payBtnText}>Déclarer Virement</Text></TouchableOpacity>
           </View>
         </View>
 
-        {/* RÉSEAU */}
         <Text style={s.sectionLabel}>MON RÉSEAU</Text>
         <View style={s.grid}>
           <MenuCard title="Créer Agence" subtitle="Ajouter un point" icon="add-circle" color="#7C3AED" bgColor="#F5F3FF" onPress={() => router.push("/(tabs)/admin/agencies/create")} badge="Nouveau" />
@@ -179,18 +119,15 @@ export default function CompanyDashboard() {
           <MenuCard title="Utilisateurs" subtitle="Gestion des accès" icon="people" color="#059669" bgColor="#ECFDF5" onPress={() => router.push("/(tabs)/admin/users")} />
         </View>
 
-        {/* FINANCE */}
         <Text style={[s.sectionLabel, { marginTop: 12 }]}>FINANCE & CONFIGURATION</Text>
         <View style={s.grid}>
           <MenuCard title="Suivi Global" subtitle="Audit & Transactions" icon="pie-chart" color="#DC2626" bgColor="#FEF2F2" onPress={() => router.push("/(tabs)/admin/transactions")} />
           <MenuCard title="Commissions" subtitle="Taux & Paliers" icon="settings" color="#0891B2" bgColor="#ECFEFF" onPress={() => router.push("/(tabs)/admin/commissions/config")} />
           <MenuCard title="Change" subtitle="Devises en temps réel" icon="cash" color="#D97706" bgColor="#FFFBEB" onPress={() => router.push("/(tabs)/admin/rates")} />
         </View>
-
         <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* MODALE PAIEMENT B2B */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
         <View style={s.modalOverlay}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
@@ -203,17 +140,14 @@ export default function CompanyDashboard() {
                   <Text style={s.modalSub}>Alimentation de compte B2B</Text>
                 </View>
               </View>
-
               <View style={s.inputWrap}>
                 <Text style={s.inputLabel}>MONTANT ENVOYÉ (XOF)</Text>
                 <TextInput style={s.input} value={amount} onChangeText={setAmount} keyboardType="numeric" placeholder="Ex: 500000" placeholderTextColor={THEME.muted} autoFocus />
               </View>
-
               <View style={s.inputWrap}>
                 <Text style={s.inputLabel}>RÉFÉRENCE BANCAIRE</Text>
                 <TextInput style={s.input} value={refBancaire} onChangeText={setRefBancaire} placeholder="REF-VIREMENT-1234" placeholderTextColor={THEME.muted} autoCapitalize="characters" />
               </View>
-
               <TouchableOpacity style={[s.confirmBtn, { backgroundColor: THEME.primary }, processing && { opacity: 0.7 }]} onPress={handlePay} disabled={processing}>
                 {processing ? <ActivityIndicator color="#FFF" /> : <Text style={s.confirmText}>ENVOYER POUR VALIDATION</Text>}
               </TouchableOpacity>
@@ -241,7 +175,6 @@ const s = StyleSheet.create({
   notifDot: { position: "absolute", top: 10, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: THEME.primary },
   content: { padding: 16, paddingTop: 20 },
   contentDesktop: { maxWidth: 1000, alignSelf: 'center', width: '100%' },
-
   hero: { backgroundColor: THEME.primary, borderRadius: 20, padding: 20, marginBottom: 20, overflow: "hidden", shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 15, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
   heroDeco1: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(255,255,255,0.06)", top: -40, right: -40 },
   heroDeco2: { position: "absolute", width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.05)", bottom: -10, left: 40 },
@@ -257,20 +190,15 @@ const s = StyleSheet.create({
   heroStatusText: { color: "rgba(255,255,255,0.9)", fontSize: 11, fontFamily: FONTS.body, fontWeight: "700" },
   payBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#FFF", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   payBtnText: { color: THEME.primary, fontSize: 11, fontFamily: FONTS.body, fontWeight: "800" },
-
-  sectionLabel: { fontSize: 12, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.5, marginBottom: 12, marginLeft: 4 },
-  
-  /* --- MISE A JOUR DE LA GRILLE : 2 Cartes par ligne --- */
+  sectionLabel: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.5, marginBottom: 12, marginLeft: 4 },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  
-  menuCard: { backgroundColor: THEME.surface, borderRadius: 20, borderWidth: 1, borderColor: THEME.border, padding: 16, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
+  menuCard: { backgroundColor: THEME.surface, borderRadius: 16, borderWidth: 1, borderColor: THEME.border, padding: 12, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
   menuHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
-  menuIcon: { width: 46, height: 46, borderRadius: 14, justifyContent: "center", alignItems: "center" },
-  menuTitle: { fontSize: 14, fontFamily: FONTS.body, fontWeight: "800", color: THEME.text, marginBottom: 4 },
-  menuSub: { fontSize: 12, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "400", lineHeight: 16 }, // RETRAIT DU GRAS
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
+  menuIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", marginRight: 10 },
+  menuTitle: { fontSize: 13, fontFamily: FONTS.body, fontWeight: "800", color: THEME.text, marginBottom: 2 },
+  menuSub: { fontSize: 10, fontFamily: FONTS.body, color: THEME.muted, fontWeight: "600", lineHeight: 14 },
+  badge: { paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, marginLeft: 6 },
   badgeText: { fontSize: 9, fontFamily: FONTS.body, fontWeight: "900", color: "#FFF", letterSpacing: 0.5 },
-
   modalOverlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.6)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: THEME.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: Platform.OS === "ios" ? 40 : 24, shadowColor: "#000", shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 10 },
   modalHandle: { width: 40, height: 5, borderRadius: 3, backgroundColor: THEME.border, alignSelf: "center", marginBottom: 20 },

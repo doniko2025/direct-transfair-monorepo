@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/services/types.ts
-
 // --- ENUMS & TYPES DE BASE ---
 export type Role = "SUPER_ADMIN" | "COMPANY_ADMIN" | "AGENT" | "USER";
 
@@ -72,6 +71,7 @@ export interface Beneficiary {
   country: string;
   city: string;
   phone?: string | null;
+  email?: string | null; // ✅ AJOUT DE L'EMAIL (Optionnel)
   createdAt?: string;
   clientId?: number;
   userId: string;
@@ -150,7 +150,7 @@ export interface Transaction {
 export interface CreateTransactionPayload {
   amount: number;
   currency: string;
-  beneficiaryId: string;
+  beneficiaryId?: string; // ✅ RENDU OPTIONNEL (Gère le undefined lors d'un envoi à un inconnu)
   payoutMethod: string;
 
   senderFirstName?: string;
@@ -284,7 +284,7 @@ export interface Client {
   ownerBirthDate?: string | null;
   ownerBirthPlace?: string | null;
   ownerCountry?: string | null;
-  ownerAddress?: string | null; // ✅ Correction appliquée
+  ownerAddress?: string | null; 
 
   createdAt?: string;
 
