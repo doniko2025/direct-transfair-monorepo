@@ -1,12 +1,17 @@
 // apps/backend/src/users/users.module.ts
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AuthModule } from '../auth/auth.module';
 import { UsersService } from './users.service';
-import { UsersController } from './users.controller'; // ✅ Ajout du contrôleur
+import { UsersController } from './users.controller';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [UsersController], // ✅ Enregistrement du contrôleur
+  imports: [
+    PrismaModule,
+    // ✅ CORRECTION CHIRURGICALE : Utilisation de forwardRef() pour briser la boucle avec UsersModule
+    forwardRef(() => AuthModule), 
+  ],
+  controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],
 })

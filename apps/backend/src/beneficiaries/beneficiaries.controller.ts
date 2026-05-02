@@ -1,16 +1,21 @@
 // apps/backend/src/beneficiaries/beneficiaries.controller.ts
+// =========================================================
+// BENEFICIARIES CONTROLLER v4.0
+// ✅ Import JwtAuthGuard depuis '../auth/jwt-auth.guard' (pas guards/)
+// =========================================================
+
 import {
   Body,
   Controller,
   Delete,
   Get,
+  Logger,
   Param,
   Patch,
   Post,
   Req,
   UnauthorizedException,
   UseGuards,
-  Logger,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 
@@ -18,12 +23,12 @@ import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 
-// Assure-toi que ces imports pointent vers tes fichiers existants
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+// ✅ CORRECTION : chemin correct (plus guards/)
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantGuard } from '../tenants/tenant.guard';
 
 @ApiTags('Beneficiaries')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(TenantGuard, JwtAuthGuard)
 @Controller('beneficiaries')
 export class BeneficiariesController {
@@ -31,14 +36,8 @@ export class BeneficiariesController {
 
   constructor(private readonly beneficiariesService: BeneficiariesService) {}
 
-  // --- Helper pour extraire l'utilisateur proprement ---
   private getUserInfo(req: any) {
     const user = req.user;
-    
-    // Debug pour voir ce que le serveur reçoit
-    // this.logger.log(`User Payload: ${JSON.stringify(user)}`);
-
-    // On accepte 'id' (standard) ou 'sub' (JWT brut) ou 'userId'
     const userId = user?.id || user?.sub || user?.userId;
     const clientId = user?.clientId;
 
@@ -53,7 +52,6 @@ export class BeneficiariesController {
   @Post()
   async create(@Req() req: any, @Body() dto: CreateBeneficiaryDto) {
     const { userId, clientId } = this.getUserInfo(req);
-    // On passe le clientId (qui peut être undefined pour un admin global, mais requis pour un tenant)
     return this.beneficiariesService.create(userId, clientId, dto);
   }
 

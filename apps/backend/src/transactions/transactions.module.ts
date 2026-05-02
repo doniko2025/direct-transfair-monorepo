@@ -1,36 +1,34 @@
-// src/transactions/transactions.module.ts
-import { Module } from '@nestjs/common';
+// apps/backend/src/transactions/transactions.module.ts
+// =========================================================
+// TRANSACTIONS MODULE v4.0
+// ✅ WalletsModule — pour WalletsService (débit/crédit)
+// ✅ PushModule — pour notifications push
+// ✅ SmsModule — pour notifications SMS
+// ✅ MailModule — pour emails (global, mais explicite ici)
+// =========================================================
 
+import { Module } from '@nestjs/common';
+import { TransactionsService } from './transactions.service';
+import { TransactionsController } from './transactions.controller';
 import { PrismaModule } from '../prisma/prisma.module';
-import { TenantsModule } from '../tenants/tenants.module';
 import { AuthModule } from '../auth/auth.module';
 import { RatesModule } from '../rates/rates.module';
-import { CommissionsModule } from '../commissions/commissions.module';
-
-// ✅ AJOUT ICI
-import { NotificationsModule } from '../notifications/notifications.module';
+import { WalletsModule } from '../wallets/wallets.module';
+import { PushModule } from '../push/push.module';
+import { SmsModule } from '../sms/sms.module';
 import { MailModule } from '../mail/mail.module';
-
-import { TransactionsController } from './transactions.controller';
-import { AdminTransactionsController } from './admin-transactions.controller';
-import { TransactionsService } from './transactions.service';
 
 @Module({
   imports: [
     PrismaModule,
-    TenantsModule,
     AuthModule,
     RatesModule,
-    CommissionsModule,
-
-    // ✅ CRUCIAL
-    NotificationsModule,
-    MailModule,
+    WalletsModule, // ✅ Pour WalletsService (débit/crédit wallets)
+    PushModule,    // ✅ Pour notifications push
+    SmsModule,     // ✅ Pour SMS
+    MailModule,    // ✅ Pour emails (déjà global, mais explicite)
   ],
-  controllers: [
-    TransactionsController,
-    AdminTransactionsController,
-  ],
+  controllers: [TransactionsController],
   providers: [TransactionsService],
   exports: [TransactionsService],
 })

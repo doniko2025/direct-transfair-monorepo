@@ -1,14 +1,55 @@
-//apps/backend/src/users/users.controller.ts
-import { Controller, Get, Post, Body, UseGuards, Request, ConflictException } from '@nestjs/common';
+// apps/backend/src/users/users.controller.ts
+// =========================================================
+// USERS CONTROLLER v4.0
+// ✅ Import JwtAuthGuard depuis '../auth/jwt-auth.guard' (pas guards/)
+// ✅ RolesGuard inline
+// =========================================================
+
+import {
+  Body,
+  CanActivate,
+  ConflictException,
+  Controller,
+  ExecutionContext,
+  Get,
+  Injectable,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
-import { UsersService } from './users.service';
 import * as bcrypt from 'bcryptjs';
 
-// ✅ Interface pour typer le corps de la requête (plus d'erreur "any")
+import { UsersService } from './users.service';
+// ✅ CORRECTION : chemin correct
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
+
+// ✅ RolesGuard inline
+const ROLES_KEY = 'roles';
+const Roles = (...roles: Role[]) => {
+  const { SetMetadata } = require('@nestjs/common');
+  return SetMetadata(ROLES_KEY, roles);
+};
+
+@Injectable()
+class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required || required.length === 0) return true;
+    const req = context.switchToHttp().getRequest();
+    const user: AuthUserPayload = req.user;
+    if (!user?.role) return false;
+    return required.includes(user.role as Role);
+  }
+}
+
 interface CreateUserBody {
   email: string;
   password: string;
@@ -17,63 +58,62 @@ interface CreateUserBody {
   role?: Role;
   clientId?: number;
   phone?: string;
+  country?: string;
 }
 
-@ApiTags('Utilisateurs (Gestion)')
-@ApiBearerAuth()
+@ApiTags('Utilisateurs')
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // 🔹 LISTER
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
   @ApiOperation({ summary: 'Lister les utilisateurs' })
-  async findAll(@Request() req: any) {
+  async findAll(@Req() req: { user?: AuthUserPayload }) {
     const user = req.user;
-    // Si Super Admin, voit tout. Sinon, voit uniquement sa société.
-    const whereClause = user.role === Role.SUPER_ADMIN ? {} : { clientId: user.clientId };
-
+    const whereClause =
+      user?.role === 'SUPER_ADMIN' ? {} : { clientId: user?.clientId };
     return this.usersService.findAll(whereClause);
   }
 
-  // 🔹 CRÉER
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
   @ApiOperation({ summary: 'Créer un utilisateur' })
-  async create(@Request() req: any, @Body() body: CreateUserBody) {
+  async create(
+    @Req() req: { user?: AuthUserPayload },
+    @Body() body: CreateUserBody,
+  ) {
     const currentUser = req.user;
 
-    // 1. Déterminer la société cible
-    // Si Super Admin : on prend l'ID envoyé, sinon le sien.
-    // Si Admin Société : on force le sien.
-    const targetClientId = currentUser.role === Role.SUPER_ADMIN 
-        ? (body.clientId || currentUser.clientId) 
-        : currentUser.clientId;
+    const targetClientId =
+      currentUser?.role === 'SUPER_ADMIN'
+        ? body.clientId ?? currentUser.clientId
+        : currentUser?.clientId;
 
     if (!targetClientId) {
-        throw new ConflictException("Impossible de déterminer la société cible.");
+      throw new ConflictException(
+        'Impossible de déterminer la société cible.',
+      );
     }
 
-    // 2. Vérifier si l'email existe
     const existing = await this.usersService.findByEmail(body.email);
-    if (existing) throw new ConflictException("Cet email est déjà utilisé.");
+    if (existing) throw new ConflictException('Cet email est déjà utilisé.');
 
-    // 3. Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(body.password, 10);
 
-    // 4. Appel au Service
     return this.usersService.create(
-        body.email,
-        hashedPassword,
-        body.role || Role.AGENT,
-        targetClientId,
-        {
-            firstName: body.firstName,
-            lastName: body.lastName,
-            phone: body.phone
-        }
+      body.email,
+      hashedPassword,
+      body.role ?? Role.AGENT,
+      targetClientId,
+      {
+        firstName: body.firstName,
+        lastName: body.lastName,
+        phone: body.phone,
+        country: body.country,
+      },
     );
   }
 }

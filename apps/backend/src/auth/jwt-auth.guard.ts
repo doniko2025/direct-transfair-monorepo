@@ -1,4 +1,11 @@
 // apps/backend/src/auth/jwt-auth.guard.ts
+// =========================================================
+// JWT AUTH GUARD — implémentation custom (sans Passport)
+// ✅ Gère le tenant matching (clientId dans token = clientId du tenant)
+// ✅ Bypass via @Public()
+// ✅ Ajout des champs agencyId + primaryCurrency dans req.user
+// =========================================================
+
 import {
   CanActivate,
   ExecutionContext,
@@ -20,6 +27,8 @@ type JwtPayloadLike = {
   email?: string;
   role?: string;
   clientId?: number;
+  agencyId?: string | null;
+  primaryCurrency?: string | null;
 };
 
 type AuthenticatedRequest = Request & {
@@ -59,17 +68,16 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const isPublic = this.reflector.getAllAndOverride<boolean>(
-      IS_PUBLIC_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
 
     if (isPublic) {
       return true;
     }
 
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
-
     const token = extractToken(req);
 
     try {
@@ -83,14 +91,18 @@ export class JwtAuthGuard implements CanActivate {
       const clientId =
         typeof payload.clientId === 'number' ? payload.clientId : undefined;
 
+      // ✅ AuthUserPayload enrichi v4 avec agencyId + primaryCurrency
       req.user = {
         id,
         sub: id,
         email: payload.email,
         role: payload.role,
         clientId,
+        agencyId: payload.agencyId ?? null,
+        primaryCurrency: payload.primaryCurrency ?? null,
       };
 
+      // ✅ Tenant matching — inchangé
       const tenantClientId = req.tenantContext?.clientId;
 
       if (typeof tenantClientId === 'number' && tenantClientId > 0) {
@@ -104,7 +116,9 @@ export class JwtAuthGuard implements CanActivate {
       }
 
       return true;
-    } catch {
+    } catch (e) {
+      // On laisse remonter le UnauthorizedException explicite si déjà thrown
+      if (e instanceof UnauthorizedException) throw e;
       throw new UnauthorizedException('Invalid token');
     }
   }

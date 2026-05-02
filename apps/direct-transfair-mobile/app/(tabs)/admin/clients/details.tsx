@@ -1,37 +1,145 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/clients/details.tsx
-import React, { useEffect, useState, useCallback } from "react";
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  ActivityIndicator, SafeAreaView, Alert, Platform, StatusBar 
+// apps/direct-transfair-mobile/app/(tabs)/admin/clients/details.tsx
+// =========================================================
+// CLIENT DETAILS v4.0 — Direct Transf'air
+// Design: Obsidian Luxury (Super Admin uniquement)
+// ✅ Wallets v4 société, stats, gérant, adresse parsée
+// =========================================================
+
+import React, { useState, useCallback, useRef } from "react";
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, SafeAreaView, Alert, Platform, StatusBar, Animated,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 
-// ─── THÈMES & TYPOGRAPHIES ──────────────────────────────────────────────
-const THEMES = {
-  SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2" },
-  COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF" },
-  AGENT: { primary: "#78350F", light: "#FFF7ED" },
-  USER: { primary: "#065F46", light: "#ECFDF5" },
+const T = {
+  ink: "#0A0A0F", inkMid: "#12121A", inkLight: "#1C1C28", inkBorder: "#2A2A3A",
+  gold: "#D4A853", goldSoft: "#F0C97A", goldGlow: "rgba(212,168,83,0.15)",
+  cream: "#F5EFE0", creamDim: "#C4B89A",
+  white: "#FFFFFF", ghost: "rgba(255,255,255,0.06)", ghostMid: "rgba(255,255,255,0.10)",
+  green: "#22C55E", red: "#EF4444", amber: "#F59E0B", blue: "#60A5FA",
+  radius: { sm: 10, md: 14, lg: 20, xl: 26 },
+  font: {
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
 };
 
-const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
-};
+const STATUS_COLORS = { ACTIVE: T.green, SUSPENDED: T.amber, INACTIVE: T.red, TRIAL: T.blue };
+const SUBSCRIPTION_COLORS = { PURCHASE: T.gold, RENTAL: T.blue };
+const CURRENCY_COLORS = { EUR: "#60A5FA", USD: "#34D399", XOF: T.gold, GNF: "#F87171", GBP: "#A78BFA" };
 
-function isDigitsOnly(s: string): boolean {
-  return /^[0-9]+$/.test(s);
+function toNum(v: unknown): number {
+  if (typeof v === "number" && isFinite(v)) return v;
+  if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
+  if (v && typeof (v as any).toNumber === "function") return (v as any).toNumber();
+  return 0;
 }
+
+function fmt(n: number, currency = "XOF"): string {
+  const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
+  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
+  catch { return n.toFixed(d); }
+}
+
+function InfoRow({ label, value, icon }: { label: string; value: string; icon: string }) {
+  return (
+    <View style={irS.row}>
+      <View style={irS.iconBox}>
+        <Ionicons name={icon as any} size={16} color={T.gold} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[irS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+        <Text style={[irS.value, { fontFamily: T.font.sans }]} numberOfLines={2}>{value || "—"}</Text>
+      </View>
+    </View>
+  );
+}
+const irS = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
+  iconBox: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: T.goldGlow, justifyContent: "center", alignItems: "center",
+  },
+  label: { fontSize: 9, fontWeight: "900", color: T.creamDim, letterSpacing: 1, marginBottom: 3 },
+  value: { fontSize: 14, fontWeight: "700", color: T.white },
+});
+
+function WalletRow({ wallet }: { wallet: any }) {
+  const currency = wallet.currency ?? "XOF";
+  const color = CURRENCY_COLORS[currency as keyof typeof CURRENCY_COLORS] ?? T.gold;
+  const balance = toNum(wallet.balance);
+  const reserved = toNum(wallet.reservedBalance ?? 0);
+  const available = balance - reserved;
+  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
+
+  return (
+    <View style={wrS.row}>
+      <View style={[wrS.colorDot, { backgroundColor: color }]} />
+      <View style={{ flex: 1 }}>
+        <View style={wrS.topRow}>
+          <Text style={[wrS.code, { color, fontFamily: T.font.mono }]}>{currency}</Text>
+          <Text style={[wrS.balance, { fontFamily: T.font.mono }]}>{fmt(balance, currency)}</Text>
+        </View>
+        <View style={wrS.progBg}>
+          <View style={[wrS.progFill, { width: `${pct}%` as any, backgroundColor: color }]} />
+        </View>
+        <Text style={[wrS.avail, { fontFamily: T.font.sans }]}>
+          Disponible: {fmt(available, currency)} · Réservé: {fmt(reserved, currency)}
+        </Text>
+      </View>
+    </View>
+  );
+}
+const wrS = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 16 },
+  colorDot: { width: 4, height: 52, borderRadius: 99, marginTop: 3 },
+  topRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  code: { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  balance: { color: T.white, fontSize: 16, fontWeight: "800" },
+  progBg: { height: 3, backgroundColor: T.ghost, borderRadius: 99, overflow: "hidden", marginBottom: 4 },
+  progFill: { height: 3, borderRadius: 99 },
+  avail: { color: T.creamDim, fontSize: 10, fontWeight: "600" },
+});
+
+function ActionBox({ icon, label, color, onPress, loading: load }: any) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[axS.box, { backgroundColor: `${color}10`, borderColor: `${color}25` }]}
+        onPress={onPress} disabled={load}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 50 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        activeOpacity={1}
+      >
+        {load ? <ActivityIndicator size="small" color={color} />
+          : <>
+              <Ionicons name={icon} size={20} color={color} />
+              <Text style={[axS.label, { color, fontFamily: T.font.sans }]}>{label}</Text>
+            </>
+        }
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+const axS = StyleSheet.create({
+  box: { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: T.radius.md, borderWidth: 1, gap: 6 },
+  label: { fontSize: 11, fontWeight: "800" },
+});
+
+function isDigitsOnly(s: string) { return /^[0-9]+$/.test(s); }
 
 export default function ClientDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { user } = useAuth();
-  
-  const theme = THEMES[(user?.role as keyof typeof THEMES)] || THEMES.COMPANY_ADMIN;
 
   const idStr = Array.isArray(id) ? id[0] : id;
   const clientId = idStr && isDigitsOnly(idStr) ? Number(idStr) : NaN;
@@ -40,306 +148,250 @@ export default function ClientDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fetchDetails = useCallback(async () => {
-    if (!Number.isFinite(clientId)) {
-      setErrorMsg("ID société invalide.");
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setErrorMsg(null);
+    if (!Number.isFinite(clientId)) { setErrorMsg("ID société invalide."); setLoading(false); return; }
+    setLoading(true); setErrorMsg(null);
     try {
       const data = await api.getClient(clientId);
       setClient(data);
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e: any) {
-      console.error(e);
       setErrorMsg(e.response?.status === 404 ? "Société introuvable (404)." : "Erreur lors du chargement.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, [clientId]);
 
   useFocusEffect(useCallback(() => { void fetchDetails(); return () => {}; }, [fetchDetails]));
 
-  const handleToggleStatus = async () => {
+  const handleToggleStatus = () => {
     const current = String(client.subscriptionStatus ?? "").toUpperCase();
     const nextStatus = current === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
-    
-    const executeToggle = async () => {
+    const label = nextStatus === "ACTIVE" ? "activer" : "suspendre";
+    const confirm = () => {
       setProcessing(true);
-      try {
-        const updated = await api.updateClientStatus(client.id, nextStatus as any);
-        setClient(updated);
-      } catch (e) { 
-        Platform.OS === 'web' ? alert("Erreur") : Alert.alert("Erreur", "Impossible de changer le statut."); 
-      } finally { 
-        setProcessing(false); 
-      }
+      api.updateClientStatus(client.id, nextStatus as any)
+        .then((updated) => setClient(updated))
+        .catch(() => Alert.alert("Erreur", "Impossible de changer le statut."))
+        .finally(() => setProcessing(false));
     };
-
-    if (Platform.OS === 'web') { 
-      if (window.confirm(`Voulez-vous ${nextStatus === 'ACTIVE' ? 'activer' : 'suspendre'} cette société ?`)) executeToggle(); 
-    } else { 
-      Alert.alert("Confirmation", `Voulez-vous ${nextStatus === 'ACTIVE' ? 'activer' : 'suspendre'} cette société ?`, [
-        { text: "Annuler", style: "cancel" }, 
-        { text: "OUI", onPress: executeToggle }
-      ]); 
-    }
+    if (Platform.OS === "web") { if (window.confirm(`Voulez-vous ${label} cette société ?`)) confirm(); }
+    else Alert.alert("Confirmation", `Voulez-vous ${label} cette société ?`, [{ text: "Annuler", style: "cancel" }, { text: "OUI", onPress: confirm }]);
   };
 
-  const handleDelete = async () => {
-    const executeDelete = async () => {
+  const handleDelete = () => {
+    const confirm = () => {
       setProcessing(true);
-      try {
-        await api.deleteClient(client.id);
-        if (Platform.OS === 'web') { 
-          alert("Société supprimée !"); 
-          router.back(); 
-        } else { 
-          Alert.alert("Succès", "Société supprimée !", [{ text: "OK", onPress: () => router.back() }]); 
-        }
-      } catch (e: any) { 
-        const msg = e?.response?.data?.message || "Impossible de supprimer.";
-        Platform.OS === 'web' ? alert(msg) : Alert.alert("Erreur", msg); 
-      } finally { 
-        setProcessing(false); 
-      }
+      api.deleteClient(client.id)
+        .then(() => { Alert.alert("Supprimé", "Société supprimée.", [{ text: "OK", onPress: () => router.back() }]); })
+        .catch((e: any) => Alert.alert("Erreur", e?.response?.data?.message || "Impossible de supprimer."))
+        .finally(() => setProcessing(false));
     };
-
-    if (Platform.OS === 'web') { 
-      if (window.confirm("Supprimer cette société ? Action irréversible.")) executeDelete(); 
-    } else { 
-      Alert.alert("Confirmation", "Supprimer cette société ? Action irréversible.", [
-        { text: "Annuler", style: "cancel" }, 
-        { text: "SUPPRIMER", style: "destructive", onPress: executeDelete }
-      ]); 
-    }
+    if (Platform.OS === "web") { if (window.confirm("Supprimer ? Action irréversible.")) confirm(); }
+    else Alert.alert("Confirmation", "Supprimer cette société ? Action irréversible.", [
+      { text: "Annuler", style: "cancel" }, { text: "SUPPRIMER", style: "destructive", onPress: confirm },
+    ]);
   };
 
-  if (loading) return <View style={[styles.center, { backgroundColor: '#F8FAFC' }]}><ActivityIndicator color={theme.primary} size="large" /></View>;
-  
+  if (loading) {
+    return (
+      <LinearGradient colors={[T.ink, T.inkMid]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color={T.gold} size="large" />
+      </LinearGradient>
+    );
+  }
+
   if (errorMsg || !client) {
     return (
-      <View style={styles.center}>
-        <Text style={{ color: "#0F172A", fontFamily: FONTS.heading, marginBottom: 8, fontSize: 24, fontWeight: "700" }}>Oups !</Text>
-        <Text style={{ color: "#64748B", fontFamily: FONTS.body, textAlign: "center", marginBottom: 24 }}>{errorMsg}</Text>
-        <TouchableOpacity style={[styles.backBtnError, { backgroundColor: theme.primary }]} onPress={() => router.back()}>
-          <Text style={styles.backBtnTextError}>Retourner à la liste</Text>
+      <LinearGradient colors={[T.ink, T.inkMid]} style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+        <Ionicons name="alert-circle-outline" size={48} color={T.red} />
+        <Text style={[{ color: T.white, fontSize: 16, fontWeight: "700", marginTop: 16, textAlign: "center", fontFamily: T.font.sans }]}>
+          {errorMsg ?? "Erreur inconnue"}
+        </Text>
+        <TouchableOpacity style={[{ marginTop: 24, backgroundColor: T.goldGlow, paddingHorizontal: 24, paddingVertical: 14, borderRadius: T.radius.md, borderWidth: 1, borderColor: `${T.gold}30` }]} onPress={() => router.back()}>
+          <Text style={[{ color: T.gold, fontWeight: "800", fontFamily: T.font.sans }]}>Retour</Text>
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
     );
   }
 
   const isActive = String(client.subscriptionStatus ?? "").toUpperCase() === "ACTIVE";
-  const formatName = (f?: string | null, l?: string | null) => `${f || ""} ${l || ""}`.trim() || "Non renseigné";
-
-  // ─── PARSEUR INTELLIGENT D'ADRESSE ───
+  const statusColor = STATUS_COLORS[client.subscriptionStatus as keyof typeof STATUS_COLORS] ?? T.creamDim;
+  const subColor = SUBSCRIPTION_COLORS[client.subscriptionType as keyof typeof SUBSCRIPTION_COLORS] ?? T.gold;
+  const wallets = Array.isArray(client.wallets) ? client.wallets : [];
   const rawAddress = client.ownerAddress || client.address || "";
-  const addressParts = rawAddress.split(',').map((s: string) => s.trim());
-  
-  const streetPart = addressParts[0] || "";
-  const streetMatch = streetPart.match(/^(\S+)\s+(.*)/); // Extrait le 1er mot (Numéro) et le reste (Libellé)
-  const numero = streetMatch ? streetMatch[1] : "N/A";
-  const libelle = streetMatch ? streetMatch[2] : (streetPart || "N/A");
-
-  const cityPart = addressParts[1] || "";
-  const cityMatch = cityPart.match(/^(\S+)\s+(.*)/); // Extrait le 1er mot (Code Postal) et le reste (Ville)
-  const zipCode = cityMatch ? cityMatch[1] : "N/A";
-  const city = cityMatch ? cityMatch[2] : (cityPart || "N/A");
-
-  const pays = addressParts[2] || client.ownerCountry || "N/A";
-  const nationalite = client.ownerCountry || "N/A";
+  const parts = rawAddress.split(",").map((s: string) => s.trim());
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.primary }]}>
-      <StatusBar barStyle="light-content" backgroundColor={theme.primary} />
-      
-      {/* ─── HEADER ─── */}
-      <View style={[styles.header, { backgroundColor: theme.primary }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={15}>
-          <Ionicons name="arrow-back" size={26} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{client.name}</Text>
-        <View style={{width: 26}} />
-      </View>
+    <LinearGradient colors={[T.ink, T.inkMid]} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <StatusBar barStyle="light-content" />
 
-      {/* ─── CONTENU ─── */}
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        {/* CARTE PRINCIPALE (CODE & STATUT) */}
-        <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
-          <View>
-            <Text style={styles.balanceLabel}>CODE SOCIÉTÉ</Text>
-            <Text style={styles.balanceValue}>{client.code}</Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: isActive ? '#D1FAE5' : '#FEE2E2' }]}>
-            <Text style={{ color: isActive ? '#065F46' : '#991B1B', fontFamily: FONTS.body, fontWeight: '800', fontSize: 11, letterSpacing: 0.5 }}>
-              {isActive ? 'ACTIVE' : 'SUSPENDUE'}
-            </Text>
-          </View>
-        </View>
-
-        {/* STATISTIQUES (2 Cartes) */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statBox}>
-            <View style={[styles.statIcon, { backgroundColor: theme.light }]}><Ionicons name="people" size={20} color={theme.primary} /></View>
-            <Text style={styles.statValue}>{client._count?.users ?? 0}</Text>
-            <Text style={styles.statLabel}>Utilisateurs</Text>
-          </View>
-          <View style={styles.statBox}>
-            <View style={[styles.statIcon, { backgroundColor: theme.light }]}><Ionicons name="business" size={20} color={theme.primary} /></View>
-            <Text style={styles.statValue}>{client._count?.agencies ?? 0}</Text>
-            <Text style={styles.statLabel}>Agences</Text>
-          </View>
-        </View>
-
-        {/* INFORMATIONS SOCIÉTÉ */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SOCIÉTÉ & CONTACT</Text>
-          <InfoRow label="Email Administrateur" value={client.email || client.contactEmail || "Non renseigné"} icon="mail" theme={theme} />
-          <InfoRow label="Téléphone Contact" value={client.phone || client.contactPhone || "Non renseigné"} icon="call" theme={theme} />
-          <InfoRow label="Secteur d'activité" value={client.activitySector || "Non renseigné"} icon="briefcase" theme={theme} />
-          <View style={styles.divider} />
-          <InfoRow label="Contrat SaaS" value={client.subscriptionType === "PURCHASE" ? "Achat" : "Location"} icon="document-text" theme={theme} />
-        </View>
-
-        {/* INFORMATIONS GÉRANT */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>INFORMATIONS GÉRANT</Text>
-          <InfoRow label="Nom complet" value={formatName(client.ownerFirstName, client.ownerLastName)} icon="person" theme={theme} />
-          <InfoRow label="Naissance" value={`${client.ownerBirthDate || "Date N/A"} • ${client.ownerBirthPlace || "Lieu N/A"}`} icon="calendar" theme={theme} />
-        </View>
-
-        {/* ADRESSE ÉCLATÉE */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>LOCALISATION & ADRESSE</Text>
-          
-          <InfoRow label="Nationalité" value={nationalite} icon="flag" theme={theme} />
-          <InfoRow label="Pays de résidence" value={pays} icon="earth" theme={theme} />
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.grid2}>
-            <View style={{ flex: 0.4 }}>
-              <Text style={styles.infoLabel}>Numéro</Text>
-              <Text style={styles.infoValue}>{numero}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.infoLabel}>Libellé de la voie</Text>
-              <Text style={styles.infoValue}>{libelle}</Text>
-            </View>
-          </View>
-
-          <View style={[styles.grid2, { marginTop: 16 }]}>
-            <View style={{ flex: 0.4 }}>
-              <Text style={styles.infoLabel}>Code Postal</Text>
-              <Text style={styles.infoValue}>{zipCode}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.infoLabel}>Ville</Text>
-              <Text style={styles.infoValue}>{city}</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* ACTIONS SENSIBLES */}
-        <Text style={[styles.sectionTitle, { marginTop: 15, marginBottom: 12, marginLeft: 4 }]}>ACTIONS RAPIDES</Text>
-        <View style={styles.actionsContainer}>
-          
-          {/* ✅ BOUTON MODIFIER AJOUTÉ ICI */}
-          <TouchableOpacity 
-            style={[styles.actionBox, { backgroundColor: "#EFF6FF", borderColor: "#BFDBFE" }]} 
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="arrow-back" size={24} color={T.white} />
+          </TouchableOpacity>
+          <Text style={[s.headerTitle, { fontFamily: T.font.display }]} numberOfLines={1}>{client.name}</Text>
+          <TouchableOpacity
+            style={s.editBtn}
             onPress={() => router.push({ pathname: "/(tabs)/admin/clients/edit", params: { id: client.id } })}
           >
-            <Ionicons name="pencil" size={22} color="#3B82F6" />
-            <Text style={[styles.actionBoxText, { color: '#3B82F6' }]}>Modifier</Text>
+            <Ionicons name="pencil" size={18} color={T.gold} />
           </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.actionBox, { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }]} 
-            onPress={handleToggleStatus} 
-            disabled={processing}
-          >
-            {processing ? <ActivityIndicator size="small" color="#D97706" /> : (
-              <>
-                <Ionicons name={isActive ? "pause" : "play"} size={22} color="#D97706" />
-                <Text style={[styles.actionBoxText, { color: '#D97706' }]}>{isActive ? "Suspendre" : "Activer"}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionBox, { backgroundColor: "#FEE2E2", borderColor: "#FECACA" }]} 
-            onPress={handleDelete} 
-            disabled={processing}
-          >
-            {processing ? <ActivityIndicator size="small" color="#DC2626" /> : (
-              <>
-                <Ionicons name="trash" size={22} color="#DC2626" />
-                <Text style={[styles.actionBoxText, { color: '#DC2626' }]}>Supprimer</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
         </View>
-        <View style={{height: 120}} />
-      </ScrollView>
-    </SafeAreaView>
+
+        <Animated.ScrollView style={{ opacity: fadeAnim }} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+          {/* Status & Code */}
+          <View style={s.statusRow}>
+            <View style={[s.codePill, { borderColor: `${T.gold}30` }]}>
+              <Text style={[s.codeTxt, { fontFamily: T.font.mono }]}>{client.code}</Text>
+            </View>
+            <View style={[s.statusPill, { backgroundColor: `${statusColor}12`, borderColor: `${statusColor}25` }]}>
+              <View style={[s.statusDot, { backgroundColor: statusColor }]} />
+              <Text style={[s.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
+                {isActive ? "ACTIVE" : "SUSPENDUE"}
+              </Text>
+            </View>
+            <View style={[s.subPill, { backgroundColor: `${subColor}10`, borderColor: `${subColor}25` }]}>
+              <Text style={[s.subTxt, { color: subColor, fontFamily: T.font.sans }]}>
+                {client.subscriptionType === "PURCHASE" ? "Achat" : "Location"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Stats */}
+          <View style={s.statsRow}>
+            <View style={s.statBox}>
+              <Ionicons name="people-outline" size={18} color={T.blue} />
+              <Text style={[s.statValue, { color: T.blue, fontFamily: T.font.display }]}>
+                {client._count?.users ?? 0}
+              </Text>
+              <Text style={[s.statLabel, { fontFamily: T.font.sans }]}>Utilisateurs</Text>
+            </View>
+            <View style={s.statBox}>
+              <Ionicons name="storefront-outline" size={18} color={T.gold} />
+              <Text style={[s.statValue, { color: T.gold, fontFamily: T.font.display }]}>
+                {client._count?.agencies ?? 0}
+              </Text>
+              <Text style={[s.statLabel, { fontFamily: T.font.sans }]}>Agences</Text>
+            </View>
+          </View>
+
+          {/* Wallets */}
+          {wallets.length > 0 && (
+            <View style={s.card}>
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: T.gold }]} />
+                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>WALLETS SOCIÉTÉ</Text>
+              </View>
+              {wallets.map((w: any) => <WalletRow key={w.id} wallet={w} />)}
+            </View>
+          )}
+
+          {/* Infos société */}
+          <View style={s.card}>
+            <View style={s.sectionRow}>
+              <View style={[s.sectionDot, { backgroundColor: T.blue }]} />
+              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>SOCIÉTÉ & CONTACT</Text>
+            </View>
+            <InfoRow label="EMAIL ADMINISTRATEUR" value={client.email || client.contactEmail || ""} icon="mail-outline" />
+            <InfoRow label="TÉLÉPHONE" value={client.phone || client.contactPhone || ""} icon="call-outline" />
+            <InfoRow label="SECTEUR" value={client.activitySector || ""} icon="briefcase-outline" />
+            <InfoRow label="DEVISE PRINCIPALE" value={client.defaultCurrency || ""} icon="cash-outline" />
+          </View>
+
+          {/* Gérant */}
+          <View style={s.card}>
+            <View style={s.sectionRow}>
+              <View style={[s.sectionDot, { backgroundColor: T.amber }]} />
+              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>GÉRANT</Text>
+            </View>
+            <InfoRow
+              label="NOM COMPLET"
+              value={`${client.ownerFirstName || ""} ${client.ownerLastName || ""}`.trim() || "—"}
+              icon="person-outline"
+            />
+            <InfoRow
+              label="NAISSANCE"
+              value={[client.ownerBirthDate, client.ownerBirthPlace].filter(Boolean).join(" · ") || "—"}
+              icon="calendar-outline"
+            />
+            <InfoRow label="NATIONALITÉ / PAYS" value={client.ownerCountry || ""} icon="flag-outline" />
+          </View>
+
+          {/* Adresse */}
+          {rawAddress && (
+            <View style={s.card}>
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: T.green }]} />
+                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ADRESSE</Text>
+              </View>
+              {parts.map((part: string, i: number) => part ? (
+                <Text key={i} style={[s.addressLine, { fontFamily: T.font.sans }]}>{part}</Text>
+              ) : null)}
+            </View>
+          )}
+
+          {/* Actions */}
+          <View style={s.sectionRow}>
+            <View style={[s.sectionDot, { backgroundColor: T.amber }]} />
+            <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ACTIONS</Text>
+          </View>
+          <View style={s.actionsRow}>
+            <ActionBox icon="pencil-outline" label="Modifier" color={T.blue} onPress={() => router.push({ pathname: "/(tabs)/admin/clients/edit", params: { id: client.id } })} loading={false} />
+            <ActionBox icon={isActive ? "pause-circle-outline" : "play-circle-outline"} label={isActive ? "Suspendre" : "Activer"} color={T.amber} onPress={handleToggleStatus} loading={processing} />
+            <ActionBox icon="trash-outline" label="Supprimer" color={T.red} onPress={handleDelete} loading={false} />
+          </View>
+
+          <View style={{ height: 100 }} />
+        </Animated.ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
-// ─── COMPOSANTS ─────────────────────────────────────────────────────────
-
-function InfoRow({ label, value, icon, theme }: any) {
-  return (
-    <View style={styles.infoRow}>
-      <View style={[styles.iconSmall, { backgroundColor: theme.light }]}>
-        <Ionicons name={icon} size={18} color={theme.primary} />
-      </View>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={2}>{value}</Text>
-      </View>
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
-  backBtnError: { paddingHorizontal: 24, paddingVertical: 14, borderRadius: 16 },
-  backBtnTextError: { color: '#FFF', fontFamily: FONTS.body, fontWeight: '800' },
-  
-  header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 20, paddingTop: Platform.OS === 'android' ? 40 : 20, alignItems: 'center' },
-  headerTitle: { fontSize: 24, fontFamily: FONTS.heading, color: '#FFF', fontWeight: '700' },
-  
-  content: { padding: 20, backgroundColor: '#F8FAFC', borderTopLeftRadius: 30, borderTopRightRadius: 30, flexGrow: 1 },
-  
-  balanceCard: { borderRadius: 20, padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  balanceLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontFamily: FONTS.body, fontWeight: '800', letterSpacing: 1 },
-  balanceValue: { color: '#FFF', fontSize: 28, fontFamily: FONTS.heading, fontWeight: '900', marginTop: 6, letterSpacing: 1 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-
-  statsContainer: { flexDirection: 'row', gap: 16, marginBottom: 20 },
-  statBox: { flex: 1, backgroundColor: '#FFF', padding: 16, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: '#F1F5F9', shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 8, elevation: 1 },
-  statIcon: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
-  statValue: { fontSize: 22, fontFamily: FONTS.heading, fontWeight: '800', color: '#0F172A', marginBottom: 2 },
-  statLabel: { fontSize: 11, fontFamily: FONTS.body, color: '#64748B', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  
-  section: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1, borderWidth: 1, borderColor: '#F1F5F9' },
-  sectionTitle: { fontSize: 12, color: '#94A3B8', fontFamily: FONTS.body, fontWeight: '900', marginBottom: 16, letterSpacing: 1.2 },
-  
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  iconSmall: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  infoLabel: { fontSize: 11, color: '#64748B', fontFamily: FONTS.body, fontWeight: '700', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
-  infoValue: { fontSize: 15, color: '#0F172A', fontFamily: FONTS.body, fontWeight: '700' },
-  
-  grid2: { flexDirection: 'row', gap: 16 },
-  
-  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 4, marginBottom: 16 },
-  
-  actionsContainer: { flexDirection: 'row', gap: 10 },
-  actionBox: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 14, borderRadius: 16, borderWidth: 1 },
-  actionBoxText: { marginTop: 8, fontSize: 12, fontFamily: FONTS.body, fontWeight: "800", letterSpacing: 0.3 }
+const s = StyleSheet.create({
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.inkBorder,
+  },
+  headerTitle: { flex: 1, color: T.white, fontSize: 20, fontWeight: "700" },
+  editBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.goldGlow, borderWidth: 1, borderColor: `${T.gold}30`,
+    justifyContent: "center", alignItems: "center",
+  },
+  scroll: { paddingHorizontal: 20, paddingTop: 4 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 18, flexWrap: "wrap" },
+  codePill: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: T.goldGlow, borderWidth: 1,
+  },
+  codeTxt: { color: T.gold, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  statusDot: { width: 5, height: 5, borderRadius: 99 },
+  statusTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
+  subPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  subTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
+  statsRow: { flexDirection: "row", gap: 12, marginBottom: 18 },
+  statBox: {
+    flex: 1, backgroundColor: T.ghost, borderRadius: T.radius.md, padding: 16,
+    alignItems: "center", gap: 4, borderWidth: 1, borderColor: T.inkBorder,
+  },
+  statValue: { fontSize: 24, fontWeight: "800" },
+  statLabel: { fontSize: 9, fontWeight: "900", color: T.creamDim, letterSpacing: 0.8 },
+  card: {
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 18, marginBottom: 14, borderWidth: 1, borderColor: T.inkBorder,
+  },
+  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  sectionDot: { width: 5, height: 5, borderRadius: 99 },
+  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.creamDim, letterSpacing: 1.5 },
+  addressLine: { color: T.white, fontSize: 14, fontWeight: "600", marginBottom: 4 },
+  actionsRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
 });

@@ -12,7 +12,7 @@
      * NESTJS (STABLE CJS)
      * ========================= */
     "module": "CommonJS",
-    "moduleResolution": "node16",
+    "moduleResolution": "Node",
     "target": "ES2021",
     "lib": ["ES2021"],
 
@@ -40,6 +40,7 @@
      * ========================= */
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
 
     /* =========================
      * PERF
@@ -55,6 +56,12 @@
     "noImplicitAny": false,
 
     /* =========================
+     * VERBATIM (FIX SEED + DECORATORS)
+     * ========================= */
+    "verbatimModuleSyntax": false,
+    "isolatedModules": false,
+
+    /* =========================
      * SECURITE
      * ========================= */
     "forceConsistentCasingInFileNames": true,
@@ -65,11 +72,16 @@
 
   /* =========================
    * TS-NODE (PRISMA / SEED)
+   * Force CommonJS + Node resolution pour le seed
    * ========================= */
   "ts-node": {
+    "transpileOnly": true,
     "compilerOptions": {
       "module": "CommonJS",
-      "moduleResolution": "node16"
+      "moduleResolution": "Node",
+      "verbatimModuleSyntax": false,
+      "isolatedModules": false,
+      "esModuleInterop": true
     }
   },
 

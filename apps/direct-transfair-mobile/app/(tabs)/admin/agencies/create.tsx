@@ -1,257 +1,612 @@
 //apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
-import React, { useState, useEffect } from "react";
-import { 
-  View, Text, StyleSheet, TextInput, ScrollView, Switch, Alert, 
-  SafeAreaView, KeyboardAvoidingView, Platform, Modal, FlatList, TouchableOpacity, ActivityIndicator, StatusBar 
+// apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
+// =========================================================
+// AGENCY CREATE v4.0 — Direct Transf'air
+// Design: Thème dynamique par rôle — dark premium
+// ✅ Sélecteur pays + ville + indicatif téléphonique
+// ✅ Devise auto depuis le pays sélectionné (wallets v4)
+// ✅ Type agence : Filiale / Partenaire
+// =========================================================
+
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import {
+  View, Text, StyleSheet, TextInput, ScrollView, Alert,
+  SafeAreaView, KeyboardAvoidingView, Platform, Modal, FlatList,
+  TouchableOpacity, ActivityIndicator, StatusBar, Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors } from "../../../../theme/colors"; 
+import { LinearGradient } from "expo-linear-gradient";
+import { api } from "../../../../services/api";
+import { useAuth } from "../../../../providers/AuthProvider";
 import { countriesList, CountryData } from "../../../../data/countries";
 import { citiesByCountry } from "../../../../data/cities";
-import { api } from "../../../../services/api"; 
 
-export default function CreateAgencyScreen() {
-  const router = useRouter();
-  
-  const [name, setName] = useState("");
-  const [managerFirstName, setManagerFirstName] = useState("");
-  const [managerLastName, setManagerLastName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [address, setAddress] = useState("");
-  
-  const [selectedCountry, setSelectedCountry] = useState<CountryData>(countriesList[0]);
-  const [selectedPhoneCode, setSelectedPhoneCode] = useState<CountryData>(countriesList[0]);
-  const [selectedCity, setSelectedCity] = useState("");
-  
-  const [showCountryModal, setShowCountryModal] = useState(false);
-  const [showPhoneCodeModal, setShowPhoneCodeModal] = useState(false);
-  const [showCityModal, setShowCityModal] = useState(false);
-  
-  const [isPartner, setIsPartner] = useState(false);
-  const [submitting, setSubmitting] = useState(false); 
+// ─── Tokens ─────────────────────────────────────────────
+const ROLE_THEMES = {
+  SUPER_ADMIN:   { g1: "#0A0A0F", g2: "#12121A", accent: "#D4A853", accentGlow: "rgba(212,168,83,0.15)" },
+  COMPANY_ADMIN: { g1: "#030B1A", g2: "#071224", accent: "#34D399", accentGlow: "rgba(52,211,153,0.15)" },
+  AGENT:         { g1: "#1A0E00", g2: "#211200", accent: "#F59E0B", accentGlow: "rgba(245,158,11,0.15)" },
+} as const;
 
-  useEffect(() => { setSelectedCity(""); }, [selectedCountry]);
+const T = {
+  inkLight:  "#1C1C28",
+  inkBorder: "#2A2A3A",
+  ghost:     "rgba(255,255,255,0.06)",
+  ghostMid:  "rgba(255,255,255,0.10)",
+  white:     "#FFFFFF",
+  dim:       "#8A9BB5",
+  green:     "#22C55E",
+  amber:     "#F59E0B",
+  radius: { sm: 10, md: 14, lg: 20 },
+  font: {
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:    Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
+};
 
-  const availableCities = citiesByCountry[selectedCountry.name] || [];
-
-  const showAlert = (title: string, message: string, onOk?: () => void) => {
-      if (Platform.OS === 'web') {
-          setTimeout(() => {
-            if (window.confirm(`${title}\n\n${message}`)) { if (onOk) onOk(); }
-          }, 100);
-      } else {
-          Alert.alert(title, message, [{ text: "OK", onPress: onOk }]);
-      }
-  };
-
-  const handleCreate = async () => {
-      if (!name.trim() || !phone.trim() || !managerFirstName.trim() || !managerLastName.trim() || !selectedCity || !email.trim() || !password.trim()) {
-          showAlert("Attention", "Veuillez remplir tous les champs obligatoires (*).");
-          return;
-      }
-
-      setSubmitting(true);
-
-      try {
-          const fullPhone = `${selectedPhoneCode.dialCode}${phone}`;
-          const fullManagerName = `${managerFirstName.trim()} ${managerLastName.trim()}`;
-          const autoCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
-          const subscriptionType = isPartner ? 'PURCHASE' : 'RENTAL';
-
-          // ✅ C'est ici que la devise du pays est récupérée (Ex: GNF pour Guinée)
-          const agencyCurrency = selectedCountry.currency || "XOF"; 
-
-          const newAgency = {
-              name,
-              code: autoCode, 
-              address,
-              phone: fullPhone,
-              email, 
-              adminEmail: email, 
-              adminFirstName: managerFirstName,
-              adminLastName: managerLastName,
-              adminPassword: password, 
-              
-              managerName: fullManagerName, 
-              country: selectedCountry.name,
-              currency: agencyCurrency, // ✅ Devise correctement envoyée
-              
-              city: selectedCity,
-              subscriptionType, 
-              status: 'ACTIVE'
-          };
-
-          await api.createAgency(newAgency);
-          showAlert("Succès 🎉", `L'agence ${name} a été créée en ${agencyCurrency}.\nLogin: ${email}\nMot de passe: ${password}`, () => router.back());
-
-      } catch (error: any) {
-          console.error("Erreur création:", error);
-          const rawMsg = error.response?.data?.message || "Erreur technique.";
-          if (error.response?.status === 401) {
-             showAlert("Session Expirée", "Veuillez vous déconnecter et vous reconnecter.");
-          } else {
-             showAlert("Erreur", rawMsg);
-          }
-      } finally {
-          setSubmitting(false);
-      }
-  };
+// ─── Field ────────────────────────────────────────────────
+function Field({ label, value, onChangeText, placeholder, keyboardType, autoCapitalize, secureTextEntry, required, editable = true }: {
+  label: string; value: string; onChangeText: (v: string) => void;
+  placeholder?: string; keyboardType?: any; autoCapitalize?: any;
+  secureTextEntry?: boolean; required?: boolean; editable?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const [shown, setShown] = useState(false);
+  const isPassword = secureTextEntry;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backIcon}><Ionicons name="arrow-back" size={24} color="#111827" /></TouchableOpacity>
-        <Text style={styles.headerTitle}>Nouvelle Agence</Text>
-        <View style={{width: 24}} /> 
+    <View style={fS.wrap}>
+      <Text style={[fS.label, { fontFamily: T.font.sans }]}>
+        {label}
+        {required && <Text style={{ color: "#EF4444" }}> *</Text>}
+      </Text>
+      <View style={[fS.box, focused && fS.boxFocused, !editable && fS.disabled]}>
+        <TextInput
+          style={[fS.input, { fontFamily: T.font.sans }]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={T.dim + "55"}
+          keyboardType={keyboardType}
+          autoCapitalize={autoCapitalize}
+          secureTextEntry={isPassword && !shown}
+          editable={editable}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {isPassword && (
+          <TouchableOpacity style={fS.eyeBtn} onPress={() => setShown(!shown)}>
+            <Ionicons name={shown ? "eye-off-outline" : "eye-outline"} size={18} color={T.dim} />
+          </TouchableOpacity>
+        )}
       </View>
+    </View>
+  );
+}
+const fS = StyleSheet.create({
+  wrap: { marginBottom: 14 },
+  label: { fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 6 },
+  box: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
+    borderRadius: T.radius.md, overflow: "hidden",
+  },
+  boxFocused: { borderColor: "rgba(255,255,255,0.25)" },
+  disabled: { opacity: 0.5 },
+  input: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.white, fontWeight: "600" },
+  eyeBtn: { padding: 12 },
+});
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{flex:1}}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        
-        <View style={styles.cardHighlight}>
-            <View style={styles.rowBetween}>
-                <View style={{flex:1, paddingRight:10}}>
-                    <Text style={[styles.highlightTitle, { color: isPartner ? colors.primary : '#059669' }]}>
-                        {isPartner ? "Agence Partenaire" : "Agence Filiale"}
-                    </Text>
-                    <Text style={styles.highlightDesc}>{isPartner ? "Société tierce indépendante commissionnée." : "Propriété de l'entreprise. Gains à 100%."}</Text>
-                </View>
-                <Switch value={isPartner} onValueChange={setIsPartner} trackColor={{ false: "#10B981", true: colors.primary }} thumbColor="#FFF" />
-            </View>
+// ─── SelectButton ─────────────────────────────────────────
+function SelectButton({ label, value, onPress, required, accent }: {
+  label: string; value: string; onPress: () => void; required?: boolean; accent: string;
+}) {
+  return (
+    <View style={sbS.wrap}>
+      <Text style={[sbS.label, { fontFamily: T.font.sans }]}>
+        {label}
+        {required && <Text style={{ color: "#EF4444" }}> *</Text>}
+      </Text>
+      <TouchableOpacity style={sbS.btn} onPress={onPress} activeOpacity={0.8}>
+        <Text style={[sbS.value, { color: value ? T.white : T.dim + "80", fontFamily: T.font.sans }]}>
+          {value || "Sélectionner…"}
+        </Text>
+        <View style={[sbS.chevron, { backgroundColor: `${accent}10` }]}>
+          <Ionicons name="chevron-down" size={14} color={accent} />
         </View>
+      </TouchableOpacity>
+    </View>
+  );
+}
+const sbS = StyleSheet.create({
+  wrap: { marginBottom: 14 },
+  label: { fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 6 },
+  btn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
+    borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 13,
+  },
+  value: { flex: 1, fontSize: 14, fontWeight: "600" },
+  chevron: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+});
 
-        <Text style={styles.sectionHeader}>IDENTITÉ</Text>
-        <View style={styles.card}>
-            <InputLabel label="Nom de l'agence" req />
-            <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Ex: Agence Centre-Ville" placeholderTextColor="#9CA3AF" />
-            <InputLabel label="Email contact (Login)" req />
-            <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="contact@agence.com" keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#9CA3AF" />
-            <InputLabel label="Mot de passe de connexion" req />
-            <View style={styles.passwordContainer}>
-                <TextInput style={styles.passwordInput} value={password} onChangeText={setPassword} placeholder="Définir un mot de passe" placeholderTextColor="#9CA3AF" secureTextEntry={!showPassword} />
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{padding: 10}}>
-                    <Ionicons name={showPassword ? "eye-off" : "eye"} size={20} color="#6B7280" />
-                </TouchableOpacity>
-            </View>
-        </View>
-
-        <Text style={styles.sectionHeader}>RESPONSABLE</Text>
-        <View style={styles.card}>
-            <View style={styles.rowGap}>
-                <View style={{flex:1}}><InputLabel label="Prénom" req /><TextInput style={styles.input} value={managerFirstName} onChangeText={setManagerFirstName} placeholder="Moussa" placeholderTextColor="#9CA3AF" /></View>
-                <View style={{flex:1}}><InputLabel label="Nom" req /><TextInput style={styles.input} value={managerLastName} onChangeText={setManagerLastName} placeholder="DIOP" placeholderTextColor="#9CA3AF" /></View>
-            </View>
-            <InputLabel label="Téléphone Mobile" req />
-            <View style={styles.phoneContainer}>
-                <TouchableOpacity style={styles.phoneCodeBtn} onPress={() => setShowPhoneCodeModal(true)}>
-                    <Text style={{fontSize:18}}>{selectedPhoneCode.flag}</Text>
-                    <Text style={styles.phoneCodeText}>{selectedPhoneCode.dialCode}</Text>
-                    <Ionicons name="caret-down" size={10} color="#6B7280" />
-                </TouchableOpacity>
-                <TextInput style={styles.phoneInput} value={phone} onChangeText={setPhone} placeholder="77 000 00 00" keyboardType="phone-pad" placeholderTextColor="#9CA3AF" />
-            </View>
-        </View>
-
-        <Text style={styles.sectionHeader}>ADRESSE & LOCALISATION</Text>
-        <View style={styles.card}>
-            <InputLabel label="Pays (Définit la devise)" req />
-            <TouchableOpacity style={styles.selectBtn} onPress={() => setShowCountryModal(true)}>
-                <View style={{flexDirection:'row', alignItems:'center'}}>
-                    <Text style={{fontSize:20, marginRight:10}}>{selectedCountry.flag}</Text>
-                    <Text style={styles.selectText}>{selectedCountry.name} ({selectedCountry.currency})</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color="#D1D5DB" />
-            </TouchableOpacity>
-
-            <View style={[styles.rowGap, {marginTop: 15}]}>
-                <View style={{flex:1}}>
-                    <InputLabel label="Ville" req />
-                    <TouchableOpacity style={styles.selectBtn} onPress={() => setShowCityModal(true)}>
-                        <Text style={[styles.selectText, !selectedCity && {color:'#9CA3AF'}]}>{selectedCity || "Sélectionner"}</Text>
-                        <Ionicons name="chevron-down" size={18} color="#9CA3AF" />
-                    </TouchableOpacity>
-                </View>
-            </View>
-            
-            <View style={{marginTop: 15}}>
-                <InputLabel label="Adresse exacte" />
-                <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="Quartier, Rue, N° Porte..." placeholderTextColor="#9CA3AF" />
-            </View>
-        </View>
-
-        <TouchableOpacity style={[styles.mainBtn, submitting && styles.btnDisabled]} onPress={handleCreate} disabled={submitting} activeOpacity={0.9}>
-            {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnText}>VALIDER LA CRÉATION</Text>}
-        </TouchableOpacity>
-        <View style={{height: 120}} /> 
-    </ScrollView>
-    </KeyboardAvoidingView>
-
-    <SelectionModal visible={showCountryModal} onClose={() => setShowCountryModal(false)} title="Choisir le Pays" data={countriesList} onSelect={(item: CountryData) => { setSelectedCountry(item); setSelectedPhoneCode(item); setShowCountryModal(false); }} />
-    <SelectionModal visible={showPhoneCodeModal} onClose={() => setShowPhoneCodeModal(false)} title="Indicatif" data={countriesList} onSelect={(item: CountryData) => { setSelectedPhoneCode(item); setShowPhoneCodeModal(false); }} />
-    <CityModal visible={showCityModal} onClose={() => setShowCityModal(false)} title={`Villes (${selectedCountry.name})`} data={availableCities} onSelect={(city: string) => { setSelectedCity(city); setShowCityModal(false); }} />
-    </SafeAreaView>
+// ─── SectionHeader ────────────────────────────────────────
+function SectionHeader({ icon, title, color }: { icon: string; title: string; color: string }) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, marginTop: 4 }}>
+      <View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: `${color}15`, justifyContent: "center", alignItems: "center" }}>
+        <Ionicons name={icon as any} size={14} color={color} />
+      </View>
+      <Text style={[{ fontSize: 10, fontWeight: "900" as any, color: T.dim, letterSpacing: 1.5 }, { fontFamily: T.font.sans }]}>{title}</Text>
+    </View>
   );
 }
 
-const InputLabel = ({label, req}: {label:string, req?:boolean}) => (<Text style={styles.label}>{label} {req && <Text style={{color:'#EF4444'}}>*</Text>}</Text>);
-const SelectionModal = ({ visible, onClose, title, data, onSelect }: any) => (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-        <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-                <View style={styles.modalHeader}><Text style={styles.modalTitle}>{title}</Text><TouchableOpacity onPress={onClose} style={styles.closeBtn}><Ionicons name="close" size={20} color="#374151" /></TouchableOpacity></View>
-                <FlatList data={data} keyExtractor={item => item.code} renderItem={({item}) => (<TouchableOpacity style={styles.modalItem} onPress={() => onSelect(item)}><Text style={{fontSize:24, marginRight:12}}>{item.flag}</Text><Text style={styles.modalText}>{item.name}</Text><Text style={styles.modalCode}>{item.dialCode}</Text></TouchableOpacity>)} />
-            </View>
-        </View>
-    </Modal>
-);
-const CityModal = ({ visible, onClose, title, data, onSelect }: any) => (
-    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-        <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-                <View style={styles.modalHeader}><Text style={styles.modalTitle}>{title}</Text><TouchableOpacity onPress={onClose} style={styles.closeBtn}><Ionicons name="close" size={20} color="#374151" /></TouchableOpacity></View>
-                <FlatList data={data} keyExtractor={(item, i) => item + i} renderItem={({item}) => (<TouchableOpacity style={styles.modalItem} onPress={() => onSelect(item)}><Text style={styles.modalText}>{item}</Text><Ionicons name="chevron-forward" size={16} color="#D1D5DB" /></TouchableOpacity>)} ListEmptyComponent={<Text style={{padding:20, textAlign:'center', color:'#999'}}>Aucune ville disponible.</Text>} />
-            </View>
-        </View>
-    </Modal>
-);
+// ─── Country / City Modal ─────────────────────────────────
+function PickerModal({
+  visible, onClose, title, data, onSelect, renderItem,
+}: {
+  visible: boolean; onClose: () => void; title: string;
+  data: any[]; onSelect: (item: any) => void;
+  renderItem: (item: any) => React.ReactNode;
+}) {
+  const [q, setQ] = useState("");
+  const filtered = q.trim()
+    ? data.filter((item: any) => (typeof item === "string" ? item : item.name ?? "").toLowerCase().includes(q.toLowerCase()))
+    : data;
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F3F4F6' },
-    header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#E5E7EB' },
-    backIcon: { padding: 4 },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-    content: { padding: 20, paddingBottom: 150 }, 
-    sectionHeader: { fontSize: 12, fontWeight: '800', color: '#6B7280', marginTop: 25, marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase' },
-    card: { backgroundColor: '#FFF', borderRadius: 12, padding: 16, marginBottom: 8, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, elevation: 1, borderWidth:1, borderColor:'#F9FAFB' },
-    cardHighlight: { backgroundColor: '#FFF', borderRadius: 12, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: '#E5E7EB' },
-    highlightTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
-    highlightDesc: { fontSize: 12, color: '#6B7280', lineHeight: 16 },
-    label: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 4 },
-    input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#1F2937' },
-    passwordContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8 },
-    passwordInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#1F2937' },
-    rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    rowGap: { flexDirection: 'row', gap: 12 },
-    phoneContainer: { flexDirection: 'row', gap: 8 },
-    phoneCodeBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 10, gap: 6 },
-    phoneCodeText: { fontWeight: '600', color: '#374151' },
-    phoneInput: { flex: 1, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#1F2937' },
-    selectBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
-    selectText: { fontSize: 15, color: '#1F2937' },
-    mainBtn: { backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginTop: 30, shadowColor: colors.primary, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
-    btnDisabled: { backgroundColor: '#9CA3AF', shadowOpacity: 0 },
-    btnText: { color: '#FFF', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    modalContainer: { backgroundColor: '#FFF', borderRadius: 16, width: '100%', maxWidth: 400, maxHeight: '70%' },
-    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F3F4F6' },
-    modalTitle: { fontSize: 16, fontWeight: '700', color: '#111827' },
-    closeBtn: { padding: 4, backgroundColor: '#F3F4F6', borderRadius: 12 },
-    modalItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#F9FAFB' },
-    modalText: { fontSize: 15, color: '#374151', flex: 1, fontWeight: '500' },
-    modalCode: { fontSize: 14, fontWeight: '700', color: '#9CA3AF' }
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={pmS.overlay}>
+        <View style={pmS.sheet}>
+          <View style={pmS.handle} />
+          <View style={pmS.headerRow}>
+            <Text style={[pmS.title, { fontFamily: T.font.display }]}>{title}</Text>
+            <TouchableOpacity style={pmS.closeBtn} onPress={onClose}>
+              <Ionicons name="close" size={18} color={T.dim} />
+            </TouchableOpacity>
+          </View>
+          <View style={pmS.searchBox}>
+            <Ionicons name="search" size={16} color={T.dim} />
+            <TextInput
+              style={[pmS.searchInput, { fontFamily: T.font.sans }]}
+              value={q}
+              onChangeText={setQ}
+              placeholder="Rechercher…"
+              placeholderTextColor={T.dim + "60"}
+              autoFocus
+            />
+            {!!q && (
+              <TouchableOpacity onPress={() => setQ("")}>
+                <Ionicons name="close" size={14} color={T.dim} />
+              </TouchableOpacity>
+            )}
+          </View>
+          <FlatList
+            data={filtered}
+            keyExtractor={(item, i) => (typeof item === "string" ? item : item.code ?? item.name ?? i.toString())}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={pmS.item} onPress={() => { onSelect(item); onClose(); setQ(""); }}>
+                {renderItem(item)}
+              </TouchableOpacity>
+            )}
+            ListEmptyComponent={
+              <Text style={[pmS.empty, { fontFamily: T.font.sans }]}>Aucun résultat</Text>
+            }
+            showsVerticalScrollIndicator={false}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const pmS = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(5,5,10,0.88)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: "#0C0C16", borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    maxHeight: "75%", borderWidth: 1, borderColor: T.inkBorder,
+  },
+  handle: { width: 36, height: 4, borderRadius: 99, backgroundColor: T.inkBorder, alignSelf: "center", marginTop: 14, marginBottom: 4 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.inkBorder },
+  title: { color: T.white, fontSize: 18, fontWeight: "700" },
+  closeBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: T.ghost, justifyContent: "center", alignItems: "center" },
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    margin: 16, backgroundColor: T.ghost, borderWidth: 1, borderColor: T.inkBorder,
+    borderRadius: T.radius.md, paddingHorizontal: 14, height: 44,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: T.white, fontWeight: "600" },
+  item: { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.inkBorder },
+  empty: { color: T.dim, textAlign: "center", padding: 24, fontWeight: "600" },
+});
+
+// ─── Type Toggle ──────────────────────────────────────────
+function TypeToggle({ isPartner, onChange, accent }: { isPartner: boolean; onChange: (v: boolean) => void; accent: string }) {
+  return (
+    <View style={ttS.card}>
+      <TouchableOpacity
+        style={[ttS.option, !isPartner && { backgroundColor: `${T.green}15`, borderColor: `${T.green}30` }]}
+        onPress={() => onChange(false)}
+        activeOpacity={0.85}
+      >
+        {!isPartner && <View style={[ttS.activeDot, { backgroundColor: T.green }]} />}
+        <View style={{ flex: 1 }}>
+          <Text style={[ttS.optTitle, { color: !isPartner ? T.green : T.dim, fontFamily: T.font.sans }]}>
+            Agence Filiale
+          </Text>
+          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>
+            Propriété directe · Gains à 100%
+          </Text>
+        </View>
+        {!isPartner && <Ionicons name="checkmark-circle" size={20} color={T.green} />}
+      </TouchableOpacity>
+
+      <View style={ttS.divider} />
+
+      <TouchableOpacity
+        style={[ttS.option, isPartner && { backgroundColor: `${accent}15`, borderColor: `${accent}30` }]}
+        onPress={() => onChange(true)}
+        activeOpacity={0.85}
+      >
+        {isPartner && <View style={[ttS.activeDot, { backgroundColor: accent }]} />}
+        <View style={{ flex: 1 }}>
+          <Text style={[ttS.optTitle, { color: isPartner ? accent : T.dim, fontFamily: T.font.sans }]}>
+            Agence Partenaire
+          </Text>
+          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>
+            Société tierce indépendante · Commissionnée
+          </Text>
+        </View>
+        {isPartner && <Ionicons name="checkmark-circle" size={20} color={accent} />}
+      </TouchableOpacity>
+    </View>
+  );
+}
+const ttS = StyleSheet.create({
+  card: { backgroundColor: T.ghost, borderRadius: T.radius.lg, borderWidth: 1, borderColor: T.inkBorder, marginBottom: 14, overflow: "hidden" },
+  option: {
+    flexDirection: "row", alignItems: "center", padding: 16, gap: 12,
+    borderWidth: 1, borderColor: "transparent",
+  },
+  activeDot: { width: 4, height: 36, borderRadius: 99 },
+  optTitle: { fontSize: 14, fontWeight: "800", marginBottom: 2 },
+  optDesc: { fontSize: 11, color: T.dim, fontWeight: "600", lineHeight: 15 },
+  divider: { height: 1, backgroundColor: T.inkBorder },
+});
+
+// ─── Main Screen ──────────────────────────────────────────
+export default function CreateAgencyScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
+  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
+
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [managerFirstName, setManagerFirstName] = useState("");
+  const [managerLastName, setManagerLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [isPartner, setIsPartner] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [selectedCountry, setSelectedCountry] = useState<CountryData>(countriesList[0]);
+  const [selectedPhoneCode, setSelectedPhoneCode] = useState<CountryData>(countriesList[0]);
+  const [selectedCity, setSelectedCity] = useState("");
+
+  const [showCountryModal, setShowCountryModal] = useState(false);
+  const [showPhoneCodeModal, setShowPhoneCodeModal] = useState(false);
+  const [showCityModal, setShowCityModal] = useState(false);
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setSelectedCity("");
+    Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+  }, [selectedCountry]);
+
+  const availableCities = (citiesByCountry as any)[selectedCountry.name] ?? [];
+
+  const handleCreate = async () => {
+    if (!name.trim() || !email.trim() || !password.trim() || !managerFirstName.trim() || !managerLastName.trim() || !selectedCity) {
+      Alert.alert("Champs manquants", "Tous les champs marqués * sont obligatoires.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const fullPhone = `${selectedPhoneCode.dialCode}${phone}`;
+      const autoCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
+      const agencyCurrency = (selectedCountry as any).currency ?? "XOF";
+
+      await api.createAgency({
+        name: name.trim(),
+        code: autoCode,
+        address: address.trim() || undefined,
+        phone: fullPhone,
+        email: email.trim(),
+        adminEmail: email.trim(),
+        adminFirstName: managerFirstName.trim(),
+        adminLastName: managerLastName.trim(),
+        adminPassword: password,
+        managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
+        country: selectedCountry.name,
+        currency: agencyCurrency,
+        primaryCurrency: agencyCurrency,
+        city: selectedCity,
+        subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
+        status: "ACTIVE",
+      });
+
+      Alert.alert(
+        "✅ Agence créée",
+        `${name.trim()}\nDevise: ${agencyCurrency}\nLogin: ${email.trim()}`,
+        [{ text: "OK", onPress: () => router.back() }],
+      );
+    } catch (error: any) {
+      const rawMsg = error?.response?.data?.message ?? "Erreur technique.";
+      if (error?.response?.status === 401) {
+        Alert.alert("Session expirée", "Veuillez vous reconnecter.");
+      } else {
+        Alert.alert("Erreur", Array.isArray(rawMsg) ? rawMsg[0] : rawMsg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <StatusBar barStyle="light-content" />
+
+        {/* ── Header ── */}
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="arrow-back" size={24} color={T.white} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Nouvelle Agence</Text>
+            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
+              {(selectedCountry as any).currency ?? "XOF"} · {selectedCountry.name}
+            </Text>
+          </View>
+        </View>
+
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <Animated.ScrollView
+            style={{ opacity: fadeAnim }}
+            contentContainerStyle={s.content}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Type agence */}
+            <TypeToggle isPartner={isPartner} onChange={setIsPartner} accent={theme.accent} />
+
+            {/* Identité */}
+            <View style={s.card}>
+              <SectionHeader icon="business-outline" title="IDENTITÉ" color={theme.accent} />
+              <Field label="NOM DE L'AGENCE" value={name} onChangeText={setName} placeholder="Ex: Agence Centre-Ville" required editable={!submitting} />
+              <Field label="EMAIL DE CONNEXION" value={email} onChangeText={setEmail} placeholder="contact@agence.com" keyboardType="email-address" autoCapitalize="none" required editable={!submitting} />
+              <Field label="MOT DE PASSE" value={password} onChangeText={setPassword} placeholder="Définir un mot de passe…" secureTextEntry required editable={!submitting} />
+            </View>
+
+            {/* Responsable */}
+            <View style={s.card}>
+              <SectionHeader icon="person-outline" title="RESPONSABLE" color="#60A5FA" />
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Field label="PRÉNOM" value={managerFirstName} onChangeText={setManagerFirstName} placeholder="Moussa" required editable={!submitting} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field label="NOM" value={managerLastName} onChangeText={setManagerLastName} placeholder="DIOP" required editable={!submitting} />
+                </View>
+              </View>
+
+              {/* Téléphone avec indicatif */}
+              <Text style={[s.fieldLabel, { fontFamily: T.font.sans }]}>
+                TÉLÉPHONE <Text style={{ color: "#EF4444" }}>*</Text>
+              </Text>
+              <View style={s.phoneRow}>
+                <TouchableOpacity
+                  style={[s.dialCodeBtn, { borderColor: T.inkBorder }]}
+                  onPress={() => setShowPhoneCodeModal(true)}
+                >
+                  <Text style={{ fontSize: 20 }}>{selectedPhoneCode.flag}</Text>
+                  <Text style={[s.dialCodeTxt, { fontFamily: T.font.mono }]}>{selectedPhoneCode.dialCode}</Text>
+                  <Ionicons name="caret-down" size={10} color={T.dim} />
+                </TouchableOpacity>
+                <View style={[s.phoneInputBox, { borderColor: T.inkBorder }]}>
+                  <TextInput
+                    style={[s.phoneInput, { fontFamily: T.font.sans }]}
+                    value={phone}
+                    onChangeText={setPhone}
+                    placeholder="620 000 000"
+                    placeholderTextColor={T.dim + "60"}
+                    keyboardType="phone-pad"
+                    editable={!submitting}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* Localisation */}
+            <View style={s.card}>
+              <SectionHeader icon="location-outline" title="LOCALISATION · DEVISE" color={T.green} />
+
+              {/* Pays */}
+              <View style={s.countryPreview}>
+                <TouchableOpacity
+                  style={[s.countryBtn, { borderColor: `${theme.accent}25` }]}
+                  onPress={() => setShowCountryModal(true)}
+                >
+                  <Text style={{ fontSize: 28 }}>{selectedCountry.flag}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.countryName, { fontFamily: T.font.sans }]}>{selectedCountry.name}</Text>
+                    <Text style={[s.countryCur, { color: theme.accent, fontFamily: T.font.mono }]}>
+                      Devise: {(selectedCountry as any).currency ?? "XOF"}
+                    </Text>
+                  </View>
+                  <View style={[s.chevronBox, { backgroundColor: `${theme.accent}15` }]}>
+                    <Ionicons name="chevron-down" size={14} color={theme.accent} />
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <SelectButton
+                label="VILLE"
+                value={selectedCity}
+                onPress={() => setShowCityModal(true)}
+                required
+                accent={theme.accent}
+              />
+
+              <Field label="ADRESSE EXACTE" value={address} onChangeText={setAddress} placeholder="Quartier, Rue, N° Porte…" editable={!submitting} />
+            </View>
+
+            {/* Bouton */}
+            <TouchableOpacity
+              style={[s.primaryBtn, submitting && { opacity: 0.65 }]}
+              onPress={handleCreate}
+              disabled={submitting}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={[theme.accent, theme.accent + "CC"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={s.primaryGrad}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#000" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle-outline" size={20} color="#000" />
+                    <Text style={[s.primaryTxt, { fontFamily: T.font.sans }]}>VALIDER LA CRÉATION</Text>
+                  </>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={s.cancelBtn} onPress={() => router.back()} disabled={submitting}>
+              <Text style={[s.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 60 }} />
+          </Animated.ScrollView>
+        </KeyboardAvoidingView>
+
+        {/* Modals */}
+        <PickerModal
+          visible={showCountryModal}
+          onClose={() => setShowCountryModal(false)}
+          title="Choisir le Pays"
+          data={countriesList}
+          onSelect={(item: CountryData) => { setSelectedCountry(item); setSelectedPhoneCode(item); }}
+          renderItem={(item: CountryData) => (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <Text style={{ fontSize: 24 }}>{item.flag}</Text>
+              <Text style={[{ flex: 1, color: T.white, fontSize: 14, fontWeight: "700" }, { fontFamily: T.font.sans }]}>
+                {item.name}
+              </Text>
+              <Text style={[{ color: theme.accent, fontSize: 11, fontWeight: "900" }, { fontFamily: T.font.mono }]}>
+                {(item as any).currency ?? ""}
+              </Text>
+            </View>
+          )}
+        />
+
+        <PickerModal
+          visible={showPhoneCodeModal}
+          onClose={() => setShowPhoneCodeModal(false)}
+          title="Indicatif Téléphonique"
+          data={countriesList}
+          onSelect={(item: CountryData) => setSelectedPhoneCode(item)}
+          renderItem={(item: CountryData) => (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <Text style={{ fontSize: 24 }}>{item.flag}</Text>
+              <Text style={[{ flex: 1, color: T.white, fontSize: 14, fontWeight: "600" }, { fontFamily: T.font.sans }]}>
+                {item.name}
+              </Text>
+              <Text style={[{ color: T.dim, fontSize: 13, fontWeight: "800" }, { fontFamily: T.font.mono }]}>
+                {item.dialCode}
+              </Text>
+            </View>
+          )}
+        />
+
+        <PickerModal
+          visible={showCityModal}
+          onClose={() => setShowCityModal(false)}
+          title={`Villes · ${selectedCountry.name}`}
+          data={availableCities}
+          onSelect={(city: string) => setSelectedCity(city)}
+          renderItem={(city: string) => (
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={[{ color: T.white, fontSize: 14, fontWeight: "600" }, { fontFamily: T.font.sans }]}>{city}</Text>
+              <Ionicons name="chevron-forward" size={14} color={T.dim} />
+            </View>
+          )}
+        />
+      </SafeAreaView>
+    </LinearGradient>
+  );
+}
+
+const s = StyleSheet.create({
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
+    borderBottomWidth: 1, borderBottomColor: T.inkBorder,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.inkBorder,
+  },
+  headerTitle: { color: T.white, fontSize: 20, fontWeight: "700" },
+  headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+
+  content: { paddingHorizontal: 20, paddingTop: 20 },
+
+  card: {
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 18, marginBottom: 14,
+    borderWidth: 1, borderColor: T.inkBorder,
+  },
+
+  fieldLabel: { fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 6 },
+
+  phoneRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  dialCodeBtn: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    backgroundColor: T.ghost, borderWidth: 1,
+    borderRadius: T.radius.md, paddingHorizontal: 12, paddingVertical: 12,
+  },
+  dialCodeTxt: { color: T.white, fontSize: 13, fontWeight: "800" },
+  phoneInputBox: {
+    flex: 1, backgroundColor: T.ghost, borderWidth: 1,
+    borderRadius: T.radius.md, overflow: "hidden",
+  },
+  phoneInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.white, fontWeight: "600" },
+
+  countryPreview: { marginBottom: 14 },
+  countryBtn: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: T.ghost, borderWidth: 1,
+    borderRadius: T.radius.md, padding: 14,
+  },
+  countryName: { color: T.white, fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  countryCur: { fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  chevronBox: { width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center" },
+
+  primaryBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 8 },
+  primaryGrad: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    paddingVertical: 18, gap: 10,
+  },
+  primaryTxt: { color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+  cancelBtn: { alignItems: "center", paddingVertical: 16 },
+  cancelTxt: { color: T.dim, fontWeight: "800", fontSize: 14 },
 });

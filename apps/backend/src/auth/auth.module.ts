@@ -1,24 +1,32 @@
 // apps/backend/src/auth/auth.module.ts
-import { Module } from '@nestjs/common';
+// =========================================================
+// AUTH MODULE v4.0
+// ✅ Pas de Passport (guard custom JwtAuthGuard)
+// ✅ MailModule importé pour les emails OTP/welcome/confirmation
+// ✅ JwtModule.registerAsync conservé tel quel
+// =========================================================
+
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-
-import { JwtStrategy } from './strategies/jwt.strategy';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
 import { UsersModule } from '../users/users.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { MailModule } from '../mail/mail.module';
 
-// Fonction utilitaire pour gérer la durée du token (ex: "1d", "3600s")
+// =========================================================
+// HELPER : durée du token (ex: "1d", "3600s", "15m")
+// =========================================================
+
 function parseExpiresToSeconds(raw: unknown): number {
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
 
   const s = typeof raw === 'string' ? raw.trim() : '';
-  if (!s) return 86400; // Par défaut 1 jour
+  if (!s) return 86400;
 
   if (/^\d+$/.test(s)) {
     const n = Number(s);
@@ -48,9 +56,10 @@ function parseExpiresToSeconds(raw: unknown): number {
 @Module({
   imports: [
     ConfigModule,
-    PassportModule.register({ defaultStrategy: 'jwt' }),
     PrismaModule,
-    UsersModule,
+    // ✅ CORRECTION CHIRURGICALE : Utilisation de forwardRef() pour briser la boucle avec AuthModule
+    forwardRef(() => UsersModule),
+    MailModule, // ✅ Pour les emails OTP, bienvenue, confirmation password
 
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -68,7 +77,7 @@ function parseExpiresToSeconds(raw: unknown): number {
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard],
-  exports: [AuthService, JwtModule, PassportModule, JwtAuthGuard],
+  providers: [AuthService, JwtAuthGuard],
+  exports: [AuthService, JwtModule, JwtAuthGuard],
 })
 export class AuthModule {}

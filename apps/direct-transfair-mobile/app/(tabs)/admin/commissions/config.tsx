@@ -1,269 +1,325 @@
 //apps/direct-transfair-mobile/app/(tabs)/admin/commissions/config.tsx
-import React, { useState, useEffect } from "react";
+// apps/direct-transfair-mobile/app/(tabs)/admin/commissions/config.tsx
+// =========================================================
+// COMMISSIONS CONFIG v4.0 — Direct Transf'air
+// Design: Thème dynamique — stats + historique + config
+// =========================================================
+
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, SafeAreaView,
-  ScrollView, ActivityIndicator, Platform, StatusBar
+  View, Text, StyleSheet, FlatList, ActivityIndicator,
+  TouchableOpacity, SafeAreaView, ScrollView, StatusBar, Platform, Animated,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
+import { useAuth } from "../../../../providers/AuthProvider";
 
-const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
+const ROLE_THEMES = {
+  SUPER_ADMIN:   { g1: "#0A0A0F", g2: "#12121A", accent: "#D4A853" },
+  COMPANY_ADMIN: { g1: "#030B1A", g2: "#071224", accent: "#34D399" },
+  AGENT:         { g1: "#1A0E00", g2: "#211200", accent: "#F59E0B" },
+} as const;
+
+const T = {
+  ghost: "rgba(255,255,255,0.06)",
+  ghostMid: "rgba(255,255,255,0.10)",
+  white: "#FFFFFF",
+  dim: "#8A9BB5",
+  inkBorder: "rgba(255,255,255,0.08)",
+  amber: "#F59E0B",
+  green: "#22C55E",
+  radius: { sm: 10, md: 14, lg: 20 },
+  font: {
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
 };
 
-const THEME = {
-  primary: "#1E3A8A", // Bleu Nuit pour Admin Société
-  light: "#EFF6FF",
-  surface: "#FFFFFF",
-  bg: "#F8FAFC",
-  text: "#0F172A",
-  muted: "#64748B",
-  border: "#E2E8F0",
-  success: "#10B981",
-  danger: "#EF4444"
-};
-
-// ─── SCÉNARIOS (RÈGLES MÉTIER) ───
-const SCENARIOS = [
-  { id: "SUB_SUB", label: "Filiale -> Filiale", source: "SUBSIDIARY", dest: "SUBSIDIARY" },
-  { id: "SUB_PART", label: "Filiale -> Partenaire", source: "SUBSIDIARY", dest: "PARTNER" },
-  { id: "PART_SUB", label: "Partenaire -> Filiale", source: "PARTNER", dest: "SUBSIDIARY" },
-  { id: "PART_PART", label: "Partenaire -> Partenaire", source: "PARTNER", dest: "PARTNER" },
-  { id: "WALL_SUB", label: "Wallet (Client) -> Filiale", source: "WALLET", dest: "SUBSIDIARY" },
-  { id: "WALL_PART", label: "Wallet (Client) -> Partenaire", source: "WALLET", dest: "PARTNER" },
+const PERIODS = [
+  { key: "day",     label: "Aujourd'hui" },
+  { key: "week",    label: "7 Jours" },
+  { key: "month",   label: "Ce Mois" },
+  { key: "quarter", label: "Trimestre" },
+  { key: "year",    label: "Année" },
 ];
 
-type Scenario = (typeof SCENARIOS)[number];
+function toNum(v: unknown): number {
+  if (typeof v === "number" && isFinite(v)) return v;
+  if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
+  return 0;
+}
 
-export default function CommissionConfigScreen() {
-  const router = useRouter();
+function fmt(n: number): string {
+  try { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n); }
+  catch { return Math.round(n).toString(); }
+}
 
-  const [selectedScenario, setSelectedScenario] = useState<Scenario>(SCENARIOS[0]);
-  const [senderPart, setSenderPart] = useState("0");
-  const [payerPart, setPayerPart] = useState("0");
-  
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [allRules, setAllRules] = useState<any[]>([]);
+// ─── Stats Card ───────────────────────────────────────────
+function StatCard({ label, value, currency = "XOF", icon, color }: any) {
+  return (
+    <View style={stS.card}>
+      <View style={[stS.iconBox, { backgroundColor: `${color}15` }]}>
+        <Ionicons name={icon} size={16} color={color} />
+      </View>
+      <Text style={[stS.value, { color, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
+        {fmt(value)}
+      </Text>
+      <Text style={[stS.currency, { fontFamily: T.font.mono }]}>{currency}</Text>
+      <Text style={[stS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+    </View>
+  );
+}
+const stS = StyleSheet.create({
+  card: {
+    flex: 1, backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 16, alignItems: "center",
+    borderWidth: 1, borderColor: T.inkBorder, gap: 4,
+  },
+  iconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  value: { fontSize: 20, fontWeight: "800" },
+  currency: { color: T.dim, fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
+  label: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.8, textAlign: "center" },
+});
 
-  const loadRules = async () => {
-    setLoading(true);
-    try {
-      const rules = await api.getCommissionRules();
-      setAllRules(rules);
-      applyRuleToForm(rules, selectedScenario);
-    } catch (e) {
-      console.log("Erreur chargement règles", e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const applyRuleToForm = (rules: any[], scenario: Scenario) => {
-    const existingRule = rules.find(r => r.sourceType === scenario.source && r.destinationType === scenario.dest);
-    if (existingRule) {
-      setSenderPart(existingRule.senderShare?.toString() || "0");
-      setPayerPart(existingRule.payerShare?.toString() || "0");
-    } else {
-      setSenderPart("0");
-      setPayerPart("0");
-    }
-  };
-
-  useEffect(() => { loadRules(); }, []);
-
-  const handleScenarioChange = (scenario: Scenario) => {
-    setSelectedScenario(scenario);
-    applyRuleToForm(allRules, scenario);
-  };
-
-  const senderVal = parseFloat(senderPart) || 0;
-  const payerVal = parseFloat(payerPart) || 0;
-  const platformPart = 100 - senderVal - payerVal;
-
-  const handleSave = async () => {
-    if (platformPart < 0) {
-      const msg = "Impossible de sauvegarder : le total des parts agences dépasse 100%.";
-      return Platform.OS === "web" ? alert(msg) : Alert.alert("Erreur", msg);
-    }
-
-    if (selectedScenario.source === "WALLET" && senderVal > 0) {
-      const msg = "Un client Wallet ne peut pas toucher de commission d'envoi. Mettez la part expéditeur à 0.";
-      return Platform.OS === "web" ? alert(msg) : Alert.alert("Règle invalide", msg);
-    }
-
-    setSaving(true);
-    try {
-      const payload = {
-        sourceType: selectedScenario.source,
-        destinationType: selectedScenario.dest,
-        senderShare: senderVal,
-        payerShare: payerVal,
-        platformShare: platformPart
-      };
-
-      await api.saveCommissionRule(payload);
-      
-      const msg = "Règle de commission sauvegardée avec succès.";
-      Platform.OS === "web" ? alert(msg) : Alert.alert("Succès", msg);
-      
-      await loadRules(); // Rafraîchir la liste complète
-    } catch (e: any) {
-      const err = e?.response?.data?.message || "Erreur technique lors de la sauvegarde.";
-      Platform.OS === "web" ? alert(err) : Alert.alert("Erreur", err);
-    } finally {
-      setSaving(false);
-    }
-  };
+// ─── TX Commission Row ────────────────────────────────────
+function CommissionRow({ item, accent }: { item: any; accent: string }) {
+  const amount = toNum(item.amount);
+  const fees = toNum(item.fees);
+  const commission = toNum(item.myCommission ?? item.agencyCommission ?? 0);
 
   return (
-    <SafeAreaView style={s.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={THEME.primary} />
-      
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={s.backBtn} activeOpacity={0.8}>
-          <Ionicons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Répartition des Commissions</Text>
-        <View style={{ width: 44 }} />
-      </View>
-
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
-        
-        {/* ─── SÉLECTION DU SCÉNARIO ─── */}
-        <Text style={s.sectionLabel}>1. SÉLECTIONNEZ LE FLUX TRANSACTIONNEL</Text>
-        <View style={s.scenarioContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10 }}>
-            {SCENARIOS.map((sc) => (
-              <TouchableOpacity
-                key={sc.id}
-                style={[s.chip, selectedScenario.id === sc.id && s.chipActive]}
-                onPress={() => handleScenarioChange(sc)}
-                activeOpacity={0.8}
-              >
-                <Text style={[s.chipText, selectedScenario.id === sc.id && s.chipTextActive]}>{sc.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={s.infoBox}>
-          <Ionicons name="information-circle" size={24} color={THEME.primary} />
-          <Text style={s.infoText}>
-            Vous modifiez la règle de partage pour :{"\n"}
-            <Text style={{ fontFamily: FONTS.heading, fontSize: 16, fontWeight: "800", color: THEME.primary }}>{selectedScenario.label}</Text>
+    <View style={crS.row}>
+      <View style={crS.left}>
+        <View style={[crS.dot, { backgroundColor: accent }]} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[crS.origin, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.origin || "—"}</Text>
+          <Text style={[crS.date, { fontFamily: T.font.sans }]}>
+            {new Date(item.createdAt || item.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).replace(",", "")}
           </Text>
         </View>
+      </View>
+      <View style={crS.right}>
+        <Text style={[crS.amount, { fontFamily: T.font.mono }]}>{fmt(amount)}</Text>
+        <Text style={[crS.fees, { fontFamily: T.font.sans }]}>Frais: {fmt(fees)}</Text>
+        <View style={[crS.comPill, { backgroundColor: `${accent}15`, borderColor: `${accent}25` }]}>
+          <Text style={[crS.comTxt, { color: accent, fontFamily: T.font.mono }]}>+{fmt(commission)}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+const crS = StyleSheet.create({
+  row: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.inkBorder,
+  },
+  left: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 },
+  dot: { width: 4, height: 32, borderRadius: 99 },
+  origin: { color: T.white, fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  date: { color: T.dim, fontSize: 10, fontWeight: "600" },
+  right: { alignItems: "flex-end", gap: 3, paddingLeft: 10 },
+  amount: { color: T.white, fontSize: 14, fontWeight: "800" },
+  fees: { color: T.dim, fontSize: 10, fontWeight: "600" },
+  comPill: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
+  },
+  comTxt: { fontSize: 11, fontWeight: "900" },
+});
+
+export default function AdminCommissionsScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
+  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
+
+  const [period, setPeriod] = useState("day");
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ totalFees: 0, platformNet: 0, distributed: 0, count: 0 });
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.http.get(`/commissions/history?period=${period}`);
+      const data = Array.isArray(res.data) ? res.data : [];
+      setHistory(data);
+
+      let totalFees = 0, platformNet = 0, distributed = 0;
+      data.forEach((tx: any) => {
+        const fees = toNum(tx.fees);
+        const plat = toNum(tx.breakdown?.platform?.amount ?? 0);
+        totalFees += fees;
+        platformNet += plat;
+        distributed += fees - plat;
+      });
+      setStats({ totalFees, platformNet, distributed, count: data.length });
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+    } catch { console.log("Erreur commissions"); }
+    finally { setLoading(false); }
+  }, [period]);
+
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  return (
+    <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <StatusBar barStyle="light-content" />
+
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="arrow-back" size={24} color={T.white} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Commissions</Text>
+            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
+              {stats.count} transaction{stats.count > 1 ? "s" : ""}
+            </Text>
+          </View>
+          <TouchableOpacity style={s.refreshBtn} onPress={() => void loadData()}>
+            <Ionicons name="refresh" size={20} color={theme.accent} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Period filters */}
+        <ScrollView
+          horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.periods}
+        >
+          {PERIODS.map((p) => {
+            const isActive = period === p.key;
+            return (
+              <TouchableOpacity
+                key={p.key}
+                style={[s.periodPill, isActive && { backgroundColor: `${theme.accent}20`, borderColor: `${theme.accent}40` }]}
+                onPress={() => setPeriod(p.key)}
+              >
+                <Text style={[s.periodTxt, { color: isActive ? theme.accent : T.dim, fontFamily: T.font.sans }]}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
         {loading ? (
-          <ActivityIndicator size="large" color={THEME.primary} style={{ marginTop: 40 }} />
-        ) : (
-          <View style={s.configWrapper}>
-            
-            {/* ─── PART EXPÉDITEUR ─── */}
-            <View style={[s.card, selectedScenario.source === "WALLET" && { opacity: 0.5 }]}>
-              <Text style={s.cardTitle}>Part Expéditeur (Envoi)</Text>
-              <Text style={s.cardSub}>Commission reversée à l'agence initiatrice.</Text>
-              <View style={s.inputRow}>
-                <TextInput
-                  style={s.input}
-                  value={senderPart}
-                  onChangeText={setSenderPart}
-                  keyboardType="numeric"
-                  editable={selectedScenario.source !== "WALLET"}
-                  selectTextOnFocus
-                />
-                <Text style={s.percentLabel}>%</Text>
-              </View>
-              {selectedScenario.source === "WALLET" && (
-                <Text style={s.warningText}>Un Wallet Client ne prend pas de commission.</Text>
-              )}
-            </View>
-
-            {/* ─── PART PAYEUR ─── */}
-            <View style={s.card}>
-              <Text style={s.cardTitle}>Part Payeur (Retrait)</Text>
-              <Text style={s.cardSub}>Commission reversée à l'agence qui remet les fonds.</Text>
-              <View style={s.inputRow}>
-                <TextInput
-                  style={s.input}
-                  value={payerPart}
-                  onChangeText={setPayerPart}
-                  keyboardType="numeric"
-                  selectTextOnFocus
-                />
-                <Text style={s.percentLabel}>%</Text>
-              </View>
-            </View>
-
-            {/* ─── RÉSULTAT PLATEFORME ─── */}
-            <View style={[s.resultCard, platformPart < 0 && s.resultCardError]}>
-              <Text style={s.resultTitle}>Part de la Société (Plateforme)</Text>
-              <Text style={[s.resultValue, platformPart < 0 && { color: THEME.danger }]}>
-                {platformPart.toFixed(1)}%
-              </Text>
-              <Text style={s.resultSub}>Marge nette conservée par Direct Transf'air</Text>
-            </View>
-
-            <TouchableOpacity 
-              style={[s.saveBtn, saving && { opacity: 0.8 }]} 
-              onPress={handleSave} 
-              disabled={saving}
-              activeOpacity={0.9}
-            >
-              {saving ? <ActivityIndicator color="#FFF" /> : (
-                <>
-                  <Text style={s.saveText}>Sauvegarder la règle</Text>
-                  <Ionicons name="checkmark-circle" size={20} color="#FFF" />
-                </>
-              )}
-            </TouchableOpacity>
-
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <ActivityIndicator color={theme.accent} size="large" />
           </View>
+        ) : (
+          <Animated.ScrollView
+            style={{ opacity: fadeAnim }}
+            contentContainerStyle={s.scroll}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Stats */}
+            <View style={s.statsRow}>
+              <StatCard label="TOTAL FRAIS" value={stats.totalFees} icon="cash-outline" color={theme.accent} />
+              <StatCard label="PLATEFORME" value={stats.platformNet} icon="business-outline" color="#60A5FA" />
+              <StatCard label="DISTRIBUÉ" value={stats.distributed} icon="people-outline" color={T.amber} />
+            </View>
+
+            {/* Hero marge */}
+            <View style={[s.heroCard, { borderColor: `${theme.accent}20` }]}>
+              <View>
+                <Text style={[s.heroLabel, { fontFamily: T.font.sans }]}>MARGE NETTE PLATEFORME</Text>
+                <Text style={[s.heroAmount, { color: theme.accent, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {fmt(stats.platformNet)}
+                </Text>
+                <Text style={[s.heroCur, { color: theme.accent, fontFamily: T.font.mono }]}>XOF</Text>
+              </View>
+              <View style={[s.heroProgress]}>
+                {stats.totalFees > 0 && (
+                  <View
+                    style={[
+                      s.heroProgressFill,
+                      {
+                        height: `${Math.min((stats.platformNet / stats.totalFees) * 100, 100)}%` as any,
+                        backgroundColor: theme.accent,
+                      },
+                    ]}
+                  />
+                )}
+              </View>
+            </View>
+
+            {/* Historique */}
+            <View style={s.sectionRow}>
+              <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
+              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
+                DÉTAIL ({history.length} TRANSACTIONS)
+              </Text>
+            </View>
+
+            {history.length === 0 ? (
+              <View style={s.empty}>
+                <Ionicons name="bar-chart-outline" size={32} color={T.dim} />
+                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucune transaction sur cette période</Text>
+              </View>
+            ) : (
+              <View style={s.historyCard}>
+                {history.map((item, idx) => (
+                  <CommissionRow key={item.id ?? idx} item={item} accent={theme.accent} />
+                ))}
+              </View>
+            )}
+
+            <View style={{ height: 100 }} />
+          </Animated.ScrollView>
         )}
-      </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
 const s = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: THEME.bg },
-  header: { backgroundColor: THEME.primary, paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 40 : 20, paddingBottom: 24, flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomLeftRadius: 24, borderBottomRightRadius: 24, shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 8, zIndex: 10 },
-  headerTitle: { color: "#FFF", fontSize: 18, fontFamily: FONTS.heading, fontWeight: "800" },
-  backBtn: { width: 44, height: 44, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
-  
-  content: { padding: 20, paddingTop: 24, paddingBottom: 60 },
-  
-  sectionLabel: { fontSize: 11, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted, letterSpacing: 1.2, marginBottom: 12, marginLeft: 4 },
-  
-  scenarioContainer: { marginBottom: 20 },
-  chip: { backgroundColor: THEME.surface, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: THEME.border },
-  chipActive: { backgroundColor: THEME.primary, borderColor: THEME.primary, shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 5, elevation: 3 },
-  chipText: { fontFamily: FONTS.body, fontWeight: "700", color: THEME.text, fontSize: 13 },
-  chipTextActive: { color: "#FFF", fontWeight: "900" },
-  
-  infoBox: { flexDirection: "row", backgroundColor: THEME.light, padding: 16, borderRadius: 16, marginBottom: 24, borderWidth: 1, borderColor: "#BFDBFE", alignItems: 'center' },
-  infoText: { marginLeft: 12, fontFamily: FONTS.body, color: THEME.primary, fontSize: 13, lineHeight: 20, flex: 1 },
-  
-  configWrapper: { gap: 16 },
-  
-  card: { backgroundColor: THEME.surface, padding: 20, borderRadius: 20, borderWidth: 1, borderColor: THEME.border, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 5, elevation: 1 },
-  cardTitle: { fontSize: 15, fontFamily: FONTS.body, fontWeight: "800", color: THEME.text },
-  cardSub: { fontSize: 12, fontFamily: FONTS.body, color: THEME.muted, marginTop: 4, marginBottom: 16 },
-  
-  inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: THEME.bg, borderRadius: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: THEME.border },
-  input: { flex: 1, fontSize: 28, fontFamily: FONTS.heading, fontWeight: "900", color: THEME.text, paddingVertical: 12 },
-  percentLabel: { fontSize: 24, fontFamily: FONTS.body, fontWeight: "900", color: THEME.muted },
-  warningText: { fontSize: 11, color: THEME.danger, marginTop: 8, fontStyle: 'italic' },
-  
-  resultCard: { backgroundColor: "#0F172A", padding: 24, borderRadius: 24, alignItems: "center", marginTop: 10, shadowColor: "#0F172A", shadowOpacity: 0.4, shadowRadius: 15, elevation: 5 },
-  resultCardError: { backgroundColor: "#7F1D1D" },
-  resultTitle: { color: "#94A3B8", fontSize: 13, fontFamily: FONTS.body, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 },
-  resultValue: { color: THEME.success, fontSize: 48, fontFamily: FONTS.heading, fontWeight: "900" },
-  resultSub: { color: "#64748B", fontSize: 11, fontFamily: FONTS.body, marginTop: 8, fontStyle: "italic" },
-  
-  saveBtn: { backgroundColor: THEME.primary, flexDirection: 'row', paddingVertical: 18, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 10, shadowColor: THEME.primary, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4 },
-  saveText: { color: "#FFF", fontSize: 16, fontFamily: FONTS.body, fontWeight: "900", letterSpacing: 0.5 },
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, gap: 14,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.inkBorder,
+  },
+  headerTitle: { color: T.white, fontSize: 22, fontWeight: "700" },
+  headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  refreshBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.inkBorder,
+  },
+  periods: { paddingHorizontal: 20, gap: 8, marginBottom: 16 },
+  periodPill: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: T.radius.md,
+    backgroundColor: T.ghost, borderWidth: 1, borderColor: T.inkBorder,
+  },
+  periodTxt: { fontSize: 12, fontWeight: "800" },
+  scroll: { paddingHorizontal: 20 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  heroCard: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 22, marginBottom: 20, borderWidth: 1,
+  },
+  heroLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.2, marginBottom: 6 },
+  heroAmount: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5 },
+  heroCur: { fontSize: 11, fontWeight: "900", marginTop: 2 },
+  heroProgress: {
+    width: 6, height: 80, backgroundColor: T.ghost,
+    borderRadius: 99, overflow: "hidden", justifyContent: "flex-end",
+  },
+  heroProgressFill: { width: 6, borderRadius: 99 },
+  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  sectionDot: { width: 5, height: 5, borderRadius: 99 },
+  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  historyCard: {
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    paddingHorizontal: 16, borderWidth: 1, borderColor: T.inkBorder,
+  },
+  empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
+  emptyTxt: { color: T.dim, fontSize: 13, fontWeight: "600" },
 });

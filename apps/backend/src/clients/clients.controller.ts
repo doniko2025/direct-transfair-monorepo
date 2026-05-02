@@ -1,16 +1,59 @@
 // apps/backend/src/clients/clients.controller.ts
-import { Controller, Get, Post, Body, Param, UseGuards, ParseIntPipe, Delete, Patch, ForbiddenException, Req } from '@nestjs/common';
+// =========================================================
+// CLIENTS CONTROLLER v4.0
+// ✅ Imports corrigés (chemin JwtAuthGuard correct)
+// =========================================================
+
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  UseGuards,
+  ParseIntPipe,
+  Delete,
+  Patch,
+  ForbiddenException,
+  Req,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Role, SubscriptionStatus } from '@prisma/client';
 
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+// ✅ CORRECTION : chemin correct (pas guards/)
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
+
+// ✅ Guard de rôle inline (si RolesGuard pas encore créé)
+import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+
+const ROLES_KEY = 'roles';
+const Roles = (...roles: Role[]) => {
+  const { SetMetadata } = require('@nestjs/common');
+  return SetMetadata(ROLES_KEY, roles);
+};
+
+@Injectable()
+class RolesGuard implements CanActivate {
+  constructor(private reflector: Reflector) {}
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required || required.length === 0) return true;
+    const req = context.switchToHttp().getRequest();
+    const user: AuthUserPayload = req.user;
+    if (!user?.role) return false;
+    return required.includes(user.role as Role);
+  }
+}
 
 @ApiTags('Clients (Sociétés)')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('clients')
 export class ClientsController {
@@ -19,57 +62,50 @@ export class ClientsController {
   @Post()
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Créer une société' })
-  create(@Body() createClientDto: CreateClientDto) {
-    return this.clientsService.create(createClientDto);
+  create(@Body() dto: CreateClientDto) {
+    return this.clientsService.create(dto);
   }
 
   @Get()
-  @Roles(Role.SUPER_ADMIN) // 🔒 Sécurité : Seul le Super Admin voit la liste globale
+  @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Lister les sociétés' })
   findAll() {
-    // Le service filtrera automatiquement "DONIKO" pour ne pas l'afficher
     return this.clientsService.findAll();
   }
 
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
   @ApiOperation({ summary: 'Voir une société spécifique' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Req() req: { user?: AuthUserPayload },
+  ) {
     const user = req.user;
-
-    // 🔒 SÉCURITÉ : Un Admin Société ne peut voir QUE sa propre société
-    if (user.role === Role.COMPANY_ADMIN && user.clientId !== id) {
-        throw new ForbiddenException("Vous ne pouvez pas accéder aux données d'une autre société.");
+    if (user?.role === 'COMPANY_ADMIN' && user.clientId !== id) {
+      throw new ForbiddenException(
+        "Vous ne pouvez pas accéder aux données d'une autre société.",
+      );
     }
-
     return this.clientsService.findOne(id);
   }
 
-  // ✅ ROUTE MODIFIER (PATCH) - Mise à jour complète
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Mettre à jour les infos' })
-  update(
-    @Param('id', ParseIntPipe) id: number,
-    // ⚠️ On utilise 'any' ou un DTO partiel complet pour ne pas perdre de données
-    // Le formulaire frontend envoie beaucoup de champs (adresse, contact, couleurs...)
-    @Body() data: any 
-  ) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
     return this.clientsService.update(id, data);
   }
 
-  // ✅ ROUTE STATUT (Suspendre/Activer)
   @Patch(':id/status')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Changer le statut (ACTIVE/SUSPENDED)' })
   updateStatus(
-      @Param('id', ParseIntPipe) id: number, 
-      @Body('status') status: SubscriptionStatus
+    @Param('id', ParseIntPipe) id: number,
+    @Body('status') status: SubscriptionStatus,
   ) {
     return this.clientsService.updateStatus(id, status);
   }
 
-  // ✅ ROUTE SUPPRIMER (DELETE)
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Supprimer une société' })

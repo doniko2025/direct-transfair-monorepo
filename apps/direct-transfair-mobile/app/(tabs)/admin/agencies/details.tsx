@@ -1,241 +1,471 @@
 //apps/direct-transfair-mobile/app/(tabs)/admin/agencies/details.tsx
-import React, { useEffect, useState, useCallback } from "react";
-import { 
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, 
-  ActivityIndicator, SafeAreaView, Alert, Platform, StatusBar 
+// apps/direct-transfair-mobile/app/(tabs)/admin/agencies/details.tsx
+// =========================================================
+// AGENCY DETAILS — Direct Transf'air v4.0
+// Design: Thème dynamique par rôle (Obsidian / Saphir / Forge / Émeraude)
+// ✅ Wallet agence v4 (plus balance/cash directs)
+// ✅ Actions suspendre/activer/supprimer
+// =========================================================
+
+import React, { useState, useCallback } from "react";
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, SafeAreaView, Alert, Platform, StatusBar, Animated,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 
-// ─── THÈMES & TYPOGRAPHIES ──────────────────────────────────────────────
-const THEMES = {
-  SUPER_ADMIN: { primary: "#7F1D1D", light: "#FEF2F2" },
-  COMPANY_ADMIN: { primary: "#1E3A8A", light: "#EFF6FF" },
-  AGENT: { primary: "#78350F", light: "#FFF7ED" },
-  USER: { primary: "#065F46", light: "#ECFDF5" },
+// ─── Palettes par rôle ──────────────────────────────────
+const ROLE_THEMES = {
+  SUPER_ADMIN:   { g1: "#0A0A0F", g2: "#12121A", accent: "#D4A853", accentSoft: "rgba(212,168,83,0.15)", label: "SUPER ADMIN" },
+  COMPANY_ADMIN: { g1: "#030B1A", g2: "#071224", accent: "#34D399", accentSoft: "rgba(52,211,153,0.15)", label: "ADMIN SOCIÉTÉ" },
+  AGENT:         { g1: "#1A0E00", g2: "#211200", accent: "#F59E0B", accentSoft: "rgba(245,158,11,0.15)", label: "AGENT" },
+  USER:          { g1: "#0B1F14", g2: "#0F2A1C", accent: "#10B981", accentSoft: "rgba(16,185,129,0.15)", label: "CLIENT" },
+} as const;
+
+const T = {
+  inkBorder: "#2A2A3A",
+  ghost: "rgba(255,255,255,0.06)",
+  ghostMid: "rgba(255,255,255,0.10)",
+  white: "#FFFFFF",
+  dim: "#8A9BB5",
+  dimMuted: "#4A6070",
+  red: "#EF4444",
+  green: "#22C55E",
+  amber: "#F59E0B",
+  radius: { sm: 10, md: 14, lg: 20, xl: 26 },
+  font: {
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
 };
 
-const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
-};
-
-export default function AgencyDetailsScreen() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
-  const { user } = useAuth();
-  
-  const theme = THEMES[(user?.role as keyof typeof THEMES)] || THEMES.COMPANY_ADMIN;
-
-  const [agency, setAgency] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-
-  useFocusEffect(
-    useCallback(() => { if (id) fetchDetails(); }, [id])
-  );
-
-  const fetchDetails = async () => {
-    try {
-      const data = await api.getAgency(id as string);
-      setAgency(data);
-    } catch (e) {
-      console.error(e);
-      if ((e as any).response?.status === 404) router.back();
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    const confirmMessage = `Êtes-vous sûr de vouloir supprimer l'agence ${agency.name} ? Cette action est irréversible.`;
-    
-    const executeDelete = async () => {
-      setProcessing(true);
-      try {
-        await api.deleteAgency(agency.id);
-        if (Platform.OS === 'web') { 
-          alert("Agence supprimée !"); 
-          router.back(); 
-        } else { 
-          Alert.alert("Succès", "Agence supprimée !", [{ text: "OK", onPress: () => router.back() }]); 
-        }
-      } catch (e) { 
-        Platform.OS === 'web' ? alert("Erreur lors de la suppression") : Alert.alert("Erreur", "Impossible de supprimer."); 
-      } finally { 
-        setProcessing(false); 
-      }
-    };
-
-    if (Platform.OS === 'web') { 
-      if (window.confirm(confirmMessage)) executeDelete(); 
-    } else { 
-      Alert.alert("Confirmation", confirmMessage, [
-        { text: "Annuler", style: "cancel" }, 
-        { text: "SUPPRIMER", style: "destructive", onPress: executeDelete }
-      ]); 
-    }
-  };
-
-  const handleToggleStatus = async () => {
-    const executeToggle = async () => {
-      setProcessing(true);
-      try {
-        await api.updateAgency(agency.id, { isActive: !agency.isActive } as any);
-        setAgency({ ...agency, isActive: !agency.isActive });
-      } catch (e) { 
-        Platform.OS === 'web' ? alert("Erreur") : Alert.alert("Erreur", "Impossible de changer le statut."); 
-      } finally { 
-        setProcessing(false); 
-      }
-    };
-
-    if (Platform.OS === 'web') { 
-      if (window.confirm(`Voulez-vous ${agency.isActive ? 'suspendre' : 'activer'} l'agence ?`)) executeToggle(); 
-    } else { 
-      Alert.alert("Confirmation", `Voulez-vous ${agency.isActive ? 'suspendre' : 'activer'} l'agence ?`, [
-        { text: "Annuler", style: "cancel" }, 
-        { text: "OUI", onPress: executeToggle }
-      ]); 
-    }
-  };
-
-  if (loading) return <View style={[styles.center, { backgroundColor: '#F8FAFC' }]}><ActivityIndicator color={theme.primary} size="large" /></View>;
-  if (!agency) return <View style={styles.center}><Text style={{fontFamily: FONTS.body}}>Agence introuvable</Text></View>;
-
-  const isActive = agency.isActive;
-
-  return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.primary }]}>
-      <StatusBar barStyle="light-content" backgroundColor={theme.primary} />
-      
-      {/* ─── HEADER ─── */}
-      <View style={[styles.header, { backgroundColor: theme.primary }]}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={15}>
-          <Ionicons name="arrow-back" size={26} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{agency.name}</Text>
-        <TouchableOpacity 
-          style={[styles.editBtn, { backgroundColor: '#FFF' }]} 
-          onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: agency.id } })}
-        >
-          <Ionicons name="pencil" size={20} color={theme.primary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* ─── CONTENU ─── */}
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        
-        {/* CARTE SOLDE */}
-        <View style={[styles.balanceCard, { backgroundColor: theme.primary }]}>
-          <View>
-            <Text style={styles.balanceLabel}>SOLDE CAISSE</Text>
-            <Text style={styles.balanceValue}>
-              {(agency.balance || 0).toLocaleString('fr-FR')} {agency.currency || 'XOF'}
-            </Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: isActive ? '#D1FAE5' : '#FEE2E2' }]}>
-            <Text style={{ color: isActive ? '#065F46' : '#991B1B', fontFamily: FONTS.body, fontWeight: '800', fontSize: 11, letterSpacing: 0.5 }}>
-              {isActive ? 'ACTIVE' : 'SUSPENDUE'}
-            </Text>
-          </View>
-        </View>
-
-        {/* INFORMATIONS */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>INFORMATIONS GÉNÉRALES</Text>
-          <InfoRow label="Code Agence" value={agency.code || "N/A"} icon="qr-code-outline" theme={theme} />
-          <InfoRow label="Devise" value={agency.currency || "XOF"} icon="cash-outline" theme={theme} /> 
-          <InfoRow label="Email" value={agency.email || "N/A"} icon="mail-outline" theme={theme} />
-          <InfoRow label="Téléphone" value={agency.phone || "N/A"} icon="call-outline" theme={theme} />
-          
-          <View style={styles.divider} />
-          
-          <InfoRow label="Ville" value={agency.city} icon="location-outline" theme={theme} />
-          <InfoRow label="Adresse" value={agency.address} icon="map-outline" theme={theme} />
-        </View>
-
-        {/* ACTIONS SENSIBLES */}
-        <Text style={[styles.sectionTitle, { marginTop: 15, marginBottom: 12, marginLeft: 4 }]}>ACTIONS RAPIDES</Text>
-        <View style={styles.actionsContainer}>
-          
-          <TouchableOpacity 
-            style={[styles.actionBox, { backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }]} 
-            onPress={handleToggleStatus} 
-            disabled={processing}
-          >
-            {processing ? <ActivityIndicator size="small" color="#D97706" /> : (
-              <>
-                <Ionicons name={isActive ? "pause" : "play"} size={22} color="#D97706" />
-                <Text style={[styles.actionBoxText, { color: '#D97706' }]}>{isActive ? "Suspendre" : "Activer"}</Text>
-              </>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.actionBox, { backgroundColor: "#FEE2E2", borderColor: "#FECACA" }]} 
-            onPress={handleDelete} 
-            disabled={processing}
-          >
-            {processing ? <ActivityIndicator size="small" color="#DC2626" /> : (
-              <>
-                <Ionicons name="trash" size={22} color="#DC2626" />
-                <Text style={[styles.actionBoxText, { color: '#DC2626' }]}>Supprimer</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-        </View>
-        <View style={{height: 120}} />
-      </ScrollView>
-    </SafeAreaView>
-  );
+function toNum(v: unknown): number {
+  if (typeof v === "number" && isFinite(v)) return v;
+  if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
+  if (v && typeof (v as any).toNumber === "function") return (v as any).toNumber();
+  return 0;
 }
 
-// ─── COMPOSANTS ─────────────────────────────────────────────────────────
+function fmt(n: number, currency = "XOF"): string {
+  const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
+  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
+  catch { return n.toFixed(d); }
+}
 
-function InfoRow({ label, value, icon, theme }: any) {
+// ─── Info Row ─────────────────────────────────────────────
+function InfoRow({ label, value, icon, accent }: { label: string; value: string; icon: string; accent: string }) {
   return (
-    <View style={styles.infoRow}>
-      <View style={[styles.iconSmall, { backgroundColor: theme.light }]}>
-        <Ionicons name={icon} size={18} color={theme.primary} />
+    <View style={irS.row}>
+      <View style={[irS.iconBox, { backgroundColor: `${accent}12` }]}>
+        <Ionicons name={icon as any} size={18} color={accent} />
       </View>
-      <View style={{ flex: 1, justifyContent: 'center' }}>
-        <Text style={styles.infoLabel}>{label}</Text>
-        <Text style={styles.infoValue} numberOfLines={2}>{value}</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={[irS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+        <Text style={[irS.value, { fontFamily: T.font.sans }]} numberOfLines={2}>{value || "—"}</Text>
       </View>
     </View>
   );
 }
+const irS = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16, gap: 14 },
+  iconBox: { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
+  label: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 3 },
+  value: { fontSize: 14, fontWeight: "700", color: T.white },
+});
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
-  header: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 20, paddingTop: Platform.OS === 'android' ? 40 : 20, alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontFamily: FONTS.heading, color: '#FFF', fontWeight: '700' },
-  editBtn: { padding: 8, borderRadius: 12, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
-  
-  content: { padding: 20, backgroundColor: '#F8FAFC', borderTopLeftRadius: 30, borderTopRightRadius: 30, flexGrow: 1 },
-  
-  balanceCard: { borderRadius: 20, padding: 24, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  balanceLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontFamily: FONTS.body, fontWeight: '800', letterSpacing: 1 },
-  balanceValue: { color: '#FFF', fontSize: 26, fontFamily: FONTS.body, fontWeight: '900', marginTop: 6, letterSpacing: 0.5 },
-  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  
-  section: { backgroundColor: '#FFF', borderRadius: 20, padding: 20, marginBottom: 20, shadowColor: "#000", shadowOpacity: 0.02, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 1, borderWidth: 1, borderColor: '#F1F5F9' },
-  sectionTitle: { fontSize: 12, color: '#94A3B8', fontFamily: FONTS.body, fontWeight: '900', marginBottom: 16, letterSpacing: 1.2 },
-  
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  iconSmall: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
-  infoLabel: { fontSize: 12, color: '#64748B', fontFamily: FONTS.body, fontWeight: '600', marginBottom: 2 },
-  infoValue: { fontSize: 15, color: '#0F172A', fontFamily: FONTS.body, fontWeight: '700' },
-  
-  divider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 4, marginBottom: 16 },
-  
-  actionsContainer: { flexDirection: 'row', gap: 12 },
-  actionBox: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: 18, borderWidth: 1 },
-  actionBoxText: { marginTop: 8, fontSize: 13, fontFamily: FONTS.body, fontWeight: "800", letterSpacing: 0.3 }
+// ─── Wallet Card ─────────────────────────────────────────
+function WalletCard({ wallet, accent }: { wallet: any; accent: string }) {
+  const balance = toNum(wallet?.balance);
+  const reserved = toNum(wallet?.reservedBalance ?? 0);
+  const available = balance - reserved;
+  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
+  const currency = wallet?.currency ?? "XOF";
+
+  return (
+    <View style={wcS.card}>
+      <View style={wcS.top}>
+        <View style={[wcS.badge, { backgroundColor: `${accent}15`, borderColor: `${accent}30` }]}>
+          <Text style={[wcS.badgeTxt, { color: accent, fontFamily: T.font.mono }]}>{currency}</Text>
+        </View>
+        {wallet?.isDefault && (
+          <View style={wcS.defaultTag}>
+            <Text style={[wcS.defaultTxt, { fontFamily: T.font.sans }]}>Principal</Text>
+          </View>
+        )}
+      </View>
+      <Text style={[wcS.amount, { color: T.white, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
+        {fmt(balance, currency)}
+      </Text>
+      <Text style={[wcS.amtLabel, { color: accent, fontFamily: T.font.sans }]}>{currency}</Text>
+      <View style={wcS.progBg}>
+        <View style={[wcS.progFill, { width: `${pct}%` as any, backgroundColor: accent }]} />
+      </View>
+      <View style={wcS.footRow}>
+        <View>
+          <Text style={[wcS.footLabel, { fontFamily: T.font.sans }]}>Disponible</Text>
+          <Text style={[wcS.footVal, { color: accent, fontFamily: T.font.mono }]}>{fmt(available, currency)}</Text>
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          <Text style={[wcS.footLabel, { fontFamily: T.font.sans }]}>Réservé</Text>
+          <Text style={[wcS.footVal, { color: T.dim, fontFamily: T.font.mono }]}>{fmt(reserved, currency)}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+const wcS = StyleSheet.create({
+  card: {
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    marginBottom: 12,
+  },
+  top: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  badge: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7, borderWidth: 1,
+  },
+  badgeTxt: { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  defaultTag: {
+    backgroundColor: "rgba(255,255,255,0.08)", paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+  },
+  defaultTxt: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.5 },
+  amount: { fontSize: 28, letterSpacing: -0.5, marginBottom: 2 },
+  amtLabel: { fontSize: 11, fontWeight: "800", marginBottom: 12 },
+  progBg: { height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 99, overflow: "hidden", marginBottom: 12 },
+  progFill: { height: 3, borderRadius: 99 },
+  footRow: { flexDirection: "row", justifyContent: "space-between" },
+  footLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.8, marginBottom: 2 },
+  footVal: { fontSize: 12, fontWeight: "800" },
+});
+
+// ─── Action Box ───────────────────────────────────────────
+function ActionBox({ icon, label, color, bg, onPress, loading }: any) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[axS.box, { backgroundColor: bg, borderColor: `${color}30` }]}
+        onPress={onPress}
+        disabled={loading}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 50 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        activeOpacity={1}
+      >
+        {loading
+          ? <ActivityIndicator size="small" color={color} />
+          : <>
+              <Ionicons name={icon} size={22} color={color} />
+              <Text style={[axS.label, { color, fontFamily: T.font.sans }]}>{label}</Text>
+            </>
+        }
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+const axS = StyleSheet.create({
+  box: {
+    alignItems: "center", justifyContent: "center",
+    paddingVertical: 18, borderRadius: T.radius.md, borderWidth: 1, gap: 8,
+  },
+  label: { fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+});
+
+// ─── Main Screen ──────────────────────────────────────────
+export default function AgencyDetailsScreen() {
+  const { id } = useLocalSearchParams();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
+  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
+
+  const [agency, setAgency] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+
+  const fetchDetails = useCallback(async () => {
+    try {
+      const data = await api.getAgency(id as string);
+      setAgency(data);
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+    } catch (e: any) {
+      if (e.response?.status === 404) router.back();
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useFocusEffect(useCallback(() => { if (id) fetchDetails(); }, [fetchDetails]));
+
+  const confirm = (title: string, msg: string, onOk: () => void) => {
+    if (Platform.OS === "web") { if (window.confirm(`${title}\n${msg}`)) onOk(); }
+    else Alert.alert(title, msg, [{ text: "Annuler", style: "cancel" }, { text: "OUI", onPress: onOk }]);
+  };
+
+  const handleDelete = () => {
+    confirm(
+      "Supprimer l'agence",
+      `Supprimer "${agency.name}" ? Cette action est irréversible.`,
+      async () => {
+        setProcessing(true);
+        try {
+          await api.deleteAgency(agency.id);
+          if (Platform.OS === "web") { alert("Agence supprimée !"); router.back(); }
+          else Alert.alert("Succès", "Agence supprimée !", [{ text: "OK", onPress: () => router.back() }]);
+        } catch {
+          if (Platform.OS === "web") alert("Erreur lors de la suppression");
+          else Alert.alert("Erreur", "Impossible de supprimer.");
+        } finally { setProcessing(false); }
+      }
+    );
+  };
+
+  const handleToggleStatus = () => {
+    confirm(
+      agency.isActive ? "Suspendre l'agence" : "Activer l'agence",
+      `Voulez-vous ${agency.isActive ? "suspendre" : "activer"} "${agency.name}" ?`,
+      async () => {
+        setProcessing(true);
+        try {
+          await api.updateAgency(agency.id, { isActive: !agency.isActive } as any);
+          setAgency({ ...agency, isActive: !agency.isActive });
+        } catch {
+          Alert.alert("Erreur", "Impossible de changer le statut.");
+        } finally { setProcessing(false); }
+      }
+    );
+  };
+
+  if (loading) {
+    return (
+      <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator color={theme.accent} size="large" />
+      </LinearGradient>
+    );
+  }
+
+  if (!agency) return null;
+
+  const isActive = agency.isActive;
+  const wallets = Array.isArray(agency.wallets) ? agency.wallets : [];
+  const primaryWallet = wallets.find((w: any) => w.isDefault) ?? wallets[0];
+  const currency = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
+
+  return (
+    <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <StatusBar barStyle="light-content" />
+
+        {/* ── Header ── */}
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+            <Ionicons name="arrow-back" size={24} color={T.white} />
+          </TouchableOpacity>
+          <Text style={[s.headerTitle, { fontFamily: T.font.display }]} numberOfLines={1}>{agency.name}</Text>
+          <TouchableOpacity
+            style={[s.editBtn, { backgroundColor: `${theme.accent}20`, borderColor: `${theme.accent}30` }]}
+            onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: agency.id } })}
+          >
+            <Ionicons name="pencil" size={18} color={theme.accent} />
+          </TouchableOpacity>
+        </View>
+
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Status badge */}
+          <View style={s.statusRow}>
+            <View style={[s.statusPill, { backgroundColor: isActive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", borderColor: isActive ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)" }]}>
+              <View style={[s.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
+              <Text style={[s.statusTxt, { color: isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
+                {isActive ? "AGENCE ACTIVE" : "AGENCE SUSPENDUE"}
+              </Text>
+            </View>
+            <View style={[s.typePill, { borderColor: `${theme.accent}30` }]}>
+              <Text style={[s.typeTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
+                {agency.type === "PARTNER" ? "PARTENAIRE" : "FILIALE"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Wallets */}
+          <View style={s.sectionRow}>
+            <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
+            <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
+              TRÉSORERIE · {currency}
+            </Text>
+          </View>
+
+          {wallets.length > 0 ? (
+            wallets.map((w: any) => (
+              <WalletCard key={w.id} wallet={w} accent={theme.accent} />
+            ))
+          ) : (
+            <View style={s.noWallet}>
+              <Ionicons name="wallet-outline" size={24} color={T.dim} />
+              <Text style={[s.noWalletTxt, { fontFamily: T.font.sans }]}>Aucun wallet créé</Text>
+            </View>
+          )}
+
+          {/* Informations */}
+          <View style={s.card}>
+            <View style={s.sectionRow}>
+              <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
+              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>INFORMATIONS</Text>
+            </View>
+            <InfoRow label="CODE AGENCE" value={agency.code ?? "N/A"} icon="qr-code-outline" accent={theme.accent} />
+            <InfoRow label="DEVISE PRINCIPALE" value={currency} icon="cash-outline" accent={theme.accent} />
+            <InfoRow label="EMAIL" value={agency.email ?? "N/A"} icon="mail-outline" accent={theme.accent} />
+            <InfoRow label="TÉLÉPHONE" value={agency.phone ?? "N/A"} icon="call-outline" accent={theme.accent} />
+            <InfoRow label="VILLE" value={agency.city ?? "N/A"} icon="location-outline" accent={theme.accent} />
+            <InfoRow label="ADRESSE" value={agency.address ?? "N/A"} icon="map-outline" accent={theme.accent} />
+            <InfoRow label="PAYS" value={agency.country ?? "N/A"} icon="flag-outline" accent={theme.accent} />
+          </View>
+
+          {/* Agents */}
+          {Array.isArray(agency.agents) && agency.agents.length > 0 && (
+            <View style={s.card}>
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: T.dim }]} />
+                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>AGENTS ({agency.agents.length})</Text>
+              </View>
+              {agency.agents.map((agent: any) => (
+                <View key={agent.id} style={s.agentRow}>
+                  <View style={[s.agentAvatar, { backgroundColor: `${theme.accent}15` }]}>
+                    <Text style={[s.agentAvatarTxt, { color: theme.accent, fontFamily: T.font.display }]}>
+                      {(agent.firstName?.[0] ?? "A").toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.agentName, { fontFamily: T.font.sans }]}>
+                      {agent.firstName} {agent.lastName}
+                    </Text>
+                    <Text style={[s.agentEmail, { fontFamily: T.font.sans }]}>{agent.email}</Text>
+                  </View>
+                  <View style={[s.roleBadge, { borderColor: `${theme.accent}30` }]}>
+                    <Text style={[s.roleBadgeTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
+                      {agent.role}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Actions */}
+          <View style={s.sectionRow}>
+            <View style={[s.sectionDot, { backgroundColor: T.amber }]} />
+            <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ACTIONS</Text>
+          </View>
+
+          <View style={s.actionsRow}>
+            <ActionBox
+              icon="pencil-outline"
+              label="Modifier"
+              color={theme.accent}
+              bg={`${theme.accent}10`}
+              onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: agency.id } })}
+              loading={false}
+            />
+            <ActionBox
+              icon={isActive ? "pause-circle-outline" : "play-circle-outline"}
+              label={isActive ? "Suspendre" : "Activer"}
+              color={T.amber}
+              bg="rgba(245,158,11,0.10)"
+              onPress={handleToggleStatus}
+              loading={processing}
+            />
+            <ActionBox
+              icon="trash-outline"
+              label="Supprimer"
+              color={T.red}
+              bg="rgba(239,68,68,0.10)"
+              onPress={handleDelete}
+              loading={false}
+            />
+          </View>
+
+          <View style={{ height: 100 }} />
+        </Animated.ScrollView>
+      </SafeAreaView>
+    </LinearGradient>
+  );
+}
+
+const s = StyleSheet.create({
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16,
+    gap: 14,
+  },
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.10)",
+  },
+  headerTitle: { flex: 1, color: T.white, fontSize: 20, fontWeight: "700" },
+  editBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    justifyContent: "center", alignItems: "center", borderWidth: 1,
+  },
+
+  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 },
+  statusPill: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1,
+  },
+  statusDot: { width: 6, height: 6, borderRadius: 99 },
+  statusTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+  typePill: {
+    paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1,
+    backgroundColor: T.ghost,
+  },
+  typeTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+
+  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  sectionDot: { width: 5, height: 5, borderRadius: 99 },
+  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+
+  noWallet: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    padding: 16, backgroundColor: T.ghost, borderRadius: T.radius.md,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", marginBottom: 14,
+  },
+  noWalletTxt: { color: T.dim, fontSize: 13, fontWeight: "600" },
+
+  card: {
+    backgroundColor: T.ghost, borderRadius: T.radius.lg,
+    padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
+  },
+
+  agentRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)",
+  },
+  agentAvatar: {
+    width: 38, height: 38, borderRadius: 11,
+    justifyContent: "center", alignItems: "center",
+  },
+  agentAvatarTxt: { fontSize: 16, fontWeight: "900" },
+  agentName: { fontSize: 14, fontWeight: "700", color: T.white, marginBottom: 2 },
+  agentEmail: { fontSize: 11, color: T.dim, fontWeight: "600" },
+  roleBadge: {
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
+    backgroundColor: T.ghost,
+  },
+  roleBadgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
+
+  actionsRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
 });

@@ -1,32 +1,46 @@
-//apps/backend/src/agencies/dto/update-agency.dto.ts
+// apps/backend/src/agencies/dto/update-agency.dto.ts
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsOptional, IsString } from 'class-validator';
 
 export class UpdateAgencyDto {
-  @IsString()
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   name?: string;
 
-  @IsString()
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   city?: string;
 
-  @IsString()
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   address?: string;
 
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsEmail()
-  @IsOptional()
-  email?: string; // Si modifié, mettra à jour le login agent
+  email?: string;
 
-  @IsString()
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   phone?: string;
 
-  @IsString()
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   code?: string;
-  
-  @IsString()
+
+  @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
   managerName?: string;
+
+  /** ✅ Si changé, recalcule primaryCurrency */
+  @ApiPropertyOptional({ description: 'ISO alpha-2 : FR, GN, GB…' })
+  @IsOptional()
+  @IsString()
+  country?: string;
 }

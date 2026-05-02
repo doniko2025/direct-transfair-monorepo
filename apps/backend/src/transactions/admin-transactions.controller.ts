@@ -3,7 +3,8 @@ import { Controller, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
 
 import { TransactionsService } from './transactions.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+// ✅ CORRECTION CHIRURGICALE : Le fichier se trouve directement dans auth/ selon ton arborescence VS Code
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantGuard } from '../tenants/tenant.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 

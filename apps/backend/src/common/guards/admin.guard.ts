@@ -1,4 +1,11 @@
 // apps/backend/src/common/guards/admin.guard.ts
+// =========================================================
+// ADMIN GUARD — version unifiée v4.0
+// ✅ Autorise SUPER_ADMIN + COMPANY_ADMIN
+// ✅ Remplace aussi withdrawals/guards/admin.guard.ts
+//    → supprimer apps/backend/src/withdrawals/guards/admin.guard.ts
+// =========================================================
+
 import {
   CanActivate,
   ExecutionContext,
@@ -7,7 +14,6 @@ import {
 } from '@nestjs/common';
 import { Role } from '@prisma/client';
 
-// Définition simple du type pour la requête authentifiée
 type AuthRequest = {
   user?: {
     id: string;
@@ -20,20 +26,23 @@ type AuthRequest = {
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<AuthRequest>();
-    
-    // 1. Vérification basique de l'authentification
+
     if (!req.user) {
-        throw new ForbiddenException('Utilisateur non authentifié');
+      throw new ForbiddenException('Utilisateur non authentifié');
     }
 
-    // 2. Normalisation du rôle (au cas où il arrive en minuscule)
     const role = String(req.user.role ?? '').toUpperCase();
 
-    // ✅ SÉCURITÉ : On autorise SUPER_ADMIN et COMPANY_ADMIN
-    if (role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN') {
+    if (
+      role === 'SUPER_ADMIN' ||
+      role === 'COMPANY_ADMIN' ||
+      role === 'ADMIN'  // ← rétrocompat ancienne valeur
+    ) {
       return true;
     }
 
-    throw new ForbiddenException(`Accès administrateur requis (Rôle actuel: ${role})`);
+    throw new ForbiddenException(
+      `Accès administrateur requis (Rôle actuel: ${role})`,
+    );
   }
 }

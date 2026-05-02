@@ -2,7 +2,7 @@
   "name": "direct-transfair-backend",
   "private": true,
   "version": "0.1.0",
-  "description": "DirectTransf’air backend (NestJS)",
+  "description": "DirectTransf'air backend (NestJS) — v4.0 multi-currency, OTP, push, AML",
   "scripts": {
     "postinstall": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma",
     "dev": "ts-node -r tsconfig-paths/register src/main.ts",
@@ -12,13 +12,15 @@
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "ts-node --transpile-only --compiler-options {\"module\":\"CommonJS\",\"verbatimModuleSyntax\":false} prisma/seed.ts",
+    "prisma:reset": "prisma migrate reset --force",
+    "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+    "prisma:studio": "prisma studio",
     "prisma:platform:generate": "prisma generate --schema prisma-platform/schema.prisma",
     "prisma:platform:migrate": "prisma migrate dev --schema prisma-platform/schema.prisma",
     "prisma:platform:deploy": "prisma migrate deploy --schema prisma-platform/schema.prisma"
   },
   "prisma": {
-    "seed": "ts-node --transpile-only --compiler-options {\"module\":\"CommonJS\",\"verbatimModuleSyntax\":false} prisma/seed.ts"
+    "seed": "ts-node --transpile-only prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",
@@ -27,13 +29,17 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/schedule": "^4.1.1",
     "@nestjs/swagger": "^7.4.0",
+    "@nestjs/throttler": "^5.1.2",
     "@prisma/client": "5.22.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "express": "^4.19.2",
+    "firebase-admin": "^12.7.0",
+    "helmet": "^7.2.0",
     "nodemailer": "^8.0.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",

@@ -21,19 +21,19 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty()
-  firstName: string;
+  firstName!: string;
 
   @IsString()
   @IsNotEmpty()
-  lastName: string;
+  lastName!: string;
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsNotEmpty()
   @MinLength(6)
-  password: string;
+  password!: string;
 
   @IsOptional()
   @IsEnum(Role)
@@ -43,6 +43,11 @@ export class RegisterDto {
   @IsOptional()
   phone?: string;
 
+  /**
+   * ✅ Code ISO alpha-2 (FR, GN, GB, US, SN…)
+   *    → utilisé pour déduire la devise principale et créer le wallet automatiquement
+   *    Ex: country="FR" → primaryCurrency="EUR" + Wallet EUR créé
+   */
   @IsString()
   @IsOptional()
   country?: string;

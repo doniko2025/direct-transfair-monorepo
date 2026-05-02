@@ -1,14 +1,16 @@
 // apps/backend/src/auth/types/auth-user-payload.type.ts
+import type { Role } from '@prisma/client';
 
 /**
- * Shape unique de req.user partout dans l'app.
- * - id: identifiant utilisateur (source JWT)
- * - role/clientId: indispensables pour guards + multi-tenant
+ * Payload qui est attaché à req.user par le JwtAuthGuard.
+ * Utilisé partout dans le backend pour récupérer l'utilisateur courant.
  */
-export type AuthUserPayload = {
+export interface AuthUserPayload {
   id: string;
-  sub: string; // compat JWT standard
+  sub: string;
   email?: string;
-  role?: string;
+  role?: Role | string;
   clientId?: number;
-};
+  agencyId?: string | null;
+  primaryCurrency?: string | null;
+}
