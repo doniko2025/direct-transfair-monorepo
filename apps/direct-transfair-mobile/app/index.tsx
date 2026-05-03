@@ -1,265 +1,189 @@
 //apps/direct-transfair-mobile/app/index.tsx
+// apps/direct-transfair-mobile/app/index.tsx
+// =========================================================
+// SPLASH / LANDING v4.0 — Direct Transf'air
+// Design: Émeraude Profond premium avec animations
+// ✅ Entrée animée, CTA Se connecter / Devenir client
+// =========================================================
+
 import React, { useRef, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  Animated,
-  useWindowDimensions,
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
+  StatusBar, Platform, Animated, useWindowDimensions,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
-// ─── THÈMES & TYPOGRAPHIES ──────────────────────────────────────────────
-const FONTS = {
-  heading: Platform.OS === 'ios' ? 'Cochin' : 'serif',
-  body: Platform.OS === 'ios' ? 'Avenir' : 'sans-serif',
-};
-
-const THEME = {
-  primary: "#059669",     // Vert Émeraude
-  primaryDark: "#047857", // Vert profond
+const T = {
+  g1: "#022C22", g2: "#065F46", g3: "#059669",
   white: "#FFFFFF",
-  text: "#0F172A",
-  muted: "#64748B",
+  font: {
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
 };
 
-// ─── DÉCORS D'ARRIÈRE-PLAN ──────────────────────────────────────────────
-function BgCircles() {
+// ─── Feature Pill ─────────────────────────────────────────
+function FeaturePill({ icon, label }: { icon: string; label: string }) {
   return (
-    <>
-      <View style={[styles.circle, { width: 400, height: 400, top: -100, right: -100, opacity: 0.1 }]} />
-      <View style={[styles.circle, { width: 250, height: 250, top: "30%", left: -100, opacity: 0.05 }]} />
-      <View style={[styles.circle, { width: 150, height: 150, bottom: -50, right: "20%", opacity: 0.08 }]} />
-    </>
+    <View style={fpS.pill}>
+      <Ionicons name={icon as any} size={13} color="rgba(255,255,255,0.9)" />
+      <Text style={[fpS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+    </View>
   );
 }
+const fpS = StyleSheet.create({
+  pill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
+  },
+  label: { color: "rgba(255,255,255,0.9)", fontSize: 11, fontWeight: "700" },
+});
 
 export default function Index() {
   const router = useRouter();
   const { width } = useWindowDimensions();
   const isDesktop = width > 768;
 
-  // Animations d'entrée
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const scaleLogoAnim = useRef(new Animated.Value(0.7)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
+    Animated.stagger(80, [
+      Animated.spring(scaleLogoAnim, { toValue: 1, useNativeDriver: true, speed: 8, bounciness: 8 }),
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true }),
+      ]),
     ]).start();
-  }, [fadeAnim, slideAnim]);
+  }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={THEME.primaryDark} />
-      
-      {/* ─── ARRIÈRE-PLAN ─── */}
-      <View style={styles.bg}>
-        <BgCircles />
-      </View>
+    <LinearGradient colors={[T.g1, T.g2, T.g3]} style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }}>
+        <StatusBar barStyle="light-content" />
 
-      <View style={styles.container}>
-        <Animated.View 
-          style={[
-            styles.content, 
-            isDesktop && styles.contentDesktop,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-          ]}
-        >
-          
-          {/* ─── LOGO & TITRE ─── */}
-          <View style={styles.logoSection}>
-            <View style={styles.logoOuter}>
-              <View style={styles.logoInner}>
-                <Ionicons name="swap-horizontal" size={40} color={THEME.primary} />
-              </View>
+        {/* Déco cercles */}
+        <View style={[s.deco1]} pointerEvents="none" />
+        <View style={[s.deco2]} pointerEvents="none" />
+        <View style={[s.deco3]} pointerEvents="none" />
+
+        <View style={[s.container, isDesktop && s.containerDesktop]}>
+
+          {/* ── Logo ── */}
+          <Animated.View style={[s.logoSection, { transform: [{ scale: scaleLogoAnim }] }]}>
+            <View style={s.logoOuter}>
+              <LinearGradient colors={["rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]} style={s.logoGrad}>
+                <View style={s.logoInner}>
+                  <Ionicons name="swap-horizontal" size={38} color="#059669" />
+                </View>
+              </LinearGradient>
             </View>
-            <Text style={styles.title}>Direct Transf'air</Text>
-            <Text style={styles.subtitle}>
+          </Animated.View>
+
+          {/* ── Hero text ── */}
+          <Animated.View
+            style={[
+              s.heroSection,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <Text style={[s.title, { fontFamily: T.font.display }]}>Direct Transf'air</Text>
+            <Text style={[s.subtitle, { fontFamily: T.font.sans }]}>
               L'argent sans frontières.{"\n"}Transferts instantanés et sécurisés.
             </Text>
-          </View>
 
-          {/* ─── BOUTONS D'ACTION ─── */}
-          <View style={styles.actionSection}>
-            <TouchableOpacity 
-              style={styles.primaryBtn} 
+            {/* Feature pills */}
+            <View style={s.pillsRow}>
+              <FeaturePill icon="flash-outline" label="Instantané" />
+              <FeaturePill icon="shield-checkmark-outline" label="Sécurisé" />
+              <FeaturePill icon="cash-outline" label="Sans frais" />
+            </View>
+          </Animated.View>
+
+          {/* ── CTAs ── */}
+          <Animated.View
+            style={[
+              s.ctaSection,
+              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+          >
+            <TouchableOpacity
+              style={s.primaryBtn}
               activeOpacity={0.9}
               onPress={() => router.replace("/(auth)/login")}
             >
-              <Text style={styles.primaryBtnText}>Se connecter</Text>
-              <Ionicons name="arrow-forward" size={20} color={THEME.primary} />
+              <Text style={[s.primaryBtnTxt, { fontFamily: T.font.sans }]}>Se connecter</Text>
+              <View style={s.primaryBtnArrow}>
+                <Ionicons name="arrow-forward" size={18} color="#059669" />
+              </View>
             </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={styles.secondaryBtn} 
-              activeOpacity={0.8}
+            <TouchableOpacity
+              style={s.secondaryBtn}
+              activeOpacity={0.85}
               onPress={() => router.replace("/(auth)/register")}
             >
-              <Text style={styles.secondaryBtnText}>Devenir client</Text>
+              <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Devenir client</Text>
             </TouchableOpacity>
-          </View>
+          </Animated.View>
 
-          {/* ─── FOOTER ─── */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
+          {/* ── Footer ── */}
+          <Animated.View style={[s.footer, { opacity: fadeAnim }]}>
+            <Text style={[s.footerTxt, { fontFamily: T.font.sans }]}>
               En continuant, vous acceptez nos{" "}
-              <Text style={styles.footerLink}>Conditions générales</Text> et notre{" "}
-              <Text style={styles.footerLink}>Politique de confidentialité</Text>.
+              <Text style={s.footerLink}>Conditions générales</Text>
+              {" "}et notre{" "}
+              <Text style={s.footerLink}>Politique de confidentialité</Text>.
             </Text>
-          </View>
+          </Animated.View>
 
-        </Animated.View>
-      </View>
-    </SafeAreaView>
+        </View>
+      </SafeAreaView>
+    </LinearGradient>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: THEME.primaryDark },
-  
-  bg: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: THEME.primary,
-  },
-  circle: {
-    position: "absolute",
-    borderRadius: 999,
-    backgroundColor: THEME.white,
-  },
+const s = StyleSheet.create({
+  deco1: { position: "absolute", width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(255,255,255,0.05)", top: -100, right: -120 },
+  deco2: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(255,255,255,0.04)", top: "35%", left: -80 },
+  deco3: { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: "rgba(255,255,255,0.04)", bottom: -40, right: "22%" },
 
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  content: {
-    flex: 1,
-    justifyContent: "space-between",
-    paddingVertical: Platform.OS === 'android' ? 60 : 80,
-  },
-  contentDesktop: {
-    maxWidth: 500,
-    alignSelf: "center",
-    width: "100%",
-  },
+  container: { flex: 1, paddingHorizontal: 24, justifyContent: "space-between", paddingVertical: Platform.OS === "android" ? 60 : 80 },
+  containerDesktop: { maxWidth: 500, alignSelf: "center", width: "100%" },
 
-  // Logo
-  logoSection: {
-    alignItems: "center",
-    marginTop: 40,
-  },
-  logoOuter: {
-    width: 100,
-    height: 100,
-    borderRadius: 30,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-  },
-  logoInner: {
-    width: 76,
-    height: 76,
-    borderRadius: 24,
-    backgroundColor: THEME.white,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 15,
-    elevation: 8,
-  },
-  title: {
-    fontSize: 36,
-    fontFamily: FONTS.heading,
-    fontWeight: "900",
-    color: THEME.white,
-    marginBottom: 12,
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 16,
-    fontFamily: FONTS.body,
-    color: "rgba(255,255,255,0.85)",
-    textAlign: "center",
-    lineHeight: 24,
-    fontWeight: "500",
-  },
+  logoSection: { alignItems: "center" },
+  logoOuter: { width: 96, height: 96, borderRadius: 28, overflow: "hidden" },
+  logoGrad: { flex: 1, justifyContent: "center", alignItems: "center" },
+  logoInner: { width: 74, height: 74, borderRadius: 22, backgroundColor: T.white, justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 14, elevation: 8 },
 
-  // Actions
-  actionSection: {
-    width: "100%",
-    gap: 16,
-  },
+  heroSection: { alignItems: "center", gap: 12 },
+  title: { fontSize: 38, color: T.white, fontWeight: "900", letterSpacing: -0.5, textAlign: "center" },
+  subtitle: { fontSize: 16, color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 24, fontWeight: "500" },
+  pillsRow: { flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "center" },
+
+  ctaSection: { gap: 14 },
   primaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: THEME.white,
-    borderRadius: 20,
-    paddingVertical: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 15,
-    elevation: 5,
-    gap: 10,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: T.white, borderRadius: 20, paddingVertical: 18,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 16, elevation: 6, gap: 12,
   },
-  primaryBtnText: {
-    color: THEME.primary,
-    fontSize: 18,
-    fontFamily: FONTS.body,
-    fontWeight: "900",
-    letterSpacing: 0.5,
-  },
-  secondaryBtn: {
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 20,
-    paddingVertical: 18,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  secondaryBtnText: {
-    color: THEME.white,
-    fontSize: 16,
-    fontFamily: FONTS.body,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
+  primaryBtnTxt: { color: "#059669", fontSize: 18, fontWeight: "900", letterSpacing: 0.3 },
+  primaryBtnArrow: { width: 30, height: 30, borderRadius: 99, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center" },
 
-  // Footer
-  footer: {
-    alignItems: "center",
-    paddingHorizontal: 20,
-    marginBottom: 20,
+  secondaryBtn: {
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 20, paddingVertical: 18,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.28)",
   },
-  footerText: {
-    textAlign: "center",
-    fontSize: 12,
-    fontFamily: FONTS.body,
-    color: "rgba(255,255,255,0.6)",
-    lineHeight: 18,
-  },
-  footerLink: {
-    color: THEME.white,
-    fontWeight: "700",
-    textDecorationLine: "underline",
-  },
+  secondaryBtnTxt: { color: T.white, fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
+
+  footer: { alignItems: "center", paddingHorizontal: 10 },
+  footerTxt: { textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 17 },
+  footerLink: { color: "rgba(255,255,255,0.85)", fontWeight: "700", textDecorationLine: "underline" },
 });

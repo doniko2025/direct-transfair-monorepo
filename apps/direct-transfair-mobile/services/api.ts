@@ -431,12 +431,11 @@ class API {
   private clearTokens(): void {
     this.token = null;
     this.refreshToken = null;
-    void AsyncStorage.multiRemove([
-      STORAGE_KEYS.ACCESS_TOKEN,
-      STORAGE_KEYS.REFRESH_TOKEN,
+    void Promise.all([
+      AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN),
+      AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
     ]);
   }
-
   private platformHeaders(): Record<string, string> {
     return { "x-tenant-id": PLATFORM_TENANT };
   }

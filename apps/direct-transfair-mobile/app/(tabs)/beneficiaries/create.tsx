@@ -216,7 +216,7 @@ function StepDot({ active, done }: { active: boolean; done: boolean }) {
   );
 }
 const stS = StyleSheet.create({
-  dot: { height: 5, width: 5, borderRadius: 99, transition: "all 0.3s" as any },
+  dot: { height: 5, width: 5, borderRadius: 99 },
 });
 
 // ─── Main Screen ──────────────────────────────────────────

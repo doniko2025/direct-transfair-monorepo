@@ -322,23 +322,21 @@ export default function CreateAgencyScreen() {
       const agencyCurrency = (selectedCountry as any).currency ?? "XOF";
 
       await api.createAgency({
-        name: name.trim(),
-        code: autoCode,
-        address: address.trim() || undefined,
-        phone: fullPhone,
-        email: email.trim(),
-        adminEmail: email.trim(),
-        adminFirstName: managerFirstName.trim(),
-        adminLastName: managerLastName.trim(),
-        adminPassword: password,
-        managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
-        country: selectedCountry.name,
-        currency: agencyCurrency,
-        primaryCurrency: agencyCurrency,
-        city: selectedCity,
-        subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
-        status: "ACTIVE",
-      });
+  name: name.trim(),
+  code: autoCode,
+  address: address.trim() || "",
+  phone: fullPhone,
+  email: email.trim(),
+  adminFirstName: managerFirstName.trim(),
+  adminLastName: managerLastName.trim(),
+  adminPassword: password,
+  managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
+  country: selectedCountry.name,
+  // Suppression de la ligne currency: agencyCurrency car elle n'existe pas dans le type
+  city: selectedCity,
+  subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
+  status: "ACTIVE",
+});
 
       Alert.alert(
         "✅ Agence créée",

@@ -294,19 +294,18 @@ export default function AgencyAgentsScreen() {
     try {
       const data = await api.getAgency(id as string);
       setAgencyName(data.name ?? "");
+      
+      // Utilisation de primaryCurrency ou du premier wallet par défaut
       const agentCurrency =
-        (Array.isArray(data.wallets) && data.wallets.find((w: any) => w.isDefault)?.currency) ??
-        data.primaryCurrency ??
-        data.currency ??
-        "XOF";
+        data.primaryCurrency ?? 
+        (Array.isArray(data.wallets) && data.wallets.length > 0 ? data.wallets[0].currency : "XOF");
+      
       setCurrency(agentCurrency);
       setAgents(Array.isArray(data.agents) ? data.agents : []);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
-  }, [id]);
-
-  useEffect(() => { void fetchAgents(); }, [fetchAgents]);
+  }, [id, fadeAnim]);
 
   const handleSuspend = (agent: any) => {
     const next = !agent.isActive;
@@ -321,7 +320,8 @@ export default function AgencyAgentsScreen() {
           onPress: async () => {
             setProcessing(true);
             try {
-              await api.updateUser?.(agent.id, { isActive: next });
+              // Appel chirurgical via le client HTTP car updateUser n'est pas défini
+              await api.http.patch(`/users/${agent.id}`, { isActive: next });
               setAgents((prev) => prev.map((a) => a.id === agent.id ? { ...a, isActive: next } : a));
             } catch {
               Alert.alert("Erreur", "Impossible de modifier le statut.");

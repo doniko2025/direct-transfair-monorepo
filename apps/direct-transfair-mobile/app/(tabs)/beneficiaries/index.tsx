@@ -198,14 +198,22 @@ const tcS = StyleSheet.create({
   date: { color: T.dim, fontSize: 10, fontWeight: "600" },
   senderRow: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: T.inkBorder },
   senderTxt: { color: T.dim, fontSize: 10, fontWeight: "600" },
-  validateBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 10, marginTop: -1,
-    borderTopWidth: 0, borderBottomLeftRadius: T.radius.lg, borderBottomRightRadius: T.radius.lg,
-    borderWidth: 1, borderTopWidth: 0,
-  },
-  validateTxt: { fontSize: 12, fontWeight: "800" },
-});
+  // Fichier : index.tsx (Lignes ~201-215)
+validateBtn: {
+  flexDirection: "row",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 6,
+  paddingVertical: 10,
+  marginTop: -1,
+  borderBottomLeftRadius: T.radius.lg,
+  borderBottomRightRadius: T.radius.lg,
+  borderWidth: 1,
+  borderTopWidth: 0, 
+}, // Cette accolade ferme validateBtn
+// SUPPRIMER l'accolade qui se trouvait ici à la ligne 213
+validateTxt: { fontSize: 12, fontWeight: "800" },
+}); // Cette parenthèse et accolade ferment StyleSheet.create
 
 // ─── Wrapper (Card + Validate bouton) ────────────────────
 function TxWrapper({ item, accent, userId, onValidateB2B, validating }: any) {
