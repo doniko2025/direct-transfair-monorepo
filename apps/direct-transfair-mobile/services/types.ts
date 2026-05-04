@@ -1,5 +1,5 @@
 // =========================================================
-// DIRECT TRANSF'AIR — Types v4.4 (FUSION COMPLETE)
+// DIRECT TRANSF'AIR — Types v4.5 (MISSING TYPES ADDED)
 // =========================================================
 
 // =========================================================
@@ -123,6 +123,32 @@ export type ClientSubscriptionStatus =
 
 export type ClientSubscriptionType = "RENTAL" | "PURCHASE";
 
+export type KycDocumentType =
+  | "PASSPORT"
+  | "ID_CARD"
+  | "RESIDENCE_PERMIT"
+  | "DRIVING_LICENSE"
+  | "UTILITY_BILL"
+  | "BANK_STATEMENT"
+  | "OTHER";
+
+export type KycDocumentStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "EXPIRED";
+
+export type CommissionType = "PERCENTAGE" | "FIXED" | "TIERED";
+
+export type PromotionType = "PERCENTAGE" | "FIXED" | "FREE_FEES";
+
+export type AmlFlagReason =
+  | "HIGH_AMOUNT"
+  | "FREQUENT_TRANSFERS"
+  | "SUSPICIOUS_PATTERN"
+  | "BLACKLISTED_COUNTRY"
+  | "OTHER";
+
 // =========================================================
 // WALLET
 // =========================================================
@@ -139,6 +165,24 @@ export interface Wallet {
   clientId?: number;
   createdAt?: ISODate;
   updatedAt?: ISODate;
+}
+
+// =========================================================
+// LEDGER
+// =========================================================
+
+export interface LedgerEntry {
+  id: string;
+  walletId: string;
+  type: LedgerEntryType;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  currency: CurrencyCode;
+  reference?: string;
+  description?: string;
+  transactionId?: string;
+  createdAt: ISODate;
 }
 
 // =========================================================
@@ -520,6 +564,253 @@ export interface CreateRateAlertPayload {
   pair: string;
   targetRate: number;
   direction: RateAlertDirection;
+}
+
+// =========================================================
+// KYC
+// =========================================================
+
+export interface KycDocument {
+  id: string;
+  userId: string;
+  type: KycDocumentType;
+  status: KycDocumentStatus;
+  fileUrl?: string;
+  fileName?: string;
+  rejectionReason?: string;
+  expiresAt?: ISODate;
+  reviewedAt?: ISODate;
+  reviewedBy?: string;
+  createdAt: ISODate;
+  updatedAt?: ISODate;
+}
+
+export interface SubmitKycPayload {
+  type: KycDocumentType;
+  fileUrl: string;
+  fileName?: string;
+  expiresAt?: ISODate;
+  [key: string]: unknown;
+}
+
+// =========================================================
+// TREASURY
+// =========================================================
+
+export interface TreasuryOverview {
+  currency: CurrencyCode;
+  totalBalance: number;
+  clientBalance: number;
+  agencyBalance: number;
+  userBalance: number;
+  pendingTransactions?: number;
+  date?: ISODate;
+}
+
+export interface TreasurySnapshot {
+  id: string;
+  currency: CurrencyCode;
+  totalSent: number;
+  totalReceived: number;
+  totalFees: number;
+  totalCommission: number;
+  openingBalance: number;
+  closingBalance: number;
+  date: ISODate;
+  clientId?: number;
+  createdAt?: ISODate;
+}
+
+// =========================================================
+// COMMISSIONS
+// =========================================================
+
+export interface CommissionRule {
+  id?: string;
+  name?: string;
+  type: CommissionType;
+  value: number;
+  minAmount?: number;
+  maxAmount?: number;
+  currency?: CurrencyCode;
+  targetCurrency?: CurrencyCode;
+  agencyId?: string;
+  clientId?: number;
+  isActive?: boolean;
+  createdAt?: ISODate;
+  updatedAt?: ISODate;
+}
+
+// =========================================================
+// LOYALTY
+// =========================================================
+
+export interface LoyaltyTransaction {
+  id: string;
+  userId: string;
+  points: number;
+  type: "EARNED" | "REDEEMED" | "EXPIRED" | "ADJUSTED";
+  description?: string;
+  transactionId?: string;
+  createdAt: ISODate;
+}
+
+export interface LoyaltyConfig {
+  pointsPerUnit: number;
+  currency: CurrencyCode;
+  minRedeemPoints: number;
+  pointValue: number;
+  tiers: Array<{
+    tier: LoyaltyTier;
+    minPoints: number;
+    bonusMultiplier: number;
+  }>;
+}
+
+// =========================================================
+// PROMOTIONS
+// =========================================================
+
+export interface Promotion {
+  id: string;
+  code: string;
+  type: PromotionType;
+  value: number;
+  minAmount?: number;
+  maxDiscount?: number;
+  currency?: CurrencyCode;
+  usageLimit?: number;
+  usageCount?: number;
+  isActive: boolean;
+  startsAt?: ISODate;
+  expiresAt?: ISODate;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// AML
+// =========================================================
+
+export interface AmlFlag {
+  id: string;
+  userId: string;
+  transactionId?: string;
+  reason: AmlFlagReason;
+  description?: string;
+  severity: AlertSeverity;
+  isReviewed: boolean;
+  resolution?: string;
+  reviewedBy?: string;
+  reviewedAt?: ISODate;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// ALERTS (Admin)
+// =========================================================
+
+export interface Alert {
+  id: string;
+  title: string;
+  message: string;
+  severity: AlertSeverity;
+  type?: string;
+  isResolved: boolean;
+  resolvedBy?: string;
+  resolvedAt?: ISODate;
+  metadata?: Record<string, unknown>;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// COMMUNICATIONS
+// =========================================================
+
+export interface CommunicationLog {
+  id: string;
+  userId?: string;
+  type: CommsType;
+  status: CommsStatus;
+  recipient: string;
+  subject?: string;
+  body?: string;
+  provider?: string;
+  errorMessage?: string;
+  sentAt?: ISODate;
+  deliveredAt?: ISODate;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// AUDIT LOGS
+// =========================================================
+
+export interface AuditLog {
+  id: string;
+  userId?: string;
+  action: string;
+  entity?: string;
+  entityId?: string;
+  oldValue?: Record<string, unknown>;
+  newValue?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// WEBHOOKS
+// =========================================================
+
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  events: string[];
+  isActive: boolean;
+  secret?: string;
+  clientId?: number;
+  createdAt: ISODate;
+  updatedAt?: ISODate;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  endpointId: string;
+  event: string;
+  payload: Record<string, unknown>;
+  status: WebhookStatus;
+  statusCode?: number;
+  responseBody?: string;
+  attempt: number;
+  deliveredAt?: ISODate;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// API KEYS
+// =========================================================
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  ipWhitelist?: string[];
+  isActive: boolean;
+  lastUsedAt?: ISODate;
+  expiresAt?: ISODate;
+  createdAt: ISODate;
+}
+
+// =========================================================
+// COUNTRY CURRENCY
+// =========================================================
+
+export interface CountryCurrency {
+  countryCode: string;
+  countryName: string;
+  currencyCode: CurrencyCode;
+  currencyName?: string;
 }
 
 // =========================================================
