@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "buildCommand": "pnpm expo export --platform web",
+  "buildCommand": "pnpm install && pnpm run build",
   "outputDirectory": "dist",
   "framework": null,
   "rewrites": [

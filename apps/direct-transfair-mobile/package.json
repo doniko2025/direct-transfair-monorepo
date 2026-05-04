@@ -4,12 +4,12 @@
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
-    "start": "npx expo start",
-    "android": "npx expo run:android",
-    "ios": "npx expo run:ios",
-    "web": "npx expo start --web",
-    "build": "npx expo export --platform web",
-    "reset": "rm -rf node_modules .expo && pnpm install && npx expo start --clear"
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "build": "expo export --platform web",
+    "reset": "rm -rf node_modules .expo && pnpm install && expo start --clear"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
