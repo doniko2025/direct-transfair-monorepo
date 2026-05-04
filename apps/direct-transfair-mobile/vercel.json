@@ -1,6 +1,10 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install --no-frozen-lockfile && pnpm run build",
+  "buildCommand": "pnpm install && pnpm run build",
   "outputDirectory": "dist",
-  "framework": null
+  "framework": null,
+  "rewrites": [
+    { "source": "/:tenant", "destination": "/[tenant]" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

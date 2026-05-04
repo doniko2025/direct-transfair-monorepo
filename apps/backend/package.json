@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "description": "DirectTransf'air backend (NestJS) — v4.0 multi-currency, OTP, push, AML",
   "scripts": {
+    "postinstall": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma",
     "dev": "ts-node -r tsconfig-paths/register src/main.ts",
     "dev:watch": "tsx watch -r tsconfig-paths/register src/main.ts",
-    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma && npm run clean && nest build -p tsconfig.build.json && cp -r src/platform/generated dist/platform/",
+   "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma && pnpm run clean && nest build -p tsconfig.build.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/platform', {recursive:true}); fs.cpSync('src/platform/generated', 'dist/platform', {recursive:true})\"",
     "start": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
