@@ -7,7 +7,7 @@
 
 import React from "react";
 import { Stack } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { StatusBar } from "expo-status-bar"; 
 import { AuthProvider } from "../providers/AuthProvider";
 
 export default function RootLayout() {
