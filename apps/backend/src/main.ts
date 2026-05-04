@@ -28,9 +28,15 @@ async function bootstrap(): Promise<void> {
         'https://direct-transfair-monorepo-production.up.railway.app',
         'https://direct-transfair-monorepo-backend.vercel.app',
         'https://direct-transfair-monorepo-direct-tr.vercel.app',
+        // Ajoute ici toute nouvelle URL frontend Vercel si besoin
       ];
 
-      if (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
+      // Autorise tous les sous-domaines vercel.app ET railway.app
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.endsWith('.railway.app')
+      ) {
         return callback(null, true);
       }
 
