@@ -1,4 +1,3 @@
-// components/dashboards/ClientDashboard.tsx
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
 // CLIENT DASHBOARD — Direct Transf'air v4.0
@@ -124,16 +123,16 @@ const txS = StyleSheet.create({
   row: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomWidth: 1, borderBottomColor: "#F1F5F9",
   },
   avatar: {
     width: 44, height: 44, borderRadius: 14,
     justifyContent: "center", alignItems: "center",
   },
   avatarTxt: { fontSize: 18, fontWeight: "900" },
-  name: { fontSize: 14, fontWeight: "700", color: T.white, marginBottom: 4 },
+  name: { fontSize: 14, fontWeight: "700", color: "#1E293B", marginBottom: 4 },
   meta: { flexDirection: "row", alignItems: "center", gap: 8 },
-  date: { fontSize: 11, color: T.ivoryDim, fontWeight: "600" },
+  date: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
   pill: {
     flexDirection: "row", alignItems: "center", gap: 3,
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 99,
@@ -141,7 +140,7 @@ const txS = StyleSheet.create({
   pillDot: { width: 4, height: 4, borderRadius: 99 },
   pillTxt: { fontSize: 10, fontWeight: "800", letterSpacing: 0.3 },
   amount: { fontSize: 15, letterSpacing: -0.3 },
-  currency: { fontSize: 10, color: T.ivoryDim, fontWeight: "700", marginTop: 2 },
+  currency: { fontSize: 10, color: "#94A3B8", fontWeight: "700", marginTop: 2 },
 });
 
 // ─── Action Button ───────────────────────────────────────
@@ -172,9 +171,9 @@ const abS = StyleSheet.create({
     width: 56, height: 56, borderRadius: 18,
     justifyContent: "center", alignItems: "center",
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15, shadowRadius: 6, elevation: 3,
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
-  label: { fontSize: 11, fontWeight: "800", color: T.ivoryDim, textAlign: "center" },
+  label: { fontSize: 11, fontWeight: "800", color: "#475569", textAlign: "center" },
 });
 
 // ─── Stat Chip ───────────────────────────────────────────
@@ -194,7 +193,7 @@ const scS = StyleSheet.create({
   chip: { flex: 1, alignItems: "center", gap: 4, paddingVertical: 14 },
   iconMini: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   val: { fontSize: 15, fontWeight: "900" },
-  lbl: { fontSize: 10, color: T.ivoryDim, fontWeight: "700", letterSpacing: 0.4 },
+  lbl: { fontSize: 10, color: "#64748B", fontWeight: "700", letterSpacing: 0.4 },
 });
 
 // ─── Main ────────────────────────────────────────────────
@@ -214,8 +213,17 @@ export default function ClientDashboard() {
 
   const firstName = user?.firstName ?? "Client";
 
-  // ✅ Devise locale uniquement (primaryCurrency du user)
-  const primaryCurrency = (user as any)?.primaryCurrency ?? "XOF";
+  // ✅ Devise locale — priorité : primaryCurrency > dérivé du pays > fallback XOF
+  const COUNTRY_CURRENCY_MAP: Record<string, string> = {
+    GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
+    TG: "XOF", NE: "XOF", GW: "XOF", FR: "EUR", DE: "EUR", BE: "EUR",
+    IT: "EUR", ES: "EUR", PT: "EUR", NL: "EUR", AT: "EUR", FI: "EUR",
+    IE: "EUR", LU: "EUR", GR: "EUR", GB: "GBP", US: "USD", SV: "USD",
+    GG: "GBP", JE: "GBP",
+  };
+  const rawCountry = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
+  const derivedCurrency = rawCountry ? (COUNTRY_CURRENCY_MAP[rawCountry] ?? "XOF") : "XOF";
+  const primaryCurrency = (user as any)?.primaryCurrency || derivedCurrency;
 
   // Wallet dans la devise principale
   const wallets = (user as any)?.wallets ?? [];
@@ -253,7 +261,7 @@ export default function ClientDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={T.forest} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
 
       {/* ── Header ── */}
       <LinearGradient
@@ -445,7 +453,7 @@ export default function ClientDashboard() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.forestMid },
+  safe: { flex: 1, backgroundColor: "#F8FAFC" },
 
   header: {
     paddingHorizontal: 20,
@@ -509,19 +517,19 @@ const s = StyleSheet.create({
   scrollDesktop: { maxWidth: 800, alignSelf: "center", width: "100%" },
 
   statsStrip: {
-    flexDirection: "row", backgroundColor: T.forestL, borderRadius: 18,
-    borderWidth: 1, borderColor: T.forestB, marginBottom: 16, overflow: "hidden",
-    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 3,
+    flexDirection: "row", backgroundColor: "#FFFFFF", borderRadius: 18,
+    borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 16, overflow: "hidden",
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  statsDivider: { width: 1, backgroundColor: T.forestB, marginVertical: 8 },
+  statsDivider: { width: 1, backgroundColor: "#E2E8F0", marginVertical: 8 },
 
   actionsCard: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: T.forestL, borderRadius: 22, padding: 20,
-    marginBottom: 16, borderWidth: 1, borderColor: T.forestB,
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 3,
+    backgroundColor: "#FFFFFF", borderRadius: 22, padding: 20,
+    marginBottom: 16, borderWidth: 1, borderColor: "#E2E8F0",
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
-  actionsSep: { width: 1, height: 44, backgroundColor: T.forestB },
+  actionsSep: { width: 1, height: 44, backgroundColor: "#E2E8F0" },
 
   promo: { borderRadius: 18, overflow: "hidden", marginBottom: 16 },
   promoGrad: {
@@ -541,29 +549,29 @@ const s = StyleSheet.create({
   },
 
   txCard: {
-    backgroundColor: T.forestL, borderRadius: 22, padding: 18,
-    borderWidth: 1, borderColor: T.forestB, marginBottom: 14,
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8, elevation: 3,
+    backgroundColor: "#FFFFFF", borderRadius: 22, padding: 18,
+    borderWidth: 1, borderColor: "#E2E8F0", marginBottom: 14,
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
   },
   txCardHeader: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12,
   },
   txCardTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   txCardDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: T.emeraldL },
-  txCardTitle: { fontSize: 14, fontWeight: "800", color: T.white },
+  txCardTitle: { fontSize: 14, fontWeight: "800", color: "#0F172A" },
   seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 3 },
   seeAllTxt: { fontSize: 12, fontWeight: "700", color: T.emeraldL },
 
   empty: { alignItems: "center", paddingVertical: 28, gap: 8 },
   emptyIconBox: {
-    width: 60, height: 60, borderRadius: 18, backgroundColor: T.ghost,
+    width: 60, height: 60, borderRadius: 18, backgroundColor: "#F1F5F9",
     justifyContent: "center", alignItems: "center", marginBottom: 4,
-    borderWidth: 1, borderColor: T.forestB,
+    borderWidth: 1, borderColor: "#E2E8F0",
   },
-  emptyTitle: { fontSize: 15, fontWeight: "800", color: T.white },
-  emptySub: { fontSize: 12, color: T.ivoryDim, fontWeight: "600" },
+  emptyTitle: { fontSize: 15, fontWeight: "800", color: "#1E293B" },
+  emptySub: { fontSize: 12, color: "#64748B", fontWeight: "600" },
   emptyBtn: {
-    marginTop: 10, backgroundColor: `${T.emeraldL}15`, borderRadius: 12,
+    marginTop: 10, backgroundColor: `${T.emeraldL}12`, borderRadius: 12,
     paddingHorizontal: 18, paddingVertical: 10,
     borderWidth: 1, borderColor: `${T.emeraldL}30`,
   },
@@ -572,7 +580,7 @@ const s = StyleSheet.create({
   viewMoreBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 6, paddingTop: 16, marginTop: 4,
-    borderTopWidth: 1, borderTopColor: T.forestB,
+    borderTopWidth: 1, borderTopColor: "#F1F5F9",
   },
   viewMoreTxt: { fontSize: 13, color: T.emeraldL, fontWeight: "700" },
 
@@ -580,5 +588,5 @@ const s = StyleSheet.create({
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     gap: 5, paddingVertical: 8,
   },
-  secTxt: { fontSize: 11, color: T.ivoryDim, fontWeight: "600" },
+  secTxt: { fontSize: 11, color: "#94A3B8", fontWeight: "600" },
 });

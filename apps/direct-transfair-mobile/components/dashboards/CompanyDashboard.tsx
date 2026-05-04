@@ -1,4 +1,3 @@
-// components/dashboards/CompanyDashboard.tsx
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
 // COMPANY ADMIN DASHBOARD — Direct Transf'air v4.0
@@ -41,11 +40,11 @@ const T = {
   dimMuted:  "#4A7099",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€", flag: "🇪🇺", color: "#60A5FA", bg: "#060F1E" },
-    USD: { code: "USD", symbol: "$", flag: "🇺🇸", color: "#34D399", bg: "#061410" },
-    XOF: { code: "XOF", symbol: "Fr", flag: "🌍", color: "#FCD34D", bg: "#120E00" },
-    GNF: { code: "GNF", symbol: "FG", flag: "🇬🇳", color: "#F87171", bg: "#150505" },
-    GBP: { code: "GBP", symbol: "£", flag: "🇬🇧", color: "#A78BFA", bg: "#0D0A1E" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#60A5FA", bg: "#0A1628" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#34D399", bg: "#091F18" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#FCD34D", bg: "#1E1600" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#F87171", bg: "#200A0A" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#A78BFA", bg: "#130E28" },
   },
 
   radius: { sm: 12, md: 16, lg: 22, xl: 28 },
@@ -141,7 +140,7 @@ function CurrencyCard({ currency, balance, reserved, txCount }: {
 const ccS = StyleSheet.create({
   card: {
     borderRadius: T.radius.xl, padding: 22, marginRight: 16,
-    borderWidth: 1, borderColor: T.navyBorder, overflow: "hidden",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)", overflow: "hidden",
     shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 20, elevation: 12,
   },
   glow: { ...StyleSheet.absoluteFillObject, borderRadius: T.radius.xl },
@@ -149,7 +148,7 @@ const ccS = StyleSheet.create({
   flagBox: {
     width: 46, height: 46, borderRadius: 14,
     justifyContent: "center", alignItems: "center",
-    borderWidth: 1, backgroundColor: T.ghost,
+    borderWidth: 1, backgroundColor: "rgba(255,255,255,0.08)",
   },
   curCode: { fontSize: 10, fontWeight: "900", letterSpacing: 2, marginBottom: 2 },
   curSymbol: { fontSize: 22, fontWeight: "700", color: T.white },
@@ -158,14 +157,14 @@ const ccS = StyleSheet.create({
   },
   txBadgeTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
   balSection: { marginBottom: 16 },
-  balLabel: { color: T.dim, fontSize: 9, fontWeight: "900", letterSpacing: 1.5, marginBottom: 6 },
+  balLabel: { color: "rgba(255,255,255,0.55)", fontSize: 9, fontWeight: "900", letterSpacing: 1.5, marginBottom: 6 },
   balAmount: { color: T.white, fontSize: 32, letterSpacing: -0.5, marginBottom: 2 },
   balCur: { fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
-  divider: { height: 1, backgroundColor: T.ghost, marginBottom: 14 },
+  divider: { height: 1, backgroundColor: "rgba(255,255,255,0.12)", marginBottom: 14 },
   footRow: { flexDirection: "row", marginBottom: 12 },
-  footLabel: { color: T.dimMuted, fontSize: 9, fontWeight: "900", letterSpacing: 1, marginBottom: 3 },
+  footLabel: { color: "rgba(255,255,255,0.4)", fontSize: 9, fontWeight: "900", letterSpacing: 1, marginBottom: 3 },
   footVal: { fontSize: 12, fontWeight: "800" },
-  progBg: { height: 3, backgroundColor: T.ghost, borderRadius: 99, overflow: "hidden" },
+  progBg: { height: 3, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99, overflow: "hidden" },
   progFill: { height: 3, borderRadius: 99 },
 });
 
@@ -224,9 +223,9 @@ function MenuCard({ title, subtitle, icon, color, bgColor, onPress, badge }: any
 
 const mS = StyleSheet.create({
   card: {
-    backgroundColor: T.navyLight, borderRadius: T.radius.lg,
-    padding: 16, borderWidth: 1, borderColor: T.navyBorder,
-    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
+    backgroundColor: "#FFFFFF", borderRadius: T.radius.lg,
+    padding: 16, borderWidth: 1, borderColor: "#E2E8F0",
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
     overflow: "hidden",
   },
   topRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 },
@@ -235,8 +234,8 @@ const mS = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1,
   },
   badgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
-  title: { fontSize: 13, fontWeight: "800", color: T.white, marginBottom: 3 },
-  sub: { fontSize: 11, color: T.dim, fontWeight: "600", lineHeight: 15 },
+  title: { fontSize: 13, fontWeight: "800", color: "#1E293B", marginBottom: 3 },
+  sub: { fontSize: 11, color: "#64748B", fontWeight: "600", lineHeight: 15 },
   arrow: {
     position: "absolute", right: 12, bottom: 12,
     width: 24, height: 24, borderRadius: 7,
@@ -256,6 +255,12 @@ export default function CompanyDashboard() {
   const [amount, setAmount] = useState("");
   const [refBancaire, setRefBancaire] = useState("");
   const [processing, setProcessing] = useState(false);
+
+  // ── Auto-alimentation caisse (COMPANY_ADMIN uniquement) ──
+  const [autoFillVisible, setAutoFillVisible] = useState(false);
+  const [autoFillCurrency, setAutoFillCurrency] = useState("XOF");
+  const [autoFillAmount, setAutoFillAmount] = useState("");
+  const [autoFillProcessing, setAutoFillProcessing] = useState(false);
 
   const contentAnim = useRef(new Animated.Value(0)).current;
 
@@ -283,6 +288,41 @@ export default function CompanyDashboard() {
   }, [loadData]));
 
   const closeModal = () => { setModalVisible(false); setAmount(""); setRefBancaire(""); };
+  const closeAutoFill = () => { setAutoFillVisible(false); setAutoFillAmount(""); };
+
+  const openAutoFill = (currency: string) => {
+    setAutoFillCurrency(currency);
+    setAutoFillAmount("");
+    setAutoFillVisible(true);
+  };
+
+  const handleAutoFill = async () => {
+    const n = Number(autoFillAmount);
+    if (!autoFillAmount || isNaN(n) || n <= 0) {
+      Alert.alert("Erreur", "Saisissez un montant valide.");
+      return;
+    }
+    setAutoFillProcessing(true);
+    try {
+      // Appel API — crédit direct du wallet par devise
+      await api.http.post("/treasury/admin/inject", {
+        currency: autoFillCurrency,
+        amount: n,
+      });
+      closeAutoFill();
+      const successMsg = `${fmtAmount(n, autoFillCurrency)} ${autoFillCurrency} ajouté à votre caisse.`;
+      if (Platform.OS === "web") {
+        alert(`✅ Caisse alimentée\n\n${successMsg}`);
+      } else {
+        Alert.alert("✅ Caisse alimentée", successMsg);
+      }
+      await loadData();
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || "Erreur technique";
+      if (Platform.OS === "web") alert(`Erreur\n\n${msg}`);
+      else Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+    } finally { setAutoFillProcessing(false); }
+  };
 
   const handlePay = async () => {
     const n = Number(amount);
@@ -379,6 +419,27 @@ export default function CompanyDashboard() {
 
           <Dots active={activeCurrency} />
 
+          {/* CTA Alimenter caisse (auto-injection) */}
+          <TouchableOpacity
+            style={[s.virementBtn, { marginBottom: 10 }]}
+            onPress={() => openAutoFill(CURRENCIES_ORDER[activeCurrency])}
+            activeOpacity={0.85}
+          >
+            <LinearGradient
+              colors={["#16A34A", "#22C55E"]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              style={s.virementGrad}
+            >
+              <Ionicons name="wallet-outline" size={18} color="#FFFFFF" />
+              <Text style={[s.virementTxt, { fontFamily: T.font.sans }]}>
+                Alimenter ma caisse · {CURRENCIES_ORDER[activeCurrency]}
+              </Text>
+              <View style={[s.virementArrow, { backgroundColor: "rgba(255,255,255,0.2)" }]}>
+                <Ionicons name="add" size={16} color="#FFFFFF" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+
           {/* CTA Virement */}
           <TouchableOpacity style={s.virementBtn} onPress={() => setModalVisible(true)} activeOpacity={0.85}>
             <LinearGradient
@@ -419,6 +480,104 @@ export default function CompanyDashboard() {
 
         <View style={{ height: 120 }} />
       </Animated.ScrollView>
+
+      {/* ── Modal Auto-alimentation caisse ── */}
+      <Modal visible={autoFillVisible} transparent animationType="slide" onRequestClose={closeAutoFill}>
+        <View style={s.overlay}>
+          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
+            <View style={s.sheet}>
+              <View style={s.sheetHandle} />
+
+              <LinearGradient
+                colors={["#16A34A", "#22C55E"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={s.sheetHeader}
+              >
+                <Ionicons name="wallet" size={24} color={T.white} />
+                <View style={{ flex: 1, paddingLeft: 12 }}>
+                  <Text style={[s.sheetTitle, { fontFamily: T.font.display }]}>
+                    Alimenter ma Caisse
+                  </Text>
+                  <Text style={[s.sheetSub, { fontFamily: T.font.sans }]}>
+                    Auto-injection — Devise {autoFillCurrency}
+                  </Text>
+                </View>
+              </LinearGradient>
+
+              <View style={s.sheetBody}>
+                {/* Info */}
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: "rgba(34,197,94,0.08)", borderRadius: 12, padding: 12, marginBottom: 20, borderWidth: 1, borderColor: "rgba(34,197,94,0.2)" }}>
+                  <Ionicons name="information-circle-outline" size={16} color="#22C55E" style={{ marginTop: 1 }} />
+                  <Text style={{ flex: 1, color: "#22C55E", fontSize: 11, fontWeight: "600", lineHeight: 16, fontFamily: T.font.sans }}>
+                    Ce montant sera ajouté directement à votre portefeuille {autoFillCurrency}. Vous pourrez ensuite alimenter vos agences et régler vos factures Super Admin.
+                  </Text>
+                </View>
+
+                <View style={s.inputGroup}>
+                  <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>MONTANT À INJECTER</Text>
+                  <View style={s.inputWrap}>
+                    <TextInput
+                      style={[s.input, { fontFamily: T.font.sans }]}
+                      value={autoFillAmount}
+                      onChangeText={setAutoFillAmount}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={T.dimMuted}
+                      autoFocus
+                    />
+                    <View style={s.inputSuffix}>
+                      <Text style={[s.inputSuffixTxt, { fontFamily: T.font.mono }]}>{autoFillCurrency}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Quick amounts */}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+                  {[100000, 500000, 1000000, 5000000].map((v) => (
+                    <TouchableOpacity
+                      key={v}
+                      style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, backgroundColor: autoFillAmount === String(v) ? "rgba(34,197,94,0.15)" : T.navyLight, borderWidth: 1, borderColor: autoFillAmount === String(v) ? "rgba(34,197,94,0.3)" : T.navyBorder }}
+                      onPress={() => setAutoFillAmount(String(v))}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={{ color: autoFillAmount === String(v) ? "#22C55E" : T.dim, fontSize: 11, fontWeight: "800", fontFamily: T.font.mono }}>
+                        {fmtAmount(v, autoFillCurrency)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={[s.confirmBtn, autoFillProcessing && { opacity: 0.7 }]}
+                  onPress={handleAutoFill}
+                  disabled={autoFillProcessing}
+                  activeOpacity={0.85}
+                >
+                  <LinearGradient
+                    colors={["#16A34A", "#22C55E"]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={s.confirmGrad}
+                  >
+                    {autoFillProcessing
+                      ? <ActivityIndicator color={T.white} />
+                      : <>
+                          <Ionicons name="add-circle-outline" size={18} color={T.white} />
+                          <Text style={[s.confirmTxt, { fontFamily: T.font.sans }]}>
+                            INJECTER {autoFillAmount ? fmtAmount(Number(autoFillAmount), autoFillCurrency) : "—"} {autoFillCurrency}
+                          </Text>
+                        </>
+                    }
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={closeAutoFill} style={s.cancelBtn} disabled={autoFillProcessing}>
+                  <Text style={[s.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
 
       {/* ── Modal Virement ── */}
       <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
@@ -504,7 +663,7 @@ export default function CompanyDashboard() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.navyMid },
+  safe: { flex: 1, backgroundColor: "#F0F4FF" },
 
   header: {
     paddingBottom: 16, zIndex: 10,
@@ -546,7 +705,7 @@ const s = StyleSheet.create({
   carouselSection: { marginBottom: 10 },
   sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   sectionDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: T.sapphireL },
-  sectionLabel: { flex: 1, fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  sectionLabel: { flex: 1, fontSize: 11, fontWeight: "900", color: "#64748B", letterSpacing: 1.5 },
 
   virementBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 4 },
   virementGrad: {

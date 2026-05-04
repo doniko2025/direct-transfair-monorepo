@@ -1,4 +1,3 @@
-//apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
 // BENEFICIARY CREATE v4.0 — Direct Transf'air
@@ -20,6 +19,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
+import { citiesByCountry } from "../../../data/cities";
 
 // ─── Design Tokens ──────────────────────────────────────
 const T = {
@@ -242,7 +242,7 @@ export default function BeneficiaryCreateScreen() {
     lastName.trim().length >= 2 &&
     city.trim().length >= 2;
 
-  const availableCities: string[] = (addressCountry as any).cities ?? [];
+  const availableCities: string[] = (citiesByCountry as any)[addressCountry.name] ?? (addressCountry as any).cities ?? [];
 
   const progress = [
     firstName.trim().length >= 2 && lastName.trim().length >= 2,

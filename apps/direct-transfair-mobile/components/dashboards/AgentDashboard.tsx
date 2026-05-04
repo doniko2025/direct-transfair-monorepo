@@ -1,4 +1,3 @@
-// components/dashboards/AgentDashboard.tsx
 // apps/direct-transfair-mobile/components/dashboards/AgentDashboard.tsx
 // =========================================================
 // AGENT DASHBOARD — Direct Transf'air v4.0
@@ -92,9 +91,9 @@ function OpCard({ title, subtitle, icon, color, bgColor, onPress, badge }: any) 
 
 const opS = StyleSheet.create({
   card: {
-    backgroundColor: T.forgeLight, borderRadius: T.radius.lg,
-    padding: 18, borderWidth: 1, borderColor: T.forgeBorder,
-    shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
+    backgroundColor: "#FFFFFF", borderRadius: T.radius.lg,
+    padding: 18, borderWidth: 1, borderColor: "#E7DDD0",
+    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
     overflow: "hidden",
   },
   iconBox: {
@@ -106,8 +105,8 @@ const opS = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1,
   },
   badgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
-  title: { fontSize: 14, fontWeight: "800", color: T.white, marginBottom: 4 },
-  sub: { fontSize: 11, color: T.creamDim, fontWeight: "600" },
+  title: { fontSize: 14, fontWeight: "800", color: "#1C1208", marginBottom: 4 },
+  sub: { fontSize: 11, color: "#78614A", fontWeight: "600" },
 });
 
 // ─── Report Row ──────────────────────────────────────────
@@ -142,14 +141,14 @@ function ReportRow({ title, subtitle, icon, color, bgColor, onPress, value }: an
 const rrS = StyleSheet.create({
   row: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: T.forgeLight, borderRadius: T.radius.md,
-    padding: 16, borderWidth: 1, borderColor: T.forgeBorder,
-    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 6, elevation: 3,
+    backgroundColor: "#FFFFFF", borderRadius: T.radius.md,
+    padding: 16, borderWidth: 1, borderColor: "#E7DDD0",
+    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
     gap: 14,
   },
   iconBox: { width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  title: { fontSize: 14, fontWeight: "800", color: T.white, marginBottom: 2 },
-  sub: { fontSize: 11, color: T.creamDim, fontWeight: "600" },
+  title: { fontSize: 14, fontWeight: "800", color: "#1C1208", marginBottom: 2 },
+  sub: { fontSize: 11, color: "#78614A", fontWeight: "600" },
   value: { fontSize: 13, fontWeight: "900" },
   arrow: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
 });
@@ -164,9 +163,17 @@ export default function AgentDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [agencyData, setAgencyData] = useState<any>(null);
 
-  // ✅ Devise locale uniquement (agence)
+  // ✅ Devise dérivée depuis agence.country si primaryCurrency absent
+  const COUNTRY_CURRENCY_MAP: Record<string, string> = {
+    GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
+    TG: "XOF", NE: "XOF", GW: "XOF", FR: "EUR", DE: "EUR", BE: "EUR",
+    IT: "EUR", ES: "EUR", PT: "EUR", NL: "EUR", GB: "GBP", US: "USD",
+  };
+  const agencyCountryCode = ((agencyData?.country ?? user?.agency?.country ?? "") as string)
+    .trim().toUpperCase().substring(0, 2);
+  const derivedCurrency = COUNTRY_CURRENCY_MAP[agencyCountryCode] ?? "XOF";
   const agencyName = agencyData?.name ?? user?.agency?.name ?? "Mon Agence";
-  const currency = agencyData?.primaryCurrency ?? (agencyData?.wallets?.[0]?.currency) ?? "XOF";
+  const currency = agencyData?.primaryCurrency || agencyData?.wallets?.[0]?.currency || derivedCurrency;
 
   // Wallet agence (première devise disponible, la devise locale)
   const agencyWallet = Array.isArray(agencyData?.wallets)
@@ -198,7 +205,7 @@ export default function AgentDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={T.forge} />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFF8F0" />
 
       {/* ── Header ── */}
       <Animated.View
@@ -364,7 +371,7 @@ export default function AgentDashboard() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.forgeMid },
+  safe: { flex: 1, backgroundColor: "#FFF8F0" },
 
   header: { zIndex: 10 },
   headerGrad: {
@@ -404,21 +411,21 @@ const s = StyleSheet.create({
 
   balanceCard: {
     backgroundColor: T.forgeLight, borderRadius: 22,
-    borderWidth: 1, borderColor: T.forgeBorder, padding: 20,
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.12)", padding: 20,
     shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
   balanceTop: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
-  balLabel: { color: T.creamDim, fontSize: 9, fontWeight: "900", letterSpacing: 1.5, marginBottom: 6 },
+  balLabel: { color: "rgba(255,255,255,0.55)", fontSize: 9, fontWeight: "900", letterSpacing: 1.5, marginBottom: 6 },
   balAmount: { color: T.white, fontSize: 36, letterSpacing: -0.8 },
   balCurrency: { color: T.amberL, fontSize: 13, fontWeight: "800", marginTop: 2 },
   balStatus: { alignItems: "flex-end", gap: 4 },
   activeDot: { width: 8, height: 8, borderRadius: 99, backgroundColor: T.green },
   activeText: { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "700" },
   balProgSection: {},
-  balProgBg: { height: 4, backgroundColor: T.ghost, borderRadius: 99, overflow: "hidden", marginBottom: 8 },
+  balProgBg: { height: 4, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99, overflow: "hidden", marginBottom: 8 },
   balProgFill: { height: 4, borderRadius: 99, backgroundColor: T.amberL },
   balProgRow: { flexDirection: "row", justifyContent: "space-between" },
-  balProgLabel: { color: T.creamDim, fontSize: 10, fontWeight: "700" },
+  balProgLabel: { color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: "700" },
   balProgValue: { color: T.amberL, fontWeight: "900" },
 
   content: { padding: 20, paddingTop: 22 },
@@ -426,7 +433,7 @@ const s = StyleSheet.create({
 
   sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   sectionDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: T.amber },
-  sectionLabel: { flex: 1, fontSize: 11, fontWeight: "900", color: T.creamDim, letterSpacing: 1.5 },
+  sectionLabel: { flex: 1, fontSize: 11, fontWeight: "900", color: "#78614A", letterSpacing: 1.5 },
 
   opsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginBottom: 24 },
 });

@@ -1,5 +1,4 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
-// apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // =========================================================
 // BENEFICIARY DETAIL v4.0 — Direct Transf'air
 // Design: Émeraude Profond (thème CLIENT)
@@ -21,6 +20,7 @@ import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
+import { citiesByCountry } from "../../../data/cities";
 
 // ─── Design Tokens ──────────────────────────────────────
 const T = {
@@ -397,7 +397,7 @@ export default function BeneficiaireDetailScreen() {
     );
   }
 
-  const availableCities: string[] = (addressCountry as any).cities ?? [];
+  const availableCities: string[] = (citiesByCountry as any)[addressCountry.name] ?? (addressCountry as any).cities ?? [];
 
   return (
     <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>

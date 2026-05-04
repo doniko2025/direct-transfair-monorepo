@@ -1,4 +1,3 @@
-//apps/direct-transfair-mobile/app/(tabs)/profile/security.tsx
 // apps/direct-transfair-mobile/app/(tabs)/profile/security.tsx
 // =========================================================
 // SECURITY (Change Password) v4.0 — Direct Transf'air
@@ -97,6 +96,7 @@ export default function SecurityScreen() {
 
   const [oldPass, setOldPass] = useState("");
   const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState({ title: "", message: "", type: "success" as "success" | "error" });
   const toastAnim = useRef(new Animated.Value(-120)).current;
@@ -112,21 +112,32 @@ export default function SecurityScreen() {
   };
 
   const handleSave = async () => {
-    if (!oldPass || !newPass) { showToast("Erreur", "Veuillez remplir tous les champs.", "error"); return; }
-    if (newPass.length < 6) { showToast("Sécurité", "Le nouveau code doit contenir au moins 6 caractères.", "error"); return; }
+    if (!oldPass.trim() || !newPass.trim() || !confirmPass.trim()) {
+      showToast("Champs manquants", "Veuillez remplir tous les champs.", "error");
+      return;
+    }
+    if (newPass.length < 6) {
+      showToast("Sécurité", "Le nouveau code doit contenir au moins 6 caractères.", "error");
+      return;
+    }
+    if (newPass !== confirmPass) {
+      showToast("Erreur", "Les deux nouveaux codes ne correspondent pas.", "error");
+      return;
+    }
+    if (newPass === oldPass) {
+      showToast("Erreur", "Le nouveau code doit être différent de l'ancien.", "error");
+      return;
+    }
     setLoading(true);
     try {
-      await api.changePassword({
-  oldPassword: oldPass,
-  newPassword: newPass,
-});
+      await api.changePassword({ oldPassword: oldPass, newPassword: newPass });
       showToast("✅ Succès", "Votre code secret a été mis à jour.", "success", () => router.back());
     } catch (e: any) {
       const err = e?.response?.data?.message || e?.message || "Impossible de modifier le code.";
       showToast("Erreur", Array.isArray(err) ? err[0] : String(err), "error");
     } finally {
       setLoading(false);
-      setOldPass(""); setNewPass("");
+      setOldPass(""); setNewPass(""); setConfirmPass("");
     }
   };
 
@@ -206,6 +217,28 @@ export default function SecurityScreen() {
                 </View>
               )}
 
+              <PasswordInput
+                label="CONFIRMER LE NOUVEAU CODE"
+                value={confirmPass}
+                onChange={setConfirmPass}
+                placeholder="Répétez le nouveau code"
+                accent={theme.accent}
+              />
+
+              {/* Indicateur correspondance */}
+              {confirmPass.length > 0 && newPass.length > 0 && (
+                <View style={[s.matchRow, { backgroundColor: newPass === confirmPass ? `${T.green}12` : `${T.red}12`, borderColor: newPass === confirmPass ? `${T.green}25` : `${T.red}25` }]}>
+                  <Ionicons
+                    name={newPass === confirmPass ? "checkmark-circle-outline" : "close-circle-outline"}
+                    size={14}
+                    color={newPass === confirmPass ? T.green : T.red}
+                  />
+                  <Text style={[s.matchTxt, { color: newPass === confirmPass ? T.green : T.red, fontFamily: T.font.sans }]}>
+                    {newPass === confirmPass ? "Les codes correspondent" : "Les codes ne correspondent pas"}
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
                 style={[s.saveBtn, loading && { opacity: 0.65 }]}
                 onPress={handleSave}
@@ -227,7 +260,7 @@ export default function SecurityScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={{ height: 80 }} />
+            <View style={{ height: 110 }} />
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -248,7 +281,7 @@ const s = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: T.ghost, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.inkBorder },
   headerTitle: { color: T.white, fontSize: 20, fontWeight: "700" },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8, alignItems: "center" },
+  scroll: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 30, alignItems: "center" },
 
   heroBox: { width: 80, height: 80, borderRadius: 24, justifyContent: "center", alignItems: "center", borderWidth: 1, marginBottom: 18 },
   title: { color: T.white, fontSize: 22, fontWeight: "700", textAlign: "center", marginBottom: 8 },
@@ -259,6 +292,13 @@ const s = StyleSheet.create({
   strengthRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   strengthBar: { flex: 1, height: 3, borderRadius: 99 },
   strengthTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+
+  matchRow: {
+    flexDirection: "row", alignItems: "center", gap: 7,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, marginBottom: 14,
+  },
+  matchTxt: { fontSize: 11, fontWeight: "700" },
 
   saveBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 4 },
   saveGrad: { paddingVertical: 17, alignItems: "center" },

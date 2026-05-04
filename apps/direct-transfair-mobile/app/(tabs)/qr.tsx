@@ -1,4 +1,3 @@
-//apps/direct-transfair-mobile/app/(tabs)/qr.tsx
 // apps/direct-transfair-mobile/app/(tabs)/qr.tsx
 // =========================================================
 // QR CODE SCREEN v4.0 — Direct Transf'air
@@ -9,7 +8,7 @@
 import React, { useRef } from "react";
 import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Platform, StatusBar, Animated,
+  Platform, StatusBar, Animated, ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -161,7 +160,11 @@ export default function QRCodeScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={s.content}>
+        <ScrollView
+          contentContainerStyle={s.content}
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
           {/* Sous-titre */}
           <Text style={[s.subtitle, { fontFamily: T.font.sans }]}>
             Présentez ce code pour recevoir de l'argent instantanément.
@@ -237,7 +240,10 @@ export default function QRCodeScreen() {
               Code sécurisé · Valide uniquement pour votre compte
             </Text>
           </View>
-        </View>
+
+          {/* Espace pour la tab bar flottante */}
+          <View style={{ height: 110 }} />
+        </ScrollView>
       </SafeAreaView>
     </LinearGradient>
   );
@@ -263,8 +269,9 @@ const s = StyleSheet.create({
   },
 
   content: {
-    flex: 1, paddingHorizontal: 20,
+    paddingHorizontal: 20,
     alignItems: "center",
+    paddingBottom: 20,
   },
   subtitle: {
     color: T.dim, fontSize: 13, fontWeight: "600",

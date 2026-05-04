@@ -291,7 +291,7 @@ export default function ProfileScreen() {
             Direct Transf'air v4.0 · Build 500
           </Text>
 
-          <View style={{ height: 80 }} />
+          <View style={{ height: 110 }} />
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
@@ -299,7 +299,7 @@ export default function ProfileScreen() {
 }
 
 const s = StyleSheet.create({
-  scroll: { paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 54 : 20 },
+  scroll: { paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 54 : 20, paddingBottom: 20 },
 
   hero: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
   avatarBox: {

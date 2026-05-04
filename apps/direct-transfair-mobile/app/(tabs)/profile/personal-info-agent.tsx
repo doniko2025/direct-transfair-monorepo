@@ -1,4 +1,3 @@
-//apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-agent.tsx
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-agent.tsx
 // =========================================================
 // PERSONAL INFO — AGENT v4.0
@@ -19,8 +18,9 @@ import { api } from "../../../services/api";
 const T = {
   g1: "#1A0E00", g2: "#211200",
   accent: "#F59E0B", accentSoft: "#FCD34D", accentGlow: "rgba(245,158,11,0.15)",
-  ghost: "rgba(255,255,255,0.06)", inkBorder: "rgba(255,255,255,0.08)", inkLight: "#261800",
-  white: "#FFFFFF", dim: "#A89070", red: "#EF4444",
+  ghost: "#F9F3E8", inkBorder: "#E7DDD0", inkLight: "#FFFFFF",
+  white: "#FFFFFF", dim: "#78614A", red: "#EF4444",
+  textPrimary: "#1C1208", textSub: "#78614A",
   radius: { md: 14, lg: 20 },
   font: {
     display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
@@ -33,13 +33,13 @@ function Field({ label, value, onChange, editable = true, style, placeholder, ke
   const [focused, setFocused] = useState(false);
   return (
     <View style={[{ marginBottom: 14 }, style]}>
-      <Text style={{ fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 6, fontFamily: T.font.sans }}>{label}</Text>
-      <View style={{ backgroundColor: editable ? T.inkLight : T.ghost, borderWidth: 1, borderColor: focused ? `${T.accent}45` : T.inkBorder, borderRadius: T.radius.md }}>
+      <Text style={{ fontSize: 10, fontWeight: "900", color: "#78614A", letterSpacing: 1, marginBottom: 6, fontFamily: T.font.sans }}>{label}</Text>
+      <View style={{ backgroundColor: editable ? "#FFFFFF" : "#F9F3E8", borderWidth: 1, borderColor: focused ? `${T.accent}45` : "#E7DDD0", borderRadius: T.radius.md }}>
         <TextInput
           value={value} onChangeText={onChange} editable={editable}
-          placeholder={placeholder} placeholderTextColor={T.dim + "55"}
+          placeholder={placeholder} placeholderTextColor={"#B8A090"}
           keyboardType={keyboardType}
-          style={{ paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.white, fontWeight: "600", fontFamily: T.font.sans }}
+          style={{ paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: "#1C1208", fontWeight: "600", fontFamily: T.font.sans }}
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
       </View>
@@ -80,50 +80,51 @@ export default function PersonalInfoAgent() {
   };
 
   return (
-    <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#FFF8F0" }}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFF8F0" />
 
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14 }}>
-          <TouchableOpacity style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: T.ghost, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.inkBorder }} onPress={() => router.back()} hitSlop={12}>
+      {/* Header Forge & Ambre conservé */}
+      <LinearGradient colors={[T.g1, T.g2]} style={{ paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 18 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <TouchableOpacity style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.10)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" }} onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="arrow-back" size={24} color={T.white} />
           </TouchableOpacity>
           <Text style={{ flex: 1, color: T.white, fontSize: 20, fontWeight: "700", fontFamily: T.font.display }}>Profil Agent</Text>
-          <TouchableOpacity style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isEditing ? "rgba(239,68,68,0.12)" : T.accentGlow, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: isEditing ? "rgba(239,68,68,0.3)" : `${T.accent}30` }} onPress={() => setIsEditing(!isEditing)}>
+          <TouchableOpacity style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isEditing ? "rgba(239,68,68,0.2)" : T.accentGlow, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: isEditing ? "rgba(239,68,68,0.4)" : `${T.accent}30` }} onPress={() => setIsEditing(!isEditing)}>
             <Ionicons name={isEditing ? "close" : "pencil"} size={17} color={isEditing ? T.red : T.accent} />
           </TouchableOpacity>
         </View>
+      </LinearGradient>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <Animated.ScrollView style={{ opacity: fadeAnim }} contentContainerStyle={{ paddingHorizontal: 20 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <Animated.ScrollView style={{ opacity: fadeAnim }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 20 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            <View style={{ backgroundColor: T.ghost, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: T.inkBorder }}>
-              <Text style={{ fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 16, fontFamily: T.font.sans }}>IDENTITÉ</Text>
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Field label="PRÉNOM" value={firstName} onChange={setFirstName} editable={isEditing} style={{ flex: 1 }} />
-                <Field label="NOM" value={lastName} onChange={setLastName} editable={isEditing} style={{ flex: 1 }} />
-              </View>
-              <Field label="TÉLÉPHONE (LECTURE SEULE)" value={phone} editable={false} keyboardType="phone-pad" />
-              <Field label="AGENCE AFFECTÉE (LECTURE SEULE)" value={agencyName} editable={false} />
+          <View style={{ backgroundColor: "#FFFFFF", borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: "#E7DDD0", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+            <Text style={{ fontSize: 11, fontWeight: "900", color: "#78614A", letterSpacing: 1.5, marginBottom: 16, fontFamily: T.font.sans }}>IDENTITÉ</Text>
+            <View style={{ flexDirection: "row", gap: 12 }}>
+              <Field label="PRÉNOM" value={firstName} onChange={setFirstName} editable={isEditing} style={{ flex: 1 }} />
+              <Field label="NOM" value={lastName} onChange={setLastName} editable={isEditing} style={{ flex: 1 }} />
             </View>
+            <Field label="TÉLÉPHONE (LECTURE SEULE)" value={phone} editable={false} keyboardType="phone-pad" />
+            <Field label="AGENCE AFFECTÉE (LECTURE SEULE)" value={agencyName} editable={false} />
+          </View>
 
-            <View style={{ backgroundColor: T.ghost, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: T.inkBorder }}>
-              <Text style={{ fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 16, fontFamily: T.font.sans }}>LOCALISATION</Text>
-              <Field label="VILLE" value={city} onChange={setCity} editable={isEditing} />
-              <Field label="PAYS" value={country} onChange={setCountry} editable={isEditing} />
-            </View>
+          <View style={{ backgroundColor: "#FFFFFF", borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: "#E7DDD0", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 }}>
+            <Text style={{ fontSize: 11, fontWeight: "900", color: "#78614A", letterSpacing: 1.5, marginBottom: 16, fontFamily: T.font.sans }}>LOCALISATION</Text>
+            <Field label="VILLE" value={city} onChange={setCity} editable={isEditing} />
+            <Field label="PAYS" value={country} onChange={setCountry} editable={isEditing} />
+          </View>
 
-            {isEditing && (
-              <TouchableOpacity style={{ borderRadius: T.radius.md, overflow: "hidden", marginBottom: 16 }} onPress={save} disabled={loading} activeOpacity={0.85}>
-                <LinearGradient colors={[T.accent, T.accentSoft]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 17, alignItems: "center" }}>
-                  {loading ? <ActivityIndicator color="#000" /> : <Text style={{ color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1, fontFamily: T.font.sans }}>ENREGISTRER</Text>}
-                </LinearGradient>
-              </TouchableOpacity>
-            )}
-            <View style={{ height: 80 }} />
-          </Animated.ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+          {isEditing && (
+            <TouchableOpacity style={{ borderRadius: T.radius.md, overflow: "hidden", marginBottom: 16 }} onPress={save} disabled={loading} activeOpacity={0.85}>
+              <LinearGradient colors={[T.accent, T.accentSoft]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ paddingVertical: 17, alignItems: "center" }}>
+                {loading ? <ActivityIndicator color="#000" /> : <Text style={{ color: "#000", fontWeight: "900", fontSize: 13, letterSpacing: 1, fontFamily: T.font.sans }}>ENREGISTRER</Text>}
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+          <View style={{ height: 80 }} />
+        </Animated.ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

@@ -1,4 +1,3 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
 // =========================================================
 // AGENCY CREATE v4.0 — Direct Transf'air
@@ -292,6 +291,17 @@ export default function CreateAgencyScreen() {
   const [address, setAddress] = useState("");
   const [isPartner, setIsPartner] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [toastMsg, setToastMsg] = useState("");
+  const toastAnim = useRef(new Animated.Value(0)).current;
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    Animated.sequence([
+      Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 4 }),
+      Animated.delay(2500),
+      Animated.timing(toastAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start();
+  };
 
   const [selectedCountry, setSelectedCountry] = useState<CountryData>(countriesList[0]);
   const [selectedPhoneCode, setSelectedPhoneCode] = useState<CountryData>(countriesList[0]);
@@ -317,38 +327,57 @@ export default function CreateAgencyScreen() {
     }
     setSubmitting(true);
     try {
-      const fullPhone = `${selectedPhoneCode.dialCode}${phone}`;
+      const fullPhone = `${selectedPhoneCode.dialCode}${phone.trim()}`;
       const autoCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
-      const agencyCurrency = (selectedCountry as any).currency ?? "XOF";
 
-      await api.createAgency({
-  name: name.trim(),
-  code: autoCode,
-  address: address.trim() || "",
-  phone: fullPhone,
-  email: email.trim(),
-  adminFirstName: managerFirstName.trim(),
-  adminLastName: managerLastName.trim(),
-  adminPassword: password,
-  managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
-  country: selectedCountry.name,
-  // Suppression de la ligne currency: agencyCurrency car elle n'existe pas dans le type
-  city: selectedCity,
-  subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
-  status: "ACTIVE",
-});
+      // Dériver la devise depuis le pays (CountryData.currency n'est pas toujours présent)
+      const COUNTRY_CURRENCY_MAP: Record<string, string> = {
+        GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
+        TG: "XOF", NE: "XOF", GW: "XOF", FR: "EUR", DE: "EUR", BE: "EUR",
+        IT: "EUR", ES: "EUR", PT: "EUR", NL: "EUR", AT: "EUR", FI: "EUR",
+        IE: "EUR", LU: "EUR", GR: "EUR", GB: "GBP", US: "USD", SV: "USD",
+        GG: "GBP", JE: "GBP",
+      };
+      const countryCode = (selectedCountry.code ?? "").toUpperCase().substring(0, 2);
+      const agencyCurrency =
+        (selectedCountry as any).currency
+        ?? COUNTRY_CURRENCY_MAP[countryCode]
+        ?? "XOF";
 
-      Alert.alert(
-        "✅ Agence créée",
-        `${name.trim()}\nDevise: ${agencyCurrency}\nLogin: ${email.trim()}`,
-        [{ text: "OK", onPress: () => router.back() }],
-      );
+      const payload = {
+        name: name.trim(),
+        code: autoCode,
+        // ✅ address doit être string, jamais undefined
+        address: address.trim() || selectedCity,
+        phone: fullPhone,
+        email: email.trim(),
+        adminEmail: email.trim(),
+        adminFirstName: managerFirstName.trim(),
+        adminLastName: managerLastName.trim(),
+        adminPassword: password.trim(),
+        managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
+        country: selectedCountry.code ?? selectedCountry.name,
+        currency: agencyCurrency,
+        primaryCurrency: agencyCurrency,
+        city: selectedCity,
+        subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
+        status: "ACTIVE",
+      };
+
+      await api.createAgency(payload as any);
+
+      showToast(`✅ Agence "${name.trim()}" créée · ${agencyCurrency}`);
+      // Fermeture automatique après 2s
+      setTimeout(() => router.back(), 2800);
     } catch (error: any) {
-      const rawMsg = error?.response?.data?.message ?? "Erreur technique.";
-      if (error?.response?.status === 401) {
+      const rawMsg = error?.response?.data?.message ?? error?.message ?? "Erreur technique.";
+      const displayMsg = Array.isArray(rawMsg) ? rawMsg[0] : String(rawMsg);
+      if (Platform.OS === "web") {
+        alert(`Erreur\n\n${displayMsg}`);
+      } else if (error?.response?.status === 401) {
         Alert.alert("Session expirée", "Veuillez vous reconnecter.");
       } else {
-        Alert.alert("Erreur", Array.isArray(rawMsg) ? rawMsg[0] : rawMsg);
+        Alert.alert("Erreur", displayMsg);
       }
     } finally {
       setSubmitting(false);
@@ -359,6 +388,18 @@ export default function CreateAgencyScreen() {
     <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1 }}>
         <StatusBar barStyle="light-content" />
+
+        {/* ── Toast succès ── */}
+        <Animated.View style={{
+          position: "absolute", top: Platform.OS === "android" ? 56 : 60, left: 20, right: 20, zIndex: 999,
+          opacity: toastAnim,
+          transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+        }}>
+          <View style={{ backgroundColor: "#16A34A", borderRadius: 14, paddingHorizontal: 18, paddingVertical: 14, flexDirection: "row", alignItems: "center", gap: 10, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 12, elevation: 8 }}>
+            <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 13, flex: 1, fontFamily: T.font.sans }}>{toastMsg}</Text>
+          </View>
+        </Animated.View>
 
         {/* ── Header ── */}
         <View style={s.header}>
