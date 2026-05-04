@@ -23,7 +23,7 @@ export default function RootLayout() {
         <Stack.Screen name="topup" options={{ presentation: "modal" }} />
         <Stack.Screen name="wallet-transfer" options={{ presentation: "modal" }} />
         <Stack.Screen name="referral" />
-        <Stack.Screen name="[tenant]" />
+        <Stack.Screen name="[tenant]/index" />
       </Stack>
     </AuthProvider>
   );
