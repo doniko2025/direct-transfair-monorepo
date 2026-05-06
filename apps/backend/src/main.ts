@@ -1,4 +1,5 @@
 // apps/backend/src/main.ts
+
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -8,8 +9,10 @@ import { TenantGuard } from './tenants/tenant.guard';
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
+  // 🔥 PREFIX API
   app.setGlobalPrefix('api');
 
+  // 🔥 VALIDATION
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -17,50 +20,67 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
-  app.enableCors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
+  // =========================================================
+  // 🔥 CORS FIX VERCEL (ULTRA IMPORTANT)
+  // =========================================================
 
-      const allowedOrigins = [
-        'http://localhost:8081',
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'https://direct-transfair-monorepo-production.up.railway.app',
-        'https://direct-transfair-monorepo-backend.vercel.app',
-        'https://direct-transfair-monorepo-direct-tr.vercel.app',
-        // Ajoute ici toute nouvelle URL frontend Vercel si besoin
-      ];
+  // ✅ Middleware manuel (gère OPTIONS / preflight)
+  app.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
 
-      // Autorise tous les sous-domaines vercel.app ET railway.app
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app') ||
-        origin.endsWith('.railway.app')
-      ) {
-        return callback(null, true);
-      }
+    // 👉 Autorise ton frontend + dev + previews Vercel
+    const allowedOrigins = [
+      'http://localhost:8081',
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://direct-transfair-monorepo-direct-tr.vercel.app',
+      'https://direct-transfair-monorepo-production.up.railway.app',
+    ];
 
-      console.error(`CORS BLOQUE : ${origin}`);
-      return callback(null, false);
-    },
-    credentials: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'x-tenant-id',
-      'Accept',
-      'Origin',
-      'X-Requested-With',
-    ],
-    exposedHeaders: ['Authorization'],
+    if (
+      !origin ||
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.railway.app')
+    ) {
+      res.header('Access-Control-Allow-Origin', origin || '*');
+    }
+
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header(
+      'Access-Control-Allow-Headers',
+      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
+    );
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    );
+
+    // 🔥 CRUCIAL POUR VERCEL
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+
+    next();
   });
 
+  // ✅ CORS NestJS (simple et stable)
+  app.enableCors({
+    origin: true,
+    credentials: true,
+  });
+
+  // =========================================================
+  // 🔥 GUARDS
+  // =========================================================
   app.useGlobalGuards(app.get(TenantGuard));
 
+  // =========================================================
+  // 🔥 SWAGGER
+  // =========================================================
   const config = new DocumentBuilder()
     .setTitle("Direct Transf'air API")
-    .setDescription("Documentation officielle du backend Direct Transf'air")
+    .setDescription('Documentation officielle du backend Direct Transf’air')
     .setVersion('1.0')
     .addBearerAuth(
       { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
@@ -75,10 +95,13 @@ async function bootstrap(): Promise<void> {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, document);
 
+  // =========================================================
+  // 🔥 START SERVER
+  // =========================================================
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
 
-  console.log(`Backend running: http://localhost:${port}/api`);
+  console.log(`🚀 Backend running on port ${port}`);
 }
 
 void bootstrap();
