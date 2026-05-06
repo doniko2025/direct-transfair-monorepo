@@ -1,18 +1,26 @@
 // apps/backend/src/treasury/treasury.service.ts
 // =========================================================
-// TREASURY SERVICE v4.0 — Direct Transf'air
+// TREASURY SERVICE v5.1 — Direct Transf'air
 // ✅ Snapshot quotidien par devise (5 devises)
 // ✅ Vue globale Super Admin (toutes sociétés)
 // ✅ Vue Company Admin (sa société)
+// ✅ Injection / Retrait de fonds (Super Admin + Company Admin)
+// ✅ Auto-alimentation Company Admin (toutes devises)
 // ✅ Cron job quotidien à minuit
 // =========================================================
 
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
+import { WalletsService } from '../wallets/wallets.service';
 
 const SUPPORTED_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'];
 
@@ -51,6 +59,7 @@ export class TreasuryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rates: RatesService,
+    private readonly walletsService: WalletsService,
   ) {}
 
   // ========================================================
@@ -64,7 +73,6 @@ export class TreasuryService {
     const results: TreasuryOverviewItem[] = [];
 
     for (const currency of SUPPORTED_CURRENCIES) {
-      // Somme des wallets de la plateforme pour cette devise
       const walletAgg = await this.prisma.wallet.aggregate({
         where: { clientId: { not: null }, currency, isActive: true },
         _sum: { balance: true, reservedBalance: true },
@@ -73,7 +81,6 @@ export class TreasuryService {
       const balance = Number(walletAgg._sum.balance ?? 0);
       const reserved = Number(walletAgg._sum.reservedBalance ?? 0);
 
-      // Transactions du jour
       const txStats = await this.prisma.transaction.groupBy({
         by: ['currency'],
         where: {
@@ -190,6 +197,163 @@ export class TreasuryService {
   }
 
   // ========================================================
+  // INJECTION DE FONDS — Company Admin (sa société)
+  // ========================================================
+
+  /**
+   * @param clientId    - ID de la société (extrait du JWT par le controller)
+   * @param currency    - Devise cible
+   * @param amount      - Montant à créditer
+   * @param performedBy - ID de l'admin qui effectue l'opération (audit)
+   * @param reason      - Libellé optionnel
+   */
+  async injectFunds(params: {
+    clientId: number;
+    currency: string;
+    amount: number;
+    performedBy?: string;
+    reason?: string;
+  }) {
+    const { clientId, currency, amount, performedBy, reason } = params;
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Montant invalide');
+    }
+
+    const normalizedCurrency = currency.toUpperCase().trim();
+    if (!SUPPORTED_CURRENCIES.includes(normalizedCurrency)) {
+      throw new BadRequestException(`Devise non supportée : ${currency}`);
+    }
+
+    const wallet = await this.walletsService.getOrCreateWallet({
+      clientId,
+      currency: normalizedCurrency,
+    });
+
+    this.logger.log(
+      `💉 injectFunds — clientId=${clientId} | ${amount} ${normalizedCurrency} | by=${performedBy ?? 'system'}`,
+    );
+
+    return this.walletsService.credit(
+      wallet.id,
+      amount,
+      reason ?? `Injection trésorerie ${normalizedCurrency}`,
+    );
+  }
+
+  // ========================================================
+  // RETRAIT FORCÉ — Super Admin uniquement
+  // ========================================================
+
+  async withdrawFunds(params: {
+    userId?: string;
+    agencyId?: string;
+    clientId?: number;
+    amount: number;
+    currency: string;
+    reason?: string;
+  }) {
+    const { amount, currency, reason } = params;
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Montant invalide');
+    }
+
+    const wallet = await this.walletsService.getOrCreateWallet({
+      userId: params.userId,
+      agencyId: params.agencyId,
+      clientId: params.clientId,
+      currency,
+    });
+
+    return this.walletsService.debit(
+      wallet.id,
+      amount,
+      reason ?? 'Retrait trésorerie',
+    );
+  }
+
+  // ========================================================
+  // AUTO-ALIMENTATION — Company Admin (sa société uniquement)
+  // ========================================================
+
+  async selfFund(params: {
+    clientId: number;
+    currency: string;
+    amount: number;
+    reason?: string;
+  }): Promise<{ walletId: string; currency: string; credited: number }> {
+    const { clientId, currency, amount, reason } = params;
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Le montant doit être supérieur à 0.');
+    }
+
+    const normalizedCurrency = currency.toUpperCase().trim();
+    if (!SUPPORTED_CURRENCIES.includes(normalizedCurrency)) {
+      throw new BadRequestException(
+        `Devise non supportée : ${currency}. Devises acceptées : ${SUPPORTED_CURRENCIES.join(', ')}`,
+      );
+    }
+
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, isActive: true },
+    });
+
+    if (!client || !client.isActive) {
+      throw new ForbiddenException('Société introuvable ou inactive.');
+    }
+
+    const wallet = await this.walletsService.getOrCreateWallet({
+      clientId,
+      currency: normalizedCurrency,
+    });
+
+    await this.walletsService.credit(
+      wallet.id,
+      amount,
+      reason ?? `Auto-alimentation ${normalizedCurrency} — Company Admin`,
+    );
+
+    this.logger.log(
+      `💰 selfFund — clientId=${clientId} | ${amount} ${normalizedCurrency} crédités sur wallet ${wallet.id}`,
+    );
+
+    return {
+      walletId: wallet.id,
+      currency: normalizedCurrency,
+      credited: amount,
+    };
+  }
+
+  async selfFundAll(params: {
+    clientId: number;
+    amounts: Partial<Record<string, number>>;
+    reason?: string;
+  }): Promise<{ results: { currency: string; credited: number; walletId: string }[] }> {
+    const { clientId, amounts, reason } = params;
+
+    const entries = Object.entries(amounts).filter(
+      ([cur, amt]) => SUPPORTED_CURRENCIES.includes(cur.toUpperCase()) && amt && amt > 0,
+    );
+
+    if (entries.length === 0) {
+      throw new BadRequestException(
+        'Aucun montant valide fourni. Vérifiez les devises et les montants.',
+      );
+    }
+
+    const results = await Promise.all(
+      entries.map(([currency, amount]) =>
+        this.selfFund({ clientId, currency, amount: amount!, reason }),
+      ),
+    );
+
+    return { results };
+  }
+
+  // ========================================================
   // CRON — Snapshot quotidien à minuit
   // ========================================================
 
@@ -205,10 +369,8 @@ export class TreasuryService {
     today.setHours(0, 0, 0, 0);
 
     try {
-      // Snapshot global (Super Admin)
       await this.createSnapshotForDate(null, yesterday, today);
 
-      // Snapshot par société
       const clients = await this.prisma.client.findMany({
         select: { id: true },
       });
@@ -216,9 +378,7 @@ export class TreasuryService {
         await this.createSnapshotForDate(client.id, yesterday, today);
       }
 
-      this.logger.log(
-        `✅ Snapshots créés pour ${clients.length + 1} entités`,
-      );
+      this.logger.log(`✅ Snapshots créés pour ${clients.length + 1} entités`);
     } catch (e) {
       this.logger.error('❌ Erreur snapshot trésorerie', e);
     }
@@ -248,11 +408,7 @@ export class TreasuryService {
         }),
         this.prisma.transaction.aggregate({
           where: txWhere,
-          _sum: {
-            amount: true,
-            fees: true,
-            platformCommission: true,
-          },
+          _sum: { amount: true, fees: true, platformCommission: true },
           _count: { id: true },
         }),
         this.prisma.transaction.groupBy({
@@ -261,9 +417,7 @@ export class TreasuryService {
         }),
       ]);
 
-      const closingBalance = new Prisma.Decimal(
-        walletAgg._sum.balance ?? 0,
-      );
+      const closingBalance = new Prisma.Decimal(walletAgg._sum.balance ?? 0);
 
       await this.prisma.treasurySnapshot.upsert({
         where: {
@@ -299,7 +453,7 @@ export class TreasuryService {
   }
 
   // ========================================================
-  // TRIGGER MANUEL (pour les admins)
+  // TRIGGER MANUEL
   // ========================================================
 
   async triggerManualSnapshot(): Promise<void> {

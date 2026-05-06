@@ -1,6 +1,5 @@
-//apps/direct-transfair-mobile/app/(tabs)/profile/personal-info.tsx
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info.tsx
-// Router qui redirige selon le rôle
+// Router qui redirige selon le rôle — Thème Clair
 
 import { useEffect } from "react";
 import { useRouter } from "expo-router";
@@ -13,16 +12,19 @@ export default function PersonalInfoRouter() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role === "SUPER_ADMIN")   router.replace("/(tabs)/profile/personal-info-super-admin");
+    if (user.role === "SUPER_ADMIN")        router.replace("/(tabs)/profile/personal-info-super-admin");
     else if (user.role === "COMPANY_ADMIN") router.replace("/(tabs)/profile/personal-info-admin");
-    else if (user.role === "AGENT")    router.replace("/(tabs)/profile/personal-info-agent");
-    else                               router.replace("/(tabs)/profile/personal-info-wallet");
+    else if (user.role === "AGENT")         router.replace("/(tabs)/profile/personal-info-agent");
+    else                                    router.replace("/(tabs)/profile/personal-info-wallet");
   }, [user]);
 
   return (
     <View style={s.center}>
-      <ActivityIndicator size="large" color="#10B981" />
+      <ActivityIndicator size="large" color="#2563EB" />
     </View>
   );
 }
-const s = StyleSheet.create({ center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#0B1F14" } });
+
+const s = StyleSheet.create({
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#F8FAFF" },
+});

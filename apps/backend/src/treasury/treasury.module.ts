@@ -7,6 +7,7 @@ import { TreasuryController } from './treasury.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthModule } from '../auth/auth.module';
 import { RatesModule } from '../rates/rates.module';
+import { WalletsModule } from '../wallets/wallets.module'; // ✅ REQUIS
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { RatesModule } from '../rates/rates.module';
     PrismaModule,
     AuthModule,
     RatesModule,
+    WalletsModule, // ✅ Injecte WalletsService dans TreasuryService
   ],
   controllers: [TreasuryController],
   providers: [TreasuryService],
