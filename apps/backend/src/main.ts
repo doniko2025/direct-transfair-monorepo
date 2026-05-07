@@ -25,10 +25,9 @@ async function bootstrap(): Promise<void> {
   // =========================================================
 
   // ✅ Middleware manuel (gère OPTIONS / preflight)
-  app.use((req: any, res: any, next: any) => {
-    const origin = req.headers.origin;
-
-    // 👉 Autorise ton frontend + dev + previews Vercel
+ // ✅ CONFIGURATION CORS UNIQUE ET PROPRE
+app.enableCors({
+  origin: (origin, callback) => {
     const allowedOrigins = [
       'http://localhost:8081',
       'http://localhost:5173',
@@ -37,38 +36,22 @@ async function bootstrap(): Promise<void> {
       'https://direct-transfair-monorepo-production.up.railway.app',
     ];
 
+    // Autorise si pas d'origin (ex: mobile app), si dans la liste, ou si domaine Vercel/Railway
     if (
-      !origin ||
-      allowedOrigins.includes(origin) ||
-      origin.endsWith('.vercel.app') ||
+      !origin || 
+      allowedOrigins.includes(origin) || 
+      origin.endsWith('.vercel.app') || 
       origin.endsWith('.railway.app')
     ) {
-      res.header('Access-Control-Allow-Origin', origin || '*');
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header(
-      'Access-Control-Allow-Headers',
-      'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
-    );
-    res.header(
-      'Access-Control-Allow-Methods',
-      'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    );
-
-    // 🔥 CRUCIAL POUR VERCEL
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-
-    next();
-  });
-
-  // ✅ CORS NestJS (simple et stable)
-  app.enableCors({
-    origin: true,
-    credentials: true,
-  });
+  },
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+  credentials: true,
+  allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
+});
 
   // =========================================================
   // 🔥 GUARDS
