@@ -1,10 +1,7 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.0
-// ✅ ONCE / DAILY / WEEKLY / BIWEEKLY / MONTHLY
-// ✅ Cron job toutes les 5 minutes
-// ✅ Gestion des échecs (failureCount + pause auto)
-// ✅ Notifications push + email à chaque exécution
+// SCHEDULED TRANSFERS SERVICE v4.1
+// ✅ FIX: debit max 4 arguments (walletId, amount, description, txId?)
 // =========================================================
 
 import {
@@ -66,31 +63,21 @@ export class ScheduledTransfersService {
       where: { id: userId },
       include: { client: true },
     });
-    if (!user || !user.clientId) {
-      throw new ForbiddenException('Utilisateur invalide');
-    }
+    if (!user || !user.clientId) throw new ForbiddenException('Utilisateur invalide');
 
-    const client = await this.prisma.client.findUnique({
-      where: { id: user.clientId },
-    });
+    const client = await this.prisma.client.findUnique({ where: { id: user.clientId } });
     if (!client?.featureScheduledTransfers) {
-      throw new ForbiddenException(
-        'Les virements programmés ne sont pas activés pour cette société.',
-      );
+      throw new ForbiddenException('Les virements programmés ne sont pas activés pour cette société.');
     }
 
     if (dto.beneficiaryId) {
-      const bene = await this.prisma.beneficiary.findFirst({
-        where: { id: dto.beneficiaryId, userId },
-      });
+      const bene = await this.prisma.beneficiary.findFirst({ where: { id: dto.beneficiaryId, userId } });
       if (!bene) throw new NotFoundException('Bénéficiaire introuvable');
     }
 
     const startDate = new Date(dto.startDate);
     if (startDate < new Date()) {
-      throw new BadRequestException(
-        'La date de départ doit être dans le futur',
-      );
+      throw new BadRequestException('La date de départ doit être dans le futur');
     }
 
     const transfer = await this.prisma.scheduledTransfer.create({
@@ -133,9 +120,7 @@ export class ScheduledTransfersService {
   }
 
   async pause(id: string, userId: string) {
-    const transfer = await this.prisma.scheduledTransfer.findFirst({
-      where: { id, userId },
-    });
+    const transfer = await this.prisma.scheduledTransfer.findFirst({ where: { id, userId } });
     if (!transfer) throw new NotFoundException('Introuvable');
     if (transfer.status !== ScheduledStatus.ACTIVE) {
       throw new BadRequestException('Seul un virement ACTIVE peut être suspendu');
@@ -148,9 +133,7 @@ export class ScheduledTransfersService {
   }
 
   async resume(id: string, userId: string) {
-    const transfer = await this.prisma.scheduledTransfer.findFirst({
-      where: { id, userId },
-    });
+    const transfer = await this.prisma.scheduledTransfer.findFirst({ where: { id, userId } });
     if (!transfer) throw new NotFoundException('Introuvable');
     if (transfer.status !== ScheduledStatus.PAUSED) {
       throw new BadRequestException('Seul un virement PAUSED peut être repris');
@@ -163,9 +146,7 @@ export class ScheduledTransfersService {
   }
 
   async cancel(id: string, userId: string) {
-    const transfer = await this.prisma.scheduledTransfer.findFirst({
-      where: { id, userId },
-    });
+    const transfer = await this.prisma.scheduledTransfer.findFirst({ where: { id, userId } });
     if (!transfer) throw new NotFoundException('Introuvable');
     const updated = await this.prisma.scheduledTransfer.update({
       where: { id },
@@ -188,11 +169,7 @@ export class ScheduledTransfersService {
         nextExecutionAt: { lte: now },
       },
       include: {
-        user: {
-          include: {
-            wallets: { where: { isActive: true } },
-          },
-        },
+        user: { include: { wallets: { where: { isActive: true } } } },
         beneficiary: true,
         client: true,
       },
@@ -216,48 +193,35 @@ export class ScheduledTransfersService {
       if (!user) throw new Error('Utilisateur introuvable');
 
       const currency = transfer.currency;
-      const userWallet = user.wallets?.find(
-        (w: any) => w.currency === currency && w.isActive,
-      );
+      const userWallet = user.wallets?.find((w: any) => w.currency === currency && w.isActive);
 
-      if (!userWallet) {
-        throw new Error(`Wallet ${currency} introuvable pour l'utilisateur`);
-      }
+      if (!userWallet) throw new Error(`Wallet ${currency} introuvable pour l'utilisateur`);
 
       if (Number(userWallet.balance) < Number(transfer.amount)) {
-        throw new Error(
-          `Solde insuffisant : ${userWallet.balance} ${currency} < ${transfer.amount}`,
-        );
+        throw new Error(`Solde insuffisant : ${userWallet.balance} ${currency} < ${transfer.amount}`);
       }
 
       const reference = `SCHED-${Date.now()}-${transfer.id.slice(-6)}`;
       const amt = new Prisma.Decimal(transfer.amount);
       const fees = new Prisma.Decimal(0);
 
-      // Conversion si nécessaire
       let receivedAmount = Number(transfer.amount);
       let exchangeRate = 1;
       const targetCurrency = transfer.targetCurrency ?? currency;
 
       if (targetCurrency !== currency) {
-        receivedAmount = await this.rates.convert(
-          Number(transfer.amount),
-          currency,
-          targetCurrency,
-        );
+        receivedAmount = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
         exchangeRate = receivedAmount / Number(transfer.amount);
       }
 
-      // Débit du wallet
+      // ✅ FIX: max 4 args — on retire le 5ème argument (reference en trop)
       await this.wallets.debit(
         userWallet.id,
         Number(transfer.amount),
         `Virement programmé #${reference}`,
-        undefined,
-        reference,
+        undefined, // transactionId (pas encore créé)
       );
 
-      // Crée la transaction
       const tx = await this.prisma.transaction.create({
         data: {
           reference,
@@ -280,16 +244,11 @@ export class ScheduledTransfersService {
         },
       });
 
-      // Calcul prochaine exécution
-      const nextDate = this.calculateNextDate(
-        transfer.nextExecutionAt,
-        transfer.frequency,
-      );
+      const nextDate = this.calculateNextDate(transfer.nextExecutionAt, transfer.frequency);
       const newCount = (transfer.executionCount ?? 0) + 1;
       const isDone =
         transfer.frequency === 'ONCE' ||
-        (transfer.maxExecutions !== null &&
-          newCount >= transfer.maxExecutions);
+        (transfer.maxExecutions !== null && newCount >= transfer.maxExecutions);
 
       await this.prisma.scheduledTransfer.update({
         where: { id: transfer.id },
@@ -298,18 +257,13 @@ export class ScheduledTransfersService {
           lastExecutedAt: new Date(),
           failureCount: 0,
           failureReason: null,
-          // ✅ FIX : Prisma n'accepte pas null pour nextExecutionAt (DateTime non nullable)
-          // On utilise undefined pour ne pas mettre à jour le champ quand isDone
           nextExecutionAt: nextDate ?? undefined,
           status: isDone ? ScheduledStatus.COMPLETED : ScheduledStatus.ACTIVE,
         },
       });
 
-      this.logger.log(
-        `✅ Virement programmé exécuté : ${transfer.id} (tx: ${tx.id})`,
-      );
+      this.logger.log(`✅ Virement programmé exécuté : ${transfer.id} (tx: ${tx.id})`);
 
-      // Notification push
       await this.push.notifyScheduledTransferExecuted(
         user.id,
         `${transfer.amount}`,
@@ -317,14 +271,12 @@ export class ScheduledTransfersService {
         transfer.beneficiary?.fullName ?? 'Bénéficiaire',
       );
 
-      // Email
       if (user.email) {
         await this.mail.sendEmail(
           user.email,
           'Virement programmé exécuté 📅',
           `<p>Votre virement de <strong>${transfer.amount} ${currency}</strong> vers ` +
-            `<strong>${transfer.beneficiary?.fullName ?? 'votre bénéficiaire'}</strong> ` +
-            `a été exécuté.</p>` +
+            `<strong>${transfer.beneficiary?.fullName ?? 'votre bénéficiaire'}</strong> a été exécuté.</p>` +
             (nextDate && !isDone
               ? `<p>Prochaine exécution : <strong>${nextDate.toLocaleDateString('fr-FR')}</strong></p>`
               : ''),
@@ -332,9 +284,7 @@ export class ScheduledTransfersService {
       }
     } catch (error: any) {
       const errMsg = error?.message ?? String(error);
-      this.logger.error(
-        `❌ Échec virement programmé ${transfer.id}: ${errMsg}`,
-      );
+      this.logger.error(`❌ Échec virement programmé ${transfer.id}: ${errMsg}`);
 
       const newFailureCount = (transfer.failureCount ?? 0) + 1;
       const shouldPause = newFailureCount >= MAX_CONSECUTIVE_FAILURES;
@@ -352,10 +302,7 @@ export class ScheduledTransfersService {
       });
 
       if (transfer.user?.id) {
-        await this.push.notifyScheduledTransferFailed(
-          transfer.user.id,
-          errMsg,
-        );
+        await this.push.notifyScheduledTransferFailed(transfer.user.id, errMsg);
       }
     }
   }
@@ -364,29 +311,17 @@ export class ScheduledTransfersService {
   // CALCUL PROCHAINE DATE
   // ========================================================
 
-  private calculateNextDate(
-    current: Date,
-    frequency: ScheduledFrequency,
-  ): Date | null {
+  private calculateNextDate(current: Date, frequency: ScheduledFrequency): Date | null {
     if (frequency === 'ONCE') return null;
 
     const next = new Date(current);
 
     switch (frequency) {
-      case 'DAILY':
-        next.setDate(next.getDate() + 1);
-        break;
-      case 'WEEKLY':
-        next.setDate(next.getDate() + 7);
-        break;
-      case 'BIWEEKLY':
-        next.setDate(next.getDate() + 14);
-        break;
-      case 'MONTHLY':
-        next.setMonth(next.getMonth() + 1);
-        break;
-      default:
-        return null;
+      case 'DAILY':   next.setDate(next.getDate() + 1);    break;
+      case 'WEEKLY':  next.setDate(next.getDate() + 7);    break;
+      case 'BIWEEKLY': next.setDate(next.getDate() + 14); break;
+      case 'MONTHLY': next.setMonth(next.getMonth() + 1); break;
+      default: return null;
     }
 
     return next;

@@ -1,9 +1,8 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.0 — Patché multi-devises
-// ✅ Wallets (plus balance/cash directs sur User/Agency)
-// ✅ Import AuthUserPayload depuis le bon chemin
-// ✅ Notifications multi-devises
+// TRANSACTIONS SERVICE v4.1
+// ✅ FIX: availableBalance lu depuis wallet Prisma (pas getOrCreateWallet)
+// ✅ FIX: debit/credit max 4 arguments (walletId, amount, description, txId?)
 // =========================================================
 
 import {
@@ -32,7 +31,6 @@ import {
   CreateDepositDto,
 } from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
-// ✅ CORRECTION : chemin correct
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 
 import { WalletMailService } from '../mail/channels/wallet-mail.service';
@@ -63,9 +61,7 @@ const COUNTRY_TO_CURRENCY: Record<string, string> = {
 function getCurrencyFromCountryOrText(raw?: string | null): string {
   if (!raw) return 'XOF';
   const upper = raw.toUpperCase().trim();
-  // Essai code ISO
   if (COUNTRY_TO_CURRENCY[upper]) return COUNTRY_TO_CURRENCY[upper];
-  // Essai texte libre (legacy)
   if (upper.includes('GUIN')) return 'GNF';
   if (['SENEGAL', 'MALI', 'BENIN', 'TOGO', "COTE D'IVOIRE"].some(c => upper.includes(c))) return 'XOF';
   if (upper.includes('FRANC') || upper === 'FR') return 'EUR';
@@ -87,6 +83,21 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   if (!allowed[from]?.includes(to)) {
     throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
   }
+}
+
+// =========================================================
+// HELPER — Lire le solde disponible d'un wallet depuis Prisma
+// =========================================================
+
+async function getWalletAvailable(
+  prisma: PrismaService,
+  walletId: string,
+): Promise<{ id: string; balance: number; reservedBalance: number; availableBalance: number; currency: string }> {
+  const w = await prisma.wallet.findUnique({ where: { id: walletId } });
+  if (!w) throw new NotFoundException(`Wallet ${walletId} introuvable`);
+  const bal = Number(w.balance);
+  const res = Number(w.reservedBalance);
+  return { id: w.id, currency: w.currency, balance: bal, reservedBalance: res, availableBalance: bal - res };
 }
 
 // =========================================================
@@ -113,20 +124,12 @@ export class TransactionsService {
 
   private enrichTransaction(tx: any): any {
     if (!tx) return tx;
-    const cloned: any = {
-      ...tx,
-      sender: tx.sender ? { ...tx.sender } : tx.sender,
-    };
+    const cloned: any = { ...tx, sender: tx.sender ? { ...tx.sender } : tx.sender };
     const ref = cloned.providerRef;
     if (ref && typeof ref === 'string' && ref.includes('|')) {
       const parts = ref.split('|');
       if (parts.length >= 2) {
-        cloned.sender = {
-          ...cloned.sender,
-          firstName: parts[1],
-          lastName: '(Client)',
-          agency: cloned.sender?.agency,
-        };
+        cloned.sender = { ...cloned.sender, firstName: parts[1], lastName: '(Client)', agency: cloned.sender?.agency };
         cloned.providerRef = parts[0];
       }
     }
@@ -141,11 +144,9 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
-    // ✅ v4 : débit sur le wallet (pas user.balance)
-    const wallet = await this.walletsService.getOrCreateWallet({
-      userId: adminId,
-      currency,
-    });
+    // ✅ FIX: récupérer le wallet puis lire availableBalance depuis Prisma
+    const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
+    const wallet = await getWalletAvailable(this.prisma, walletRef.id);
 
     if (wallet.availableBalance < amount) {
       throw new ForbiddenException(`Solde ${currency} insuffisant pour effectuer ce virement.`);
@@ -170,13 +171,8 @@ export class TransactionsService {
       });
     });
 
-    // Débit wallet
-    await this.walletsService.debit(
-      (await this.walletsService.getOrCreateWallet({ userId: adminId, currency })).id,
-      amount,
-      `Virement B2B ${proofReference}`,
-      tx.id,
-    );
+    // ✅ FIX: max 4 args pour debit
+    await this.walletsService.debit(wallet.id, amount, `Virement B2B ${proofReference}`, tx.id);
 
     if (admin.email) {
       await this.companyMail.sendB2BRequestSent({
@@ -199,12 +195,8 @@ export class TransactionsService {
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT) throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING) throw new ConflictException('Transaction déjà traitée');
 
-    // ✅ Crédit sur le wallet plateforme
-    const platformWallet = await this.walletsService.getOrCreateWallet({
-      userId: superAdminId,
-      currency: tx.currency,
-    });
-    await this.walletsService.credit(platformWallet.id, Number(tx.amount), `Validation B2B ${transactionId}`, transactionId);
+    const walletRef = await this.walletsService.getOrCreateWallet({ userId: superAdminId, currency: tx.currency });
+    await this.walletsService.credit(walletRef.id, Number(tx.amount), `Validation B2B ${transactionId}`, transactionId);
 
     const result = await this.prisma.transaction.update({
       where: { id: transactionId },
@@ -232,12 +224,8 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.status !== TransactionStatus.PENDING) throw new ConflictException('Impossible à rejeter');
 
-    // ✅ Remboursement sur le wallet expéditeur
-    const senderWallet = await this.walletsService.getOrCreateWallet({
-      userId: tx.senderId,
-      currency: tx.currency,
-    });
-    await this.walletsService.credit(senderWallet.id, Number(tx.amount), `Remboursement B2B rejeté`, transactionId);
+    const walletRef = await this.walletsService.getOrCreateWallet({ userId: tx.senderId, currency: tx.currency });
+    await this.walletsService.credit(walletRef.id, Number(tx.amount), `Remboursement B2B rejeté`, transactionId);
 
     return this.prisma.transaction.update({
       where: { id: transactionId },
@@ -259,12 +247,8 @@ export class TransactionsService {
     if (tx.status === TransactionStatus.PAID) throw new ConflictException("Impossible : le client a déjà retiré l'argent");
     if (tx.status === TransactionStatus.CANCELLED) throw new ConflictException('Déjà annulée');
 
-    // ✅ Remboursement sur wallet
-    const wallet = await this.walletsService.getOrCreateWallet({
-      userId,
-      currency: tx.currency,
-    });
-    await this.walletsService.credit(wallet.id, Number(tx.total), `Remboursement annulation ${tx.reference}`, transactionId);
+    const walletRef = await this.walletsService.getOrCreateWallet({ userId, currency: tx.currency });
+    await this.walletsService.credit(walletRef.id, Number(tx.total), `Remboursement annulation ${tx.reference}`, transactionId);
 
     return this.prisma.$transaction(async (prismaTx) => {
       const updated = await prismaTx.transaction.update({
@@ -286,9 +270,7 @@ export class TransactionsService {
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
       where: { id: senderId },
-      include: {
-        wallets: { where: { isActive: true } },
-      },
+      include: { wallets: { where: { isActive: true } } },
     });
     if (!user) throw new NotFoundException('User not found');
     if (!user.clientId) throw new ForbiddenException('User must belong to a client');
@@ -313,12 +295,12 @@ export class TransactionsService {
     const fees = amount.mul(new Prisma.Decimal(feeRate));
     const total = amount.plus(fees);
 
+    // ✅ FIX: lire availableBalance depuis Prisma directement (userWallet vient déjà de l'include)
     const available = Number(userWallet.balance) - Number(userWallet.reservedBalance);
     if (available < Number(total)) {
       throw new ForbiddenException(`Solde ${currency} insuffisant. Disponible : ${available}`);
     }
 
-    // Cherche un destinataire interne (wallet → wallet)
     let recipientUser: any = null;
     if (isWalletTransfer && beneficiary?.phone) {
       const cleanPhone = beneficiary.phone.replace(/[^0-9]/g, '');
@@ -328,7 +310,6 @@ export class TransactionsService {
       });
     }
 
-    // Devise cible selon pays bénéficiaire
     const targetCurrency = beneficiary?.country
       ? getCurrencyFromCountryOrText(beneficiary.country)
       : currency;
@@ -353,22 +334,13 @@ export class TransactionsService {
       }
     }
 
-    // ✅ Débit wallet (v4)
-    await this.walletsService.debit(
-      userWallet.id,
-      Number(total),
-      `Envoi ${transactionRef}`,
-    );
+    // ✅ FIX: max 4 args
+    await this.walletsService.debit(userWallet.id, Number(total), `Envoi ${transactionRef}`);
 
-    // Crédit destinataire interne si wallet→wallet
     if (recipientUser) {
       const recipientWallet = recipientUser.wallets?.find((w: any) => w.currency === targetCurrency);
       if (recipientWallet) {
-        await this.walletsService.credit(
-          recipientWallet.id,
-          convertedAmount,
-          `Réception de ${user.firstName} ${user.lastName}`,
-        );
+        await this.walletsService.credit(recipientWallet.id, convertedAmount, `Réception de ${user.firstName} ${user.lastName}`);
       }
     }
 
@@ -394,7 +366,6 @@ export class TransactionsService {
       },
     });
 
-    // Notifications
     await this.push.notifyTransferSent(senderId, beneficiary?.fullName ?? 'Bénéficiaire', `${amount}`, currency);
 
     if (recipientUser?.id) {
@@ -411,9 +382,7 @@ export class TransactionsService {
   async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
     const agent = await this.prisma.user.findUnique({
       where: { id: agentId },
-      include: {
-        wallets: { where: { isActive: true } },
-      },
+      include: { wallets: { where: { isActive: true } } },
     });
 
     if (!agent || !agent.agencyId) throw new ForbiddenException('Agent ou Agence invalide');
@@ -437,15 +406,11 @@ export class TransactionsService {
     if (!clientUser) throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
 
     const currency = agencyWallet.currency;
-    const clientWallet = await this.walletsService.getOrCreateWallet({
-      userId: clientUser.id,
-      currency,
-    });
+    const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
 
-    // Débit agence
+    // ✅ FIX: max 4 args
     await this.walletsService.debit(agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`);
-    // Crédit client
-    await this.walletsService.credit(clientWallet.id, Number(amountDec), `Dépôt agent`);
+    await this.walletsService.credit(clientWalletRef.id, Number(amountDec), `Dépôt agent`);
 
     const result = await this.prisma.transaction.create({
       data: {
@@ -468,7 +433,6 @@ export class TransactionsService {
 
     await this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency);
 
-    // Alerte solde bas agence
     const updatedAgencyWallet = await this.prisma.wallet.findUnique({ where: { id: agencyWallet.id } });
     if (updatedAgencyWallet && Number(updatedAgencyWallet.balance) < 50000) {
       await this.push.notifyLowBalance(agentId, currency, `${updatedAgencyWallet.balance}`);
@@ -478,7 +442,7 @@ export class TransactionsService {
   }
 
   // ========================================================
-  // TRÉSORERIE ADMIN (v4 wallets)
+  // TRÉSORERIE ADMIN
   // ========================================================
 
   async adminFundSelf(user: AuthUserPayload, amount: number | string) {
@@ -490,8 +454,8 @@ export class TransactionsService {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) throw new BadRequestException('Montant invalide');
 
-    const wallet = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
-    return this.walletsService.credit(wallet.id, amt, `Auto-alimentation admin`);
+    const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
+    return this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
   }
 
   async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF') {
@@ -499,16 +463,18 @@ export class TransactionsService {
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!admin || !agency) throw new NotFoundException('Introuvable');
 
-    const adminWallet = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
+    const adminWalletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
+    const adminWallet = await getWalletAvailable(this.prisma, adminWalletRef.id);
     if (adminWallet.availableBalance < amount) throw new ForbiddenException('Solde Admin insuffisant');
 
-    const agencyWallet = await this.walletsService.getOrCreateWallet({ agencyId, currency });
+    const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency });
 
     const txRef = `REFILL-${Date.now()}`;
 
     await this.prisma.$transaction(async () => {
-      await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name}`, undefined, txRef);
-      await this.walletsService.credit(agencyWallet.id, amount, `Recharge de l'admin`, undefined, txRef);
+      // ✅ FIX: max 4 args
+      await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name}`, txRef);
+      await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge de l'admin`, txRef);
       await this.prisma.transaction.create({
         data: {
           reference: txRef,
@@ -618,26 +584,13 @@ export class TransactionsService {
     assertTxTransition(tx.status, dto.status);
 
     if (dto.status === TransactionStatus.CANCELLED) {
-      // Remboursement wallet expéditeur
-      const senderWallet = await this.walletsService.getOrCreateWallet({
-        userId: tx.senderId,
-        currency: tx.currency,
-      });
-      await this.walletsService.credit(
-        senderWallet.id,
-        Number(tx.total),
-        `Remboursement annulation admin ${tx.reference}`,
-        id,
-      );
+      const walletRef = await this.walletsService.getOrCreateWallet({ userId: tx.senderId, currency: tx.currency });
+      await this.walletsService.credit(walletRef.id, Number(tx.total), `Remboursement annulation admin ${tx.reference}`, id);
 
       return this.prisma.$transaction(async (prismaTx) => {
         const updated = await prismaTx.transaction.update({
           where: { id },
-          data: {
-            status: TransactionStatus.CANCELLED,
-            cancelledAt: new Date(),
-            providerStatus: ProviderStatus.CANCELLED,
-          },
+          data: { status: TransactionStatus.CANCELLED, cancelledAt: new Date(), providerStatus: ProviderStatus.CANCELLED },
         });
         await prismaTx.withdrawal.updateMany({
           where: { transactionId: id },

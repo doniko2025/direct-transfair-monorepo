@@ -1,12 +1,13 @@
 // apps/backend/src/treasury/treasury.service.ts
 // =========================================================
-// TREASURY SERVICE v5.1 — Direct Transf'air
+// TREASURY SERVICE v5.2 — Direct Transf'air
 // ✅ Snapshot quotidien par devise (5 devises)
 // ✅ Vue globale Super Admin (toutes sociétés)
 // ✅ Vue Company Admin (sa société)
 // ✅ Injection / Retrait de fonds (Super Admin + Company Admin)
 // ✅ Auto-alimentation Company Admin (toutes devises)
 // ✅ Cron job quotidien à minuit
+// ✅ FIX: isActive → subscriptionStatus sur le modèle Client
 // =========================================================
 
 import {
@@ -16,7 +17,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { Prisma } from '@prisma/client';
+import { Prisma, SubscriptionStatus } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
@@ -200,13 +201,6 @@ export class TreasuryService {
   // INJECTION DE FONDS — Company Admin (sa société)
   // ========================================================
 
-  /**
-   * @param clientId    - ID de la société (extrait du JWT par le controller)
-   * @param currency    - Devise cible
-   * @param amount      - Montant à créditer
-   * @param performedBy - ID de l'admin qui effectue l'opération (audit)
-   * @param reason      - Libellé optionnel
-   */
   async injectFunds(params: {
     clientId: number;
     currency: string;
@@ -296,12 +290,18 @@ export class TreasuryService {
       );
     }
 
+    // ✅ FIX: Client n'a pas isActive — on utilise subscriptionStatus
     const client = await this.prisma.client.findUnique({
       where: { id: clientId },
-      select: { id: true, isActive: true },
+      select: { id: true, subscriptionStatus: true },
     });
 
-    if (!client || !client.isActive) {
+    if (
+      !client ||
+      client.subscriptionStatus === SubscriptionStatus.INACTIVE ||
+      client.subscriptionStatus === SubscriptionStatus.SUSPENDED ||
+      client.subscriptionStatus === SubscriptionStatus.EXPIRED
+    ) {
       throw new ForbiddenException('Société introuvable ou inactive.');
     }
 
