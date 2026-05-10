@@ -454,8 +454,10 @@ export default function CompanyDashboard() {
     setAutoFillProcessing(true);
     try {
       await api.http.post(
-        `/treasury/admin/inject?currency=${encodeURIComponent(autoFillCurrency)}&amount=${n}`,
-      );
+  "/treasury/admin/inject",
+  JSON.stringify({ currency: autoFillCurrency, amount: Number(n) }),
+  { headers: { "Content-Type": "application/json" } },
+   );
 
       closeAutoFill();
       const successMsg = `${fmtAmount(n, autoFillCurrency)} ${autoFillCurrency} ajouté à votre caisse.`;

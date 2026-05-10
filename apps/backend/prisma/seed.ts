@@ -1,4 +1,3 @@
-// apps/backend/prisma/seed.ts
 // =========================================================
 // SEED v4.0 — Direct Transf'air
 // ✅ Super Admin uniquement (le reste se crée via UI)
@@ -159,7 +158,7 @@ async function main() {
       if (prisma[model]) {
         await prisma[model].deleteMany();
       }
-    } catch (e) {
+    } catch (e: any) { // Typage explicite en 'any' pour éviter l'erreur sur e.message
       console.log(`   ↳ skip ${model}: ${(e && e.message ? e.message : e).toString().substring(0, 80)}`);
     }
   }

@@ -67,7 +67,10 @@
     "forceConsistentCasingInFileNames": true,
 
     "types": ["node", "express"],
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "typeRoots": ["./node_modules/@types", "./src/types"],
+
+    /* ✅ FIX TS 5.6+ WARNINGS : Déplacé à l'intérieur de compilerOptions */
+    "ignoreDeprecations": "5.0"
   },
 
   /* =========================
@@ -100,8 +103,5 @@
     "**/*.spec.ts",
     "**/*.e2e-spec.ts",
     "prisma"
-  ],
-
-  /* ✅ FIX TS 5.6+ WARNINGS */
-  "ignoreDeprecations": "6.0"
+  ]
 }

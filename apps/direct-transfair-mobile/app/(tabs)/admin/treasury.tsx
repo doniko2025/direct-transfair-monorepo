@@ -693,12 +693,12 @@ function TreasuryScreen() {
         showAlert("✅ Rechargé", `L'agence ${targetAgency.name} a été créditée.`);
       } 
       else if (modalType === "FUND_SELF") {
-        await api.adminFundSelf(val);
+        const selectedCurrency = CURRENCIES_ORDER[activeCurrency];   // ← devise active du carrousel
+        await api.adminFundSelf(val, selectedCurrency);
         showAlert("✅ Succès", "Votre trésorerie a été mise à jour.");
       }
 
       closeModal();
-      // On rafraîchit les données après l'action
       await loadData("refresh");
     } catch (e: any) {
       const err = e?.response?.data?.message || e?.message || "Une erreur est survenue.";

@@ -23,35 +23,33 @@ async function bootstrap(): Promise<void> {
   // =========================================================
   // 🔥 CORS FIX VERCEL (ULTRA IMPORTANT)
   // =========================================================
+  // ✅ CONFIGURATION CORS UNIQUE ET PROPRE
+  app.enableCors({
+    origin: (origin, callback) => {
+      const allowedOrigins = [
+        'http://localhost:8081',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'https://direct-transfair-monorepo-direct-tr.vercel.app',
+        'https://direct-transfair-monorepo-production.up.railway.app',
+      ];
 
-  // ✅ Middleware manuel (gère OPTIONS / preflight)
- // ✅ CONFIGURATION CORS UNIQUE ET PROPRE
-app.enableCors({
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:8081',
-      'http://localhost:5173',
-      'http://localhost:3000',
-      'https://direct-transfair-monorepo-direct-tr.vercel.app',
-      'https://direct-transfair-monorepo-production.up.railway.app',
-    ];
-
-    // Autorise si pas d'origin (ex: mobile app), si dans la liste, ou si domaine Vercel/Railway
-    if (
-      !origin || 
-      allowedOrigins.includes(origin) || 
-      origin.endsWith('.vercel.app') || 
-      origin.endsWith('.railway.app')
-    ) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-  credentials: true,
-  allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
-});
+      // Autorise si pas d'origin (ex: mobile app), si dans la liste, ou si domaine Vercel/Railway
+      if (
+        !origin || 
+        allowedOrigins.includes(origin) || 
+        origin.endsWith('.vercel.app') || 
+        origin.endsWith('.railway.app')
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+    allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
+  });
 
   // =========================================================
   // 🔥 GUARDS

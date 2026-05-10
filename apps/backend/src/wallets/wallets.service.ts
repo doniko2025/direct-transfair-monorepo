@@ -1,6 +1,9 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.0
+// WALLETS SERVICE v5.1
+// ✅ FIX lockWallet : "Wallet" → "wallet" (casse PostgreSQL)
+// ✅ FIX lockWallet : advisory lock via pg_advisory_xact_lock
+//    au lieu de SELECT FOR UPDATE sur nom de table raw
 // ✅ Gestion multi-devises (XOF, EUR, USD, GNF, GBP)
 // ✅ Wallet auto créé selon pays de résidence
 // ✅ Ledger double-entrée
@@ -28,6 +31,14 @@ function assertCurrency(currency: string): asserts currency is SupportedCurrency
   }
 }
 
+// ✅ APRÈS — fonctionne avec CUID, UUID, ou n'importe quel string
+function uuidToLockKey(id: string): bigint {
+  let hash = 0n;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31n + BigInt(id.charCodeAt(i))) & 0x7FFFFFFFFFFFFFFFn;
+  }
+  return hash;
+}
 @Injectable()
 export class WalletsService {
   constructor(
@@ -48,7 +59,6 @@ export class WalletsService {
   }): Promise<{ id: string; currency: string }> {
     assertCurrency(params.currency);
 
-    // Résolution de l'identifiant : clientId > agencyId > userId
     const clientId =
       params.clientId ??
       (params.agencyId ? parseInt(params.agencyId, 10) : undefined);
@@ -65,11 +75,9 @@ export class WalletsService {
       ? { clientId, currency: params.currency, isActive: true }
       : { userId, currency: params.currency, isActive: true };
 
-    // Chercher un wallet existant
     const existing = await this.prisma.wallet.findFirst({ where });
     if (existing) return existing;
 
-    // Créer le wallet si absent
     const created = await this.prisma.wallet.create({
       data: {
         ...(clientId ? { clientId } : { userId }),
@@ -164,13 +172,17 @@ export class WalletsService {
 
   // ========================================================
   // SAFE LOCK (ANTI RACE CONDITION)
+  // ✅ FIX v5.1 : advisory lock au lieu de SELECT FOR UPDATE
+  //    raw SQL — évite l'erreur 42P01 "relation Wallet does not exist"
+  //    pg_advisory_xact_lock est automatiquement libéré en fin de transaction
   // ========================================================
 
-  private async lockWallet(tx: Prisma.TransactionClient, walletId: string) {
-    await tx.$executeRawUnsafe(
-      `SELECT id FROM "Wallet" WHERE id = $1 FOR UPDATE`,
-      walletId,
-    );
+  private async lockWallet(
+    tx: Prisma.TransactionClient,
+    walletId: string,
+  ): Promise<void> {
+    const lockKey = uuidToLockKey(walletId);
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
   }
 
   // ========================================================
@@ -356,13 +368,15 @@ export class WalletsService {
     if (amount <= 0) throw new BadRequestException('Montant invalide');
 
     return this.prisma.$transaction(async (tx) => {
-      await this.lockWallet(tx, fromWalletId);
-      await this.lockWallet(tx, toWalletId);
+      // Toujours locker dans le même ordre pour éviter les deadlocks
+      const ids = [fromWalletId, toWalletId].sort();
+      await this.lockWallet(tx, ids[0]);
+      await this.lockWallet(tx, ids[1]);
 
       const fromWallet = await tx.wallet.findUnique({ where: { id: fromWalletId } });
       const toWallet = await tx.wallet.findUnique({ where: { id: toWalletId } });
 
-      if (!fromWallet || !toWallet) throw new NotFoundException();
+      if (!fromWallet || !toWallet) throw new NotFoundException('Wallet introuvable');
 
       const fromAmt = new Prisma.Decimal(amount);
       const available = fromWallet.balance.minus(fromWallet.reservedBalance);

@@ -391,7 +391,7 @@ class API {
     );
   }
 
-  // ============================================================
+// ============================================================
   // TENANT / TOKEN / STATE
   // ============================================================
 
@@ -436,6 +436,7 @@ class API {
       AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
     ]);
   }
+
   private platformHeaders(): Record<string, string> {
     return { "x-tenant-id": PLATFORM_TENANT };
   }
@@ -762,16 +763,24 @@ class API {
     amount: number,
     currency: Currency | string = "XOF",
   ): Promise<unknown> {
-    const payload = { amount, currency };
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.post<unknown>("/transactions/admin/fund-self", payload),
-        async () => this.http.post<unknown>("/admin/fund-self", payload),
-        async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
-      ],
-      "adminFundSelf",
-    );
-    return data.data;
+    // ✅ /treasury/admin/inject — body JSON avec Content-Type explicite
+    const payload = { currency: String(currency).toUpperCase(), amount: Number(amount) };
+    try {
+      const res = await this.http.post("/treasury/admin/inject", payload, {
+        headers: { "Content-Type": "application/json" },
+      });
+      return res.data;
+    } catch {
+      const data = await tryMany<AxiosResponse<unknown>>(
+        [
+          async () => this.http.post<unknown>("/transactions/admin/fund-self", payload),
+          async () => this.http.post<unknown>("/admin/fund-self", payload),
+          async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
+        ],
+        "adminFundSelf",
+      );
+      return data.data;
+    }
   }
 
   async declareBankTransfer(

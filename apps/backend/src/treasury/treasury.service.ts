@@ -8,6 +8,7 @@
 // ✅ Auto-alimentation Company Admin (toutes devises)
 // ✅ Cron job quotidien à minuit
 // ✅ FIX: isActive → subscriptionStatus sur le modèle Client
+// ✅ FIX: transferBetweenWallets ajouté (requis par controller)
 // =========================================================
 
 import {
@@ -206,11 +207,13 @@ export class TreasuryService {
     currency: string;
     amount: number;
     performedBy?: string;
+    description?: string;
     reason?: string;
   }) {
-    const { clientId, currency, amount, performedBy, reason } = params;
+    const { clientId, currency, performedBy, description, reason } = params;
+const amount = Number(params.amount);   // ← cast défensif string → number
 
-    if (!amount || amount <= 0) {
+if (!amount || amount <= 0) {
       throw new BadRequestException('Montant invalide');
     }
 
@@ -231,7 +234,7 @@ export class TreasuryService {
     return this.walletsService.credit(
       wallet.id,
       amount,
-      reason ?? `Injection trésorerie ${normalizedCurrency}`,
+      description ?? reason ?? `Injection trésorerie ${normalizedCurrency}`,
     );
   }
 
@@ -265,6 +268,30 @@ export class TreasuryService {
       amount,
       reason ?? 'Retrait trésorerie',
     );
+  }
+
+  // ========================================================
+  // TRANSFERT ENTRE WALLETS — Super Admin
+  // ========================================================
+
+  async transferBetweenWallets(params: {
+    fromWalletId: string;
+    toWalletId: string;
+    amount: number;
+    description?: string;
+  }) {
+    const { fromWalletId, toWalletId, amount, description } = params;
+
+    if (!amount || amount <= 0) {
+      throw new BadRequestException('Montant invalide');
+    }
+
+    return this.walletsService.transfer({
+      fromWalletId,
+      toWalletId,
+      amount,
+      description: description ?? 'Transfert interne Super Admin',
+    });
   }
 
   // ========================================================
@@ -327,6 +354,10 @@ export class TreasuryService {
     };
   }
 
+  // ========================================================
+  // AUTO-ALIMENTATION MULTI-DEVISES — Company Admin
+  // ========================================================
+
   async selfFundAll(params: {
     clientId: number;
     amounts: Partial<Record<string, number>>;
@@ -335,7 +366,8 @@ export class TreasuryService {
     const { clientId, amounts, reason } = params;
 
     const entries = Object.entries(amounts).filter(
-      ([cur, amt]) => SUPPORTED_CURRENCIES.includes(cur.toUpperCase()) && amt && amt > 0,
+      ([cur, amt]) =>
+        SUPPORTED_CURRENCIES.includes(cur.toUpperCase()) && amt && amt > 0,
     );
 
     if (entries.length === 0) {
@@ -374,6 +406,7 @@ export class TreasuryService {
       const clients = await this.prisma.client.findMany({
         select: { id: true },
       });
+
       for (const client of clients) {
         await this.createSnapshotForDate(client.id, yesterday, today);
       }
@@ -383,6 +416,10 @@ export class TreasuryService {
       this.logger.error('❌ Erreur snapshot trésorerie', e);
     }
   }
+
+  // ========================================================
+  // HELPER INTERNE — Crée un snapshot pour une date donnée
+  // ========================================================
 
   private async createSnapshotForDate(
     clientId: number | null,
@@ -417,12 +454,18 @@ export class TreasuryService {
         }),
       ]);
 
-      const closingBalance = new Prisma.Decimal(walletAgg._sum.balance ?? 0);
+      const closingBalance = new Prisma.Decimal(
+        walletAgg._sum.balance ?? 0,
+      );
+
+      // ✅ FIX: clientId=null → on stocke 0 pour le snapshot global
+      // car Prisma n'accepte pas null dans une clé unique composite
+      const snapshotClientId = clientId ?? 0;
 
       await this.prisma.treasurySnapshot.upsert({
         where: {
           clientId_currency_date: {
-            clientId: clientId ?? 0,
+            clientId: snapshotClientId,
             currency,
             date: dateStart,
           },
@@ -436,7 +479,7 @@ export class TreasuryService {
           uniqueSenders: txCount.length,
         },
         create: {
-          clientId,
+          clientId: snapshotClientId === 0 ? null : snapshotClientId,
           currency,
           date: dateStart,
           totalSent: txAgg._sum.amount ?? 0,
