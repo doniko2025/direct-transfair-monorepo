@@ -1,19 +1,23 @@
 {
   "version": 2,
+
+  "buildCommand": "pnpm build",
+
+  "installCommand": "pnpm install --no-frozen-lockfile",
+
+  "outputDirectory": "dist",
+
   "builds": [
     {
-      "src": "src/main.ts",
+      "src": "dist/main.js",
       "use": "@vercel/node"
     }
   ],
+
   "routes": [
     {
-      "src": "/api/swagger",
-      "dest": "src/main.ts"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "src/main.ts"
+      "src": "/(.*)",
+      "dest": "dist/main.js"
     }
   ]
 }

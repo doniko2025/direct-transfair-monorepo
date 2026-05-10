@@ -1,88 +1,149 @@
 // apps/backend/src/main.ts
 
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+import { AppModule } from './app.module';
 import { TenantGuard } from './tenants/tenant.guard';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
 
-  // 🔥 PREFIX API
+  // =========================================================
+  // 🔥 GLOBAL PREFIX
+  // =========================================================
+
   app.setGlobalPrefix('api');
 
+  // =========================================================
   // 🔥 VALIDATION
+  // =========================================================
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
+      forbidNonWhitelisted: false,
     }),
   );
 
   // =========================================================
-  // 🔥 CORS FIX VERCEL (ULTRA IMPORTANT)
+  // 🔥 CORS CONFIG
   // =========================================================
-  // ✅ CONFIGURATION CORS UNIQUE ET PROPRE
+
   app.enableCors({
-    origin: (origin, callback) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       const allowedOrigins = [
-        'http://localhost:8081',
-        'http://localhost:5173',
         'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:8081',
+
+        // Frontend Vercel
         'https://direct-transfair-monorepo-direct-tr.vercel.app',
+
+        // Backend Railway
         'https://direct-transfair-monorepo-production.up.railway.app',
       ];
 
-      // Autorise si pas d'origin (ex: mobile app), si dans la liste, ou si domaine Vercel/Railway
-      if (
-        !origin || 
-        allowedOrigins.includes(origin) || 
-        origin.endsWith('.vercel.app') || 
-        origin.endsWith('.railway.app')
-      ) {
+      const isAllowed =
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        origin?.endsWith('.vercel.app') ||
+        origin?.endsWith('.railway.app');
+
+      if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error(`CORS blocked for origin: ${origin}`));
       }
     },
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+
+    methods: [
+      'GET',
+      'HEAD',
+      'PUT',
+      'PATCH',
+      'POST',
+      'DELETE',
+      'OPTIONS',
+    ],
+
     credentials: true,
-    allowedHeaders: 'Origin, X-Requested-With, Content-Type, Accept, Authorization, x-tenant-id',
+
+    allowedHeaders: [
+      'Origin',
+      'X-Requested-With',
+      'Content-Type',
+      'Accept',
+      'Authorization',
+      'x-tenant-id',
+    ],
   });
 
   // =========================================================
-  // 🔥 GUARDS
+  // 🔥 SECURITY
   // =========================================================
+
+  app.enableShutdownHooks();
+
+  // =========================================================
+  // 🔥 GLOBAL GUARDS
+  // =========================================================
+
   app.useGlobalGuards(app.get(TenantGuard));
 
   // =========================================================
   // 🔥 SWAGGER
   // =========================================================
-  const config = new DocumentBuilder()
+
+  const swaggerConfig = new DocumentBuilder()
     .setTitle("Direct Transf'air API")
-    .setDescription('Documentation officielle du backend Direct Transf’air')
+    .setDescription(
+      'Documentation officielle du backend Direct Transf’air',
+    )
     .setVersion('1.0')
     .addBearerAuth(
-      { type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' },
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        in: 'header',
+      },
       'access-token',
     )
     .addApiKey(
-      { type: 'apiKey', name: 'x-tenant-id', in: 'header' },
+      {
+        type: 'apiKey',
+        name: 'x-tenant-id',
+        in: 'header',
+      },
       'x-tenant-id',
     )
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('swagger', app, document);
+  const swaggerDocument = SwaggerModule.createDocument(
+    app,
+    swaggerConfig,
+  );
+
+  SwaggerModule.setup('swagger', app, swaggerDocument);
 
   // =========================================================
   // 🔥 START SERVER
   // =========================================================
+
   const port = Number(process.env.PORT ?? 3000);
+
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Backend running on port ${port}`);
+  console.log(
+    `📚 Swagger available on http://localhost:${port}/swagger`,
+  );
 }
 
 void bootstrap();

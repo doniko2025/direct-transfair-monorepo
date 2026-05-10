@@ -3,25 +3,47 @@
   "private": true,
   "version": "0.1.0",
   "description": "DirectTransf'air backend (NestJS) — v4.0 multi-currency, OTP, push, AML",
+
   "scripts": {
-    "postinstall": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma",
+    "postinstall": "prisma generate && prisma generate --schema prisma-platform/schema.prisma",
+
+    "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
+
     "dev": "ts-node -r tsconfig-paths/register src/main.ts",
+
     "dev:watch": "tsx watch -r tsconfig-paths/register src/main.ts",
-   "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npx prisma generate && npx prisma generate --schema prisma-platform/schema.prisma && pnpm run clean && nest build -p tsconfig.build.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/platform', {recursive:true}); fs.cpSync('src/platform/generated', 'dist/platform', {recursive:true})\"",
+
+    "build": "pnpm run clean && prisma generate && prisma generate --schema prisma-platform/schema.prisma && nest build -p tsconfig.build.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/platform', {recursive:true}); fs.cpSync('src/platform/generated', 'dist/platform', {recursive:true})\"",
+
     "start": "node dist/main.js",
+
+    "start:prod": "node dist/main.js",
+
+    "vercel-build": "pnpm build",
+
     "prisma:generate": "prisma generate",
+
     "prisma:migrate": "prisma migrate dev",
+
+    "prisma:deploy": "prisma migrate deploy",
+
     "prisma:reset": "prisma migrate reset --force",
+
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
+
     "prisma:studio": "prisma studio",
+
     "prisma:platform:generate": "prisma generate --schema prisma-platform/schema.prisma",
+
     "prisma:platform:migrate": "prisma migrate dev --schema prisma-platform/schema.prisma",
+
     "prisma:platform:deploy": "prisma migrate deploy --schema prisma-platform/schema.prisma"
   },
+
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"
   },
+
   "dependencies": {
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",
@@ -49,6 +71,7 @@
     "swagger-ui-express": "^5.0.1",
     "twilio": "^5.12.1"
   },
+
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",
     "@nestjs/schematics": "^10.1.0",
