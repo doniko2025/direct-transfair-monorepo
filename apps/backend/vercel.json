@@ -1,18 +1,15 @@
 {
   "version": 2,
 
-  "buildCommand": "pnpm build",
+  "buildCommand": "pnpm vercel-build",
 
   "installCommand": "pnpm install --no-frozen-lockfile",
 
-  "outputDirectory": "dist",
-
-  "builds": [
-    {
-      "src": "dist/main.js",
-      "use": "@vercel/node"
+  "functions": {
+    "dist/main.js": {
+      "maxDuration": 30
     }
-  ],
+  },
 
   "routes": [
     {
