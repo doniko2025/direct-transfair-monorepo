@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "pnpm"]
+
+[phases.install]
+cmds = ["pnpm install --no-frozen-lockfile"]
+
+[phases.build]
+cmds = [
+  "cd apps/backend && pnpm prisma:deploy",
+  "cd apps/backend && pnpm build"
+]
+
+[start]
+cmd = "cd apps/backend && pnpm start:prod"

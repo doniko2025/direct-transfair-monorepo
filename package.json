@@ -2,25 +2,38 @@
   "name": "direct-transfair",
   "version": "1.0.0",
   "private": true,
+
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
+
   "packageManager": "pnpm@9.0.0",
+
+  "engines": {
+    "node": ">=20"
+  },
+
   "scripts": {
-    "dev:backend": "pnpm --filter backend start:dev",
-    "dev:frontend": "pnpm --filter direct-transfair-mobile start",
+    "dev:backend": "pnpm --filter direct-transfair-backend dev",
+
+    "dev:mobile": "pnpm --filter direct-transfair-mobile start",
 
     "db:up": "docker compose up -d",
+
     "db:down": "docker compose down -v",
 
-    "prisma:migrate": "pnpm --filter backend prisma migrate dev",
-    "prisma:seed": "pnpm --filter backend prisma db seed",
+    "prisma:migrate": "pnpm --filter direct-transfair-backend prisma:migrate",
+
+    "prisma:seed": "pnpm --filter direct-transfair-backend prisma:seed",
+
     "db:reset": "pnpm prisma:migrate && pnpm prisma:seed",
 
-    "build:backend": "pnpm --filter backend build",
-    "start:backend:prod": "pnpm --filter backend start:prod"
+    "build:backend": "pnpm --filter direct-transfair-backend build",
+
+    "start:backend:prod": "pnpm --filter direct-transfair-backend start:prod"
   },
+
   "devDependencies": {
     "@types/node": "^24.10.1",
     "ts-node": "^10.9.2",
