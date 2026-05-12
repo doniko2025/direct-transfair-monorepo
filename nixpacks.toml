@@ -1,12 +1,12 @@
 [variables]
 NODE_VERSION = "20"
-NIXPACKS_METADATA = "pnpm"
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "pnpm-9_x"]
+nixPkgs = ["nodejs_20"]
 
 [phases.install]
 cmds = [
+  "npm install -g pnpm@9",
   "pnpm install --no-frozen-lockfile"
 ]
 
