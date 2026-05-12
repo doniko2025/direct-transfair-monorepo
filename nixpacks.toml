@@ -1,21 +1,19 @@
 [variables]
 NODE_VERSION = "20"
+NIXPACKS_METADATA = "pnpm"
 
 [phases.setup]
-nixPkgs = ["nodejs_20", "pnpm"]
+nixPkgs = ["nodejs_20", "pnpm-9_x"]
 
 [phases.install]
 cmds = [
-  "npm install -g pnpm",
   "pnpm install --no-frozen-lockfile"
 ]
 
 [phases.build]
 cmds = [
-  "cd apps/backend && pnpm prisma generate",
-  "cd apps/backend && pnpm prisma:deploy",
-  "cd apps/backend && pnpm build"
+  "pnpm build:backend"
 ]
 
 [start]
-cmd = "cd apps/backend && pnpm start:prod"
+cmd = "pnpm start:backend:prod"
