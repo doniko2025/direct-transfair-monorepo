@@ -11,6 +11,8 @@ cmds = [
 
 [phases.build]
 cmds = [
+  "pnpm --filter direct-transfair-backend prisma:generate",
+  "pnpm --filter direct-transfair-backend prisma:platform:generate",
   "pnpm build:backend"
 ]
 
