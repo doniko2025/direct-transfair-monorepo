@@ -46,7 +46,7 @@ async function bootstrap(): Promise<void> {
         'https://direct-transfair-monorepo-direct-tr.vercel.app',
 
         // Backend Railway
-        'https://direct-transfair-monorepo-production.up.railway.app',
+        'https://direct-transfair-backend-production.up.railway.app',
       ];
 
       const isAllowed =
@@ -103,7 +103,7 @@ async function bootstrap(): Promise<void> {
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Direct Transf'air API")
     .setDescription(
-      'Documentation officielle du backend Direct Transf’air',
+      "Documentation officielle du backend Direct Transf'air",
     )
     .setVersion('1.0')
     .addBearerAuth(
@@ -130,7 +130,9 @@ async function bootstrap(): Promise<void> {
     swaggerConfig,
   );
 
+  // Swagger accessible sur /swagger ET /api/swagger
   SwaggerModule.setup('swagger', app, swaggerDocument);
+  SwaggerModule.setup('api/swagger', app, swaggerDocument);
 
   // =========================================================
   // 🔥 START SERVER
@@ -143,6 +145,9 @@ async function bootstrap(): Promise<void> {
   console.log(`🚀 Backend running on port ${port}`);
   console.log(
     `📚 Swagger available on http://localhost:${port}/swagger`,
+  );
+  console.log(
+    `📚 Swagger also available on http://localhost:${port}/api/swagger`,
   );
 }
 
