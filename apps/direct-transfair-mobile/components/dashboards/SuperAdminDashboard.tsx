@@ -1,11 +1,10 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v9.0 — Direct Transf'air
-// ✅ Hero ultra-compact forme capture 2 (violet plein + blanc qui remonte)
-// ✅ Hero max ~30% écran
-// ✅ Cartes devises nano swipeables au doigt (ScrollView natif, snap)
-// ✅ Arrondi bas prononcé + coins concaves
-// ✅ Stats, actions, clients identiques v8
+// SUPER ADMIN DASHBOARD v8.0 — Direct Transf'air
+// ✅ Hero compact forme fintech (wave bottom, inspiration capture 2)
+// ✅ Cartes devises compactes, superposées, swipe au doigt
+// ✅ Stats / Actions / Clients modernes
+// ✅ Animations entrée fluides
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -23,14 +22,13 @@ import {
   Alert,
   Platform,
   Animated,
-  ScrollView,
+  PanResponder,
   Dimensions,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path } from "react-native-svg";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import CreateCompanyModal from "./CreateCompanyModal";
@@ -39,14 +37,10 @@ const { width: SW } = Dimensions.get("window");
 
 // ─── Design Tokens ────────────────────────────────────────
 const T = {
-  // Hero violet — identique capture 2
-  heroA: "#5B5BD6",
-  heroB: "#4848C8",
-  heroC: "#3636A8",
-
   blue:     "#1956F0",
   blueDark: "#1240D6",
-  blueDeep: "#0D33B0",
+  blueDeep: "#0A2CB8",
+  blueDeeper:"#0822A0",
   blueLt:   "#EEF2FF",
   blueMd:   "#C7D5FF",
 
@@ -69,14 +63,14 @@ const T = {
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
 
-  white: "#FFFFFF",
+  white:    "#FFFFFF",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#818CF8", colorDark: "#4F46E5", bg: "rgba(255,255,255,0.14)", name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#34D399", colorDark: "#059669", bg: "rgba(255,255,255,0.14)", name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#FCD34D", colorDark: "#D97706", bg: "rgba(255,255,255,0.14)", name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#FCA5A5", colorDark: "#DC2626", bg: "rgba(255,255,255,0.14)", name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#C4B5FD", colorDark: "#7C3AED", bg: "rgba(255,255,255,0.14)", name: "Livre Sterling" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", colorDark: "#1240D6", bg: "#EEF2FF",  name: "Euro" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "#DCFCE7",  name: "Dollar US" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "#FEF3C7",  name: "Franc CFA" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "#FEE2E2",  name: "Franc Guinéen" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#EDE9FE",  name: "Livre Sterling" },
   },
 
   statusColors: {
@@ -87,7 +81,7 @@ const T = {
     TRIAL:     "#6366F1",
   } as Record<string, string>,
 
-  radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 36 },
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 32 },
 
   font: {
     display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
@@ -98,34 +92,30 @@ const T = {
 
   shadow: {
     card: {
-      shadowColor: "#3636A8",
+      shadowColor: "#1240D6",
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.12,
       shadowRadius: 16,
       elevation: 8,
     },
+    deep: {
+      shadowColor: "#0D33B0",
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.2,
+      shadowRadius: 28,
+      elevation: 16,
+    },
     soft: {
-      shadowColor: "#3636A8",
+      shadowColor: "#1240D6",
       shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.07,
       shadowRadius: 10,
       elevation: 4,
     },
-    hero: {
-      shadowColor: "#3730A3",
-      shadowOffset: { width: 0, height: 18 },
-      shadowOpacity: 0.3,
-      shadowRadius: 28,
-      elevation: 24,
-    },
   },
 };
 
 const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
-
-// Nano card dimensions — beaucoup plus petites
-const NANO_W = SW * 0.52; // ~52% largeur écran
-const NANO_H = 62;
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -147,173 +137,189 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── Nano Currency Card ────────────────────────────────────
-// Petite, compacte, glassmorphism sur fond violet
-function NanoCurrencyCard({ currency, wallets }: { currency: string; wallets: any[] }) {
-  const cfg = T.currencies[currency as keyof typeof T.currencies];
-  const w = wallets.find((x) => x.currency === currency);
-  const balance   = toNum(w?.balance);
-  const reserved  = toNum(w?.reservedBalance);
-  const available = balance - reserved;
+// ─── Cartes devises compactes empilées — swipe au doigt ──
+const CARD_W = SW - 80;
+const CARD_H = 110; // compact
+const PEEK_OFFSET = 8;
+const PEEK_SCALE_STEP = 0.04;
 
-  return (
-    <View style={ncS.card}>
-      {/* Fond glass */}
-      <View style={[ncS.glass, { borderColor: `${cfg.color}40` }]}>
-        {/* Ligne haut colorée */}
-        <View style={[ncS.topBar, { backgroundColor: cfg.color }]} />
-
-        <View style={ncS.inner}>
-          {/* Gauche : flag + codes */}
-          <View style={ncS.left}>
-            <Text style={{ fontSize: 14, lineHeight: 18 }}>{cfg.flag}</Text>
-            <View>
-              <Text style={[ncS.code, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-              <Text style={[ncS.symb, { fontFamily: T.font.subtitle }]}>{cfg.symbol}</Text>
-            </View>
-          </View>
-
-          {/* Droite : montant */}
-          <View style={ncS.right}>
-            <Text
-              style={[ncS.amount, { color: T.white, fontFamily: T.font.display }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.65}
-            >
-              {fmtAmount(balance, currency)}
-            </Text>
-            <Text style={[ncS.dispo, { color: cfg.color, fontFamily: T.font.mono }]} numberOfLines={1}>
-              ↗ {fmtAmount(available, currency)}
-            </Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-}
-
-const ncS = StyleSheet.create({
-  card: {
-    width: NANO_W,
-    height: NANO_H,
-    marginRight: 8,
-  },
-  glass: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  topBar: {
-    height: 2.5,
-    width: "100%",
-    opacity: 0.9,
-  },
-  inner: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  left: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
-  code: { fontSize: 11, fontWeight: "900", letterSpacing: 1.1 },
-  symb: { fontSize: 8, color: "rgba(255,255,255,0.5)", marginTop: 1 },
-  right: {
-    flex: 1,
-    alignItems: "flex-end",
-  },
-  amount: {
-    fontSize: 15,
-    fontWeight: "700",
-    letterSpacing: -0.4,
-    maxWidth: NANO_W * 0.52,
-  },
-  dispo: {
-    fontSize: 8,
-    fontWeight: "700",
-    marginTop: 2,
-    opacity: 0.85,
-  },
-});
-
-// ─── Swipeable Nano Carousel (scroll natif au doigt) ──────
-function NanoCarousel({ wallets }: { wallets: any[] }) {
+function CurrencyStack({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const SNAP = NANO_W + 8;
+  const translateX = useRef(new Animated.Value(0)).current;
+  const total = CURRENCIES_ORDER.length;
 
-  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / SNAP);
-    if (idx !== activeIdx) setActiveIdx(Math.max(0, Math.min(idx, CURRENCIES_ORDER.length - 1)));
+  const getWalletData = (currency: string) => {
+    const w = wallets.find((x) => x.currency === currency);
+    return { balance: toNum(w?.balance), reserved: toNum(w?.reservedBalance) };
   };
 
-  return (
-    <View style={ncc.wrap}>
-      <ScrollView
-        horizontal
-        pagingEnabled={false}
-        snapToInterval={SNAP}
-        snapToAlignment="start"
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-        contentContainerStyle={ncc.content}
-        bounces={false}
-      >
-        {CURRENCIES_ORDER.map((cur) => (
-          <NanoCurrencyCard key={cur} currency={cur} wallets={wallets} />
-        ))}
-      </ScrollView>
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 8,
+      onPanResponderMove: (_, gs) => { translateX.setValue(gs.dx); },
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dx < -45) setActiveIdx((p) => Math.min(p + 1, total - 1));
+        else if (gs.dx > 45) setActiveIdx((p) => Math.max(p - 1, 0));
+        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 32, bounciness: 5 }).start();
+      },
+    })
+  ).current;
 
-      {/* Dots minimalistes */}
-      <View style={ncc.dots}>
-        {CURRENCIES_ORDER.map((_, i) => (
+  return (
+    <View style={stk.wrapper} {...panResponder.panHandlers}>
+      {/* Cartes empilées derrière — 2 visibles */}
+      {[2, 1].map((offset) => {
+        const idx = activeIdx + offset;
+        if (idx >= total) return null;
+        const cfg = T.currencies[CURRENCIES_ORDER[idx] as keyof typeof T.currencies];
+        return (
           <View
-            key={i}
+            key={`behind-${offset}`}
             style={[
-              ncc.dot,
+              stk.card,
               {
-                width: i === activeIdx ? 14 : 4,
-                opacity: i === activeIdx ? 0.9 : 0.3,
+                position: "absolute",
+                top: offset * PEEK_OFFSET,
+                left: offset * 5,
+                right: offset * 5,
+                opacity: 1 - offset * 0.22,
+                transform: [{ scaleX: 1 - offset * PEEK_SCALE_STEP }],
+                zIndex: 10 - offset,
+                borderTopColor: cfg.color,
               },
             ]}
-          />
-        ))}
-      </View>
+          >
+            <View style={[stk.peekAccent, { backgroundColor: cfg.color }]} />
+            <View style={stk.peekInner}>
+              <Text style={{ fontSize: 16 }}>{cfg.flag}</Text>
+              <Text style={[stk.peekCode, { color: cfg.color }]}>{cfg.code}</Text>
+            </View>
+          </View>
+        );
+      })}
+
+      {/* Carte active */}
+      {(() => {
+        const cur = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
+        const cfg = T.currencies[cur];
+        const data = getWalletData(cur);
+        const available = data.balance - data.reserved;
+        return (
+          <Animated.View
+            style={[stk.card, stk.front, { borderTopColor: cfg.color, transform: [{ translateX }] }]}
+          >
+            {/* Accent bande */}
+            <View style={[stk.frontAccent, { backgroundColor: cfg.color }]} />
+
+            <View style={stk.row}>
+              {/* Gauche: flag + nom + montant */}
+              <View style={stk.left}>
+                <View style={stk.flagRow}>
+                  <View style={[stk.flagBox, { backgroundColor: cfg.bg }]}>
+                    <Text style={{ fontSize: 18 }}>{cfg.flag}</Text>
+                  </View>
+                  <View>
+                    <Text style={[stk.code, { color: cfg.color }]}>{cfg.code}</Text>
+                    <Text style={stk.name}>{cfg.name}</Text>
+                  </View>
+                </View>
+                <Text
+                  style={[stk.amount, { color: cfg.colorDark }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.6}
+                >
+                  {fmtAmount(data.balance, cur)}{" "}
+                  <Text style={[stk.symbol, { color: cfg.color }]}>{cfg.symbol}</Text>
+                </Text>
+              </View>
+
+              {/* Droite: dispo + nav */}
+              <View style={stk.right}>
+                <View style={[stk.dispoBox, { backgroundColor: cfg.bg }]}>
+                  <Text style={[stk.dispoLabel, { color: cfg.colorDark }]}>DISPO</Text>
+                  <Text style={[stk.dispoAmt, { color: cfg.colorDark }]}>{fmtAmount(available, cur)}</Text>
+                </View>
+                {/* Dots */}
+                <View style={stk.dots}>
+                  {CURRENCIES_ORDER.map((_, i) => (
+                    <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
+                      <View style={[stk.dot, {
+                        width: i === activeIdx ? 14 : 4,
+                        backgroundColor: i === activeIdx ? cfg.color : "rgba(0,0,0,0.18)",
+                      }]} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </Animated.View>
+        );
+      })()}
     </View>
   );
 }
 
-const ncc = StyleSheet.create({
-  wrap: { paddingLeft: 18, marginTop: 10 },
-  content: { paddingRight: 18 },
-  dots: {
-    flexDirection: "row",
+const stk = StyleSheet.create({
+  wrapper: {
+    height: CARD_H + PEEK_OFFSET * 2 + 10,
     alignItems: "center",
-    gap: 4,
-    paddingLeft: 3,
-    marginTop: 8,
-    height: 8,
+    justifyContent: "flex-end",
+    marginTop: 10,
   },
-  dot: {
-    height: 3,
-    borderRadius: 99,
-    backgroundColor: T.white,
+  card: {
+    width: CARD_W,
+    height: CARD_H,
+    backgroundColor: "rgba(255,255,255,0.96)",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderTopWidth: 3,
+    borderColor: "rgba(255,255,255,0.3)",
+    padding: 12,
+    overflow: "hidden",
+    shadowColor: "#0A2FA8",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.24,
+    shadowRadius: 16,
+    elevation: 12,
   },
+  front: { zIndex: 20, position: "relative", top: 0 },
+  frontAccent: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 44, opacity: 0.06,
+  },
+  peekAccent: {
+    position: "absolute", top: 0, left: 0, right: 0, height: 3, opacity: 0.7,
+  },
+  peekInner: { flexDirection: "row", alignItems: "center", gap: 7, padding: 10 },
+  peekCode: { fontSize: 11, fontWeight: "900", letterSpacing: 1.4 },
+
+  row: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
+  left: { flex: 1, gap: 8 },
+  right: { alignItems: "flex-end", gap: 8 },
+
+  flagRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  flagBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  code: { fontSize: 12, fontWeight: "900", letterSpacing: 1.4 },
+  name: { fontSize: 10, color: T.inkSub, marginTop: 1 },
+
+  amount: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
+  symbol: { fontSize: 13, fontWeight: "700" },
+
+  dispoBox: { borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6, alignItems: "center", minWidth: 66 },
+  dispoLabel: { fontSize: 8, fontWeight: "900", letterSpacing: 1.2, marginBottom: 2 },
+  dispoAmt: { fontSize: 12, fontWeight: "700" },
+
+  dots: { flexDirection: "row", gap: 3, alignItems: "center" },
+  dot: { height: 4, borderRadius: 99 },
 });
 
-// ─── Hero Compact — forme capture 2 ───────────────────────
-// Violet plein, fond blanc remonte par-dessous avec coins arrondis
-const HERO_CURVE = 28;
+// ─── Hero — forme wave/fintech (inspiration capture 2) ────
+// La forme basse est une courbe SVG asymétrique (vague douce),
+// fond bleu profond dégradé, le hero est compact.
+
+const HERO_H = 260; // hauteur totale du hero zone
+const WAVE_H = 38;  // hauteur de la vague basse
 
 function DashHero({
   animValue,
@@ -328,155 +334,147 @@ function DashHero({
   onRefresh: () => void;
   onNotif: () => void;
 }) {
-  const statusBarH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
+  // Courbe SVG pour simuler la forme "vague" de la capture 2
+  // Chemin: part du coin bas-gauche, monte légèrement au centre, descend à droite
+  const wavePath = `M0,0 L${SW},0 L${SW},${WAVE_H - 10} Q${SW * 0.75},${WAVE_H + 14} ${SW * 0.5},${WAVE_H - 4} Q${SW * 0.25},${WAVE_H - 22} 0,${WAVE_H + 6} Z`;
 
   return (
     <Animated.View
       style={[
-        hS.outer,
+        heroS.outer,
         {
           opacity: animValue,
-          transform: [{
-            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }),
-          }],
+          transform: [{ translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
         },
       ]}
     >
       <LinearGradient
-        colors={["#5B5BD6", "#4545BE", "#3232A0"]}
+        colors={["#2461FF", "#1340D4", "#0A22A8"]}
         start={{ x: 0.1, y: 0 }}
         end={{ x: 0.95, y: 1 }}
-        style={[hS.gradient, { paddingTop: statusBarH + 10 }]}
+        style={heroS.gradient}
       >
-        {/* Cercles déco subtils */}
-        <View style={hS.circle1} />
-        <View style={hS.circle2} />
-        <View style={hS.circle3} />
+        {/* Décos lumineuses */}
+        <View style={heroS.glow1} />
+        <View style={heroS.glow2} />
+        <View style={heroS.glow3} />
 
-        {/* ── Top bar ── */}
-        <View style={hS.topBar}>
-          {/* Gauche */}
-          <View style={hS.topLeft}>
-            <View style={hS.adminBadge}>
-              <View style={hS.activeDot} />
-              <Text style={[hS.badgeLabel, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
+        {/* Top bar */}
+        <View style={heroS.topBar}>
+          <View style={{ flex: 1 }}>
+            <View style={heroS.badge}>
+              <View style={heroS.badgeDot} />
+              <Text style={[heroS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
             </View>
-            <Text style={[hS.name, { fontFamily: T.font.display }]}>
+            <Text style={[heroS.title, { fontFamily: T.font.display }]}>
               {user?.firstName ?? "Console"}
             </Text>
-            <Text style={[hS.tagline, { fontFamily: T.font.subtitle }]}>
+            <Text style={[heroS.sub, { fontFamily: T.font.subtitle }]}>
               Direct Transf'air™ · Trésorerie
             </Text>
           </View>
-
-          {/* Droite — boutons */}
-          <View style={hS.btns}>
-            <TouchableOpacity style={hS.iconBtn} onPress={onRefresh} activeOpacity={0.7}>
-              <Ionicons name="refresh-outline" size={15} color={T.white} />
+          <View style={heroS.btns}>
+            <TouchableOpacity style={heroS.btn} onPress={onRefresh}>
+              <Ionicons name="refresh" size={16} color={T.white} />
             </TouchableOpacity>
-            <TouchableOpacity style={hS.iconBtn} onPress={onNotif} activeOpacity={0.7}>
-              <Ionicons name="notifications-outline" size={15} color={T.white} />
-              <View style={hS.redDot} />
+            <TouchableOpacity style={heroS.btn} onPress={onNotif}>
+              <Ionicons name="notifications" size={16} color={T.white} />
+              <View style={heroS.notifDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Nano carousel devises ── */}
-        <NanoCarousel wallets={wallets} />
+        {/* Stack cartes compact */}
+        <CurrencyStack wallets={wallets} />
 
-        {/* Espace bas avant la courbe */}
-        <View style={{ height: 22 }} />
+        {/* Padding bas avant wave */}
+        <View style={{ height: WAVE_H + 6 }} />
       </LinearGradient>
 
-      {/* Coins concaves pageBg — effet capture 2 */}
-      <View style={hS.cL} />
-      <View style={hS.cR} />
+      {/* Wave SVG découpant le bas du hero */}
+      <View style={heroS.waveCover} pointerEvents="none">
+        <Svg width={SW} height={WAVE_H + 10} viewBox={`0 0 ${SW} ${WAVE_H + 10}`}>
+          <Path d={wavePath} fill={T.pageBg} />
+        </Svg>
+      </View>
     </Animated.View>
   );
 }
 
-const hS = StyleSheet.create({
+const heroS = StyleSheet.create({
   outer: {
     zIndex: 10,
-    ...T.shadow.hero,
+    shadowColor: "#0A2FA8",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.38,
+    shadowRadius: 32,
+    elevation: 22,
+    marginBottom: -6,
   },
   gradient: {
-    borderBottomLeftRadius: HERO_CURVE,
-    borderBottomRightRadius: HERO_CURVE,
     overflow: "hidden",
   },
-  circle1: {
-    position: "absolute", width: 180, height: 180, borderRadius: 90,
-    backgroundColor: "rgba(255,255,255,0.06)", top: -50, right: -30,
+  glow1: {
+    position: "absolute", width: 200, height: 200, borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -40,
   },
-  circle2: {
-    position: "absolute", width: 80, height: 80, borderRadius: 40,
-    backgroundColor: "rgba(255,255,255,0.05)", bottom: 10, left: 10,
+  glow2: {
+    position: "absolute", width: 120, height: 120, borderRadius: 60,
+    backgroundColor: "rgba(255,255,255,0.05)", bottom: 20, left: -30,
   },
-  circle3: {
-    position: "absolute", width: 50, height: 50, borderRadius: 25,
-    backgroundColor: "rgba(255,255,255,0.04)", top: 20, left: SW * 0.45,
+  glow3: {
+    position: "absolute", width: 60, height: 60, borderRadius: 30,
+    backgroundColor: "rgba(99,179,237,0.12)", top: 40, left: SW * 0.4,
   },
   topBar: {
     flexDirection: "row",
     alignItems: "flex-start",
-    justifyContent: "space-between",
-    paddingHorizontal: 18,
-    paddingBottom: 2,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 12 : 14,
+    marginBottom: 4,
   },
-  topLeft: { flex: 1 },
-  adminBadge: {
+  badge: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3,
-    alignSelf: "flex-start", marginBottom: 5,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4,
+    alignSelf: "flex-start", marginBottom: 6,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
   },
-  activeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
-  badgeLabel: { color: "rgba(255,255,255,0.9)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
-  name: { color: T.white, fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
-  tagline: { color: "rgba(255,255,255,0.55)", fontSize: 10, marginTop: 1 },
-  btns: { flexDirection: "row", gap: 7, paddingTop: 2 },
-  iconBtn: {
-    width: 34, height: 34, borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.12)",
+  badgeDot: { width: 6, height: 6, borderRadius: 99, backgroundColor: "#4ADE80" },
+  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
+  title: { color: T.white, fontSize: 24, fontWeight: "700", letterSpacing: -0.3 },
+  sub: { color: "rgba(255,255,255,0.62)", fontSize: 11, marginTop: 2 },
+  btns: { flexDirection: "row", gap: 8, paddingTop: 2 },
+  btn: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.13)",
     borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
     justifyContent: "center", alignItems: "center",
   },
-  redDot: {
-    position: "absolute", top: 7, right: 7,
-    width: 6, height: 6, borderRadius: 99,
-    backgroundColor: "#EF4444",
-    borderWidth: 1.5, borderColor: "#4545BE",
+  notifDot: {
+    position: "absolute", top: 8, right: 8,
+    width: 7, height: 7, borderRadius: 99,
+    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#1240D6",
   },
-  // Coins concaves — même couleur que le fond de la page
-  cL: {
-    position: "absolute", bottom: 0, left: 0,
-    width: HERO_CURVE, height: HERO_CURVE,
-    backgroundColor: T.pageBg,
-    borderTopRightRadius: HERO_CURVE,
-  },
-  cR: {
-    position: "absolute", bottom: 0, right: 0,
-    width: HERO_CURVE, height: HERO_CURVE,
-    backgroundColor: T.pageBg,
-    borderTopLeftRadius: HERO_CURVE,
+  waveCover: {
+    position: "absolute",
+    bottom: 0, left: 0, right: 0,
   },
 });
 
 // ─── Stat Strip ───────────────────────────────────────────
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
-    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" as const },
-    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" as const },
-    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" as const },
+    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" },
+    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" },
+    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" },
   ];
   return (
     <View style={ssS.row}>
       {items.map((it, idx) => (
         <View key={idx} style={[ssS.card, { borderLeftColor: it.color }]}>
           <View style={[ssS.iconBox, { backgroundColor: it.bg }]}>
-            <Ionicons name={it.icon} size={16} color={it.color} />
+            <Ionicons name={it.icon as any} size={16} color={it.color} />
           </View>
           <Text style={[ssS.val, { color: it.color, fontFamily: T.font.display }]}>{it.value}</Text>
           <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
@@ -487,7 +485,7 @@ function StatStrip({ stats }: { stats: { total: number; active: number; inactive
 }
 
 const ssS = StyleSheet.create({
-  row: { flexDirection: "row", gap: 8, marginTop: 20, marginBottom: 22 },
+  row: { flexDirection: "row", gap: 8, marginTop: 18, marginBottom: 20 },
   card: {
     flex: 1,
     backgroundColor: T.surface,
@@ -532,10 +530,7 @@ function ActionGrid({ actions }: { actions: any[] }) {
 }
 
 const agS = StyleSheet.create({
-  grid: {
-    flexDirection: "row", flexWrap: "wrap",
-    justifyContent: "space-between", marginBottom: 22,
-  },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
   card: {
     width: "48.5%",
     backgroundColor: T.surface,
@@ -549,20 +544,13 @@ const agS = StyleSheet.create({
     ...T.shadow.soft,
   },
   bar: { position: "absolute", top: 0, left: 0, right: 0, height: 3, opacity: 0.85 },
-  iconBox: {
-    width: 40, height: 40, borderRadius: 11,
-    justifyContent: "center", alignItems: "center", marginBottom: 10,
-  },
+  iconBox: { width: 40, height: 40, borderRadius: 11, justifyContent: "center", alignItems: "center", marginBottom: 10 },
   title: { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
   sub: { fontSize: 10, color: T.inkSub },
-  arrow: {
-    position: "absolute", right: 10, top: 10,
-    width: 22, height: 22, borderRadius: 6,
-    justifyContent: "center", alignItems: "center",
-  },
+  arrow: { position: "absolute", right: 10, top: 10, width: 22, height: 22, borderRadius: 6, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Client Card ─────────────────────────────────────────
+// ─── Client Card ──────────────────────────────────────────
 function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
   const statusColor = T.statusColors[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
   return (
@@ -593,8 +581,7 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
 
 const clS = StyleSheet.create({
   card: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "row", alignItems: "center",
     backgroundColor: T.surface,
     borderRadius: T.radius.md,
     padding: 13,
@@ -614,18 +601,10 @@ const clS = StyleSheet.create({
   name: { color: T.ink, fontSize: 13, fontWeight: "700", marginBottom: 4 },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   code: { color: T.amber, fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
-  statusPill: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 6, paddingVertical: 2,
-    borderRadius: 6, borderWidth: 1,
-  },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
   dot: { width: 4, height: 4, borderRadius: 99 },
   statusTxt: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-  chevron: {
-    width: 24, height: 24, borderRadius: 7,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.blueMd,
-  },
+  chevron: { width: 24, height: 24, borderRadius: 7, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
 });
 
 // ─── Section Header ───────────────────────────────────────
@@ -664,9 +643,9 @@ export default function SuperAdminDashboard() {
   const contentAnim = useRef(new Animated.Value(0)).current;
 
   const runEntrance = useCallback(() => {
-    Animated.stagger(120, [
-      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }),
-      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 2 }),
+    Animated.stagger(100, [
+      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 4 }),
+      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 3 }),
     ]).start();
   }, []);
 
@@ -721,18 +700,18 @@ export default function SuperAdminDashboard() {
   }), [clients]);
 
   const actions = useMemo(() => [
-    { title: "Trésorerie",     subtitle: "Vue globale",       icon: "wallet-outline",      color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux & Devises", subtitle: "5 devises",         icon: "trending-up-outline", color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Transactions",   subtitle: "Audit temps réel",  icon: "analytics-outline",   color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs",   subtitle: "Accès & Rôles",     icon: "people-outline",      color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
+    { title: "Trésorerie",     subtitle: "Vue globale",       icon: "wallet-outline",        color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
+    { title: "Taux & Devises", subtitle: "5 devises",         icon: "trending-up-outline",   color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
+    { title: "Transactions",   subtitle: "Audit temps réel",  icon: "analytics-outline",     color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs",   subtitle: "Accès & Rôles",     icon: "people-outline",        color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
   ], [router]);
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor="#3232A0" barStyle="light-content" />
+      <StatusBar backgroundColor={T.blueDeeper} barStyle="light-content" />
 
       <View style={s.screen}>
-        {/* ── HERO COMPACT ── */}
+        {/* HERO */}
         <DashHero
           animValue={headerAnim}
           user={user}
@@ -741,7 +720,7 @@ export default function SuperAdminDashboard() {
           onNotif={() => router.push("/(tabs)/admin/notifications")}
         />
 
-        {/* ── CONTENU SCROLLABLE ── */}
+        {/* CONTENU SCROLLABLE */}
         <FlatList
           data={filtered}
           keyExtractor={(i) => i.id}
@@ -771,6 +750,7 @@ export default function SuperAdminDashboard() {
               }}
             >
               <StatStrip stats={stats} />
+
               <SH dot={T.blue} label="PILOTAGE RÉSEAU" />
               <ActionGrid actions={actions} />
 
@@ -843,10 +823,11 @@ export default function SuperAdminDashboard() {
   );
 }
 
+// ─── Styles globaux ───────────────────────────────────────
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: T.pageBg },
   screen: { flex: 1, backgroundColor: T.pageBg },
-  list: { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
+  list: { paddingHorizontal: LIST_H_PAD, paddingTop: 8 },
   searchBox: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: T.surface,
