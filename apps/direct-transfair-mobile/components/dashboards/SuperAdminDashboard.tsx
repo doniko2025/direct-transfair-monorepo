@@ -1,10 +1,10 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v7.0 — Direct Transf'air
-// ✅ Hero élargi · shape arrondie bas (capture 3)
-// ✅ Cartes devises superposées en 3D stack dans le hero
-// ✅ Swipe horizontal natif sur le stack
-// ✅ Stats / Actions / Clients compacts & modernes
+// SUPER ADMIN DASHBOARD v8.0 — Direct Transf'air
+// ✅ Hero compact violet (capture 2) — max ~38% écran
+// ✅ Cartes devises mini swipeables au doigt (ScrollView natif)
+// ✅ Arrondi bas prononcé
+// ✅ Reste identique au v7 (stats, actions, clients)
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -22,8 +22,10 @@ import {
   Alert,
   Platform,
   Animated,
-  PanResponder,
+  ScrollView,
   Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -36,6 +38,11 @@ const { width: SW } = Dimensions.get("window");
 
 // ─── Design Tokens ────────────────────────────────────────
 const T = {
+  // Hero violet — capture 2
+  heroTop:    "#5B5BD6",
+  heroMid:    "#4747C2",
+  heroBot:    "#3636A8",
+
   blue:     "#1956F0",
   blueDark: "#1240D6",
   blueDeep: "#0D33B0",
@@ -64,11 +71,11 @@ const T = {
   white:    "#FFFFFF",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", colorDark: "#1240D6", bg: "#EEF2FF",  name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "#DCFCE7",  name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "#FEF3C7",  name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "#FEE2E2",  name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#EDE9FE",  name: "Livre Sterling" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#5B5BD6", colorDark: "#3636A8", bg: "rgba(91,91,214,0.12)", name: "Euro" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "rgba(22,163,74,0.12)",  name: "Dollar US" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "rgba(217,119,6,0.12)",  name: "Franc CFA" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "rgba(220,38,38,0.12)",  name: "Franc Guinéen" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#A855F7", colorDark: "#7C3AED", bg: "rgba(168,85,247,0.12)", name: "Livre Sterling" },
   },
 
   statusColors: {
@@ -79,7 +86,7 @@ const T = {
     TRIAL:     "#6366F1",
   } as Record<string, string>,
 
-  radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 32 },
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 36 },
 
   font: {
     display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
@@ -90,21 +97,14 @@ const T = {
 
   shadow: {
     card: {
-      shadowColor: "#1240D6",
+      shadowColor: "#3636A8",
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.12,
       shadowRadius: 16,
       elevation: 8,
     },
-    deep: {
-      shadowColor: "#0D33B0",
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.2,
-      shadowRadius: 28,
-      elevation: 16,
-    },
     soft: {
-      shadowColor: "#1240D6",
+      shadowColor: "#3636A8",
       shadowOffset: { width: 0, height: 3 },
       shadowOpacity: 0.07,
       shadowRadius: 10,
@@ -114,6 +114,7 @@ const T = {
 };
 
 const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
+const CARD_W = SW - 80; // largeur d'une mini-carte devise
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -135,269 +136,182 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── Stack 3D de cartes devises dans le hero ──────────────
-const STACK_CARD_W = SW - 72;
-const STACK_CARD_H = 148;
-const STACK_VISIBLE = 3; // nb de cartes empilées visibles derrière
-
-function CurrencyStack({
-  wallets,
-}: {
-  wallets: any[];
-}) {
-  const [activeIdx, setActiveIdx] = useState(0);
-  const translateX = useRef(new Animated.Value(0)).current;
-  const total = CURRENCIES_ORDER.length;
-
-  const getWalletData = (currency: string) => {
-    const w = wallets.find((x) => x.currency === currency);
-    return { balance: toNum(w?.balance), reserved: toNum(w?.reservedBalance) };
-  };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 8,
-      onPanResponderMove: (_, gs) => {
-        translateX.setValue(gs.dx);
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dx < -50) {
-          setActiveIdx((prev) => Math.min(prev + 1, total - 1));
-        } else if (gs.dx > 50) {
-          setActiveIdx((prev) => Math.max(prev - 1, 0));
-        }
-        Animated.spring(translateX, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 30,
-          bounciness: 6,
-        }).start();
-      },
-    })
-  ).current;
+// ─── Mini Currency Card (swipeable) ──────────────────────
+function MiniCurrencyCard({ currency, wallets }: { currency: string; wallets: any[] }) {
+  const cfg = T.currencies[currency as keyof typeof T.currencies];
+  const w = wallets.find((x) => x.currency === currency);
+  const balance  = toNum(w?.balance);
+  const reserved = toNum(w?.reservedBalance);
+  const available = balance - reserved;
 
   return (
-    <View style={stackS.wrapper} {...panResponder.panHandlers}>
-      {/* Cartes empilées derrière */}
-      {[2, 1].map((offset) => {
-        const behindIdx = activeIdx + offset;
-        if (behindIdx >= total) return null;
-        const cfg = T.currencies[CURRENCIES_ORDER[behindIdx] as keyof typeof T.currencies];
-        return (
-          <View
-            key={`behind-${offset}`}
-            style={[
-              stackS.card,
-              {
-                position: "absolute",
-                top: offset * 10,
-                left: offset * 6,
-                right: offset * 6,
-                opacity: 1 - offset * 0.25,
-                transform: [{ scaleX: 1 - offset * 0.04 }],
-                zIndex: 10 - offset,
-                borderTopColor: cfg.color,
-              },
-            ]}
-          >
-            <View style={[stackS.peekStripe, { backgroundColor: cfg.color }]} />
-            <View style={stackS.peekRow}>
-              <Text style={stackS.peekFlag}>{cfg.flag}</Text>
-              <Text style={[stackS.peekCode, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-            </View>
-          </View>
-        );
-      })}
+    <View style={mcS.card}>
+      {/* Bande couleur gauche */}
+      <View style={[mcS.stripe, { backgroundColor: cfg.color }]} />
 
-      {/* Carte active (front) */}
-      {(() => {
-        const cur = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
-        const cfg = T.currencies[cur];
-        const data = getWalletData(cur);
-        const available = data.balance - data.reserved;
+      <View style={mcS.left}>
+        <View style={[mcS.flagBox, { backgroundColor: cfg.bg }]}>
+          <Text style={{ fontSize: 16 }}>{cfg.flag}</Text>
+        </View>
+        <View>
+          <Text style={[mcS.code, { color: cfg.colorDark, fontFamily: T.font.mono }]}>{cfg.code}</Text>
+          <Text style={[mcS.name, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
+        </View>
+      </View>
 
-        return (
-          <Animated.View
-            style={[
-              stackS.card,
-              stackS.frontCard,
-              {
-                borderTopColor: cfg.color,
-                transform: [{ translateX }],
-              },
-            ]}
-          >
-            {/* Bande accent */}
-            <View style={[stackS.accentStripe, { backgroundColor: cfg.color }]} />
-
-            {/* Header */}
-            <View style={stackS.cardHeader}>
-              <View style={[stackS.flagBox, { backgroundColor: cfg.bg }]}>
-                <Text style={{ fontSize: 22 }}>{cfg.flag}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[stackS.cardCode, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-                <Text style={[stackS.cardName, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
-              </View>
-              <View style={stackS.navRow}>
-                <TouchableOpacity
-                  onPress={() => setActiveIdx((p) => Math.max(p - 1, 0))}
-                  style={[stackS.navBtn, { opacity: activeIdx === 0 ? 0.3 : 1 }]}
-                >
-                  <Ionicons name="chevron-back" size={12} color={cfg.color} />
-                </TouchableOpacity>
-                <Text style={[stackS.navCount, { color: cfg.color, fontFamily: T.font.mono }]}>
-                  {activeIdx + 1}/{total}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setActiveIdx((p) => Math.min(p + 1, total - 1))}
-                  style={[stackS.navBtn, { opacity: activeIdx === total - 1 ? 0.3 : 1 }]}
-                >
-                  <Ionicons name="chevron-forward" size={12} color={cfg.color} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Soldes */}
-            <View style={stackS.balRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={[stackS.balLabel, { fontFamily: T.font.sans }]}>TOTAL</Text>
-                <Text
-                  style={[stackS.balAmount, { color: cfg.colorDark, fontFamily: T.font.display }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.6}
-                >
-                  {fmtAmount(data.balance, cur)} <Text style={[stackS.balSymbol, { color: cfg.color }]}>{cfg.symbol}</Text>
-                </Text>
-              </View>
-              <View style={[stackS.availBox, { backgroundColor: cfg.bg }]}>
-                <Text style={[stackS.availLabel, { fontFamily: T.font.sans, color: cfg.colorDark }]}>Dispo</Text>
-                <Text style={[stackS.availAmount, { color: cfg.colorDark, fontFamily: T.font.mono }]}>
-                  {fmtAmount(available, cur)}
-                </Text>
-              </View>
-            </View>
-
-            {/* Dots indicateurs */}
-            <View style={stackS.dotsRow}>
-              {CURRENCIES_ORDER.map((_, i) => {
-                const c2 = T.currencies[CURRENCIES_ORDER[i] as keyof typeof T.currencies];
-                return (
-                  <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
-                    <View
-                      style={[
-                        stackS.dot,
-                        {
-                          width: i === activeIdx ? 18 : 5,
-                          backgroundColor: i === activeIdx ? cfg.color : T.borderMd,
-                        },
-                      ]}
-                    />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </Animated.View>
-        );
-      })()}
+      <View style={mcS.right}>
+        <Text style={[mcS.balLabel, { fontFamily: T.font.sans }]}>SOLDE</Text>
+        <Text
+          style={[mcS.balAmount, { color: cfg.colorDark, fontFamily: T.font.display }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.7}
+        >
+          {fmtAmount(balance, currency)}{" "}
+          <Text style={{ fontSize: 11, fontWeight: "700", color: cfg.color }}>{cfg.symbol}</Text>
+        </Text>
+        <View style={[mcS.availPill, { backgroundColor: cfg.bg }]}>
+          <Text style={[mcS.availTxt, { color: cfg.colorDark, fontFamily: T.font.mono }]}>
+            Dispo · {fmtAmount(available, currency)}
+          </Text>
+        </View>
+      </View>
     </View>
   );
 }
 
-const stackS = StyleSheet.create({
-  wrapper: {
-    marginTop: 18,
-    height: STACK_CARD_H + 26,
-    alignItems: "center",
-    justifyContent: "flex-end",
-  },
+const mcS = StyleSheet.create({
   card: {
-    width: STACK_CARD_W,
-    height: STACK_CARD_H,
-    backgroundColor: "rgba(255,255,255,0.97)",
-    borderRadius: T.radius.xl,
+    width: CARD_W,
+    height: 76,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 16,
     borderWidth: 1,
-    borderTopWidth: 3,
-    borderColor: "rgba(255,255,255,0.4)",
-    padding: 14,
+    borderColor: "rgba(255,255,255,0.28)",
+    flexDirection: "row",
+    alignItems: "center",
     overflow: "hidden",
-    shadowColor: "#0A2FA8",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.28,
-    shadowRadius: 20,
-    elevation: 14,
+    paddingRight: 14,
   },
-  frontCard: {
-    zIndex: 20,
-    position: "relative",
-    top: 0,
+  stripe: {
+    width: 4,
+    height: "100%",
+    borderRadius: 2,
+    marginRight: 12,
+    opacity: 0.85,
   },
-  accentStripe: {
-    position: "absolute",
-    top: 0, left: 0, right: 0,
-    height: 60,
-    opacity: 0.05,
-  },
-  peekStripe: {
-    position: "absolute",
-    top: 0, left: 0, right: 0,
-    height: 3,
-    opacity: 0.6,
-  },
-  peekRow: {
+  left: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingTop: 12,
-    paddingHorizontal: 14,
-  },
-  peekFlag: { fontSize: 18 },
-  peekCode: { fontSize: 13, fontWeight: "900", letterSpacing: 1.5 },
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 12,
+    gap: 9,
+    flex: 1,
   },
   flagBox: {
-    width: 40, height: 40, borderRadius: 12,
-    justifyContent: "center", alignItems: "center",
-  },
-  cardCode: { fontSize: 13, fontWeight: "900", letterSpacing: 1.5 },
-  cardName: { fontSize: 11, color: T.inkSub, marginTop: 1 },
-  navRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  navBtn: {
-    width: 24, height: 24, borderRadius: 7,
-    backgroundColor: "rgba(0,0,0,0.05)",
-    justifyContent: "center", alignItems: "center",
-  },
-  navCount: { fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
-  balRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  balLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 1.6, color: T.inkMuted, marginBottom: 2 },
-  balAmount: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
-  balSymbol: { fontSize: 14, fontWeight: "700" },
-  availBox: {
+    width: 34, height: 34,
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    justifyContent: "center",
     alignItems: "center",
-    minWidth: 72,
   },
-  availLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 1.2, marginBottom: 2 },
-  availAmount: { fontSize: 14, fontWeight: "700" },
-  dotsRow: { flexDirection: "row", gap: 4, marginTop: 10, alignItems: "center" },
-  dot: { height: 5, borderRadius: 99 },
+  code: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2, color: T.white },
+  name: { fontSize: 9, color: "rgba(255,255,255,0.65)", marginTop: 1 },
+  right: {
+    alignItems: "flex-end",
+  },
+  balLabel: {
+    fontSize: 8, fontWeight: "800",
+    letterSpacing: 1.4,
+    color: "rgba(255,255,255,0.55)",
+    marginBottom: 1,
+  },
+  balAmount: {
+    fontSize: 18, fontWeight: "700",
+    color: T.white,
+    letterSpacing: -0.3,
+  },
+  availPill: {
+    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    marginTop: 3,
+  },
+  availTxt: {
+    fontSize: 9, fontWeight: "700",
+  },
 });
 
-// ─── Hero (forme capture 3 — grand arrondi bas centré) ────
-const HERO_CURVE = 56;
+// ─── Swipeable Currency Carousel ──────────────────────────
+function CurrencyCarousel({ wallets }: { wallets: any[] }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const total = CURRENCIES_ORDER.length;
+
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 10));
+    if (idx !== activeIdx) setActiveIdx(idx);
+  };
+
+  return (
+    <View style={ccS.wrapper}>
+      <ScrollView
+        horizontal
+        pagingEnabled={false}
+        snapToInterval={CARD_W + 10}
+        decelerationRate="fast"
+        showsHorizontalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        contentContainerStyle={ccS.scrollContent}
+      >
+        {CURRENCIES_ORDER.map((cur) => (
+          <View key={cur} style={{ marginRight: 10 }}>
+            <MiniCurrencyCard currency={cur} wallets={wallets} />
+          </View>
+        ))}
+      </ScrollView>
+
+      {/* Dots indicateurs */}
+      <View style={ccS.dotsRow}>
+        {CURRENCIES_ORDER.map((_, i) => (
+          <View
+            key={i}
+            style={[
+              ccS.dot,
+              {
+                width: i === activeIdx ? 16 : 4,
+                backgroundColor: i === activeIdx
+                  ? "rgba(255,255,255,0.9)"
+                  : "rgba(255,255,255,0.3)",
+              },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+const ccS = StyleSheet.create({
+  wrapper: {
+    marginTop: 12,
+    paddingLeft: 20,
+  },
+  scrollContent: {
+    paddingRight: 20,
+  },
+  dotsRow: {
+    flexDirection: "row",
+    gap: 4,
+    marginTop: 10,
+    alignItems: "center",
+    paddingLeft: 4,
+  },
+  dot: {
+    height: 4,
+    borderRadius: 99,
+  },
+});
+
+// ─── Hero Compact (violet, forme capture 2) ───────────────
+const HERO_RADIUS = 32;
 
 function DashHero({
   animValue,
@@ -419,18 +333,18 @@ function DashHero({
         {
           opacity: animValue,
           transform: [{
-            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-24, 0] }),
+            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }),
           }],
         },
       ]}
     >
       <LinearGradient
-        colors={["#2461FF", "#1340D4", "#0D2FA8"]}
+        colors={["#6366F1", "#4F46E5", "#3730A3"]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={heroS.gradient}
       >
-        {/* Décos géométriques */}
+        {/* Décos géométriques subtiles */}
         <View style={heroS.deco1} />
         <View style={heroS.deco2} />
 
@@ -442,28 +356,27 @@ function DashHero({
               <Text style={[heroS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
             </View>
             <Text style={[heroS.title, { fontFamily: T.font.display }]}>
-              {user?.firstName ? user.firstName : "Console"}
+              {user?.firstName ?? "Console"}
             </Text>
             <Text style={[heroS.sub, { fontFamily: T.font.subtitle }]}>
-              Direct Transf'air™ · Trésorerie
+              Trésorerie · Direct Transf'air™
             </Text>
           </View>
           <View style={heroS.btns}>
             <TouchableOpacity style={heroS.btn} onPress={onRefresh}>
-              <Ionicons name="refresh" size={17} color={T.white} />
+              <Ionicons name="refresh" size={16} color={T.white} />
             </TouchableOpacity>
             <TouchableOpacity style={heroS.btn} onPress={onNotif}>
-              <Ionicons name="notifications" size={17} color={T.white} />
+              <Ionicons name="notifications" size={16} color={T.white} />
               <View style={heroS.notifDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Stack cartes */}
-        <CurrencyStack wallets={wallets} />
+        {/* Cartes devises swipeables */}
+        <CurrencyCarousel wallets={wallets} />
 
-        {/* Espace bas pour laisser respirer avant l'arrondi */}
-        <View style={{ height: 32 }} />
+        <View style={{ height: 20 }} />
       </LinearGradient>
 
       {/* Coins concaves pageBg */}
@@ -476,70 +389,70 @@ function DashHero({
 const heroS = StyleSheet.create({
   outer: {
     zIndex: 10,
-    shadowColor: "#0A2FA8",
-    shadowOffset: { width: 0, height: 18 },
-    shadowOpacity: 0.42,
-    shadowRadius: 40,
-    elevation: 26,
+    shadowColor: "#3730A3",
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.35,
+    shadowRadius: 30,
+    elevation: 22,
   },
   gradient: {
-    borderBottomLeftRadius: HERO_CURVE,
-    borderBottomRightRadius: HERO_CURVE,
+    borderBottomLeftRadius: HERO_RADIUS,
+    borderBottomRightRadius: HERO_RADIUS,
     overflow: "hidden",
-    paddingBottom: 0,
   },
   deco1: {
-    position: "absolute", width: 260, height: 260, borderRadius: 130,
-    backgroundColor: "rgba(255,255,255,0.06)", top: -80, right: -60,
+    position: "absolute", width: 200, height: 200, borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -40,
   },
   deco2: {
-    position: "absolute", width: 140, height: 140, borderRadius: 70,
-    backgroundColor: "rgba(255,255,255,0.04)", bottom: 30, left: -30,
+    position: "absolute", width: 100, height: 100, borderRadius: 50,
+    backgroundColor: "rgba(255,255,255,0.04)", bottom: 20, left: -20,
   },
   topBar: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    paddingHorizontal: 22,
-    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 16 : 16,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 14 : 14,
+    paddingBottom: 4,
   },
   badge: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 7, paddingHorizontal: 9, paddingVertical: 4,
-    alignSelf: "flex-start", marginBottom: 8,
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    alignSelf: "flex-start", marginBottom: 6,
   },
-  badgeDot: { width: 6, height: 6, borderRadius: 99, backgroundColor: "#4ADE80" },
-  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 9, fontWeight: "900", letterSpacing: 1.4 },
-  title: { color: T.white, fontSize: 26, fontWeight: "700", letterSpacing: -0.3 },
-  sub: { color: "rgba(255,255,255,0.65)", fontSize: 12, marginTop: 2 },
-  btns: { flexDirection: "row", gap: 8, paddingTop: 4 },
+  badgeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
+  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 8, fontWeight: "900", letterSpacing: 1.4 },
+  title: { color: T.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+  sub: { color: "rgba(255,255,255,0.6)", fontSize: 11, marginTop: 1 },
+  btns: { flexDirection: "row", gap: 8, paddingTop: 2 },
   btn: {
-    width: 40, height: 40, borderRadius: 12,
+    width: 36, height: 36, borderRadius: 11,
     backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
     justifyContent: "center", alignItems: "center",
   },
   notifDot: {
-    position: "absolute", top: 8, right: 8,
-    width: 7, height: 7, borderRadius: 99,
-    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#1240D6",
+    position: "absolute", top: 7, right: 7,
+    width: 6, height: 6, borderRadius: 99,
+    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#4F46E5",
   },
   cornerL: {
     position: "absolute", bottom: 0, left: 0,
-    width: HERO_CURVE, height: HERO_CURVE,
+    width: HERO_RADIUS, height: HERO_RADIUS,
     backgroundColor: T.pageBg,
-    borderTopRightRadius: HERO_CURVE,
+    borderTopRightRadius: HERO_RADIUS,
   },
   cornerR: {
     position: "absolute", bottom: 0, right: 0,
-    width: HERO_CURVE, height: HERO_CURVE,
+    width: HERO_RADIUS, height: HERO_RADIUS,
     backgroundColor: T.pageBg,
-    borderTopLeftRadius: HERO_CURVE,
+    borderTopLeftRadius: HERO_RADIUS,
   },
 });
 
-// ─── Stat Strip (3 indicateurs en ligne compacte) ─────────
+// ─── Stat Strip ───────────────────────────────────────────
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
     { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" },
@@ -585,7 +498,7 @@ const ssS = StyleSheet.create({
   lbl: { fontSize: 8, color: T.inkMuted, fontWeight: "800", letterSpacing: 0.9, textAlign: "center" },
 });
 
-// ─── Action Grid (2 colonnes compactes) ───────────────────
+// ─── Action Grid ──────────────────────────────────────────
 function ActionGrid({ actions }: { actions: any[] }) {
   return (
     <View style={agS.grid}>
@@ -637,7 +550,7 @@ const agS = StyleSheet.create({
   },
 });
 
-// ─── Client Card (compacte) ───────────────────────────────
+// ─── Client Card ─────────────────────────────────────────
 function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
   const statusColor = T.statusColors[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
   return (
@@ -796,18 +709,18 @@ export default function SuperAdminDashboard() {
   }), [clients]);
 
   const actions = useMemo(() => [
-    { title: "Trésorerie",    subtitle: "Vue globale",   icon: "wallet-outline",        color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux & Devises", subtitle: "5 devises",   icon: "trending-up-outline",   color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Transactions",  subtitle: "Audit temps réel", icon: "analytics-outline", color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs",  subtitle: "Accès & Rôles", icon: "people-outline",       color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
+    { title: "Trésorerie",     subtitle: "Vue globale",       icon: "wallet-outline",      color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
+    { title: "Taux & Devises", subtitle: "5 devises",         icon: "trending-up-outline", color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
+    { title: "Transactions",   subtitle: "Audit temps réel",  icon: "analytics-outline",   color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs",   subtitle: "Accès & Rôles",     icon: "people-outline",      color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
   ], [router]);
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor={T.blueDeep} barStyle="light-content" />
+      <StatusBar backgroundColor="#3730A3" barStyle="light-content" />
 
       <View style={s.screen}>
-        {/* HERO */}
+        {/* HERO COMPACT */}
         <DashHero
           animValue={headerAnim}
           user={user}
@@ -845,14 +758,10 @@ export default function SuperAdminDashboard() {
                 transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
               }}
             >
-              {/* Stats compactes */}
               <StatStrip stats={stats} />
-
-              {/* Actions */}
               <SH dot={T.blue} label="PILOTAGE RÉSEAU" />
               <ActionGrid actions={actions} />
 
-              {/* Recherche */}
               <View style={s.searchBox}>
                 <Ionicons name="search" size={15} color={T.inkMuted} />
                 <TextInput
@@ -871,7 +780,6 @@ export default function SuperAdminDashboard() {
                 )}
               </View>
 
-              {/* Header liste */}
               <SH
                 dot={T.green}
                 label={`CLIENTS SAAS · ${filtered.length}`}
@@ -923,13 +831,10 @@ export default function SuperAdminDashboard() {
   );
 }
 
-// ─── Styles globaux ───────────────────────────────────────
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: T.pageBg },
   screen: { flex: 1, backgroundColor: T.pageBg },
-
   list: { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
-
   searchBox: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: T.surface,
