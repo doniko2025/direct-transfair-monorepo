@@ -209,7 +209,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await setStorage(USER_KEY, JSON.stringify(enrichedUser));
         return;
       }
-      await login({ email: data.email, password: (data as any).password });
+      // ✅
+await login({ identifier: data.email ?? data.phone ?? "", password: data.password });
     } catch (e: unknown) {
       throw e;
     } finally {

@@ -502,34 +502,35 @@ class API {
    * Utilisé si le backend n'a pas encore le flow en 2 étapes
    */
   async login(data: LoginPayload): Promise<LoginResponse> {
-    this.token = null;
-    const res = await this.http.post<LoginResponse>("/auth/login", data);
+  this.token = null;
+  // ✅ Remapper identifier → email pour le backend
+  const payload = { email: data.identifier, password: data.password };
+  const res = await this.http.post<LoginResponse>("/auth/login", payload);
 
-    if (res.data?.access_token) {
-      this.token = res.data.access_token;
-      await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, res.data.access_token);
+  if (res.data?.access_token) {
+    this.token = res.data.access_token;
+    await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, res.data.access_token);
 
-      if (res.data.refresh_token) {
-        this.refreshToken = res.data.refresh_token;
-        await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, res.data.refresh_token);
-      }
-
-      if (res.data?.user?.client?.code) {
-        await this.setTenant(res.data.user.client.code);
-      }
+    if (res.data.refresh_token) {
+      this.refreshToken = res.data.refresh_token;
+      await AsyncStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, res.data.refresh_token);
     }
 
-    return res.data;
-  }
-
-  async logout(): Promise<void> {
-    try {
-      await this.http.post("/auth/logout");
-    } catch { /* noop */ } finally {
-      this.clearTokens();
+    if (res.data?.user?.client?.code) {
+      await this.setTenant(res.data.user.client.code);
     }
   }
 
+  return res.data;
+}
+
+async logout(): Promise<void> {
+  try {
+    await this.http.post("/auth/logout");
+  } catch { /* noop */ } finally {
+    this.clearTokens();
+  }
+}
   async getMe(): Promise<AuthUser> {
     const res = await this.http.get<AuthUser>("/auth/me");
     if (res.data?.client?.code) await this.setTenant(res.data.client.code);
