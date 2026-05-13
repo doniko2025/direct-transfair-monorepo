@@ -1,10 +1,11 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v8.0 — Direct Transf'air
-// ✅ Hero compact violet (capture 2) — max ~38% écran
-// ✅ Cartes devises mini swipeables au doigt (ScrollView natif)
-// ✅ Arrondi bas prononcé
-// ✅ Reste identique au v7 (stats, actions, clients)
+// SUPER ADMIN DASHBOARD v9.0 — Direct Transf'air
+// ✅ Hero ultra-compact forme capture 2 (violet plein + blanc qui remonte)
+// ✅ Hero max ~30% écran
+// ✅ Cartes devises nano swipeables au doigt (ScrollView natif, snap)
+// ✅ Arrondi bas prononcé + coins concaves
+// ✅ Stats, actions, clients identiques v8
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -38,10 +39,10 @@ const { width: SW } = Dimensions.get("window");
 
 // ─── Design Tokens ────────────────────────────────────────
 const T = {
-  // Hero violet — capture 2
-  heroTop:    "#5B5BD6",
-  heroMid:    "#4747C2",
-  heroBot:    "#3636A8",
+  // Hero violet — identique capture 2
+  heroA: "#5B5BD6",
+  heroB: "#4848C8",
+  heroC: "#3636A8",
 
   blue:     "#1956F0",
   blueDark: "#1240D6",
@@ -68,14 +69,14 @@ const T = {
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
 
-  white:    "#FFFFFF",
+  white: "#FFFFFF",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#5B5BD6", colorDark: "#3636A8", bg: "rgba(91,91,214,0.12)", name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "rgba(22,163,74,0.12)",  name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "rgba(217,119,6,0.12)",  name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "rgba(220,38,38,0.12)",  name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#A855F7", colorDark: "#7C3AED", bg: "rgba(168,85,247,0.12)", name: "Livre Sterling" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#818CF8", colorDark: "#4F46E5", bg: "rgba(255,255,255,0.14)", name: "Euro" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#34D399", colorDark: "#059669", bg: "rgba(255,255,255,0.14)", name: "Dollar US" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#FCD34D", colorDark: "#D97706", bg: "rgba(255,255,255,0.14)", name: "Franc CFA" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#FCA5A5", colorDark: "#DC2626", bg: "rgba(255,255,255,0.14)", name: "Franc Guinéen" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#C4B5FD", colorDark: "#7C3AED", bg: "rgba(255,255,255,0.14)", name: "Livre Sterling" },
   },
 
   statusColors: {
@@ -110,11 +111,21 @@ const T = {
       shadowRadius: 10,
       elevation: 4,
     },
+    hero: {
+      shadowColor: "#3730A3",
+      shadowOffset: { width: 0, height: 18 },
+      shadowOpacity: 0.3,
+      shadowRadius: 28,
+      elevation: 24,
+    },
   },
 };
 
 const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
-const CARD_W = SW - 80; // largeur d'une mini-carte devise
+
+// Nano card dimensions — beaucoup plus petites
+const NANO_W = SW * 0.52; // ~52% largeur écran
+const NANO_H = 62;
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -136,150 +147,143 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── Mini Currency Card (swipeable) ──────────────────────
-function MiniCurrencyCard({ currency, wallets }: { currency: string; wallets: any[] }) {
+// ─── Nano Currency Card ────────────────────────────────────
+// Petite, compacte, glassmorphism sur fond violet
+function NanoCurrencyCard({ currency, wallets }: { currency: string; wallets: any[] }) {
   const cfg = T.currencies[currency as keyof typeof T.currencies];
   const w = wallets.find((x) => x.currency === currency);
-  const balance  = toNum(w?.balance);
-  const reserved = toNum(w?.reservedBalance);
+  const balance   = toNum(w?.balance);
+  const reserved  = toNum(w?.reservedBalance);
   const available = balance - reserved;
 
   return (
-    <View style={mcS.card}>
-      {/* Bande couleur gauche */}
-      <View style={[mcS.stripe, { backgroundColor: cfg.color }]} />
+    <View style={ncS.card}>
+      {/* Fond glass */}
+      <View style={[ncS.glass, { borderColor: `${cfg.color}40` }]}>
+        {/* Ligne haut colorée */}
+        <View style={[ncS.topBar, { backgroundColor: cfg.color }]} />
 
-      <View style={mcS.left}>
-        <View style={[mcS.flagBox, { backgroundColor: cfg.bg }]}>
-          <Text style={{ fontSize: 16 }}>{cfg.flag}</Text>
-        </View>
-        <View>
-          <Text style={[mcS.code, { color: cfg.colorDark, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-          <Text style={[mcS.name, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
-        </View>
-      </View>
+        <View style={ncS.inner}>
+          {/* Gauche : flag + codes */}
+          <View style={ncS.left}>
+            <Text style={{ fontSize: 14, lineHeight: 18 }}>{cfg.flag}</Text>
+            <View>
+              <Text style={[ncS.code, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
+              <Text style={[ncS.symb, { fontFamily: T.font.subtitle }]}>{cfg.symbol}</Text>
+            </View>
+          </View>
 
-      <View style={mcS.right}>
-        <Text style={[mcS.balLabel, { fontFamily: T.font.sans }]}>SOLDE</Text>
-        <Text
-          style={[mcS.balAmount, { color: cfg.colorDark, fontFamily: T.font.display }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.7}
-        >
-          {fmtAmount(balance, currency)}{" "}
-          <Text style={{ fontSize: 11, fontWeight: "700", color: cfg.color }}>{cfg.symbol}</Text>
-        </Text>
-        <View style={[mcS.availPill, { backgroundColor: cfg.bg }]}>
-          <Text style={[mcS.availTxt, { color: cfg.colorDark, fontFamily: T.font.mono }]}>
-            Dispo · {fmtAmount(available, currency)}
-          </Text>
+          {/* Droite : montant */}
+          <View style={ncS.right}>
+            <Text
+              style={[ncS.amount, { color: T.white, fontFamily: T.font.display }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.65}
+            >
+              {fmtAmount(balance, currency)}
+            </Text>
+            <Text style={[ncS.dispo, { color: cfg.color, fontFamily: T.font.mono }]} numberOfLines={1}>
+              ↗ {fmtAmount(available, currency)}
+            </Text>
+          </View>
         </View>
       </View>
     </View>
   );
 }
 
-const mcS = StyleSheet.create({
+const ncS = StyleSheet.create({
   card: {
-    width: CARD_W,
-    height: 76,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: 16,
+    width: NANO_W,
+    height: NANO_H,
+    marginRight: 8,
+  },
+  glass: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.28)",
+    overflow: "hidden",
+  },
+  topBar: {
+    height: 2.5,
+    width: "100%",
+    opacity: 0.9,
+  },
+  inner: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    overflow: "hidden",
-    paddingRight: 14,
-  },
-  stripe: {
-    width: 4,
-    height: "100%",
-    borderRadius: 2,
-    marginRight: 12,
-    opacity: 0.85,
+    justifyContent: "space-between",
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    gap: 6,
   },
   left: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
-    flex: 1,
+    gap: 7,
   },
-  flagBox: {
-    width: 34, height: 34,
-    borderRadius: 10,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  code: { fontSize: 12, fontWeight: "900", letterSpacing: 1.2, color: T.white },
-  name: { fontSize: 9, color: "rgba(255,255,255,0.65)", marginTop: 1 },
+  code: { fontSize: 11, fontWeight: "900", letterSpacing: 1.1 },
+  symb: { fontSize: 8, color: "rgba(255,255,255,0.5)", marginTop: 1 },
   right: {
+    flex: 1,
     alignItems: "flex-end",
   },
-  balLabel: {
-    fontSize: 8, fontWeight: "800",
-    letterSpacing: 1.4,
-    color: "rgba(255,255,255,0.55)",
-    marginBottom: 1,
+  amount: {
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: -0.4,
+    maxWidth: NANO_W * 0.52,
   },
-  balAmount: {
-    fontSize: 18, fontWeight: "700",
-    color: T.white,
-    letterSpacing: -0.3,
-  },
-  availPill: {
-    borderRadius: 6,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    marginTop: 3,
-  },
-  availTxt: {
-    fontSize: 9, fontWeight: "700",
+  dispo: {
+    fontSize: 8,
+    fontWeight: "700",
+    marginTop: 2,
+    opacity: 0.85,
   },
 });
 
-// ─── Swipeable Currency Carousel ──────────────────────────
-function CurrencyCarousel({ wallets }: { wallets: any[] }) {
+// ─── Swipeable Nano Carousel (scroll natif au doigt) ──────
+function NanoCarousel({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
-  const total = CURRENCIES_ORDER.length;
+  const SNAP = NANO_W + 8;
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 10));
-    if (idx !== activeIdx) setActiveIdx(idx);
+    const idx = Math.round(e.nativeEvent.contentOffset.x / SNAP);
+    if (idx !== activeIdx) setActiveIdx(Math.max(0, Math.min(idx, CURRENCIES_ORDER.length - 1)));
   };
 
   return (
-    <View style={ccS.wrapper}>
+    <View style={ncc.wrap}>
       <ScrollView
         horizontal
         pagingEnabled={false}
-        snapToInterval={CARD_W + 10}
+        snapToInterval={SNAP}
+        snapToAlignment="start"
         decelerationRate="fast"
         showsHorizontalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        contentContainerStyle={ccS.scrollContent}
+        contentContainerStyle={ncc.content}
+        bounces={false}
       >
         {CURRENCIES_ORDER.map((cur) => (
-          <View key={cur} style={{ marginRight: 10 }}>
-            <MiniCurrencyCard currency={cur} wallets={wallets} />
-          </View>
+          <NanoCurrencyCard key={cur} currency={cur} wallets={wallets} />
         ))}
       </ScrollView>
 
-      {/* Dots indicateurs */}
-      <View style={ccS.dotsRow}>
+      {/* Dots minimalistes */}
+      <View style={ncc.dots}>
         {CURRENCIES_ORDER.map((_, i) => (
           <View
             key={i}
             style={[
-              ccS.dot,
+              ncc.dot,
               {
-                width: i === activeIdx ? 16 : 4,
-                backgroundColor: i === activeIdx
-                  ? "rgba(255,255,255,0.9)"
-                  : "rgba(255,255,255,0.3)",
+                width: i === activeIdx ? 14 : 4,
+                opacity: i === activeIdx ? 0.9 : 0.3,
               },
             ]}
           />
@@ -289,29 +293,27 @@ function CurrencyCarousel({ wallets }: { wallets: any[] }) {
   );
 }
 
-const ccS = StyleSheet.create({
-  wrapper: {
-    marginTop: 12,
-    paddingLeft: 20,
-  },
-  scrollContent: {
-    paddingRight: 20,
-  },
-  dotsRow: {
+const ncc = StyleSheet.create({
+  wrap: { paddingLeft: 18, marginTop: 10 },
+  content: { paddingRight: 18 },
+  dots: {
     flexDirection: "row",
-    gap: 4,
-    marginTop: 10,
     alignItems: "center",
-    paddingLeft: 4,
+    gap: 4,
+    paddingLeft: 3,
+    marginTop: 8,
+    height: 8,
   },
   dot: {
-    height: 4,
+    height: 3,
     borderRadius: 99,
+    backgroundColor: T.white,
   },
 });
 
-// ─── Hero Compact (violet, forme capture 2) ───────────────
-const HERO_RADIUS = 32;
+// ─── Hero Compact — forme capture 2 ───────────────────────
+// Violet plein, fond blanc remonte par-dessous avec coins arrondis
+const HERO_CURVE = 28;
 
 function DashHero({
   animValue,
@@ -326,145 +328,155 @@ function DashHero({
   onRefresh: () => void;
   onNotif: () => void;
 }) {
+  const statusBarH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
+
   return (
     <Animated.View
       style={[
-        heroS.outer,
+        hS.outer,
         {
           opacity: animValue,
           transform: [{
-            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }),
+            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }),
           }],
         },
       ]}
     >
       <LinearGradient
-        colors={["#6366F1", "#4F46E5", "#3730A3"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={heroS.gradient}
+        colors={["#5B5BD6", "#4545BE", "#3232A0"]}
+        start={{ x: 0.1, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
+        style={[hS.gradient, { paddingTop: statusBarH + 10 }]}
       >
-        {/* Décos géométriques subtiles */}
-        <View style={heroS.deco1} />
-        <View style={heroS.deco2} />
+        {/* Cercles déco subtils */}
+        <View style={hS.circle1} />
+        <View style={hS.circle2} />
+        <View style={hS.circle3} />
 
-        {/* Top bar */}
-        <View style={heroS.topBar}>
-          <View>
-            <View style={heroS.badge}>
-              <View style={heroS.badgeDot} />
-              <Text style={[heroS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
+        {/* ── Top bar ── */}
+        <View style={hS.topBar}>
+          {/* Gauche */}
+          <View style={hS.topLeft}>
+            <View style={hS.adminBadge}>
+              <View style={hS.activeDot} />
+              <Text style={[hS.badgeLabel, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
             </View>
-            <Text style={[heroS.title, { fontFamily: T.font.display }]}>
+            <Text style={[hS.name, { fontFamily: T.font.display }]}>
               {user?.firstName ?? "Console"}
             </Text>
-            <Text style={[heroS.sub, { fontFamily: T.font.subtitle }]}>
-              Trésorerie · Direct Transf'air™
+            <Text style={[hS.tagline, { fontFamily: T.font.subtitle }]}>
+              Direct Transf'air™ · Trésorerie
             </Text>
           </View>
-          <View style={heroS.btns}>
-            <TouchableOpacity style={heroS.btn} onPress={onRefresh}>
-              <Ionicons name="refresh" size={16} color={T.white} />
+
+          {/* Droite — boutons */}
+          <View style={hS.btns}>
+            <TouchableOpacity style={hS.iconBtn} onPress={onRefresh} activeOpacity={0.7}>
+              <Ionicons name="refresh-outline" size={15} color={T.white} />
             </TouchableOpacity>
-            <TouchableOpacity style={heroS.btn} onPress={onNotif}>
-              <Ionicons name="notifications" size={16} color={T.white} />
-              <View style={heroS.notifDot} />
+            <TouchableOpacity style={hS.iconBtn} onPress={onNotif} activeOpacity={0.7}>
+              <Ionicons name="notifications-outline" size={15} color={T.white} />
+              <View style={hS.redDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Cartes devises swipeables */}
-        <CurrencyCarousel wallets={wallets} />
+        {/* ── Nano carousel devises ── */}
+        <NanoCarousel wallets={wallets} />
 
-        <View style={{ height: 20 }} />
+        {/* Espace bas avant la courbe */}
+        <View style={{ height: 22 }} />
       </LinearGradient>
 
-      {/* Coins concaves pageBg */}
-      <View style={heroS.cornerL} />
-      <View style={heroS.cornerR} />
+      {/* Coins concaves pageBg — effet capture 2 */}
+      <View style={hS.cL} />
+      <View style={hS.cR} />
     </Animated.View>
   );
 }
 
-const heroS = StyleSheet.create({
+const hS = StyleSheet.create({
   outer: {
     zIndex: 10,
-    shadowColor: "#3730A3",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.35,
-    shadowRadius: 30,
-    elevation: 22,
+    ...T.shadow.hero,
   },
   gradient: {
-    borderBottomLeftRadius: HERO_RADIUS,
-    borderBottomRightRadius: HERO_RADIUS,
+    borderBottomLeftRadius: HERO_CURVE,
+    borderBottomRightRadius: HERO_CURVE,
     overflow: "hidden",
   },
-  deco1: {
-    position: "absolute", width: 200, height: 200, borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -40,
+  circle1: {
+    position: "absolute", width: 180, height: 180, borderRadius: 90,
+    backgroundColor: "rgba(255,255,255,0.06)", top: -50, right: -30,
   },
-  deco2: {
-    position: "absolute", width: 100, height: 100, borderRadius: 50,
-    backgroundColor: "rgba(255,255,255,0.04)", bottom: 20, left: -20,
+  circle2: {
+    position: "absolute", width: 80, height: 80, borderRadius: 40,
+    backgroundColor: "rgba(255,255,255,0.05)", bottom: 10, left: 10,
+  },
+  circle3: {
+    position: "absolute", width: 50, height: 50, borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.04)", top: 20, left: SW * 0.45,
   },
   topBar: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 14 : 14,
-    paddingBottom: 4,
+    paddingHorizontal: 18,
+    paddingBottom: 2,
   },
-  badge: {
+  topLeft: { flex: 1 },
+  adminBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
-    alignSelf: "flex-start", marginBottom: 6,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 5, paddingHorizontal: 7, paddingVertical: 3,
+    alignSelf: "flex-start", marginBottom: 5,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
   },
-  badgeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
-  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 8, fontWeight: "900", letterSpacing: 1.4 },
-  title: { color: T.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
-  sub: { color: "rgba(255,255,255,0.6)", fontSize: 11, marginTop: 1 },
-  btns: { flexDirection: "row", gap: 8, paddingTop: 2 },
-  btn: {
-    width: 36, height: 36, borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.13)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
+  activeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
+  badgeLabel: { color: "rgba(255,255,255,0.9)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
+  name: { color: T.white, fontSize: 20, fontWeight: "700", letterSpacing: -0.4 },
+  tagline: { color: "rgba(255,255,255,0.55)", fontSize: 10, marginTop: 1 },
+  btns: { flexDirection: "row", gap: 7, paddingTop: 2 },
+  iconBtn: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
     justifyContent: "center", alignItems: "center",
   },
-  notifDot: {
+  redDot: {
     position: "absolute", top: 7, right: 7,
     width: 6, height: 6, borderRadius: 99,
-    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#4F46E5",
+    backgroundColor: "#EF4444",
+    borderWidth: 1.5, borderColor: "#4545BE",
   },
-  cornerL: {
+  // Coins concaves — même couleur que le fond de la page
+  cL: {
     position: "absolute", bottom: 0, left: 0,
-    width: HERO_RADIUS, height: HERO_RADIUS,
+    width: HERO_CURVE, height: HERO_CURVE,
     backgroundColor: T.pageBg,
-    borderTopRightRadius: HERO_RADIUS,
+    borderTopRightRadius: HERO_CURVE,
   },
-  cornerR: {
+  cR: {
     position: "absolute", bottom: 0, right: 0,
-    width: HERO_RADIUS, height: HERO_RADIUS,
+    width: HERO_CURVE, height: HERO_CURVE,
     backgroundColor: T.pageBg,
-    borderTopLeftRadius: HERO_RADIUS,
+    borderTopLeftRadius: HERO_CURVE,
   },
 });
 
 // ─── Stat Strip ───────────────────────────────────────────
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
-    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" },
-    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" },
-    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" },
+    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" as const },
+    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" as const },
+    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" as const },
   ];
   return (
     <View style={ssS.row}>
       {items.map((it, idx) => (
         <View key={idx} style={[ssS.card, { borderLeftColor: it.color }]}>
           <View style={[ssS.iconBox, { backgroundColor: it.bg }]}>
-            <Ionicons name={it.icon as any} size={16} color={it.color} />
+            <Ionicons name={it.icon} size={16} color={it.color} />
           </View>
           <Text style={[ssS.val, { color: it.color, fontFamily: T.font.display }]}>{it.value}</Text>
           <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
@@ -653,8 +665,8 @@ export default function SuperAdminDashboard() {
 
   const runEntrance = useCallback(() => {
     Animated.stagger(120, [
-      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 4 }),
-      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 3 }),
+      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }),
+      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 2 }),
     ]).start();
   }, []);
 
@@ -717,10 +729,10 @@ export default function SuperAdminDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor="#3730A3" barStyle="light-content" />
+      <StatusBar backgroundColor="#3232A0" barStyle="light-content" />
 
       <View style={s.screen}>
-        {/* HERO COMPACT */}
+        {/* ── HERO COMPACT ── */}
         <DashHero
           animValue={headerAnim}
           user={user}
@@ -729,7 +741,7 @@ export default function SuperAdminDashboard() {
           onNotif={() => router.push("/(tabs)/admin/notifications")}
         />
 
-        {/* CONTENU SCROLLABLE */}
+        {/* ── CONTENU SCROLLABLE ── */}
         <FlatList
           data={filtered}
           keyExtractor={(i) => i.id}
