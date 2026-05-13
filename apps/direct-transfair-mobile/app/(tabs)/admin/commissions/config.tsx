@@ -1,8 +1,7 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/commissions/config.tsx
 // apps/direct-transfair-mobile/app/(tabs)/admin/commissions/config.tsx
 // =========================================================
-// COMMISSIONS CONFIG v4.0 — Direct Transf'air
-// Design: Thème dynamique — stats + historique + config
+// COMMISSIONS CONFIG v5.0 — Direct Transf'air
+// ✅ Thème CLAIR — zéro dark/sombre
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -12,30 +11,39 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 
-const ROLE_THEMES = {
-  SUPER_ADMIN:   { g1: "#0A0A0F", g2: "#12121A", accent: "#D4A853" },
-  COMPANY_ADMIN: { g1: "#030B1A", g2: "#071224", accent: "#34D399" },
-  AGENT:         { g1: "#1A0E00", g2: "#211200", accent: "#F59E0B" },
-} as const;
-
 const T = {
-  ghost: "rgba(255,255,255,0.06)",
-  ghostMid: "rgba(255,255,255,0.10)",
-  white: "#FFFFFF",
-  dim: "#8A9BB5",
-  inkBorder: "rgba(255,255,255,0.08)",
-  amber: "#F59E0B",
-  green: "#22C55E",
-  radius: { sm: 10, md: 14, lg: 20 },
+  pageBg:   "#F2F4F8",
+  surface:  "#FFFFFF",
+  border:   "#E4E9F0",
+  borderMd: "#CDD5E0",
+  ink:      "#0F172A",
+  inkSub:   "#64748B",
+  inkMuted: "#94A3B8",
+  blue:     "#1956F0",
+  blueLt:   "#EEF2FF",
+  blueMd:   "#C7D5FF",
+  green:    "#16A34A",
+  greenLt:  "#DCFCE7",
+  amber:    "#D97706",
+  amberLt:  "#FEF3C7",
+  red:      "#DC2626",
+  redLt:    "#FEE2E2",
+  white:    "#FFFFFF",
+  radius: { sm: 8, md: 12, lg: 16, xl: 20 },
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    display:  Platform.select({ ios: "Georgia",     android: "serif",             default: "serif" }),
+    sans:     Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:     Platform.select({ ios: "Courier New", android: "monospace",          default: "monospace" }),
   },
+};
+
+const ROLE_ACCENT: Record<string, { color: string; bg: string }> = {
+  SUPER_ADMIN:   { color: T.blue,  bg: T.blueLt  },
+  COMPANY_ADMIN: { color: T.green, bg: T.greenLt },
+  AGENT:         { color: T.amber, bg: T.amberLt },
 };
 
 const PERIODS = [
@@ -57,45 +65,48 @@ function fmt(n: number): string {
   catch { return Math.round(n).toString(); }
 }
 
-// ─── Stats Card ───────────────────────────────────────────
-function StatCard({ label, value, currency = "XOF", icon, color }: any) {
+// ─── Stat Card ────────────────────────────────────────────
+function StatCard({ label, value, icon, color, bgColor }: {
+  label: string; value: number; icon: string; color: string; bgColor: string;
+}) {
   return (
-    <View style={stS.card}>
-      <View style={[stS.iconBox, { backgroundColor: `${color}15` }]}>
-        <Ionicons name={icon} size={16} color={color} />
+    <View style={[stS.card, { borderTopColor: color }]}>
+      <View style={[stS.iconBox, { backgroundColor: bgColor }]}>
+        <Ionicons name={icon as any} size={16} color={color} />
       </View>
       <Text style={[stS.value, { color, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
         {fmt(value)}
       </Text>
-      <Text style={[stS.currency, { fontFamily: T.font.mono }]}>{currency}</Text>
       <Text style={[stS.label, { fontFamily: T.font.sans }]}>{label}</Text>
     </View>
   );
 }
 const stS = StyleSheet.create({
   card: {
-    flex: 1, backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 16, alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder, gap: 4,
+    flex: 1, backgroundColor: T.surface, borderRadius: T.radius.lg,
+    padding: 14, alignItems: "center",
+    borderWidth: 1, borderTopWidth: 3, borderColor: T.border, gap: 4,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   iconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  value: { fontSize: 20, fontWeight: "800" },
-  currency: { color: T.dim, fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
-  label: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.8, textAlign: "center" },
+  value:   { fontSize: 20, fontWeight: "800" },
+  label:   { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 0.8, textAlign: "center", textTransform: "uppercase" },
 });
 
-// ─── TX Commission Row ────────────────────────────────────
-function CommissionRow({ item, accent }: { item: any; accent: string }) {
-  const amount = toNum(item.amount);
-  const fees = toNum(item.fees);
+// ─── Commission Row ────────────────────────────────────────
+function CommissionRow({ item, accent }: { item: any; accent: { color: string; bg: string } }) {
+  const amount     = toNum(item.amount);
+  const fees       = toNum(item.fees);
   const commission = toNum(item.myCommission ?? item.agencyCommission ?? 0);
 
   return (
     <View style={crS.row}>
       <View style={crS.left}>
-        <View style={[crS.dot, { backgroundColor: accent }]} />
+        <View style={[crS.colorBar, { backgroundColor: accent.color }]} />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[crS.origin, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.origin || "—"}</Text>
+          <Text style={[crS.origin, { fontFamily: T.font.sans }]} numberOfLines={1}>
+            {item.origin || item.reference || "—"}
+          </Text>
           <Text style={[crS.date, { fontFamily: T.font.sans }]}>
             {new Date(item.createdAt || item.date).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).replace(",", "")}
           </Text>
@@ -104,8 +115,8 @@ function CommissionRow({ item, accent }: { item: any; accent: string }) {
       <View style={crS.right}>
         <Text style={[crS.amount, { fontFamily: T.font.mono }]}>{fmt(amount)}</Text>
         <Text style={[crS.fees, { fontFamily: T.font.sans }]}>Frais: {fmt(fees)}</Text>
-        <View style={[crS.comPill, { backgroundColor: `${accent}15`, borderColor: `${accent}25` }]}>
-          <Text style={[crS.comTxt, { color: accent, fontFamily: T.font.mono }]}>+{fmt(commission)}</Text>
+        <View style={[crS.comPill, { backgroundColor: accent.bg, borderColor: `${accent.color}25` }]}>
+          <Text style={[crS.comTxt, { color: accent.color, fontFamily: T.font.mono }]}>+{fmt(commission)}</Text>
         </View>
       </View>
     </View>
@@ -114,37 +125,36 @@ function CommissionRow({ item, accent }: { item: any; accent: string }) {
 const crS = StyleSheet.create({
   row: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.inkBorder,
+    paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  left: { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 },
-  dot: { width: 4, height: 32, borderRadius: 99 },
-  origin: { color: T.white, fontSize: 13, fontWeight: "700", marginBottom: 2 },
-  date: { color: T.dim, fontSize: 10, fontWeight: "600" },
-  right: { alignItems: "flex-end", gap: 3, paddingLeft: 10 },
-  amount: { color: T.white, fontSize: 14, fontWeight: "800" },
-  fees: { color: T.dim, fontSize: 10, fontWeight: "600" },
-  comPill: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
-  },
-  comTxt: { fontSize: 11, fontWeight: "900" },
+  left:  { flex: 1, flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0 },
+  colorBar: { width: 4, height: 34, borderRadius: 99 },
+  origin:   { color: T.ink, fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  date:     { color: T.inkMuted, fontSize: 10, fontWeight: "600" },
+  right:    { alignItems: "flex-end", gap: 3, paddingLeft: 10 },
+  amount:   { color: T.ink, fontSize: 14, fontWeight: "800" },
+  fees:     { color: T.inkSub, fontSize: 10, fontWeight: "600" },
+  comPill:  { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1 },
+  comTxt:   { fontSize: 11, fontWeight: "900" },
 });
 
+// ─── Main Screen ──────────────────────────────────────────
 export default function AdminCommissionsScreen() {
-  const router = useRouter();
+  const router   = useRouter();
   const { user } = useAuth();
-  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
-  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
+  const role     = user?.role ?? "COMPANY_ADMIN";
+  const accent   = ROLE_ACCENT[role] ?? ROLE_ACCENT.COMPANY_ADMIN;
 
-  const [period, setPeriod] = useState("day");
+  const [period,  setPeriod]  = useState("day");
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalFees: 0, platformNet: 0, distributed: 0, count: 0 });
+  const [stats,   setStats]   = useState({ totalFees: 0, platformNet: 0, distributed: 0, count: 0 });
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.http.get(`/commissions/history?period=${period}`);
+      const res  = await api.http.get(`/commissions/history?period=${period}`);
       const data = Array.isArray(res.data) ? res.data : [];
       setHistory(data);
 
@@ -152,7 +162,7 @@ export default function AdminCommissionsScreen() {
       data.forEach((tx: any) => {
         const fees = toNum(tx.fees);
         const plat = toNum(tx.breakdown?.platform?.amount ?? 0);
-        totalFees += fees;
+        totalFees  += fees;
         platformNet += plat;
         distributed += fees - plat;
       });
@@ -164,162 +174,159 @@ export default function AdminCommissionsScreen() {
 
   useEffect(() => { void loadData(); }, [loadData]);
 
+  const pct = stats.totalFees > 0 ? Math.min((stats.platformNet / stats.totalFees) * 100, 100) : 0;
+
   return (
-    <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <SafeAreaView style={cs.safe}>
+      <StatusBar backgroundColor={T.surface} barStyle="dark-content" />
 
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Commissions</Text>
-            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
-              {stats.count} transaction{stats.count > 1 ? "s" : ""}
-            </Text>
-          </View>
-          <TouchableOpacity style={s.refreshBtn} onPress={() => void loadData()}>
-            <Ionicons name="refresh" size={20} color={theme.accent} />
-          </TouchableOpacity>
+      <View style={cs.header}>
+        <TouchableOpacity style={cs.backBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={22} color={T.ink} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[cs.headerTitle, { fontFamily: T.font.display }]}>Commissions</Text>
+          <Text style={[cs.headerSub, { color: accent.color, fontFamily: T.font.sans }]}>
+            {stats.count} transaction{stats.count > 1 ? "s" : ""}
+          </Text>
         </View>
+        <TouchableOpacity style={[cs.iconBtn, { backgroundColor: accent.bg }]} onPress={() => void loadData()}>
+          <Ionicons name="refresh" size={19} color={accent.color} />
+        </TouchableOpacity>
+      </View>
 
-        {/* Period filters */}
-        <ScrollView
-          horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.periods}
+      {/* Period filters */}
+      <ScrollView
+        horizontal showsHorizontalScrollIndicator={false}
+        contentContainerStyle={cs.periods}
+      >
+        {PERIODS.map((p) => {
+          const isActive = period === p.key;
+          return (
+            <TouchableOpacity
+              key={p.key}
+              style={[cs.periodPill, isActive && { backgroundColor: accent.bg, borderColor: `${accent.color}40` }]}
+              onPress={() => setPeriod(p.key)}
+            >
+              <Text style={[cs.periodTxt, { fontFamily: T.font.sans, color: isActive ? accent.color : T.inkSub }]}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator color={accent.color} size="large" />
+        </View>
+      ) : (
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
+          contentContainerStyle={cs.scroll}
+          showsVerticalScrollIndicator={false}
         >
-          {PERIODS.map((p) => {
-            const isActive = period === p.key;
-            return (
-              <TouchableOpacity
-                key={p.key}
-                style={[s.periodPill, isActive && { backgroundColor: `${theme.accent}20`, borderColor: `${theme.accent}40` }]}
-                onPress={() => setPeriod(p.key)}
-              >
-                <Text style={[s.periodTxt, { color: isActive ? theme.accent : T.dim, fontFamily: T.font.sans }]}>
-                  {p.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {loading ? (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <ActivityIndicator color={theme.accent} size="large" />
+          {/* Stats */}
+          <View style={cs.statsRow}>
+            <StatCard label="Total frais"  value={stats.totalFees}   icon="cash-outline"     color={accent.color}  bgColor={accent.bg} />
+            <StatCard label="Plateforme"   value={stats.platformNet}  icon="business-outline" color={T.blue}       bgColor={T.blueLt}  />
+            <StatCard label="Distribué"    value={stats.distributed}  icon="people-outline"   color={T.amber}      bgColor={T.amberLt} />
           </View>
-        ) : (
-          <Animated.ScrollView
-            style={{ opacity: fadeAnim }}
-            contentContainerStyle={s.scroll}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Stats */}
-            <View style={s.statsRow}>
-              <StatCard label="TOTAL FRAIS" value={stats.totalFees} icon="cash-outline" color={theme.accent} />
-              <StatCard label="PLATEFORME" value={stats.platformNet} icon="business-outline" color="#60A5FA" />
-              <StatCard label="DISTRIBUÉ" value={stats.distributed} icon="people-outline" color={T.amber} />
-            </View>
 
-            {/* Hero marge */}
-            <View style={[s.heroCard, { borderColor: `${theme.accent}20` }]}>
-              <View>
-                <Text style={[s.heroLabel, { fontFamily: T.font.sans }]}>MARGE NETTE PLATEFORME</Text>
-                <Text style={[s.heroAmount, { color: theme.accent, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
-                  {fmt(stats.platformNet)}
-                </Text>
-                <Text style={[s.heroCur, { color: theme.accent, fontFamily: T.font.mono }]}>XOF</Text>
+          {/* Hero marge nette */}
+          <View style={[cs.heroCard, { borderTopColor: accent.color }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[cs.heroLabel, { fontFamily: T.font.sans }]}>MARGE NETTE PLATEFORME</Text>
+              <Text
+                style={[cs.heroAmount, { color: accent.color, fontFamily: T.font.display }]}
+                numberOfLines={1} adjustsFontSizeToFit
+              >
+                {fmt(stats.platformNet)}
+              </Text>
+              <Text style={[cs.heroCur, { color: accent.color, fontFamily: T.font.mono }]}>XOF</Text>
+              {/* Barre progress */}
+              <View style={[cs.progBg, { backgroundColor: `${accent.color}12` }]}>
+                <View style={[cs.progFill, { width: `${pct}%` as any, backgroundColor: accent.color }]} />
               </View>
-              <View style={[s.heroProgress]}>
-                {stats.totalFees > 0 && (
-                  <View
-                    style={[
-                      s.heroProgressFill,
-                      {
-                        height: `${Math.min((stats.platformNet / stats.totalFees) * 100, 100)}%` as any,
-                        backgroundColor: theme.accent,
-                      },
-                    ]}
-                  />
-                )}
-              </View>
-            </View>
-
-            {/* Historique */}
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
-                DÉTAIL ({history.length} TRANSACTIONS)
+              <Text style={[cs.progLabel, { fontFamily: T.font.sans }]}>
+                {pct.toFixed(1)}% des frais totaux
               </Text>
             </View>
+          </View>
 
-            {history.length === 0 ? (
-              <View style={s.empty}>
-                <Ionicons name="bar-chart-outline" size={32} color={T.dim} />
-                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucune transaction sur cette période</Text>
-              </View>
-            ) : (
-              <View style={s.historyCard}>
-                {history.map((item, idx) => (
-                  <CommissionRow key={item.id ?? idx} item={item} accent={theme.accent} />
-                ))}
-              </View>
-            )}
+          {/* Historique */}
+          <View style={cs.sectionRow}>
+            <View style={[cs.sectionDot, { backgroundColor: accent.color }]} />
+            <Text style={[cs.sectionLabel, { fontFamily: T.font.sans }]}>
+              DÉTAIL ({history.length} TRANSACTIONS)
+            </Text>
+          </View>
 
-            <View style={{ height: 100 }} />
-          </Animated.ScrollView>
-        )}
-      </SafeAreaView>
-    </LinearGradient>
+          {history.length === 0 ? (
+            <View style={cs.empty}>
+              <Ionicons name="bar-chart-outline" size={32} color={T.inkMuted} />
+              <Text style={[cs.emptyTxt, { fontFamily: T.font.sans }]}>Aucune transaction sur cette période</Text>
+            </View>
+          ) : (
+            <View style={cs.historyCard}>
+              {history.map((item, idx) => (
+                <CommissionRow key={item.id ?? idx} item={item} accent={accent} />
+              ))}
+            </View>
+          )}
+
+          <View style={{ height: 100 }} />
+        </Animated.ScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
-const s = StyleSheet.create({
+const cs = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: T.pageBg },
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, gap: 14,
+    backgroundColor: T.surface,
+    paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, gap: 12,
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
-  headerTitle: { color: T.white, fontSize: 22, fontWeight: "700" },
+  backBtn: { width: 38, height: 38, borderRadius: 11, backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
+  headerTitle: { color: T.ink, fontSize: 20, fontWeight: "700" },
   headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
-  refreshBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
-  periods: { paddingHorizontal: 20, gap: 8, marginBottom: 16 },
+  iconBtn: { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
+
+  periods: { paddingHorizontal: 14, gap: 8, paddingVertical: 12 },
   periodPill: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: T.radius.md,
-    backgroundColor: T.ghost, borderWidth: 1, borderColor: T.inkBorder,
+    backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border,
   },
   periodTxt: { fontSize: 12, fontWeight: "800" },
-  scroll: { paddingHorizontal: 20 },
+
+  scroll: { padding: 14 },
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+
   heroCard: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 22, marginBottom: 20, borderWidth: 1,
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    padding: 20, marginBottom: 20,
+    borderWidth: 1, borderTopWidth: 3, borderColor: T.border,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
-  heroLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.2, marginBottom: 6 },
-  heroAmount: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5 },
-  heroCur: { fontSize: 11, fontWeight: "900", marginTop: 2 },
-  heroProgress: {
-    width: 6, height: 80, backgroundColor: T.ghost,
-    borderRadius: 99, overflow: "hidden", justifyContent: "flex-end",
-  },
-  heroProgressFill: { width: 6, borderRadius: 99 },
+  heroLabel:  { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.2, marginBottom: 6, textTransform: "uppercase" },
+  heroAmount: { fontSize: 34, fontWeight: "800", letterSpacing: -0.5, marginBottom: 4 },
+  heroCur:    { fontSize: 11, fontWeight: "900", marginBottom: 14 },
+  progBg:     { height: 6, borderRadius: 99, overflow: "hidden", marginBottom: 8 },
+  progFill:   { height: 6, borderRadius: 99 },
+  progLabel:  { fontSize: 10, color: T.inkSub, fontWeight: "700" },
+
   sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  sectionDot: { width: 6, height: 6, borderRadius: 99 },
+  sectionLabel: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase" },
+
   historyCard: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    paddingHorizontal: 16, borderWidth: 1, borderColor: T.inkBorder,
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    paddingHorizontal: 16, borderWidth: 1, borderColor: T.border,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
-  emptyTxt: { color: T.dim, fontSize: 13, fontWeight: "600" },
+  emptyTxt: { color: T.inkSub, fontSize: 13, fontWeight: "600" },
 });
