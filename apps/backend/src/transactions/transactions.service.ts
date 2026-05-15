@@ -1,8 +1,9 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.1
-// ✅ FIX: availableBalance lu depuis wallet Prisma (pas getOrCreateWallet)
-// ✅ FIX: debit/credit max 4 arguments (walletId, amount, description, txId?)
+// TRANSACTIONS SERVICE v4.2
+// ✅ FIX refillAgency: débite wallet clientId (société) et non userId (vide)
+// ✅ FIX: availableBalance lu depuis wallet Prisma
+// ✅ FIX: debit/credit max 4 arguments
 // =========================================================
 
 import {
@@ -144,7 +145,6 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
-    // ✅ FIX: récupérer le wallet puis lire availableBalance depuis Prisma
     const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
     const wallet = await getWalletAvailable(this.prisma, walletRef.id);
 
@@ -171,7 +171,6 @@ export class TransactionsService {
       });
     });
 
-    // ✅ FIX: max 4 args pour debit
     await this.walletsService.debit(wallet.id, amount, `Virement B2B ${proofReference}`, tx.id);
 
     if (admin.email) {
@@ -295,7 +294,6 @@ export class TransactionsService {
     const fees = amount.mul(new Prisma.Decimal(feeRate));
     const total = amount.plus(fees);
 
-    // ✅ FIX: lire availableBalance depuis Prisma directement (userWallet vient déjà de l'include)
     const available = Number(userWallet.balance) - Number(userWallet.reservedBalance);
     if (available < Number(total)) {
       throw new ForbiddenException(`Solde ${currency} insuffisant. Disponible : ${available}`);
@@ -334,7 +332,6 @@ export class TransactionsService {
       }
     }
 
-    // ✅ FIX: max 4 args
     await this.walletsService.debit(userWallet.id, Number(total), `Envoi ${transactionRef}`);
 
     if (recipientUser) {
@@ -408,7 +405,6 @@ export class TransactionsService {
     const currency = agencyWallet.currency;
     const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
 
-    // ✅ FIX: max 4 args
     await this.walletsService.debit(agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`);
     await this.walletsService.credit(clientWalletRef.id, Number(amountDec), `Dépôt agent`);
 
@@ -458,21 +454,35 @@ export class TransactionsService {
     return this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
   }
 
+  // ========================================================
+  // RECHARGE AGENCE — ✅ FIX : débite clientId, pas userId
+  // ========================================================
+
   async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF') {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!admin || !agency) throw new NotFoundException('Introuvable');
+    if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
-    const adminWalletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
+    // ✅ CORRECTION CLEF : wallet de la SOCIÉTÉ (clientId)
+    // treasury/admin/inject crédite getOrCreateWallet({ clientId }) → même wallet ici
+    const adminWalletRef = await this.walletsService.getOrCreateWallet({
+      clientId: admin.clientId,
+      currency,
+    });
     const adminWallet = await getWalletAvailable(this.prisma, adminWalletRef.id);
-    if (adminWallet.availableBalance < amount) throw new ForbiddenException('Solde Admin insuffisant');
+
+    if (adminWallet.availableBalance < amount) {
+      throw new ForbiddenException(
+        `Solde ${currency} insuffisant. Disponible : ${adminWallet.availableBalance}`,
+      );
+    }
 
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency });
 
     const txRef = `REFILL-${Date.now()}`;
 
     await this.prisma.$transaction(async () => {
-      // ✅ FIX: max 4 args
       await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name}`, txRef);
       await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge de l'admin`, txRef);
       await this.prisma.transaction.create({

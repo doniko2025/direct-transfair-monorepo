@@ -2,8 +2,8 @@
 // =========================================================
 // COMPANY ADMIN DASHBOARD — Direct Transf'air v5.0
 // Design: Saphir Premium — fond lavande, cartes blanches ombrées
-// Inspiré du design Grand Chef (Cormorant + DM Sans + vert émeraude)
-// ✅ Carrousel 5 devises
+// Thème : BLEU (inspiré du design Super Admin)
+// ✅ Carrousel 5 devises — navigation clic/toucher + flèches
 // ✅ Déclaration virement B2B
 // ✅ Auto-alimentation caisse
 // ✅ Menu actions grid
@@ -114,23 +114,24 @@ const CURRENCIES: Record<CurrencyCode, CurrencyConfig> = {
 };
 
 // ─── Design Tokens ──────────────────────────────────────────
+// Thème BLEU — inspiré du Super Admin
 const T = {
-  // Fond page — lavande très doux comme les captures
-  pageBg: "#EEF2FF",
+  // Fond page — bleu très doux
+  pageBg: "#EFF6FF",
   surface: "#FFFFFF",
   surfaceAlt: "#F8FAFC",
   surfaceCard: "#FFFFFF",
 
   // Bordures
-  border: "#E2E8F0",
-  borderSoft: "#EDF2F7",
+  border: "#DBEAFE",
+  borderSoft: "#EFF6FF",
 
-  // Couleurs primaires — émeraude/vert comme le thème Grand Chef
-  primary: "#0F766E",
-  primaryLight: "#CCFBF1",
-  primaryDark: "#0D9488",
-  accent: "#14B8A6",
-  accentSoft: "#F0FDFA",
+  // Couleurs primaires — BLEU
+  primary: "#1D4ED8",
+  primaryLight: "#DBEAFE",
+  primaryDark: "#1E40AF",
+  accent: "#3B82F6",
+  accentSoft: "#EFF6FF",
 
   // Couleurs sémantiques
   success: "#16A34A",
@@ -139,18 +140,18 @@ const T = {
   warningSoft: "#FEF3C7",
   danger: "#DC2626",
   dangerSoft: "#FEE2E2",
-  info: "#2563EB",
-  infoSoft: "#EFF6FF",
+  info: "#0369A1",
+  infoSoft: "#E0F2FE",
 
   // Texte
   text: "#0F172A",
-  textSoft: "#475569",
-  textMuted: "#94A3B8",
+  textSoft: "#334155",
+  textMuted: "#64748B",
   textLight: "#CBD5E1",
 
   // Ombres
-  shadowColor: "rgba(15,23,42,0.10)",
-  shadowCard: "rgba(15,23,42,0.07)",
+  shadowColor: "rgba(29,78,216,0.10)",
+  shadowCard: "rgba(29,78,216,0.07)",
 
   currencies: CURRENCIES,
 
@@ -164,19 +165,16 @@ const T = {
   },
 
   font: {
-    // Cormorant Garamond pour les titres display — comme Grand Chef
     display: Platform.select({
       ios: "Georgia",
       android: "serif",
       default: "serif",
     }),
-    // DM Sans pour l'UI
     sans: Platform.select({
       ios: "Avenir Next",
       android: "sans-serif-medium",
       default: "sans-serif",
     }),
-    // DM Mono pour les chiffres
     mono: Platform.select({
       ios: "Courier New",
       android: "monospace",
@@ -440,13 +438,12 @@ const ccS = StyleSheet.create({
   card: {
     backgroundColor: T.surface,
     borderRadius: T.radius.xl,
-    marginRight: 16,
+    marginRight: 0,
     borderWidth: 1,
     borderColor: T.border,
     overflow: "hidden",
     paddingBottom: 20,
-    // Ombre card premium
-    shadowColor: "#1E3A5F",
+    shadowColor: "#1E3A8A",
     shadowOpacity: 0.12,
     shadowRadius: 24,
     shadowOffset: { width: 0, height: 10 },
@@ -583,36 +580,236 @@ const ccS = StyleSheet.create({
   },
 });
 
-// ─── Pagination dots ───────────────────────────────────────
-function Dots({ active }: { active: number }) {
+// ─── Currency Carousel with click/tap navigation ──────────
+function CurrencyCarousel({
+  wallets,
+  activeCurrency,
+  onCurrencyChange,
+}: {
+  wallets: any[];
+  activeCurrency: number;
+  onCurrencyChange: (idx: number) => void;
+}) {
+  const scrollRef = useRef<ScrollView>(null);
+  const translateX = useRef(new Animated.Value(0)).current;
+
+  const getWalletBalance = useCallback(
+    (currency: string) => {
+      const w = wallets.find((x) => x.currency === currency);
+      return {
+        balance: toNum(w?.balance),
+        reserved: toNum(w?.reservedBalance),
+      };
+    },
+    [wallets],
+  );
+
+  // Scroll programmatique vers la carte active
+  const scrollToIndex = useCallback(
+    (idx: number) => {
+      scrollRef.current?.scrollTo({
+        x: idx * (CURRENCY_CARD_WIDTH + 16),
+        animated: true,
+      });
+    },
+    [],
+  );
+
+  const goNext = () => {
+    const next = Math.min(activeCurrency + 1, CURRENCIES_ORDER.length - 1);
+    onCurrencyChange(next);
+    scrollToIndex(next);
+  };
+
+  const goPrev = () => {
+    const prev = Math.max(activeCurrency - 1, 0);
+    onCurrencyChange(prev);
+    scrollToIndex(prev);
+  };
+
+  const cur = CURRENCIES_ORDER[activeCurrency];
+  const cfg = T.currencies[cur];
+
   return (
-    <View
-      style={{
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 6,
-        marginTop: 14,
-        marginBottom: 6,
-      }}
-    >
-      {CURRENCIES_ORDER.map((cur, i) => {
-        const cfg = T.currencies[cur];
-        const isActive = i === active;
-        return (
-          <View
-            key={cur}
-            style={{
-              width: isActive ? 22 : 6,
-              height: 6,
-              borderRadius: 99,
-              backgroundColor: isActive ? cfg.color : T.border,
-            }}
+    <View style={carS.wrapper}>
+      {/* Carrousel scroll */}
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled={false}
+        showsHorizontalScrollIndicator={false}
+        snapToInterval={CURRENCY_CARD_WIDTH + 16}
+        decelerationRate="fast"
+        onScroll={(e) => {
+          const idx = Math.round(
+            e.nativeEvent.contentOffset.x / (CURRENCY_CARD_WIDTH + 16),
+          );
+          const clamped = Math.max(
+            0,
+            Math.min(idx, CURRENCIES_ORDER.length - 1),
+          );
+          if (clamped !== activeCurrency) onCurrencyChange(clamped);
+        }}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingRight: 20 }}
+        style={carS.scrollView}
+        nestedScrollEnabled
+        snapToAlignment="start"
+      >
+        {CURRENCIES_ORDER.map((c) => {
+          const d = getWalletBalance(c);
+          return (
+            <View
+              key={c}
+              style={{ width: CURRENCY_CARD_WIDTH, marginRight: 16 }}
+            >
+              <CurrencyCard
+                currency={c}
+                balance={d.balance}
+                reserved={d.reserved}
+              />
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* Contrôles de navigation — flèches + compteur */}
+      <View style={carS.navRow}>
+        {/* Flèche gauche */}
+        <TouchableOpacity
+          onPress={goPrev}
+          activeOpacity={0.7}
+          disabled={activeCurrency === 0}
+          style={[
+            carS.navBtn,
+            activeCurrency === 0 && carS.navBtnDisabled,
+          ]}
+        >
+          <Ionicons
+            name="chevron-back"
+            size={16}
+            color={activeCurrency === 0 ? T.textLight : T.primary}
           />
-        );
-      })}
+        </TouchableOpacity>
+
+        {/* Dots cliquables */}
+        <View style={carS.dotsRow}>
+          {CURRENCIES_ORDER.map((c, i) => {
+            const dotCfg = T.currencies[c];
+            const isActive = i === activeCurrency;
+            return (
+              <TouchableOpacity
+                key={c}
+                onPress={() => {
+                  onCurrencyChange(i);
+                  scrollToIndex(i);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              >
+                <View
+                  style={[
+                    carS.dot,
+                    {
+                      width: isActive ? 22 : 6,
+                      backgroundColor: isActive ? dotCfg.color : T.border,
+                    },
+                  ]}
+                />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Compteur */}
+        <View style={carS.counter}>
+          <Text style={[carS.counterTxt, { fontFamily: T.font.mono }]}>
+            {activeCurrency + 1}/{CURRENCIES_ORDER.length}
+          </Text>
+        </View>
+
+        {/* Flèche droite */}
+        <TouchableOpacity
+          onPress={goNext}
+          activeOpacity={0.7}
+          disabled={activeCurrency === CURRENCIES_ORDER.length - 1}
+          style={[
+            carS.navBtn,
+            activeCurrency === CURRENCIES_ORDER.length - 1 &&
+              carS.navBtnDisabled,
+          ]}
+        >
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={
+              activeCurrency === CURRENCIES_ORDER.length - 1
+                ? T.textLight
+                : T.primary
+            }
+          />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
+
+const carS = StyleSheet.create({
+  wrapper: { marginBottom: 4 },
+  scrollView: {
+    flexGrow: 0,
+  },
+  navRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 14,
+    marginBottom: 6,
+  },
+  dotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    justifyContent: "center",
+  },
+  dot: {
+    height: 6,
+    borderRadius: 99,
+  },
+  navBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: T.surface,
+    borderWidth: 1,
+    borderColor: T.border,
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#1E3A8A",
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  navBtnDisabled: {
+    opacity: 0.4,
+  },
+  counter: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: T.primaryLight,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: `${T.primary}20`,
+  },
+  counterTxt: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: T.primary,
+    letterSpacing: 0.5,
+  },
+});
 
 // ─── Section Header ────────────────────────────────────────
 function SectionHeader({
@@ -678,7 +875,7 @@ const shS = StyleSheet.create({
   },
 });
 
-// ─── Stat Mini Card (solde antenne style) ─────────────────
+// ─── Stat Mini Card ────────────────────────────────────────
 function StatCard({
   icon,
   label,
@@ -728,7 +925,7 @@ const stS = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.border,
     alignItems: "center",
-    shadowColor: "#1E3A5F",
+    shadowColor: "#1E3A8A",
     shadowOpacity: 0.08,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
@@ -868,7 +1065,7 @@ const acS = StyleSheet.create({
     borderWidth: 1,
     borderColor: T.border,
     overflow: "hidden",
-    shadowColor: "#1E3A5F",
+    shadowColor: "#1E3A8A",
     shadowOpacity: 0.08,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
@@ -1099,7 +1296,7 @@ const agS = StyleSheet.create({
     borderColor: T.border,
     flexDirection: "row",
     overflow: "hidden",
-    shadowColor: "#1E3A5F",
+    shadowColor: "#1E3A8A",
     shadowOpacity: 0.09,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 7 },
@@ -1333,17 +1530,6 @@ export default function CompanyDashboard() {
     [user?.client?.name],
   );
 
-  const getWalletBalance = useCallback(
-    (currency: string) => {
-      const w = wallets.find((x) => x.currency === currency);
-      return {
-        balance: toNum(w?.balance),
-        reserved: toNum(w?.reservedBalance),
-      };
-    },
-    [wallets],
-  );
-
   // ── loadData avec fallback TreasuryOverview ──────────────
   const loadData = useCallback(async () => {
     setRefreshing(true);
@@ -1424,12 +1610,6 @@ export default function CompanyDashboard() {
     setTargetAgency(null);
   };
 
-  const openAutoFill = (currency: CurrencyCode) => {
-    setAutoFillCurrency(currency);
-    setAutoFillAmount("");
-    setAutoFillVisible(true);
-  };
-
   // ── Auto-alimentation ────────────────────────────────────
   const handleAutoFill = async () => {
     const n = Number(autoFillAmount);
@@ -1439,7 +1619,6 @@ export default function CompanyDashboard() {
     }
     setAutoFillProcessing(true);
     try {
-      // ✅ Fix : utiliser api.adminFundSelf — pas de double-sérialisation
       await api.adminFundSelf(n, autoFillCurrency);
       closeAutoFill();
       const msg = `${fmtAmount(n, autoFillCurrency)} ${autoFillCurrency} ajouté à votre caisse.`;
@@ -1513,14 +1692,13 @@ export default function CompanyDashboard() {
   // ── Stats rapides ────────────────────────────────────────
   const totalAgencies = agencies.length;
   const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
-  const primaryWallet = getWalletBalance("XOF");
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.pageBg} />
+      <StatusBar barStyle="light-content" backgroundColor={T.primary} />
 
       {/* ══════════════════════════════════════
-          HEADER — style Grand Chef
+          HERO HEADER — thème bleu + courbe SVG en bas
       ══════════════════════════════════════ */}
       <Animated.View
         style={[
@@ -1539,23 +1717,27 @@ export default function CompanyDashboard() {
         ]}
       >
         <LinearGradient
-          colors={["#FFFFFF", "#F8FCFA"]}
-          style={s.headerGrad}
+          colors={[T.primary, T.primaryDark]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.heroGrad}
         >
+          {/* Cercles décoratifs fond */}
+          <View style={s.heroDeco1} />
+          <View style={s.heroDeco2} />
+          <View style={s.heroDeco3} />
+
+          {/* Ligne principale header */}
           <View style={s.headerContent}>
             {/* Avatar */}
             <View style={s.avatarWrap}>
-              <LinearGradient
-                colors={[T.primary, T.accent]}
-                style={s.avatar}
-              >
+              <View style={s.avatar}>
                 <Text
                   style={[s.avatarTxt, { fontFamily: T.font.display }]}
                 >
                   {(clientName[0] ?? "E").toUpperCase()}
                 </Text>
-              </LinearGradient>
-              {/* Indicateur actif */}
+              </View>
               <View style={s.avatarDot} />
             </View>
 
@@ -1565,7 +1747,7 @@ export default function CompanyDashboard() {
                 <View
                   style={[
                     s.headerBadgeDot,
-                    { backgroundColor: T.success },
+                    { backgroundColor: "#A5F3FC" },
                   ]}
                 />
                 <Text
@@ -1574,7 +1756,7 @@ export default function CompanyDashboard() {
                     { fontFamily: T.font.sans },
                   ]}
                 >
-                  PILOTAGE SOCIÉTÉ
+                  ADMIN SOCIÉTÉ
                 </Text>
               </View>
               <Text
@@ -1599,7 +1781,7 @@ export default function CompanyDashboard() {
                 onPress={loadData}
                 activeOpacity={0.8}
               >
-                <Ionicons name="refresh" size={17} color={T.primary} />
+                <Ionicons name="refresh" size={17} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={s.headerBtn}
@@ -1611,7 +1793,7 @@ export default function CompanyDashboard() {
                 <Ionicons
                   name="notifications-outline"
                   size={17}
-                  color={T.text}
+                  color="#fff"
                 />
                 <View style={s.notifDot} />
               </TouchableOpacity>
@@ -1624,7 +1806,7 @@ export default function CompanyDashboard() {
               style={[s.welcomeTxt, { fontFamily: T.font.sans }]}
             >
               Bonjour,{" "}
-              <Text style={{ fontWeight: "800", color: T.text }}>
+              <Text style={{ fontWeight: "800", color: "#fff" }}>
                 {user?.firstName || "Admin"}
               </Text>{" "}
               👋
@@ -1641,7 +1823,42 @@ export default function CompanyDashboard() {
               </Text>
             </View>
           </View>
+
+          {/* Stats résumé inline dans le hero */}
+          <View style={s.heroStats}>
+            <View style={s.heroStatItem}>
+              <Text style={[s.heroStatVal, { fontFamily: T.font.display }]}>
+                {totalAgencies}
+              </Text>
+              <Text style={[s.heroStatLbl, { fontFamily: T.font.sans }]}>
+                AGENCES
+              </Text>
+            </View>
+            <View style={s.heroStatSep} />
+            <View style={s.heroStatItem}>
+              <Text style={[s.heroStatVal, { fontFamily: T.font.display }]}>
+                {activeAgencies}
+              </Text>
+              <Text style={[s.heroStatLbl, { fontFamily: T.font.sans }]}>
+                ACTIVES
+              </Text>
+            </View>
+            <View style={s.heroStatSep} />
+            <View style={s.heroStatItem}>
+              <Text style={[s.heroStatVal, { fontFamily: T.font.display }]}>
+                5
+              </Text>
+              <Text style={[s.heroStatLbl, { fontFamily: T.font.sans }]}>
+                DEVISES
+              </Text>
+            </View>
+          </View>
         </LinearGradient>
+
+        {/* ── Courbe en bas du Hero — technique RN sans SVG externe ── */}
+        <View style={s.heroWave}>
+          <View style={s.heroWaveCurve} />
+        </View>
       </Animated.View>
 
       {/* ══════════════════════════════════════
@@ -1673,73 +1890,18 @@ export default function CompanyDashboard() {
           />
         }
       >
-        {/* ── Stats rapides ── */}
-        <View style={s.statsRow}>
-          <StatCard
-            icon="storefront-outline"
-            label="AGENCES"
-            value={totalAgencies}
-            color={T.info}
-            bg={T.infoSoft}
-          />
-          <StatCard
-            icon="checkmark-circle-outline"
-            label="ACTIVES"
-            value={activeAgencies}
-            color={T.success}
-            bg={T.successSoft}
-          />
-          <StatCard
-            icon="cash-outline"
-            label="DEVISES"
-            value={5}
-            color={T.warning}
-            bg={T.warningSoft}
-          />
-        </View>
-
         {/* ── Section Trésorerie ── */}
         <SectionHeader
           label="TRÉSORERIE · 5 DEVISES"
           color={T.warning}
         />
 
-        {/* Carrousel */}
-        <ScrollView
-          horizontal
-          pagingEnabled={false}
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={CURRENCY_CARD_WIDTH + 16}
-          decelerationRate="fast"
-          onScroll={(e) => {
-            const idx = Math.round(
-              e.nativeEvent.contentOffset.x /
-                (CURRENCY_CARD_WIDTH + 16),
-            );
-            setActiveCurrency(
-              Math.max(
-                0,
-                Math.min(idx, CURRENCIES_ORDER.length - 1),
-              ),
-            );
-          }}
-          scrollEventThrottle={16}
-          contentContainerStyle={{ paddingRight: 4 }}
-        >
-          {CURRENCIES_ORDER.map((cur) => {
-            const d = getWalletBalance(cur);
-            return (
-              <CurrencyCard
-                key={cur}
-                currency={cur}
-                balance={d.balance}
-                reserved={d.reserved}
-              />
-            );
-          })}
-        </ScrollView>
-
-        <Dots active={activeCurrency} />
+        {/* Carrousel avec navigation clic/toucher */}
+        <CurrencyCarousel
+          wallets={wallets}
+          activeCurrency={activeCurrency}
+          onCurrencyChange={setActiveCurrency}
+        />
 
         {/* ── Sélecteur devise + bouton alimentation ── */}
         <View style={s.feedSection}>
@@ -1843,15 +2005,15 @@ export default function CompanyDashboard() {
         <VirementBanner onPress={() => setModalVisible(true)} />
 
         {/* ── Actions rapides ── */}
-        <SectionHeader label="ACTIONS RAPIDES" color={T.info} />
+        <SectionHeader label="PILOTAGE SOCIÉTÉ" color={T.primary} />
 
         <View style={s.actionsGrid}>
           <ActionCard
             title="Transactions"
             subtitle="Historique & suivi"
             icon="list-outline"
-            color={T.info}
-            bg={T.infoSoft}
+            color={T.primary}
+            bg={T.accentSoft}
             onPress={() => router.push("/(tabs)/admin/transactions")}
           />
           <ActionCard
@@ -2228,14 +2390,14 @@ export default function CompanyDashboard() {
                   <View
                     style={[
                       ms.inputSuffix,
-                      { backgroundColor: T.infoSoft },
+                      { backgroundColor: T.accentSoft },
                     ]}
                   >
                     <Text
                       style={[
                         ms.suffixTxt,
                         {
-                          color: T.info,
+                          color: T.primary,
                           fontFamily: T.font.mono,
                         },
                       ]}
@@ -2514,18 +2676,45 @@ export default function CompanyDashboard() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.pageBg },
 
-  // Header
+  // Hero Header — gradient bleu pleine largeur
   header: {
     zIndex: 10,
-    shadowColor: "#1E3A5F",
-    shadowOpacity: 0.07,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
+    shadowColor: T.primary,
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
-  headerGrad: {
-    borderBottomWidth: 1,
-    borderBottomColor: T.border,
+  heroGrad: {
+    overflow: "hidden",
+    paddingBottom: 0,
+  },
+  heroDeco1: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    top: -80,
+    right: -60,
+  },
+  heroDeco2: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    bottom: -40,
+    left: -30,
+  },
+  heroDeco3: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    top: 40,
+    left: SW * 0.4,
   },
   headerContent: {
     flexDirection: "row",
@@ -2533,13 +2722,15 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 44 : 16,
     paddingBottom: 12,
-    gap: 0,
   },
   avatarWrap: { position: "relative" },
   avatar: {
     width: 46,
     height: 46,
     borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.4)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -2555,17 +2746,17 @@ const s = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 99,
-    backgroundColor: T.success,
+    backgroundColor: "#A5F3FC",
     borderWidth: 2,
-    borderColor: "#fff",
+    borderColor: T.primary,
   },
   headerBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: T.accentSoft,
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderWidth: 1,
-    borderColor: `${T.primary}20`,
+    borderColor: "rgba(255,255,255,0.3)",
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -2578,19 +2769,19 @@ const s = StyleSheet.create({
     borderRadius: 99,
   },
   headerBadgeTxt: {
-    color: T.primary,
+    color: "#fff",
     fontSize: 8,
     fontWeight: "900",
     letterSpacing: 1.5,
   },
   headerTitle: {
-    color: T.text,
+    color: "#fff",
     fontSize: 18,
     fontWeight: "800",
     lineHeight: 22,
   },
   headerSub: {
-    color: T.textMuted,
+    color: "rgba(255,255,255,0.7)",
     fontSize: 10,
     fontWeight: "600",
     marginTop: 2,
@@ -2600,16 +2791,11 @@ const s = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: T.surface,
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderWidth: 1,
-    borderColor: T.border,
+    borderColor: "rgba(255,255,255,0.28)",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
   },
   notifDot: {
     position: "absolute",
@@ -2618,9 +2804,9 @@ const s = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 99,
-    backgroundColor: T.danger,
+    backgroundColor: "#FCA5A5",
     borderWidth: 1.5,
-    borderColor: "#fff",
+    borderColor: T.primary,
   },
 
   // Bande de bienvenue
@@ -2629,26 +2815,78 @@ const s = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 14,
-    paddingTop: 2,
+    paddingBottom: 16,
+    paddingTop: 0,
   },
   welcomeTxt: {
-    color: T.textSoft,
+    color: "rgba(255,255,255,0.8)",
     fontSize: 13,
     fontWeight: "600",
   },
   datePill: {
-    backgroundColor: T.primaryLight,
+    backgroundColor: "rgba(255,255,255,0.18)",
     borderRadius: 99,
     paddingHorizontal: 12,
     paddingVertical: 5,
     borderWidth: 1,
-    borderColor: `${T.primary}20`,
+    borderColor: "rgba(255,255,255,0.25)",
   },
   dateTxt: {
-    color: T.primary,
+    color: "#fff",
     fontSize: 11,
     fontWeight: "800",
+  },
+
+  // Stats dans le hero
+  heroStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 20,
+    marginBottom: 20,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: T.radius.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  heroStatItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  heroStatVal: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    lineHeight: 26,
+  },
+  heroStatLbl: {
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 8,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginTop: 3,
+  },
+  heroStatSep: {
+    width: 1,
+    height: 32,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  // Vague en bas du hero : fond bleu avec borderRadius bas très grand
+  // Le View bleu dépasse vers le bas, le pageBg derrière crée la "vague"
+  heroWave: {
+    width: "100%",
+    height: 36,
+    overflow: "hidden",
+    backgroundColor: T.pageBg,
+  },
+  heroWaveCurve: {
+    width: "100%",
+    height: 72,
+    backgroundColor: T.primaryDark,
+    borderBottomLeftRadius: SW * 0.6,
+    borderBottomRightRadius: SW * 0.6,
+    marginTop: -36,
   },
 
   // Scroll
@@ -2657,13 +2895,6 @@ const s = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 20,
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 24,
   },
 
   // Section d'alimentation
@@ -2831,7 +3062,6 @@ const ms = StyleSheet.create({
     alignItems: "center",
   },
   body: { padding: 20 },
-
   infoBox: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -2847,7 +3077,6 @@ const ms = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 16,
   },
-
   inputLabel: {
     color: T.textMuted,
     fontSize: 9,
@@ -2895,7 +3124,6 @@ const ms = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
-
   quickRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -2912,7 +3140,6 @@ const ms = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
   },
-
   confirmBtn: {
     borderRadius: T.radius.md,
     overflow: "hidden",
@@ -2935,7 +3162,6 @@ const ms = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.8,
   },
-
   cancelBtn: { alignItems: "center", paddingVertical: 16 },
   cancelTxt: {
     color: T.textMuted,

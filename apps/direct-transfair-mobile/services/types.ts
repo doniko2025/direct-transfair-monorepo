@@ -449,9 +449,27 @@ export interface Agency {
   country?: string | null;
   primaryCurrency?: CurrencyCode;
   isActive?: boolean;
+  isCertified?: boolean;
   clientId: number;
+  type?: string;
   wallets?: Wallet[];
+  // ✅ AJOUT — agents renvoyés par agencies.service.ts dans findOne/findAllByClient
+  agents?: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string | null;
+    role: string;
+    isActive?: boolean;
+    primaryCurrency?: CurrencyCode;
+    wallets?: Wallet[];
+    balance?: number;
+  }>;
+  createdAt?: ISODate;
+  updatedAt?: ISODate;
 }
+ 
 
 export interface CreateAgencyPayload {
   name: string;
@@ -599,26 +617,32 @@ export interface SubmitKycPayload {
 
 export interface TreasuryOverview {
   currency: CurrencyCode;
-  totalBalance: number;
-  clientBalance: number;
-  agencyBalance: number;
-  userBalance: number;
+  symbol?: string;
+ 
+  // ✅ Champs réels du backend
+  balance: number;
+  reservedBalance: number;
+  availableBalance: number;
+ 
+  totalSentToday?: number;
+  totalReceivedToday?: number;
+  totalFeesToday?: number;
+  transactionCountToday?: number;
+ 
+  // Anciens champs conservés pour rétrocompatibilité
+  totalBalance?: number;
+  clientBalance?: number;
+  agencyBalance?: number;
+  userBalance?: number;
   pendingTransactions?: number;
   date?: ISODate;
-}
-
-export interface TreasurySnapshot {
-  id: string;
-  currency: CurrencyCode;
-  totalSent: number;
-  totalReceived: number;
-  totalFees: number;
-  totalCommission: number;
-  openingBalance: number;
-  closingBalance: number;
-  date: ISODate;
-  clientId?: number;
-  createdAt?: ISODate;
+ 
+  // Snapshot fields
+  closingBalance?: number;
+  openingBalance?: number;
+  totalSent?: number;
+  totalReceived?: number;
+  totalFees?: number;
 }
 
 // =========================================================

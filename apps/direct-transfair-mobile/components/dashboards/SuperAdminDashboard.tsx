@@ -1,10 +1,12 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v8.0 — Direct Transf'air
-// ✅ Hero compact forme fintech (wave bottom, inspiration capture 2)
-// ✅ Cartes devises compactes, superposées, swipe au doigt
-// ✅ Stats / Actions / Clients modernes
-// ✅ Animations entrée fluides
+// SUPER ADMIN DASHBOARD v10.0 — Direct Transf'air
+// ✅ Hero forme capture2 : violet plein, blanc remonte avec
+//    grand arrondi + coins concaves pageBg
+// ✅ Cartes devises superposées 3D stack (capture3)
+//    swipe au doigt (PanResponder natif)
+// ✅ Hero compact ~30% écran
+// ✅ Stats / Actions / Clients identiques
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -28,7 +30,6 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import Svg, { Path } from "react-native-svg";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import CreateCompanyModal from "./CreateCompanyModal";
@@ -37,10 +38,13 @@ const { width: SW } = Dimensions.get("window");
 
 // ─── Design Tokens ────────────────────────────────────────
 const T = {
+  heroA: "#5B5BD6",
+  heroB: "#4545C0",
+  heroC: "#3232A8",
+
   blue:     "#1956F0",
   blueDark: "#1240D6",
-  blueDeep: "#0A2CB8",
-  blueDeeper:"#0822A0",
+  blueDeep: "#0D33B0",
   blueLt:   "#EEF2FF",
   blueMd:   "#C7D5FF",
 
@@ -63,14 +67,14 @@ const T = {
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
 
-  white:    "#FFFFFF",
+  white: "#FFFFFF",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", colorDark: "#1240D6", bg: "#EEF2FF",  name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "#DCFCE7",  name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "#FEF3C7",  name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "#FEE2E2",  name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#EDE9FE",  name: "Livre Sterling" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", colorDark: "#1240D6", bg: "#EEF2FF", name: "Euro" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "#DCFCE7", name: "Dollar US" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "#FEF3C7", name: "Franc CFA" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "#FEE2E2", name: "Franc Guinéen" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#EDE9FE", name: "Livre Sterling" },
   },
 
   statusColors: {
@@ -94,16 +98,9 @@ const T = {
     card: {
       shadowColor: "#1240D6",
       shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.12,
+      shadowOpacity: 0.13,
       shadowRadius: 16,
       elevation: 8,
-    },
-    deep: {
-      shadowColor: "#0D33B0",
-      shadowOffset: { width: 0, height: 12 },
-      shadowOpacity: 0.2,
-      shadowRadius: 28,
-      elevation: 16,
     },
     soft: {
       shadowColor: "#1240D6",
@@ -112,10 +109,22 @@ const T = {
       shadowRadius: 10,
       elevation: 4,
     },
+    hero: {
+      shadowColor: "#2E2E9A",
+      shadowOffset: { width: 0, height: 16 },
+      shadowOpacity: 0.32,
+      shadowRadius: 32,
+      elevation: 24,
+    },
   },
 };
 
 const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
+
+const STACK_W        = SW - 64;
+const STACK_H        = 110;
+const STACK_OFFSET_X = 7;
+const STACK_OFFSET_Y = 9;
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -137,189 +146,214 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── Cartes devises compactes empilées — swipe au doigt ──
-const CARD_W = SW - 80;
-const CARD_H = 110; // compact
-const PEEK_OFFSET = 8;
-const PEEK_SCALE_STEP = 0.04;
-
+// ─── 3D Stack cartes devises ──────────────────────────────
 function CurrencyStack({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
   const total = CURRENCIES_ORDER.length;
 
-  const getWalletData = (currency: string) => {
-    const w = wallets.find((x) => x.currency === currency);
-    return { balance: toNum(w?.balance), reserved: toNum(w?.reservedBalance) };
-  };
-
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 8,
+      onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 6,
       onPanResponderMove: (_, gs) => { translateX.setValue(gs.dx); },
       onPanResponderRelease: (_, gs) => {
-        if (gs.dx < -45) setActiveIdx((p) => Math.min(p + 1, total - 1));
-        else if (gs.dx > 45) setActiveIdx((p) => Math.max(p - 1, 0));
-        Animated.spring(translateX, { toValue: 0, useNativeDriver: true, speed: 32, bounciness: 5 }).start();
+        if (gs.dx < -48) setActiveIdx((p) => Math.min(p + 1, total - 1));
+        else if (gs.dx > 48) setActiveIdx((p) => Math.max(p - 1, 0));
+        Animated.spring(translateX, {
+          toValue: 0, useNativeDriver: true, speed: 28, bounciness: 5,
+        }).start();
       },
     })
   ).current;
 
+  const activeCur = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
+  const activeCfg = T.currencies[activeCur];
+  const activeW   = wallets.find((x) => x.currency === activeCur);
+  const balance   = toNum(activeW?.balance);
+  const reserved  = toNum(activeW?.reservedBalance);
+  const available = balance - reserved;
+
+  const behindCount = Math.min(2, total - activeIdx - 1);
+
   return (
     <View style={stk.wrapper} {...panResponder.panHandlers}>
-      {/* Cartes empilées derrière — 2 visibles */}
-      {[2, 1].map((offset) => {
-        const idx = activeIdx + offset;
-        if (idx >= total) return null;
-        const cfg = T.currencies[CURRENCIES_ORDER[idx] as keyof typeof T.currencies];
-        return (
-          <View
-            key={`behind-${offset}`}
-            style={[
-              stk.card,
-              {
-                position: "absolute",
-                top: offset * PEEK_OFFSET,
-                left: offset * 5,
-                right: offset * 5,
-                opacity: 1 - offset * 0.22,
-                transform: [{ scaleX: 1 - offset * PEEK_SCALE_STEP }],
-                zIndex: 10 - offset,
-                borderTopColor: cfg.color,
-              },
-            ]}
-          >
-            <View style={[stk.peekAccent, { backgroundColor: cfg.color }]} />
-            <View style={stk.peekInner}>
-              <Text style={{ fontSize: 16 }}>{cfg.flag}</Text>
-              <Text style={[stk.peekCode, { color: cfg.color }]}>{cfg.code}</Text>
+      {/* Cartes derrière — effet 3D stack */}
+      {([2, 1] as const)
+        .filter((d) => d <= behindCount)
+        .map((d) => {
+          const behindCur = CURRENCIES_ORDER[activeIdx + d] as keyof typeof T.currencies;
+          const cfg = T.currencies[behindCur];
+          return (
+            <View
+              key={`behind-${d}`}
+              style={[
+                stk.card,
+                {
+                  position: "absolute",
+                  top: -(d * STACK_OFFSET_Y),
+                  left: d * STACK_OFFSET_X,
+                  right: d * STACK_OFFSET_X,
+                  width: undefined,
+                  opacity: 1 - d * 0.22,
+                  zIndex: 10 - d,
+                  borderTopColor: cfg.color,
+                },
+              ]}
+            >
+              <View style={[stk.topAccent, { backgroundColor: cfg.color }]} />
+              <View style={stk.peekRow}>
+                <Text style={{ fontSize: 16, marginRight: 6 }}>{cfg.flag}</Text>
+                <Text style={[stk.peekCode, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
+                <Text style={[stk.peekName, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
+              </View>
             </View>
+          );
+        })}
+
+      {/* Carte active (front) */}
+      <Animated.View
+        style={[
+          stk.card,
+          stk.front,
+          { borderTopColor: activeCfg.color, transform: [{ translateX }] },
+        ]}
+      >
+        <View style={[stk.topAccent, { backgroundColor: activeCfg.color }]} />
+        <View style={[stk.cardBgTint, { backgroundColor: activeCfg.bg }]} />
+
+        {/* Row 1 : flag + nom + nav */}
+        <View style={stk.row1}>
+          <View style={[stk.flagBox, { backgroundColor: activeCfg.bg }]}>
+            <Text style={{ fontSize: 20 }}>{activeCfg.flag}</Text>
           </View>
-        );
-      })}
+          <View style={{ flex: 1 }}>
+            <Text style={[stk.cardCode, { color: activeCfg.color, fontFamily: T.font.mono }]}>
+              {activeCur}
+            </Text>
+            <Text style={[stk.cardName, { fontFamily: T.font.subtitle }]}>{activeCfg.name}</Text>
+          </View>
+          <View style={stk.navArea}>
+            <TouchableOpacity
+              onPress={() => setActiveIdx((p) => Math.max(p - 1, 0))}
+              style={[stk.navBtn, { opacity: activeIdx === 0 ? 0.25 : 1 }]}
+            >
+              <Ionicons name="chevron-back" size={11} color={activeCfg.color} />
+            </TouchableOpacity>
+            <Text style={[stk.navCount, { color: activeCfg.color, fontFamily: T.font.mono }]}>
+              {activeIdx + 1}/{total}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setActiveIdx((p) => Math.min(p + 1, total - 1))}
+              style={[stk.navBtn, { opacity: activeIdx === total - 1 ? 0.25 : 1 }]}
+            >
+              <Ionicons name="chevron-forward" size={11} color={activeCfg.color} />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-      {/* Carte active */}
-      {(() => {
-        const cur = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
-        const cfg = T.currencies[cur];
-        const data = getWalletData(cur);
-        const available = data.balance - data.reserved;
-        return (
-          <Animated.View
-            style={[stk.card, stk.front, { borderTopColor: cfg.color, transform: [{ translateX }] }]}
-          >
-            {/* Accent bande */}
-            <View style={[stk.frontAccent, { backgroundColor: cfg.color }]} />
+        {/* Row 2 : montants */}
+        <View style={stk.row2}>
+          <View style={{ flex: 1 }}>
+            <Text style={[stk.balLabel, { fontFamily: T.font.sans }]}>SOLDE TOTAL</Text>
+            <Text
+              style={[stk.balAmount, { color: activeCfg.colorDark, fontFamily: T.font.display }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {fmtAmount(balance, activeCur)}{" "}
+              <Text style={[stk.balSym, { color: activeCfg.color }]}>{activeCfg.symbol}</Text>
+            </Text>
+          </View>
+          <View style={[stk.availPill, { backgroundColor: activeCfg.bg }]}>
+            <Text style={[stk.availLbl, { color: activeCfg.colorDark, fontFamily: T.font.sans }]}>DISPO</Text>
+            <Text style={[stk.availAmt, { color: activeCfg.colorDark, fontFamily: T.font.mono }]}>
+              {fmtAmount(available, activeCur)}
+            </Text>
+          </View>
+        </View>
 
-            <View style={stk.row}>
-              {/* Gauche: flag + nom + montant */}
-              <View style={stk.left}>
-                <View style={stk.flagRow}>
-                  <View style={[stk.flagBox, { backgroundColor: cfg.bg }]}>
-                    <Text style={{ fontSize: 18 }}>{cfg.flag}</Text>
-                  </View>
-                  <View>
-                    <Text style={[stk.code, { color: cfg.color }]}>{cfg.code}</Text>
-                    <Text style={stk.name}>{cfg.name}</Text>
-                  </View>
-                </View>
-                <Text
-                  style={[stk.amount, { color: cfg.colorDark }]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.6}
-                >
-                  {fmtAmount(data.balance, cur)}{" "}
-                  <Text style={[stk.symbol, { color: cfg.color }]}>{cfg.symbol}</Text>
-                </Text>
-              </View>
-
-              {/* Droite: dispo + nav */}
-              <View style={stk.right}>
-                <View style={[stk.dispoBox, { backgroundColor: cfg.bg }]}>
-                  <Text style={[stk.dispoLabel, { color: cfg.colorDark }]}>DISPO</Text>
-                  <Text style={[stk.dispoAmt, { color: cfg.colorDark }]}>{fmtAmount(available, cur)}</Text>
-                </View>
-                {/* Dots */}
-                <View style={stk.dots}>
-                  {CURRENCIES_ORDER.map((_, i) => (
-                    <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
-                      <View style={[stk.dot, {
-                        width: i === activeIdx ? 14 : 4,
-                        backgroundColor: i === activeIdx ? cfg.color : "rgba(0,0,0,0.18)",
-                      }]} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-          </Animated.View>
-        );
-      })()}
+        {/* Dots */}
+        <View style={stk.dots}>
+          {CURRENCIES_ORDER.map((_, i) => (
+            <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
+              <View
+                style={[
+                  stk.dot,
+                  {
+                    width: i === activeIdx ? 16 : 5,
+                    backgroundColor: i === activeIdx ? activeCfg.color : T.borderMd,
+                  },
+                ]}
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Animated.View>
     </View>
   );
 }
 
 const stk = StyleSheet.create({
   wrapper: {
-    height: CARD_H + PEEK_OFFSET * 2 + 10,
-    alignItems: "center",
+    marginTop: 14,
+    marginHorizontal: 20,
+    height: STACK_H + STACK_OFFSET_Y * 2 + 8,
     justifyContent: "flex-end",
-    marginTop: 10,
   },
   card: {
-    width: CARD_W,
-    height: CARD_H,
-    backgroundColor: "rgba(255,255,255,0.96)",
+    width: STACK_W,
+    height: STACK_H,
+    backgroundColor: T.surface,
     borderRadius: 18,
-    borderWidth: 1,
     borderTopWidth: 3,
-    borderColor: "rgba(255,255,255,0.3)",
-    padding: 12,
+    borderWidth: 1,
+    borderColor: "rgba(200,210,240,0.6)",
     overflow: "hidden",
-    shadowColor: "#0A2FA8",
+    padding: 12,
+    shadowColor: "#1240D6",
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    elevation: 12,
+    shadowOpacity: 0.14,
+    shadowRadius: 18,
+    elevation: 10,
   },
-  front: { zIndex: 20, position: "relative", top: 0 },
-  frontAccent: {
-    position: "absolute", top: 0, left: 0, right: 0, height: 44, opacity: 0.06,
+  front: { zIndex: 20, position: "relative" },
+  topAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+  cardBgTint: {
+    position: "absolute", top: 0, left: 0, right: 0,
+    height: STACK_H * 0.45, opacity: 0.18,
   },
-  peekAccent: {
-    position: "absolute", top: 0, left: 0, right: 0, height: 3, opacity: 0.7,
+  peekRow: {
+    flexDirection: "row", alignItems: "center",
+    paddingTop: 14, paddingHorizontal: 12,
   },
-  peekInner: { flexDirection: "row", alignItems: "center", gap: 7, padding: 10 },
-  peekCode: { fontSize: 11, fontWeight: "900", letterSpacing: 1.4 },
-
-  row: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
-  left: { flex: 1, gap: 8 },
-  right: { alignItems: "flex-end", gap: 8 },
-
-  flagRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  flagBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  code: { fontSize: 12, fontWeight: "900", letterSpacing: 1.4 },
-  name: { fontSize: 10, color: T.inkSub, marginTop: 1 },
-
-  amount: { fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
-  symbol: { fontSize: 13, fontWeight: "700" },
-
-  dispoBox: { borderRadius: 9, paddingHorizontal: 9, paddingVertical: 6, alignItems: "center", minWidth: 66 },
-  dispoLabel: { fontSize: 8, fontWeight: "900", letterSpacing: 1.2, marginBottom: 2 },
-  dispoAmt: { fontSize: 12, fontWeight: "700" },
-
-  dots: { flexDirection: "row", gap: 3, alignItems: "center" },
+  peekCode: { fontSize: 11, fontWeight: "900", letterSpacing: 1.3, marginRight: 6 },
+  peekName: { fontSize: 9, color: T.inkMuted },
+  row1: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 8 },
+  flagBox: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  cardCode: { fontSize: 12, fontWeight: "900", letterSpacing: 1.4 },
+  cardName: { fontSize: 9, color: T.inkSub, marginTop: 1 },
+  navArea: { flexDirection: "row", alignItems: "center", gap: 4 },
+  navBtn: {
+    width: 22, height: 22, borderRadius: 6,
+    backgroundColor: "rgba(0,0,0,0.04)",
+    justifyContent: "center", alignItems: "center",
+  },
+  navCount: { fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+  row2: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 10 },
+  balLabel: { fontSize: 8, fontWeight: "800", letterSpacing: 1.5, color: T.inkMuted, marginBottom: 2 },
+  balAmount: { fontSize: 22, fontWeight: "700", letterSpacing: -0.4 },
+  balSym: { fontSize: 12, fontWeight: "700" },
+  availPill: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 6, alignItems: "center", minWidth: 68 },
+  availLbl: { fontSize: 8, fontWeight: "800", letterSpacing: 1.2, marginBottom: 2 },
+  availAmt: { fontSize: 13, fontWeight: "700" },
+  dots: { flexDirection: "row", gap: 4, marginTop: 7, alignItems: "center" },
   dot: { height: 4, borderRadius: 99 },
 });
 
-// ─── Hero — forme wave/fintech (inspiration capture 2) ────
-// La forme basse est une courbe SVG asymétrique (vague douce),
-// fond bleu profond dégradé, le hero est compact.
-
-const HERO_H = 260; // hauteur totale du hero zone
-const WAVE_H = 38;  // hauteur de la vague basse
+// ─── Hero — forme capture2 ────────────────────────────────
+const HERO_CURVE = 30;
 
 function DashHero({
   animValue,
@@ -334,147 +368,136 @@ function DashHero({
   onRefresh: () => void;
   onNotif: () => void;
 }) {
-  // Courbe SVG pour simuler la forme "vague" de la capture 2
-  // Chemin: part du coin bas-gauche, monte légèrement au centre, descend à droite
-  const wavePath = `M0,0 L${SW},0 L${SW},${WAVE_H - 10} Q${SW * 0.75},${WAVE_H + 14} ${SW * 0.5},${WAVE_H - 4} Q${SW * 0.25},${WAVE_H - 22} 0,${WAVE_H + 6} Z`;
+  const sbH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
 
   return (
     <Animated.View
       style={[
-        heroS.outer,
+        hS.outer,
         {
           opacity: animValue,
-          transform: [{ translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
+          transform: [{
+            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }),
+          }],
         },
       ]}
     >
       <LinearGradient
-        colors={["#2461FF", "#1340D4", "#0A22A8"]}
-        start={{ x: 0.1, y: 0 }}
+        colors={["#5B5BD6", "#4545C2", "#3232A8"]}
+        start={{ x: 0.05, y: 0 }}
         end={{ x: 0.95, y: 1 }}
-        style={heroS.gradient}
+        style={[hS.gradient, { paddingTop: sbH + 12 }]}
       >
-        {/* Décos lumineuses */}
-        <View style={heroS.glow1} />
-        <View style={heroS.glow2} />
-        <View style={heroS.glow3} />
+        <View style={hS.c1} />
+        <View style={hS.c2} />
 
         {/* Top bar */}
-        <View style={heroS.topBar}>
-          <View style={{ flex: 1 }}>
-            <View style={heroS.badge}>
-              <View style={heroS.badgeDot} />
-              <Text style={[heroS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
+        <View style={hS.topBar}>
+          <View style={hS.topLeft}>
+            <View style={hS.badge}>
+              <View style={hS.activeDot} />
+              <Text style={[hS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
             </View>
-            <Text style={[heroS.title, { fontFamily: T.font.display }]}>
+            <Text style={[hS.name, { fontFamily: T.font.display }]}>
               {user?.firstName ?? "Console"}
             </Text>
-            <Text style={[heroS.sub, { fontFamily: T.font.subtitle }]}>
+            <Text style={[hS.sub, { fontFamily: T.font.subtitle }]}>
               Direct Transf'air™ · Trésorerie
             </Text>
           </View>
-          <View style={heroS.btns}>
-            <TouchableOpacity style={heroS.btn} onPress={onRefresh}>
-              <Ionicons name="refresh" size={16} color={T.white} />
+          <View style={hS.btns}>
+            <TouchableOpacity style={hS.btn} onPress={onRefresh} activeOpacity={0.7}>
+              <Ionicons name="refresh-outline" size={15} color={T.white} />
             </TouchableOpacity>
-            <TouchableOpacity style={heroS.btn} onPress={onNotif}>
-              <Ionicons name="notifications" size={16} color={T.white} />
-              <View style={heroS.notifDot} />
+            <TouchableOpacity style={hS.btn} onPress={onNotif} activeOpacity={0.7}>
+              <Ionicons name="notifications-outline" size={15} color={T.white} />
+              <View style={hS.notifDot} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* Stack cartes compact */}
+        {/* Stack 3D */}
         <CurrencyStack wallets={wallets} />
 
-        {/* Padding bas avant wave */}
-        <View style={{ height: WAVE_H + 6 }} />
+        <View style={{ height: 28 }} />
       </LinearGradient>
 
-      {/* Wave SVG découpant le bas du hero */}
-      <View style={heroS.waveCover} pointerEvents="none">
-        <Svg width={SW} height={WAVE_H + 10} viewBox={`0 0 ${SW} ${WAVE_H + 10}`}>
-          <Path d={wavePath} fill={T.pageBg} />
-        </Svg>
-      </View>
+      {/* Coins concaves : effet blanc qui remonte (capture2) */}
+      <View style={hS.cornerL} />
+      <View style={hS.cornerR} />
     </Animated.View>
   );
 }
 
-const heroS = StyleSheet.create({
-  outer: {
-    zIndex: 10,
-    shadowColor: "#0A2FA8",
-    shadowOffset: { width: 0, height: 14 },
-    shadowOpacity: 0.38,
-    shadowRadius: 32,
-    elevation: 22,
-    marginBottom: -6,
-  },
+const hS = StyleSheet.create({
+  outer: { zIndex: 10, ...T.shadow.hero },
   gradient: {
+    borderBottomLeftRadius: HERO_CURVE,
+    borderBottomRightRadius: HERO_CURVE,
     overflow: "hidden",
   },
-  glow1: {
+  c1: {
     position: "absolute", width: 200, height: 200, borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -40,
+    backgroundColor: "rgba(255,255,255,0.06)", top: -55, right: -35,
   },
-  glow2: {
-    position: "absolute", width: 120, height: 120, borderRadius: 60,
-    backgroundColor: "rgba(255,255,255,0.05)", bottom: 20, left: -30,
-  },
-  glow3: {
-    position: "absolute", width: 60, height: 60, borderRadius: 30,
-    backgroundColor: "rgba(99,179,237,0.12)", top: 40, left: SW * 0.4,
+  c2: {
+    position: "absolute", width: 90, height: 90, borderRadius: 45,
+    backgroundColor: "rgba(255,255,255,0.04)", bottom: 15, left: 10,
   },
   topBar: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 12 : 14,
-    marginBottom: 4,
+    flexDirection: "row", alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingHorizontal: 20, paddingBottom: 0,
   },
+  topLeft: { flex: 1 },
   badge: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 7, paddingHorizontal: 8, paddingVertical: 4,
-    alignSelf: "flex-start", marginBottom: 6,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    alignSelf: "flex-start", marginBottom: 5,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
   },
-  badgeDot: { width: 6, height: 6, borderRadius: 99, backgroundColor: "#4ADE80" },
-  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 9, fontWeight: "900", letterSpacing: 1.5 },
-  title: { color: T.white, fontSize: 24, fontWeight: "700", letterSpacing: -0.3 },
-  sub: { color: "rgba(255,255,255,0.62)", fontSize: 11, marginTop: 2 },
-  btns: { flexDirection: "row", gap: 8, paddingTop: 2 },
+  activeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
+  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
+  name: { color: T.white, fontSize: 21, fontWeight: "700", letterSpacing: -0.4 },
+  sub: { color: "rgba(255,255,255,0.55)", fontSize: 10, marginTop: 1 },
+  btns: { flexDirection: "row", gap: 7, paddingTop: 2 },
   btn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: "rgba(255,255,255,0.13)",
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.12)",
     borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
     justifyContent: "center", alignItems: "center",
   },
   notifDot: {
-    position: "absolute", top: 8, right: 8,
-    width: 7, height: 7, borderRadius: 99,
-    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#1240D6",
+    position: "absolute", top: 7, right: 7,
+    width: 6, height: 6, borderRadius: 99,
+    backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: "#4545C2",
   },
-  waveCover: {
-    position: "absolute",
-    bottom: 0, left: 0, right: 0,
+  cornerL: {
+    position: "absolute", bottom: 0, left: 0,
+    width: HERO_CURVE, height: HERO_CURVE,
+    backgroundColor: T.pageBg, borderTopRightRadius: HERO_CURVE,
+  },
+  cornerR: {
+    position: "absolute", bottom: 0, right: 0,
+    width: HERO_CURVE, height: HERO_CURVE,
+    backgroundColor: T.pageBg, borderTopLeftRadius: HERO_CURVE,
   },
 });
 
 // ─── Stat Strip ───────────────────────────────────────────
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
-    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" },
-    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" },
-    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" },
+    { label: "Sociétés",  value: stats.total,    color: T.blue,  bg: T.blueLt,  icon: "business-outline" as const },
+    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" as const },
+    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" as const },
   ];
   return (
     <View style={ssS.row}>
       {items.map((it, idx) => (
         <View key={idx} style={[ssS.card, { borderLeftColor: it.color }]}>
           <View style={[ssS.iconBox, { backgroundColor: it.bg }]}>
-            <Ionicons name={it.icon as any} size={16} color={it.color} />
+            <Ionicons name={it.icon} size={16} color={it.color} />
           </View>
           <Text style={[ssS.val, { color: it.color, fontFamily: T.font.display }]}>{it.value}</Text>
           <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
@@ -483,27 +506,15 @@ function StatStrip({ stats }: { stats: { total: number; active: number; inactive
     </View>
   );
 }
-
 const ssS = StyleSheet.create({
-  row: { flexDirection: "row", gap: 8, marginTop: 18, marginBottom: 20 },
+  row: { flexDirection: "row", gap: 8, marginTop: 20, marginBottom: 22 },
   card: {
-    flex: 1,
-    backgroundColor: T.surface,
-    borderRadius: T.radius.md,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    alignItems: "center",
-    borderLeftWidth: 3,
-    borderTopWidth: 1,
-    borderRightWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: T.border,
-    ...T.shadow.soft,
+    flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md,
+    paddingVertical: 12, paddingHorizontal: 10, alignItems: "center",
+    borderLeftWidth: 3, borderTopWidth: 1, borderRightWidth: 1,
+    borderBottomWidth: 1, borderColor: T.border, ...T.shadow.soft,
   },
-  iconBox: {
-    width: 32, height: 32, borderRadius: 9,
-    justifyContent: "center", alignItems: "center", marginBottom: 7,
-  },
+  iconBox: { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center", marginBottom: 7 },
   val: { fontSize: 22, fontWeight: "700", marginBottom: 2 },
   lbl: { fontSize: 8, color: T.inkMuted, fontWeight: "800", letterSpacing: 0.9, textAlign: "center" },
 });
@@ -528,20 +539,12 @@ function ActionGrid({ actions }: { actions: any[] }) {
     </View>
   );
 }
-
 const agS = StyleSheet.create({
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 22 },
   card: {
-    width: "48.5%",
-    backgroundColor: T.surface,
-    borderRadius: T.radius.md,
-    padding: 14,
-    paddingTop: 18,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: T.border,
-    overflow: "hidden",
-    ...T.shadow.soft,
+    width: "48.5%", backgroundColor: T.surface, borderRadius: T.radius.md,
+    padding: 14, paddingTop: 18, marginBottom: 10,
+    borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft,
   },
   bar: { position: "absolute", top: 0, left: 0, right: 0, height: 3, opacity: 0.85 },
   iconBox: { width: 40, height: 40, borderRadius: 11, justifyContent: "center", alignItems: "center", marginBottom: 10 },
@@ -550,7 +553,7 @@ const agS = StyleSheet.create({
   arrow: { position: "absolute", right: 10, top: 10, width: 22, height: 22, borderRadius: 6, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Client Card ──────────────────────────────────────────
+// ─── Client Card ─────────────────────────────────────────
 function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
   const statusColor = T.statusColors[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
   return (
@@ -578,24 +581,15 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
     </TouchableOpacity>
   );
 }
-
 const clS = StyleSheet.create({
   card: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface,
-    borderRadius: T.radius.md,
-    padding: 13,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: T.border,
-    gap: 11,
-    ...T.shadow.soft,
+    flexDirection: "row", alignItems: "center", backgroundColor: T.surface,
+    borderRadius: T.radius.md, padding: 13, marginBottom: 8,
+    borderWidth: 1, borderColor: T.border, gap: 11, ...T.shadow.soft,
   },
   avatar: {
-    width: 40, height: 40, borderRadius: 11,
-    backgroundColor: T.blueLt,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1.5, borderColor: T.blueMd,
+    width: 40, height: 40, borderRadius: 11, backgroundColor: T.blueLt,
+    justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: T.blueMd,
   },
   avatarLetter: { fontSize: 17, fontWeight: "700", color: T.blue },
   name: { color: T.ink, fontSize: 13, fontWeight: "700", marginBottom: 4 },
@@ -643,9 +637,9 @@ export default function SuperAdminDashboard() {
   const contentAnim = useRef(new Animated.Value(0)).current;
 
   const runEntrance = useCallback(() => {
-    Animated.stagger(100, [
-      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 4 }),
-      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 3 }),
+    Animated.stagger(120, [
+      Animated.spring(headerAnim,  { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }),
+      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 2 }),
     ]).start();
   }, []);
 
@@ -700,18 +694,17 @@ export default function SuperAdminDashboard() {
   }), [clients]);
 
   const actions = useMemo(() => [
-    { title: "Trésorerie",     subtitle: "Vue globale",       icon: "wallet-outline",        color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux & Devises", subtitle: "5 devises",         icon: "trending-up-outline",   color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Transactions",   subtitle: "Audit temps réel",  icon: "analytics-outline",     color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs",   subtitle: "Accès & Rôles",     icon: "people-outline",        color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
+    { title: "Trésorerie",     subtitle: "Vue globale",      icon: "wallet-outline",      color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
+    { title: "Taux & Devises", subtitle: "5 devises",        icon: "trending-up-outline", color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
+    { title: "Transactions",   subtitle: "Audit temps réel", icon: "analytics-outline",   color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs",   subtitle: "Accès & Rôles",    icon: "people-outline",      color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
   ], [router]);
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor={T.blueDeeper} barStyle="light-content" />
+      <StatusBar backgroundColor="#3232A8" barStyle="light-content" />
 
       <View style={s.screen}>
-        {/* HERO */}
         <DashHero
           animValue={headerAnim}
           user={user}
@@ -720,7 +713,6 @@ export default function SuperAdminDashboard() {
           onNotif={() => router.push("/(tabs)/admin/notifications")}
         />
 
-        {/* CONTENU SCROLLABLE */}
         <FlatList
           data={filtered}
           keyExtractor={(i) => i.id}
@@ -750,7 +742,6 @@ export default function SuperAdminDashboard() {
               }}
             >
               <StatStrip stats={stats} />
-
               <SH dot={T.blue} label="PILOTAGE RÉSEAU" />
               <ActionGrid actions={actions} />
 
@@ -823,38 +814,26 @@ export default function SuperAdminDashboard() {
   );
 }
 
-// ─── Styles globaux ───────────────────────────────────────
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: T.pageBg },
   screen: { flex: 1, backgroundColor: T.pageBg },
-  list: { paddingHorizontal: LIST_H_PAD, paddingTop: 8 },
+  list: { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
   searchBox: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface,
-    borderRadius: T.radius.md,
+    backgroundColor: T.surface, borderRadius: T.radius.md,
     paddingHorizontal: 13, height: 46,
     borderWidth: 1, borderColor: T.border,
-    marginBottom: 14, gap: 8,
-    ...T.shadow.soft,
+    marginBottom: 14, gap: 8, ...T.shadow.soft,
   },
   searchInput: { flex: 1, fontSize: 13, color: T.ink },
-  clearBtn: {
-    width: 24, height: 24, borderRadius: 7,
-    backgroundColor: "#F1F5F9",
-    justifyContent: "center", alignItems: "center",
-  },
+  clearBtn: { width: 24, height: 24, borderRadius: 7, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
   addBtn: {},
-  addBtnGrad: {
-    width: 30, height: 30, borderRadius: 9,
-    justifyContent: "center", alignItems: "center",
-  },
+  addBtnGrad: { width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center" },
   empty: { alignItems: "center", paddingVertical: 44, gap: 8 },
   emptyIcon: {
-    width: 64, height: 64, borderRadius: 18,
-    backgroundColor: T.blueLt,
+    width: 64, height: 64, borderRadius: 18, backgroundColor: T.blueLt,
     justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.blueMd,
-    ...T.shadow.card,
+    borderWidth: 1, borderColor: T.blueMd, ...T.shadow.card,
   },
   emptyTitle: { color: T.ink, fontSize: 16, fontWeight: "700" },
   emptySub: { color: T.inkMuted, fontSize: 12, textAlign: "center", lineHeight: 18, paddingHorizontal: 24 },
