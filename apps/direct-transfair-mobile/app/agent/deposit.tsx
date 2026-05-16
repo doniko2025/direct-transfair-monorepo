@@ -1,8 +1,7 @@
-//apps/direct-transfair-mobile/app/agent/deposit.tsx
 // apps/direct-transfair-mobile/app/agent/deposit.tsx
 // =========================================================
-// AGENT DEPOSIT (CASH-IN) v4.0 — Direct Transf'air
-// Design: Forge & Ambre — thème AGENT
+// AGENT DEPOSIT (CASH-IN) v5.0 — Direct Transf'air
+// Design: Thème clair · Violet #6C47FF · Ultra-moderne
 // ✅ Dépôt client via numéro de téléphone
 // =========================================================
 
@@ -14,30 +13,48 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 
-// ─── Design Tokens ──────────────────────────────────────
-const T = {
-  g1: "#1A0E00",
-  g2: "#211200",
-  accent: "#F59E0B",
-  accentSoft: "#FCD34D",
-  accentGlow: "rgba(245,158,11,0.15)",
-  ghost: "rgba(255,255,255,0.06)",
-  ghostMid: "rgba(255,255,255,0.10)",
-  inkBorder: "rgba(255,255,255,0.08)",
-  inkLight: "#261800",
-  white: "#FFFFFF",
-  dim: "#A89070",
-  green: "#22C55E",
-  blue: "#60A5FA",
-  red: "#EF4444",
-  radius: { sm: 10, md: 14, lg: 20 },
+// ─── Design System ──────────────────────────────────────
+const C = {
+  violet:       "#6C47FF",
+  violetLight:  "#F5F3FF",
+  violetBorder: "#EDE9FE",
+
+  heroGlass:    "rgba(255,255,255,0.14)",
+  heroGlassBdr: "rgba(255,255,255,0.22)",
+  heroDim:      "rgba(255,255,255,0.60)",
+  heroGlow:     "rgba(255,255,255,0.08)",
+
+  pageBg:       "#F4F2FF",
+  white:        "#FFFFFF",
+  cardBorder:   "#EDE9FE",
+  inputBg:      "#F8F7FF",
+
+  ink:          "#12082E",
+  inkMid:       "#4B3F72",
+  inkSoft:      "#8B80A8",
+
+  green:        "#10B981",
+  greenBg:      "#ECFDF5",
+  greenBorder:  "#A7F3D0",
+
+  red:          "#EF4444",
+  redBg:        "#FEF2F2",
+
+  blue:         "#3B82F6",
+  blueBg:       "#EFF6FF",
+  blueBorder:   "#BFDBFE",
+
+  amber:        "#F59E0B",
+  amberBg:      "#FFFBEB",
+  amberBorder:  "#FDE68A",
+
+  r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
 };
 
@@ -46,66 +63,45 @@ function fmt(n: number): string {
   catch { return Math.round(n).toString(); }
 }
 
-// ─── Field ────────────────────────────────────────────────
-function Field({
-  label, value, onChangeText, placeholder, keyboardType, prefix, required,
-}: {
+// ─── Field ──────────────────────────────────────────────
+function Field({ label, value, onChangeText, placeholder, keyboardType, required }: {
   label: string; value: string; onChangeText: (v: string) => void;
-  placeholder?: string; keyboardType?: any; prefix?: string; required?: boolean;
+  placeholder?: string; keyboardType?: any; required?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
-    <View style={fS.wrap}>
-      <Text style={[fS.label, { fontFamily: T.font.sans }]}>
-        {label}
-        {required && <Text style={{ color: T.red }}> *</Text>}
+    <View style={f.wrap}>
+      <Text style={[f.label, { fontFamily: C.font.sans }]}>
+        {label}{required && <Text style={{ color: C.red }}> *</Text>}
       </Text>
-      <View style={[fS.box, focused && fS.boxFocused]}>
-        {prefix && (
-          <View style={fS.prefixBox}>
-            <Text style={[fS.prefixTxt, { fontFamily: T.font.mono }]}>{prefix}</Text>
-          </View>
-        )}
+      <View style={[f.box, focused && f.focused]}>
         <TextInput
-          style={[fS.input, { fontFamily: prefix ? T.font.display : T.font.sans }]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={T.dim + "55"}
+          style={[f.input, { fontFamily: C.font.sans }]}
+          value={value} onChangeText={onChangeText}
+          placeholder={placeholder} placeholderTextColor={C.inkSoft}
           keyboardType={keyboardType}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
       </View>
     </View>
   );
 }
-const fS = StyleSheet.create({
-  wrap: { marginBottom: 16 },
-  label: { fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 6 },
-  box: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, overflow: "hidden",
-  },
-  boxFocused: { borderColor: `${T.accent}45` },
-  prefixBox: {
-    paddingHorizontal: 14, paddingVertical: 12,
-    backgroundColor: T.ghost, borderRightWidth: 1, borderRightColor: T.inkBorder,
-  },
-  prefixTxt: { color: T.accent, fontSize: 18, fontWeight: "900" },
-  input: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16, color: T.white, fontWeight: "700" },
+const f = StyleSheet.create({
+  wrap:    { marginBottom: 16 },
+  label:   { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
+  box:     { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
+  focused: { borderColor: C.violet, backgroundColor: C.white },
+  input:   { paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: C.ink, fontWeight: "600" },
 });
 
-// ─── Quick Amount Pills ────────────────────────────────────
-const QUICK_AMOUNTS = [1000, 2000, 5000, 10000, 25000, 50000];
+const QUICK = [1_000, 2_000, 5_000, 10_000, 25_000, 50_000];
 
 export default function AgentDepositScreen() {
   const router = useRouter();
-  const [phone, setPhone] = useState("");
-  const [amount, setAmount] = useState("");
+  const [phone,   setPhone]   = useState("");
+  const [amount,  setAmount]  = useState("");
   const [loading, setLoading] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const numAmount = parseFloat(amount) || 0;
   const canSubmit = phone.trim().length >= 8 && numAmount > 0;
@@ -118,229 +114,236 @@ export default function AgentDepositScreen() {
   const handleDeposit = () => {
     if (!canSubmit) { showAlert("Champs manquants", "Veuillez remplir le numéro et le montant."); return; }
     const msg = `Créditer ${fmt(numAmount)} XOF sur le wallet du client ${phone.trim()} ?`;
-    if (Platform.OS === "web") { if (window.confirm(msg)) void processDeposit(); }
+    if (Platform.OS === "web") { if (window.confirm(msg)) void process(); }
     else Alert.alert("Confirmation Dépôt", msg, [
       { text: "Annuler", style: "cancel" },
-      { text: "CONFIRMER", onPress: () => void processDeposit() },
+      { text: "CONFIRMER", onPress: () => void process() },
     ]);
   };
 
-  const processDeposit = async () => {
+  const process = async () => {
     setLoading(true);
     try {
-      await api.http.post("/transactions/deposit", {
-        userPhone: phone.trim(),
-        amount: numAmount,
-      });
+      await api.http.post("/transactions/deposit", { userPhone: phone.trim(), amount: numAmount });
       showAlert("✅ Dépôt effectué", `${fmt(numAmount)} XOF crédités sur ${phone.trim()}.`, () => router.back());
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Le dépôt a échoué.";
       showAlert("Erreur", Array.isArray(msg) ? msg[0] : msg);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
+  };
+
+  // Anime l'apparition du résumé
+  const onAmountChange = (v: string) => {
+    setAmount(v);
+    const n = parseFloat(v) || 0;
+    Animated.timing(fadeAnim, { toValue: n > 0 && phone.trim().length >= 8 ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+  };
+  const onPhoneChange = (v: string) => {
+    setPhone(v);
+    Animated.timing(fadeAnim, { toValue: numAmount > 0 && v.trim().length >= 8 ? 1 : 0, duration: 200, useNativeDriver: true }).start();
   };
 
   return (
-    <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={C.violet} />
 
-        {/* ── Header ── */}
-        <View style={s.header}>
+      {/* ── Hero ── */}
+      <View style={s.hero}>
+        <View style={s.glow} />
+        <View style={s.heroRow}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
+            <Ionicons name="arrow-back" size={20} color={C.white} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Dépôt Client</Text>
-            <Text style={[s.headerSub, { color: T.accent, fontFamily: T.font.sans }]}>Cash-In · Crédit Wallet</Text>
+            <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Dépôt Client</Text>
+            <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>Cash-In · Crédit Wallet</Text>
+          </View>
+          <View style={s.heroBadge}>
+            <Ionicons name="arrow-down-circle-outline" size={20} color={C.white} />
           </View>
         </View>
+      </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {/* Info banner */}
-            <View style={s.infoBanner}>
-              <View style={[s.infoIconBox, { backgroundColor: `${T.blue}15` }]}>
-                <Ionicons name="wallet-outline" size={20} color={T.blue} />
-              </View>
-              <Text style={[s.infoTxt, { fontFamily: T.font.sans }]}>
-                Les fonds seront crédités instantanément sur le Wallet du client.
-              </Text>
+          {/* Bannière info */}
+          <View style={s.banner}>
+            <View style={[s.bannerIcon, { backgroundColor: C.blueBg }]}>
+              <Ionicons name="wallet-outline" size={17} color={C.blue} />
+            </View>
+            <Text style={[s.bannerTxt, { fontFamily: C.font.sans }]}>
+              Les fonds sont crédités <Text style={{ fontWeight: "800" }}>instantanément</Text> sur le Wallet du client.
+            </Text>
+          </View>
+
+          {/* Formulaire */}
+          <View style={s.card}>
+            <View style={s.secRow}>
+              <View style={[s.secDot, { backgroundColor: C.violet }]} />
+              <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>INFORMATIONS DÉPÔT</Text>
             </View>
 
-            {/* Formulaire */}
-            <View style={s.card}>
-              <View style={s.sectionRow}>
-                <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>INFORMATIONS DÉPÔT</Text>
-              </View>
+            <Field label="Numéro du client" value={phone} onChangeText={onPhoneChange} placeholder="620 000 000" keyboardType="phone-pad" required />
 
-              <Field
-                label="NUMÉRO DU CLIENT"
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="620 000 000"
-                keyboardType="phone-pad"
-                required
+            {/* Montant */}
+            <Text style={[f.label, { fontFamily: C.font.sans }]}>Montant <Text style={{ color: C.red }}>*</Text></Text>
+            <View style={[s.amtBox, numAmount > 0 && { borderColor: C.violet }]}>
+              <TextInput
+                style={[s.amtInput, { fontFamily: C.font.serif }]}
+                value={amount} onChangeText={onAmountChange}
+                placeholder="0" placeholderTextColor={C.inkSoft}
+                keyboardType="numeric"
               />
-
-              {/* Montant avec préfixe */}
-              <View style={{ marginBottom: 16 }}>
-                <Text style={[fS.label, { fontFamily: T.font.sans }]}>
-                  MONTANT <Text style={{ color: T.red }}>*</Text>
-                </Text>
-                <View style={[fS.box, amount.length > 0 && { borderColor: `${T.accent}45` }]}>
-                  <TextInput
-                    style={[s.amountInput, { fontFamily: T.font.display }]}
-                    value={amount}
-                    onChangeText={setAmount}
-                    placeholder="0"
-                    placeholderTextColor={T.dim + "55"}
-                    keyboardType="numeric"
-                  />
-                  <View style={s.currBox}>
-                    <Text style={[s.currTxt, { fontFamily: T.font.mono }]}>XOF</Text>
-                  </View>
-                </View>
+              <View style={s.curBox}>
+                <Text style={[s.curTxt, { fontFamily: C.font.mono }]}>XOF</Text>
               </View>
+            </View>
 
-              {/* Quick amounts */}
-              <Text style={[s.quickLabel, { fontFamily: T.font.sans }]}>MONTANTS RAPIDES</Text>
-              <View style={s.quickRow}>
-                {QUICK_AMOUNTS.map((v) => (
+            {/* Montants rapides */}
+            <Text style={[s.quickLbl, { fontFamily: C.font.sans }]}>MONTANTS RAPIDES</Text>
+            <View style={s.quickRow}>
+              {QUICK.map((v) => {
+                const active = numAmount === v;
+                return (
                   <TouchableOpacity
                     key={v}
-                    style={[
-                      s.quickPill,
-                      numAmount === v && { backgroundColor: T.accentGlow, borderColor: `${T.accent}40` },
-                    ]}
-                    onPress={() => setAmount(String(v))}
+                    style={[s.quickPill, active && { backgroundColor: C.violetLight, borderColor: C.violet }]}
+                    onPress={() => { setAmount(String(v)); onAmountChange(String(v)); }}
                     activeOpacity={0.8}
                   >
-                    <Text style={[
-                      s.quickTxt,
-                      { color: numAmount === v ? T.accent : T.dim, fontFamily: T.font.mono },
-                    ]}>
+                    <Text style={[s.quickTxt, { color: active ? C.violet : C.inkSoft, fontFamily: C.font.mono }]}>
                       {fmt(v)}
                     </Text>
                   </TouchableOpacity>
-                ))}
-              </View>
+                );
+              })}
             </View>
+          </View>
 
-            {/* Résumé */}
-            {numAmount > 0 && phone.trim().length >= 8 && (
-              <View style={s.summaryCard}>
-                <View style={s.summaryRow}>
-                  <Text style={[s.summaryLabel, { fontFamily: T.font.sans }]}>Client</Text>
-                  <Text style={[s.summaryValue, { fontFamily: T.font.mono }]}>{phone.trim()}</Text>
-                </View>
-                <View style={s.summaryDivider} />
-                <View style={s.summaryRow}>
-                  <Text style={[s.summaryLabel, { fontFamily: T.font.sans }]}>Montant à créditer</Text>
-                  <Text style={[s.summaryAmountTxt, { color: T.accent, fontFamily: T.font.display }]}>
-                    {fmt(numAmount)} XOF
-                  </Text>
-                </View>
+          {/* Résumé animé */}
+          <Animated.View style={[s.summary, { opacity: fadeAnim }]}>
+            <View style={s.summaryHead}>
+              <View style={[s.summaryIconBox, { backgroundColor: C.violetLight }]}>
+                <Ionicons name="receipt-outline" size={15} color={C.violet} />
               </View>
-            )}
+              <Text style={[s.summaryTitle, { fontFamily: C.font.sans }]}>Récapitulatif</Text>
+            </View>
+            <View style={s.summaryRow}>
+              <Text style={[s.sumLbl, { fontFamily: C.font.sans }]}>Client</Text>
+              <Text style={[s.sumVal, { fontFamily: C.font.mono }]}>{phone.trim()}</Text>
+            </View>
+            <View style={s.sumDivider} />
+            <View style={s.summaryRow}>
+              <Text style={[s.sumLbl, { fontFamily: C.font.sans }]}>Montant à créditer</Text>
+              <Text style={[s.sumAmt, { fontFamily: C.font.serif }]}>{fmt(numAmount)} XOF</Text>
+            </View>
+          </Animated.View>
 
-            {/* Bouton */}
-            <TouchableOpacity
-              style={[s.submitBtn, (!canSubmit || loading) && { opacity: 0.5 }]}
-              onPress={handleDeposit}
-              disabled={!canSubmit || loading}
-              activeOpacity={0.85}
-            >
-              <LinearGradient
-                colors={[T.accent, T.accentSoft]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={s.submitGrad}
-              >
-                {loading
-                  ? <ActivityIndicator color={T.g1} />
-                  : <>
-                      <Ionicons name="checkmark-circle-outline" size={20} color={T.g1} />
-                      <Text style={[s.submitTxt, { fontFamily: T.font.sans }]}>VALIDER LE DÉPÔT</Text>
-                    </>
-                }
-              </LinearGradient>
-            </TouchableOpacity>
+          {/* CTA */}
+          <TouchableOpacity
+            style={[s.cta, (!canSubmit || loading) && { opacity: 0.4 }]}
+            onPress={handleDeposit} disabled={!canSubmit || loading} activeOpacity={0.88}
+          >
+            <View style={s.ctaInner}>
+              {loading
+                ? <ActivityIndicator color={C.white} />
+                : <>
+                    <Ionicons name="checkmark-circle-outline" size={20} color={C.white} />
+                    <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>VALIDER LE DÉPÔT</Text>
+                  </>
+              }
+            </View>
+          </TouchableOpacity>
 
-            <TouchableOpacity style={s.cancelBtn} onPress={() => router.back()} disabled={loading}>
-              <Text style={[s.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
-            </TouchableOpacity>
+          <TouchableOpacity style={s.cancelBtn} onPress={() => router.back()} disabled={loading}>
+            <Text style={[s.cancelTxt, { fontFamily: C.font.sans }]}>Annuler</Text>
+          </TouchableOpacity>
 
-            <View style={{ height: 60 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
+  safe: { flex: 1, backgroundColor: C.pageBg },
+
+  hero: {
+    backgroundColor: C.violet,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 48 : 16,
+    paddingBottom: 24, overflow: "hidden",
   },
+  glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+  heroRow:   { flexDirection: "row", alignItems: "center", gap: 14 },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
+    width: 38, height: 38, borderRadius: C.r.sm,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
   },
-  headerTitle: { color: T.white, fontSize: 22, fontWeight: "700" },
-  headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
+  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  heroBadge: {
+    width: 42, height: 42, borderRadius: C.r.sm,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
+  },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingHorizontal: 20, paddingTop: 20 },
 
-  infoBanner: {
+  banner: {
     flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: `${T.blue}10`, borderRadius: T.radius.md,
-    padding: 14, borderWidth: 1, borderColor: `${T.blue}20`, marginBottom: 18,
+    backgroundColor: C.blueBg, borderRadius: C.r.md,
+    padding: 14, borderWidth: 1, borderColor: C.blueBorder, marginBottom: 18,
   },
-  infoIconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  infoTxt: { flex: 1, color: T.blue, fontSize: 12, fontWeight: "600", lineHeight: 17 },
+  bannerIcon: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  bannerTxt:  { flex: 1, color: C.blue, fontSize: 12, fontWeight: "600", lineHeight: 18 },
 
   card: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 18, marginBottom: 16, borderWidth: 1, borderColor: T.inkBorder,
+    backgroundColor: C.white, borderRadius: C.r.lg,
+    padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: C.cardBorder,
+    shadowColor: C.violet, shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  secRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 18 },
+  secDot: { width: 5, height: 5, borderRadius: C.r.pill },
+  secLbl: { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
 
-  amountInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 28, color: T.white, fontWeight: "800" },
-  currBox: {
-    paddingHorizontal: 14, paddingVertical: 14,
-    backgroundColor: T.ghost, borderLeftWidth: 1, borderLeftColor: T.inkBorder,
+  amtBox: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder,
+    borderRadius: C.r.md, overflow: "hidden", marginBottom: 18,
   },
-  currTxt: { color: T.dim, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  amtInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 30, color: C.ink, fontWeight: "800" },
+  curBox:   { paddingHorizontal: 14, paddingVertical: 14, backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder },
+  curTxt:   { color: C.violet, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
 
-  quickLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 8 },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  quickPill: {
-    paddingHorizontal: 12, paddingVertical: 7, borderRadius: T.radius.md,
-    backgroundColor: T.ghost, borderWidth: 1, borderColor: T.inkBorder,
+  quickLbl:  { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
+  quickRow:  { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  quickPill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: C.r.md, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder },
+  quickTxt:  { fontSize: 11, fontWeight: "800" },
+
+  summary: {
+    backgroundColor: C.white, borderRadius: C.r.lg,
+    padding: 18, marginBottom: 16,
+    borderWidth: 1.5, borderColor: C.violetBorder,
+    shadowColor: C.violet, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
   },
-  quickTxt: { fontSize: 11, fontWeight: "800" },
+  summaryHead:    { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  summaryIconBox: { width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center" },
+  summaryTitle:   { fontSize: 12, fontWeight: "900", color: C.violet, letterSpacing: 0.5 },
+  summaryRow:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  sumLbl:         { color: C.inkSoft, fontSize: 12, fontWeight: "700" },
+  sumVal:         { color: C.ink, fontSize: 14, fontWeight: "800" },
+  sumDivider:     { height: 1, backgroundColor: C.violetBorder, marginVertical: 10 },
+  sumAmt:         { fontSize: 22, fontWeight: "900", color: C.violet },
 
-  summaryCard: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 18, marginBottom: 16, borderWidth: 1, borderColor: `${T.accent}20`,
-  },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  summaryLabel: { color: T.dim, fontSize: 12, fontWeight: "700" },
-  summaryValue: { color: T.white, fontSize: 14, fontWeight: "800" },
-  summaryDivider: { height: 1, backgroundColor: T.inkBorder, marginVertical: 10 },
-  summaryAmountTxt: { fontSize: 22, fontWeight: "900" },
-
-  submitBtn: { borderRadius: T.radius.md, overflow: "hidden", marginBottom: 10 },
-  submitGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8 },
-  submitTxt: { color: T.g1, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
-
+  cta:       { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
+  ctaInner:  { backgroundColor: C.violet, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
+  ctaTxt:    { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
   cancelBtn: { alignItems: "center", paddingVertical: 14 },
-  cancelTxt: { color: T.dim, fontWeight: "800", fontSize: 14 },
+  cancelTxt: { color: C.inkSoft, fontWeight: "800", fontSize: 14 },
 });

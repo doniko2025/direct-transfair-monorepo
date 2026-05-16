@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/app/(auth)/login.tsx
 // =========================================================
-// LOGIN v5.1 — Direct Transf'air
-// ✅ Fix React 19 : useRef<TextInput | null> + inputRef?: React.Ref<TextInput>
+// LOGIN v5.2 — Direct Transf'air
+// ✅ Fix outlineStyle : appliqué inline sur TextInput, pas dans StyleSheet
+// ✅ Fix underlineColorAndroid : prop uniquement, jamais dans StyleSheet
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -17,7 +18,7 @@ import { api } from "../../services/api";
 
 const F = {
   display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-  body: Platform.select({ ios: "System", android: "sans-serif", default: "sans-serif" }),
+  body:    Platform.select({ ios: "System",  android: "sans-serif", default: "sans-serif" }),
 };
 
 const C = {
@@ -38,10 +39,9 @@ function FloatingInput({
   label: string; value: string; onChangeText: (v: string) => void;
   secureTextEntry?: boolean; keyboardType?: any; autoCapitalize?: any;
   icon: string; returnKeyType?: any; onSubmitEditing?: () => void;
-  // ✅ FIX React 19 : React.Ref accepte RefObject, RefCallback et null
   inputRef?: React.Ref<TextInput>;
 }) {
-  const [focused, setFocused] = useState(false);
+  const [focused,  setFocused]  = useState(false);
   const [showPass, setShowPass] = useState(false);
   const hasValue = value.length > 0;
 
@@ -56,7 +56,12 @@ function FloatingInput({
         )}
         <TextInput
           ref={inputRef}
-          style={[iS.input, !(focused || hasValue) && { paddingVertical: 5 }]}
+          // ✅ outlineStyle appliqué INLINE, jamais dans StyleSheet
+          style={[
+            iS.input,
+            !(focused || hasValue) && { paddingVertical: 5 },
+            Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+          ]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -69,11 +74,16 @@ function FloatingInput({
           autoCorrect={false}
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
+          // ✅ underlineColorAndroid uniquement comme prop
+          underlineColorAndroid="transparent"
         />
       </View>
       {secureTextEntry && (
         <TouchableOpacity onPress={() => setShowPass(!showPass)} style={iS.eye}>
-          <Ionicons name={showPass ? "eye-outline" : "eye-off-outline"} size={19} color={C.textFaint} />
+          <Ionicons
+            name={showPass ? "eye-outline" : "eye-off-outline"}
+            size={19} color={C.textFaint}
+          />
         </TouchableOpacity>
       )}
     </View>
@@ -88,15 +98,13 @@ const iS = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  wrapFocused: {
-    borderColor: C.borderFocus,
+  wrapFocused: { borderColor: C.borderFocus },
+  iconBox:     { width: 28, alignItems: "center", marginRight: 10 },
+  floatLabel:  { fontSize: 9, fontWeight: "800", letterSpacing: 0.8, marginBottom: 1 },
+  // ✅ PAS de underlineColorAndroid ni outlineStyle ici
+  input: {
+    fontSize: 15, color: C.text, fontWeight: "600", paddingVertical: 0,
   },
-  iconBox: { width: 28, alignItems: "center", marginRight: 10 },
-  floatLabel: {
-    fontSize: 9, fontWeight: "800",
-    letterSpacing: 0.8, marginBottom: 1,
-  },
-  input: { fontSize: 15, color: C.text, fontWeight: "600", paddingVertical: 0 },
   eye: { padding: 4 },
 });
 
@@ -107,10 +115,9 @@ export default function LoginScreen() {
 
   const [identifier,     setIdentifier]     = useState("");
   const [password,       setPassword]       = useState("");
-  const [rememberMe,     setRememberMe]      = useState(false);
+  const [rememberMe,     setRememberMe]     = useState(false);
   const [currentTenant,  setCurrentTenant]  = useState("DONIKO");
 
-  // ✅ FIX React 19 : useRef<TextInput | null>
   const passRef  = useRef<TextInput | null>(null);
   const btnScale = useRef(new Animated.Value(1)).current;
 
@@ -136,7 +143,8 @@ export default function LoginScreen() {
     } catch (e: any) {
       const msg  = e.response?.data?.message || "Erreur de connexion au serveur.";
       const text = Array.isArray(msg) ? msg[0] : msg;
-      if (Platform.OS === "web") { alert(text); } else { Alert.alert("Connexion échouée", text); }
+      if (Platform.OS === "web") { alert(text); }
+      else { Alert.alert("Connexion échouée", text); }
     }
   };
 
@@ -159,7 +167,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Hero */}
+        {/* ── Hero ── */}
         <View style={s.hero}>
           <View style={s.logoOuter}>
             <View style={s.logoInner}>
@@ -174,7 +182,7 @@ export default function LoginScreen() {
           </View>
         </View>
 
-        {/* Card */}
+        {/* ── Card ── */}
         <View style={s.card}>
           <View style={s.cardAccent} />
           <Text style={[s.cardTitle, { fontFamily: F.display }]}>Connectez-vous</Text>
@@ -207,6 +215,7 @@ export default function LoginScreen() {
             />
           </View>
 
+          {/* Remember me */}
           <TouchableOpacity
             style={s.rememberRow}
             onPress={() => setRememberMe(!rememberMe)}
@@ -218,6 +227,7 @@ export default function LoginScreen() {
             </View>
           </TouchableOpacity>
 
+          {/* CTA */}
           <Animated.View style={{ transform: [{ scale: btnScale }] }}>
             <TouchableOpacity
               style={[s.btn, !canSubmit && s.btnDisabled]}
@@ -248,7 +258,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom */}
+        {/* ── Bottom ── */}
         <View style={s.bottom}>
           <TouchableOpacity
             style={s.registerBtn}
@@ -272,45 +282,45 @@ export default function LoginScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.g2 },
-  bgBase:   { ...StyleSheet.absoluteFillObject, backgroundColor: C.g3 },
-  bgCircle1: { position: "absolute", width: 320, height: 320, borderRadius: 160, backgroundColor: "rgba(255,255,255,0.05)", top: -80, right: -80 },
-  bgCircle2: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.04)", top: 120, left: -60 },
+  root:      { flex: 1, backgroundColor: C.g2 },
+  bgBase:    { ...StyleSheet.absoluteFillObject, backgroundColor: C.g3 },
+  bgCircle1: { position: "absolute", width: 320, height: 320, borderRadius: 160, backgroundColor: "rgba(255,255,255,0.05)", top: -80,  right: -80 },
+  bgCircle2: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.04)", top: 120,  left: -60 },
 
   scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 56 : 64 },
 
-  hero: { alignItems: "center", marginBottom: 28 },
+  hero:      { alignItems: "center", marginBottom: 28 },
   logoOuter: { width: 78, height: 78, borderRadius: 26, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
   logoInner: { width: 58, height: 58, borderRadius: 19, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
-  appName: { fontSize: 30, color: C.white, letterSpacing: -0.4, marginBottom: 5, textAlign: "center" },
-  tagline: { fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginBottom: 16, textAlign: "center" },
-  pill: { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
-  pillDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: C.g6 },
-  pillTxt: { color: C.white, fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
+  appName:   { fontSize: 30, color: C.white, letterSpacing: -0.4, marginBottom: 5, textAlign: "center" },
+  tagline:   { fontSize: 13, color: "rgba(255,255,255,0.7)", fontWeight: "500", marginBottom: 16, textAlign: "center" },
+  pill:      { flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
+  pillDot:   { width: 7, height: 7, borderRadius: 99, backgroundColor: C.g6 },
+  pillTxt:   { color: C.white, fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
 
-  card: { backgroundColor: C.white, borderRadius: 28, padding: 24, overflow: "hidden", shadowColor: C.g1, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 10, maxWidth: 520, alignSelf: "center", width: "100%" },
+  card:       { backgroundColor: C.white, borderRadius: 28, padding: 24, overflow: "hidden", shadowColor: C.g1, shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 10, maxWidth: 520, alignSelf: "center", width: "100%" },
   cardAccent: { position: "absolute", top: 0, left: 0, right: 0, height: 4, backgroundColor: C.g4 },
-  cardTitle: { fontSize: 28, color: C.text, letterSpacing: -0.3, marginBottom: 6, marginTop: 8 },
-  cardSub: { fontSize: 13, color: C.textMuted, fontWeight: "500", lineHeight: 20 },
+  cardTitle:  { fontSize: 28, color: C.text, letterSpacing: -0.3, marginBottom: 6, marginTop: 8 },
+  cardSub:    { fontSize: 13, color: C.textMuted, fontWeight: "500", lineHeight: 20 },
 
   rememberRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 22 },
   rememberTxt: { fontSize: 13, color: C.textSub, fontWeight: "600" },
-  toggle: { width: 48, height: 28, borderRadius: 14, backgroundColor: C.borderInput, justifyContent: "center", paddingHorizontal: 3 },
-  toggleOn: { backgroundColor: C.g4 },
-  thumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.white, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2 },
-  thumbOn: { alignSelf: "flex-end" },
+  toggle:      { width: 48, height: 28, borderRadius: 14, backgroundColor: C.borderInput, justifyContent: "center", paddingHorizontal: 3 },
+  toggleOn:    { backgroundColor: C.g4 },
+  thumb:       { width: 22, height: 22, borderRadius: 11, backgroundColor: C.white, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2 },
+  thumbOn:     { alignSelf: "flex-end" },
 
-  btn: { backgroundColor: C.g3, borderRadius: 16, paddingVertical: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: C.g3, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
+  btn:         { backgroundColor: C.g3, borderRadius: 16, paddingVertical: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: C.g3, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
   btnDisabled: { backgroundColor: "#9CA3AF", shadowOpacity: 0 },
-  btnTxt: { color: C.white, fontSize: 15, fontWeight: "800", letterSpacing: 0.3 },
-  btnArrow: { width: 28, height: 28, borderRadius: 9, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
+  btnTxt:      { color: C.white, fontSize: 15, fontWeight: "800", letterSpacing: 0.3 },
+  btnArrow:    { width: 28, height: 28, borderRadius: 9, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
 
-  forgotBtn: { alignItems: "center", paddingTop: 18, paddingBottom: 2 },
-  forgotTxt: { color: C.g4, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", textDecorationColor: C.g4 },
+  forgotBtn:  { alignItems: "center", paddingTop: 18, paddingBottom: 2 },
+  forgotTxt:  { color: C.g4, fontSize: 13, fontWeight: "700", textDecorationLine: "underline", textDecorationColor: C.g4 },
 
-  bottom: { marginTop: 20, alignItems: "center", gap: 14, maxWidth: 520, alignSelf: "center", width: "100%" },
+  bottom:      { marginTop: 20, alignItems: "center", gap: 14, maxWidth: 520, alignSelf: "center", width: "100%" },
   registerBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", width: "100%", backgroundColor: C.white, borderRadius: 16, paddingVertical: 17, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 3 },
   registerTxt: { color: C.g3, fontSize: 15, fontWeight: "900" },
-  helpRow: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
-  helpTxt: { color: "rgba(255,255,255,0.65)", fontSize: 12, fontWeight: "600" },
+  helpRow:     { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 4 },
+  helpTxt:     { color: "rgba(255,255,255,0.65)", fontSize: 12, fontWeight: "600" },
 });

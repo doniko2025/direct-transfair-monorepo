@@ -1,10 +1,9 @@
-//apps/direct-transfair-mobile/app/agent/withdraw.tsx
 // apps/direct-transfair-mobile/app/agent/withdraw.tsx
 // =========================================================
-// AGENT WITHDRAW (RETRAIT ESPÈCES) v4.0 — Direct Transf'air
-// Design: Forge & Ambre — thème AGENT
+// AGENT WITHDRAW (RETRAIT ESPÈCES) v5.0 — Direct Transf'air
+// Design: Thème clair · Violet #6C47FF · Ultra-moderne
 // ✅ Vérification code → Détail → Confirmation paiement
-// ✅ Montant converti GNF prioritaire
+// ✅ Montant converti devise cible prioritaire
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -15,31 +14,49 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 
-// ─── Design Tokens ──────────────────────────────────────
-const T = {
-  g1: "#1A0E00",
-  g2: "#211200",
-  accent: "#F59E0B",
-  accentSoft: "#FCD34D",
-  accentGlow: "rgba(245,158,11,0.15)",
-  ghost: "rgba(255,255,255,0.06)",
-  ghostMid: "rgba(255,255,255,0.10)",
-  inkBorder: "rgba(255,255,255,0.08)",
-  inkLight: "#261800",
-  white: "#FFFFFF",
-  dim: "#A89070",
-  green: "#22C55E",
-  blue: "#60A5FA",
-  red: "#EF4444",
-  amber: "#F59E0B",
-  radius: { sm: 10, md: 14, lg: 20, xl: 26 },
+// ─── Design System ──────────────────────────────────────
+const C = {
+  violet:       "#6C47FF",
+  violetLight:  "#F5F3FF",
+  violetBorder: "#EDE9FE",
+
+  heroGlass:    "rgba(255,255,255,0.14)",
+  heroGlassBdr: "rgba(255,255,255,0.22)",
+  heroDim:      "rgba(255,255,255,0.60)",
+  heroGlow:     "rgba(255,255,255,0.08)",
+
+  pageBg:       "#F4F2FF",
+  white:        "#FFFFFF",
+  cardBorder:   "#EDE9FE",
+  inputBg:      "#F8F7FF",
+
+  ink:          "#12082E",
+  inkMid:       "#4B3F72",
+  inkSoft:      "#8B80A8",
+
+  green:        "#10B981",
+  greenBg:      "#ECFDF5",
+  greenBorder:  "#A7F3D0",
+  greenDark:    "#065F46",
+
+  red:          "#EF4444",
+  redBg:        "#FEF2F2",
+
+  blue:         "#3B82F6",
+  blueBg:       "#EFF6FF",
+  blueBorder:   "#BFDBFE",
+
+  amber:        "#F59E0B",
+  amberBg:      "#FFFBEB",
+  amberBorder:  "#FDE68A",
+
+  r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
 };
 
@@ -48,43 +65,41 @@ function toNum(v: unknown): number {
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
   return 0;
 }
-
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
   catch { return n.toFixed(d); }
 }
 
-// ─── Info Row ─────────────────────────────────────────────
-function InfoRow({ label, value, icon, color = T.dim }: { label: string; value: string; icon: string; color?: string }) {
+// ─── Info Row ───────────────────────────────────────────
+function InfoRow({ label, value, icon, color = C.violet }: { label: string; value: string; icon: string; color?: string }) {
   return (
-    <View style={irS.row}>
-      <View style={[irS.iconBox, { backgroundColor: `${color}12` }]}>
-        <Ionicons name={icon as any} size={14} color={color} />
+    <View style={ir.row}>
+      <View style={[ir.iconBox, { backgroundColor: `${color}18` }]}>
+        <Ionicons name={icon as any} size={15} color={color} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[irS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-        <Text style={[irS.value, { fontFamily: T.font.sans }]} numberOfLines={1}>{value || "—"}</Text>
+        <Text style={[ir.lbl, { fontFamily: C.font.sans }]}>{label}</Text>
+        <Text style={[ir.val, { fontFamily: C.font.sans }]} numberOfLines={1}>{value || "—"}</Text>
       </View>
     </View>
   );
 }
-const irS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
-  iconBox: { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center" },
-  label: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.8, marginBottom: 2 },
-  value: { fontSize: 13, fontWeight: "700", color: T.white },
+const ir = StyleSheet.create({
+  row:     { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  iconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  lbl:     { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 0.8, marginBottom: 2, textTransform: "uppercase" },
+  val:     { fontSize: 13, fontWeight: "700", color: C.ink },
 });
 
-// ─── Main Screen ──────────────────────────────────────────
 export default function AgentWithdrawScreen() {
   const router = useRouter();
-  const [code, setCode] = useState("");
-  const [checking, setChecking] = useState(false);
-  const [paying, setPaying] = useState(false);
+  const [code,        setCode]        = useState("");
+  const [checking,    setChecking]    = useState(false);
+  const [paying,      setPaying]      = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
 
   const showAlert = (title: string, msg: string, onOk?: () => void) => {
     if (Platform.OS === "web") { setTimeout(() => { window.alert(`${title}\n\n${msg}`); if (onOk) onOk(); }, 100); }
@@ -93,32 +108,24 @@ export default function AgentWithdrawScreen() {
 
   const getAmountData = () => {
     if (!transaction) return { val: "0", curr: "XOF" };
-    if (toNum(transaction.receivedAmount) > 0) {
-      return {
-        val: fmt(toNum(transaction.receivedAmount), transaction.targetCurrency ?? "GNF"),
-        curr: transaction.targetCurrency ?? "GNF",
-      };
-    }
+    if (toNum(transaction.receivedAmount) > 0) return { val: fmt(toNum(transaction.receivedAmount), transaction.targetCurrency ?? "GNF"), curr: transaction.targetCurrency ?? "GNF" };
     return { val: fmt(toNum(transaction.amount), transaction.currency), curr: transaction.currency ?? "XOF" };
   };
 
   const handleCheckCode = async () => {
     if (code.trim().length < 6) { showAlert("Erreur", "Le code doit contenir au moins 6 caractères."); return; }
-    setChecking(true);
-    setTransaction(null);
+    setChecking(true); setTransaction(null);
     try {
       const res = await api.http.post("/withdrawals/agent/check", { code: code.trim() });
       setTransaction(res.data);
       Animated.parallel([
         Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 6 }),
-        Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Code invalide ou introuvable.";
       showAlert("Code invalide", Array.isArray(msg) ? msg[0] : msg);
-    } finally {
-      setChecking(false);
-    }
+    } finally { setChecking(false); }
   };
 
   const handlePayOut = () => {
@@ -139,292 +146,265 @@ export default function AgentWithdrawScreen() {
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Échec de la validation.";
       showAlert("Erreur", Array.isArray(msg) ? msg[0] : msg);
-    } finally {
-      setPaying(false);
-    }
+    } finally { setPaying(false); }
   };
 
-  const { val: amountVal, curr: amountCurr } = getAmountData();
+  const { val: amtVal, curr: amtCurr } = getAmountData();
+
+  const resetForm = () => { setTransaction(null); setCode(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
 
   return (
-    <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="light-content" backgroundColor={C.violet} />
 
-        {/* ── Header ── */}
-        <View style={s.header}>
+      {/* ── Hero ── */}
+      <View style={s.hero}>
+        <View style={s.glow} />
+        <View style={s.heroRow}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
+            <Ionicons name="arrow-back" size={20} color={C.white} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Retrait Espèces</Text>
-            <Text style={[s.headerSub, { color: T.accent, fontFamily: T.font.sans }]}>
-              {transaction ? "Paiement en cours" : "Entrez le code de retrait"}
+            <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Retrait Espèces</Text>
+            <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>
+              {transaction ? "Paiement en cours" : "Saisir le code de retrait"}
             </Text>
           </View>
-          {transaction && (
-            <TouchableOpacity
-              style={[s.resetBtn]}
-              onPress={() => { setTransaction(null); setCode(""); fadeAnim.setValue(0); }}
-            >
-              <Ionicons name="close" size={18} color={T.dim} />
+          {transaction ? (
+            <TouchableOpacity style={s.backBtn} onPress={resetForm}>
+              <Ionicons name="close" size={20} color={C.white} />
             </TouchableOpacity>
+          ) : (
+            <View style={s.heroBadge}>
+              <Ionicons name="arrow-up-circle-outline" size={20} color={C.white} />
+            </View>
           )}
         </View>
+      </View>
 
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {!transaction ? (
-              /* ── Saisie code ── */
-              <View style={s.centerBox}>
-                <View style={s.qrIconBox}>
-                  <LinearGradient colors={[T.accentGlow, "transparent"]} style={s.qrIconGrad}>
-                    <Ionicons name="qr-code-outline" size={54} color={T.accent} />
-                  </LinearGradient>
-                </View>
-                <Text style={[s.codeHint, { fontFamily: T.font.sans }]}>
-                  Demandez le code de retrait au client
-                </Text>
-
-                <View style={s.codeInputWrap}>
-                  <TextInput
-                    style={[s.codeInput, { fontFamily: T.font.mono }]}
-                    value={code}
-                    onChangeText={setCode}
-                    placeholder="• • • • • •"
-                    placeholderTextColor={T.dim + "55"}
-                    keyboardType="default"
-                    autoCapitalize="characters"
-                    maxLength={20}
-                    textAlign="center"
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[s.checkBtn, (checking || code.trim().length < 6) && { opacity: 0.5 }]}
-                  onPress={() => void handleCheckCode()}
-                  disabled={checking || code.trim().length < 6}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={[T.accent, T.accentSoft]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={s.checkBtnGrad}
-                  >
-                    {checking
-                      ? <ActivityIndicator color={T.g1} />
-                      : <>
-                          <Ionicons name="search-outline" size={18} color={T.g1} />
-                          <Text style={[s.checkBtnTxt, { fontFamily: T.font.sans }]}>VÉRIFIER LE CODE</Text>
-                        </>
-                    }
-                  </LinearGradient>
-                </TouchableOpacity>
+          {!transaction ? (
+            /* ── SAISIE CODE ── */
+            <View style={s.centerBox}>
+              {/* Icon décor */}
+              <View style={s.qrBox}>
+                <Ionicons name="qr-code-outline" size={48} color={C.violet} />
               </View>
-            ) : (
-              /* ── Résultat ── */
-              <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
-                {/* Valid badge */}
-                <View style={s.validBadge}>
-                  <View style={s.validIconBox}>
-                    <Ionicons name="checkmark-circle" size={22} color={T.green} />
+              <Text style={[s.qrHint, { fontFamily: C.font.sans }]}>
+                Demandez le code de retrait au client et saisissez-le ci-dessous
+              </Text>
+
+              <View style={[s.codeWrap, code.trim().length >= 6 && { borderColor: C.violet }]}>
+                <TextInput
+                  style={[s.codeInput, { fontFamily: C.font.mono }]}
+                  value={code} onChangeText={setCode}
+                  placeholder="• • • • • •"
+                  placeholderTextColor={C.inkSoft}
+                  keyboardType="default"
+                  autoCapitalize="characters"
+                  maxLength={20}
+                  textAlign="center"
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[s.cta, (checking || code.trim().length < 6) && { opacity: 0.4 }]}
+                onPress={() => void handleCheckCode()}
+                disabled={checking || code.trim().length < 6}
+                activeOpacity={0.88}
+              >
+                <View style={s.ctaInner}>
+                  {checking
+                    ? <ActivityIndicator color={C.white} />
+                    : <>
+                        <Ionicons name="search-outline" size={18} color={C.white} />
+                        <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>VÉRIFIER LE CODE</Text>
+                      </>
+                  }
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* ── RÉSULTAT ── */
+            <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
+
+              {/* Badge valide */}
+              <View style={s.validBadge}>
+                <View style={s.validIcon}>
+                  <Ionicons name="checkmark-circle" size={18} color={C.green} />
+                </View>
+                <Text style={[s.validTxt, { fontFamily: C.font.sans }]}>CODE VALIDE — Transaction trouvée</Text>
+              </View>
+
+              {/* Montant hero card */}
+              <View style={s.amtCard}>
+                <Text style={[s.amtLbl, { fontFamily: C.font.sans }]}>MONTANT À REMETTRE AU CLIENT</Text>
+                <Text style={[s.amtVal, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {amtVal}
+                </Text>
+                <Text style={[s.amtCur, { fontFamily: C.font.mono }]}>{amtCurr}</Text>
+                {transaction.receivedAmount && toNum(transaction.receivedAmount) > 0 && transaction.targetCurrency !== transaction.currency && (
+                  <View style={s.rateRow}>
+                    <Ionicons name="swap-horizontal" size={12} color={C.inkSoft} />
+                    <Text style={[s.rateTxt, { fontFamily: C.font.mono }]}>
+                      {fmt(toNum(transaction.amount), transaction.currency)} {transaction.currency}
+                      {transaction.exchangeRate ? ` · Taux : ${Number(transaction.exchangeRate).toFixed(2)}` : ""}
+                    </Text>
                   </View>
-                  <Text style={[s.validLabel, { fontFamily: T.font.sans }]}>CODE VALIDE</Text>
+                )}
+              </View>
+
+              {/* Bénéficiaire */}
+              <View style={s.card}>
+                <View style={s.secRow}>
+                  <View style={[s.secDot, { backgroundColor: C.blue }]} />
+                  <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>BÉNÉFICIAIRE · VÉRIFIER PIÈCE D'IDENTITÉ</Text>
                 </View>
+                <InfoRow label="Nom complet" value={transaction.beneficiary?.fullName || "Non spécifié"} icon="person-outline" color={C.blue} />
+                <InfoRow label="Téléphone"   value={transaction.beneficiary?.phone || "—"}               icon="call-outline"   color={C.blue} />
+              </View>
 
-                {/* Montant hero */}
-                <LinearGradient
-                  colors={["rgba(34,197,94,0.15)", "rgba(34,197,94,0.05)"]}
-                  style={s.amountCard}
-                >
-                  <Text style={[s.amountLabel, { fontFamily: T.font.sans }]}>MONTANT À PAYER AU CLIENT</Text>
-                  <Text style={[s.amountValue, { fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {amountVal}
-                  </Text>
-                  <Text style={[s.amountCurrency, { fontFamily: T.font.mono }]}>{amountCurr}</Text>
-
-                  {/* Taux de change si conversion */}
-                  {transaction.receivedAmount && toNum(transaction.receivedAmount) > 0 && transaction.targetCurrency !== transaction.currency && (
-                    <View style={s.rateRow}>
-                      <Ionicons name="swap-horizontal" size={12} color={T.dim} />
-                      <Text style={[s.rateTxt, { fontFamily: T.font.mono }]}>
-                        {fmt(toNum(transaction.amount), transaction.currency)} {transaction.currency}
-                        {transaction.exchangeRate ? ` · Taux : ${Number(transaction.exchangeRate).toFixed(2)}` : ""}
-                      </Text>
-                    </View>
-                  )}
-                </LinearGradient>
-
-                {/* Bénéficiaire */}
-                <View style={s.card}>
-                  <View style={s.sectionRow}>
-                    <View style={[s.sectionDot, { backgroundColor: T.blue }]} />
-                    <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>BÉNÉFICIAIRE — VÉRIFIER PIÈCE D'IDENTITÉ</Text>
-                  </View>
-                  <InfoRow
-                    label="NOM COMPLET"
-                    value={transaction.beneficiary?.fullName || "Non spécifié"}
-                    icon="person-outline"
-                    color={T.blue}
-                  />
-                  <InfoRow
-                    label="TÉLÉPHONE"
-                    value={transaction.beneficiary?.phone || "—"}
-                    icon="call-outline"
-                    color={T.blue}
-                  />
+              {/* Expéditeur */}
+              <View style={s.card}>
+                <View style={s.secRow}>
+                  <View style={[s.secDot, { backgroundColor: C.violet }]} />
+                  <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>EXPÉDITEUR</Text>
                 </View>
+                <InfoRow label="Nom" value={transaction.senderName || `${transaction.sender?.firstName ?? ""} ${transaction.sender?.lastName ?? ""}`.trim() || "—"} icon="person-circle-outline" color={C.violet} />
+                <InfoRow label="Pays d'origine" value={transaction.originCountry || transaction.sender?.country || "—"} icon="flag-outline" color={C.violet} />
+                <InfoRow label="Référence"      value={transaction.reference || "—"} icon="document-text-outline" color={C.inkSoft} />
+              </View>
 
-                {/* Expéditeur */}
-                <View style={s.card}>
-                  <View style={s.sectionRow}>
-                    <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-                    <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>EXPÉDITEUR</Text>
-                  </View>
-                  <InfoRow
-                    label="NOM"
-                    value={transaction.senderName || `${transaction.sender?.firstName ?? ""} ${transaction.sender?.lastName ?? ""}`.trim() || "—"}
-                    icon="person-circle-outline"
-                    color={T.accent}
-                  />
-                  <InfoRow
-                    label="PAYS D'ORIGINE"
-                    value={transaction.originCountry || transaction.sender?.country || "—"}
-                    icon="flag-outline"
-                    color={T.accent}
-                  />
-                  <InfoRow
-                    label="RÉFÉRENCE"
-                    value={transaction.reference || "—"}
-                    icon="document-text-outline"
-                    color={T.dim}
-                  />
+              {/* Warning */}
+              <View style={s.warning}>
+                <Ionicons name="warning-outline" size={16} color={C.amber} />
+                <Text style={[s.warningTxt, { fontFamily: C.font.sans }]}>
+                  Vérifiez impérativement la pièce d'identité avant de remettre les fonds.
+                </Text>
+              </View>
+
+              {/* CTA paiement */}
+              <TouchableOpacity
+                style={[s.payBtn, paying && { opacity: 0.65 }]}
+                onPress={handlePayOut} disabled={paying} activeOpacity={0.88}
+              >
+                <View style={s.payBtnInner}>
+                  {paying
+                    ? <ActivityIndicator color={C.white} />
+                    : <>
+                        <Ionicons name="checkmark-circle-outline" size={20} color={C.white} />
+                        <Text style={[s.payBtnTxt, { fontFamily: C.font.sans }]}>CONFIRMER — {amtVal} {amtCurr}</Text>
+                      </>
+                  }
                 </View>
+              </TouchableOpacity>
 
-                {/* Warning */}
-                <View style={s.warningBox}>
-                  <Ionicons name="warning-outline" size={16} color={T.amber} />
-                  <Text style={[s.warningTxt, { fontFamily: T.font.sans }]}>
-                    Vérifiez impérativement la pièce d'identité du bénéficiaire avant de remettre les fonds.
-                  </Text>
-                </View>
+              <TouchableOpacity style={s.cancelBtn} onPress={resetForm} disabled={paying}>
+                <Text style={[s.cancelTxt, { fontFamily: C.font.sans }]}>Annuler · Nouveau code</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
 
-                {/* Confirmer */}
-                <TouchableOpacity
-                  style={[s.payBtn, paying && { opacity: 0.65 }]}
-                  onPress={handlePayOut}
-                  disabled={paying}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={[T.green, "#34D399"]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={s.payBtnGrad}
-                  >
-                    {paying
-                      ? <ActivityIndicator color={T.g1} />
-                      : <>
-                          <Ionicons name="checkmark-circle-outline" size={20} color={T.g1} />
-                          <Text style={[s.payBtnTxt, { fontFamily: T.font.sans }]}>
-                            CONFIRMER LE PAIEMENT DE {amountVal} {amountCurr}
-                          </Text>
-                        </>
-                    }
-                  </LinearGradient>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={s.cancelBtn}
-                  onPress={() => { setTransaction(null); setCode(""); fadeAnim.setValue(0); }}
-                  disabled={paying}
-                >
-                  <Text style={[s.cancelTxt, { fontFamily: T.font.sans }]}>Annuler · Nouveau code</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            <View style={{ height: 80 }} />
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
-    </LinearGradient>
+          <View style={{ height: 80 }} />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
+  safe: { flex: 1, backgroundColor: C.pageBg },
+
+  hero: {
+    backgroundColor: C.violet,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 48 : 16,
+    paddingBottom: 24, overflow: "hidden",
   },
+  glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+  heroRow:   { flexDirection: "row", alignItems: "center", gap: 14 },
   backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
+    width: 38, height: 38, borderRadius: C.r.sm,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
   },
-  headerTitle: { color: T.white, fontSize: 22, fontWeight: "700" },
-  headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
-  resetBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
+  heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
+  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  heroBadge: {
+    width: 42, height: 42, borderRadius: C.r.sm,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
   },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingHorizontal: 20, paddingTop: 20 },
 
-  // ── Saisie code ──
-  centerBox: { alignItems: "center", paddingTop: 20 },
-  qrIconBox: { marginBottom: 20 },
-  qrIconGrad: { width: 100, height: 100, borderRadius: 28, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: `${T.accent}25` },
-  codeHint: { color: T.dim, fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24, lineHeight: 18 },
-  codeInputWrap: { width: "100%", marginBottom: 24 },
+  // Saisie code
+  centerBox: { alignItems: "center", paddingTop: 10 },
+  qrBox: {
+    width: 96, height: 96, borderRadius: 24, marginBottom: 20,
+    backgroundColor: C.violetLight, borderWidth: 1.5, borderColor: C.violetBorder,
+    justifyContent: "center", alignItems: "center",
+  },
+  qrHint:   { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24, lineHeight: 19, paddingHorizontal: 10 },
+  codeWrap: {
+    width: "100%", marginBottom: 22,
+    backgroundColor: C.white, borderWidth: 2, borderColor: C.cardBorder,
+    borderRadius: C.r.md,
+    shadowColor: C.violet, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
+  },
   codeInput: {
-    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, paddingVertical: 20, paddingHorizontal: 20,
-    fontSize: 28, color: T.white, fontWeight: "900", letterSpacing: 6, textAlign: "center",
+    paddingVertical: 22, paddingHorizontal: 20,
+    fontSize: 30, color: C.ink, fontWeight: "900", letterSpacing: 8,
   },
-  checkBtn: { width: "100%", borderRadius: T.radius.md, overflow: "hidden" },
-  checkBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8 },
-  checkBtnTxt: { color: T.g1, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 
-  // ── Result ──
+  cta:      { width: "100%", borderRadius: C.r.md, overflow: "hidden" },
+  ctaInner: { backgroundColor: C.violet, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
+  ctaTxt:   { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+
+  // Résultat
   validBadge: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: "rgba(34,197,94,0.10)", borderRadius: T.radius.md,
-    padding: 12, borderWidth: 1, borderColor: "rgba(34,197,94,0.20)", marginBottom: 14,
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: C.greenBg, borderRadius: C.r.md,
+    padding: 13, borderWidth: 1, borderColor: C.greenBorder, marginBottom: 14,
   },
-  validIconBox: { width: 28, height: 28, borderRadius: 9, backgroundColor: "rgba(34,197,94,0.15)", justifyContent: "center", alignItems: "center" },
-  validLabel: { color: T.green, fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  validIcon: { width: 28, height: 28, borderRadius: 9, backgroundColor: "#D1FAE5", justifyContent: "center", alignItems: "center" },
+  validTxt:  { color: C.greenDark, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, flex: 1 },
 
-  amountCard: {
-    borderRadius: T.radius.lg, padding: 22, marginBottom: 14,
-    borderWidth: 1, borderColor: "rgba(34,197,94,0.20)",
+  amtCard: {
+    backgroundColor: C.greenBg, borderRadius: C.r.xl,
+    padding: 22, marginBottom: 14,
+    borderWidth: 1.5, borderColor: C.greenBorder,
   },
-  amountLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 8 },
-  amountValue: { color: T.white, fontSize: 38, fontWeight: "900", letterSpacing: -0.5 },
-  amountCurrency: { color: T.green, fontSize: 12, fontWeight: "900", marginTop: 4, letterSpacing: 1 },
-  rateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
-  rateTxt: { color: T.dim, fontSize: 11, fontWeight: "700" },
+  amtLbl: { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
+  amtVal: { color: C.ink, fontSize: 38, fontWeight: "900", letterSpacing: -0.5 },
+  amtCur: { color: C.green, fontSize: 12, fontWeight: "900", marginTop: 4, letterSpacing: 1 },
+  rateRow:{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  rateTxt:{ color: C.inkSoft, fontSize: 11, fontWeight: "700" },
 
   card: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 12, borderWidth: 1, borderColor: T.inkBorder,
+    backgroundColor: C.white, borderRadius: C.r.lg,
+    padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: C.cardBorder,
+    shadowColor: C.violet, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 10, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  secRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  secDot: { width: 5, height: 5, borderRadius: C.r.pill },
+  secLbl: { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.2 },
 
-  warningBox: {
+  warning: {
     flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: "rgba(245,158,11,0.08)", borderRadius: T.radius.md,
-    padding: 14, borderWidth: 1, borderColor: "rgba(245,158,11,0.20)", marginBottom: 16,
+    backgroundColor: C.amberBg, borderRadius: C.r.md,
+    padding: 14, borderWidth: 1, borderColor: C.amberBorder, marginBottom: 16,
   },
-  warningTxt: { flex: 1, color: T.amber, fontSize: 12, fontWeight: "600", lineHeight: 17 },
+  warningTxt: { flex: 1, color: "#92400E", fontSize: 12, fontWeight: "600", lineHeight: 17 },
 
-  payBtn: { borderRadius: T.radius.md, overflow: "hidden", marginBottom: 10 },
-  payBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, flexWrap: "wrap" },
-  payBtnTxt: { color: T.g1, fontWeight: "900", fontSize: 13, letterSpacing: 0.5, textAlign: "center" },
+  payBtn:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
+  payBtnInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
+  payBtnTxt:   { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
 
   cancelBtn: { alignItems: "center", paddingVertical: 14 },
-  cancelTxt: { color: T.dim, fontWeight: "800", fontSize: 14 },
+  cancelTxt: { color: C.inkSoft, fontWeight: "800", fontSize: 14 },
 });

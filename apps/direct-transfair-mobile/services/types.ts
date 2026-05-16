@@ -230,10 +230,11 @@ export interface RegisterPayload {
 }
 
 export interface ChangePasswordPayload {
-  oldPassword: string;
+  oldPassword?: string;
+  currentPassword?: string;
   newPassword: string;
+  password?: string;
 }
-
 // =========================================================
 // USER
 // =========================================================
@@ -618,17 +619,17 @@ export interface SubmitKycPayload {
 export interface TreasuryOverview {
   currency: CurrencyCode;
   symbol?: string;
- 
+
   // ✅ Champs réels du backend
   balance: number;
   reservedBalance: number;
   availableBalance: number;
- 
+
   totalSentToday?: number;
   totalReceivedToday?: number;
   totalFeesToday?: number;
   transactionCountToday?: number;
- 
+
   // Anciens champs conservés pour rétrocompatibilité
   totalBalance?: number;
   clientBalance?: number;
@@ -636,13 +637,28 @@ export interface TreasuryOverview {
   userBalance?: number;
   pendingTransactions?: number;
   date?: ISODate;
- 
+
   // Snapshot fields
   closingBalance?: number;
   openingBalance?: number;
   totalSent?: number;
   totalReceived?: number;
   totalFees?: number;
+}
+
+// ✅ AJOUT — TreasurySnapshot manquant
+export interface TreasurySnapshot {
+  id?: string;
+  currency: CurrencyCode;
+  date?: ISODate;
+  openingBalance: number;
+  closingBalance: number;
+  totalSent: number;
+  totalReceived: number;
+  totalFees: number;
+  totalCommission: number;
+  clientId?: number;
+  createdAt?: ISODate;
 }
 
 // =========================================================

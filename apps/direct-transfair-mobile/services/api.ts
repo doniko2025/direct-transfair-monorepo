@@ -543,8 +543,15 @@ async logout(): Promise<void> {
   }
 
   async changePassword(data: ChangePasswordPayload): Promise<void> {
-    await this.http.patch("/auth/change-password", data);
-  }
+  const old = (data.oldPassword ?? data.currentPassword ?? "").trim();
+  const nw  = (data.newPassword ?? data.password ?? "").trim();
+
+  // ✅ Le backend attend exactement oldPass + newPass (auth.controller.ts)
+  await this.http.patch("/auth/change-password", {
+    oldPass: old,
+    newPass: nw,
+  });
+}
 
   async findAccount(
     identifier: string,

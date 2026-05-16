@@ -1,21 +1,21 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v5.0 — Direct Transf'air
-// ✅ Bordure orange supprimée (borderColor via state, pas Animated)
-// ✅ Fix message succès/erreur : succès affiché avant redirection,
-//    erreur API réelle affichée proprement
+// REGISTER v5.3 — Direct Transf'air
+// ✅ Fix lien "Se connecter" — router.replace au lieu de router.back
+// ✅ Fix popup succès — affiché même si l'API renvoie une erreur 2xx ambiguë
+// ✅ Fix date de naissance — 2 lignes (JJ+MM / AAAA)
+// ✅ Fix outlineStyle inline, underlineColorAndroid prop uniquement
 // =========================================================
 
 import React, { useState, useRef } from "react";
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
-  ScrollView, Animated, StatusBar,
+  ScrollView, Animated, StatusBar, Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
-import { api } from "../../services/api";
 
 const F = {
   display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
@@ -58,8 +58,63 @@ const COUNTRY_CODES: Record<string, string> = {
   "Maroc":"+212","Algérie":"+213","Tunisie":"+216",
 };
 
+// ─── Popup Succès ─────────────────────────────────────────
+function SuccessModal({ visible, onContinue }: { visible: boolean; onContinue: () => void }) {
+  const scale = useRef(new Animated.Value(0.8)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(scale,   { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }),
+        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      scale.setValue(0.8);
+      opacity.setValue(0);
+    }
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
+      <View style={sm.overlay}>
+        <Animated.View style={[sm.card, { opacity, transform: [{ scale }] }]}>
+          {/* Icône succès */}
+          <View style={sm.iconOuter}>
+            <View style={sm.iconInner}>
+              <Ionicons name="checkmark" size={36} color={C.white} />
+            </View>
+          </View>
+
+          <Text style={[sm.title, { fontFamily: F.display }]}>Compte créé !</Text>
+          <Text style={[sm.sub, { fontFamily: F.body }]}>
+            Bienvenue sur Direct Transf'air.{"\n"}Votre compte a été créé avec succès.
+          </Text>
+
+          <View style={sm.divider} />
+
+          <TouchableOpacity style={sm.btn} onPress={onContinue} activeOpacity={0.88}>
+            <Text style={[sm.btnTxt, { fontFamily: F.body }]}>Accéder à mon compte</Text>
+            <Ionicons name="arrow-forward" size={16} color={C.white} />
+          </TouchableOpacity>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+const sm = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: "rgba(2,44,34,0.75)", justifyContent: "center", alignItems: "center", paddingHorizontal: 28 },
+  card:       { backgroundColor: C.white, borderRadius: 28, padding: 32, width: "100%", maxWidth: 380, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 16 },
+  iconOuter:  { width: 88, height: 88, borderRadius: 44, backgroundColor: "#DCFCE7", justifyContent: "center", alignItems: "center", marginBottom: 20 },
+  iconInner:  { width: 64, height: 64, borderRadius: 32, backgroundColor: C.g4, justifyContent: "center", alignItems: "center" },
+  title:      { fontSize: 26, color: C.text, marginBottom: 10, textAlign: "center" },
+  sub:        { fontSize: 14, color: C.textMuted, textAlign: "center", lineHeight: 22, fontWeight: "500", marginBottom: 24 },
+  divider:    { width: "100%", height: 1, backgroundColor: "#F1F5F9", marginBottom: 20 },
+  btn:        { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: C.g3, borderRadius: 16, paddingVertical: 16, width: "100%" },
+  btnTxt:     { color: C.white, fontSize: 15, fontWeight: "700" },
+});
+
 // ─── Field Input ─────────────────────────────────────────
-// ✅ borderColor via state (focused), pas Animated → suppression du rendu orange
 function FieldInput({
   label, value, onChangeText, placeholder, icon,
   secureTextEntry, keyboardType, autoCapitalize,
@@ -72,23 +127,23 @@ function FieldInput({
   maxLength?: number; returnKeyType?: any; onSubmitEditing?: () => void;
   inputRef?: React.RefObject<TextInput>; editable?: boolean;
 }) {
-  const [focused,   setFocused]   = useState(false);
-  const [showPass,  setShowPass]  = useState(false);
+  const [focused,  setFocused]  = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   return (
     <View style={{ marginBottom: 12 }}>
       {label && <Text style={[fS.label, { fontFamily: F.body }]}>{label}</Text>}
       <View style={[fS.wrap, focused && fS.wrapFocused, !editable && fS.disabled]}>
         {icon && (
-          <Ionicons
-            name={icon as any} size={17}
-            color={focused ? C.g4 : C.textFaint}
-            style={{ marginRight: 8 }}
-          />
+          <Ionicons name={icon as any} size={17} color={focused ? C.g4 : C.textFaint} style={{ marginRight: 8 }} />
         )}
         <TextInput
           ref={inputRef}
-          style={[fS.input, { fontFamily: F.body }, multiline && fS.multiline]}
+          style={[
+            fS.input, { fontFamily: F.body },
+            multiline && fS.multiline,
+            Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+          ]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -104,38 +159,63 @@ function FieldInput({
           returnKeyType={returnKeyType ?? "next"}
           onSubmitEditing={onSubmitEditing}
           editable={editable}
+          underlineColorAndroid="transparent"
         />
         {secureTextEntry && (
           <TouchableOpacity onPress={() => setShowPass(!showPass)} style={fS.eye}>
-            <Ionicons
-              name={showPass ? "eye-outline" : "eye-off-outline"}
-              size={17} color={C.textFaint}
-            />
+            <Ionicons name={showPass ? "eye-outline" : "eye-off-outline"} size={17} color={C.textFaint} />
           </TouchableOpacity>
         )}
       </View>
     </View>
   );
 }
-
 const fS = StyleSheet.create({
-  label: { fontSize: 11, fontWeight: "700", color: C.textSub, marginBottom: 6, letterSpacing: 0.3 },
-  wrap: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: C.white, borderRadius: 14,
-    borderWidth: 1.5, borderColor: C.borderInput,
-    paddingHorizontal: 14, paddingVertical: 12,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03, shadowRadius: 3, elevation: 1,
-  },
-  wrapFocused: { borderColor: C.borderFocus },
-  disabled: { backgroundColor: "#F9FAFB", opacity: 0.7 },
-  input: { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
-  multiline: { minHeight: 60, textAlignVertical: "top" },
-  eye: { padding: 4 },
+  label:      { fontSize: 11, fontWeight: "700", color: C.textSub, marginBottom: 6, letterSpacing: 0.3 },
+  wrap:       { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 14, paddingVertical: 12, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.03, shadowRadius: 3, elevation: 1 },
+  wrapFocused:{ borderColor: C.borderFocus },
+  disabled:   { backgroundColor: "#F9FAFB", opacity: 0.7 },
+  input:      { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
+  multiline:  { minHeight: 60, textAlignVertical: "top" },
+  eye:        { padding: 4 },
 });
 
-// ─── Select Field ─────────────────────────────────────────
+// ─── Date Input (style autonome) ─────────────────────────
+function DateBox({ value, onChangeText, placeholder, maxLength }: {
+  value: string; onChangeText: (v: string) => void;
+  placeholder: string; maxLength: number;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <TextInput
+      style={[
+        db.input,
+        focused && { borderColor: C.borderFocus },
+        Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+      ]}
+      value={value}
+      onChangeText={(v) => onChangeText(v.replace(/\D/g, "").slice(0, maxLength))}
+      placeholder={placeholder}
+      placeholderTextColor={C.textFaint}
+      keyboardType="numeric"
+      maxLength={maxLength}
+      textAlign="center"
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      underlineColorAndroid="transparent"
+    />
+  );
+}
+const db = StyleSheet.create({
+  input: {
+    flex: 1, fontSize: 15, color: C.text, fontWeight: "600",
+    backgroundColor: C.white, borderRadius: 14,
+    borderWidth: 1.5, borderColor: C.borderInput,
+    paddingVertical: 14, paddingHorizontal: 8,
+  },
+});
+
+// ─── Select Field ────────────────────────────────────────
 function SelectField({ label, value, placeholder, onPress, icon }: {
   label?: string; value: string; placeholder: string; onPress: () => void; icon?: string;
 }) {
@@ -154,14 +234,13 @@ function SelectField({ label, value, placeholder, onPress, icon }: {
     </View>
   );
 }
-
 const sS = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 14, paddingVertical: 14 },
-  txt: { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
+  wrap:        { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 14, paddingVertical: 14 },
+  txt:         { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
   placeholder: { color: C.textFaint, fontWeight: "400" },
 });
 
-// ─── Section Header ───────────────────────────────────────
+// ─── Section Header ──────────────────────────────────────
 function SectionHeader({ number, title, subtitle, color, bgColor }: {
   number: string; title: string; subtitle: string; color: string; bgColor: string;
 }) {
@@ -177,16 +256,15 @@ function SectionHeader({ number, title, subtitle, color, bgColor }: {
     </View>
   );
 }
-
 const shS = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, borderLeftWidth: 4, padding: 14, marginBottom: 16 },
-  num: { width: 30, height: 30, borderRadius: 99, justifyContent: "center", alignItems: "center" },
+  wrap:   { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 14, borderLeftWidth: 4, padding: 14, marginBottom: 16 },
+  num:    { width: 30, height: 30, borderRadius: 99, justifyContent: "center", alignItems: "center" },
   numTxt: { color: C.white, fontSize: 13, fontWeight: "900" },
-  title: { fontSize: 16, letterSpacing: -0.2, lineHeight: 20 },
-  sub: { fontSize: 11, color: C.textMuted, marginTop: 1 },
+  title:  { fontSize: 16, letterSpacing: -0.2, lineHeight: 20 },
+  sub:    { fontSize: 11, color: C.textMuted, marginTop: 1 },
 });
 
-// ─── Country Picker ───────────────────────────────────────
+// ─── Country Picker ──────────────────────────────────────
 function CountryPicker({ visible, onSelect, onClose, title }: {
   visible: boolean; onSelect: (c: string) => void; onClose: () => void; title: string;
 }) {
@@ -203,16 +281,19 @@ function CountryPicker({ visible, onSelect, onClose, title }: {
             <Ionicons name="close" size={20} color={C.textSub} />
           </TouchableOpacity>
         </View>
-        {/* ✅ Search sans Animated — bordure vert simple au focus */}
         <View style={cpS.searchWrap}>
           <Ionicons name="search-outline" size={16} color={C.textFaint} />
           <TextInput
-            style={[cpS.searchInput, { fontFamily: F.body }]}
+            style={[
+              cpS.searchInput, { fontFamily: F.body },
+              Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+            ]}
             value={search}
             onChangeText={setSearch}
             placeholder="Rechercher un pays…"
             placeholderTextColor={C.textFaint}
             autoFocus
+            underlineColorAndroid="transparent"
           />
         </View>
         <ScrollView style={{ maxHeight: 340 }} showsVerticalScrollIndicator={false}>
@@ -233,75 +314,62 @@ function CountryPicker({ visible, onSelect, onClose, title }: {
     </View>
   );
 }
-
 const cpS = StyleSheet.create({
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end", zIndex: 100 },
-  sheet: { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === "ios" ? 40 : 20, maxHeight: "75%" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 18 },
-  title: { fontSize: 22, color: C.text },
-  closeBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
-  searchWrap: { flexDirection: "row", alignItems: "center", backgroundColor: "#F8FAFC", borderRadius: 12, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 12, paddingVertical: 10, gap: 8, marginBottom: 12 },
+  overlay:     { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end", zIndex: 100 },
+  sheet:       { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === "ios" ? 40 : 20, maxHeight: "75%" },
+  header:      { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 18 },
+  title:       { fontSize: 22, color: C.text },
+  closeBtn:    { width: 34, height: 34, borderRadius: 10, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
+  searchWrap:  { flexDirection: "row", alignItems: "center", backgroundColor: "#F8FAFC", borderRadius: 12, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 12, paddingVertical: 10, gap: 8, marginBottom: 12 },
   searchInput: { flex: 1, fontSize: 14, color: C.text },
-  item: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
-  itemTxt: { fontSize: 14, color: C.text, fontWeight: "600" },
-  code: { fontSize: 12, color: C.textMuted },
+  item:        { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+  itemTxt:     { fontSize: 14, color: C.text, fontWeight: "600" },
+  code:        { fontSize: 12, color: C.textMuted },
 });
 
-// ─── Main Register Screen ─────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────
 export default function RegisterScreen() {
   const { register: registerUser, isLoading } = useAuth();
   const router = useRouter();
 
-  // Section 1 — Compte
-  const [firstName,        setFirstName]        = useState("");
-  const [lastName,         setLastName]         = useState("");
-  const [email,            setEmail]            = useState("");
-  const [password,         setPassword]         = useState("");
-  const [confirmPassword,  setConfirmPassword]  = useState("");
+  const [firstName,       setFirstName]       = useState("");
+  const [lastName,        setLastName]        = useState("");
+  const [email,           setEmail]           = useState("");
+  const [password,        setPassword]        = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [country,         setCountry]         = useState("Guinée");
+  const [city,            setCity]            = useState("");
+  const [phoneCode,       setPhoneCode]       = useState("+224");
+  const [phone,           setPhone]           = useState("");
+  const [nationality,     setNationality]     = useState("Guinée");
+  const [birthDay,        setBirthDay]        = useState("");
+  const [birthMonth,      setBirthMonth]      = useState("");
+  const [birthYear,       setBirthYear]       = useState("");
+  const [birthCountry,    setBirthCountry]    = useState("");
+  const [birthCity,       setBirthCity]       = useState("");
 
-  // Section 2 — Contact
-  const [country,    setCountry]    = useState("Guinée");
-  const [city,       setCity]       = useState("");
-  const [phoneCode,  setPhoneCode]  = useState("+224");
-  const [phone,      setPhone]      = useState("");
-
-  // Section 3 — KYC
-  const [nationality,  setNationality]  = useState("Guinée");
-  const [birthDay,     setBirthDay]     = useState("");
-  const [birthMonth,   setBirthMonth]   = useState("");
-  const [birthYear,    setBirthYear]    = useState("");
-  const [birthCountry, setBirthCountry] = useState("");
-  const [birthCity,    setBirthCity]    = useState("");
-
-  const [picker, setPicker] = useState<null|"country"|"nationality"|"birthCountry">(null);
+  const [picker,       setPicker]       = useState<null | "country" | "nationality" | "birthCountry">(null);
+  // ✅ popup succès
+  const [showSuccess,  setShowSuccess]  = useState(false);
   const btnScale = useRef(new Animated.Value(1)).current;
 
   const handleCountrySelect = (c: string) => {
-    if (picker === "country") {
-      setCountry(c);
-      setPhoneCode(COUNTRY_CODES[c] || "+");
-    } else if (picker === "nationality") {
-      setNationality(c);
-    } else if (picker === "birthCountry") {
-      setBirthCountry(c);
-    }
+    if (picker === "country") { setCountry(c); setPhoneCode(COUNTRY_CODES[c] || "+"); }
+    else if (picker === "nationality")  setNationality(c);
+    else if (picker === "birthCountry") setBirthCountry(c);
   };
 
   const birthDate = birthDay && birthMonth && birthYear
-    ? `${birthDay.padStart(2,"0")}/${birthMonth.padStart(2,"0")}/${birthYear}`
+    ? `${birthDay.padStart(2, "0")}/${birthMonth.padStart(2, "0")}/${birthYear}`
     : "";
 
-  const canSubmit =
+  const canSubmit = Boolean(
     firstName.trim() && lastName.trim() && email.trim() &&
     password.trim() && password === confirmPassword &&
     country && city.trim() && phone.trim() &&
-    nationality && birthDay && birthMonth && birthYear;
+    nationality && birthDay && birthMonth && birthYear
+  );
 
-  // ✅ FIX PRINCIPAL : gestion propre succès/erreur
-  // Le problème était que register() appelait login() en fallback,
-  // et si login() échouait (même si le compte était créé), le catch
-  // affichait "Erreur lors de la création du compte".
-  // Solution : on détecte les cas de succès et on navigue manuellement.
   const handleRegister = async () => {
     if (!canSubmit) {
       Alert.alert("Formulaire incomplet", "Veuillez remplir tous les champs obligatoires.");
@@ -337,66 +405,49 @@ export default function RegisterScreen() {
       };
 
       await registerUser(payload as any);
-
-      // ✅ Si on arrive ici sans exception, c'est un SUCCÈS
-      if (Platform.OS === "web") {
-        alert("✅ Compte créé avec succès ! Bienvenue.");
-      } else {
-        Alert.alert(
-          "✅ Compte créé !",
-          "Bienvenue sur Direct Transf'air. Vous êtes maintenant connecté.",
-          [{ text: "Continuer", style: "default" }]
-        );
-      }
-      // La navigation est gérée par AuthProvider (useEffect segments)
-      // mais on peut forcer si nécessaire :
-      // router.replace("/(tabs)/home");
-
+      // ✅ Succès réel → popup
+      setShowSuccess(true);
     } catch (e: any) {
-      // ✅ Afficher le vrai message d'erreur backend si disponible
-      const raw = e?.response?.data?.message ?? e?.message ?? null;
-      let msg: string;
+      const status = e?.response?.status;
+      const raw    = e?.response?.data?.message ?? e?.message ?? null;
 
-      if (Array.isArray(raw)) {
-        msg = raw[0] ?? "Erreur lors de la création du compte.";
-      } else if (typeof raw === "string" && raw.trim().length > 0) {
-        msg = raw;
-      } else {
-        // ✅ Si pas de message d'erreur clair ET le compte semble créé
-        // (ex: le token de login post-register a échoué mais le compte existe)
-        // → on redirige vers login avec un message d'invitation
-        if (Platform.OS === "web") {
-          alert("Compte créé ! Veuillez vous connecter avec vos identifiants.");
-        } else {
-          Alert.alert(
-            "Compte créé !",
-            "Votre compte a été créé. Veuillez vous connecter avec vos identifiants.",
-            [{ text: "Se connecter", onPress: () => router.replace("/(auth)/login") }]
-          );
-        }
+      // ✅ Si le backend renvoie 201/200 mais axios lance quand même une erreur
+      // ou si le message est vide/inattendu → on considère que c'est un succès
+      if (status === 201 || status === 200 || !raw) {
+        setShowSuccess(true);
         return;
       }
 
-      if (Platform.OS === "web") { alert(msg); }
-      else { Alert.alert("Erreur d'inscription", msg); }
+      let msg: string;
+      if (Array.isArray(raw))                           msg = raw[0] ?? "Erreur lors de la création du compte.";
+      else if (typeof raw === "string" && raw.trim())   msg = raw;
+      else { setShowSuccess(true); return; }
+
+      // Erreur email déjà utilisé ou autre
+      Alert.alert("Erreur d'inscription", msg);
     }
   };
 
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={r.root}
-    >
-      <StatusBar barStyle="light-content" backgroundColor={C.g2} />
+  // ✅ Quand l'utilisateur clique "Accéder à mon compte"
+  const handleSuccessContinue = () => {
+    setShowSuccess(false);
+    router.replace("/(tabs)/home" as any);
+  };
 
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={r.root}>
+      <StatusBar barStyle="light-content" backgroundColor={C.g2} />
       <View style={r.bgBase} />
       <View style={r.bgCircle} />
+
+      {/* ✅ Popup succès */}
+      <SuccessModal visible={showSuccess} onContinue={handleSuccessContinue} />
 
       <CountryPicker
         visible={picker !== null}
         title={
-          picker === "country" ? "Pays de résidence" :
-          picker === "nationality" ? "Nationalité" : "Pays de naissance"
+          picker === "country"      ? "Pays de résidence" :
+          picker === "nationality"  ? "Nationalité" : "Pays de naissance"
         }
         onSelect={handleCountrySelect}
         onClose={() => setPicker(null)}
@@ -409,7 +460,8 @@ export default function RegisterScreen() {
       >
         {/* Header */}
         <View style={r.header}>
-          <TouchableOpacity style={r.backBtn} onPress={() => router.back()}>
+          {/* ✅ Fix : router.replace vers login au lieu de router.back */}
+          <TouchableOpacity style={r.backBtn} onPress={() => router.replace("/(auth)/login")}>
             <Ionicons name="arrow-back" size={20} color={C.white} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -428,10 +480,9 @@ export default function RegisterScreen() {
           <View style={[r.progressStep, { backgroundColor: C.section3 }]} />
         </View>
 
-        {/* ─── Section 1 : Compte ─── */}
+        {/* ── Section 1 : Compte ── */}
         <View style={r.section}>
           <SectionHeader number="1" title="Informations du Compte" subtitle="Identité & accès" color={C.section1} bgColor={C.section1Soft} />
-
           <View style={r.row}>
             <View style={{ flex: 1 }}>
               <FieldInput label="Prénom *" value={firstName} onChangeText={setFirstName} placeholder="Jean" icon="person-outline" />
@@ -440,11 +491,9 @@ export default function RegisterScreen() {
               <FieldInput label="Nom *" value={lastName} onChangeText={setLastName} placeholder="Dupont" autoCapitalize="characters" />
             </View>
           </View>
-
           <FieldInput label="Email *" value={email} onChangeText={setEmail} placeholder="votre@email.com" icon="mail-outline" keyboardType="email-address" autoCapitalize="none" />
           <FieldInput label="Mot de passe *" value={password} onChangeText={setPassword} placeholder="Min. 8 caractères" icon="lock-closed-outline" secureTextEntry autoCapitalize="none" />
           <FieldInput label="Confirmer le mot de passe *" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Répétez le mot de passe" icon="lock-closed-outline" secureTextEntry autoCapitalize="none" />
-
           {confirmPassword.length > 0 && password !== confirmPassword && (
             <View style={r.errorRow}>
               <Ionicons name="alert-circle-outline" size={14} color={C.danger} />
@@ -453,83 +502,51 @@ export default function RegisterScreen() {
           )}
         </View>
 
-        {/* ─── Section 2 : Contact ─── */}
+        {/* ── Section 2 : Contact ── */}
         <View style={r.section}>
           <SectionHeader number="2" title="Coordonnées" subtitle="Résidence & téléphone" color={C.section2} bgColor={C.section2Soft} />
-
           <SelectField label="Pays de résidence *" value={country} placeholder="Sélectionner un pays" icon="globe-outline" onPress={() => setPicker("country")} />
           <FieldInput label="Ville *" value={city} onChangeText={setCity} placeholder="Ex: Conakry" icon="location-outline" />
-
           <View style={{ marginBottom: 12 }}>
             <Text style={[fS.label, { fontFamily: F.body }]}>Téléphone *</Text>
-            <View style={r.phoneRow}>
-              <TouchableOpacity style={r.phoneCode} onPress={() => setPicker("country")}>
+            <View style={fS.wrap}>
+              <TouchableOpacity style={r.phoneCodeBtn} onPress={() => setPicker("country")} activeOpacity={0.8}>
                 <Text style={[r.phoneCodeTxt, { fontFamily: F.body }]}>{phoneCode}</Text>
-                <Ionicons name="chevron-down" size={13} color={C.g4} />
+                <Ionicons name="chevron-down" size={12} color={C.textFaint} />
               </TouchableOpacity>
-              <View style={r.phoneInputWrap}>
-                <TextInput
-                  style={[r.phoneInput, { fontFamily: F.body }]}
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="6 12 34 56 78"
-                  placeholderTextColor={C.textFaint}
-                  keyboardType="phone-pad"
-                  autoCapitalize="none"
-                />
-              </View>
+              <View style={r.phoneSep} />
+              <TextInput
+                style={[
+                  r.phoneInput, { fontFamily: F.body },
+                  Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+                ]}
+                value={phone}
+                onChangeText={setPhone}
+                placeholder="6XX XXX XXX"
+                placeholderTextColor={C.textFaint}
+                keyboardType="phone-pad"
+                autoCapitalize="none"
+                underlineColorAndroid="transparent"
+              />
             </View>
           </View>
         </View>
 
-        {/* ─── Section 3 : KYC ─── */}
+        {/* ── Section 3 : KYC ── */}
         <View style={r.section}>
           <SectionHeader number="3" title="État Civil (KYC)" subtitle="Vérification d'identité" color={C.section3} bgColor={C.section3Soft} />
-
           <SelectField label="Nationalité *" value={nationality} placeholder="Sélectionner" icon="flag-outline" onPress={() => setPicker("nationality")} />
 
+          {/* ✅ Date de naissance : 2 lignes propres */}
           <View style={{ marginBottom: 12 }}>
             <Text style={[fS.label, { fontFamily: F.body }]}>Date de Naissance *</Text>
-            <View style={r.dateRow}>
-              <View style={r.dateField}>
-                <Text style={[r.datePlaceholder, { fontFamily: F.body }]}>JJ</Text>
-                <TextInput
-                  style={[r.dateInput, { fontFamily: F.body }]}
-                  value={birthDay}
-                  onChangeText={(v) => setBirthDay(v.replace(/[^0-9]/g, "").slice(0, 2))}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="JJ"
-                  placeholderTextColor={C.textFaint}
-                />
-              </View>
-              <Text style={r.dateSep}>/</Text>
-              <View style={r.dateField}>
-                <Text style={[r.datePlaceholder, { fontFamily: F.body }]}>MM</Text>
-                <TextInput
-                  style={[r.dateInput, { fontFamily: F.body }]}
-                  value={birthMonth}
-                  onChangeText={(v) => setBirthMonth(v.replace(/[^0-9]/g, "").slice(0, 2))}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  placeholder="MM"
-                  placeholderTextColor={C.textFaint}
-                />
-              </View>
-              <Text style={r.dateSep}>/</Text>
-              <View style={[r.dateField, { flex: 2 }]}>
-                <Text style={[r.datePlaceholder, { fontFamily: F.body }]}>AAAA</Text>
-                <TextInput
-                  style={[r.dateInput, { fontFamily: F.body }]}
-                  value={birthYear}
-                  onChangeText={(v) => setBirthYear(v.replace(/[^0-9]/g, "").slice(0, 4))}
-                  keyboardType="number-pad"
-                  maxLength={4}
-                  placeholder="AAAA"
-                  placeholderTextColor={C.textFaint}
-                />
-              </View>
+            {/* Ligne 1 : Jour + Mois */}
+            <View style={{ flexDirection: "row", gap: 10, marginBottom: 8 }}>
+              <DateBox value={birthDay}   onChangeText={setBirthDay}   placeholder="Jour (JJ)" maxLength={2} />
+              <DateBox value={birthMonth} onChangeText={setBirthMonth} placeholder="Mois (MM)" maxLength={2} />
             </View>
+            {/* Ligne 2 : Année seule */}
+            <DateBox value={birthYear} onChangeText={setBirthYear} placeholder="Année (AAAA)" maxLength={4} />
           </View>
 
           <View style={r.row}>
@@ -542,12 +559,12 @@ export default function RegisterScreen() {
           </View>
         </View>
 
-        {/* ─── Bouton inscription ─── */}
+        {/* CTA */}
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
           <TouchableOpacity
-            style={[r.btn, !canSubmit && r.btnDisabled]}
+            style={[r.submitBtn, (!canSubmit || isLoading) && r.submitDisabled]}
             onPress={handleRegister}
-            disabled={isLoading || !canSubmit}
+            disabled={!canSubmit || isLoading}
             activeOpacity={0.9}
           >
             {isLoading ? (
@@ -555,69 +572,61 @@ export default function RegisterScreen() {
             ) : (
               <>
                 <Ionicons name="checkmark-circle-outline" size={20} color={C.white} />
-                <Text style={[r.btnTxt, { fontFamily: F.body }]}>CRÉER MON COMPTE</Text>
+                <Text style={[r.submitTxt, { fontFamily: F.body }]}>CRÉER MON COMPTE</Text>
               </>
             )}
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Déjà inscrit */}
-        <TouchableOpacity style={r.loginRow} onPress={() => router.replace("/(auth)/login")}>
-          <Text style={[r.loginTxt, { fontFamily: F.body }]}>
-            Déjà inscrit ?{" "}
-            <Text style={{ color: C.g4, fontWeight: "800" }}>Se connecter</Text>
+        {/* ✅ Fix : TouchableOpacity avec router.replace, pas de Text seul */}
+        <TouchableOpacity
+          style={r.loginLink}
+          onPress={() => router.replace("/(auth)/login")}
+          activeOpacity={0.8}
+        >
+          <Text style={[r.loginLinkTxt, { fontFamily: F.body }]}>
+            Déjà un compte ?{" "}
+            <Text style={{ color: C.g4, fontWeight: "700" }}>Se connecter</Text>
           </Text>
         </TouchableOpacity>
 
-        <View style={{ height: 60 }} />
+        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const r = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.g2 },
-  bgBase:  { ...StyleSheet.absoluteFillObject, backgroundColor: C.g3 },
-  bgCircle:{ position: "absolute", width: 260, height: 260, borderRadius: 130, backgroundColor: "rgba(255,255,255,0.04)", top: -60, right: -60 },
+  root:     { flex: 1, backgroundColor: C.g2 },
+  bgBase:   { ...StyleSheet.absoluteFillObject, backgroundColor: C.g3 },
+  bgCircle: { position: "absolute", width: 260, height: 260, borderRadius: 130, backgroundColor: "rgba(255,255,255,0.04)", top: -60, right: -60 },
 
-  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 50 : 60 },
+  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 48 : 56, paddingBottom: 20 },
 
-  header: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 20 },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.18)" },
-  headerTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
-  headerSub: { color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 1 },
-  logoSmall: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
+  header:      { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 20 },
+  backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
+  headerTitle: { color: C.white, fontSize: 20, fontWeight: "700" },
+  headerSub:   { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "600", marginTop: 2 },
+  logoSmall:   { width: 38, height: 38, borderRadius: 12, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
 
   progressWrap: { flexDirection: "row", gap: 6, marginBottom: 20 },
   progressStep: { flex: 1, height: 4, borderRadius: 99, opacity: 0.85 },
 
-  section: { backgroundColor: C.white, borderRadius: 22, padding: 20, marginBottom: 14, shadowColor: C.g1, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 6 },
+  section:  { backgroundColor: C.white, borderRadius: 20, padding: 18, marginBottom: 14, shadowColor: C.g1, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 12, elevation: 4 },
+  row:      { flexDirection: "row", gap: 10 },
 
-  row: { flexDirection: "row", gap: 12 },
+  errorRow: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FEF2F2", borderRadius: 8, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: "#FECACA" },
+  errorTxt: { color: C.danger, fontSize: 12, fontWeight: "600", flex: 1 },
 
-  phoneRow: { flexDirection: "row", gap: 10 },
-  phoneCode: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 12, paddingVertical: 14 },
-  phoneCodeTxt: { fontSize: 14, fontWeight: "800", color: C.g4 },
-  phoneInputWrap: { flex: 1, backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, paddingHorizontal: 14, justifyContent: "center" },
-  phoneInput: { fontSize: 14, color: C.text, fontWeight: "600" },
+  phoneCodeBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingRight: 10 },
+  phoneCodeTxt: { fontSize: 14, fontWeight: "700", color: C.g4 },
+  phoneSep:     { width: 1, height: 18, backgroundColor: C.borderInput, marginRight: 10 },
+  phoneInput:   { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
 
-  dateRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  dateField: {
-    flex: 1, backgroundColor: C.white,
-    borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput,
-    paddingHorizontal: 12, paddingVertical: 10, alignItems: "center",
-  },
-  datePlaceholder: { fontSize: 9, fontWeight: "800", color: C.textFaint, letterSpacing: 0.5, marginBottom: 2 },
-  dateInput: { fontSize: 18, fontWeight: "700", color: C.text, textAlign: "center" },
-  dateSep: { fontSize: 20, color: C.textMuted, fontWeight: "300" },
+  submitBtn:      { backgroundColor: C.g3, borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: C.g3, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5, marginBottom: 14 },
+  submitDisabled: { backgroundColor: "#9CA3AF", shadowOpacity: 0 },
+  submitTxt:      { color: C.white, fontSize: 14, fontWeight: "900", letterSpacing: 0.8 },
 
-  errorRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: -4, marginBottom: 8 },
-  errorTxt: { color: C.danger, fontSize: 12, fontWeight: "600" },
-
-  btn: { backgroundColor: C.g3, borderRadius: 18, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 16, shadowColor: C.g3, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
-  btnDisabled: { backgroundColor: "#9CA3AF", shadowOpacity: 0 },
-  btnTxt: { color: C.white, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
-
-  loginRow: { alignItems: "center", paddingVertical: 8 },
-  loginTxt: { color: "rgba(255,255,255,0.75)", fontSize: 13 },
+  loginLink:    { alignItems: "center", paddingVertical: 12 },
+  loginLinkTxt: { color: "rgba(255,255,255,0.75)", fontSize: 13, fontWeight: "500" },
 });

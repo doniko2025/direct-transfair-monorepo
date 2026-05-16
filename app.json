@@ -1,5 +1,13 @@
 {
   "expo": {
+    "plugins": [
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Autoriser l'accès à vos contacts pour ajouter des bénéficiaires."
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "dd024b9e-ccb1-4b9b-9a4a-c9b8b9fd06c1"
