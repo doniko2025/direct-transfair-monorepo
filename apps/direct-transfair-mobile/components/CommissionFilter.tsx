@@ -59,4 +59,4 @@ const styles = StyleSheet.create({
   },
   text: { color: '#64748B', fontFamily: FONTS.body, fontWeight: '700', fontSize: 13 },
   textActive: { color: '#FFFFFF', fontWeight: '900' }
-});
+}); 
