@@ -1,16 +1,19 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 // =========================================================
-// TREASURY SCREEN v6.1 — Direct Transf'air
-// ✅ FIX: wallets chargés depuis getTreasuryOverview (clientId)
-//         et non getMyWallets (userId vide)
-// ✅ Normalisation balance/reservedBalance depuis TreasuryOverview
+// SUPER ADMIN — TRÉSORERIE GLOBALE v1.0
+// ✅ Vision multi-sociétés (pas par agence)
+// ✅ Snapshots quotidiens par devise
+// ✅ Flux entrants/sortants globaux
+// ✅ Classement sociétés par volume
+// ✅ KPIs plateforme : commissions, frais, transactions
+// ✅ Thème violet/bleu SuperAdmin
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView,
-  StatusBar, Alert, Platform, Modal, TextInput, ActivityIndicator,
-  RefreshControl, KeyboardAvoidingView, Animated, Dimensions, Pressable,
+  View, Text, StyleSheet, TouchableOpacity, ScrollView,
+  SafeAreaView, StatusBar, Platform, ActivityIndicator,
+  RefreshControl, Animated, Dimensions, FlatList,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -20,8 +23,12 @@ import { useAuth } from "../../../providers/AuthProvider";
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Design Tokens — Thème Clair Premium ─────────────────
+// ─── Design Tokens ────────────────────────────────────────
 const T = {
+  heroA: "#5B5BD6",
+  heroB: "#4545C2",
+  heroC: "#3232A8",
+
   blue:     "#1956F0",
   blueDark: "#1240D6",
   blueLt:   "#EEF2FF",
@@ -31,10 +38,12 @@ const T = {
   surface:  "#FFFFFF",
   border:   "#E2E8F0",
   borderLt: "#F1F5F9",
+  borderMd: "#D1D9E6",
 
   ink:      "#0F172A",
-  inkMid:   "#475569",
-  inkMuted: "#94A3B8",
+  inkMid:   "#374151",
+  inkSub:   "#6B7280",
+  inkMuted: "#9CA3AF",
 
   green:    "#16A34A",
   greenLt:  "#DCFCE7",
@@ -44,32 +53,58 @@ const T = {
   amberLt:  "#FEF3C7",
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
+  teal:     "#0F766E",
+  tealLt:   "#CCFBF1",
 
-  white:    "#FFFFFF",
+  white: "#FFFFFF",
 
   currencies: {
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", bg: "#FEF3C7", name: "Franc CFA",       shadow: "#D9770640" },
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", bg: "#EEF2FF", name: "Euro",            shadow: "#1956F040" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", bg: "#DCFCE7", name: "Dollar US",       shadow: "#16A34A40" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", bg: "#FEE2E2", name: "Franc Guinéen",   shadow: "#DC262640" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", bg: "#EDE9FE", name: "Livre Sterling",  shadow: "#7C3AED40" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#B45309", bg: "#FEF3C7", name: "Franc CFA"      },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", colorDark: "#1240D6", bg: "#EEF2FF", name: "Euro"           },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", colorDark: "#15803D", bg: "#DCFCE7", name: "Dollar US"      },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#B91C1C", bg: "#FEE2E2", name: "Franc Guinéen"  },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#EDE9FE", name: "Livre Sterling" },
   },
 
-  radius: { sm: 10, md: 14, lg: 16, xl: 22, xxl: 28 },
+  radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 },
 
   font: {
-    display:  Platform.select({ ios: "Georgia",      android: "serif",              default: "serif" }),
-    sans:     Platform.select({ ios: "Trebuchet MS",  android: "sans-serif-condensed", default: "sans-serif" }),
-    subtitle: Platform.select({ ios: "Trebuchet MS",  android: "sans-serif-light",     default: "sans-serif" }),
-    mono:     Platform.select({ ios: "Courier New",   android: "monospace",            default: "monospace" }),
+    display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    sans:     Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    subtitle: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-light",     default: "Trebuchet MS" }),
+    mono:     Platform.select({ ios: "Trebuchet MS", android: "monospace",             default: "Trebuchet MS" }),
+  },
+
+  shadow: {
+    hero: {
+      shadowColor: "#2E2E9A",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.25,
+      shadowRadius: 22,
+      elevation: 18,
+    },
+    card: {
+      shadowColor: "#1240D6",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.10,
+      shadowRadius: 12,
+      elevation: 6,
+    },
+    soft: {
+      shadowColor: "#1240D6",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 3,
+    },
   },
 };
 
 const CURRENCIES_ORDER = ["XOF", "EUR", "USD", "GNF", "GBP"] as const;
 const CARD_W = SW - 48;
-const HERO_BR = 56;
+const HERO_BR = 28;
 
-// ─── Helpers ─────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -81,682 +116,762 @@ function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try {
     return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d, maximumFractionDigits: d,
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
     }).format(n);
   } catch { return n.toFixed(d); }
 }
 
-// ─── Normalise TreasuryOverview → format wallet interne ──
-// TreasuryOverview du backend peut renvoyer :
-//   { currency, balance, reservedBalance, availableBalance }  (getClientOverview)
-// ou des variantes avec totalBalance, clientBalance, etc.
-function normalizeTreasuryItem(item: any): { currency: string; balance: number; reservedBalance: number } {
-  const currency = item.currency ?? "";
-  // Priorité : balance > closingBalance > totalBalance > clientBalance
-  const balance = toNum(
-    item.balance ??
-    (item.availableBalance != null
-      ? item.availableBalance + toNum(item.reservedBalance)
-      : undefined) ??
-    item.closingBalance ??
-    item.totalBalance ??
-    item.clientBalance ??
-    0,
-  );
-  const reservedBalance = toNum(item.reservedBalance ?? 0);
-  return { currency, balance, reservedBalance };
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}Md`;
+  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)         return `${(n / 1_000).toFixed(0)}k`;
+  return n.toFixed(0);
 }
 
-// ─── Currency Card ────────────────────────────────────────
-const CurrencyCard = React.memo(function CurrencyCard({
-  currency, balance, reserved,
+// ─── Hero ─────────────────────────────────────────────────
+function TreasuryHero({
+  anim, userName, onBack, onRefresh,
 }: {
-  currency: keyof typeof T.currencies;
-  balance: number;
-  reserved: number;
+  anim: Animated.Value;
+  userName?: string;
+  onBack: () => void;
+  onRefresh: () => void;
 }) {
-  const cfg = T.currencies[currency];
-  const available = balance - reserved;
-  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
-  const scale = useRef(new Animated.Value(1)).current;
-
+  const sbH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
   return (
-    <Pressable
-      onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start()}
-      onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start()}
-    >
-      <Animated.View style={{ transform: [{ scale }] }}>
-        <LinearGradient
-          colors={["#FFFFFF", "#F8FAFF"]}
-          style={[ccS.card, { width: CARD_W, borderTopColor: cfg.color }]}
-        >
-          <View style={[ccS.topBar, { backgroundColor: cfg.color }]} />
-
-          <View style={ccS.topRow}>
-            <View style={[ccS.flagBox, { backgroundColor: cfg.bg, borderColor: `${cfg.color}30` }]}>
-              <Text style={{ fontSize: 24 }}>{cfg.flag}</Text>
+    <Animated.View style={[
+      hS.outer,
+      {
+        opacity: anim,
+        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }) }],
+      },
+    ]}>
+      <LinearGradient
+        colors={[T.heroA, T.heroB, T.heroC]}
+        start={{ x: 0.05, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
+        style={[hS.gradient, { paddingTop: sbH + 10, paddingBottom: 22 }]}
+      >
+        <View style={hS.deco1} />
+        <View style={hS.deco2} />
+        <View style={hS.row}>
+          <TouchableOpacity style={hS.backBtn} onPress={onBack}>
+            <Ionicons name="arrow-back" size={18} color={T.white} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <View style={hS.badge}>
+              <View style={hS.badgeDot} />
+              <Text style={[hS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[ccS.code, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-              <Text style={[ccS.curName, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>{cfg.name}</Text>
-            </View>
-            <View style={[ccS.trendBox, { backgroundColor: cfg.bg, borderColor: `${cfg.color}25` }]}>
-              <Ionicons name="trending-up-outline" size={14} color={cfg.color} />
-            </View>
-          </View>
-
-          <Text style={[ccS.label, { fontFamily: T.font.sans }]}>TRÉSORERIE TOTALE</Text>
-          <Text style={[ccS.amount, { fontFamily: T.font.display, color: T.ink }]} numberOfLines={1} adjustsFontSizeToFit>
-            {fmt(balance, cfg.code)}
-          </Text>
-          <Text style={[ccS.symbol, { color: cfg.color, fontFamily: T.font.sans }]}>
-            {cfg.symbol} · {cfg.code}
-          </Text>
-
-          <View style={ccS.divider} />
-
-          <View style={ccS.progRow}>
-            <Text style={[ccS.progLabel, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>Disponible</Text>
-            <Text style={[ccS.progVal, { color: cfg.color, fontFamily: T.font.mono }]}>
-              {fmt(available, cfg.code)} {cfg.symbol}
+            <Text style={[hS.title, { fontFamily: T.font.display }]}>Trésorerie Globale</Text>
+            <Text style={[hS.sub, { fontFamily: T.font.subtitle }]}>
+              {userName ? `${userName}  ·  ` : ""}Vue multi-sociétés
             </Text>
           </View>
-          <View style={ccS.progBg}>
-            <View style={[ccS.progFill, { width: `${pct}%` as any, backgroundColor: cfg.color }]} />
-          </View>
-          <View style={ccS.progRow}>
-            <Text style={[ccS.progLabel, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>Réservé</Text>
-            <Text style={[ccS.progVal, { color: T.inkMuted, fontFamily: T.font.mono }]}>
-              {fmt(reserved, cfg.code)} {cfg.symbol}
-            </Text>
-          </View>
-        </LinearGradient>
-      </Animated.View>
-    </Pressable>
+          <TouchableOpacity style={hS.refreshBtn} onPress={onRefresh}>
+            <Ionicons name="refresh" size={17} color={T.white} />
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+      <View style={hS.cornerL} />
+      <View style={hS.cornerR} />
+    </Animated.View>
   );
+}
+
+const hS = StyleSheet.create({
+  outer: { zIndex: 10, ...T.shadow.hero },
+  gradient: {
+    borderBottomLeftRadius: HERO_BR,
+    borderBottomRightRadius: HERO_BR,
+    overflow: "hidden",
+  },
+  deco1: {
+    position: "absolute", width: 180, height: 180, borderRadius: 90,
+    backgroundColor: "rgba(255,255,255,0.06)", top: -55, right: -35,
+  },
+  deco2: {
+    position: "absolute", width: 80, height: 80, borderRadius: 40,
+    backgroundColor: "rgba(255,255,255,0.04)", bottom: 10, left: 10,
+  },
+  row: { flexDirection: "row", alignItems: "flex-end", paddingHorizontal: 20, gap: 12 },
+  backBtn: {
+    width: 36, height: 36, borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.20)",
+    justifyContent: "center", alignItems: "center", marginBottom: 4,
+  },
+  badge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3,
+    alignSelf: "flex-start", marginBottom: 5,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
+  },
+  badgeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
+  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
+  title: { color: T.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 },
+  sub:   { color: "rgba(255,255,255,0.55)", fontSize: 10, marginTop: 1 },
+  refreshBtn: {
+    width: 36, height: 36, borderRadius: 11,
+    backgroundColor: "rgba(255,255,255,0.13)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.20)",
+    justifyContent: "center", alignItems: "center", marginBottom: 4,
+  },
+  cornerL: {
+    position: "absolute", bottom: 0, left: 0,
+    width: HERO_BR, height: HERO_BR,
+    backgroundColor: T.pageBg, borderTopRightRadius: HERO_BR,
+  },
+  cornerR: {
+    position: "absolute", bottom: 0, right: 0,
+    width: HERO_BR, height: HERO_BR,
+    backgroundColor: T.pageBg, borderTopLeftRadius: HERO_BR,
+  },
 });
 
-const ccS = StyleSheet.create({
+// ─── Section Header ───────────────────────────────────────
+function SH({ dot, label, right }: { dot: string; label: string; right?: React.ReactNode }) {
+  return (
+    <View style={shS.row}>
+      <View style={[shS.dot, { backgroundColor: dot }]} />
+      <Text style={[shS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      {right}
+    </View>
+  );
+}
+const shS = StyleSheet.create({
+  row:   { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
+  dot:   { width: 6, height: 6, borderRadius: 99 },
+  label: { flex: 1, fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.6 },
+});
+
+// ─── Carte devise horizontale (carousel) ──────────────────
+// Différente de l'admin société : affiche volume global plateforme
+// = somme de tous les wallets de toutes les sociétés
+function GlobalCurrencyCard({
+  currency, totalBalance, totalReserved, totalSent, totalReceived, txCount,
+}: {
+  currency: keyof typeof T.currencies;
+  totalBalance: number;
+  totalReserved: number;
+  totalSent: number;
+  totalReceived: number;
+  txCount: number;
+}) {
+  const cfg       = T.currencies[currency];
+  const available = totalBalance - totalReserved;
+  const pct       = totalBalance > 0 ? Math.min((available / totalBalance) * 100, 100) : 0;
+
+  return (
+    <LinearGradient
+      colors={["#FFFFFF", "#F8FAFF"]}
+      style={[gccS.card, { width: CARD_W, borderTopColor: cfg.color }]}
+    >
+      <View style={[gccS.topBar, { backgroundColor: cfg.color }]} />
+
+      {/* En-tête devise */}
+      <View style={gccS.topRow}>
+        <View style={[gccS.flagBox, { backgroundColor: cfg.bg, borderColor: `${cfg.color}30` }]}>
+          <Text style={{ fontSize: 22 }}>{cfg.flag}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[gccS.code, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.code}</Text>
+          <Text style={[gccS.curName, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
+        </View>
+        <View style={[gccS.txPill, { backgroundColor: cfg.bg }]}>
+          <Ionicons name="swap-horizontal-outline" size={11} color={cfg.color} />
+          <Text style={[gccS.txCount, { color: cfg.color, fontFamily: T.font.mono }]}>
+            {txCount} tx
+          </Text>
+        </View>
+      </View>
+
+      {/* Solde global plateforme */}
+      <Text style={[gccS.label, { fontFamily: T.font.sans }]}>SOLDE GLOBAL PLATEFORME</Text>
+      <Text
+        style={[gccS.amount, { color: T.ink, fontFamily: T.font.display }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
+        {fmt(totalBalance, cfg.code)}
+      </Text>
+      <Text style={[gccS.symbol, { color: cfg.color, fontFamily: T.font.sans }]}>
+        {cfg.symbol} · {cfg.code}
+      </Text>
+
+      {/* Barre disponible/réservé */}
+      <View style={gccS.divider} />
+      <View style={gccS.progRow}>
+        <Text style={[gccS.progLabel, { fontFamily: T.font.subtitle }]}>Disponible</Text>
+        <Text style={[gccS.progVal, { color: cfg.color, fontFamily: T.font.mono }]}>
+          {fmt(available, cfg.code)} {cfg.symbol}
+        </Text>
+      </View>
+      <View style={gccS.progBg}>
+        <View style={[gccS.progFill, { width: `${pct}%` as any, backgroundColor: cfg.color }]} />
+      </View>
+      <View style={gccS.progRow}>
+        <Text style={[gccS.progLabel, { fontFamily: T.font.subtitle }]}>Réservé</Text>
+        <Text style={[gccS.progVal, { color: T.inkMuted, fontFamily: T.font.mono }]}>
+          {fmt(totalReserved, cfg.code)} {cfg.symbol}
+        </Text>
+      </View>
+
+      {/* Flux entrants / sortants */}
+      <View style={gccS.divider} />
+      <View style={gccS.flowRow}>
+        <View style={[gccS.flowBox, { backgroundColor: T.greenLt }]}>
+          <Ionicons name="arrow-down-circle-outline" size={13} color={T.green} />
+          <View>
+            <Text style={[gccS.flowLabel, { fontFamily: T.font.sans }]}>Reçus (j)</Text>
+            <Text style={[gccS.flowVal, { color: T.green, fontFamily: T.font.mono }]}>
+              +{fmtCompact(totalReceived)}
+            </Text>
+          </View>
+        </View>
+        <View style={[gccS.flowBox, { backgroundColor: T.redLt }]}>
+          <Ionicons name="arrow-up-circle-outline" size={13} color={T.red} />
+          <View>
+            <Text style={[gccS.flowLabel, { fontFamily: T.font.sans }]}>Envoyés (j)</Text>
+            <Text style={[gccS.flowVal, { color: T.red, fontFamily: T.font.mono }]}>
+              -{fmtCompact(totalSent)}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+}
+
+const gccS = StyleSheet.create({
   card: {
     borderRadius: T.radius.xl, marginRight: 16,
     borderWidth: 1, borderTopWidth: 4, borderColor: T.border,
     overflow: "hidden",
-    shadowColor: "#1956F0", shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.25, shadowRadius: 30, elevation: 14,
+    shadowColor: "#1956F0", shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18, shadowRadius: 24, elevation: 12,
   },
-  topBar: { position: "absolute", top: 0, left: 0, right: 0, height: 60, opacity: 0.05 },
-  topRow: { flexDirection: "row", alignItems: "center", padding: 20, paddingBottom: 0, gap: 12 },
-  flagBox: { width: 48, height: 48, borderRadius: 14, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  code: { fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 2 },
-  curName: { fontSize: 12, color: T.inkMuted },
-  trendBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  label: { marginHorizontal: 20, marginTop: 18, fontSize: 10, fontWeight: "800", color: T.inkMuted, letterSpacing: 1.6, marginBottom: 4 },
-  amount: { marginHorizontal: 20, fontSize: 36, fontWeight: "700", letterSpacing: -0.5, marginBottom: 3 },
-  symbol: { marginHorizontal: 20, fontSize: 13, fontWeight: "700", letterSpacing: 0.3, marginBottom: 18 },
-  divider: { height: 1, backgroundColor: T.border, marginHorizontal: 20, marginBottom: 14 },
-  progRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 4 },
-  progLabel: { color: T.inkMuted, fontSize: 11 },
-  progVal: { fontSize: 11, fontWeight: "800" },
+  topBar:  { position: "absolute", top: 0, left: 0, right: 0, height: 50, opacity: 0.05 },
+  topRow:  { flexDirection: "row", alignItems: "center", padding: 18, paddingBottom: 0, gap: 12 },
+  flagBox: { width: 46, height: 46, borderRadius: 13, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  code:    { fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 2 },
+  curName: { fontSize: 11, color: T.inkMuted },
+  txPill:  { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  txCount: { fontSize: 10, fontWeight: "800" },
+  label:   { marginHorizontal: 18, marginTop: 16, fontSize: 9, fontWeight: "800", color: T.inkMuted, letterSpacing: 1.6, marginBottom: 4 },
+  amount:  { marginHorizontal: 18, fontSize: 34, fontWeight: "700", letterSpacing: -0.5, marginBottom: 3, color: T.ink },
+  symbol:  { marginHorizontal: 18, fontSize: 12, fontWeight: "700", letterSpacing: 0.3, marginBottom: 16 },
+  divider: { height: 1, backgroundColor: T.border, marginHorizontal: 18, marginBottom: 12 },
+  progRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, marginBottom: 4 },
+  progLabel: { color: T.inkMuted, fontSize: 10 },
+  progVal:   { fontSize: 10, fontWeight: "800" },
   progBg: {
     height: 5, backgroundColor: "#EEF2F8",
-    marginHorizontal: 20, borderRadius: 99, overflow: "hidden",
-    marginBottom: 8, marginTop: 2,
+    marginHorizontal: 18, borderRadius: 99, overflow: "hidden",
+    marginBottom: 10, marginTop: 2,
   },
   progFill: { height: 5, borderRadius: 99 },
+  flowRow:  { flexDirection: "row", gap: 10, marginHorizontal: 18, marginBottom: 18 },
+  flowBox:  { flex: 1, flexDirection: "row", alignItems: "center", gap: 7, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9 },
+  flowLabel:{ fontSize: 9, color: T.inkSub, fontWeight: "700", marginBottom: 2 },
+  flowVal:  { fontSize: 12, fontWeight: "800" },
 });
 
-// ─── Pagination Dots ──────────────────────────────────────
+// ─── Dots pagination carousel ─────────────────────────────
 function CurrencyDots({ active }: { active: number }) {
   return (
-    <View style={{ flexDirection: "row", justifyContent: "center", gap: 5, marginTop: 14, marginBottom: 24 }}>
+    <View style={{ flexDirection: "row", justifyContent: "center", gap: 5, marginTop: 12, marginBottom: 22 }}>
       {CURRENCIES_ORDER.map((cur, i) => {
-        const cfg = T.currencies[cur as keyof typeof T.currencies];
+        const cfg = T.currencies[cur];
         const isActive = i === active;
         return (
-          <View key={cur} style={{ width: isActive ? 20 : 5, height: 5, borderRadius: 99, backgroundColor: isActive ? cfg.color : T.border }} />
+          <View
+            key={cur}
+            style={{
+              width: isActive ? 20 : 5, height: 5,
+              borderRadius: 99,
+              backgroundColor: isActive ? cfg.color : T.borderMd,
+            }}
+          />
         );
       })}
     </View>
   );
 }
 
-// ─── Stat Mini Card ───────────────────────────────────────
-function MiniStat({ icon, label, value, color, bg }: {
-  icon: string; label: string; value: string | number; color: string; bg: string;
+// ─── KPI Quad ─────────────────────────────────────────────
+function KpiQuad({ kpis }: {
+  kpis: { label: string; value: string; sub?: string; icon: string; color: string; bg: string }[];
 }) {
   return (
-    <View style={msS.card}>
-      <View style={[msS.iconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon as any} size={17} color={color} />
-      </View>
-      <Text style={[msS.value, { color, fontFamily: T.font.display }]}>{value}</Text>
-      <Text style={[msS.label, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>{label}</Text>
+    <View style={kqS.grid}>
+      {kpis.map((k, i) => (
+        <View key={i} style={[kqS.card, { borderTopColor: k.color }]}>
+          <View style={[kqS.iconBox, { backgroundColor: k.bg }]}>
+            <Ionicons name={k.icon as any} size={16} color={k.color} />
+          </View>
+          <Text style={[kqS.val, { color: k.color, fontFamily: T.font.mono }]}>{k.value}</Text>
+          <Text style={[kqS.label, { fontFamily: T.font.sans }]}>{k.label}</Text>
+          {k.sub && <Text style={[kqS.sub, { fontFamily: T.font.subtitle }]}>{k.sub}</Text>}
+        </View>
+      ))}
     </View>
   );
 }
-const msS = StyleSheet.create({
+const kqS = StyleSheet.create({
+  grid:    { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 22 },
   card: {
-    flex: 1, backgroundColor: T.surface, borderRadius: T.radius.lg,
-    padding: 14, alignItems: "center", borderWidth: 1, borderColor: T.border,
-    shadowColor: "#1240D6", shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.13, shadowRadius: 18, elevation: 8,
+    width: (SW - 36 - 10) / 2,
+    backgroundColor: T.surface, borderRadius: T.radius.md,
+    padding: 14, borderTopWidth: 3, borderWidth: 1, borderColor: T.border,
+    ...T.shadow.soft,
   },
-  iconBox: { width: 36, height: 36, borderRadius: 11, justifyContent: "center", alignItems: "center", marginBottom: 8 },
-  value: { fontSize: 22, fontWeight: "700", marginBottom: 3 },
-  label: { fontSize: 9, color: T.inkMuted, letterSpacing: 0.8, textAlign: "center" },
+  iconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", marginBottom: 8 },
+  val:     { fontSize: 20, fontWeight: "800", marginBottom: 2 },
+  label:   { fontSize: 9, fontWeight: "800", color: T.inkMuted, letterSpacing: 0.8 },
+  sub:     { fontSize: 9, color: T.inkSub, marginTop: 3 },
 });
 
-// ─── Agency Card ─────────────────────────────────────────
-function AgencyCard({ agency, onRefill }: { agency: any; onRefill: () => void }) {
-  const isActive = agency.isActive;
-  const wallets = Array.isArray(agency.wallets) ? agency.wallets : [];
-  const primary = wallets.find((w: any) => w.isDefault) ?? wallets[0];
-  const balance  = toNum(primary?.balance ?? agency.balance ?? 0);
-  const currency = primary?.currency ?? agency.primaryCurrency ?? "XOF";
-  const cfg = T.currencies[currency as keyof typeof T.currencies] ?? T.currencies.XOF;
+// ─── Société Rank Card ────────────────────────────────────
+function ClientRankCard({
+  item, rank,
+}: {
+  item: any;
+  rank: number;
+}) {
+  const rankColors = ["#D97706", "#64748B", "#B45309"];
+  const rankColor  = rankColors[rank - 1] ?? T.inkMuted;
+  const statusColor =
+    item.subscriptionStatus?.toUpperCase() === "ACTIVE" ? T.green :
+    item.subscriptionStatus?.toUpperCase() === "TRIAL"  ? T.purple : T.red;
 
-  const flagMap: Record<string, string> = {
-    GN: "🇬🇳", SN: "🇸🇳", ML: "🇲🇱", CI: "🇨🇮", FR: "🇫🇷",
-    GB: "🇬🇧", US: "🇺🇸", BF: "🇧🇫", NE: "🇳🇪", TG: "🇹🇬",
-  };
-  const flag = agency.country ? (flagMap[agency.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
+  const txCount   = toNum(item._count?.transactions ?? item.transactionCount ?? 0);
+  const txVolume  = toNum(item.totalVolume ?? 0);
+  const currency  = item.defaultCurrency ?? "XOF";
+  const cfg       = T.currencies[currency as keyof typeof T.currencies] ?? T.currencies.XOF;
 
   return (
-    <View style={agS.card}>
-      <View style={[agS.sideBar, { backgroundColor: isActive ? T.green : T.red }]} />
-      <View style={agS.inner}>
-        <View style={agS.topRow}>
-          <View style={agS.flagBox}><Text style={{ fontSize: 26 }}>{flag}</Text></View>
-          <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[agS.name, { fontFamily: T.font.display }]} numberOfLines={1}>{agency.name}</Text>
-            <Text style={[agS.city, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>
-              {agency.city || "—"} · {agency.country || "—"}
-            </Text>
-          </View>
-          <View style={{ alignItems: "flex-end" }}>
-            <Text style={[agS.balLabel, { fontFamily: T.font.sans }]}>SOLDE</Text>
-            <Text style={[agS.bal, { color: cfg.color, fontFamily: T.font.display }]}>{fmt(balance, currency)}</Text>
-            <Text style={[agS.cur, { color: cfg.color, fontFamily: T.font.mono }]}>
-              {currency === "XOF" ? "CFA" : cfg.symbol}
-            </Text>
-          </View>
+    <View style={rcS.card}>
+      {/* Rang */}
+      <View style={[rcS.rankBox, { backgroundColor: rankColor + "18", borderColor: rankColor + "30" }]}>
+        <Text style={[rcS.rankTxt, { color: rankColor, fontFamily: T.font.mono }]}>#{rank}</Text>
+      </View>
+
+      {/* Avatar + infos */}
+      <View style={[rcS.avatar, { backgroundColor: T.blueLt }]}>
+        <Text style={[rcS.avatarLetter, { fontFamily: T.font.display }]}>
+          {(item.name?.[0] ?? "C").toUpperCase()}
+        </Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[rcS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
+        <View style={rcS.metaRow}>
+          <Text style={[rcS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
+          <View style={[rcS.statusDot, { backgroundColor: statusColor }]} />
         </View>
-        <View style={agS.divider} />
-        <View style={agS.foot}>
-          <View style={[agS.statusPill, { backgroundColor: isActive ? T.greenLt : T.redLt, borderColor: isActive ? `${T.green}35` : `${T.red}35` }]}>
-            <View style={[agS.dot, { backgroundColor: isActive ? T.green : T.red }]} />
-            <Text style={[agS.statusTxt, { color: isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
-              {isActive ? "Opérationnelle" : "Suspendue"}
-            </Text>
-          </View>
-          <TouchableOpacity style={agS.refillBtn} onPress={onRefill} activeOpacity={0.8}>
-            <LinearGradient colors={[T.blue, T.blueDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={agS.refillGrad}>
-              <Ionicons name="paper-plane-outline" size={14} color={T.white} />
-              <Text style={[agS.refillTxt, { fontFamily: T.font.sans }]}>Recharger</Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
+      </View>
+
+      {/* Volume + tx */}
+      <View style={{ alignItems: "flex-end" }}>
+        {txVolume > 0 && (
+          <Text style={[rcS.volume, { color: cfg.color, fontFamily: T.font.mono }]}>
+            {fmtCompact(txVolume)}
+          </Text>
+        )}
+        <Text style={[rcS.txCount, { fontFamily: T.font.sans }]}>{txCount} tx</Text>
       </View>
     </View>
   );
 }
-
-const agS = StyleSheet.create({
+const rcS = StyleSheet.create({
   card: {
-    backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 14,
-    borderWidth: 1, borderColor: T.border, flexDirection: "row", overflow: "hidden",
-    shadowColor: "#1240D6", shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12, shadowRadius: 20, elevation: 10,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: T.surface, borderRadius: T.radius.md,
+    padding: 12, marginBottom: 8, gap: 10,
+    borderWidth: 1, borderColor: T.border, ...T.shadow.soft,
   },
-  sideBar: { width: 4 },
-  inner: { flex: 1, padding: 16 },
-  topRow: { flexDirection: "row", alignItems: "center", gap: 13, marginBottom: 13 },
-  flagBox: { width: 50, height: 50, borderRadius: 14, backgroundColor: T.blueLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
-  name: { color: T.ink, fontSize: 15, fontWeight: "700", marginBottom: 4 },
-  city: { color: T.inkMuted, fontSize: 11 },
-  balLabel: { fontSize: 9, fontWeight: "800", color: T.inkMuted, letterSpacing: 0.8, marginBottom: 2 },
-  bal: { fontSize: 18, fontWeight: "700" },
-  cur: { fontSize: 10, fontWeight: "700", marginTop: 2 },
-  divider: { height: 1, backgroundColor: T.border, marginBottom: 12 },
-  foot: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1 },
-  dot: { width: 5, height: 5, borderRadius: 99 },
-  statusTxt: { fontSize: 10, fontWeight: "800", letterSpacing: 0.4 },
-  refillBtn: { borderRadius: 10, overflow: "hidden" },
-  refillGrad: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9 },
-  refillTxt: { fontSize: 12, fontWeight: "800", color: T.white },
+  rankBox: { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  rankTxt: { fontSize: 11, fontWeight: "900" },
+  avatar:  { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: T.blueMd },
+  avatarLetter: { fontSize: 16, fontWeight: "700", color: T.blue },
+  name:    { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 3 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  code:    { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
+  statusDot: { width: 6, height: 6, borderRadius: 99 },
+  volume:  { fontSize: 13, fontWeight: "800", marginBottom: 2 },
+  txCount: { fontSize: 9, color: T.inkSub, fontWeight: "700" },
 });
 
-// ─── Action Card ─────────────────────────────────────────
-function ActionBtn({ icon, label, sublabel, color, bg, onPress }: {
-  icon: string; label: string; sublabel: string; color: string; bg: string; onPress: () => void;
+// ─── Commission Row ───────────────────────────────────────
+function CommissionRow({ label, value, currency, color }: {
+  label: string; value: number; currency: string; color: string;
 }) {
   return (
-    <TouchableOpacity style={abS.card} onPress={onPress} activeOpacity={0.8}>
-      <View style={[abS.iconBox, { backgroundColor: bg }]}>
-        <Ionicons name={icon as any} size={20} color={color} />
-      </View>
-      <View style={[abS.arrow, { backgroundColor: bg }]}>
-        <Ionicons name="arrow-forward" size={11} color={color} />
-      </View>
-      <Text style={[abS.label, { fontFamily: T.font.sans }]} numberOfLines={1}>{label}</Text>
-      <Text style={[abS.sub, { fontFamily: T.font.subtitle, fontWeight: "300" }]} numberOfLines={1}>{sublabel}</Text>
+    <View style={comS.row}>
+      <View style={[comS.dot, { backgroundColor: color }]} />
+      <Text style={[comS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      <Text style={[comS.value, { color, fontFamily: T.font.mono }]}>
+        {fmt(value, currency)} {currency === "XOF" ? "CFA" : currency}
+      </Text>
+    </View>
+  );
+}
+const comS = StyleSheet.create({
+  row:   { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  dot:   { width: 8, height: 8, borderRadius: 99 },
+  label: { flex: 1, fontSize: 12, color: T.inkMid, fontWeight: "600" },
+  value: { fontSize: 13, fontWeight: "800" },
+});
+
+// ─── Accès rapide ─────────────────────────────────────────
+function QuickBtn({ icon, label, color, bg, onPress }: {
+  icon: string; label: string; color: string; bg: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={[qbS.btn, { backgroundColor: bg, borderColor: color + "25" }]} onPress={onPress} activeOpacity={0.8}>
+      <Ionicons name={icon as any} size={18} color={color} />
+      <Text style={[qbS.label, { color, fontFamily: T.font.sans }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
-const abS = StyleSheet.create({
-  card: { flex: 1, backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 16, borderWidth: 1, borderColor: T.border, overflow: "hidden", shadowColor: "#1240D6", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.12, shadowRadius: 18, elevation: 8 },
-  iconBox: { width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center", marginBottom: 12 },
-  label: { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 3 },
-  sub: { fontSize: 11, color: T.inkMuted },
-  arrow: { position: "absolute", right: 12, top: 12, width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-});
-
-// ─── Hero Parapluie ───────────────────────────────────────
-function TreasuryHero({ role, userName, onRefresh, onBack, anim }: {
-  role: string; userName?: string; onRefresh: () => void; onBack: () => void; anim: Animated.Value;
-}) {
-  return (
-    <Animated.View style={[hs.outer, {
-      opacity: anim,
-      transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
-    }]}>
-      <LinearGradient colors={["#2461FF", "#1240D6"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={hs.gradient}>
-        <View style={hs.deco1} />
-        <View style={hs.deco2} />
-        <View style={hs.deco3} />
-        <View style={hs.content}>
-          <TouchableOpacity style={hs.backBtn} onPress={onBack}>
-            <Ionicons name="arrow-back" size={20} color={T.white} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <View style={hs.badge}>
-              <View style={hs.badgeDot} />
-              <Text style={[hs.badgeTxt, { fontFamily: T.font.sans }]}>
-                {role === "SUPER_ADMIN" ? "SUPER ADMIN" : "ADMIN SOCIÉTÉ"}
-              </Text>
-            </View>
-            <Text style={[hs.title, { fontFamily: T.font.display }]}>Trésorerie</Text>
-            <Text style={[hs.sub, { fontFamily: T.font.subtitle }]}>
-              {userName ? `${userName}  ·  ` : ""}Direct Transf'air™
-            </Text>
-          </View>
-          <TouchableOpacity style={hs.actionBtn} onPress={onRefresh}>
-            <Ionicons name="refresh" size={18} color={T.white} />
-          </TouchableOpacity>
-        </View>
-      </LinearGradient>
-      <View style={hs.cornerLeft} />
-      <View style={hs.cornerRight} />
-    </Animated.View>
-  );
-}
-
-const hs = StyleSheet.create({
-  outer: { zIndex: 10, shadowColor: "#0A2FA8", shadowOffset: { width: 0, height: 14 }, shadowOpacity: 0.40, shadowRadius: 32, elevation: 22 },
-  gradient: { borderBottomLeftRadius: HERO_BR, borderBottomRightRadius: HERO_BR, overflow: "hidden", paddingBottom: 30 },
-  deco1: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(255,255,255,0.07)", top: -80, right: -50 },
-  deco2: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.05)", bottom: -40, left: 20 },
-  deco3: { position: "absolute", width: 60, height: 60, borderRadius: 30, backgroundColor: "rgba(255,255,255,0.04)", top: 20, left: "45%" as any },
-  content: { flexDirection: "row", alignItems: "flex-end", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) + 12 : 14, paddingBottom: 0, gap: 12 },
-  backBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  badge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.16)", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, alignSelf: "flex-start", marginBottom: 10 },
-  badgeDot: { width: 6, height: 6, borderRadius: 99, backgroundColor: "#4ADE80" },
-  badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 10, fontWeight: "900", letterSpacing: 1.4 },
-  title: { color: T.white, fontSize: 28, fontWeight: "700", marginBottom: 4, letterSpacing: -0.3 },
-  sub: { color: "rgba(255,255,255,0.70)", fontSize: 13, fontWeight: "300", letterSpacing: 0.1 },
-  actionBtn: { width: 40, height: 40, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  cornerLeft: { position: "absolute", bottom: 0, left: 0, width: HERO_BR, height: HERO_BR, backgroundColor: "#F0F4FF", borderTopRightRadius: HERO_BR },
-  cornerRight: { position: "absolute", bottom: 0, right: 0, width: HERO_BR, height: HERO_BR, backgroundColor: "#F0F4FF", borderTopLeftRadius: HERO_BR },
+const qbS = StyleSheet.create({
+  btn:   { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingVertical: 14, borderRadius: T.radius.md, borderWidth: 1 },
+  label: { fontSize: 11, fontWeight: "800" },
 });
 
 // ─── Main Screen ──────────────────────────────────────────
-function TreasuryScreen() {
-  const router = useRouter();
-  const { user, refreshUser } = useAuth();
+export default function SuperAdminTreasuryScreen() {
+  const router   = useRouter();
+  const { user } = useAuth();
 
-  const role = (user?.role ?? "COMPANY_ADMIN") as string;
-  const isSuperAdmin = role === "SUPER_ADMIN";
-
-  const [agencies, setAgencies]   = useState<any[]>([]);
-  // ✅ wallets normalisés depuis TreasuryOverview (clientId)
-  const [wallets,  setWallets]    = useState<{ currency: string; balance: number; reservedBalance: number }[]>([]);
-  const [loading,  setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeCurrency, setActiveCurrency] = useState(0);
-
-  const [modalVisible,  setModalVisible]  = useState(false);
-  const [modalType,     setModalType]     = useState<"FUND_SELF" | "REFILL_AGENCY" | "PAY_SUPER">("FUND_SELF");
-  const [targetAgency,  setTargetAgency]  = useState<any>(null);
-  const [amount,        setAmount]        = useState("");
-  const [refBancaire,   setRefBancaire]   = useState("");
-  const [processing,    setProcessing]    = useState(false);
+  // ── État ──────────────────────────────────────────────
+  const [wallets,      setWallets]      = useState<any[]>([]);
+  const [snapshots,    setSnapshots]    = useState<any[]>([]);
+  const [clients,      setClients]      = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [activeCard,   setActiveCard]   = useState(0);
 
   const heroAnim    = useRef(new Animated.Value(0)).current;
   const contentAnim = useRef(new Animated.Value(0)).current;
-  const scrollX     = useRef(new Animated.Value(0)).current;
-  const hasAnimated = useRef(false);
+  const carouselRef = useRef<FlatList>(null);
 
-  const getWalletBalance = useCallback((currency: string) => {
-    const w = wallets.find((x) => x.currency === currency);
-    return { balance: toNum(w?.balance), reserved: toNum(w?.reservedBalance ?? 0) };
-  }, [wallets]);
+  const runEntrance = useCallback(() => {
+    Animated.stagger(100, [
+      Animated.spring(heroAnim,    { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }),
+      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 2 }),
+    ]).start();
+  }, []);
 
-  // ── Chargement ─────────────────────────────────────────
-  const loadData = async (mode: "init" | "refresh" = "init") => {
+  const loadData = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true);
-    else if (!hasAnimated.current) setLoading(true);
-
+    else setLoading(true);
     try {
-      if (typeof refreshUser === "function") await refreshUser();
-
-      const [rawAgencies, rawOverview] = await Promise.all([
-        api.getAgencies().catch(() => []),
-        // ✅ FIX : getTreasuryOverview lit les wallets clientId
-        // Ce endpoint retourne les soldes réels de la société
-        api.getTreasuryOverview().catch(() => []),
+      const [rawWallets, rawSnapshots, rawClients, rawTx] = await Promise.all([
+        // Wallets du super admin (réutilise getMyWallets qui existe dans l'API)
+        api.getMyWallets?.().catch(() => []) ?? Promise.resolve([]),
+        // Snapshots trésorerie journaliers (optionnel — graceful fallback)
+        api.getTreasurySnapshots?.().catch(() => []) ?? Promise.resolve([]),
+        // Liste des sociétés avec leurs volumes
+        api.getClients().catch(() => []),
+        // Transactions récentes pour calcul des flux
+        api.adminGetTransactions().catch(() => []),
       ]);
 
-      setAgencies(Array.isArray(rawAgencies) ? rawAgencies : []);
+      setWallets(Array.isArray(rawWallets) ? rawWallets : []);
+      setSnapshots(Array.isArray(rawSnapshots) ? rawSnapshots : (rawSnapshots as any)?.data ?? []);
 
-      // Normalise chaque item du overview en format { currency, balance, reservedBalance }
-      const normalized = Array.isArray(rawOverview)
-        ? rawOverview.map(normalizeTreasuryItem)
-        : [];
-      setWallets(normalized);
+      const cls = Array.isArray(rawClients) ? rawClients : (rawClients as any)?.data ?? [];
+      setClients(cls);
 
-      if (!hasAnimated.current) {
-        hasAnimated.current = true;
-        Animated.parallel([
-          Animated.spring(heroAnim,    { toValue: 1, useNativeDriver: true, speed: 10 }),
-          Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10 }),
-        ]).start();
-      }
+      const txList = Array.isArray(rawTx) ? rawTx : [];
+      setTransactions(txList);
+
     } catch (e) {
-      console.error("Erreur Treasury:", e);
+      console.error("SuperAdmin Treasury load error", e);
     } finally {
-      setRefreshing(false);
-      setLoading(false);
+      if (mode === "refresh") setRefreshing(false);
+      else setLoading(false);
     }
-  };
+  }, []);
 
-  useFocusEffect(useCallback(() => { loadData("init"); }, []));
+  useFocusEffect(useCallback(() => {
+    void loadData("init");
+    runEntrance();
+    return () => {};
+  }, [loadData, runEntrance]));
 
-  // ── Modales ─────────────────────────────────────────────
-  const closeModal = () => { setModalVisible(false); setAmount(""); setRefBancaire(""); setTargetAgency(null); };
+  // ── Calculs globaux plateforme ─────────────────────────
 
-  const showAlert = (title: string, msg: string) =>
-    Platform.OS === "web" ? alert(`${title}\n\n${msg}`) : Alert.alert(title, msg);
+  // Solde global par devise (agrégation de tous les wallets)
+  const globalByCurrency = CURRENCIES_ORDER.map((cur) => {
+    const curWallets   = wallets.filter((w) => w.currency === cur);
+    const totalBalance  = curWallets.reduce((s, w) => s + toNum(w.balance), 0);
+    const totalReserved = curWallets.reduce((s, w) => s + toNum(w.reservedBalance), 0);
 
-  const handleSubmit = async () => {
-    const val = Number(amount);
-    if (!val || val <= 0) { showAlert("Erreur", "Veuillez entrer un montant valide."); return; }
-    setProcessing(true);
-    try {
-      if (modalType === "PAY_SUPER") {
-        if (!refBancaire.trim()) throw new Error("Référence bancaire obligatoire.");
-        await api.declareBankTransfer(val, refBancaire);
-        showAlert("✅ Envoyé", "Votre virement a été déclaré avec succès.");
-      } else if (modalType === "REFILL_AGENCY" && targetAgency) {
-        await api.adminRefillAgency(targetAgency.id, val);
-        showAlert("✅ Rechargé", `L'agence ${targetAgency.name} a été créditée.`);
-      } else if (modalType === "FUND_SELF") {
-        const selectedCurrency = CURRENCIES_ORDER[activeCurrency];
-        await api.adminFundSelf(val, selectedCurrency);
-        showAlert("✅ Succès", "Votre trésorerie a été mise à jour.");
-      }
-      closeModal();
-      await loadData("refresh");
-    } catch (e: any) {
-      const err = e?.response?.data?.message || e?.message || "Une erreur est survenue.";
-      showAlert("Erreur", Array.isArray(err) ? err.join(", ") : String(err));
-    } finally {
-      setProcessing(false);
-    }
-  };
+    // Flux du jour depuis les snapshots
+    const snap        = snapshots.find((s) => s.currency === cur && !s.clientId);
+    const totalSent   = toNum(snap?.totalSent ?? 0);
+    const totalRecv   = toNum(snap?.totalReceived ?? 0);
+    const txCount     = toNum(snap?.transactionCount ?? 0);
 
-  const totalAgencies  = agencies.length;
-  const activeAgencies = agencies.filter((a) => a.isActive).length;
+    return { currency: cur, totalBalance, totalReserved, totalSent, totalReceived: totalRecv, txCount };
+  });
 
-  const modalConfig = {
-    FUND_SELF:     { icon: "add-circle-outline",   title: "Alimenter la Trésorerie",                       sub: "Ajout de fonds à votre compte principal.", hasRef: false },
-    REFILL_AGENCY: { icon: "paper-plane-outline",  title: `Recharger ${targetAgency?.name ?? "l'agence"}`, sub: "Transfert immédiat vers la caisse.",        hasRef: false },
-    PAY_SUPER:     { icon: "document-text-outline", title: "Déclarer un Virement",                         sub: "Déclarez un paiement par virement bancaire.", hasRef: true },
-  };
-  const mc = modalConfig[modalType];
+  // KPIs globaux
+  const totalTx         = transactions.length;
+  const pendingTx       = transactions.filter((t) => t.status === "PENDING").length;
+  const totalClients    = clients.length;
+  const activeClients   = clients.filter((c) => c.subscriptionStatus?.toUpperCase() === "ACTIVE").length;
+
+  // Commissions plateforme (somme sur toutes les transactions)
+  const platformCommission = transactions.reduce((s, t) => s + toNum(t.platformCommission), 0);
+  const totalFees          = transactions.reduce((s, t) => s + toNum(t.fees), 0);
+
+  // Volume total du jour (devise principale XOF)
+  const todaySnap  = snapshots.find((s) => s.currency === "XOF" && !s.clientId);
+  const todayVolume = toNum(todaySnap?.totalSent ?? 0) + toNum(todaySnap?.totalReceived ?? 0);
+
+  const kpis = [
+    {
+      label:  "Transactions",
+      value:  String(totalTx),
+      sub:    `${pendingTx} en attente`,
+      icon:   "swap-horizontal-outline",
+      color:  T.blue,
+      bg:     T.blueLt,
+    },
+    {
+      label:  "Sociétés actives",
+      value:  `${activeClients}/${totalClients}`,
+      sub:    "abonnements actifs",
+      icon:   "business-outline",
+      color:  T.green,
+      bg:     T.greenLt,
+    },
+    {
+      label:  "Commissions",
+      value:  fmtCompact(platformCommission),
+      sub:    "total plateforme",
+      icon:   "trending-up-outline",
+      color:  T.amber,
+      bg:     T.amberLt,
+    },
+    {
+      label:  "Frais totaux",
+      value:  fmtCompact(totalFees),
+      sub:    "toutes devises",
+      icon:   "calculator-outline",
+      color:  T.purple,
+      bg:     T.purpleLt,
+    },
+  ];
+
+  // Top 5 sociétés par nombre de transactions
+  const topClients = [...clients]
+    .sort((a, b) =>
+      toNum(b._count?.transactions ?? b.transactionCount ?? 0) -
+      toNum(a._count?.transactions ?? a.transactionCount ?? 0)
+    )
+    .slice(0, 5);
+
+  // Commissions par devise principale
+  const commissionsByCur = CURRENCIES_ORDER.map((cur) => {
+    const total = transactions
+      .filter((t) => t.currency === cur)
+      .reduce((s, t) => s + toNum(t.platformCommission), 0);
+    return { currency: cur, total };
+  }).filter((c) => c.total > 0);
+
+  const T_borderMd = "#D1D9E6";
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor={T.blue} barStyle="light-content" />
-      <View style={s.screen}>
-        <TreasuryHero
-          role={role}
-          userName={user?.firstName}
-          onRefresh={() => void loadData("refresh")}
-          onBack={() => router.back()}
-          anim={heroAnim}
-        />
+      <StatusBar backgroundColor={T.heroC} barStyle="light-content" />
 
-        {loading ? (
-          <ActivityIndicator color={T.blue} size="large" style={{ marginTop: 60 }} />
-        ) : (
-          <Animated.ScrollView
-            style={[s.scroll, {
-              opacity: contentAnim,
-              transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }],
-            }]}
-            contentContainerStyle={s.scrollContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} tintColor={T.blue} />}
-          >
-            {/* ── Mini stats ── */}
-            <View style={s.statsRow}>
-              <MiniStat icon="storefront-outline"       label="AGENCES"  value={totalAgencies}  color={T.blue}  bg={T.blueLt} />
-              <MiniStat icon="checkmark-circle-outline" label="ACTIVES"  value={activeAgencies} color={T.green} bg={T.greenLt} />
-              <MiniStat icon="cash-outline"             label="DEVISES"  value={5}              color={T.amber} bg={T.amberLt} />
-            </View>
+      <TreasuryHero
+        anim={heroAnim}
+        userName={user?.firstName}
+        onBack={() => router.back()}
+        onRefresh={() => void loadData("refresh")}
+      />
 
-            {/* ── Section Trésorerie ── */}
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: T.amber }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>TRÉSORERIE · 5 DEVISES</Text>
-            </View>
-
-            <Animated.FlatList
-              data={CURRENCIES_ORDER}
-              keyExtractor={(item) => item}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToInterval={CARD_W + 16}
-              decelerationRate="fast"
-              bounces={false}
-              contentContainerStyle={{ paddingRight: 24 }}
-              onMomentumScrollEnd={(e) => {
-                const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 16));
-                setActiveCurrency(idx);
-              }}
-              onScroll={Animated.event(
-                [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                { useNativeDriver: true },
-              )}
-              scrollEventThrottle={16}
-              renderItem={({ item, index }) => {
-                const inputRange = [
-                  (index - 1) * (CARD_W + 16),
-                  index * (CARD_W + 16),
-                  (index + 1) * (CARD_W + 16),
-                ];
-                const scale = scrollX.interpolate({ inputRange, outputRange: [0.92, 1, 0.92], extrapolate: "clamp" });
-                const translateY = scrollX.interpolate({ inputRange, outputRange: [10, 0, 10], extrapolate: "clamp" });
-                const walletData = getWalletBalance(item);
-                return (
-                  <Animated.View style={{ transform: [{ scale }, { translateY }] }}>
-                    <CurrencyCard
-                      currency={item as keyof typeof T.currencies}
-                      balance={walletData.balance}
-                      reserved={walletData.reserved}
-                    />
-                  </Animated.View>
-                );
-              }}
+      {loading ? (
+        <View style={s.loader}>
+          <ActivityIndicator color={T.blue} size="large" />
+        </View>
+      ) : (
+        <Animated.ScrollView
+          style={{ opacity: contentAnim }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadData("refresh")}
+              tintColor={T.blue}
             />
-
-            <CurrencyDots active={activeCurrency} />
-
-            {/* ── Actions rapides ── */}
-            {!isSuperAdmin && (
-              <>
-                <View style={s.sectionRow}>
-                  <View style={[s.sectionDot, { backgroundColor: T.blue }]} />
-                  <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ACTIONS RAPIDES</Text>
-                </View>
-                <View style={s.actionsRow}>
-                  <ActionBtn
-                    icon="document-text-outline" label="Déclarer Virement" sublabel="Paiement bancaire"
-                    color={T.blue} bg={T.blueLt}
-                    onPress={() => { setModalType("PAY_SUPER"); setModalVisible(true); }}
-                  />
-                  <ActionBtn
-                    icon="add-circle-outline" label="Alimenter" sublabel="Ajouter des fonds"
-                    color={T.amber} bg={T.amberLt}
-                    onPress={() => { setModalType("FUND_SELF"); setModalVisible(true); }}
-                  />
-                </View>
-              </>
+          }
+        >
+          {/* ── Carousel soldes par devise ── */}
+          <SH dot={T.blue} label="SOLDES GLOBAUX · 5 DEVISES" />
+          <FlatList
+            ref={carouselRef}
+            horizontal
+            data={globalByCurrency}
+            keyExtractor={(item) => item.currency}
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingLeft: 2, paddingRight: 18 }}
+            snapToInterval={CARD_W + 16}
+            decelerationRate="fast"
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 16));
+              setActiveCard(idx);
+            }}
+            renderItem={({ item }) => (
+              <GlobalCurrencyCard
+                currency={item.currency as keyof typeof T.currencies}
+                totalBalance={item.totalBalance}
+                totalReserved={item.totalReserved}
+                totalSent={item.totalSent}
+                totalReceived={item.totalReceived}
+                txCount={item.txCount}
+              />
             )}
+          />
+          <CurrencyDots active={activeCard} />
 
-            {/* ── Agences ── */}
-            <View style={[s.sectionRow, { marginTop: 4 }]}>
-              <View style={[s.sectionDot, { backgroundColor: T.green }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>AGENCES DU RÉSEAU · {totalAgencies}</Text>
-            </View>
+          {/* ── KPIs globaux ── */}
+          <SH dot={T.purple} label="KPIs PLATEFORME" />
+          <KpiQuad kpis={kpis} />
 
-            {agencies.length === 0 ? (
-              <View style={s.empty}>
-                <View style={s.emptyIcon}><Ionicons name="storefront-outline" size={32} color={T.inkMuted} /></View>
-                <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>Aucune agence</Text>
-                <Text style={[s.emptySub, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>
-                  Les agences apparaîtront ici une fois créées
-                </Text>
+          {/* ── Accès rapide ── */}
+          <SH dot={T.teal} label="ACCÈS RAPIDE" />
+          <View style={s.quickRow}>
+            <QuickBtn
+              icon="analytics-outline"
+              label="Transactions"
+              color={T.blue}
+              bg={T.blueLt}
+              onPress={() => router.push("/(tabs)/admin/transactions-history")}
+            />
+            <QuickBtn
+              icon="shield-checkmark-outline"
+              label="Supervision"
+              color={T.teal}
+              bg={T.tealLt}
+              onPress={() => router.push("/(tabs)/admin/supervision")}
+            />
+          </View>
+          <View style={[s.quickRow, { marginTop: 8 }]}>
+            <QuickBtn
+              icon="people-outline"
+              label="Utilisateurs"
+              color={T.purple}
+              bg={T.purpleLt}
+              onPress={() => router.push("/(tabs)/admin/users")}
+            />
+            <QuickBtn
+              icon="business-outline"
+              label="Sociétés"
+              color={T.amber}
+              bg={T.amberLt}
+              onPress={() => router.push("/(tabs)/admin/clients")}
+            />
+          </View>
+
+          {/* ── Top sociétés ── */}
+          <View style={{ marginTop: 22 }}>
+            <SH dot={T.green} label="TOP SOCIÉTÉS · VOLUME" />
+            {topClients.length === 0 ? (
+              <View style={s.emptyBlock}>
+                <Ionicons name="business-outline" size={22} color={T.inkMuted} />
+                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucune donnée</Text>
               </View>
             ) : (
-              agencies.map((agency) => (
-                <AgencyCard
-                  key={agency.id}
-                  agency={agency}
-                  onRefill={() => { setTargetAgency(agency); setModalType("REFILL_AGENCY"); setModalVisible(true); }}
-                />
+              topClients.map((c, i) => (
+                <ClientRankCard key={c.id} item={c} rank={i + 1} />
               ))
             )}
-            <View style={{ height: 120 }} />
-          </Animated.ScrollView>
-        )}
-      </View>
+          </View>
 
-      {/* ── Modal ── */}
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={closeModal}>
-        <View style={ms.overlay}>
-          <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
-            <View style={ms.sheet}>
-              <View style={ms.handle} />
-              <LinearGradient colors={["#2461FF", T.blueDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={ms.sheetHeader}>
-                <View style={ms.sheetIconBox}>
-                  <Ionicons name={mc.icon as any} size={22} color={T.white} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[ms.sheetTitle, { fontFamily: T.font.display }]}>{mc.title}</Text>
-                  <Text style={[ms.sheetSub, { fontFamily: T.font.subtitle, fontWeight: "300" }]}>{mc.sub}</Text>
-                </View>
-              </LinearGradient>
-              <View style={ms.sheetBody}>
-                <Text style={[ms.inputLabel, { fontFamily: T.font.sans }]}>
-                  MONTANT ({CURRENCIES_ORDER[activeCurrency]} / {T.currencies[CURRENCIES_ORDER[activeCurrency]].symbol})
-                </Text>
-                <View style={ms.inputWrap}>
-                  <TextInput
-                    style={[ms.input, { fontFamily: T.font.display }]}
-                    value={amount} onChangeText={setAmount}
-                    keyboardType="numeric" placeholder="0"
-                    placeholderTextColor={T.inkMuted} autoFocus={!mc.hasRef}
-                  />
-                  <View style={ms.inputSuffix}>
-                    <Text style={[ms.suffixTxt, { fontFamily: T.font.mono }]}>
-                      {T.currencies[CURRENCIES_ORDER[activeCurrency]].symbol}
-                    </Text>
-                  </View>
-                </View>
-
-                {mc.hasRef && (
-                  <View style={{ marginTop: 16 }}>
-                    <Text style={[ms.inputLabel, { fontFamily: T.font.sans }]}>RÉFÉRENCE BANCAIRE</Text>
-                    <TextInput
-                      style={[ms.input, ms.inputSingle, { fontFamily: T.font.mono }]}
-                      value={refBancaire} onChangeText={setRefBancaire}
-                      placeholder="REF-VIREMENT-XXXX"
-                      placeholderTextColor={T.inkMuted} autoCapitalize="characters"
+          {/* ── Commissions par devise ── */}
+          {commissionsByCur.length > 0 && (
+            <View style={{ marginTop: 14 }}>
+              <SH dot={T.amber} label="COMMISSIONS PLATEFORME · PAR DEVISE" />
+              <View style={s.commCard}>
+                {commissionsByCur.map((c) => {
+                  const cfg = T.currencies[c.currency as keyof typeof T.currencies] ?? T.currencies.XOF;
+                  return (
+                    <CommissionRow
+                      key={c.currency}
+                      label={`${cfg.flag}  ${cfg.name}`}
+                      value={c.total}
+                      currency={c.currency}
+                      color={cfg.color}
                     />
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[ms.confirmBtn, processing && { opacity: 0.7 }]}
-                  onPress={handleSubmit} disabled={processing}
-                >
-                  <LinearGradient colors={[T.blue, T.blueDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ms.confirmGrad}>
-                    {processing
-                      ? <ActivityIndicator color={T.white} />
-                      : <Text style={[ms.confirmTxt, { fontFamily: T.font.sans }]}>CONFIRMER</Text>
-                    }
-                  </LinearGradient>
-                </TouchableOpacity>
-                <TouchableOpacity style={ms.cancelBtn} onPress={closeModal} disabled={processing}>
-                  <Text style={[ms.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
-                </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+          )}
+
+          {/* ── Volume du jour ── */}
+          {todayVolume > 0 && (
+            <View style={{ marginTop: 14 }}>
+              <SH dot={T.teal} label="VOLUME DU JOUR · XOF" />
+              <View style={s.volumeCard}>
+                <View style={[s.volumeIconBox, { backgroundColor: T.tealLt }]}>
+                  <Ionicons name="pulse-outline" size={22} color={T.teal} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[s.volumeVal, { fontFamily: T.font.mono, color: T.teal }]}>
+                    {fmt(todayVolume, "XOF")} CFA
+                  </Text>
+                  <Text style={[s.volumeSub, { fontFamily: T.font.subtitle }]}>
+                    Flux total entrant + sortant aujourd'hui
+                  </Text>
+                </View>
+              </View>
+            </View>
+          )}
+
+          <View style={{ height: 100 }} />
+        </Animated.ScrollView>
+      )}
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.pageBg },
-  screen: { flex: 1, backgroundColor: T.pageBg },
-  scroll: { flex: 1, backgroundColor: T.pageBg },
-  scrollContent: { paddingHorizontal: 20, paddingTop: 0 },
-  statsRow: { flexDirection: "row", gap: 10, marginTop: 22, marginBottom: 26 },
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 13, marginLeft: 2 },
-  sectionDot: { width: 6, height: 6, borderRadius: 99 },
-  sectionLabel: { flex: 1, fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.4 },
-  actionsRow: { flexDirection: "row", gap: 12, marginBottom: 24 },
-  empty: { alignItems: "center", paddingVertical: 48, gap: 10 },
-  emptyIcon: { width: 72, height: 72, borderRadius: 20, backgroundColor: T.blueLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd, shadowColor: T.blue, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.14, shadowRadius: 14, elevation: 6 },
-  emptyTitle: { color: T.ink, fontSize: 17, fontWeight: "700" },
-  emptySub: { color: T.inkMuted, fontSize: 13, textAlign: "center", lineHeight: 20, paddingHorizontal: 24 },
-});
+  safe:   { flex: 1, backgroundColor: T.pageBg },
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  scroll: { paddingHorizontal: 18, paddingTop: 22 },
 
-const ms = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.55)", justifyContent: "flex-end" },
-  sheet: { backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden", shadowColor: "#000", shadowOffset: { width: 0, height: -8 }, shadowOpacity: 0.18, shadowRadius: 24, elevation: 20 },
-  handle: { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 },
-  sheetHeader: { flexDirection: "row", alignItems: "center", padding: 20, gap: 14 },
-  sheetIconBox: { width: 46, height: 46, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", justifyContent: "center", alignItems: "center" },
-  sheetTitle: { color: T.white, fontSize: 18, fontWeight: "700" },
-  sheetSub: { color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 },
-  sheetBody: { padding: 20, backgroundColor: T.surface },
-  inputLabel: { fontSize: 10, fontWeight: "800", color: T.inkMuted, letterSpacing: 1.2, marginBottom: 8 },
-  inputWrap: { flexDirection: "row", alignItems: "center", backgroundColor: T.pageBg, borderWidth: 1.5, borderColor: T.blueMd, borderRadius: T.radius.md, overflow: "hidden" },
-  input: { flex: 1, paddingHorizontal: 14, paddingVertical: 14, fontSize: 22, color: T.ink, fontWeight: "700" },
-  inputSingle: { backgroundColor: T.pageBg, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, fontSize: 16, paddingHorizontal: 14, paddingVertical: 14, color: T.ink },
-  inputSuffix: { paddingHorizontal: 14, paddingVertical: 14, backgroundColor: T.blueLt, borderLeftWidth: 1, borderLeftColor: T.blueMd },
-  suffixTxt: { color: T.blue, fontSize: 12, fontWeight: "800" },
-  confirmBtn: { marginTop: 22, borderRadius: T.radius.md, overflow: "hidden" },
-  confirmGrad: { paddingVertical: 18, alignItems: "center" },
-  confirmTxt: { color: T.white, fontWeight: "900", fontSize: 14, letterSpacing: 1 },
-  cancelBtn: { alignItems: "center", paddingVertical: 16 },
-  cancelTxt: { color: T.inkMuted, fontWeight: "700", fontSize: 14 },
-});
+  quickRow: { flexDirection: "row", gap: 10, marginBottom: 0 },
 
-export default React.memo(TreasuryScreen);
+  commCard: {
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    borderWidth: 1, borderColor: T.border,
+    paddingHorizontal: 14, marginBottom: 4,
+    ...T.shadow.soft,
+  },
+
+  volumeCard: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    borderWidth: 1, borderColor: T.border,
+    padding: 16, marginBottom: 4,
+    ...T.shadow.soft,
+  },
+  volumeIconBox: { width: 48, height: 48, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  volumeVal:     { fontSize: 18, fontWeight: "800", marginBottom: 3 },
+  volumeSub:     { fontSize: 10, color: T.inkSub },
+
+  emptyBlock: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 16 },
+  emptyTxt:   { fontSize: 12, color: T.inkMuted, fontWeight: "600" },
+});

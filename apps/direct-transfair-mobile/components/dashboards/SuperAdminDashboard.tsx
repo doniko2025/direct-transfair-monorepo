@@ -1,12 +1,10 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v10.0 — Direct Transf'air
-// ✅ Hero forme capture2 : violet plein, blanc remonte avec
-//    grand arrondi + coins concaves pageBg
-// ✅ Cartes devises superposées 3D stack (capture3)
-//    swipe au doigt (PanResponder natif)
-// ✅ Hero compact ~30% écran
-// ✅ Stats / Actions / Clients identiques
+// SUPER ADMIN DASHBOARD v11.0 — Direct Transf'air
+// ✅ Hero compact (~15% écran) — texte + boutons seulement
+// ✅ CurrencyStack sorti du hero, placé entre hero et stats
+// ✅ "Taux & Devises" remplacé par "Supervision Plateforme"
+// ✅ Tout le reste identique à v10
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -66,6 +64,8 @@ const T = {
   amberLt:  "#FEF3C7",
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
+  teal:     "#0F766E",
+  tealLt:   "#CCFBF1",
 
   white: "#FFFFFF",
 
@@ -111,10 +111,10 @@ const T = {
     },
     hero: {
       shadowColor: "#2E2E9A",
-      shadowOffset: { width: 0, height: 16 },
-      shadowOpacity: 0.32,
-      shadowRadius: 32,
-      elevation: 24,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.22,
+      shadowRadius: 20,
+      elevation: 16,
     },
   },
 };
@@ -146,7 +146,7 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── 3D Stack cartes devises ──────────────────────────────
+// ─── 3D Stack cartes devises (inchangé) ──────────────────
 function CurrencyStack({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
@@ -178,7 +178,6 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
 
   return (
     <View style={stk.wrapper} {...panResponder.panHandlers}>
-      {/* Cartes derrière — effet 3D stack */}
       {([2, 1] as const)
         .filter((d) => d <= behindCount)
         .map((d) => {
@@ -211,7 +210,6 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
           );
         })}
 
-      {/* Carte active (front) */}
       <Animated.View
         style={[
           stk.card,
@@ -222,7 +220,6 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
         <View style={[stk.topAccent, { backgroundColor: activeCfg.color }]} />
         <View style={[stk.cardBgTint, { backgroundColor: activeCfg.bg }]} />
 
-        {/* Row 1 : flag + nom + nav */}
         <View style={stk.row1}>
           <View style={[stk.flagBox, { backgroundColor: activeCfg.bg }]}>
             <Text style={{ fontSize: 20 }}>{activeCfg.flag}</Text>
@@ -252,7 +249,6 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
           </View>
         </View>
 
-        {/* Row 2 : montants */}
         <View style={stk.row2}>
           <View style={{ flex: 1 }}>
             <Text style={[stk.balLabel, { fontFamily: T.font.sans }]}>SOLDE TOTAL</Text>
@@ -274,7 +270,6 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
           </View>
         </View>
 
-        {/* Dots */}
         <View style={stk.dots}>
           {CURRENCIES_ORDER.map((_, i) => (
             <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
@@ -297,7 +292,7 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
 
 const stk = StyleSheet.create({
   wrapper: {
-    marginTop: 14,
+    // ✅ Plus de marginTop ici — géré par le conteneur parent
     marginHorizontal: 20,
     height: STACK_H + STACK_OFFSET_Y * 2 + 8,
     justifyContent: "flex-end",
@@ -352,19 +347,18 @@ const stk = StyleSheet.create({
   dot: { height: 4, borderRadius: 99 },
 });
 
-// ─── Hero — forme capture2 ────────────────────────────────
-const HERO_CURVE = 30;
+// ─── Hero COMPACT — texte + boutons seulement ─────────────
+// Hauteur réduite : pas de CurrencyStack à l'intérieur
+const HERO_CURVE = 28;
 
 function DashHero({
   animValue,
   user,
-  wallets,
   onRefresh,
   onNotif,
 }: {
   animValue: Animated.Value;
   user: any;
-  wallets: any[];
   onRefresh: () => void;
   onNotif: () => void;
 }) {
@@ -377,7 +371,7 @@ function DashHero({
         {
           opacity: animValue,
           transform: [{
-            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }),
+            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }),
           }],
         },
       ]}
@@ -386,12 +380,13 @@ function DashHero({
         colors={["#5B5BD6", "#4545C2", "#3232A8"]}
         start={{ x: 0.05, y: 0 }}
         end={{ x: 0.95, y: 1 }}
-        style={[hS.gradient, { paddingTop: sbH + 12 }]}
+        // ✅ paddingBottom réduit — pas de stack à l'intérieur
+        style={[hS.gradient, { paddingTop: sbH + 10, paddingBottom: 22 }]}
       >
         <View style={hS.c1} />
         <View style={hS.c2} />
 
-        {/* Top bar */}
+        {/* Top bar uniquement */}
         <View style={hS.topBar}>
           <View style={hS.topLeft}>
             <View style={hS.badge}>
@@ -415,14 +410,8 @@ function DashHero({
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Stack 3D */}
-        <CurrencyStack wallets={wallets} />
-
-        <View style={{ height: 28 }} />
       </LinearGradient>
 
-      {/* Coins concaves : effet blanc qui remonte (capture2) */}
       <View style={hS.cornerL} />
       <View style={hS.cornerR} />
     </Animated.View>
@@ -437,17 +426,17 @@ const hS = StyleSheet.create({
     overflow: "hidden",
   },
   c1: {
-    position: "absolute", width: 200, height: 200, borderRadius: 100,
-    backgroundColor: "rgba(255,255,255,0.06)", top: -55, right: -35,
+    position: "absolute", width: 160, height: 160, borderRadius: 80,
+    backgroundColor: "rgba(255,255,255,0.06)", top: -45, right: -30,
   },
   c2: {
-    position: "absolute", width: 90, height: 90, borderRadius: 45,
-    backgroundColor: "rgba(255,255,255,0.04)", bottom: 15, left: 10,
+    position: "absolute", width: 70, height: 70, borderRadius: 35,
+    backgroundColor: "rgba(255,255,255,0.04)", bottom: 10, left: 10,
   },
   topBar: {
     flexDirection: "row", alignItems: "flex-start",
     justifyContent: "space-between",
-    paddingHorizontal: 20, paddingBottom: 0,
+    paddingHorizontal: 20,
   },
   topLeft: { flex: 1 },
   badge: {
@@ -459,7 +448,7 @@ const hS = StyleSheet.create({
   },
   activeDot: { width: 5, height: 5, borderRadius: 99, backgroundColor: "#4ADE80" },
   badgeTxt: { color: "rgba(255,255,255,0.92)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
-  name: { color: T.white, fontSize: 21, fontWeight: "700", letterSpacing: -0.4 },
+  name: { color: T.white, fontSize: 20, fontWeight: "700", letterSpacing: -0.3 },
   sub: { color: "rgba(255,255,255,0.55)", fontSize: 10, marginTop: 1 },
   btns: { flexDirection: "row", gap: 7, paddingTop: 2 },
   btn: {
@@ -507,7 +496,7 @@ function StatStrip({ stats }: { stats: { total: number; active: number; inactive
   );
 }
 const ssS = StyleSheet.create({
-  row: { flexDirection: "row", gap: 8, marginTop: 20, marginBottom: 22 },
+  row: { flexDirection: "row", gap: 8, marginBottom: 22 },
   card: {
     flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md,
     paddingVertical: 12, paddingHorizontal: 10, alignItems: "center",
@@ -693,11 +682,40 @@ export default function SuperAdminDashboard() {
     ).length,
   }), [clients]);
 
+  // ✅ "Taux & Devises" remplacé par "Supervision Plateforme"
   const actions = useMemo(() => [
-    { title: "Trésorerie",     subtitle: "Vue globale",      icon: "wallet-outline",      color: T.blue,   bgColor: T.blueLt,   onPress: () => router.push("/(tabs)/admin/treasury") },
-    { title: "Taux & Devises", subtitle: "5 devises",        icon: "trending-up-outline", color: T.amber,  bgColor: T.amberLt,  onPress: () => router.push("/(tabs)/admin/rates") },
-    { title: "Transactions",   subtitle: "Audit temps réel", icon: "analytics-outline",   color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs",   subtitle: "Accès & Rôles",    icon: "people-outline",      color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users") },
+    {
+      title: "Trésorerie",
+      subtitle: "Vue globale",
+      icon: "wallet-outline",
+      color: T.blue,
+      bgColor: T.blueLt,
+      onPress: () => router.push("/(tabs)/admin/treasury"),
+    },
+    {
+      title: "Supervision",
+      subtitle: "Plateforme & logs",
+      icon: "shield-checkmark-outline",
+      color: T.teal,
+      bgColor: T.tealLt,
+      onPress: () => router.push("/(tabs)/admin/supervision"),
+    },
+    {
+      title: "Transactions",
+      subtitle: "Audit temps réel",
+      icon: "analytics-outline",
+      color: T.green,
+      bgColor: T.greenLt,
+      onPress: () => router.push("/(tabs)/admin/transactions"),
+    },
+    {
+      title: "Utilisateurs",
+      subtitle: "Accès & Rôles",
+      icon: "people-outline",
+      color: T.purple,
+      bgColor: T.purpleLt,
+      onPress: () => router.push("/(tabs)/admin/users"),
+    },
   ], [router]);
 
   return (
@@ -705,10 +723,10 @@ export default function SuperAdminDashboard() {
       <StatusBar backgroundColor="#3232A8" barStyle="light-content" />
 
       <View style={s.screen}>
+        {/* ✅ Hero compact — sans stack */}
         <DashHero
           animValue={headerAnim}
           user={user}
-          wallets={wallets}
           onRefresh={() => void loadData("refresh")}
           onNotif={() => router.push("/(tabs)/admin/notifications")}
         />
@@ -741,6 +759,11 @@ export default function SuperAdminDashboard() {
                 transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
               }}
             >
+              {/* ✅ CurrencyStack placé ici, juste au-dessus des stats */}
+              <View style={s.stackWrapper}>
+                <CurrencyStack wallets={wallets} />
+              </View>
+
               <StatStrip stats={stats} />
               <SH dot={T.blue} label="PILOTAGE RÉSEAU" />
               <ActionGrid actions={actions} />
@@ -817,7 +840,14 @@ export default function SuperAdminDashboard() {
 const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: T.pageBg },
   screen: { flex: 1, backgroundColor: T.pageBg },
-  list: { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
+  list:   { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
+
+  // ✅ Wrapper du stack entre hero et stats — espacement propre
+  stackWrapper: {
+    marginTop: 18,
+    marginBottom: 20,
+  },
+
   searchBox: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: T.surface, borderRadius: T.radius.md,

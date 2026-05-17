@@ -820,15 +820,33 @@ async logout(): Promise<void> {
   // AGENCIES
   // ============================================================
 
+  /**
+   * Récupère les agences.
+   * - SuperAdmin (tenant DONIKO) : platformHeaders() → toutes les agences
+   * - CompanyAdmin : headers normaux → agences de son client uniquement
+   * Le backend filtre selon x-tenant-id.
+   */
   async getAgencies(params?: {
-    page?: number;
-    limit?: number;
-    country?: string;
-    currency?: string;
-  }): Promise<Agency[]> {
-    const res = await this.http.get<unknown>("/agencies", { params });
-    return unwrapArray<Agency>(res.data);
-  }
+  page?: number;
+  limit?: number;
+  country?: string;
+  currency?: string;
+}): Promise<Agency[]> {
+
+  const headers = {
+    "x-tenant-id": this.tenant,
+  };
+
+  const res = await tryMany<AxiosResponse<unknown>>(
+    [
+      () => this.http.get<unknown>("/agencies", { params, headers }),
+      () => this.http.get<unknown>("/admin/agencies", { params, headers }),
+    ],
+    "getAgencies",
+  );
+
+  return unwrapArray<Agency>(res.data);
+}
 
   async getAgency(id: string): Promise<Agency> {
     const res = await this.http.get<Agency>(`/agencies/${id}`);

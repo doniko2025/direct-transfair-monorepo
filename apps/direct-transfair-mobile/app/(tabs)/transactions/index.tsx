@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v5.0 — Direct Transf'air
-// Design: Thème clair · Vert #059669 · Style YMO/Wise
+// TRANSACTIONS HISTORY v5.1 — Direct Transf'air
+// ✅ SuperAdmin : SERVICE_PAYMENT = encaissement → "+" vert · badge "Reçu"
+// ✅ CompanyAdmin/User : logique inchangée
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
@@ -92,25 +93,55 @@ function fmtDate(iso: string): string {
 }
 
 // ─── Tx Card ────────────────────────────────────────────
-function TxCard({ item, userId }: { item: any; userId?: string }) {
+function TxCard({ item, userId, userRole }: {
+  item: any;
+  userId?: string;
+  userRole?: string;
+}) {
   const router = useRouter();
   const scale = useRef(new Animated.Value(1)).current;
 
-  const isRefill  = item.type === "REFILL" || item.type === "AGENCY_REFILL";
-  const isDeposit = item.type === "DEPOSIT";
-  const isIncoming = item.beneficiaryId === userId || isDeposit || isRefill;
-  const isOut     = !isIncoming;
+  const isSuperAdmin = userRole === "SUPER_ADMIN";
+  const typeStr = String(item.type ?? "").toUpperCase();
+
+  const isRefill  = typeStr === "REFILL" || typeStr === "AGENCY_REFILL";
+  const isDeposit = typeStr === "DEPOSIT";
+  const isB2B     = typeStr === "SERVICE_PAYMENT";
+
+  // ✅ Logique direction selon le rôle
+  // SuperAdmin : SERVICE_PAYMENT = encaissement (la société lui paie) → entrant
+  // Autres : direction basée sur beneficiaryId
+  const isIncoming = isSuperAdmin
+    ? (isB2B || isDeposit || isRefill)
+    : (item.beneficiaryId === userId || isDeposit || isRefill);
 
   const accent = isIncoming ? C.green : C.red;
   const sign   = isIncoming ? "+" : "−";
   const icon   = isIncoming ? "arrow-down-circle-outline" : "paper-plane-outline";
   const bg     = isIncoming ? C.greenPale : C.redBg;
-  const label  = isRefill ? "Alimentation caisse" : isDeposit ? "Dépôt agence" : isIncoming ? "Transfert reçu" : "Envoi d'argent";
+
+  const label = isRefill
+    ? "Alimentation caisse"
+    : isDeposit
+      ? "Dépôt agence"
+      : isB2B && isSuperAdmin
+        ? "Encaissement société"
+        : isIncoming
+          ? "Transfert reçu"
+          : "Envoi d'argent";
+
   const detail = isIncoming
     ? (item.senderFirstName ? `${item.senderFirstName} ${item.senderLastName ?? ""}`.trim() : "")
     : (item.beneficiary?.fullName || item.beneficiary?.phone || "");
 
-  const st = STATUS_MAP[item.status] ?? { label: item.status, color: C.slate, bg: C.slateBg, border: C.slateBorder, icon: "help-circle-outline" };
+  // ✅ Badge "Reçu" au lieu de "Payé" pour les entrées
+  const rawSt = STATUS_MAP[item.status] ?? {
+    label: item.status, color: C.slate, bg: C.slateBg, border: C.slateBorder, icon: "help-circle-outline",
+  };
+  const st = {
+    ...rawSt,
+    label: (item.status === "PAID" && isIncoming) ? "Reçu" : rawSt.label,
+  };
 
   return (
     <Animated.View style={{ transform: [{ scale }], marginBottom: 10 }}>
@@ -121,7 +152,6 @@ function TxCard({ item, userId }: { item: any; userId?: string }) {
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
       >
-        {/* Barre latérale */}
         <View style={[tc.sideBar, { backgroundColor: accent }]} />
 
         <View style={tc.content}>
@@ -155,6 +185,7 @@ function TxCard({ item, userId }: { item: any; userId?: string }) {
     </Animated.View>
   );
 }
+
 const tc = StyleSheet.create({
   card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   sideBar:   { width: 4 },
@@ -248,7 +279,6 @@ export default function TransactionsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Search dans le hero */}
         <View style={s.searchBox}>
           <Ionicons name="search" size={15} color={C.heroDim} />
           <TextInput
@@ -307,7 +337,10 @@ export default function TransactionsScreen() {
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={C.green} />}
-          renderItem={({ item }) => <TxCard item={item} userId={user?.id} />}
+          // ✅ userRole transmis à TxCard
+          renderItem={({ item }) => (
+            <TxCard item={item} userId={user?.id} userRole={user?.role} />
+          )}
           ListEmptyComponent={
             <View style={s.empty}>
               <View style={s.emptyIconBox}>
@@ -330,7 +363,6 @@ export default function TransactionsScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
-
   hero: {
     backgroundColor: C.green,
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
@@ -338,31 +370,24 @@ const s = StyleSheet.create({
     paddingTop: Platform.OS === "android" ? 48 : 16,
     paddingBottom: 20, overflow: "hidden",
   },
-  glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:   { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
-  heroPill:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
+  glow:        { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+  heroRow:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
+  heroPill:    { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
   heroPillDot: { width: 4, height: 4, borderRadius: C.r.pill, backgroundColor: "#A5F3FC" },
   heroPillTxt: { color: "#E8FFE8", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
-  heroTitle: { color: C.white, fontSize: 24, fontWeight: "700", marginBottom: 2 },
-  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600" },
-  refreshBtn:{ width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", marginTop: 4 },
-
-  searchBox: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
-    borderRadius: C.r.md, paddingHorizontal: 14, height: 44,
-  },
+  heroTitle:   { color: C.white, fontSize: 24, fontWeight: "700", marginBottom: 2 },
+  heroSub:     { color: C.heroDim, fontSize: 11, fontWeight: "600" },
+  refreshBtn:  { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", marginTop: 4 },
+  searchBox:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 14, height: 44 },
   searchInput: { flex: 1, fontSize: 14, color: C.white, fontWeight: "600" },
-
   filters:     { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: "center" },
   filterPill:  { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: C.r.pill, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder },
   filterTxt:   { fontSize: 12, fontWeight: "700", color: C.inkSoft },
   filterCount: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: C.r.pill },
   filterCountTxt: { fontSize: 10, fontWeight: "900" },
-
-  list:  { paddingHorizontal: 16, paddingTop: 12 },
-  empty: { alignItems: "center", paddingVertical: 50, gap: 8 },
-  emptyIconBox: { width: 68, height: 68, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  emptyTitle:   { color: C.ink, fontSize: 17, fontWeight: "700" },
-  emptySub:     { color: C.inkSoft, fontSize: 12, fontWeight: "600", textAlign: "center" },
+  list:        { paddingHorizontal: 16, paddingTop: 12 },
+  empty:       { alignItems: "center", paddingVertical: 50, gap: 8 },
+  emptyIconBox:{ width: 68, height: 68, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  emptyTitle:  { color: C.ink, fontSize: 17, fontWeight: "700" },
+  emptySub:    { color: C.inkSoft, fontSize: 12, fontWeight: "600", textAlign: "center" },
 });

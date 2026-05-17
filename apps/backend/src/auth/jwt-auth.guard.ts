@@ -103,6 +103,12 @@ export class JwtAuthGuard implements CanActivate {
       };
 
       // ✅ Tenant matching — inchangé
+            // ✅ SUPER_ADMIN = bypass multi-tenant global
+      if (payload.role === 'SUPER_ADMIN') {
+        return true;
+      }
+
+      // ✅ Tenant matching — inchangé
       const tenantClientId = req.tenantContext?.clientId;
 
       if (typeof tenantClientId === 'number' && tenantClientId > 0) {

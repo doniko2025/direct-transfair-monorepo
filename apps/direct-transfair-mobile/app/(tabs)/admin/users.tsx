@@ -1,399 +1,763 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/users.tsx
 // =========================================================
-// ADMIN USERS v5.0 — Direct Transf'air
-// Design: Thème CLAIR par rôle, clean & aéré
-// ✅ Liste, recherche, création inline
+// ADMIN USERS v6.0 — Direct Transf'air · SuperAdmin
+// ✅ Arborescence : Sociétés → (clic) → Admins + infos
+//                  → Agences → Clients
+// ✅ Bouton + supprimé (SuperAdmin n'en a pas besoin)
+// ✅ Thème clair violet/bleu — cohérent avec le dashboard
 // =========================================================
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useMemo } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Modal, TextInput,
-  SafeAreaView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
-  ScrollView, StatusBar, Animated,
+  View, Text, StyleSheet, FlatList, TouchableOpacity,
+  TextInput, SafeAreaView, ActivityIndicator, Platform,
+  StatusBar, Animated, ScrollView,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
 
-// ─── Thèmes clairs par rôle ────────────────────────────────
-const ROLE_THEMES = {
-  SUPER_ADMIN:   { bg: "#FFFBF2", card: "#FFF8E7", accent: "#B8860B", accentLight: "#FFF3CD" },
-  COMPANY_ADMIN: { bg: "#F0FDF8", card: "#E8FDF4", accent: "#059669", accentLight: "#D1FAE5" },
-  AGENT:         { bg: "#FFFBF0", card: "#FFF8E6", accent: "#D97706", accentLight: "#FEF3C7" },
-  USER:          { bg: "#F0FDF4", card: "#E8FDF0", accent: "#16A34A", accentLight: "#DCFCE7" },
-} as const;
-
-const ROLE_CONFIG = {
-  SUPER_ADMIN:   { color: "#B8860B", bg: "#FEF3C7", label: "Super Admin" },
-  COMPANY_ADMIN: { color: "#2563EB", bg: "#DBEAFE", label: "Admin Société" },
-  AGENT:         { color: "#D97706", bg: "#FEF3C7", label: "Agent" },
-  USER:          { color: "#16A34A", bg: "#DCFCE7", label: "Client" },
-} as const;
-
+// ─── Design Tokens ────────────────────────────────────────
 const T = {
+  blue:     "#1956F0",
+  blueDark: "#1240D6",
+  blueLt:   "#EEF2FF",
+  blueMd:   "#C7D5FF",
+
+  pageBg:   "#F0F4FF",
+  surface:  "#FFFFFF",
+  border:   "#E2E8F0",
+  borderLt: "#F1F5F9",
+
+  ink:      "#0F172A",
+  inkMid:   "#374151",
+  inkSub:   "#6B7280",
+  inkMuted: "#9CA3AF",
+
+  green:    "#16A34A",
+  greenLt:  "#DCFCE7",
+  red:      "#DC2626",
+  redLt:    "#FEE2E2",
+  amber:    "#D97706",
+  amberLt:  "#FEF3C7",
+  purple:   "#7C3AED",
+  purpleLt: "#EDE9FE",
+  teal:     "#0F766E",
+  tealLt:   "#CCFBF1",
+
   white: "#FFFFFF",
-  pageBackground: "#F4F6F9",
-  cardBg: "#FFFFFF",
-  border: "#E5E8EF",
-  borderLight: "#EFF1F5",
-  text: "#111827",
-  textSub: "#6B7280",
-  textMuted: "#9CA3AF",
-  red: "#DC2626",
-  redBg: "#FEE2E2",
+
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
-  shadow: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-  },
+
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    sans:     Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    subtitle: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-light",     default: "Trebuchet MS" }),
+    mono:     Platform.select({ ios: "Trebuchet MS", android: "monospace",             default: "Trebuchet MS" }),
+  },
+
+  shadow: {
+    card: {
+      shadowColor: "#1240D6",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.09,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    soft: {
+      shadowColor: "#1240D6",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      elevation: 3,
+    },
   },
 };
 
-// ─── User Card ─────────────────────────────────────────────
-function UserCard({ item, accent }: { item: any; accent: string }) {
-  const roleCfg = ROLE_CONFIG[item.role as keyof typeof ROLE_CONFIG] ?? { color: T.textMuted, bg: T.borderLight, label: item.role };
+// ─── Types de navigation ──────────────────────────────────
+type ViewMode = "companies" | "company_detail";
+
+// ─── Helpers ──────────────────────────────────────────────
+const STATUS_COLORS: Record<string, string> = {
+  ACTIVE:    T.green,
+  INACTIVE:  T.red,
+  SUSPENDED: T.amber,
+  EXPIRED:   T.red,
+  TRIAL:     T.purple,
+};
+
+const ROLE_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
+  SUPER_ADMIN:   { color: T.amber,  bg: T.amberLt,  label: "Super Admin" },
+  COMPANY_ADMIN: { color: T.blue,   bg: T.blueLt,   label: "Admin Société" },
+  AGENT:         { color: T.amber,  bg: T.amberLt,  label: "Agent" },
+  USER:          { color: T.green,  bg: T.greenLt,  label: "Client" },
+};
+
+function initials(str: string): string {
+  return (str ?? "?")[0].toUpperCase();
+}
+
+// ─── Section Header ───────────────────────────────────────
+function SH({ dot, label, count }: { dot: string; label: string; count?: number }) {
+  return (
+    <View style={shS.row}>
+      <View style={[shS.dot, { backgroundColor: dot }]} />
+      <Text style={[shS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      {count !== undefined && (
+        <View style={[shS.pill, { backgroundColor: dot + "18" }]}>
+          <Text style={[shS.pillTxt, { color: dot, fontFamily: T.font.mono }]}>{count}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+const shS = StyleSheet.create({
+  row:    { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
+  dot:    { width: 6, height: 6, borderRadius: 99 },
+  label:  { flex: 1, fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.6 },
+  pill:   { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  pillTxt:{ fontSize: 10, fontWeight: "900" },
+});
+
+// ─── Company Card (vue liste) ─────────────────────────────
+function CompanyCard({ item, onPress }: { item: any; onPress: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
+  const statusColor = STATUS_COLORS[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
+  const adminCount  = (item.users ?? []).filter((u: any) => u.role === "COMPANY_ADMIN").length;
+  const agencyCount = (item.agencies ?? []).length;
+  const clientCount = (item.users ?? []).filter((u: any) => u.role === "USER").length;
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={ucS.card}
+        style={ccS.card}
+        onPress={onPress}
         activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,  useNativeDriver: true, speed: 30 }).start()}
       >
-        <View style={[ucS.avatar, { backgroundColor: `${roleCfg.color}18` }]}>
-          <Text style={[ucS.avatarTxt, { color: roleCfg.color, fontFamily: T.font.display }]}>
-            {(item.firstName?.[0] ?? "U").toUpperCase()}
-          </Text>
-        </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[ucS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
-            {item.firstName} {item.lastName}
-          </Text>
-          <Text style={[ucS.email, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.email}</Text>
-          <View style={ucS.metaRow}>
-            <View style={[ucS.rolePill, { backgroundColor: roleCfg.bg }]}>
-              <Text style={[ucS.roleText, { color: roleCfg.color, fontFamily: T.font.sans }]}>{roleCfg.label}</Text>
+        {/* Barre top colorée */}
+        <View style={[ccS.topBar, { backgroundColor: statusColor }]} />
+
+        <View style={ccS.inner}>
+          {/* Avatar + infos */}
+          <View style={ccS.topRow}>
+            <View style={ccS.avatar}>
+              <Text style={[ccS.avatarLetter, { fontFamily: T.font.display }]}>
+                {initials(item.name)}
+              </Text>
             </View>
-            {item.client?.name && (
-              <View style={ucS.clientPill}>
-                <Text style={[ucS.clientText, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.client.name}</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[ccS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                {item.name}
+              </Text>
+              <View style={ccS.metaRow}>
+                <Text style={[ccS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
+                <View style={[ccS.statusPill, {
+                  backgroundColor: statusColor + "14",
+                  borderColor: statusColor + "30",
+                }]}>
+                  <View style={[ccS.dot, { backgroundColor: statusColor }]} />
+                  <Text style={[ccS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
+                    {item.subscriptionStatus}
+                  </Text>
+                </View>
               </View>
-            )}
+            </View>
+            <View style={ccS.chevronBox}>
+              <Ionicons name="chevron-forward" size={13} color={T.blue} />
+            </View>
           </View>
-        </View>
-        <View style={[ucS.chevronBox, { backgroundColor: `${accent}15` }]}>
-          <Ionicons name="chevron-forward" size={14} color={accent} />
+
+          {/* Compteurs */}
+          <View style={ccS.counters}>
+            <CounterPill icon="person-outline"   color={T.blue}   bg={T.blueLt}   value={adminCount}  label="Admins" />
+            <CounterPill icon="business-outline" color={T.purple} bg={T.purpleLt} value={agencyCount} label="Agences" />
+            <CounterPill icon="people-outline"   color={T.green}  bg={T.greenLt}  value={clientCount} label="Clients" />
+          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
   );
 }
-const ucS = StyleSheet.create({
-  card: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.cardBg, borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 10,
-    borderWidth: 1, borderColor: T.border, gap: 14,
-    ...T.shadow,
-  },
-  avatar: { width: 46, height: 46, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  avatarTxt: { fontSize: 20, fontWeight: "700" },
-  name: { color: T.text, fontSize: 15, fontWeight: "700", marginBottom: 3 },
-  email: { color: T.textSub, fontSize: 11, fontWeight: "500", marginBottom: 6 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
-  rolePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  roleText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.3 },
-  clientPill: { backgroundColor: T.borderLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  clientText: { color: T.textSub, fontSize: 10, fontWeight: "600" },
-  chevronBox: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-});
 
-// ─── Form Field ────────────────────────────────────────────
-function FormField({ label, value, onChangeText, placeholder, keyboardType, secureTextEntry, autoCapitalize }: any) {
+function CounterPill({ icon, color, bg, value, label }: {
+  icon: string; color: string; bg: string; value: number; label: string;
+}) {
   return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={[ffS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <TextInput
-        style={[ffS.input, { fontFamily: T.font.sans }]}
-        value={value} onChangeText={onChangeText}
-        placeholder={placeholder} placeholderTextColor={T.textMuted}
-        keyboardType={keyboardType} secureTextEntry={secureTextEntry}
-        autoCapitalize={autoCapitalize}
-      />
+    <View style={[cpS.pill, { backgroundColor: bg, borderColor: color + "25" }]}>
+      <Ionicons name={icon as any} size={11} color={color} />
+      <Text style={[cpS.val, { color, fontFamily: T.font.mono }]}>{value}</Text>
+      <Text style={[cpS.lbl, { color, fontFamily: T.font.sans }]}>{label}</Text>
     </View>
   );
 }
-const ffS = StyleSheet.create({
-  label: { fontSize: 11, fontWeight: "700", color: T.textSub, letterSpacing: 0.5, marginBottom: 6 },
-  input: {
-    backgroundColor: T.pageBackground, borderWidth: 1, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, color: T.text, fontWeight: "500",
+const cpS = StyleSheet.create({
+  pill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 9, paddingVertical: 5,
+    borderRadius: 8, borderWidth: 1, flex: 1, justifyContent: "center",
+  },
+  val: { fontSize: 12, fontWeight: "800" },
+  lbl: { fontSize: 9, fontWeight: "700" },
+});
+
+const ccS = StyleSheet.create({
+  card: {
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    borderWidth: 1, borderColor: T.border,
+    marginBottom: 10, overflow: "hidden", ...T.shadow.card,
+  },
+  topBar: { height: 3 },
+  inner:  { padding: 14 },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 12 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 13,
+    backgroundColor: T.blueLt, borderWidth: 1.5, borderColor: T.blueMd,
+    justifyContent: "center", alignItems: "center",
+  },
+  avatarLetter: { fontSize: 19, fontWeight: "700", color: T.blue },
+  name:   { fontSize: 14, fontWeight: "700", color: T.ink, marginBottom: 4 },
+  metaRow:{ flexDirection: "row", alignItems: "center", gap: 7 },
+  code:   { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  dot:    { width: 4, height: 4, borderRadius: 99 },
+  statusTxt: { fontSize: 9, fontWeight: "800" },
+  chevronBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.blueLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
+  counters: { flexDirection: "row", gap: 7 },
+});
+
+// ─── User Row (admin / agent / client) ───────────────────
+function UserRow({ item }: { item: any }) {
+  const roleCfg = ROLE_CONFIG[item.role] ?? { color: T.inkMuted, bg: T.borderLt, label: item.role };
+  return (
+    <View style={urS.row}>
+      <View style={[urS.avatar, { backgroundColor: roleCfg.bg }]}>
+        <Text style={[urS.avatarTxt, { color: roleCfg.color, fontFamily: T.font.display }]}>
+          {initials(item.firstName ?? item.email ?? "?")}
+        </Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[urS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+          {item.firstName ?? ""} {item.lastName ?? ""}
+        </Text>
+        <Text style={[urS.email, { fontFamily: T.font.subtitle }]} numberOfLines={1}>
+          {item.email}
+        </Text>
+      </View>
+      <View style={[urS.rolePill, { backgroundColor: roleCfg.bg }]}>
+        <Text style={[urS.roleText, { color: roleCfg.color, fontFamily: T.font.sans }]}>
+          {roleCfg.label}
+        </Text>
+      </View>
+    </View>
+  );
+}
+const urS = StyleSheet.create({
+  row: {
+    flexDirection: "row", alignItems: "center", gap: 11,
+    paddingVertical: 10, paddingHorizontal: 14,
+    borderBottomWidth: 1, borderBottomColor: T.borderLt,
+  },
+  avatar: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  avatarTxt: { fontSize: 15, fontWeight: "700" },
+  name:  { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  email: { fontSize: 10, color: T.inkSub },
+  rolePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  roleText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+});
+
+// ─── Agency Row ───────────────────────────────────────────
+function AgencyRow({ item }: { item: any }) {
+  const isActive  = item.isActive;
+  const agentCount = (item.agents ?? []).length;
+  return (
+    <View style={arS.row}>
+      <View style={[arS.iconBox, { backgroundColor: isActive ? T.tealLt : T.redLt }]}>
+        <Ionicons name="business-outline" size={15} color={isActive ? T.teal : T.red} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[arS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
+        <Text style={[arS.city, { fontFamily: T.font.subtitle }]}>
+          {item.city ?? "—"}  ·  {item.country ?? "—"}
+        </Text>
+      </View>
+      <View style={arS.right}>
+        <View style={[arS.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
+        {agentCount > 0 && (
+          <View style={[arS.agentPill, { backgroundColor: T.amberLt }]}>
+            <Text style={[arS.agentTxt, { color: T.amber, fontFamily: T.font.mono }]}>
+              {agentCount} agent{agentCount > 1 ? "s" : ""}
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+const arS = StyleSheet.create({
+  row: {
+    flexDirection: "row", alignItems: "center", gap: 11,
+    paddingVertical: 10, paddingHorizontal: 14,
+    borderBottomWidth: 1, borderBottomColor: T.borderLt,
+  },
+  iconBox:    { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  name:       { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  city:       { fontSize: 10, color: T.inkSub },
+  right:      { alignItems: "flex-end", gap: 4 },
+  statusDot:  { width: 7, height: 7, borderRadius: 99 },
+  agentPill:  { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  agentTxt:   { fontSize: 9, fontWeight: "800" },
+});
+
+// ─── Collapsible Section ──────────────────────────────────
+function CollapsibleSection({
+  dot, label, count, children, defaultOpen = false,
+}: {
+  dot: string; label: string; count: number;
+  children: React.ReactNode; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const rotAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
+
+  const toggle = () => {
+    const toVal = open ? 0 : 1;
+    setOpen(!open);
+    Animated.spring(rotAnim, { toValue: toVal, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
+  };
+
+  const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "90deg"] });
+
+  return (
+    <View style={csS.wrapper}>
+      <TouchableOpacity style={csS.header} onPress={toggle} activeOpacity={0.8}>
+        <View style={[csS.dot, { backgroundColor: dot }]} />
+        <Text style={[csS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+        <View style={[csS.countPill, { backgroundColor: dot + "18" }]}>
+          <Text style={[csS.countTxt, { color: dot, fontFamily: T.font.mono }]}>{count}</Text>
+        </View>
+        <Animated.View style={{ transform: [{ rotate }] }}>
+          <Ionicons name="chevron-forward" size={14} color={T.inkMuted} />
+        </Animated.View>
+      </TouchableOpacity>
+      {open && <View style={csS.body}>{children}</View>}
+    </View>
+  );
+}
+const csS = StyleSheet.create({
+  wrapper: {
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    borderWidth: 1, borderColor: T.border,
+    marginBottom: 12, overflow: "hidden", ...T.shadow.soft,
+  },
+  header: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 14, paddingVertical: 13,
+    borderBottomWidth: 0,
+  },
+  dot:       { width: 6, height: 6, borderRadius: 99 },
+  label:     { flex: 1, fontSize: 11, fontWeight: "800", color: T.ink, letterSpacing: 0.3 },
+  countPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, marginRight: 4 },
+  countTxt:  { fontSize: 10, fontWeight: "900" },
+  body:      { borderTopWidth: 1, borderTopColor: T.borderLt },
+});
+
+// ─── Info Row ─────────────────────────────────────────────
+function InfoRow({ label, value, icon }: { label: string; value: string; icon?: string }) {
+  return (
+    <View style={irS.row}>
+      {icon && (
+        <View style={irS.iconBox}>
+          <Ionicons name={icon as any} size={13} color={T.inkMuted} />
+        </View>
+      )}
+      <Text style={[irS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      <Text style={[irS.value, { fontFamily: T.font.mono }]} numberOfLines={1}>{value || "—"}</Text>
+    </View>
+  );
+}
+const irS = StyleSheet.create({
+  row:     { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  iconBox: { width: 20, justifyContent: "center", alignItems: "center" },
+  label:   { flex: 1, fontSize: 11, color: T.inkSub, fontWeight: "600" },
+  value:   { fontSize: 11, color: T.ink, fontWeight: "700", maxWidth: "55%" },
+});
+
+// ─── Company Detail View ──────────────────────────────────
+function CompanyDetailView({
+  company,
+  onBack,
+}: {
+  company: any;
+  onBack: () => void;
+}) {
+  const statusColor  = STATUS_COLORS[company.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
+  const admins       = (company.users ?? []).filter((u: any) => u.role === "COMPANY_ADMIN");
+  const agents       = (company.users ?? []).filter((u: any) => u.role === "AGENT");
+  const clients      = (company.users ?? []).filter((u: any) => u.role === "USER");
+  const agencies     = company.agencies ?? [];
+
+  return (
+    <View style={{ flex: 1 }}>
+      {/* Header détail */}
+      <View style={dvS.header}>
+        <TouchableOpacity style={dvS.backBtn} onPress={onBack} hitSlop={12}>
+          <Ionicons name="arrow-back" size={20} color={T.ink} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[dvS.title, { fontFamily: T.font.display }]} numberOfLines={1}>
+            {company.name}
+          </Text>
+          <View style={dvS.metaRow}>
+            <Text style={[dvS.code, { fontFamily: T.font.mono }]}>{company.code}</Text>
+            <View style={[dvS.statusPill, {
+              backgroundColor: statusColor + "14",
+              borderColor: statusColor + "30",
+            }]}>
+              <View style={[dvS.dot, { backgroundColor: statusColor }]} />
+              <Text style={[dvS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
+                {company.subscriptionStatus}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <ScrollView
+        style={{ flex: 1, backgroundColor: T.pageBg }}
+        contentContainerStyle={dvS.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Infos société ── */}
+        <SH dot={T.blue} label="INFORMATIONS SOCIÉTÉ" />
+        <View style={dvS.infoCard}>
+          <InfoRow icon="mail-outline"     label="Email"        value={company.email ?? company.contactEmail} />
+          <InfoRow icon="call-outline"     label="Téléphone"    value={company.phone ?? company.contactPhone} />
+          <InfoRow icon="globe-outline"    label="Pays"         value={company.country} />
+          <InfoRow icon="location-outline" label="Ville"        value={company.city} />
+          <InfoRow icon="briefcase-outline"label="Secteur"      value={company.activitySector} />
+          <InfoRow icon="repeat-outline"   label="Contrat"      value={company.subscriptionType} />
+          <InfoRow icon="calendar-outline" label="Début"
+            value={company.subscriptionStart
+              ? new Date(company.subscriptionStart).toLocaleDateString("fr-FR")
+              : "—"
+            }
+          />
+          <InfoRow icon="calendar-outline" label="Fin"
+            value={company.subscriptionEnd
+              ? new Date(company.subscriptionEnd).toLocaleDateString("fr-FR")
+              : "—"
+            }
+          />
+        </View>
+
+        {/* ── Admins société ── */}
+        <CollapsibleSection
+          dot={T.blue}
+          label="ADMINS SOCIÉTÉ"
+          count={admins.length}
+          defaultOpen
+        >
+          {admins.length === 0
+            ? <EmptyInline text="Aucun admin" />
+            : admins.map((u: any) => <UserRow key={u.id} item={u} />)
+          }
+        </CollapsibleSection>
+
+        {/* ── Agences ── */}
+        <CollapsibleSection
+          dot={T.teal}
+          label="AGENCES"
+          count={agencies.length}
+          defaultOpen
+        >
+          {agencies.length === 0
+            ? <EmptyInline text="Aucune agence" />
+            : agencies.map((a: any) => <AgencyRow key={a.id} item={a} />)
+          }
+        </CollapsibleSection>
+
+        {/* ── Agents ── */}
+        <CollapsibleSection
+          dot={T.amber}
+          label="AGENTS"
+          count={agents.length}
+        >
+          {agents.length === 0
+            ? <EmptyInline text="Aucun agent" />
+            : agents.map((u: any) => <UserRow key={u.id} item={u} />)
+          }
+        </CollapsibleSection>
+
+        {/* ── Clients ── */}
+        <CollapsibleSection
+          dot={T.green}
+          label="CLIENTS"
+          count={clients.length}
+        >
+          {clients.length === 0
+            ? <EmptyInline text="Aucun client" />
+            : clients.map((u: any) => <UserRow key={u.id} item={u} />)
+          }
+        </CollapsibleSection>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </View>
+  );
+}
+
+function EmptyInline({ text }: { text: string }) {
+  return (
+    <View style={eiS.wrap}>
+      <Ionicons name="ellipse-outline" size={14} color={T.inkMuted} />
+      <Text style={[eiS.txt, { fontFamily: T.font.sans }]}>{text}</Text>
+    </View>
+  );
+}
+const eiS = StyleSheet.create({
+  wrap: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14 },
+  txt:  { fontSize: 11, color: T.inkMuted, fontWeight: "600" },
+});
+
+const dvS = StyleSheet.create({
+  header: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: T.surface,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 14, gap: 12,
+    borderBottomWidth: 1, borderBottomColor: T.border,
+  },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border,
+    justifyContent: "center", alignItems: "center",
+  },
+  title: { fontSize: 18, fontWeight: "700", color: T.ink, marginBottom: 4 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 7 },
+  code: { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  dot:       { width: 4, height: 4, borderRadius: 99 },
+  statusTxt: { fontSize: 9, fontWeight: "800" },
+  scroll:    { paddingHorizontal: 18, paddingTop: 18 },
+  infoCard:  {
+    backgroundColor: T.surface, borderRadius: T.radius.lg,
+    borderWidth: 1, borderColor: T.border,
+    marginBottom: 18, overflow: "hidden", ...T.shadow.soft,
   },
 });
 
-// ─── Main Screen ───────────────────────────────────────────
+// ─── Main Screen ──────────────────────────────────────────
 export default function AdminUsersScreen() {
-  const router = useRouter();
+  const router   = useRouter();
   const { user } = useAuth();
-  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
-  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
 
-  const [usersList, setUsersList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [q, setQ] = useState("");
-  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "AGENT", country: "" });
+  const [companies,   setCompanies]   = useState<any[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [q,           setQ]           = useState("");
+  const [viewMode,    setViewMode]    = useState<ViewMode>("companies");
+  const [selected,    setSelected]    = useState<any>(null);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const loadUsers = useCallback(async () => {
+  const loadCompanies = useCallback(async (mode: "init" | "refresh" = "init") => {
+    if (mode === "refresh") setRefreshing(true);
+    else setLoading(true);
     try {
-      const data = await api.getUsers();
-      setUsersList(Array.isArray(data) ? data : []);
-      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { console.log("Erreur users"); }
-    finally { setLoading(false); }
+      // On charge les sociétés avec leurs users et agences inclus
+      const raw = await api.getClients().catch(() => []);
+      const list = Array.isArray(raw) ? raw : ((raw as any)?.data ?? []);
+      setCompanies(list);
+      Animated.spring(fadeAnim, {
+        toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3,
+      }).start();
+    } catch (e) {
+      console.error("Users load error", e);
+    } finally {
+      if (mode === "refresh") setRefreshing(false);
+      else setLoading(false);
+    }
   }, []);
 
-  useFocusEffect(useCallback(() => { void loadUsers(); }, [loadUsers]));
+  useFocusEffect(useCallback(() => {
+    void loadCompanies("init");
+    return () => {};
+  }, [loadCompanies]));
 
-  const filtered = usersList.filter((u) => {
-    if (!q.trim()) return true;
-    const search = q.toLowerCase();
-    return `${u.firstName} ${u.lastName} ${u.email}`.toLowerCase().includes(search);
-  });
+  const filtered = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    if (!n) return companies;
+    return companies.filter((c) =>
+      `${c.name} ${c.code} ${c.subscriptionStatus}`.toLowerCase().includes(n)
+    );
+  }, [companies, q]);
 
-  const handleCreate = async () => {
-    if (!form.email || !form.password || !form.firstName || !form.lastName) {
-      Alert.alert("Erreur", "Tous les champs sont obligatoires."); return;
-    }
-    setCreating(true);
-    try {
-      await api.createUser(form);
-      setModalVisible(false);
-      setForm({ firstName: "", lastName: "", email: "", password: "", role: "AGENT", country: "" });
-      void loadUsers();
-    } catch (e: any) {
-      const msg = e.response?.data?.message || "La création a échoué.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
-    } finally { setCreating(false); }
-  };
-
-  const AVAILABLE_ROLES = role === "SUPER_ADMIN"
-    ? ["SUPER_ADMIN", "COMPANY_ADMIN", "AGENT"]
-    : ["COMPANY_ADMIN", "AGENT"];
-
-  return (
-    <View style={[s.root, { backgroundColor: theme.bg }]}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
-
-        {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={22} color={T.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Utilisateurs</Text>
-            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
-              {filtered.length} compte{filtered.length > 1 ? "s" : ""}
-            </Text>
-          </View>
-          <TouchableOpacity
-            style={[s.addBtn, { backgroundColor: theme.accentLight }]}
-            onPress={() => setModalVisible(true)}
-          >
-            <Ionicons name="add" size={22} color={theme.accent} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Search */}
-        <View style={s.searchBox}>
-          <Ionicons name="search" size={17} color={T.textMuted} />
-          <TextInput
-            style={[s.searchInput, { fontFamily: T.font.sans }]}
-            value={q} onChangeText={setQ}
-            placeholder="Nom, email..."
-            placeholderTextColor={T.textMuted}
-          />
-          {!!q && (
-            <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-              <Ionicons name="close" size={14} color={T.textSub} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {loading ? (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <ActivityIndicator color={theme.accent} size="large" />
-          </View>
-        ) : (
-          <Animated.FlatList
-            style={{ opacity: fadeAnim }}
-            data={filtered}
-            keyExtractor={(item) => item.id?.toString()}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => <UserCard item={item} accent={theme.accent} />}
-            ListEmptyComponent={
-              <View style={s.empty}>
-                <View style={[s.emptyIcon, { backgroundColor: T.borderLight }]}>
-                  <Ionicons name="people-outline" size={30} color={T.textMuted} />
-                </View>
-                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucun utilisateur</Text>
-              </View>
-            }
-            ListFooterComponent={<View style={{ height: 100 }} />}
-          />
-        )}
-
-        {/* Modal création */}
-        <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
-          <View style={s.overlay}>
-            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%", maxHeight: "92%" }}>
-              <View style={s.sheet}>
-                <View style={s.sheetHandle} />
-
-                {/* Sheet Header */}
-                <View style={s.sheetHeaderRow}>
-                  <View style={[s.sheetIconBox, { backgroundColor: theme.accentLight }]}>
-                    <Ionicons name="person-add-outline" size={21} color={theme.accent} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.sheetTitle, { fontFamily: T.font.display }]}>Nouvel Utilisateur</Text>
-                    <Text style={[s.sheetSub, { fontFamily: T.font.sans }]}>Accès immédiat à la plateforme</Text>
-                  </View>
-                  <TouchableOpacity style={s.closeBtn} onPress={() => setModalVisible(false)}>
-                    <Ionicons name="close" size={18} color={T.textSub} />
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.sheetBody} keyboardShouldPersistTaps="handled">
-                  <View style={s.formRow}>
-                    <View style={{ flex: 1 }}>
-                      <FormField label="PRÉNOM" value={form.firstName} onChangeText={(v: string) => setForm({ ...form, firstName: v })} placeholder="Alpha" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <FormField label="NOM" value={form.lastName} onChangeText={(v: string) => setForm({ ...form, lastName: v })} placeholder="DIALLO" />
-                    </View>
-                  </View>
-                  <FormField label="EMAIL" value={form.email} onChangeText={(v: string) => setForm({ ...form, email: v })} placeholder="user@societe.com" keyboardType="email-address" autoCapitalize="none" />
-                  <FormField label="MOT DE PASSE" value={form.password} onChangeText={(v: string) => setForm({ ...form, password: v })} placeholder="Secret123!" secureTextEntry />
-                  <FormField label="PAYS (ISO alpha-2)" value={form.country} onChangeText={(v: string) => setForm({ ...form, country: v })} placeholder="FR, GN, GB, SN..." autoCapitalize="characters" />
-
-                  <Text style={[s.roleLabel, { fontFamily: T.font.sans }]}>RÔLE</Text>
-                  <View style={s.roleRow}>
-                    {AVAILABLE_ROLES.map((r) => {
-                      const cfg = ROLE_CONFIG[r as keyof typeof ROLE_CONFIG] ?? { color: T.textSub, bg: T.borderLight, label: r };
-                      const isActive = form.role === r;
-                      return (
-                        <TouchableOpacity
-                          key={r}
-                          style={[
-                            s.rolePill,
-                            isActive
-                              ? { backgroundColor: cfg.bg, borderColor: cfg.color }
-                              : { backgroundColor: T.pageBackground, borderColor: T.border },
-                          ]}
-                          onPress={() => setForm({ ...form, role: r })}
-                        >
-                          {isActive && <View style={[s.roleDot, { backgroundColor: cfg.color }]} />}
-                          <Text style={[s.rolePillTxt, { color: isActive ? cfg.color : T.textSub, fontFamily: T.font.sans }]}>
-                            {cfg.label}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
-
-                  <TouchableOpacity
-                    style={[s.confirmBtn, { backgroundColor: theme.accent }, creating && { opacity: 0.7 }]}
-                    onPress={handleCreate}
-                    disabled={creating}
-                  >
-                    {creating
-                      ? <ActivityIndicator color={T.white} />
-                      : <Text style={[s.confirmTxt, { fontFamily: T.font.sans }]}>CRÉER L'UTILISATEUR</Text>
-                    }
-                  </TouchableOpacity>
-                  <View style={{ height: 20 }} />
-                </ScrollView>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
+  // ─── Vue détail société ───────────────────────────────
+  if (viewMode === "company_detail" && selected) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <StatusBar barStyle="dark-content" backgroundColor={T.surface} />
+        <CompanyDetailView
+          company={selected}
+          onBack={() => {
+            setViewMode("companies");
+            setSelected(null);
+          }}
+        />
       </SafeAreaView>
-    </View>
+    );
+  }
+
+  // ─── Vue liste des sociétés ───────────────────────────
+  return (
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor={T.surface} />
+
+      {/* Header — ✅ SANS bouton + */}
+      <View style={s.header}>
+        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={20} color={T.ink} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Utilisateurs</Text>
+          <Text style={[s.headerSub, { color: T.blue, fontFamily: T.font.sans }]}>
+            {filtered.length} société{filtered.length > 1 ? "s" : ""}
+          </Text>
+        </View>
+        {/* ✅ Bouton + supprimé — remplacé par refresh */}
+        <TouchableOpacity
+          style={[s.refreshBtn]}
+          onPress={() => void loadCompanies("refresh")}
+        >
+          <Ionicons name="refresh" size={18} color={T.blue} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={s.searchBox}>
+        <Ionicons name="search" size={15} color={T.inkMuted} />
+        <TextInput
+          style={[s.searchInput, { fontFamily: T.font.sans }]}
+          value={q}
+          onChangeText={setQ}
+          placeholder="Nom ou code société..."
+          placeholderTextColor={T.inkMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {!!q && (
+          <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
+            <Ionicons name="close" size={12} color={T.inkMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Hint */}
+      <View style={s.hintRow}>
+        <Ionicons name="information-circle-outline" size={13} color={T.blue} />
+        <Text style={[s.hintTxt, { fontFamily: T.font.sans }]}>
+          Appuyez sur une société pour voir ses admins, agences et clients
+        </Text>
+      </View>
+
+      {loading ? (
+        <View style={s.loader}>
+          <ActivityIndicator color={T.blue} size="large" />
+        </View>
+      ) : (
+        <Animated.FlatList
+          style={{ opacity: fadeAnim }}
+          data={filtered}
+          keyExtractor={(item) => item.id?.toString()}
+          contentContainerStyle={s.list}
+          showsVerticalScrollIndicator={false}
+          onRefresh={() => void loadCompanies("refresh")}
+          refreshing={refreshing}
+          ListHeaderComponent={
+            <View style={{ marginBottom: 4 }}>
+              <SH dot={T.blue} label="SOCIÉTÉS SAAS" count={filtered.length} />
+            </View>
+          }
+          renderItem={({ item }) => (
+            <CompanyCard
+              item={item}
+              onPress={() => {
+                setSelected(item);
+                setViewMode("company_detail");
+              }}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={s.empty}>
+              <View style={[s.emptyIcon, { backgroundColor: T.blueLt }]}>
+                <Ionicons name="business-outline" size={28} color={T.blue} />
+              </View>
+              <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>Aucune société trouvée</Text>
+              <Text style={[s.emptySub, { fontFamily: T.font.subtitle }]}>
+                Modifiez votre recherche
+              </Text>
+            </View>
+          }
+          ListFooterComponent={<View style={{ height: 100 }} />}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1 },
+  safe:   { flex: 1, backgroundColor: T.pageBg },
+
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, gap: 14,
+    backgroundColor: T.surface,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 14, gap: 12,
+    borderBottomWidth: 1, borderBottomColor: T.border,
   },
   backBtn: {
-    width: 40, height: 40, borderRadius: T.radius.md,
-    backgroundColor: T.cardBg, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.border, ...T.shadow,
-  },
-  headerTitle: { color: T.text, fontSize: 22, fontWeight: "700" },
-  headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
-  addBtn: {
-    width: 40, height: 40, borderRadius: T.radius.md,
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border,
     justifyContent: "center", alignItems: "center",
+  },
+  headerTitle: { fontSize: 22, fontWeight: "700", color: T.ink },
+  headerSub:   { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  refreshBtn: {
+    width: 38, height: 38, borderRadius: 11,
+    backgroundColor: T.blueLt,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.blueMd,
   },
 
   searchBox: {
     flexDirection: "row", alignItems: "center",
-    marginHorizontal: 20, marginBottom: 14,
-    backgroundColor: T.cardBg, borderWidth: 1, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 14, height: 46, gap: 10,
-    ...T.shadow,
+    backgroundColor: T.surface, borderRadius: T.radius.md,
+    marginHorizontal: 18, marginTop: 14, marginBottom: 0,
+    paddingHorizontal: 13, height: 46,
+    borderWidth: 1, borderColor: T.border, gap: 8,
+    ...T.shadow.soft,
   },
-  searchInput: { flex: 1, fontSize: 14, color: T.text, fontWeight: "500" },
-  clearBtn: { width: 26, height: 26, borderRadius: 7, backgroundColor: T.borderLight, justifyContent: "center", alignItems: "center" },
-
-  list: { paddingHorizontal: 20 },
-  empty: { alignItems: "center", paddingVertical: 50, gap: 12 },
-  emptyIcon: { width: 64, height: 64, borderRadius: 20, justifyContent: "center", alignItems: "center" },
-  emptyTxt: { color: T.textSub, fontSize: 14, fontWeight: "600" },
-
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.35)", justifyContent: "flex-end" },
-  sheet: {
-    backgroundColor: T.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    overflow: "hidden", maxHeight: "92%",
-    borderWidth: 1, borderColor: T.border,
+  searchInput: { flex: 1, fontSize: 13, color: T.ink },
+  clearBtn: {
+    width: 22, height: 22, borderRadius: 7,
+    backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center",
   },
-  sheetHandle: { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 },
-  sheetHeaderRow: { flexDirection: "row", alignItems: "center", padding: 20, gap: 14, borderBottomWidth: 1, borderBottomColor: T.borderLight },
-  sheetIconBox: { width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  sheetTitle: { color: T.text, fontSize: 18, fontWeight: "700" },
-  sheetSub: { color: T.textSub, fontSize: 11, fontWeight: "500", marginTop: 2 },
-  closeBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: T.pageBackground, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
-  sheetBody: { padding: 20 },
-  formRow: { flexDirection: "row", gap: 12 },
-  roleLabel: { fontSize: 11, fontWeight: "700", color: T.textSub, letterSpacing: 0.5, marginBottom: 10 },
-  roleRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
-  rolePill: {
+
+  hintRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: T.radius.md,
-    borderWidth: 1.5,
+    marginHorizontal: 18, marginTop: 10, marginBottom: 2,
   },
-  roleDot: { width: 6, height: 6, borderRadius: 99 },
-  rolePillTxt: { fontSize: 12, fontWeight: "700" },
-  confirmBtn: { borderRadius: T.radius.md, paddingVertical: 16, alignItems: "center", marginTop: 4 },
-  confirmTxt: { color: T.white, fontWeight: "800", fontSize: 14, letterSpacing: 0.8 },
+  hintTxt: { fontSize: 10, color: T.blue, fontWeight: "600", flex: 1, lineHeight: 14 },
+
+  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
+  list:   { paddingHorizontal: 18, paddingTop: 14 },
+
+  empty:      { alignItems: "center", paddingVertical: 44, gap: 8 },
+  emptyIcon:  { width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: T.ink },
+  emptySub:   { fontSize: 12, color: T.inkMuted, textAlign: "center" },
 });

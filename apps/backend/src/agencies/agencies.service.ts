@@ -1,9 +1,8 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.0
-// ✅ Plus de agency.balance / agency.cash / agency.currency (supprimés schéma v4)
-// ✅ Wallets créés automatiquement selon country
-// ✅ primaryCurrency déduit du pays
+// AGENCIES SERVICE v4.1
+// ✅ findAll() SuperAdmin : toutes les agences sans filtre clientId
+// ✅ findAllByClient() CompanyAdmin : filtré par clientId (inchangé)
 // =========================================================
 
 import {
@@ -87,11 +86,9 @@ export class AgenciesService {
       10,
     );
 
-    // ✅ Devise déduite du pays
     const primaryCurrency = getCurrencyFromCountry(dto.country);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Crée l'agence
       const agency = await tx.agency.create({
         data: {
           name: safeTrim(dto.name),
@@ -101,13 +98,12 @@ export class AgenciesService {
           code: dto.code || null,
           email: email,
           country: dto.country || null,
-          primaryCurrency, // ✅ v4 — remplace currency
+          primaryCurrency,
           isActive: true,
           clientId,
         },
       });
 
-      // ✅ 2. Wallet de l'agence dans sa devise principale
       await tx.wallet.create({
         data: {
           agencyId: agency.id,
@@ -118,7 +114,6 @@ export class AgenciesService {
         },
       });
 
-      // 3. Crée l'agent responsable
       const agent = await tx.user.create({
         data: {
           email,
@@ -131,7 +126,7 @@ export class AgenciesService {
           phone: safeTrim(dto.phone) || null,
           city: safeTrim(dto.city) || null,
           country: dto.country || null,
-          primaryCurrency, // ✅ v4
+          primaryCurrency,
           jobTitle: 'Responsable Agence',
           kycLevel: KycLevel.LEVEL_1,
           isEmailVerified: true,
@@ -139,7 +134,6 @@ export class AgenciesService {
         },
       });
 
-      // ✅ 4. Wallet de l'agent dans sa devise
       await tx.wallet.create({
         data: {
           userId: agent.id,
@@ -163,7 +157,6 @@ export class AgenciesService {
     if (!agency) throw new NotFoundException('Agence introuvable');
 
     return this.prisma.$transaction(async (tx) => {
-      // Recalcule primaryCurrency si le pays change
       const updateData: any = {
         name: dto.name,
         city: dto.city,
@@ -181,7 +174,6 @@ export class AgenciesService {
         updateData.isActive = (dto as any).isActive;
       }
 
-      // Retire les undefined pour ne pas écraser les valeurs existantes
       Object.keys(updateData).forEach((k) => {
         if (updateData[k] === undefined) delete updateData[k];
       });
@@ -191,7 +183,6 @@ export class AgenciesService {
         data: updateData,
       });
 
-      // Met à jour l'email de l'agent si changé
       if (dto.email && dto.email !== agency.email) {
         const newEmail = safeTrim(dto.email).toLowerCase();
         const exists = await tx.user.findUnique({ where: { email: newEmail } });
@@ -225,24 +216,15 @@ export class AgenciesService {
       const agentIds = agents.map((a) => a.id);
 
       if (agentIds.length > 0) {
-        // Suppression en cascade
-        try {
-          await tx.otpLog.deleteMany({ where: { userId: { in: agentIds } } });
-        } catch (_) {}
-        try {
-          await tx.userDevice.deleteMany({ where: { userId: { in: agentIds } } });
-        } catch (_) {}
-        try {
-          await tx.userSession.deleteMany({ where: { userId: { in: agentIds } } });
-        } catch (_) {}
+        try { await tx.otpLog.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
+        try { await tx.userDevice.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
+        try { await tx.userSession.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
         try {
           await tx.withdrawal.deleteMany({
             where: { transaction: { senderId: { in: agentIds } } },
           });
         } catch (_) {}
-        await tx.transaction.deleteMany({
-          where: { senderId: { in: agentIds } },
-        });
+        await tx.transaction.deleteMany({ where: { senderId: { in: agentIds } } });
         await tx.wallet.deleteMany({ where: { userId: { in: agentIds } } });
       }
 
@@ -253,7 +235,7 @@ export class AgenciesService {
   }
 
   // ========================================================
-  // LECTURE
+  // LECTURE — CompanyAdmin (filtré par clientId)
   // ========================================================
 
   async findAllByClient(clientId: number) {
@@ -275,7 +257,41 @@ export class AgenciesService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return agencies.map(this.serializeAgency);
+    return agencies.map(this.serializeAgency.bind(this));
+  }
+
+  // ========================================================
+  // ✅ NOUVEAU — LECTURE SuperAdmin (toutes les agences)
+  // ========================================================
+
+  async findAll() {
+    const agencies = await this.prisma.agency.findMany({
+      // Pas de filtre clientId → TOUTES les agences de TOUS les clients
+      include: {
+        agents: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+            role: true,
+          },
+        },
+        wallets: { where: { isActive: true } },
+        // ✅ Inclure le client pour afficher son nom dans le frontend
+        client: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return agencies.map(this.serializeAgency.bind(this));
   }
 
   async findOne(id: string, clientId: number) {
@@ -299,9 +315,67 @@ export class AgenciesService {
     if (!agency) throw new NotFoundException('Agence introuvable');
     return this.serializeAgency(agency);
   }
+  async findOneAsSuperAdmin(id: string) {
+  const agency = await this.prisma.agency.findUnique({
+    where: { id },
+    include: {
+      agents: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          role: true,
+        },
+      },
+      wallets: {
+        where: { isActive: true },
+      },
+      client: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+        },
+      },
+    },
+  });
+
+  if (!agency) {
+    throw new NotFoundException('Agence introuvable');
+  }
+
+  return this.serializeAgency(agency);
+}
+async updateAsSuperAdmin(
+  id: string,
+  dto: UpdateAgencyDto,
+) {
+  const agency = await this.prisma.agency.findUnique({
+    where: { id },
+  });
+
+  if (!agency) {
+    throw new NotFoundException('Agence introuvable');
+  }
+
+  return this.update(id, agency.clientId, dto);
+}
+async removeAsSuperAdmin(id: string) {
+  const agency = await this.prisma.agency.findUnique({
+    where: { id },
+  });
+
+  if (!agency) {
+    throw new NotFoundException('Agence introuvable');
+  }
+
+  return this.remove(id, agency.clientId);
+}
 
   // ========================================================
-  // SÉRIALISATION (wallets en number, plus de legacy fields)
+  // SÉRIALISATION
   // ========================================================
 
   private serializeAgency(a: any) {
@@ -318,6 +392,9 @@ export class AgenciesService {
       isActive: a.isActive,
       isCertified: a.isCertified ?? false,
       clientId: a.clientId,
+      // ✅ Nom du client inclus pour le SuperAdmin
+      clientName: a.client?.name ?? null,
+      clientCode: a.client?.code ?? null,
       type: a.type,
       wallets: Array.isArray(a.wallets)
         ? a.wallets.map((w: any) => ({
