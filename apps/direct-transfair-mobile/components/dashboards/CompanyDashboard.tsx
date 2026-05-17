@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v6.0 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v6.1 — Direct Transf'air
 // Design: Modern Fintech · Hero compact · Carousel 2-col
+// ✅ FIX v6.1 : handleAgencyRefill robuste (useRef + currency)
+// ✅ FIX v6.1 : openAgencyModal synchrone via targetAgencyRef
+// ✅ FIX v6.1 : currency transmis à api.adminRefillAgency()
 // =========================================================
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
@@ -132,7 +135,6 @@ function WalletCarousel({
     return toNum(w?.balance ?? w?.availableBalance ?? 0);
   }, [wallets]);
 
-  // Active dot tracks which pair is "leading" (every card = 1 step)
   const [dotIdx, setDotIdx] = useState(0);
 
   return (
@@ -461,6 +463,9 @@ export default function CompanyDashboard() {
   const [agencyAmount,  setAgencyAmount]  = useState("");
   const [loadingAgency, setLoadingAgency] = useState(false);
 
+  // ✅ FIX : ref synchrone pour éviter le problème setState async
+  const targetAgencyRef = useRef<any>(null);
+
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   const clientName     = useMemo(() => user?.client?.name || "Mon Entreprise", [user?.client?.name]);
@@ -493,6 +498,14 @@ export default function CompanyDashboard() {
 
   const today = new Date().toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
 
+  // ✅ FIX : openAgencyModal met à jour la ref de façon synchrone
+  const openAgencyModal = useCallback((agency: any) => {
+    targetAgencyRef.current = agency;  // synchrone — disponible immédiatement
+    setTargetAgency(agency);           // asynchrone — pour le rendu UI
+    setAgencyAmount("");
+    setModalAgency(true);
+  }, []);
+
   const handleFill = async () => {
     const n = Number(fillAmount);
     if (!fillAmount || isNaN(n) || n <= 0) { Alert.alert("Erreur", "Montant invalide."); return; }
@@ -521,18 +534,46 @@ export default function CompanyDashboard() {
     } finally { setLoadingB2B(false); }
   };
 
+  // ✅ FIX : lit depuis targetAgencyRef (synchrone) et passe currency au backend
   const handleAgencyRefill = async () => {
+    const agency = targetAgencyRef.current;
+    if (!agency) {
+      Alert.alert("Erreur", "Aucune agence sélectionnée");
+      return;
+    }
+
     const n = Number(agencyAmount);
-    if (!agencyAmount || isNaN(n) || n <= 0) { Alert.alert("Erreur", "Montant invalide."); return; }
+    if (!agencyAmount || isNaN(n) || n <= 0) {
+      Alert.alert("Erreur", "Montant invalide.");
+      return;
+    }
+
+    // Déduire la devise depuis le wallet principal de l'agence
+    const agencyWallets = Array.isArray(agency.wallets) ? agency.wallets : [];
+    const primaryWallet = agencyWallets.find((w: any) => w.isDefault) ?? agencyWallets[0];
+    const currency: string = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
+
     setLoadingAgency(true);
     try {
-      await api.adminRefillAgency(targetAgency.id, n);
-      setModalAgency(false); setAgencyAmount("");
-      Alert.alert("✅ Rechargé", `${targetAgency.name} crédité de ${fmt(n, "XOF")} CFA.`);
+      // ✅ FIX : currency transmis explicitement (était undefined avant)
+      await api.adminRefillAgency(agency.id, n, currency);
+
+      setModalAgency(false);
+      setAgencyAmount("");
+      targetAgencyRef.current = null;
+
+      const cfg = CURRENCIES[currency as CurrencyCode] ?? CURRENCIES.XOF;
+      Alert.alert(
+        "✅ Rechargé",
+        `${agency.name} crédité de ${fmt(n, currency)} ${cfg.symbol}.`,
+      );
       await loadData();
     } catch (e: any) {
-      Alert.alert("Erreur", e?.response?.data?.message || "Erreur technique");
-    } finally { setLoadingAgency(false); }
+      const msg = e?.response?.data?.message || "Erreur technique";
+      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+    } finally {
+      setLoadingAgency(false);
+    }
   };
 
   return (
@@ -688,10 +729,10 @@ export default function CompanyDashboard() {
           <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
         </View>
         <View style={s.grid}>
-          <ActionCard title="Transactions" subtitle="Historique & suivi"  icon="list-outline"       color={T.primary}  bg="#EEF2FF"    onPress={() => router.push("/(tabs)/admin/transactions")} />
+          <ActionCard title="Transactions" subtitle="Historique & suivi"  icon="list-outline"       color={T.primary}  bg="#EEF2FF"       onPress={() => router.push("/(tabs)/admin/transactions")} />
           <ActionCard title="Agences"      subtitle="Réseau & gestion"    icon="storefront-outline" color={T.success}  bg={T.successSoft} onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
           <ActionCard title="Trésorerie"   subtitle="Vue détaillée"       icon="wallet-outline"     color={T.warning}  bg={T.warningSoft} onPress={() => router.push("/(tabs)/admin/treasury")} />
-          <ActionCard title="Paramètres"   subtitle="Compte & société"    icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"    onPress={() => router.push("/(tabs)/admin/settings")} />
+          <ActionCard title="Paramètres"   subtitle="Compte & société"    icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"       onPress={() => router.push("/(tabs)/admin/settings")} />
         </View>
 
         {/* Agencies */}
@@ -708,8 +749,10 @@ export default function CompanyDashboard() {
             </View>
             {agencies.slice(0, 5).map((a) => (
               <AgencyCard
-                key={a.id} agency={a}
-                onRefill={() => { setTargetAgency(a); setAgencyAmount(""); setModalAgency(true); }}
+                key={a.id}
+                agency={a}
+                // ✅ FIX : utilise openAgencyModal (ref synchrone) au lieu du setter direct
+                onRefill={() => openAgencyModal(a)}
               />
             ))}
             {agencies.length > 5 && (
@@ -780,18 +823,48 @@ export default function CompanyDashboard() {
       {/* ── Modal Recharge Agence ── */}
       <ModalSheet
         visible={modalAgency}
-        onClose={() => { setModalAgency(false); setAgencyAmount(""); }}
+        onClose={() => {
+          setModalAgency(false);
+          setAgencyAmount("");
+          targetAgencyRef.current = null;
+        }}
         title="Recharger l'Agence"
         subtitle={targetAgency?.name || "—"}
         gradColors={["#7C3AED", "#6D28D9"]}
       >
-        <AmountInput value={agencyAmount} onChange={setAgencyAmount} currency="XOF" accentColor="#7C3AED" accentBg="#F5F3FF" />
+        <AmountInput
+          value={agencyAmount}
+          onChange={setAgencyAmount}
+          // ✅ Affiche la vraie devise de l'agence dans l'input
+          currency={(() => {
+            const a = targetAgencyRef.current;
+            if (!a) return "XOF";
+            const ws = Array.isArray(a.wallets) ? a.wallets : [];
+            const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+            return pw?.currency ?? a.primaryCurrency ?? "XOF";
+          })()}
+          accentColor="#7C3AED"
+          accentBg="#F5F3FF"
+        />
         <QuickAmounts amounts={[50000, 100000, 500000, 1000000]} selected={agencyAmount} onSelect={setAgencyAmount} color="#7C3AED" />
         <ConfirmBtn
-          label={`TRANSFÉRER ${agencyAmount ? fmt(Number(agencyAmount), "XOF") : "—"} CFA`}
+          label={`TRANSFÉRER ${agencyAmount ? fmt(Number(agencyAmount), (() => {
+            const a = targetAgencyRef.current;
+            if (!a) return "XOF";
+            const ws = Array.isArray(a.wallets) ? a.wallets : [];
+            const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+            return pw?.currency ?? a.primaryCurrency ?? "XOF";
+          })()) : "—"} CFA`}
           color="#7C3AED" loading={loadingAgency} onPress={handleAgencyRefill}
         />
-        <TouchableOpacity onPress={() => { setModalAgency(false); setAgencyAmount(""); }} style={{ alignItems: "center", paddingVertical: 14 }}>
+        <TouchableOpacity
+          onPress={() => {
+            setModalAgency(false);
+            setAgencyAmount("");
+            targetAgencyRef.current = null;
+          }}
+          style={{ alignItems: "center", paddingVertical: 14 }}
+        >
           <Text style={[{ color: T.textSoft, fontWeight: "600", fontSize: 13 }, { fontFamily: T.font.sans }]}>Annuler</Text>
         </TouchableOpacity>
       </ModalSheet>

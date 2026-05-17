@@ -1,7 +1,11 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.2
-// ✅ FIX refillAgency: débite wallet clientId (société) et non userId (vide)
+// TRANSACTIONS SERVICE v4.3
+// ✅ FIX refillAgency: suppression de la $transaction imbriquée
+//    (Prisma ne supporte pas les transactions imbriquées —
+//     debit() et credit() ont déjà leur propre $transaction)
+// ✅ FIX refillAgency: débite wallet clientId (société) et non userId
+// ✅ FIX refillAgency: currency transmis depuis le contrôleur
 // ✅ FIX: availableBalance lu depuis wallet Prisma
 // ✅ FIX: debit/credit max 4 arguments
 // =========================================================
@@ -455,54 +459,100 @@ export class TransactionsService {
   }
 
   // ========================================================
-  // RECHARGE AGENCE — ✅ FIX : débite clientId, pas userId
+  // RECHARGE AGENCE
+  // ✅ v4.3 FIX CRITIQUE : suppression du $transaction imbriqué
+  //   Prisma interdit les $transaction imbriquées.
+  //   debit() et credit() ont déjà leur propre $transaction
+  //   avec pg_advisory_xact_lock → cohérence garantie.
   // ========================================================
 
-  async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF') {
+  async refillAgency(
+    adminId: string,
+    agencyId: string,
+    amount: number,
+    currency: string = 'XOF',
+  ) {
+    // ── 1. Charger admin + agence ──────────────────────────
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-    const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
-    if (!admin || !agency) throw new NotFoundException('Introuvable');
+    if (!admin) throw new NotFoundException('Admin introuvable');
     if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
-    // ✅ CORRECTION CLEF : wallet de la SOCIÉTÉ (clientId)
-    // treasury/admin/inject crédite getOrCreateWallet({ clientId }) → même wallet ici
+    const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
+    if (!agency) throw new NotFoundException(`Agence ${agencyId} introuvable`);
+
+    // ── 2. Vérifier appartenance (sauf SUPER_ADMIN) ────────
+    if (admin.role !== 'SUPER_ADMIN' && agency.clientId !== admin.clientId) {
+      throw new ForbiddenException('Cette agence ne vous appartient pas');
+    }
+
+    // ── 3. Wallet de la SOCIÉTÉ (clientId) ────────────────
+    //   ✅ On cherche par clientId (pas userId) — c'est ce wallet
+    //      qui est crédité par treasury/admin/inject
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
       currency,
     });
-    const adminWallet = await getWalletAvailable(this.prisma, adminWalletRef.id);
 
-    if (adminWallet.availableBalance < amount) {
+    // Relire le solde depuis la DB (getOrCreateWallet renvoie balance=0 à la création)
+    const adminWalletRaw = await this.prisma.wallet.findUnique({
+      where: { id: adminWalletRef.id },
+    });
+    if (!adminWalletRaw) throw new NotFoundException('Wallet société introuvable');
+
+    const available =
+      Number(adminWalletRaw.balance) - Number(adminWalletRaw.reservedBalance);
+
+    if (available < amount) {
       throw new ForbiddenException(
-        `Solde ${currency} insuffisant. Disponible : ${adminWallet.availableBalance}`,
+        `Solde ${currency} insuffisant. Disponible : ${available.toLocaleString('fr-FR')} — Demandé : ${amount.toLocaleString('fr-FR')}`,
       );
     }
 
-    const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency });
+    // ── 4. Wallet de l'agence ──────────────────────────────
+    const agencyWalletRef = await this.walletsService.getOrCreateWallet({
+      agencyId,
+      currency,
+    });
 
     const txRef = `REFILL-${Date.now()}`;
 
-    await this.prisma.$transaction(async () => {
-      await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name}`, txRef);
-      await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge de l'admin`, txRef);
-      await this.prisma.transaction.create({
-        data: {
-          reference: txRef,
-          type: TransactionType.AGENCY_REFILL,
-          amount: new Prisma.Decimal(amount),
-          fees: new Prisma.Decimal(0),
-          total: new Prisma.Decimal(amount),
-          currency,
-          status: TransactionStatus.PAID,
-          payoutMethod: PayoutMethod.BANK_DEPOSIT,
-          senderId: adminId,
-          clientId: admin.clientId!,
-          paidAt: new Date(),
-        },
-      });
+    // ── 5. Opérations séquentielles SANS $transaction wrapper ──
+    // ✅ FIX : debit() et credit() lancent déjà leur propre
+    //    prisma.$transaction() avec advisory lock.
+    //    Les imbriquer dans un $transaction supplémentaire
+    //    provoque une erreur Prisma non catchée → 500.
+
+    await this.walletsService.debit(
+      adminWalletRef.id,
+      amount,
+      `Recharge agence ${agency.name}`,
+      txRef,
+    );
+
+    await this.walletsService.credit(
+      agencyWalletRef.id,
+      amount,
+      `Recharge de l'admin`,
+      txRef,
+    );
+
+    await this.prisma.transaction.create({
+      data: {
+        reference: txRef,
+        type: TransactionType.AGENCY_REFILL,
+        amount: new Prisma.Decimal(amount),
+        fees: new Prisma.Decimal(0),
+        total: new Prisma.Decimal(amount),
+        currency,
+        status: TransactionStatus.PAID,
+        payoutMethod: PayoutMethod.BANK_DEPOSIT,
+        senderId: adminId,
+        clientId: admin.clientId!,
+        paidAt: new Date(),
+      },
     });
 
-    return { status: 'SUCCESS', sent: amount, currency };
+    return { status: 'SUCCESS', sent: amount, currency, agencyId, txRef };
   }
 
   // ========================================================

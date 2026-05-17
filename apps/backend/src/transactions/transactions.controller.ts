@@ -69,22 +69,34 @@ export class TransactionsController {
   async refillAgency(
     @Req() req: AuthedRequest,
     @Body('agencyId') agencyId: string,
-    @Body('amount') amount: string | number 
+    @Body('amount') amount: string | number,
+    @Body('currency') currency: string,           // ← AJOUT : lire currency du body
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
     if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Accès refusé : Rôle Admin requis.');
     }
+ 
     const userId = this.getUserId(req);
     const numericAmount = Number(amount);
-
+ 
     if (!agencyId || isNaN(numericAmount) || numericAmount <= 0)
       throw new BadRequestException('AgencyId et Amount valides requis');
-
-    return this.transactionsService.refillAgency(userId, agencyId, numericAmount);
+ 
+    // ← CORRECTION : transmettre currency (défaut XOF si absent)
+    const safeCurrency = (currency ?? 'XOF').toString().toUpperCase();
+ 
+    return this.transactionsService.refillAgency(
+      userId,
+      agencyId,
+      numericAmount,
+      safeCurrency,           // ← était manquant → le service utilisait 'XOF' par défaut
+                              //   mais getOrCreateWallet({ clientId }) pouvait chercher
+                              //   un wallet inexistant et lever une exception non catchée
+    );
   }
-
+ 
   // =========================================================
   // 🏦 FLUX B2B
   // =========================================================
