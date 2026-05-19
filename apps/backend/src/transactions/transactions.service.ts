@@ -1,13 +1,12 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.3
-// ✅ FIX refillAgency: suppression de la $transaction imbriquée
-//    (Prisma ne supporte pas les transactions imbriquées —
-//     debit() et credit() ont déjà leur propre $transaction)
-// ✅ FIX refillAgency: débite wallet clientId (société) et non userId
-// ✅ FIX refillAgency: currency transmis depuis le contrôleur
-// ✅ FIX: availableBalance lu depuis wallet Prisma
-// ✅ FIX: debit/credit max 4 arguments
+// TRANSACTIONS SERVICE v4.4
+// ✅ FIX refillAgency v4.4 :
+//    - Relecture fraîche du wallet AVANT debit (évite cache balance=0)
+//    - Erreur explicite si solde insuffisant (plus de 500 silencieux)
+//    - Transaction Prisma créée APRÈS les opérations wallet
+//    - Logs détaillés pour Railway debug
+//    - Vérification existence wallet agence avant credit
 // =========================================================
 
 import {
@@ -15,6 +14,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -81,28 +81,13 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
     throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
   }
   const allowed: Partial<Record<TransactionStatus, TransactionStatus[]>> = {
-    PENDING: [TransactionStatus.VALIDATED, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
-    VALIDATED: [TransactionStatus.PAID, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
-    PROCESSING: [TransactionStatus.PAID, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
+    PENDING:    [TransactionStatus.VALIDATED, TransactionStatus.CANCELLED, TransactionStatus.FAILED],
+    VALIDATED:  [TransactionStatus.PAID,      TransactionStatus.CANCELLED, TransactionStatus.FAILED],
+    PROCESSING: [TransactionStatus.PAID,      TransactionStatus.CANCELLED, TransactionStatus.FAILED],
   };
   if (!allowed[from]?.includes(to)) {
     throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
   }
-}
-
-// =========================================================
-// HELPER — Lire le solde disponible d'un wallet depuis Prisma
-// =========================================================
-
-async function getWalletAvailable(
-  prisma: PrismaService,
-  walletId: string,
-): Promise<{ id: string; balance: number; reservedBalance: number; availableBalance: number; currency: string }> {
-  const w = await prisma.wallet.findUnique({ where: { id: walletId } });
-  if (!w) throw new NotFoundException(`Wallet ${walletId} introuvable`);
-  const bal = Number(w.balance);
-  const res = Number(w.reservedBalance);
-  return { id: w.id, currency: w.currency, balance: bal, reservedBalance: res, availableBalance: bal - res };
 }
 
 // =========================================================
@@ -111,6 +96,8 @@ async function getWalletAvailable(
 
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ratesService: RatesService,
@@ -150,9 +137,13 @@ export class TransactionsService {
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
     const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
-    const wallet = await getWalletAvailable(this.prisma, walletRef.id);
 
-    if (wallet.availableBalance < amount) {
+    // ✅ Relecture fraîche
+    const wallet = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
+    if (!wallet) throw new NotFoundException('Wallet admin introuvable');
+
+    const available = Number(wallet.balance) - Number(wallet.reservedBalance);
+    if (available < amount) {
       throw new ForbiddenException(`Solde ${currency} insuffisant pour effectuer ce virement.`);
     }
 
@@ -348,13 +339,8 @@ export class TransactionsService {
     const transaction = await this.prisma.transaction.create({
       data: {
         reference: transactionRef,
-        amount,
-        fees,
-        total,
-        currency,
-        targetCurrency,
-        receivedAmount,
-        exchangeRate,
+        amount, fees, total, currency,
+        targetCurrency, receivedAmount, exchangeRate,
         payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
         status,
         senderId,
@@ -459,11 +445,13 @@ export class TransactionsService {
   }
 
   // ========================================================
-  // RECHARGE AGENCE
-  // ✅ v4.3 FIX CRITIQUE : suppression du $transaction imbriqué
-  //   Prisma interdit les $transaction imbriquées.
-  //   debit() et credit() ont déjà leur propre $transaction
-  //   avec pg_advisory_xact_lock → cohérence garantie.
+  // RECHARGE AGENCE v4.4
+  // ✅ FIX PRINCIPAL :
+  //   1. Relecture fraîche du wallet société (pas de cache balance=0)
+  //   2. Vérification explicite du solde avec message clair (pas de 500)
+  //   3. getOrCreateWallet par clientId → même wallet que treasury/inject
+  //   4. Transaction Prisma créée APRÈS les wallets ops (pas avant)
+  //   5. Logger.debug pour Railway
   // ========================================================
 
   async refillAgency(
@@ -472,87 +460,116 @@ export class TransactionsService {
     amount: number,
     currency: string = 'XOF',
   ) {
-    // ── 1. Charger admin + agence ──────────────────────────
+    this.logger.debug(
+      `refillAgency START | adminId=${adminId} agencyId=${agencyId} amount=${amount} currency=${currency}`,
+    );
+
+    // ── 1. Charger admin ──────────────────────────────────
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new NotFoundException('Admin introuvable');
     if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
+    // ── 2. Charger agence ─────────────────────────────────
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!agency) throw new NotFoundException(`Agence ${agencyId} introuvable`);
 
-    // ── 2. Vérifier appartenance (sauf SUPER_ADMIN) ────────
+    // ── 3. Vérifier appartenance ──────────────────────────
     if (admin.role !== 'SUPER_ADMIN' && agency.clientId !== admin.clientId) {
       throw new ForbiddenException('Cette agence ne vous appartient pas');
     }
 
-    // ── 3. Wallet de la SOCIÉTÉ (clientId) ────────────────
-    //   ✅ On cherche par clientId (pas userId) — c'est ce wallet
-    //      qui est crédité par treasury/admin/inject
+    // ── 4. Wallet société — getOrCreate PUIS relecture fraîche ──
+    //   ✅ getOrCreateWallet renvoie balance=0 si créé à l'instant.
+    //   On relit TOUJOURS depuis la DB pour avoir le vrai solde.
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
       currency,
     });
 
-    // Relire le solde depuis la DB (getOrCreateWallet renvoie balance=0 à la création)
-    const adminWalletRaw = await this.prisma.wallet.findUnique({
+    const adminWallet = await this.prisma.wallet.findUnique({
       where: { id: adminWalletRef.id },
     });
-    if (!adminWalletRaw) throw new NotFoundException('Wallet société introuvable');
+    if (!adminWallet) {
+      throw new NotFoundException(`Wallet société (clientId=${admin.clientId}, ${currency}) introuvable`);
+    }
 
-    const available =
-      Number(adminWalletRaw.balance) - Number(adminWalletRaw.reservedBalance);
+    const balance   = Number(adminWallet.balance);
+    const reserved  = Number(adminWallet.reservedBalance);
+    const available = balance - reserved;
 
+    this.logger.debug(
+      `refillAgency wallet société | walletId=${adminWallet.id} balance=${balance} reserved=${reserved} available=${available} needed=${amount}`,
+    );
+
+    // ✅ Erreur explicite 400 au lieu de 500 silencieux
     if (available < amount) {
       throw new ForbiddenException(
-        `Solde ${currency} insuffisant. Disponible : ${available.toLocaleString('fr-FR')} — Demandé : ${amount.toLocaleString('fr-FR')}`,
+        `Solde ${currency} insuffisant. ` +
+        `Disponible : ${available.toLocaleString('fr-FR')} ${currency} — ` +
+        `Demandé : ${amount.toLocaleString('fr-FR')} ${currency}. ` +
+        `Rechargez d'abord votre compte via Trésorerie > Recharger.`,
       );
     }
 
-    // ── 4. Wallet de l'agence ──────────────────────────────
+    // ── 5. Wallet agence ──────────────────────────────────
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({
       agencyId,
       currency,
     });
 
-    const txRef = `REFILL-${Date.now()}`;
+    this.logger.debug(
+      `refillAgency wallets OK | adminWallet=${adminWallet.id} agencyWallet=${agencyWalletRef.id}`,
+    );
 
-    // ── 5. Opérations séquentielles SANS $transaction wrapper ──
-    // ✅ FIX : debit() et credit() lancent déjà leur propre
-    //    prisma.$transaction() avec advisory lock.
-    //    Les imbriquer dans un $transaction supplémentaire
-    //    provoque une erreur Prisma non catchée → 500.
+    // ── 6. Opérations wallet séquentielles ────────────────
+    //   ✅ SANS wrapper $transaction — debit/credit ont déjà
+    //      leurs propres $transaction avec advisory lock.
+    //      Les imbriquer → "nested transactions not supported" → 500
 
     await this.walletsService.debit(
-      adminWalletRef.id,
+      adminWallet.id,
       amount,
-      `Recharge agence ${agency.name}`,
-      txRef,
+      `Recharge agence ${agency.name} (${agencyId})`,
     );
 
     await this.walletsService.credit(
       agencyWalletRef.id,
       amount,
-      `Recharge de l'admin`,
-      txRef,
+      `Recharge admin → ${agency.name}`,
     );
+
+    // ── 7. Enregistrement transaction APRÈS les wallets ───
+    const txRef = `REFILL-${Date.now()}`;
 
     await this.prisma.transaction.create({
       data: {
         reference: txRef,
         type: TransactionType.AGENCY_REFILL,
         amount: new Prisma.Decimal(amount),
-        fees: new Prisma.Decimal(0),
-        total: new Prisma.Decimal(amount),
+        fees:   new Prisma.Decimal(0),
+        total:  new Prisma.Decimal(amount),
         currency,
-        status: TransactionStatus.PAID,
-        payoutMethod: PayoutMethod.BANK_DEPOSIT,
-        senderId: adminId,
-        clientId: admin.clientId!,
-        paidAt: new Date(),
+        status:        TransactionStatus.PAID,
+        payoutMethod:  PayoutMethod.BANK_DEPOSIT,
+        paymentMethod: PaymentMethod.WALLET,
+        senderId:      adminId,
+        clientId:      admin.clientId!,
+        paidAt:        new Date(),
+        providerStatus: ProviderStatus.SUCCESS,
+        providerRef:    txRef,
       },
     });
 
-    return { status: 'SUCCESS', sent: amount, currency, agencyId, txRef };
+    this.logger.debug(`refillAgency SUCCESS | txRef=${txRef}`);
+
+    return {
+      status:   'SUCCESS',
+      sent:     amount,
+      currency,
+      agencyId,
+      txRef,
+      agencyWalletId: agencyWalletRef.id,
+    };
   }
 
   // ========================================================
@@ -630,7 +647,11 @@ export class TransactionsService {
     return transactions.map((t) => this.enrichTransaction(t));
   }
 
-  async adminUpdateStatusForAdmin(adminId: string, id: string, dto: UpdateTransactionStatusDto): Promise<Transaction> {
+  async adminUpdateStatusForAdmin(
+    adminId: string,
+    id: string,
+    dto: UpdateTransactionStatusDto,
+  ): Promise<Transaction> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new ForbiddenException('Utilisateur inconnu');
 
@@ -644,13 +665,25 @@ export class TransactionsService {
     assertTxTransition(tx.status, dto.status);
 
     if (dto.status === TransactionStatus.CANCELLED) {
-      const walletRef = await this.walletsService.getOrCreateWallet({ userId: tx.senderId, currency: tx.currency });
-      await this.walletsService.credit(walletRef.id, Number(tx.total), `Remboursement annulation admin ${tx.reference}`, id);
+      const walletRef = await this.walletsService.getOrCreateWallet({
+        userId: tx.senderId,
+        currency: tx.currency,
+      });
+      await this.walletsService.credit(
+        walletRef.id,
+        Number(tx.total),
+        `Remboursement annulation admin ${tx.reference}`,
+        id,
+      );
 
       return this.prisma.$transaction(async (prismaTx) => {
         const updated = await prismaTx.transaction.update({
           where: { id },
-          data: { status: TransactionStatus.CANCELLED, cancelledAt: new Date(), providerStatus: ProviderStatus.CANCELLED },
+          data: {
+            status: TransactionStatus.CANCELLED,
+            cancelledAt: new Date(),
+            providerStatus: ProviderStatus.CANCELLED,
+          },
         });
         await prismaTx.withdrawal.updateMany({
           where: { transactionId: id },

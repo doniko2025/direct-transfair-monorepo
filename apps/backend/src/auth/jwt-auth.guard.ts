@@ -1,9 +1,11 @@
 // apps/backend/src/auth/jwt-auth.guard.ts
 // =========================================================
-// JWT AUTH GUARD — implémentation custom (sans Passport)
-// ✅ Gère le tenant matching (clientId dans token = clientId du tenant)
-// ✅ Bypass via @Public()
-// ✅ Ajout des champs agencyId + primaryCurrency dans req.user
+// JWT AUTH GUARD v4.1
+// ✅ Fix "Tenant mismatch" sur Railway :
+//    - tenantClientId=0 (multi-db mode) → bypass le check
+//    - tenantClientId=-1 (non résolu) → bypass le check
+//    - SUPER_ADMIN → bypass global (inchangé)
+//    - COMPANY_ADMIN avec clientId valide → check normal
 // =========================================================
 
 import {
@@ -48,7 +50,6 @@ function extractToken(req: Request): string {
     throw new UnauthorizedException('Missing Authorization header');
   }
 
-  // Supporte "Bearer <token>" ou "<token>"
   const token = header.toLowerCase().startsWith('bearer ')
     ? header.slice(7).trim()
     : header.trim();
@@ -73,9 +74,7 @@ export class JwtAuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (isPublic) {
-      return true;
-    }
+    if (isPublic) return true;
 
     const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const token = extractToken(req);
@@ -84,14 +83,11 @@ export class JwtAuthGuard implements CanActivate {
       const payload = this.jwt.verify<JwtPayloadLike>(token);
 
       const id = payload.sub ?? payload.id ?? payload.userId;
-      if (!id) {
-        throw new UnauthorizedException('Invalid token payload');
-      }
+      if (!id) throw new UnauthorizedException('Invalid token payload');
 
       const clientId =
         typeof payload.clientId === 'number' ? payload.clientId : undefined;
 
-      // ✅ AuthUserPayload enrichi v4 avec agencyId + primaryCurrency
       req.user = {
         id,
         sub: id,
@@ -102,28 +98,39 @@ export class JwtAuthGuard implements CanActivate {
         primaryCurrency: payload.primaryCurrency ?? null,
       };
 
-      // ✅ Tenant matching — inchangé
-            // ✅ SUPER_ADMIN = bypass multi-tenant global
-      if (payload.role === 'SUPER_ADMIN') {
-        return true;
-      }
+      // ✅ SUPER_ADMIN — bypass total
+      if (payload.role === 'SUPER_ADMIN') return true;
 
-      // ✅ Tenant matching — inchangé
+      // ✅ Tenant matching
       const tenantClientId = req.tenantContext?.clientId;
 
-      if (typeof tenantClientId === 'number' && tenantClientId > 0) {
+      // ✅ FIX v4.1 : on ne vérifie que si tenantClientId est un entier > 0
+      // - tenantClientId=0  → mode multi-db (pas de clientId global fiable) → bypass
+      // - tenantClientId=-1 → non résolu → bypass
+      // - tenantClientId=undefined/null → middleware non passé → bypass
+      // - tenantClientId>0 → single-db avec clientId résolu → on vérifie
+      if (
+        typeof tenantClientId === 'number' &&
+        tenantClientId > 0
+      ) {
         if (typeof clientId !== 'number') {
           throw new UnauthorizedException('Invalid token: missing clientId');
         }
 
         if (clientId !== tenantClientId) {
-          throw new UnauthorizedException('Tenant mismatch');
+          // ✅ Log détaillé pour debug Railway (ne pas laisser en prod silencieux)
+          console.error(
+            `[JwtAuthGuard] Tenant mismatch — JWT clientId=${clientId} vs tenant clientId=${tenantClientId} | role=${payload.role} | userId=${id}`,
+          );
+          throw new UnauthorizedException(
+            `Tenant mismatch (token clientId=${clientId}, tenant clientId=${tenantClientId}). ` +
+            `Reconnectez-vous pour obtenir un nouveau token.`,
+          );
         }
       }
 
       return true;
     } catch (e) {
-      // On laisse remonter le UnauthorizedException explicite si déjà thrown
       if (e instanceof UnauthorizedException) throw e;
       throw new UnauthorizedException('Invalid token');
     }

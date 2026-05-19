@@ -1,763 +1,791 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/users.tsx
 // =========================================================
-// ADMIN USERS v6.0 — Direct Transf'air · SuperAdmin
-// ✅ Arborescence : Sociétés → (clic) → Admins + infos
-//                  → Agences → Clients
-// ✅ Bouton + supprimé (SuperAdmin n'en a pas besoin)
-// ✅ Thème clair violet/bleu — cohérent avec le dashboard
+// USERS v7.0 — Direct Transf'air
+// ✅ SUPER_ADMIN   : voit admins sociétés + gérants agences
+//                   + stats clients (actifs/inactifs/total)
+//                   Filtre : pays, devise, nom, email
+// ✅ COMPANY_ADMIN : voit ses clients + ses agents
+//                   Filtre : pays, devise, nom, email
+// ✅ Rôles strictement séparés — zéro mélange
 // =========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   TextInput, SafeAreaView, ActivityIndicator, Platform,
-  StatusBar, Animated, ScrollView,
+  StatusBar, Animated, ScrollView, Modal,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
 
-// ─── Design Tokens ────────────────────────────────────────
+// ─── Tokens ──────────────────────────────────────────────
 const T = {
-  blue:     "#1956F0",
-  blueDark: "#1240D6",
-  blueLt:   "#EEF2FF",
-  blueMd:   "#C7D5FF",
+  // SA : violet/bleu
+  saAccent:   "#1956F0",
+  saAccentLt: "#EEF2FF",
+  saAccentMd: "#C7D5FF",
+  saBg:       "#F0F4FF",
 
-  pageBg:   "#F0F4FF",
+  // CA : bleu ciel
+  caAccent:   "#0284C7",
+  caAccentLt: "#E0F2FE",
+  caAccentMd: "#7DD3FC",
+  caBg:       "#F2F4F8",
+
   surface:  "#FFFFFF",
   border:   "#E2E8F0",
   borderLt: "#F1F5F9",
+  borderMd: "#D1D9E6",
 
   ink:      "#0F172A",
-  inkMid:   "#374151",
   inkSub:   "#6B7280",
-  inkMuted: "#9CA3AF",
+  inkMuted: "#94A3B8",
 
-  green:    "#16A34A",
-  greenLt:  "#DCFCE7",
-  red:      "#DC2626",
-  redLt:    "#FEE2E2",
-  amber:    "#D97706",
-  amberLt:  "#FEF3C7",
-  purple:   "#7C3AED",
-  purpleLt: "#EDE9FE",
-  teal:     "#0F766E",
-  tealLt:   "#CCFBF1",
-
-  white: "#FFFFFF",
+  green:   "#16A34A", greenLt:  "#DCFCE7", greenMd: "#A7F3D0",
+  red:     "#DC2626", redLt:    "#FEE2E2",
+  amber:   "#D97706", amberLt:  "#FEF3C7",
+  blue:    "#1956F0", blueLt:   "#EEF2FF", blueMd: "#C7D5FF",
+  purple:  "#7C3AED", purpleLt: "#EDE9FE",
+  teal:    "#0F766E", tealLt:   "#CCFBF1", tealMd: "#5EEAD4",
+  white:   "#FFFFFF",
 
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
 
   font: {
-    display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
-    sans:     Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
-    subtitle: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-light",     default: "Trebuchet MS" }),
-    mono:     Platform.select({ ios: "Trebuchet MS", android: "monospace",             default: "Trebuchet MS" }),
+    display: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    sans:    Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
+    sub:     Platform.select({ ios: "Trebuchet MS", android: "sans-serif-light",     default: "Trebuchet MS" }),
+    mono:    Platform.select({ ios: "Trebuchet MS", android: "monospace",            default: "monospace"    }),
   },
 
   shadow: {
-    card: {
-      shadowColor: "#1240D6",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.09,
-      shadowRadius: 12,
-      elevation: 5,
-    },
-    soft: {
-      shadowColor: "#1240D6",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.05,
-      shadowRadius: 8,
-      elevation: 3,
-    },
+    card: { shadowColor: "#1240D6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.09, shadowRadius: 12, elevation: 5 },
+    soft: { shadowColor: "#1240D6", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8,  elevation: 3 },
   },
 };
 
-// ─── Types de navigation ──────────────────────────────────
-type ViewMode = "companies" | "company_detail";
-
-// ─── Helpers ──────────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
-  ACTIVE:    T.green,
-  INACTIVE:  T.red,
-  SUSPENDED: T.amber,
-  EXPIRED:   T.red,
-  TRIAL:     T.purple,
+  ACTIVE: T.green, INACTIVE: T.red, SUSPENDED: T.amber, EXPIRED: T.red, TRIAL: T.purple,
 };
 
-const ROLE_CONFIG: Record<string, { color: string; bg: string; label: string }> = {
-  SUPER_ADMIN:   { color: T.amber,  bg: T.amberLt,  label: "Super Admin" },
-  COMPANY_ADMIN: { color: T.blue,   bg: T.blueLt,   label: "Admin Société" },
-  AGENT:         { color: T.amber,  bg: T.amberLt,  label: "Agent" },
-  USER:          { color: T.green,  bg: T.greenLt,  label: "Client" },
+const ROLE_CFG: Record<string, { color: string; bg: string; label: string }> = {
+  SUPER_ADMIN:   { color: T.amber,      bg: T.amberLt,  label: "Super Admin"   },
+  COMPANY_ADMIN: { color: T.blue,       bg: T.blueLt,   label: "Admin Société" },
+  AGENT:         { color: T.amber,      bg: T.amberLt,  label: "Agent"         },
+  USER:          { color: T.green,      bg: T.greenLt,  label: "Client"        },
 };
 
-function initials(str: string): string {
-  return (str ?? "?")[0].toUpperCase();
+const CURRENCIES = ["Toutes", "XOF", "EUR", "GNF", "USD", "GBP"];
+
+// ─── Helpers ─────────────────────────────────────────────
+function initials(s: string): string { return (s ?? "?")[0].toUpperCase(); }
+function fullName(u: any): string {
+  return `${u.firstName ?? ""} ${u.lastName ?? ""}`.trim() || (u.email ?? "—");
 }
 
-// ─── Section Header ───────────────────────────────────────
-function SH({ dot, label, count }: { dot: string; label: string; count?: number }) {
+// ─── Composants partagés ─────────────────────────────────
+
+function SL({ dot, label, count }: { dot: string; label: string; count?: number }) {
   return (
-    <View style={shS.row}>
-      <View style={[shS.dot, { backgroundColor: dot }]} />
-      <Text style={[shS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+    <View style={slS.row}>
+      <View style={[slS.dot, { backgroundColor: dot }]} />
+      <Text style={[slS.lbl, { fontFamily: T.font.sans }]}>{label}</Text>
       {count !== undefined && (
-        <View style={[shS.pill, { backgroundColor: dot + "18" }]}>
-          <Text style={[shS.pillTxt, { color: dot, fontFamily: T.font.mono }]}>{count}</Text>
+        <View style={[slS.pill, { backgroundColor: dot + "18" }]}>
+          <Text style={[slS.pillTxt, { color: dot, fontFamily: T.font.mono }]}>{count}</Text>
         </View>
       )}
     </View>
   );
 }
-const shS = StyleSheet.create({
+const slS = StyleSheet.create({
   row:    { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
   dot:    { width: 6, height: 6, borderRadius: 99 },
-  label:  { flex: 1, fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.6 },
+  lbl:    { flex: 1, fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.6 },
   pill:   { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
   pillTxt:{ fontSize: 10, fontWeight: "900" },
 });
 
-// ─── Company Card (vue liste) ─────────────────────────────
-function CompanyCard({ item, onPress }: { item: any; onPress: () => void }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const statusColor = STATUS_COLORS[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
-  const adminCount  = (item.users ?? []).filter((u: any) => u.role === "COMPANY_ADMIN").length;
-  const agencyCount = (item.agencies ?? []).length;
-  const clientCount = (item.users ?? []).filter((u: any) => u.role === "USER").length;
+// Barre de recherche + bouton filtre
+function SearchBar({
+  value, onChange, onFilterPress, accent, filterActive,
+}: {
+  value: string; onChange: (v: string) => void;
+  onFilterPress: () => void; accent: string; filterActive: boolean;
+}) {
+  return (
+    <View style={sbS.row}>
+      <View style={sbS.inputWrap}>
+        <Ionicons name="search" size={16} color={T.inkMuted} />
+        <TextInput
+          style={[sbS.input, { fontFamily: T.font.sans }]}
+          value={value}
+          onChangeText={onChange}
+          placeholder="Nom, email…"
+          placeholderTextColor={T.inkMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        {!!value && (
+          <TouchableOpacity onPress={() => onChange("")}>
+            <Ionicons name="close-circle" size={15} color={T.inkMuted} />
+          </TouchableOpacity>
+        )}
+      </View>
+      <TouchableOpacity
+        style={[sbS.filterBtn, { backgroundColor: filterActive ? accent : T.surface, borderColor: filterActive ? accent : T.border }]}
+        onPress={onFilterPress}
+      >
+        <Ionicons name="options-outline" size={18} color={filterActive ? T.white : T.inkSub} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+const sbS = StyleSheet.create({
+  row:      { flexDirection: "row", gap: 10, marginBottom: 14 },
+  inputWrap:{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, height: 46 },
+  input:    { flex: 1, fontSize: 13, color: T.ink, fontWeight: "600" },
+  filterBtn:{ width: 46, height: 46, borderRadius: T.radius.md, borderWidth: 1.5, justifyContent: "center", alignItems: "center" },
+});
+
+// Modal de filtres (pays + devise)
+function FilterModal({
+  visible, onClose, country, onCountry,
+  currency, onCurrency, countries, accent,
+}: {
+  visible: boolean; onClose: () => void;
+  country: string; onCountry: (v: string) => void;
+  currency: string; onCurrency: (v: string) => void;
+  countries: string[]; accent: string;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={fmS.overlay}>
+        <View style={fmS.sheet}>
+          <View style={fmS.handle} />
+          <View style={fmS.header}>
+            <Text style={[fmS.title, { fontFamily: T.font.display }]}>Filtres</Text>
+            <TouchableOpacity style={fmS.closeBtn} onPress={onClose}>
+              <Ionicons name="close" size={17} color={T.inkSub} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={fmS.body} showsVerticalScrollIndicator={false}>
+            {/* Pays */}
+            <Text style={[fmS.sectionLbl, { fontFamily: T.font.sans }]}>PAYS</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fmS.chips}>
+              {["Tous", ...countries].map((c) => {
+                const active = country === c;
+                return (
+                  <TouchableOpacity
+                    key={c}
+                    style={[fmS.chip, active && { backgroundColor: accent, borderColor: accent }]}
+                    onPress={() => onCountry(c)}
+                  >
+                    <Text style={[fmS.chipTxt, { color: active ? T.white : T.inkSub, fontFamily: T.font.sans }]}>{c}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Devise */}
+            <Text style={[fmS.sectionLbl, { fontFamily: T.font.sans, marginTop: 16 }]}>DEVISE</Text>
+            <View style={fmS.chipsWrap}>
+              {CURRENCIES.map((cur) => {
+                const active = currency === cur;
+                return (
+                  <TouchableOpacity
+                    key={cur}
+                    style={[fmS.chip, active && { backgroundColor: accent, borderColor: accent }]}
+                    onPress={() => onCurrency(cur)}
+                  >
+                    <Text style={[fmS.chipTxt, { color: active ? T.white : T.inkSub, fontFamily: T.font.mono }]}>{cur}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity
+              style={[fmS.resetBtn, { borderColor: accent }]}
+              onPress={() => { onCountry("Tous"); onCurrency("Toutes"); onClose(); }}
+            >
+              <Text style={[fmS.resetTxt, { color: accent, fontFamily: T.font.sans }]}>Réinitialiser les filtres</Text>
+            </TouchableOpacity>
+            <View style={{ height: 20 }} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const fmS = StyleSheet.create({
+  overlay:  { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
+  sheet:    { backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "65%", borderWidth: 1, borderColor: T.border },
+  handle:   { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 },
+  header:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18, paddingBottom: 10 },
+  title:    { fontSize: 17, fontWeight: "700", color: T.ink },
+  closeBtn: { width: 30, height: 30, borderRadius: 8, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
+  body:     { paddingHorizontal: 18, paddingBottom: 10 },
+  sectionLbl:{ fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.2, marginBottom: 10 },
+  chips:    { gap: 8, paddingBottom: 4 },
+  chipsWrap:{ flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip:     { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5, borderColor: T.border, backgroundColor: T.surface },
+  chipTxt:  { fontSize: 12, fontWeight: "700" },
+  resetBtn: { marginTop: 20, borderWidth: 1.5, borderRadius: T.radius.md, paddingVertical: 12, alignItems: "center" },
+  resetTxt: { fontSize: 13, fontWeight: "800" },
+});
+
+// User Card générique
+function UserCard({ item, accent, accentLt }: { item: any; accent: string; accentLt: string }) {
+  const scale   = useRef(new Animated.Value(1)).current;
+  const roleCfg = ROLE_CFG[item.role] ?? { color: T.inkMuted, bg: T.borderLt, label: item.role };
+  const isActive = item.isActive !== false && !item.isSuspended;
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={ccS.card}
-        onPress={onPress}
+        style={ucS.card}
         activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1,  useNativeDriver: true, speed: 30 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
-        {/* Barre top colorée */}
-        <View style={[ccS.topBar, { backgroundColor: statusColor }]} />
-
-        <View style={ccS.inner}>
-          {/* Avatar + infos */}
-          <View style={ccS.topRow}>
-            <View style={ccS.avatar}>
-              <Text style={[ccS.avatarLetter, { fontFamily: T.font.display }]}>
-                {initials(item.name)}
+        <View style={[ucS.bar, { backgroundColor: roleCfg.color }]} />
+        <View style={ucS.body}>
+          <View style={ucS.row}>
+            <View style={[ucS.avatar, { backgroundColor: accentLt }]}>
+              <Text style={[ucS.avatarTxt, { color: accent, fontFamily: T.font.display }]}>
+                {initials(item.firstName ?? item.email ?? "?")}
               </Text>
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={[ccS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
-                {item.name}
+              <Text style={[ucS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                {fullName(item)}
               </Text>
-              <View style={ccS.metaRow}>
-                <Text style={[ccS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
-                <View style={[ccS.statusPill, {
-                  backgroundColor: statusColor + "14",
-                  borderColor: statusColor + "30",
-                }]}>
-                  <View style={[ccS.dot, { backgroundColor: statusColor }]} />
-                  <Text style={[ccS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
-                    {item.subscriptionStatus}
-                  </Text>
-                </View>
-              </View>
+              <Text style={[ucS.email, { fontFamily: T.font.sub }]} numberOfLines={1}>
+                {item.email}
+              </Text>
             </View>
-            <View style={ccS.chevronBox}>
-              <Ionicons name="chevron-forward" size={13} color={T.blue} />
+            <View style={{ alignItems: "flex-end", gap: 4 }}>
+              <View style={[ucS.rolePill, { backgroundColor: roleCfg.bg }]}>
+                <Text style={[ucS.roleTxt, { color: roleCfg.color, fontFamily: T.font.sans }]}>
+                  {roleCfg.label}
+                </Text>
+              </View>
+              <View style={[ucS.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
             </View>
           </View>
 
-          {/* Compteurs */}
-          <View style={ccS.counters}>
-            <CounterPill icon="person-outline"   color={T.blue}   bg={T.blueLt}   value={adminCount}  label="Admins" />
-            <CounterPill icon="business-outline" color={T.purple} bg={T.purpleLt} value={agencyCount} label="Agences" />
-            <CounterPill icon="people-outline"   color={T.green}  bg={T.greenLt}  value={clientCount} label="Clients" />
+          {/* Infos secondaires */}
+          <View style={ucS.meta}>
+            {item.country && (
+              <View style={ucS.metaItem}>
+                <Ionicons name="flag-outline" size={10} color={T.inkMuted} />
+                <Text style={[ucS.metaTxt, { fontFamily: T.font.sans }]}>{item.country}</Text>
+              </View>
+            )}
+            {item.primaryCurrency && (
+              <View style={ucS.metaItem}>
+                <Ionicons name="cash-outline" size={10} color={T.inkMuted} />
+                <Text style={[ucS.metaTxt, { fontFamily: T.font.mono }]}>{item.primaryCurrency}</Text>
+              </View>
+            )}
+            {item.phone && (
+              <View style={ucS.metaItem}>
+                <Ionicons name="call-outline" size={10} color={T.inkMuted} />
+                <Text style={[ucS.metaTxt, { fontFamily: T.font.sans }]}>{item.phone}</Text>
+              </View>
+            )}
           </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
   );
 }
+const ucS = StyleSheet.create({
+  card:     { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft },
+  bar:      { width: 4 },
+  body:     { flex: 1, padding: 12 },
+  row:      { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 },
+  avatar:   { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
+  avatarTxt:{ fontSize: 16, fontWeight: "700" },
+  name:     { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  email:    { fontSize: 10, color: T.inkSub },
+  rolePill: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  roleTxt:  { fontSize: 8, fontWeight: "900", letterSpacing: 0.3 },
+  statusDot:{ width: 7, height: 7, borderRadius: 99 },
+  meta:     { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaTxt:  { fontSize: 10, color: T.inkSub, fontWeight: "600" },
+});
 
-function CounterPill({ icon, color, bg, value, label }: {
-  icon: string; color: string; bg: string; value: number; label: string;
+// Stat card (pour les stats clients SA)
+function StatCard({ label, value, color, bg, icon }: {
+  label: string; value: number; color: string; bg: string; icon: string;
 }) {
   return (
-    <View style={[cpS.pill, { backgroundColor: bg, borderColor: color + "25" }]}>
-      <Ionicons name={icon as any} size={11} color={color} />
-      <Text style={[cpS.val, { color, fontFamily: T.font.mono }]}>{value}</Text>
-      <Text style={[cpS.lbl, { color, fontFamily: T.font.sans }]}>{label}</Text>
+    <View style={[stcS.card, { borderTopColor: color }]}>
+      <View style={[stcS.iconBox, { backgroundColor: bg }]}>
+        <Ionicons name={icon as any} size={15} color={color} />
+      </View>
+      <Text style={[stcS.val, { color, fontFamily: T.font.mono }]}>{value}</Text>
+      <Text style={[stcS.lbl, { fontFamily: T.font.sans }]}>{label}</Text>
     </View>
   );
 }
-const cpS = StyleSheet.create({
-  pill: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 9, paddingVertical: 5,
-    borderRadius: 8, borderWidth: 1, flex: 1, justifyContent: "center",
-  },
-  val: { fontSize: 12, fontWeight: "800" },
-  lbl: { fontSize: 9, fontWeight: "700" },
+const stcS = StyleSheet.create({
+  card:   { flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, alignItems: "center", borderTopWidth: 3, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
+  iconBox:{ width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center", marginBottom: 6 },
+  val:    { fontSize: 20, fontWeight: "800", marginBottom: 2 },
+  lbl:    { fontSize: 9, fontWeight: "800", color: T.inkMuted, letterSpacing: 0.8, textAlign: "center" },
 });
 
-const ccS = StyleSheet.create({
-  card: {
-    backgroundColor: T.surface, borderRadius: T.radius.lg,
-    borderWidth: 1, borderColor: T.border,
-    marginBottom: 10, overflow: "hidden", ...T.shadow.card,
-  },
-  topBar: { height: 3 },
-  inner:  { padding: 14 },
-  topRow: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 12 },
-  avatar: {
-    width: 44, height: 44, borderRadius: 13,
-    backgroundColor: T.blueLt, borderWidth: 1.5, borderColor: T.blueMd,
-    justifyContent: "center", alignItems: "center",
-  },
-  avatarLetter: { fontSize: 19, fontWeight: "700", color: T.blue },
-  name:   { fontSize: 14, fontWeight: "700", color: T.ink, marginBottom: 4 },
-  metaRow:{ flexDirection: "row", alignItems: "center", gap: 7 },
-  code:   { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
-  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
-  dot:    { width: 4, height: 4, borderRadius: 99 },
-  statusTxt: { fontSize: 9, fontWeight: "800" },
-  chevronBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.blueLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
-  counters: { flexDirection: "row", gap: 7 },
-});
-
-// ─── User Row (admin / agent / client) ───────────────────
-function UserRow({ item }: { item: any }) {
-  const roleCfg = ROLE_CONFIG[item.role] ?? { color: T.inkMuted, bg: T.borderLt, label: item.role };
-  return (
-    <View style={urS.row}>
-      <View style={[urS.avatar, { backgroundColor: roleCfg.bg }]}>
-        <Text style={[urS.avatarTxt, { color: roleCfg.color, fontFamily: T.font.display }]}>
-          {initials(item.firstName ?? item.email ?? "?")}
-        </Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[urS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
-          {item.firstName ?? ""} {item.lastName ?? ""}
-        </Text>
-        <Text style={[urS.email, { fontFamily: T.font.subtitle }]} numberOfLines={1}>
-          {item.email}
-        </Text>
-      </View>
-      <View style={[urS.rolePill, { backgroundColor: roleCfg.bg }]}>
-        <Text style={[urS.roleText, { color: roleCfg.color, fontFamily: T.font.sans }]}>
-          {roleCfg.label}
-        </Text>
-      </View>
-    </View>
-  );
-}
-const urS = StyleSheet.create({
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 11,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderBottomWidth: 1, borderBottomColor: T.borderLt,
-  },
-  avatar: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  avatarTxt: { fontSize: 15, fontWeight: "700" },
-  name:  { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  email: { fontSize: 10, color: T.inkSub },
-  rolePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  roleText: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-});
-
-// ─── Agency Row ───────────────────────────────────────────
-function AgencyRow({ item }: { item: any }) {
-  const isActive  = item.isActive;
-  const agentCount = (item.agents ?? []).length;
-  return (
-    <View style={arS.row}>
-      <View style={[arS.iconBox, { backgroundColor: isActive ? T.tealLt : T.redLt }]}>
-        <Ionicons name="business-outline" size={15} color={isActive ? T.teal : T.red} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[arS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
-        <Text style={[arS.city, { fontFamily: T.font.subtitle }]}>
-          {item.city ?? "—"}  ·  {item.country ?? "—"}
-        </Text>
-      </View>
-      <View style={arS.right}>
-        <View style={[arS.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
-        {agentCount > 0 && (
-          <View style={[arS.agentPill, { backgroundColor: T.amberLt }]}>
-            <Text style={[arS.agentTxt, { color: T.amber, fontFamily: T.font.mono }]}>
-              {agentCount} agent{agentCount > 1 ? "s" : ""}
-            </Text>
-          </View>
-        )}
-      </View>
-    </View>
-  );
-}
-const arS = StyleSheet.create({
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 11,
-    paddingVertical: 10, paddingHorizontal: 14,
-    borderBottomWidth: 1, borderBottomColor: T.borderLt,
-  },
-  iconBox:    { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  name:       { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  city:       { fontSize: 10, color: T.inkSub },
-  right:      { alignItems: "flex-end", gap: 4 },
-  statusDot:  { width: 7, height: 7, borderRadius: 99 },
-  agentPill:  { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
-  agentTxt:   { fontSize: 9, fontWeight: "800" },
-});
-
-// ─── Collapsible Section ──────────────────────────────────
-function CollapsibleSection({
-  dot, label, count, children, defaultOpen = false,
+// Header écran
+function ScreenHeader({
+  accent, accentLt, title, subtitle, onBack, onRefresh,
 }: {
-  dot: string; label: string; count: number;
-  children: React.ReactNode; defaultOpen?: boolean;
+  accent: string; accentLt: string;
+  title: string; subtitle: string;
+  onBack: () => void; onRefresh: () => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const rotAnim = useRef(new Animated.Value(defaultOpen ? 1 : 0)).current;
-
-  const toggle = () => {
-    const toVal = open ? 0 : 1;
-    setOpen(!open);
-    Animated.spring(rotAnim, { toValue: toVal, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
-  };
-
-  const rotate = rotAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "90deg"] });
-
   return (
-    <View style={csS.wrapper}>
-      <TouchableOpacity style={csS.header} onPress={toggle} activeOpacity={0.8}>
-        <View style={[csS.dot, { backgroundColor: dot }]} />
-        <Text style={[csS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-        <View style={[csS.countPill, { backgroundColor: dot + "18" }]}>
-          <Text style={[csS.countTxt, { color: dot, fontFamily: T.font.mono }]}>{count}</Text>
-        </View>
-        <Animated.View style={{ transform: [{ rotate }] }}>
-          <Ionicons name="chevron-forward" size={14} color={T.inkMuted} />
-        </Animated.View>
+    <View style={[schS.header, { backgroundColor: T.surface }]}>
+      <TouchableOpacity style={schS.backBtn} onPress={onBack} hitSlop={12}>
+        <Ionicons name="arrow-back" size={22} color={T.ink} />
       </TouchableOpacity>
-      {open && <View style={csS.body}>{children}</View>}
-    </View>
-  );
-}
-const csS = StyleSheet.create({
-  wrapper: {
-    backgroundColor: T.surface, borderRadius: T.radius.lg,
-    borderWidth: 1, borderColor: T.border,
-    marginBottom: 12, overflow: "hidden", ...T.shadow.soft,
-  },
-  header: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    paddingHorizontal: 14, paddingVertical: 13,
-    borderBottomWidth: 0,
-  },
-  dot:       { width: 6, height: 6, borderRadius: 99 },
-  label:     { flex: 1, fontSize: 11, fontWeight: "800", color: T.ink, letterSpacing: 0.3 },
-  countPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, marginRight: 4 },
-  countTxt:  { fontSize: 10, fontWeight: "900" },
-  body:      { borderTopWidth: 1, borderTopColor: T.borderLt },
-});
-
-// ─── Info Row ─────────────────────────────────────────────
-function InfoRow({ label, value, icon }: { label: string; value: string; icon?: string }) {
-  return (
-    <View style={irS.row}>
-      {icon && (
-        <View style={irS.iconBox}>
-          <Ionicons name={icon as any} size={13} color={T.inkMuted} />
-        </View>
-      )}
-      <Text style={[irS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <Text style={[irS.value, { fontFamily: T.font.mono }]} numberOfLines={1}>{value || "—"}</Text>
-    </View>
-  );
-}
-const irS = StyleSheet.create({
-  row:     { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
-  iconBox: { width: 20, justifyContent: "center", alignItems: "center" },
-  label:   { flex: 1, fontSize: 11, color: T.inkSub, fontWeight: "600" },
-  value:   { fontSize: 11, color: T.ink, fontWeight: "700", maxWidth: "55%" },
-});
-
-// ─── Company Detail View ──────────────────────────────────
-function CompanyDetailView({
-  company,
-  onBack,
-}: {
-  company: any;
-  onBack: () => void;
-}) {
-  const statusColor  = STATUS_COLORS[company.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
-  const admins       = (company.users ?? []).filter((u: any) => u.role === "COMPANY_ADMIN");
-  const agents       = (company.users ?? []).filter((u: any) => u.role === "AGENT");
-  const clients      = (company.users ?? []).filter((u: any) => u.role === "USER");
-  const agencies     = company.agencies ?? [];
-
-  return (
-    <View style={{ flex: 1 }}>
-      {/* Header détail */}
-      <View style={dvS.header}>
-        <TouchableOpacity style={dvS.backBtn} onPress={onBack} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color={T.ink} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[dvS.title, { fontFamily: T.font.display }]} numberOfLines={1}>
-            {company.name}
-          </Text>
-          <View style={dvS.metaRow}>
-            <Text style={[dvS.code, { fontFamily: T.font.mono }]}>{company.code}</Text>
-            <View style={[dvS.statusPill, {
-              backgroundColor: statusColor + "14",
-              borderColor: statusColor + "30",
-            }]}>
-              <View style={[dvS.dot, { backgroundColor: statusColor }]} />
-              <Text style={[dvS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
-                {company.subscriptionStatus}
-              </Text>
-            </View>
-          </View>
-        </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[schS.title, { fontFamily: T.font.display }]}>{title}</Text>
+        <Text style={[schS.sub, { color: accent, fontFamily: T.font.sans }]}>{subtitle}</Text>
       </View>
-
-      <ScrollView
-        style={{ flex: 1, backgroundColor: T.pageBg }}
-        contentContainerStyle={dvS.scroll}
-        showsVerticalScrollIndicator={false}
+      <View style={[schS.badge, { backgroundColor: accentLt }]}>
+        <View style={[schS.badgeDot, { backgroundColor: accent }]} />
+        <Text style={[schS.badgeTxt, { color: accent, fontFamily: T.font.sans }]}>
+          {accent === T.saAccent ? "SUPER ADMIN" : "ADMIN"}
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[schS.refreshBtn, { backgroundColor: accentLt }]}
+        onPress={onRefresh}
       >
-        {/* ── Infos société ── */}
-        <SH dot={T.blue} label="INFORMATIONS SOCIÉTÉ" />
-        <View style={dvS.infoCard}>
-          <InfoRow icon="mail-outline"     label="Email"        value={company.email ?? company.contactEmail} />
-          <InfoRow icon="call-outline"     label="Téléphone"    value={company.phone ?? company.contactPhone} />
-          <InfoRow icon="globe-outline"    label="Pays"         value={company.country} />
-          <InfoRow icon="location-outline" label="Ville"        value={company.city} />
-          <InfoRow icon="briefcase-outline"label="Secteur"      value={company.activitySector} />
-          <InfoRow icon="repeat-outline"   label="Contrat"      value={company.subscriptionType} />
-          <InfoRow icon="calendar-outline" label="Début"
-            value={company.subscriptionStart
-              ? new Date(company.subscriptionStart).toLocaleDateString("fr-FR")
-              : "—"
-            }
-          />
-          <InfoRow icon="calendar-outline" label="Fin"
-            value={company.subscriptionEnd
-              ? new Date(company.subscriptionEnd).toLocaleDateString("fr-FR")
-              : "—"
-            }
-          />
-        </View>
-
-        {/* ── Admins société ── */}
-        <CollapsibleSection
-          dot={T.blue}
-          label="ADMINS SOCIÉTÉ"
-          count={admins.length}
-          defaultOpen
-        >
-          {admins.length === 0
-            ? <EmptyInline text="Aucun admin" />
-            : admins.map((u: any) => <UserRow key={u.id} item={u} />)
-          }
-        </CollapsibleSection>
-
-        {/* ── Agences ── */}
-        <CollapsibleSection
-          dot={T.teal}
-          label="AGENCES"
-          count={agencies.length}
-          defaultOpen
-        >
-          {agencies.length === 0
-            ? <EmptyInline text="Aucune agence" />
-            : agencies.map((a: any) => <AgencyRow key={a.id} item={a} />)
-          }
-        </CollapsibleSection>
-
-        {/* ── Agents ── */}
-        <CollapsibleSection
-          dot={T.amber}
-          label="AGENTS"
-          count={agents.length}
-        >
-          {agents.length === 0
-            ? <EmptyInline text="Aucun agent" />
-            : agents.map((u: any) => <UserRow key={u.id} item={u} />)
-          }
-        </CollapsibleSection>
-
-        {/* ── Clients ── */}
-        <CollapsibleSection
-          dot={T.green}
-          label="CLIENTS"
-          count={clients.length}
-        >
-          {clients.length === 0
-            ? <EmptyInline text="Aucun client" />
-            : clients.map((u: any) => <UserRow key={u.id} item={u} />)
-          }
-        </CollapsibleSection>
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
+        <Ionicons name="refresh" size={18} color={accent} />
+      </TouchableOpacity>
     </View>
   );
 }
+const schS = StyleSheet.create({
+  header:     { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, gap: 10, borderBottomWidth: 1, borderBottomColor: T.border },
+  backBtn:    { width: 38, height: 38, borderRadius: 11, backgroundColor: T.borderLt, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
+  title:      { fontSize: 19, fontWeight: "700", color: T.ink },
+  sub:        { fontSize: 11, fontWeight: "700", marginTop: 2 },
+  badge:      { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  badgeDot:   { width: 5, height: 5, borderRadius: 99 },
+  badgeTxt:   { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  refreshBtn: { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
+});
 
-function EmptyInline({ text }: { text: string }) {
-  return (
-    <View style={eiS.wrap}>
-      <Ionicons name="ellipse-outline" size={14} color={T.inkMuted} />
-      <Text style={[eiS.txt, { fontFamily: T.font.sans }]}>{text}</Text>
-    </View>
-  );
+// Appliquer les filtres texte + pays + devise
+function applyFilters(
+  list: any[],
+  q: string,
+  country: string,
+  currency: string,
+): any[] {
+  return list.filter((item) => {
+    // Texte
+    if (q.trim()) {
+      const s = q.toLowerCase();
+      const match =
+        fullName(item).toLowerCase().includes(s) ||
+        (item.email ?? "").toLowerCase().includes(s);
+      if (!match) return false;
+    }
+    // Pays
+    if (country && country !== "Tous" && country !== "Toutes") {
+      if ((item.country ?? "").toUpperCase() !== country.toUpperCase()) return false;
+    }
+    // Devise
+    if (currency && currency !== "Toutes") {
+      if ((item.primaryCurrency ?? "") !== currency) return false;
+    }
+    return true;
+  });
 }
-const eiS = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", gap: 8, padding: 14 },
-  txt:  { fontSize: 11, color: T.inkMuted, fontWeight: "600" },
-});
 
-const dvS = StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface,
-    paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 14, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: T.border,
-  },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border,
-    justifyContent: "center", alignItems: "center",
-  },
-  title: { fontSize: 18, fontWeight: "700", color: T.ink, marginBottom: 4 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 7 },
-  code: { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
-  statusPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
-  dot:       { width: 4, height: 4, borderRadius: 99 },
-  statusTxt: { fontSize: 9, fontWeight: "800" },
-  scroll:    { paddingHorizontal: 18, paddingTop: 18 },
-  infoCard:  {
-    backgroundColor: T.surface, borderRadius: T.radius.lg,
-    borderWidth: 1, borderColor: T.border,
-    marginBottom: 18, overflow: "hidden", ...T.shadow.soft,
-  },
-});
-
-// ─── Main Screen ──────────────────────────────────────────
-export default function AdminUsersScreen() {
+// ══════════════════════════════════════════════════════════
+//  SUPER-ADMIN
+//  Voit : admins sociétés + gérants agences (pas les clients)
+//  Stats : clients actifs/inactifs/suspendus/total
+//  Filtres : pays, devise, nom, email
+// ══════════════════════════════════════════════════════════
+function UsersSA() {
   const router   = useRouter();
   const { user } = useAuth();
 
-  const [companies,   setCompanies]   = useState<any[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [q,           setQ]           = useState("");
-  const [viewMode,    setViewMode]    = useState<ViewMode>("companies");
-  const [selected,    setSelected]    = useState<any>(null);
-
+  const [clients,    setClients]    = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [q,          setQ]          = useState("");
+  const [country,    setCountry]    = useState("Tous");
+  const [currency,   setCurrency]   = useState("Toutes");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeTab,  setActiveTab]  = useState<"admins" | "agents">("admins");
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const loadCompanies = useCallback(async (mode: "init" | "refresh" = "init") => {
-    if (mode === "refresh") setRefreshing(true);
-    else setLoading(true);
+  const load = useCallback(async (mode: "init" | "refresh" = "init") => {
+    if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
-      // On charge les sociétés avec leurs users et agences inclus
-      const raw = await api.getClients().catch(() => []);
-      const list = Array.isArray(raw) ? raw : ((raw as any)?.data ?? []);
-      setCompanies(list);
-      Animated.spring(fadeAnim, {
-        toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3,
-      }).start();
-    } catch (e) {
-      console.error("Users load error", e);
-    } finally {
-      if (mode === "refresh") setRefreshing(false);
-      else setLoading(false);
-    }
-  }, []);
+      const cl = await (api as any).getClients?.() ?? [];
+      setClients(Array.isArray(cl) ? cl : []);
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+    } catch { setClients([]); }
+    finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
+  }, [fadeAnim]);
 
-  useFocusEffect(useCallback(() => {
-    void loadCompanies("init");
-    return () => {};
-  }, [loadCompanies]));
+  useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
 
-  const filtered = useMemo(() => {
-    const n = q.trim().toLowerCase();
-    if (!n) return companies;
-    return companies.filter((c) =>
-      `${c.name} ${c.code} ${c.subscriptionStatus}`.toLowerCase().includes(n)
-    );
-  }, [companies, q]);
+  // Extraire admins sociétés + gérants agences de tous les clients
+  const allAdmins = useMemo(() =>
+    clients.flatMap((c) =>
+      (c.users ?? [])
+        .filter((u: any) => u.role === "COMPANY_ADMIN")
+        .map((u: any) => ({ ...u, _clientName: c.name, _clientCode: c.code }))
+    ), [clients]);
 
-  // ─── Vue détail société ───────────────────────────────
-  if (viewMode === "company_detail" && selected) {
-    return (
-      <SafeAreaView style={s.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor={T.surface} />
-        <CompanyDetailView
-          company={selected}
-          onBack={() => {
-            setViewMode("companies");
-            setSelected(null);
-          }}
-        />
-      </SafeAreaView>
-    );
-  }
+  const allAgents = useMemo(() =>
+    clients.flatMap((c) =>
+      (c.agencies ?? []).flatMap((a: any) =>
+        (a.agents ?? []).map((u: any) => ({ ...u, _agencyName: a.name, _clientName: c.name }))
+      )
+    ), [clients]);
 
-  // ─── Vue liste des sociétés ───────────────────────────
+  // Pays disponibles
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    [...allAdmins, ...allAgents].forEach((u) => { if (u.country) set.add(u.country); });
+    return Array.from(set).sort();
+  }, [allAdmins, allAgents]);
+
+  // Listes filtrées
+  const filteredAdmins = useMemo(() =>
+    applyFilters(allAdmins, q, country, currency), [allAdmins, q, country, currency]);
+  const filteredAgents = useMemo(() =>
+    applyFilters(allAgents, q, country, currency), [allAgents, q, country, currency]);
+
+  // Stats clients
+  const statsClients = useMemo(() => ({
+    total:     clients.length,
+    active:    clients.filter((c) => c.subscriptionStatus === "ACTIVE").length,
+    inactive:  clients.filter((c) => c.subscriptionStatus === "INACTIVE").length,
+    suspended: clients.filter((c) => c.subscriptionStatus === "SUSPENDED").length,
+    trial:     clients.filter((c) => c.subscriptionStatus === "TRIAL").length,
+  }), [clients]);
+
+  const filterActive = country !== "Tous" || currency !== "Toutes";
+  const currentList  = activeTab === "admins" ? filteredAdmins : filteredAgents;
+
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.surface} />
-
-      {/* Header — ✅ SANS bouton + */}
-      <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color={T.ink} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Utilisateurs</Text>
-          <Text style={[s.headerSub, { color: T.blue, fontFamily: T.font.sans }]}>
-            {filtered.length} société{filtered.length > 1 ? "s" : ""}
-          </Text>
-        </View>
-        {/* ✅ Bouton + supprimé — remplacé par refresh */}
-        <TouchableOpacity
-          style={[s.refreshBtn]}
-          onPress={() => void loadCompanies("refresh")}
-        >
-          <Ionicons name="refresh" size={18} color={T.blue} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search */}
-      <View style={s.searchBox}>
-        <Ionicons name="search" size={15} color={T.inkMuted} />
-        <TextInput
-          style={[s.searchInput, { fontFamily: T.font.sans }]}
-          value={q}
-          onChangeText={setQ}
-          placeholder="Nom ou code société..."
-          placeholderTextColor={T.inkMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {!!q && (
-          <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-            <Ionicons name="close" size={12} color={T.inkMuted} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Hint */}
-      <View style={s.hintRow}>
-        <Ionicons name="information-circle-outline" size={13} color={T.blue} />
-        <Text style={[s.hintTxt, { fontFamily: T.font.sans }]}>
-          Appuyez sur une société pour voir ses admins, agences et clients
-        </Text>
-      </View>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.saBg }]}>
+      <StatusBar backgroundColor={T.surface} barStyle="dark-content" />
+      <ScreenHeader
+        accent={T.saAccent} accentLt={T.saAccentLt}
+        title="Utilisateurs"
+        subtitle={`${filteredAdmins.length + filteredAgents.length} résultat(s)`}
+        onBack={() => router.back()}
+        onRefresh={() => void load("refresh")}
+      />
 
       {loading ? (
-        <View style={s.loader}>
-          <ActivityIndicator color={T.blue} size="large" />
-        </View>
+        <View style={s.loader}><ActivityIndicator color={T.saAccent} size="large" /></View>
       ) : (
-        <Animated.FlatList
+        <Animated.ScrollView
           style={{ opacity: fadeAnim }}
-          data={filtered}
-          keyExtractor={(item) => item.id?.toString()}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[s.scroll, { backgroundColor: T.saBg }]}
           showsVerticalScrollIndicator={false}
-          onRefresh={() => void loadCompanies("refresh")}
-          refreshing={refreshing}
-          ListHeaderComponent={
-            <View style={{ marginBottom: 4 }}>
-              <SH dot={T.blue} label="SOCIÉTÉS SAAS" count={filtered.length} />
+        >
+          {/* Stats sociétés clientes */}
+          <SL dot={T.saAccent} label="STATISTIQUES SOCIÉTÉS CLIENTES" />
+          <View style={s.statsRow}>
+            <StatCard label="Total"     value={statsClients.total}     color={T.saAccent} bg={T.saAccentLt} icon="business-outline"         />
+            <StatCard label="Actives"   value={statsClients.active}    color={T.green}    bg={T.greenLt}    icon="checkmark-circle-outline"  />
+            <StatCard label="Inactives" value={statsClients.inactive}  color={T.red}      bg={T.redLt}      icon="close-circle-outline"      />
+            <StatCard label="Suspendus" value={statsClients.suspended} color={T.amber}    bg={T.amberLt}    icon="pause-circle-outline"      />
+          </View>
+
+          {/* Recherche + filtres */}
+          <SearchBar
+            value={q} onChange={setQ}
+            onFilterPress={() => setFilterOpen(true)}
+            accent={T.saAccent} filterActive={filterActive}
+          />
+
+          {/* Tabs Admins / Agents */}
+          <View style={s.tabs}>
+            {(["admins", "agents"] as const).map((tab) => {
+              const active = activeTab === tab;
+              const count  = tab === "admins" ? filteredAdmins.length : filteredAgents.length;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[s.tab, active && { backgroundColor: T.saAccentLt, borderColor: T.saAccentMd }]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  <Text style={[s.tabTxt, { color: active ? T.saAccent : T.inkSub, fontFamily: T.font.sans }]}>
+                    {tab === "admins" ? "Admins Société" : "Gérants Agences"}
+                  </Text>
+                  <View style={[s.tabPill, { backgroundColor: active ? T.saAccent : T.borderLt }]}>
+                    <Text style={[s.tabCount, { color: active ? T.white : T.inkMuted, fontFamily: T.font.mono }]}>
+                      {count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Liste */}
+          <SL
+            dot={T.saAccent}
+            label={activeTab === "admins" ? "ADMINS SOCIÉTÉS" : "GÉRANTS AGENCES"}
+            count={currentList.length}
+          />
+          {currentList.length === 0 ? (
+            <View style={s.emptyRow}>
+              <Ionicons name="people-outline" size={20} color={T.inkMuted} />
+              <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucun résultat</Text>
             </View>
-          }
-          renderItem={({ item }) => (
-            <CompanyCard
-              item={item}
-              onPress={() => {
-                setSelected(item);
-                setViewMode("company_detail");
-              }}
-            />
-          )}
-          ListEmptyComponent={
-            <View style={s.empty}>
-              <View style={[s.emptyIcon, { backgroundColor: T.blueLt }]}>
-                <Ionicons name="business-outline" size={28} color={T.blue} />
+          ) : (
+            currentList.map((item, i) => (
+              <View key={item.id ?? i}>
+                <UserCard item={item} accent={T.saAccent} accentLt={T.saAccentLt} />
+                {/* Contexte société/agence */}
+                {item._clientName && (
+                  <View style={s.contextBadge}>
+                    <Ionicons name="business-outline" size={10} color={T.saAccent} />
+                    <Text style={[s.contextTxt, { color: T.saAccent, fontFamily: T.font.sans }]}>
+                      {item._clientName}{item._agencyName ? ` · ${item._agencyName}` : ""}
+                    </Text>
+                  </View>
+                )}
               </View>
-              <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>Aucune société trouvée</Text>
-              <Text style={[s.emptySub, { fontFamily: T.font.subtitle }]}>
-                Modifiez votre recherche
-              </Text>
-            </View>
-          }
-          ListFooterComponent={<View style={{ height: 100 }} />}
-        />
+            ))
+          )}
+
+          <View style={{ height: 80 }} />
+        </Animated.ScrollView>
       )}
+
+      <FilterModal
+        visible={filterOpen} onClose={() => setFilterOpen(false)}
+        country={country} onCountry={setCountry}
+        currency={currency} onCurrency={setCurrency}
+        countries={countries} accent={T.saAccent}
+      />
     </SafeAreaView>
   );
 }
 
+// ══════════════════════════════════════════════════════════
+//  COMPANY-ADMIN
+//  Voit : ses clients (USER) + ses agents
+//  Filtres : pays, devise, nom, email
+//  Ne voit PAS : les autres sociétés, les admins globaux
+// ══════════════════════════════════════════════════════════
+function UsersCA() {
+  const router   = useRouter();
+  const { user } = useAuth();
+
+  const [allUsers,   setAllUsers]   = useState<any[]>([]);
+  const [agencies,   setAgencies]   = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [q,          setQ]          = useState("");
+  const [country,    setCountry]    = useState("Tous");
+  const [currency,   setCurrency]   = useState("Toutes");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeTab,  setActiveTab]  = useState<"clients" | "agents">("clients");
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const load = useCallback(async (mode: "init" | "refresh" = "init") => {
+    if (mode === "refresh") setRefreshing(true); else setLoading(true);
+    try {
+      const [usersRes, agenciesRes] = await Promise.allSettled([
+        api.http.get("/users?limit=100"),
+        api.getAgencies(),
+      ]);
+      if (usersRes.status    === "fulfilled") {
+        const data = usersRes.value.data;
+        setAllUsers(Array.isArray(data) ? data : (data?.data ?? []));
+      }
+      if (agenciesRes.status === "fulfilled") setAgencies(Array.isArray(agenciesRes.value) ? agenciesRes.value : []);
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+    } catch { setAllUsers([]); setAgencies([]); }
+    finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
+  }, [fadeAnim]);
+
+  useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
+
+  const myClients = useMemo(() => allUsers.filter((u) => u.role === "USER"),           [allUsers]);
+  const myAgents  = useMemo(() => allUsers.filter((u) => u.role === "AGENT"),          [allUsers]);
+
+  // Pays disponibles
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    [...myClients, ...myAgents].forEach((u) => { if (u.country) set.add(u.country); });
+    return Array.from(set).sort();
+  }, [myClients, myAgents]);
+
+  const filteredClients = useMemo(() => applyFilters(myClients, q, country, currency), [myClients, q, country, currency]);
+  const filteredAgents  = useMemo(() => applyFilters(myAgents,  q, country, currency), [myAgents,  q, country, currency]);
+
+  // Stats clients de la société
+  const statsClients = useMemo(() => ({
+    total:    myClients.length,
+    active:   myClients.filter((u) => u.isActive !== false && !u.isSuspended).length,
+    inactive: myClients.filter((u) => u.isActive === false || u.isSuspended).length,
+  }), [myClients]);
+
+  const filterActive = country !== "Tous" || currency !== "Toutes";
+  const currentList  = activeTab === "clients" ? filteredClients : filteredAgents;
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.caBg }]}>
+      <StatusBar backgroundColor={T.surface} barStyle="dark-content" />
+      <ScreenHeader
+        accent={T.caAccent} accentLt={T.caAccentLt}
+        title="Mes Utilisateurs"
+        subtitle={`${filteredClients.length + filteredAgents.length} résultat(s)`}
+        onBack={() => router.back()}
+        onRefresh={() => void load("refresh")}
+      />
+
+      {loading ? (
+        <View style={s.loader}><ActivityIndicator color={T.caAccent} size="large" /></View>
+      ) : (
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
+          contentContainerStyle={[s.scroll, { backgroundColor: T.caBg }]}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Stats mes clients */}
+          <SL dot={T.caAccent} label="STATISTIQUES MES CLIENTS" />
+          <View style={s.statsRow}>
+            <StatCard label="Total"    value={statsClients.total}    color={T.caAccent} bg={T.caAccentLt} icon="people-outline"            />
+            <StatCard label="Actifs"   value={statsClients.active}   color={T.green}    bg={T.greenLt}    icon="checkmark-circle-outline"  />
+            <StatCard label="Inactifs" value={statsClients.inactive} color={T.red}      bg={T.redLt}      icon="close-circle-outline"      />
+            <StatCard label="Agences"  value={agencies.length}       color={T.teal}     bg={T.tealLt}     icon="storefront-outline"        />
+          </View>
+
+          {/* Recherche + filtres */}
+          <SearchBar
+            value={q} onChange={setQ}
+            onFilterPress={() => setFilterOpen(true)}
+            accent={T.caAccent} filterActive={filterActive}
+          />
+
+          {/* Tabs Clients / Agents */}
+          <View style={s.tabs}>
+            {(["clients", "agents"] as const).map((tab) => {
+              const active = activeTab === tab;
+              const count  = tab === "clients" ? filteredClients.length : filteredAgents.length;
+              return (
+                <TouchableOpacity
+                  key={tab}
+                  style={[s.tab, active && { backgroundColor: T.caAccentLt, borderColor: T.caAccentMd }]}
+                  onPress={() => setActiveTab(tab)}
+                >
+                  <Text style={[s.tabTxt, { color: active ? T.caAccent : T.inkSub, fontFamily: T.font.sans }]}>
+                    {tab === "clients" ? "Mes Clients" : "Mes Agents"}
+                  </Text>
+                  <View style={[s.tabPill, { backgroundColor: active ? T.caAccent : T.borderLt }]}>
+                    <Text style={[s.tabCount, { color: active ? T.white : T.inkMuted, fontFamily: T.font.mono }]}>
+                      {count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Liste */}
+          <SL
+            dot={T.caAccent}
+            label={activeTab === "clients" ? "MES CLIENTS" : "MES AGENTS"}
+            count={currentList.length}
+          />
+          {currentList.length === 0 ? (
+            <View style={s.emptyRow}>
+              <Ionicons name="people-outline" size={20} color={T.inkMuted} />
+              <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucun résultat</Text>
+            </View>
+          ) : (
+            currentList.map((item, i) => (
+              <UserCard key={item.id ?? i} item={item} accent={T.caAccent} accentLt={T.caAccentLt} />
+            ))
+          )}
+
+          <View style={{ height: 80 }} />
+        </Animated.ScrollView>
+      )}
+
+      <FilterModal
+        visible={filterOpen} onClose={() => setFilterOpen(false)}
+        country={country} onCountry={setCountry}
+        currency={currency} onCurrency={setCurrency}
+        countries={countries} accent={T.caAccent}
+      />
+    </SafeAreaView>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+//  ROUTEUR
+// ══════════════════════════════════════════════════════════
+export default function UsersScreen() {
+  const { user } = useAuth();
+  if (user?.role === "SUPER_ADMIN")   return <UsersSA />;
+  if (user?.role === "COMPANY_ADMIN") return <UsersCA />;
+  const router = useRouter();
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.caBg, justifyContent: "center", alignItems: "center" }}>
+      <Ionicons name="lock-closed-outline" size={48} color={T.inkMuted} />
+      <Text style={{ color: T.ink, fontSize: 16, fontWeight: "700", marginTop: 16 }}>
+        Accès non autorisé
+      </Text>
+      <TouchableOpacity
+        style={{ marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: T.caAccentLt, borderRadius: 12 }}
+        onPress={() => router.back()}
+      >
+        <Text style={{ color: T.caAccent, fontWeight: "700" }}>Retour</Text>
+      </TouchableOpacity>
+    </SafeAreaView>
+  );
+}
+
+// ─── Styles partagés ─────────────────────────────────────
 const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: T.pageBg },
-
-  header: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface,
-    paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 14, gap: 12,
-    borderBottomWidth: 1, borderBottomColor: T.border,
-  },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border,
-    justifyContent: "center", alignItems: "center",
-  },
-  headerTitle: { fontSize: 22, fontWeight: "700", color: T.ink },
-  headerSub:   { fontSize: 11, fontWeight: "700", marginTop: 2 },
-  refreshBtn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: T.blueLt,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.blueMd,
-  },
-
-  searchBox: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface, borderRadius: T.radius.md,
-    marginHorizontal: 18, marginTop: 14, marginBottom: 0,
-    paddingHorizontal: 13, height: 46,
-    borderWidth: 1, borderColor: T.border, gap: 8,
-    ...T.shadow.soft,
-  },
-  searchInput: { flex: 1, fontSize: 13, color: T.ink },
-  clearBtn: {
-    width: 22, height: 22, borderRadius: 7,
-    backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center",
-  },
-
-  hintRow: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    marginHorizontal: 18, marginTop: 10, marginBottom: 2,
-  },
-  hintTxt: { fontSize: 10, color: T.blue, fontWeight: "600", flex: 1, lineHeight: 14 },
-
+  safe:   { flex: 1 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  list:   { paddingHorizontal: 18, paddingTop: 14 },
+  scroll: { padding: 16 },
 
-  empty:      { alignItems: "center", paddingVertical: 44, gap: 8 },
-  emptyIcon:  { width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.blueMd },
-  emptyTitle: { fontSize: 16, fontWeight: "700", color: T.ink },
-  emptySub:   { fontSize: 12, color: T.inkMuted, textAlign: "center" },
+  statsRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
+
+  tabs: { flexDirection: "row", gap: 10, marginBottom: 16 },
+  tab:  {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 10, borderRadius: T.radius.md,
+    borderWidth: 1.5, borderColor: T.border, backgroundColor: T.surface,
+  },
+  tabTxt:   { fontSize: 12, fontWeight: "800" },
+  tabPill:  { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
+  tabCount: { fontSize: 10, fontWeight: "900" },
+
+  contextBadge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    marginTop: -6, marginBottom: 10, marginLeft: 16,
+  },
+  contextTxt: { fontSize: 10, fontWeight: "600" },
+
+  emptyRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, backgroundColor: T.surface, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, marginBottom: 14 },
+  emptyTxt: { color: T.inkMuted, fontSize: 12, fontWeight: "600" },
 });
