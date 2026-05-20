@@ -1,15 +1,14 @@
 // apps/direct-transfair-mobile/app/(tabs)/agencies/index.tsx
-// apps/direct-transfair-mobile/app/(tabs)/agencies/index.tsx
 // =========================================================
-// AGENCIES INDEX ROUTER v4.0 — Direct Transf'air
-// Redirige selon le rôle avec spinner dark cohérent
+// AGENCIES INDEX ROUTER v4.1 — Direct Transf'air
+// ✅ Fond blanc pendant la redirection (plus de fond noir)
+// ✅ Spinner vert centré
 // =========================================================
 
 import React, { useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../../providers/AuthProvider";
-import { LinearGradient } from "expo-linear-gradient";
 
 export default function AgenciesIndex() {
   const router = useRouter();
@@ -25,8 +24,17 @@ export default function AgenciesIndex() {
   }, [router, user, isLoading]);
 
   return (
-    <LinearGradient colors={["#030B1A", "#071224"]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-      <ActivityIndicator size="large" color="#34D399" />
-    </LinearGradient>
+    <View style={s.safe}>
+      <ActivityIndicator size="large" color="#10B981" />
+    </View>
   );
 }
+
+const s = StyleSheet.create({
+  safe: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+});

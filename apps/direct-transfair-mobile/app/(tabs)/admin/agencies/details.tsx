@@ -1,8 +1,7 @@
-//apps/direct-transfair-mobile/app/(tabs)/admin/agencies/details.tsx
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/details.tsx
 // =========================================================
-// AGENCY DETAILS — Direct Transf'air v4.0
-// Design: Thème dynamique par rôle (Obsidian / Saphir / Forge / Émeraude)
+// AGENCY DETAILS — Direct Transf'air v4.1
+// Design: Thème CLAIR dynamique par rôle
 // ✅ Wallet agence v4 (plus balance/cash directs)
 // ✅ Actions suspendre/activer/supprimer
 // =========================================================
@@ -18,29 +17,54 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 
-// ─── Palettes par rôle ──────────────────────────────────
+// ─── Palettes CLAIRES par rôle ───────────────────────────
 const ROLE_THEMES = {
-  SUPER_ADMIN:   { g1: "#0A0A0F", g2: "#12121A", accent: "#D4A853", accentSoft: "rgba(212,168,83,0.15)", label: "SUPER ADMIN" },
-  COMPANY_ADMIN: { g1: "#030B1A", g2: "#071224", accent: "#34D399", accentSoft: "rgba(52,211,153,0.15)", label: "ADMIN SOCIÉTÉ" },
-  AGENT:         { g1: "#1A0E00", g2: "#211200", accent: "#F59E0B", accentSoft: "rgba(245,158,11,0.15)", label: "AGENT" },
-  USER:          { g1: "#0B1F14", g2: "#0F2A1C", accent: "#10B981", accentSoft: "rgba(16,185,129,0.15)", label: "CLIENT" },
+  SUPER_ADMIN:   { g1: "#FFF8F0", g2: "#FFF3E0", accent: "#B45309", accentSoft: "rgba(180,83,9,0.10)",   label: "SUPER ADMIN" },
+  COMPANY_ADMIN: { g1: "#F0F7FF", g2: "#E8F3FF", accent: "#1D4ED8", accentSoft: "rgba(29,78,216,0.10)",  label: "ADMIN SOCIÉTÉ" },
+  AGENT:         { g1: "#FFFBF0", g2: "#FFF8E1", accent: "#D97706", accentSoft: "rgba(217,119,6,0.10)",   label: "AGENT" },
+  USER:          { g1: "#F0FDF8", g2: "#E8FDF3", accent: "#059669", accentSoft: "rgba(5,150,105,0.10)",   label: "CLIENT" },
 } as const;
 
 const T = {
-  inkBorder: "#2A2A3A",
-  ghost: "rgba(255,255,255,0.06)",
-  ghostMid: "rgba(255,255,255,0.10)",
-  white: "#FFFFFF",
-  dim: "#8A9BB5",
-  dimMuted: "#4A6070",
-  red: "#EF4444",
-  green: "#22C55E",
-  amber: "#F59E0B",
+  surface:    "#FFFFFF",
+  surfaceAlt: "#F8FAFC",
+  border:     "#E2E8F0",
+  borderLt:   "#F1F5F9",
+  ink:        "#0F172A",
+  inkMid:     "#334155",
+  inkSub:     "#64748B",
+  inkMuted:   "#94A3B8",
+  white:      "#FFFFFF",
+  red:        "#DC2626",
+  redLt:      "#FEF2F2",
+  redBorder:  "#FECACA",
+  green:      "#16A34A",
+  greenLt:    "#F0FDF4",
+  greenBorder:"#BBF7D0",
+  amber:      "#D97706",
+  amberLt:    "#FFFBEB",
+  amberBorder:"#FDE68A",
   radius: { sm: 10, md: 14, lg: 20, xl: 26 },
   font: {
     display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
     sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+  },
+  shadow: {
+    card: {
+      shadowColor: "#64748B",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
+      elevation: 3,
+    },
+    soft: {
+      shadowColor: "#94A3B8",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 2,
+    },
   },
 };
 
@@ -61,7 +85,7 @@ function fmt(n: number, currency = "XOF"): string {
 function InfoRow({ label, value, icon, accent }: { label: string; value: string; icon: string; accent: string }) {
   return (
     <View style={irS.row}>
-      <View style={[irS.iconBox, { backgroundColor: `${accent}12` }]}>
+      <View style={[irS.iconBox, { backgroundColor: `${accent}12`, borderWidth: 1, borderColor: `${accent}20` }]}>
         <Ionicons name={icon as any} size={18} color={accent} />
       </View>
       <View style={{ flex: 1 }}>
@@ -72,39 +96,47 @@ function InfoRow({ label, value, icon, accent }: { label: string; value: string;
   );
 }
 const irS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16, gap: 14 },
-  iconBox: { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
-  label: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1, marginBottom: 3 },
-  value: { fontSize: 14, fontWeight: "700", color: T.white },
+  row:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 16, gap: 14 },
+  iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  label:   { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 3, textTransform: "uppercase" },
+  value:   { fontSize: 14, fontWeight: "700", color: T.ink },
 });
 
 // ─── Wallet Card ─────────────────────────────────────────
 function WalletCard({ wallet, accent }: { wallet: any; accent: string }) {
-  const balance = toNum(wallet?.balance);
-  const reserved = toNum(wallet?.reservedBalance ?? 0);
+  const balance   = toNum(wallet?.balance);
+  const reserved  = toNum(wallet?.reservedBalance ?? 0);
   const available = balance - reserved;
-  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
-  const currency = wallet?.currency ?? "XOF";
+  const pct       = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
+  const currency  = wallet?.currency ?? "XOF";
 
   return (
-    <View style={wcS.card}>
+    <View style={[wcS.card, { borderColor: `${accent}25`, ...T.shadow.card }]}>
+      {/* Top badges */}
       <View style={wcS.top}>
-        <View style={[wcS.badge, { backgroundColor: `${accent}15`, borderColor: `${accent}30` }]}>
+        <View style={[wcS.badge, { backgroundColor: `${accent}12`, borderColor: `${accent}30` }]}>
           <Text style={[wcS.badgeTxt, { color: accent, fontFamily: T.font.mono }]}>{currency}</Text>
         </View>
         {wallet?.isDefault && (
           <View style={wcS.defaultTag}>
+            <Ionicons name="star" size={8} color={T.amber} />
             <Text style={[wcS.defaultTxt, { fontFamily: T.font.sans }]}>Principal</Text>
           </View>
         )}
       </View>
-      <Text style={[wcS.amount, { color: T.white, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
+
+      {/* Amount */}
+      <Text style={[wcS.amount, { color: T.ink, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
         {fmt(balance, currency)}
       </Text>
       <Text style={[wcS.amtLabel, { color: accent, fontFamily: T.font.sans }]}>{currency}</Text>
+
+      {/* Progress bar */}
       <View style={wcS.progBg}>
         <View style={[wcS.progFill, { width: `${pct}%` as any, backgroundColor: accent }]} />
       </View>
+
+      {/* Footer */}
       <View style={wcS.footRow}>
         <View>
           <Text style={[wcS.footLabel, { fontFamily: T.font.sans }]}>Disponible</Text>
@@ -112,7 +144,7 @@ function WalletCard({ wallet, accent }: { wallet: any; accent: string }) {
         </View>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={[wcS.footLabel, { fontFamily: T.font.sans }]}>Réservé</Text>
-          <Text style={[wcS.footVal, { color: T.dim, fontFamily: T.font.mono }]}>{fmt(reserved, currency)}</Text>
+          <Text style={[wcS.footVal, { color: T.inkSub, fontFamily: T.font.mono }]}>{fmt(reserved, currency)}</Text>
         </View>
       </View>
     </View>
@@ -120,40 +152,41 @@ function WalletCard({ wallet, accent }: { wallet: any; accent: string }) {
 }
 const wcS = StyleSheet.create({
   card: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)",
+    backgroundColor: T.surface,
+    borderRadius: T.radius.lg,
+    padding: 20,
+    borderWidth: 1,
     marginBottom: 12,
   },
-  top: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  badge: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7, borderWidth: 1,
-  },
-  badgeTxt: { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  top:        { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  badge:      { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+  badgeTxt:   { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
   defaultTag: {
-    backgroundColor: "rgba(255,255,255,0.08)", paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)",
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: T.amberLt, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 6, borderWidth: 1, borderColor: T.amberBorder,
   },
-  defaultTxt: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.5 },
-  amount: { fontSize: 28, letterSpacing: -0.5, marginBottom: 2 },
-  amtLabel: { fontSize: 11, fontWeight: "800", marginBottom: 12 },
-  progBg: { height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 99, overflow: "hidden", marginBottom: 12 },
-  progFill: { height: 3, borderRadius: 99 },
-  footRow: { flexDirection: "row", justifyContent: "space-between" },
-  footLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 0.8, marginBottom: 2 },
-  footVal: { fontSize: 12, fontWeight: "800" },
+  defaultTxt: { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.5 },
+  amount:     { fontSize: 32, letterSpacing: -0.5, marginBottom: 2, fontWeight: "700" },
+  amtLabel:   { fontSize: 11, fontWeight: "800", marginBottom: 14 },
+  progBg:     { height: 4, backgroundColor: T.borderLt, borderRadius: 99, overflow: "hidden", marginBottom: 14 },
+  progFill:   { height: 4, borderRadius: 99 },
+  footRow:    { flexDirection: "row", justifyContent: "space-between" },
+  footLabel:  { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 0.8, marginBottom: 2, textTransform: "uppercase" },
+  footVal:    { fontSize: 13, fontWeight: "800" },
 });
 
 // ─── Action Box ───────────────────────────────────────────
-function ActionBox({ icon, label, color, bg, onPress, loading }: any) {
+function ActionBox({ icon, label, color, bg, borderColor, onPress, loading }: any) {
   const scale = React.useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
       <TouchableOpacity
-        style={[axS.box, { backgroundColor: bg, borderColor: `${color}30` }]}
+        style={[axS.box, { backgroundColor: bg, borderColor: borderColor ?? `${color}25` }]}
         onPress={onPress}
         disabled={loading}
         onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
         activeOpacity={1}
       >
         {loading
@@ -170,22 +203,22 @@ function ActionBox({ icon, label, color, bg, onPress, loading }: any) {
 const axS = StyleSheet.create({
   box: {
     alignItems: "center", justifyContent: "center",
-    paddingVertical: 18, borderRadius: T.radius.md, borderWidth: 1, gap: 8,
+    paddingVertical: 18, borderRadius: T.radius.md, borderWidth: 1.5, gap: 8,
   },
-  label: { fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
+  label: { fontSize: 11, fontWeight: "800", letterSpacing: 0.3 },
 });
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function AgencyDetailsScreen() {
-  const { id } = useLocalSearchParams();
-  const router = useRouter();
+  const { id }   = useLocalSearchParams();
+  const router   = useRouter();
   const { user } = useAuth();
 
-  const role = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
+  const role  = (user?.role ?? "COMPANY_ADMIN") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.COMPANY_ADMIN;
 
-  const [agency, setAgency] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [agency,     setAgency]     = useState<any>(null);
+  const [loading,    setLoading]    = useState(true);
   const [processing, setProcessing] = useState(false);
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
@@ -244,32 +277,34 @@ export default function AgencyDetailsScreen() {
 
   if (loading) {
     return (
-      <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View style={{ flex: 1, backgroundColor: theme.g1, justifyContent: "center", alignItems: "center" }}>
         <ActivityIndicator color={theme.accent} size="large" />
-      </LinearGradient>
+      </View>
     );
   }
 
   if (!agency) return null;
 
-  const isActive = agency.isActive;
-  const wallets = Array.isArray(agency.wallets) ? agency.wallets : [];
+  const isActive      = agency.isActive;
+  const wallets       = Array.isArray(agency.wallets) ? agency.wallets : [];
   const primaryWallet = wallets.find((w: any) => w.isDefault) ?? wallets[0];
-  const currency = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
+  const currency      = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
 
   return (
-    <LinearGradient colors={[theme.g1, theme.g2]} style={{ flex: 1 }}>
+    <View style={[s.root, { backgroundColor: theme.g1 }]}>
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="dark-content" backgroundColor={theme.g1} />
 
         {/* ── Header ── */}
-        <View style={s.header}>
+        <View style={[s.header, { backgroundColor: theme.g1, borderBottomColor: T.border }]}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
+            <Ionicons name="arrow-back" size={22} color={T.ink} />
           </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]} numberOfLines={1}>{agency.name}</Text>
+          <Text style={[s.headerTitle, { fontFamily: T.font.display, color: T.ink }]} numberOfLines={1}>
+            {agency.name}
+          </Text>
           <TouchableOpacity
-            style={[s.editBtn, { backgroundColor: `${theme.accent}20`, borderColor: `${theme.accent}30` }]}
+            style={[s.editBtn, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}30` }]}
             onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: agency.id } })}
           >
             <Ionicons name="pencil" size={18} color={theme.accent} />
@@ -281,25 +316,30 @@ export default function AgencyDetailsScreen() {
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
         >
-          {/* Status badge */}
+          {/* ── Status badges ── */}
           <View style={s.statusRow}>
-            <View style={[s.statusPill, { backgroundColor: isActive ? "rgba(34,197,94,0.15)" : "rgba(239,68,68,0.15)", borderColor: isActive ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)" }]}>
+            <View style={[
+              s.statusPill,
+              isActive
+                ? { backgroundColor: T.greenLt,  borderColor: T.greenBorder }
+                : { backgroundColor: T.redLt,    borderColor: T.redBorder },
+            ]}>
               <View style={[s.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
               <Text style={[s.statusTxt, { color: isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
                 {isActive ? "AGENCE ACTIVE" : "AGENCE SUSPENDUE"}
               </Text>
             </View>
-            <View style={[s.typePill, { borderColor: `${theme.accent}30` }]}>
+            <View style={[s.typePill, { borderColor: `${theme.accent}30`, backgroundColor: theme.accentSoft }]}>
               <Text style={[s.typeTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
                 {agency.type === "PARTNER" ? "PARTENAIRE" : "FILIALE"}
               </Text>
             </View>
           </View>
 
-          {/* Wallets */}
+          {/* ── Section label: Trésorerie ── */}
           <View style={s.sectionRow}>
             <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
-            <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
+            <Text style={[s.sectionLabel, { fontFamily: T.font.sans, color: T.inkSub }]}>
               TRÉSORERIE · {currency}
             </Text>
           </View>
@@ -310,47 +350,49 @@ export default function AgencyDetailsScreen() {
             ))
           ) : (
             <View style={s.noWallet}>
-              <Ionicons name="wallet-outline" size={24} color={T.dim} />
+              <Ionicons name="wallet-outline" size={22} color={T.inkMuted} />
               <Text style={[s.noWalletTxt, { fontFamily: T.font.sans }]}>Aucun wallet créé</Text>
             </View>
           )}
 
-          {/* Informations */}
-          <View style={s.card}>
+          {/* ── Informations ── */}
+          <View style={[s.card, T.shadow.card]}>
             <View style={s.sectionRow}>
               <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>INFORMATIONS</Text>
+              <Text style={[s.sectionLabel, { fontFamily: T.font.sans, color: T.inkSub }]}>INFORMATIONS</Text>
             </View>
-            <InfoRow label="CODE AGENCE" value={agency.code ?? "N/A"} icon="qr-code-outline" accent={theme.accent} />
-            <InfoRow label="DEVISE PRINCIPALE" value={currency} icon="cash-outline" accent={theme.accent} />
-            <InfoRow label="EMAIL" value={agency.email ?? "N/A"} icon="mail-outline" accent={theme.accent} />
-            <InfoRow label="TÉLÉPHONE" value={agency.phone ?? "N/A"} icon="call-outline" accent={theme.accent} />
-            <InfoRow label="VILLE" value={agency.city ?? "N/A"} icon="location-outline" accent={theme.accent} />
-            <InfoRow label="ADRESSE" value={agency.address ?? "N/A"} icon="map-outline" accent={theme.accent} />
-            <InfoRow label="PAYS" value={agency.country ?? "N/A"} icon="flag-outline" accent={theme.accent} />
+            <InfoRow label="CODE AGENCE"       value={agency.code    ?? "N/A"} icon="qr-code-outline"  accent={theme.accent} />
+            <InfoRow label="DEVISE PRINCIPALE" value={currency}               icon="cash-outline"      accent={theme.accent} />
+            <InfoRow label="EMAIL"             value={agency.email   ?? "N/A"} icon="mail-outline"      accent={theme.accent} />
+            <InfoRow label="TÉLÉPHONE"         value={agency.phone   ?? "N/A"} icon="call-outline"      accent={theme.accent} />
+            <InfoRow label="VILLE"             value={agency.city    ?? "N/A"} icon="location-outline"  accent={theme.accent} />
+            <InfoRow label="ADRESSE"           value={agency.address ?? "N/A"} icon="map-outline"       accent={theme.accent} />
+            <InfoRow label="PAYS"              value={agency.country ?? "N/A"} icon="flag-outline"      accent={theme.accent} />
           </View>
 
-          {/* Agents */}
+          {/* ── Agents ── */}
           {Array.isArray(agency.agents) && agency.agents.length > 0 && (
-            <View style={s.card}>
+            <View style={[s.card, T.shadow.card]}>
               <View style={s.sectionRow}>
-                <View style={[s.sectionDot, { backgroundColor: T.dim }]} />
-                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>AGENTS ({agency.agents.length})</Text>
+                <View style={[s.sectionDot, { backgroundColor: T.inkMuted }]} />
+                <Text style={[s.sectionLabel, { fontFamily: T.font.sans, color: T.inkSub }]}>
+                  AGENTS ({agency.agents.length})
+                </Text>
               </View>
               {agency.agents.map((agent: any) => (
                 <View key={agent.id} style={s.agentRow}>
-                  <View style={[s.agentAvatar, { backgroundColor: `${theme.accent}15` }]}>
+                  <View style={[s.agentAvatar, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}20`, borderWidth: 1 }]}>
                     <Text style={[s.agentAvatarTxt, { color: theme.accent, fontFamily: T.font.display }]}>
                       {(agent.firstName?.[0] ?? "A").toUpperCase()}
                     </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[s.agentName, { fontFamily: T.font.sans }]}>
+                    <Text style={[s.agentName, { fontFamily: T.font.sans, color: T.ink }]}>
                       {agent.firstName} {agent.lastName}
                     </Text>
-                    <Text style={[s.agentEmail, { fontFamily: T.font.sans }]}>{agent.email}</Text>
+                    <Text style={[s.agentEmail, { fontFamily: T.font.sans, color: T.inkSub }]}>{agent.email}</Text>
                   </View>
-                  <View style={[s.roleBadge, { borderColor: `${theme.accent}30` }]}>
+                  <View style={[s.roleBadge, { borderColor: `${theme.accent}25`, backgroundColor: theme.accentSoft }]}>
                     <Text style={[s.roleBadgeTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
                       {agent.role}
                     </Text>
@@ -360,10 +402,10 @@ export default function AgencyDetailsScreen() {
             </View>
           )}
 
-          {/* Actions */}
+          {/* ── Actions ── */}
           <View style={s.sectionRow}>
             <View style={[s.sectionDot, { backgroundColor: T.amber }]} />
-            <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ACTIONS</Text>
+            <Text style={[s.sectionLabel, { fontFamily: T.font.sans, color: T.inkSub }]}>ACTIONS</Text>
           </View>
 
           <View style={s.actionsRow}>
@@ -371,7 +413,8 @@ export default function AgencyDetailsScreen() {
               icon="pencil-outline"
               label="Modifier"
               color={theme.accent}
-              bg={`${theme.accent}10`}
+              bg={theme.accentSoft}
+              borderColor={`${theme.accent}25`}
               onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/edit", params: { id: agency.id } })}
               loading={false}
             />
@@ -379,7 +422,8 @@ export default function AgencyDetailsScreen() {
               icon={isActive ? "pause-circle-outline" : "play-circle-outline"}
               label={isActive ? "Suspendre" : "Activer"}
               color={T.amber}
-              bg="rgba(245,158,11,0.10)"
+              bg={T.amberLt}
+              borderColor={T.amberBorder}
               onPress={handleToggleStatus}
               loading={processing}
             />
@@ -387,7 +431,8 @@ export default function AgencyDetailsScreen() {
               icon="trash-outline"
               label="Supprimer"
               color={T.red}
-              bg="rgba(239,68,68,0.10)"
+              bg={T.redLt}
+              borderColor={T.redBorder}
               onPress={handleDelete}
               loading={false}
             />
@@ -396,30 +441,36 @@ export default function AgencyDetailsScreen() {
           <View style={{ height: 100 }} />
         </Animated.ScrollView>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
+  root: { flex: 1 },
+
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 16,
     gap: 14,
+    borderBottomWidth: 1,
   },
   backBtn: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.10)",
+    backgroundColor: T.surface,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
   },
-  headerTitle: { flex: 1, color: T.white, fontSize: 20, fontWeight: "700" },
+  headerTitle: { flex: 1, fontSize: 20, fontWeight: "700" },
   editBtn: {
     width: 40, height: 40, borderRadius: 12,
     justifyContent: "center", alignItems: "center", borderWidth: 1,
   },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  scroll: { paddingHorizontal: 20, paddingTop: 20 },
 
-  statusRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 },
+  statusRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 22 },
   statusPill: {
     flexDirection: "row", alignItems: "center", gap: 6,
     paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1,
@@ -428,44 +479,44 @@ const s = StyleSheet.create({
   statusTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
   typePill: {
     paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10, borderWidth: 1,
-    backgroundColor: T.ghost,
   },
   typeTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
 
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  sectionRow:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  sectionDot:   { width: 5, height: 5, borderRadius: 99 },
+  sectionLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 1.5, textTransform: "uppercase" },
 
   noWallet: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    padding: 16, backgroundColor: T.ghost, borderRadius: T.radius.md,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.06)", marginBottom: 14,
+    padding: 16, backgroundColor: T.surfaceAlt, borderRadius: T.radius.md,
+    borderWidth: 1, borderColor: T.border, marginBottom: 14,
   },
-  noWalletTxt: { color: T.dim, fontSize: 13, fontWeight: "600" },
+  noWalletTxt: { color: T.inkSub, fontSize: 13, fontWeight: "600" },
 
   card: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 18, marginBottom: 16,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.07)",
+    backgroundColor: T.surface,
+    borderRadius: T.radius.lg,
+    padding: 20, marginBottom: 16,
+    borderWidth: 1, borderColor: T.border,
   },
 
   agentRow: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.05)",
+    borderBottomWidth: 1, borderBottomColor: T.borderLt,
   },
   agentAvatar: {
     width: 38, height: 38, borderRadius: 11,
     justifyContent: "center", alignItems: "center",
   },
   agentAvatarTxt: { fontSize: 16, fontWeight: "900" },
-  agentName: { fontSize: 14, fontWeight: "700", color: T.white, marginBottom: 2 },
-  agentEmail: { fontSize: 11, color: T.dim, fontWeight: "600" },
+  agentName:      { fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  agentEmail:     { fontSize: 11, fontWeight: "600" },
   roleBadge: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
-    backgroundColor: T.ghost,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 8, borderWidth: 1,
   },
   roleBadgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
 
-  actionsRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+  actionsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
 });
