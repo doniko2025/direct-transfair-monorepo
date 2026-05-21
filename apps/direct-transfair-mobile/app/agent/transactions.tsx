@@ -1,11 +1,11 @@
 // apps/direct-transfair-mobile/app/agent/transactions.tsx
 // =========================================================
-// AGENT TRANSACTIONS v5.1 — Direct Transf'air
-// ✅ FIX : logique direction correcte pour l'AGENT
-//    - AGENCY_REFILL  → entrant  → badge "Reçu"   (vert +)
-//    - DEPOSIT        → sortant  → badge "Déposé"  (amber -)
-//    - Retrait validé → sortant  → badge "Payé"    (green -)
-// ✅ FIX : filtre transactions — inclut recharges reçues
+// AGENT TRANSACTIONS v5.2 — Direct Transf'air
+// ✅ FIX : retraits validés par l'agent récupérés via /withdrawals
+//    puis croisés avec /transactions pour affichage complet
+// ✅ AGENCY_REFILL  → entrant  → badge "Reçu"   (teal +)
+// ✅ DEPOSIT        → sortant  → badge "Déposé"  (amber -)
+// ✅ Retrait validé → sortant  → badge "Payé"    (green -)
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -58,106 +58,72 @@ function fmtDate(iso: string): string {
 
 // =========================================================
 // LOGIQUE DIRECTION AGENT
-// AGENCY_REFILL : sa caisse a été rechargée → entrant (vert +)
-// DEPOSIT       : il dépose vers un client   → sortant (amber -)
-// Retrait traité: il paye un client          → sortant (green -, badge Payé)
 // =========================================================
 function resolveAgentDirection(tx: any, agentId: string): {
   isIncoming: boolean;
-  label:      string;
-  sublabel:   string;
-  icon:       string;
-  iconBg:     string;
-  iconColor:  string;
-  badgeLabel: string;
-  badgeColor: string;
-  badgeBg:    string;
-  badgeBorder:string;
-  amountSign: string;
-  amountColor:string;
+  label: string; sublabel: string;
+  icon: string; iconBg: string; iconColor: string;
+  badgeLabel: string; badgeColor: string; badgeBg: string; badgeBorder: string;
+  amountSign: string; amountColor: string;
 } {
   const type   = String(tx.type ?? "").toUpperCase();
   const status = String(tx.status ?? "").toUpperCase();
-  const myId   = String(agentId);
-  const processedById = String(tx.withdrawal?.processedById ?? "");
-
   const isRefill   = type === "AGENCY_REFILL" || type === "REFILL";
   const isDeposit  = type === "DEPOSIT";
-  const isMyPayout = processedById === myId && processedById !== "";
+  // ✅ Retrait validé : marqué via _agentPayout injecté au chargement
+  const isMyPayout = tx._agentPayout === true;
 
-  // ── RECHARGE CAISSE (entrante) ──────────────────────────
   if (isRefill) {
     return {
-      isIncoming:  true,
-      label:       "Recharge caisse",
-      sublabel:    tx.sender
+      isIncoming: true,
+      label:      "Recharge caisse",
+      sublabel:   tx.sender
         ? `${tx.sender.firstName ?? ""} ${tx.sender.lastName ?? ""}`.trim()
         : "Admin",
-      icon:        "arrow-down-circle-outline",
-      iconBg:      C.tealBg,
-      iconColor:   C.teal,
-      badgeLabel:  status === "PAID" ? "Reçu ✓" : status === "PENDING" ? "En attente" : status,
-      badgeColor:  status === "PAID" ? C.teal    : C.amber,
-      badgeBg:     status === "PAID" ? C.tealBg  : C.amberBg,
+      icon: "arrow-down-circle-outline", iconBg: C.tealBg, iconColor: C.teal,
+      badgeLabel:  status === "PAID" ? "Reçu ✓" : "En attente",
+      badgeColor:  status === "PAID" ? C.teal   : C.amber,
+      badgeBg:     status === "PAID" ? C.tealBg : C.amberBg,
       badgeBorder: status === "PAID" ? C.tealBorder : C.amberBorder,
-      amountSign:  "+",
-      amountColor: C.teal,
+      amountSign: "+", amountColor: C.teal,
     };
   }
 
-  // ── DÉPÔT CLIENT (sortant) ───────────────────────────────
   if (isDeposit) {
     return {
-      isIncoming:  false,
-      label:       "Dépôt client",
-      sublabel:    tx.beneficiary?.fullName ?? tx.beneficiary?.phone ?? "Client",
-      icon:        "arrow-up-circle-outline",
-      iconBg:      C.amberBg,
-      iconColor:   C.amber,
+      isIncoming: false,
+      label:   "Dépôt client",
+      sublabel: tx.beneficiary?.fullName ?? tx.beneficiary?.phone ?? "Client",
+      icon: "arrow-up-circle-outline", iconBg: C.amberBg, iconColor: C.amber,
       badgeLabel:  status === "PAID" ? "Déposé ✓" : "En attente",
-      badgeColor:  status === "PAID" ? C.amber    : C.violet,
-      badgeBg:     status === "PAID" ? C.amberBg  : C.violetLight,
+      badgeColor:  status === "PAID" ? C.amber   : C.violet,
+      badgeBg:     status === "PAID" ? C.amberBg : C.violetLight,
       badgeBorder: status === "PAID" ? C.amberBorder : C.violetBorder,
-      amountSign:  "−",
-      amountColor: C.amber,
+      amountSign: "−", amountColor: C.amber,
     };
   }
 
-  // ── RETRAIT VALIDÉ PAR CET AGENT (sortant — il a remis du cash) ──
   if (isMyPayout) {
-    const receivedAmt = toNum(tx.receivedAmount);
     return {
-      isIncoming:  false,
-      label:       "Retrait client payé",
-      sublabel:    tx.beneficiary?.fullName ?? tx.sender
-        ? `${tx.sender?.firstName ?? ""} ${tx.sender?.lastName ?? ""}`.trim()
-        : "Client",
-      icon:        "cash-outline",
-      iconBg:      C.greenBg,
-      iconColor:   C.green,
+      isIncoming: false,
+      label:    "Retrait client payé",
+      sublabel: tx.beneficiary?.fullName
+        ?? (tx.sender ? `${tx.sender?.firstName ?? ""} ${tx.sender?.lastName ?? ""}`.trim() : "Client"),
+      icon: "cash-outline", iconBg: C.greenBg, iconColor: C.green,
       badgeLabel:  "Payé ✓",
-      badgeColor:  C.green,
-      badgeBg:     C.greenBg,
-      badgeBorder: C.greenBorder,
-      amountSign:  "−",
-      amountColor: C.green,
+      badgeColor:  C.green, badgeBg: C.greenBg, badgeBorder: C.greenBorder,
+      amountSign: "−", amountColor: C.green,
     };
   }
 
-  // ── AUTRE (ex: transaction liée à l'agence) ──────────────
   return {
-    isIncoming:  false,
-    label:       "Transaction",
-    sublabel:    tx.reference ?? "—",
-    icon:        "swap-horizontal-outline",
-    iconBg:      C.violetLight,
-    iconColor:   C.violet,
+    isIncoming: false,
+    label:    "Transaction",
+    sublabel: tx.reference ?? "—",
+    icon: "swap-horizontal-outline", iconBg: C.violetLight, iconColor: C.violet,
     badgeLabel:  status === "PAID" ? "Traité" : status,
-    badgeColor:  C.violet,
-    badgeBg:     C.violetLight,
-    badgeBorder: C.violetBorder,
-    amountSign:  "−",
-    amountColor: C.violet,
+    badgeColor:  C.violet, badgeBg: C.violetLight, badgeBorder: C.violetBorder,
+    amountSign: "−", amountColor: C.violet,
   };
 }
 
@@ -190,8 +156,7 @@ function TxCard({ item, userId }: { item: Transaction; userId?: string }) {
 
   const dir = resolveAgentDirection(tx, userId ?? "");
 
-  // Montant à afficher — priorité à receivedAmount si retrait
-  const isMyPayout = String(tx.withdrawal?.processedById ?? "") === String(userId ?? "") && tx.withdrawal?.processedById;
+  const isMyPayout = tx._agentPayout === true;
   let displayAmount   = toNum(tx.amount);
   let displayCurrency = tx.currency ?? "XOF";
   if (isMyPayout && toNum(tx.receivedAmount) > 0) {
@@ -279,11 +244,91 @@ export default function AgentHistoryScreen() {
   const loadTransactions = useCallback(async () => {
     try {
       if (!user?.id) { setTransactions([]); setLoading(false); setRefreshing(false); return; }
-      const data = await api.getTransactions();
-      setTransactions(Array.isArray(data) ? data : []);
+
+      const myId = String(user.id);
+
+      // ✅ Chargement parallèle : transactions + withdrawals traités par l'agent
+      const [txList, wdList] = await Promise.allSettled([
+        api.getTransactions(),
+        api.getWithdrawals(),
+      ]);
+
+      const allTx: any[] = txList.status === "fulfilled" ? txList.value : [];
+      const allWd: any[] = wdList.status === "fulfilled" ? wdList.value : [];
+
+      // IDs de transactions déjà liées aux retraits que l'agent a traités
+      const processedWithdrawals = allWd.filter(
+        (w) => String(w.processedById ?? "") === myId && w.transactionId
+      );
+      const payoutTxIds = new Set(processedWithdrawals.map((w) => String(w.transactionId)));
+
+      // ✅ Construire la liste finale des transactions pertinentes pour l'agent
+      const myTxs: any[] = [];
+      const seenIds = new Set<string>();
+
+      for (const tx of allTx) {
+        const type = String(tx.type ?? "").toUpperCase();
+        const txId = String(tx.id);
+
+        // Recharge caisse
+        if (type === "AGENCY_REFILL" || type === "REFILL") {
+          if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
+          continue;
+        }
+        // Dépôt initié par l'agent
+        if (type === "DEPOSIT" && String(tx.senderId ?? "") === myId) {
+          if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
+          continue;
+        }
+        // ✅ Retrait validé par l'agent (croisement avec /withdrawals)
+        if (payoutTxIds.has(txId)) {
+          if (!seenIds.has(txId)) {
+            seenIds.add(txId);
+            // Marquer la tx pour que resolveAgentDirection l'identifie correctement
+            myTxs.push({ ...tx, _agentPayout: true });
+          }
+          continue;
+        }
+        // Envoi initié par l'agent
+        if (String(tx.senderId ?? "") === myId) {
+          if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
+        }
+      }
+
+      // ✅ Retraits dont la transaction n'est PAS dans allTx (endpoint limité)
+      // → créer une transaction synthétique à partir du withdrawal
+      for (const w of processedWithdrawals) {
+        const txId = String(w.transactionId);
+        if (!seenIds.has(txId)) {
+          seenIds.add(txId);
+          myTxs.push({
+            id:             txId,
+            reference:      w.code ?? txId.slice(0, 8),
+            amount:         toNum(w.amount),
+            fees:           0,
+            total:          toNum(w.amount),
+            currency:       w.currency ?? "XOF",
+            status:         w.status ?? "PAID",
+            type:           "WITHDRAWAL",
+            createdAt:      w.paidAt ?? w.createdAt,
+            _agentPayout:   true,
+          });
+        }
+      }
+
+      // Tri antéchronologique
+      myTxs.sort((a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      setTransactions(myTxs);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { setTransactions([]); }
-    finally { setLoading(false); setRefreshing(false); }
+    } catch {
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [user]);
 
   useFocusEffect(useCallback(() => {
@@ -292,24 +337,8 @@ export default function AgentHistoryScreen() {
   }, [loadTransactions]));
 
   const onRefresh = () => { setRefreshing(true); void loadTransactions(); };
-  const myId = String(user?.id ?? "");
 
-  // ✅ FIX : filtre élargi — inclut recharges caisse + dépôts + retraits validés
-  const myTxs = transactions.filter((tx) => {
-    const t    = tx as any;
-    const type = String(t.type ?? "").toUpperCase();
-    // Recharge caisse reçue par l'agence de cet agent
-    if (type === "AGENCY_REFILL" || type === "REFILL") return true;
-    // Dépôt initié par cet agent
-    if (type === "DEPOSIT" && String(t.senderId ?? "") === myId) return true;
-    // Retrait validé par cet agent
-    if (String(t.withdrawal?.processedById ?? "") === myId) return true;
-    // Envoi initié par cet agent
-    if (String(t.senderId ?? "") === myId) return true;
-    return false;
-  });
-
-  const filtered = myTxs.filter((tx) => {
+  const filtered = transactions.filter((tx) => {
     if (!q.trim()) return true;
     const s = q.toLowerCase();
     const t = tx as any;
@@ -322,9 +351,9 @@ export default function AgentHistoryScreen() {
   });
 
   // Compteurs
-  const refillCount   = myTxs.filter((tx) => { const t = String((tx as any).type ?? "").toUpperCase(); return t === "AGENCY_REFILL" || t === "REFILL"; }).length;
-  const payoutCount   = myTxs.filter((tx) => String((tx as any).withdrawal?.processedById ?? "") === myId).length;
-  const depositCount  = myTxs.filter((tx) => { const t = tx as any; return String(t.type ?? "").toUpperCase() === "DEPOSIT" && String(t.senderId ?? "") === myId; }).length;
+  const refillCount  = transactions.filter((tx) => { const t = String((tx as any).type ?? "").toUpperCase(); return t === "AGENCY_REFILL" || t === "REFILL"; }).length;
+  const payoutCount  = transactions.filter((tx) => (tx as any)._agentPayout === true).length;
+  const depositCount = transactions.filter((tx) => { const t = tx as any; return String(t.type ?? "").toUpperCase() === "DEPOSIT"; }).length;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -352,7 +381,6 @@ export default function AgentHistoryScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Barre de recherche */}
         <View style={s.searchBox}>
           <Ionicons name="search" size={15} color={C.heroDim} />
           <TextInput
@@ -371,11 +399,11 @@ export default function AgentHistoryScreen() {
       </View>
 
       {/* Mini stats */}
-      {!loading && myTxs.length > 0 && (
+      {!loading && transactions.length > 0 && (
         <View style={s.statsRow}>
-          <StatCard icon="arrow-down-circle-outline" label="Recharges"  value={String(refillCount)}  accent={C.teal}   bg={C.tealBg}   />
-          <StatCard icon="cash-outline"              label="Retraits"   value={String(payoutCount)}  accent={C.green}  bg={C.greenBg}  />
-          <StatCard icon="arrow-up-circle-outline"   label="Dépôts"     value={String(depositCount)} accent={C.amber}  bg={C.amberBg}  />
+          <StatCard icon="arrow-down-circle-outline" label="Recharges" value={String(refillCount)}  accent={C.teal}  bg={C.tealBg}  />
+          <StatCard icon="cash-outline"              label="Retraits"  value={String(payoutCount)}  accent={C.green} bg={C.greenBg} />
+          <StatCard icon="arrow-up-circle-outline"   label="Dépôts"    value={String(depositCount)} accent={C.amber} bg={C.amberBg} />
         </View>
       )}
 

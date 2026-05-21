@@ -1,23 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.0 — Direct Transf'air
-// ✅ Logique isIncoming correcte pour les 4 rôles :
-//
-//  SUPER_ADMIN   : entrant = SERVICE_PAYMENT (encaissement société)
-//                  sortant = REFUND (remboursement excédent admin)
-//                  Ne voit PAS les dépôts agences ni recharges caisses
-//
-//  COMPANY_ADMIN : entrant = recipientId === userId, DEPOSIT, REFUND
-//                  sortant = senderId === userId, AGENCY_REFILL
-//
-//  AGENT         : entrant = AGENCY_REFILL (recharge caisse reçue)
-//                  sortant = DEPOSIT (dépôt vers client)
-//
-//  CLIENT (USER) : entrant = recipientId === userId, DEPOSIT
-//                  sortant = senderId === userId
-//
-// ✅ Badge "Reçu" si entrant + statut PAID
-// ✅ Badge "Payé" si sortant + statut PAID
+// TRANSACTIONS HISTORY v6.1 — Direct Transf'air
+// ✅ AGENT : retraits validés récupérés via /withdrawals
+//    puis croisés avec /transactions + tx synthétiques si besoin
+// ✅ Logique isIncoming correcte pour les 4 rôles
+// ✅ Badge "Reçu" si entrant + PAID / "Payé" si sortant + PAID
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
@@ -89,49 +76,30 @@ function fmtDate(iso: string): string {
 }
 
 // =========================================================
-// LOGIQUE DIRECTION — cœur du fichier
-// Détermine si une transaction est entrante ou sortante
-// selon le rôle de l'utilisateur connecté.
+// LOGIQUE DIRECTION — tous rôles
 // =========================================================
 function resolveDirection(tx: any, userId?: string, role?: string): {
   isIncoming: boolean;
-  label: string;
-  icon: string;
-  iconBg: string;
-  iconColor: string;
+  label: string; icon: string; iconBg: string; iconColor: string;
 } {
-  const type    = String(tx.type ?? "").toUpperCase();
-  const method  = String(tx.payoutMethod ?? "").toUpperCase();
-
-  const isB2B      = type === "SERVICE_PAYMENT";
-  const isRefill   = type === "AGENCY_REFILL" || type === "REFILL";
-  const isDeposit  = type === "DEPOSIT" || type === "TOP_UP";
-  const isRefund   = type === "REFUND" || tx.status === "REFUNDED";
+  const type   = String(tx.type ?? "").toUpperCase();
+  const isB2B     = type === "SERVICE_PAYMENT";
+  const isRefill  = type === "AGENCY_REFILL" || type === "REFILL";
+  const isDeposit = type === "DEPOSIT" || type === "TOP_UP";
+  const isRefund  = type === "REFUND" || tx.status === "REFUNDED";
 
   switch (role) {
-
-    // ── SUPER_ADMIN ──────────────────────────────────────
-    // Entrant : SERVICE_PAYMENT (une société paie la plateforme)
-    // Sortant : REFUND (il rembourse un excédent à un admin société)
-    // Il n'est PAS impliqué dans les dépôts agences / recharges caisses
     case "SUPER_ADMIN": {
-      const incoming = isB2B || isRefund && tx.recipientId === userId;
+      const incoming = isB2B || (isRefund && tx.recipientId === userId);
       return incoming
-        ? { isIncoming: true,  label: "Encaissement société",   icon: "arrow-down-circle-outline",  iconBg: C.greenPale, iconColor: C.green  }
-        : { isIncoming: false, label: "Remboursement admin",     icon: "return-down-forward-outline",iconBg: C.violetBg,  iconColor: C.violet };
+        ? { isIncoming: true,  label: "Encaissement société",   icon: "arrow-down-circle-outline",   iconBg: C.greenPale, iconColor: C.green  }
+        : { isIncoming: false, label: "Remboursement admin",     icon: "return-down-forward-outline", iconBg: C.violetBg,  iconColor: C.violet };
     }
 
-    // ── COMPANY_ADMIN ────────────────────────────────────
-    // Entrant : reçoit un remboursement (REFUND), un dépôt (DEPOSIT)
-    //           ou est le destinataire (recipientId)
-    // Sortant : envoie de l'argent, recharge une agence (AGENCY_REFILL)
     case "COMPANY_ADMIN": {
-      const incoming =
-        isDeposit ||
-        isRefund ||
-        tx.recipientId === userId;
+      const incoming = isDeposit || isRefund || tx.recipientId === userId;
       if (isRefill)
-        return { isIncoming: false, label: "Recharge agence",   icon: "arrow-up-circle-outline",    iconBg: C.amberBg,   iconColor: C.amber  };
+        return { isIncoming: false, label: "Recharge agence",   icon: "arrow-up-circle-outline",     iconBg: C.amberBg,   iconColor: C.amber  };
       return incoming
         ? { isIncoming: true,  label: isDeposit ? "Dépôt reçu" : isRefund ? "Remboursement reçu" : "Transfert reçu",
             icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green  }
@@ -139,27 +107,21 @@ function resolveDirection(tx: any, userId?: string, role?: string): {
             icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red    };
     }
 
-    // ── AGENT ────────────────────────────────────────────
-    // Entrant : AGENCY_REFILL (sa caisse a été rechargée par l'admin)
-    // Sortant : DEPOSIT (il dépose vers un client)
     case "AGENT": {
+      // ✅ Retrait validé par l'agent → sortant (marqué _agentPayout)
+      if (tx._agentPayout)
+        return { isIncoming: false, label: "Retrait client payé",   icon: "cash-outline",                iconBg: C.greenPale, iconColor: C.green  };
       if (isRefill)
-        return { isIncoming: true,  label: "Recharge caisse reçue", icon: "arrow-down-circle-outline",  iconBg: C.greenPale, iconColor: C.green  };
+        return { isIncoming: true,  label: "Recharge caisse reçue", icon: "arrow-down-circle-outline",   iconBg: C.greenPale, iconColor: C.green  };
       if (isDeposit)
-        return { isIncoming: false, label: "Dépôt vers client",      icon: "arrow-up-circle-outline",    iconBg: C.amberBg,   iconColor: C.amber  };
+        return { isIncoming: false, label: "Dépôt vers client",     icon: "arrow-up-circle-outline",     iconBg: C.amberBg,   iconColor: C.amber  };
       return tx.senderId === userId
         ? { isIncoming: false, label: "Envoi d'argent",    icon: "paper-plane-outline",      iconBg: C.redBg,     iconColor: C.red    }
         : { isIncoming: true,  label: "Transfert reçu",    icon: "arrow-down-circle-outline",iconBg: C.greenPale, iconColor: C.green  };
     }
 
-    // ── CLIENT (USER) ────────────────────────────────────
-    // Entrant : recipientId === userId, ou DEPOSIT
-    // Sortant : senderId === userId
     default: {
-      const incoming =
-        isDeposit ||
-        tx.recipientId === userId ||
-        (tx.senderId !== userId && !tx.beneficiaryId);
+      const incoming = isDeposit || tx.recipientId === userId || (tx.senderId !== userId && !tx.beneficiaryId);
       return incoming
         ? { isIncoming: true,  label: isDeposit ? "Dépôt en agence" : "Transfert reçu",
             icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green  }
@@ -178,16 +140,13 @@ function TxCard({ item, userId, userRole }: {
 
   const dir = resolveDirection(item, userId, userRole);
 
-  // Badge statut — "Reçu" si entrant + PAID, "Payé" si sortant + PAID
   const rawSt = STATUS_MAP[item.status] ?? {
     label: item.status, labelIncoming: item.status,
     color: C.slate, bg: C.slateBg, border: C.slateBorder, icon: "help-circle-outline",
   };
   const badgeLabel = dir.isIncoming ? rawSt.labelIncoming : rawSt.label;
-
   const amount = toNum(item.amount);
 
-  // Nom affiché selon direction
   const counterpart = dir.isIncoming
     ? (item.sender?.firstName
         ? `${item.sender.firstName} ${item.sender.lastName ?? ""}`.trim()
@@ -205,11 +164,8 @@ function TxCard({ item, userId, userRole }: {
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
-        {/* Barre latérale */}
         <View style={[tc.sideBar, { backgroundColor: dir.isIncoming ? C.green : C.red }]} />
-
         <View style={tc.content}>
-          {/* Ligne principale */}
           <View style={tc.top}>
             <View style={[tc.iconBox, { backgroundColor: dir.iconBg }]}>
               <Ionicons name={dir.icon as any} size={18} color={dir.iconColor} />
@@ -235,10 +191,7 @@ function TxCard({ item, userId, userRole }: {
               <Text style={[tc.currency, { fontFamily: C.font.mono }]}>{item.currency}</Text>
             </View>
           </View>
-
-          {/* Pied : badge statut + conversion éventuelle */}
           <View style={tc.bottom}>
-            {/* Conversion multi-devises */}
             {item.targetCurrency && item.targetCurrency !== item.currency && (
               <View style={tc.convPill}>
                 <Ionicons name="swap-horizontal-outline" size={10} color={C.blue} />
@@ -247,7 +200,6 @@ function TxCard({ item, userId, userRole }: {
                 </Text>
               </View>
             )}
-            {/* Badge statut */}
             <View style={[tc.statusPill, { backgroundColor: rawSt.bg, borderColor: rawSt.border }]}>
               <Ionicons name={rawSt.icon as any} size={10} color={rawSt.color} />
               <Text style={[tc.statusTxt, { color: rawSt.color, fontFamily: C.font.sans }]}>
@@ -285,6 +237,7 @@ export default function TransactionsScreen() {
   const router   = useRouter();
   const { user } = useAuth();
   const isAdmin  = user?.role === "SUPER_ADMIN" || user?.role === "COMPANY_ADMIN";
+  const isAgent  = user?.role === "AGENT";
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -297,17 +250,89 @@ export default function TransactionsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const res  = isAdmin ? await api.adminGetTransactions() : await api.getTransactions();
-      const list = Array.isArray(res) ? res : [];
+      let list: any[] = [];
+
+      if (isAdmin) {
+        const res = await api.adminGetTransactions();
+        list = Array.isArray(res) ? res : [];
+
+      } else if (isAgent) {
+        // ✅ Chargement parallèle pour l'agent
+        const myId = String(user?.id ?? "");
+        const [txRes, wdRes] = await Promise.allSettled([
+          api.getTransactions(),
+          api.getWithdrawals(),
+        ]);
+
+        const allTx: any[] = txRes.status === "fulfilled" ? txRes.value : [];
+        const allWd: any[] = wdRes.status === "fulfilled" ? wdRes.value : [];
+
+        const processedWithdrawals = allWd.filter(
+          (w) => String(w.processedById ?? "") === myId && w.transactionId
+        );
+        const payoutTxIds = new Set(processedWithdrawals.map((w) => String(w.transactionId)));
+
+        const seenIds = new Set<string>();
+
+        for (const tx of allTx) {
+          const type = String(tx.type ?? "").toUpperCase();
+          const txId = String(tx.id);
+
+          if (type === "AGENCY_REFILL" || type === "REFILL") {
+            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
+            continue;
+          }
+          if (type === "DEPOSIT" && String(tx.senderId ?? "") === myId) {
+            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
+            continue;
+          }
+          if (payoutTxIds.has(txId)) {
+            if (!seenIds.has(txId)) { seenIds.add(txId); list.push({ ...tx, _agentPayout: true }); }
+            continue;
+          }
+          if (String(tx.senderId ?? "") === myId) {
+            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
+          }
+        }
+
+        // Transactions synthétiques pour les retraits sans tx dans /transactions
+        for (const w of processedWithdrawals) {
+          const txId = String(w.transactionId);
+          if (!seenIds.has(txId)) {
+            seenIds.add(txId);
+            list.push({
+              id:           txId,
+              reference:    w.code ?? txId.slice(0, 8),
+              amount:       toNum(w.amount),
+              fees:         0,
+              total:        toNum(w.amount),
+              currency:     w.currency ?? "XOF",
+              status:       w.status ?? "PAID",
+              type:         "WITHDRAWAL",
+              createdAt:    w.paidAt ?? w.createdAt,
+              _agentPayout: true,
+            });
+          }
+        }
+
+      } else {
+        const res = await api.getTransactions();
+        list = Array.isArray(res) ? res : [];
+      }
+
       setTransactions(
         list.sort((a: any, b: any) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
       );
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { setTransactions([]); }
-    finally { setLoading(false); setRefreshing(false); }
-  }, [isAdmin]);
+    } catch {
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [isAdmin, isAgent, user?.id]);
 
   useFocusEffect(useCallback(() => {
     fadeAnim.setValue(0);
@@ -334,7 +359,6 @@ export default function TransactionsScreen() {
 
   const pendingCount = transactions.filter((t) => t.status === "PENDING").length;
 
-  // Label rôle pour le badge hero
   const roleLabel: Record<string, string> = {
     SUPER_ADMIN:   "SUPER ADMIN",
     COMPANY_ADMIN: "ADMIN",
