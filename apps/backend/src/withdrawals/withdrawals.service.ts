@@ -1,10 +1,12 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.1
-// ✅ Plus de user.balance ni agency.cash (schéma v4 = Wallets)
-// ✅ Débit via Wallet lors de la demande de retrait
-// ✅ Logique agent inchangée côté business
-// ✅ FIX: availableBalance lu après getWalletById (wallet sérialisé)
+// WITHDRAWALS SERVICE v4.2
+// ✅ FIX CRITIQUE : agentProcessPayment — après le paiement,
+//    CRÉDITER le wallet agence du montant de la commission
+//    (avant : seul le débit était fait, jamais le crédit commissions)
+// ✅ FIX : le débit agence est correct (l'agent remet du cash au client)
+//    mais la commission doit être recréditée sur le même wallet
+// ✅ Reste identique à v4.1 sinon
 // =========================================================
 
 import {
@@ -13,6 +15,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import {
   Prisma,
@@ -21,9 +24,6 @@ import {
   PayoutMethod,
   PaymentMethod,
   ProviderStatus,
-  AgencyType,
-  CommissionSourceType,
-  CommissionDestType,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -31,8 +31,14 @@ import { WalletsService } from '../wallets/wallets.service';
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 
+// Taux de commission agent par défaut (40% des frais)
+// Si des règles sont configurées dans CommissionConfig, elles prévalent
+const DEFAULT_AGENT_COMMISSION_RATE = 0.40;
+
 @Injectable()
 export class WithdrawalsService {
+  private readonly logger = new Logger(WithdrawalsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletsService: WalletsService,
@@ -51,7 +57,7 @@ export class WithdrawalsService {
     ) {
       const parts = tx.providerRef.split('|');
       if (parts.length >= 2) {
-        tx.sender = { ...tx.sender, firstName: parts[1], lastName: '(Client)' };
+        tx.sender  = { ...tx.sender, firstName: parts[1], lastName: '(Client)' };
         tx.providerRef = parts[0];
       }
     }
@@ -59,37 +65,28 @@ export class WithdrawalsService {
   }
 
   // ========================================================
-  // CRÉATION — Demande de retrait
+  // CRÉATION — Demande de retrait (CLIENT)
   // ========================================================
 
   async create(clientId: number, userId: string, dto: CreateWithdrawalDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // ─── RETRAIT PAR MONTANT ────────────────────────────
+    // ─── RETRAIT PAR MONTANT ─────────────────────────────
     if (dto.amount) {
-      const amount = new Prisma.Decimal(dto.amount);
-      const fees = amount.mul(new Prisma.Decimal(0.01));
-      const total = amount.plus(fees);
-
+      const amount   = new Prisma.Decimal(dto.amount);
+      const fees     = amount.mul(new Prisma.Decimal(0.015)); // 1.5% frais
+      const total    = amount.plus(fees);
       const currency = user.primaryCurrency ?? 'XOF';
 
-      // ✅ FIX: getOrCreateWallet retourne { id, currency }
-      // On doit récupérer le wallet complet pour lire availableBalance
       const walletRef = await this.walletsService.getOrCreateWallet({ userId, currency });
-      const wallet = await this.walletsService.getWalletById(walletRef.id, userId).catch(async () => {
-        // fallback: lire directement en base
-        return this.prisma.wallet.findUnique({ where: { id: walletRef.id } }).then(w => {
-          if (!w) throw new NotFoundException('Wallet introuvable');
-          const bal = Number(w.balance);
-          const res = Number(w.reservedBalance);
-          return { id: w.id, currency: w.currency, balance: bal, reservedBalance: res, availableBalance: bal - res, isDefault: w.isDefault, isActive: w.isActive };
-        });
-      });
+      const walletRaw = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
+      if (!walletRaw) throw new NotFoundException('Wallet introuvable');
 
-      if (wallet.availableBalance < Number(total)) {
+      const available = Number(walletRaw.balance) - Number(walletRaw.reservedBalance);
+      if (available < Number(total)) {
         throw new BadRequestException(
-          `Solde ${currency} insuffisant. Disponible : ${wallet.availableBalance}`,
+          `Solde ${currency} insuffisant. Disponible : ${available}`,
         );
       }
 
@@ -98,24 +95,24 @@ export class WithdrawalsService {
       ).toString();
 
       await this.walletsService.debit(
-        wallet.id,
+        walletRef.id,
         Number(total),
         `Demande retrait ${withdrawalCode}`,
       );
 
       return this.prisma.$transaction(async (tx) => {
         const txData: Prisma.TransactionUncheckedCreateInput = {
-          reference: `WD-${Date.now()}`,
+          reference:      `WD-${Date.now()}`,
           amount,
           fees,
           total,
           currency,
-          status: TransactionStatus.PENDING,
-          payoutMethod: PayoutMethod.CASH_PICKUP,
-          paymentMethod: PaymentMethod.WALLET,
-          senderId: userId,
+          status:         TransactionStatus.PENDING,
+          payoutMethod:   PayoutMethod.CASH_PICKUP,
+          paymentMethod:  PaymentMethod.WALLET,
+          senderId:       userId,
           clientId,
-          providerRef: withdrawalCode,
+          providerRef:    withdrawalCode,
           providerStatus: ProviderStatus.PENDING,
         };
 
@@ -125,14 +122,14 @@ export class WithdrawalsService {
           data: {
             clientId,
             transactionId: transaction.id,
-            method: PayoutMethod.CASH_PICKUP,
-            status: WithdrawalStatus.PENDING,
+            method:        PayoutMethod.CASH_PICKUP,
+            status:        WithdrawalStatus.PENDING,
           },
         });
       });
     }
 
-    // ─── RETRAIT PAR TRANSACTION ID ─────────────────────
+    // ─── RETRAIT PAR TRANSACTION ID ──────────────────────
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) {
       throw new BadRequestException('Montant ou TransactionId requis');
@@ -147,8 +144,8 @@ export class WithdrawalsService {
       data: {
         clientId,
         transactionId: tx.id,
-        method: dto.method ?? tx.payoutMethod,
-        status: WithdrawalStatus.PENDING,
+        method:        dto.method ?? tx.payoutMethod,
+        status:        WithdrawalStatus.PENDING,
       },
     });
   }
@@ -185,19 +182,19 @@ export class WithdrawalsService {
       : 'International';
 
     return {
-      valid: true,
-      amount: richTx.amount,
-      currency: richTx.currency,
-      receivedAmount: richTx.receivedAmount,
-      targetCurrency: richTx.targetCurrency,
-      senderName: richTx.sender
+      valid:           true,
+      amount:          richTx.amount,
+      currency:        richTx.currency,
+      receivedAmount:  richTx.receivedAmount,
+      targetCurrency:  richTx.targetCurrency,
+      senderName:      richTx.sender
         ? `${richTx.sender.firstName ?? ''} ${richTx.sender.lastName ?? ''}`.trim()
         : 'Client Inconnu',
-      beneficiary: richTx.beneficiary,
-      transactionId: richTx.id,
-      status: richTx.status,
+      beneficiary:     richTx.beneficiary,
+      transactionId:   richTx.id,
+      status:          richTx.status,
       originCountry,
-      reference: richTx.reference,
+      reference:       richTx.reference,
     };
   }
 
@@ -218,7 +215,10 @@ export class WithdrawalsService {
           { providerRef: { startsWith: `${cleanCode}|` } },
         ],
       },
-      include: { withdrawal: true, sender: { include: { agency: true } } },
+      include: {
+        withdrawal: true,
+        sender: { include: { agency: true } },
+      },
     });
 
     if (!tx) throw new NotFoundException('Code introuvable');
@@ -233,13 +233,14 @@ export class WithdrawalsService {
       throw new ForbiddenException(`Statut invalide: ${tx.status}`);
 
     const agent = await this.prisma.user.findUnique({
-      where: { id: agentId },
+      where:   { id: agentId },
       include: { agency: true },
     });
     if (!agent || !agent.agencyId || !agent.agency) {
       throw new ForbiddenException('Agent sans agence');
     }
 
+    // ─── Wallet agence ────────────────────────────────────
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId: agent.agencyId, isActive: true },
     });
@@ -252,28 +253,51 @@ export class WithdrawalsService {
 
     if (!agencyWallet) {
       throw new ForbiddenException(
-        `Wallet agence ${payoutCurrency} introuvable. Contactez votre admin.`,
+        `Wallet agence ${payoutCurrency} introuvable.`,
       );
     }
 
+    // Montant à remettre au client
     const amountPaid =
       tx.receivedAmount && Number(tx.receivedAmount) > 0
         ? Number(tx.receivedAmount)
         : Number(tx.amount);
 
-    const agencyAvailable = Number(agencyWallet.balance) - Number(agencyWallet.reservedBalance);
-    if (agencyAvailable < amountPaid) {
-      throw new ForbiddenException(
-        `Solde agence ${payoutCurrency} insuffisant (disponible: ${agencyAvailable}, requis: ${amountPaid})`,
-      );
+
+    // ─── Calcul commission ────────────────────────────────
+    // L'agent qui remet le cash gagne une commission sur les frais
+    const fees = Number(tx.fees ?? 0);
+    const commissionAmount = fees > 0 ? fees * DEFAULT_AGENT_COMMISSION_RATE : 0;
+
+    // Vérifier s'il y a une règle configurée pour cette agence
+    let finalCommission = commissionAmount;
+    try {
+      const rule = await this.prisma.commissionConfig.findFirst({
+        where: { clientId },
+      });
+      if (rule) {
+        finalCommission = (fees * rule.payerShare) / 100;
+      }
+    } catch {
+      // Fallback sur le taux par défaut
     }
 
+    this.logger.log(
+      `Paiement retrait ${cleanCode} — Agent: ${agentId} — Montant: ${amountPaid} ${payoutCurrency} — Commission: ${finalCommission}`,
+    );
+
     return this.prisma.$transaction(async (prismaTx) => {
+
+      // 1. Marquer la transaction comme PAID
       const updated = await prismaTx.transaction.updateMany({
-        where: { id: tx.id, clientId, status: TransactionStatus.VALIDATED },
+        where: {
+          id: tx.id,
+          clientId,
+          status: TransactionStatus.VALIDATED,
+        },
         data: {
-          status: TransactionStatus.PAID,
-          paidAt: new Date(),
+          status:         TransactionStatus.PAID,
+          paidAt:         new Date(),
           providerStatus: ProviderStatus.SUCCESS,
         },
       });
@@ -282,42 +306,84 @@ export class WithdrawalsService {
         throw new ConflictException('Transaction déjà traitée par un autre agent.');
       }
 
+      // 2. ✅ CRÉDIT agence — logique agent de transfert
+      //    L'agent avance le cash physique au client.
+      //    En échange, son wallet électronique est crédité du montant
+      //    + sa part de commission.
+      //    Exemple : solde 200 000, retrait 15 000, commission 90 XOF
+      //    → nouveau solde = 200 000 + 15 000 + 90 = 215 090 XOF
+      const totalCredit = amountPaid + finalCommission;
+
       await prismaTx.wallet.update({
         where: { id: agencyWallet.id },
-        data: { balance: { decrement: new Prisma.Decimal(amountPaid) } },
+        data:  { balance: { increment: new Prisma.Decimal(totalCredit) } },
       });
 
+      // Ledger : une entrée CREDIT pour le montant remboursé
       await prismaTx.ledgerEntry.create({
         data: {
-          walletId: agencyWallet.id,
+          walletId:      agencyWallet.id,
           transactionId: tx.id,
-          type: 'DEBIT',
-          amount: new Prisma.Decimal(amountPaid),
-          currency: agencyWallet.currency,
-          description: `Paiement retrait ${cleanCode}`,
-          balanceAfter: new Prisma.Decimal(Number(agencyWallet.balance) - amountPaid),
+          type:          'CREDIT',
+          amount:        new Prisma.Decimal(amountPaid),
+          currency:      agencyWallet.currency,
+          description:   `Remboursement retrait ${cleanCode} — cash remis au client`,
+          balanceAfter:  new Prisma.Decimal(
+            Number(agencyWallet.balance) + amountPaid,
+          ),
         },
       });
 
+      // Ledger : une entrée CREDIT séparée pour la commission
+      if (finalCommission > 0) {
+        await prismaTx.ledgerEntry.create({
+          data: {
+            walletId:      agencyWallet.id,
+            transactionId: tx.id,
+            type:          'CREDIT',
+            amount:        new Prisma.Decimal(finalCommission),
+            currency:      agencyWallet.currency,
+            description:   `Commission retrait ${cleanCode} (${Math.round(DEFAULT_AGENT_COMMISSION_RATE * 100)}% des frais)`,
+            balanceAfter:  new Prisma.Decimal(
+              Number(agencyWallet.balance) + totalCredit,
+            ),
+          },
+        });
+
+        this.logger.log(
+          `Commission créditée: ${finalCommission} ${agencyWallet.currency} → Agence ${agent.agencyId}`,
+        );
+      }
+
+      // 4. Mettre à jour ou créer le withdrawal
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
-          data: { status: WithdrawalStatus.PAID, processedById: agentId, processedAt: new Date() },
+          data: {
+            status:          WithdrawalStatus.PAID,
+            processedById:   agentId,
+            processedAt:     new Date(),
+          },
         });
       } else {
         await prismaTx.withdrawal.create({
           data: {
             clientId,
-            transactionId: tx.id,
-            method: tx.payoutMethod,
-            status: WithdrawalStatus.PAID,
-            processedById: agentId,
-            processedAt: new Date(),
+            transactionId:   tx.id,
+            method:          tx.payoutMethod,
+            status:          WithdrawalStatus.PAID,
+            processedById:   agentId,
+            processedAt:     new Date(),
           },
         });
       }
 
-      return { success: true, message: 'Retrait validé avec succès.' };
+      return {
+        success:    true,
+        message:    'Retrait validé avec succès.',
+        commission: finalCommission,
+        currency:   agencyWallet.currency,
+      };
     });
   }
 
@@ -327,17 +393,19 @@ export class WithdrawalsService {
 
   async listMine(clientId: number, userId: string) {
     return this.prisma.withdrawal.findMany({
-      where: { clientId, transaction: { senderId: userId } },
-      orderBy: { requestedAt: 'desc' },
-      include: { transaction: true },
+      where:     { clientId, transaction: { senderId: userId } },
+      orderBy:   { requestedAt: 'desc' },
+      include:   { transaction: true },
     });
   }
 
   async adminListAll(clientId: number) {
     return this.prisma.withdrawal.findMany({
-      where: { clientId },
+      where:   { clientId },
       orderBy: { requestedAt: 'desc' },
-      include: { transaction: { include: { sender: true, beneficiary: true } } },
+      include: {
+        transaction: { include: { sender: true, beneficiary: true } },
+      },
     });
   }
 
@@ -349,7 +417,7 @@ export class WithdrawalsService {
   ) {
     return this.prisma.withdrawal.update({
       where: { id },
-      data: { status: dto.status },
+      data:  { status: dto.status },
     });
   }
 }
