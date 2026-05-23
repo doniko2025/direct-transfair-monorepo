@@ -1,8 +1,12 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v13.1 (Modern Light - Syntax Fixed)
+// SUPER ADMIN DASHBOARD v14.1 (Clean Light Theme)
+// ✅ FIX : padding bottom FlatList pour ne pas masquer le contenu
+//          sous la barre de navigation (tabBar)
 // ✅ FIX : DONIKO filtré côté frontend (code !== "DONIKO")
-// ✅ FIX : Corrections des erreurs JSX sur DashHero
+// ✅ FIX : SafeAreaView importé depuis react-native-safe-area-context
+//          pour supporter le prop `edges`
+// ✅ Thème clair moderne avec palette indigo/violet/emeraude
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -11,7 +15,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   FlatList,
   ActivityIndicator,
@@ -26,63 +29,83 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import CreateCompanyModal from "./CreateCompanyModal";
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Modern Design Tokens ────────────────────────────────────────
+// ─── Design Tokens — Clean Light ─────────────────────────
 const T = {
-  heroA: "#1E293B",
-  heroB: "#334155",
-  heroC: "#475569",
+  // Hero gradient (indigo profond → violet)
+  heroA: "#4F46E5",
+  heroB: "#7C3AED",
 
+  // Brand indigo
   brand:     "#4F46E5",
   brandDark: "#4338CA",
   brandLt:   "#EEF2FF",
   brandMd:   "#E0E7FF",
 
-  pageBg:   "#F8FAFC",
-  surface:  "#FFFFFF",
-  border:   "#E2E8F0",
-  borderMd: "#CBD5E1",
+  // Page & surfaces
+  pageBg:    "#F5F7FF",   // très légère teinte indigo
+  surface:   "#FFFFFF",
+  surfaceAlt:"#FAFBFF",
+  border:    "#E8EDFB",
+  borderMd:  "#D1D9F5",
 
-  ink:      "#0F172A",
-  inkMid:   "#334155",
-  inkSub:   "#64748B",
-  inkMuted: "#94A3B8",
+  // Texte
+  ink:      "#1E1B4B",    // indigo très foncé
+  inkMid:   "#3730A3",
+  inkSub:   "#6B7280",
+  inkMuted: "#9CA3AF",
 
-  green:    "#10B981",
+  // Sémantiques
+  green:    "#059669",
   greenLt:  "#ECFDF5",
-  red:      "#EF4444",
+  greenMd:  "#D1FAE5",
+  red:      "#DC2626",
   redLt:    "#FEF2F2",
-  amber:    "#F59E0B",
+  amber:    "#D97706",
   amberLt:  "#FFFBEB",
-  purple:   "#8B5CF6",
-  purpleLt: "#F5F3FF",
-  teal:     "#14B8A6",
+  violet:   "#7C3AED",
+  violetLt: "#F5F3FF",
+  violetMd: "#EDE9FE",
+  teal:     "#0D9488",
   tealLt:   "#F0FDFA",
+  tealMd:   "#CCFBF1",
+  rose:     "#E11D48",
+  roseLt:   "#FFF1F2",
 
   white: "#FFFFFF",
+  black: "#000000",
 
   currencies: {
     EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#4F46E5", colorDark: "#3730A3", bg: "#EEF2FF", name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#10B981", colorDark: "#065F46", bg: "#ECFDF5", name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#F59E0B", colorDark: "#92400E", bg: "#FFFBEB", name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#EF4444", colorDark: "#991B1B", bg: "#FEF2F2", name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#8B5CF6", colorDark: "#6D28D9", bg: "#F5F3FF", name: "Livre Sterling" },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#059669", colorDark: "#065F46", bg: "#ECFDF5", name: "Dollar US" },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#92400E", bg: "#FFFBEB", name: "Franc CFA" },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#991B1B", bg: "#FEF2F2", name: "Franc Guinéen" },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#F5F3FF", name: "Livre Sterling" },
   },
 
   statusColors: {
-    ACTIVE:    "#10B981",
-    SUSPENDED: "#F59E0B",
-    INACTIVE:  "#EF4444",
-    EXPIRED:   "#EF4444",
-    TRIAL:     "#6366F1",
+    ACTIVE:    "#059669",
+    SUSPENDED: "#D97706",
+    INACTIVE:  "#DC2626",
+    EXPIRED:   "#DC2626",
+    TRIAL:     "#4F46E5",
   } as Record<string, string>,
 
-  radius: { sm: 6, md: 12, lg: 16, xl: 24, xxl: 32 },
+  statusBg: {
+    ACTIVE:    "#ECFDF5",
+    SUSPENDED: "#FFFBEB",
+    INACTIVE:  "#FEF2F2",
+    EXPIRED:   "#FEF2F2",
+    TRIAL:     "#EEF2FF",
+  } as Record<string, string>,
+
+  radius: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, full: 999 },
 
   font: {
     display:  Platform.select({ ios: "System", android: "sans-serif-medium", default: "System" }),
@@ -93,35 +116,40 @@ const T = {
 
   shadow: {
     card: {
-      shadowColor: "#0F172A",
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.05,
-      shadowRadius: 12,
-      elevation: 3,
-    },
-    soft: {
-      shadowColor: "#334155",
+      shadowColor: "#4F46E5",
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.04,
-      shadowRadius: 8,
+      shadowOpacity: 0.06,
+      shadowRadius: 10,
       elevation: 2,
     },
+    float: {
+      shadowColor: "#4F46E5",
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.10,
+      shadowRadius: 18,
+      elevation: 5,
+    },
     hero: {
-      shadowColor: "#0F172A",
+      shadowColor: "#3730A3",
       shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.08,
-      shadowRadius: 16,
-      elevation: 6,
+      shadowOpacity: 0.14,
+      shadowRadius: 20,
+      elevation: 7,
     },
   },
 };
 
-const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
+// ─── Tab bar height constants ─────────────────────────────
+// On ajoute un padding bottom suffisant pour que le contenu
+// ne soit jamais masqué par la barre de navigation.
+const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 84 : 70;
+const LIST_BOTTOM_PADDING = TAB_BAR_HEIGHT + 16;
 
+const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
 const STACK_W        = SW - 40;
-const STACK_H        = 125;
-const STACK_OFFSET_X = 0;
+const STACK_H        = 130;
 const STACK_OFFSET_Y = 10;
+const PLATFORM_CODE  = "DONIKO";
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -131,7 +159,6 @@ function toNum(v: unknown): number {
   return 0;
 }
 
-// Formatage propre sans devise codée en dur
 function fmtAmount(n: number, currency: string): string {
   const decimals = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try {
@@ -144,7 +171,7 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── 3D Stack cartes devises ──────────────────────────────
+// ─── Currency Stack Card ──────────────────────────────────
 function CurrencyStack({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
@@ -188,64 +215,76 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
                 {
                   position: "absolute",
                   bottom: d * STACK_OFFSET_Y,
-                  transform: [{ scale: 1 - d * 0.04 }],
+                  transform: [{ scale: 1 - d * 0.03 }],
                   width: STACK_W,
-                  opacity: 0.6 - d * 0.2,
+                  opacity: 0.55 - d * 0.18,
                   zIndex: 10 - d,
+                  backgroundColor: d === 1 ? "#F0F3FF" : "#E8EEFF",
                 },
               ]}
             >
               <View style={stk.peekRow}>
-                <Text style={{ fontSize: 16, marginRight: 6 }}>{cfg.flag}</Text>
-                <Text style={[stk.peekCode, { color: T.ink, fontFamily: T.font.mono }]}>{cfg.code}</Text>
-                <Text style={[stk.peekName, { fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
+                <Text style={{ fontSize: 15, marginRight: 6 }}>{cfg.flag}</Text>
+                <Text style={[stk.peekCode, { color: T.inkMid, fontFamily: T.font.mono }]}>{cfg.code}</Text>
+                <Text style={[stk.peekName, { color: T.inkSub, fontFamily: T.font.subtitle }]}>{cfg.name}</Text>
               </View>
             </View>
           );
         })}
 
-      <Animated.View
-        style={[stk.card, stk.front, { transform: [{ translateX }] }]}
-      >
-        <View style={stk.row1}>
-          <View style={[stk.flagBox, { backgroundColor: activeCfg.bg }]}>
-            <Text style={{ fontSize: 18 }}>{activeCfg.flag}</Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[stk.cardCode, { color: T.ink, fontFamily: T.font.display }]}>{activeCur}</Text>
-            <Text style={[stk.cardName, { fontFamily: T.font.subtitle }]}>{activeCfg.name}</Text>
-          </View>
-          <View style={stk.navArea}>
-            <TouchableOpacity onPress={() => setActiveIdx((p) => Math.max(p - 1, 0))} style={[stk.navBtn, { opacity: activeIdx === 0 ? 0.25 : 1 }]}>
-              <Ionicons name="chevron-back" size={14} color={T.inkMid} />
-            </TouchableOpacity>
-            <Text style={[stk.navCount, { color: T.inkSub, fontFamily: T.font.mono }]}>{activeIdx + 1}/{total}</Text>
-            <TouchableOpacity onPress={() => setActiveIdx((p) => Math.min(p + 1, total - 1))} style={[stk.navBtn, { opacity: activeIdx === total - 1 ? 0.25 : 1 }]}>
-              <Ionicons name="chevron-forward" size={14} color={T.inkMid} />
-            </TouchableOpacity>
-          </View>
-        </View>
+      <Animated.View style={[stk.card, stk.front, { transform: [{ translateX }] }]}>
+        {/* Accent coloré sur le côté gauche */}
+        <View style={[stk.accentBar, { backgroundColor: activeCfg.color }]} />
 
-        <View style={stk.row2}>
-          <View style={{ flex: 1 }}>
-            <Text style={[stk.balLabel, { fontFamily: T.font.sans }]}>SOLDE TOTAL</Text>
-            <Text style={[stk.balAmount, { color: T.ink, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-              {fmtAmount(balance, activeCur)}{" "}
-              <Text style={[stk.balSym, { color: T.inkSub }]}>{activeCfg.symbol}</Text>
-            </Text>
+        <View style={stk.inner}>
+          <View style={stk.row1}>
+            <View style={[stk.flagBox, { backgroundColor: activeCfg.bg }]}>
+              <Text style={{ fontSize: 18 }}>{activeCfg.flag}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[stk.cardCode, { color: T.ink, fontFamily: T.font.display }]}>{activeCur}</Text>
+              <Text style={[stk.cardName, { color: T.inkSub, fontFamily: T.font.subtitle }]}>{activeCfg.name}</Text>
+            </View>
+            <View style={stk.navArea}>
+              <TouchableOpacity onPress={() => setActiveIdx((p) => Math.max(p - 1, 0))} style={[stk.navBtn, { opacity: activeIdx === 0 ? 0.25 : 1 }]}>
+                <Ionicons name="chevron-back" size={13} color={T.inkMid} />
+              </TouchableOpacity>
+              <Text style={[stk.navCount, { color: T.inkSub, fontFamily: T.font.mono }]}>{activeIdx + 1}/{total}</Text>
+              <TouchableOpacity onPress={() => setActiveIdx((p) => Math.min(p + 1, total - 1))} style={[stk.navBtn, { opacity: activeIdx === total - 1 ? 0.25 : 1 }]}>
+                <Ionicons name="chevron-forward" size={13} color={T.inkMid} />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View style={stk.availPill}>
-            <Text style={[stk.availLbl, { fontFamily: T.font.sans }]}>Disponible</Text>
-            <Text style={[stk.availAmt, { color: activeCfg.color, fontFamily: T.font.display }]}>{fmtAmount(available, activeCur)} {activeCfg.symbol}</Text>
-          </View>
-        </View>
 
-        <View style={stk.dots}>
-          {CURRENCIES_ORDER.map((_, i) => (
-            <TouchableOpacity key={i} onPress={() => setActiveIdx(i)}>
-              <View style={[stk.dot, { width: i === activeIdx ? 12 : 4, backgroundColor: i === activeIdx ? T.brand : T.borderMd }]} />
-            </TouchableOpacity>
-          ))}
+          <View style={stk.divider} />
+
+          <View style={stk.row2}>
+            <View style={{ flex: 1 }}>
+              <Text style={[stk.balLabel, { color: T.inkMuted, fontFamily: T.font.sans }]}>SOLDE TOTAL</Text>
+              <Text style={[stk.balAmount, { color: T.ink, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {fmtAmount(balance, activeCur)}{" "}
+                <Text style={[stk.balSym, { color: T.inkSub }]}>{activeCfg.symbol}</Text>
+              </Text>
+            </View>
+            <View style={[stk.availPill, { backgroundColor: activeCfg.bg }]}>
+              <Text style={[stk.availLbl, { color: activeCfg.colorDark, fontFamily: T.font.sans }]}>Disponible</Text>
+              <Text style={[stk.availAmt, { color: activeCfg.color, fontFamily: T.font.display }]}>{fmtAmount(available, activeCur)} {activeCfg.symbol}</Text>
+            </View>
+          </View>
+
+          <View style={stk.dots}>
+            {CURRENCIES_ORDER.map((_, i) => (
+              <TouchableOpacity key={i} onPress={() => setActiveIdx(i)} hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}>
+                <View style={[
+                  stk.dot,
+                  {
+                    width: i === activeIdx ? 16 : 4,
+                    backgroundColor: i === activeIdx ? activeCfg.color : T.borderMd,
+                  },
+                ]} />
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </Animated.View>
     </View>
@@ -253,38 +292,50 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
 }
 
 const stk = StyleSheet.create({
-  wrapper:     { marginHorizontal: 20, height: STACK_H + 20, justifyContent: "flex-start", alignItems: "center" },
-  card:        { width: STACK_W, height: STACK_H, backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderColor: T.border, overflow: "hidden", padding: 16, ...T.shadow.card },
-  front:       { zIndex: 20, position: "relative" },
-  peekRow:     { flexDirection: "row", alignItems: "center", paddingTop: 4 },
-  peekCode:    { fontSize: 13, fontWeight: "600", marginRight: 6 },
-  peekName:    { fontSize: 11, color: T.inkSub },
-  row1:        { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-  flagBox:     { width: 34, height: 34, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  cardCode:    { fontSize: 14, fontWeight: "600" },
-  cardName:    { fontSize: 11, color: T.inkSub },
-  navArea:     { flexDirection: "row", alignItems: "center", gap: 6 },
-  navBtn:      { width: 26, height: 26, borderRadius: T.radius.sm, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center" },
-  navCount:    { fontSize: 10, fontWeight: "500" },
-  row2:        { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 10 },
-  balLabel:    { fontSize: 9, fontWeight: "600", color: T.inkMuted, letterSpacing: 0.5, marginBottom: 2 },
-  balAmount:   { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
-  balSym:      { fontSize: 14, fontWeight: "400" },
-  availPill:   { alignItems: "flex-end" },
-  availLbl:    { fontSize: 9, color: T.inkMuted, marginBottom: 1 },
-  availAmt:    { fontSize: 13, fontWeight: "600" },
-  dots:        { flexDirection: "row", gap: 4, marginTop: 10, alignItems: "center", justifyContent: "center" },
-  dot:         { height: 4, borderRadius: 99 },
+  wrapper:   { marginHorizontal: 20, height: STACK_H + 22, justifyContent: "flex-start", alignItems: "center" },
+  card:      { width: STACK_W, height: STACK_H, backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.float },
+  front:     { zIndex: 20, position: "relative", flexDirection: "row" },
+  accentBar: { width: 4, height: "100%" },
+  inner:     { flex: 1, padding: 14 },
+  peekRow:   { flexDirection: "row", alignItems: "center", paddingTop: 6, paddingHorizontal: 14 },
+  peekCode:  { fontSize: 12, fontWeight: "600", marginRight: 6 },
+  peekName:  { fontSize: 11 },
+  row1:      { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  flagBox:   { width: 34, height: 34, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
+  cardCode:  { fontSize: 14, fontWeight: "700" },
+  cardName:  { fontSize: 11, marginTop: 1 },
+  navArea:   { flexDirection: "row", alignItems: "center", gap: 4 },
+  navBtn:    { width: 26, height: 26, borderRadius: T.radius.xs, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  navCount:  { fontSize: 10, fontWeight: "500" },
+  divider:   { height: 1, backgroundColor: T.border, marginBottom: 10 },
+  row2:      { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 10 },
+  balLabel:  { fontSize: 9, fontWeight: "700", letterSpacing: 0.6, marginBottom: 3, textTransform: "uppercase" },
+  balAmount: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
+  balSym:    { fontSize: 14, fontWeight: "400" },
+  availPill: { alignItems: "flex-end", paddingHorizontal: 10, paddingVertical: 6, borderRadius: T.radius.sm },
+  availLbl:  { fontSize: 9, fontWeight: "600", marginBottom: 2, textTransform: "uppercase" },
+  availAmt:  { fontSize: 13, fontWeight: "700" },
+  dots:      { flexDirection: "row", gap: 4, marginTop: 10, alignItems: "center", justifyContent: "center" },
+  dot:       { height: 4, borderRadius: T.radius.full },
 });
 
-// ─── Hero COMPACT ─────────────────────────────────────────
+// ─── Hero ─────────────────────────────────────────────────
 function DashHero({ animValue, user, onRefresh, onNotif }: {
   animValue: Animated.Value; user: any; onRefresh: () => void; onNotif: () => void;
 }) {
-  const sbH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
+  const insets = useSafeAreaInsets();
   return (
     <Animated.View style={[hS.outer, { opacity: animValue, transform: [{ translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }] }]}>
-      <LinearGradient colors={[T.heroA, T.heroB]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[hS.gradient, { paddingTop: sbH + 16, paddingBottom: 24 }]}>
+      <LinearGradient
+        colors={[T.heroA, T.heroB, "#9333EA"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[hS.gradient, { paddingTop: insets.top + 14, paddingBottom: 28 }]}
+      >
+        {/* Cercle décoratif */}
+        <View style={hS.deco1} />
+        <View style={hS.deco2} />
+
         <View style={hS.topBar}>
           <View style={hS.topLeft}>
             <View style={hS.badge}>
@@ -296,10 +347,10 @@ function DashHero({ animValue, user, onRefresh, onNotif }: {
           </View>
           <View style={hS.btns}>
             <TouchableOpacity style={hS.btn} onPress={onRefresh} activeOpacity={0.7}>
-              <Ionicons name="refresh-outline" size={16} color={T.white} />
+              <Ionicons name="refresh-outline" size={17} color={T.white} />
             </TouchableOpacity>
             <TouchableOpacity style={hS.btn} onPress={onNotif} activeOpacity={0.7}>
-              <Ionicons name="notifications-outline" size={16} color={T.white} />
+              <Ionicons name="notifications-outline" size={17} color={T.white} />
               <View style={hS.notifDot} />
             </TouchableOpacity>
           </View>
@@ -312,45 +363,47 @@ function DashHero({ animValue, user, onRefresh, onNotif }: {
 const hS = StyleSheet.create({
   outer:      { zIndex: 10 },
   gradient:   { borderBottomLeftRadius: T.radius.xl, borderBottomRightRadius: T.radius.xl, overflow: "hidden" },
+  deco1:      { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.05)", top: -40, right: -40 },
+  deco2:      { position: "absolute", width: 100, height: 100, borderRadius: 50, backgroundColor: "rgba(255,255,255,0.06)", bottom: 10, left: 30 },
   topBar:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
   topLeft:    { flex: 1 },
-  badge:      { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, alignSelf: "flex-start", marginBottom: 6 },
-  activeDot:  { width: 5, height: 5, borderRadius: 99, backgroundColor: T.green },
-  badgeTxt:   { color: T.white, fontSize: 9, fontWeight: "600", letterSpacing: 0.5 },
-  name:       { color: T.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
-  sub:        { color: "rgba(255,255,255,0.6)", fontSize: 11, marginTop: 2 },
+  badge:      { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: T.radius.xs, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 8 },
+  activeDot:  { width: 5, height: 5, borderRadius: T.radius.full, backgroundColor: "#34D399" },
+  badgeTxt:   { color: T.white, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
+  name:       { color: T.white, fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
+  sub:        { color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 3 },
   btns:       { flexDirection: "row", gap: 8 },
-  btn:        { width: 36, height: 36, borderRadius: T.radius.sm, backgroundColor: "rgba(255,255,255,0.1)", justifyContent: "center", alignItems: "center" },
-  notifDot:   { position: "absolute", top: 8, right: 8, width: 6, height: 6, borderRadius: 99, backgroundColor: T.red },
+  btn:        { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
+  notifDot:   { position: "absolute", top: 9, right: 9, width: 7, height: 7, borderRadius: T.radius.full, backgroundColor: "#F87171", borderWidth: 1.5, borderColor: T.white },
 });
 
 // ─── Stat Strip ───────────────────────────────────────────
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
-    { label: "Sociétés",  value: stats.total,    color: T.brand, icon: "business-outline" as const },
-    { label: "Actives",   value: stats.active,   color: T.green, icon: "checkmark-circle-outline" as const },
-    { label: "Inactives", value: stats.inactive, color: T.red,   icon: "close-circle-outline" as const },
+    { label: "Sociétés",  value: stats.total,    color: T.brand,  bg: T.brandLt,  icon: "business-outline" as const },
+    { label: "Actives",   value: stats.active,   color: T.green,  bg: T.greenLt,  icon: "checkmark-circle-outline" as const },
+    { label: "Inactives", value: stats.inactive, color: T.red,    bg: T.redLt,    icon: "close-circle-outline" as const },
   ];
   return (
     <View style={ssS.row}>
       {items.map((it, idx) => (
         <View key={idx} style={ssS.card}>
-          <View style={ssS.meta}>
-            <Ionicons name={it.icon} size={14} color={T.inkSub} style={{ marginRight: 4 }} />
-            <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
+          <View style={[ssS.iconWrap, { backgroundColor: it.bg }]}>
+            <Ionicons name={it.icon} size={14} color={it.color} />
           </View>
           <Text style={[ssS.val, { color: it.color, fontFamily: T.font.display }]}>{it.value}</Text>
+          <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
         </View>
       ))}
     </View>
   );
 }
 const ssS = StyleSheet.create({
-  row:    { flexDirection: "row", gap: 10, marginBottom: 20, marginTop: 10 },
-  card:   { flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
-  meta:   { flexDirection: "row", alignItems: "center", marginBottom: 4 },
-  val:    { fontSize: 22, fontWeight: "700" },
-  lbl:    { fontSize: 11, color: T.inkSub, fontWeight: "500" },
+  row:     { flexDirection: "row", gap: 10, marginBottom: 20, marginTop: 10 },
+  card:    { flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: T.border, alignItems: "center", gap: 4, ...T.shadow.card },
+  iconWrap:{ width: 28, height: 28, borderRadius: T.radius.xs, justifyContent: "center", alignItems: "center", marginBottom: 2 },
+  val:     { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
+  lbl:     { fontSize: 11, color: T.inkSub, fontWeight: "500" },
 });
 
 // ─── Action Grid ──────────────────────────────────────────
@@ -358,80 +411,98 @@ function ActionGrid({ actions }: { actions: any[] }) {
   return (
     <View style={agS.grid}>
       {actions.map((a) => (
-        <TouchableOpacity key={a.title} style={agS.card} onPress={a.onPress} activeOpacity={0.8}>
+        <TouchableOpacity key={a.title} style={agS.card} onPress={a.onPress} activeOpacity={0.82}>
           <View style={[agS.iconBox, { backgroundColor: a.bgColor }]}>
             <Ionicons name={a.icon} size={18} color={a.color} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[agS.title, { fontFamily: T.font.sans }]} numberOfLines={1}>{a.title}</Text>
-            <Text style={[agS.sub, { fontFamily: T.font.subtitle }]} numberOfLines={1}>{a.subtitle}</Text>
+            <Text style={[agS.title, { fontFamily: T.font.sans, color: T.ink }]} numberOfLines={1}>{a.title}</Text>
+            <Text style={[agS.sub, { fontFamily: T.font.subtitle, color: T.inkSub }]} numberOfLines={1}>{a.subtitle}</Text>
           </View>
+          <Ionicons name="chevron-forward" size={12} color={T.borderMd} />
         </TouchableOpacity>
       ))}
     </View>
   );
 }
 const agS = StyleSheet.create({
-  grid:   { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
-  card:   { width: "48.5%", flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
-  iconBox:{ width: 34, height: 34, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  title:  { fontSize: 12, fontWeight: "600", color: T.ink },
-  sub:    { fontSize: 10, color: T.inkSub, marginTop: 1 },
+  grid:    { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
+  card:    { width: "48.5%", flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: T.border, ...T.shadow.card },
+  iconBox: { width: 36, height: 36, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
+  title:   { fontSize: 12, fontWeight: "600" },
+  sub:     { fontSize: 10, marginTop: 1 },
 });
 
-// ─── Client Card ─────────────────────────────────────────
+// ─── Client Card ──────────────────────────────────────────
 function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
-  const statusColor = T.statusColors[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
+  const statusKey = item.subscriptionStatus?.toUpperCase() ?? "ACTIVE";
+  const statusColor = T.statusColors[statusKey] ?? T.inkMuted;
+  const statusBg    = T.statusBg[statusKey] ?? T.pageBg;
+
+  // Couleur d'avatar basée sur la première lettre
+  const avatarColors = [T.brandLt, T.violetLt, T.greenLt, T.tealLt, T.amberLt, T.roseLt];
+  const avatarTxts   = [T.brand, T.violet, T.green, T.teal, T.amber, T.rose];
+  const colorIdx = (item.name?.charCodeAt(0) ?? 0) % avatarColors.length;
+
   return (
-    <TouchableOpacity style={clS.card} onPress={onPress} activeOpacity={0.8}>
-      <View style={clS.avatar}>
-        <Text style={[clS.avatarLetter, { fontFamily: T.font.display }]}>{(item.name?.[0] ?? "C").toUpperCase()}</Text>
+    <TouchableOpacity style={clS.card} onPress={onPress} activeOpacity={0.82}>
+      <View style={[clS.avatar, { backgroundColor: avatarColors[colorIdx] }]}>
+        <Text style={[clS.avatarLetter, { color: avatarTxts[colorIdx], fontFamily: T.font.display }]}>
+          {(item.name?.[0] ?? "C").toUpperCase()}
+        </Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[clS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
         <View style={clS.metaRow}>
-          <Text style={[clS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
-          <View style={[clS.statusPill, { backgroundColor: `${statusColor}10` }]}>
-            <Text style={[clS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>{item.subscriptionStatus}</Text>
+          <View style={clS.codeChip}>
+            <Text style={[clS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
+          </View>
+          <View style={[clS.statusPill, { backgroundColor: statusBg }]}>
+            <View style={[clS.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[clS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>{statusKey}</Text>
           </View>
         </View>
       </View>
-      <Ionicons name="chevron-forward" size={14} color={T.inkMuted} style={{ marginRight: 4 }} />
+      <Ionicons name="chevron-forward" size={14} color={T.borderMd} />
     </TouchableOpacity>
   );
 }
 const clS = StyleSheet.create({
-  card:       { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: T.border, gap: 12, ...T.shadow.soft },
-  avatar:     { width: 36, height: 36, borderRadius: T.radius.sm, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center" },
-  avatarLetter:{ fontSize: 15, fontWeight: "600", color: T.inkMid },
-  name:       { color: T.ink, fontSize: 13, fontWeight: "600", marginBottom: 2 },
-  metaRow:    { flexDirection: "row", alignItems: "center", gap: 8 },
-  code:       { color: T.inkSub, fontSize: 10, fontWeight: "500" },
-  statusPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  statusTxt:  { fontSize: 9, fontWeight: "600", textTransform: "uppercase" },
+  card:         { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: T.border, gap: 12, ...T.shadow.card },
+  avatar:       { width: 40, height: 40, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
+  avatarLetter: { fontSize: 16, fontWeight: "700" },
+  name:         { color: T.ink, fontSize: 14, fontWeight: "600", marginBottom: 4 },
+  metaRow:      { flexDirection: "row", alignItems: "center", gap: 6 },
+  codeChip:     { backgroundColor: T.pageBg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: T.radius.xs, borderWidth: 1, borderColor: T.border },
+  code:         { color: T.inkSub, fontSize: 10, fontWeight: "600" },
+  statusPill:   { flexDirection: "row", alignItems: "center", paddingHorizontal: 7, paddingVertical: 2, borderRadius: T.radius.xs, gap: 4 },
+  statusDot:    { width: 5, height: 5, borderRadius: T.radius.full },
+  statusTxt:    { fontSize: 9, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.3 },
 });
 
 // ─── Section Header ───────────────────────────────────────
-function SH({ label, right }: { dot: string; label: string; right?: React.ReactNode }) {
+function SH({ accentColor = T.brand, label, right }: { accentColor?: string; label: string; right?: React.ReactNode }) {
   return (
     <View style={shS.row}>
+      <View style={[shS.accent, { backgroundColor: accentColor }]} />
       <Text style={[shS.label, { fontFamily: T.font.sans }]}>{label}</Text>
       {right}
     </View>
   );
 }
 const shS = StyleSheet.create({
-  row:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginTop: 6 },
-  label: { fontSize: 11, fontWeight: "700", color: T.inkSub, letterSpacing: 0.5 },
+  row:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginTop: 4, gap: 8 },
+  accent: { width: 3, height: 13, borderRadius: T.radius.full },
+  label:  { flex: 1, fontSize: 11, fontWeight: "700", color: T.inkSub, letterSpacing: 0.6, textTransform: "uppercase" },
 });
 
 // ─── Main Component ───────────────────────────────────────
 const LIST_H_PAD = 16;
-const PLATFORM_CODE = "DONIKO";
 
 export default function SuperAdminDashboard() {
   const router = useRouter();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const [clients,    setClients]    = useState<any[]>([]);
@@ -508,15 +579,15 @@ export default function SuperAdminDashboard() {
   }), [clients]);
 
   const actions = useMemo(() => [
-    { title: "Trésorerie",    subtitle: "Vue globale",       icon: "wallet-outline",           color: T.brand,  bgColor: T.brandLt,  onPress: () => router.push("/(tabs)/admin/treasury")    },
-    { title: "Supervision",   subtitle: "Logs système",      icon: "shield-checkmark-outline", color: T.teal,   bgColor: T.tealLt,   onPress: () => router.push("/(tabs)/admin/supervision")  },
-    { title: "Transactions",  subtitle: "Audit temps réel",  icon: "analytics-outline",        color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs",  subtitle: "Accès & Rôles",     icon: "people-outline",           color: T.purple, bgColor: T.purpleLt, onPress: () => router.push("/(tabs)/admin/users")        },
+    { title: "Trésorerie",   subtitle: "Vue globale",      icon: "wallet-outline",           color: T.brand,  bgColor: T.brandLt,  onPress: () => router.push("/(tabs)/admin/treasury")    },
+    { title: "Supervision",  subtitle: "Logs système",     icon: "shield-checkmark-outline", color: T.teal,   bgColor: T.tealLt,   onPress: () => router.push("/(tabs)/admin/supervision")  },
+    { title: "Transactions", subtitle: "Audit temps réel", icon: "analytics-outline",        color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs", subtitle: "Accès & Rôles",    icon: "people-outline",           color: T.violet, bgColor: T.violetLt, onPress: () => router.push("/(tabs)/admin/users")        },
   ], [router]);
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar backgroundColor={T.heroA} barStyle="light-content" />
+    <SafeAreaView style={s.safe} edges={["top"]}>
+      <StatusBar backgroundColor={T.heroA} barStyle="light-content" translucent={false} />
       <View style={s.screen}>
         <DashHero
           animValue={headerAnim}
@@ -534,21 +605,38 @@ export default function SuperAdminDashboard() {
               onPress={() => router.push({ pathname: "/(tabs)/admin/clients/details", params: { id: item.id } })}
             />
           )}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            // ✅ Padding bottom dynamique : hauteur tab bar + safe area bottom
+            { paddingBottom: LIST_BOTTOM_PADDING + insets.bottom },
+          ]}
           showsVerticalScrollIndicator={false}
           style={{ backgroundColor: T.pageBg }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} tintColor={T.brand} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void loadData("refresh")}
+              tintColor={T.brand}
+              colors={[T.brand]}
+            />
+          }
           ListHeaderComponent={
             <Animated.View style={{ opacity: contentAnim, transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }] }}>
+              {/* Stack devises */}
               <View style={s.stackWrapper}>
                 <CurrencyStack wallets={wallets} />
               </View>
+
+              {/* Stats */}
               <StatStrip stats={stats} />
-              <SH dot={T.brand} label="PILOTAGE RÉSEAU" />
+
+              {/* Actions */}
+              <SH accentColor={T.brand} label="Pilotage réseau" />
               <ActionGrid actions={actions} />
-              
+
+              {/* Recherche */}
               <View style={s.searchBox}>
-                <Ionicons name="search" size={16} color={T.inkMuted} />
+                <Ionicons name="search" size={15} color={T.inkMuted} />
                 <TextInput
                   value={q} onChangeText={setQ}
                   placeholder="Rechercher un client SaaS..."
@@ -557,15 +645,16 @@ export default function SuperAdminDashboard() {
                   autoCapitalize="none" autoCorrect={false}
                 />
                 {!!q && (
-                  <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-                    <Ionicons name="close" size={14} color={T.inkMuted} />
+                  <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="close" size={12} color={T.inkMuted} />
                   </TouchableOpacity>
                 )}
               </View>
 
+              {/* Header liste clients */}
               <SH
-                dot={T.green}
-                label={`CLIENTS SAAS (${filtered.length})`}
+                accentColor={T.green}
+                label={`Clients SaaS (${filtered.length})`}
                 right={
                   <TouchableOpacity
                     style={[s.addBtn, !isSuperAdmin && { opacity: 0.4 }]}
@@ -573,13 +662,13 @@ export default function SuperAdminDashboard() {
                       if (!isSuperAdmin) { Alert.alert("Accès refusé", "Seul le Super Admin peut créer une société."); return; }
                       setCreateOpen(true);
                     }}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   >
-                    <View style={s.addBtnBg}>
-                      <Ionicons name="add" size={18} color={T.brand} />
-                    </View>
+                    <Ionicons name="add" size={16} color={T.brand} />
                   </TouchableOpacity>
                 }
               />
+
               {loading && <ActivityIndicator color={T.brand} style={{ marginVertical: 24 }} size="large" />}
             </Animated.View>
           }
@@ -587,14 +676,13 @@ export default function SuperAdminDashboard() {
             !loading ? (
               <View style={s.empty}>
                 <View style={s.emptyIcon}>
-                  <Ionicons name="business-outline" size={24} color={T.inkMuted} />
+                  <Ionicons name="business-outline" size={22} color={T.inkMuted} />
                 </View>
                 <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>Aucun client trouvé</Text>
                 <Text style={[s.emptySub, { fontFamily: T.font.subtitle }]}>Modifiez votre recherche ou créez une nouvelle structure.</Text>
               </View>
             ) : null
           }
-          ListFooterComponent={<View style={{ height: 60 }} />}
         />
       </View>
 
@@ -609,17 +697,36 @@ export default function SuperAdminDashboard() {
 }
 
 const s = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: T.pageBg },
+  safe:         { flex: 1, backgroundColor: T.heroA },
   screen:       { flex: 1, backgroundColor: T.pageBg },
-  list:         { paddingHorizontal: LIST_H_PAD, paddingTop: 4 },
-  stackWrapper: { marginTop: 16, marginBottom: 12 },
-  searchBox:    { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, paddingHorizontal: 12, height: 42, borderWidth: 1, borderColor: T.border, marginBottom: 16, gap: 8, ...T.shadow.soft },
+  list:         { paddingHorizontal: LIST_H_PAD, paddingTop: 6 },
+  stackWrapper: { marginTop: 18, marginBottom: 14 },
+  searchBox:    {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: T.surface, borderRadius: T.radius.md,
+    paddingHorizontal: 12, height: 44,
+    borderWidth: 1, borderColor: T.border,
+    marginBottom: 16, gap: 8,
+    ...T.shadow.card,
+  },
   searchInput:  { flex: 1, fontSize: 13, color: T.ink },
-  clearBtn:     { width: 20, height: 20, borderRadius: 5, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center" },
-  addBtn:       {},
-  addBtnBg:     { width: 28, height: 28, borderRadius: T.radius.sm, backgroundColor: T.brandLt, justifyContent: "center", alignItems: "center" },
-  empty:        { alignItems: "center", paddingVertical: 40, gap: 6 },
-  emptyIcon:    { width: 48, height: 48, borderRadius: T.radius.md, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  clearBtn:     {
+    width: 20, height: 20, borderRadius: T.radius.full,
+    backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
+  },
+  addBtn:       {
+    width: 30, height: 30, borderRadius: T.radius.sm,
+    backgroundColor: T.brandLt,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.brandMd,
+  },
+  empty:        { alignItems: "center", paddingVertical: 48, gap: 8 },
+  emptyIcon:    {
+    width: 52, height: 52, borderRadius: T.radius.md,
+    backgroundColor: T.surface, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
+  },
   emptyTitle:   { color: T.ink, fontSize: 15, fontWeight: "600" },
-  emptySub:     { color: T.inkMuted, fontSize: 12, textAlign: "center", paddingHorizontal: 32 },
+  emptySub:     { color: T.inkMuted, fontSize: 12, textAlign: "center", paddingHorizontal: 36 },
 });

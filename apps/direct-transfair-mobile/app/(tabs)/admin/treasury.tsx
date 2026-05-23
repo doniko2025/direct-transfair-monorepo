@@ -1,9 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 // =========================================================
-// TRÉSORERIE — ROUTEUR PAR RÔLE v2.2
-// ✅ FIX : filteredClients filtre sur code DONIKO (plus d'erreurs TS)
-// ✅ FIX : parseApiNum() gère les strings abrégées (4K, 2.6M)
-// ✅ Montants toujours complets via fmt()
+// TRÉSORERIE — ROUTEUR PAR RÔLE v2.3
+// ✅ FIX TreasuryCompanyAdmin : utilise getMyWallets + getAgencies
+//    au lieu de getTreasuryOverview (qui renvoie vide pour CA)
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -40,7 +39,7 @@ const T = {
     USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#16A34A", bg: "#DCFCE7", name: "Dollar US"      },
     GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", bg: "#FEE2E2", name: "Franc Guinéen"  },
     GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", bg: "#EDE9FE", name: "Livre Sterling" },
-  },
+  } as const,
   radius: { sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 },
   font: {
     display: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
@@ -55,38 +54,31 @@ const T = {
   },
 };
 
-const CURRENCIES_ORDER = ["XOF", "EUR", "USD", "GNF", "GBP"] as const;
+type CurrencyKey = keyof typeof T.currencies;
+const CURRENCIES_ORDER: CurrencyKey[] = ["XOF", "EUR", "USD", "GNF", "GBP"];
 const CARD_W = (SW - 48 - 10) / 2;
 const HERO_BR = 28;
 
-// ✅ FIX : parse les strings abrégées (4K, 2.6M) renvoyées par certaines API
 function parseApiNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") {
     const s = v.replace(/\s/g, "").replace(",", ".");
     if (s.endsWith("k") || s.endsWith("K")) return parseFloat(s) * 1_000;
     if (s.endsWith("M") || s.endsWith("m")) return parseFloat(s) * 1_000_000;
-    if (s.endsWith("G") || s.endsWith("g")) return parseFloat(s) * 1_000_000_000;
     return parseFloat(s) || 0;
   }
   if (v && typeof (v as any).toNumber === "function") return (v as any).toNumber();
   return 0;
 }
-
-// Alias pour compatibilité avec le reste du code
 const toNum = parseApiNum;
 
-// ✅ Montants complets — jamais abrégés
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
-  try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(n);
-  } catch { return n.toFixed(d); }
+  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
+  catch { return n.toFixed(d); }
 }
 
+// ─── Section Label ─────────────────────────────────────────
 function SL({ dot, label }: { dot: string; label: string }) {
   return (
     <View style={slS.row}>
@@ -101,10 +93,9 @@ const slS = StyleSheet.create({
   txt: { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.6 },
 });
 
-function CurrencyCardCompact({ currency, balance, reserved, sentToday, receivedToday }: {
-  currency: keyof typeof T.currencies;
-  balance: number; reserved: number;
-  sentToday: number; receivedToday: number;
+// ─── Currency Card ─────────────────────────────────────────
+function CurrencyCard({ currency, balance, reserved }: {
+  currency: CurrencyKey; balance: number; reserved: number;
 }) {
   const cfg = T.currencies[currency];
   const available = balance - reserved;
@@ -122,7 +113,8 @@ function CurrencyCardCompact({ currency, balance, reserved, sentToday, receivedT
         </View>
       </View>
       <Text style={[ccS.balLabel, { fontFamily: T.font.sans }]}>SOLDE</Text>
-      <Text style={[ccS.balance, { color: T.ink, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+      <Text style={[ccS.balance, { color: T.ink, fontFamily: T.font.display }]}
+        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
         {fmt(balance, currency)}
       </Text>
       <Text style={[ccS.symbol, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.symbol}</Text>
@@ -130,28 +122,14 @@ function CurrencyCardCompact({ currency, balance, reserved, sentToday, receivedT
         <View style={[ccS.progFill, { width: `${pct}%` as any, backgroundColor: cfg.color }]} />
       </View>
       <View style={ccS.progRow}>
-        <Text style={[ccS.progLbl, { fontFamily: T.font.sub }]}>Dispo</Text>
+        <Text style={[ccS.progLbl, { fontFamily: T.font.sub }]}>Disponible</Text>
         <Text style={[ccS.progVal, { color: cfg.color, fontFamily: T.font.mono }]}>{fmt(available, currency)}</Text>
-      </View>
-      <View style={ccS.flowRow}>
-        <View style={ccS.flowItem}>
-          <Ionicons name="arrow-down-outline" size={9} color={T.green} />
-          <Text style={[ccS.flowTxt, { color: T.green, fontFamily: T.font.mono }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-            +{fmt(receivedToday, currency)}
-          </Text>
-        </View>
-        <View style={ccS.flowItem}>
-          <Ionicons name="arrow-up-outline" size={9} color={T.red} />
-          <Text style={[ccS.flowTxt, { color: T.red, fontFamily: T.font.mono }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-            -{fmt(sentToday, currency)}
-          </Text>
-        </View>
       </View>
     </View>
   );
 }
 const ccS = StyleSheet.create({
-  card:     { backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderTopWidth: 3, borderColor: T.border, padding: 11, ...T.shadow.soft },
+  card:     { backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderTopWidth: 3, borderColor: T.border, padding: 12, ...T.shadow.soft },
   top:      { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 8 },
   flagBox:  { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   code:     { fontSize: 11, fontWeight: "900", letterSpacing: 1 },
@@ -161,14 +139,12 @@ const ccS = StyleSheet.create({
   symbol:   { fontSize: 9, fontWeight: "800", marginBottom: 8 },
   progBg:   { height: 3, backgroundColor: T.borderLt, borderRadius: 99, overflow: "hidden", marginBottom: 5 },
   progFill: { height: 3, borderRadius: 99 },
-  progRow:  { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
+  progRow:  { flexDirection: "row", justifyContent: "space-between" },
   progLbl:  { fontSize: 8, color: T.inkMuted },
   progVal:  { fontSize: 8, fontWeight: "800" },
-  flowRow:  { flexDirection: "row", gap: 6 },
-  flowItem: { flex: 1, flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: T.borderLt, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 3 },
-  flowTxt:  { fontSize: 9, fontWeight: "800", flex: 1 },
 });
 
+// ─── KPI Card ─────────────────────────────────────────────
 function KpiCard({ label, value, sub, icon, color, bg }: {
   label: string; value: string; sub?: string; icon: string; color: string; bg: string;
 }) {
@@ -193,10 +169,10 @@ const kpiS = StyleSheet.create({
   sub:     { fontSize: 9, color: T.inkSub, marginTop: 3 },
 });
 
+// ─── Hero ─────────────────────────────────────────────────
 function TreasuryHero({ g1, g2, g3, role, userName, onBack, onRefresh }: {
-  g1: string; g2: string; g3: string;
-  role: string; userName?: string;
-  onBack: () => void; onRefresh: () => void;
+  g1: string; g2: string; g3: string; role: string;
+  userName?: string; onBack: () => void; onRefresh: () => void;
 }) {
   const sbH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
   return (
@@ -249,7 +225,253 @@ const hS = StyleSheet.create({
 });
 
 // ══════════════════════════════════════════════════════════
-//  SUPER-ADMIN
+//  COMPANY ADMIN — vue société
+// ══════════════════════════════════════════════════════════
+function TreasuryCompanyAdmin() {
+  const router   = useRouter();
+  const { user } = useAuth();
+
+  const [wallets,    setWallets]    = useState<any[]>([]);
+  const [agencies,   setAgencies]   = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const load = useCallback(async (mode: "init" | "refresh" = "init") => {
+    if (mode === "refresh") setRefreshing(true); else setLoading(true);
+    try {
+      // ✅ Utilise getMyWallets (wallets de la société) + getAgencies
+      const [wRes, aRes] = await Promise.allSettled([
+        api.getMyWallets(),
+        api.getAgencies(),
+      ]);
+      const ws = wRes.status === "fulfilled" ? wRes.value : [];
+      const as = aRes.status === "fulfilled" ? aRes.value : [];
+      setWallets(Array.isArray(ws) ? ws : []);
+      setAgencies(Array.isArray(as) ? as : []);
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
+    } catch {
+      setWallets([]); setAgencies([]);
+    } finally {
+      if (mode === "refresh") setRefreshing(false); else setLoading(false);
+    }
+  }, [fadeAnim]);
+
+  useFocusEffect(useCallback(() => {
+    fadeAnim.setValue(0); void load("init");
+  }, [load]));
+
+  // Solde par devise (wallets société)
+  const balanceByCurrency = (cur: CurrencyKey) => {
+    const w = wallets.find((x) => x.currency === cur);
+    return {
+      balance:  toNum(w?.balance ?? 0),
+      reserved: toNum(w?.reservedBalance ?? 0),
+    };
+  };
+
+  // Solde total toutes agences en XOF (estimation)
+  const totalAgencyBalance = agencies.reduce((sum, a) => {
+    const ws = Array.isArray(a.wallets) ? a.wallets : [];
+    const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+    return sum + toNum(pw?.balance ?? a.balance ?? 0);
+  }, 0);
+
+  const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
+
+  // Devises avec solde > 0
+  const activeCurrencies = CURRENCIES_ORDER.filter((cur) => balanceByCurrency(cur).balance > 0);
+  const displayCurrencies = activeCurrencies.length > 0 ? activeCurrencies : CURRENCIES_ORDER.slice(0, 4);
+
+  const flagMap: Record<string, string> = {
+    GN:"🇬🇳", SN:"🇸🇳", ML:"🇲🇱", CI:"🇨🇮",
+    FR:"🇫🇷", GB:"🇬🇧", US:"🇺🇸", BF:"🇧🇫", NE:"🇳🇪", TG:"🇹🇬",
+  };
+
+  return (
+    <SafeAreaView style={[s.safe, { backgroundColor: T.caBg }]}>
+      <StatusBar barStyle="light-content" />
+      <TreasuryHero
+        g1={T.caHeroA} g2={T.caHeroB} g3={T.caHeroC}
+        role="ADMIN SOCIÉTÉ"
+        userName={user?.firstName ?? ""}
+        onBack={() => router.back()}
+        onRefresh={() => void load("refresh")}
+      />
+
+      {loading ? (
+        <View style={s.loader}><ActivityIndicator color={T.caAccent} size="large" /></View>
+      ) : (
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
+          contentContainerStyle={[s.scroll, { backgroundColor: T.caBg }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={T.caAccent} />}
+        >
+
+          {/* ── Wallets société ── */}
+          <SL dot={T.caAccent} label="SOLDES SOCIÉTÉ · PAR DEVISE" />
+          <ScrollView
+            horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.currencyRow}
+            snapToInterval={CARD_W + 10} decelerationRate="fast"
+          >
+            {displayCurrencies.map((cur) => {
+              const { balance, reserved } = balanceByCurrency(cur);
+              return (
+                <View key={cur} style={{ marginRight: 10 }}>
+                  <CurrencyCard currency={cur} balance={balance} reserved={reserved} />
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          {/* ── KPIs ── */}
+          <SL dot={T.purple} label="SYNTHÈSE" />
+          <View style={s.kpiGrid}>
+            <KpiCard
+              label="Agences actives"
+              value={`${activeAgencies}/${agencies.length}`}
+              sub="réseau opérationnel"
+              icon="storefront-outline"
+              color={T.green} bg={T.greenLt}
+            />
+            <KpiCard
+              label="Solde total agences"
+              value={fmt(totalAgencyBalance)}
+              sub="toutes devises"
+              icon="wallet-outline"
+              color={T.caAccent} bg={T.caAccentLt}
+            />
+            <KpiCard
+              label="Devises actives"
+              value={String(wallets.length)}
+              sub="wallets ouverts"
+              icon="cash-outline"
+              color={T.amber} bg={T.amberLt}
+            />
+            <KpiCard
+              label="Agences"
+              value={String(agencies.length)}
+              sub="dans le réseau"
+              icon="business-outline"
+              color={T.purple} bg={T.purpleLt}
+            />
+          </View>
+
+          {/* ── Accès rapide ── */}
+          <SL dot={T.green} label="ACCÈS RAPIDE" />
+          <View style={s.quickGrid}>
+            {[
+              { label: "Transactions", icon: "analytics-outline",  color: T.caAccent, bg: T.caAccentLt, route: "/(tabs)/admin/transactions" },
+              { label: "Agences",      icon: "storefront-outline", color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/agencies"     },
+              { label: "Paramètres",   icon: "settings-outline",   color: T.purple,   bg: T.purpleLt,   route: "/(tabs)/admin/settings"     },
+              { label: "Retour",       icon: "arrow-back-outline",  color: T.amber,    bg: T.amberLt,    route: null                          },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
+                onPress={() => item.route ? router.push(item.route as any) : router.back()}
+              >
+                <Ionicons name={item.icon as any} size={18} color={item.color} />
+                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* ── Agences détail ── */}
+          {agencies.length > 0 && (
+            <>
+              <SL dot={T.caAccent} label={`AGENCES DU RÉSEAU · ${agencies.length}`} />
+              {agencies.map((agency) => {
+                const isActive = agency.isActive !== false;
+                const ws = Array.isArray(agency.wallets) ? agency.wallets : [];
+                const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+                const bal = toNum(pw?.balance ?? agency.balance ?? 0);
+                const cur = pw?.currency ?? agency.primaryCurrency ?? "XOF";
+                const cfg = T.currencies[cur as CurrencyKey] ?? T.currencies.XOF;
+                const flag = agency.country
+                  ? (flagMap[agency.country.toUpperCase().substring(0, 2)] ?? "🌍")
+                  : "🌍";
+
+                return (
+                  <View key={agency.id} style={agS.card}>
+                    <View style={[agS.bar, { backgroundColor: isActive ? T.green : T.red }]} />
+                    <View style={agS.body}>
+                      <View style={agS.row}>
+                        <View style={agS.flagBox}>
+                          <Text style={{ fontSize: 20 }}>{flag}</Text>
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[agS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                            {agency.name}
+                          </Text>
+                          <Text style={[agS.city, { fontFamily: T.font.sub }]}>
+                            {agency.city ?? "—"} · {agency.country ?? "—"}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: "flex-end" }}>
+                          <Text style={[agS.balLbl, { fontFamily: T.font.sans }]}>SOLDE</Text>
+                          <Text style={[agS.bal, { color: cfg.color, fontFamily: T.font.mono }]}>
+                            {fmt(bal, cur)}
+                          </Text>
+                          <Text style={[agS.cur, { color: cfg.color, fontFamily: T.font.sans }]}>
+                            {cfg.symbol}
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={agS.foot}>
+                        <View style={[agS.status, {
+                          backgroundColor: isActive ? T.greenLt : T.redLt,
+                          borderColor: `${isActive ? T.green : T.red}30`,
+                        }]}>
+                          <View style={[agS.dot, { backgroundColor: isActive ? T.green : T.red }]} />
+                          <Text style={[agS.statusTxt, { color: isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
+                            {isActive ? "Opérationnelle" : "Suspendue"}
+                          </Text>
+                        </View>
+                        {agency.type && (
+                          <View style={[agS.typePill, { backgroundColor: T.caAccentLt, borderColor: T.caAccentMd }]}>
+                            <Text style={[agS.typeTxt, { color: T.caAccent, fontFamily: T.font.sans }]}>
+                              {agency.type === "PARTNER" ? "PARTENAIRE" : "FILIALE"}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )}
+
+          <View style={{ height: 80 }} />
+        </Animated.ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+const agS = StyleSheet.create({
+  card:     { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft },
+  bar:      { width: 4 },
+  body:     { flex: 1, padding: 13 },
+  row:      { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  flagBox:  { width: 40, height: 40, borderRadius: 12, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  name:     { color: T.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  city:     { color: T.inkSub, fontSize: 10 },
+  balLbl:   { fontSize: 8, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.8, marginBottom: 2 },
+  bal:      { fontSize: 16, fontWeight: "800" },
+  cur:      { fontSize: 9, fontWeight: "700", marginTop: 1 },
+  foot:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  status:   { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+  dot:      { width: 4, height: 4, borderRadius: 99 },
+  statusTxt:{ fontSize: 9, fontWeight: "700" },
+  typePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+  typeTxt:  { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+});
+
+// ══════════════════════════════════════════════════════════
+//  SUPER ADMIN — vue globale
 // ══════════════════════════════════════════════════════════
 function TreasurySuperAdmin() {
   const router   = useRouter();
@@ -263,12 +485,10 @@ function TreasurySuperAdmin() {
   const load = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
-      const ov = await (api as any).getTreasuryOverview?.() ?? [];
+      const ov = await api.getTreasuryOverview().catch(() => []);
       setOverview(Array.isArray(ov) ? ov : []);
-      try {
-        const cl = await (api as any).getClients?.() ?? [];
-        setClients(Array.isArray(cl) ? cl : []);
-      } catch { setClients([]); }
+      const cl = await (api as any).getClients?.().catch(() => []) ?? [];
+      setClients(Array.isArray(cl) ? cl : []);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch { setOverview([]); }
     finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
@@ -276,22 +496,17 @@ function TreasurySuperAdmin() {
 
   useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
 
-  // ✅ FIX : filtre sur code DONIKO — zéro erreur TypeScript
-  const filteredClients = clients.filter((c) => {
-    if ((c.code ?? "").toUpperCase() === "DONIKO") return false;
-    if ((user as any)?.client?.name && c.name === (user as any)?.client?.name) return false;
-    return true;
-  });
+  const filteredClients = clients.filter((c) => (c.code ?? "").toUpperCase() !== "DONIKO");
 
   const totalTx   = overview.reduce((s, o) => s + parseApiNum(o.transactionCountToday), 0);
   const totalFees = overview.reduce((s, o) => s + parseApiNum(o.totalFeesToday), 0);
   const activeClients = filteredClients.filter((c) => c.subscriptionStatus === "ACTIVE").length;
 
   const kpis = [
-    { label: "Transactions",     value: String(totalTx),              sub: "Aujourd'hui",        icon: "swap-horizontal-outline", color: T.saAccent, bg: T.saAccentLt },
-    { label: "Sociétés actives", value: `${activeClients}/${filteredClients.length}`, sub: "abonnements actifs", icon: "business-outline", color: T.green, bg: T.greenLt },
-    { label: "Commissions",      value: fmt(totalFees * 0.3),         sub: "total plateforme",   icon: "trending-up-outline",     color: T.amber,    bg: T.amberLt    },
-    { label: "Frais totaux",     value: fmt(totalFees),               sub: "toutes devises",     icon: "calculator-outline",      color: T.purple,   bg: T.purpleLt   },
+    { label: "Transactions",     value: String(totalTx),           sub: "Aujourd'hui",        icon: "swap-horizontal-outline", color: T.saAccent, bg: T.saAccentLt },
+    { label: "Sociétés actives", value: `${activeClients}/${filteredClients.length}`, sub: "abonnements", icon: "business-outline", color: T.green, bg: T.greenLt },
+    { label: "Commissions",      value: fmt(totalFees * 0.3),      sub: "plateforme",          icon: "trending-up-outline",     color: T.amber,    bg: T.amberLt    },
+    { label: "Frais totaux",     value: fmt(totalFees),            sub: "toutes devises",      icon: "calculator-outline",      color: T.purple,   bg: T.purpleLt   },
   ];
 
   return (
@@ -314,13 +529,13 @@ function TreasurySuperAdmin() {
             {CURRENCIES_ORDER.map((cur) => {
               const ov = overview.find((o) => o.currency === cur);
               return (
-                <CurrencyCardCompact key={cur} currency={cur}
-                  // ✅ parseApiNum gère les strings abrégées (4K, 2.6M)
-                  balance={parseApiNum(ov?.balance ?? ov?.totalBalance ?? 0)}
-                  reserved={parseApiNum(ov?.reservedBalance ?? 0)}
-                  sentToday={parseApiNum(ov?.totalSentToday ?? 0)}
-                  receivedToday={parseApiNum(ov?.totalReceivedToday ?? 0)}
-                />
+                <View key={cur} style={{ marginRight: 10 }}>
+                  <CurrencyCard
+                    currency={cur}
+                    balance={parseApiNum(ov?.balance ?? ov?.totalBalance ?? 0)}
+                    reserved={parseApiNum(ov?.reservedBalance ?? 0)}
+                  />
+                </View>
               );
             })}
           </ScrollView>
@@ -335,56 +550,47 @@ function TreasurySuperAdmin() {
             {[
               { label: "Transactions", icon: "analytics-outline",  color: T.saAccent, bg: T.saAccentLt, route: "/(tabs)/admin/transactions" },
               { label: "Supervision",  icon: "shield-outline",     color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/agencies"     },
-              { label: "Utilisateurs", icon: "people-outline",     color: T.purple,   bg: T.purpleLt,   route: "/(tabs)/admin/agencies"     },
               { label: "Sociétés",     icon: "business-outline",   color: T.amber,    bg: T.amberLt,    route: "/(tabs)/admin/agencies"     },
+              { label: "Retour",       icon: "arrow-back-outline",  color: T.purple,   bg: T.purpleLt,   route: null                          },
             ].map((item) => (
               <TouchableOpacity key={item.label}
                 style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
-                onPress={() => router.push(item.route as any)}>
+                onPress={() => item.route ? router.push(item.route as any) : router.back()}>
                 <Ionicons name={item.icon as any} size={18} color={item.color} />
                 <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>{item.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          {/* ✅ Top Sociétés — DONIKO exclu */}
-          <SL dot={T.amber} label={`TOP SOCIÉTÉS · ${filteredClients.length} CLIENT${filteredClients.length > 1 ? "S" : ""}`} />
-          {filteredClients.length === 0 ? (
-            <View style={s.emptyRow}>
-              <Ionicons name="business-outline" size={22} color={T.inkMuted} />
-              <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucune société cliente</Text>
-            </View>
-          ) : (
-            filteredClients.slice(0, 5).map((c, i) => {
-              const rankColors = [T.amber, T.inkMuted, "#B45309"];
-              const rc = rankColors[i] ?? T.inkMuted;
-              return (
-                <View key={c.id} style={s.rankCard}>
-                  <View style={[s.rankBox, { backgroundColor: rc + "18", borderColor: rc + "30" }]}>
-                    <Text style={[s.rankTxt, { color: rc, fontFamily: T.font.mono }]}>#{i + 1}</Text>
+          {filteredClients.length > 0 && (
+            <>
+              <SL dot={T.amber} label={`TOP SOCIÉTÉS · ${filteredClients.length}`} />
+              {filteredClients.slice(0, 5).map((c, i) => {
+                const rc = [T.amber, T.inkMuted, "#B45309"][i] ?? T.inkMuted;
+                return (
+                  <View key={c.id} style={s.rankCard}>
+                    <View style={[s.rankBox, { backgroundColor: rc + "18", borderColor: rc + "30" }]}>
+                      <Text style={[s.rankTxt, { color: rc, fontFamily: T.font.mono }]}>#{i + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.rankName, { fontFamily: T.font.sans }]}>{c.name}</Text>
+                      <Text style={[s.rankCode, { fontFamily: T.font.mono }]}>{c.code}</Text>
+                    </View>
+                    <View style={[s.rankStatus, {
+                      backgroundColor: c.subscriptionStatus === "ACTIVE" ? T.greenLt : T.redLt,
+                      borderColor: (c.subscriptionStatus === "ACTIVE" ? T.green : T.red) + "30",
+                    }]}>
+                      <Text style={[s.rankStatusTxt, {
+                        color: c.subscriptionStatus === "ACTIVE" ? T.green : T.red,
+                        fontFamily: T.font.sans,
+                      }]}>{c.subscriptionStatus}</Text>
+                    </View>
                   </View>
-                  <View style={[s.rankAvatar, { backgroundColor: T.saAccentLt }]}>
-                    <Text style={[s.rankLetter, { fontFamily: T.font.display, color: T.saAccent }]}>
-                      {(c.name?.[0] ?? "C").toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.rankName, { fontFamily: T.font.sans }]} numberOfLines={1}>{c.name}</Text>
-                    <Text style={[s.rankCode, { fontFamily: T.font.mono }]}>{c.code}</Text>
-                  </View>
-                  <View style={[s.rankStatus, {
-                    backgroundColor: c.subscriptionStatus === "ACTIVE" ? T.greenLt : T.redLt,
-                    borderColor: c.subscriptionStatus === "ACTIVE" ? T.greenMd : T.red + "35",
-                  }]}>
-                    <Text style={[s.rankStatusTxt, {
-                      color: c.subscriptionStatus === "ACTIVE" ? T.green : T.red,
-                      fontFamily: T.font.sans,
-                    }]}>{c.subscriptionStatus}</Text>
-                  </View>
-                </View>
-              );
-            })
+                );
+              })}
+            </>
           )}
+
           <View style={{ height: 80 }} />
         </Animated.ScrollView>
       )}
@@ -393,204 +599,35 @@ function TreasurySuperAdmin() {
 }
 
 // ══════════════════════════════════════════════════════════
-//  COMPANY-ADMIN
-// ══════════════════════════════════════════════════════════
-function TreasuryCompanyAdmin() {
-  const router   = useRouter();
-  const { user } = useAuth();
-  const [wallets,    setWallets]    = useState<any[]>([]);
-  const [agencies,   setAgencies]   = useState<any[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const load = useCallback(async (mode: "init" | "refresh" = "init") => {
-    if (mode === "refresh") setRefreshing(true); else setLoading(true);
-    try {
-      const wRes = await api.http.get("/wallets");
-      const wList = Array.isArray(wRes.data) ? wRes.data
-        : Array.isArray(wRes.data?.data) ? wRes.data.data : [];
-      setWallets(wList);
-      const aList = await api.getAgencies();
-      setAgencies(Array.isArray(aList) ? aList : []);
-      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { setWallets([]); setAgencies([]); }
-    finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
-  }, [fadeAnim]);
-
-  useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
-
-  const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
-  const totalBalance   = wallets.reduce((s, w) => s + toNum(w.balance), 0);
-
-  const kpis = [
-    { label: "Agences",        value: `${activeAgencies}/${agencies.length}`, sub: "actives",        icon: "storefront-outline",   color: T.caAccent, bg: T.caAccentLt },
-    { label: "Wallets actifs", value: String(wallets.length),                 sub: "5 devises",       icon: "wallet-outline",       color: T.teal,     bg: T.tealLt     },
-    { label: "Solde total",    value: fmt(totalBalance),                      sub: "toutes devises",  icon: "cash-outline",         color: T.green,    bg: T.greenLt    },
-    { label: "Transactions",   value: "—",                                    sub: "Voir historique", icon: "analytics-outline",    color: T.amber,    bg: T.amberLt    },
-  ];
-
-  const FLAG_MAP: Record<string, string> = { GN:"🇬🇳", SN:"🇸🇳", ML:"🇲🇱", CI:"🇨🇮", FR:"🇫🇷", GB:"🇬🇧", US:"🇺🇸", BF:"🇧🇫" };
-
-  return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.caBg }]}>
-      <StatusBar barStyle="light-content" />
-      <TreasuryHero g1={T.caHeroA} g2={T.caHeroB} g3={T.caHeroC} role="ADMIN SOCIÉTÉ"
-        userName={user?.firstName ?? ""} onBack={() => router.back()} onRefresh={() => void load("refresh")} />
-
-      {loading ? (
-        <View style={s.loader}><ActivityIndicator color={T.caAccent} size="large" /></View>
-      ) : (
-        <Animated.ScrollView style={{ opacity: fadeAnim }}
-          contentContainerStyle={[s.scroll, { backgroundColor: T.caBg }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={T.caAccent} />}>
-
-          <SL dot={T.caAccent} label="MES PORTEFEUILLES · 5 DEVISES" />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.currencyRow} snapToInterval={CARD_W + 10} decelerationRate="fast">
-            {CURRENCIES_ORDER.map((cur) => {
-              const w = wallets.find((x) => x.currency === cur);
-              return (
-                <CurrencyCardCompact key={cur} currency={cur}
-                  balance={toNum(w?.balance ?? 0)} reserved={toNum(w?.reservedBalance ?? 0)}
-                  sentToday={0} receivedToday={0} />
-              );
-            })}
-          </ScrollView>
-
-          <SL dot={T.teal} label="MES INDICATEURS" />
-          <View style={s.kpiGrid}>
-            {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
-          </View>
-
-          <SL dot={T.caAccent} label={`MES AGENCES · ${agencies.length}`} />
-          {agencies.length === 0 ? (
-            <View style={s.emptyRow}>
-              <Ionicons name="storefront-outline" size={22} color={T.inkMuted} />
-              <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>Aucune agence</Text>
-            </View>
-          ) : (
-            agencies.map((agency) => {
-              const isActive = agency.isActive !== false;
-              const currency = agency.primaryCurrency ?? "XOF";
-              const balance  = toNum(agency.balance ?? 0);
-              const flag     = agency.country ? (FLAG_MAP[agency.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
-              const cfg = T.currencies[currency as keyof typeof T.currencies] ?? T.currencies.XOF;
-              return (
-                <View key={agency.id} style={s.agencyCard}>
-                  <View style={[s.agencyBar, { backgroundColor: isActive ? T.teal : T.red }]} />
-                  <View style={s.agencyBody}>
-                    <View style={s.agencyRow}>
-                      <View style={s.agencyFlag}><Text style={{ fontSize: 20 }}>{flag}</Text></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.agencyName, { fontFamily: T.font.sans }]} numberOfLines={1}>{agency.name}</Text>
-                        <Text style={[s.agencyCity, { fontFamily: T.font.sub }]}>{agency.city ?? "—"} · {agency.country ?? "—"}</Text>
-                      </View>
-                      <View style={{ alignItems: "flex-end" }}>
-                        <Text style={[s.agencyBal, { color: cfg.color, fontFamily: T.font.mono }]}>{fmt(balance, currency)}</Text>
-                        <Text style={[s.agencyCur, { color: cfg.color, fontFamily: T.font.sans }]}>{cfg.symbol}</Text>
-                      </View>
-                    </View>
-                    <View style={s.agencyFoot}>
-                      <View style={[s.agencyStatus, { backgroundColor: isActive ? T.tealLt : T.redLt, borderColor: isActive ? T.tealMd : T.red + "35" }]}>
-                        <View style={[s.agencyDot, { backgroundColor: isActive ? T.teal : T.red }]} />
-                        <Text style={[s.agencyStatusTxt, { color: isActive ? T.teal : T.red, fontFamily: T.font.sans }]}>
-                          {isActive ? "Opérationnelle" : "Suspendue"}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        style={[s.agencyBtn, { backgroundColor: T.caAccentLt, borderColor: T.caAccentMd }]}
-                        onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/details" as any, params: { id: agency.id } })}>
-                        <Ionicons name="eye-outline" size={13} color={T.caAccent} />
-                        <Text style={[s.agencyBtnTxt, { color: T.caAccent, fontFamily: T.font.sans }]}>Détails</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-              );
-            })
-          )}
-
-          <SL dot={T.green} label="ACTIONS RAPIDES" />
-          <View style={s.quickGrid}>
-            {[
-              { label: "Transactions",   icon: "analytics-outline",      color: T.caAccent, bg: T.caAccentLt, route: "/(tabs)/admin/transactions" },
-              { label: "Agences",        icon: "storefront-outline",      color: T.teal,     bg: T.tealLt,     route: "/(tabs)/admin/agencies"     },
-              { label: "Paramètres",     icon: "settings-outline",        color: T.purple,   bg: T.purpleLt,   route: "/(tabs)/admin/settings"     },
-              { label: "Taux & Devises", icon: "swap-horizontal-outline", color: T.amber,    bg: T.amberLt,    route: "/(tabs)/rates"              },
-            ].map((item) => (
-              <TouchableOpacity key={item.label}
-                style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
-                onPress={() => router.push(item.route as any)}>
-                <Ionicons name={item.icon as any} size={18} color={item.color} />
-                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <View style={{ height: 80 }} />
-        </Animated.ScrollView>
-      )}
-    </SafeAreaView>
-  );
-}
-
-// ══════════════════════════════════════════════════════════
-//  ROUTEUR
+//  ROUTEUR PRINCIPAL
 // ══════════════════════════════════════════════════════════
 export default function TreasuryScreen() {
   const { user } = useAuth();
-  if (user?.role === "SUPER_ADMIN")   return <TreasurySuperAdmin />;
-  if (user?.role === "COMPANY_ADMIN") return <TreasuryCompanyAdmin />;
-  const router = useRouter();
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.caBg, justifyContent: "center", alignItems: "center" }}>
-      <Ionicons name="lock-closed-outline" size={48} color={T.inkMuted} />
-      <Text style={[{ color: T.ink, fontSize: 16, fontWeight: "700", marginTop: 16 }, { fontFamily: T.font.sans }]}>
-        Accès non autorisé
-      </Text>
-      <TouchableOpacity
-        style={{ marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, backgroundColor: T.caAccentLt, borderRadius: 12 }}
-        onPress={() => router.back()}>
-        <Text style={{ color: T.caAccent, fontWeight: "700" }}>Retour</Text>
-      </TouchableOpacity>
-    </SafeAreaView>
-  );
+  if (user?.role === "SUPER_ADMIN") return <TreasurySuperAdmin />;
+  return <TreasuryCompanyAdmin />;
 }
 
+// ─── Styles communs ────────────────────────────────────────
 const s = StyleSheet.create({
   safe:   { flex: 1 },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   scroll: { padding: 16 },
-  currencyRow: { gap: 10, paddingBottom: 4, marginBottom: 20 },
-  kpiGrid:     { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 20 },
-  quickGrid:   { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 20 },
-  quickCard:   { width: (SW - 36 - 10) / 2, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 14, borderRadius: T.radius.md, borderWidth: 1, ...T.shadow.soft },
-  quickTxt:    { fontSize: 13, fontWeight: "700" },
-  rankCard:    { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, marginBottom: 8, gap: 10, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
-  rankBox:     { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  rankTxt:     { fontSize: 11, fontWeight: "900" },
-  rankAvatar:  { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: T.saAccentMd },
-  rankLetter:  { fontSize: 16, fontWeight: "700" },
-  rankName:    { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  rankCode:    { fontSize: 9, fontWeight: "900", color: T.amber, letterSpacing: 0.8 },
-  rankStatus:  { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+
+  currencyRow: { paddingLeft: 0, paddingBottom: 14 },
+
+  kpiGrid:  { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
+  quickGrid:{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
+  quickCard:{ width: (SW - 42) / 2, flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: T.radius.md, borderWidth: 1 },
+  quickTxt: { fontSize: 12, fontWeight: "700" },
+
+  rankCard:   { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
+  rankBox:    { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  rankTxt:    { fontSize: 12, fontWeight: "900" },
+  rankName:   { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  rankCode:   { fontSize: 9, color: T.inkSub, fontWeight: "700" },
+  rankStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
   rankStatusTxt: { fontSize: 9, fontWeight: "800" },
-  agencyCard:  { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft },
-  agencyBar:   { width: 4 },
-  agencyBody:  { flex: 1, padding: 12 },
-  agencyRow:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
-  agencyFlag:  { width: 38, height: 38, borderRadius: 10, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
-  agencyName:  { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  agencyCity:  { fontSize: 10, color: T.inkSub },
-  agencyBal:   { fontSize: 14, fontWeight: "800" },
-  agencyCur:   { fontSize: 8, fontWeight: "700", marginTop: 1 },
-  agencyFoot:  { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  agencyStatus:{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
-  agencyDot:   { width: 5, height: 5, borderRadius: 99 },
-  agencyStatusTxt: { fontSize: 9, fontWeight: "800" },
-  agencyBtn:   { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  agencyBtnTxt:{ fontSize: 11, fontWeight: "700" },
-  emptyRow:    { flexDirection: "row", alignItems: "center", gap: 10, padding: 16, backgroundColor: T.surface, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, marginBottom: 16 },
-  emptyTxt:    { color: T.inkMuted, fontSize: 13, fontWeight: "600" },
+
+  emptyRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16 },
+  emptyTxt: { color: T.inkMuted, fontSize: 13, fontWeight: "600" },
 });

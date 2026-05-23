@@ -1,20 +1,23 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/users.tsx
 // =========================================================
-// USERS v7.0 — Direct Transf'air
+// USERS v7.1 — Direct Transf'air
 // ✅ SUPER_ADMIN   : voit admins sociétés + gérants agences
 //                   + stats clients (actifs/inactifs/total)
 //                   Filtre : pays, devise, nom, email
 // ✅ COMPANY_ADMIN : voit ses clients + ses agents
 //                   Filtre : pays, devise, nom, email
-// ✅ Rôles strictement séparés — zéro mélange
+// ✅ FIX v7.1 : UsersSA utilise api.getUsers() (GET /users)
+//              au lieu de api.getClients() qui ne renvoie
+//              pas les relations users/agencies imbriquées
 // =========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  TextInput, SafeAreaView, ActivityIndicator, Platform,
+  TextInput, ActivityIndicator, Platform,
   StatusBar, Animated, ScrollView, Modal,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../../services/api";
@@ -297,6 +300,15 @@ function UserCard({ item, accent, accentLt }: { item: any; accent: string; accen
                 <Text style={[ucS.metaTxt, { fontFamily: T.font.sans }]}>{item.phone}</Text>
               </View>
             )}
+            {/* Contexte société / agence */}
+            {item.client?.name && (
+              <View style={ucS.metaItem}>
+                <Ionicons name="business-outline" size={10} color={T.inkMuted} />
+                <Text style={[ucS.metaTxt, { fontFamily: T.font.sans }]}>
+                  {item.client.name}{item.agency?.name ? ` · ${item.agency.name}` : ""}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -320,7 +332,7 @@ const ucS = StyleSheet.create({
   metaTxt:  { fontSize: 10, color: T.inkSub, fontWeight: "600" },
 });
 
-// Stat card (pour les stats clients SA)
+// Stat card
 function StatCard({ label, value, color, bg, icon }: {
   label: string; value: number; color: string; bg: string; icon: string;
 }) {
@@ -385,14 +397,8 @@ const schS = StyleSheet.create({
 });
 
 // Appliquer les filtres texte + pays + devise
-function applyFilters(
-  list: any[],
-  q: string,
-  country: string,
-  currency: string,
-): any[] {
+function applyFilters(list: any[], q: string, country: string, currency: string): any[] {
   return list.filter((item) => {
-    // Texte
     if (q.trim()) {
       const s = q.toLowerCase();
       const match =
@@ -400,11 +406,9 @@ function applyFilters(
         (item.email ?? "").toLowerCase().includes(s);
       if (!match) return false;
     }
-    // Pays
     if (country && country !== "Tous" && country !== "Toutes") {
       if ((item.country ?? "").toUpperCase() !== country.toUpperCase()) return false;
     }
-    // Devise
     if (currency && currency !== "Toutes") {
       if ((item.primaryCurrency ?? "") !== currency) return false;
     }
@@ -414,15 +418,17 @@ function applyFilters(
 
 // ══════════════════════════════════════════════════════════
 //  SUPER-ADMIN
-//  Voit : admins sociétés + gérants agences (pas les clients)
-//  Stats : clients actifs/inactifs/suspendus/total
-//  Filtres : pays, devise, nom, email
+//  ✅ FIX v7.1 : utilise api.getUsers() → GET /users
+//  Le backend renvoie tous les users (whereClause = {})
+//  On filtre ensuite par rôle côté frontend.
 // ══════════════════════════════════════════════════════════
 function UsersSA() {
   const router   = useRouter();
   const { user } = useAuth();
 
-  const [clients,    setClients]    = useState<any[]>([]);
+  // ✅ allUsers contient la liste brute depuis GET /users
+  const [allUsers,   setAllUsers]   = useState<any[]>([]);
+  const [agencies,   setAgencies]   = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [q,          setQ]          = useState("");
@@ -435,29 +441,51 @@ function UsersSA() {
   const load = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
-      const cl = await (api as any).getClients?.() ?? [];
-      setClients(Array.isArray(cl) ? cl : []);
+      // ✅ GET /users retourne tous les users car le SA a whereClause = {}
+      // GET /agencies pour les stats agences
+      const [usersRes, agenciesRes] = await Promise.allSettled([
+        api.getUsers({ limit: 500 }),
+        api.getAgencies(),
+      ]);
+
+      if (usersRes.status === "fulfilled") {
+        const data = usersRes.value;
+        setAllUsers(Array.isArray(data) ? data : []);
+      } else {
+        console.warn("getUsers failed:", usersRes.reason);
+        setAllUsers([]);
+      }
+
+      if (agenciesRes.status === "fulfilled") {
+        setAgencies(Array.isArray(agenciesRes.value) ? agenciesRes.value : []);
+      } else {
+        setAgencies([]);
+      }
+
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { setClients([]); }
-    finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
+    } catch (e) {
+      console.error("UsersSA load error:", e);
+      setAllUsers([]);
+    } finally {
+      if (mode === "refresh") setRefreshing(false); else setLoading(false);
+    }
   }, [fadeAnim]);
 
   useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
 
-  // Extraire admins sociétés + gérants agences de tous les clients
+  // ✅ Filtrer par rôle depuis la liste brute
   const allAdmins = useMemo(() =>
-    clients.flatMap((c) =>
-      (c.users ?? [])
-        .filter((u: any) => u.role === "COMPANY_ADMIN")
-        .map((u: any) => ({ ...u, _clientName: c.name, _clientCode: c.code }))
-    ), [clients]);
+    allUsers.filter((u: any) => u.role === "COMPANY_ADMIN"),
+  [allUsers]);
 
   const allAgents = useMemo(() =>
-    clients.flatMap((c) =>
-      (c.agencies ?? []).flatMap((a: any) =>
-        (a.agents ?? []).map((u: any) => ({ ...u, _agencyName: a.name, _clientName: c.name }))
-      )
-    ), [clients]);
+    allUsers.filter((u: any) => u.role === "AGENT"),
+  [allUsers]);
+
+  // Clients (rôle USER) pour les stats
+  const allClientUsers = useMemo(() =>
+    allUsers.filter((u: any) => u.role === "USER"),
+  [allUsers]);
 
   // Pays disponibles
   const countries = useMemo(() => {
@@ -472,20 +500,20 @@ function UsersSA() {
   const filteredAgents = useMemo(() =>
     applyFilters(allAgents, q, country, currency), [allAgents, q, country, currency]);
 
-  // Stats clients
+  // Stats
   const statsClients = useMemo(() => ({
-    total:     clients.length,
-    active:    clients.filter((c) => c.subscriptionStatus === "ACTIVE").length,
-    inactive:  clients.filter((c) => c.subscriptionStatus === "INACTIVE").length,
-    suspended: clients.filter((c) => c.subscriptionStatus === "SUSPENDED").length,
-    trial:     clients.filter((c) => c.subscriptionStatus === "TRIAL").length,
-  }), [clients]);
+    total:     allClientUsers.length,
+    active:    allClientUsers.filter((u) => u.isActive !== false && !u.isSuspended).length,
+    inactive:  allClientUsers.filter((u) => u.isActive === false).length,
+    suspended: allClientUsers.filter((u) => u.isSuspended).length,
+    trial:     0,
+  }), [allClientUsers]);
 
   const filterActive = country !== "Tous" || currency !== "Toutes";
   const currentList  = activeTab === "admins" ? filteredAdmins : filteredAgents;
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.saBg }]}>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.saBg }]} edges={["top"]}>
       <StatusBar backgroundColor={T.surface} barStyle="dark-content" />
       <ScreenHeader
         accent={T.saAccent} accentLt={T.saAccentLt}
@@ -503,13 +531,13 @@ function UsersSA() {
           contentContainerStyle={[s.scroll, { backgroundColor: T.saBg }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Stats sociétés clientes */}
-          <SL dot={T.saAccent} label="STATISTIQUES SOCIÉTÉS CLIENTES" />
+          {/* Stats */}
+          <SL dot={T.saAccent} label="STATISTIQUES UTILISATEURS" />
           <View style={s.statsRow}>
-            <StatCard label="Total"     value={statsClients.total}     color={T.saAccent} bg={T.saAccentLt} icon="business-outline"         />
-            <StatCard label="Actives"   value={statsClients.active}    color={T.green}    bg={T.greenLt}    icon="checkmark-circle-outline"  />
-            <StatCard label="Inactives" value={statsClients.inactive}  color={T.red}      bg={T.redLt}      icon="close-circle-outline"      />
-            <StatCard label="Suspendus" value={statsClients.suspended} color={T.amber}    bg={T.amberLt}    icon="pause-circle-outline"      />
+            <StatCard label="Admins"    value={allAdmins.length}       color={T.saAccent} bg={T.saAccentLt} icon="business-outline"         />
+            <StatCard label="Agents"    value={allAgents.length}       color={T.amber}    bg={T.amberLt}    icon="person-outline"            />
+            <StatCard label="Clients"   value={allClientUsers.length}  color={T.green}    bg={T.greenLt}    icon="people-outline"            />
+            <StatCard label="Agences"   value={agencies.length}        color={T.teal}     bg={T.tealLt}     icon="storefront-outline"        />
           </View>
 
           {/* Recherche + filtres */}
@@ -519,7 +547,7 @@ function UsersSA() {
             accent={T.saAccent} filterActive={filterActive}
           />
 
-          {/* Tabs Admins / Agents */}
+          {/* Tabs */}
           <View style={s.tabs}>
             {(["admins", "agents"] as const).map((tab) => {
               const active = activeTab === tab;
@@ -556,18 +584,7 @@ function UsersSA() {
             </View>
           ) : (
             currentList.map((item, i) => (
-              <View key={item.id ?? i}>
-                <UserCard item={item} accent={T.saAccent} accentLt={T.saAccentLt} />
-                {/* Contexte société/agence */}
-                {item._clientName && (
-                  <View style={s.contextBadge}>
-                    <Ionicons name="business-outline" size={10} color={T.saAccent} />
-                    <Text style={[s.contextTxt, { color: T.saAccent, fontFamily: T.font.sans }]}>
-                      {item._clientName}{item._agencyName ? ` · ${item._agencyName}` : ""}
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <UserCard key={item.id ?? i} item={item} accent={T.saAccent} accentLt={T.saAccentLt} />
             ))
           )}
 
@@ -588,8 +605,7 @@ function UsersSA() {
 // ══════════════════════════════════════════════════════════
 //  COMPANY-ADMIN
 //  Voit : ses clients (USER) + ses agents
-//  Filtres : pays, devise, nom, email
-//  Ne voit PAS : les autres sociétés, les admins globaux
+//  Inchangé — fonctionnait déjà correctement
 // ══════════════════════════════════════════════════════════
 function UsersCA() {
   const router   = useRouter();
@@ -625,10 +641,9 @@ function UsersCA() {
 
   useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
 
-  const myClients = useMemo(() => allUsers.filter((u) => u.role === "USER"),           [allUsers]);
-  const myAgents  = useMemo(() => allUsers.filter((u) => u.role === "AGENT"),          [allUsers]);
+  const myClients = useMemo(() => allUsers.filter((u) => u.role === "USER"),  [allUsers]);
+  const myAgents  = useMemo(() => allUsers.filter((u) => u.role === "AGENT"), [allUsers]);
 
-  // Pays disponibles
   const countries = useMemo(() => {
     const set = new Set<string>();
     [...myClients, ...myAgents].forEach((u) => { if (u.country) set.add(u.country); });
@@ -638,7 +653,6 @@ function UsersCA() {
   const filteredClients = useMemo(() => applyFilters(myClients, q, country, currency), [myClients, q, country, currency]);
   const filteredAgents  = useMemo(() => applyFilters(myAgents,  q, country, currency), [myAgents,  q, country, currency]);
 
-  // Stats clients de la société
   const statsClients = useMemo(() => ({
     total:    myClients.length,
     active:   myClients.filter((u) => u.isActive !== false && !u.isSuspended).length,
@@ -649,7 +663,7 @@ function UsersCA() {
   const currentList  = activeTab === "clients" ? filteredClients : filteredAgents;
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: T.caBg }]}>
+    <SafeAreaView style={[s.safe, { backgroundColor: T.caBg }]} edges={["top"]}>
       <StatusBar backgroundColor={T.surface} barStyle="dark-content" />
       <ScreenHeader
         accent={T.caAccent} accentLt={T.caAccentLt}
@@ -667,7 +681,7 @@ function UsersCA() {
           contentContainerStyle={[s.scroll, { backgroundColor: T.caBg }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Stats mes clients */}
+          {/* Stats */}
           <SL dot={T.caAccent} label="STATISTIQUES MES CLIENTS" />
           <View style={s.statsRow}>
             <StatCard label="Total"    value={statsClients.total}    color={T.caAccent} bg={T.caAccentLt} icon="people-outline"            />
@@ -683,7 +697,7 @@ function UsersCA() {
             accent={T.caAccent} filterActive={filterActive}
           />
 
-          {/* Tabs Clients / Agents */}
+          {/* Tabs */}
           <View style={s.tabs}>
             {(["clients", "agents"] as const).map((tab) => {
               const active = activeTab === tab;
@@ -747,7 +761,7 @@ export default function UsersScreen() {
   if (user?.role === "COMPANY_ADMIN") return <UsersCA />;
   const router = useRouter();
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.caBg, justifyContent: "center", alignItems: "center" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.caBg, justifyContent: "center", alignItems: "center" }} edges={["top"]}>
       <Ionicons name="lock-closed-outline" size={48} color={T.inkMuted} />
       <Text style={{ color: T.ink, fontSize: 16, fontWeight: "700", marginTop: 16 }}>
         Accès non autorisé
@@ -779,12 +793,6 @@ const s = StyleSheet.create({
   tabTxt:   { fontSize: 12, fontWeight: "800" },
   tabPill:  { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
   tabCount: { fontSize: 10, fontWeight: "900" },
-
-  contextBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    marginTop: -6, marginBottom: 10, marginLeft: 16,
-  },
-  contextTxt: { fontSize: 10, fontWeight: "600" },
 
   emptyRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, backgroundColor: T.surface, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, marginBottom: 14 },
   emptyTxt: { color: T.inkMuted, fontSize: 12, fontWeight: "600" },

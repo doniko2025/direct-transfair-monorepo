@@ -1,13 +1,12 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.5
+// TRANSACTIONS SERVICE v4.6
 // ✅ FIX findForUser / findOneForUser :
 //    Chaque rôle voit les transactions qui le concernent :
 //
 //  AGENT         : senderId=lui | recipientId=lui
-//                  | AGENCY_REFILL (clientId=sien)
+//                  | AGENCY_REFILL dont providerRef contient son agencyId
 //                  | retraits qu'il a traités (processedById=lui)
-//                  | DEPOSIT dont il est l'auteur (senderId=lui — déjà couvert)
 //
 //  USER          : senderId=lui | recipientId=lui
 //
@@ -118,17 +117,26 @@ export class TransactionsService {
   ) {}
 
   // ========================================================
-  // UTILITAIRE
+  // UTILITAIRE — v4.6
   // ========================================================
 
   private enrichTransaction(tx: any): any {
     if (!tx) return tx;
     const cloned: any = { ...tx, sender: tx.sender ? { ...tx.sender } : tx.sender };
     const ref = cloned.providerRef;
+
+    // ✅ Ne pas toucher aux AGENCY_REFILL — le providerRef stocke l'agencyId
+    if (cloned.type === 'AGENCY_REFILL') return cloned;
+
     if (ref && typeof ref === 'string' && ref.includes('|')) {
       const parts = ref.split('|');
       if (parts.length >= 2) {
-        cloned.sender = { ...cloned.sender, firstName: parts[1], lastName: '(Client)', agency: cloned.sender?.agency };
+        cloned.sender = {
+          ...cloned.sender,
+          firstName: parts[1],
+          lastName: '(Client)',
+          agency: cloned.sender?.agency,
+        };
         cloned.providerRef = parts[0];
       }
     }
@@ -525,7 +533,7 @@ export class TransactionsService {
 
     const txRef = `REFILL-${Date.now()}`;
 
-    // ✅ On stocke l'agencyId dans providerRef pour pouvoir filtrer côté agent
+    // ✅ providerRef stocke "${txRef}|AGENCY:${agencyId}" pour filtrage côté agent
     await this.prisma.transaction.create({
       data: {
         reference: txRef,
@@ -538,11 +546,10 @@ export class TransactionsService {
         payoutMethod:  PayoutMethod.BANK_DEPOSIT,
         paymentMethod: PaymentMethod.WALLET,
         senderId:      adminId,
-        // ✅ recipientId = premier agent de l'agence pour que findForUser le renvoie
         clientId:      admin.clientId!,
         paidAt:        new Date(),
         providerStatus: ProviderStatus.SUCCESS,
-        // providerRef stocke l'agencyId pour retrouver les recharges de cette agence
+        // ✅ Format : "${txRef}|AGENCY:${agencyId}" — permet le filtre contains(agencyId)
         providerRef:   `${txRef}|AGENCY:${agencyId}`,
       },
     });
@@ -560,36 +567,19 @@ export class TransactionsService {
   }
 
   // ========================================================
-  // LECTURE — ✅ FIX v4.5
+  // LECTURE — v4.6
   // ========================================================
 
   /**
    * Construit le filtre Prisma selon le rôle de l'utilisateur.
    *
-   * AGENT         : ses propres tx (senderId/recipientId) +
-   *                 AGENCY_REFILL de son clientId (recharges de sa caisse) +
-   *                 retraits qu'il a traités (withdrawal.processedById=lui)
-   *
-   * USER          : ses propres tx uniquement
-   *
-   * COMPANY_ADMIN : toutes les tx de son clientId
-   *
-   * SUPER_ADMIN   : toutes les tx sans restriction
-   */
-  // ========================================================
-  // LECTURE — v4.6 PATCH
-  // ========================================================
-
-  /**
-   * Filtre Prisma selon le rôle.
-   *
    * AGENT :
    *   - ses propres tx (senderId | recipientId)
-   *   - TOUTES les AGENCY_REFILL de son clientId
-   *     (pas de filtre providerRef — compatible ancien et nouveau format)
+   *   - AGENCY_REFILL dont providerRef contient son agencyId
+   *     (format : "${txRef}|AGENCY:${agencyId}")
    *   - retraits qu'il a traités (withdrawal.processedById = lui)
    *
-   * USER          : senderId | recipientId
+   * USER          : senderId | recipientId (scoped clientId)
    * COMPANY_ADMIN : tout son clientId
    * SUPER_ADMIN   : tout
    */
@@ -603,14 +593,17 @@ export class TransactionsService {
     });
     if (!user) throw new NotFoundException('User not found');
 
+    // SUPER_ADMIN : tout
     if (user.role === 'SUPER_ADMIN') {
       return { where: {}, user };
     }
 
+    // COMPANY_ADMIN : tout son clientId
     if (user.role === 'COMPANY_ADMIN') {
       return { where: { clientId: user.clientId ?? -1 }, user };
     }
 
+    // AGENT
     if (user.role === 'AGENT') {
       // Retraits traités par cet agent
       const processedWithdrawals = await this.prisma.withdrawal.findMany({
@@ -622,11 +615,20 @@ export class TransactionsService {
         .map((w) => w.transactionId as string);
 
       const orClauses: Prisma.TransactionWhereInput[] = [
+        // Transactions directes (dépôt, envoi, retrait reçu)
         { senderId: userId },
         { recipientId: userId },
-        // ✅ Toutes les recharges de la société — compatible ancien format providerRef
-        { type: TransactionType.AGENCY_REFILL },
       ];
+
+      // ✅ Recharges caisse : uniquement celles de l'agence de l'agent
+      // providerRef stocke "${txRef}|AGENCY:${agencyId}" (nouveau format)
+      // Les anciens enregistrements sans ce format ne remontent pas — comportement attendu
+      if (user.agencyId) {
+        orClauses.push({
+          type: TransactionType.AGENCY_REFILL,
+          providerRef: { contains: user.agencyId },
+        });
+      }
 
       if (processedTxIds.length > 0) {
         orClauses.push({ id: { in: processedTxIds } });
@@ -641,7 +643,7 @@ export class TransactionsService {
       };
     }
 
-    // USER
+    // USER (CLIENT)
     return {
       where: {
         clientId: user.clientId ?? -1,
