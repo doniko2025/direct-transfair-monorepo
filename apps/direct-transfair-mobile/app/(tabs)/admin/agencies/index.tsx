@@ -198,8 +198,11 @@ const scS = StyleSheet.create({
 function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
   const scale    = useRef(new Animated.Value(1)).current;
   const isActive = item.isActive !== false && item.status !== "INACTIVE";
-  const currency = item.primaryCurrency ?? item.currency ?? "XOF";
-  const balance  = toNum(item.balance ?? 0);
+  const primaryWallet = Array.isArray(item.wallets)
+  ? (item.wallets.find((w: any) => w.isDefault) ?? item.wallets[0])
+  : null;
+  const balance  = toNum(primaryWallet?.balance ?? item.balance ?? 0);
+  const currency = primaryWallet?.currency ?? item.primaryCurrency ?? item.currency ?? "XOF";
   const flag     = item.country ? (FLAG_MAP[item.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
   return (
     <Animated.View style={{ transform: [{ scale }] }}>

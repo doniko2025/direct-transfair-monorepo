@@ -1,11 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
 // =========================================================
-// AGENCY CREATE v5.0 — Direct Transf'air
-// ✅ Thème 100% CLAIR — cohérent avec agencies/index.tsx v6.2
-// ✅ Hero bleu ciel pour COMPANY_ADMIN
-// ✅ Sélecteur pays + ville + indicatif téléphonique
-// ✅ Devise auto depuis le pays sélectionné
-// ✅ Type agence : Filiale / Partenaire
+// AGENCY CREATE v5.1 — Direct Transf'air
+// ✅ FIX : type "PARTNER" / "SUBSIDIARY" envoyé au backend
+// ✅ FIX : bouton création remonté (paddingBottom nav)
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -22,29 +19,23 @@ import { useAuth } from "../../../../providers/AuthProvider";
 import { countriesList, CountryData } from "../../../../data/countries";
 import { citiesByCountry } from "../../../../data/cities";
 
-// ─── Tokens CLAIR ────────────────────────────────────────
 const T = {
   pageBg:   "#F2F4F8",
   surface:  "#FFFFFF",
   border:   "#E4E9F0",
   borderLt: "#F1F5F9",
   borderMd: "#D1D9E6",
-
   ink:      "#0F172A",
   inkMid:   "#1E293B",
   inkSub:   "#6B7280",
   inkMuted: "#94A3B8",
-
-  // Hero bleu ciel
   sky:      "#0284C7",
   skyMid:   "#0369A1",
   skyLt:    "#E0F2FE",
   skyMd:    "#7DD3FC",
-
   blue:     "#1956F0",
   blueLt:   "#EEF2FF",
   blueMd:   "#C7D5FF",
-
   teal:     "#0F766E",
   tealLt:   "#CCFBF1",
   tealMd:   "#5EEAD4",
@@ -54,17 +45,14 @@ const T = {
   redLt:    "#FEE2E2",
   amber:    "#D97706",
   amberLt:  "#FEF3C7",
-
   white: "#FFFFFF",
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
-
   font: {
     display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
     sans:     Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
     subtitle: Platform.select({ ios: "Trebuchet MS", android: "sans-serif-light",     default: "Trebuchet MS" }),
-    mono:     Platform.select({ ios: "Trebuchet MS", android: "monospace",             default: "Trebuchet MS" }),
+    mono:     Platform.select({ ios: "Trebuchet MS", android: "monospace",             default: "monospace"   }),
   },
-
   shadow: {
     card: { shadowColor: "#0284C7", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
     soft: { shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8,  elevation: 3 },
@@ -80,7 +68,6 @@ const COUNTRY_CURRENCY_MAP: Record<string, string> = {
   US: "USD", SV: "USD",
 };
 
-// ─── Field CLAIR ──────────────────────────────────────────
 function Field({ label, value, onChangeText, placeholder, keyboardType, autoCapitalize, secureTextEntry, required, editable = true }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; autoCapitalize?: any;
@@ -89,30 +76,19 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, autoCapi
   const [focused, setFocused] = useState(false);
   const [shown,   setShown]   = useState(false);
   const isPassword = secureTextEntry;
-
   return (
     <View style={fS.wrap}>
       <Text style={[fS.label, { fontFamily: T.font.sans }]}>
-        {label}
-        {required && <Text style={{ color: T.red }}> *</Text>}
+        {label}{required && <Text style={{ color: T.red }}> *</Text>}
       </Text>
-      <View style={[
-        fS.box,
-        focused && { borderColor: T.skyMd, backgroundColor: T.skyLt + "40" },
-        !editable && fS.disabled,
-      ]}>
+      <View style={[fS.box, focused && { borderColor: T.skyMd, backgroundColor: T.skyLt + "40" }, !editable && fS.disabled]}>
         <TextInput
           style={[fS.input, { fontFamily: T.font.sans }]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={T.inkMuted}
-          keyboardType={keyboardType}
-          autoCapitalize={autoCapitalize}
-          secureTextEntry={isPassword && !shown}
-          editable={editable}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          value={value} onChangeText={onChangeText}
+          placeholder={placeholder} placeholderTextColor={T.inkMuted}
+          keyboardType={keyboardType} autoCapitalize={autoCapitalize}
+          secureTextEntry={isPassword && !shown} editable={editable}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         />
         {isPassword && (
           <TouchableOpacity style={fS.eyeBtn} onPress={() => setShown(!shown)}>
@@ -126,33 +102,23 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, autoCapi
 const fS = StyleSheet.create({
   wrap:     { marginBottom: 14 },
   label:    { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
-  box: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.radius.md, overflow: "hidden",
-  },
+  box:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, overflow: "hidden" },
   disabled: { backgroundColor: T.borderLt, opacity: 0.7 },
   input:    { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, fontWeight: "600" },
   eyeBtn:   { padding: 12 },
 });
 
-// ─── SelectButton CLAIR ───────────────────────────────────
-function SelectButton({ label, value, onPress, required }: {
-  label: string; value: string; onPress: () => void; required?: boolean;
-}) {
+function SelectButton({ label, value, onPress, required }: { label: string; value: string; onPress: () => void; required?: boolean }) {
   return (
     <View style={sbS.wrap}>
       <Text style={[sbS.label, { fontFamily: T.font.sans }]}>
-        {label}
-        {required && <Text style={{ color: T.red }}> *</Text>}
+        {label}{required && <Text style={{ color: T.red }}> *</Text>}
       </Text>
       <TouchableOpacity style={sbS.btn} onPress={onPress} activeOpacity={0.8}>
         <Text style={[sbS.value, { color: value ? T.ink : T.inkMuted, fontFamily: T.font.sans }]}>
           {value || "Sélectionner…"}
         </Text>
-        <View style={sbS.chevron}>
-          <Ionicons name="chevron-down" size={14} color={T.sky} />
-        </View>
+        <View style={sbS.chevron}><Ionicons name="chevron-down" size={14} color={T.sky} /></View>
       </TouchableOpacity>
     </View>
   );
@@ -160,30 +126,24 @@ function SelectButton({ label, value, onPress, required }: {
 const sbS = StyleSheet.create({
   wrap:   { marginBottom: 14 },
   label:  { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
-  btn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 13,
-  },
-  value:   { flex: 1, fontSize: 14, fontWeight: "600" },
-  chevron: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.skyLt, justifyContent: "center", alignItems: "center" },
+  btn:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 13 },
+  value:  { flex: 1, fontSize: 14, fontWeight: "600" },
+  chevron:{ width: 28, height: 28, borderRadius: 8, backgroundColor: T.skyLt, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── SectionHeader CLAIR ──────────────────────────────────
 function SectionHeader({ icon, title, color }: { icon: string; title: string; color: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, marginTop: 4 }}>
       <View style={{ width: 30, height: 30, borderRadius: 9, backgroundColor: color + "18", justifyContent: "center", alignItems: "center" }}>
         <Ionicons name={icon as any} size={14} color={color} />
       </View>
-      <Text style={[{ fontSize: 10, fontWeight: "900" as any, color: T.inkSub, letterSpacing: 1.5 }, { fontFamily: T.font.sans }]}>
+      <Text style={{ fontSize: 10, fontWeight: "900" as any, color: T.inkSub, letterSpacing: 1.5, fontFamily: T.font.sans }}>
         {title}
       </Text>
     </View>
   );
 }
 
-// ─── PickerModal CLAIR ────────────────────────────────────
 function PickerModal({ visible, onClose, title, data, onSelect, renderItem }: {
   visible: boolean; onClose: () => void; title: string;
   data: any[]; onSelect: (item: any) => void;
@@ -193,7 +153,6 @@ function PickerModal({ visible, onClose, title, data, onSelect, renderItem }: {
   const filtered = q.trim()
     ? data.filter((item: any) => (typeof item === "string" ? item : item.name ?? "").toLowerCase().includes(q.toLowerCase()))
     : data;
-
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={pmS.overlay}>
@@ -210,15 +169,9 @@ function PickerModal({ visible, onClose, title, data, onSelect, renderItem }: {
             <TextInput
               style={[pmS.searchInput, { fontFamily: T.font.sans }]}
               value={q} onChangeText={setQ}
-              placeholder="Rechercher…"
-              placeholderTextColor={T.inkMuted}
-              autoFocus
+              placeholder="Rechercher…" placeholderTextColor={T.inkMuted} autoFocus
             />
-            {!!q && (
-              <TouchableOpacity onPress={() => setQ("")}>
-                <Ionicons name="close" size={14} color={T.inkMuted} />
-              </TouchableOpacity>
-            )}
+            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close" size={14} color={T.inkMuted} /></TouchableOpacity>}
           </View>
           <FlatList
             data={filtered}
@@ -238,61 +191,41 @@ function PickerModal({ visible, onClose, title, data, onSelect, renderItem }: {
 }
 const pmS = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
-  sheet: {
-    backgroundColor: T.surface,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    maxHeight: "75%", borderWidth: 1, borderColor: T.border,
-  },
-  handle:    { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
+  sheet:   { backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "75%", borderWidth: 1, borderColor: T.border },
+  handle:  { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border },
-  title:     { color: T.ink, fontSize: 18, fontWeight: "700" },
-  closeBtn:  { width: 32, height: 32, borderRadius: 9, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
-  searchBox: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    margin: 16, backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 14, height: 44,
-  },
+  title:   { color: T.ink, fontSize: 18, fontWeight: "700" },
+  closeBtn:{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
+  searchBox: { flexDirection: "row", alignItems: "center", gap: 10, margin: 16, backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, height: 44 },
   searchInput: { flex: 1, fontSize: 14, color: T.ink, fontWeight: "600" },
-  item:        { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
-  empty:       { color: T.inkMuted, textAlign: "center", padding: 24, fontWeight: "600" },
+  item:    { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  empty:   { color: T.inkMuted, textAlign: "center", padding: 24, fontWeight: "600" },
 });
 
-// ─── TypeToggle CLAIR ─────────────────────────────────────
+// ✅ TypeToggle — envoie "PARTNER" / "SUBSIDIARY" au backend
 function TypeToggle({ isPartner, onChange }: { isPartner: boolean; onChange: (v: boolean) => void }) {
   return (
     <View style={ttS.card}>
       <TouchableOpacity
         style={[ttS.option, !isPartner && { backgroundColor: T.tealLt, borderColor: T.tealMd }]}
-        onPress={() => onChange(false)}
-        activeOpacity={0.85}
+        onPress={() => onChange(false)} activeOpacity={0.85}
       >
         {!isPartner && <View style={[ttS.activeDot, { backgroundColor: T.teal }]} />}
         <View style={{ flex: 1 }}>
-          <Text style={[ttS.optTitle, { color: !isPartner ? T.teal : T.inkSub, fontFamily: T.font.sans }]}>
-            Agence Filiale
-          </Text>
-          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>
-            Propriété directe · Gains à 100%
-          </Text>
+          <Text style={[ttS.optTitle, { color: !isPartner ? T.teal : T.inkSub, fontFamily: T.font.sans }]}>Agence Filiale</Text>
+          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>Propriété directe · Gains à 100%</Text>
         </View>
         {!isPartner && <Ionicons name="checkmark-circle" size={20} color={T.teal} />}
       </TouchableOpacity>
-
       <View style={ttS.divider} />
-
       <TouchableOpacity
         style={[ttS.option, isPartner && { backgroundColor: T.skyLt, borderColor: T.skyMd }]}
-        onPress={() => onChange(true)}
-        activeOpacity={0.85}
+        onPress={() => onChange(true)} activeOpacity={0.85}
       >
         {isPartner && <View style={[ttS.activeDot, { backgroundColor: T.sky }]} />}
         <View style={{ flex: 1 }}>
-          <Text style={[ttS.optTitle, { color: isPartner ? T.sky : T.inkSub, fontFamily: T.font.sans }]}>
-            Agence Partenaire
-          </Text>
-          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>
-            Société tierce indépendante · Commissionnée
-          </Text>
+          <Text style={[ttS.optTitle, { color: isPartner ? T.sky : T.inkSub, fontFamily: T.font.sans }]}>Agence Partenaire</Text>
+          <Text style={[ttS.optDesc, { fontFamily: T.font.sans }]}>Société tierce indépendante · Commissionnée</Text>
         </View>
         {isPartner && <Ionicons name="checkmark-circle" size={20} color={T.sky} />}
       </TouchableOpacity>
@@ -308,7 +241,6 @@ const ttS = StyleSheet.create({
   divider:  { height: 1, backgroundColor: T.border },
 });
 
-// ─── Badge devise ─────────────────────────────────────────
 function CurrencyBadge({ currency }: { currency: string }) {
   const colors: Record<string, { bg: string; color: string }> = {
     XOF: { bg: T.amberLt, color: T.amber },
@@ -330,7 +262,7 @@ const cbS = StyleSheet.create({
   txt:  { fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
 });
 
-// ─── Main Screen ──────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────
 export default function CreateAgencyScreen() {
   const router   = useRouter();
   const { user } = useAuth();
@@ -353,8 +285,7 @@ export default function CreateAgencyScreen() {
   const [showPhoneCodeModal, setShowPhoneCodeModal] = useState(false);
   const [showCityModal,      setShowCityModal]      = useState(false);
 
-  // Toast
-  const [toastMsg,  setToastMsg]  = useState("");
+  const [toastMsg, setToastMsg]  = useState("");
   const toastAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
 
@@ -387,22 +318,24 @@ export default function CreateAgencyScreen() {
       const autoCode  = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
 
       const payload = {
-        name: name.trim(),
-        code: autoCode,
-        address: address.trim() || selectedCity,
-        phone: fullPhone,
-        email: email.trim(),
-        adminEmail: email.trim(),
-        adminFirstName: managerFirstName.trim(),
-        adminLastName:  managerLastName.trim(),
-        adminPassword:  password.trim(),
-        managerName: `${managerFirstName.trim()} ${managerLastName.trim()}`,
-        country: selectedCountry.code ?? selectedCountry.name,
-        currency: agencyCurrency,
+        name:            name.trim(),
+        code:            autoCode,
+        address:         address.trim() || selectedCity,
+        phone:           fullPhone,
+        email:           email.trim(),
+        adminEmail:      email.trim(),
+        adminFirstName:  managerFirstName.trim(),
+        adminLastName:   managerLastName.trim(),
+        adminPassword:   password.trim(),
+        managerName:     `${managerFirstName.trim()} ${managerLastName.trim()}`,
+        country:         selectedCountry.code ?? selectedCountry.name,
+        currency:        agencyCurrency,
         primaryCurrency: agencyCurrency,
-        city: selectedCity,
+        city:            selectedCity,
+        // ✅ FIX : champ "type" envoyé explicitement au backend
+        type:            isPartner ? "PARTNER" : "SUBSIDIARY",
         subscriptionType: isPartner ? "PURCHASE" : "RENTAL",
-        status: "ACTIVE",
+        status:          "ACTIVE",
       };
 
       await api.createAgency(payload as any);
@@ -411,13 +344,9 @@ export default function CreateAgencyScreen() {
     } catch (error: any) {
       const rawMsg = error?.response?.data?.message ?? error?.message ?? "Erreur technique.";
       const displayMsg = Array.isArray(rawMsg) ? rawMsg[0] : String(rawMsg);
-      if (Platform.OS === "web") {
-        alert(`Erreur\n\n${displayMsg}`);
-      } else if (error?.response?.status === 401) {
-        Alert.alert("Session expirée", "Veuillez vous reconnecter.");
-      } else {
-        Alert.alert("Erreur", displayMsg);
-      }
+      if (Platform.OS === "web") alert(`Erreur\n\n${displayMsg}`);
+      else if (error?.response?.status === 401) Alert.alert("Session expirée", "Veuillez vous reconnecter.");
+      else Alert.alert("Erreur", displayMsg);
     } finally {
       setSubmitting(false);
     }
@@ -428,7 +357,7 @@ export default function CreateAgencyScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <StatusBar barStyle="light-content" />
 
-        {/* ── Toast ── */}
+        {/* Toast */}
         <Animated.View style={[s.toast, {
           opacity: toastAnim,
           transform: [{ translateY: toastAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }],
@@ -437,7 +366,7 @@ export default function CreateAgencyScreen() {
           <Text style={[s.toastTxt, { fontFamily: T.font.sans }]}>{toastMsg}</Text>
         </Animated.View>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="arrow-back" size={24} color={T.white} />
@@ -453,7 +382,7 @@ export default function CreateAgencyScreen() {
           </View>
         </View>
 
-        {/* ── Contenu ── */}
+        {/* Contenu */}
         <Animated.View style={[s.body, { opacity: fadeAnim }]}>
           <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
             <ScrollView
@@ -462,157 +391,138 @@ export default function CreateAgencyScreen() {
               keyboardShouldPersistTaps="handled"
             >
               {/* Type agence */}
-              <TypeToggle isPartner={isPartner} onChange={setIsPartner} />
+              <View style={s.sectionCard}>
+                <TypeToggle isPartner={isPartner} onChange={setIsPartner} />
+              </View>
 
               {/* Identité */}
-              <View style={s.card}>
+              <View style={s.sectionCard}>
                 <SectionHeader icon="business-outline" title="IDENTITÉ" color={T.sky} />
-                <Field label="Nom de l'agence" value={name} onChangeText={setName} placeholder="Ex: Agence Centre-Ville" required editable={!submitting} />
-                <Field label="Email de connexion" value={email} onChangeText={setEmail} placeholder="contact@agence.com" keyboardType="email-address" autoCapitalize="none" required editable={!submitting} />
-                <Field label="Mot de passe" value={password} onChangeText={setPassword} placeholder="Définir un mot de passe…" secureTextEntry required editable={!submitting} />
+                <Field label="Nom de l'agence"    value={name}     onChangeText={setName}     placeholder="Agence de Paris" required />
+                <Field label="Email de connexion" value={email}    onChangeText={setEmail}    placeholder="agence@domaine.com" keyboardType="email-address" autoCapitalize="none" required />
+                <Field label="Mot de passe"       value={password} onChangeText={setPassword} placeholder="Mot de passe sécurisé" secureTextEntry required />
               </View>
 
               {/* Responsable */}
-              <View style={s.card}>
-                <SectionHeader icon="person-outline" title="RESPONSABLE" color={T.blue} />
-                <View style={{ flexDirection: "row", gap: 12 }}>
+              <View style={s.sectionCard}>
+                <SectionHeader icon="person-outline" title="RESPONSABLE" color={T.teal} />
+                <View style={{ flexDirection: "row", gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Field label="Prénom" value={managerFirstName} onChangeText={setManagerFirstName} placeholder="Moussa" required editable={!submitting} />
+                    <Field label="Prénom" value={managerFirstName} onChangeText={setManagerFirstName} placeholder="Alpha" required />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Field label="Nom" value={managerLastName} onChangeText={setManagerLastName} placeholder="DIALLO" required editable={!submitting} />
+                    <Field label="Nom" value={managerLastName} onChangeText={setManagerLastName} placeholder="DIALLO" required />
                   </View>
                 </View>
 
-                {/* Indicatif + Téléphone */}
-                <Text style={[s.fieldLabel, { fontFamily: T.font.sans }]}>TÉLÉPHONE</Text>
-                <View style={s.phoneRow}>
-                  <TouchableOpacity style={s.dialBtn} onPress={() => setShowPhoneCodeModal(true)}>
-                    <Text style={{ fontSize: 16 }}>{selectedPhoneCode.flag ?? "🌍"}</Text>
-                    <Text style={[s.dialCode, { fontFamily: T.font.mono }]}>{selectedPhoneCode.dialCode}</Text>
-                    <Ionicons name="chevron-down" size={12} color={T.inkMuted} />
+                {/* Indicatif + numéro */}
+                <Text style={[fS.label, { fontFamily: T.font.sans, marginBottom: 6 }]}>TÉLÉPHONE</Text>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
+                  <TouchableOpacity
+                    style={[sbS.btn, { width: 110 }]}
+                    onPress={() => setShowPhoneCodeModal(true)}
+                  >
+                    <Text style={[sbS.value, { fontFamily: T.font.sans, fontSize: 13 }]}>
+                      {selectedPhoneCode.flag ?? ""} {selectedPhoneCode.dialCode}
+                    </Text>
+                    <Ionicons name="chevron-down" size={13} color={T.sky} />
                   </TouchableOpacity>
-                  <TextInput
-                    style={[s.phoneInput, { fontFamily: T.font.sans }]}
-                    value={phone}
-                    onChangeText={setPhone}
-                    placeholder="620 000 000"
-                    placeholderTextColor={T.inkMuted}
-                    keyboardType="phone-pad"
-                    editable={!submitting}
-                  />
+                  <View style={[fS.box, { flex: 1 }]}>
+                    <TextInput
+                      style={[fS.input, { fontFamily: T.font.sans }]}
+                      value={phone} onChangeText={setPhone}
+                      placeholder="620 000 000" placeholderTextColor={T.inkMuted}
+                      keyboardType="phone-pad"
+                    />
+                  </View>
                 </View>
               </View>
 
               {/* Localisation */}
-              <View style={s.card}>
-                <SectionHeader icon="location-outline" title="LOCALISATION" color={T.teal} />
-
+              <View style={s.sectionCard}>
+                <SectionHeader icon="location-outline" title="LOCALISATION" color={T.blue} />
                 <SelectButton
-                  label="Pays *"
-                  value={selectedCountry.flag ? `${selectedCountry.flag} ${selectedCountry.name}` : selectedCountry.name}
+                  label="Pays"
+                  value={`${selectedCountry.flag ?? ""} ${selectedCountry.name}`}
                   onPress={() => setShowCountryModal(true)}
                   required
                 />
-
                 <SelectButton
-                  label="Ville *"
+                  label="Ville"
                   value={selectedCity}
-                  onPress={() => availableCities.length > 0 ? setShowCityModal(true) : Alert.alert("Ville", "Sélectionnez d'abord un pays.")}
+                  onPress={() => availableCities.length > 0 ? setShowCityModal(true) : Alert.alert("Info", "Sélectionnez un pays d'abord.")}
                   required
                 />
-
                 <Field
                   label="Adresse complète"
                   value={address}
                   onChangeText={setAddress}
                   placeholder="Rue, quartier, numéro…"
-                  editable={!submitting}
                 />
 
-                {/* Badge devise auto */}
-                <View style={s.currencyRow}>
+                {/* Devise auto */}
+                <View style={s.currencyInfo}>
                   <Ionicons name="information-circle-outline" size={14} color={T.sky} />
-                  <Text style={[s.currencyNote, { fontFamily: T.font.sans }]}>
+                  <Text style={[s.currencyInfoTxt, { fontFamily: T.font.sans }]}>
                     Devise automatique depuis le pays :
                   </Text>
                   <CurrencyBadge currency={agencyCurrency} />
                 </View>
               </View>
 
-              {/* CTA */}
+              {/* Bouton créer — ✅ padding bottom suffisant pour passer au-dessus de la tab bar */}
               <TouchableOpacity
                 style={[s.createBtn, submitting && { opacity: 0.65 }]}
                 onPress={handleCreate}
                 disabled={submitting}
                 activeOpacity={0.88}
               >
-                <LinearGradient
-                  colors={[T.sky, T.skyMid]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={s.createGrad}
-                >
-                  {submitting
-                    ? <ActivityIndicator color={T.white} />
-                    : <>
-                        <Ionicons name="checkmark-circle-outline" size={20} color={T.white} />
-                        <Text style={[s.createTxt, { fontFamily: T.font.sans }]}>CRÉER L'AGENCE</Text>
-                      </>
-                  }
-                </LinearGradient>
+                {submitting
+                  ? <ActivityIndicator color={T.white} />
+                  : <>
+                      <Ionicons name="checkmark-circle-outline" size={20} color={T.white} />
+                      <Text style={[s.createBtnTxt, { fontFamily: T.font.sans }]}>
+                        CRÉER L'AGENCE · {agencyCurrency}
+                      </Text>
+                    </>
+                }
               </TouchableOpacity>
 
-              <View style={{ height: 40 }} />
+              {/* ✅ Espace suffisant pour la tab bar */}
+              <View style={{ height: 100 }} />
             </ScrollView>
           </KeyboardAvoidingView>
         </Animated.View>
 
-        {/* ── Modals ── */}
+        {/* Modals */}
         <PickerModal
-          visible={showCountryModal}
-          onClose={() => setShowCountryModal(false)}
-          title="Pays de l'agence"
-          data={countriesList}
+          visible={showCountryModal} onClose={() => setShowCountryModal(false)}
+          title="Pays" data={countriesList}
           onSelect={(c: CountryData) => { setSelectedCountry(c); setSelectedPhoneCode(c); }}
           renderItem={(item: CountryData) => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Text style={{ fontSize: 20 }}>{item.flag ?? "🌍"}</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={[{ color: T.ink, fontWeight: "700", fontSize: 14 }, { fontFamily: T.font.sans }]}>{item.name}</Text>
-                <Text style={[{ color: T.inkMuted, fontSize: 11 }, { fontFamily: T.font.mono }]}>
-                  {item.dialCode} · {COUNTRY_CURRENCY_MAP[item.code?.toUpperCase().substring(0, 2) ?? ""] ?? "XOF"}
-                </Text>
-              </View>
-            </View>
+            <Text style={[{ fontSize: 14, color: T.ink, fontWeight: "600" }, { fontFamily: T.font.sans }]}>
+              {item.flag ?? ""} {item.name} — {item.dialCode}
+            </Text>
           )}
         />
-
         <PickerModal
-          visible={showPhoneCodeModal}
-          onClose={() => setShowPhoneCodeModal(false)}
-          title="Indicatif téléphonique"
-          data={countriesList}
+          visible={showPhoneCodeModal} onClose={() => setShowPhoneCodeModal(false)}
+          title="Indicatif" data={countriesList}
           onSelect={(c: CountryData) => setSelectedPhoneCode(c)}
           renderItem={(item: CountryData) => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Text style={{ fontSize: 20 }}>{item.flag ?? "🌍"}</Text>
-              <Text style={[{ color: T.ink, fontWeight: "700", fontSize: 14, flex: 1 }, { fontFamily: T.font.sans }]}>{item.name}</Text>
-              <Text style={[{ color: T.sky, fontWeight: "900", fontSize: 13 }, { fontFamily: T.font.mono }]}>{item.dialCode}</Text>
-            </View>
+            <Text style={[{ fontSize: 14, color: T.ink, fontWeight: "600" }, { fontFamily: T.font.sans }]}>
+              {item.flag ?? ""} {item.name} {item.dialCode}
+            </Text>
           )}
         />
-
         <PickerModal
-          visible={showCityModal}
-          onClose={() => setShowCityModal(false)}
-          title={`Villes — ${selectedCountry.name}`}
-          data={availableCities}
+          visible={showCityModal} onClose={() => setShowCityModal(false)}
+          title="Ville" data={availableCities}
           onSelect={(city: string) => setSelectedCity(city)}
-          renderItem={(city: string) => (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Ionicons name="location-outline" size={16} color={T.sky} />
-              <Text style={[{ color: T.ink, fontWeight: "600", fontSize: 14 }, { fontFamily: T.font.sans }]}>{city}</Text>
-            </View>
+          renderItem={(item: string) => (
+            <Text style={[{ fontSize: 14, color: T.ink, fontWeight: "600" }, { fontFamily: T.font.sans }]}>
+              {item}
+            </Text>
           )}
         />
       </SafeAreaView>
@@ -620,77 +530,54 @@ export default function CreateAgencyScreen() {
   );
 }
 
-// ─── Styles ──────────────────────────────────────────────
 const s = StyleSheet.create({
   toast: {
-    position: "absolute",
-    top: Platform.OS === "android" ? 56 : 60,
-    left: 20, right: 20, zIndex: 999,
-    backgroundColor: T.green, borderRadius: 14,
-    paddingHorizontal: 18, paddingVertical: 14,
+    position: "absolute", top: 60, left: 20, right: 20, zIndex: 999,
     flexDirection: "row", alignItems: "center", gap: 10,
-    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 12, elevation: 8,
+    backgroundColor: T.teal, borderRadius: T.radius.md,
+    paddingHorizontal: 16, paddingVertical: 14,
+    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 10,
   },
-  toastTxt: { color: T.white, fontWeight: "800", fontSize: 13, flex: 1 },
+  toastTxt: { color: T.white, fontSize: 13, fontWeight: "700", flex: 1 },
 
   header: {
-    flexDirection: "row", alignItems: "center",
+    flexDirection: "row", alignItems: "center", gap: 14,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 16, gap: 14,
+    paddingTop: Platform.OS === "android" ? 8 : 4,
+    paddingBottom: 16,
   },
   backBtn: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.22)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.35)",
+    backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.28)",
     justifyContent: "center", alignItems: "center",
   },
-  headerTitle: { color: T.white, fontSize: 20, fontWeight: "800" },
-  headerSub:   { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "600" },
+  headerTitle: { color: T.white, fontSize: 22, fontWeight: "700" },
+  headerSub:   { color: "rgba(255,255,255,0.75)", fontSize: 11, fontWeight: "600" },
 
-  body: {
-    flex: 1,
-    backgroundColor: T.pageBg,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    overflow: "hidden",
-  },
-  scroll: { paddingHorizontal: 16, paddingTop: 20 },
+  body:   { flex: 1, backgroundColor: T.pageBg, borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: "hidden" },
+  scroll: { padding: 20 },
 
-  card: {
+  sectionCard: {
     backgroundColor: T.surface, borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 14,
+    padding: 18, marginBottom: 16,
     borderWidth: 1, borderColor: T.border,
     ...T.shadow.soft,
   },
 
-  fieldLabel: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
-
-  phoneRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
-  dialBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 10, paddingVertical: 12,
-  },
-  dialCode:  { fontSize: 12, fontWeight: "700", color: T.ink },
-  phoneInput: {
-    flex: 1, backgroundColor: T.surface,
-    borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 14, fontWeight: "600", color: T.ink,
-  },
-
-  currencyRow: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    marginTop: 4, padding: 10,
+  currencyInfo: {
+    flexDirection: "row", alignItems: "center", gap: 8,
     backgroundColor: T.skyLt, borderRadius: T.radius.md,
-    borderWidth: 1, borderColor: T.skyMd,
+    padding: 12, borderWidth: 1, borderColor: T.skyMd + "60",
+    marginTop: 4,
   },
-  currencyNote: { fontSize: 11, color: T.sky, fontWeight: "600", flex: 1 },
+  currencyInfoTxt: { color: T.sky, fontSize: 12, fontWeight: "600", flex: 1 },
 
-  createBtn: { borderRadius: T.radius.lg, overflow: "hidden", marginTop: 8 },
-  createGrad: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 10, paddingVertical: 17,
+  createBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: T.sky, borderRadius: T.radius.lg,
+    paddingVertical: 18, marginTop: 4,
+    shadowColor: T.sky, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
-  createTxt: { color: T.white, fontWeight: "900", fontSize: 15, letterSpacing: 1 },
+  createBtnTxt: { color: T.white, fontWeight: "900", fontSize: 14, letterSpacing: 0.5 },
 });

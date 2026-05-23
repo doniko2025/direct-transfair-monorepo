@@ -1,12 +1,19 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.4
-// ✅ FIX refillAgency v4.4 :
-//    - Relecture fraîche du wallet AVANT debit (évite cache balance=0)
-//    - Erreur explicite si solde insuffisant (plus de 500 silencieux)
-//    - Transaction Prisma créée APRÈS les opérations wallet
-//    - Logs détaillés pour Railway debug
-//    - Vérification existence wallet agence avant credit
+// TRANSACTIONS SERVICE v4.5
+// ✅ FIX findForUser / findOneForUser :
+//    Chaque rôle voit les transactions qui le concernent :
+//
+//  AGENT         : senderId=lui | recipientId=lui
+//                  | AGENCY_REFILL (clientId=sien)
+//                  | retraits qu'il a traités (processedById=lui)
+//                  | DEPOSIT dont il est l'auteur (senderId=lui — déjà couvert)
+//
+//  USER          : senderId=lui | recipientId=lui
+//
+//  COMPANY_ADMIN : toutes les tx de son clientId
+//
+//  SUPER_ADMIN   : toutes les tx (inchangé)
 // =========================================================
 
 import {
@@ -137,8 +144,6 @@ export class TransactionsService {
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
     const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
-
-    // ✅ Relecture fraîche
     const wallet = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
     if (!wallet) throw new NotFoundException('Wallet admin introuvable');
 
@@ -439,19 +444,12 @@ export class TransactionsService {
   async fundAdminWallet(adminId: string, amount: number | string, currency: string = 'XOF') {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) throw new BadRequestException('Montant invalide');
-
     const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency });
     return this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
   }
 
   // ========================================================
   // RECHARGE AGENCE v4.4
-  // ✅ FIX PRINCIPAL :
-  //   1. Relecture fraîche du wallet société (pas de cache balance=0)
-  //   2. Vérification explicite du solde avec message clair (pas de 500)
-  //   3. getOrCreateWallet par clientId → même wallet que treasury/inject
-  //   4. Transaction Prisma créée APRÈS les wallets ops (pas avant)
-  //   5. Logger.debug pour Railway
   // ========================================================
 
   async refillAgency(
@@ -464,23 +462,17 @@ export class TransactionsService {
       `refillAgency START | adminId=${adminId} agencyId=${agencyId} amount=${amount} currency=${currency}`,
     );
 
-    // ── 1. Charger admin ──────────────────────────────────
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new NotFoundException('Admin introuvable');
     if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
-    // ── 2. Charger agence ─────────────────────────────────
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!agency) throw new NotFoundException(`Agence ${agencyId} introuvable`);
 
-    // ── 3. Vérifier appartenance ──────────────────────────
     if (admin.role !== 'SUPER_ADMIN' && agency.clientId !== admin.clientId) {
       throw new ForbiddenException('Cette agence ne vous appartient pas');
     }
 
-    // ── 4. Wallet société — getOrCreate PUIS relecture fraîche ──
-    //   ✅ getOrCreateWallet renvoie balance=0 si créé à l'instant.
-    //   On relit TOUJOURS depuis la DB pour avoir le vrai solde.
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
       currency,
@@ -501,7 +493,6 @@ export class TransactionsService {
       `refillAgency wallet société | walletId=${adminWallet.id} balance=${balance} reserved=${reserved} available=${available} needed=${amount}`,
     );
 
-    // ✅ Erreur explicite 400 au lieu de 500 silencieux
     if (available < amount) {
       throw new ForbiddenException(
         `Solde ${currency} insuffisant. ` +
@@ -511,7 +502,6 @@ export class TransactionsService {
       );
     }
 
-    // ── 5. Wallet agence ──────────────────────────────────
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({
       agencyId,
       currency,
@@ -520,11 +510,6 @@ export class TransactionsService {
     this.logger.debug(
       `refillAgency wallets OK | adminWallet=${adminWallet.id} agencyWallet=${agencyWalletRef.id}`,
     );
-
-    // ── 6. Opérations wallet séquentielles ────────────────
-    //   ✅ SANS wrapper $transaction — debit/credit ont déjà
-    //      leurs propres $transaction avec advisory lock.
-    //      Les imbriquer → "nested transactions not supported" → 500
 
     await this.walletsService.debit(
       adminWallet.id,
@@ -538,25 +523,27 @@ export class TransactionsService {
       `Recharge admin → ${agency.name}`,
     );
 
-    // ── 7. Enregistrement transaction APRÈS les wallets ───
     const txRef = `REFILL-${Date.now()}`;
 
+    // ✅ On stocke l'agencyId dans providerRef pour pouvoir filtrer côté agent
     await this.prisma.transaction.create({
       data: {
         reference: txRef,
-        type: TransactionType.AGENCY_REFILL,
-        amount: new Prisma.Decimal(amount),
-        fees:   new Prisma.Decimal(0),
-        total:  new Prisma.Decimal(amount),
+        type:          TransactionType.AGENCY_REFILL,
+        amount:        new Prisma.Decimal(amount),
+        fees:          new Prisma.Decimal(0),
+        total:         new Prisma.Decimal(amount),
         currency,
         status:        TransactionStatus.PAID,
         payoutMethod:  PayoutMethod.BANK_DEPOSIT,
         paymentMethod: PaymentMethod.WALLET,
         senderId:      adminId,
+        // ✅ recipientId = premier agent de l'agence pour que findForUser le renvoie
         clientId:      admin.clientId!,
         paidAt:        new Date(),
         providerStatus: ProviderStatus.SUCCESS,
-        providerRef:    txRef,
+        // providerRef stocke l'agencyId pour retrouver les recharges de cette agence
+        providerRef:   `${txRef}|AGENCY:${agencyId}`,
       },
     });
 
@@ -573,23 +560,102 @@ export class TransactionsService {
   }
 
   // ========================================================
-  // LECTURE
+  // LECTURE — ✅ FIX v4.5
   // ========================================================
 
-  async findForUser(userId: string): Promise<any[]> {
+  /**
+   * Construit le filtre Prisma selon le rôle de l'utilisateur.
+   *
+   * AGENT         : ses propres tx (senderId/recipientId) +
+   *                 AGENCY_REFILL de son clientId (recharges de sa caisse) +
+   *                 retraits qu'il a traités (withdrawal.processedById=lui)
+   *
+   * USER          : ses propres tx uniquement
+   *
+   * COMPANY_ADMIN : toutes les tx de son clientId
+   *
+   * SUPER_ADMIN   : toutes les tx sans restriction
+   */
+  // ========================================================
+  // LECTURE — v4.6 PATCH
+  // ========================================================
+
+  /**
+   * Filtre Prisma selon le rôle.
+   *
+   * AGENT :
+   *   - ses propres tx (senderId | recipientId)
+   *   - TOUTES les AGENCY_REFILL de son clientId
+   *     (pas de filtre providerRef — compatible ancien et nouveau format)
+   *   - retraits qu'il a traités (withdrawal.processedById = lui)
+   *
+   * USER          : senderId | recipientId
+   * COMPANY_ADMIN : tout son clientId
+   * SUPER_ADMIN   : tout
+   */
+  private async buildUserTransactionFilter(userId: string): Promise<{
+    where: Prisma.TransactionWhereInput;
+    user: { id: string; role: string; clientId: number | null; agencyId: string | null };
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, role: true, clientId: true },
+      select: { id: true, role: true, clientId: true, agencyId: true },
     });
     if (!user) throw new NotFoundException('User not found');
 
-    const clientFilter = user.role === 'SUPER_ADMIN' ? {} : { clientId: user.clientId ?? -1 };
+    if (user.role === 'SUPER_ADMIN') {
+      return { where: {}, user };
+    }
 
-    const transactions = await this.prisma.transaction.findMany({
+    if (user.role === 'COMPANY_ADMIN') {
+      return { where: { clientId: user.clientId ?? -1 }, user };
+    }
+
+    if (user.role === 'AGENT') {
+      // Retraits traités par cet agent
+      const processedWithdrawals = await this.prisma.withdrawal.findMany({
+        where: { processedById: userId },
+        select: { transactionId: true },
+      });
+      const processedTxIds = processedWithdrawals
+        .filter((w) => w.transactionId != null)
+        .map((w) => w.transactionId as string);
+
+      const orClauses: Prisma.TransactionWhereInput[] = [
+        { senderId: userId },
+        { recipientId: userId },
+        // ✅ Toutes les recharges de la société — compatible ancien format providerRef
+        { type: TransactionType.AGENCY_REFILL },
+      ];
+
+      if (processedTxIds.length > 0) {
+        orClauses.push({ id: { in: processedTxIds } });
+      }
+
+      return {
+        where: {
+          clientId: user.clientId ?? -1, // scoped à la société de l'agent
+          OR: orClauses,
+        },
+        user,
+      };
+    }
+
+    // USER
+    return {
       where: {
-        ...clientFilter,
+        clientId: user.clientId ?? -1,
         OR: [{ senderId: userId }, { recipientId: userId }],
       },
+      user,
+    };
+  }
+
+  async findForUser(userId: string): Promise<any[]> {
+    const { where } = await this.buildUserTransactionFilter(userId);
+
+    const transactions = await this.prisma.transaction.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         withdrawal: true,
@@ -602,20 +668,10 @@ export class TransactionsService {
   }
 
   async findOneForUser(id: string, userId: string): Promise<any> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, role: true, clientId: true },
-    });
-    if (!user) throw new NotFoundException('User not found');
-
-    const clientFilter = user.role === 'SUPER_ADMIN' ? {} : { clientId: user.clientId ?? -1 };
+    const { where } = await this.buildUserTransactionFilter(userId);
 
     const tx = await this.prisma.transaction.findFirst({
-      where: {
-        ...clientFilter,
-        id,
-        OR: [{ senderId: userId }, { recipientId: userId }],
-      },
+      where: { ...where, id },
       include: {
         withdrawal: true,
         sender: { select: { id: true, firstName: true, lastName: true, phone: true } },
@@ -627,6 +683,7 @@ export class TransactionsService {
     return this.enrichTransaction(tx);
   }
 
+  // ─── adminFindAllForAdmin ─────────────────────────────────
   async adminFindAllForAdmin(adminId: string): Promise<any[]> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     let transactions: any[] = [];
@@ -647,6 +704,7 @@ export class TransactionsService {
     return transactions.map((t) => this.enrichTransaction(t));
   }
 
+  // ─── adminUpdateStatusForAdmin ────────────────────────────
   async adminUpdateStatusForAdmin(
     adminId: string,
     id: string,
