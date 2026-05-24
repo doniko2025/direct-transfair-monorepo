@@ -1,8 +1,7 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.1
-// ✅ findAll() SuperAdmin : toutes les agences sans filtre clientId
-// ✅ findAllByClient() CompanyAdmin : filtré par clientId (inchangé)
+// AGENCIES SERVICE v4.2
+// ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // =========================================================
 
 import {
@@ -11,7 +10,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { KycLevel, Role } from '@prisma/client';
+import { CurrencyCode, KycLevel, Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -23,20 +22,22 @@ import { UpdateAgencyDto } from './dto/update-agency.dto';
 // HELPERS
 // =========================================================
 
-const COUNTRY_TO_CURRENCY: Record<string, string> = {
-  FR: 'EUR', DE: 'EUR', IT: 'EUR', ES: 'EUR', BE: 'EUR', PT: 'EUR',
-  NL: 'EUR', AT: 'EUR', FI: 'EUR', IE: 'EUR', LU: 'EUR', GR: 'EUR',
-  GB: 'GBP', GG: 'GBP', JE: 'GBP', IM: 'GBP',
-  US: 'USD', SV: 'USD', PA: 'USD', EC: 'USD',
-  GN: 'GNF',
-  SN: 'XOF', CI: 'XOF', ML: 'XOF', BF: 'XOF', BJ: 'XOF',
-  TG: 'XOF', NE: 'XOF', GW: 'XOF',
+const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
+  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
+  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
+  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
+  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
+  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
+  GN: CurrencyCode.GNF,
+  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
+  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
-function getCurrencyFromCountry(country?: string | null): string {
-  if (!country) return 'XOF';
+function getCurrencyFromCountry(country?: string | null): CurrencyCode {
+  if (!country) return CurrencyCode.XOF;
   const code = country.toUpperCase().trim().substring(0, 2);
-  return COUNTRY_TO_CURRENCY[code] ?? 'XOF';
+  return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
 function safeTrim(v: unknown): string {
@@ -74,19 +75,15 @@ export class AgenciesService {
       throw new ConflictException(`L'email "${email}" est déjà utilisé.`);
 
     if (dto.code) {
-      const existingCode = await this.prisma.agency.findUnique({
-        where: { code: dto.code },
-      });
+      const existingCode = await this.prisma.agency.findUnique({ where: { code: dto.code } });
       if (existingCode)
         throw new ConflictException(`Le code "${dto.code}" est déjà utilisé.`);
     }
 
-    const hashedPassword = await bcrypt.hash(
-      safeTrim(dto.adminPassword) || '123456',
-      10,
-    );
+    const hashedPassword = await bcrypt.hash(safeTrim(dto.adminPassword) || '123456', 10);
 
-    const primaryCurrency = getCurrencyFromCountry(dto.country);
+    // ✅ FIX: CurrencyCode
+    const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
     return this.prisma.$transaction(async (tx) => {
       const agency = await tx.agency.create({
@@ -96,7 +93,7 @@ export class AgenciesService {
           address: safeTrim(dto.address),
           phone: safeTrim(dto.phone) || null,
           code: dto.code || null,
-          email: email,
+          email,
           country: dto.country || null,
           primaryCurrency,
           isActive: true,
@@ -167,6 +164,7 @@ export class AgenciesService {
 
       if (dto.country) {
         updateData.country = dto.country;
+        // ✅ FIX: CurrencyCode
         updateData.primaryCurrency = getCurrencyFromCountry(dto.country);
       }
 
@@ -178,10 +176,7 @@ export class AgenciesService {
         if (updateData[k] === undefined) delete updateData[k];
       });
 
-      const updatedAgency = await tx.agency.update({
-        where: { id },
-        data: updateData,
-      });
+      const updatedAgency = await tx.agency.update({ where: { id }, data: updateData });
 
       if (dto.email && dto.email !== agency.email) {
         const newEmail = safeTrim(dto.email).toLowerCase();
@@ -235,7 +230,7 @@ export class AgenciesService {
   }
 
   // ========================================================
-  // LECTURE — CompanyAdmin (filtré par clientId)
+  // LECTURE — CompanyAdmin
   // ========================================================
 
   async findAllByClient(clientId: number) {
@@ -244,53 +239,35 @@ export class AgenciesService {
       include: {
         agents: {
           select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            role: true,
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, role: true,
           },
         },
         wallets: { where: { isActive: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-
     return agencies.map(this.serializeAgency.bind(this));
   }
 
   // ========================================================
-  // ✅ NOUVEAU — LECTURE SuperAdmin (toutes les agences)
+  // LECTURE — SuperAdmin (toutes agences)
   // ========================================================
 
   async findAll() {
     const agencies = await this.prisma.agency.findMany({
-      // Pas de filtre clientId → TOUTES les agences de TOUS les clients
       include: {
         agents: {
           select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            role: true,
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, role: true,
           },
         },
         wallets: { where: { isActive: true } },
-        // ✅ Inclure le client pour afficher son nom dans le frontend
-        client: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
+        client: { select: { id: true, name: true, code: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
-
     return agencies.map(this.serializeAgency.bind(this));
   }
 
@@ -300,79 +277,46 @@ export class AgenciesService {
       include: {
         agents: {
           select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            phone: true,
-            role: true,
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, role: true,
           },
         },
         wallets: { where: { isActive: true } },
       },
     });
-
     if (!agency) throw new NotFoundException('Agence introuvable');
     return this.serializeAgency(agency);
   }
+
   async findOneAsSuperAdmin(id: string) {
-  const agency = await this.prisma.agency.findUnique({
-    where: { id },
-    include: {
-      agents: {
-        select: {
-          id: true,
-          firstName: true,
-          lastName: true,
-          email: true,
-          phone: true,
-          role: true,
+    const agency = await this.prisma.agency.findUnique({
+      where: { id },
+      include: {
+        agents: {
+          select: {
+            id: true, firstName: true, lastName: true,
+            email: true, phone: true, role: true,
+          },
         },
+        wallets: { where: { isActive: true } },
+        client: { select: { id: true, name: true, code: true } },
       },
-      wallets: {
-        where: { isActive: true },
-      },
-      client: {
-        select: {
-          id: true,
-          name: true,
-          code: true,
-        },
-      },
-    },
-  });
-
-  if (!agency) {
-    throw new NotFoundException('Agence introuvable');
+    });
+    if (!agency) throw new NotFoundException('Agence introuvable');
+    return this.serializeAgency(agency);
   }
 
-  return this.serializeAgency(agency);
-}
-async updateAsSuperAdmin(
-  id: string,
-  dto: UpdateAgencyDto,
-) {
-  const agency = await this.prisma.agency.findUnique({
-    where: { id },
-  });
-
-  if (!agency) {
-    throw new NotFoundException('Agence introuvable');
+  async updateAsSuperAdmin(id: string, dto: UpdateAgencyDto) {
+    const agency = await this.prisma.agency.findUnique({ where: { id } });
+    if (!agency) throw new NotFoundException('Agence introuvable');
+    return this.update(id, agency.clientId, dto);
   }
 
-  return this.update(id, agency.clientId, dto);
-}
-async removeAsSuperAdmin(id: string) {
-  const agency = await this.prisma.agency.findUnique({
-    where: { id },
-  });
-
-  if (!agency) {
-    throw new NotFoundException('Agence introuvable');
+  async removeAsSuperAdmin(id: string) {
+    const agency = await this.prisma.agency.findUnique({ where: { id } });
+    if (!agency) throw new NotFoundException('Agence introuvable');
+    return this.remove(id, agency.clientId);
   }
-
-  return this.remove(id, agency.clientId);
-}
 
   // ========================================================
   // SÉRIALISATION
@@ -392,7 +336,6 @@ async removeAsSuperAdmin(id: string) {
       isActive: a.isActive,
       isCertified: a.isCertified ?? false,
       clientId: a.clientId,
-      // ✅ Nom du client inclus pour le SuperAdmin
       clientName: a.client?.name ?? null,
       clientCode: a.client?.code ?? null,
       type: a.type,

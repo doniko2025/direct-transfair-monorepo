@@ -1,12 +1,7 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.0 — Direct Transf'air
-// ✅ Login email OU téléphone (avec OTP à chaque connexion)
-// ✅ Multi-currency : Wallet auto créé selon country
-// ✅ Refresh tokens
-// ✅ Push devices (FCM/APNS) gérés via UserDevice
-// ✅ Audit logs
-// ✅ Rétrocompatible avec le frontend actuel (signature login inchangée)
+// AUTH SERVICE v4.1 — Direct Transf'air
+// ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // =========================================================
 
 import {
@@ -20,6 +15,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import {
   CommsType,
+  CurrencyCode,
   KycLevel,
   OtpPurpose,
   Role,
@@ -36,22 +32,19 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 
 // =========================================================
-// CURRENCY MAP — Pays → Devise
+// CURRENCY MAP
 // =========================================================
 
-const COUNTRY_TO_CURRENCY: Record<string, string> = {
-  // Eurozone
-  FR: 'EUR', DE: 'EUR', IT: 'EUR', ES: 'EUR', BE: 'EUR', PT: 'EUR',
-  NL: 'EUR', AT: 'EUR', FI: 'EUR', IE: 'EUR', LU: 'EUR', GR: 'EUR',
-  // Royaume-Uni
-  GB: 'GBP', GG: 'GBP', JE: 'GBP', IM: 'GBP',
-  // USD
-  US: 'USD', SV: 'USD', PA: 'USD', EC: 'USD',
-  // Guinée
-  GN: 'GNF',
-  // UEMOA (XOF)
-  SN: 'XOF', CI: 'XOF', ML: 'XOF', BF: 'XOF', BJ: 'XOF',
-  TG: 'XOF', NE: 'XOF', GW: 'XOF',
+const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
+  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
+  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
+  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
+  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
+  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
+  GN: CurrencyCode.GNF,
+  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
+  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
 const OTP_EXPIRY_MINUTES = 10;
@@ -74,7 +67,7 @@ export type PublicUser = {
   loyaltyPoints?: number;
   loyaltyTier?: string | null;
   kycLevel?: KycLevel;
-  balance?: number; // Legacy (toujours envoyé pour compat front)
+  balance?: number;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
   mfaEnabled?: boolean;
@@ -85,7 +78,6 @@ export type PublicUser = {
   postalCode?: string | null;
   city?: string | null;
   country?: string | null;
-  // ✅ Cruciaux pour le frontend
   client?: any;
   agency?: any;
   wallets?: any[];
@@ -124,16 +116,14 @@ function normalizeTenantCode(code?: string | null): string | null {
   return c.toUpperCase();
 }
 
-function getCurrencyFromCountry(country?: string | null): string {
-  if (!country) return 'XOF';
+function getCurrencyFromCountry(country?: string | null): CurrencyCode {
+  if (!country) return CurrencyCode.XOF;
   const code = country.toUpperCase().substring(0, 2);
-  return COUNTRY_TO_CURRENCY[code] ?? 'XOF';
+  return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
 function isPhoneIdentifier(s: string): boolean {
-  // Si ça contient @ → email. Sinon on traite comme téléphone.
   if (s.includes('@')) return false;
-  // Doit ressembler à un numéro (chiffres, +, espaces)
   return /^[\d+\s\-()]+$/.test(s);
 }
 
@@ -174,22 +164,12 @@ export class AuthService {
   ) {}
 
   // ========================================================
-  // LOGIN — Compatible avec ton frontend actuel
+  // LOGIN
   // ========================================================
 
-  /**
-   * Si LOGIN_OTP_REQUIRED=true (recommandé en prod), retourne une étape 1
-   * indiquant qu'un OTP a été envoyé. Le frontend doit ensuite appeler
-   * verify-otp pour finaliser.
-   *
-   * Sinon (mode legacy / dev), retourne directement le JWT.
-   */
-  async login(
-    dto: LoginDto,
-  ): Promise<LoginStep2Result | LoginStep1Result> {
+  async login(dto: LoginDto): Promise<LoginStep2Result | LoginStep1Result> {
     const otpRequired = process.env.LOGIN_OTP_REQUIRED === 'true';
 
-    // Le frontend actuel envoie email — on lit dans cet ordre :
     const identifier = (dto.identifier ?? dto.email ?? '').trim();
     if (!identifier) throw new BadRequestException('Identifiant requis');
 
@@ -200,13 +180,10 @@ export class AuthService {
       throw new UnauthorizedException('Compte suspendu');
     }
 
-    // ✅ Mode OTP (recommandé)
     if (otpRequired) {
       const isPhone = isPhoneIdentifier(identifier);
       const channel: CommsType =
-        isPhone && user.phone
-          ? CommsType.SMS
-          : CommsType.EMAIL;
+        isPhone && user.phone ? CommsType.SMS : CommsType.EMAIL;
 
       const recipient =
         channel === CommsType.EMAIL ? user.email : (user.phone ?? user.email);
@@ -227,7 +204,6 @@ export class AuthService {
       };
     }
 
-    // ✅ Mode legacy direct
     const tokens = await this.generateTokens(user);
     await this.createSession(user.id, tokens);
     await this.audit(user.id, user.clientId, AuditAction.LOGIN);
@@ -245,7 +221,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // LOGIN — Étape 2 : Vérification OTP → JWT + Refresh
+  // LOGIN — Étape 2 : Vérification OTP
   // ========================================================
 
   async verifyLoginOtp(dto: VerifyLoginOtpDto): Promise<LoginStep2Result> {
@@ -261,7 +237,6 @@ export class AuthService {
     });
 
     if (!otpLog) {
-      // Incrémente attempts si trouvé mais code mauvais
       await this.prisma.otpLog.updateMany({
         where: {
           userId: dto.userId,
@@ -290,7 +265,6 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    // Marque le téléphone vérifié si OTP par SMS
     if (otpLog.channel === CommsType.SMS && !user.isPhoneVerified) {
       await this.prisma.user.update({
         where: { id: user.id },
@@ -298,7 +272,6 @@ export class AuthService {
       });
     }
 
-    // Marque l'appareil comme TRUSTED si demandé
     if (dto.trustDevice && dto.deviceId) {
       await this.prisma.userDevice.updateMany({
         where: { userId: user.id, deviceId: dto.deviceId },
@@ -328,7 +301,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // VALIDATE USER (email OU téléphone)
+  // VALIDATE USER
   // ========================================================
 
   async validateUser(identifier: string, pass: string): Promise<any | null> {
@@ -386,8 +359,7 @@ export class AuthService {
 
     if (phone) {
       const existingPhone = await this.prisma.user.findFirst({ where: { phone } });
-      if (existingPhone)
-        throw new ConflictException('Ce numéro est déjà utilisé.');
+      if (existingPhone) throw new ConflictException('Ce numéro est déjà utilisé.');
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -404,8 +376,8 @@ export class AuthService {
     if (!client)
       throw new BadRequestException(`Société introuvable (${resolvedTenantCode}).`);
 
-    // ✅ Devise déduite du pays de résidence
-    const primaryCurrency = getCurrencyFromCountry(dto.country);
+    // ✅ FIX: CurrencyCode
+    const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
     const user = await this.prisma.user.create({
       data: {
@@ -431,7 +403,7 @@ export class AuthService {
       },
     });
 
-    // ✅ Crée le wallet de la devise principale
+    // ✅ FIX: CurrencyCode
     await this.prisma.wallet.create({
       data: {
         userId: user.id,
@@ -447,7 +419,6 @@ export class AuthService {
       currency: primaryCurrency,
     });
 
-    // ✅ Email de bienvenue
     try {
       await this.mail.sendEmail(
         email,
@@ -460,7 +431,6 @@ export class AuthService {
       this.logger.warn('Échec email bienvenue', e);
     }
 
-    // OTP de vérification email (purpose différent de LOGIN)
     await this.sendOtpInternal(
       user.id,
       CommsType.EMAIL,
@@ -468,7 +438,6 @@ export class AuthService {
       email,
     );
 
-    // ✅ Connexion auto après inscription (legacy mode pour rester rétrocompatible)
     return this.login({ email: dto.email, password: dto.password });
   }
 
@@ -501,14 +470,10 @@ export class AuthService {
   }
 
   // ========================================================
-  // OTP — Public method (rétrocompat existante)
+  // OTP — Public
   // ========================================================
 
-  async sendOtp(
-    userId: string,
-    channel: 'EMAIL' | 'PHONE',
-    purpose: string = 'PASSWORD_RESET',
-  ) {
+  async sendOtp(userId: string, channel: 'EMAIL' | 'PHONE', purpose: string = 'PASSWORD_RESET') {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
@@ -518,9 +483,7 @@ export class AuthService {
     const recipient =
       otpChannel === CommsType.EMAIL ? user.email : user.phone;
 
-    if (!recipient) {
-      throw new BadRequestException('Canal indisponible');
-    }
+    if (!recipient) throw new BadRequestException('Canal indisponible');
 
     const otpPurpose = (OtpPurpose as any)[purpose] ?? OtpPurpose.PASSWORD_RESET;
 
@@ -530,7 +493,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // OTP — Logic interne
+  // OTP — Interne
   // ========================================================
 
   private async sendOtpInternal(
@@ -542,24 +505,15 @@ export class AuthService {
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
-    // Invalide les OTP précédents du même purpose
     await this.prisma.otpLog.updateMany({
       where: { userId, purpose, isUsed: false },
       data: { isExpired: true },
     });
 
     await this.prisma.otpLog.create({
-      data: {
-        userId,
-        code, // ⚠️ TODO en prod : hasher le code
-        purpose,
-        channel,
-        recipient,
-        expiresAt,
-      },
+      data: { userId, code, purpose, channel, recipient, expiresAt },
     });
 
-    // Mise à jour User (champs OTP — utiles pour rétrocompat)
     await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -570,7 +524,6 @@ export class AuthService {
       },
     });
 
-    // Envoi via le bon canal
     if (channel === CommsType.EMAIL) {
       try {
         await this.mail.sendEmail(
@@ -585,7 +538,6 @@ export class AuthService {
         this.logger.error('Erreur envoi OTP email', e);
       }
     } else if (channel === CommsType.SMS) {
-      // TODO: Brancher Twilio / Orange API ici
       this.logger.log(`[SMS STUB] Code ${code} → ${recipient}`);
     }
 
@@ -593,7 +545,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // VERIFY OTP (générique — non login)
+  // VERIFY OTP (générique)
   // ========================================================
 
   async verifyOtp(userId: string, code: string, type?: string) {
@@ -628,13 +580,9 @@ export class AuthService {
         otpCode: null,
         otpExpiresAt: null,
         isEmailVerified:
-          otpLog.purpose === OtpPurpose.EMAIL_VERIFICATION
-            ? true
-            : user.isEmailVerified,
+          otpLog.purpose === OtpPurpose.EMAIL_VERIFICATION ? true : user.isEmailVerified,
         isPhoneVerified:
-          otpLog.purpose === OtpPurpose.PHONE_VERIFICATION
-            ? true
-            : user.isPhoneVerified,
+          otpLog.purpose === OtpPurpose.PHONE_VERIFICATION ? true : user.isPhoneVerified,
       },
     });
 
@@ -648,9 +596,7 @@ export class AuthService {
   // ========================================================
 
   async resetPassword(userId: string, code: string, newPass: string) {
-    if (newPass.length < 6) {
-      throw new BadRequestException('Mot de passe trop court');
-    }
+    if (newPass.length < 6) throw new BadRequestException('Mot de passe trop court');
 
     const otpLog = await this.prisma.otpLog.findFirst({
       where: {
@@ -689,7 +635,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // CHANGE PASSWORD (utilisateur connecté)
+  // CHANGE PASSWORD
   // ========================================================
 
   async changePassword(userId: string, oldPass: string, newPass: string) {
@@ -700,14 +646,10 @@ export class AuthService {
     if (!isMatch) throw new BadRequestException('Ancien code secret incorrect.');
 
     if (newPass.length < 6)
-      throw new BadRequestException(
-        'Le nouveau code doit faire au moins 6 caractères.',
-      );
+      throw new BadRequestException('Le nouveau code doit faire au moins 6 caractères.');
 
     if (oldPass === newPass)
-      throw new BadRequestException(
-        "Le nouveau code doit être différent de l'ancien.",
-      );
+      throw new BadRequestException("Le nouveau code doit être différent de l'ancien.");
 
     const hashedNewPassword = await bcrypt.hash(newPass, 10);
 
@@ -750,10 +692,7 @@ export class AuthService {
       throw new UnauthorizedException('Session invalide');
     }
 
-    if (
-      session.refreshTokenExpiresAt &&
-      session.refreshTokenExpiresAt < new Date()
-    ) {
+    if (session.refreshTokenExpiresAt && session.refreshTokenExpiresAt < new Date()) {
       await this.prisma.userSession.update({
         where: { id: session.id },
         data: { status: 'EXPIRED' },
@@ -763,7 +702,6 @@ export class AuthService {
 
     const tokens = await this.generateTokens(session.user as any);
 
-    // Rotation du refresh token
     await this.prisma.userSession.update({
       where: { id: session.id },
       data: {
@@ -819,7 +757,6 @@ export class AuthService {
   async updateProfile(userId: string, data: any) {
     const updateData: any = { ...data };
 
-    // Protection des champs sensibles
     delete updateData.id;
     delete updateData.role;
     delete updateData.password;
@@ -838,9 +775,9 @@ export class AuthService {
       updateData.phone = normalizePhone(updateData.phone);
     }
 
-    // ✅ Si le pays change, on met à jour primaryCurrency et on crée le wallet manquant
+    // ✅ FIX: CurrencyCode
     if (updateData.country) {
-      const newCurrency = getCurrencyFromCountry(updateData.country);
+      const newCurrency: CurrencyCode = getCurrencyFromCountry(updateData.country);
       updateData.primaryCurrency = newCurrency;
 
       const existingWallet = await this.prisma.wallet.findUnique({
@@ -865,12 +802,8 @@ export class AuthService {
       });
     } catch (e: any) {
       if (e.code === 'P2002')
-        throw new ConflictException(
-          'Ce numéro de téléphone est déjà utilisé.',
-        );
-      throw new BadRequestException(
-        'Erreur lors de la mise à jour du profil.',
-      );
+        throw new ConflictException('Ce numéro de téléphone est déjà utilisé.');
+      throw new BadRequestException('Erreur lors de la mise à jour du profil.');
     }
 
     await this.audit(userId, null, AuditAction.USER_UPDATE);
@@ -932,7 +865,7 @@ export class AuthService {
       loyaltyPoints: user.loyaltyPoints ?? 0,
       loyaltyTier: user.loyaltyTier,
       kycLevel: user.kycLevel,
-      balance: user.balance != null ? Number(user.balance) : 0, // legacy front
+      balance: user.balance != null ? Number(user.balance) : 0,
       isEmailVerified: user.isEmailVerified,
       isPhoneVerified: user.isPhoneVerified,
       mfaEnabled: user.mfaEnabled,

@@ -1,34 +1,31 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.0
-// ✅ Wallet auto créé selon country à la création d'un user
-// ✅ primaryCurrency déduit du pays
+// USERS SERVICE v4.1
+// ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // =========================================================
 
 import { Injectable } from '@nestjs/common';
-import { KycLevel, Role, User } from '@prisma/client';
+import { CurrencyCode, KycLevel, Role, User } from '@prisma/client';
 import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 
-// =========================================================
-// HELPERS
-// =========================================================
-
-const COUNTRY_TO_CURRENCY: Record<string, string> = {
-  FR: 'EUR', DE: 'EUR', IT: 'EUR', ES: 'EUR', BE: 'EUR', PT: 'EUR',
-  NL: 'EUR', AT: 'EUR', FI: 'EUR', IE: 'EUR', LU: 'EUR', GR: 'EUR',
-  GB: 'GBP', GG: 'GBP', JE: 'GBP', IM: 'GBP',
-  US: 'USD', SV: 'USD', PA: 'USD', EC: 'USD',
-  GN: 'GNF',
-  SN: 'XOF', CI: 'XOF', ML: 'XOF', BF: 'XOF', BJ: 'XOF',
-  TG: 'XOF', NE: 'XOF', GW: 'XOF',
+const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
+  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
+  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
+  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
+  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
+  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
+  GN: CurrencyCode.GNF,
+  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
+  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
-function getCurrencyFromCountry(country?: string | null): string {
-  if (!country) return 'XOF';
+function getCurrencyFromCountry(country?: string | null): CurrencyCode {
+  if (!country) return CurrencyCode.XOF;
   const code = country.toUpperCase().trim().substring(0, 2);
-  return COUNTRY_TO_CURRENCY[code] ?? 'XOF';
+  return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
 function generateReferralCode(firstName?: string, lastName?: string): string {
@@ -36,10 +33,6 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
   const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `${prefix}${suffix}`;
 }
-
-// =========================================================
-// TYPES
-// =========================================================
 
 type UserExtraFields = {
   firstName?: string;
@@ -56,17 +49,9 @@ type UserExtraFields = {
   birthPlace?: string;
 };
 
-// =========================================================
-// SERVICE
-// =========================================================
-
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
-
-  // ========================================================
-  // LECTURE
-  // ========================================================
 
   async findAll(whereClause: any) {
     return this.prisma.user.findMany({
@@ -112,13 +97,6 @@ export class UsersService {
     });
   }
 
-  // ========================================================
-  // CRÉATION
-  // ========================================================
-
-  /**
-   * Crée un utilisateur et son wallet principal selon son pays
-   */
   async create(
     email: string,
     passwordHash: string,
@@ -126,7 +104,8 @@ export class UsersService {
     clientId: number,
     extra: UserExtraFields = {},
   ): Promise<User> {
-    const primaryCurrency = getCurrencyFromCountry(extra.country);
+    // ✅ FIX: CurrencyCode
+    const primaryCurrency: CurrencyCode = getCurrencyFromCountry(extra.country);
 
     return this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
@@ -142,7 +121,6 @@ export class UsersService {
         },
       });
 
-      // ✅ Wallet principal selon pays
       await tx.wallet.create({
         data: {
           userId: user.id,
@@ -157,15 +135,11 @@ export class UsersService {
     });
   }
 
-  // ========================================================
-  // MISE À JOUR
-  // ========================================================
-
-  async update(id: string, data: Partial<UserExtraFields & { primaryCurrency?: string }>) {
-    // Si le pays change, recalcule la devise
-    if (data.country) {
-      data.primaryCurrency = getCurrencyFromCountry(data.country);
-    }
-    return this.prisma.user.update({ where: { id }, data });
+  // ✅ Après
+async update(id: string, data: Partial<UserExtraFields & { primaryCurrency?: CurrencyCode }>) {
+  if (data.country) {
+    data.primaryCurrency = getCurrencyFromCountry(data.country);
   }
+  return this.prisma.user.update({ where: { id }, data });
+}
 }

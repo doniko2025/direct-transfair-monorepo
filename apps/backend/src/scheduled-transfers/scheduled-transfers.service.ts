@@ -1,7 +1,7 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.1
-// ✅ FIX: debit max 4 arguments (walletId, amount, description, txId?)
+// SCHEDULED TRANSFERS SERVICE v4.2
+// ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // =========================================================
 
 import {
@@ -12,17 +12,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { Prisma, ScheduledStatus, ScheduledFrequency } from '@prisma/client';
+import { CurrencyCode, Prisma, ScheduledStatus, ScheduledFrequency } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RatesService } from '../rates/rates.service';
 import { PushService } from '../push/push.service';
 import { MailService } from '../mail/mail.service';
-
-// =========================================================
-// TYPES
-// =========================================================
 
 export interface CreateScheduledTransferDto {
   beneficiaryId?: string;
@@ -38,10 +34,6 @@ export interface CreateScheduledTransferDto {
 
 const MAX_CONSECUTIVE_FAILURES = 3;
 
-// =========================================================
-// SERVICE
-// =========================================================
-
 @Injectable()
 export class ScheduledTransfersService {
   private readonly logger = new Logger(ScheduledTransfersService.name);
@@ -53,10 +45,6 @@ export class ScheduledTransfersService {
     private readonly push: PushService,
     private readonly mail: MailService,
   ) {}
-
-  // ========================================================
-  // CRUD
-  // ========================================================
 
   async create(userId: string, dto: CreateScheduledTransferDto) {
     const user = await this.prisma.user.findUnique({
@@ -80,14 +68,20 @@ export class ScheduledTransfersService {
       throw new BadRequestException('La date de départ doit être dans le futur');
     }
 
+    // ✅ FIX: cast string → CurrencyCode
+    const currency = dto.currency.toUpperCase() as CurrencyCode;
+    const targetCurrency = dto.targetCurrency
+      ? (dto.targetCurrency.toUpperCase() as CurrencyCode)
+      : null;
+
     const transfer = await this.prisma.scheduledTransfer.create({
       data: {
         userId,
         clientId: user.clientId,
         beneficiaryId: dto.beneficiaryId ?? null,
         amount: new Prisma.Decimal(dto.amount),
-        currency: dto.currency,
-        targetCurrency: dto.targetCurrency ?? null,
+        currency,
+        targetCurrency,
         payoutMethod: (dto.payoutMethod as any) ?? 'CASH_PICKUP',
         note: dto.note ?? null,
         frequency: dto.frequency,
@@ -155,10 +149,6 @@ export class ScheduledTransfersService {
     return this.serialize(updated);
   }
 
-  // ========================================================
-  // CRON — Toutes les 5 minutes
-  // ========================================================
-
   @Cron('*/5 * * * *')
   async processScheduledTransfers(): Promise<void> {
     const now = new Date();
@@ -183,16 +173,12 @@ export class ScheduledTransfersService {
     }
   }
 
-  // ========================================================
-  // EXÉCUTION D'UN VIREMENT PROGRAMMÉ
-  // ========================================================
-
   private async executeTransfer(transfer: any): Promise<void> {
     try {
       const user = transfer.user;
       if (!user) throw new Error('Utilisateur introuvable');
 
-      const currency = transfer.currency;
+      const currency = transfer.currency as CurrencyCode;
       const userWallet = user.wallets?.find((w: any) => w.currency === currency && w.isActive);
 
       if (!userWallet) throw new Error(`Wallet ${currency} introuvable pour l'utilisateur`);
@@ -207,19 +193,18 @@ export class ScheduledTransfersService {
 
       let receivedAmount = Number(transfer.amount);
       let exchangeRate = 1;
-      const targetCurrency = transfer.targetCurrency ?? currency;
+      const targetCurrency = (transfer.targetCurrency ?? currency) as CurrencyCode;
 
       if (targetCurrency !== currency) {
         receivedAmount = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
         exchangeRate = receivedAmount / Number(transfer.amount);
       }
 
-      // ✅ FIX: max 4 args — on retire le 5ème argument (reference en trop)
       await this.wallets.debit(
         userWallet.id,
         Number(transfer.amount),
         `Virement programmé #${reference}`,
-        undefined, // transactionId (pas encore créé)
+        undefined,
       );
 
       const tx = await this.prisma.transaction.create({
@@ -307,23 +292,16 @@ export class ScheduledTransfersService {
     }
   }
 
-  // ========================================================
-  // CALCUL PROCHAINE DATE
-  // ========================================================
-
   private calculateNextDate(current: Date, frequency: ScheduledFrequency): Date | null {
     if (frequency === 'ONCE') return null;
-
     const next = new Date(current);
-
     switch (frequency) {
-      case 'DAILY':   next.setDate(next.getDate() + 1);    break;
-      case 'WEEKLY':  next.setDate(next.getDate() + 7);    break;
-      case 'BIWEEKLY': next.setDate(next.getDate() + 14); break;
-      case 'MONTHLY': next.setMonth(next.getMonth() + 1); break;
+      case 'DAILY':    next.setDate(next.getDate() + 1);   break;
+      case 'WEEKLY':   next.setDate(next.getDate() + 7);   break;
+      case 'BIWEEKLY': next.setDate(next.getDate() + 14);  break;
+      case 'MONTHLY':  next.setMonth(next.getMonth() + 1); break;
       default: return null;
     }
-
     return next;
   }
 

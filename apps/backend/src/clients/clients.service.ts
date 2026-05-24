@@ -1,9 +1,7 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.0
-// ✅ Wallets 5 devises créés automatiquement à la création
-// ✅ primaryCurrency déduit du pays
-// ✅ Import AuthUserPayload depuis le bon chemin
+// CLIENTS SERVICE v4.1
+// ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // =========================================================
 
 import {
@@ -14,25 +12,33 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import * as bcrypt from 'bcryptjs';
-import { KycLevel, Role, SubscriptionStatus } from '@prisma/client';
+import { CurrencyCode, KycLevel, Role, SubscriptionStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 
-const SUPPORTED_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'];
+const SUPPORTED_CURRENCIES: CurrencyCode[] = [
+  CurrencyCode.XOF,
+  CurrencyCode.EUR,
+  CurrencyCode.USD,
+  CurrencyCode.GNF,
+  CurrencyCode.GBP,
+];
 
-const COUNTRY_TO_CURRENCY: Record<string, string> = {
-  FR: 'EUR', DE: 'EUR', IT: 'EUR', ES: 'EUR', BE: 'EUR', PT: 'EUR',
-  NL: 'EUR', AT: 'EUR', FI: 'EUR', IE: 'EUR', LU: 'EUR', GR: 'EUR',
-  GB: 'GBP', GG: 'GBP', JE: 'GBP', IM: 'GBP',
-  US: 'USD', SV: 'USD', PA: 'USD', EC: 'USD',
-  GN: 'GNF',
-  SN: 'XOF', CI: 'XOF', ML: 'XOF', BF: 'XOF', BJ: 'XOF',
-  TG: 'XOF', NE: 'XOF', GW: 'XOF',
+const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
+  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
+  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
+  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
+  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
+  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
+  GN: CurrencyCode.GNF,
+  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
+  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
-function getCurrencyFromCountry(country?: string | null): string {
-  if (!country) return 'XOF';
+function getCurrencyFromCountry(country?: string | null): CurrencyCode {
+  if (!country) return CurrencyCode.XOF;
   const code = country.toUpperCase().trim().substring(0, 2);
-  return COUNTRY_TO_CURRENCY[code] ?? 'XOF';
+  return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
 function generateReferralCode(firstName?: string, lastName?: string): string {
@@ -44,10 +50,6 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
 @Injectable()
 export class ClientsService {
   constructor(private prisma: PrismaService) {}
-
-  // ========================================================
-  // CRÉATION
-  // ========================================================
 
   async create(dto: CreateClientDto) {
     const existingCode = await this.prisma.client.findUnique({
@@ -64,12 +66,10 @@ export class ClientsService {
 
     const hashedPassword = await bcrypt.hash(dto.adminPassword, 10);
 
-    // Devise déduite du pays
     const ownerCountryCode = dto.ownerCountry?.toUpperCase().substring(0, 2);
-    const primaryCurrency = getCurrencyFromCountry(ownerCountryCode);
+    const primaryCurrency: CurrencyCode = getCurrencyFromCountry(ownerCountryCode);
 
     return this.prisma.$transaction(async (tx) => {
-      // 1. Crée la société
       const client = await tx.client.create({
         data: {
           code: dto.code.toUpperCase(),
@@ -99,7 +99,6 @@ export class ClientsService {
         },
       });
 
-      // ✅ 2. Crée les 5 wallets pour la société
       for (const currency of SUPPORTED_CURRENCIES) {
         await tx.wallet.create({
           data: {
@@ -112,7 +111,6 @@ export class ClientsService {
         });
       }
 
-      // 3. Crée l'admin société
       const admin = await tx.user.create({
         data: {
           email: dto.adminEmail,
@@ -131,7 +129,6 @@ export class ClientsService {
         },
       });
 
-      // ✅ 4. Wallet principal de l'admin
       await tx.wallet.create({
         data: {
           userId: admin.id,
@@ -145,10 +142,6 @@ export class ClientsService {
       return { client, admin };
     });
   }
-
-  // ========================================================
-  // LECTURE
-  // ========================================================
 
   async findAll() {
     return this.prisma.client.findMany({
@@ -176,27 +169,19 @@ export class ClientsService {
     return this.prisma.client.findUnique({ where: { code: code.toUpperCase() } });
   }
 
-  // ========================================================
-  // MISE À JOUR
-  // ========================================================
-
   async update(id: number, data: any) {
     const updateData: any = { ...data };
-
-    // Champs protégés — ne jamais mettre à jour via cet endpoint
     delete updateData.adminEmail;
     delete updateData.adminFirstName;
     delete updateData.adminLastName;
     delete updateData.adminPassword;
     delete updateData.id;
 
-    // Mappe status → subscriptionStatus si envoyé par le frontend
     if (updateData.status) {
       updateData.subscriptionStatus = updateData.status;
       delete updateData.status;
     }
 
-    // Recalcule la devise si le pays change
     if (updateData.country || updateData.ownerCountry) {
       const countryCode = (updateData.country ?? updateData.ownerCountry)
         ?.toUpperCase()
@@ -204,10 +189,7 @@ export class ClientsService {
       updateData.defaultCurrency = getCurrencyFromCountry(countryCode);
     }
 
-    return this.prisma.client.update({
-      where: { id },
-      data: updateData,
-    });
+    return this.prisma.client.update({ where: { id }, data: updateData });
   }
 
   async updateStatus(id: number, status: SubscriptionStatus) {
@@ -217,18 +199,12 @@ export class ClientsService {
     });
   }
 
-  // ========================================================
-  // SUPPRESSION
-  // ========================================================
-
   async remove(id: number) {
     const client = await this.prisma.client.findUnique({ where: { id } });
     if (!client) throw new NotFoundException('Société introuvable');
     if (client.code === 'DONIKO') {
       throw new ConflictException('Impossible de supprimer la société système DONIKO.');
     }
-
-    // Suppression en cascade
     await this.prisma.user.deleteMany({ where: { clientId: id } });
     await this.prisma.wallet.deleteMany({ where: { clientId: id } });
     return this.prisma.client.delete({ where: { id } });

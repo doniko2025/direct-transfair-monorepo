@@ -1,15 +1,32 @@
 // ==========================================================
-//  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION v4.0 FINAL)
-//  ✅ Multi-Currency (XOF, EUR, USD, GNF, GBP)
-//  ✅ Currency ↔ Country/Residence Auto-Link
-//  ✅ Phone Login + OTP every login
-//  ✅ Push Notifications (FCM/APNS)
-//  ✅ Email + SMS Communication Logs
-//  ✅ Webhooks, AML, KYC, Ledger, Tiers
-//  ✅ Super Admin & Company Admin 5-currency treasury
-//  ✅ Referral, Loyalty Points, Device Management
-//  ✅ Rate Alerts, Scheduled Transfers
-//  ✅ IBAN/Mobile Money Validation
+//  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION v5.0 ULTIMATE)
+//
+//  FUSION COMPLÈTE v4.0 + v4.1 + v4.2 + v5.0
+//
+//  ✅ Multi-Tenant SaaS (Tenant → Client)
+//  ✅ Multi-Currency typé (enum CurrencyCode)
+//  ✅ Wallets multi-devises avec version optimistic locking + freeze
+//  ✅ KYC / AML / Compliance (ComplianceStatus + ComplianceCase)
+//  ✅ OTP + MFA + Device Trust + Login History
+//  ✅ Push Notifications FCM/APNS / SMS / Email
+//  ✅ Treasury / Ledger double-entrée / Audit Logs
+//  ✅ Loyalty / Promotions / Referrals
+//  ✅ Rate Alerts / Scheduled Transfers
+//  ✅ UserCard (tokenisée PSP) + UserMobileWallet
+//  ✅ API Keys + Webhooks
+//  ✅ Support Tickets
+//  ✅ Beneficiary complet (IBAN, Mobile Money)
+//  ✅ Commission Config & Tiers multi-devises
+//  ✅ ExchangeRate avec historique, spread, isActive
+//  ✅ Transaction avec direction, riskScore, receiptUrl
+//  ✅ Withdrawal complet
+//  ✅ ScheduledTransfer (récurrence, failureCount)
+//  ✅ Précision financière @db.Decimal(18, 4)
+//  ✅ soft-delete (deletedAt) sur User, Client, Agency
+//  ✅ Notification enrichie (priority, groupKey, expiresAt)
+//  ✅ CommunicationLog enrichi (metadata, externalId)
+//  ✅ TreasurySnapshot enrichi (métriques avancées)
+//  ✅ CommissionConfig enrichi (description, priority)
 // ==========================================================
 
 generator client {
@@ -26,11 +43,26 @@ datasource db {
 // ENUMS
 // =========================================================
 
+// Devises supportées — typées pour éviter les erreurs de saisie
+enum CurrencyCode {
+  XOF
+  EUR
+  USD
+  GNF
+  GBP
+}
+
 enum Role {
   SUPER_ADMIN    // Plateforme SaaS — accès total
   COMPANY_ADMIN  // Admin de la société cliente
   AGENT          // Agent en agence
   USER           // Client final
+}
+
+enum ComplianceStatus {
+  CLEAR    // Aucun problème
+  REVIEW   // En cours de révision AML/KYC
+  BLOCKED  // Compte bloqué par compliance
 }
 
 enum SubscriptionType {
@@ -54,8 +86,28 @@ enum TransactionStatus {
   CANCELLED
   FAILED
   REFUNDED
-  ON_HOLD      // Bloqué AML/compliance
-  EXPIRED      // Code de retrait expiré
+  ON_HOLD  // Bloqué AML/compliance
+  EXPIRED  // Code de retrait expiré
+}
+
+enum TransactionDirection {
+  INBOUND   // Argent reçu
+  OUTBOUND  // Argent envoyé
+  INTERNAL  // Transfert interne (ex: wallet → wallet)
+}
+
+enum TransactionType {
+  TRANSFER
+  DEPOSIT
+  WITHDRAWAL
+  SERVICE_PAYMENT
+  INTERNAL_TRANSFER
+  FEE_COLLECTION
+  EXCHANGE        // Conversion multi-devises
+  AGENCY_REFILL
+  REFUND
+  LOYALTY_CREDIT  // Crédit points fidélité
+  SCHEDULED       // Virement programmé
 }
 
 enum PayoutMethod {
@@ -64,7 +116,7 @@ enum PayoutMethod {
   MOBILE_MONEY
   WALLET
   IBAN_TRANSFER
-  CRYPTO        // Pour évolution future
+  CRYPTO          // Pour évolution future
 }
 
 enum PaymentMethod {
@@ -106,20 +158,6 @@ enum WithdrawalStatus {
   EXPIRED
 }
 
-enum TransactionType {
-  TRANSFER
-  DEPOSIT
-  WITHDRAWAL
-  SERVICE_PAYMENT
-  INTERNAL_TRANSFER
-  FEE_COLLECTION
-  EXCHANGE          // Conversion multi-devises
-  AGENCY_REFILL
-  REFUND
-  LOYALTY_CREDIT    // Crédit points fidélité
-  SCHEDULED         // Virement programmé
-}
-
 enum AgencyType {
   SUBSIDIARY
   PARTNER
@@ -141,10 +179,10 @@ enum NotificationType {
   SUCCESS
   WARNING
   ERROR
-  TRANSACTION     // Spécifique transaction
-  SECURITY        // OTP, nouvelle connexion
-  MARKETING       // Promotions, offres
-  SYSTEM          // Maintenance, alertes système
+  TRANSACTION  // Spécifique transaction
+  SECURITY     // OTP, nouvelle connexion
+  MARKETING    // Promotions, offres
+  SYSTEM       // Maintenance, alertes système
 }
 
 enum NotificationChannel {
@@ -152,6 +190,13 @@ enum NotificationChannel {
   PUSH
   EMAIL
   SMS
+}
+
+enum NotificationPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
 
 enum KycStatus {
@@ -175,8 +220,16 @@ enum KycDocumentType {
 enum KycLevel {
   LEVEL_0  // Aucun KYC — limites très basses
   LEVEL_1  // Pièce identité — limites basiques
-  LEVEL_2  // + Justif domicile — limites intermédiaires
+  LEVEL_2  // + Justificatif domicile — limites intermédiaires
   LEVEL_3  // Full KYC — limites maximales
+}
+
+enum LedgerEntryType {
+  CREDIT
+  DEBIT
+  HOLD
+  UNHOLD
+  ADJUSTMENT
 }
 
 enum AuditAction {
@@ -221,6 +274,9 @@ enum AuditAction {
   DEVICE_REVOKE
   SCHEDULED_TRANSFER_CREATE
   SCHEDULED_TRANSFER_CANCEL
+  SUPPORT_TICKET_CREATE
+  COMPLIANCE_CASE_CREATE
+  COMPLIANCE_CASE_RESOLVE
 }
 
 enum AlertType {
@@ -281,20 +337,12 @@ enum WebhookStatus {
   RETRYING
 }
 
-enum LedgerEntryType {
-  CREDIT
-  DEBIT
-  HOLD
-  UNHOLD
-  ADJUSTMENT
-}
-
 enum OtpPurpose {
   LOGIN               // OTP à chaque connexion
   PASSWORD_RESET
   PHONE_VERIFICATION
   EMAIL_VERIFICATION
-  TRANSACTION_CONFIRM // Confirm avant gros virement
+  TRANSACTION_CONFIRM // Confirmation avant gros virement
   WITHDRAWAL_CONFIRM
   DEVICE_TRUST
 }
@@ -329,25 +377,58 @@ enum DeviceStatus {
 }
 
 enum RateAlertDirection {
-  ABOVE  // Alerter quand le taux dépasse X
-  BELOW  // Alerter quand le taux passe en dessous de X
+  ABOVE  // Alerter quand le taux dépasse le seuil
+  BELOW  // Alerter quand le taux passe en dessous du seuil
+}
+
+enum CardBrand {
+  VISA
+  MASTERCARD
+  AMEX
+  DISCOVER
+  OTHER
+}
+
+enum SupportTicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_USER
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ComplianceCaseStatus {
+  OPEN
+  UNDER_REVIEW
+  ESCALATED
+  RESOLVED
+  CLOSED
 }
 
 // =========================================================
-// CURRENCY MAP (utilitaire : pays → devise par défaut)
+// CURRENCY MAP
+// Utilitaire : pays → devise par défaut
+// Ex : FR → EUR, GN → GNF, US → USD, GB → GBP, SN → XOF
 // =========================================================
-// Ce modèle permet de lier automatiquement un pays à sa devise.
-// Exemples : FR → EUR, GN → GNF, US → USD, GB → GBP, SN → XOF
 
 model CountryCurrency {
-  id           Int    @id @default(autoincrement())
-  countryCode  String @unique  // ISO 3166-1 alpha-2 : "FR", "GN", "US", "GB"…
-  countryName  String
-  currencyCode String           // "EUR", "GNF", "USD", "GBP", "XOF"…
-  currencyName String
+  id             Int          @id @default(autoincrement())
+  countryCode    String       @unique  // ISO 3166-1 alpha-2 : "FR", "GN", "US", "GB"…
+  countryName    String
+  currencyCode   CurrencyCode          // Typé enum
+  currencyName   String
   currencySymbol String
-  flagEmoji    String?
-  isSupported  Boolean @default(true) // Parmi les 5 devises actives de la plateforme
+  flagEmoji      String?
+  phonePrefix    String?               // Ex: "+33", "+224"
+  region         String?               // Ex: "Europe", "Afrique de l'Ouest"
+  isSupported    Boolean      @default(true)
 
   @@index([currencyCode])
   @@map("country_currencies")
@@ -355,22 +436,25 @@ model CountryCurrency {
 
 // =========================================================
 // TENANT
+// Niveau racine du multi-tenant SaaS
 // =========================================================
 
 model Tenant {
   id          Int      @id @default(autoincrement())
   code        String   @unique
   name        String
-  databaseUrl String?
+  databaseUrl String?  // Pour isolation DB si besoin
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  clients Client[]
 
   @@map("tenants")
 }
 
 // =========================================================
-// CLIENT (SOCIÉTÉ SAAS)
+// CLIENT (Société SaaS cliente)
 // =========================================================
 
 model Client {
@@ -378,26 +462,32 @@ model Client {
   code String @unique
   name String
 
-  logoUrl        String?
-  primaryColor   String? @default("#F7931E")
-  secondaryColor String? @default("#1E40AF")
-  timezone       String? @default("Africa/Conakry")
-  locale         String? @default("fr-GN")
-  defaultCurrency String? @default("GNF")
+  // Rattachement tenant
+  tenantId Int?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
+  // Branding
+  logoUrl        String?
+  primaryColor   String?      @default("#F7931E")
+  secondaryColor String?      @default("#1E40AF")
+  timezone       String?      @default("Africa/Conakry")
+  locale         String?      @default("fr-GN")
+  defaultCurrency CurrencyCode @default(GNF)
+
+  // Coordonnées
   address  String?
   phone    String?
   email    String?
   website  String?
-
-  // Pays siège social → détermine devise principale
-  country  String?   // ISO alpha-2 ex: "GN", "FR", "US"
+  country  String?  // ISO alpha-2
   city     String?
 
+  // Secteur / contact opérationnel
   activitySector String?
   contactPhone   String?
   contactEmail   String?
 
+  // Propriétaire légal
   ownerFirstName  String?
   ownerLastName   String?
   ownerBirthDate  String?
@@ -405,70 +495,88 @@ model Client {
   ownerCountry    String?
   ownerAddress    String?
 
+  // Représentant légal
   representativeName String?
   representativeDocs String?
 
+  // Abonnement
   subscriptionType   SubscriptionType   @default(RENTAL)
   subscriptionStatus SubscriptionStatus @default(ACTIVE)
   subscriptionStart  DateTime?
   subscriptionEnd    DateTime?
   trialEndsAt        DateTime?
 
-  // Limites & Config
-  maxDailyTransferAmount  Decimal? @db.Decimal(14, 2)
-  maxTransactionAmount    Decimal? @db.Decimal(14, 2)
-  requireKyc              Boolean  @default(false)
-  kycLevel                Int      @default(1)
-  allowedCurrencies       String[] @default(["XOF", "EUR", "USD", "GNF", "GBP"])
+  // Limites de transfert
+  maxDailyTransferAmount   Decimal? @db.Decimal(18, 4)
+  maxMonthlyTransferAmount Decimal? @db.Decimal(18, 4)
+  maxYearlyTransferAmount  Decimal? @db.Decimal(18, 4)
+  maxTransactionAmount     Decimal? @db.Decimal(18, 4)
+
+  // Compliance
+  requireKyc        Boolean  @default(false)
+  kycLevel          Int      @default(1)
+  allowedCurrencies CurrencyCode[] @default([XOF, EUR, USD, GNF, GBP])
 
   // Feature flags
   featureScheduledTransfers Boolean @default(true)
   featureRateAlerts         Boolean @default(true)
   featureLoyaltyPoints      Boolean @default(false)
   featureCryptoPayouts      Boolean @default(false)
+  featureCardPayments       Boolean @default(true)
+  featureMobileWallets      Boolean @default(true)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime? // Soft delete
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
-  users             User[]
-  agencies          Agency[]
-  beneficiaries     Beneficiary[]
-  transactions      Transaction[]
-  withdrawals       Withdrawal[]
-  commissionConfigs CommissionConfig[]
-  promotions        Promotion[]
-  alerts            Alert[]
-  auditLogs         AuditLog[]        @relation("ClientAuditLogs")
-  apiKeys           ApiKey[]
-  wallets           Wallet[]
-  webhooks          WebhookEndpoint[]
+  users              User[]
+  agencies           Agency[]
+  beneficiaries      Beneficiary[]
+  transactions       Transaction[]
+  withdrawals        Withdrawal[]
+  commissionConfigs  CommissionConfig[]
+  promotions         Promotion[]
+  alerts             Alert[]
+  auditLogs          AuditLog[]          @relation("ClientAuditLogs")
+  apiKeys            ApiKey[]
+  wallets            Wallet[]
+  webhooks           WebhookEndpoint[]
   scheduledTransfers ScheduledTransfer[]
-  loyaltyConfig     LoyaltyConfig?
+  loyaltyConfig      LoyaltyConfig?
+  treasurySnapshots  TreasurySnapshot[]
+  supportTickets     SupportTicket[]
+  complianceCases    ComplianceCase[]
 
+  @@index([tenantId])
   @@index([subscriptionStatus])
   @@index([country])
   @@map("clients")
 }
 
 // =========================================================
-// MULTI-CURRENCY WALLET (5 devises : XOF, EUR, USD, GNF, GBP)
+// WALLET (Multi-devises avec optimistic locking)
 // =========================================================
 
 model Wallet {
-  id String @id @default(cuid())
+  id       String       @id @default(cuid())
+  currency CurrencyCode
 
-  // Devise — l'une des 5 supportées
-  currency String  // "XOF" | "EUR" | "USD" | "GNF" | "GBP"
-  balance  Decimal @default(0) @db.Decimal(14, 2)
-  
-  // Solde réservé (fonds en attente de débit, non disponibles)
-  reservedBalance Decimal @default(0) @db.Decimal(14, 2)
+  balance         Decimal @default(0) @db.Decimal(18, 4)
+  reservedBalance Decimal @default(0) @db.Decimal(18, 4) // Fonds en attente de débit
 
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
+  isFrozen  Boolean @default(false)  // Freeze compliance/AML
+  frozenReason String?
+  frozenAt  DateTime?
 
-  // Propriétaire polymorphe
+  // Optimistic locking — incrémenter à chaque mise à jour de solde
+  version Int @default(1)
+
+  // Propriétaire polymorphe (user OU agency OU client)
   userId   String?
   user     User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -497,20 +605,20 @@ model Wallet {
 model LedgerEntry {
   id String @id @default(cuid())
 
+  walletId String
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
 
-  walletId String
-  wallet   Wallet @relation(fields: [walletId], references: [id])
-
   type         LedgerEntryType
-  amount       Decimal @db.Decimal(14, 2)
-  currency     String
+  amount       Decimal         @db.Decimal(18, 4)
+  currency     CurrencyCode
   description  String?
-  balanceAfter Decimal @db.Decimal(14, 2)
-  
-  // Référence externe (paiement provider, etc.)
-  externalRef  String?
+  balanceAfter Decimal         @db.Decimal(18, 4)
+
+  externalRef         String? // Référence provider externe
+  counterpartWalletId String? // Wallet de contrepartie (transferts internes)
 
   createdAt DateTime @default(now())
 
@@ -535,21 +643,23 @@ model Agency {
   email String?
   phone String?
 
-  // Pays / résidence → détermine la devise par défaut du wallet
-  country     String?  // ISO alpha-2 ex: "FR", "GN", "SN"
-  postalCode  String?
+  // Localisation → détermine devise principale
+  country        String?      // ISO alpha-2 ex: "FR", "GN", "SN"
+  postalCode     String?
+  primaryCurrency CurrencyCode @default(XOF)
 
-  // Devise principale déduite du pays (lecture seule, calculée à la création)
-  // "EUR" si country=FR, "GNF" si country=GN, etc.
-  primaryCurrency String @default("XOF")
-
-  creditLimit Decimal @default(0) @db.Decimal(14, 2)
+  creditLimit Decimal @default(0) @db.Decimal(18, 4)
 
   openingHours Json?
   latitude     Float?
   longitude    Float?
   isActive     Boolean @default(true)
-  isCertified  Boolean @default(false)  // Agence certifiée/vérifiée
+  isCertified  Boolean @default(false) // Agence certifiée/vérifiée
+
+  // Coordonnées bancaires
+  ibanNumber String?
+  bankName   String?
+  bankBic    String?
 
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
@@ -557,10 +667,7 @@ model Agency {
   agents  User[]   @relation("AgencyAgents")
   wallets Wallet[] // Un wallet par devise supportée
 
-  // IBAN/coordonnées bancaires de l'agence
-  ibanNumber  String?
-  bankName    String?
-  bankBic     String?
+  deletedAt DateTime? // Soft delete
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -575,12 +682,13 @@ model Agency {
 // =========================================================
 
 model User {
-  id       String @id @default(cuid())
-  email    String @unique
-  phone    String? @unique  // ✅ Requis pour connexion par téléphone
+  id       String  @id @default(cuid())
+  email    String  @unique
+  phone    String? @unique  // Requis pour connexion par téléphone
   password String
-  role     Role   @default(USER)
+  role     Role    @default(USER)
 
+  // Identité
   firstName String?
   lastName  String?
   gender    String?
@@ -590,48 +698,56 @@ model User {
   addressStreet String?
   postalCode    String?
   city          String?
-  country       String?  // ISO alpha-2 — CLEF pour devise auto
+  country       String?       // ISO alpha-2 — clé pour devise auto
 
   // Devise principale déduite du pays de résidence
-  // Ex: country=FR → primaryCurrency=EUR, country=GN → primaryCurrency=GNF
-  primaryCurrency String @default("XOF")
+  primaryCurrency CurrencyCode @default(XOF)
 
+  // Identité complémentaire
   nationality  String?
   birthDate    String?
   birthPlace   String?
   birthCountry String?
   birthCity    String?
 
-  dailySentAmount Decimal @default(0) @db.Decimal(14, 2)
-
   profilePictureUrl String?
   preferredLanguage String? @default("fr")
 
   // Coordonnées bancaires personnelles
-  ibanNumber  String?
-  bankName    String?
-  bankBic     String?
+  ibanNumber          String?
+  bankName            String?
+  bankBic             String?
   mobileMoneyOperator String?
   mobileMoneyNumber   String?
 
-  // Points fidélité
-  loyaltyPoints    Int @default(0)
-  loyaltyTier      String? @default("BRONZE") // BRONZE, SILVER, GOLD, PLATINUM
+  // Compteurs de montants envoyés (remis à zéro périodiquement)
+  dailySentAmount   Decimal @default(0) @db.Decimal(18, 4)
+  monthlySentAmount Decimal @default(0) @db.Decimal(18, 4)
+  yearlySentAmount  Decimal @default(0) @db.Decimal(18, 4)
 
-  // Sécurité
-  isEmailVerified Boolean  @default(false)
-  isPhoneVerified Boolean  @default(false)
-  isActive        Boolean  @default(true)
-  isSuspended     Boolean  @default(false)
+  // Fidélité
+  loyaltyPoints Int     @default(0)
+  loyaltyTier   String? @default("BRONZE") // BRONZE, SILVER, GOLD, PLATINUM
+
+  // Compliance
+  complianceStatus ComplianceStatus @default(CLEAR)
+  kycLevel         KycLevel         @default(LEVEL_0)
+
+  // Vérifications
+  isEmailVerified Boolean   @default(false)
+  isPhoneVerified Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  isSuspended     Boolean   @default(false)
   suspendedReason String?
   suspendedAt     DateTime?
 
-  // OTP — utilisé à CHAQUE connexion (email ou téléphone)
+  // OTP — utilisé à chaque connexion (email ou téléphone)
   otpCode      String?
   otpExpiresAt DateTime?
   otpPurpose   OtpPurpose?
-  otpChannel   CommsType?   // EMAIL ou SMS
+  otpChannel   CommsType?  // EMAIL ou SMS
 
+  // Sécurité / verrouillage
   failedLoginAttempts Int       @default(0)
   lastFailedLoginAt   DateTime?
   lockedUntil         DateTime?
@@ -639,48 +755,56 @@ model User {
   lastLoginIp         String?
   lastLoginCountry    String?
 
-  mfaEnabled  Boolean @default(false)
-  mfaSecret   String?
+  // MFA
+  mfaEnabled     Boolean  @default(false)
+  mfaSecret      String?
   mfaBackupCodes String[]
 
-  // Référencement
+  // Parrainage
   referralCode String?  @unique
   referredById String?
   referredBy   User?    @relation("Referrals", fields: [referredById], references: [id])
   referrals    User[]   @relation("Referrals")
 
-  // Push notification token (FCM/APNS)
-  pushTokens   UserDevice[] // Un utilisateur peut avoir plusieurs appareils
+  // Soft delete
+  deletedAt DateTime?
 
-  // Relations
+  // Appartenance
   clientId Int?
   client   Client? @relation(fields: [clientId], references: [id])
 
   agencyId String?
   agency   Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
 
-  sentTransactions     Transaction[] @relation("Sender")
-  receivedTransactions Transaction[] @relation("Recipient")
-
-  beneficiaries        Beneficiary[]
-  processedWithdrawals Withdrawal[] @relation("ProcessedWithdrawals")
-
-  notifications        Notification[]
-  communicationLogs    CommunicationLog[]
+  // Relations financières
   wallets              Wallet[]
-
-  sessions             UserSession[]
-  auditLogs            AuditLog[]
-  kyc                  KycDocument[]
-  kycLevel             KycLevel @default(LEVEL_0)
-
-  alerts               Alert[]       @relation("AlertUser")
-  amlFlags             AmlFlag[]
-  promotionsUsed       PromotionUse[]
+  cards                UserCard[]
+  mobileWallets        UserMobileWallet[]
+  sentTransactions     Transaction[]      @relation("Sender")
+  receivedTransactions Transaction[]      @relation("Recipient")
+  beneficiaries        Beneficiary[]
+  processedWithdrawals Withdrawal[]       @relation("ProcessedWithdrawals")
   scheduledTransfers   ScheduledTransfer[]
   rateAlerts           RateAlert[]
   loyaltyTransactions  LoyaltyTransaction[]
-  otpLogs              OtpLog[]
+  promotionsUsed       PromotionUse[]
+
+  // Relations sécurité / logs
+  sessions      UserSession[]
+  devices       UserDevice[]
+  otpLogs       OtpLog[]
+  loginHistory  LoginHistory[]
+  auditLogs     AuditLog[]
+  kyc           KycDocument[]
+  amlFlags      AmlFlag[]
+
+  // Notifications / comms
+  notifications     Notification[]
+  communicationLogs CommunicationLog[]
+  alerts            Alert[]            @relation("AlertUser")
+
+  // Support
+  supportTickets SupportTicket[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -690,6 +814,7 @@ model User {
   @@index([role])
   @@index([country])
   @@index([phone])
+  @@index([complianceStatus])
   @@map("users")
 }
 
@@ -703,24 +828,25 @@ model UserDevice {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  platform    DevicePlatform
-  status      DeviceStatus   @default(PENDING)
+  platform DevicePlatform
+  status   DeviceStatus   @default(PENDING)
 
   // Push notification
-  pushToken   String?  // FCM token (Android) ou APNS token (iOS)
+  pushToken   String?  // FCM (Android) ou APNS (iOS)
   pushEnabled Boolean  @default(true)
 
   // Fingerprint appareil
-  deviceId    String   // Identifiant unique appareil
-  deviceName  String?  // Ex: "iPhone 15 Pro de Doniko"
-  deviceModel String?
-  osVersion   String?
-  appVersion  String?
+  deviceId        String   // Identifiant unique appareil
+  deviceName      String?  // Ex: "iPhone 15 Pro de Doniko"
+  deviceModel     String?
+  osVersion       String?
+  appVersion      String?
+  fingerprintHash String?  // Hash fingerprint pour détection fraude
 
-  ipAddress   String?
-  lastUsedAt  DateTime @default(now())
-  trustedAt   DateTime?
-  revokedAt   DateTime?
+  ipAddress  String?
+  lastUsedAt DateTime  @default(now())
+  trustedAt  DateTime?
+  revokedAt  DateTime?
 
   createdAt DateTime @default(now())
 
@@ -730,25 +856,49 @@ model UserDevice {
 }
 
 // =========================================================
+// LOGIN HISTORY (Historique de connexions)
+// =========================================================
+
+model LoginHistory {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  ipAddress     String?
+  country       String?
+  city          String?
+  device        String?
+  userAgent     String?
+  success       Boolean  @default(true)
+  failureReason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("login_history")
+}
+
+// =========================================================
 // OTP LOG (Traçabilité complète des OTP)
 // =========================================================
 
 model OtpLog {
   id String @id @default(cuid())
 
-  userId  String
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   code      String
   purpose   OtpPurpose
-  channel   CommsType   // EMAIL ou SMS
-  recipient String      // email ou numéro
+  channel   CommsType  // EMAIL ou SMS
+  recipient String     // Email ou numéro
 
-  isUsed    Boolean  @default(false)
+  isUsed    Boolean   @default(false)
   usedAt    DateTime?
   expiresAt DateTime
-  attempts  Int      @default(0)
-  isExpired Boolean  @default(false)
+  attempts  Int       @default(0)
+  isExpired Boolean   @default(false)
 
   ipAddress String?
 
@@ -756,6 +906,91 @@ model OtpLog {
 
   @@index([userId, purpose])
   @@map("otp_logs")
+}
+
+// =========================================================
+// USER SESSION
+// =========================================================
+
+model UserSession {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  token     String        @unique
+  status    SessionStatus @default(ACTIVE)
+  device    String?
+  deviceId  String?       // Lien vers UserDevice
+  ipAddress String?
+  userAgent String?
+  country   String?       // Pays de connexion détecté
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  // Refresh token
+  refreshToken          String?  @unique
+  refreshTokenExpiresAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, status])
+  @@map("user_sessions")
+}
+
+// =========================================================
+// USER CARD (Carte bancaire tokenisée PSP)
+// =========================================================
+
+model UserCard {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  last4          String
+  expiry         String    // Format "MM/YY"
+  brand          CardBrand @default(VISA)
+  cardholderName String?   // Nom sur la carte
+
+  isDefault  Boolean @default(false)
+  isActive   Boolean @default(true)
+  isVerified Boolean @default(false) // Vérifiée via 3DS ou micro-débit
+
+  // Tokenisation PSP (ne jamais stocker le PAN complet)
+  providerToken String? // Token Stripe / Flutterwave / autre PSP
+  providerName  String? // "stripe", "flutterwave"
+  fingerprint   String? // Fingerprint PSP pour déduplication
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("user_cards")
+}
+
+// =========================================================
+// USER MOBILE WALLET (Orange Money, Wave, etc.)
+// =========================================================
+
+model UserMobileWallet {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider   PaymentMethod
+  number     String
+  currency   CurrencyCode?
+  alias      String?   // Nom personnalisé ex: "Mon Orange Money"
+
+  isDefault  Boolean @default(false)
+  isVerified Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider, number])
+  @@index([userId])
+  @@map("user_mobile_wallets")
 }
 
 // =========================================================
@@ -777,6 +1012,9 @@ model KycDocument {
   expiryDate     DateTime?
   issuedCountry  String?
 
+  // Versionning pour re-soumission
+  version Int @default(1)
+
   rejectionReason String?
   reviewedAt      DateTime?
   reviewedById    String?
@@ -797,12 +1035,12 @@ model AmlFlag {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
 
-  reason      String
-  riskScore   Int      @default(50) // 1 à 100
-  isReviewed  Boolean  @default(false)
-  reviewedBy  String?
-  reviewedAt  DateTime?
-  resolution  String?
+  reason     String
+  riskScore  Int      @default(50) // Score 1 à 100
+  isReviewed Boolean  @default(false)
+  reviewedBy String?
+  reviewedAt DateTime?
+  resolution String?
 
   createdAt DateTime @default(now())
 
@@ -811,33 +1049,32 @@ model AmlFlag {
 }
 
 // =========================================================
-// USER SESSION
+// COMPLIANCE CASE (Dossiers AML/KYC structurés)
 // =========================================================
 
-model UserSession {
+model ComplianceCase {
   id String @id @default(cuid())
 
-  userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String?
+  transactionId String?
 
-  token     String        @unique
-  status    SessionStatus @default(ACTIVE)
-  device    String?
-  deviceId  String?       // Lien vers UserDevice
-  ipAddress String?
-  userAgent String?
-  country   String?       // Pays de connexion détecté
-  expiresAt DateTime
-  revokedAt DateTime?
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id])
 
-  // Refresh token
-  refreshToken          String? @unique
-  refreshTokenExpiresAt DateTime?
+  reason String
+  notes  String?
+
+  status     ComplianceCaseStatus @default(OPEN)
+  assignedTo String?              // userId de l'analyste
+  resolvedAt DateTime?
+  resolution String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([userId, status])
-  @@map("user_sessions")
+  @@index([status])
+  @@index([clientId])
+  @@map("compliance_cases")
 }
 
 // =========================================================
@@ -853,17 +1090,20 @@ model Beneficiary {
   email    String?
 
   // Devise attendue selon pays du bénéficiaire
-  expectedCurrency String? // "GNF" si country=GN par ex.
+  expectedCurrency CurrencyCode?
 
-  bankName            String?
-  bankAccount         String?
-  bankIban            String?
-  bankBic             String?
+  // Coordonnées bancaires
+  bankName    String?
+  bankAccount String?
+  bankIban    String?
+  bankBic     String?
+
+  // Mobile Money
   mobileMoneyOperator String?
   mobileMoneyNumber   String?
 
-  isFavorite  Boolean @default(false)
-  transferCount Int   @default(0)
+  isFavorite    Boolean @default(false)
+  transferCount Int     @default(0)
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -878,6 +1118,7 @@ model Beneficiary {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([clientId])
   @@index([country])
   @@map("beneficiaries")
 }
@@ -890,37 +1131,47 @@ model Transaction {
   id        String @id @default(cuid())
   reference String @unique
 
-  type TransactionType @default(TRANSFER)
+  type      TransactionType      @default(TRANSFER)
+  direction TransactionDirection @default(OUTBOUND)
 
-  amount Decimal @db.Decimal(14, 2)
-  fees   Decimal @db.Decimal(14, 2)
-  total  Decimal @db.Decimal(14, 2)
+  amount Decimal @db.Decimal(18, 4)
+  fees   Decimal @db.Decimal(18, 4)
+  total  Decimal @db.Decimal(18, 4)
 
   // Multi-devise
-  currency        String           // Devise source (ex: EUR)
-  targetCurrency  String?          // Devise cible (ex: GNF)
-  exchangeRate    Float?           // Taux appliqué au moment de la transaction
-  receivedAmount  Decimal? @db.Decimal(14, 2) // Montant reçu après conversion
+  currency       CurrencyCode
+  targetCurrency CurrencyCode?
+  exchangeRate   Float?                       // Taux au moment de la transaction
+  receivedAmount Decimal?     @db.Decimal(18, 4) // Montant reçu après conversion
 
   // Commissions
-  senderCommission   Decimal? @db.Decimal(14, 2)
-  payerCommission    Decimal? @db.Decimal(14, 2)
-  platformCommission Decimal? @db.Decimal(14, 2)
+  senderCommission   Decimal? @db.Decimal(18, 4)
+  payerCommission    Decimal? @db.Decimal(18, 4)
+  platformCommission Decimal? @db.Decimal(18, 4)
 
-  status       TransactionStatus @default(PENDING)
-  payoutMethod PayoutMethod      @default(CASH_PICKUP)
-  paymentMethod PaymentMethod    @default(WALLET)
+  status        TransactionStatus @default(PENDING)
+  payoutMethod  PayoutMethod      @default(CASH_PICKUP)
+  paymentMethod PaymentMethod     @default(WALLET)
 
-  provider       PaymentProvider?
-  providerRef    String?
-  providerStatus ProviderStatus?  @default(PENDING)
-  providerMetadata Json?           // Réponse brute du provider
+  // Provider paiement
+  provider         PaymentProvider?
+  providerRef      String?          @unique
+  providerStatus   ProviderStatus?  @default(PENDING)
+  providerMetadata Json?            // Réponse brute du provider
 
-  note     String?
+  // Compliance
+  riskScore Int     @default(0)   // Score de risque calculé 0-100
+  isFlagged Boolean @default(false)
+
+  note         String?
   pickupCode   String?
   pickupExpiry DateTime?
 
-  // Origine (virement programmé ?)
+  // Documents
+  receiptUrl String? // Reçu PDF généré
+  invoiceUrl String? // Facture si applicable
+
+  // Virement programmé origine
   scheduledTransferId String?
   scheduledTransfer   ScheduledTransfer? @relation(fields: [scheduledTransferId], references: [id])
 
@@ -936,24 +1187,26 @@ model Transaction {
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
 
-  withdrawal    Withdrawal?
-  ledgerEntries LedgerEntry[]
-  amlFlags      AmlFlag[]
-  commsLogs     CommunicationLog[] // Emails/SMS envoyés pour cette transaction
-
+  // Promotion appliquée
   promotionId String?
   promotion   Promotion? @relation(fields: [promotionId], references: [id])
 
-  // Loyalty
-  loyaltyPointsEarned  Int @default(0)
-  loyaltyTransactions  LoyaltyTransaction[]
+  // Fidélité
+  loyaltyPointsEarned Int @default(0)
 
-  // Horodatages
+  // Horodatages métier
   validatedAt DateTime?
   paidAt      DateTime?
   cancelledAt DateTime?
   failedAt    DateTime?
   expiresAt   DateTime?
+
+  // Relations
+  withdrawal          Withdrawal?
+  ledgerEntries       LedgerEntry[]
+  amlFlags            AmlFlag[]
+  commsLogs           CommunicationLog[]
+  loyaltyTransactions LoyaltyTransaction[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -963,6 +1216,7 @@ model Transaction {
   @@index([createdAt])
   @@index([reference])
   @@index([currency, targetCurrency])
+  @@index([isFlagged])
   @@map("transactions")
 }
 
@@ -980,15 +1234,15 @@ model Withdrawal {
   status WithdrawalStatus @default(PENDING)
 
   // Détails paiement bénéficiaire
-  recipientIban       String?
-  recipientBankName   String?
-  recipientMobileOp   String?
-  recipientMobileNum  String?
+  recipientIban      String?
+  recipientBankName  String?
+  recipientMobileOp  String?
+  recipientMobileNum String?
 
   requestedAt   DateTime  @default(now())
   processedAt   DateTime?
   processedById String?
-  processedBy   User?    @relation("ProcessedWithdrawals", fields: [processedById], references: [id])
+  processedBy   User?     @relation("ProcessedWithdrawals", fields: [processedById], references: [id])
   expiresAt     DateTime?
 
   rejectionReason String?
@@ -1016,11 +1270,11 @@ model ScheduledTransfer {
   beneficiaryId String?
   beneficiary   Beneficiary? @relation(fields: [beneficiaryId], references: [id])
 
-  amount        Decimal @db.Decimal(14, 2)
-  currency      String
-  targetCurrency String?
-  payoutMethod  PayoutMethod @default(CASH_PICKUP)
-  note          String?
+  amount         Decimal      @db.Decimal(18, 4)
+  currency       CurrencyCode
+  targetCurrency CurrencyCode?
+  payoutMethod   PayoutMethod @default(CASH_PICKUP)
+  note           String?
 
   frequency  ScheduledFrequency @default(ONCE)
   status     ScheduledStatus    @default(ACTIVE)
@@ -1053,15 +1307,14 @@ model RateAlert {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  pair      String  // Ex: "EUR_GNF"
+  pair      String             // Ex: "EUR_GNF"
   direction RateAlertDirection
-  threshold Float   // Taux seuil
+  threshold Float              // Taux seuil
 
-  isTriggered Boolean  @default(false)
+  isTriggered Boolean   @default(false)
   triggeredAt DateTime?
-  isActive    Boolean  @default(true)
+  isActive    Boolean   @default(true)
 
-  // Notification envoyée lors du déclenchement
   notifiedVia CommsType[] @default([PUSH, EMAIL])
 
   createdAt DateTime @default(now())
@@ -1100,8 +1353,8 @@ model LoyaltyTransaction {
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
 
-  points      Int    // Positif = crédit, négatif = débit
-  description String
+  points       Int    // Positif = crédit, négatif = débit
+  description  String
   balanceAfter Int
 
   createdAt DateTime @default(now())
@@ -1117,8 +1370,8 @@ model LoyaltyTransaction {
 model CommunicationLog {
   id String @id @default(cuid())
 
-  userId        String?
-  user          User?   @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
@@ -1127,33 +1380,37 @@ model CommunicationLog {
   recipient String    // Email, numéro de téléphone, ou push token
 
   // Email
-  subject   String?
-  htmlBody  String?
-  textBody  String?
+  subject  String?
+  htmlBody String?
+  textBody String?
 
   // SMS
   smsContent String?
 
   // Push
-  pushTitle   String?
-  pushBody    String?
-  pushData    Json?   // Payload custom
+  pushTitle String?
+  pushBody  String?
+  pushData  Json?   // Payload custom FCM/APNS
 
   // Template
-  templateId  String?
+  templateId   String?
   templateVars Json?
 
-  status   CommsStatus @default(PENDING)
-  errorMsg String?
-  retryCount Int       @default(0)
+  status     CommsStatus @default(PENDING)
+  errorMsg   String?
+  retryCount Int         @default(0)
 
-  providerId      String? // ID retourné par Sendgrid, Twilio, FCM, etc.
-  providerName    String? // "sendgrid", "twilio", "fcm", "apns"
+  providerId   String? // ID retourné par Sendgrid, Twilio, FCM, etc.
+  providerName String? // "sendgrid", "twilio", "fcm", "apns"
 
-  createdAt DateTime @default(now())
-  sentAt    DateTime?
+  // Debug & déduplication
+  metadata   Json?   // Données arbitraires pour debugging
+  externalId String? // ID externe pour déduplication côté provider
+
+  createdAt   DateTime  @default(now())
+  sentAt      DateTime?
   deliveredAt DateTime?
-  readAt    DateTime?
+  readAt      DateTime?
 
   @@index([userId, status])
   @@index([transactionId])
@@ -1161,23 +1418,22 @@ model CommunicationLog {
   @@map("communication_logs")
 }
 
-// Template de communication (emails, SMS, Push réutilisables)
 model CommsTemplate {
   id       String @id @default(cuid())
   clientId Int?   // null = template global plateforme
 
-  slug     String @unique  // Ex: "transfer_receipt", "otp_login", "kyc_approved"
+  slug     String    @unique  // Ex: "transfer_receipt", "otp_login", "kyc_approved"
   name     String
   type     CommsType
 
-  subject  String?          // Pour emails
-  htmlBody String?          // Corps HTML email
-  textBody String?          // Corps texte email/SMS
-  pushTitle String?         // Titre push
-  pushBody  String?         // Corps push
+  subject   String?   // Pour emails
+  htmlBody  String?   // Corps HTML email
+  textBody  String?   // Corps texte email/SMS
+  pushTitle String?   // Titre push
+  pushBody  String?   // Corps push
 
-  variables String[]         // Ex: ["{{firstName}}", "{{amount}}", "{{currency}}"]
-  isActive  Boolean @default(true)
+  variables String[]  // Ex: ["{{firstName}}", "{{amount}}", "{{currency}}"]
+  isActive  Boolean   @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1193,30 +1449,37 @@ model Notification {
   id String @id @default(cuid())
 
   userId String
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   title    String
   message  String
-  type     NotificationType    @default(INFO)
+  type     NotificationType      @default(INFO)
   channels NotificationChannel[] @default([IN_APP])
-  isRead   Boolean              @default(false)
-  readAt   DateTime?
+  priority NotificationPriority  @default(NORMAL)
 
-  // Lien d'action (deep link ou URL)
+  isRead Boolean   @default(false)
+  readAt DateTime?
+
+  // Action associée (deep link ou URL web)
   actionUrl   String?
   actionLabel String?
-  metadata    Json?
-  
-  // Image/icône
-  imageUrl    String?
 
-  // Expiration
-  expiresAt   DateTime?
+  metadata Json?
+
+  // Image/icône personnalisée
+  imageUrl String?
+
+  // Regroupement (ex: "transactions", "kyc")
+  groupKey String?
+
+  // Expiration automatique
+  expiresAt DateTime?
 
   createdAt DateTime @default(now())
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
+  @@index([groupKey])
   @@map("notifications")
 }
 
@@ -1230,11 +1493,11 @@ model WebhookEndpoint {
   clientId Int
   client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  url       String
-  secret    String
-  isActive  Boolean  @default(true)
-  events    String[] // Ex: ["transaction.created", "transaction.paid", "kyc.approved"]
-  
+  url      String
+  secret   String
+  isActive Boolean  @default(true)
+  events   String[] // Ex: ["transaction.created", "transaction.paid", "kyc.approved"]
+
   // Retry config
   maxRetries   Int @default(3)
   retryDelayMs Int @default(5000)
@@ -1253,13 +1516,14 @@ model WebhookDelivery {
   endpointId String
   endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 
-  event      String
-  payload    Json
-  statusCode Int?
-  response   String?
-  status     WebhookStatus @default(PENDING)
-  attempts   Int           @default(0)
+  event       String
+  payload     Json
+  statusCode  Int?
+  response    String?
+  status      WebhookStatus @default(PENDING)
+  attempts    Int           @default(0)
   nextRetryAt DateTime?
+  lastAttemptAt DateTime?
 
   createdAt DateTime @default(now())
 
@@ -1272,31 +1536,39 @@ model WebhookDelivery {
 // =========================================================
 
 model ExchangeRate {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  // Paire de devises (toujours dans cet ordre: BASE_QUOTE)
+  // Paire de devises (toujours BASE_QUOTE)
   // Ex: "EUR_GNF", "EUR_XOF", "USD_GNF", "GBP_GNF", "GBP_EUR"
-  pair      String   @unique
+  pair String @unique
 
-  rate      Float
-  
-  // Taux inverse calculé automatiquement (1/rate)
-  inverseRate Float?
+  rate        Float
+  inverseRate Float?       // Calculé automatiquement (1/rate)
+  spread      Float? @default(0) // Spread appliqué sur le taux marché (en %)
 
   source    String?  @default("manual") // "manual", "api", "ecb", "xe.com"
   validFrom DateTime @default(now())
   validTo   DateTime?
 
-  // Historique
-  previousRate Float?
-  changePercent Float? // % de variation
+  isActive Boolean @default(true) // Désactiver sans supprimer
+
+  // Suivi variation
+  previousRate  Float?
+  changePercent Float?
+
+  // Métadonnées provider
+  providerMetadata Json?
+
+  // Versionning
+  version Int @default(1)
 
   updatedAt DateTime @updatedAt
-  updatedBy String?  // userId de l'admin qui a mis à jour
+  updatedBy String?  // userId de l'admin
 
   history ExchangeRateHistory[]
 
   @@index([pair])
+  @@index([pair, isActive])
   @@map("exchange_rates")
 }
 
@@ -1308,8 +1580,8 @@ model ExchangeRateHistory {
 
   pair       String
   rate       Float
-  recordedAt DateTime @default(now())
   source     String?
+  recordedAt DateTime @default(now())
 
   @@index([pair, recordedAt])
   @@map("exchange_rate_history")
@@ -1328,12 +1600,15 @@ model CommissionConfig {
   sourceType CommissionSourceType
   destType   CommissionDestType
 
-  // Devise de référence pour ce config (optionnel : si null, s'applique à toutes)
-  currency   String?
+  // Devise de référence (null = s'applique à toutes)
+  currency CurrencyCode?
 
   senderShare   Float @default(0)
   payerShare    Float @default(0)
   platformShare Float @default(100)
+
+  description String? // Note interne pour l'admin
+  priority    Int     @default(0) // Ordre d'application si plusieurs configs
 
   tiers CommissionTier[]
 
@@ -1350,12 +1625,12 @@ model CommissionTier {
   configId String
   config   CommissionConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
 
-  minAmount     Decimal  @db.Decimal(14, 2)
-  maxAmount     Decimal? @db.Decimal(14, 2)
+  minAmount     Decimal  @db.Decimal(18, 4)
+  maxAmount     Decimal? @db.Decimal(18, 4)
   senderShare   Float
   payerShare    Float
   platformShare Float
-  fixedFee      Decimal? @db.Decimal(14, 2) // Frais fixe additionnel
+  fixedFee      Decimal? @db.Decimal(18, 4) // Frais fixe additionnel
 
   @@map("commission_tiers")
 }
@@ -1367,8 +1642,8 @@ model CommissionTier {
 model AuditLog {
   id String @id @default(cuid())
 
-  userId   String?
-  user     User?   @relation(fields: [userId], references: [id])
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
 
   clientId Int?
   client   Client? @relation("ClientAuditLogs", fields: [clientId], references: [id])
@@ -1436,14 +1711,14 @@ model Promotion {
   title       String
   description String?
 
-  discountValue  Float   @default(0)
-  isPercentage   Boolean @default(true)
+  discountValue Float   @default(0)
+  isPercentage  Boolean @default(true)
 
-  minAmount   Decimal? @db.Decimal(14, 2)
-  maxDiscount Decimal? @db.Decimal(14, 2)
+  minAmount   Decimal? @db.Decimal(18, 4)
+  maxDiscount Decimal? @db.Decimal(18, 4)
 
   // Devises éligibles (vide = toutes)
-  eligibleCurrencies String[] @default([])
+  eligibleCurrencies CurrencyCode[] @default([])
 
   usageLimit   Int?
   usageCount   Int @default(0)
@@ -1494,13 +1769,12 @@ model ApiKey {
   keyHash   String   @unique
   keyPrefix String
 
-  scopes    String[]
-  isActive  Boolean  @default(true)
+  scopes      String[]
+  isActive    Boolean  @default(true)
+  ipWhitelist String[] @default([]) // IPs autorisées
 
   lastUsedAt DateTime?
   expiresAt  DateTime?
-
-  ipWhitelist String[] @default([]) // IPs autorisées
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1510,39 +1784,98 @@ model ApiKey {
 }
 
 // =========================================================
-// TREASURY SNAPSHOT (Tableau de bord trésorerie 5 devises)
-// Super Admin & Company Admin
+// TREASURY SNAPSHOT
+// Snapshot quotidien de trésorerie par devise
+// Alimente les dashboards Super Admin & Company Admin
 // =========================================================
-// Ce modèle capture un snapshot quotidien de la trésorerie
-// par devise pour alimenter les dashboards admin.
 
 model TreasurySnapshot {
   id String @id @default(cuid())
 
-  clientId Int?  // null = snapshot global (Super Admin)
-  // Si non null : snapshot de la société cliente (Company Admin)
+  clientId Int?     // null = snapshot global (Super Admin)
+  client   Client?  @relation(fields: [clientId], references: [id])
 
-  currency   String  // "XOF" | "EUR" | "USD" | "GNF" | "GBP"
-  date       DateTime @db.Date
+  currency CurrencyCode
+  date     DateTime     @db.Date
 
   // Volumes du jour
-  totalSent       Decimal @db.Decimal(14, 2)
-  totalReceived   Decimal @db.Decimal(14, 2)
-  totalFees       Decimal @db.Decimal(14, 2)
-  totalCommission Decimal @db.Decimal(14, 2)
+  totalSent       Decimal @db.Decimal(18, 4)
+  totalReceived   Decimal @db.Decimal(18, 4)
+  totalFees       Decimal @db.Decimal(18, 4)
+  totalCommission Decimal @db.Decimal(18, 4)
 
   // Soldes
-  openingBalance Decimal @db.Decimal(14, 2)
-  closingBalance Decimal @db.Decimal(14, 2)
+  openingBalance Decimal @db.Decimal(18, 4)
+  closingBalance Decimal @db.Decimal(18, 4)
 
-  transactionCount Int @default(0)
-  uniqueSenders    Int @default(0)
+  // Métriques
+  transactionCount     Int     @default(0)
+  uniqueSenders        Int     @default(0)
+  avgTransactionAmount Decimal? @db.Decimal(18, 4)
+  refundedAmount       Decimal? @db.Decimal(18, 4)
+  failedCount          Int      @default(0)
+
+  // Annotation manuelle admin
+  notes String?
 
   createdAt DateTime @default(now())
 
   @@unique([clientId, currency, date])
   @@index([currency, date])
   @@map("treasury_snapshots")
+}
+
+// =========================================================
+// SUPPORT TICKETS
+// =========================================================
+
+model SupportTicket {
+  id String @id @default(cuid())
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  subject  String
+  message  String
+  category String? // Ex: "transaction", "kyc", "account", "technical"
+
+  status   SupportTicketStatus   @default(OPEN)
+  priority SupportTicketPriority @default(MEDIUM)
+
+  assignedTo String?     // userId de l'agent support
+  resolvedAt DateTime?
+  closedAt   DateTime?
+
+  // Métadonnées (transactionId concernée, etc.)
+  metadata Json?
+
+  replies SupportTicketReply[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([clientId])
+  @@index([userId])
+  @@map("support_tickets")
+}
+
+model SupportTicketReply {
+  id       String @id @default(cuid())
+  ticketId String
+  ticket   SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  authorId   String  // userId de l'auteur (client ou agent)
+  isInternal Boolean @default(false) // Note interne non visible par le client
+  message    String
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@map("support_ticket_replies")
 }
 
 // =========================================================
