@@ -949,13 +949,7 @@ class API {
     currency?: string;
   }): Promise<Agency[]> {
     const headers = { "x-tenant-id": this.tenant };
-    const res = await tryMany<AxiosResponse<unknown>>(
-      [
-        () => this.http.get<unknown>("/agencies", { params, headers }),
-        () => this.http.get<unknown>("/admin/agencies", { params, headers }),
-      ],
-      "getAgencies",
-    );
+    const res = await this.http.get<unknown>("/agencies", { params, headers });
     return unwrapArray<Agency>(res.data);
   }
 
@@ -983,6 +977,8 @@ class API {
     const res = await this.http.get<unknown>(`/agencies/${agencyId}/wallets`);
     return unwrapArray<Wallet>(res.data).map(normalizeWallet);
   }
+
+  // ============================================================
 
   // ============================================================
   // BENEFICIARIES

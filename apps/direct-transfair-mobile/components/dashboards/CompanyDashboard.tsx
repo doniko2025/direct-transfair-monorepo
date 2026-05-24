@@ -520,18 +520,23 @@ export default function CompanyDashboard() {
     } finally { setLoadingFill(false); }
   };
 
+  // ✅ FIX : B2B utilise fillCur (devise sélectionnée) au lieu de XOF hardcodé
   const handleB2B = async () => {
     const n = Number(amountB2B);
     if (!amountB2B || isNaN(n) || n <= 0) { Alert.alert("Erreur", "Montant invalide."); return; }
+    if (!refB2B.trim()) { Alert.alert("Erreur", "Référence bancaire requise."); return; }
     setLoadingB2B(true);
     try {
-      await api.declareBankTransfer(n, refB2B);
+      await api.declareBankTransfer(n, refB2B, fillCur); // ✅ passe la devise
       setModalB2B(false); setAmountB2B(""); setRefB2B("");
-      Alert.alert("✅ Déclaration envoyée", "En attente de validation.");
+      Alert.alert("✅ Déclaration envoyée", "En attente de validation Super Admin.");
       await loadData();
     } catch (e: any) {
-      Alert.alert("Erreur", e?.response?.data?.message || "Erreur technique");
-    } finally { setLoadingB2B(false); }
+      const msg = e?.response?.data?.message ?? e?.message ?? "Erreur technique";
+      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+    } finally {
+      setLoadingB2B(false);
+    }
   };
 
   // ✅ FIX : lit depuis targetAgencyRef (synchrone) et passe currency au backend

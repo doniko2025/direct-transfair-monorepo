@@ -451,6 +451,8 @@ export interface Agency {
   primaryCurrency?: CurrencyCode;
   isActive?: boolean;
   isCertified?: boolean;
+  clientName?: string | null;   // ✅ AJOUTER
+  clientCode?: string | null;   // ✅ AJOUTER
   clientId: number;
   type?: string;
   wallets?: Wallet[];

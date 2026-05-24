@@ -1,4 +1,3 @@
-// apps/backend/src/transactions/transactions.controller.ts
 import {
   Body,
   Controller,
@@ -40,8 +39,8 @@ export class TransactionsController {
 
   @Post('admin/fund-self')
   async fundSelf(
-    @Req() req: AuthedRequest, 
-    @Body('amount') amount: string | number // ✅ Acceptation fluide des strings/numbers
+    @Req() req: AuthedRequest,
+    @Body('amount') amount: string | number,
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -70,33 +69,30 @@ export class TransactionsController {
     @Req() req: AuthedRequest,
     @Body('agencyId') agencyId: string,
     @Body('amount') amount: string | number,
-    @Body('currency') currency: string,           // ← AJOUT : lire currency du body
+    @Body('currency') currency: string,
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
     if (user.role !== 'COMPANY_ADMIN' && user.role !== 'SUPER_ADMIN') {
       throw new ForbiddenException('Accès refusé : Rôle Admin requis.');
     }
- 
+
     const userId = this.getUserId(req);
     const numericAmount = Number(amount);
- 
+
     if (!agencyId || isNaN(numericAmount) || numericAmount <= 0)
       throw new BadRequestException('AgencyId et Amount valides requis');
- 
-    // ← CORRECTION : transmettre currency (défaut XOF si absent)
+
     const safeCurrency = (currency ?? 'XOF').toString().toUpperCase();
- 
+
     return this.transactionsService.refillAgency(
       userId,
       agencyId,
       numericAmount,
-      safeCurrency,           // ← était manquant → le service utilisait 'XOF' par défaut
-                              //   mais getOrCreateWallet({ clientId }) pouvait chercher
-                              //   un wallet inexistant et lever une exception non catchée
+      safeCurrency,
     );
   }
- 
+
   // =========================================================
   // 🏦 FLUX B2B
   // =========================================================
@@ -105,18 +101,27 @@ export class TransactionsController {
   async declareTransfer(
     @Req() req: AuthedRequest,
     @Body('amount') amount: string | number,
-    @Body('ref') ref: string                
+    @Body('ref') ref: string,
+    @Body('currency') currency?: string, // ✅ AJOUT : devise transmise par le frontend
   ) {
     const user = req.user;
     if (user?.role !== 'COMPANY_ADMIN')
       throw new ForbiddenException('Réservé aux sociétés.');
-      
+
     const numericAmount = Number(amount);
-    
+
     if (isNaN(numericAmount) || !ref)
       throw new BadRequestException('Montant et Référence requis');
 
-    return this.transactionsService.declareBankTransfer(user.id, numericAmount, ref);
+    // ✅ FIX : transmet la devise au service (défaut XOF si absent)
+    const safeCurrency = (currency ?? 'XOF').toString().toUpperCase();
+
+    return this.transactionsService.declareBankTransfer(
+      user.id,
+      numericAmount,
+      ref,
+      safeCurrency,
+    );
   }
 
   @UseGuards(AdminGuard)

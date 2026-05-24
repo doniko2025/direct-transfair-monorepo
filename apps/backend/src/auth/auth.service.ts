@@ -1,7 +1,8 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.1 — Direct Transf'air
-// ✅ FIX: CurrencyCode enum cast (migration v4.1)
+// AUTH SERVICE v4.3 — Direct Transf'air
+// ✅ FIX: méthodes manquantes restaurées
+//    refreshTokens, logout, getProfile, updateProfile, changePassword
 // =========================================================
 
 import {
@@ -40,6 +41,8 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
   NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
   IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  SI: CurrencyCode.EUR, SK: CurrencyCode.EUR, EE: CurrencyCode.EUR,
+  LT: CurrencyCode.EUR, LV: CurrencyCode.EUR, MT: CurrencyCode.EUR, CY: CurrencyCode.EUR,
   GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
   US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
   GN: CurrencyCode.GNF,
@@ -118,7 +121,35 @@ function normalizeTenantCode(code?: string | null): string | null {
 
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {
   if (!country) return CurrencyCode.XOF;
-  const code = country.toUpperCase().substring(0, 2);
+  const raw = country.trim();
+
+  if (raw.length <= 3) {
+    const found = COUNTRY_TO_CURRENCY[raw.toUpperCase()];
+    if (found) return found;
+  }
+
+  const u = raw
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (u.includes('GUIN') && !u.includes('BISS') && !u.includes('EQUAT')) return CurrencyCode.GNF;
+  if (u.includes('GUIN') && u.includes('BISS')) return CurrencyCode.XOF;
+
+  if (['FRANCE','ALLEMAGNE','BELGIQUE','PORTUGAL','ESPAGNE',
+       'ITALIE','PAYS-BAS','LUXEMBOURG','AUTRICHE','FINLANDE',
+       'IRLANDE','GRECE','SLOVENIE','SLOVAQUIE','ESTONIE',
+       'LITUANIE','LETTONIE','MALTE','CHYPRE'].some((k) => u.includes(k)))
+    return CurrencyCode.EUR;
+
+  if (u.includes('ROYAUME') || u === 'UK' || u === 'ANGLETERRE') return CurrencyCode.GBP;
+  if ((u.includes('ETATS') && u.includes('UNIS')) || u === 'USA') return CurrencyCode.USD;
+
+  if (['SENEGAL','MALI','BENIN','TOGO','IVOIRE','BURKINA','BISSAU']
+    .some((k) => u.includes(k))) return CurrencyCode.XOF;
+  if (u.includes('NIGER') && !u.includes('NIGERIA') && !u.includes('NIGERI')) return CurrencyCode.XOF;
+
+  const code = raw.toUpperCase().substring(0, 2);
   return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
@@ -148,6 +179,12 @@ function generateRefreshToken(): string {
   return crypto.randomBytes(48).toString('hex');
 }
 
+function generateReferralCode(firstName?: string, lastName?: string): string {
+  const prefix = `${(firstName ?? 'U').slice(0, 1)}${(lastName ?? 'X').slice(0, 1)}`.toUpperCase();
+  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `${prefix}${suffix}`;
+}
+
 // =========================================================
 // SERVICE
 // =========================================================
@@ -164,7 +201,7 @@ export class AuthService {
   ) {}
 
   // ========================================================
-  // LOGIN
+  // LOGIN — Étape 1
   // ========================================================
 
   async login(dto: LoginDto): Promise<LoginStep2Result | LoginStep1Result> {
@@ -176,9 +213,7 @@ export class AuthService {
     const user = await this.validateUser(identifier, dto.password);
     if (!user) throw new UnauthorizedException('Identifiants incorrects');
 
-    if (user.isSuspended) {
-      throw new UnauthorizedException('Compte suspendu');
-    }
+    if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
 
     if (otpRequired) {
       const isPhone = isPhoneIdentifier(identifier);
@@ -188,9 +223,7 @@ export class AuthService {
       const recipient =
         channel === CommsType.EMAIL ? user.email : (user.phone ?? user.email);
 
-      if (!recipient) {
-        throw new BadRequestException('Aucun canal de contact disponible');
-      }
+      if (!recipient) throw new BadRequestException('Aucun canal de contact disponible');
 
       await this.sendOtpInternal(user.id, channel, OtpPurpose.LOGIN, recipient);
 
@@ -281,7 +314,6 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user);
     await this.createSession(user.id, tokens, dto.deviceId ?? null);
-
     await this.audit(
       user.id,
       user.clientId,
@@ -376,8 +408,11 @@ export class AuthService {
     if (!client)
       throw new BadRequestException(`Société introuvable (${resolvedTenantCode}).`);
 
-    // ✅ FIX: CurrencyCode
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
+
+    this.logger.debug(
+      `register | country="${dto.country}" → currency="${primaryCurrency}"`,
+    );
 
     const user = await this.prisma.user.create({
       data: {
@@ -399,11 +434,10 @@ export class AuthService {
         birthCity: dto.birthCity,
         birthPlace: dto.birthPlace,
         kycLevel: KycLevel.LEVEL_0,
-        referralCode: this.generateReferralCode(dto.firstName, dto.lastName),
+        referralCode: generateReferralCode(dto.firstName, dto.lastName),
       },
     });
 
-    // ✅ FIX: CurrencyCode
     await this.prisma.wallet.create({
       data: {
         userId: user.id,
@@ -438,7 +472,31 @@ export class AuthService {
       email,
     );
 
-    return this.login({ email: dto.email, password: dto.password });
+    const freshUser = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        client: true,
+        agency: true,
+        wallets: { where: { isActive: true } },
+      },
+    });
+
+    if (!freshUser) throw new NotFoundException('Utilisateur introuvable après création');
+
+    const tokens = await this.generateTokens(freshUser);
+    await this.createSession(freshUser.id, tokens);
+    await this.audit(freshUser.id, client.id, AuditAction.LOGIN);
+
+    await this.prisma.user.update({
+      where: { id: freshUser.id },
+      data: { lastLoginAt: new Date(), failedLoginAttempts: 0 },
+    });
+
+    return {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      user: this.toPublicUser(freshUser),
+    };
   }
 
   // ========================================================
@@ -613,29 +671,168 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(newPass, 10);
 
-    await this.prisma.$transaction([
-      this.prisma.otpLog.update({
-        where: { id: otpLog.id },
-        data: { isUsed: true, usedAt: new Date() },
-      }),
-      this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          password: hashedPassword,
-          otpCode: null,
-          otpExpiresAt: null,
-          failedLoginAttempts: 0,
-        },
-      }),
-    ]);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
 
-    await this.audit(userId, null, AuditAction.PASSWORD_CHANGE);
+    await this.prisma.otpLog.update({
+      where: { id: otpLog.id },
+      data: { isUsed: true, usedAt: new Date() },
+    });
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (user) {
+      await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
+    }
 
     return { success: true };
   }
 
   // ========================================================
-  // CHANGE PASSWORD
+  // REFRESH TOKEN ✅ RESTAURÉ
+  // ========================================================
+
+  async refreshTokens(refreshToken: string) {
+    if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
+
+    const session = await this.prisma.userSession.findUnique({
+      where: { refreshToken },
+      include: {
+        user: {
+          include: { client: true, agency: true, wallets: { where: { isActive: true } } },
+        },
+      },
+    });
+
+    if (!session || session.status !== 'ACTIVE') {
+      throw new UnauthorizedException('Session invalide');
+    }
+
+    if (session.refreshTokenExpiresAt && session.refreshTokenExpiresAt < new Date()) {
+      await this.prisma.userSession.update({
+        where: { id: session.id },
+        data: { status: 'EXPIRED' },
+      });
+      throw new UnauthorizedException('Refresh token expiré');
+    }
+
+    const tokens = await this.generateTokens(session.user as any);
+
+    await this.prisma.userSession.update({
+      where: { id: session.id },
+      data: {
+        token: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        refreshTokenExpiresAt: new Date(
+          Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+        ),
+      },
+    });
+
+    return {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+    };
+  }
+
+  // ========================================================
+  // LOGOUT ✅ RESTAURÉ
+  // ========================================================
+
+  async logout(userId: string, accessToken?: string) {
+    const where: any = { userId, status: 'ACTIVE' };
+    if (accessToken) where.token = accessToken;
+
+    await this.prisma.userSession.updateMany({
+      where,
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    });
+
+    await this.audit(userId, null, AuditAction.LOGOUT);
+
+    return { success: true };
+  }
+
+  // ========================================================
+  // GET PROFILE ✅ RESTAURÉ
+  // ========================================================
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        client: true,
+        agency: true,
+        wallets: { where: { isActive: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return this.toPublicUser(user);
+  }
+
+  // ========================================================
+  // UPDATE PROFILE ✅ RESTAURÉ
+  // ========================================================
+
+  async updateProfile(userId: string, data: any) {
+    const updateData: any = { ...data };
+
+    delete updateData.id;
+    delete updateData.role;
+    delete updateData.password;
+    delete updateData.email;
+    delete updateData.balance;
+    delete updateData.clientId;
+    delete updateData.kycLevel;
+    delete updateData.loyaltyPoints;
+    delete updateData.loyaltyTier;
+    delete updateData.referralCode;
+    delete updateData.wallets;
+    delete updateData.client;
+    delete updateData.agency;
+
+    if (updateData.phone) {
+      updateData.phone = normalizePhone(updateData.phone);
+    }
+
+    if (updateData.country) {
+      const newCurrency: CurrencyCode = getCurrencyFromCountry(updateData.country);
+      updateData.primaryCurrency = newCurrency;
+
+      const existingWallet = await this.prisma.wallet.findUnique({
+        where: { userId_currency: { userId, currency: newCurrency } },
+      });
+      if (!existingWallet) {
+        await this.prisma.wallet.create({
+          data: {
+            userId,
+            currency: newCurrency,
+            balance: 0,
+            isActive: true,
+          },
+        });
+      }
+    }
+
+    try {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: updateData,
+      });
+    } catch (e: any) {
+      if (e.code === 'P2002')
+        throw new ConflictException('Ce numéro de téléphone est déjà utilisé.');
+      throw new BadRequestException('Erreur lors de la mise à jour du profil.');
+    }
+
+    await this.audit(userId, null, AuditAction.USER_UPDATE);
+
+    return this.getProfile(userId);
+  }
+
+  // ========================================================
+  // CHANGE PASSWORD ✅ RESTAURÉ
   // ========================================================
 
   async changePassword(userId: string, oldPass: string, newPass: string) {
@@ -677,157 +874,21 @@ export class AuthService {
   }
 
   // ========================================================
-  // REFRESH TOKEN
-  // ========================================================
-
-  async refreshTokens(refreshToken: string) {
-    if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
-
-    const session = await this.prisma.userSession.findUnique({
-      where: { refreshToken },
-      include: { user: { include: { client: true, agency: true } } },
-    });
-
-    if (!session || session.status !== 'ACTIVE') {
-      throw new UnauthorizedException('Session invalide');
-    }
-
-    if (session.refreshTokenExpiresAt && session.refreshTokenExpiresAt < new Date()) {
-      await this.prisma.userSession.update({
-        where: { id: session.id },
-        data: { status: 'EXPIRED' },
-      });
-      throw new UnauthorizedException('Refresh token expiré');
-    }
-
-    const tokens = await this.generateTokens(session.user as any);
-
-    await this.prisma.userSession.update({
-      where: { id: session.id },
-      data: {
-        token: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        refreshTokenExpiresAt: new Date(
-          Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-        ),
-      },
-    });
-
-    return {
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-    };
-  }
-
-  // ========================================================
-  // LOGOUT
-  // ========================================================
-
-  async logout(userId: string, accessToken?: string) {
-    const where: any = { userId, status: 'ACTIVE' };
-    if (accessToken) where.token = accessToken;
-
-    await this.prisma.userSession.updateMany({
-      where,
-      data: { status: 'REVOKED', revokedAt: new Date() },
-    });
-
-    await this.audit(userId, null, AuditAction.LOGOUT);
-
-    return { success: true };
-  }
-
-  // ========================================================
-  // PROFILE
-  // ========================================================
-
-  async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        client: true,
-        agency: true,
-        wallets: { where: { isActive: true } },
-      },
-    });
-    if (!user) throw new NotFoundException('User not found');
-    return this.toPublicUser(user);
-  }
-
-  async updateProfile(userId: string, data: any) {
-    const updateData: any = { ...data };
-
-    delete updateData.id;
-    delete updateData.role;
-    delete updateData.password;
-    delete updateData.email;
-    delete updateData.balance;
-    delete updateData.clientId;
-    delete updateData.kycLevel;
-    delete updateData.loyaltyPoints;
-    delete updateData.loyaltyTier;
-    delete updateData.referralCode;
-    delete updateData.wallets;
-    delete updateData.client;
-    delete updateData.agency;
-
-    if (updateData.phone) {
-      updateData.phone = normalizePhone(updateData.phone);
-    }
-
-    // ✅ FIX: CurrencyCode
-    if (updateData.country) {
-      const newCurrency: CurrencyCode = getCurrencyFromCountry(updateData.country);
-      updateData.primaryCurrency = newCurrency;
-
-      const existingWallet = await this.prisma.wallet.findUnique({
-        where: { userId_currency: { userId, currency: newCurrency } },
-      });
-      if (!existingWallet) {
-        await this.prisma.wallet.create({
-          data: {
-            userId,
-            currency: newCurrency,
-            balance: 0,
-            isActive: true,
-          },
-        });
-      }
-    }
-
-    try {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: updateData,
-      });
-    } catch (e: any) {
-      if (e.code === 'P2002')
-        throw new ConflictException('Ce numéro de téléphone est déjà utilisé.');
-      throw new BadRequestException('Erreur lors de la mise à jour du profil.');
-    }
-
-    await this.audit(userId, null, AuditAction.USER_UPDATE);
-
-    return this.getProfile(userId);
-  }
-
-  // ========================================================
   // HELPERS PRIVÉS
   // ========================================================
 
-  private async generateTokens(user: any) {
+  private async generateTokens(user: any): Promise<{
+    access_token: string;
+    refresh_token: string;
+  }> {
     const payload = {
       sub: user.id,
       email: user.email,
       role: user.role,
       clientId: user.clientId,
-      agencyId: user.agencyId,
-      primaryCurrency: user.primaryCurrency,
     };
-
-    const access_token = await this.jwt.signAsync(payload);
+    const access_token = this.jwt.sign(payload, { expiresIn: '7d' });
     const refresh_token = generateRefreshToken();
-
     return { access_token, refresh_token };
   }
 
@@ -836,19 +897,25 @@ export class AuthService {
     tokens: { access_token: string; refresh_token: string },
     deviceId?: string | null,
   ): Promise<void> {
-    await this.prisma.userSession.create({
-      data: {
-        userId,
-        token: tokens.access_token,
-        refreshToken: tokens.refresh_token,
-        refreshTokenExpiresAt: new Date(
-          Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
-        ),
-        deviceId: deviceId ?? null,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        status: 'ACTIVE',
-      },
-    });
+    const expiresAt = new Date(
+      Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+    );
+    try {
+      await this.prisma.userSession.deleteMany({ where: { userId } });
+      await this.prisma.userSession.create({
+        data: {
+          userId,
+          token: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          refreshTokenExpiresAt: expiresAt,
+          expiresAt,
+          deviceId: deviceId ?? null,
+          status: 'ACTIVE',
+        },
+      });
+    } catch (e) {
+      this.logger.warn('Session create error (non-bloquant)', e);
+    }
   }
 
   private toPublicUser(user: any): PublicUser {
@@ -862,10 +929,8 @@ export class AuthService {
       lastName: user.lastName,
       agencyId: user.agencyId,
       primaryCurrency: user.primaryCurrency,
-      loyaltyPoints: user.loyaltyPoints ?? 0,
-      loyaltyTier: user.loyaltyTier,
       kycLevel: user.kycLevel,
-      balance: user.balance != null ? Number(user.balance) : 0,
+      balance: 0,
       isEmailVerified: user.isEmailVerified,
       isPhoneVerified: user.isPhoneVerified,
       mfaEnabled: user.mfaEnabled,
@@ -876,44 +941,14 @@ export class AuthService {
       postalCode: user.postalCode,
       city: user.city,
       country: user.country,
-      client: user.client
-        ? {
-            id: user.client.id,
-            code: user.client.code,
-            name: user.client.name,
-            primaryColor: user.client.primaryColor,
-            logoUrl: user.client.logoUrl,
-          }
-        : undefined,
-      agency: user.agency
-        ? {
-            id: user.agency.id,
-            name: user.agency.name,
-            country: user.agency.country,
-            primaryCurrency: user.agency.primaryCurrency,
-          }
-        : undefined,
-      wallets: Array.isArray(user.wallets)
-        ? user.wallets.map((w: any) => ({
-            id: w.id,
-            currency: w.currency,
-            balance: Number(w.balance),
-            reservedBalance: Number(w.reservedBalance ?? 0),
-            isDefault: w.isDefault,
-            isActive: w.isActive,
-          }))
-        : undefined,
+      client: user.client,
+      agency: user.agency,
+      wallets: user.wallets,
     };
   }
 
-  private generateReferralCode(firstName?: string, lastName?: string): string {
-    const prefix = `${(firstName ?? 'U').slice(0, 1)}${(lastName ?? 'X').slice(0, 1)}`.toUpperCase();
-    const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
-    return `${prefix}${suffix}`;
-  }
-
   private async audit(
-    userId: string | null,
+    userId: string,
     clientId: number | null,
     action: AuditAction,
     details?: any,
@@ -929,7 +964,7 @@ export class AuthService {
         },
       });
     } catch (e) {
-      this.logger.warn('Audit log failed', e);
+      this.logger.warn('Audit log error (non-bloquant)', e);
     }
   }
 }

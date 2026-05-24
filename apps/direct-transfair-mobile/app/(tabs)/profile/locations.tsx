@@ -1,18 +1,22 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
 // =========================================================
-// LOCATIONS v5.0 — Direct Transf'air
+// LOCATIONS v6.1 — Direct Transf'air
 // Design: Light & Premium — Points de retrait
+// ✅ Données dynamiques depuis l'API
+// ✅ Type Agency importé depuis services/types
 // =========================================================
 
-import React from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  SafeAreaView, StatusBar, Platform,
+  SafeAreaView, StatusBar, Platform, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import type { Agency } from "../../../services/types";
 import { useAuth } from "../../../providers/AuthProvider";
+import { api } from "../../../services/api";
 
 const ROLE_THEMES = {
   SUPER_ADMIN: { bg: "#F8FAFF", accent: "#1D4ED8", accentSoft: "#EFF6FF" },
@@ -37,20 +41,80 @@ const T = {
   },
 };
 
-const AGENCIES = [
-  { id: "1", name: "Agence Paris 18ème", address: "12 Rue Marcadet, 75018 Paris", distance: "1.2 km", open: true },
-  { id: "2", name: "Agence Montreuil", address: "45 Rue de Paris, 93100 Montreuil", distance: "5.4 km", open: true },
-  { id: "3", name: "Agence Saint-Denis", address: "78 Av. du Président Wilson, 93200", distance: "8.1 km", open: false },
-  { id: "4", name: "Agence Conakry Centre", address: "Quartier Kaloum, Conakry, Guinée", distance: "—", open: true },
-  { id: "5", name: "Agence Dakar Plateau", address: "12 Av. Léopold Sédar Senghor, Dakar", distance: "—", open: true },
-];
-
 export default function LocationsScreen() {
   const router = useRouter();
   const { user } = useAuth();
 
   const role = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
+
+  const [agencies, setAgencies] = useState<Agency[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchAgencies = useCallback(async () => {
+    try {
+      setError(null);
+      const data = await api.getAgencies();
+      setAgencies(data);
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || "Impossible de charger les agences.";
+      setError(Array.isArray(msg) ? msg[0] : msg);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAgencies(); }, [fetchAgencies]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchAgencies();
+  };
+
+  const renderItem = ({ item }: { item: Agency }) => (
+    <TouchableOpacity style={s.card} activeOpacity={0.8}>
+      <View style={[s.iconBox, { backgroundColor: theme.accentSoft }]}>
+        <Ionicons name="location" size={20} color={theme.accent} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[s.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+          {item.name}
+        </Text>
+        <Text style={[s.address, { fontFamily: T.font.sans }]} numberOfLines={1}>
+          {[item.address, item.city, item.country].filter(Boolean).join(", ")}
+        </Text>
+        <View style={s.metaRow}>
+          <View style={[
+            s.openPill,
+            {
+              backgroundColor: item.isActive ? "#DCFCE7" : "#FEE2E2",
+              borderColor: item.isActive ? "#16A34A40" : "#DC262640",
+            }
+          ]}>
+            <View style={[s.openDot, { backgroundColor: item.isActive ? T.green : T.red }]} />
+            <Text style={[s.openTxt, { color: item.isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
+              {item.isActive ? "Ouvert" : "Fermé"}
+            </Text>
+          </View>
+          {role === "SUPER_ADMIN" && item.clientName ? (
+            <View style={[s.clientPill, { backgroundColor: theme.accentSoft }]}>
+              <Text style={[s.clientTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
+                {item.clientName}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <View style={[s.distBox, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}>
+        <Text style={[s.distTxt, { color: theme.accent, fontFamily: T.font.mono }]}>
+          {item.primaryCurrency ?? "—"}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <LinearGradient colors={[theme.bg, "rgba(255,255,255,0.3)"]} style={{ flex: 1 }}>
@@ -64,49 +128,61 @@ export default function LocationsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Nos Agences</Text>
             <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
-              {AGENCIES.length} points Direct Transf'air
+              {loading
+                ? "Chargement…"
+                : `${agencies.length} point${agencies.length > 1 ? "s" : ""} Direct Transf'air`}
             </Text>
           </View>
         </View>
 
-        <FlatList
-          data={AGENCIES}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={s.list}
-          showsVerticalScrollIndicator={false}
-          ListHeaderComponent={
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>AGENCES À PROXIMITÉ</Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <TouchableOpacity style={s.card} activeOpacity={0.8}>
-              <View style={[s.iconBox, { backgroundColor: theme.accentSoft }]}>
-                <Ionicons name="location" size={20} color={theme.accent} />
-              </View>
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={[s.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
-                <Text style={[s.address, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.address}</Text>
-                <View style={s.metaRow}>
-                  <View style={[s.openPill, { backgroundColor: item.open ? "#DCFCE7" : "#FEE2E2", borderColor: item.open ? "#16A34A40" : "#DC262640" }]}>
-                    <View style={[s.openDot, { backgroundColor: item.open ? T.green : T.red }]} />
-                    <Text style={[s.openTxt, { color: item.open ? T.green : T.red, fontFamily: T.font.sans }]}>
-                      {item.open ? "Ouvert" : "Fermé"}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-              {item.distance !== "—" && (
-                <View style={[s.distBox, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}>
-                  <Ionicons name="navigate-circle-outline" size={12} color={theme.accent} />
-                  <Text style={[s.distTxt, { color: theme.accent, fontFamily: T.font.mono }]}>{item.distance}</Text>
-                </View>
-              )}
+        {loading && (
+          <View style={s.centered}>
+            <ActivityIndicator size="large" color={theme.accent} />
+            <Text style={[s.loadingTxt, { fontFamily: T.font.sans, color: T.textSub }]}>
+              Chargement des agences…
+            </Text>
+          </View>
+        )}
+
+        {!loading && error && (
+          <View style={s.centered}>
+            <Ionicons name="alert-circle-outline" size={40} color={T.red} />
+            <Text style={[s.errorTxt, { fontFamily: T.font.sans }]}>{error}</Text>
+            <TouchableOpacity style={[s.retryBtn, { backgroundColor: theme.accent }]} onPress={fetchAgencies}>
+              <Text style={[s.retryTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
             </TouchableOpacity>
-          )}
-          ListFooterComponent={<View style={{ height: 80 }} />}
-        />
+          </View>
+        )}
+
+        {!loading && !error && (
+          <FlatList
+            data={agencies}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={s.list}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.accent} />
+            }
+            ListHeaderComponent={
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
+                <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
+                  {role === "SUPER_ADMIN" ? "TOUTES LES AGENCES" : "AGENCES À PROXIMITÉ"}
+                </Text>
+              </View>
+            }
+            renderItem={renderItem}
+            ListEmptyComponent={
+              <View style={s.centered}>
+                <Ionicons name="business-outline" size={40} color={T.textDim} />
+                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>
+                  Aucune agence disponible.
+                </Text>
+              </View>
+            }
+            ListFooterComponent={<View style={{ height: 80 }} />}
+          />
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
@@ -115,17 +191,24 @@ export default function LocationsScreen() {
 const s = StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 12,
+    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 16, gap: 12,
     backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  backBtn: { width: 38, height: 38, borderRadius: 10, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  backBtn: {
+    width: 38, height: 38, borderRadius: 10, backgroundColor: "#F3F4F6",
+    justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border,
+  },
   headerTitle: { color: T.text, fontSize: 18, fontWeight: "700" },
   headerSub: { fontSize: 11, fontWeight: "700", marginTop: 2 },
 
   list: { paddingHorizontal: 20, paddingTop: 16 },
   sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   sectionDot: { width: 6, height: 6, borderRadius: 99 },
-  sectionLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
+  sectionLabel: {
+    fontSize: 10, fontWeight: "900", color: T.textSub,
+    letterSpacing: 1.5, textTransform: "uppercase",
+  },
 
   card: {
     flexDirection: "row", alignItems: "center", gap: 12,
@@ -136,10 +219,25 @@ const s = StyleSheet.create({
   iconBox: { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   name: { color: T.text, fontSize: 14, fontWeight: "700", marginBottom: 3 },
   address: { color: T.textDim, fontSize: 11, fontWeight: "600", marginBottom: 6 },
-  metaRow: { flexDirection: "row", alignItems: "center" },
-  openPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  openPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1,
+  },
   openDot: { width: 5, height: 5, borderRadius: 99 },
   openTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
-  distBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 4 },
+  clientPill: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7 },
+  clientTxt: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+  distBox: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1,
+    flexDirection: "row", alignItems: "center", gap: 4,
+  },
   distTxt: { fontSize: 11, fontWeight: "800" },
+
+  centered: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, padding: 32 },
+  loadingTxt: { fontSize: 13, marginTop: 8 },
+  errorTxt: { color: T.red, fontSize: 13, textAlign: "center" },
+  retryBtn: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, marginTop: 4 },
+  retryTxt: { color: "#fff", fontSize: 13, fontWeight: "700" },
+  emptyTxt: { color: T.textDim, fontSize: 13, textAlign: "center" },
 });

@@ -1,7 +1,8 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.1
+// USERS SERVICE v4.2
 // ✅ FIX: CurrencyCode enum cast (migration v4.1)
+// ✅ FIX getCurrencyFromCountry : noms complets gérés
 // =========================================================
 
 import { Injectable } from '@nestjs/common';
@@ -10,11 +11,17 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 
+// =========================================================
+// HELPERS
+// =========================================================
+
 const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
   ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
   NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
   IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
+  SI: CurrencyCode.EUR, SK: CurrencyCode.EUR, EE: CurrencyCode.EUR,
+  LT: CurrencyCode.EUR, LV: CurrencyCode.EUR, MT: CurrencyCode.EUR, CY: CurrencyCode.EUR,
   GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
   US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
   GN: CurrencyCode.GNF,
@@ -22,9 +29,39 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
+// ✅ Gère les noms complets en plus des codes ISO
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {
   if (!country) return CurrencyCode.XOF;
-  const code = country.toUpperCase().trim().substring(0, 2);
+  const raw = country.trim();
+
+  if (raw.length <= 3) {
+    const found = COUNTRY_TO_CURRENCY[raw.toUpperCase()];
+    if (found) return found;
+  }
+
+  const u = raw
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  if (u.includes('GUIN') && !u.includes('BISS') && !u.includes('EQUAT')) return CurrencyCode.GNF;
+  if (u.includes('GUIN') && u.includes('BISS')) return CurrencyCode.XOF;
+
+  if (['FRANCE','ALLEMAGNE','BELGIQUE','PORTUGAL','ESPAGNE',
+       'ITALIE','PAYS-BAS','LUXEMBOURG','AUTRICHE','FINLANDE',
+       'IRLANDE','GRECE','SLOVENIE','SLOVAQUIE','ESTONIE',
+       'LITUANIE','LETTONIE','MALTE','CHYPRE'].some((k) => u.includes(k)))
+    return CurrencyCode.EUR;
+
+  if (u.includes('ROYAUME') || u === 'UK' || u === 'ANGLETERRE') return CurrencyCode.GBP;
+
+  if ((u.includes('ETATS') && u.includes('UNIS')) || u === 'USA') return CurrencyCode.USD;
+
+  if (['SENEGAL','MALI','BENIN','TOGO','IVOIRE','BURKINA','BISSAU']
+    .some((k) => u.includes(k))) return CurrencyCode.XOF;
+  if (u.includes('NIGER') && !u.includes('NIGERIA') && !u.includes('NIGERI')) return CurrencyCode.XOF;
+
+  const code = raw.toUpperCase().substring(0, 2);
   return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
 }
 
@@ -33,6 +70,10 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
   const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
   return `${prefix}${suffix}`;
 }
+
+// =========================================================
+// TYPES
+// =========================================================
 
 type UserExtraFields = {
   firstName?: string;
@@ -48,6 +89,10 @@ type UserExtraFields = {
   birthDate?: string;
   birthPlace?: string;
 };
+
+// =========================================================
+// SERVICE
+// =========================================================
 
 @Injectable()
 export class UsersService {
@@ -135,11 +180,11 @@ export class UsersService {
     });
   }
 
-  // ✅ Après
-async update(id: string, data: Partial<UserExtraFields & { primaryCurrency?: CurrencyCode }>) {
-  if (data.country) {
-    data.primaryCurrency = getCurrencyFromCountry(data.country);
+  // ✅ FIX: primaryCurrency → CurrencyCode
+  async update(id: string, data: Partial<UserExtraFields & { primaryCurrency?: CurrencyCode }>) {
+    if (data.country) {
+      data.primaryCurrency = getCurrencyFromCountry(data.country);
+    }
+    return this.prisma.user.update({ where: { id }, data });
   }
-  return this.prisma.user.update({ where: { id }, data });
-}
 }
