@@ -1,7 +1,8 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.7
-// ✅ FIX: CurrencyCode enum cast (migration v4.1)
+// TRANSACTIONS SERVICE v4.8
+// ✅ FIX: declareBankTransfer → wallet société (clientId) au lieu du wallet personnel
+// ✅ FIX: validateBankTransfer → wallet plateforme (clientId) au lieu du wallet personnel
 // =========================================================
 
 import {
@@ -40,10 +41,6 @@ import { CompanyMailService } from '../mail/channels/company-mail.service';
 import { AdminMailService } from '../mail/channels/admin-mail.service';
 import { PushService } from '../push/push.service';
 import { SmsService } from '../sms/sms.service';
-
-// =========================================================
-// CONSTANTS
-// =========================================================
 
 const TERMINAL_TX: TransactionStatus[] = [
   TransactionStatus.PAID,
@@ -90,10 +87,6 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   }
 }
 
-// =========================================================
-// SERVICE
-// =========================================================
-
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
@@ -137,9 +130,13 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
-    const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency: currencyCode });
+    // ✅ FIX v4.8: wallet société (clientId) — le solde est sur la société, pas sur le user
+    const walletRef = await this.walletsService.getOrCreateWallet({
+      clientId: admin.clientId,
+      currency: currencyCode,
+    });
     const wallet = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
-    if (!wallet) throw new NotFoundException('Wallet admin introuvable');
+    if (!wallet) throw new NotFoundException('Wallet société introuvable');
 
     const available = Number(wallet.balance) - Number(wallet.reservedBalance);
     if (available < amount) {
@@ -188,7 +185,11 @@ export class TransactionsService {
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT) throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING) throw new ConflictException('Transaction déjà traitée');
 
-    const walletRef = await this.walletsService.getOrCreateWallet({ userId: superAdminId, currency: tx.currency });
+    // ✅ FIX v4.8: wallet plateforme (clientId) au lieu du wallet personnel du super admin
+    const walletRef = await this.walletsService.getOrCreateWallet({
+      clientId: superAdmin.clientId!,
+      currency: tx.currency,
+    });
     await this.walletsService.credit(walletRef.id, Number(tx.amount), `Validation B2B ${transactionId}`, transactionId);
 
     const result = await this.prisma.transaction.update({
@@ -272,7 +273,6 @@ export class TransactionsService {
 
     if (dto.beneficiaryId && !beneficiary) throw new NotFoundException('Beneficiary not found');
 
-    // ✅ FIX: cast string → CurrencyCode
     const currency = dto.currency.toUpperCase() as CurrencyCode;
     const userWallet = user.wallets.find((w) => w.currency === currency);
     if (!userWallet) {

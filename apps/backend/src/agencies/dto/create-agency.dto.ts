@@ -76,4 +76,9 @@ export class CreateAgencyDto {
   @IsOptional()
   @IsString()
   currency?: string;
+
+  @ApiPropertyOptional({ description: 'SUBSIDIARY | PARTNER' })
+  @IsOptional()
+  @IsString()
+  type?: string;
 }

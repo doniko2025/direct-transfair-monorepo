@@ -43,4 +43,9 @@ export class UpdateAgencyDto {
   @IsOptional()
   @IsString()
   country?: string;
+
+  @ApiPropertyOptional({ description: 'SUBSIDIARY | PARTNER' })
+  @IsOptional()
+  @IsString()
+  type?: string;
 }

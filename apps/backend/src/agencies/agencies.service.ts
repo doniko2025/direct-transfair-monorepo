@@ -98,6 +98,8 @@ export class AgenciesService {
           primaryCurrency,
           isActive: true,
           clientId,
+          // ✅ FIX : type agence persisté
+          type: (dto.type === 'PARTNER' ? 'PARTNER' : 'SUBSIDIARY') as any,
         },
       });
 
@@ -160,6 +162,10 @@ export class AgenciesService {
         address: dto.address,
         phone: dto.phone,
         code: dto.code,
+        // ✅ FIX : type agence mis à jour
+        ...(dto.type !== undefined && {
+          type: dto.type === 'PARTNER' ? 'PARTNER' : 'SUBSIDIARY',
+        }),
       };
 
       if (dto.country) {
