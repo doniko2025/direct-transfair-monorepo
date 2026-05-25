@@ -27,7 +27,10 @@
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.doniko.directtransfair"
+      "package": "com.doniko.directtransfair",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -35,11 +38,16 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-  ["expo-router", { "origin": "https://directtransfair.app" }],
-  "expo-secure-store",
-  "expo-font",
-  "expo-image-picker"
-  ],
+      [
+        "expo-router",
+        {
+          "origin": "https://directtransfair.app"
+        }
+      ],
+      "expo-secure-store",
+      "expo-font",
+      "expo-image-picker"
+    ],
     "experiments": {
       "typedRoutes": true
     },
@@ -48,8 +56,9 @@
         "origin": "https://directtransfair.app"
       },
       "eas": {
-        "projectId": "dd024b9e-ccb1-4b9b-9a4a-c9b8b9fd06c1"
+        "projectId": "f53f2705-691d-4b29-8ddf-368ef551a58a"
       }
-    }
+    },
+    "owner": "doniko2025"
   }
 }
