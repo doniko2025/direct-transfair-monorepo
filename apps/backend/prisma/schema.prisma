@@ -470,6 +470,11 @@ model Client {
   logoUrl        String?
   primaryColor   String?      @default("#F7931E")
   secondaryColor String?      @default("#1E40AF")
+  // À ajouter dans le model Client (schema.prisma)
+  tagline        String?   // Slogan affiché sur la page login
+  fontFamily     String?   // Police principale ex: "Georgia"
+  splashBgColor  String?   // Couleur fond login (hex)
+  welcomeMessage String?   // Message d'accueil personnalisé
   timezone       String?      @default("Africa/Conakry")
   locale         String?      @default("fr-GN")
   defaultCurrency CurrencyCode @default(GNF)

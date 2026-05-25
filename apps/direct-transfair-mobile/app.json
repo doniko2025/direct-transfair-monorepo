@@ -35,15 +35,11 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      [
-        "expo-router",
-        {
-          "origin": "https://directtransfair.app"
-        }
-      ],
-      "expo-secure-store",
-      "expo-font"
-    ],
+  ["expo-router", { "origin": "https://directtransfair.app" }],
+  "expo-secure-store",
+  "expo-font",
+  "expo-image-picker"
+  ],
     "experiments": {
       "typedRoutes": true
     },

@@ -17,6 +17,7 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
+import { useTenant } from "../../providers/TenantProvider";
 
 const F = {
   display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
@@ -328,6 +329,7 @@ const cpS = StyleSheet.create({
 // ─── Main ─────────────────────────────────────────────────
 export default function RegisterScreen() {
   const { register: registerUser, isLoading } = useAuth();
+  const { branding, loadBranding } = useTenant();
   const router = useRouter();
 
   // Section 1 — Identité

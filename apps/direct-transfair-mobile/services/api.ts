@@ -827,6 +827,12 @@ class API {
     const res = await this.http.get<unknown>("/wallets/me");
     return unwrapArray<Wallet>(res.data).map(normalizeWallet);
   }
+  // Ajouter dans la classe API, après getMyWallets() :
+
+ async getClientPublicBranding(code: string): Promise<any> {
+  const res = await this.http.get(`/branding/${code.trim().toUpperCase()}`);
+  return res.data;
+ }
 
   async getWalletLedger(
     walletId: string,

@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { WithdrawalsService } from './withdrawals.service';
 import { WithdrawalsController } from './withdrawals.controller';
 import { PrismaModule } from '../prisma/prisma.module';
+import { RatesService } from '../rates/rates.service';
 import { AuthModule } from '../auth/auth.module';
 import { WalletsModule } from '../wallets/wallets.module';
 
@@ -17,7 +18,7 @@ import { TenantsModule } from '../tenants/tenants.module';
     TenantsModule, // <-- C'est l'ajout qui résout ton erreur de dépendance
   ],
   controllers: [WithdrawalsController],
-  providers: [WithdrawalsService],
+  providers: [WithdrawalsService, RatesService],
   exports: [WithdrawalsService],
 })
 export class WithdrawalsModule {}

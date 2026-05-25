@@ -1,12 +1,9 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.2
-// ✅ FIX CRITIQUE : agentProcessPayment — après le paiement,
-//    CRÉDITER le wallet agence du montant de la commission
-//    (avant : seul le débit était fait, jamais le crédit commissions)
-// ✅ FIX : le débit agence est correct (l'agent remet du cash au client)
-//    mais la commission doit être recréditée sur le même wallet
-// ✅ Reste identique à v4.1 sinon
+// WITHDRAWALS SERVICE v4.3
+// ✅ FIX CRITIQUE : commission calculée sur fees CONVERTIS
+//    en devise de paiement (évite 750 XOF traités comme 750 EUR)
+// ✅ Inject RatesService pour la conversion
 // =========================================================
 
 import {
@@ -28,11 +25,10 @@ import {
 
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { RatesService } from '../rates/rates.service';           // ✅ AJOUT
 import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 
-// Taux de commission agent par défaut (40% des frais)
-// Si des règles sont configurées dans CommissionConfig, elles prévalent
 const DEFAULT_AGENT_COMMISSION_RATE = 0.40;
 
 @Injectable()
@@ -42,6 +38,7 @@ export class WithdrawalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletsService: WalletsService,
+    private readonly ratesService: RatesService,               // ✅ AJOUT
   ) {}
 
   // ========================================================
@@ -72,10 +69,9 @@ export class WithdrawalsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    // ─── RETRAIT PAR MONTANT ─────────────────────────────
     if (dto.amount) {
       const amount   = new Prisma.Decimal(dto.amount);
-      const fees     = amount.mul(new Prisma.Decimal(0.015)); // 1.5% frais
+      const fees     = amount.mul(new Prisma.Decimal(0.015));
       const total    = amount.plus(fees);
       const currency = user.primaryCurrency ?? 'XOF';
 
@@ -129,7 +125,6 @@ export class WithdrawalsService {
       });
     }
 
-    // ─── RETRAIT PAR TRANSACTION ID ──────────────────────
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) {
       throw new BadRequestException('Montant ou TransactionId requis');
@@ -257,33 +252,58 @@ export class WithdrawalsService {
       );
     }
 
-    // Montant à remettre au client
+    // Montant à remettre au client (déjà en payoutCurrency)
     const amountPaid =
       tx.receivedAmount && Number(tx.receivedAmount) > 0
         ? Number(tx.receivedAmount)
         : Number(tx.amount);
 
-
     // ─── Calcul commission ────────────────────────────────
-    // L'agent qui remet le cash gagne une commission sur les frais
-    const fees = Number(tx.fees ?? 0);
-    const commissionAmount = fees > 0 ? fees * DEFAULT_AGENT_COMMISSION_RATE : 0;
+    // ✅ FIX v4.3 : convertir tx.fees (en tx.currency, ex: GNF)
+    //    vers payoutCurrency (ex: EUR) AVANT d'appliquer le taux
+    const rawFees = Number(tx.fees ?? 0);
+    let feesInPayoutCurrency = rawFees;
 
-    // Vérifier s'il y a une règle configurée pour cette agence
-    let finalCommission = commissionAmount;
+    if (rawFees > 0 && tx.currency !== payoutCurrency) {
+      try {
+        feesInPayoutCurrency = await this.ratesService.convert(
+          rawFees,
+          tx.currency,       // GNF / XOF / etc.
+          payoutCurrency,    // EUR / GBP / etc.
+        );
+        this.logger.log(
+          `Conversion frais: ${rawFees} ${tx.currency} → ${feesInPayoutCurrency.toFixed(4)} ${payoutCurrency}`,
+        );
+      } catch {
+        // Fallback : si la conversion échoue, commission = 0
+        // (vaut mieux ne pas créditer que créditer une valeur fausse)
+        feesInPayoutCurrency = 0;
+        this.logger.warn(
+          `Conversion frais impossible (${tx.currency}→${payoutCurrency}) — commission = 0`,
+        );
+      }
+    }
+
+    let finalCommission = feesInPayoutCurrency * DEFAULT_AGENT_COMMISSION_RATE;
+
+    // Règle configurée en base (payerShare est en %) ?
     try {
       const rule = await this.prisma.commissionConfig.findFirst({
         where: { clientId },
       });
       if (rule) {
-        finalCommission = (fees * rule.payerShare) / 100;
+        finalCommission = (feesInPayoutCurrency * rule.payerShare) / 100;
       }
     } catch {
-      // Fallback sur le taux par défaut
+      // Fallback taux par défaut
     }
 
     this.logger.log(
-      `Paiement retrait ${cleanCode} — Agent: ${agentId} — Montant: ${amountPaid} ${payoutCurrency} — Commission: ${finalCommission}`,
+      `Paiement retrait ${cleanCode} — Agent: ${agentId}` +
+      ` — Montant: ${amountPaid} ${payoutCurrency}` +
+      ` — Frais bruts: ${rawFees} ${tx.currency}` +
+      ` — Frais convertis: ${feesInPayoutCurrency.toFixed(4)} ${payoutCurrency}` +
+      ` — Commission: ${finalCommission.toFixed(4)} ${payoutCurrency}`,
     );
 
     return this.prisma.$transaction(async (prismaTx) => {
@@ -306,12 +326,8 @@ export class WithdrawalsService {
         throw new ConflictException('Transaction déjà traitée par un autre agent.');
       }
 
-      // 2. ✅ CRÉDIT agence — logique agent de transfert
-      //    L'agent avance le cash physique au client.
-      //    En échange, son wallet électronique est crédité du montant
-      //    + sa part de commission.
-      //    Exemple : solde 200 000, retrait 15 000, commission 90 XOF
-      //    → nouveau solde = 200 000 + 15 000 + 90 = 215 090 XOF
+      // 2. Créditer le wallet agence
+      //    amountPaid + commission (tous deux en payoutCurrency)
       const totalCredit = amountPaid + finalCommission;
 
       await prismaTx.wallet.update({
@@ -319,7 +335,7 @@ export class WithdrawalsService {
         data:  { balance: { increment: new Prisma.Decimal(totalCredit) } },
       });
 
-      // Ledger : une entrée CREDIT pour le montant remboursé
+      // Ledger — remboursement cash
       await prismaTx.ledgerEntry.create({
         data: {
           walletId:      agencyWallet.id,
@@ -334,7 +350,7 @@ export class WithdrawalsService {
         },
       });
 
-      // Ledger : une entrée CREDIT séparée pour la commission
+      // Ledger — commission (si > 0)
       if (finalCommission > 0) {
         await prismaTx.ledgerEntry.create({
           data: {
@@ -343,7 +359,7 @@ export class WithdrawalsService {
             type:          'CREDIT',
             amount:        new Prisma.Decimal(finalCommission),
             currency:      agencyWallet.currency,
-            description:   `Commission retrait ${cleanCode} (${Math.round(DEFAULT_AGENT_COMMISSION_RATE * 100)}% des frais)`,
+            description:   `Commission retrait ${cleanCode} (${Math.round(DEFAULT_AGENT_COMMISSION_RATE * 100)}% des frais convertis)`,
             balanceAfter:  new Prisma.Decimal(
               Number(agencyWallet.balance) + totalCredit,
             ),
@@ -351,29 +367,29 @@ export class WithdrawalsService {
         });
 
         this.logger.log(
-          `Commission créditée: ${finalCommission} ${agencyWallet.currency} → Agence ${agent.agencyId}`,
+          `Commission créditée: ${finalCommission.toFixed(4)} ${agencyWallet.currency} → Agence ${agent.agencyId}`,
         );
       }
 
-      // 4. Mettre à jour ou créer le withdrawal
+      // 3. Mettre à jour ou créer le withdrawal
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
           data: {
-            status:          WithdrawalStatus.PAID,
-            processedById:   agentId,
-            processedAt:     new Date(),
+            status:        WithdrawalStatus.PAID,
+            processedById: agentId,
+            processedAt:   new Date(),
           },
         });
       } else {
         await prismaTx.withdrawal.create({
           data: {
             clientId,
-            transactionId:   tx.id,
-            method:          tx.payoutMethod,
-            status:          WithdrawalStatus.PAID,
-            processedById:   agentId,
-            processedAt:     new Date(),
+            transactionId: tx.id,
+            method:        tx.payoutMethod,
+            status:        WithdrawalStatus.PAID,
+            processedById: agentId,
+            processedAt:   new Date(),
           },
         });
       }
