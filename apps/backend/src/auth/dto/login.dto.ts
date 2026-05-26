@@ -5,7 +5,7 @@ import { IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
 export class LoginDto {
   // ✅ Conservé : le frontend actuel envoie email, mais ce champ accepte aussi un téléphone.
   // Le service détecte le format automatiquement.
-  @ApiProperty({ description: 'Email OU numéro de téléphone' })
+  @ApiProperty({ description: 'Email OU numéro de téléphone' }) 
   @IsString()
   @IsNotEmpty()
   email!: string;
