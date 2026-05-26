@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v9.0 — TabBar 100% custom (React Native pur)
+// TAB LAYOUT v9.1 — TabBar 100% custom (React Native pur)
+//
+// FIX v9.1 : suppression de <Tabs.Screen name="agencies" />
+//   → ce screen n'existe pas à la racine de (tabs)/
+//   → il est accessible via routeOverride "/(tabs)/admin/agencies"
+//   → sa présence ici causait l'erreur :
+//     "No route named agencies exists in nested children"
 //
 // SOLUTION DÉFINITIVE : on remplace complètement la tabBar
 // native par notre propre composant via la prop `tabBar`.
@@ -79,11 +85,7 @@ function CustomTabBar({
 
   return (
     <View style={[s.barWrapper, { bottom }]}>
-      {tabs.map((tab, index) => {
-        // Détermine si l'onglet est actif
-        const routeName = state.routes[
-          state.routes.findIndex(r => r.name === tab.name)
-        ]?.name;
+      {tabs.map((tab) => {
         const isActive = pathname.includes(tab.name) ||
           state.routes[state.index]?.name === tab.name;
 
@@ -172,6 +174,8 @@ function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
       )}
     >
       {/* On déclare TOUS les screens de l'app mais sans tabBar native */}
+      {/* ✅ FIX v9.1 : "agencies" retiré — n'existe pas à la racine de (tabs)/ */}
+      {/*    Les agences sont accessibles via (tabs)/admin/agencies             */}
       <Tabs.Screen name="home" />
       <Tabs.Screen name="transactions" />
       <Tabs.Screen name="send" />
@@ -183,7 +187,6 @@ function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="qr" />
       <Tabs.Screen name="notifications" />
-      <Tabs.Screen name="agencies" />
     </Tabs>
   );
 }
@@ -206,7 +209,7 @@ export default function TabLayout() {
   const isAdmin = role === "SUPER_ADMIN" || role === "COMPANY_ADMIN";
   const isAgent = role === "AGENT";
 
-  const tabs  = isAdmin ? ADMIN_TABS : isAgent ? AGENT_TABS : USER_TABS;
+  const tabs = isAdmin ? ADMIN_TABS : isAgent ? AGENT_TABS : USER_TABS;
 
   return <RoleLayout tabs={tabs} accent={theme.primary} />;
 }

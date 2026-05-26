@@ -1,10 +1,10 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// FIX v5.1 — refreshUser stabilisé avec useCallback
-// ✅ Évite la boucle infinie dans ClientDashboard
-//    (refreshUser avait une nouvelle référence à chaque render
-//     → useFocusEffect se re-déclenchait indéfiniment)
-// ✅ Tout le reste identique
+// FIX v5.2 — Filtrage des hosts cloud (Vercel / Railway)
+// ✅ extractTenantFromUrl ne retourne plus le sous-domaine
+//    Vercel/Railway comme code tenant
+// ✅ refreshUser stabilisé avec useCallback (v5.1 conservé)
+// ✅ Tout le reste identique à v5.1
 // =========================================================
 
 import React, {
@@ -35,7 +35,24 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const TOKEN_KEY  = "dt_token";
 const USER_KEY   = "dt_user";
 const TENANT_KEY = "dt_tenant";
+
 const RESERVED_HOST_PREFIXES = new Set(["www", "app", "mobile"]);
+
+// ✅ FIX v5.2 : suffixes de déploiements cloud à ignorer
+//    Le sous-domaine Vercel/Railway n'est PAS un code tenant
+const CLOUD_HOST_SUFFIXES = [
+  ".vercel.app",
+  ".up.railway.app",
+  ".netlify.app",
+  ".onrender.com",
+  ".fly.dev",
+  ".railway.app",
+];
+
+function isCloudDeploymentHost(host: string): boolean {
+  const lower = host.toLowerCase();
+  return CLOUD_HOST_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
 
 function normalizeTenant(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -51,13 +68,22 @@ function extractTenantFromUrl(url: string): string | null {
   try {
     const parsed = Linking.parse(url);
     const qp = parsed.queryParams ?? {};
+
+    // Query params en priorité — toujours fiables, quel que soit le host
     const candidates: unknown[] = [
       qp["tenant"], qp["tenantCode"], qp["t"],
       qp["code"], qp["company"], qp["x-tenant-id"],
     ];
-    for (const c of candidates) { const t = normalizeTenant(c); if (t) return t; }
+    for (const c of candidates) {
+      const t = normalizeTenant(c);
+      if (t) return t;
+    }
+
     const host = typeof parsed.hostname === "string" ? parsed.hostname : "";
-    if (host) {
+
+    // ✅ FIX v5.2 : on n'extrait le tenant depuis le sous-domaine
+    //    QUE si ce n'est pas un host de déploiement cloud
+    if (host && !isCloudDeploymentHost(host)) {
       const firstLabel = host.split(".")[0] ?? "";
       const lower = firstLabel.toLowerCase();
       if (firstLabel && !RESERVED_HOST_PREFIXES.has(lower)) {
@@ -87,8 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ✅ tokenRef — permet à refreshUser (useCallback) de lire le token
   //    sans l'avoir en dépendance (éviterait une nouvelle référence à chaque changement)
-  const tokenRef         = useRef<string | null>(null);
-  const tenantReadyRef   = useRef(false);
+  const tokenRef       = useRef<string | null>(null);
+  const tenantReadyRef = useRef(false);
 
   // Sync tokenRef à chaque changement de token
   useEffect(() => { tokenRef.current = token; }, [token]);

@@ -1,9 +1,12 @@
 // apps/direct-transfair-mobile/providers/TenantProvider.tsx
 // =========================================================
-// TENANT PROVIDER v1.0 — Direct Transf'air
+// TENANT PROVIDER v1.1 — Direct Transf'air
 // ✅ Charge et persiste le branding de la société active
 // ✅ Utilisé par login, register, et [tenant]/index
 // ✅ Fallback → branding Direct Transf'air par défaut
+// ✅ FIX v1.1 : useEffect restauration réécrit en async/await
+//    propre (plus de .then/.finally imbriqués)
+//    + await api.setTenant() au lieu de void
 // =========================================================
 
 import React, {
@@ -40,11 +43,11 @@ export const DEFAULT_BRANDING: TenantBranding = {
 const STORAGE_KEY = "dt_tenant_branding_v1";
 
 type TenantContextValue = {
-  branding:         TenantBranding;
+  branding:          TenantBranding;
   isLoadingBranding: boolean;
   isCustomBranding:  boolean;
-  loadBranding:     (code: string) => Promise<void>;
-  clearBranding:    () => void;
+  loadBranding:      (code: string) => Promise<void>;
+  clearBranding:     () => void;
 };
 
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
@@ -56,20 +59,25 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [isCustomBranding,  setIsCustomBranding]  = useState(false);
 
   // ── Restaurer depuis AsyncStorage au démarrage ────────
+  // ✅ FIX v1.1 : async/await propre + await api.setTenant()
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
-      .then((raw) => {
+    const restore = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (!raw) return;
-        try {
-          const parsed = JSON.parse(raw) as TenantBranding;
-          if (parsed?.code && parsed.code !== "DONIKO") {
-            setBranding(parsed);
-            setIsCustomBranding(true);
-            void api.setTenant(parsed.code);
-          }
-        } catch {}
-      })
-      .finally(() => setIsLoadingBranding(false));
+        const parsed = JSON.parse(raw) as TenantBranding;
+        if (parsed?.code && parsed.code !== "DONIKO") {
+          setBranding(parsed);
+          setIsCustomBranding(true);
+          await api.setTenant(parsed.code); // ✅ await propre (était void)
+        }
+      } catch {
+        // Silencieux — on reste sur DEFAULT_BRANDING
+      } finally {
+        setIsLoadingBranding(false);
+      }
+    };
+    void restore();
   }, []);
 
   // ── Charger branding depuis l'API ─────────────────────
