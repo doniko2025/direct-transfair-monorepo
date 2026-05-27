@@ -1,24 +1,14 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.0
-// ✅ Phone Login + OTP à chaque connexion
-// ✅ Multi-Currency (XOF, EUR, USD, GNF, GBP)
-// ✅ Push notifications (FCM/APNS) — UserDevice
-// ✅ Scheduled Transfers, Rate Alerts, Loyalty
-// ✅ Treasury Snapshots, KYC, AML
-// ✅ Refresh Token, Rate History, Webhooks
+// DIRECT TRANSF'AIR — API Service v5.1
+// ✅ v5.0 — Hardening production (tout conservé)
 // ─────────────────────────────────────────────────────────
-// v5.0 — Hardening production
-// ✅ _retry flag → anti-boucle infinie 401
-// ✅ initPromise → pas de requête avant chargement état
-// ✅ expo-secure-store pour refresh token
-// ✅ refreshPromise → refresh concurrent sécurisé
-// ✅ clearTokens() async/await
-// ✅ logs sensibles conditionnels (__DEV__)
-// ✅ tryMany étendu (404 + 405 + 501)
-// ✅ normalizeTenant() corrigé (blacklist exacte + IP)
-// ✅ refreshQueue callbacks try/catch
-// ✅ uploadHttp instance dédiée (timeout 120s)
+// v5.1 — Fix "Application not found" sur Expo/Railway
+// ✅ normalizeTenant() — blacklist étendue Railway/Expo
+// ✅ secureGet/secureSet/secureDelete — fallback AsyncStorage web
+// ✅ loadPersistedState — double tentative SecureStore → AsyncStorage
+// ✅ clearTokens — nettoie les deux storages
+// ✅ Logs de diagnostic tenant étendus (isDev)
 // =========================================================
 
 import axios, {
@@ -111,7 +101,8 @@ const STORAGE_KEYS = {
 // LOGGER — logs sensibles uniquement en dev
 // ============================================================
 
-const isDev = typeof __DEV__ !== "undefined" ? __DEV__ : process.env.NODE_ENV !== "production";
+const isDev =
+  typeof __DEV__ !== "undefined" ? __DEV__ : process.env.NODE_ENV !== "production";
 
 function devLog(...args: unknown[]): void {
   if (isDev) console.log(...args);
@@ -135,12 +126,12 @@ function getBaseUrl(): string {
   return PROD_FALLBACK_BASE_URL;
 }
 
-/**
- * Correction : blackList.includes(raw) pour correspondance exacte
- * + détection IP par startsWith
- */
+// ✅ FIX v5.1 — blacklist étendue pour Railway / Expo / IPs
+// "Application not found" vient d'un x-tenant-id invalide envoyé au backend
 function normalizeTenant(input: string | null | undefined): string {
   const raw = (input ?? "").trim().toUpperCase();
+
+  // Blacklist exacte
   const blackList = [
     "10",
     "LOCALHOST",
@@ -150,15 +141,59 @@ function normalizeTenant(input: string | null | undefined): string {
     "NULL",
     "VERCEL",
     "DIRECT-TRANSFAIR-MONOREPO",
+    // ✅ AJOUTS v5.1 — noms Railway / Expo courants
+    "DIRECT-TRANSFAIR-BACKEND-PRODUCTION",
+    "DIRECT-TRANSFAIR-MOBILE",
+    "DIRECT-TRANSFAIR-BACKEND",
+    "DIRECT-TRANSFAIR",
+    "EXP",
+    "EXPO",
   ];
-  if (!raw || blackList.includes(raw) || raw.startsWith("192.168.")) {
+
+  if (!raw) {
+    devLog("🔧 normalizeTenant: vide → DONIKO");
     return PLATFORM_TENANT;
   }
+
+  if (blackList.includes(raw)) {
+    devLog(`🔧 normalizeTenant: "${raw}" blacklisté → DONIKO`);
+    return PLATFORM_TENANT;
+  }
+
+  // Blacklist par préfixe (IPs + sous-domaines cloud)
+  const badPrefixes = ["192.168.", "10.", "172.", "EXP://"];
+  for (const prefix of badPrefixes) {
+    if (raw.startsWith(prefix)) {
+      devLog(`🔧 normalizeTenant: "${raw}" préfixe invalide → DONIKO`);
+      return PLATFORM_TENANT;
+    }
+  }
+
+  // Blacklist par inclusion (sous-domaines Railway / Expo injectés)
+  const badSubstrings = [
+    "RAILWAY",
+    "TRANSFAIR-BACKEND",
+    "TRANSFAIR-MOBILE",
+    "VERCEL.APP",
+    "NETLIFY",
+    "ONRENDER",
+    "FLY.DEV",
+  ];
+  for (const sub of badSubstrings) {
+    if (raw.includes(sub)) {
+      devLog(`🔧 normalizeTenant: "${raw}" contient "${sub}" → DONIKO`);
+      return PLATFORM_TENANT;
+    }
+  }
+
+  devLog(`✅ normalizeTenant: "${raw}" accepté`);
   return raw;
 }
 
 function getInitialTenantId(): string {
-  return normalizeTenant(process.env.EXPO_PUBLIC_TENANT_ID);
+  const envTenant = process.env.EXPO_PUBLIC_TENANT_ID;
+  devLog("🌱 EXPO_PUBLIC_TENANT_ID:", envTenant ?? "(non défini)");
+  return normalizeTenant(envTenant);
 }
 
 function buildApiBaseURL(): string {
@@ -216,9 +251,13 @@ function normalizeTransaction(t: unknown): Transaction {
         ? toNumberSafe(tx.exchangeRate)
         : (tx as unknown as Transaction).exchangeRate,
     senderCommission:
-      tx.senderCommission !== undefined ? toNumberSafe(tx.senderCommission) : undefined,
+      tx.senderCommission !== undefined
+        ? toNumberSafe(tx.senderCommission)
+        : undefined,
     loyaltyPointsEarned:
-      tx.loyaltyPointsEarned !== undefined ? toNumberSafe(tx.loyaltyPointsEarned) : 0,
+      tx.loyaltyPointsEarned !== undefined
+        ? toNumberSafe(tx.loyaltyPointsEarned)
+        : 0,
   };
 }
 
@@ -227,7 +266,8 @@ function normalizeWallet(w: unknown): Wallet {
   return {
     ...(ww as unknown as Wallet),
     balance: toNumberSafe(ww.balance),
-    reservedBalance: ww.reservedBalance !== undefined ? toNumberSafe(ww.reservedBalance) : 0,
+    reservedBalance:
+      ww.reservedBalance !== undefined ? toNumberSafe(ww.reservedBalance) : 0,
   };
 }
 
@@ -237,7 +277,8 @@ function normalizeExchangeRate(r: unknown): ExchangeRate {
     ...(rr as unknown as ExchangeRate),
     pair: String(rr.pair ?? ""),
     rate: toNumberSafe(rr.rate),
-    inverseRate: rr.inverseRate !== undefined ? toNumberSafe(rr.inverseRate) : undefined,
+    inverseRate:
+      rr.inverseRate !== undefined ? toNumberSafe(rr.inverseRate) : undefined,
     changePercent:
       rr.changePercent !== undefined ? toNumberSafe(rr.changePercent) : undefined,
     updatedAt: rr.updatedAt ? String(rr.updatedAt) : undefined,
@@ -269,9 +310,6 @@ function isAxios401(err: unknown): boolean {
   );
 }
 
-/**
- * Correction : shouldFallback couvre 404, 405, 501
- */
 function shouldFallback(err: unknown): boolean {
   if (!axios.isAxiosError(err)) return false;
   const status = err.response?.status;
@@ -302,7 +340,6 @@ async function tryMany<T>(fns: Array<() => Promise<T>>, label: string): Promise<
       return await fn();
     } catch (e) {
       lastErr = e;
-      // Fallback si 404, 405 ou 501 — break sur toute autre erreur
       if (!shouldFallback(e)) break;
     }
   }
@@ -311,32 +348,44 @@ async function tryMany<T>(fns: Array<() => Promise<T>>, label: string): Promise<
 }
 
 // ============================================================
-// SECURE STORAGE — refresh token dans SecureStore + fallback web
+// SECURE STORAGE — SecureStore + fallback AsyncStorage (web/Expo)
 // ============================================================
 
+// ✅ FIX v5.1 : SecureStore échoue sur web et parfois sur Expo Go
+// → fallback transparent sur AsyncStorage
+
 async function secureGet(key: string): Promise<string | null> {
-  // ✅ FIX : SecureStore échoue sur web → fallback AsyncStorage
   try {
     const val = await SecureStore.getItemAsync(key);
-    if (val) return val;
-  } catch { /* SecureStore non disponible (web) */ }
+    if (val) {
+      devLog(`🔐 secureGet[${key}]: SecureStore OK`);
+      return val;
+    }
+  } catch {
+    devWarn(`🔐 secureGet[${key}]: SecureStore indisponible → AsyncStorage`);
+  }
   try {
-    return await AsyncStorage.getItem(key);
+    const val = await AsyncStorage.getItem(key);
+    if (val) devLog(`🔐 secureGet[${key}]: AsyncStorage OK`);
+    return val;
   } catch {
     return null;
   }
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
-  // ✅ FIX : fallback AsyncStorage si SecureStore indisponible (web)
   try {
     await SecureStore.setItemAsync(key, value);
+    devLog(`🔐 secureSet[${key}]: SecureStore OK`);
     return;
-  } catch { /* SecureStore non disponible (web) */ }
+  } catch {
+    devWarn(`🔐 secureSet[${key}]: SecureStore indisponible → AsyncStorage`);
+  }
   try {
     await AsyncStorage.setItem(key, value);
+    devLog(`🔐 secureSet[${key}]: AsyncStorage OK`);
   } catch (e) {
-    devWarn("secureSet fallback error", e);
+    devWarn(`🔐 secureSet[${key}]: échec total`, e);
   }
 }
 
@@ -355,26 +404,15 @@ async function secureDelete(key: string): Promise<void> {
 
 class API {
   public http: AxiosInstance;
-  /** Instance dédiée pour uploads (timeout 120s) */
   public uploadHttp: AxiosInstance;
 
   private token: string | null = null;
-  /** refreshToken stocké uniquement en SecureStore, jamais AsyncStorage */
   private refreshToken: string | null = null;
   private tenant: string = getInitialTenantId();
 
   private isRefreshing = false;
   private refreshQueue: Array<(token: string) => void> = [];
-  /**
-   * Correction : refreshPromise évite les races concurrentes
-   * sans queue manuelle complexe.
-   */
   private refreshPromise: Promise<string> | null = null;
-
-  /**
-   * initPromise garantit que les premières requêtes attendent
-   * le chargement du state persisté (token + tenant).
-   */
   private initPromise: Promise<void>;
 
   constructor() {
@@ -383,9 +421,8 @@ class API {
     this.http = this.createHttp(30_000);
     this.uploadHttp = this.createHttp(120_000);
 
-    devLog("🌐 API Init | URL:", baseURL, "| Tenant:", this.tenant);
+    devLog("🌐 API Init | URL:", baseURL, "| Tenant initial:", this.tenant);
 
-    // ✅ initPromise — les interceptors await avant de continuer
     this.initPromise = this.loadPersistedState();
 
     this.setupInterceptors(this.http);
@@ -407,11 +444,12 @@ class API {
   private setupInterceptors(instance: AxiosInstance): void {
     // REQUEST
     instance.interceptors.request.use(async (config) => {
-      // ✅ Attendre le chargement initial avant toute requête
       await this.initPromise;
 
       const headers = ensureAxiosHeaders(config.headers);
 
+      // ✅ Recharge le tenant si c'est encore DONIKO (défaut)
+      // pour attraper les cas où AsyncStorage était vide au boot
       if (!this.tenant || this.tenant === PLATFORM_TENANT) {
         await this.loadPersistedTenant();
       }
@@ -427,13 +465,12 @@ class API {
         }
       }
 
+      // ✅ Logs de diagnostic étendus — visibles dans Expo Go
       devLog("------------------------------------------");
       devLog("🚀", config.method?.toUpperCase(), config.url);
-      devLog("🆔 TENANT:", this.tenant);
-      devLog(
-        "🔑 TOKEN:",
-        this.token ? `OUI (${this.token.substring(0, 10)}...)` : "NON",
-      );
+      devLog("🆔 TENANT ENVOYÉ:", this.tenant);
+      devLog("🔑 TOKEN:", this.token ? `OUI (${this.token.substring(0, 12)}...)` : "NON");
+      devLog("🌍 BASE URL:", config.baseURL);
       devLog("------------------------------------------");
 
       headers.set("x-tenant-id", this.tenant);
@@ -460,7 +497,6 @@ class API {
 
           const originalConfig = err.config as RetryableRequestConfig | undefined;
 
-          // ✅ _retry flag pour éviter toute boucle infinie
           if (
             status === 401 &&
             this.refreshToken &&
@@ -471,7 +507,6 @@ class API {
             originalConfig._retry = true;
 
             try {
-              // ✅ refreshPromise partagée — un seul refresh concurrent
               if (!this.refreshPromise) {
                 this.refreshPromise = this.attemptTokenRefresh().finally(() => {
                   this.refreshPromise = null;
@@ -481,17 +516,13 @@ class API {
               const newToken = await this.refreshPromise;
               this.token = newToken;
 
-              // ✅ Drain refreshQueue avec try/catch par callback
               for (const cb of this.refreshQueue) {
-                try {
-                  cb(newToken);
-                } catch (e) {
+                try { cb(newToken); } catch (e) {
                   devWarn("Refresh queue callback failed", e);
                 }
               }
               this.refreshQueue = [];
 
-              // Rejouer la requête originale avec le nouveau token
               const headers = ensureAxiosHeaders(originalConfig.headers);
               headers.set("Authorization", `Bearer ${newToken}`);
               originalConfig.headers = headers;
@@ -506,7 +537,6 @@ class API {
             originalConfig &&
             !originalConfig._retry
           ) {
-            // Autre requête en attente pendant le refresh en cours
             return new Promise((resolve) => {
               this.refreshQueue.push((token) => {
                 if (originalConfig) {
@@ -523,10 +553,9 @@ class API {
             "❌ HTTP ERROR",
             method,
             fullUrl,
-            "| status:",
-            status,
-            "| msg:",
-            extractAxiosErrorMessage(err),
+            "| status:", status,
+            "| tenant:", this.tenant,
+            "| msg:", extractAxiosErrorMessage(err),
           );
         } else {
           console.error("❌ HTTP ERROR (non-axios)", String(err));
@@ -536,27 +565,36 @@ class API {
     );
   }
 
- // ============================================================
+  // ============================================================
   // TENANT / TOKEN / STATE
   // ============================================================
 
   private async loadPersistedState(): Promise<void> {
     await this.loadPersistedTenant();
-    // ✅ FIX : double tentative SecureStore → AsyncStorage (web)
+    // ✅ FIX v5.1 : double tentative SecureStore → AsyncStorage
     try {
       const rt = await secureGet(STORAGE_KEYS.REFRESH_TOKEN);
-      if (rt) { this.refreshToken = rt; return; }
+      if (rt) {
+        this.refreshToken = rt;
+        devLog("🔐 refreshToken chargé depuis storage");
+        return;
+      }
     } catch { /* SecureStore indisponible */ }
     try {
       const rt = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-      if (rt) this.refreshToken = rt;
+      if (rt) {
+        this.refreshToken = rt;
+        devLog("🔐 refreshToken chargé depuis AsyncStorage (fallback)");
+      }
     } catch { /* noop */ }
   }
 
   private async loadPersistedTenant(): Promise<void> {
     try {
       const saved = await AsyncStorage.getItem(STORAGE_KEYS.PREFERRED_TENANT);
+      devLog("📦 loadPersistedTenant — valeur brute:", saved ?? "(vide)");
       this.tenant = normalizeTenant(saved);
+      devLog("📦 loadPersistedTenant — normalisé:", this.tenant);
       if (this.tenant !== saved) {
         await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, this.tenant);
       }
@@ -566,9 +604,11 @@ class API {
   }
 
   async setTenant(tenant: string): Promise<void> {
-    this.tenant = normalizeTenant(tenant);
+    const normalized = normalizeTenant(tenant);
+    devLog("🎯 setTenant:", tenant, "→", normalized);
+    this.tenant = normalized;
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, this.tenant);
+      await AsyncStorage.setItem(STORAGE_KEYS.PREFERRED_TENANT, normalized);
     } catch { /* noop */ }
   }
 
@@ -584,12 +624,12 @@ class API {
     this.token = null;
   }
 
+  // ✅ FIX v5.1 : supprime dans les deux storages
   private async clearTokens(): Promise<void> {
     this.token = null;
     this.refreshToken = null;
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN),
-      // ✅ FIX : supprime aussi dans AsyncStorage (fallback web)
       AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
       secureDelete(STORAGE_KEYS.REFRESH_TOKEN),
     ]);
@@ -622,18 +662,12 @@ class API {
     return res.data;
   }
 
-  /**
-   * Étape 1 : vérifier l'identifiant + mot de passe → déclenche OTP
-   */
   async loginStep1(data: LoginPayload): Promise<LoginStep1Response> {
     this.token = null;
     const res = await this.http.post<LoginStep1Response>("/auth/login", data);
     return res.data;
   }
 
-  /**
-   * Étape 2 : vérifier l'OTP → retourne le JWT
-   */
   async loginStep2(data: VerifyLoginOtpPayload): Promise<LoginResponse> {
     const res = await this.http.post<LoginResponse>("/auth/login/verify-otp", data);
 
@@ -647,7 +681,7 @@ class API {
       }
 
       if (res.data?.user?.client?.code) {
-        devLog("🎯 Tenant détecté:", res.data.user.client.code);
+        devLog("🎯 Tenant détecté via loginStep2:", res.data.user.client.code);
         await this.setTenant(res.data.user.client.code);
       }
     }
@@ -655,9 +689,6 @@ class API {
     return res.data;
   }
 
-  /**
-   * Login direct (rétrocompatibilité — sans OTP step)
-   */
   async login(data: LoginPayload): Promise<LoginResponse> {
     this.token = null;
     const payload = { email: data.identifier, password: data.password };
@@ -673,6 +704,7 @@ class API {
       }
 
       if (res.data?.user?.client?.code) {
+        devLog("🎯 Tenant détecté via login:", res.data.user.client.code);
         await this.setTenant(res.data.user.client.code);
       }
     }
@@ -690,7 +722,10 @@ class API {
 
   async getMe(): Promise<AuthUser> {
     const res = await this.http.get<AuthUser>("/auth/me");
-    if (res.data?.client?.code) await this.setTenant(res.data.client.code);
+    if (res.data?.client?.code) {
+      devLog("🎯 Tenant mis à jour via getMe:", res.data.client.code);
+      await this.setTenant(res.data.client.code);
+    }
     return res.data;
   }
 
@@ -843,12 +878,11 @@ class API {
     const res = await this.http.get<unknown>("/wallets/me");
     return unwrapArray<Wallet>(res.data).map(normalizeWallet);
   }
-  // Ajouter dans la classe API, après getMyWallets() :
 
- async getClientPublicBranding(code: string): Promise<any> {
-  const res = await this.http.get(`/branding/${code.trim().toUpperCase()}`);
-  return res.data;
- }
+  async getClientPublicBranding(code: string): Promise<any> {
+    const res = await this.http.get(`/branding/${code.trim().toUpperCase()}`);
+    return res.data;
+  }
 
   async getWalletLedger(
     walletId: string,
@@ -915,7 +949,10 @@ class API {
     amount: number,
     currency: Currency | string = "XOF",
   ): Promise<unknown> {
-    const payload = { currency: String(currency).toUpperCase(), amount: Number(amount) };
+    const payload = {
+      currency: String(currency).toUpperCase(),
+      amount: Number(amount),
+    };
     try {
       const res = await this.http.post("/treasury/admin/inject", payload, {
         headers: { "Content-Type": "application/json" },
@@ -924,7 +961,8 @@ class API {
     } catch {
       const data = await tryMany<AxiosResponse<unknown>>(
         [
-          async () => this.http.post<unknown>("/transactions/admin/fund-self", payload),
+          async () =>
+            this.http.post<unknown>("/transactions/admin/fund-self", payload),
           async () => this.http.post<unknown>("/admin/fund-self", payload),
           async () => this.http.post<unknown>("/admin/treasury/fund-self", payload),
         ],
@@ -986,7 +1024,10 @@ class API {
     return res.data;
   }
 
-  async updateAgency(id: string, data: Partial<CreateAgencyPayload>): Promise<unknown> {
+  async updateAgency(
+    id: string,
+    data: Partial<CreateAgencyPayload>,
+  ): Promise<unknown> {
     const res = await this.http.patch(`/agencies/${id}`, data);
     return res.data;
   }
@@ -999,8 +1040,6 @@ class API {
     const res = await this.http.get<unknown>(`/agencies/${agencyId}/wallets`);
     return unwrapArray<Wallet>(res.data).map(normalizeWallet);
   }
-
-  // ============================================================
 
   // ============================================================
   // BENEFICIARIES
@@ -1037,7 +1076,9 @@ class API {
   }
 
   async toggleFavoriteBeneficiary(id: string): Promise<Beneficiary> {
-    const res = await this.http.patch<Beneficiary>(`/beneficiaries/${id}/favorite`);
+    const res = await this.http.patch<Beneficiary>(
+      `/beneficiaries/${id}/favorite`,
+    );
     return res.data;
   }
 
@@ -1071,11 +1112,15 @@ class API {
     return tryMany<Transaction>(
       [
         async () => {
-          const res = await this.http.patch<Transaction>(`/transactions/${id}/cancel`);
+          const res = await this.http.patch<Transaction>(
+            `/transactions/${id}/cancel`,
+          );
           return normalizeTransaction(res.data);
         },
         async () => {
-          const res = await this.http.post<Transaction>(`/transactions/${id}/cancel`);
+          const res = await this.http.post<Transaction>(
+            `/transactions/${id}/cancel`,
+          );
           return normalizeTransaction(res.data);
         },
       ],
@@ -1112,8 +1157,10 @@ class API {
   ): Promise<ScheduledTransfer> {
     const res = await tryMany<AxiosResponse<ScheduledTransfer>>(
       [
-        async () => this.http.post<ScheduledTransfer>("/scheduled-transfers", data),
-        async () => this.http.post<ScheduledTransfer>("/transactions/scheduled", data),
+        async () =>
+          this.http.post<ScheduledTransfer>("/scheduled-transfers", data),
+        async () =>
+          this.http.post<ScheduledTransfer>("/transactions/scheduled", data),
       ],
       "createScheduledTransfer",
     );
@@ -1225,7 +1272,10 @@ class API {
         async () =>
           this.http.patch<Transaction>(`/transactions/${id}/status`, { status }),
         async () =>
-          this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status }),
+          this.http.patch<Transaction>(
+            `/transactions/admin/status/${id}`,
+            { status },
+          ),
       ],
       "adminUpdateTransactionStatus",
     );
@@ -1235,8 +1285,10 @@ class API {
   async validateBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () => this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
-        async () => this.http.post<Transaction>(`/transactions/${id}/validate`),
+        async () =>
+          this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`),
+        async () =>
+          this.http.post<Transaction>(`/transactions/${id}/validate`),
       ],
       "validateBankTransfer",
     );
@@ -1246,8 +1298,10 @@ class API {
   async rejectBankTransfer(id: string): Promise<Transaction> {
     const data = await tryMany<AxiosResponse<Transaction>>(
       [
-        async () => this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
-        async () => this.http.post<Transaction>(`/transactions/${id}/reject`),
+        async () =>
+          this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`),
+        async () =>
+          this.http.post<Transaction>(`/transactions/${id}/reject`),
       ],
       "rejectBankTransfer",
     );
@@ -1287,12 +1341,8 @@ class API {
   async updateExchangeRate(pair: string, rate: number): Promise<void> {
     await tryMany<void>(
       [
-        async () => {
-          await this.http.post("/rates", { pair, rate });
-        },
-        async () => {
-          await this.http.patch(`/rates/${pair}`, { rate });
-        },
+        async () => { await this.http.post("/rates", { pair, rate }); },
+        async () => { await this.http.patch(`/rates/${pair}`, { rate }); },
       ],
       "updateExchangeRate",
     );
@@ -1340,12 +1390,8 @@ class API {
   async deleteRateAlert(id: string): Promise<void> {
     await tryMany<void>(
       [
-        async () => {
-          await this.http.delete(`/rate-alerts/${id}`);
-        },
-        async () => {
-          await this.http.delete(`/rates/alerts/${id}`);
-        },
+        async () => { await this.http.delete(`/rate-alerts/${id}`); },
+        async () => { await this.http.delete(`/rates/alerts/${id}`); },
       ],
       "deleteRateAlert",
     );
@@ -1678,12 +1724,22 @@ class API {
         () =>
           this.http.patch<Client>(`/clients/${id}/status`, payloadA, { headers }),
         () =>
-          this.http.patch<Client>(`/admin/clients/${id}/status`, payloadA, { headers }),
+          this.http.patch<Client>(
+            `/admin/clients/${id}/status`,
+            payloadA,
+            { headers },
+          ),
         () =>
-          this.http.patch<Client>(`/saas/clients/${id}/status`, payloadA, { headers }),
+          this.http.patch<Client>(
+            `/saas/clients/${id}/status`,
+            payloadA,
+            { headers },
+          ),
         () => this.http.patch<Client>(`/clients/${id}`, payloadB, { headers }),
-        () => this.http.patch<Client>(`/admin/clients/${id}`, payloadB, { headers }),
-        () => this.http.patch<Client>(`/saas/clients/${id}`, payloadB, { headers }),
+        () =>
+          this.http.patch<Client>(`/admin/clients/${id}`, payloadB, { headers }),
+        () =>
+          this.http.patch<Client>(`/saas/clients/${id}`, payloadB, { headers }),
       ],
       "updateClientStatus",
     );
@@ -1729,9 +1785,10 @@ class API {
     endpointId: string,
     params?: { page?: number; limit?: number },
   ): Promise<WebhookDelivery[]> {
-    const res = await this.http.get<unknown>(`/webhooks/${endpointId}/deliveries`, {
-      params,
-    });
+    const res = await this.http.get<unknown>(
+      `/webhooks/${endpointId}/deliveries`,
+      { params },
+    );
     return unwrapArray<WebhookDelivery>(res.data);
   }
 
