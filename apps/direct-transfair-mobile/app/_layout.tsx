@@ -4,7 +4,9 @@
 // ✅ TenantProvider wrappe AuthProvider
 //    → le branding est disponible dès le démarrage
 // =========================================================
+// app/_layout.tsx
 
+import "react-native-gesture-handler";
 import React from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";

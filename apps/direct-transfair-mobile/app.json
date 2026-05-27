@@ -46,8 +46,7 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-image-picker",
-      "react-native-reanimated/plugin"
+      "expo-image-picker"
     ],
     "experiments": {
       "typedRoutes": true
