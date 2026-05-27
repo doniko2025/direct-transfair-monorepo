@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.1
+// DIRECT TRANSF'AIR — API Service v5.2
 // ✅ v5.0 — Hardening production (tout conservé)
 // ─────────────────────────────────────────────────────────
 // v5.1 — Fix "Application not found" sur Expo/Railway
@@ -126,8 +126,9 @@ function getBaseUrl(): string {
   return PROD_FALLBACK_BASE_URL;
 }
 
-// ✅ FIX v5.1 — blacklist étendue pour Railway / Expo / IPs
+// ✅ FIX v5.2 — blacklist étendue pour Railway / Expo / IPs
 // "Application not found" vient d'un x-tenant-id invalide envoyé au backend
+// ✅ FIX v5.2 : bloque aussi les segments d'IP isolés ex: "192" extrait par Expo
 function normalizeTenant(input: string | null | undefined): string {
   const raw = (input ?? "").trim().toUpperCase();
 
@@ -141,7 +142,6 @@ function normalizeTenant(input: string | null | undefined): string {
     "NULL",
     "VERCEL",
     "DIRECT-TRANSFAIR-MONOREPO",
-    // ✅ AJOUTS v5.1 — noms Railway / Expo courants
     "DIRECT-TRANSFAIR-BACKEND-PRODUCTION",
     "DIRECT-TRANSFAIR-MOBILE",
     "DIRECT-TRANSFAIR-BACKEND",
@@ -160,13 +160,20 @@ function normalizeTenant(input: string | null | undefined): string {
     return PLATFORM_TENANT;
   }
 
-  // Blacklist par préfixe (IPs + sous-domaines cloud)
-  const badPrefixes = ["192.168.", "10.", "172.", "EXP://"];
+  // ✅ FIX v5.2 : bloque IPs complètes ET segments isolés ("192", "10", "172"...)
+  // Expo extrait parfois seulement le premier octet de l'IP locale
+  const badPrefixes = ["192.168.", "192.", "10.", "172.", "EXP://"];
   for (const prefix of badPrefixes) {
     if (raw.startsWith(prefix)) {
-      devLog(`🔧 normalizeTenant: "${raw}" préfixe invalide → DONIKO`);
+      devLog(`🔧 normalizeTenant: "${raw}" préfixe IP → DONIKO`);
       return PLATFORM_TENANT;
     }
+  }
+
+  // Segment d'IP isolé : nombre seul 1–3 chiffres (ex: "192", "10", "172")
+  if (/^\d{1,3}$/.test(raw)) {
+    devLog(`🔧 normalizeTenant: "${raw}" segment IP isolé → DONIKO`);
+    return PLATFORM_TENANT;
   }
 
   // Blacklist par inclusion (sous-domaines Railway / Expo injectés)
