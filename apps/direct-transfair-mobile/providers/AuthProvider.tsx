@@ -178,40 +178,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [router]);
 
-  // ─── Init ─────────────────────────────────────────────────
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        await ensureTenantReady();
-        const storedToken   = await getStorage(TOKEN_KEY);
-        const storedUserRaw = await getStorage(USER_KEY);
+// ─── Init ─────────────────────────────────────────────────
+useEffect(() => {
+  const initAuth = async () => {
+    try {
+      await ensureTenantReady();
+      const storedToken   = await getStorage(TOKEN_KEY);
+      const storedUserRaw = await getStorage(USER_KEY);
 
-        if (storedToken && storedUserRaw) {
-          api.setToken(storedToken);
-          setToken(storedToken);
-          tokenRef.current = storedToken;
+      if (storedToken && storedUserRaw) {
+        const storedUser = JSON.parse(storedUserRaw) as AuthUser;
 
-          const storedUser = JSON.parse(storedUserRaw) as AuthUser;
-          setUser(injectCurrencyToUser(storedUser));
+        // ✅ FIX TENANT MISMATCH : synchroniser le tenant depuis l'user
+        // stocké AVANT tout appel API — évite le mismatch clientId
+        const clientCode = (storedUser as any)?.client?.code;
+        if (clientCode) {
+          await applyTenant(clientCode);
+        }
 
-          try {
-            const me = await api.getMe();
-            const enrichedMe = injectCurrencyToUser(me);
-            setUser(enrichedMe);
-            await setStorage(USER_KEY, JSON.stringify(enrichedMe));
-          } catch {
+        api.setToken(storedToken);
+        setToken(storedToken);
+        tokenRef.current = storedToken;
+        setUser(injectCurrencyToUser(storedUser));
+
+        try {
+          const me = await api.getMe();
+          const enrichedMe = injectCurrencyToUser(me);
+          // ✅ Re-sync tenant après getMe() au cas où le serveur retourne
+          // un code différent (changement de tenant côté serveur)
+          const meCode = (me as any)?.client?.code;
+          if (meCode) await applyTenant(meCode);
+          setUser(enrichedMe);
+          await setStorage(USER_KEY, JSON.stringify(enrichedMe));
+        } catch (e: any) {
+          const status = e?.response?.status;
+          if (status === 401 || status === 403) {
             await logout();
           }
+          // Erreur réseau / 500 → on garde la session locale
         }
-      } catch (e) {
-        console.log("Erreur init auth", e);
-      } finally {
-        setIsLoading(false);
       }
-    };
-    void initAuth();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    } catch (e) {
+      console.log("Erreur init auth", e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  void initAuth();
+// eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   useEffect(() => {
     if (isLoading) return;
@@ -220,25 +235,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     else if (user && inAuthGroup) router.replace("/(tabs)/home");
   }, [user, isLoading, segments, router]);
 
-  // ─── Login ────────────────────────────────────────────────
-  const login = useCallback(async (data: LoginPayload) => {
-    setIsLoading(true);
-    try {
-      await ensureTenantReady();
-      const res: LoginResponse = await api.login(data);
-      api.setToken(res.access_token);
-      setToken(res.access_token);
-      tokenRef.current = res.access_token;
+// ─── Login ────────────────────────────────────────────────
+const login = useCallback(async (data: LoginPayload) => {
+  setIsLoading(true);
+  try {
+    await ensureTenantReady();
+    const res: LoginResponse = await api.login(data);
 
-      const enrichedUser = injectCurrencyToUser(res.user);
-      setUser(enrichedUser);
-      await setStorage(TOKEN_KEY, res.access_token);
-      await setStorage(USER_KEY, JSON.stringify(enrichedUser));
-    } catch (e: unknown) {
-      throw e;
-    } finally {
-      setIsLoading(false);
-    }
+    // ✅ FIX : synchroniser le tenant depuis le token reçu IMMÉDIATEMENT
+    // avant de stocker quoi que ce soit
+    const clientCode = (res.user as any)?.client?.code;
+    if (clientCode) await applyTenant(clientCode);
+
+    api.setToken(res.access_token);
+    setToken(res.access_token);
+    tokenRef.current = res.access_token;
+
+    const enrichedUser = injectCurrencyToUser(res.user);
+    setUser(enrichedUser);
+    await setStorage(TOKEN_KEY, res.access_token);
+    await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+  } catch (e: unknown) {
+    throw e;
+  } finally {
+    setIsLoading(false);
+  }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -278,10 +299,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [login]);
 
   // ─── refreshUser — STABLE avec useCallback ───────────────
-  // ✅ FIX v5.1 : useCallback + tokenRef (pas de dépendance sur `token`)
-  //    Avant : refreshUser était recréée à chaque render (pas de useCallback)
-  //    → useFocusEffect dans ClientDashboard la voyait changer
-  //    → déclenchait loadData en boucle infinie
   const refreshUser = useCallback(async () => {
     try {
       const currentToken = tokenRef.current;
@@ -291,8 +308,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const enrichedUser = injectCurrencyToUser(updatedUser);
       setUser(enrichedUser);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
-    } catch (e) {
-      console.log("Erreur refresh user", e);
+    } catch (e: any) {
+      // ✅ FIX : on ne déconnecte pas sur erreur réseau/timeout
+      // refreshUser est appelé en arrière-plan — une erreur 500 ou offline
+      // ne doit pas effacer la session locale
+      const status = (e as any)?.response?.status;
+      if (status === 401 || status === 403) {
+        await logout();
+      }
+      // Sinon : silencieux, l'user reste connecté avec les données en cache
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // ✅ [] — référence stable pour toujours

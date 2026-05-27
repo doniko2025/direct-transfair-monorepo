@@ -311,28 +311,41 @@ async function tryMany<T>(fns: Array<() => Promise<T>>, label: string): Promise<
 }
 
 // ============================================================
-// SECURE STORAGE — refresh token dans SecureStore
+// SECURE STORAGE — refresh token dans SecureStore + fallback web
 // ============================================================
 
 async function secureGet(key: string): Promise<string | null> {
+  // ✅ FIX : SecureStore échoue sur web → fallback AsyncStorage
   try {
-    return await SecureStore.getItemAsync(key);
+    const val = await SecureStore.getItemAsync(key);
+    if (val) return val;
+  } catch { /* SecureStore non disponible (web) */ }
+  try {
+    return await AsyncStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
 async function secureSet(key: string, value: string): Promise<void> {
+  // ✅ FIX : fallback AsyncStorage si SecureStore indisponible (web)
   try {
     await SecureStore.setItemAsync(key, value);
+    return;
+  } catch { /* SecureStore non disponible (web) */ }
+  try {
+    await AsyncStorage.setItem(key, value);
   } catch (e) {
-    devWarn("SecureStore write error", e);
+    devWarn("secureSet fallback error", e);
   }
 }
 
 async function secureDelete(key: string): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(key);
+  } catch { /* noop */ }
+  try {
+    await AsyncStorage.removeItem(key);
   } catch { /* noop */ }
 }
 
@@ -523,15 +536,21 @@ class API {
     );
   }
 
-  // ============================================================
+ // ============================================================
   // TENANT / TOKEN / STATE
   // ============================================================
 
   private async loadPersistedState(): Promise<void> {
     await this.loadPersistedTenant();
-    // ✅ refresh token depuis SecureStore uniquement
-    const rt = await secureGet(STORAGE_KEYS.REFRESH_TOKEN);
-    if (rt) this.refreshToken = rt;
+    // ✅ FIX : double tentative SecureStore → AsyncStorage (web)
+    try {
+      const rt = await secureGet(STORAGE_KEYS.REFRESH_TOKEN);
+      if (rt) { this.refreshToken = rt; return; }
+    } catch { /* SecureStore indisponible */ }
+    try {
+      const rt = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
+      if (rt) this.refreshToken = rt;
+    } catch { /* noop */ }
   }
 
   private async loadPersistedTenant(): Promise<void> {
@@ -565,14 +584,13 @@ class API {
     this.token = null;
   }
 
-  /**
-   * ✅ clearTokens() est maintenant async/await — pas de fire-and-forget
-   */
   private async clearTokens(): Promise<void> {
     this.token = null;
     this.refreshToken = null;
     await Promise.all([
       AsyncStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN),
+      // ✅ FIX : supprime aussi dans AsyncStorage (fallback web)
+      AsyncStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN),
       secureDelete(STORAGE_KEYS.REFRESH_TOKEN),
     ]);
   }
@@ -586,10 +604,8 @@ class API {
       refresh_token: this.refreshToken,
     });
     const { access_token, refresh_token } = res.data;
-    // access token → mémoire + AsyncStorage
     this.token = access_token;
     await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, access_token);
-    // refresh token → SecureStore uniquement
     if (refresh_token) {
       this.refreshToken = refresh_token;
       await secureSet(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
