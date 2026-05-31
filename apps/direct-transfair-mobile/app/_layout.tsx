@@ -1,12 +1,16 @@
 // apps/direct-transfair-mobile/app/_layout.tsx
 // =========================================================
-// ROOT LAYOUT v5.0
+// ROOT LAYOUT v5.1
 // ✅ TenantProvider wrappe AuthProvider
 //    → le branding est disponible dès le démarrage
+// ✅ FIX : import "react-native-gesture-handler" en tout
+//    premier — requis par react-navigation pour éviter
+//    les crashs gesture sur Android/iOS
 // =========================================================
-// app/_layout.tsx
 
+// ⚠️ DOIT être le tout premier import du point d'entrée
 import "react-native-gesture-handler";
+
 import React from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
