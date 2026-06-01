@@ -95,23 +95,8 @@ tsconfig.build.tsbuildinfo
 prisma/seed.js
 prisma/seed.js.map
 
-############################################
-# Expo / React Native
-############################################
-
-.expo/
-.expo-shared/
-.metro-health-check*
-
-android/app/build/
-android/.gradle/
-android/local.properties
-android/.idea/
-
-ios/Pods/
-ios/build/
-ios/*.xcworkspace
-ios/.idea/
+# Client Prisma "platform" généré (régénéré par postinstall → prisma generate)
+src/platform/generated/
 
 ############################################
 # Docker
