@@ -1,8 +1,12 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.3 — Direct Transf'air
-// ✅ FIX: méthodes manquantes restaurées
+// AUTH SERVICE v4.4 — Direct Transf'air
+// ✅ v4.3: méthodes manquantes restaurées
 //    refreshTokens, logout, getProfile, updateProfile, changePassword
+// ✅ v4.4: register — sendOtpInternal passé en non-bloquant (.catch)
+//    → élimine le moulinage de 40s causé par un timeout SMTP
+//    → le compte est créé et le token renvoyé immédiatement
+//    → l'OTP email est envoyé en arrière-plan sans bloquer la réponse
 // =========================================================
 
 import {
@@ -453,24 +457,31 @@ export class AuthService {
       currency: primaryCurrency,
     });
 
-    try {
-      await this.mail.sendEmail(
-        email,
-        "Bienvenue sur Direct Transf'air 🎉",
-        `<p>Bonjour ${dto.firstName},</p>
-         <p>Votre compte a bien été créé avec la devise <strong>${primaryCurrency}</strong>.</p>
-         <p>Pour activer pleinement votre compte, vérifiez votre adresse email.</p>`,
-      );
-    } catch (e) {
-      this.logger.warn('Échec email bienvenue', e);
-    }
+    // ✅ FIX v4.4 : email de bienvenue non-bloquant (.catch) — ne bloque pas la réponse
+    this.mail.sendEmail(
+      email,
+      "Bienvenue sur Direct Transf'air 🎉",
+      `<p>Bonjour ${dto.firstName},</p>
+       <p>Votre compte a bien été créé avec la devise <strong>${primaryCurrency}</strong>.</p>
+       <p>Pour activer pleinement votre compte, vérifiez votre adresse email.</p>`,
+    ).catch((e) => {
+      this.logger.warn('Échec email bienvenue (non-bloquant)', e);
+    });
 
-    await this.sendOtpInternal(
+    // ✅ FIX v4.4 : OTP email non-bloquant (.catch)
+    // Avant : await this.sendOtpInternal(...) bloquait la réponse pendant 40s
+    // si le service SMTP était lent ou en timeout.
+    // Maintenant : le compte est créé + le token est renvoyé immédiatement.
+    // L'OTP est envoyé en arrière-plan ; s'il échoue, l'utilisateur peut
+    // en redemander un depuis son profil.
+    this.sendOtpInternal(
       user.id,
       CommsType.EMAIL,
       OtpPurpose.EMAIL_VERIFICATION,
       email,
-    );
+    ).catch((e) => {
+      this.logger.warn(`OTP email non envoyé pour ${email} (non-bloquant) : ${e?.message}`);
+    });
 
     const freshUser = await this.prisma.user.findUnique({
       where: { id: user.id },
@@ -690,7 +701,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // REFRESH TOKEN ✅ RESTAURÉ
+  // REFRESH TOKEN
   // ========================================================
 
   async refreshTokens(refreshToken: string) {
@@ -737,7 +748,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // LOGOUT ✅ RESTAURÉ
+  // LOGOUT
   // ========================================================
 
   async logout(userId: string, accessToken?: string) {
@@ -755,7 +766,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // GET PROFILE ✅ RESTAURÉ
+  // GET PROFILE
   // ========================================================
 
   async getProfile(userId: string) {
@@ -772,7 +783,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // UPDATE PROFILE ✅ RESTAURÉ
+  // UPDATE PROFILE
   // ========================================================
 
   async updateProfile(userId: string, data: any) {
@@ -832,7 +843,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // CHANGE PASSWORD ✅ RESTAURÉ
+  // CHANGE PASSWORD
   // ========================================================
 
   async changePassword(userId: string, oldPass: string, newPass: string) {
@@ -858,16 +869,15 @@ export class AuthService {
     await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
 
     if (user.email) {
-      try {
-        await this.mail.sendEmail(
-          user.email,
-          'Mot de passe modifié',
-          `<p>Votre mot de passe a été modifié avec succès.</p>
-           <p style="color:#DC2626;">Si vous n'êtes pas à l'origine de cette modification, contactez-nous immédiatement.</p>`,
-        );
-      } catch (e) {
-        this.logger.warn('Échec email confirmation password', e);
-      }
+      // Non-bloquant — cohérent avec la politique du service
+      this.mail.sendEmail(
+        user.email,
+        'Mot de passe modifié',
+        `<p>Votre mot de passe a été modifié avec succès.</p>
+         <p style="color:#DC2626;">Si vous n'êtes pas à l'origine de cette modification, contactez-nous immédiatement.</p>`,
+      ).catch((e) => {
+        this.logger.warn('Échec email confirmation password (non-bloquant)', e);
+      });
     }
 
     return { success: true, message: 'Mot de passe mis à jour avec succès' };

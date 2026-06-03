@@ -1,14 +1,18 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.2
+// DIRECT TRANSF'AIR — API Service v5.3
 // ✅ v5.0 — Hardening production (tout conservé)
-// ─────────────────────────────────────────────────────────
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
 // ✅ secureGet/secureSet/secureDelete — fallback AsyncStorage web
 // ✅ loadPersistedState — double tentative SecureStore → AsyncStorage
 // ✅ clearTokens — nettoie les deux storages
 // ✅ Logs de diagnostic tenant étendus (isDev)
+// v5.3 — Fix moulinage declareBankTransfer
+// ✅ declareBankTransfer — suppression tryMany (causait double appel
+//    après timeout → 500 Internal server error sur le 2ème essai)
+// ✅ declareBankTransfer — timeout réduit à 15s (au lieu de 30s)
+// ✅ declareBankTransfer — devise par défaut corrigée XOF (était EUR)
 // =========================================================
 
 import axios, {
@@ -126,13 +130,9 @@ function getBaseUrl(): string {
   return PROD_FALLBACK_BASE_URL;
 }
 
-// ✅ FIX v5.2 — blacklist étendue pour Railway / Expo / IPs
-// "Application not found" vient d'un x-tenant-id invalide envoyé au backend
-// ✅ FIX v5.2 : bloque aussi les segments d'IP isolés ex: "192" extrait par Expo
 function normalizeTenant(input: string | null | undefined): string {
   const raw = (input ?? "").trim().toUpperCase();
 
-  // Blacklist exacte
   const blackList = [
     "10",
     "LOCALHOST",
@@ -160,8 +160,6 @@ function normalizeTenant(input: string | null | undefined): string {
     return PLATFORM_TENANT;
   }
 
-  // ✅ FIX v5.2 : bloque IPs complètes ET segments isolés ("192", "10", "172"...)
-  // Expo extrait parfois seulement le premier octet de l'IP locale
   const badPrefixes = ["192.168.", "192.", "10.", "172.", "EXP://"];
   for (const prefix of badPrefixes) {
     if (raw.startsWith(prefix)) {
@@ -170,13 +168,11 @@ function normalizeTenant(input: string | null | undefined): string {
     }
   }
 
-  // Segment d'IP isolé : nombre seul 1–3 chiffres (ex: "192", "10", "172")
   if (/^\d{1,3}$/.test(raw)) {
     devLog(`🔧 normalizeTenant: "${raw}" segment IP isolé → DONIKO`);
     return PLATFORM_TENANT;
   }
 
-  // Blacklist par inclusion (sous-domaines Railway / Expo injectés)
   const badSubstrings = [
     "RAILWAY",
     "TRANSFAIR-BACKEND",
@@ -358,9 +354,6 @@ async function tryMany<T>(fns: Array<() => Promise<T>>, label: string): Promise<
 // SECURE STORAGE — SecureStore + fallback AsyncStorage (web/Expo)
 // ============================================================
 
-// ✅ FIX v5.1 : SecureStore échoue sur web et parfois sur Expo Go
-// → fallback transparent sur AsyncStorage
-
 async function secureGet(key: string): Promise<string | null> {
   try {
     const val = await SecureStore.getItemAsync(key);
@@ -436,8 +429,6 @@ class API {
     this.setupInterceptors(this.uploadHttp);
   }
 
-  // ─── Factory instances Axios ────────────────────────────
-
   private createHttp(timeout: number): AxiosInstance {
     return axios.create({
       baseURL: buildApiBaseURL(),
@@ -446,17 +437,12 @@ class API {
     });
   }
 
-  // ─── Interceptors ────────────────────────────────────────
-
   private setupInterceptors(instance: AxiosInstance): void {
-    // REQUEST
     instance.interceptors.request.use(async (config) => {
       await this.initPromise;
 
       const headers = ensureAxiosHeaders(config.headers);
 
-      // ✅ Recharge le tenant si c'est encore DONIKO (défaut)
-      // pour attraper les cas où AsyncStorage était vide au boot
       if (!this.tenant || this.tenant === PLATFORM_TENANT) {
         await this.loadPersistedTenant();
       }
@@ -472,7 +458,6 @@ class API {
         }
       }
 
-      // ✅ Logs de diagnostic étendus — visibles dans Expo Go
       devLog("------------------------------------------");
       devLog("🚀", config.method?.toUpperCase(), config.url);
       devLog("🆔 TENANT ENVOYÉ:", this.tenant);
@@ -493,7 +478,6 @@ class API {
       return config;
     });
 
-    // RESPONSE — auto-refresh 401
     instance.interceptors.response.use(
       (res) => res,
       async (err: unknown) => {
@@ -578,7 +562,6 @@ class API {
 
   private async loadPersistedState(): Promise<void> {
     await this.loadPersistedTenant();
-    // ✅ FIX v5.1 : double tentative SecureStore → AsyncStorage
     try {
       const rt = await secureGet(STORAGE_KEYS.REFRESH_TOKEN);
       if (rt) {
@@ -631,7 +614,6 @@ class API {
     this.token = null;
   }
 
-  // ✅ FIX v5.1 : supprime dans les deux storages
   private async clearTokens(): Promise<void> {
     this.token = null;
     this.refreshToken = null;
@@ -979,10 +961,24 @@ class API {
     }
   }
 
+  // ✅ FIX v5.3 — declareBankTransfer
+  //
+  // AVANT (v5.2) :
+  //   tryMany([endpoint1, endpoint2]) avec timeout global 30s
+  //   → si endpoint1 timeout (ex: email SMTP lent côté Railway),
+  //     tryMany essayait endpoint2 → 2ème transaction créée en DB → 500
+  //   → le frontend moulinait 30s puis affichait un faux message d'erreur
+  //
+  // MAINTENANT (v5.3) :
+  //   - Un seul appel direct, timeout réduit à 15s
+  //   - Pas de retry : si le backend a répondu (même lentement),
+  //     la transaction existe → on ne réessaie pas
+  //   - Devise par défaut corrigée : XOF (était EUR par erreur)
+  //   - Le catch dans CompanyDashboard.tsx gère le timeout comme un succès
   async declareBankTransfer(
     amount: number,
     refBancaire?: string,
-    currency: Currency | string = "EUR",
+    currency: Currency | string = "XOF",
   ): Promise<unknown> {
     const reference = (refBancaire ?? "").trim();
     const payload = {
@@ -994,13 +990,10 @@ class API {
       method: "BANK_TRANSFER",
       paymentMethod: "BANK_TRANSFER",
     };
-    const res = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.post<unknown>("/transactions/b2b/declare", payload),
-        async () =>
-          this.http.post<unknown>("/transactions/declare-bank-transfer", payload),
-      ],
-      "declareBankTransfer",
+    const res = await this.http.post<unknown>(
+      "/transactions/b2b/declare",
+      payload,
+      { timeout: 15_000 },
     );
     return res.data;
   }

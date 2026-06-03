@@ -12,6 +12,11 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://direct-transfair-backend-production.up.railway.app",
+        "EXPO_PUBLIC_API_PREFIX": "/api",
+        "EXPO_PUBLIC_TENANT_ID": "DONIKO"
       }
     },
     "production": {

@@ -1,8 +1,13 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.8
-// ✅ FIX: declareBankTransfer → wallet société (clientId) au lieu du wallet personnel
-// ✅ FIX: validateBankTransfer → wallet plateforme (clientId) au lieu du wallet personnel
+// TRANSACTIONS SERVICE v4.9
+// ✅ v4.8: declareBankTransfer → wallet société (clientId)
+// ✅ v4.8: validateBankTransfer → wallet plateforme (clientId)
+// ✅ v4.9: declareBankTransfer — atomique (create + debit + ledger
+//    dans la même $transaction Prisma avec advisory lock)
+//    → élimine le moulinage causé par une transaction créée
+//    avant que le debit échoue ou timeout
+// ✅ v4.9: email B2B non-bloquant (.catch) — ne bloque pas la réponse
 // =========================================================
 
 import {
@@ -123,30 +128,73 @@ export class TransactionsService {
     return cloned;
   }
 
+  // ── Advisory lock helper (même algo que wallets.service) ─
+  private walletLockKey(id: string): bigint {
+    let hash = 0n;
+    for (let i = 0; i < id.length; i++) {
+      hash = (hash * 31n + BigInt(id.charCodeAt(i))) & 0x7FFFFFFFFFFFFFFFn;
+    }
+    return hash;
+  }
+
   // ── B2B ──────────────────────────────────────────────────
 
-  async declareBankTransfer(adminId: string, amount: number, proofReference: string, currency: string = 'XOF') {
+  /**
+   * ✅ FIX v4.9 — Atomique : create + debit + ledger dans la même $transaction Prisma.
+   *
+   * Avant (v4.8) :
+   *   1. prisma.$transaction → crée la Transaction en DB  ← committée immédiatement
+   *   2. walletsService.debit()                           ← pouvait timeout/échouer séparément
+   *   → La Transaction existait en DB mais le wallet n'était pas débité.
+   *   → Le backend renvoyait une erreur, le frontend moulinait 30-40s puis
+   *     affichait un faux message d'erreur alors que la transaction avait été créée.
+   *
+   * Maintenant (v4.9) :
+   *   - Lock advisory sur le wallet.
+   *   - Vérification du solde dans la transaction Prisma (solde à jour, pas de race).
+   *   - Création de la Transaction + débit + écriture ledger dans un seul bloc atomique.
+   *   - Si quoi que ce soit échoue → rollback complet → aucune transaction fantôme.
+   *   - Email de confirmation non-bloquant (.catch) → la réponse HTTP part immédiatement.
+   */
+  async declareBankTransfer(
+    adminId: string,
+    amount: number,
+    proofReference: string,
+    currency: string = 'XOF',
+  ) {
     const currencyCode = currency.toUpperCase() as CurrencyCode;
+
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
-    // ✅ FIX v4.8: wallet société (clientId) — le solde est sur la société, pas sur le user
+    // Récupère ou crée le wallet société pour cette devise (hors transaction)
     const walletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
       currency: currencyCode,
     });
-    const wallet = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
-    if (!wallet) throw new NotFoundException('Wallet société introuvable');
 
-    const available = Number(wallet.balance) - Number(wallet.reservedBalance);
-    if (available < amount) {
-      throw new ForbiddenException(`Solde ${currencyCode} insuffisant pour effectuer ce virement.`);
-    }
-
+    // ✅ FIX v4.9 : tout dans un seul bloc atomique avec advisory lock
     const tx = await this.prisma.$transaction(async (prismaTx) => {
-      return prismaTx.transaction.create({
+      // 1. Lock advisory sur le wallet pour éviter les race conditions
+      const lockKey = this.walletLockKey(walletRef.id);
+      await prismaTx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
+
+      // 2. Relit le wallet DANS la transaction pour avoir le solde à jour
+      const wallet = await prismaTx.wallet.findUnique({ where: { id: walletRef.id } });
+      if (!wallet) throw new NotFoundException('Wallet société introuvable');
+
+      const available = Number(wallet.balance) - Number(wallet.reservedBalance);
+      if (available < amount) {
+        throw new ForbiddenException(
+          `Solde ${currencyCode} insuffisant. Disponible : ${available.toLocaleString('fr-FR')} ${currencyCode}`,
+        );
+      }
+
+      // 3. Crée la Transaction
+      const reference = `BILL-${Date.now()}`;
+      const newTx = await prismaTx.transaction.create({
         data: {
-          reference: `BILL-${Date.now()}`,
+          reference,
           type: TransactionType.SERVICE_PAYMENT,
           amount: new Prisma.Decimal(amount),
           fees: new Prisma.Decimal(0),
@@ -160,17 +208,39 @@ export class TransactionsService {
           providerRef: proofReference,
         },
       });
+
+      // 4. Débite le wallet dans la même transaction Prisma
+      const updatedWallet = await prismaTx.wallet.update({
+        where: { id: walletRef.id },
+        data: { balance: { decrement: new Prisma.Decimal(amount) } },
+      });
+
+      // 5. Écrit l'entrée ledger
+      await prismaTx.ledgerEntry.create({
+        data: {
+          walletId: walletRef.id,
+          type: 'DEBIT',
+          amount: new Prisma.Decimal(amount),
+          currency: currencyCode,
+          description: `Virement B2B ${proofReference}`,
+          transactionId: newTx.id,
+          balanceAfter: updatedWallet.balance,
+        },
+      });
+
+      return newTx;
     });
 
-    await this.walletsService.debit(wallet.id, amount, `Virement B2B ${proofReference}`, tx.id);
-
+    // ✅ Email non-bloquant — ne retarde pas la réponse HTTP
     if (admin.email) {
-      await this.companyMail.sendB2BRequestSent({
+      this.companyMail.sendB2BRequestSent({
         email: admin.email,
         companyName: `${admin.firstName} ${admin.lastName}`,
         amount,
         currency: currencyCode,
         ref: proofReference,
+      }).catch((err) => {
+        this.logger.warn(`Email B2B non envoyé : ${err?.message}`);
       });
     }
 

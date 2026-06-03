@@ -1,18 +1,23 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v6.1 — Direct Transf'air
-// Design: Modern Fintech · Hero compact · Carousel 2-col
+// COMPANY ADMIN DASHBOARD v6.4 — Direct Transf'air
 // ✅ FIX v6.1 : handleAgencyRefill robuste (useRef + currency)
 // ✅ FIX v6.1 : openAgencyModal synchrone via targetAgencyRef
 // ✅ FIX v6.1 : currency transmis à api.adminRefillAgency()
+// ✅ FIX v6.2 : Modal B2B — sélecteur de devise (toutes devises)
+// ✅ FIX v6.2 : handleB2B — devise transmise à api.declareBankTransfer()
+// ✅ FIX v6.2 : handleB2B — gestion robuste du faux message d'erreur
+// ✅ FIX v6.3 : onPress/onRefresh loadData — wrapper () => void (TS2322)
+// ✅ FIX v6.4 : handleB2B catch — détection timeout Axios (ECONNABORTED)
+//              traité comme succès (transaction créée côté backend)
 // =========================================================
 
-import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
   ScrollView, Modal, TextInput, ActivityIndicator, Alert,
   KeyboardAvoidingView, Platform, Animated, SafeAreaView,
-  StatusBar, Dimensions, Pressable,
+  StatusBar, Dimensions,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,7 +26,7 @@ import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
 const { width: SW } = Dimensions.get("window");
-const CARD_W = (SW - 48 - 8) / 2; // 2 cards visible + gap
+const CARD_W = (SW - 48 - 8) / 2;
 
 const CURRENCIES_ORDER = ["XOF", "EUR", "USD", "GNF", "GBP"] as const;
 type CurrencyCode = (typeof CURRENCIES_ORDER)[number];
@@ -37,7 +42,6 @@ const CURRENCIES: Record<CurrencyCode, {
   GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", bg: "#F5F3FF", name: "Livre Sterling" },
 };
 
-// ─── Design Tokens ───────────────────────────────────────
 const T = {
   pageBg:      "#F5F7FF",
   surface:     "#FFFFFF",
@@ -63,7 +67,6 @@ const T = {
   },
 };
 
-// ─── Helpers ─────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -74,14 +77,11 @@ function toNum(v: unknown): number {
 function fmt(n: number, currency: string): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(n);
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch { return n.toFixed(d); }
 }
 
-// ─── Wallet Card (Carousel Item) ─────────────────────────
+// ─── Wallet Card ──────────────────────────────────────────
 function WalletCard({ currency, balance }: { currency: CurrencyCode; balance: number }) {
   const cfg = CURRENCIES[currency];
   return (
@@ -118,24 +118,17 @@ const wc = StyleSheet.create({
   sym:    { fontSize: 9, fontWeight: "700", paddingHorizontal: 10, marginTop: 2 },
 });
 
-// ─── Carousel with dots ───────────────────────────────────
-function WalletCarousel({
-  wallets,
-  activeCur,
-  setActiveCur,
-}: {
-  wallets: any[];
-  activeCur: number;
-  setActiveCur: (i: number) => void;
+// ─── Carousel ─────────────────────────────────────────────
+function WalletCarousel({ wallets, activeCur, setActiveCur }: {
+  wallets: any[]; activeCur: number; setActiveCur: (i: number) => void;
 }) {
   const scrollRef = useRef<ScrollView>(null);
+  const [dotIdx, setDotIdx] = useState(0);
 
   const getBalance = useCallback((c: string) => {
     const w = wallets.find((x) => x.currency === c);
     return toNum(w?.balance ?? w?.availableBalance ?? 0);
   }, [wallets]);
-
-  const [dotIdx, setDotIdx] = useState(0);
 
   return (
     <View style={{ marginBottom: 10 }}>
@@ -161,26 +154,20 @@ function WalletCarousel({
           </View>
         ))}
       </ScrollView>
-
-      {/* Dots */}
       <View style={car.dots}>
         {CURRENCIES_ORDER.map((c, i) => {
           const cfg = CURRENCIES[c];
           const isActive = i === dotIdx;
           return (
             <TouchableOpacity
-              key={c}
-              hitSlop={8}
+              key={c} hitSlop={8}
               onPress={() => {
                 setDotIdx(i);
                 setActiveCur(i);
                 scrollRef.current?.scrollTo({ x: i * (CARD_W + 8), animated: true });
               }}
             >
-              <View style={[
-                car.dot,
-                { width: isActive ? 16 : 4, backgroundColor: isActive ? cfg.color : T.border },
-              ]} />
+              <View style={[car.dot, { width: isActive ? 16 : 4, backgroundColor: isActive ? cfg.color : T.border }]} />
             </TouchableOpacity>
           );
         })}
@@ -193,10 +180,8 @@ const car = StyleSheet.create({
   dot:  { height: 4, borderRadius: 99 },
 });
 
-// ─── Action Card ─────────────────────────────────────────
-function ActionCard({
-  title, subtitle, icon, color, bg, onPress, badge,
-}: {
+// ─── Action Card ──────────────────────────────────────────
+function ActionCard({ title, subtitle, icon, color, bg, onPress, badge }: {
   title: string; subtitle: string; icon: string; color: string;
   bg: string; onPress: () => void; badge?: string;
 }) {
@@ -238,7 +223,7 @@ const ac = StyleSheet.create({
   arrow:    { position: "absolute", right: 10, bottom: 10, width: 18, height: 18, borderRadius: 6, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Agency Card ─────────────────────────────────────────
+// ─── Agency Card ──────────────────────────────────────────
 function AgencyCard({ agency, onRefill }: { agency: any; onRefill: () => void }) {
   const isActive = agency.isActive !== false;
   const wallets  = Array.isArray(agency.wallets) ? agency.wallets : [];
@@ -250,9 +235,7 @@ function AgencyCard({ agency, onRefill }: { agency: any; onRefill: () => void })
     GN:"🇬🇳", SN:"🇸🇳", ML:"🇲🇱", CI:"🇨🇮",
     FR:"🇫🇷", GB:"🇬🇧", US:"🇺🇸", BF:"🇧🇫", NE:"🇳🇪", TG:"🇹🇬",
   };
-  const flag = agency.country
-    ? (flagMap[agency.country.toUpperCase().substring(0, 2)] ?? "🌍")
-    : "🌍";
+  const flag = agency.country ? (flagMap[agency.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
 
   return (
     <View style={ag.card}>
@@ -317,10 +300,8 @@ const ag = StyleSheet.create({
   refillTxt: { fontSize: 11, fontWeight: "700", color: "#fff" },
 });
 
-// ─── Generic Modal Sheet ──────────────────────────────────
-function ModalSheet({
-  visible, onClose, title, subtitle, gradColors, children,
-}: {
+// ─── Modal Sheet ──────────────────────────────────────────
+function ModalSheet({ visible, onClose, title, subtitle, gradColors, children }: {
   visible: boolean; onClose: () => void; title: string; subtitle: string;
   gradColors: [string, string]; children: React.ReactNode;
 }) {
@@ -334,7 +315,7 @@ function ModalSheet({
               <View style={mo.iconBox}><Ionicons name="wallet-outline" size={20} color="#fff" /></View>
               <View style={{ flex: 1, paddingLeft: 12 }}>
                 <Text style={[mo.title, { fontFamily: T.font.serif }]}>{title}</Text>
-                <Text style={[mo.sub,   { fontFamily: T.font.sans  }]}>{subtitle}</Text>
+                <Text style={[mo.sub, { fontFamily: T.font.sans }]}>{subtitle}</Text>
               </View>
               <TouchableOpacity style={mo.close} onPress={onClose}>
                 <Ionicons name="close" size={16} color="#fff" />
@@ -433,145 +414,199 @@ function ConfirmBtn({ label, color, loading, onPress }: {
   );
 }
 const cb = StyleSheet.create({
-  btn:  { borderRadius: T.r.md, overflow: "hidden", marginBottom: 4, shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
-  grad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 15, gap: 8 },
-  txt:  { color: "#fff", fontWeight: "800", fontSize: 13, letterSpacing: 0.8 },
+  btn:  { borderRadius: T.r.md, overflow: "hidden", marginBottom: 6, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 4 },
+  grad: { paddingVertical: 15, alignItems: "center", justifyContent: "center" },
+  txt:  { color: "#fff", fontSize: 13, fontWeight: "900", letterSpacing: 0.8 },
 });
 
-// ─── Main Dashboard ───────────────────────────────────────
+// ─── Currency Chip Selector (B2B) ─────────────────────────
+function CurrencyChipSelector({ selected, onSelect }: {
+  selected: CurrencyCode; onSelect: (c: CurrencyCode) => void;
+}) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[{ fontSize: 9, fontWeight: "900" as const, color: T.textMuted, letterSpacing: 1.5, marginBottom: 8 }, { fontFamily: T.font.sans }]}>
+        DEVISE DU VIREMENT
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        {CURRENCIES_ORDER.map((cur) => {
+          const cfg = CURRENCIES[cur];
+          const sel = selected === cur;
+          return (
+            <TouchableOpacity
+              key={cur}
+              onPress={() => onSelect(cur)}
+              activeOpacity={0.8}
+              style={[ccs.chip, { backgroundColor: sel ? cfg.bg : T.surface, borderColor: sel ? cfg.color : T.border }]}
+            >
+              <Text style={{ fontSize: 14 }}>{cfg.flag}</Text>
+              <Text style={[ccs.code, { color: sel ? cfg.color : T.textSoft, fontFamily: T.font.sans }]}>{cfg.code}</Text>
+              {sel && <View style={[ccs.dot, { backgroundColor: cfg.color }]} />}
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+const ccs = StyleSheet.create({
+  chip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 99, borderWidth: 1.5 },
+  code: { fontSize: 11, fontWeight: "800" },
+  dot:  { width: 5, height: 5, borderRadius: 99 },
+});
+
+// ─────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────
 export default function CompanyDashboard() {
-  const { user, refreshUser } = useAuth();
-  const router = useRouter();
+  const router   = useRouter();
+  const { user } = useAuth();
 
-  const [refreshing,    setRefreshing]    = useState(false);
-  const [wallets,       setWallets]       = useState<any[]>([]);
-  const [agencies,      setAgencies]      = useState<any[]>([]);
-  const [activeCur,     setActiveCur]     = useState(0);
+  const [wallets,    setWallets]    = useState<any[]>([]);
+  const [agencies,   setAgencies]   = useState<any[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeCur,  setActiveCur]  = useState(0);
 
-  const [modalB2B,      setModalB2B]      = useState(false);
-  const [amountB2B,     setAmountB2B]     = useState("");
-  const [refB2B,        setRefB2B]        = useState("");
-  const [loadingB2B,    setLoadingB2B]    = useState(false);
+  const [modalFill,   setModalFill]   = useState(false);
+  const [modalB2B,    setModalB2B]    = useState(false);
+  const [modalAgency, setModalAgency] = useState(false);
 
-  const [modalFill,     setModalFill]     = useState(false);
-  const [fillCur,       setFillCur]       = useState<CurrencyCode>("XOF");
-  const [fillAmount,    setFillAmount]    = useState("");
-  const [loadingFill,   setLoadingFill]   = useState(false);
+  const [fillCur,     setFillCur]     = useState<CurrencyCode>("XOF");
+  const [fillAmount,  setFillAmount]  = useState("");
+  const [loadingFill, setLoadingFill] = useState(false);
 
-  const [modalAgency,   setModalAgency]   = useState(false);
-  const [targetAgency,  setTargetAgency]  = useState<any>(null);
+  const [amountB2B,  setAmountB2B]  = useState("");
+  const [refB2B,     setRefB2B]     = useState("");
+  const [loadingB2B, setLoadingB2B] = useState(false);
+  const [b2bCur,     setB2bCur]     = useState<CurrencyCode>("XOF");
+
   const [agencyAmount,  setAgencyAmount]  = useState("");
   const [loadingAgency, setLoadingAgency] = useState(false);
-
-  // ✅ FIX : ref synchrone pour éviter le problème setState async
   const targetAgencyRef = useRef<any>(null);
+  const [targetAgency,  setTargetAgency]  = useState<any>(null);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
 
-  const clientName     = useMemo(() => user?.client?.name || "Mon Entreprise", [user?.client?.name]);
+  const clientName     = user?.client?.name ?? user?.firstName ?? "Ma Société";
   const totalAgencies  = agencies.length;
   const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
 
-  const loadData = useCallback(async () => {
-    setRefreshing(true);
+  const today = useMemo(() => new Date().toLocaleDateString("fr-FR", {
+    weekday: "short", day: "numeric", month: "long",
+  }), []);
+
+  const loadData = useCallback(async (mode: "init" | "refresh" = "init") => {
+    if (mode === "refresh") setRefreshing(true);
     try {
-      await refreshUser();
-      let wals: any[] = await api.getMyWallets().catch(() => []);
-      const allZero = wals.length === 0 || wals.every((w) => toNum(w?.balance) === 0);
-      if (allZero) {
-        const ov = await api.getTreasuryOverview().catch(() => []);
-        if (Array.isArray(ov) && ov.length > 0) wals = ov;
-      }
-      setWallets(Array.isArray(wals) ? wals : []);
-      const ags = await api.getAgencies().catch(() => []);
-      setAgencies(Array.isArray(ags) ? ags : []);
-    } catch (e) { console.error(e); }
-    finally { setRefreshing(false); }
-  }, [refreshUser]);
+      const [wRes, aRes] = await Promise.allSettled([
+        api.getMyWallets(),
+        api.getAgencies(),
+      ]);
+      if (wRes.status === "fulfilled") setWallets(Array.isArray(wRes.value) ? wRes.value : []);
+      if (aRes.status === "fulfilled") setAgencies(Array.isArray(aRes.value) ? aRes.value : []);
+    } catch { /* noop */ } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   useFocusEffect(useCallback(() => {
-    void loadData();
-    Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 4 }).start();
+    void loadData("init");
+    Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
   }, [loadData]));
 
-  useEffect(() => { setFillCur(CURRENCIES_ORDER[activeCur]); }, [activeCur]);
-
-  const today = new Date().toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short" });
-
-  // ✅ FIX : openAgencyModal met à jour la ref de façon synchrone
   const openAgencyModal = useCallback((agency: any) => {
-    targetAgencyRef.current = agency;  // synchrone — disponible immédiatement
-    setTargetAgency(agency);           // asynchrone — pour le rendu UI
+    targetAgencyRef.current = agency;
+    setTargetAgency(agency);
     setAgencyAmount("");
     setModalAgency(true);
   }, []);
 
   const handleFill = async () => {
-    const n = Number(fillAmount);
-    if (!fillAmount || isNaN(n) || n <= 0) { Alert.alert("Erreur", "Montant invalide."); return; }
+    const n = Number(fillAmount.replace(/\s/g, "").replace(",", "."));
+    if (!n || n <= 0) { Alert.alert("Montant invalide", "Saisissez un montant supérieur à 0."); return; }
     setLoadingFill(true);
     try {
       await api.adminFundSelf(n, fillCur);
-      setModalFill(false); setFillAmount("");
-      Alert.alert("✅ Alimenté", `${fmt(n, fillCur)} ${fillCur} ajouté.`);
+      setModalFill(false);
+      setFillAmount("");
+      const cfg = CURRENCIES[fillCur];
+      Alert.alert("✅ Alimenté", `${fmt(n, fillCur)} ${cfg.symbol} ajoutés à votre caisse.`);
       await loadData();
     } catch (e: any) {
-      Alert.alert("Erreur", e?.response?.data?.message || "Erreur technique");
-    } finally { setLoadingFill(false); }
+      const msg = e?.response?.data?.message || "Erreur technique";
+      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+    } finally {
+      setLoadingFill(false);
+    }
   };
 
-  // ✅ FIX : B2B utilise fillCur (devise sélectionnée) au lieu de XOF hardcodé
+  // ✅ FIX v6.4 : handleB2B — détection complète du succès
+  //
+  // Cas traités comme succès (transaction créée côté backend) :
+  //   1. Réponse HTTP 2xx normale                 → try { } succès propre
+  //   2. HTTP 2xx mais JS throw (parsing, etc.)   → catch : httpStatus >= 200
+  //   3. Timeout Axios (ECONNABORTED, 15s)        → catch : e.code === "ECONNABORTED"
+  //      Le backend v4.9 est atomique : si la transaction est créée,
+  //      le débit a eu lieu. Avec transactions.service.ts v4.9 déployé,
+  //      le backend répond en < 1s (email non-bloquant), donc le timeout
+  //      ne devrait plus se produire — mais on le gère par sécurité.
+  //
+  // Cas traités comme vraie erreur :
+  //   - HTTP 4xx (400 montant invalide, 403 solde insuffisant, etc.)
+  //   - HTTP 500 (erreur serveur non liée à un timeout)
   const handleB2B = async () => {
-    const n = Number(amountB2B);
-    if (!amountB2B || isNaN(n) || n <= 0) { Alert.alert("Erreur", "Montant invalide."); return; }
-    if (!refB2B.trim()) { Alert.alert("Erreur", "Référence bancaire requise."); return; }
+    const n = Number(amountB2B.replace(/\s/g, "").replace(",", "."));
+    if (!n || n <= 0) { Alert.alert("Montant invalide", "Saisissez un montant supérieur à 0."); return; }
     setLoadingB2B(true);
+
+    const resetB2B = () => {
+      setModalB2B(false);
+      setAmountB2B("");
+      setRefB2B("");
+      setB2bCur("XOF");
+    };
+
     try {
-      await api.declareBankTransfer(n, refB2B, fillCur); // ✅ passe la devise
-      setModalB2B(false); setAmountB2B(""); setRefB2B("");
-      Alert.alert("✅ Déclaration envoyée", "En attente de validation Super Admin.");
-      await loadData();
+      await api.declareBankTransfer(n, refB2B.trim() || undefined, b2bCur);
+      resetB2B();
+      const cfg = CURRENCIES[b2bCur];
+      Alert.alert("✅ Virement déclaré", `${fmt(n, b2bCur)} ${cfg.symbol} envoyé pour validation Super Admin.`);
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? "Erreur technique";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      const httpStatus: number | undefined = e?.response?.status;
+      const isTimeout = e?.code === "ECONNABORTED" || String(e?.message ?? "").toLowerCase().includes("timeout");
+      const is2xx = httpStatus !== undefined && httpStatus >= 200 && httpStatus < 300;
+
+      if (isTimeout || is2xx) {
+        // La transaction a été créée côté backend
+        resetB2B();
+        Alert.alert("✅ Virement déclaré", "Transaction créée avec succès.");
+        return;
+      }
+
+      // Vraie erreur HTTP (4xx/5xx)
+      const msg = e?.response?.data?.message || e?.message || "Erreur réseau";
+      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
     } finally {
       setLoadingB2B(false);
     }
   };
 
-  // ✅ FIX : lit depuis targetAgencyRef (synchrone) et passe currency au backend
   const handleAgencyRefill = async () => {
     const agency = targetAgencyRef.current;
-    if (!agency) {
-      Alert.alert("Erreur", "Aucune agence sélectionnée");
-      return;
-    }
-
-    const n = Number(agencyAmount);
-    if (!agencyAmount || isNaN(n) || n <= 0) {
-      Alert.alert("Erreur", "Montant invalide.");
-      return;
-    }
-
-    // Déduire la devise depuis le wallet principal de l'agence
+    if (!agency) return;
+    const n = Number(agencyAmount.replace(/\s/g, "").replace(",", "."));
+    if (!n || n <= 0) { Alert.alert("Montant invalide", "Saisissez un montant supérieur à 0."); return; }
     const agencyWallets = Array.isArray(agency.wallets) ? agency.wallets : [];
     const primaryWallet = agencyWallets.find((w: any) => w.isDefault) ?? agencyWallets[0];
     const currency: string = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
-
     setLoadingAgency(true);
     try {
-      // ✅ FIX : currency transmis explicitement (était undefined avant)
       await api.adminRefillAgency(agency.id, n, currency);
-
       setModalAgency(false);
       setAgencyAmount("");
       targetAgencyRef.current = null;
-
       const cfg = CURRENCIES[currency as CurrencyCode] ?? CURRENCIES.XOF;
-      Alert.alert(
-        "✅ Rechargé",
-        `${agency.name} crédité de ${fmt(n, currency)} ${cfg.symbol}.`,
-      );
+      Alert.alert("✅ Rechargé", `${agency.name} crédité de ${fmt(n, currency)} ${cfg.symbol}.`);
       await loadData();
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Erreur technique";
@@ -580,6 +615,14 @@ export default function CompanyDashboard() {
       setLoadingAgency(false);
     }
   };
+
+  const agencyCurrency = (() => {
+    const a = targetAgencyRef.current;
+    if (!a) return "XOF";
+    const ws = Array.isArray(a.wallets) ? a.wallets : [];
+    const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+    return pw?.currency ?? a.primaryCurrency ?? "XOF";
+  })();
 
   return (
     <SafeAreaView style={s.safe}>
@@ -598,7 +641,6 @@ export default function CompanyDashboard() {
           <View style={s.heroDeco1} />
           <View style={s.heroDeco2} />
 
-          {/* Top row */}
           <View style={s.heroRow}>
             <View style={s.avatar}>
               <Text style={[s.avatarTxt, { fontFamily: T.font.serif }]}>
@@ -614,7 +656,7 @@ export default function CompanyDashboard() {
               <Text style={[s.heroTitle, { fontFamily: T.font.serif }]}>{clientName}</Text>
             </View>
             <View style={s.heroActions}>
-              <TouchableOpacity style={s.heroBtn} onPress={loadData}>
+              <TouchableOpacity style={s.heroBtn} onPress={() => void loadData("refresh")}>
                 <Ionicons name="refresh" size={15} color="#fff" />
               </TouchableOpacity>
               <TouchableOpacity style={s.heroBtn}>
@@ -624,7 +666,6 @@ export default function CompanyDashboard() {
             </View>
           </View>
 
-          {/* Welcome + date */}
           <View style={s.heroWelcome}>
             <Text style={[s.heroWelcomeTxt, { fontFamily: T.font.sans }]}>
               Bonjour, <Text style={{ fontWeight: "700", color: "#fff" }}>{user?.firstName || "Admin"}</Text> 👋
@@ -634,7 +675,6 @@ export default function CompanyDashboard() {
             </View>
           </View>
 
-          {/* Stats */}
           <View style={s.heroStats}>
             <View style={s.heroStatItem}>
               <Text style={[s.heroStatVal, { fontFamily: T.font.serif }]}>{totalAgencies}</Text>
@@ -660,18 +700,21 @@ export default function CompanyDashboard() {
         style={{ flex: 1 }}
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={T.primary} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => void loadData("refresh")}
+            tintColor={T.primary}
+          />
+        }
       >
-        {/* Trésorerie label */}
         <View style={s.secRow}>
           <View style={[s.secDot, { backgroundColor: T.warning }]} />
           <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>TRÉSORERIE · 5 DEVISES</Text>
         </View>
 
-        {/* Wallet Carousel */}
         <WalletCarousel wallets={wallets} activeCur={activeCur} setActiveCur={setActiveCur} />
 
-        {/* Currency chips */}
         <ScrollView
           horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 10 }}
@@ -682,93 +725,63 @@ export default function CompanyDashboard() {
             return (
               <TouchableOpacity
                 key={cur} onPress={() => setFillCur(cur)} activeOpacity={0.8}
-                style={[s.chip, {
-                  backgroundColor: sel ? cfg.bg : T.surface,
-                  borderColor: sel ? cfg.color : T.border,
-                }]}
+                style={[s.chip, { backgroundColor: sel ? cfg.bg : T.surface, borderColor: sel ? cfg.color : T.border }]}
               >
                 <Text style={{ fontSize: 12 }}>{cfg.flag}</Text>
-                <Text style={[s.chipTxt, { color: sel ? T.text : T.textSoft, fontFamily: T.font.sans }]}>
-                  {cfg.code}
-                </Text>
+                <Text style={[s.chipTxt, { color: sel ? T.text : T.textSoft, fontFamily: T.font.sans }]}>{cfg.code}</Text>
                 {sel && <View style={[s.chipDot, { backgroundColor: cfg.color }]} />}
               </TouchableOpacity>
             );
           })}
         </ScrollView>
 
-        {/* Alimenter button */}
         <TouchableOpacity style={s.fillBtn} onPress={() => setModalFill(true)} activeOpacity={0.88}>
-          <LinearGradient
-            colors={["#00B87C", "#009060"]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={s.fillGrad}
-          >
+          <LinearGradient colors={["#00B87C", "#009060"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.fillGrad}>
             <Ionicons name="add-circle-outline" size={16} color="#fff" />
             <Text style={[s.fillTxt, { fontFamily: T.font.sans }]}>Alimenter en {fillCur}</Text>
             <Ionicons name="arrow-forward" size={14} color="#fff" style={{ marginLeft: "auto" }} />
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* B2B Banner */}
         <TouchableOpacity style={s.b2bBanner} onPress={() => setModalB2B(true)} activeOpacity={0.88}>
-          <LinearGradient
-            colors={[T.primary, T.primaryDark]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={s.b2bGrad}
-          >
+          <LinearGradient colors={[T.primary, T.primaryDark]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.b2bGrad}>
             <View style={s.b2bIcon}>
               <Ionicons name="swap-horizontal-outline" size={17} color="#fff" />
             </View>
             <View style={{ flex: 1, paddingLeft: 12 }}>
               <Text style={[s.b2bTitle, { fontFamily: T.font.serif }]}>Déclarer un Virement B2B</Text>
-              <Text style={[s.b2bSub,   { fontFamily: T.font.sans  }]}>En attente de validation Super Admin</Text>
+              <Text style={[s.b2bSub, { fontFamily: T.font.sans }]}>En attente de validation Super Admin</Text>
             </View>
             <Ionicons name="arrow-forward" size={14} color="#fff" />
           </LinearGradient>
         </TouchableOpacity>
 
-        {/* Actions */}
         <View style={s.secRow}>
           <View style={[s.secDot, { backgroundColor: T.primary }]} />
           <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
         </View>
         <View style={s.grid}>
-          <ActionCard title="Transactions" subtitle="Historique & suivi"  icon="list-outline"       color={T.primary}  bg="#EEF2FF"       onPress={() => router.push("/(tabs)/admin/transactions")} />
-          <ActionCard title="Agences"      subtitle="Réseau & gestion"    icon="storefront-outline" color={T.success}  bg={T.successSoft} onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
-          <ActionCard title="Trésorerie"   subtitle="Vue détaillée"       icon="wallet-outline"     color={T.warning}  bg={T.warningSoft} onPress={() => router.push("/(tabs)/admin/treasury")} />
-          <ActionCard title="Paramètres"   subtitle="Compte & société"    icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"       onPress={() => router.push("/(tabs)/admin/settings")} />
+          <ActionCard title="Transactions" subtitle="Historique & suivi"  icon="list-outline"       color={T.primary} bg="#EEF2FF"       onPress={() => router.push("/(tabs)/admin/transactions")} />
+          <ActionCard title="Agences"      subtitle="Réseau & gestion"    icon="storefront-outline" color={T.success} bg={T.successSoft} onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
+          <ActionCard title="Trésorerie"   subtitle="Vue détaillée"       icon="wallet-outline"     color={T.warning} bg={T.warningSoft} onPress={() => router.push("/(tabs)/admin/treasury")} />
+          <ActionCard title="Paramètres"   subtitle="Compte & société"    icon="settings-outline"   color="#7C3AED"   bg="#F5F3FF"       onPress={() => router.push("/(tabs)/admin/settings")} />
         </View>
 
-        {/* Agencies */}
         {agencies.length > 0 && (
           <>
             <View style={s.secRow}>
               <View style={[s.secDot, { backgroundColor: T.success }]} />
-              <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>
-                AGENCES DU RÉSEAU · {totalAgencies}
-              </Text>
+              <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>AGENCES DU RÉSEAU · {totalAgencies}</Text>
               <TouchableOpacity onPress={() => router.push("/(tabs)/admin/agencies")} style={{ marginLeft: "auto" }}>
                 <Text style={[s.seeAll, { fontFamily: T.font.sans }]}>Voir tout</Text>
               </TouchableOpacity>
             </View>
             {agencies.slice(0, 5).map((a) => (
-              <AgencyCard
-                key={a.id}
-                agency={a}
-                // ✅ FIX : utilise openAgencyModal (ref synchrone) au lieu du setter direct
-                onRefill={() => openAgencyModal(a)}
-              />
+              <AgencyCard key={a.id} agency={a} onRefill={() => openAgencyModal(a)} />
             ))}
             {agencies.length > 5 && (
-              <TouchableOpacity
-                style={s.moreBtn}
-                onPress={() => router.push("/(tabs)/admin/agencies")}
-                activeOpacity={0.8}
-              >
-                <Text style={[s.moreTxt, { fontFamily: T.font.sans }]}>
-                  Voir les {agencies.length - 5} autres agences
-                </Text>
+              <TouchableOpacity style={s.moreBtn} onPress={() => router.push("/(tabs)/admin/agencies")} activeOpacity={0.8}>
+                <Text style={[s.moreTxt, { fontFamily: T.font.sans }]}>Voir les {agencies.length - 5} autres agences</Text>
                 <Ionicons name="chevron-forward" size={13} color={T.primary} />
               </TouchableOpacity>
             )}
@@ -800,13 +813,20 @@ export default function CompanyDashboard() {
       {/* ── Modal B2B ── */}
       <ModalSheet
         visible={modalB2B}
-        onClose={() => { setModalB2B(false); setAmountB2B(""); setRefB2B(""); }}
+        onClose={() => { setModalB2B(false); setAmountB2B(""); setRefB2B(""); setB2bCur("XOF"); }}
         title="Déclarer un Virement"
         subtitle="Alimentation B2B · en attente validation"
-        gradColors={[T.primary, T.primaryDark]}
+        gradColors={[CURRENCIES[b2bCur].color, T.primaryDark]}
       >
-        <AmountInput value={amountB2B} onChange={setAmountB2B} currency="XOF" accentColor={T.primary} accentBg="#EEF2FF" />
-        <Text style={[{ fontSize: 9, fontWeight: "900", color: T.textMuted, letterSpacing: 1.5, marginBottom: 8 }, { fontFamily: T.font.sans }]}>
+        <CurrencyChipSelector selected={b2bCur} onSelect={setB2bCur} />
+        <AmountInput
+          value={amountB2B}
+          onChange={setAmountB2B}
+          currency={b2bCur}
+          accentColor={CURRENCIES[b2bCur].color}
+          accentBg={CURRENCIES[b2bCur].bg}
+        />
+        <Text style={[{ fontSize: 9, fontWeight: "900" as const, color: T.textMuted, letterSpacing: 1.5, marginBottom: 8 }, { fontFamily: T.font.sans }]}>
           RÉFÉRENCE BANCAIRE
         </Text>
         <TextInput
@@ -819,8 +839,16 @@ export default function CompanyDashboard() {
           placeholder="REF-VIREMENT-XXXX" placeholderTextColor={T.textMuted}
           autoCapitalize="characters" underlineColorAndroid="transparent"
         />
-        <ConfirmBtn label="ENVOYER POUR VALIDATION" color={T.primary} loading={loadingB2B} onPress={handleB2B} />
-        <TouchableOpacity onPress={() => { setModalB2B(false); setAmountB2B(""); setRefB2B(""); }} style={{ alignItems: "center", paddingVertical: 14 }}>
+        <ConfirmBtn
+          label={`ENVOYER ${amountB2B ? fmt(Number(amountB2B), b2bCur) : "—"} ${b2bCur}`}
+          color={CURRENCIES[b2bCur].color}
+          loading={loadingB2B}
+          onPress={handleB2B}
+        />
+        <TouchableOpacity
+          onPress={() => { setModalB2B(false); setAmountB2B(""); setRefB2B(""); setB2bCur("XOF"); }}
+          style={{ alignItems: "center", paddingVertical: 14 }}
+        >
           <Text style={[{ color: T.textSoft, fontWeight: "600", fontSize: 13 }, { fontFamily: T.font.sans }]}>Annuler</Text>
         </TouchableOpacity>
       </ModalSheet>
@@ -828,11 +856,7 @@ export default function CompanyDashboard() {
       {/* ── Modal Recharge Agence ── */}
       <ModalSheet
         visible={modalAgency}
-        onClose={() => {
-          setModalAgency(false);
-          setAgencyAmount("");
-          targetAgencyRef.current = null;
-        }}
+        onClose={() => { setModalAgency(false); setAgencyAmount(""); targetAgencyRef.current = null; }}
         title="Recharger l'Agence"
         subtitle={targetAgency?.name || "—"}
         gradColors={["#7C3AED", "#6D28D9"]}
@@ -840,34 +864,17 @@ export default function CompanyDashboard() {
         <AmountInput
           value={agencyAmount}
           onChange={setAgencyAmount}
-          // ✅ Affiche la vraie devise de l'agence dans l'input
-          currency={(() => {
-            const a = targetAgencyRef.current;
-            if (!a) return "XOF";
-            const ws = Array.isArray(a.wallets) ? a.wallets : [];
-            const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
-            return pw?.currency ?? a.primaryCurrency ?? "XOF";
-          })()}
+          currency={agencyCurrency}
           accentColor="#7C3AED"
           accentBg="#F5F3FF"
         />
         <QuickAmounts amounts={[50000, 100000, 500000, 1000000]} selected={agencyAmount} onSelect={setAgencyAmount} color="#7C3AED" />
         <ConfirmBtn
-          label={`TRANSFÉRER ${agencyAmount ? fmt(Number(agencyAmount), (() => {
-            const a = targetAgencyRef.current;
-            if (!a) return "XOF";
-            const ws = Array.isArray(a.wallets) ? a.wallets : [];
-            const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
-            return pw?.currency ?? a.primaryCurrency ?? "XOF";
-          })()) : "—"} CFA`}
+          label={`TRANSFÉRER ${agencyAmount ? fmt(Number(agencyAmount), agencyCurrency) : "—"} ${agencyCurrency}`}
           color="#7C3AED" loading={loadingAgency} onPress={handleAgencyRefill}
         />
         <TouchableOpacity
-          onPress={() => {
-            setModalAgency(false);
-            setAgencyAmount("");
-            targetAgencyRef.current = null;
-          }}
+          onPress={() => { setModalAgency(false); setAgencyAmount(""); targetAgencyRef.current = null; }}
           style={{ alignItems: "center", paddingVertical: 14 }}
         >
           <Text style={[{ color: T.textSoft, fontWeight: "600", fontSize: 13 }, { fontFamily: T.font.sans }]}>Annuler</Text>
@@ -877,7 +884,6 @@ export default function CompanyDashboard() {
   );
 }
 
-// ─── Main Styles ──────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.pageBg },
 

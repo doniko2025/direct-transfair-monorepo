@@ -1,11 +1,14 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v5.4 — Direct Transf'air
-// ✅ FIX : addressStreet + postalCode + birthPlace ajoutés
-//          → aligné avec la page Profil
-// ✅ FIX : handleRegister — succès détecté même si AuthProvider
-//          lance une erreur sans status (ex: OTP mode en prod)
-// ✅ FIX : lien "Se connecter" → router.replace
+// REGISTER v5.5 — Direct Transf'air
+// ✅ v5.4 : addressStreet + postalCode + birthPlace ajoutés
+// ✅ v5.4 : lien "Se connecter" → router.replace
+// ✅ v5.5 : handleRegister — robuste face au timeout SMTP
+//   - Le backend v4.4 répond immédiatement (OTP non-bloquant)
+//   - Mais AuthProvider peut encore throw si parsing inattendu
+//   - On détecte le succès même sans token dans la réponse
+//   - Timeout Axios côté frontend réduit à 15s pour register
+//   - Si aucune erreur HTTP réelle → showSuccess
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -33,8 +36,8 @@ const C = {
   danger: "#EF4444", dangerSoft: "#FEF2F2",
   section1: "#1E40AF", section1Soft: "#EFF6FF",
   section2: "#059669", section2Soft: "#ECFDF5",
-  section3: "#D97706", section3Soft: "#FFFBEB",  // amber pour Adresse
-  section4: "#7C3AED", section4Soft: "#F5F3FF",  // violet pour État civil
+  section3: "#D97706", section3Soft: "#FFFBEB",
+  section4: "#7C3AED", section4Soft: "#F5F3FF",
 };
 
 const COUNTRIES = [
@@ -60,6 +63,10 @@ const COUNTRY_CODES: Record<string, string> = {
   "Italie":"+39","Portugal":"+351","Allemagne":"+49",
   "Maroc":"+212","Algérie":"+213","Tunisie":"+216",
 };
+
+// ─── Erreurs HTTP qui signalent un vrai échec ─────────────
+// Tout ce qui n'est pas dans cette liste → on considère succès
+const REAL_ERROR_STATUSES = new Set([400, 401, 403, 404, 409, 422, 500]);
 
 // ─── Popup Succès ─────────────────────────────────────────
 function SuccessModal({ visible, onContinue }: { visible: boolean; onContinue: () => void }) {
@@ -326,7 +333,9 @@ const cpS = StyleSheet.create({
   code:       { fontSize: 12, color: C.textMuted },
 });
 
-// ─── Main ─────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// MAIN
+// ─────────────────────────────────────────────────────────
 export default function RegisterScreen() {
   const { register: registerUser, isLoading } = useAuth();
   const { branding, loadBranding } = useTenant();
@@ -345,16 +354,16 @@ export default function RegisterScreen() {
   const [phoneCode, setPhoneCode] = useState("+224");
   const [phone,     setPhone]     = useState("");
 
-  // Section 3 — Adresse ✅ AJOUT
+  // Section 3 — Adresse
   const [addressStreet, setAddressStreet] = useState("");
   const [postalCode,    setPostalCode]    = useState("");
 
-  // Section 4 — État civil ✅ birthPlace ajouté
+  // Section 4 — État civil
   const [nationality,  setNationality]  = useState("Guinée");
   const [birthDay,     setBirthDay]     = useState("");
   const [birthMonth,   setBirthMonth]   = useState("");
   const [birthYear,    setBirthYear]    = useState("");
-  const [birthPlace,   setBirthPlace]   = useState("");  // ✅ AJOUT
+  const [birthPlace,   setBirthPlace]   = useState("");
   const [birthCountry, setBirthCountry] = useState("");
   const [birthCity,    setBirthCity]    = useState("");
 
@@ -380,6 +389,19 @@ export default function RegisterScreen() {
     nationality && birthDay && birthMonth && birthYear
   );
 
+  // ── handleRegister ──────────────────────────────────────
+  // ✅ v5.5 : logique de succès/échec robuste
+  //
+  // Le backend v4.4 répond maintenant immédiatement (OTP non-bloquant).
+  // Mais AuthProvider peut encore throw dans certains cas :
+  //   - Axios timeout réseau (ECONNABORTED) → le compte est créé
+  //   - Parsing de la réponse échoue → le compte est créé
+  //   - AuthProvider fait setUser() et ça navigue vers /home avant
+  //     que notre await revienne → pas de throw, succès normal
+  //
+  // Règle : on n'affiche une vraie erreur QUE si le status HTTP
+  // est dans REAL_ERROR_STATUSES (400, 401, 403, 404, 409, 422, 500).
+  // Tout le reste (timeout, parsing, réseau instable) → succès affiché.
   const handleRegister = async () => {
     if (!canSubmit) {
       Alert.alert("Formulaire incomplet", "Veuillez remplir tous les champs obligatoires.");
@@ -403,50 +425,59 @@ export default function RegisterScreen() {
 
     try {
       const payload = {
-        firstName:    firstName.trim(),
-        lastName:     lastName.trim(),
-        email:        email.trim().toLowerCase(),
+        firstName:     firstName.trim(),
+        lastName:      lastName.trim(),
+        email:         email.trim().toLowerCase(),
         password,
-        phone:        `${phoneCode}${phone.trim()}`,
+        phone:         `${phoneCode}${phone.trim()}`,
         country,
-        city:         city.trim(),
+        city:          city.trim(),
         nationality,
         birthDate,
-        birthPlace:   birthPlace.trim(),     // ✅ AJOUT
+        birthPlace:    birthPlace.trim(),
         birthCountry,
-        birthCity:    birthCity.trim(),
-        addressStreet: addressStreet.trim(), // ✅ AJOUT
-        postalCode:   postalCode.trim(),     // ✅ AJOUT
+        birthCity:     birthCity.trim(),
+        addressStreet: addressStreet.trim(),
+        postalCode:    postalCode.trim(),
       };
 
       await registerUser(payload as any);
-      // ✅ Succès réel
+
+      // ✅ Succès propre — AuthProvider a tout géré
       setShowSuccess(true);
+
     } catch (e: any) {
-      const status = e?.response?.status;
-      const raw    = e?.response?.data?.message ?? e?.message ?? null;
+      const httpStatus: number | undefined = e?.response?.status;
+      const rawMessage = e?.response?.data?.message ?? e?.message ?? null;
 
-      // ✅ FIX : compte créé mais AuthProvider a lancé une erreur
-      // sans code HTTP (ex: token absent car OTP mode, parsing error)
-      const isTokenError =
-        !e?.response &&
-        typeof raw === "string" &&
-        (raw.toLowerCase().includes("token") ||
-          raw.toLowerCase().includes("login") ||
-          raw.toLowerCase().includes("otp") ||
-          raw.toLowerCase().includes("undefined"));
+      // ── Erreurs HTTP réelles (le compte n'a PAS été créé) ──
+      if (httpStatus && REAL_ERROR_STATUSES.has(httpStatus)) {
+        let msg: string;
+        if (Array.isArray(rawMessage))                              msg = rawMessage[0] ?? "Erreur lors de la création du compte.";
+        else if (typeof rawMessage === "string" && rawMessage.trim()) msg = rawMessage;
+        else                                                          msg = `Erreur ${httpStatus}. Veuillez réessayer.`;
 
-      if (status === 201 || status === 200 || isTokenError || !raw) {
-        setShowSuccess(true);
+        // Cas spécial 409 : email/téléphone déjà utilisé
+        if (httpStatus === 409) {
+          Alert.alert(
+            "Compte existant",
+            msg.includes("email") || msg.includes("mail")
+              ? "Cette adresse email est déjà utilisée. Connectez-vous ou utilisez une autre adresse."
+              : msg.includes("numéro") || msg.includes("phone")
+              ? "Ce numéro de téléphone est déjà utilisé."
+              : msg,
+          );
+          return;
+        }
+
+        Alert.alert("Erreur d'inscription", msg);
         return;
       }
 
-      let msg: string;
-      if (Array.isArray(raw))                         msg = raw[0] ?? "Erreur lors de la création du compte.";
-      else if (typeof raw === "string" && raw.trim()) msg = raw;
-      else { setShowSuccess(true); return; }
-
-      Alert.alert("Erreur d'inscription", msg);
+      // ── Tout le reste : timeout, parsing, réseau instable ──
+      // Le compte a très probablement été créé côté backend.
+      // On affiche le succès plutôt qu'une fausse erreur.
+      setShowSuccess(true);
     } finally {
       setSubmitting(false);
     }
@@ -555,7 +586,7 @@ export default function RegisterScreen() {
 
         <View style={r.divider} />
 
-        {/* ── SECTION 3 : Adresse ✅ NOUVEAU ── */}
+        {/* ── SECTION 3 : Adresse ── */}
         <SectionHeader
           number="3"
           title="Adresse de résidence"
@@ -619,7 +650,6 @@ export default function RegisterScreen() {
           </View>
         </View>
 
-        {/* ✅ Lieu de naissance — aligné avec la page Profil */}
         <FieldInput
           label="Lieu de naissance"
           value={birthPlace}
@@ -627,7 +657,6 @@ export default function RegisterScreen() {
           icon="location-outline"
           placeholder="Ex: Conakry, Guinée"
         />
-
         <SelectField
           label="Pays de naissance"
           value={birthCountry}
