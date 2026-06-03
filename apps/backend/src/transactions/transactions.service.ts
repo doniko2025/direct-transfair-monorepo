@@ -1,13 +1,16 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.9
+// TRANSACTIONS SERVICE v4.10
 // ✅ v4.8: declareBankTransfer → wallet société (clientId)
 // ✅ v4.8: validateBankTransfer → wallet plateforme (clientId)
 // ✅ v4.9: declareBankTransfer — atomique (create + debit + ledger
 //    dans la même $transaction Prisma avec advisory lock)
 //    → élimine le moulinage causé par une transaction créée
 //    avant que le debit échoue ou timeout
-// ✅ v4.9: email B2B non-bloquant (.catch) — ne bloque pas la réponse
+// ✅ v4.9: declareBankTransfer — email non-bloquant (.catch)
+// ✅ v4.10: validateBankTransfer — email + push non-bloquants (.catch)
+//    → élimine le moulinage lors de la validation Super Admin
+// ✅ v4.10: rejectBankTransfer — push non-bloquant (.catch)
 // =========================================================
 
 import {
@@ -141,20 +144,7 @@ export class TransactionsService {
 
   /**
    * ✅ FIX v4.9 — Atomique : create + debit + ledger dans la même $transaction Prisma.
-   *
-   * Avant (v4.8) :
-   *   1. prisma.$transaction → crée la Transaction en DB  ← committée immédiatement
-   *   2. walletsService.debit()                           ← pouvait timeout/échouer séparément
-   *   → La Transaction existait en DB mais le wallet n'était pas débité.
-   *   → Le backend renvoyait une erreur, le frontend moulinait 30-40s puis
-   *     affichait un faux message d'erreur alors que la transaction avait été créée.
-   *
-   * Maintenant (v4.9) :
-   *   - Lock advisory sur le wallet.
-   *   - Vérification du solde dans la transaction Prisma (solde à jour, pas de race).
-   *   - Création de la Transaction + débit + écriture ledger dans un seul bloc atomique.
-   *   - Si quoi que ce soit échoue → rollback complet → aucune transaction fantôme.
-   *   - Email de confirmation non-bloquant (.catch) → la réponse HTTP part immédiatement.
+   * ✅ FIX v4.9 — Email non-bloquant (.catch) → réponse HTTP immédiate.
    */
   async declareBankTransfer(
     adminId: string,
@@ -167,19 +157,15 @@ export class TransactionsService {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin || !admin.clientId) throw new ForbiddenException('Admin société introuvable');
 
-    // Récupère ou crée le wallet société pour cette devise (hors transaction)
     const walletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
       currency: currencyCode,
     });
 
-    // ✅ FIX v4.9 : tout dans un seul bloc atomique avec advisory lock
     const tx = await this.prisma.$transaction(async (prismaTx) => {
-      // 1. Lock advisory sur le wallet pour éviter les race conditions
       const lockKey = this.walletLockKey(walletRef.id);
       await prismaTx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
 
-      // 2. Relit le wallet DANS la transaction pour avoir le solde à jour
       const wallet = await prismaTx.wallet.findUnique({ where: { id: walletRef.id } });
       if (!wallet) throw new NotFoundException('Wallet société introuvable');
 
@@ -190,7 +176,6 @@ export class TransactionsService {
         );
       }
 
-      // 3. Crée la Transaction
       const reference = `BILL-${Date.now()}`;
       const newTx = await prismaTx.transaction.create({
         data: {
@@ -209,13 +194,11 @@ export class TransactionsService {
         },
       });
 
-      // 4. Débite le wallet dans la même transaction Prisma
       const updatedWallet = await prismaTx.wallet.update({
         where: { id: walletRef.id },
         data: { balance: { decrement: new Prisma.Decimal(amount) } },
       });
 
-      // 5. Écrit l'entrée ledger
       await prismaTx.ledgerEntry.create({
         data: {
           walletId: walletRef.id,
@@ -231,7 +214,7 @@ export class TransactionsService {
       return newTx;
     });
 
-    // ✅ Email non-bloquant — ne retarde pas la réponse HTTP
+    // ✅ Non-bloquant
     if (admin.email) {
       this.companyMail.sendB2BRequestSent({
         email: admin.email,
@@ -240,13 +223,25 @@ export class TransactionsService {
         currency: currencyCode,
         ref: proofReference,
       }).catch((err) => {
-        this.logger.warn(`Email B2B non envoyé : ${err?.message}`);
+        this.logger.warn(`Email B2B declare non envoyé : ${err?.message}`);
       });
     }
 
     return tx;
   }
 
+  /**
+   * ✅ FIX v4.10 — email + push non-bloquants (.catch)
+   *
+   * Avant (v4.9) :
+   *   await this.companyMail.sendB2BValidated(...)  ← bloquait si SMTP lent
+   *   await this.push.notifyTransferReceived(...)   ← bloquait si push lent
+   *   → le frontend moulinait jusqu'au timeout (30s) lors de la validation
+   *
+   * Maintenant (v4.10) :
+   *   - Le credit wallet + la mise à jour du statut sont synchrones (critique)
+   *   - L'email et le push sont fire-and-forget (.catch) → réponse immédiate
+   */
   async validateBankTransfer(superAdminId: string, transactionId: string) {
     const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Seul le Super Admin peut valider.');
@@ -255,32 +250,61 @@ export class TransactionsService {
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT) throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING) throw new ConflictException('Transaction déjà traitée');
 
-    // ✅ FIX v4.8: wallet plateforme (clientId) au lieu du wallet personnel du super admin
+    // ✅ Synchrone — critique : crédite le wallet plateforme avant de répondre
     const walletRef = await this.walletsService.getOrCreateWallet({
       clientId: superAdmin.clientId!,
       currency: tx.currency,
     });
-    await this.walletsService.credit(walletRef.id, Number(tx.amount), `Validation B2B ${transactionId}`, transactionId);
+    await this.walletsService.credit(
+      walletRef.id,
+      Number(tx.amount),
+      `Validation B2B ${transactionId}`,
+      transactionId,
+    );
 
+    // ✅ Synchrone — met à jour le statut avant de répondre
     const result = await this.prisma.transaction.update({
       where: { id: transactionId },
-      data: { status: TransactionStatus.PAID, paidAt: new Date(), providerStatus: ProviderStatus.SUCCESS },
+      data: {
+        status: TransactionStatus.PAID,
+        paidAt: new Date(),
+        providerStatus: ProviderStatus.SUCCESS,
+      },
     });
 
-    const sender = await this.prisma.user.findUnique({ where: { id: tx.senderId } });
-    if (sender?.email) {
-      await this.companyMail.sendB2BValidated({
-        email: sender.email,
-        companyName: `${sender.firstName} ${sender.lastName}`,
-        amount: Number(tx.amount),
-        currency: tx.currency,
-        ref: tx.providerRef ?? transactionId,
-      });
-    }
-    await this.push.notifyTransferReceived(tx.senderId, 'Plateforme', `${tx.amount}`, tx.currency);
+    // ✅ FIX v4.10 — Non-bloquant : email de confirmation à l'admin société
+    this.prisma.user.findUnique({ where: { id: tx.senderId } })
+      .then((sender) => {
+        if (sender?.email) {
+          this.companyMail.sendB2BValidated({
+            email: sender.email,
+            companyName: `${sender.firstName} ${sender.lastName}`,
+            amount: Number(tx.amount),
+            currency: tx.currency,
+            ref: tx.providerRef ?? transactionId,
+          }).catch((err) => {
+            this.logger.warn(`Email B2B validé non envoyé : ${err?.message}`);
+          });
+        }
+      })
+      .catch(() => { /* noop */ });
+
+    // ✅ FIX v4.10 — Non-bloquant : notification push
+    this.push.notifyTransferReceived(
+      tx.senderId,
+      'Plateforme',
+      `${tx.amount}`,
+      tx.currency,
+    ).catch((err) => {
+      this.logger.warn(`Push B2B validé non envoyé : ${err?.message}`);
+    });
+
     return result;
   }
 
+  /**
+   * ✅ FIX v4.10 — push non-bloquant (.catch)
+   */
   async rejectBankTransfer(superAdminId: string, transactionId: string) {
     const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Accès refusé');
@@ -288,13 +312,38 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.status !== TransactionStatus.PENDING) throw new ConflictException('Impossible à rejeter');
 
-    const walletRef = await this.walletsService.getOrCreateWallet({ userId: tx.senderId, currency: tx.currency });
-    await this.walletsService.credit(walletRef.id, Number(tx.amount), `Remboursement B2B rejeté`, transactionId);
-
-    return this.prisma.transaction.update({
-      where: { id: transactionId },
-      data: { status: TransactionStatus.CANCELLED, cancelledAt: new Date(), providerStatus: ProviderStatus.FAILED },
+    // ✅ Synchrone — remboursement critique
+    const walletRef = await this.walletsService.getOrCreateWallet({
+      userId: tx.senderId,
+      currency: tx.currency,
     });
+    await this.walletsService.credit(
+      walletRef.id,
+      Number(tx.amount),
+      `Remboursement B2B rejeté`,
+      transactionId,
+    );
+
+    const result = await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data: {
+        status: TransactionStatus.CANCELLED,
+        cancelledAt: new Date(),
+        providerStatus: ProviderStatus.FAILED,
+      },
+    });
+
+    // ✅ FIX v4.10 — Non-bloquant
+    this.push.notifyTransferReceived(
+      tx.senderId,
+      'Plateforme',
+      `${tx.amount}`,
+      tx.currency,
+    ).catch((err) => {
+      this.logger.warn(`Push B2B rejeté non envoyé : ${err?.message}`);
+    });
+
+    return result;
   }
 
   // ── Annulation ───────────────────────────────────────────
