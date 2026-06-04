@@ -1,10 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.1
-// ✅ FIX : loadTransaction — l'AGENT appelle getTransactions()
-//    directement, sans tenter adminGetTransactions() qui renvoie 403
-// ✅ FIX : logique isIncoming pour l'AGENT — un retrait validé
-//    par l'agent est une opération SORTANTE (il remet du cash)
+// TRANSACTION DETAIL v6.2
+// ✅ v6.1 : logique isIncoming correcte par rôle
+// ✅ FIX v6.2 : montant hero + "Montant crédité" pour les entrants avec conversion
+//    AVANT : le destinataire voyait "+26,00 EUR" et "Montant crédité : 26,00 EUR"
+//    APRÈS  : "+17 055 XOF" et "Montant crédité : 17 055 XOF"
+//    Règle  : si isIncoming ET targetCurrency ≠ currency ET receivedAmount > 0
+//             → afficher receivedAmount / targetCurrency
 // =========================================================
 
 import React, { useState, useEffect } from "react";
@@ -67,14 +69,11 @@ export default function TransactionDetailScreen() {
       setLoading(true);
       if (!idParam) return setTransaction(null);
 
-      // ✅ FIX : chaque rôle appelle l'API appropriée
-      // L'AGENT et le USER n'ont pas accès à adminGetTransactions → 403
       let list: any[] = [];
       if (isSA || isCA) {
         try { list = await api.adminGetTransactions(); }
         catch { list = await api.getTransactions(); }
       } else {
-        // AGENT et USER : getTransactions() uniquement
         list = await api.getTransactions();
       }
 
@@ -143,16 +142,33 @@ export default function TransactionDetailScreen() {
   const isValidated = transaction.status === "VALIDATED";
   const isPaid      = transaction.status === "PAID";
 
-  // ✅ Direction selon rôle — AGENT : retrait validé = sortant
+  // ── Direction selon rôle ──────────────────────────────
   let isIncoming = false;
   if (isSA)      isIncoming = isB2B;
   else if (isCA) isIncoming = isDeposit || isRefund || transaction.recipientId === user?.id;
-  else if (isAgent) {
-    // Entrant : recharge caisse
-    // Sortant : dépôt client, retrait validé par l'agent
-    isIncoming = isRefill;
-  }
+  else if (isAgent) isIncoming = isRefill;
   else isIncoming = isDeposit || transaction.recipientId === user?.id;
+
+  // ✅ FIX v6.2 — Montant héro : pour les entrants avec conversion de devise,
+  // afficher ce que l'utilisateur a réellement reçu (receivedAmount/targetCurrency)
+  // plutôt que ce que l'expéditeur a envoyé (amount/currency).
+  //
+  // Exemple : Fatim envoie 26 EUR → Mouctar reçoit 17 055 XOF
+  //   Côté Mouctar (isIncoming=true) :
+  //     AVANT : "+26,00 EUR"  ← faux, montant de l'expéditeur
+  //     APRÈS  : "+17 055 XOF" ← correct, montant crédité sur son wallet
+  const isConversionIncoming =
+    isIncoming &&
+    transaction.targetCurrency &&
+    transaction.targetCurrency !== transaction.currency &&
+    toNum(transaction.receivedAmount) > 0;
+
+  const heroDisplayAmount   = isConversionIncoming
+    ? toNum(transaction.receivedAmount)
+    : toNum(transaction.amount);
+  const heroDisplayCurrency = isConversionIncoming
+    ? (transaction.targetCurrency as string)
+    : (transaction.currency as string);
 
   const amountColor = isIncoming ? "#059669" : "#DC2626";
   const amountSign  = isIncoming ? "+" : "−";
@@ -172,7 +188,6 @@ export default function TransactionDetailScreen() {
     if (isAgent) {
       if (isRefill)  return "Recharge caisse reçue";
       if (isDeposit) return "Dépôt vers client";
-      // Retrait validé par l'agent — il a remis du cash
       if (transaction.withdrawal) return "Retrait client payé";
       return "Transaction";
     }
@@ -228,12 +243,15 @@ export default function TransactionDetailScreen() {
             <Text style={[s.statusText, { color: status.color, fontFamily: FONTS.body }]}>{status.label}</Text>
           </View>
 
+          {/* ── Montant héro ── */}
           <View style={s.amountHero}>
             <Text style={[s.amountSign, { color: amountColor, fontFamily: FONTS.body }]}>{amountSign}</Text>
             <Text style={[s.amountMain, { color: amountColor, fontFamily: FONTS.heading }]}>
-              {fmt(toNum(transaction.amount), transaction.currency)}
+              {fmt(heroDisplayAmount, heroDisplayCurrency)}
             </Text>
-            <Text style={[s.amountCur, { color: amountColor, fontFamily: FONTS.mono }]}>{transaction.currency}</Text>
+            <Text style={[s.amountCur, { color: amountColor, fontFamily: FONTS.mono }]}>
+              {heroDisplayCurrency}
+            </Text>
           </View>
 
           <Text style={[s.txLabel, { fontFamily: FONTS.body, color: theme.primary }]}>{getTxLabel()}</Text>
@@ -250,12 +268,22 @@ export default function TransactionDetailScreen() {
             </View>
           )}
 
+          {/* Pill de conversion — affichée pour TOUS (expéditeur et destinataire)
+              quand il y a une conversion, pour montrer les deux montants */}
           {transaction.targetCurrency && transaction.targetCurrency !== transaction.currency && (
             <View style={[s.convSection, { backgroundColor: "#EFF6FF" }]}>
               <Ionicons name="swap-horizontal-outline" size={14} color="#2563EB" />
-              <Text style={[s.convTxt, { fontFamily: FONTS.mono }]}>
-                Reçoit : {fmt(toNum(transaction.receivedAmount), transaction.targetCurrency)} {transaction.targetCurrency}
-              </Text>
+              {isConversionIncoming ? (
+                // Destinataire : montre ce que l'expéditeur avait envoyé
+                <Text style={[s.convTxt, { fontFamily: FONTS.mono }]}>
+                  Envoyé : {fmt(toNum(transaction.amount), transaction.currency)} {transaction.currency}
+                </Text>
+              ) : (
+                // Expéditeur : montre ce que le destinataire reçoit
+                <Text style={[s.convTxt, { fontFamily: FONTS.mono }]}>
+                  Reçoit : {fmt(toNum(transaction.receivedAmount), transaction.targetCurrency)} {transaction.targetCurrency}
+                </Text>
+              )}
               <Text style={[s.convRate, { fontFamily: FONTS.body }]}>
                 Taux : {toNum(transaction.exchangeRate).toFixed(4)}
               </Text>
@@ -283,7 +311,6 @@ export default function TransactionDetailScreen() {
                 <DetailRow label="Bénéficiaire" value={isAgent ? "Client" : "Votre wallet"} />
               </>
             ) : isAgent && transaction.withdrawal ? (
-              // ✅ Retrait validé par l'agent
               <>
                 <DetailRow label="Expéditeur"   value={senderName} />
                 <DetailRow label="Bénéficiaire" value={transaction.beneficiary?.fullName ?? recipientName} />
@@ -317,10 +344,18 @@ export default function TransactionDetailScreen() {
               />
             )}
             <View style={[s.divider, { backgroundColor: "#E2E8F0" }]} />
+            {/* ✅ FIX v6.2 — "Montant crédité" affiche heroDisplayAmount/heroDisplayCurrency
+                pour le destinataire d'une conversion (17 055 XOF et non 26 EUR) */}
             <DetailRow
               label={isIncoming ? "Montant crédité" : "Total débité"}
-              value={`${fmt(toNum(transaction.total ?? transaction.amount), transaction.currency)} ${transaction.currency}`}
-              bold color={amountColor}
+              value={`${fmt(
+                isIncoming
+                  ? heroDisplayAmount
+                  : toNum(transaction.total ?? transaction.amount),
+                isIncoming ? heroDisplayCurrency : transaction.currency
+              )} ${isIncoming ? heroDisplayCurrency : transaction.currency}`}
+              bold
+              color={amountColor}
             />
           </View>
         </View>
@@ -404,13 +439,13 @@ const s = StyleSheet.create({
   divider:       { height: 1, backgroundColor: "#F1F5F9", marginVertical: 2 },
   financeSection:{ borderRadius: 16, padding: 18, marginTop: 20, gap: 10 },
   financeHeader: { fontSize: 10, fontWeight: "900", color: "#94A3B8", letterSpacing: 1, marginBottom: 4 },
-  actionsBlock:  { marginTop: 24, backgroundColor: "#FFF", padding: 20, borderRadius: 20, borderWidth: 1, borderColor: "#E2E8F0" },
-  actionsTitle:  { fontSize: 11, fontWeight: "900", color: "#94A3B8", letterSpacing: 0.5, marginBottom: 14, textTransform: "uppercase" },
+  actionsBlock:  { marginTop: 24 },
+  actionsTitle:  { fontSize: 11, fontWeight: "900", color: "#94A3B8", letterSpacing: 1, marginBottom: 12, textAlign: "center" },
   actionsRow:    { flexDirection: "row", gap: 12 },
-  actionBtn:     { flex: 1, paddingVertical: 16, borderRadius: 14, alignItems: "center" },
-  actionBtnTxt:  { fontWeight: "900", fontSize: 14 },
-  cancelBtn:     { marginTop: 16, borderWidth: 2, borderColor: "#FEE2E2", paddingVertical: 16, borderRadius: 16, alignItems: "center", backgroundColor: "#FFF" },
+  actionBtn:     { flex: 1, paddingVertical: 16, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  actionBtnTxt:  { fontWeight: "800", fontSize: 14 },
+  cancelBtn:     { marginTop: 12, paddingVertical: 16, alignItems: "center", borderRadius: 14, borderWidth: 1.5, borderColor: "#FECACA", backgroundColor: "#FEF2F2" },
   cancelBtnTxt:  { color: "#EF4444", fontWeight: "800", fontSize: 14 },
-  shareBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginTop: 16, paddingVertical: 18, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 10, elevation: 4 },
-  shareBtnTxt:   { color: "#FFF", fontWeight: "900", fontSize: 15, letterSpacing: 0.5 },
+  shareBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12, paddingVertical: 16, borderRadius: 14 },
+  shareBtnTxt:   { color: "#FFFFFF", fontWeight: "800", fontSize: 14 },
 });
