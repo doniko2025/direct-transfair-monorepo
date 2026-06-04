@@ -1,8 +1,13 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 // =========================================================
-// TRÉSORERIE — ROUTEUR PAR RÔLE v2.3
-// ✅ FIX TreasuryCompanyAdmin : utilise getMyWallets + getAgencies
-//    au lieu de getTreasuryOverview (qui renvoie vide pour CA)
+// TRÉSORERIE — ROUTEUR PAR RÔLE v3.0
+// ✅ v2.3 : TreasuryCompanyAdmin — getMyWallets + getAgencies
+// ✅ v3.0 : TreasurySuperAdmin — utilise api.getMyWallets() au lieu de
+//           api.getTreasuryOverview(). Le SA voit désormais SA PROPRE
+//           trésorerie (ses wallets clientId) et non l'agrégat de toutes
+//           les sociétés clientes.
+//           Le backend est également corrigé (treasury.controller v5.3 +
+//           wallets.service v5.3) pour cohérence.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -19,20 +24,21 @@ import { useAuth } from "../../../providers/AuthProvider";
 
 const { width: SW } = Dimensions.get("window");
 
+// ─── Design Tokens ─────────────────────────────────────────
 const T = {
   saHeroA: "#5B5BD6", saHeroB: "#4545C2", saHeroC: "#3232A8",
   saAccent: "#1956F0", saAccentLt: "#EEF2FF", saAccentMd: "#C7D5FF",
   caHeroA: "#38BDF8", caHeroB: "#0EA5E9", caHeroC: "#0284C7",
   caAccent: "#0284C7", caAccentLt: "#E0F2FE", caAccentMd: "#7DD3FC",
-  pageBg:   "#F0F4FF", caBg: "#F2F4F8",
-  surface:  "#FFFFFF", border: "#E2E8F0", borderLt: "#F1F5F9", borderMd: "#D1D9E6",
-  ink:      "#0F172A", inkSub: "#6B7280", inkMuted: "#9CA3AF",
-  green:    "#16A34A", greenLt: "#DCFCE7", greenMd: "#A7F3D0",
-  red:      "#DC2626", redLt:   "#FEE2E2",
-  amber:    "#D97706", amberLt: "#FEF3C7",
-  teal:     "#0F766E", tealLt:  "#CCFBF1", tealMd: "#5EEAD4",
-  purple:   "#7C3AED", purpleLt:"#EDE9FE", purpleMd: "#C4B5FD",
-  white:    "#FFFFFF",
+  pageBg:  "#F0F4FF", caBg: "#F2F4F8",
+  surface: "#FFFFFF", border: "#E2E8F0", borderLt: "#F1F5F9", borderMd: "#D1D9E6",
+  ink:     "#0F172A", inkSub: "#6B7280", inkMuted: "#9CA3AF",
+  green:   "#16A34A", greenLt: "#DCFCE7", greenMd: "#A7F3D0",
+  red:     "#DC2626", redLt: "#FEE2E2",
+  amber:   "#D97706", amberLt: "#FEF3C7",
+  teal:    "#0F766E", tealLt: "#CCFBF1", tealMd: "#5EEAD4",
+  purple:  "#7C3AED", purpleLt: "#EDE9FE", purpleMd: "#C4B5FD",
+  white:   "#FFFFFF",
   currencies: {
     XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", bg: "#FEF3C7", name: "Franc CFA"      },
     EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#1956F0", bg: "#EEF2FF", name: "Euro"           },
@@ -56,7 +62,7 @@ const T = {
 
 type CurrencyKey = keyof typeof T.currencies;
 const CURRENCIES_ORDER: CurrencyKey[] = ["XOF", "EUR", "USD", "GNF", "GBP"];
-const CARD_W = (SW - 48 - 10) / 2;
+const CARD_W  = (SW - 48 - 10) / 2;
 const HERO_BR = 28;
 
 function parseApiNum(v: unknown): number {
@@ -74,8 +80,9 @@ const toNum = parseApiNum;
 
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
-  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
-  catch { return n.toFixed(d); }
+  try {
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+  } catch { return n.toFixed(d); }
 }
 
 // ─── Section Label ─────────────────────────────────────────
@@ -97,9 +104,9 @@ const slS = StyleSheet.create({
 function CurrencyCard({ currency, balance, reserved }: {
   currency: CurrencyKey; balance: number; reserved: number;
 }) {
-  const cfg = T.currencies[currency];
+  const cfg       = T.currencies[currency];
   const available = balance - reserved;
-  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
+  const pct       = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
 
   return (
     <View style={[ccS.card, { width: CARD_W, borderTopColor: cfg.color }]}>
@@ -113,8 +120,12 @@ function CurrencyCard({ currency, balance, reserved }: {
         </View>
       </View>
       <Text style={[ccS.balLabel, { fontFamily: T.font.sans }]}>SOLDE</Text>
-      <Text style={[ccS.balance, { color: T.ink, fontFamily: T.font.display }]}
-        numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+      <Text
+        style={[ccS.balance, { color: T.ink, fontFamily: T.font.display }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+      >
         {fmt(balance, currency)}
       </Text>
       <Text style={[ccS.symbol, { color: cfg.color, fontFamily: T.font.mono }]}>{cfg.symbol}</Text>
@@ -153,7 +164,12 @@ function KpiCard({ label, value, sub, icon, color, bg }: {
       <View style={[kpiS.iconBox, { backgroundColor: bg }]}>
         <Ionicons name={icon as any} size={16} color={color} />
       </View>
-      <Text style={[kpiS.val, { color, fontFamily: T.font.mono }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+      <Text
+        style={[kpiS.val, { color, fontFamily: T.font.mono }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+      >
         {value}
       </Text>
       <Text style={[kpiS.label, { fontFamily: T.font.sans }]}>{label}</Text>
@@ -177,9 +193,14 @@ function TreasuryHero({ g1, g2, g3, role, userName, onBack, onRefresh }: {
   const sbH = Platform.OS === "android" ? (StatusBar.currentHeight ?? 0) : 0;
   return (
     <View style={hS.outer}>
-      <LinearGradient colors={[g1, g2, g3]} start={{ x: 0.05, y: 0 }} end={{ x: 0.95, y: 1 }}
-        style={[hS.gradient, { paddingTop: sbH + 10, paddingBottom: 22 }]}>
-        <View style={hS.deco1} /><View style={hS.deco2} />
+      <LinearGradient
+        colors={[g1, g2, g3]}
+        start={{ x: 0.05, y: 0 }}
+        end={{ x: 0.95, y: 1 }}
+        style={[hS.gradient, { paddingTop: sbH + 10, paddingBottom: 22 }]}
+      >
+        <View style={hS.deco1} />
+        <View style={hS.deco2} />
         <View style={hS.row}>
           <TouchableOpacity style={hS.backBtn} onPress={onBack}>
             <Ionicons name="arrow-back" size={18} color={T.white} />
@@ -190,11 +211,11 @@ function TreasuryHero({ g1, g2, g3, role, userName, onBack, onRefresh }: {
               <Text style={[hS.badgeTxt, { fontFamily: T.font.sans }]}>{role}</Text>
             </View>
             <Text style={[hS.title, { fontFamily: T.font.display }]}>
-              {role === "SUPER ADMIN" ? "Trésorerie Globale" : "Ma Trésorerie"}
+              {role === "SUPER ADMIN" ? "Ma Trésorerie" : "Ma Trésorerie"}
             </Text>
             <Text style={[hS.sub, { fontFamily: T.font.sub }]}>
               {userName ? `${userName}  ·  ` : ""}
-              {role === "SUPER ADMIN" ? "Vue multi-sociétés" : "Vue de votre société"}
+              {role === "SUPER ADMIN" ? "Compte Super Admin" : "Vue de votre société"}
             </Text>
           </View>
           <TouchableOpacity style={hS.refreshBtn} onPress={onRefresh}>
@@ -211,7 +232,7 @@ const hS = StyleSheet.create({
   outer:      { zIndex: 10, ...T.shadow.hero },
   gradient:   { borderBottomLeftRadius: HERO_BR, borderBottomRightRadius: HERO_BR, overflow: "hidden" },
   deco1:      { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.06)", top: -55, right: -35 },
-  deco2:      { position: "absolute", width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.04)", bottom: 10, left: 10 },
+  deco2:      { position: "absolute", width: 80,  height: 80,  borderRadius: 40, backgroundColor: "rgba(255,255,255,0.04)", bottom: 10, left: 10 },
   row:        { flexDirection: "row", alignItems: "flex-end", paddingHorizontal: 20, gap: 12 },
   backBtn:    { width: 36, height: 36, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.20)", justifyContent: "center", alignItems: "center", marginBottom: 4 },
   badge:      { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" },
@@ -240,7 +261,6 @@ function TreasuryCompanyAdmin() {
   const load = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
-      // ✅ Utilise getMyWallets (wallets de la société) + getAgencies
       const [wRes, aRes] = await Promise.allSettled([
         api.getMyWallets(),
         api.getAgencies(),
@@ -258,10 +278,10 @@ function TreasuryCompanyAdmin() {
   }, [fadeAnim]);
 
   useFocusEffect(useCallback(() => {
-    fadeAnim.setValue(0); void load("init");
+    fadeAnim.setValue(0);
+    void load("init");
   }, [load]));
 
-  // Solde par devise (wallets société)
   const balanceByCurrency = (cur: CurrencyKey) => {
     const w = wallets.find((x) => x.currency === cur);
     return {
@@ -270,22 +290,19 @@ function TreasuryCompanyAdmin() {
     };
   };
 
-  // Solde total toutes agences en XOF (estimation)
   const totalAgencyBalance = agencies.reduce((sum, a) => {
     const ws = Array.isArray(a.wallets) ? a.wallets : [];
     const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
     return sum + toNum(pw?.balance ?? a.balance ?? 0);
   }, 0);
 
-  const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
-
-  // Devises avec solde > 0
-  const activeCurrencies = CURRENCIES_ORDER.filter((cur) => balanceByCurrency(cur).balance > 0);
+  const activeAgencies    = agencies.filter((a) => a.isActive !== false).length;
+  const activeCurrencies  = CURRENCIES_ORDER.filter((cur) => balanceByCurrency(cur).balance > 0);
   const displayCurrencies = activeCurrencies.length > 0 ? activeCurrencies : CURRENCIES_ORDER.slice(0, 4);
 
   const flagMap: Record<string, string> = {
-    GN:"🇬🇳", SN:"🇸🇳", ML:"🇲🇱", CI:"🇨🇮",
-    FR:"🇫🇷", GB:"🇬🇧", US:"🇺🇸", BF:"🇧🇫", NE:"🇳🇪", TG:"🇹🇬",
+    GN: "🇬🇳", SN: "🇸🇳", ML: "🇲🇱", CI: "🇨🇮",
+    FR: "🇫🇷", GB: "🇬🇧", US: "🇺🇸", BF: "🇧🇫", NE: "🇳🇪", TG: "🇹🇬",
   };
 
   return (
@@ -300,21 +317,30 @@ function TreasuryCompanyAdmin() {
       />
 
       {loading ? (
-        <View style={s.loader}><ActivityIndicator color={T.caAccent} size="large" /></View>
+        <View style={s.loader}>
+          <ActivityIndicator color={T.caAccent} size="large" />
+        </View>
       ) : (
         <Animated.ScrollView
           style={{ opacity: fadeAnim }}
           contentContainerStyle={[s.scroll, { backgroundColor: T.caBg }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={T.caAccent} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void load("refresh")}
+              tintColor={T.caAccent}
+            />
+          }
         >
-
           {/* ── Wallets société ── */}
           <SL dot={T.caAccent} label="SOLDES SOCIÉTÉ · PAR DEVISE" />
           <ScrollView
-            horizontal showsHorizontalScrollIndicator={false}
+            horizontal
+            showsHorizontalScrollIndicator={false}
             contentContainerStyle={s.currencyRow}
-            snapToInterval={CARD_W + 10} decelerationRate="fast"
+            snapToInterval={CARD_W + 10}
+            decelerationRate="fast"
           >
             {displayCurrencies.map((cur) => {
               const { balance, reserved } = balanceByCurrency(cur);
@@ -385,11 +411,11 @@ function TreasuryCompanyAdmin() {
               <SL dot={T.caAccent} label={`AGENCES DU RÉSEAU · ${agencies.length}`} />
               {agencies.map((agency) => {
                 const isActive = agency.isActive !== false;
-                const ws = Array.isArray(agency.wallets) ? agency.wallets : [];
-                const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
+                const ws  = Array.isArray(agency.wallets) ? agency.wallets : [];
+                const pw  = ws.find((w: any) => w.isDefault) ?? ws[0];
                 const bal = toNum(pw?.balance ?? agency.balance ?? 0);
-                const cur = pw?.currency ?? agency.primaryCurrency ?? "XOF";
-                const cfg = T.currencies[cur as CurrencyKey] ?? T.currencies.XOF;
+                const cur = (pw?.currency ?? agency.primaryCurrency ?? "XOF") as CurrencyKey;
+                const cfg = T.currencies[cur] ?? T.currencies.XOF;
                 const flag = agency.country
                   ? (flagMap[agency.country.toUpperCase().substring(0, 2)] ?? "🌍")
                   : "🌍";
@@ -399,43 +425,45 @@ function TreasuryCompanyAdmin() {
                     <View style={[agS.bar, { backgroundColor: isActive ? T.green : T.red }]} />
                     <View style={agS.body}>
                       <View style={agS.row}>
-                        <View style={agS.flagBox}>
-                          <Text style={{ fontSize: 20 }}>{flag}</Text>
+                        <View style={[agS.flagWrap, { backgroundColor: cfg.bg }]}>
+                          <Text style={{ fontSize: 15 }}>{flag}</Text>
                         </View>
-                        <View style={{ flex: 1, minWidth: 0 }}>
-                          <Text style={[agS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[agS.agName, { fontFamily: T.font.sans, color: T.ink }]} numberOfLines={1}>
                             {agency.name}
                           </Text>
-                          <Text style={[agS.city, { fontFamily: T.font.sub }]}>
-                            {agency.city ?? "—"} · {agency.country ?? "—"}
+                          <Text style={[agS.agMeta, { fontFamily: T.font.sub, color: T.inkMuted }]} numberOfLines={1}>
+                            {agency.country ?? "—"}
+                            {agency.city ? `  ·  ${agency.city}` : ""}
                           </Text>
                         </View>
-                        <View style={{ alignItems: "flex-end" }}>
-                          <Text style={[agS.balLbl, { fontFamily: T.font.sans }]}>SOLDE</Text>
+                        <View style={agS.balCol}>
                           <Text style={[agS.bal, { color: cfg.color, fontFamily: T.font.mono }]}>
                             {fmt(bal, cur)}
                           </Text>
-                          <Text style={[agS.cur, { color: cfg.color, fontFamily: T.font.sans }]}>
+                          <Text style={[agS.balSym, { color: T.inkMuted, fontFamily: T.font.sub }]}>
                             {cfg.symbol}
                           </Text>
                         </View>
                       </View>
-                      <View style={agS.foot}>
-                        <View style={[agS.status, {
+
+                      <View style={agS.footer}>
+                        <View style={[agS.statusPill, {
                           backgroundColor: isActive ? T.greenLt : T.redLt,
-                          borderColor: `${isActive ? T.green : T.red}30`,
+                          borderColor:     (isActive ? T.green : T.red) + "30",
                         }]}>
-                          <View style={[agS.dot, { backgroundColor: isActive ? T.green : T.red }]} />
-                          <Text style={[agS.statusTxt, { color: isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
-                            {isActive ? "Opérationnelle" : "Suspendue"}
+                          <View style={[agS.statusDot, { backgroundColor: isActive ? T.green : T.red }]} />
+                          <Text style={[agS.statusTxt, {
+                            color: isActive ? T.green : T.red,
+                            fontFamily: T.font.sans,
+                          }]}>
+                            {isActive ? "ACTIVE" : "INACTIVE"}
                           </Text>
                         </View>
-                        {agency.type && (
-                          <View style={[agS.typePill, { backgroundColor: T.caAccentLt, borderColor: T.caAccentMd }]}>
-                            <Text style={[agS.typeTxt, { color: T.caAccent, fontFamily: T.font.sans }]}>
-                              {agency.type === "PARTNER" ? "PARTENAIRE" : "FILIALE"}
-                            </Text>
-                          </View>
+                        {agency.agentCount !== undefined && (
+                          <Text style={[agS.agents, { fontFamily: T.font.sub }]}>
+                            {agency.agentCount} agent{agency.agentCount > 1 ? "s" : ""}
+                          </Text>
                         )}
                       </View>
                     </View>
@@ -445,38 +473,49 @@ function TreasuryCompanyAdmin() {
             </>
           )}
 
+          {agencies.length === 0 && (
+            <View style={s.emptyRow}>
+              <Ionicons name="storefront-outline" size={18} color={T.inkMuted} />
+              <Text style={[s.emptyTxt, { fontFamily: T.font.sub }]}>Aucune agence configurée</Text>
+            </View>
+          )}
+
           <View style={{ height: 80 }} />
         </Animated.ScrollView>
       )}
     </SafeAreaView>
   );
 }
+
+// ─── Agency card styles ─────────────────────────────────
 const agS = StyleSheet.create({
-  card:     { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft },
-  bar:      { width: 4 },
-  body:     { flex: 1, padding: 13 },
-  row:      { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  flagBox:  { width: 40, height: 40, borderRadius: 12, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
-  name:     { color: T.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
-  city:     { color: T.inkSub, fontSize: 10 },
-  balLbl:   { fontSize: 8, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.8, marginBottom: 2 },
-  bal:      { fontSize: 16, fontWeight: "800" },
-  cur:      { fontSize: 9, fontWeight: "700", marginTop: 1 },
-  foot:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  status:   { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
-  dot:      { width: 4, height: 4, borderRadius: 99 },
-  statusTxt:{ fontSize: 9, fontWeight: "700" },
-  typePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
-  typeTxt:  { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
+  card:      { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderColor: T.border, marginBottom: 10, overflow: "hidden", ...T.shadow.soft },
+  bar:       { width: 4 },
+  body:      { flex: 1, padding: 12 },
+  row:       { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  flagWrap:  { width: 32, height: 32, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+  agName:    { fontSize: 13, fontWeight: "700", marginBottom: 2 },
+  agMeta:    { fontSize: 9, fontWeight: "600" },
+  balCol:    { alignItems: "flex-end" },
+  bal:       { fontSize: 15, fontWeight: "800", letterSpacing: -0.3 },
+  balSym:    { fontSize: 9, fontWeight: "700" },
+  footer:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  statusPill:{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, borderWidth: 1 },
+  statusDot: { width: 5, height: 5, borderRadius: 99 },
+  statusTxt: { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  agents:    { fontSize: 9, color: T.inkMuted },
 });
 
 // ══════════════════════════════════════════════════════════
-//  SUPER ADMIN — vue globale
+//  SUPER ADMIN — vue trésorerie personnelle
+//  ✅ v3.0 : utilise api.getMyWallets() au lieu de getTreasuryOverview()
+//  Le SA voit ses propres wallets (son clientId), pas l'agrégat global.
 // ══════════════════════════════════════════════════════════
 function TreasurySuperAdmin() {
   const router   = useRouter();
   const { user } = useAuth();
-  const [overview,   setOverview]   = useState<any[]>([]);
+
+  const [wallets,    setWallets]    = useState<any[]>([]);
   const [clients,    setClients]    = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -485,88 +524,156 @@ function TreasurySuperAdmin() {
   const load = useCallback(async (mode: "init" | "refresh" = "init") => {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
-      const ov = await api.getTreasuryOverview().catch(() => []);
-      setOverview(Array.isArray(ov) ? ov : []);
-      const cl = await (api as any).getClients?.().catch(() => []) ?? [];
-      setClients(Array.isArray(cl) ? cl : []);
+      // ✅ FIX v3.0 — getMyWallets() retourne les wallets clientId du SA
+      // (après fix wallets.service v5.3 qui inclut SUPER_ADMIN dans la
+      // branche clientId, les soldes sont maintenant corrects)
+      const [wRes, cRes] = await Promise.allSettled([
+        api.getMyWallets(),
+        (api as any).getClients?.() ?? Promise.resolve([]),
+      ]);
+      const ws = wRes.status === "fulfilled" ? wRes.value : [];
+      const cs = cRes.status === "fulfilled" ? cRes.value : [];
+      setWallets(Array.isArray(ws) ? ws : []);
+      setClients(Array.isArray(cs) ? cs : []);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { setOverview([]); }
-    finally { if (mode === "refresh") setRefreshing(false); else setLoading(false); }
+    } catch {
+      setWallets([]); setClients([]);
+    } finally {
+      if (mode === "refresh") setRefreshing(false); else setLoading(false);
+    }
   }, [fadeAnim]);
 
-  useFocusEffect(useCallback(() => { fadeAnim.setValue(0); void load("init"); }, [load]));
+  useFocusEffect(useCallback(() => {
+    fadeAnim.setValue(0);
+    void load("init");
+  }, [load]));
 
+  // Sociétés clientes (hors DONIKO)
   const filteredClients = clients.filter((c) => (c.code ?? "").toUpperCase() !== "DONIKO");
+  const activeClients   = filteredClients.filter((c) => c.subscriptionStatus === "ACTIVE").length;
 
-  const totalTx   = overview.reduce((s, o) => s + parseApiNum(o.transactionCountToday), 0);
-  const totalFees = overview.reduce((s, o) => s + parseApiNum(o.totalFeesToday), 0);
-  const activeClients = filteredClients.filter((c) => c.subscriptionStatus === "ACTIVE").length;
+  // Statistiques sur les propres wallets du SA
+  const walletsWithBalance = wallets.filter((w) => toNum(w.balance) > 0).length;
+  const totalReserved      = wallets.reduce((s, w) => s + toNum(w.reservedBalance ?? 0), 0);
+  const totalAvailable     = wallets.reduce((s, w) => s + Math.max(0, toNum(w.balance) - toNum(w.reservedBalance ?? 0)), 0);
 
   const kpis = [
-    { label: "Transactions",     value: String(totalTx),           sub: "Aujourd'hui",        icon: "swap-horizontal-outline", color: T.saAccent, bg: T.saAccentLt },
-    { label: "Sociétés actives", value: `${activeClients}/${filteredClients.length}`, sub: "abonnements", icon: "business-outline", color: T.green, bg: T.greenLt },
-    { label: "Commissions",      value: fmt(totalFees * 0.3),      sub: "plateforme",          icon: "trending-up-outline",     color: T.amber,    bg: T.amberLt    },
-    { label: "Frais totaux",     value: fmt(totalFees),            sub: "toutes devises",      icon: "calculator-outline",      color: T.purple,   bg: T.purpleLt   },
+    {
+      label: "Wallets actifs",
+      value: `${walletsWithBalance}/${wallets.length}`,
+      sub:   "avec solde",
+      icon:  "wallet-outline",
+      color: T.saAccent, bg: T.saAccentLt,
+    },
+    {
+      label: "Sociétés actives",
+      value: `${activeClients}/${filteredClients.length}`,
+      sub:   "abonnements",
+      icon:  "business-outline",
+      color: T.green, bg: T.greenLt,
+    },
+    {
+      label: "Fonds réservés",
+      value: fmt(totalReserved),
+      sub:   "toutes devises",
+      icon:  "lock-closed-outline",
+      color: T.amber, bg: T.amberLt,
+    },
+    {
+      label: "Devises ouvertes",
+      value: String(wallets.length),
+      sub:   "comptes actifs",
+      icon:  "cash-outline",
+      color: T.purple, bg: T.purpleLt,
+    },
   ];
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: T.pageBg }]}>
       <StatusBar barStyle="light-content" />
-      <TreasuryHero g1={T.saHeroA} g2={T.saHeroB} g3={T.saHeroC} role="SUPER ADMIN"
-        userName={user?.firstName ?? ""} onBack={() => router.back()} onRefresh={() => void load("refresh")} />
+      <TreasuryHero
+        g1={T.saHeroA} g2={T.saHeroB} g3={T.saHeroC}
+        role="SUPER ADMIN"
+        userName={user?.firstName ?? ""}
+        onBack={() => router.back()}
+        onRefresh={() => void load("refresh")}
+      />
 
       {loading ? (
-        <View style={s.loader}><ActivityIndicator color={T.saAccent} size="large" /></View>
+        <View style={s.loader}>
+          <ActivityIndicator color={T.saAccent} size="large" />
+        </View>
       ) : (
-        <Animated.ScrollView style={{ opacity: fadeAnim }}
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
           contentContainerStyle={[s.scroll, { backgroundColor: T.pageBg }]}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void load("refresh")} tintColor={T.saAccent} />}>
-
-          <SL dot={T.saAccent} label="SOLDES GLOBAUX · 5 DEVISES" />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.currencyRow} snapToInterval={CARD_W + 10} decelerationRate="fast">
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => void load("refresh")}
+              tintColor={T.saAccent}
+            />
+          }
+        >
+          {/* ── Soldes propres du SA ── */}
+          <SL dot={T.saAccent} label="MES SOLDES · PAR DEVISE" />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.currencyRow}
+            snapToInterval={CARD_W + 10}
+            decelerationRate="fast"
+          >
             {CURRENCIES_ORDER.map((cur) => {
-              const ov = overview.find((o) => o.currency === cur);
+              const w = wallets.find((x) => x.currency === cur);
               return (
                 <View key={cur} style={{ marginRight: 10 }}>
                   <CurrencyCard
                     currency={cur}
-                    balance={parseApiNum(ov?.balance ?? ov?.totalBalance ?? 0)}
-                    reserved={parseApiNum(ov?.reservedBalance ?? 0)}
+                    balance={toNum(w?.balance ?? 0)}
+                    reserved={toNum(w?.reservedBalance ?? 0)}
                   />
                 </View>
               );
             })}
           </ScrollView>
 
-          <SL dot={T.purple} label="KPIs PLATEFORME" />
+          {/* ── KPIs ── */}
+          <SL dot={T.purple} label="SYNTHÈSE DU COMPTE" />
           <View style={s.kpiGrid}>
             {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
           </View>
 
+          {/* ── Accès rapide ── */}
           <SL dot={T.green} label="ACCÈS RAPIDE" />
           <View style={s.quickGrid}>
             {[
-              { label: "Transactions", icon: "analytics-outline",  color: T.saAccent, bg: T.saAccentLt, route: "/(tabs)/admin/transactions" },
-              { label: "Supervision",  icon: "shield-outline",     color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/agencies"     },
-              { label: "Sociétés",     icon: "business-outline",   color: T.amber,    bg: T.amberLt,    route: "/(tabs)/admin/agencies"     },
-              { label: "Retour",       icon: "arrow-back-outline",  color: T.purple,   bg: T.purpleLt,   route: null                          },
+              { label: "Transactions", icon: "analytics-outline",          color: T.saAccent, bg: T.saAccentLt, route: "/(tabs)/admin/transactions" },
+              { label: "Supervision",  icon: "shield-checkmark-outline",   color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/supervision"  },
+              { label: "Sociétés",     icon: "business-outline",           color: T.amber,    bg: T.amberLt,    route: "/(tabs)/admin/clients"      },
+              { label: "Retour",       icon: "arrow-back-outline",          color: T.purple,   bg: T.purpleLt,   route: null                          },
             ].map((item) => (
-              <TouchableOpacity key={item.label}
+              <TouchableOpacity
+                key={item.label}
                 style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
-                onPress={() => item.route ? router.push(item.route as any) : router.back()}>
+                onPress={() => item.route ? router.push(item.route as any) : router.back()}
+              >
                 <Ionicons name={item.icon as any} size={18} color={item.color} />
-                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>{item.label}</Text>
+                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>
+                  {item.label}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
 
+          {/* ── Sociétés clientes ── */}
           {filteredClients.length > 0 && (
             <>
-              <SL dot={T.amber} label={`TOP SOCIÉTÉS · ${filteredClients.length}`} />
+              <SL dot={T.amber} label={`SOCIÉTÉS CLIENTES · ${filteredClients.length}`} />
               {filteredClients.slice(0, 5).map((c, i) => {
-                const rc = [T.amber, T.inkMuted, "#B45309"][i] ?? T.inkMuted;
+                const rankColors = [T.amber, T.inkMuted, "#B45309"];
+                const rc = rankColors[i] ?? T.inkMuted;
                 return (
                   <View key={c.id} style={s.rankCard}>
                     <View style={[s.rankBox, { backgroundColor: rc + "18", borderColor: rc + "30" }]}>
@@ -578,12 +685,14 @@ function TreasurySuperAdmin() {
                     </View>
                     <View style={[s.rankStatus, {
                       backgroundColor: c.subscriptionStatus === "ACTIVE" ? T.greenLt : T.redLt,
-                      borderColor: (c.subscriptionStatus === "ACTIVE" ? T.green : T.red) + "30",
+                      borderColor:     (c.subscriptionStatus === "ACTIVE" ? T.green : T.red) + "30",
                     }]}>
                       <Text style={[s.rankStatusTxt, {
                         color: c.subscriptionStatus === "ACTIVE" ? T.green : T.red,
                         fontFamily: T.font.sans,
-                      }]}>{c.subscriptionStatus}</Text>
+                      }]}>
+                        {c.subscriptionStatus}
+                      </Text>
                     </View>
                   </View>
                 );
@@ -620,12 +729,12 @@ const s = StyleSheet.create({
   quickCard:{ width: (SW - 42) / 2, flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: T.radius.md, borderWidth: 1 },
   quickTxt: { fontSize: 12, fontWeight: "700" },
 
-  rankCard:   { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
-  rankBox:    { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  rankTxt:    { fontSize: 12, fontWeight: "900" },
-  rankName:   { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  rankCode:   { fontSize: 9, color: T.inkSub, fontWeight: "700" },
-  rankStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+  rankCard:      { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
+  rankBox:       { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  rankTxt:       { fontSize: 12, fontWeight: "900" },
+  rankName:      { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  rankCode:      { fontSize: 9,  color: T.inkSub, fontWeight: "700" },
+  rankStatus:    { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
   rankStatusTxt: { fontSize: 9, fontWeight: "800" },
 
   emptyRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16 },

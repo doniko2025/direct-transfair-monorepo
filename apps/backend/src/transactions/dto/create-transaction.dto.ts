@@ -1,4 +1,4 @@
-// src/transactions/dto/create-transaction.dto.ts
+// apps/backend/src/transactions/dto/create-transaction.dto.ts
 import {
   IsEnum,
   IsNotEmpty,
@@ -21,9 +21,14 @@ export class CreateTransactionDto {
   @IsEnum(PayoutMethod)
   payoutMethod: PayoutMethod;
 
+  // ✅ FIX : @IsOptional() ajouté
+  // AVANT : @IsNotEmpty() → rejetait undefined → "beneficiaryId should not be empty"
+  //         quand wallet-transfer.tsx envoyait sans beneficiaryId
+  // MAINTENANT : optionnel — le service gère le cas null (no beneficiary = pas de
+  //              conversion de devise, lookup par phone directement)
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  beneficiaryId: string;
+  beneficiaryId?: string;
 
   @IsOptional()
   @IsString()
@@ -48,7 +53,7 @@ export class CreateDepositDto {
   userPhone: string;
 }
 
-// ✅ NOUVEAUX DTOs POUR SÉCURISER LA TRÉSORERIE (Le correctif est ici)
+// ✅ DTOs TRÉSORERIE
 export class FundSelfDto {
   @IsNumber()
   @IsPositive()

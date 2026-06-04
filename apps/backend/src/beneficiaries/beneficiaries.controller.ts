@@ -1,10 +1,15 @@
 // apps/backend/src/beneficiaries/beneficiaries.controller.ts
 // =========================================================
-// BENEFICIARIES CONTROLLER v4.0
-// ✅ Import JwtAuthGuard depuis '../auth/jwt-auth.guard' (pas guards/)
+// BENEFICIARIES CONTROLLER v4.1
+// ✅ v4.0 : chemin JwtAuthGuard corrigé
+// ✅ v4.1 : GET /beneficiaries/lookup?phone=...
+//    Recherche un destinataire par numéro de téléphone.
+//    Utilisé par le frontend wallet-transfer pour auto-suggérer
+//    les infos du destinataire dès la saisie du numéro.
 // =========================================================
 
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -13,17 +18,17 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { BeneficiariesService } from './beneficiaries.service';
 import { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 
-// ✅ CORRECTION : chemin correct (plus guards/)
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantGuard } from '../tenants/tenant.guard';
 
@@ -37,8 +42,8 @@ export class BeneficiariesController {
   constructor(private readonly beneficiariesService: BeneficiariesService) {}
 
   private getUserInfo(req: any) {
-    const user = req.user;
-    const userId = user?.id || user?.sub || user?.userId;
+    const user     = req.user;
+    const userId   = user?.id || user?.sub || user?.userId;
     const clientId = user?.clientId;
 
     if (!userId) {
@@ -48,6 +53,48 @@ export class BeneficiariesController {
 
     return { userId, clientId };
   }
+
+  // ========================================================
+  // LOOKUP PAR TÉLÉPHONE — v4.1
+  // GET /beneficiaries/lookup?phone=+221775099995
+  //
+  // Doit être déclaré AVANT /:id pour ne pas être capturé
+  // par la route @Get(':id').
+  //
+  // Retourne :
+  //   { found: true, isPlatformUser: true, fullName, country, city, ... }
+  //   { found: false, isPlatformUser: false }
+  // ========================================================
+
+  @Get('lookup')
+  @ApiOperation({
+    summary: 'Recherche un destinataire par numéro de téléphone',
+    description:
+      'Renvoie les infos du destinataire (bénéficiaire existant ou ' +
+      'utilisateur enregistré sur la plateforme) pour auto-suggestion ' +
+      'dans le formulaire de transfert wallet.',
+  })
+  @ApiQuery({
+    name:        'phone',
+    required:    true,
+    description: 'Numéro en format international, ex: +221775099995',
+  })
+  async lookupByPhone(
+    @Req() req: any,
+    @Query('phone') phone: string,
+  ) {
+    const { userId } = this.getUserInfo(req);
+
+    if (!phone?.trim()) {
+      throw new BadRequestException('Le paramètre "phone" est requis.');
+    }
+
+    return this.beneficiariesService.lookupByPhone(phone.trim(), userId);
+  }
+
+  // ========================================================
+  // CRUD STANDARD
+  // ========================================================
 
   @Post()
   async create(@Req() req: any, @Body() dto: CreateBeneficiaryDto) {

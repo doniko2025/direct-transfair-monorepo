@@ -1,11 +1,15 @@
 // apps/direct-transfair-mobile/app/agent/transactions.tsx
 // =========================================================
-// AGENT TRANSACTIONS v5.2 — Direct Transf'air
-// ✅ FIX : retraits validés par l'agent récupérés via /withdrawals
-//    puis croisés avec /transactions pour affichage complet
-// ✅ AGENCY_REFILL  → entrant  → badge "Reçu"   (teal +)
-// ✅ DEPOSIT        → sortant  → badge "Déposé"  (amber -)
-// ✅ Retrait validé → sortant  → badge "Payé"    (green -)
+// AGENT TRANSACTIONS v5.3 — Direct Transf'air
+// ✅ v5.2 : retraits validés récupérés via /withdrawals
+// ✅ FIX v5.3 : resolveAgentDirection — fallback "Transaction" → "Envoi d'argent"
+//    AVANT : tout ce qui n'est pas REFILL/DEPOSIT/_agentPayout tombait dans
+//            le fallback générique qui retournait label: "Transaction"
+//    APRÈS  : le fallback distingue senderId === agentId → "Envoi d'argent"
+//             vs recipientId === agentId → "Transfert reçu"
+// ✅ FIX v5.3 : displayAmount — montant entrant avec conversion
+//    AVANT : l'agent voyait le montant en devise expéditeur (EUR)
+//    APRÈS  : si hasConversion && isIncoming → receivedAmount / targetCurrency
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -57,7 +61,7 @@ function fmtDate(iso: string): string {
 }
 
 // =========================================================
-// LOGIQUE DIRECTION AGENT
+// LOGIQUE DIRECTION AGENT v5.3
 // =========================================================
 function resolveAgentDirection(tx: any, agentId: string): {
   isIncoming: boolean;
@@ -70,18 +74,17 @@ function resolveAgentDirection(tx: any, agentId: string): {
   const status = String(tx.status ?? "").toUpperCase();
   const isRefill   = type === "AGENCY_REFILL" || type === "REFILL";
   const isDeposit  = type === "DEPOSIT";
-  // ✅ Retrait validé : marqué via _agentPayout injecté au chargement
   const isMyPayout = tx._agentPayout === true;
 
   if (isRefill) {
     return {
       isIncoming: true,
-      label:      "Recharge caisse",
-      sublabel:   tx.sender
+      label:   "Recharge caisse",
+      sublabel: tx.sender
         ? `${tx.sender.firstName ?? ""} ${tx.sender.lastName ?? ""}`.trim()
         : "Admin",
       icon: "arrow-down-circle-outline", iconBg: C.tealBg, iconColor: C.teal,
-      badgeLabel:  status === "PAID" ? "Reçu ✓" : "En attente",
+      badgeLabel:  status === "PAID" ? "Reçu ✓"   : "En attente",
       badgeColor:  status === "PAID" ? C.teal   : C.amber,
       badgeBg:     status === "PAID" ? C.tealBg : C.amberBg,
       badgeBorder: status === "PAID" ? C.tealBorder : C.amberBorder,
@@ -116,14 +119,27 @@ function resolveAgentDirection(tx: any, agentId: string): {
     };
   }
 
+  // ✅ FIX v5.3 — fallback générique
+  // AVANT : toujours isIncoming=false, label="Transaction", amountColor=violet
+  // APRÈS : on distingue selon senderId vs recipientId
+  const isOutgoing = String(tx.senderId ?? "") === agentId;
   return {
-    isIncoming: false,
-    label:    "Transaction",
-    sublabel: tx.reference ?? "—",
-    icon: "swap-horizontal-outline", iconBg: C.violetLight, iconColor: C.violet,
-    badgeLabel:  status === "PAID" ? "Traité" : status,
-    badgeColor:  C.violet, badgeBg: C.violetLight, badgeBorder: C.violetBorder,
-    amountSign: "−", amountColor: C.violet,
+    isIncoming: !isOutgoing,
+    label:    isOutgoing ? "Envoi d'argent" : "Transfert reçu",
+    sublabel: isOutgoing
+      ? (tx.beneficiary?.fullName ?? tx.beneficiary?.phone ?? "Bénéficiaire")
+      : (tx.sender?.firstName
+          ? `${tx.sender.firstName} ${tx.sender.lastName ?? ""}`.trim()
+          : "Expéditeur"),
+    icon:    isOutgoing ? "paper-plane-outline"      : "arrow-down-circle-outline",
+    iconBg:  isOutgoing ? C.redBg                    : C.greenBg,
+    iconColor:isOutgoing ? C.red                     : C.green,
+    badgeLabel:  status === "PAID" ? (isOutgoing ? "Payé ✓" : "Reçu ✓") : status,
+    badgeColor:  isOutgoing ? C.green   : C.teal,
+    badgeBg:     isOutgoing ? C.greenBg : C.tealBg,
+    badgeBorder: isOutgoing ? C.greenBorder : C.tealBorder,
+    amountSign:  isOutgoing ? "−" : "+",
+    amountColor: isOutgoing ? C.red : C.green,
   };
 }
 
@@ -157,11 +173,24 @@ function TxCard({ item, userId }: { item: Transaction; userId?: string }) {
   const dir = resolveAgentDirection(tx, userId ?? "");
 
   const isMyPayout = tx._agentPayout === true;
+
+  // ✅ FIX v5.3 — displayAmount pour les entrants avec conversion
   let displayAmount   = toNum(tx.amount);
   let displayCurrency = tx.currency ?? "XOF";
+
   if (isMyPayout && toNum(tx.receivedAmount) > 0) {
+    // Retrait validé : montant en devise du bénéficiaire
     displayAmount   = toNum(tx.receivedAmount);
     displayCurrency = tx.targetCurrency ?? "GNF";
+  } else if (
+    dir.isIncoming &&
+    tx.targetCurrency &&
+    tx.targetCurrency !== tx.currency &&
+    toNum(tx.receivedAmount) > 0
+  ) {
+    // Transfert entrant avec conversion : montant reçu en devise cible
+    displayAmount   = toNum(tx.receivedAmount);
+    displayCurrency = tx.targetCurrency;
   }
 
   return (
@@ -247,7 +276,6 @@ export default function AgentHistoryScreen() {
 
       const myId = String(user.id);
 
-      // ✅ Chargement parallèle : transactions + withdrawals traités par l'agent
       const [txList, wdList] = await Promise.allSettled([
         api.getTransactions(),
         api.getWithdrawals(),
@@ -256,13 +284,11 @@ export default function AgentHistoryScreen() {
       const allTx: any[] = txList.status === "fulfilled" ? txList.value : [];
       const allWd: any[] = wdList.status === "fulfilled" ? wdList.value : [];
 
-      // IDs de transactions déjà liées aux retraits que l'agent a traités
       const processedWithdrawals = allWd.filter(
         (w) => String(w.processedById ?? "") === myId && w.transactionId
       );
       const payoutTxIds = new Set(processedWithdrawals.map((w) => String(w.transactionId)));
 
-      // ✅ Construire la liste finale des transactions pertinentes pour l'agent
       const myTxs: any[] = [];
       const seenIds = new Set<string>();
 
@@ -270,53 +296,45 @@ export default function AgentHistoryScreen() {
         const type = String(tx.type ?? "").toUpperCase();
         const txId = String(tx.id);
 
-        // Recharge caisse
         if (type === "AGENCY_REFILL" || type === "REFILL") {
           if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
           continue;
         }
-        // Dépôt initié par l'agent
         if (type === "DEPOSIT" && String(tx.senderId ?? "") === myId) {
           if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
           continue;
         }
-        // ✅ Retrait validé par l'agent (croisement avec /withdrawals)
         if (payoutTxIds.has(txId)) {
           if (!seenIds.has(txId)) {
             seenIds.add(txId);
-            // Marquer la tx pour que resolveAgentDirection l'identifie correctement
             myTxs.push({ ...tx, _agentPayout: true });
           }
           continue;
         }
-        // Envoi initié par l'agent
         if (String(tx.senderId ?? "") === myId) {
           if (!seenIds.has(txId)) { seenIds.add(txId); myTxs.push(tx); }
         }
       }
 
-      // ✅ Retraits dont la transaction n'est PAS dans allTx (endpoint limité)
-      // → créer une transaction synthétique à partir du withdrawal
       for (const w of processedWithdrawals) {
         const txId = String(w.transactionId);
         if (!seenIds.has(txId)) {
           seenIds.add(txId);
           myTxs.push({
-            id:             txId,
-            reference:      w.code ?? txId.slice(0, 8),
-            amount:         toNum(w.amount),
-            fees:           0,
-            total:          toNum(w.amount),
-            currency:       w.currency ?? "XOF",
-            status:         w.status ?? "PAID",
-            type:           "WITHDRAWAL",
-            createdAt:      w.paidAt ?? w.createdAt,
-            _agentPayout:   true,
+            id:           txId,
+            reference:    w.code ?? txId.slice(0, 8),
+            amount:       toNum(w.amount),
+            fees:         0,
+            total:        toNum(w.amount),
+            currency:     w.currency ?? "XOF",
+            status:       w.status ?? "PAID",
+            type:         "WITHDRAWAL",
+            createdAt:    w.paidAt ?? w.createdAt,
+            _agentPayout: true,
           });
         }
       }
 
-      // Tri antéchronologique
       myTxs.sort((a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
@@ -350,10 +368,9 @@ export default function AgentHistoryScreen() {
     );
   });
 
-  // Compteurs
   const refillCount  = transactions.filter((tx) => { const t = String((tx as any).type ?? "").toUpperCase(); return t === "AGENCY_REFILL" || t === "REFILL"; }).length;
   const payoutCount  = transactions.filter((tx) => (tx as any)._agentPayout === true).length;
-  const depositCount = transactions.filter((tx) => { const t = tx as any; return String(t.type ?? "").toUpperCase() === "DEPOSIT"; }).length;
+  const depositCount = transactions.filter((tx) => String((tx as any).type ?? "").toUpperCase() === "DEPOSIT").length;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -449,12 +466,12 @@ const s = StyleSheet.create({
   pillTxt:{ color: "#E8E0FF", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
   heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
   heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  searchBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 14, height: 44, marginTop: 14 },
+  searchBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 14, marginTop: 12, height: 44 },
   searchInput: { flex: 1, fontSize: 14, color: C.white, fontWeight: "600" },
-  statsRow: { flexDirection: "row", gap: 10, paddingHorizontal: 18, paddingTop: 14, marginBottom: 4 },
-  list:  { paddingHorizontal: 18, paddingTop: 14 },
-  empty: { alignItems: "center", paddingVertical: 50, gap: 10 },
-  emptyIconBox: { width: 68, height: 68, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  emptyTitle: { color: C.ink, fontSize: 17, fontWeight: "700" },
-  emptySub:   { color: C.inkSoft, fontSize: 12, fontWeight: "600", textAlign: "center", paddingHorizontal: 30 },
+  statsRow:  { flexDirection: "row", gap: 10, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.violetBorder },
+  list:  { paddingHorizontal: 18, paddingTop: 16 },
+  empty: { alignItems: "center", paddingVertical: 60, gap: 8 },
+  emptyIconBox: { width: 70, height: 70, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: C.violetBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  emptyTitle:   { color: C.ink, fontSize: 17, fontWeight: "700" },
+  emptySub:     { color: C.inkSoft, fontSize: 12, fontWeight: "600" },
 });

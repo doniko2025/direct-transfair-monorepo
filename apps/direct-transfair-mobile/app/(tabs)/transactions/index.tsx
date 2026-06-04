@@ -1,10 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.1 — Direct Transf'air
-// ✅ AGENT : retraits validés récupérés via /withdrawals
-//    puis croisés avec /transactions + tx synthétiques si besoin
-// ✅ Logique isIncoming correcte pour les 4 rôles
-// ✅ Badge "Reçu" si entrant + PAID / "Payé" si sortant + PAID
+// TRANSACTIONS HISTORY v6.2 — Direct Transf'air
+// ✅ v6.1 : AGENT : retraits validés récupérés via /withdrawals
+// ✅ FIX v6.2 : displayAmount / displayCurrency pour les entrants
+//    AVANT : le DESTINATAIRE voyait "15 EUR" (devise expéditeur)
+//    APRÈS  : le DESTINATAIRE voit "+9 839 XOF" (montant reçu réel)
+//    Règle  : si isIncoming ET conversion (targetCurrency ≠ currency)
+//             ET receivedAmount > 0 → afficher receivedAmount / targetCurrency
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
@@ -82,7 +84,7 @@ function resolveDirection(tx: any, userId?: string, role?: string): {
   isIncoming: boolean;
   label: string; icon: string; iconBg: string; iconColor: string;
 } {
-  const type   = String(tx.type ?? "").toUpperCase();
+  const type      = String(tx.type ?? "").toUpperCase();
   const isB2B     = type === "SERVICE_PAYMENT";
   const isRefill  = type === "AGENCY_REFILL" || type === "REFILL";
   const isDeposit = type === "DEPOSIT" || type === "TOP_UP";
@@ -108,7 +110,6 @@ function resolveDirection(tx: any, userId?: string, role?: string): {
     }
 
     case "AGENT": {
-      // ✅ Retrait validé par l'agent → sortant (marqué _agentPayout)
       if (tx._agentPayout)
         return { isIncoming: false, label: "Retrait client payé",   icon: "cash-outline",                iconBg: C.greenPale, iconColor: C.green  };
       if (isRefill)
@@ -145,7 +146,20 @@ function TxCard({ item, userId, userRole }: {
     color: C.slate, bg: C.slateBg, border: C.slateBorder, icon: "help-circle-outline",
   };
   const badgeLabel = dir.isIncoming ? rawSt.labelIncoming : rawSt.label;
-  const amount = toNum(item.amount);
+
+  // ✅ FIX v6.2 — Montant affiché pour les transactions entrantes
+  // Si l'utilisateur est le DESTINATAIRE d'une conversion (EUR→XOF par ex.),
+  // afficher receivedAmount (9 839 XOF) plutôt que amount (15 EUR).
+  const hasConversion =
+    item.targetCurrency &&
+    item.targetCurrency !== item.currency &&
+    toNum(item.receivedAmount) > 0;
+  const displayAmount   = dir.isIncoming && hasConversion
+    ? toNum(item.receivedAmount)
+    : toNum(item.amount);
+  const displayCurrency: string = dir.isIncoming && hasConversion
+    ? (item.targetCurrency as string)
+    : (item.currency as string);
 
   const counterpart = dir.isIncoming
     ? (item.sender?.firstName
@@ -186,13 +200,16 @@ function TxCard({ item, userId, userRole }: {
                 color: dir.isIncoming ? C.green : C.red,
                 fontFamily: C.font.serif,
               }]}>
-                {dir.isIncoming ? "+" : "−"} {fmt(amount, item.currency)}
+                {dir.isIncoming ? "+" : "−"} {fmt(displayAmount, displayCurrency)}
               </Text>
-              <Text style={[tc.currency, { fontFamily: C.font.mono }]}>{item.currency}</Text>
+              <Text style={[tc.currency, { fontFamily: C.font.mono }]}>{displayCurrency}</Text>
             </View>
           </View>
           <View style={tc.bottom}>
-            {item.targetCurrency && item.targetCurrency !== item.currency && (
+            {/* Pill conversion : affiché uniquement quand on est l'EXPÉDITEUR (sortant)
+                et qu'il y a une conversion, pour info. Pour l'entrant, displayAmount
+                affiche déjà le bon montant donc le pill serait redondant. */}
+            {!dir.isIncoming && item.targetCurrency && item.targetCurrency !== item.currency && (
               <View style={tc.convPill}>
                 <Ionicons name="swap-horizontal-outline" size={10} color={C.blue} />
                 <Text style={[tc.convTxt, { fontFamily: C.font.mono }]}>
@@ -257,7 +274,6 @@ export default function TransactionsScreen() {
         list = Array.isArray(res) ? res : [];
 
       } else if (isAgent) {
-        // ✅ Chargement parallèle pour l'agent
         const myId = String(user?.id ?? "");
         const [txRes, wdRes] = await Promise.allSettled([
           api.getTransactions(),
@@ -295,7 +311,6 @@ export default function TransactionsScreen() {
           }
         }
 
-        // Transactions synthétiques pour les retraits sans tx dans /transactions
         for (const w of processedWithdrawals) {
           const txId = String(w.transactionId);
           if (!seenIds.has(txId)) {
@@ -417,7 +432,8 @@ export default function TransactionsScreen() {
 
       {/* ── Filtres ── */}
       <FlatList
-        horizontal data={[...FILTERS]}
+        horizontal
+        data={[...FILTERS]}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={s.filters}
         style={{ maxHeight: 52, backgroundColor: C.pageBg }}
@@ -430,38 +446,49 @@ export default function TransactionsScreen() {
             : transactions.filter((t) => t.status === f).length;
           return (
             <TouchableOpacity
-              style={[s.filterPill, active && {
-                backgroundColor: st ? st.bg : C.greenPale,
-                borderColor:     st ? st.border : C.greenBorder,
-              }]}
+              style={[
+                s.filterPill,
+                active && { backgroundColor: st?.bg ?? C.greenPale, borderColor: `${st?.color ?? C.green}30` },
+              ]}
               onPress={() => setFilter(f)}
+              activeOpacity={0.8}
             >
+              {active && st && (
+                <Ionicons name={st.icon as any} size={10} color={st.color} />
+              )}
               <Text style={[
-                s.filterTxt, { fontFamily: C.font.sans },
-                active && { color: st?.color ?? C.green, fontWeight: "800" },
+                s.filterTxt,
+                { color: active ? (st?.color ?? C.green) : C.inkSoft, fontFamily: C.font.sans },
               ]}>
-                {f === "ALL" ? "Toutes" : (st?.label ?? f)}
+                {f === "ALL" ? "Toutes" : st?.label ?? f}
               </Text>
-              <View style={[s.filterCount, { backgroundColor: active ? (st?.color ?? C.green) + "20" : C.greenLight }]}>
-                <Text style={[s.filterCountTxt, { color: active ? (st?.color ?? C.green) : C.inkSoft, fontFamily: C.font.mono }]}>
-                  {count}
-                </Text>
-              </View>
+              {count > 0 && (
+                <View style={[
+                  s.filterCount,
+                  { backgroundColor: active ? `${st?.color ?? C.green}15` : C.white },
+                ]}>
+                  <Text style={[
+                    s.filterCountTxt,
+                    { color: active ? (st?.color ?? C.green) : C.inkSoft, fontFamily: C.font.mono },
+                  ]}>
+                    {count}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         }}
       />
 
-      {/* ── Liste ── */}
-      {loading ? (
+      {loading && !refreshing ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator color={C.green} size="large" />
         </View>
       ) : (
         <Animated.FlatList
-          style={{ opacity: fadeAnim, flex: 1 }}
+          style={{ opacity: fadeAnim }}
           data={filtered}
-          keyExtractor={(item) => item.id?.toString()}
+          keyExtractor={(item) => item.id ?? String(Math.random())}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
@@ -477,7 +504,7 @@ export default function TransactionsScreen() {
           ListEmptyComponent={
             <View style={s.empty}>
               <View style={s.emptyIconBox}>
-                <Ionicons name="document-text-outline" size={34} color={C.inkSoft} />
+                <Ionicons name="receipt-outline" size={34} color={C.inkSoft} />
               </View>
               <Text style={[s.emptyTitle, { fontFamily: C.font.serif }]}>
                 {q ? "Aucun résultat" : "Aucune transaction"}
@@ -487,7 +514,7 @@ export default function TransactionsScreen() {
               </Text>
             </View>
           }
-          ListFooterComponent={<View style={{ height: 100 }} />}
+          ListFooterComponent={<View style={{ height: 80 }} />}
         />
       )}
     </SafeAreaView>
@@ -495,26 +522,40 @@ export default function TransactionsScreen() {
 }
 
 const s = StyleSheet.create({
-  safe:          { flex: 1, backgroundColor: C.pageBg },
-  hero:          { backgroundColor: C.green, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 48 : 16, paddingBottom: 20, overflow: "hidden" },
-  glow:          { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:       { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
-  heroPill:      { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
-  heroPillDot:   { width: 4, height: 4, borderRadius: C.r.pill, backgroundColor: "#A5F3FC" },
-  heroPillTxt:   { color: "#E8FFE8", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
-  heroTitle:     { color: C.white, fontSize: 24, fontWeight: "700", marginBottom: 2 },
-  heroSub:       { color: C.heroDim, fontSize: 11, fontWeight: "600" },
-  refreshBtn:    { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", marginTop: 4 },
-  searchBox:     { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 14, height: 44 },
-  searchInput:   { flex: 1, fontSize: 14, color: C.white, fontWeight: "600" },
-  filters:       { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: "center" },
-  filterPill:    { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: C.r.pill, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder },
-  filterTxt:     { fontSize: 12, fontWeight: "700", color: C.inkSoft },
-  filterCount:   { paddingHorizontal: 6, paddingVertical: 2, borderRadius: C.r.pill },
-  filterCountTxt:{ fontSize: 10, fontWeight: "900" },
-  list:          { paddingHorizontal: 16, paddingTop: 12 },
-  empty:         { alignItems: "center", paddingVertical: 50, gap: 8 },
-  emptyIconBox:  { width: 68, height: 68, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  emptyTitle:    { color: C.ink, fontSize: 17, fontWeight: "700" },
-  emptySub:      { color: C.inkSoft, fontSize: 12, fontWeight: "600", textAlign: "center" },
+  safe: { flex: 1, backgroundColor: C.pageBg },
+
+  hero: {
+    backgroundColor: C.green,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 48 : 16,
+    paddingBottom: 20, overflow: "hidden",
+  },
+  glow:       { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+  heroRow:    { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  heroPill:   { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.14)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 4 },
+  heroPillDot:{ width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: "#A5F3FC" },
+  heroPillTxt:{ color: "rgba(255,255,255,0.90)", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
+  heroTitle:  { color: C.white, fontSize: 24, fontWeight: "700", marginBottom: 2 },
+  heroSub:    { color: C.heroDim, fontSize: 11, fontWeight: "600" },
+  refreshBtn: { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", marginTop: 4 },
+
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    borderRadius: C.r.md, paddingHorizontal: 14, height: 44,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: C.white, fontWeight: "600" },
+
+  filters:        { paddingHorizontal: 16, gap: 8, paddingVertical: 10, alignItems: "center" },
+  filterPill:     { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: C.r.pill, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.cardBorder },
+  filterTxt:      { fontSize: 11, fontWeight: "800" },
+  filterCount:    { minWidth: 18, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, alignItems: "center" },
+  filterCountTxt: { fontSize: 10, fontWeight: "900" },
+
+  list:         { paddingHorizontal: 16, paddingTop: 14 },
+  empty:        { alignItems: "center", paddingVertical: 60, gap: 8 },
+  emptyIconBox: { width: 70, height: 70, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  emptyTitle:   { color: C.ink, fontSize: 18, fontWeight: "700" },
+  emptySub:     { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },
 });

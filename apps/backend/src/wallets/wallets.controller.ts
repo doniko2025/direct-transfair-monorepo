@@ -39,9 +39,10 @@ export class WalletsController {
     @Query('to') to?: string,
   ) {
     if (!req.user) throw new ForbiddenException('Non authentifié');
+    // ✅ v5.3 : getWalletById gère maintenant les wallets clientId
     await this.walletsService.getWalletById(walletId, req.user.id);
     return this.walletsService.getLedger(walletId, {
-      page: page ? parseInt(page) : 1,
+      page:  page  ? parseInt(page)  : 1,
       limit: limit ? parseInt(limit) : 20,
       from,
       to,

@@ -1,11 +1,14 @@
 // apps/direct-transfair-mobile/app/agent/deposit.tsx
 // =========================================================
-// AGENT DEPOSIT (CASH-IN) v5.0 — Direct Transf'air
-// Design: Thème clair · Violet #6C47FF · Ultra-moderne
-// ✅ Dépôt client via numéro de téléphone
+// AGENT DEPOSIT (CASH-IN) v5.1 — Direct Transf'air
+// ✅ v5.0 : Thème violet ultra-moderne
+// ✅ FIX v5.1 : Devise dynamique (plus de "XOF" hardcodé)
+//    - Chargée depuis user.primaryCurrency (proxy agence)
+//    - Message de succès utilise result.data.currency
+//    - Montants rapides adaptés à la devise
 // =========================================================
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
@@ -14,42 +17,35 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../services/api";
+import { useAuth } from "../../providers/AuthProvider";
 
 // ─── Design System ──────────────────────────────────────
 const C = {
   violet:       "#6C47FF",
   violetLight:  "#F5F3FF",
   violetBorder: "#EDE9FE",
-
   heroGlass:    "rgba(255,255,255,0.14)",
   heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:      "rgba(255,255,255,0.60)",
   heroGlow:     "rgba(255,255,255,0.08)",
-
   pageBg:       "#F4F2FF",
   white:        "#FFFFFF",
   cardBorder:   "#EDE9FE",
   inputBg:      "#F8F7FF",
-
   ink:          "#12082E",
   inkMid:       "#4B3F72",
   inkSoft:      "#8B80A8",
-
   green:        "#10B981",
   greenBg:      "#ECFDF5",
   greenBorder:  "#A7F3D0",
-
   red:          "#EF4444",
   redBg:        "#FEF2F2",
-
   blue:         "#3B82F6",
   blueBg:       "#EFF6FF",
   blueBorder:   "#BFDBFE",
-
   amber:        "#F59E0B",
   amberBg:      "#FFFBEB",
   amberBorder:  "#FDE68A",
-
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
     serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
@@ -58,9 +54,24 @@ const C = {
   },
 };
 
-function fmt(n: number): string {
-  try { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n); }
-  catch { return Math.round(n).toString(); }
+// ─── Montants rapides par devise ─────────────────────────
+const QUICK_BY_CURRENCY: Record<string, number[]> = {
+  XOF: [1_000, 2_000, 5_000, 10_000, 25_000, 50_000],
+  GNF: [10_000, 20_000, 50_000, 100_000, 250_000, 500_000],
+  EUR: [10, 20, 50, 100, 200, 500],
+  USD: [10, 20, 50, 100, 200, 500],
+  GBP: [10, 20, 50, 100, 200, 500],
+};
+
+// ─── Formatage selon devise ───────────────────────────────
+function fmt(n: number, currency = "XOF"): string {
+  const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    }).format(n);
+  } catch { return n.toFixed(d); }
 }
 
 // ─── Field ──────────────────────────────────────────────
@@ -94,53 +105,112 @@ const f = StyleSheet.create({
   input:   { paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: C.ink, fontWeight: "600" },
 });
 
-const QUICK = [1_000, 2_000, 5_000, 10_000, 25_000, 50_000];
-
 export default function AgentDepositScreen() {
   const router = useRouter();
-  const [phone,   setPhone]   = useState("");
-  const [amount,  setAmount]  = useState("");
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+
+  const [phone,          setPhone]          = useState("");
+  const [amount,         setAmount]         = useState("");
+  const [loading,        setLoading]        = useState(false);
+  // ✅ FIX v5.1 : devise chargée depuis le profil agent (proxy wallet agence)
+  const [agentCurrency,  setAgentCurrency]  = useState<string>(
+    (user as any)?.primaryCurrency ?? "XOF"
+  );
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const numAmount = parseFloat(amount) || 0;
-  const canSubmit = phone.trim().length >= 8 && numAmount > 0;
+  // ── Charge la devise de l'agence au montage ─────────────
+  useEffect(() => {
+    const loadCurrency = async () => {
+      try {
+        // Essaie de charger les wallets de l'agent (via API)
+        const wallets = await api.getMyWallets();
+        if (Array.isArray(wallets) && wallets.length > 0) {
+          // Prend la devise du premier wallet actif
+          const primaryWallet = wallets.find((w) => w.isDefault) ?? wallets[0];
+          if (primaryWallet?.currency) {
+            setAgentCurrency(primaryWallet.currency);
+          }
+        }
+      } catch {
+        // Fallback : primaryCurrency du profil utilisateur
+        const primary = (user as any)?.primaryCurrency;
+        if (primary) setAgentCurrency(primary);
+      }
+    };
+    void loadCurrency();
+  }, []);
+
+  const numAmount  = parseFloat(amount) || 0;
+  const canSubmit  = phone.trim().length >= 8 && numAmount > 0;
+  const quickAmounts = QUICK_BY_CURRENCY[agentCurrency] ?? QUICK_BY_CURRENCY.XOF;
 
   const showAlert = (title: string, msg: string, onOk?: () => void) => {
-    if (Platform.OS === "web") { setTimeout(() => { window.alert(`${title}\n\n${msg}`); if (onOk) onOk(); }, 100); }
-    else Alert.alert(title, msg, [{ text: "OK", onPress: onOk }]);
+    if (Platform.OS === "web") {
+      setTimeout(() => { window.alert(`${title}\n\n${msg}`); if (onOk) onOk(); }, 100);
+    } else {
+      Alert.alert(title, msg, [{ text: "OK", onPress: onOk }]);
+    }
   };
 
   const handleDeposit = () => {
-    if (!canSubmit) { showAlert("Champs manquants", "Veuillez remplir le numéro et le montant."); return; }
-    const msg = `Créditer ${fmt(numAmount)} XOF sur le wallet du client ${phone.trim()} ?`;
-    if (Platform.OS === "web") { if (window.confirm(msg)) void process(); }
-    else Alert.alert("Confirmation Dépôt", msg, [
-      { text: "Annuler", style: "cancel" },
-      { text: "CONFIRMER", onPress: () => void process() },
-    ]);
+    if (!canSubmit) {
+      showAlert("Champs manquants", "Veuillez remplir le numéro et le montant.");
+      return;
+    }
+    const msg = `Créditer ${fmt(numAmount, agentCurrency)} ${agentCurrency} sur le wallet du client ${phone.trim()} ?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) void process();
+    } else {
+      Alert.alert("Confirmation Dépôt", msg, [
+        { text: "Annuler", style: "cancel" },
+        { text: "CONFIRMER", onPress: () => void process() },
+      ]);
+    }
   };
 
   const process = async () => {
     setLoading(true);
     try {
-      await api.http.post("/transactions/deposit", { userPhone: phone.trim(), amount: numAmount });
-      showAlert("✅ Dépôt effectué", `${fmt(numAmount)} XOF crédités sur ${phone.trim()}.`, () => router.back());
+      // ✅ FIX v5.1 : utilise result.data.currency pour le message de succès
+      const result = await api.http.post("/transactions/deposit", {
+        userPhone: phone.trim(),
+        amount:    numAmount,
+      });
+
+      // Devise réelle créditée (retournée par le backend)
+      const creditedCurrency: string = result?.data?.currency ?? agentCurrency;
+      const creditedAmount:   number = result?.data?.amount   ?? numAmount;
+
+      showAlert(
+        "✅ Dépôt effectué",
+        `${fmt(creditedAmount, creditedCurrency)} ${creditedCurrency} crédités sur ${phone.trim()}.`,
+        () => router.back(),
+      );
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Le dépôt a échoué.";
       showAlert("Erreur", Array.isArray(msg) ? msg[0] : msg);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Anime l'apparition du résumé
   const onAmountChange = (v: string) => {
     setAmount(v);
     const n = parseFloat(v) || 0;
-    Animated.timing(fadeAnim, { toValue: n > 0 && phone.trim().length >= 8 ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(fadeAnim, {
+      toValue: n > 0 && phone.trim().length >= 8 ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
   };
   const onPhoneChange = (v: string) => {
     setPhone(v);
-    Animated.timing(fadeAnim, { toValue: numAmount > 0 && v.trim().length >= 8 ? 1 : 0, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(fadeAnim, {
+      toValue: numAmount > 0 && v.trim().length >= 8 ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
   };
 
   return (
@@ -156,16 +226,21 @@ export default function AgentDepositScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Dépôt Client</Text>
-            <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>Cash-In · Crédit Wallet</Text>
+            <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>Cash-In · Crédit Wallet</Text>
           </View>
-          <View style={s.heroBadge}>
-            <Ionicons name="arrow-down-circle-outline" size={20} color={C.white} />
+          {/* ✅ Badge devise dynamique */}
+          <View style={[s.heroBadge, { paddingHorizontal: 12 }]}>
+            <Text style={[s.heroBadgeTxt, { fontFamily: C.font.mono }]}>{agentCurrency}</Text>
           </View>
         </View>
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
           {/* Bannière info */}
           <View style={s.banner}>
@@ -173,7 +248,8 @@ export default function AgentDepositScreen() {
               <Ionicons name="wallet-outline" size={17} color={C.blue} />
             </View>
             <Text style={[s.bannerTxt, { fontFamily: C.font.sans }]}>
-              Les fonds sont crédités <Text style={{ fontWeight: "800" }}>instantanément</Text> sur le Wallet du client.
+              Les fonds sont crédités <Text style={{ fontWeight: "800" }}>instantanément</Text>{" "}
+              en <Text style={{ fontWeight: "800" }}>{agentCurrency}</Text> sur le Wallet du client.
             </Text>
           </View>
 
@@ -184,26 +260,38 @@ export default function AgentDepositScreen() {
               <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>INFORMATIONS DÉPÔT</Text>
             </View>
 
-            <Field label="Numéro du client" value={phone} onChangeText={onPhoneChange} placeholder="620 000 000" keyboardType="phone-pad" required />
+            <Field
+              label="Numéro du client"
+              value={phone}
+              onChangeText={onPhoneChange}
+              placeholder="620 000 000"
+              keyboardType="phone-pad"
+              required
+            />
 
             {/* Montant */}
-            <Text style={[f.label, { fontFamily: C.font.sans }]}>Montant <Text style={{ color: C.red }}>*</Text></Text>
+            <Text style={[f.label, { fontFamily: C.font.sans }]}>
+              Montant <Text style={{ color: C.red }}>*</Text>
+            </Text>
             <View style={[s.amtBox, numAmount > 0 && { borderColor: C.violet }]}>
               <TextInput
                 style={[s.amtInput, { fontFamily: C.font.serif }]}
-                value={amount} onChangeText={onAmountChange}
-                placeholder="0" placeholderTextColor={C.inkSoft}
+                value={amount}
+                onChangeText={onAmountChange}
+                placeholder="0"
+                placeholderTextColor={C.inkSoft}
                 keyboardType="numeric"
               />
+              {/* ✅ FIX v5.1 : devise dynamique */}
               <View style={s.curBox}>
-                <Text style={[s.curTxt, { fontFamily: C.font.mono }]}>XOF</Text>
+                <Text style={[s.curTxt, { fontFamily: C.font.mono }]}>{agentCurrency}</Text>
               </View>
             </View>
 
-            {/* Montants rapides */}
+            {/* Montants rapides — adaptés à la devise */}
             <Text style={[s.quickLbl, { fontFamily: C.font.sans }]}>MONTANTS RAPIDES</Text>
             <View style={s.quickRow}>
-              {QUICK.map((v) => {
+              {quickAmounts.map((v) => {
                 const active = numAmount === v;
                 return (
                   <TouchableOpacity
@@ -212,8 +300,11 @@ export default function AgentDepositScreen() {
                     onPress={() => { setAmount(String(v)); onAmountChange(String(v)); }}
                     activeOpacity={0.8}
                   >
-                    <Text style={[s.quickTxt, { color: active ? C.violet : C.inkSoft, fontFamily: C.font.mono }]}>
-                      {fmt(v)}
+                    <Text style={[
+                      s.quickTxt,
+                      { color: active ? C.violet : C.inkSoft, fontFamily: C.font.mono },
+                    ]}>
+                      {fmt(v, agentCurrency)}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -234,16 +325,21 @@ export default function AgentDepositScreen() {
               <Text style={[s.sumVal, { fontFamily: C.font.mono }]}>{phone.trim()}</Text>
             </View>
             <View style={s.sumDivider} />
+            {/* ✅ FIX v5.1 : devise dynamique dans le récap */}
             <View style={s.summaryRow}>
               <Text style={[s.sumLbl, { fontFamily: C.font.sans }]}>Montant à créditer</Text>
-              <Text style={[s.sumAmt, { fontFamily: C.font.serif }]}>{fmt(numAmount)} XOF</Text>
+              <Text style={[s.sumAmt, { fontFamily: C.font.serif }]}>
+                {fmt(numAmount, agentCurrency)} {agentCurrency}
+              </Text>
             </View>
           </Animated.View>
 
           {/* CTA */}
           <TouchableOpacity
             style={[s.cta, (!canSubmit || loading) && { opacity: 0.4 }]}
-            onPress={handleDeposit} disabled={!canSubmit || loading} activeOpacity={0.88}
+            onPress={handleDeposit}
+            disabled={!canSubmit || loading}
+            activeOpacity={0.88}
           >
             <View style={s.ctaInner}>
               {loading
@@ -269,7 +365,6 @@ export default function AgentDepositScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
-
   hero: {
     backgroundColor: C.violet,
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
@@ -277,20 +372,17 @@ const s = StyleSheet.create({
     paddingTop: Platform.OS === "android" ? 48 : 16,
     paddingBottom: 24, overflow: "hidden",
   },
-  glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:   { flexDirection: "row", alignItems: "center", gap: 14 },
+  glow:     { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+  heroRow:  { flexDirection: "row", alignItems: "center", gap: 14 },
   backBtn: {
     width: 38, height: 38, borderRadius: C.r.sm,
     backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
     justifyContent: "center", alignItems: "center",
   },
-  heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
-  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  heroBadge: {
-    width: 42, height: 42, borderRadius: C.r.sm,
-    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
-    justifyContent: "center", alignItems: "center",
-  },
+  heroTitle:    { color: C.white, fontSize: 22, fontWeight: "700" },
+  heroSub:      { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
+  heroBadge:    { height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
+  heroBadgeTxt: { color: C.white, fontSize: 11, fontWeight: "900", letterSpacing: 1 },
 
   scroll: { paddingHorizontal: 20, paddingTop: 20 },
 

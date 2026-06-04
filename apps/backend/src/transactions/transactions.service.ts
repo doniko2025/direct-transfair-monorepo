@@ -1,6 +1,6 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.10
+// TRANSACTIONS SERVICE v4.11
 // ✅ v4.8: declareBankTransfer → wallet société (clientId)
 // ✅ v4.8: validateBankTransfer → wallet plateforme (clientId)
 // ✅ v4.9: declareBankTransfer — atomique (create + debit + ledger
@@ -11,6 +11,15 @@
 // ✅ v4.10: validateBankTransfer — email + push non-bloquants (.catch)
 //    → élimine le moulinage lors de la validation Super Admin
 // ✅ v4.10: rejectBankTransfer — push non-bloquant (.catch)
+// ✅ FIX v4.11: create() — recipientWallet getOrCreate
+//    AVANT : `recipientUser.wallets.find(w => w.currency === targetCurrency)`
+//            → si le destinataire n'a pas encore de wallet targetCurrency,
+//              le crédit ne se faisait pas silencieusement (argent débité
+//              mais jamais crédité côté destinataire)
+//    MAINTENANT : `walletsService.getOrCreateWallet({ userId, currency })`
+//            → crée le wallet si absent, garantit le crédit dans tous les cas
+//            → corrige les transferts EUR → XOF, XOF → GNF, etc. quand
+//              le destinataire n'a pas encore ouvert le wallet cible
 // =========================================================
 
 import {
@@ -445,10 +454,24 @@ export class TransactionsService {
     await this.walletsService.debit(userWallet.id, Number(total), `Envoi ${transactionRef}`);
 
     if (recipientUser) {
-      const recipientWallet = recipientUser.wallets?.find((w: any) => w.currency === targetCurrency);
-      if (recipientWallet) {
-        await this.walletsService.credit(recipientWallet.id, convertedAmount, `Réception de ${user.firstName} ${user.lastName}`);
-      }
+      // ✅ FIX v4.11 — getOrCreate garantit le crédit même si le wallet
+      // targetCurrency n'existe pas encore pour le destinataire.
+      //
+      // AVANT : .find(w => w.currency === targetCurrency) → undefined si absent
+      //         → argent débité mais jamais crédité (perte silencieuse)
+      //         → cas typique : 30 EUR vers un Sénégalais sans wallet XOF
+      //           → son wallet XOF était inexistant → aucun crédit
+      //
+      // MAINTENANT : getOrCreate crée le wallet si absent, puis crédit toujours
+      const recipientWalletRef = await this.walletsService.getOrCreateWallet({
+        userId:   recipientUser.id,
+        currency: targetCurrency,
+      });
+      await this.walletsService.credit(
+        recipientWalletRef.id,
+        convertedAmount,
+        `Réception de ${user.firstName} ${user.lastName}`,
+      );
     }
 
     const transaction = await this.prisma.transaction.create({
@@ -463,10 +486,10 @@ export class TransactionsService {
         status,
         senderId,
         beneficiaryId: beneficiary?.id ?? null,
-        recipientId: recipientUser?.id ?? null,
+        recipientId:   recipientUser?.id ?? null,
         clientId,
-        providerRef: storedRef,
-        providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
+        providerRef:     storedRef,
+        providerStatus:  recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
         paidAt,
       },
     });
@@ -474,7 +497,12 @@ export class TransactionsService {
     await this.push.notifyTransferSent(senderId, beneficiary?.fullName ?? 'Bénéficiaire', `${amount}`, currency);
 
     if (recipientUser?.id) {
-      await this.push.notifyTransferReceived(recipientUser.id, `${user.firstName} ${user.lastName}`, `${receivedAmount}`, targetCurrency);
+      await this.push.notifyTransferReceived(
+        recipientUser.id,
+        `${user.firstName} ${user.lastName}`,
+        `${receivedAmount}`,
+        targetCurrency,
+      );
     }
 
     return transaction;
@@ -516,20 +544,20 @@ export class TransactionsService {
 
     const result = await this.prisma.transaction.create({
       data: {
-        reference: this.generateReference(),
-        amount: amountDec,
-        fees: new Prisma.Decimal(0),
-        total: amountDec,
+        reference:     this.generateReference(),
+        amount:        amountDec,
+        fees:          new Prisma.Decimal(0),
+        total:         amountDec,
         currency,
-        status: TransactionStatus.PAID,
-        payoutMethod: PayoutMethod.WALLET,
+        status:        TransactionStatus.PAID,
+        payoutMethod:  PayoutMethod.WALLET,
         paymentMethod: PaymentMethod.CASH,
-        senderId: agent.id,
-        recipientId: clientUser.id,
-        clientId: agent.clientId,
-        paidAt: new Date(),
+        senderId:      agent.id,
+        recipientId:   clientUser.id,
+        clientId:      agent.clientId,
+        paidAt:        new Date(),
         providerStatus: ProviderStatus.SUCCESS,
-        providerRef: `DEP-${Date.now()}`,
+        providerRef:   `DEP-${Date.now()}`,
       },
     });
 
@@ -578,7 +606,7 @@ export class TransactionsService {
 
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
       clientId: admin.clientId,
-      currency: currencyCode,
+      currency:  currencyCode,
     });
 
     const adminWallet = await this.prisma.wallet.findUnique({ where: { id: adminWalletRef.id } });
@@ -608,24 +636,31 @@ export class TransactionsService {
 
     await this.prisma.transaction.create({
       data: {
-        reference: txRef,
-        type: TransactionType.AGENCY_REFILL,
-        amount: new Prisma.Decimal(amount),
-        fees: new Prisma.Decimal(0),
-        total: new Prisma.Decimal(amount),
-        currency: currencyCode,
-        status: TransactionStatus.PAID,
-        payoutMethod: PayoutMethod.BANK_DEPOSIT,
+        reference:     txRef,
+        type:          TransactionType.AGENCY_REFILL,
+        amount:        new Prisma.Decimal(amount),
+        fees:          new Prisma.Decimal(0),
+        total:         new Prisma.Decimal(amount),
+        currency:      currencyCode,
+        status:        TransactionStatus.PAID,
+        payoutMethod:  PayoutMethod.BANK_DEPOSIT,
         paymentMethod: PaymentMethod.WALLET,
-        senderId: adminId,
-        clientId: admin.clientId!,
-        paidAt: new Date(),
+        senderId:      adminId,
+        clientId:      admin.clientId!,
+        paidAt:        new Date(),
         providerStatus: ProviderStatus.SUCCESS,
-        providerRef: `${txRef}|AGENCY:${agencyId}`,
+        providerRef:   `${txRef}|AGENCY:${agencyId}`,
       },
     });
 
-    return { status: 'SUCCESS', sent: amount, currency: currencyCode, agencyId, txRef, agencyWalletId: agencyWalletRef.id };
+    return {
+      status:         'SUCCESS',
+      sent:           amount,
+      currency:       currencyCode,
+      agencyId,
+      txRef,
+      agencyWalletId: agencyWalletRef.id,
+    };
   }
 
   // ── Lecture ──────────────────────────────────────────────
@@ -662,7 +697,7 @@ export class TransactionsService {
 
       if (user.agencyId) {
         orClauses.push({
-          type: TransactionType.AGENCY_REFILL,
+          type:        TransactionType.AGENCY_REFILL,
           providerRef: { contains: user.agencyId },
         });
       }
@@ -734,7 +769,11 @@ export class TransactionsService {
     return transactions.map((t) => this.enrichTransaction(t));
   }
 
-  async adminUpdateStatusForAdmin(adminId: string, id: string, dto: UpdateTransactionStatusDto): Promise<Transaction> {
+  async adminUpdateStatusForAdmin(
+    adminId: string,
+    id: string,
+    dto: UpdateTransactionStatusDto,
+  ): Promise<Transaction> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     if (!admin) throw new ForbiddenException('Utilisateur inconnu');
 
@@ -749,7 +788,7 @@ export class TransactionsService {
 
     if (dto.status === TransactionStatus.CANCELLED) {
       const walletRef = await this.walletsService.getOrCreateWallet({
-        userId: tx.senderId,
+        userId:   tx.senderId,
         currency: tx.currency,
       });
       await this.walletsService.credit(
@@ -763,14 +802,14 @@ export class TransactionsService {
         const updated = await prismaTx.transaction.update({
           where: { id },
           data: {
-            status: TransactionStatus.CANCELLED,
-            cancelledAt: new Date(),
+            status:        TransactionStatus.CANCELLED,
+            cancelledAt:   new Date(),
             providerStatus: ProviderStatus.CANCELLED,
           },
         });
         await prismaTx.withdrawal.updateMany({
           where: { transactionId: id },
-          data: { status: WithdrawalStatus.CANCELLED },
+          data:  { status: WithdrawalStatus.CANCELLED },
         });
         return updated;
       });

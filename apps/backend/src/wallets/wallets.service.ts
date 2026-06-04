@@ -1,12 +1,15 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.2
-// ✅ FIX getOrCreateWallet : agencyId est un string CUID,
+// WALLETS SERVICE v5.3
+// ✅ FIX v5.2 : getOrCreateWallet — agencyId est un CUID string,
 //    ne jamais faire parseInt() dessus
-// ✅ FIX getOrCreateWallet : support agencyId comme clé propre
-// ✅ FIX getWalletsForUser : retourne aussi les wallets clientId
-//    quand l'user est COMPANY_ADMIN (wallets société)
-// ✅ Reste identique à v5.1 (lockWallet, debit, credit, etc.)
+// ✅ FIX v5.2 : getOrCreateWallet — support agencyId comme clé propre
+// ✅ FIX v5.2 : getWalletsForUser — wallets clientId pour COMPANY_ADMIN
+// ✅ FIX v5.3 : getWalletsForUser — SUPER_ADMIN inclus dans la branche
+//    clientId (le SA reçoit les paiements B2B sur son wallet clientId,
+//    pas sur son wallet userId → solde était toujours 0 sur le dashboard)
+// ✅ FIX v5.3 : getWalletById — ownership étendu aux wallets clientId
+//    (SUPER_ADMIN et COMPANY_ADMIN peuvent consulter leur ledger)
 // =========================================================
 
 import {
@@ -58,18 +61,15 @@ export class WalletsService {
 
     const { userId, agencyId, clientId, currency } = params;
 
-    // Validation : au moins un identifiant requis
     if (!userId && !agencyId && clientId === undefined) {
       throw new BadRequestException(
         'Un identifiant (userId, agencyId ou clientId) est requis.',
       );
     }
 
-    // ── Recherche du wallet existant ──────────────────────
     let existing: any = null;
 
     if (agencyId) {
-      // agencyId est un CUID string — on ne fait PAS parseInt()
       existing = await this.prisma.wallet.findFirst({
         where: { agencyId, currency, isActive: true },
       });
@@ -85,7 +85,6 @@ export class WalletsService {
 
     if (existing) return existing;
 
-    // ── Création si inexistant ────────────────────────────
     const createData: any = {
       currency,
       balance: new Prisma.Decimal(0),
@@ -108,8 +107,10 @@ export class WalletsService {
 
   // ========================================================
   // GET WALLETS FOR USER
-  // ✅ v5.2 : si COMPANY_ADMIN, retourne les wallets clientId (société)
-  //           en plus des wallets userId
+  // ✅ v5.3 : SUPER_ADMIN ET COMPANY_ADMIN → wallets clientId
+  //           Le SA reçoit les virements B2B sur son wallet clientId.
+  //           Avant v5.3, SUPER_ADMIN tombait sur le fallback userId
+  //           (wallet vide) → solde toujours affiché à 0.
   // ========================================================
 
   async getWalletsForUser(userId: string) {
@@ -120,8 +121,11 @@ export class WalletsService {
 
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    // Pour COMPANY_ADMIN, les wallets sont sur clientId (alimentés par treasury/admin/inject)
-    if (user.role === 'COMPANY_ADMIN' && user.clientId) {
+    // ✅ FIX v5.3 : SUPER_ADMIN inclus — même logique que COMPANY_ADMIN
+    if (
+      (user.role === 'SUPER_ADMIN' || user.role === 'COMPANY_ADMIN') &&
+      user.clientId
+    ) {
       const clientWallets = await this.prisma.wallet.findMany({
         where: { clientId: user.clientId, isActive: true },
         orderBy: { currency: 'asc' },
@@ -142,15 +146,26 @@ export class WalletsService {
 
   // ========================================================
   // GET WALLET BY ID (avec vérification de propriété)
+  // ✅ v5.3 : ownership étendu aux wallets clientId
+  //    Avant : wallet.userId !== userId → KO pour les wallets clientId
+  //    Maintenant : on vérifie aussi si wallet.clientId === user.clientId
   // ========================================================
 
   async getWalletById(walletId: string, userId: string) {
-    const wallet = await this.prisma.wallet.findUnique({
-      where: { id: walletId },
-    });
+    const [wallet, user] = await Promise.all([
+      this.prisma.wallet.findUnique({ where: { id: walletId } }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { clientId: true, role: true },
+      }),
+    ]);
 
     if (!wallet) throw new NotFoundException('Wallet introuvable');
-    if (wallet.userId !== userId) {
+
+    const ownedByUserId  = wallet.userId === userId;
+    const ownedByClient  = !!user?.clientId && wallet.clientId === user.clientId;
+
+    if (!ownedByUserId && !ownedByClient) {
       throw new ForbiddenException('Accès non autorisé à ce wallet');
     }
 
@@ -170,15 +185,15 @@ export class WalletsService {
       to?: string;
     },
   ) {
-    const page = params.page ?? 1;
+    const page  = params.page  ?? 1;
     const limit = params.limit ?? 20;
-    const skip = (page - 1) * limit;
+    const skip  = (page - 1) * limit;
 
     const where: any = { walletId };
     if (params.from || params.to) {
       where.createdAt = {};
       if (params.from) where.createdAt.gte = new Date(params.from);
-      if (params.to) where.createdAt.lte = new Date(params.to);
+      if (params.to)   where.createdAt.lte = new Date(params.to);
     }
 
     const [entries, total] = await Promise.all([
@@ -194,7 +209,7 @@ export class WalletsService {
     return {
       data: entries.map((e) => ({
         ...e,
-        amount: Number(e.amount),
+        amount:       Number(e.amount),
         balanceAfter: Number(e.balanceAfter),
       })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
@@ -231,7 +246,7 @@ export class WalletsService {
       const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
       if (!wallet) throw new NotFoundException('Wallet introuvable');
 
-      const amt = new Prisma.Decimal(amount);
+      const amt       = new Prisma.Decimal(amount);
       const available = wallet.balance.minus(wallet.reservedBalance);
 
       if (available.lessThan(amt)) {
@@ -242,7 +257,7 @@ export class WalletsService {
 
       const updated = await tx.wallet.update({
         where: { id: walletId },
-        data: { balance: { decrement: amt } },
+        data:  { balance: { decrement: amt } },
       });
 
       await tx.ledgerEntry.create({
@@ -283,7 +298,7 @@ export class WalletsService {
 
       const updated = await tx.wallet.update({
         where: { id: walletId },
-        data: { balance: { increment: amt } },
+        data:  { balance: { increment: amt } },
       });
 
       await tx.ledgerEntry.create({
@@ -315,7 +330,7 @@ export class WalletsService {
       const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
       if (!wallet) throw new NotFoundException('Wallet introuvable');
 
-      const amt = new Prisma.Decimal(amount);
+      const amt       = new Prisma.Decimal(amount);
       const available = wallet.balance.minus(wallet.reservedBalance);
 
       if (available.lessThan(amt)) {
@@ -324,7 +339,7 @@ export class WalletsService {
 
       const updated = await tx.wallet.update({
         where: { id: walletId },
-        data: { reservedBalance: { increment: amt } },
+        data:  { reservedBalance: { increment: amt } },
       });
 
       await tx.ledgerEntry.create({
@@ -363,7 +378,7 @@ export class WalletsService {
 
       const updated = await tx.wallet.update({
         where: { id: walletId },
-        data: { reservedBalance: { decrement: amt } },
+        data:  { reservedBalance: { decrement: amt } },
       });
 
       await tx.ledgerEntry.create({
@@ -387,9 +402,9 @@ export class WalletsService {
 
   async transfer(params: {
     fromWalletId: string;
-    toWalletId: string;
-    amount: number;
-    description: string;
+    toWalletId:   string;
+    amount:       number;
+    description:  string;
   }) {
     const { fromWalletId, toWalletId, amount, description } = params;
     if (amount <= 0) throw new BadRequestException('Montant invalide');
@@ -404,7 +419,7 @@ export class WalletsService {
 
       if (!fromWallet || !toWallet) throw new NotFoundException('Wallet introuvable');
 
-      const fromAmt  = new Prisma.Decimal(amount);
+      const fromAmt   = new Prisma.Decimal(amount);
       const available = fromWallet.balance.minus(fromWallet.reservedBalance);
 
       if (available.lessThan(fromAmt)) {
@@ -420,12 +435,12 @@ export class WalletsService {
 
       const updatedFrom = await tx.wallet.update({
         where: { id: fromWalletId },
-        data: { balance: { decrement: fromAmt } },
+        data:  { balance: { decrement: fromAmt } },
       });
 
       const updatedTo = await tx.wallet.update({
         where: { id: toWalletId },
-        data: { balance: { increment: toAmount } },
+        data:  { balance: { increment: toAmount } },
       });
 
       await tx.ledgerEntry.createMany({
@@ -451,7 +466,7 @@ export class WalletsService {
 
       return {
         from: this.serialize(updatedFrom),
-        to: this.serialize(updatedTo),
+        to:   this.serialize(updatedTo),
         rate,
       };
     });
@@ -465,13 +480,13 @@ export class WalletsService {
     const balance  = Number(w.balance);
     const reserved = Number(w.reservedBalance);
     return {
-      id: w.id,
-      currency: w.currency,
+      id:               w.id,
+      currency:         w.currency,
       balance,
-      reservedBalance: reserved,
+      reservedBalance:  reserved,
       availableBalance: balance - reserved,
-      isDefault: w.isDefault,
-      isActive: w.isActive,
+      isDefault:        w.isDefault,
+      isActive:         w.isActive,
     };
   }
 }
