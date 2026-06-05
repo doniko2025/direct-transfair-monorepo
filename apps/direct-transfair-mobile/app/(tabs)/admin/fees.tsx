@@ -1,11 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/fees.tsx
 // =========================================================
-// FRAIS DE TRANSACTION v1.0 \u2014 Direct Transf'air
-// \u2705 Frais par m\u00e9thode de paiement (cash, banque, mobile money)
-// \u2705 Paliers de frais par montant (tiered fees)
-// \u2705 Remises partenaires n\u00e9goci\u00e9es (per-beneficiary custom fee)
-// \u2705 Wallet \u2192 Wallet toujours GRATUIT (non modifiable)
-// \u2705 Frais appliqu\u00e9s en base via transactions.service.ts
+// FRAIS DE TRANSACTION v1.0 — Direct Transf'air
+// ✅ Frais par méthode de paiement (cash, banque, mobile money)
+// ✅ Paliers de frais par montant (tiered fees)
+// ✅ Remises partenaires négociées (per-beneficiary custom fee)
+// ✅ Wallet → Wallet toujours GRATUIT (non modifiable)
+// ✅ Frais appliqués en base via transactions.service.ts
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -20,7 +20,7 @@ import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// \u2500\u2500\u2500 Tokens \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Tokens ──────────────────────────────────────────────
 const T = {
   pageBg:   "#F0F4FF",
   surface:  "#FFFFFF",
@@ -76,7 +76,7 @@ const T = {
   },
 };
 
-// \u2500\u2500\u2500 Types \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Types ───────────────────────────────────────────────
 interface FeeMethod {
   key:     string;
   label:   string;
@@ -91,16 +91,16 @@ interface FeeMethod {
 interface FeeTier {
   id:       string;
   minAmount:number;
-  maxAmount:number | null; // null = illimit\u00e9
+  maxAmount:number | null; // null = illimité
   rate:     number;
   fixedFee: number;
 }
 
 interface FeeOverride {
   id:          string;
-  label:       string;    // Nom partenaire / b\u00e9n\u00e9ficiaire
+  label:       string;    // Nom partenaire / bénéficiaire
   phone:       string;
-  rate:        number;    // Taux r\u00e9duit en %
+  rate:        number;    // Taux réduit en %
   validUntil:  string;    // ISO date, "" = permanent
   note:        string;
 }
@@ -115,7 +115,7 @@ function fmtCurrency(n: number): string {
   catch { return String(n); }
 }
 
-// \u2500\u2500\u2500 Section Header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Section Header ───────────────────────────────────────
 function SH({ icon, title, color, desc }: {
   icon: string; title: string; color: string; desc?: string;
 }) {
@@ -138,7 +138,7 @@ const shS = StyleSheet.create({
   desc:  { fontSize: 10, color: T.inkMuted, fontWeight: "600", marginTop: 2 },
 });
 
-// \u2500\u2500\u2500 Fee Method Row \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Fee Method Row ───────────────────────────────────────
 function FeeMethodRow({ method, onChange }: {
   method: FeeMethod;
   onChange: (key: string, rate: number, fixedFee: number) => void;
@@ -165,7 +165,6 @@ function FeeMethodRow({ method, onChange }: {
 
   return (
     <View style={fmS.card}>
-      {/* Ligne titre */}
       <View style={fmS.cardHeader}>
         <View style={[fmS.iconBox, { backgroundColor: method.bg }]}>
           <Ionicons name={method.icon as any} size={15} color={method.color} />
@@ -180,7 +179,6 @@ function FeeMethodRow({ method, onChange }: {
         </View>
       </View>
 
-      {/* S\u00e9lecteur taux % */}
       <Text style={[fmS.stepsLabel, { fontFamily: T.font.sans }]}>TAUX EN %</Text>
       <ScrollView
         horizontal
@@ -206,7 +204,6 @@ function FeeMethodRow({ method, onChange }: {
         })}
       </ScrollView>
 
-      {/* Frais fixe additionnel */}
       <Text style={[fmS.stepsLabel, { fontFamily: T.font.sans, marginTop: 10 }]}>
         FRAIS FIXE ADDITIONNEL (en devise locale)
       </Text>
@@ -223,10 +220,9 @@ function FeeMethodRow({ method, onChange }: {
           placeholder="0"
           placeholderTextColor={T.inkMuted}
         />
-        <Text style={[fmS.fixedSuffix, { fontFamily: T.font.sub }]}>XOF / EUR / GNF\u2026</Text>
+        <Text style={[fmS.fixedSuffix, { fontFamily: T.font.sub }]}>XOF / EUR / GNF…</Text>
       </View>
 
-      {/* R\u00e9sum\u00e9 */}
       <View style={[fmS.summary, { backgroundColor: method.bg + "80", borderColor: method.color + "25" }]}>
         <Ionicons name="information-circle-outline" size={12} color={method.color} />
         <Text style={[fmS.summaryTxt, { color: method.color, fontFamily: T.font.sub }]}>
@@ -237,14 +233,12 @@ function FeeMethodRow({ method, onChange }: {
   );
 }
 const fmS = StyleSheet.create({
-  // Ligne simple (gratuit)
-  row:       { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.borderLt },
-  iconBox:   { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center" },
-  label:     { fontSize: 13, fontWeight: "700", color: T.ink },
-  sub:       { fontSize: 10, color: T.inkMuted, marginTop: 1 },
-  freeBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: T.radius.full, borderWidth: 1 },
-  freeTxt:   { fontSize: 9, fontWeight: "900" },
-  // Carte \u00e9ditable
+  row:        { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  iconBox:    { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center" },
+  label:      { fontSize: 13, fontWeight: "700", color: T.ink },
+  sub:        { fontSize: 10, color: T.inkMuted, marginTop: 1 },
+  freeBadge:  { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: T.radius.full, borderWidth: 1 },
+  freeTxt:    { fontSize: 9, fontWeight: "900" },
   card:       { borderWidth: 1, borderColor: T.borderMd, borderRadius: T.radius.md, padding: 12, marginBottom: 12, ...T.shadow.soft },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   ratePill:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: T.radius.full, borderWidth: 1 },
@@ -260,12 +254,12 @@ const fmS = StyleSheet.create({
   summaryTxt: { fontSize: 10, fontWeight: "600", flex: 1 },
 });
 
-// \u2500\u2500\u2500 Fee Tier Row \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Fee Tier Row ─────────────────────────────────────────
 function FeeTierRow({ tier, index, onDelete }: {
   tier: FeeTier; index: number; onDelete: (id: string) => void;
 }) {
-  const minStr = tier.minAmount > 0 ? `\u2265 ${fmtCurrency(tier.minAmount)}` : "Tout montant";
-  const maxStr = tier.maxAmount ? `< ${fmtCurrency(tier.maxAmount)}` : "(illimit\u00e9)";
+  const minStr = tier.minAmount > 0 ? `≥ ${fmtCurrency(tier.minAmount)}` : "Tout montant";
+  const maxStr = tier.maxAmount ? `< ${fmtCurrency(tier.maxAmount)}` : "(illimité)";
 
   return (
     <View style={ftS.row}>
@@ -275,7 +269,7 @@ function FeeTierRow({ tier, index, onDelete }: {
         </Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[ftS.range, { fontFamily: T.font.mono }]}>{minStr} \u2014 {maxStr}</Text>
+        <Text style={[ftS.range, { fontFamily: T.font.mono }]}>{minStr} — {maxStr}</Text>
         <Text style={[ftS.fee, { fontFamily: T.font.sans }]}>
           {tier.rate}%
           {tier.fixedFee > 0 ? ` + ${fmtCurrency(tier.fixedFee)} fixe` : ""}
@@ -292,15 +286,15 @@ function FeeTierRow({ tier, index, onDelete }: {
   );
 }
 const ftS = StyleSheet.create({
-  row:       { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.borderLt },
-  indexBox:  { width: 28, height: 28, borderRadius: T.radius.xs, justifyContent: "center", alignItems: "center" },
-  indexTxt:  { fontSize: 11, fontWeight: "900" },
-  range:     { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  fee:       { fontSize: 11, color: T.inkSub, fontWeight: "600" },
-  deleteBtn: { padding: 4 },
+  row:      { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  indexBox: { width: 28, height: 28, borderRadius: T.radius.xs, justifyContent: "center", alignItems: "center" },
+  indexTxt: { fontSize: 11, fontWeight: "900" },
+  range:    { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  fee:      { fontSize: 11, color: T.inkSub, fontWeight: "600" },
+  deleteBtn:{ padding: 4 },
 });
 
-// \u2500\u2500\u2500 Override Row \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Override Row ─────────────────────────────────────────
 function OverrideRow({ override, onDelete }: {
   override: FeeOverride; onDelete: (id: string) => void;
 }) {
@@ -323,20 +317,14 @@ function OverrideRow({ override, onDelete }: {
         ) : null}
       </View>
       <View style={{ alignItems: "flex-end", gap: 4 }}>
-        <View style={[ovS.rateBadge, {
-          backgroundColor: T.violetLt,
-          borderColor: T.violetMd,
-        }]}>
+        <View style={[ovS.rateBadge, { backgroundColor: T.violetLt, borderColor: T.violetMd }]}>
           <Text style={[ovS.rate, { color: T.violet, fontFamily: T.font.mono }]}>
             {override.rate}%
           </Text>
         </View>
         {override.validUntil && (
-          <Text style={[ovS.expiry, {
-            color: isExpired ? T.red : T.inkMuted,
-            fontFamily: T.font.sub,
-          }]}>
-            {isExpired ? "EXPIR\u00c9" : `jusqu'au ${new Date(override.validUntil).toLocaleDateString("fr-FR")}`}
+          <Text style={[ovS.expiry, { color: isExpired ? T.red : T.inkMuted, fontFamily: T.font.sub }]}>
+            {isExpired ? "EXPIRÉ" : `jusqu'au ${new Date(override.validUntil).toLocaleDateString("fr-FR")}`}
           </Text>
         )}
       </View>
@@ -351,18 +339,18 @@ function OverrideRow({ override, onDelete }: {
   );
 }
 const ovS = StyleSheet.create({
-  row:       { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.borderLt },
-  avatar:    { width: 34, height: 34, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  name:      { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 1 },
-  phone:     { fontSize: 10, fontWeight: "700", color: T.inkSub },
-  note:      { fontSize: 9, color: T.inkMuted, marginTop: 1 },
-  rateBadge: { paddingHorizontal: 9, paddingVertical: 3, borderRadius: T.radius.full, borderWidth: 1 },
-  rate:      { fontSize: 12, fontWeight: "900" },
-  expiry:    { fontSize: 8, fontWeight: "700" },
-  deleteBtn: { padding: 2 },
+  row:      { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.borderLt },
+  avatar:   { width: 34, height: 34, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
+  name:     { fontSize: 12, fontWeight: "700", color: T.ink, marginBottom: 1 },
+  phone:    { fontSize: 10, fontWeight: "700", color: T.inkSub },
+  note:     { fontSize: 9, color: T.inkMuted, marginTop: 1 },
+  rateBadge:{ paddingHorizontal: 9, paddingVertical: 3, borderRadius: T.radius.full, borderWidth: 1 },
+  rate:     { fontSize: 12, fontWeight: "900" },
+  expiry:   { fontSize: 8, fontWeight: "700" },
+  deleteBtn:{ padding: 2 },
 });
 
-// \u2500\u2500\u2500 Modal Add Tier \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Modal Add Tier ───────────────────────────────────────
 function AddTierModal({ visible, onClose, onSave }: {
   visible: boolean;
   onClose: () => void;
@@ -380,7 +368,7 @@ function AddTierModal({ visible, onClose, onSave }: {
     const ff  = Number(fixedFee.replace(",", ".")) || 0;
 
     if (max !== null && max <= min) {
-      Alert.alert("Erreur", "Le montant max doit \u00eatre sup\u00e9rieur au montant min.");
+      Alert.alert("Erreur", "Le montant max doit être supérieur au montant min.");
       return;
     }
 
@@ -397,30 +385,24 @@ function AddTierModal({ visible, onClose, onSave }: {
             <View style={mdS.handle} />
             <Text style={[mdS.title, { fontFamily: T.font.sans }]}>Ajouter un palier</Text>
             <Text style={[mdS.sub, { fontFamily: T.font.sub }]}>
-              D\u00e9finissez une plage de montant et un taux sp\u00e9cifique
+              Définissez une plage de montant et un taux spécifique
             </Text>
 
             <View style={mdS.field}>
               <Text style={[mdS.label, { fontFamily: T.font.sans }]}>MONTANT MINIMUM (0 = pas de min)</Text>
               <TextInput
                 style={[mdS.input, { fontFamily: T.font.mono }]}
-                value={minAmount}
-                onChangeText={setMinAmount}
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor={T.inkMuted}
+                value={minAmount} onChangeText={setMinAmount}
+                keyboardType="numeric" placeholder="0" placeholderTextColor={T.inkMuted}
               />
             </View>
 
             <View style={mdS.field}>
-              <Text style={[mdS.label, { fontFamily: T.font.sans }]}>MONTANT MAXIMUM (vide = illimit\u00e9)</Text>
+              <Text style={[mdS.label, { fontFamily: T.font.sans }]}>MONTANT MAXIMUM (vide = illimité)</Text>
               <TextInput
                 style={[mdS.input, { fontFamily: T.font.mono }]}
-                value={maxAmount}
-                onChangeText={setMaxAmount}
-                keyboardType="numeric"
-                placeholder="illimit\u00e9"
-                placeholderTextColor={T.inkMuted}
+                value={maxAmount} onChangeText={setMaxAmount}
+                keyboardType="numeric" placeholder="illimité" placeholderTextColor={T.inkMuted}
               />
             </View>
 
@@ -429,22 +411,16 @@ function AddTierModal({ visible, onClose, onSave }: {
                 <Text style={[mdS.label, { fontFamily: T.font.sans }]}>TAUX (%)</Text>
                 <TextInput
                   style={[mdS.input, { fontFamily: T.font.mono }]}
-                  value={rate}
-                  onChangeText={setRate}
-                  keyboardType="numeric"
-                  placeholder="1.5"
-                  placeholderTextColor={T.inkMuted}
+                  value={rate} onChangeText={setRate}
+                  keyboardType="numeric" placeholder="1.5" placeholderTextColor={T.inkMuted}
                 />
               </View>
               <View style={[mdS.field, { flex: 1 }]}>
                 <Text style={[mdS.label, { fontFamily: T.font.sans }]}>FRAIS FIXE</Text>
                 <TextInput
                   style={[mdS.input, { fontFamily: T.font.mono }]}
-                  value={fixedFee}
-                  onChangeText={setFixedFee}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={T.inkMuted}
+                  value={fixedFee} onChangeText={setFixedFee}
+                  keyboardType="numeric" placeholder="0" placeholderTextColor={T.inkMuted}
                 />
               </View>
             </View>
@@ -464,7 +440,7 @@ function AddTierModal({ visible, onClose, onSave }: {
   );
 }
 
-// \u2500\u2500\u2500 Modal Add Override \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Modal Add Override ───────────────────────────────────
 function AddOverrideModal({ visible, onClose, onSave }: {
   visible: boolean;
   onClose: () => void;
@@ -478,12 +454,12 @@ function AddOverrideModal({ visible, onClose, onSave }: {
 
   const handleSave = () => {
     if (!phone.trim()) {
-      Alert.alert("Erreur", "Le num\u00e9ro de t\u00e9l\u00e9phone est requis.");
+      Alert.alert("Erreur", "Le numéro de téléphone est requis.");
       return;
     }
     const r = Number(rate.replace(",", "."));
     if (!isFinite(r) || r < 0 || r > 100) {
-      Alert.alert("Erreur", "Le taux doit \u00eatre entre 0 et 100.");
+      Alert.alert("Erreur", "Le taux doit être entre 0 et 100.");
       return;
     }
     onSave({ label, phone, rate: r, validUntil, note });
@@ -497,54 +473,45 @@ function AddOverrideModal({ visible, onClose, onSave }: {
         <View style={mdS.overlay}>
           <View style={mdS.sheet}>
             <View style={mdS.handle} />
-            <Text style={[mdS.title, { fontFamily: T.font.sans }]}>Remise n\u00e9goci\u00e9e</Text>
+            <Text style={[mdS.title, { fontFamily: T.font.sans }]}>Remise négociée</Text>
             <Text style={[mdS.sub, { fontFamily: T.font.sub }]}>
-              Applique un taux r\u00e9duit \u00e0 un partenaire ou client sp\u00e9cifique
+              Applique un taux réduit à un partenaire ou client spécifique
             </Text>
 
             <View style={mdS.field}>
               <Text style={[mdS.label, { fontFamily: T.font.sans }]}>NOM OU RAISON SOCIALE</Text>
               <TextInput
                 style={[mdS.input, { fontFamily: T.font.sans }]}
-                value={label}
-                onChangeText={setLabel}
-                placeholder="Partenaire S\u00e9n\u00e9gal SAS"
-                placeholderTextColor={T.inkMuted}
+                value={label} onChangeText={setLabel}
+                placeholder="Partenaire Sénégal SAS" placeholderTextColor={T.inkMuted}
               />
             </View>
 
             <View style={mdS.field}>
-              <Text style={[mdS.label, { fontFamily: T.font.sans }]}>T\u00c9L\u00c9PHONE *</Text>
+              <Text style={[mdS.label, { fontFamily: T.font.sans }]}>TÉLÉPHONE *</Text>
               <TextInput
                 style={[mdS.input, { fontFamily: T.font.mono }]}
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="+221 77 000 0000"
-                placeholderTextColor={T.inkMuted}
+                value={phone} onChangeText={setPhone}
+                placeholder="+221 77 000 0000" placeholderTextColor={T.inkMuted}
                 keyboardType="phone-pad"
               />
             </View>
 
             <View style={mdS.row2}>
               <View style={[mdS.field, { flex: 1 }]}>
-                <Text style={[mdS.label, { fontFamily: T.font.sans }]}>TAUX R\u00c9DUIT (%)</Text>
+                <Text style={[mdS.label, { fontFamily: T.font.sans }]}>TAUX RÉDUIT (%)</Text>
                 <TextInput
                   style={[mdS.input, { fontFamily: T.font.mono }]}
-                  value={rate}
-                  onChangeText={setRate}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={T.inkMuted}
+                  value={rate} onChangeText={setRate}
+                  keyboardType="numeric" placeholder="0" placeholderTextColor={T.inkMuted}
                 />
               </View>
               <View style={[mdS.field, { flex: 1 }]}>
                 <Text style={[mdS.label, { fontFamily: T.font.sans }]}>VALIDE JUSQU'AU</Text>
                 <TextInput
                   style={[mdS.input, { fontFamily: T.font.mono }]}
-                  value={validUntil}
-                  onChangeText={setValidUntil}
-                  placeholder="JJ/MM/AAAA"
-                  placeholderTextColor={T.inkMuted}
+                  value={validUntil} onChangeText={setValidUntil}
+                  placeholder="JJ/MM/AAAA" placeholderTextColor={T.inkMuted}
                 />
               </View>
             </View>
@@ -553,12 +520,9 @@ function AddOverrideModal({ visible, onClose, onSave }: {
               <Text style={[mdS.label, { fontFamily: T.font.sans }]}>NOTE (optionnel)</Text>
               <TextInput
                 style={[mdS.input, mdS.inputMulti, { fontFamily: T.font.sub }]}
-                value={note}
-                onChangeText={setNote}
-                placeholder="Contexte de la n\u00e9gociation\u2026"
-                placeholderTextColor={T.inkMuted}
-                multiline
-                numberOfLines={2}
+                value={note} onChangeText={setNote}
+                placeholder="Contexte de la négociation…" placeholderTextColor={T.inkMuted}
+                multiline numberOfLines={2}
               />
             </View>
 
@@ -566,10 +530,7 @@ function AddOverrideModal({ visible, onClose, onSave }: {
               <TouchableOpacity style={mdS.cancelBtn} onPress={onClose}>
                 <Text style={[mdS.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[mdS.saveBtn, { backgroundColor: T.violet }]}
-                onPress={handleSave}
-              >
+              <TouchableOpacity style={[mdS.saveBtn, { backgroundColor: T.violet }]} onPress={handleSave}>
                 <Text style={[mdS.saveTxt, { fontFamily: T.font.sans }]}>Enregistrer</Text>
               </TouchableOpacity>
             </View>
@@ -581,34 +542,34 @@ function AddOverrideModal({ visible, onClose, onSave }: {
 }
 
 const mdS = StyleSheet.create({
-  overlay:    { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
-  sheet:      { backgroundColor: T.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: Platform.OS === "ios" ? 36 : 20 },
-  handle:     { width: 40, height: 4, borderRadius: T.radius.full, backgroundColor: T.borderMd, alignSelf: "center", marginBottom: 16 },
-  title:      { fontSize: 16, fontWeight: "900", color: T.ink, marginBottom: 4 },
-  sub:        { fontSize: 11, color: T.inkSub, marginBottom: 16 },
-  field:      { marginBottom: 12 },
-  label:      { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6 },
-  input:      { backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.borderMd, borderRadius: T.radius.sm, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontWeight: "700", color: T.ink },
-  inputMulti: { height: 60, textAlignVertical: "top" },
-  row2:       { flexDirection: "row", gap: 10 },
-  btns:       { flexDirection: "row", gap: 10, marginTop: 8 },
-  cancelBtn:  { flex: 1, paddingVertical: 14, borderRadius: T.radius.md, backgroundColor: T.borderLt, alignItems: "center", borderWidth: 1, borderColor: T.borderMd },
-  cancelTxt:  { fontSize: 13, fontWeight: "800", color: T.inkSub },
-  saveBtn:    { flex: 2, paddingVertical: 14, borderRadius: T.radius.md, backgroundColor: T.indigo, alignItems: "center" },
-  saveTxt:    { fontSize: 13, fontWeight: "900", color: T.white },
+  overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  sheet:     { backgroundColor: T.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: Platform.OS === "ios" ? 36 : 20 },
+  handle:    { width: 40, height: 4, borderRadius: T.radius.full, backgroundColor: T.borderMd, alignSelf: "center", marginBottom: 16 },
+  title:     { fontSize: 16, fontWeight: "900", color: T.ink, marginBottom: 4 },
+  sub:       { fontSize: 11, color: T.inkSub, marginBottom: 16 },
+  field:     { marginBottom: 12 },
+  label:     { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6 },
+  input:     { backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.borderMd, borderRadius: T.radius.sm, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontWeight: "700", color: T.ink },
+  inputMulti:{ height: 60, textAlignVertical: "top" },
+  row2:      { flexDirection: "row", gap: 10 },
+  btns:      { flexDirection: "row", gap: 10, marginTop: 8 },
+  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: T.radius.md, backgroundColor: T.borderLt, alignItems: "center", borderWidth: 1, borderColor: T.borderMd },
+  cancelTxt: { fontSize: 13, fontWeight: "800", color: T.inkSub },
+  saveBtn:   { flex: 2, paddingVertical: 14, borderRadius: T.radius.md, backgroundColor: T.indigo, alignItems: "center" },
+  saveTxt:   { fontSize: 13, fontWeight: "900", color: T.white },
 });
 
-// \u2500\u2500\u2500 Main Screen \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// ─── Main Screen ──────────────────────────────────────────
 export default function FeesScreen() {
   const router   = useRouter();
   const { user } = useAuth();
 
   const [methods, setMethods] = useState<FeeMethod[]>([
-    { key: "CASH_PICKUP",   label: "Retrait Cash",          icon: "cash-outline",         color: T.amber,   bg: T.amberLt,   rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "BANK_DEPOSIT",  label: "Virement Bancaire",     icon: "business-outline",     color: T.sky,     bg: T.skyLt,     rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "MOBILE_MONEY",  label: "Mobile Money",          icon: "phone-portrait-outline",color: T.teal,   bg: T.tealLt,    rate: 1.0, fixedFee: 0, isFree: false },
-    { key: "IBAN_TRANSFER", label: "Virement IBAN (Europe)",icon: "globe-outline",         color: T.indigo,  bg: T.indigoLt,  rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "WALLET",        label: "Wallet \u2192 Wallet",        icon: "swap-horizontal-outline",color: T.green, bg: T.greenLt,   rate: 0,   fixedFee: 0, isFree: true  },
+    { key: "CASH_PICKUP",   label: "Retrait Cash",           icon: "cash-outline",            color: T.amber,  bg: T.amberLt,  rate: 1.5, fixedFee: 0, isFree: false },
+    { key: "BANK_DEPOSIT",  label: "Virement Bancaire",      icon: "business-outline",        color: T.sky,    bg: T.skyLt,    rate: 1.5, fixedFee: 0, isFree: false },
+    { key: "MOBILE_MONEY",  label: "Mobile Money",           icon: "phone-portrait-outline",  color: T.teal,   bg: T.tealLt,   rate: 1.0, fixedFee: 0, isFree: false },
+    { key: "IBAN_TRANSFER", label: "Virement IBAN (Europe)", icon: "globe-outline",           color: T.indigo, bg: T.indigoLt, rate: 1.5, fixedFee: 0, isFree: false },
+    { key: "WALLET",        label: "Wallet → Wallet",         icon: "swap-horizontal-outline", color: T.green,  bg: T.greenLt,  rate: 0,   fixedFee: 0, isFree: true  },
   ]);
 
   const [tiers,       setTiers]       = useState<FeeTier[]>([]);
@@ -620,11 +581,9 @@ export default function FeesScreen() {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // \u2500\u2500 Chargement \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      // Charge les paliers et remises depuis AsyncStorage (persistance locale)
       const [tiersJson, ovJson] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY_TIERS),
         AsyncStorage.getItem(STORAGE_KEY_OVERRIDES),
@@ -632,7 +591,6 @@ export default function FeesScreen() {
       if (tiersJson) setTiers(JSON.parse(tiersJson));
       if (ovJson)    setOverrides(JSON.parse(ovJson));
 
-      // Charge les taux depuis l'API commission (si d\u00e9finis)
       try {
         const rules = await api.getCommissionRules() as any[];
         if (Array.isArray(rules)) {
@@ -651,7 +609,7 @@ export default function FeesScreen() {
           }
           setMethods(updatedMethods);
         }
-      } catch { /* Taux par d\u00e9faut utilis\u00e9s */ }
+      } catch { /* Taux par défaut utilisés */ }
 
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch { /* noop */ }
@@ -663,7 +621,6 @@ export default function FeesScreen() {
     void load();
   }, [load]));
 
-  // \u2500\u2500 Handlers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   const handleMethodChange = (key: string, rate: number, fixedFee: number) => {
     setMethods((prev) => prev.map((m) => m.key === key ? { ...m, rate, fixedFee } : m));
   };
@@ -693,17 +650,14 @@ export default function FeesScreen() {
     ]);
   };
 
-  // \u2500\u2500 Sauvegarder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Persiste paliers et remises localement
       await Promise.all([
         AsyncStorage.setItem(STORAGE_KEY_TIERS,    JSON.stringify(tiers)),
         AsyncStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(overrides)),
       ]);
 
-      // Envoi des frais par m\u00e9thode vers l'API commission
       for (const method of methods) {
         if (!method.isFree) {
           try {
@@ -715,13 +669,13 @@ export default function FeesScreen() {
               payerShare:   0,
               platformShare: 100 - method.rate,
             } as any);
-          } catch { /* On continue m\u00eame si un envoi \u00e9choue */ }
+          } catch { /* On continue même si un envoi échoue */ }
         }
       }
 
       Alert.alert(
-        "\u2705 Frais sauvegard\u00e9s",
-        `${methods.filter((m) => !m.isFree).length} m\u00e9thodes \u00b7 ${tiers.length} palier(s) \u00b7 ${overrides.length} remise(s)`,
+        "✅ Frais sauvegardés",
+        `${methods.filter((m) => !m.isFree).length} méthodes · ${tiers.length} palier(s) · ${overrides.length} remise(s)`,
       );
     } catch (e: any) {
       Alert.alert("Erreur", e?.message ?? "Impossible de sauvegarder.");
@@ -747,7 +701,7 @@ export default function FeesScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={T.pageBg} />
 
-      {/* \u2500\u2500 Header \u2500\u2500 */}
+      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={18} color={T.ink} />
@@ -755,7 +709,7 @@ export default function FeesScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Frais de Transaction</Text>
           <Text style={[s.headerSub, { color: T.indigo, fontFamily: T.font.sub }]}>
-            Tarification \u00b7 Admin soci\u00e9t\u00e9 uniquement
+            Tarification · Admin société uniquement
           </Text>
         </View>
         <View style={[s.roleBadge, { backgroundColor: T.indigoLt, borderColor: T.indigoMd }]}>
@@ -770,10 +724,7 @@ export default function FeesScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-
-        {/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            INFO CARD
-        \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */}
+        {/* Bannière info */}
         <View style={[s.infoBanner, { backgroundColor: T.indigoLt, borderColor: T.indigoMd }]}>
           <Ionicons name="information-circle-outline" size={16} color={T.indigo} />
           <View style={{ flex: 1 }}>
@@ -781,39 +732,30 @@ export default function FeesScreen() {
               Principes de tarification
             </Text>
             <Text style={[s.infoText, { color: T.indigo, fontFamily: T.font.sub }]}>
-              Les frais sont pr\u00e9lev\u00e9s sur le montant envoy\u00e9. Le virement Wallet \u2192 Wallet est
-              toujours gratuit. Les remises n\u00e9goci\u00e9es s'appliquent par num\u00e9ro de t\u00e9l\u00e9phone.
+              Les frais sont prélevés sur le montant envoyé. Le virement Wallet → Wallet est
+              toujours gratuit. Les remises négociées s'appliquent par numéro de téléphone.
             </Text>
           </View>
         </View>
 
-        {/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            SECTION 1 \u2014 FRAIS PAR M\u00c9THODE
-        \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */}
+        {/* Section 1 : Frais par méthode */}
         <View style={s.card}>
           <SH
             icon="pricetag-outline"
-            title="Frais par m\u00e9thode de paiement"
+            title="Frais par méthode de paiement"
             color={T.indigo}
-            desc="Taux appliqu\u00e9 lors de la cr\u00e9ation d'une transaction"
+            desc="Taux appliqué lors de la création d'une transaction"
           />
-
-          {/* Ligne "Wallet" en premier (toujours gratuit) */}
           {methods.filter((m) => m.isFree).map((m) => (
             <FeeMethodRow key={m.key} method={m} onChange={handleMethodChange} />
           ))}
-
           <View style={{ height: 8 }} />
-
-          {/* M\u00e9thodes payantes */}
           {methods.filter((m) => !m.isFree).map((m) => (
             <FeeMethodRow key={m.key} method={m} onChange={handleMethodChange} />
           ))}
-
           <TouchableOpacity
             style={[s.saveBtn, { backgroundColor: T.indigo }, saving && { opacity: 0.6 }]}
-            onPress={handleSave}
-            disabled={saving}
+            onPress={handleSave} disabled={saving}
           >
             {saving
               ? <ActivityIndicator color={T.white} size="small" />
@@ -827,35 +769,26 @@ export default function FeesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            SECTION 2 \u2014 PALIERS DE FRAIS
-        \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */}
+        {/* Section 2 : Paliers */}
         <View style={s.card}>
           <SH
             icon="layers-outline"
             title="Paliers de frais"
             color={T.teal}
-            desc="Appliquer des taux diff\u00e9rents selon le montant envoy\u00e9"
+            desc="Appliquer des taux différents selon le montant envoyé"
           />
-
           {tiers.length === 0 ? (
             <View style={s.emptyRow}>
               <Ionicons name="layers-outline" size={18} color={T.inkMuted} />
               <Text style={[s.emptyTxt, { fontFamily: T.font.sub }]}>
-                Aucun palier d\u00e9fini \u00b7 Le taux standard s'applique \u00e0 tous les montants
+                Aucun palier défini · Le taux standard s'applique à tous les montants
               </Text>
             </View>
           ) : (
             tiers.map((tier, i) => (
-              <FeeTierRow
-                key={tier.id}
-                tier={tier}
-                index={i}
-                onDelete={handleDeleteTier}
-              />
+              <FeeTierRow key={tier.id} tier={tier} index={i} onDelete={handleDeleteTier} />
             ))
           )}
-
           <TouchableOpacity
             style={[s.addBtn, { borderColor: T.teal + "60", backgroundColor: T.tealLt }]}
             onPress={() => setShowAddTier(true)}
@@ -867,18 +800,14 @@ export default function FeesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            SECTION 3 \u2014 REMISES PARTENAIRES
-        \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */}
+        {/* Section 3 : Remises partenaires */}
         <View style={s.card}>
           <SH
             icon="handshake-outline"
-            title="Remises n\u00e9goci\u00e9es"
+            title="Remises négociées"
             color={T.violet}
-            desc="Taux r\u00e9duit accord\u00e9 suite \u00e0 une n\u00e9gociation partenaire"
+            desc="Taux réduit accordé suite à une négociation partenaire"
           />
-
-          {/* Badge r\u00e9capitulatif */}
           {overrides.length > 0 && (
             <View style={[s.summaryStrip, { backgroundColor: T.violetLt, borderColor: T.violetMd }]}>
               <View style={s.summaryItem}>
@@ -892,16 +821,15 @@ export default function FeesScreen() {
                 <Text style={[s.summaryVal, { color: T.inkMuted, fontFamily: T.font.mono }]}>
                   {expiredOverrides.length}
                 </Text>
-                <Text style={[s.summaryLbl, { fontFamily: T.font.sans }]}>expir\u00e9es</Text>
+                <Text style={[s.summaryLbl, { fontFamily: T.font.sans }]}>expirées</Text>
               </View>
             </View>
           )}
-
           {overrides.length === 0 ? (
             <View style={s.emptyRow}>
-              <Ionicons name={"people-outline"} size={18} color={T.inkMuted} />
+              <Ionicons name="people-outline" size={18} color={T.inkMuted} />
               <Text style={[s.emptyTxt, { fontFamily: T.font.sub }]}>
-                Aucune remise n\u00e9goci\u00e9e \u00b7 Tous les partenaires paient le taux standard
+                Aucune remise négociée · Tous les partenaires paient le taux standard
               </Text>
             </View>
           ) : (
@@ -909,7 +837,6 @@ export default function FeesScreen() {
               <OverrideRow key={ov.id} override={ov} onDelete={handleDeleteOverride} />
             ))
           )}
-
           <TouchableOpacity
             style={[s.addBtn, { borderColor: T.violet + "60", backgroundColor: T.violetLt }]}
             onPress={() => setShowAddOv(true)}
@@ -921,32 +848,21 @@ export default function FeesScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
-            NOTE INT\u00c9GRATION BACKEND
-        \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */}
+        {/* Note intégration backend */}
         <View style={[s.infoNote, { backgroundColor: T.amberLt, borderColor: T.amberMd }]}>
           <Ionicons name="construct-outline" size={14} color={T.amber} />
           <Text style={[s.infoNoteTxt, { fontFamily: T.font.sub }]}>
-            Les paliers et remises sont synchronis\u00e9s lors de la cr\u00e9ation d'une transaction via
-            <Text style={{ fontWeight: "700" }}> transactions.service.ts \u2192 getFeeRate()</Text>.
-            Assurez-vous que la m\u00e9thode est bien appel\u00e9e dans le service backend.
+            Les paliers et remises sont synchronisés lors de la création d'une transaction via
+            <Text style={{ fontWeight: "700" }}> transactions.service.ts → getFeeRate()</Text>.
+            Assurez-vous que la méthode est bien appelée dans le service backend.
           </Text>
         </View>
 
         <View style={{ height: 100 }} />
       </Animated.ScrollView>
 
-      {/* \u2500\u2500 Modals \u2500\u2500 */}
-      <AddTierModal
-        visible={showAddTier}
-        onClose={() => setShowAddTier(false)}
-        onSave={handleAddTier}
-      />
-      <AddOverrideModal
-        visible={showAddOv}
-        onClose={() => setShowAddOv(false)}
-        onSave={handleAddOverride}
-      />
+      <AddTierModal visible={showAddTier} onClose={() => setShowAddTier(false)} onSave={handleAddTier} />
+      <AddOverrideModal visible={showAddOv} onClose={() => setShowAddOv(false)} onSave={handleAddOverride} />
     </SafeAreaView>
   );
 }
@@ -955,14 +871,7 @@ const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: T.pageBg },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  header: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: T.surface,
-    paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 14,
-    borderBottomWidth: 1, borderBottomColor: T.border,
-  },
+  header:      { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: T.surface, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: T.border },
   backBtn:     { width: 38, height: 38, borderRadius: T.radius.md, backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: T.ink },
   headerSub:   { fontSize: 11, fontWeight: "600", marginTop: 2 },
@@ -970,34 +879,28 @@ const s = StyleSheet.create({
   roleDot:     { width: 6, height: 6, borderRadius: T.radius.full, backgroundColor: T.indigo },
   roleTxt:     { fontSize: 9, fontWeight: "900", letterSpacing: 0.8 },
 
-  scroll: { padding: 16 },
+  scroll:      { padding: 16 },
 
-  infoBanner: { flexDirection: "row", gap: 10, padding: 14, borderRadius: T.radius.md, borderWidth: 1, marginBottom: 16, alignItems: "flex-start" },
-  infoTitle:  { fontSize: 12, fontWeight: "800", marginBottom: 4 },
-  infoText:   { fontSize: 11, lineHeight: 16 },
+  infoBanner:  { flexDirection: "row", gap: 10, padding: 14, borderRadius: T.radius.md, borderWidth: 1, marginBottom: 16, alignItems: "flex-start" },
+  infoTitle:   { fontSize: 12, fontWeight: "800", marginBottom: 4 },
+  infoText:    { fontSize: 11, lineHeight: 16 },
 
-  card: {
-    backgroundColor: T.surface,
-    borderRadius: T.radius.xl,
-    padding: 18, marginBottom: 16,
-    borderWidth: 1, borderColor: T.border,
-    ...T.shadow.card,
-  },
+  card:        { backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: T.border, ...T.shadow.card },
 
-  addBtn:    { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: T.radius.md, borderWidth: 1.5, borderStyle: "dashed", marginTop: 12 },
-  addBtnTxt: { fontSize: 13, fontWeight: "800" },
+  addBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: T.radius.md, borderWidth: 1.5, borderStyle: "dashed", marginTop: 12 },
+  addBtnTxt:   { fontSize: 13, fontWeight: "800" },
 
-  saveBtn:    { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 16 },
-  saveBtnTxt: { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
+  saveBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 16 },
+  saveBtnTxt:  { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
 
-  emptyRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 16, backgroundColor: T.borderLt, borderRadius: T.radius.sm },
-  emptyTxt: { flex: 1, color: T.inkMuted, fontSize: 12 },
+  emptyRow:    { flexDirection: "row", alignItems: "center", gap: 8, padding: 16, backgroundColor: T.borderLt, borderRadius: T.radius.sm },
+  emptyTxt:    { flex: 1, color: T.inkMuted, fontSize: 12 },
 
-  summaryStrip:   { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: T.radius.md, borderWidth: 1, marginBottom: 12, gap: 20 },
-  summaryItem:    { alignItems: "center", gap: 2 },
-  summaryVal:     { fontSize: 20, fontWeight: "900" },
-  summaryLbl:     { fontSize: 9, fontWeight: "700", color: T.inkSub },
-  summaryDivider: { width: 1, height: 28 },
+  summaryStrip:  { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: T.radius.md, borderWidth: 1, marginBottom: 12, gap: 20 },
+  summaryItem:   { alignItems: "center", gap: 2 },
+  summaryVal:    { fontSize: 20, fontWeight: "900" },
+  summaryLbl:    { fontSize: 9, fontWeight: "700", color: T.inkSub },
+  summaryDivider:{ width: 1, height: 28 },
 
   infoNote:    { flexDirection: "row", gap: 8, padding: 12, borderRadius: T.radius.md, borderWidth: 1, alignItems: "flex-start" },
   infoNoteTxt: { flex: 1, fontSize: 10, color: T.amber, lineHeight: 15 },
