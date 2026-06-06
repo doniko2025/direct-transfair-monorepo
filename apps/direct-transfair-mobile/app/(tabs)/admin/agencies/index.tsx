@@ -1,11 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/index.tsx
 // =========================================================
-// AGENCIES LIST v6.3 — Direct Transf'air
-// ✅ FIX : "Recharger" masqué pour SUPER_ADMIN
-//    → prop isSuperAdmin={isSA} passée à AgenceActionSheet
-//    → actions.filter((a) => a.show) — show: !isSuperAdmin pour Recharger
-// ✅ FIX : DONIKO filtré de la liste des sociétés SA
-// ✅ Tout le reste identique à v6.2
+// AGENCIES LIST v6.4 — Direct Transf'air
+// ✅ v6.4 : Pour SUPER_ADMIN, les agences NE s'affichent PLUS ici
+//           → Cliquer sur une société → clients/details (agences filtrées)
+//           Pour COMPANY_ADMIN / AGENT, comportement inchangé
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -100,25 +98,8 @@ const sbS = StyleSheet.create({
   countTxt: { fontSize: 13, fontWeight: "900" },
 });
 
-function Divider() {
-  return (
-    <View style={dvS.wrap}>
-      <View style={dvS.line} />
-      <View style={dvS.pill}>
-        <Ionicons name="git-branch-outline" size={11} color={T.inkMuted} />
-        <Text style={[dvS.txt, { fontFamily: T.font.sans }]}>AGENCES DU RÉSEAU</Text>
-      </View>
-      <View style={dvS.line} />
-    </View>
-  );
-}
-const dvS = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "center", marginVertical: 22, gap: 10 },
-  line: { flex: 1, height: 1, backgroundColor: T.border },
-  pill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: T.borderLt, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: T.border },
-  txt:  { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1 },
-});
-
+// ─── SocieteCard ──────────────────────────────────────────
+// ✅ v6.4 : onPress → clients/details (affiche les agences de la société)
 function SocieteCard({ item, onPress }: { item: any; onPress: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
   const statusColor = STATUS_COLORS[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
@@ -199,8 +180,8 @@ function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
   const scale    = useRef(new Animated.Value(1)).current;
   const isActive = item.isActive !== false && item.status !== "INACTIVE";
   const primaryWallet = Array.isArray(item.wallets)
-  ? (item.wallets.find((w: any) => w.isDefault) ?? item.wallets[0])
-  : null;
+    ? (item.wallets.find((w: any) => w.isDefault) ?? item.wallets[0])
+    : null;
   const balance  = toNum(primaryWallet?.balance ?? item.balance ?? 0);
   const currency = primaryWallet?.currency ?? item.primaryCurrency ?? item.currency ?? "XOF";
   const flag     = item.country ? (FLAG_MAP[item.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
@@ -271,7 +252,6 @@ const agcS = StyleSheet.create({
 });
 
 // ─── Action Sheet ─────────────────────────────────────────
-// ✅ FIX v6.3 : "Recharger" masqué pour SUPER_ADMIN via prop isSuperAdmin
 function AgenceActionSheet({ agency, visible, isSuperAdmin, onClose, onViewDetails, onEdit, onRefill, onDelete }: {
   agency: any; visible: boolean; isSuperAdmin: boolean;
   onClose: () => void; onViewDetails: () => void;
@@ -294,12 +274,11 @@ function AgenceActionSheet({ agency, visible, isSuperAdmin, onClose, onViewDetai
     } finally { setDeleting(false); }
   };
 
-  // ✅ show: !isSuperAdmin sur "Recharger" — le SA n'a pas de wallet société à débiter
   const actions = [
-    { icon: "eye-outline",             label: "Voir les détails",   color: T.blue,   bg: T.blueLt,   onPress: onViewDetails,              show: true             },
-    { icon: "arrow-up-circle-outline", label: "Recharger",          color: T.teal,   bg: T.tealLt,   onPress: onRefill,                   show: !isSuperAdmin    },
-    { icon: "pencil-outline",          label: "Modifier",           color: T.inkSub, bg: T.borderLt, onPress: onEdit,                     show: true             },
-    { icon: "trash-outline",           label: "Supprimer l'agence", color: T.red,    bg: T.redLt,    onPress: () => setDeleteFlow(true),  show: true             },
+    { icon: "eye-outline",             label: "Voir les détails",   color: T.blue,   bg: T.blueLt,   onPress: onViewDetails,              show: true          },
+    { icon: "arrow-up-circle-outline", label: "Recharger",          color: T.teal,   bg: T.tealLt,   onPress: onRefill,                   show: !isSuperAdmin },
+    { icon: "pencil-outline",          label: "Modifier",           color: T.inkSub, bg: T.borderLt, onPress: onEdit,                     show: true          },
+    { icon: "trash-outline",           label: "Supprimer l'agence", color: T.red,    bg: T.redLt,    onPress: () => setDeleteFlow(true),  show: true          },
   ].filter((a) => a.show);
 
   return (
@@ -391,11 +370,14 @@ export default function AgenciesScreen() {
 
   const fetchData = useCallback(async () => {
     try {
-      const agencyList = await api.getAgencies();
-      setAgencies(Array.isArray(agencyList) ? agencyList : []);
+      // ✅ v6.4 : Pour SA, on ne charge les agences que si non-SA
+      // (les agences s'affichent dans clients/details)
+      if (!isSA) {
+        const agencyList = await api.getAgencies();
+        setAgencies(Array.isArray(agencyList) ? agencyList : []);
+      }
       if (isSA) {
         const clientList = await (api as any).getClients?.() ?? [];
-        // ✅ Exclure DONIKO — c'est la plateforme, pas une société cliente
         setClients(Array.isArray(clientList) ? clientList.filter((c: any) => c.code !== PLATFORM_CODE) : []);
       }
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
@@ -423,11 +405,14 @@ export default function AgenciesScreen() {
             <Text style={[s.heroTitle, { fontFamily: T.font.display }]}>{isSA ? "Réseau & Sociétés" : "Réseau d'Agences"}</Text>
             <Text style={[s.heroSub, { fontFamily: T.font.sans }]}>
               {isSA
-                ? `${clients.length} société${clients.length > 1 ? "s" : ""} · ${agencies.length} agence${agencies.length > 1 ? "s" : ""}`
+                ? `${clients.length} société${clients.length > 1 ? "s" : ""}`
                 : `${agencies.length} agence${agencies.length > 1 ? "s" : ""}`}
             </Text>
           </View>
-          <TouchableOpacity style={s.addBtn} onPress={() => isSA ? setShowCreateCompany(true) : router.push("/(tabs)/admin/agencies/create" as any)}>
+          <TouchableOpacity
+            style={s.addBtn}
+            onPress={() => isSA ? setShowCreateCompany(true) : router.push("/(tabs)/admin/agencies/create" as any)}
+          >
             <Ionicons name="add" size={24} color={T.white} />
           </TouchableOpacity>
         </View>
@@ -435,48 +420,94 @@ export default function AgenciesScreen() {
         <View style={s.searchWrap}>
           <View style={s.searchBox}>
             <Ionicons name="search" size={16} color="rgba(255,255,255,0.6)" />
-            <TextInput style={[s.searchInput, { fontFamily: T.font.sans }]} value={q} onChangeText={setQ} placeholder="Rechercher..." placeholderTextColor="rgba(255,255,255,0.45)" />
+            <TextInput
+              style={[s.searchInput, { fontFamily: T.font.sans }]}
+              value={q} onChangeText={setQ}
+              placeholder="Rechercher..." placeholderTextColor="rgba(255,255,255,0.45)"
+            />
             {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.6)" /></TouchableOpacity>}
           </View>
         </View>
 
         {loading ? (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}><ActivityIndicator color={T.white} size="large" /></View>
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <ActivityIndicator color={T.white} size="large" />
+          </View>
         ) : (
-          <Animated.ScrollView style={[s.listContainer, { opacity: fadeAnim }]} contentContainerStyle={s.list} showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.white} />}>
+          <Animated.ScrollView
+            style={[s.listContainer, { opacity: fadeAnim }]}
+            contentContainerStyle={s.list}
+            showsVerticalScrollIndicator={false}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.white} />}
+          >
+            {/* ── SUPER ADMIN : uniquement la liste des sociétés ── */}
             {isSA && (
               <>
-                <SectionBlock icon="briefcase-outline" title="SOCIÉTÉS SAAS" desc="Clients abonnés à la plateforme" color={T.blue} colorLt={T.blueLt} colorMd={T.blueMd} count={filteredClients.length} />
+                <SectionBlock
+                  icon="briefcase-outline"
+                  title="SOCIÉTÉS SAAS"
+                  desc="Clients abonnés à la plateforme"
+                  color={T.blue} colorLt={T.blueLt} colorMd={T.blueMd}
+                  count={filteredClients.length}
+                />
                 {filteredClients.map((item) => (
-                  <SocieteCard key={item.id} item={item} onPress={() => router.push({ pathname: "/(tabs)/admin/agencies/[id]" as any, params: { id: item.id } })} />
+                  <SocieteCard
+                    key={item.id}
+                    item={item}
+                    // ✅ v6.4 : Redirige vers clients/details qui affiche les agences de la société
+                    onPress={() => router.push({
+                      pathname: "/(tabs)/admin/clients/details",
+                      params:   { id: item.id },
+                    })}
+                  />
                 ))}
-                <Divider />
+                {filteredClients.length === 0 && !loading && (
+                  <View style={s.empty}>
+                    <Ionicons name="business-outline" size={32} color="rgba(255,255,255,0.3)" />
+                    <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>{q ? "Aucun résultat" : "Aucune société"}</Text>
+                  </View>
+                )}
               </>
             )}
-            <SectionBlock icon="storefront-outline" title="AGENCES DU RÉSEAU" desc="Points de service — filiales et partenaires opérationnels" color={T.teal} colorLt={T.tealLt} colorMd={T.tealMd} count={filteredAgencies.length} />
-            {filteredAgencies.map((item) => (
-              <AgenceCard key={item.id} item={item} onPress={() => openSheet(item)} />
-            ))}
-            {filteredAgencies.length === 0 && !loading && (
-              <View style={s.empty}>
-                <Ionicons name="storefront-outline" size={32} color="rgba(255,255,255,0.3)" />
-                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>{q ? "Aucun résultat" : "Aucune agence"}</Text>
-              </View>
+
+            {/* ── COMPANY ADMIN / AGENT : liste des agences ── */}
+            {!isSA && (
+              <>
+                <SectionBlock
+                  icon="storefront-outline"
+                  title="AGENCES DU RÉSEAU"
+                  desc="Points de service — filiales et partenaires opérationnels"
+                  color={T.teal} colorLt={T.tealLt} colorMd={T.tealMd}
+                  count={filteredAgencies.length}
+                />
+                {filteredAgencies.map((item) => (
+                  <AgenceCard key={item.id} item={item} onPress={() => openSheet(item)} />
+                ))}
+                {filteredAgencies.length === 0 && !loading && (
+                  <View style={s.empty}>
+                    <Ionicons name="storefront-outline" size={32} color="rgba(255,255,255,0.3)" />
+                    <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>{q ? "Aucun résultat" : "Aucune agence"}</Text>
+                  </View>
+                )}
+              </>
             )}
+
             <View style={{ height: 80 }} />
           </Animated.ScrollView>
         )}
 
-        {/* ✅ isSuperAdmin={isSA} — masque "Recharger" pour le SA */}
-        <AgenceActionSheet
-          agency={sheetAgency} visible={sheetVisible}
-          isSuperAdmin={isSA}
-          onClose={closeSheet}
-          onViewDetails={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/details" as any, params: { id: sheetAgency?.id } }); }}
-          onEdit={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/edit" as any, params: { id: sheetAgency?.id } }); }}
-          onRefill={() => openRefill(sheetAgency)}
-          onDelete={() => fetchData()}
-        />
+        {/* Action sheet (uniquement pour non-SA) */}
+        {!isSA && (
+          <AgenceActionSheet
+            agency={sheetAgency} visible={sheetVisible}
+            isSuperAdmin={isSA}
+            onClose={closeSheet}
+            onViewDetails={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/details" as any, params: { id: sheetAgency?.id } }); }}
+            onEdit={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/edit" as any, params: { id: sheetAgency?.id } }); }}
+            onRefill={() => openRefill(sheetAgency)}
+            onDelete={() => fetchData()}
+          />
+        )}
 
         <RefillAgencyModal
           visible={refillVisible} agency={refillAgency}
@@ -484,7 +515,14 @@ export default function AgenciesScreen() {
           onSuccess={() => fetchData()}
         />
 
-        {isSA && <CreateCompanyModal visible={showCreateCompany} onClose={() => setShowCreateCompany(false)} onSuccess={() => fetchData()} isSuperAdmin />}
+        {isSA && (
+          <CreateCompanyModal
+            visible={showCreateCompany}
+            onClose={() => setShowCreateCompany(false)}
+            onSuccess={() => fetchData()}
+            isSuperAdmin
+          />
+        )}
       </SafeAreaView>
     </LinearGradient>
   );
