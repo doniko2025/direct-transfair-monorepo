@@ -530,6 +530,11 @@ export interface Client {
   featureLoyaltyPoints?: boolean;
   createdAt?: ISODate;
   wallets?: Wallet[];
+  agencies?: Agency[];        // ✅ Fix ts(2339) — details.tsx ligne 304-305
+  _count?: {
+    users?: number;
+    agencies?: number;
+  };
 }
 
 // =========================================================

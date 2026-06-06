@@ -1,10 +1,8 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// FIX v5.2 — Filtrage des hosts cloud (Vercel / Railway)
-// ✅ extractTenantFromUrl ne retourne plus le sous-domaine
-//    Vercel/Railway comme code tenant
-// ✅ refreshUser stabilisé avec useCallback (v5.1 conservé)
-// ✅ Tout le reste identique à v5.1
+// FIX v5.3 — Ajout biometricLogin
+// ✅ biometricLogin : refreshToken → getMe → restaure session
+// ✅ Tout le reste identique à v5.2
 // =========================================================
 
 import React, {
@@ -28,6 +26,7 @@ type AuthContextValue = {
   register: (data: RegisterPayload, tenantCode?: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
+  biometricLogin: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -38,8 +37,6 @@ const TENANT_KEY = "dt_tenant";
 
 const RESERVED_HOST_PREFIXES = new Set(["www", "app", "mobile"]);
 
-// ✅ FIX v5.2 : suffixes de déploiements cloud à ignorer
-//    Le sous-domaine Vercel/Railway n'est PAS un code tenant
 const CLOUD_HOST_SUFFIXES = [
   ".vercel.app",
   ".up.railway.app",
@@ -68,8 +65,6 @@ function extractTenantFromUrl(url: string): string | null {
   try {
     const parsed = Linking.parse(url);
     const qp = parsed.queryParams ?? {};
-
-    // Query params en priorité — toujours fiables, quel que soit le host
     const candidates: unknown[] = [
       qp["tenant"], qp["tenantCode"], qp["t"],
       qp["code"], qp["company"], qp["x-tenant-id"],
@@ -78,11 +73,7 @@ function extractTenantFromUrl(url: string): string | null {
       const t = normalizeTenant(c);
       if (t) return t;
     }
-
     const host = typeof parsed.hostname === "string" ? parsed.hostname : "";
-
-    // ✅ FIX v5.2 : on n'extrait le tenant depuis le sous-domaine
-    //    QUE si ce n'est pas un host de déploiement cloud
     if (host && !isCloudDeploymentHost(host)) {
       const firstLabel = host.split(".")[0] ?? "";
       const lower = firstLabel.toLowerCase();
@@ -111,12 +102,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
   const segments = useSegments();
 
-  // ✅ tokenRef — permet à refreshUser (useCallback) de lire le token
-  //    sans l'avoir en dépendance (éviterait une nouvelle référence à chaque changement)
   const tokenRef       = useRef<string | null>(null);
   const tenantReadyRef = useRef(false);
 
-  // Sync tokenRef à chaque changement de token
   useEffect(() => { tokenRef.current = token; }, [token]);
 
   // ─── Storage helpers ─────────────────────────────────────
@@ -172,61 +160,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tokenRef.current = null;
       await removeStorage(TOKEN_KEY);
       await removeStorage(USER_KEY);
+      // ✅ NE PAS supprimer le refresh token ici
+      // → il est conservé pour permettre la reconnexion biométrique
       router.replace("/(auth)/login");
     } catch (e) {
       console.error("Erreur logout", e);
     }
   }, [router]);
 
-// ─── Init ─────────────────────────────────────────────────
-useEffect(() => {
-  const initAuth = async () => {
-    try {
-      await ensureTenantReady();
-      const storedToken   = await getStorage(TOKEN_KEY);
-      const storedUserRaw = await getStorage(USER_KEY);
+  // ─── Init ─────────────────────────────────────────────────
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await ensureTenantReady();
+        const storedToken   = await getStorage(TOKEN_KEY);
+        const storedUserRaw = await getStorage(USER_KEY);
 
-      if (storedToken && storedUserRaw) {
-        const storedUser = JSON.parse(storedUserRaw) as AuthUser;
+        if (storedToken && storedUserRaw) {
+          const storedUser = JSON.parse(storedUserRaw) as AuthUser;
+          const clientCode = (storedUser as any)?.client?.code;
+          if (clientCode) await applyTenant(clientCode);
 
-        // ✅ FIX TENANT MISMATCH : synchroniser le tenant depuis l'user
-        // stocké AVANT tout appel API — évite le mismatch clientId
-        const clientCode = (storedUser as any)?.client?.code;
-        if (clientCode) {
-          await applyTenant(clientCode);
-        }
+          api.setToken(storedToken);
+          setToken(storedToken);
+          tokenRef.current = storedToken;
+          setUser(injectCurrencyToUser(storedUser));
 
-        api.setToken(storedToken);
-        setToken(storedToken);
-        tokenRef.current = storedToken;
-        setUser(injectCurrencyToUser(storedUser));
-
-        try {
-          const me = await api.getMe();
-          const enrichedMe = injectCurrencyToUser(me);
-          // ✅ Re-sync tenant après getMe() au cas où le serveur retourne
-          // un code différent (changement de tenant côté serveur)
-          const meCode = (me as any)?.client?.code;
-          if (meCode) await applyTenant(meCode);
-          setUser(enrichedMe);
-          await setStorage(USER_KEY, JSON.stringify(enrichedMe));
-        } catch (e: any) {
-          const status = e?.response?.status;
-          if (status === 401 || status === 403) {
-            await logout();
+          try {
+            const me = await api.getMe();
+            const enrichedMe = injectCurrencyToUser(me);
+            const meCode = (me as any)?.client?.code;
+            if (meCode) await applyTenant(meCode);
+            setUser(enrichedMe);
+            await setStorage(USER_KEY, JSON.stringify(enrichedMe));
+          } catch (e: any) {
+            const status = e?.response?.status;
+            if (status === 401 || status === 403) await logout();
           }
-          // Erreur réseau / 500 → on garde la session locale
         }
+      } catch (e) {
+        console.log("Erreur init auth", e);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (e) {
-      console.log("Erreur init auth", e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  void initAuth();
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
+    };
+    void initAuth();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (isLoading) return;
@@ -235,31 +215,26 @@ useEffect(() => {
     else if (user && inAuthGroup) router.replace("/(tabs)/home");
   }, [user, isLoading, segments, router]);
 
-// ─── Login ────────────────────────────────────────────────
-const login = useCallback(async (data: LoginPayload) => {
-  setIsLoading(true);
-  try {
-    await ensureTenantReady();
-    const res: LoginResponse = await api.login(data);
-
-    // ✅ FIX : synchroniser le tenant depuis le token reçu IMMÉDIATEMENT
-    // avant de stocker quoi que ce soit
-    const clientCode = (res.user as any)?.client?.code;
-    if (clientCode) await applyTenant(clientCode);
-
-    api.setToken(res.access_token);
-    setToken(res.access_token);
-    tokenRef.current = res.access_token;
-
-    const enrichedUser = injectCurrencyToUser(res.user);
-    setUser(enrichedUser);
-    await setStorage(TOKEN_KEY, res.access_token);
-    await setStorage(USER_KEY, JSON.stringify(enrichedUser));
-  } catch (e: unknown) {
-    throw e;
-  } finally {
-    setIsLoading(false);
-  }
+  // ─── Login ────────────────────────────────────────────────
+  const login = useCallback(async (data: LoginPayload) => {
+    setIsLoading(true);
+    try {
+      await ensureTenantReady();
+      const res: LoginResponse = await api.login(data);
+      const clientCode = (res.user as any)?.client?.code;
+      if (clientCode) await applyTenant(clientCode);
+      api.setToken(res.access_token);
+      setToken(res.access_token);
+      tokenRef.current = res.access_token;
+      const enrichedUser = injectCurrencyToUser(res.user);
+      setUser(enrichedUser);
+      await setStorage(TOKEN_KEY, res.access_token);
+      await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+    } catch (e: unknown) {
+      throw e;
+    } finally {
+      setIsLoading(false);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -274,7 +249,6 @@ const login = useCallback(async (data: LoginPayload) => {
         ...data,
         ...(activeTenant && activeTenant !== "DONIKO" ? { tenantCode: activeTenant } : {}),
       };
-
       const res = await api.register(payload);
       if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
         api.setToken(res.access_token);
@@ -286,10 +260,7 @@ const login = useCallback(async (data: LoginPayload) => {
         await setStorage(USER_KEY, JSON.stringify(enrichedUser));
         return;
       }
-      await login({
-        identifier: data.email ?? data.phone ?? "",
-        password: data.password,
-      });
+      await login({ identifier: data.email ?? data.phone ?? "", password: data.password });
     } catch (e: unknown) {
       throw e;
     } finally {
@@ -298,7 +269,7 @@ const login = useCallback(async (data: LoginPayload) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [login]);
 
-  // ─── refreshUser — STABLE avec useCallback ───────────────
+  // ─── refreshUser ─────────────────────────────────────────
   const refreshUser = useCallback(async () => {
     try {
       const currentToken = tokenRef.current;
@@ -309,20 +280,49 @@ const login = useCallback(async (data: LoginPayload) => {
       setUser(enrichedUser);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
     } catch (e: any) {
-      // ✅ FIX : on ne déconnecte pas sur erreur réseau/timeout
-      // refreshUser est appelé en arrière-plan — une erreur 500 ou offline
-      // ne doit pas effacer la session locale
       const status = (e as any)?.response?.status;
-      if (status === 401 || status === 403) {
-        await logout();
-      }
-      // Sinon : silencieux, l'user reste connecté avec les données en cache
+      if (status === 401 || status === 403) await logout();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // ✅ [] — référence stable pour toujours
+  }, []);
+
+  // ─── biometricLogin ───────────────────────────────────────
+  // Utilise le refresh token conservé après logout pour restaurer la session
+  // sans que l'utilisateur ait à retaper ses identifiants.
+  const biometricLogin = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await ensureTenantReady();
+      // Utilise le refresh token stocké (non effacé au logout)
+      const result = await api.refreshAccessToken();
+      const newToken = result.access_token;
+
+      api.setToken(newToken);
+      setToken(newToken);
+      tokenRef.current = newToken;
+
+      const me = await api.getMe();
+      const enrichedUser = injectCurrencyToUser(me);
+
+      const clientCode = (me as any)?.client?.code;
+      if (clientCode) await applyTenant(clientCode);
+
+      setUser(enrichedUser);
+      await setStorage(TOKEN_KEY, newToken);
+      await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+    } catch (e: unknown) {
+      throw e;
+    } finally {
+      setIsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{
+      user, token, isLoading,
+      login, register, logout, refreshUser, biometricLogin,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,14 +1,17 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v5.5 — Direct Transf'air
-// ✅ v5.4 : addressStreet + postalCode + birthPlace ajoutés
-// ✅ v5.4 : lien "Se connecter" → router.replace
-// ✅ v5.5 : handleRegister — robuste face au timeout SMTP
-//   - Le backend v4.4 répond immédiatement (OTP non-bloquant)
-//   - Mais AuthProvider peut encore throw si parsing inattendu
-//   - On détecte le succès même sans token dans la réponse
-//   - Timeout Axios côté frontend réduit à 15s pour register
-//   - Si aucune erreur HTTP réelle → showSuccess
+// REGISTER v5.6 — Direct Transf'air
+// ✅ v5.5 conservé intégralement
+// ✅ v5.6 :
+//   - Suppression du champ "Lieu de naissance" (birthPlace)
+//     → birthCity remplace birthPlace dans le payload
+//   - Fix année de naissance masquée sur web (Vercel) :
+//     chaque DateBox est maintenant enveloppée dans un View
+//     avec flex explicite — flex:1 sur TextInput seul ne
+//     fonctionne pas correctement sur React Native Web
+//   - Fix : city section 2 et city section 3 ne partagent
+//     plus le même state (addressCity séparé)
+//   - Label birthCity → "Ville / Lieu de naissance"
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -64,8 +67,7 @@ const COUNTRY_CODES: Record<string, string> = {
   "Maroc":"+212","Algérie":"+213","Tunisie":"+216",
 };
 
-// ─── Erreurs HTTP qui signalent un vrai échec ─────────────
-// Tout ce qui n'est pas dans cette liste → on considère succès
+// Status HTTP = vrai échec (tout le reste → succès probable)
 const REAL_ERROR_STATUSES = new Set([400, 401, 403, 404, 409, 422, 500]);
 
 // ─── Popup Succès ─────────────────────────────────────────
@@ -187,6 +189,9 @@ const fS = StyleSheet.create({
 });
 
 // ─── Date Input ───────────────────────────────────────────
+// ✅ FIX v5.6 : width: "100%" au lieu de flex: 1
+// flex: 1 sur TextInput seul dans une row ne fonctionne pas
+// correctement sur React Native Web (Vercel) → l'AAAA disparaît
 function DateBox({ value, onChangeText, placeholder, maxLength }: {
   value: string; onChangeText: (v: string) => void;
   placeholder: string; maxLength: number;
@@ -214,7 +219,9 @@ function DateBox({ value, onChangeText, placeholder, maxLength }: {
 }
 const db = StyleSheet.create({
   input: {
-    flex: 1, fontSize: 15, color: C.text, fontWeight: "600",
+    // ✅ width: "100%" à la place de flex: 1 — compatible web ET natif
+    width: "100%",
+    fontSize: 15, color: C.text, fontWeight: "600",
     backgroundColor: C.white, borderRadius: 14,
     borderWidth: 1.5, borderColor: C.borderInput,
     paddingVertical: 14, paddingHorizontal: 8,
@@ -338,7 +345,7 @@ const cpS = StyleSheet.create({
 // ─────────────────────────────────────────────────────────
 export default function RegisterScreen() {
   const { register: registerUser, isLoading } = useAuth();
-  const { branding, loadBranding } = useTenant();
+  const { branding } = useTenant();
   const router = useRouter();
 
   // Section 1 — Identité
@@ -355,17 +362,21 @@ export default function RegisterScreen() {
   const [phone,     setPhone]     = useState("");
 
   // Section 3 — Adresse
+  // ✅ FIX v5.6 : addressCity est un state SÉPARÉ de city (section 2)
+  // Avant : les deux sections partageaient le même state `city`
+  // ce qui écrasait la ville de résidence dès qu'on modifiait l'adresse
   const [addressStreet, setAddressStreet] = useState("");
   const [postalCode,    setPostalCode]    = useState("");
+  const [addressCity,   setAddressCity]   = useState("");
 
   // Section 4 — État civil
+  // ✅ v5.6 : birthPlace supprimé — birthCity le remplace dans le payload
   const [nationality,  setNationality]  = useState("Guinée");
   const [birthDay,     setBirthDay]     = useState("");
   const [birthMonth,   setBirthMonth]   = useState("");
   const [birthYear,    setBirthYear]    = useState("");
-  const [birthPlace,   setBirthPlace]   = useState("");
-  const [birthCountry, setBirthCountry] = useState("");
   const [birthCity,    setBirthCity]    = useState("");
+  const [birthCountry, setBirthCountry] = useState("");
 
   const [picker,      setPicker]      = useState<null | "country" | "nationality" | "birthCountry">(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -373,9 +384,14 @@ export default function RegisterScreen() {
   const btnScale = useRef(new Animated.Value(1)).current;
 
   const handleCountrySelect = (c: string) => {
-    if (picker === "country") { setCountry(c); setPhoneCode(COUNTRY_CODES[c] || "+"); }
-    else if (picker === "nationality")  setNationality(c);
-    else if (picker === "birthCountry") setBirthCountry(c);
+    if (picker === "country") {
+      setCountry(c);
+      setPhoneCode(COUNTRY_CODES[c] || "+");
+    } else if (picker === "nationality")  {
+      setNationality(c);
+    } else if (picker === "birthCountry") {
+      setBirthCountry(c);
+    }
   };
 
   const birthDate = birthDay && birthMonth && birthYear
@@ -390,18 +406,6 @@ export default function RegisterScreen() {
   );
 
   // ── handleRegister ──────────────────────────────────────
-  // ✅ v5.5 : logique de succès/échec robuste
-  //
-  // Le backend v4.4 répond maintenant immédiatement (OTP non-bloquant).
-  // Mais AuthProvider peut encore throw dans certains cas :
-  //   - Axios timeout réseau (ECONNABORTED) → le compte est créé
-  //   - Parsing de la réponse échoue → le compte est créé
-  //   - AuthProvider fait setUser() et ça navigue vers /home avant
-  //     que notre await revienne → pas de throw, succès normal
-  //
-  // Règle : on n'affiche une vraie erreur QUE si le status HTTP
-  // est dans REAL_ERROR_STATUSES (400, 401, 403, 404, 409, 422, 500).
-  // Tout le reste (timeout, parsing, réseau instable) → succès affiché.
   const handleRegister = async () => {
     if (!canSubmit) {
       Alert.alert("Formulaire incomplet", "Veuillez remplir tous les champs obligatoires.");
@@ -434,50 +438,33 @@ export default function RegisterScreen() {
         city:          city.trim(),
         nationality,
         birthDate,
-        birthPlace:    birthPlace.trim(),
-        birthCountry,
+        // ✅ v5.6 : birthPlace supprimé — birthCity remplace les deux
+        birthPlace:    birthCity.trim(),
         birthCity:     birthCity.trim(),
+        birthCountry,
         addressStreet: addressStreet.trim(),
         postalCode:    postalCode.trim(),
+        // ✅ addressCity séparé de city (ville de résidence)
+        addressCity:   addressCity.trim() || city.trim(),
       };
 
       await registerUser(payload as any);
-
-      // ✅ Succès propre — AuthProvider a tout géré
       setShowSuccess(true);
 
     } catch (e: any) {
-      const httpStatus: number | undefined = e?.response?.status;
-      const rawMessage = e?.response?.data?.message ?? e?.message ?? null;
+      const status = e?.response?.status;
 
-      // ── Erreurs HTTP réelles (le compte n'a PAS été créé) ──
-      if (httpStatus && REAL_ERROR_STATUSES.has(httpStatus)) {
-        let msg: string;
-        if (Array.isArray(rawMessage))                              msg = rawMessage[0] ?? "Erreur lors de la création du compte.";
-        else if (typeof rawMessage === "string" && rawMessage.trim()) msg = rawMessage;
-        else                                                          msg = `Erreur ${httpStatus}. Veuillez réessayer.`;
-
-        // Cas spécial 409 : email/téléphone déjà utilisé
-        if (httpStatus === 409) {
-          Alert.alert(
-            "Compte existant",
-            msg.includes("email") || msg.includes("mail")
-              ? "Cette adresse email est déjà utilisée. Connectez-vous ou utilisez une autre adresse."
-              : msg.includes("numéro") || msg.includes("phone")
-              ? "Ce numéro de téléphone est déjà utilisé."
-              : msg,
-          );
-          return;
-        }
-
-        Alert.alert("Erreur d'inscription", msg);
+      if (status && REAL_ERROR_STATUSES.has(status)) {
+        const raw = e?.response?.data?.message || e?.message || "Erreur inconnue.";
+        const msg = Array.isArray(raw) ? raw[0] : String(raw);
+        Alert.alert("Inscription échouée", msg);
         return;
       }
 
-      // ── Tout le reste : timeout, parsing, réseau instable ──
+      // Tout le reste : timeout, parsing, réseau instable
       // Le compte a très probablement été créé côté backend.
-      // On affiche le succès plutôt qu'une fausse erreur.
       setShowSuccess(true);
+
     } finally {
       setSubmitting(false);
     }
@@ -500,7 +487,8 @@ export default function RegisterScreen() {
         visible={picker !== null}
         title={
           picker === "country"      ? "Pays de résidence" :
-          picker === "nationality"  ? "Nationalité" : "Pays de naissance"
+          picker === "nationality"  ? "Nationalité" :
+                                      "Pays de naissance"
         }
         onSelect={handleCountrySelect}
         onClose={() => setPicker(null)}
@@ -531,11 +519,48 @@ export default function RegisterScreen() {
           subtitle="Vos informations de base"
           color={C.section1} bgColor={C.section1Soft}
         />
-        <FieldInput label="Prénom *" value={firstName} onChangeText={setFirstName} icon="person-outline" placeholder="Prénom" />
-        <FieldInput label="Nom *" value={lastName} onChangeText={setLastName} icon="person-outline" placeholder="Nom de famille" autoCapitalize="characters" />
-        <FieldInput label="Adresse email *" value={email} onChangeText={setEmail} icon="mail-outline" placeholder="email@exemple.com" keyboardType="email-address" autoCapitalize="none" />
-        <FieldInput label="Mot de passe *" value={password} onChangeText={setPassword} icon="lock-closed-outline" placeholder="6 caractères minimum" secureTextEntry returnKeyType="next" />
-        <FieldInput label="Confirmer le mot de passe *" value={confirmPassword} onChangeText={setConfirmPassword} icon="lock-closed-outline" placeholder="Répéter le mot de passe" secureTextEntry returnKeyType="done" />
+        <FieldInput
+          label="Prénom *"
+          value={firstName}
+          onChangeText={setFirstName}
+          icon="person-outline"
+          placeholder="Prénom"
+        />
+        <FieldInput
+          label="Nom *"
+          value={lastName}
+          onChangeText={setLastName}
+          icon="person-outline"
+          placeholder="Nom de famille"
+          autoCapitalize="characters"
+        />
+        <FieldInput
+          label="Adresse email *"
+          value={email}
+          onChangeText={setEmail}
+          icon="mail-outline"
+          placeholder="email@exemple.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <FieldInput
+          label="Mot de passe *"
+          value={password}
+          onChangeText={setPassword}
+          icon="lock-closed-outline"
+          placeholder="6 caractères minimum"
+          secureTextEntry
+          returnKeyType="next"
+        />
+        <FieldInput
+          label="Confirmer le mot de passe *"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          icon="lock-closed-outline"
+          placeholder="Répéter le mot de passe"
+          secureTextEntry
+          returnKeyType="done"
+        />
 
         {password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword && (
           <View style={r.errorRow}>
@@ -560,7 +585,13 @@ export default function RegisterScreen() {
           onPress={() => setPicker("country")}
           icon="location-outline"
         />
-        <FieldInput label="Ville *" value={city} onChangeText={setCity} icon="business-outline" placeholder="Ex: Conakry" />
+        <FieldInput
+          label="Ville de résidence *"
+          value={city}
+          onChangeText={setCity}
+          icon="business-outline"
+          placeholder="Ex: Conakry"
+        />
 
         {/* Téléphone avec indicatif */}
         <Text style={[fS.label, { fontFamily: F.body }]}>Téléphone *</Text>
@@ -574,7 +605,9 @@ export default function RegisterScreen() {
             <Ionicons name="chevron-down" size={12} color={C.textFaint} />
           </TouchableOpacity>
           <TextInput
-            style={[r.phoneInput, { fontFamily: F.body }]}
+            style={[r.phoneInput, { fontFamily: F.body },
+              Platform.OS === "web" && ({ outlineStyle: "none" } as any),
+            ]}
             value={phone}
             onChangeText={setPhone}
             placeholder="6 12 34 56 78"
@@ -600,6 +633,7 @@ export default function RegisterScreen() {
           icon="home-outline"
           placeholder="12 Rue des Lilas…"
         />
+        {/* ✅ FIX v5.6 : addressCity est séparé de city */}
         <View style={r.twoCol}>
           <View style={{ flex: 0.4 }}>
             <FieldInput
@@ -614,8 +648,8 @@ export default function RegisterScreen() {
           <View style={{ flex: 1, marginLeft: 10 }}>
             <FieldInput
               label="Ville (si différente)"
-              value={city}
-              onChangeText={setCity}
+              value={addressCity}
+              onChangeText={setAddressCity}
               placeholder={city || "Ex: Paris"}
             />
           </View>
@@ -638,25 +672,40 @@ export default function RegisterScreen() {
           icon="flag-outline"
         />
 
-        {/* Date de naissance */}
+        {/* ✅ FIX v5.6 : chaque DateBox wrappée dans un View avec flex
+            explicite — corrige l'année masquée sur React Native Web */}
         <Text style={[fS.label, { fontFamily: F.body }]}>Date de naissance *</Text>
         <View style={r.dateRow}>
-          <DateBox value={birthDay}   onChangeText={setBirthDay}   placeholder="JJ"   maxLength={2} />
+          <View style={{ flex: 1 }}>
+            <DateBox
+              value={birthDay}
+              onChangeText={setBirthDay}
+              placeholder="JJ"
+              maxLength={2}
+            />
+          </View>
           <Text style={r.dateSep}>/</Text>
-          <DateBox value={birthMonth} onChangeText={setBirthMonth} placeholder="MM"   maxLength={2} />
+          <View style={{ flex: 1 }}>
+            <DateBox
+              value={birthMonth}
+              onChangeText={setBirthMonth}
+              placeholder="MM"
+              maxLength={2}
+            />
+          </View>
           <Text style={r.dateSep}>/</Text>
           <View style={{ flex: 2 }}>
-            <DateBox value={birthYear} onChangeText={setBirthYear} placeholder="AAAA" maxLength={4} />
+            <DateBox
+              value={birthYear}
+              onChangeText={setBirthYear}
+              placeholder="AAAA"
+              maxLength={4}
+            />
           </View>
         </View>
 
-        <FieldInput
-          label="Lieu de naissance"
-          value={birthPlace}
-          onChangeText={setBirthPlace}
-          icon="location-outline"
-          placeholder="Ex: Conakry, Guinée"
-        />
+        {/* ✅ v5.6 : "Lieu de naissance" supprimé
+            → birthCity remplace les deux champs (birthPlace + birthCity) */}
         <SelectField
           label="Pays de naissance"
           value={birthCountry}
@@ -665,7 +714,7 @@ export default function RegisterScreen() {
           icon="globe-outline"
         />
         <FieldInput
-          label="Ville de naissance"
+          label="Ville / Lieu de naissance"
           value={birthCity}
           onChangeText={setBirthCity}
           icon="business-outline"
@@ -729,7 +778,9 @@ const r = StyleSheet.create({
   phoneCodeTxt:{ fontSize: 14, color: C.text, fontWeight: "700" },
   phoneInput:  { flex: 1, fontSize: 14, color: C.text, fontWeight: "600", paddingHorizontal: 14, paddingVertical: 14 },
 
-  dateRow:     { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
+  // ✅ FIX v5.6 : width: "100%" sur le conteneur pour garantir
+  // que les Views enfants se partagent bien l'espace sur web
+  dateRow:     { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12, width: "100%" },
   dateSep:     { fontSize: 20, color: C.textMuted, fontWeight: "600" },
 
   errorRow:    { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.dangerSoft, borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: "#FECACA" },

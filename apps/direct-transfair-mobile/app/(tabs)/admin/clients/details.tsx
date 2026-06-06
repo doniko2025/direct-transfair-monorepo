@@ -1,9 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/clients/details.tsx
 // =========================================================
-// CLIENT DETAILS v5.0 — Direct Transf'air
-// ✅ Thème CLAIR — zéro dark/sombre
-// ✅ Style inspiré capture Grand Chef (fond blanc, cartes blanches)
-// ✅ Données 100% API — aucune valeur en dur
+// CLIENT DETAILS v6.0 — Direct Transf'air
+// ✅ v6.0 : Section "Agences" ajoutée — agences filtrées par société
+//           Les agences s'affichent ICI, pas dans la liste globale
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -17,38 +16,32 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 
-// ─── Design Tokens (LIGHT) ───────────────────────────────
 const T = {
   pageBg:   "#F2F4F8",
   surface:  "#FFFFFF",
   border:   "#E4E9F0",
   borderMd: "#CDD5E0",
-
   ink:      "#0F172A",
   inkMid:   "#1E293B",
   inkSub:   "#64748B",
   inkMuted: "#94A3B8",
-
   blue:     "#1956F0",
   blueDark: "#1240D6",
   blueLt:   "#EEF2FF",
   blueMd:   "#C7D5FF",
-
   green:    "#16A34A",
   greenLt:  "#DCFCE7",
   greenMd:  "#86EFAC",
-
   red:      "#DC2626",
   redLt:    "#FEE2E2",
-
   amber:    "#D97706",
   amberLt:  "#FEF3C7",
-
   purple:   "#7C3AED",
   purpleLt: "#EDE9FE",
-
+  teal:     "#0F766E",
+  tealLt:   "#CCFBF1",
+  tealMd:   "#5EEAD4",
   white:    "#FFFFFF",
-
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
   font: {
     display:  Platform.select({ ios: "Georgia",     android: "serif",             default: "serif" }),
@@ -70,6 +63,10 @@ const CURRENCY_COLORS: Record<string, string> = {
 };
 const CURRENCY_BG: Record<string, string> = {
   EUR: "#EEF2FF", USD: "#DCFCE7", XOF: "#FEF3C7", GNF: "#FEE2E2", GBP: "#EDE9FE",
+};
+const FLAG_MAP: Record<string, string> = {
+  GN:"🇬🇳", SN:"🇸🇳", ML:"🇲🇱", CI:"🇨🇮",
+  FR:"🇫🇷", GB:"🇬🇧", US:"🇺🇸", BF:"🇧🇫", NE:"🇳🇪", TG:"🇹🇬",
 };
 
 function toNum(v: unknown): number {
@@ -103,21 +100,21 @@ function InfoRow({ label, value, icon, accent = T.blue }: {
   );
 }
 const irS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
+  row:     { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 14 },
   iconBox: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  label: { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 3, textTransform: "uppercase" },
-  value: { fontSize: 14, fontWeight: "700", color: T.ink },
+  label:   { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 3, textTransform: "uppercase" },
+  value:   { fontSize: 14, fontWeight: "700", color: T.ink },
 });
 
 // ─── Wallet Row ────────────────────────────────────────────
 function WalletRow({ wallet }: { wallet: any }) {
-  const currency = wallet.currency ?? "XOF";
-  const color = CURRENCY_COLORS[currency] ?? T.blue;
-  const bg    = CURRENCY_BG[currency]    ?? T.blueLt;
+  const currency  = wallet.currency ?? "XOF";
+  const color     = CURRENCY_COLORS[currency] ?? T.blue;
+  const bg        = CURRENCY_BG[currency]    ?? T.blueLt;
   const balance   = toNum(wallet.balance);
   const reserved  = toNum(wallet.reservedBalance ?? 0);
   const available = balance - reserved;
-  const pct = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
+  const pct       = balance > 0 ? Math.min((available / balance) * 100, 100) : 0;
 
   return (
     <View style={wrS.row}>
@@ -127,7 +124,7 @@ function WalletRow({ wallet }: { wallet: any }) {
       <View style={{ flex: 1 }}>
         <View style={wrS.topRow}>
           <Text style={[wrS.balLabel, { fontFamily: T.font.sans }]}>Solde total</Text>
-          <Text style={[wrS.balance, { color, fontFamily: T.font.mono }]}>{fmt(balance, currency)}</Text>
+          <Text style={[wrS.balance,  { color, fontFamily: T.font.mono }]}>{fmt(balance, currency)}</Text>
         </View>
         <View style={[wrS.progBg, { backgroundColor: `${color}15` }]}>
           <View style={[wrS.progFill, { width: `${pct}%` as any, backgroundColor: color }]} />
@@ -141,19 +138,91 @@ function WalletRow({ wallet }: { wallet: any }) {
   );
 }
 const wrS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 16 },
-  currencyBox: {
-    width: 52, height: 52, borderRadius: 14,
-    justifyContent: "center", alignItems: "center",
-  },
-  currencyCode: { fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
-  topRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
-  balLabel: { fontSize: 10, color: T.inkMuted, fontWeight: "700" },
-  balance: { fontSize: 15, fontWeight: "800" },
-  progBg: { height: 4, borderRadius: 99, overflow: "hidden", marginBottom: 6 },
-  progFill: { height: 4, borderRadius: 99 },
-  subRow: { flexDirection: "row", justifyContent: "space-between" },
-  subTxt: { fontSize: 10, color: T.inkSub, fontWeight: "600" },
+  row:         { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 16 },
+  currencyBox: { width: 52, height: 52, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  currencyCode:{ fontSize: 11, fontWeight: "900", letterSpacing: 0.8 },
+  topRow:      { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  balLabel:    { fontSize: 10, color: T.inkMuted, fontWeight: "700" },
+  balance:     { fontSize: 15, fontWeight: "800" },
+  progBg:      { height: 4, borderRadius: 99, overflow: "hidden", marginBottom: 6 },
+  progFill:    { height: 4, borderRadius: 99 },
+  subRow:      { flexDirection: "row", justifyContent: "space-between" },
+  subTxt:      { fontSize: 10, color: T.inkSub, fontWeight: "600" },
+});
+
+// ─── Agency Mini Card ──────────────────────────────────────
+// ✅ v6.0 : Affiche les agences de CETTE société uniquement
+function AgencyMiniCard({ agency, onPress }: { agency: any; onPress: () => void }) {
+  const isActive  = agency.isActive !== false;
+  const flagCode  = (agency.country ?? "").toUpperCase().substring(0, 2);
+  const flag      = FLAG_MAP[flagCode] ?? "🌍";
+  const wallets   = Array.isArray(agency.wallets) ? agency.wallets : [];
+  const pw        = wallets.find((w: any) => w.isDefault) ?? wallets[0];
+  const balance   = toNum(pw?.balance ?? agency.balance ?? 0);
+  const currency  = pw?.currency ?? agency.primaryCurrency ?? "XOF";
+  const agentCount = toNum(agency.agents?.length ?? agency._count?.agents ?? 0);
+
+  return (
+    <TouchableOpacity style={amS.card} onPress={onPress} activeOpacity={0.85}>
+      <View style={[amS.bar, { backgroundColor: isActive ? T.green : T.red }]} />
+      <View style={amS.body}>
+        <View style={amS.topRow}>
+          <View style={[amS.flagBox, { backgroundColor: isActive ? T.tealLt : T.redLt }]}>
+            <Text style={{ fontSize: 20 }}>{flag}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[amS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{agency.name}</Text>
+            <Text style={[amS.meta, { fontFamily: T.font.subtitle }]}>
+              {agency.city || "—"} · {agency.country || "—"}
+            </Text>
+          </View>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={[amS.balance, { color: isActive ? T.teal : T.red, fontFamily: T.font.mono }]}>
+              {fmt(balance, currency)}
+            </Text>
+            <Text style={[amS.currency, { fontFamily: T.font.mono }]}>{currency}</Text>
+          </View>
+        </View>
+        <View style={amS.footRow}>
+          <View style={[amS.statusPill, {
+            backgroundColor: isActive ? T.tealLt  : T.redLt,
+            borderColor:     isActive ? T.tealMd  : T.red + "35",
+          }]}>
+            <View style={[amS.statusDot, { backgroundColor: isActive ? T.teal : T.red }]} />
+            <Text style={[amS.statusTxt, { color: isActive ? T.teal : T.red, fontFamily: T.font.sans }]}>
+              {isActive ? "Opérationnelle" : "Suspendue"}
+            </Text>
+          </View>
+          {agentCount > 0 && (
+            <View style={amS.agentPill}>
+              <Ionicons name="people-outline" size={10} color={T.inkMuted} />
+              <Text style={[amS.agentTxt, { fontFamily: T.font.sans }]}>
+                {agentCount} agent{agentCount > 1 ? "s" : ""}
+              </Text>
+            </View>
+          )}
+          <Ionicons name="chevron-forward" size={13} color={T.blue} />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+const amS = StyleSheet.create({
+  card:      { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.md, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.soft },
+  bar:       { width: 3 },
+  body:      { flex: 1, padding: 12 },
+  topRow:    { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  flagBox:   { width: 36, height: 36, borderRadius: 9, justifyContent: "center", alignItems: "center" },
+  name:      { fontSize: 13, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  meta:      { fontSize: 10, color: T.inkSub, fontWeight: "500" },
+  balance:   { fontSize: 13, fontWeight: "800" },
+  currency:  { fontSize: 9, color: T.inkSub, fontWeight: "700", marginTop: 1 },
+  footRow:   { flexDirection: "row", alignItems: "center", gap: 8 },
+  statusPill:{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
+  statusDot: { width: 4, height: 4, borderRadius: 99 },
+  statusTxt: { fontSize: 8, fontWeight: "900" },
+  agentPill: { flexDirection: "row", alignItems: "center", gap: 3, marginLeft: "auto" as any, marginRight: 4 },
+  agentTxt:  { fontSize: 9, color: T.inkMuted, fontWeight: "600" },
 });
 
 // ─── Action Box ────────────────────────────────────────────
@@ -184,34 +253,31 @@ function ActionBox({ icon, label, color, bgColor, onPress, loading: load }: {
   );
 }
 const axS = StyleSheet.create({
-  box: {
-    alignItems: "center", justifyContent: "center",
-    paddingVertical: 16, borderRadius: T.radius.md,
-    borderWidth: 1, gap: 6,
-  },
+  box:   { alignItems: "center", justifyContent: "center", paddingVertical: 16, borderRadius: T.radius.md, borderWidth: 1, gap: 6 },
   label: { fontSize: 11, fontWeight: "800" },
 });
 
 // ─── Section Header ────────────────────────────────────────
-function SH({ dot, label }: { dot: string; label: string }) {
+function SH({ dot, label, right }: { dot: string; label: string; right?: React.ReactNode }) {
   return (
     <View style={shS.row}>
       <View style={[shS.dot, { backgroundColor: dot }]} />
       <Text style={[shS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      {right}
     </View>
   );
 }
 const shS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  dot: { width: 6, height: 6, borderRadius: 99 },
-  label: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase" },
+  row:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  dot:   { width: 6, height: 6, borderRadius: 99 },
+  label: { flex: 1, fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase" },
 });
 
 function isDigitsOnly(s: string) { return /^[0-9]+$/.test(s); }
 
 // ─── Main Screen ───────────────────────────────────────────
 export default function ClientDetailsScreen() {
-  const { id } = useLocalSearchParams();
+  const { id }  = useLocalSearchParams();
   const router  = useRouter();
   const { user } = useAuth();
 
@@ -219,6 +285,7 @@ export default function ClientDetailsScreen() {
   const clientId = idStr && isDigitsOnly(idStr) ? Number(idStr) : NaN;
 
   const [client,     setClient]     = useState<any>(null);
+  const [agencies,   setAgencies]   = useState<any[]>([]);   // ✅ v6.0
   const [loading,    setLoading]    = useState(true);
   const [processing, setProcessing] = useState(false);
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
@@ -230,6 +297,25 @@ export default function ClientDetailsScreen() {
     try {
       const data = await api.getClient(clientId);
       setClient(data);
+
+      // ✅ v6.0 : Agences depuis la réponse API du client
+      // Le backend inclut client.agencies dans getClient()
+      // Sinon, récupération via getAgencies() filtrée par clientId
+      if (Array.isArray(data.agencies) && data.agencies.length > 0) {
+        setAgencies(data.agencies);
+      } else {
+        // Fallback : chercher parmi toutes les agences celles qui appartiennent à ce client
+        try {
+          const allAgencies = await api.getAgencies();
+          const clientAgencies = allAgencies.filter(
+            (a: any) => String(a.clientId) === String(clientId)
+          );
+          setAgencies(clientAgencies);
+        } catch {
+          setAgencies([]);
+        }
+      }
+
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e: any) {
       setErrorMsg(e.response?.status === 404 ? "Société introuvable (404)." : "Erreur lors du chargement.");
@@ -271,7 +357,6 @@ export default function ClientDetailsScreen() {
     ]);
   };
 
-  // ── Loading ──
   if (loading) {
     return (
       <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center" }]}>
@@ -280,7 +365,6 @@ export default function ClientDetailsScreen() {
     );
   }
 
-  // ── Error ──
   if (errorMsg || !client) {
     return (
       <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center", padding: 24 }]}>
@@ -304,7 +388,7 @@ export default function ClientDetailsScreen() {
   const rawAddress  = client.ownerAddress || client.address || "";
   const addrParts   = rawAddress.split(",").map((s: string) => s.trim()).filter(Boolean);
   const userCount   = client._count?.users   ?? client.users?.length   ?? 0;
-  const agencyCount = client._count?.agencies ?? client.agencies?.length ?? 0;
+  const agencyCount = agencies.length > 0 ? agencies.length : (client._count?.agencies ?? client.agencies?.length ?? 0);
 
   return (
     <SafeAreaView style={s.safe}>
@@ -333,9 +417,7 @@ export default function ClientDetailsScreen() {
       >
         {/* ── Hero card société ── */}
         <View style={s.heroCard}>
-          {/* Barre colorée top selon statut */}
           <View style={[s.heroTopBar, { backgroundColor: statusColor }]} />
-
           <View style={s.heroRow}>
             <View style={[s.heroAvatar, { backgroundColor: `${T.blue}12` }]}>
               <Text style={[s.heroAvatarLetter, { fontFamily: T.font.display }]}>
@@ -365,18 +447,13 @@ export default function ClientDetailsScreen() {
             </View>
           </View>
 
-          {/* Stats compteurs */}
           <View style={s.countersRow}>
             <View style={[s.counterBox, { borderRightWidth: 1, borderRightColor: T.border }]}>
-              <Text style={[s.counterVal, { color: T.blue, fontFamily: T.font.display }]}>
-                {userCount}
-              </Text>
+              <Text style={[s.counterVal, { color: T.blue, fontFamily: T.font.display }]}>{userCount}</Text>
               <Text style={[s.counterLbl, { fontFamily: T.font.sans }]}>Utilisateurs</Text>
             </View>
             <View style={s.counterBox}>
-              <Text style={[s.counterVal, { color: T.amber, fontFamily: T.font.display }]}>
-                {agencyCount}
-              </Text>
+              <Text style={[s.counterVal, { color: T.amber, fontFamily: T.font.display }]}>{agencyCount}</Text>
               <Text style={[s.counterLbl, { fontFamily: T.font.sans }]}>Agences</Text>
             </View>
           </View>
@@ -393,10 +470,10 @@ export default function ClientDetailsScreen() {
         {/* ── Société & Contact ── */}
         <View style={s.card}>
           <SH dot={T.blue} label="Société & Contact" />
-          <InfoRow label="Email administrateur" value={client.email || client.contactEmail || ""} icon="mail-outline" accent={T.blue} />
-          <InfoRow label="Téléphone"           value={client.phone || client.contactPhone || ""}  icon="call-outline"      accent={T.blue} />
-          <InfoRow label="Secteur d'activité"  value={client.activitySector || ""}                icon="briefcase-outline" accent={T.blue} />
-          <InfoRow label="Devise principale"   value={client.defaultCurrency || ""}               icon="cash-outline"      accent={T.blue} />
+          <InfoRow label="Email administrateur" value={client.email || client.contactEmail || ""}           icon="mail-outline"      accent={T.blue} />
+          <InfoRow label="Téléphone"            value={client.phone || client.contactPhone || ""}           icon="call-outline"      accent={T.blue} />
+          <InfoRow label="Secteur d'activité"   value={client.activitySector || ""}                         icon="briefcase-outline" accent={T.blue} />
+          <InfoRow label="Devise principale"    value={client.defaultCurrency || ""}                        icon="cash-outline"      accent={T.blue} />
         </View>
 
         {/* ── Gérant ── */}
@@ -431,6 +508,57 @@ export default function ClientDetailsScreen() {
             </View>
           </View>
         )}
+
+        {/* ── ✅ v6.0 AGENCES DE CETTE SOCIÉTÉ ── */}
+        <View style={s.card}>
+          <SH
+            dot={T.teal}
+            label={`Agences (${agencyCount})`}
+            right={
+              <TouchableOpacity
+                style={s.addAgencyBtn}
+                onPress={() => router.push({
+                  pathname: "/(tabs)/admin/agencies/create" as any,
+                  params:   { clientId: client.id },
+                })}
+              >
+                <Ionicons name="add" size={15} color={T.teal} />
+                <Text style={[s.addAgencyTxt, { fontFamily: T.font.sans }]}>Ajouter</Text>
+              </TouchableOpacity>
+            }
+          />
+
+          {agencies.length === 0 ? (
+            <View style={s.emptyAgencies}>
+              <Ionicons name="storefront-outline" size={24} color={T.inkMuted} />
+              <Text style={[s.emptyAgenciesTxt, { fontFamily: T.font.sans }]}>
+                Aucune agence pour cette société
+              </Text>
+              <TouchableOpacity
+                style={s.createAgencyBtn}
+                onPress={() => router.push({
+                  pathname: "/(tabs)/admin/agencies/create" as any,
+                  params:   { clientId: client.id },
+                })}
+              >
+                <Text style={[s.createAgencyTxt, { fontFamily: T.font.sans }]}>
+                  Créer la première agence →
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            agencies.map((agency: any) => (
+              <AgencyMiniCard
+                key={agency.id}
+                agency={agency}
+                onPress={() => router.push({
+                  pathname: "/(tabs)/admin/agencies/details" as any,
+                  params:   { id: agency.id },
+                })}
+              />
+            ))
+          )}
+        </View>
 
         {/* ── Actions ── */}
         <View style={s.card}>
@@ -471,82 +599,45 @@ const s = StyleSheet.create({
   safe:   { flex: 1, backgroundColor: "#F2F4F8" },
 
   header: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.surface,
-    paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 14,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: T.border,
+    flexDirection: "row", alignItems: "center", backgroundColor: T.surface,
+    paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: T.pageBg,
-    borderWidth: 1, borderColor: T.border,
-    justifyContent: "center", alignItems: "center",
-  },
-  headerTitle: { flex: 1, color: T.ink, fontSize: 19, fontWeight: "700" },
-  editBtn: {
-    width: 38, height: 38, borderRadius: 11,
-    backgroundColor: T.blueLt,
-    borderWidth: 1, borderColor: T.blueMd,
-    justifyContent: "center", alignItems: "center",
-  },
+  backBtn: { width: 38, height: 38, borderRadius: 11, backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
+  headerTitle: { flex: 1, color: T.ink, fontSize: 18, fontWeight: "700", fontFamily: "System" },
+  editBtn: { width: 38, height: 38, borderRadius: 11, backgroundColor: T.blueLt, borderWidth: 1, borderColor: T.blueMd, justifyContent: "center", alignItems: "center" },
 
   scroll: { padding: 16 },
 
-  heroCard: {
-    backgroundColor: T.surface,
-    borderRadius: T.radius.xl,
-    overflow: "hidden",
-    marginBottom: 14,
-    borderWidth: 1, borderColor: T.border,
-    ...{ shadowColor: "#1240D6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 4 },
-  },
-  heroTopBar: { height: 4, width: "100%" },
-  heroRow: {
-    flexDirection: "row", alignItems: "center",
-    padding: 16, gap: 14,
-  },
-  heroAvatar: {
-    width: 56, height: 56, borderRadius: 16,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1.5, borderColor: T.blueMd,
-  },
-  heroAvatarLetter: { fontSize: 24, fontWeight: "700", color: T.blue },
-  heroName: { color: T.ink, fontSize: 17, fontWeight: "700", marginBottom: 8 },
-  pillRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  codePill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7 },
-  codeTxt: { color: T.amber, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  statusPill: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 7, borderWidth: 1,
-  },
-  statusDot: { width: 5, height: 5, borderRadius: 99 },
-  statusTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
-  subPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7, borderWidth: 1 },
-  subTxt: { fontSize: 9, fontWeight: "900" },
+  heroCard:        { backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 14, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
+  heroTopBar:      { height: 4 },
+  heroRow:         { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, paddingBottom: 12 },
+  heroAvatar:      { width: 50, height: 50, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  heroAvatarLetter:{ fontSize: 22, fontWeight: "800", color: T.blue },
+  heroName:        { fontSize: 17, fontWeight: "700", color: T.ink, marginBottom: 6 },
+  pillRow:         { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  codePill:        { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  codeTxt:         { fontSize: 10, fontWeight: "900", color: T.amber },
+  statusPill:      { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  statusDot:       { width: 5, height: 5, borderRadius: 99 },
+  statusTxt:       { fontSize: 9, fontWeight: "900" },
+  subPill:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  subTxt:          { fontSize: 10, fontWeight: "700" },
+  countersRow:     { flexDirection: "row", borderTopWidth: 1, borderTopColor: T.border },
+  counterBox:      { flex: 1, alignItems: "center", paddingVertical: 12 },
+  counterVal:      { fontSize: 22, fontWeight: "700" },
+  counterLbl:      { fontSize: 10, color: T.inkSub, fontWeight: "600", marginTop: 2 },
 
-  countersRow: {
-    flexDirection: "row",
-    borderTopWidth: 1, borderTopColor: T.border,
-  },
-  counterBox: { flex: 1, alignItems: "center", paddingVertical: 16, gap: 4 },
-  counterVal: { fontSize: 26, fontWeight: "800" },
-  counterLbl: { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 0.8, textTransform: "uppercase" },
+  card:      { backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
+  addrBox:   { flexDirection: "row", gap: 12 },
+  addrLine:  { fontSize: 14, fontWeight: "700", color: T.ink, marginBottom: 2 },
+  actionsRow:{ flexDirection: "row", gap: 10 },
 
-  card: {
-    backgroundColor: T.surface,
-    borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 14,
-    borderWidth: 1, borderColor: T.border,
-    ...{ shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  },
-
-  addrBox: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  addrLine: { color: T.ink, fontSize: 14, fontWeight: "600", marginBottom: 3 },
-
-  actionsRow: { flexDirection: "row", gap: 10 },
+  // ✅ v6.0 : Styles agences
+  addAgencyBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: T.tealLt, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: T.tealMd },
+  addAgencyTxt: { fontSize: 11, fontWeight: "800", color: T.teal },
+  emptyAgencies:{ alignItems: "center", paddingVertical: 20, gap: 8 },
+  emptyAgenciesTxt: { fontSize: 13, color: T.inkMuted, fontWeight: "600" },
+  createAgencyBtn:  { marginTop: 4 },
+  createAgencyTxt:  { fontSize: 12, color: T.teal, fontWeight: "700" },
 });

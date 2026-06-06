@@ -1,12 +1,13 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.0 — Direct Transf'air
-// Design: Light & Premium — Thèmes clairs par rôle
-// ✅ Pas de dark mode — tout en nuances claires
-// ✅ Gradients subtils, espacements généreux
+// PROFILE INDEX v5.1 — Direct Transf'air
+// ✅ Toggle biométrie FONCTIONNEL
+//    → vérifie la dispo matérielle au montage
+//    → prompt biométrique avant activation
+//    → persistance SecureStore
 // =========================================================
 
-import React, { useRef } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
   SafeAreaView, StatusBar, Platform, Alert, Animated,
@@ -15,8 +16,14 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../../providers/AuthProvider";
+import {
+  isBiometricsAvailable,
+  getBiometricsEnabled,
+  setBiometricsEnabled,
+  promptBiometrics,
+} from "../../../hooks/useBiometrics";
 
-// ─── Thèmes par rôle (100% clairs) ─────────────────────
+// ─── Thèmes par rôle ────────────────────────────────────
 const ROLE_THEMES = {
   SUPER_ADMIN: {
     bg1: "#F8FAFF", bg2: "#EEF2FF",
@@ -124,6 +131,38 @@ const sS = StyleSheet.create({
   },
 });
 
+// ─── BiometricToggle ───────────────────────────────────
+function BiometricToggle({ enabled, onToggle, accent }: {
+  enabled: boolean; onToggle: () => void; accent: string;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onToggle}
+      activeOpacity={0.85}
+      style={btS.row}
+    >
+      <View style={[btS.track, enabled && { backgroundColor: accent }]}>
+        <View style={[btS.knob, enabled && btS.knobOn]} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+const btS = StyleSheet.create({
+  row: { justifyContent: "center", alignItems: "center" },
+  track: {
+    width: 46, height: 26, borderRadius: 99,
+    backgroundColor: "#CBD5E1",
+    justifyContent: "center", padding: 3,
+  },
+  knob: {
+    width: 20, height: 20, borderRadius: 99,
+    backgroundColor: T.white,
+    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
+  },
+  knobOn: { alignSelf: "flex-end" },
+});
+
 // ─── Main Screen ───────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
@@ -134,8 +173,61 @@ export default function ProfileScreen() {
 
   const isAdmin = role === "SUPER_ADMIN" || role === "COMPANY_ADMIN";
   const isAgent = role === "AGENT";
-  const isUser = role === "USER";
+  const isUser  = role === "USER";
 
+  // ─── Biométrie ─────────────────────────────────────────
+  const [bioEnabled,   setBioEnabledState]   = useState(false);
+  const [bioAvailable, setBioAvailableState] = useState(false);
+
+  useEffect(() => {
+    const loadBioState = async () => {
+      const available = await isBiometricsAvailable();
+      setBioAvailableState(available);
+      if (available) {
+        const enabled = await getBiometricsEnabled();
+        setBioEnabledState(enabled);
+      }
+    };
+    void loadBioState();
+  }, []);
+
+  const handleToggleBio = async () => {
+    if (!bioAvailable) {
+      Alert.alert(
+        "Biométrie indisponible",
+        "Votre appareil ne supporte pas la biométrie ou aucune empreinte n'est enregistrée.",
+      );
+      return;
+    }
+
+    if (!bioEnabled) {
+      // Activation : demande confirmation biométrique d'abord
+      const success = await promptBiometrics("Activez la connexion biométrique");
+      if (!success) return; // l'utilisateur a annulé
+      await setBiometricsEnabled(true);
+      setBioEnabledState(true);
+      Alert.alert("✅ Activé", "La connexion biométrique est maintenant activée.");
+    } else {
+      // Désactivation : confirmation simple
+      Alert.alert(
+        "Désactiver la biométrie",
+        "Vous devrez utiliser votre mot de passe pour vous reconnecter.",
+        [
+          { text: "Annuler", style: "cancel" },
+          {
+            text: "Désactiver",
+            style: "destructive",
+            onPress: async () => {
+              await setBiometricsEnabled(false);
+              setBioEnabledState(false);
+            },
+          },
+        ],
+      );
+    }
+  };
+
+  // ─── UI ────────────────────────────────────────────────
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
     : "Utilisateur";
@@ -172,10 +264,8 @@ export default function ProfileScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg1} />
 
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
           {/* ── Hero card ── */}
           <LinearGradient
             colors={[theme.accentSoft, "rgba(255,255,255,0.5)"]}
@@ -207,13 +297,21 @@ export default function ProfileScreen() {
               <View style={s.secTop}>
                 <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
                 <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
-                <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>85%</Text>
+                <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
+                  {bioEnabled ? "100%" : "85%"}
+                </Text>
               </View>
               <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
-                <View style={[s.secBarFill, { width: "85%", backgroundColor: theme.accent }]} />
+                <View style={[s.secBarFill, {
+                  width: bioEnabled ? "100%" : "85%",
+                  backgroundColor: theme.accent,
+                }]} />
               </View>
               <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
-                Activez la validation 2FA pour atteindre 100%
+                {bioEnabled
+                  ? "🔒 Compte entièrement sécurisé"
+                  : "Activez la biométrie pour atteindre 100%"
+                }
               </Text>
             </View>
           )}
@@ -266,14 +364,28 @@ export default function ProfileScreen() {
               accent={theme.accent}
               onPress={() => router.push("/(tabs)/profile/security")}
             />
+            {/* ✅ Toggle biométrie FONCTIONNEL */}
             <MenuRow
               icon="finger-print-outline"
-              label="Biométrie (Face ID / Touch ID)"
-              accent={theme.accent}
+              label={
+                bioAvailable
+                  ? `Biométrie (Face ID / Touch ID)`
+                  : "Biométrie (non disponible)"
+              }
+              accent={bioAvailable ? theme.accent : T.textDim}
+              disabled={!bioAvailable}
               rightElement={
-                <View style={[s.toggle, { backgroundColor: theme.accent }]}>
-                  <View style={s.toggleKnob} />
-                </View>
+                bioAvailable ? (
+                  <BiometricToggle
+                    enabled={bioEnabled}
+                    onToggle={handleToggleBio}
+                    accent={theme.accent}
+                  />
+                ) : (
+                  <View style={{ width: 46, height: 26, borderRadius: 99, backgroundColor: "#E2E8F0", justifyContent: "center", padding: 3 }}>
+                    <View style={{ width: 20, height: 20, borderRadius: 99, backgroundColor: T.white }} />
+                  </View>
+                )
               }
             />
           </Section>
@@ -330,8 +442,7 @@ const s = StyleSheet.create({
   },
   avatarBox: {
     width: 60, height: 60, borderRadius: T.radius.lg,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 2,
+    justifyContent: "center", alignItems: "center", borderWidth: 2,
   },
   initials: { fontSize: 24, fontWeight: "900" },
   name: { color: T.text, fontSize: 20, fontWeight: "700", marginBottom: 3 },
@@ -353,9 +464,6 @@ const s = StyleSheet.create({
   secBarBg: { height: 5, borderRadius: 99, marginBottom: 10, overflow: "hidden" },
   secBarFill: { height: 5, borderRadius: 99 },
   secHint: { color: T.textDim, fontSize: 11, fontWeight: "600" },
-
-  toggle: { width: 44, height: 24, borderRadius: 99, justifyContent: "center", paddingHorizontal: 2 },
-  toggleKnob: { width: 20, height: 20, borderRadius: 99, backgroundColor: T.white, alignSelf: "flex-end", shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
 
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,

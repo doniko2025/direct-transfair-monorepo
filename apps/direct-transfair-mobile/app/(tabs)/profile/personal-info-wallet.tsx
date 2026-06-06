@@ -1,9 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.0
-// Design: Jade & Ivoire — thème 100% clair
-// accent #059669 (vert émeraude) — fond #ECFDF5 → #FFFFFF
-// ✅ Formulaire complet KYC : identité + état civil + adresse
+// PERSONAL INFO — CLIENT (WALLET) v5.1
+// ✅ Fix : paddingBottom 40 → 120 pour dépasser la tab bar
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -108,7 +106,10 @@ function CountryPicker({ label, value, onChange, editable }: any) {
             <View style={{ width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 }} />
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border }}>
               <Text style={{ color: T.text, fontSize: 17, fontWeight: "700", fontFamily: T.font.display }}>Sélectionner un pays</Text>
-              <TouchableOpacity style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border }} onPress={() => setVisible(false)}>
+              <TouchableOpacity
+                style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border }}
+                onPress={() => setVisible(false)}
+              >
                 <Ionicons name="close" size={17} color={T.textSub} />
               </TouchableOpacity>
             </View>
@@ -299,7 +300,12 @@ export default function PersonalInfoWallet() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <Animated.ScrollView
           style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            // ✅ FIX : 120px pour dépasser la tab bar (≈80px) + marge confortable
+            paddingBottom: 120,
+          }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -388,21 +394,61 @@ export default function PersonalInfoWallet() {
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 12, backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border },
-  backBtn: { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  header: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 16,
+    gap: 12,
+    backgroundColor: T.surface,
+    borderBottomWidth: 1, borderBottomColor: T.border,
+  },
+  backBtn: {
+    width: 38, height: 38, borderRadius: T.radius.sm,
+    backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
+  },
   headerTitle: { color: T.text, fontSize: 17, fontWeight: "700" },
   headerSub: { color: T.textDim, fontSize: 12, marginTop: 1 },
-  editBtn: { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  editBtn: {
+    width: 38, height: 38, borderRadius: T.radius.sm,
+    backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
+  },
   editBtnCancel: { backgroundColor: T.redSoft, borderColor: T.redBorder },
-  avatarCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: T.borderFocus },
+
+  avatarCard: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: T.surface, borderRadius: T.radius.xl,
+    padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+  },
+  avatarCircle: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center",
+    borderWidth: 2, borderColor: T.borderFocus,
+  },
   avatarText: { fontSize: 20, fontWeight: "700", color: T.accentText },
   name: { fontSize: 17, fontWeight: "700", color: T.text },
   emailText: { fontSize: 12, color: T.textSub, marginTop: 2 },
-  badge: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, backgroundColor: T.accentSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, alignSelf: "flex-start" },
+  badge: {
+    flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6,
+    backgroundColor: T.accentSoft, paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 99, alignSelf: "flex-start",
+  },
   badgeText: { fontSize: 10, fontWeight: "700", color: T.accentText, letterSpacing: 0.5 },
-  infoBanner: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: T.infoSoft, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: "#BAE6FD", marginBottom: 14 },
+
+  infoBanner: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    backgroundColor: T.infoSoft, borderRadius: T.radius.md,
+    padding: 14, borderWidth: 1, borderColor: "#BAE6FD", marginBottom: 14,
+  },
   infoText: { flex: 1, color: T.info, fontSize: 12, fontWeight: "600", lineHeight: 18 },
-  saveBtn: { backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
-  saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+
+  saveBtn: {
+    backgroundColor: T.accent, borderRadius: T.radius.md,
+    paddingVertical: 17, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", gap: 10, marginTop: 6,
+  },
+  saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 0.6 },
 });

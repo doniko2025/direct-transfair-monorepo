@@ -1,7 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // =========================================================
-// BENEFICIARY DETAIL v4.0 — Direct Transf'air
-// Design: Émeraude Profond (thème CLIENT)
+// BENEFICIARY DETAIL v5.0 — Direct Transf'air
+// ✅ v5.0 : Thème CLAIR — cohérent avec index.tsx et create.tsx
 // ✅ Voir / Modifier / Supprimer un bénéficiaire
 // ✅ Actions rapides Wallet + Cash
 // =========================================================
@@ -10,11 +10,10 @@ import React, { useCallback, useMemo, useState, useRef } from "react";
 import {
   View, Text, StyleSheet, ActivityIndicator, TextInput, ScrollView,
   Modal, FlatList, TouchableOpacity, SafeAreaView, KeyboardAvoidingView,
-  Platform, Alert, Animated, StatusBar,
+  Platform, Animated, StatusBar,
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
@@ -22,28 +21,36 @@ import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
 import { citiesByCountry } from "../../../data/cities";
 
-// ─── Design Tokens ──────────────────────────────────────
-const T = {
-  g1: "#0B1F14",
-  g2: "#0F2A1C",
-  accent: "#10B981",
-  accentSoft: "#34D399",
-  accentGlow: "rgba(16,185,129,0.15)",
-  ghost: "rgba(255,255,255,0.06)",
-  ghostMid: "rgba(255,255,255,0.10)",
-  inkBorder: "rgba(255,255,255,0.08)",
-  inkLight: "#1C2820",
-  white: "#FFFFFF",
-  dim: "#8A9BB5",
-  dimSoft: "#7B9E8A",
-  red: "#EF4444",
-  amber: "#F59E0B",
-  blue: "#60A5FA",
-  radius: { sm: 10, md: 14, lg: 20, xl: 26 },
+// ─── Design Tokens — LIGHT ───────────────────────────────
+const C = {
+  green:       "#059669",
+  greenDark:   "#047857",
+  greenLight:  "#F0FDF4",
+  greenBorder: "#A7F3D0",
+  greenPale:   "#ECFDF5",
+  heroGlass:   "rgba(255,255,255,0.14)",
+  heroGlassBdr:"rgba(255,255,255,0.22)",
+  heroDim:     "rgba(255,255,255,0.70)",
+  heroGlow:    "rgba(255,255,255,0.08)",
+  pageBg:      "#F0FDF8",
+  white:       "#FFFFFF",
+  cardBorder:  "#D1FAE5",
+  inputBg:     "#F8FFFC",
+  ink:         "#0D2B1F",
+  inkMid:      "#1F5C3A",
+  inkSoft:     "#6B9E85",
+  red:         "#EF4444",
+  redBg:       "#FEF2F2",
+  redBorder:   "#FECACA",
+  amber:       "#D97706",
+  amberBg:     "#FFFBEB",
+  blue:        "#2563EB",
+  blueBg:      "#EFF6FF",
+  r: { xs: 8, sm: 10, md: 14, lg: 18, xl: 24, pill: 99 },
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
 
@@ -55,82 +62,72 @@ function getIdParam(params: Record<string, string | string[] | undefined>): stri
   return null;
 }
 
-// ─── Field Component ─────────────────────────────────────
-function Field({
-  label, value, onChangeText, placeholder, keyboardType, editable = true,
-}: {
+const AVATAR_COLORS = [
+  { bg: "#DCFCE7", text: "#15803D" }, { bg: "#DBEAFE", text: "#1D4ED8" },
+  { bg: "#FEF3C7", text: "#B45309" }, { bg: "#F3E8FF", text: "#7E22CE" },
+  { bg: "#FFE4E6", text: "#BE123C" }, { bg: "#CCFBF1", text: "#0F766E" },
+];
+function avatarColor(name: string) { return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]; }
+
+// ─── Field ───────────────────────────────────────────────
+function Field({ label, value, onChangeText, placeholder, keyboardType, editable = true }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; editable?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
     <View style={fS.wrap}>
-      <Text style={[fS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <View style={[fS.box, focused && fS.boxFocused, !editable && fS.disabled]}>
+      <Text style={[fS.label, { fontFamily: C.font.sans }]}>{label}</Text>
+      <View style={[fS.box, focused && { borderColor: C.green }, !editable && { opacity: 0.5 }]}>
         <TextInput
-          style={[fS.input, { fontFamily: T.font.sans }]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={T.dim + "55"}
-          keyboardType={keyboardType}
-          editable={editable}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          style={[fS.input, { fontFamily: C.font.sans }]}
+          value={value} onChangeText={onChangeText}
+          placeholder={placeholder} placeholderTextColor={C.inkSoft}
+          keyboardType={keyboardType} editable={editable}
+          onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+          underlineColorAndroid="transparent"
         />
       </View>
     </View>
   );
 }
 const fS = StyleSheet.create({
-  wrap: { marginBottom: 14 },
-  label: { fontSize: 10, fontWeight: "900", color: T.dimSoft, letterSpacing: 1, marginBottom: 6 },
-  box: {
-    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, overflow: "hidden",
-  },
-  boxFocused: { borderColor: `${T.accent}45` },
-  disabled: { opacity: 0.5 },
-  input: { paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.white, fontWeight: "600" },
+  wrap:  { marginBottom: 12 },
+  label: { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 0.8, marginBottom: 5, textTransform: "uppercase" },
+  box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
+  input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600" },
 });
 
 // ─── Select Button ────────────────────────────────────────
-function SelectBtn({ label, value, onPress, icon }: { label: string; value: string; onPress: () => void; icon?: string }) {
+function SelectBtn({ label, value, onPress, icon }: {
+  label: string; value: string; onPress: () => void; icon?: string;
+}) {
   return (
-    <View style={sbS.wrap}>
-      <Text style={[sbS.label, { fontFamily: T.font.sans }]}>{label}</Text>
+    <View style={{ marginBottom: 12 }}>
+      <Text style={[fS.label, { fontFamily: C.font.sans }]}>{label}</Text>
       <TouchableOpacity style={sbS.btn} onPress={onPress} activeOpacity={0.8}>
         <View style={sbS.left}>
-          {icon && <Text style={{ fontSize: 20, marginRight: 8 }}>{icon}</Text>}
-          <Text style={[sbS.value, { fontFamily: T.font.sans }, !value && sbS.placeholder]}>
+          {icon && <Text style={{ fontSize: 18, marginRight: 8 }}>{icon}</Text>}
+          <Text style={[sbS.value, { fontFamily: C.font.sans }, !value && { color: C.inkSoft }]}>
             {value || "Sélectionner…"}
           </Text>
         </View>
-        <View style={[sbS.chevron, { backgroundColor: T.accentGlow }]}>
-          <Ionicons name="chevron-down" size={13} color={T.accent} />
+        <View style={sbS.chevron}>
+          <Ionicons name="chevron-down" size={12} color={C.green} />
         </View>
       </TouchableOpacity>
     </View>
   );
 }
 const sbS = StyleSheet.create({
-  wrap: { marginBottom: 14 },
-  label: { fontSize: 10, fontWeight: "900", color: T.dimSoft, letterSpacing: 1, marginBottom: 6 },
-  btn: {
-    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 13,
-  },
-  left: { flexDirection: "row", alignItems: "center", flex: 1 },
-  value: { fontSize: 14, color: T.white, fontWeight: "600" },
-  placeholder: { color: T.dim + "80" },
-  chevron: { width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center" },
+  btn:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 12, paddingVertical: 11 },
+  left:   { flexDirection: "row", alignItems: "center", flex: 1 },
+  value:  { fontSize: 13, color: C.ink, fontWeight: "600" },
+  chevron:{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
 });
 
 // ─── Picker Modal ─────────────────────────────────────────
-function PickerModal({
-  visible, onClose, title, data, renderItem,
-}: {
+function PickerModal({ visible, onClose, title, data, renderItem }: {
   visible: boolean; onClose: () => void; title: string;
   data: any[]; renderItem: any;
 }) {
@@ -138,32 +135,28 @@ function PickerModal({
   const filtered = q.trim()
     ? data.filter((item: any) => (typeof item === "string" ? item : item.name ?? "").toLowerCase().includes(q.toLowerCase()))
     : data;
+  const close = () => { onClose(); setQ(""); };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { onClose(); setQ(""); }}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
       <View style={pmS.overlay}>
         <View style={pmS.sheet}>
           <View style={pmS.handle} />
           <View style={pmS.headerRow}>
-            <Text style={[pmS.title, { fontFamily: T.font.display }]}>{title}</Text>
-            <TouchableOpacity style={pmS.closeBtn} onPress={() => { onClose(); setQ(""); }}>
-              <Ionicons name="close" size={18} color={T.dim} />
+            <Text style={[pmS.title, { fontFamily: C.font.serif }]}>{title}</Text>
+            <TouchableOpacity style={pmS.closeBtn} onPress={close}>
+              <Ionicons name="close" size={16} color={C.inkSoft} />
             </TouchableOpacity>
           </View>
-          <View style={pmS.searchBox}>
-            <Ionicons name="search" size={15} color={T.dim} />
+          <View style={pmS.search}>
+            <Ionicons name="search" size={13} color={C.inkSoft} />
             <TextInput
-              style={[pmS.searchInput, { fontFamily: T.font.sans }]}
+              style={[pmS.searchInput, { fontFamily: C.font.sans }]}
               value={q} onChangeText={setQ}
-              placeholder="Rechercher…"
-              placeholderTextColor={T.dim + "55"}
-              autoFocus
+              placeholder="Rechercher…" placeholderTextColor={C.inkSoft}
+              autoFocus underlineColorAndroid="transparent"
             />
-            {!!q && (
-              <TouchableOpacity onPress={() => setQ("")}>
-                <Ionicons name="close" size={13} color={T.dim} />
-              </TouchableOpacity>
-            )}
+            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close" size={13} color={C.inkSoft} /></TouchableOpacity>}
           </View>
           <FlatList
             data={filtered}
@@ -171,9 +164,7 @@ function PickerModal({
             renderItem={renderItem}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 30 }}
-            ListEmptyComponent={
-              <Text style={[pmS.empty, { fontFamily: T.font.sans }]}>Aucun résultat</Text>
-            }
+            ListEmptyComponent={<Text style={[pmS.empty, { fontFamily: C.font.sans }]}>Aucun résultat</Text>}
           />
         </View>
       </View>
@@ -181,28 +172,25 @@ function PickerModal({
   );
 }
 const pmS = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(5,5,10,0.88)", justifyContent: "flex-end" },
-  sheet: {
-    backgroundColor: "#0C1810", borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    maxHeight: "75%", borderWidth: 1, borderColor: T.inkBorder,
-  },
-  handle: { width: 36, height: 4, borderRadius: 99, backgroundColor: T.inkBorder, alignSelf: "center", marginTop: 14, marginBottom: 4 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.inkBorder },
-  title: { color: T.white, fontSize: 18, fontWeight: "700" },
-  closeBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: T.ghost, justifyContent: "center", alignItems: "center" },
-  searchBox: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    margin: 16, backgroundColor: T.ghost, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, paddingHorizontal: 12, height: 42,
-  },
-  searchInput: { flex: 1, fontSize: 14, color: T.white, fontWeight: "600" },
-  empty: { color: T.dim, textAlign: "center", padding: 24, fontWeight: "600" },
+  overlay:   { flex: 1, backgroundColor: "rgba(13,43,31,0.4)", justifyContent: "flex-end" },
+  sheet:     { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
+  handle:    { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: C.cardBorder, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
+  title:     { color: C.ink, fontSize: 16, fontWeight: "700" },
+  closeBtn:  { width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenLight, justifyContent: "center", alignItems: "center" },
+  search:    { flexDirection: "row", alignItems: "center", gap: 8, margin: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, height: 38 },
+  searchInput: { flex: 1, fontSize: 13, color: C.ink, fontWeight: "600" },
+  empty:     { color: C.inkSoft, textAlign: "center", padding: 20, fontWeight: "600" },
+});
+
+const pmItem = StyleSheet.create({
+  row:  { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
+  txt:  { color: C.ink, fontSize: 13, fontWeight: "600", flex: 1 },
+  dial: { color: C.green, fontSize: 11, fontWeight: "900", marginRight: 8 },
 });
 
 // ─── Action Card ──────────────────────────────────────────
-function ActionCard({
-  icon, iconBg, iconColor, title, subtitle, onPress,
-}: {
+function ActionCard({ icon, iconBg, iconColor, title, subtitle, onPress }: {
   icon: string; iconBg: string; iconColor: string;
   title: string; subtitle: string; onPress: () => void;
 }) {
@@ -214,36 +202,28 @@ function ActionCard({
         onPress={onPress}
         activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
         <View style={[aS.iconBox, { backgroundColor: iconBg }]}>
-          <Ionicons name={icon as any} size={22} color={iconColor} />
+          <Ionicons name={icon as any} size={20} color={iconColor} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[aS.title, { fontFamily: T.font.sans }]}>{title}</Text>
-          <Text style={[aS.sub, { fontFamily: T.font.sans }]}>{subtitle}</Text>
+          <Text style={[aS.title, { fontFamily: C.font.sans }]}>{title}</Text>
+          <Text style={[aS.sub,   { fontFamily: C.font.sans }]}>{subtitle}</Text>
         </View>
         <View style={aS.chevronBox}>
-          <Ionicons name="chevron-forward" size={14} color={T.accent} />
+          <Ionicons name="chevron-forward" size={13} color={C.green} />
         </View>
       </TouchableOpacity>
     </Animated.View>
   );
 }
 const aS = StyleSheet.create({
-  card: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 10, gap: 14,
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
-  iconBox: { width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center" },
-  title: { color: T.white, fontSize: 14, fontWeight: "700", marginBottom: 2 },
-  sub: { color: T.dim, fontSize: 11, fontWeight: "600" },
-  chevronBox: {
-    width: 26, height: 26, borderRadius: 8,
-    backgroundColor: T.accentGlow, justifyContent: "center", alignItems: "center",
-  },
+  card:      { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: C.r.lg, padding: 15, marginBottom: 10, gap: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  iconBox:   { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  title:     { color: C.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  sub:       { color: C.inkSoft, fontSize: 11, fontWeight: "600" },
+  chevronBox:{ width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
 });
 
 // ─── Main Screen ──────────────────────────────────────────
@@ -252,46 +232,38 @@ export default function BeneficiaireDetailScreen() {
   const params = useLocalSearchParams();
   const id = useMemo(() => getIdParam(params as any), [params]);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [loading,  setLoading]  = useState(true);
+  const [saving,   setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [item, setItem] = useState<Beneficiary | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [item,     setItem]     = useState<Beneficiary | null>(null);
+  const [editing,  setEditing]  = useState(false);
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [firstName,      setFirstName]      = useState("");
+  const [lastName,       setLastName]       = useState("");
   const [addressCountry, setAddressCountry] = useState<CountryData>(countriesList[0]);
-  const [phoneCountry, setPhoneCountry] = useState<CountryData>(countriesList[0]);
-  const [city, setCity] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneCountry,   setPhoneCountry]   = useState<CountryData>(countriesList[0]);
+  const [city,           setCity]           = useState("");
+  const [phoneNumber,    setPhoneNumber]    = useState("");
 
-  const [showCountryModal, setShowCountryModal] = useState(false);
-  const [showCityModal, setShowCityModal] = useState(false);
+  const [showCountryModal,   setShowCountryModal]   = useState(false);
+  const [showCityModal,      setShowCityModal]      = useState(false);
   const [showPhoneCodeModal, setShowPhoneCodeModal] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const hydrateForm = (b: Beneficiary) => {
     const parts = (b.fullName || "").split(" ");
-    if (parts.length > 1) {
-      setFirstName(parts.slice(0, -1).join(" "));
-      setLastName(parts[parts.length - 1]);
-    } else {
-      setFirstName(b.fullName || "");
-      setLastName("");
-    }
+    if (parts.length > 1) { setFirstName(parts.slice(0, -1).join(" ")); setLastName(parts[parts.length - 1]); }
+    else { setFirstName(b.fullName || ""); setLastName(""); }
     const found = countriesList.find((c) => c.name === b.country);
     if (found) { setAddressCountry(found); if (!b.phone) setPhoneCountry(found); }
     setCity(b.city || "");
-
     if (b.phone) {
       const sorted = [...countriesList].sort((a, b) => b.dialCode.length - a.dialCode.length);
-      const match = sorted.find((c) => b.phone?.startsWith(c.dialCode));
+      const match  = sorted.find((c) => b.phone?.startsWith(c.dialCode));
       if (match) { setPhoneCountry(match); setPhoneNumber(b.phone.replace(match.dialCode, "")); }
       else setPhoneNumber(b.phone);
-    } else {
-      setPhoneNumber("");
-    }
+    } else { setPhoneNumber(""); }
   };
 
   const load = useCallback(async () => {
@@ -301,17 +273,12 @@ export default function BeneficiaireDetailScreen() {
       setItem(b);
       hydrateForm(b);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch {
-      showAlert("Erreur", "Impossible de charger le bénéficiaire.");
-    } finally {
-      setLoading(false);
-    }
+    } catch { showAlert("Erreur", "Impossible de charger le bénéficiaire."); }
+    finally { setLoading(false); }
   }, [id]);
 
   useFocusEffect(useCallback(() => {
-    setLoading(true);
-    setEditing(false);
-    fadeAnim.setValue(0);
+    setLoading(true); setEditing(false); fadeAnim.setValue(0);
     void load();
     return () => {};
   }, [load]));
@@ -324,42 +291,27 @@ export default function BeneficiaireDetailScreen() {
     let fullPhone: string | null = null;
     if (phoneNumber.trim().length > 0) {
       const dial = phoneCountry.dialCode.replace("+", "");
-      const num = phoneNumber.trim().replace(/^0+/, "");
-      fullPhone = `+${dial}${num}`;
+      const num  = phoneNumber.trim().replace(/^0+/, "");
+      fullPhone  = `+${dial}${num}`;
     }
-    const payload: Partial<CreateBeneficiaryPayload> = {
-      fullName, country: addressCountry.name, city: city.trim(), phone: fullPhone,
-    };
     try {
       setSaving(true);
-      const updated = await api.updateBeneficiary(id, payload);
-      setItem(updated);
-      hydrateForm(updated);
-      setEditing(false);
-    } catch {
-      showAlert("Erreur", "Impossible de mettre à jour.");
-    } finally {
-      setSaving(false);
-    }
+      const updated = await api.updateBeneficiary(id, { fullName, country: addressCountry.name, city: city.trim(), phone: fullPhone } as Partial<CreateBeneficiaryPayload>);
+      setItem(updated); hydrateForm(updated); setEditing(false);
+    } catch { showAlert("Erreur", "Impossible de mettre à jour."); }
+    finally { setSaving(false); }
   };
 
   const onDelete = () => {
     if (!id) return;
-    showConfirm(
-      "Supprimer le bénéficiaire",
-      "Cette action est irréversible. Confirmer ?",
-      async () => {
-        try {
-          setDeleting(true);
-          await api.deleteBeneficiary(id);
-          showAlert("Supprimé", "Bénéficiaire supprimé.", () => router.back());
-        } catch {
-          showAlert("Erreur", "Impossible de supprimer (lié à une transaction ?).");
-        } finally {
-          setDeleting(false);
-        }
-      }
-    );
+    showConfirm("Supprimer le bénéficiaire", "Cette action est irréversible. Confirmer ?", async () => {
+      try {
+        setDeleting(true);
+        await api.deleteBeneficiary(id);
+        showAlert("Supprimé", "Bénéficiaire supprimé.", () => router.back());
+      } catch { showAlert("Erreur", "Impossible de supprimer (lié à une transaction ?)."); }
+      finally { setDeleting(false); }
+    });
   };
 
   const onCancelEdit = () => { if (item) hydrateForm(item); setEditing(false); };
@@ -368,348 +320,270 @@ export default function BeneficiaireDetailScreen() {
     if (!item?.phone) { showAlert("Info", "Ce bénéficiaire n'a pas de numéro enregistré."); return; }
     router.push({ pathname: "/(tabs)/send", params: { mode: "WALLET", phone: item.phone } });
   };
-
   const goSendCash = () => {
     router.push({ pathname: "/(tabs)/send", params: { mode: "CASH", beneficiaryId: item?.id } });
   };
 
+  const colors   = item ? avatarColor(item.fullName) : AVATAR_COLORS[0];
   const initials = item ? item.fullName.split(" ").map((s) => s[0] ?? "").join("").slice(0, 2).toUpperCase() : "–";
 
   if (loading) {
     return (
-      <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator color={T.accent} size="large" />
-      </LinearGradient>
+      <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator color={C.green} size="large" />
+      </SafeAreaView>
     );
   }
 
   if (!item) {
     return (
-      <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <Ionicons name="person-outline" size={40} color={T.dim} />
-        <Text style={[{ color: T.dim, marginTop: 12, fontFamily: T.font.sans, fontWeight: "700" }]}>
+      <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center", padding: 24 }]}>
+        <Ionicons name="person-outline" size={40} color={C.inkSoft} />
+        <Text style={[{ color: C.ink, marginTop: 12, fontFamily: C.font.sans, fontWeight: "700", fontSize: 15 }]}>
           Bénéficiaire introuvable.
         </Text>
-        <TouchableOpacity style={[{ marginTop: 24, paddingHorizontal: 24, paddingVertical: 12, borderRadius: T.radius.md, backgroundColor: T.accentGlow, borderWidth: 1, borderColor: `${T.accent}30` }]} onPress={() => router.back()}>
-          <Text style={[{ color: T.accent, fontWeight: "800", fontFamily: T.font.sans }]}>Retour</Text>
+        <TouchableOpacity
+          style={[{ marginTop: 20, backgroundColor: C.greenPale, paddingHorizontal: 24, paddingVertical: 12, borderRadius: C.r.md, borderWidth: 1, borderColor: C.greenBorder }]}
+          onPress={() => router.back()}
+        >
+          <Text style={[{ color: C.green, fontWeight: "800", fontFamily: C.font.sans }]}>Retour</Text>
         </TouchableOpacity>
-      </LinearGradient>
+      </SafeAreaView>
     );
   }
 
   const availableCities: string[] = (citiesByCountry as any)[addressCountry.name] ?? (addressCountry as any).cities ?? [];
 
   return (
-    <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <SafeAreaView style={s.safe}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.pageBg} />
 
-        {/* ── Header ── */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="arrow-back" size={20} color={C.ink} />
+        </TouchableOpacity>
+        <Text style={[s.headerTitle, { fontFamily: C.font.serif }]}>Bénéficiaire</Text>
+        {!editing ? (
+          <TouchableOpacity style={s.editBtn} onPress={() => setEditing(true)}>
+            <Ionicons name="pencil" size={16} color={C.green} />
           </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Bénéficiaire</Text>
+        ) : (
+          <TouchableOpacity style={s.cancelBtnHeader} onPress={onCancelEdit}>
+            <Ionicons name="close" size={16} color={C.inkSoft} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <Animated.ScrollView
+          style={{ opacity: fadeAnim }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* ── Hero Avatar ── */}
+          <View style={s.heroCard}>
+            <View style={[s.avatar, { backgroundColor: colors.bg }]}>
+              <Text style={[s.avatarInitials, { color: colors.text, fontFamily: C.font.serif }]}>{initials}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.heroName, { fontFamily: C.font.serif }]}>{item.fullName}</Text>
+              <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>
+                {item.city}{item.country ? `, ${item.country}` : ""}
+              </Text>
+              {item.phone && (
+                <View style={s.phonePill}>
+                  <Ionicons name="call-outline" size={11} color={C.green} />
+                  <Text style={[s.phoneTxt, { fontFamily: C.font.mono }]}>{item.phone}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
           {!editing ? (
-            <TouchableOpacity
-              style={[s.editBtn, { backgroundColor: T.accentGlow, borderColor: `${T.accent}30` }]}
-              onPress={() => setEditing(true)}
-            >
-              <Ionicons name="pencil" size={17} color={T.accent} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={[s.cancelBtnHeader]} onPress={onCancelEdit}>
-              <Ionicons name="close" size={17} color={T.dim} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-          <Animated.ScrollView
-            style={{ opacity: fadeAnim }}
-            contentContainerStyle={s.scroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* ── Hero Avatar ── */}
-            <View style={s.heroRow}>
-              <LinearGradient
-                colors={[`${T.accent}25`, `${T.accent}10`]}
-                style={s.avatarBox}
-              >
-                <Text style={[s.avatarInitials, { fontFamily: T.font.display }]}>{initials}</Text>
-              </LinearGradient>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.heroName, { fontFamily: T.font.display }]}>{item.fullName}</Text>
-                <Text style={[s.heroSub, { fontFamily: T.font.sans }]}>
-                  {item.city}{item.country ? `, ${item.country}` : ""}
-                </Text>
-                {item.phone && (
-                  <View style={s.phonePill}>
-                    <Ionicons name="call-outline" size={11} color={T.accent} />
-                    <Text style={[s.phoneTxt, { fontFamily: T.font.mono }]}>{item.phone}</Text>
-                  </View>
-                )}
+            /* ── Vue lecture ── */
+            <>
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: C.green }]} />
+                <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>ENVOYER DE L'ARGENT</Text>
               </View>
-            </View>
 
-            {!editing ? (
-              /* ── Vue lecture ── */
-              <>
-                <View style={s.sectionRow}>
-                  <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-                  <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ENVOYER DE L'ARGENT</Text>
+              <ActionCard
+                icon="wallet-outline"
+                iconBg={C.greenPale}
+                iconColor={C.green}
+                title="Vers un Wallet"
+                subtitle="Transfert direct Mobile Money"
+                onPress={goSendWallet}
+              />
+              <ActionCard
+                icon="cash-outline"
+                iconBg={C.blueBg}
+                iconColor={C.blue}
+                title="Envoi d'argent"
+                subtitle="Retrait en agence"
+                onPress={goSendCash}
+              />
+            </>
+          ) : (
+            /* ── Formulaire édition ── */
+            <>
+              <View style={s.sectionRow}>
+                <View style={[s.sectionDot, { backgroundColor: C.green }]} />
+                <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>MODIFIER LES INFORMATIONS</Text>
+              </View>
+
+              <View style={s.card}>
+                <View style={s.rowTwo}>
+                  <View style={{ flex: 1 }}><Field label="PRÉNOM" value={firstName} onChangeText={setFirstName} placeholder="Mamadou" editable={!saving} /></View>
+                  <View style={{ flex: 1 }}><Field label="NOM"    value={lastName}  onChangeText={setLastName}  placeholder="Diallo"  editable={!saving} /></View>
                 </View>
 
-                <ActionCard
-                  icon="wallet-outline"
-                  iconBg="rgba(16,185,129,0.12)"
-                  iconColor={T.accent}
-                  title="Vers un Wallet"
-                  subtitle="Transfert direct Mobile Money"
-                  onPress={goSendWallet}
-                />
-                <ActionCard
-                  icon="cash-outline"
-                  iconBg="rgba(96,165,250,0.12)"
-                  iconColor={T.blue}
-                  title="Envoi d'argent"
-                  subtitle="Retrait en agence"
-                  onPress={goSendCash}
-                />
-              </>
-            ) : (
-              /* ── Formulaire édition ── */
-              <>
-                <View style={s.sectionRow}>
-                  <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-                  <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>MODIFIER LES INFORMATIONS</Text>
-                </View>
+                <SelectBtn label="PAYS DE RÉSIDENCE" value={addressCountry.name} icon={addressCountry.flag} onPress={() => setShowCountryModal(true)} />
+                <SelectBtn label="VILLE"              value={city}               onPress={() => setShowCityModal(true)} />
 
-                <View style={s.card}>
-                  <View style={s.rowTwo}>
-                    <View style={{ flex: 1 }}>
-                      <Field label="PRÉNOM" value={firstName} onChangeText={setFirstName} placeholder="Mamadou" editable={!saving} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Field label="NOM" value={lastName} onChangeText={setLastName} placeholder="Diallo" editable={!saving} />
-                    </View>
-                  </View>
-
-                  <SelectBtn
-                    label="PAYS DE RÉSIDENCE"
-                    value={addressCountry.name}
-                    icon={addressCountry.flag}
-                    onPress={() => setShowCountryModal(true)}
-                  />
-
-                  <SelectBtn
-                    label="VILLE"
-                    value={city}
-                    onPress={() => setShowCityModal(true)}
-                  />
-
-                  <View style={{ marginBottom: 14 }}>
-                    <Text style={[fS.label, { fontFamily: T.font.sans }]}>TÉLÉPHONE (MOBILE MONEY)</Text>
-                    <View style={s.phoneRow}>
-                      <TouchableOpacity style={s.dialBtn} onPress={() => setShowPhoneCodeModal(true)}>
-                        <Text style={{ fontSize: 18 }}>{phoneCountry.flag}</Text>
-                        <Text style={[s.dialCode, { fontFamily: T.font.mono }]}>{phoneCountry.dialCode}</Text>
-                        <Ionicons name="caret-down" size={10} color={T.dim} />
-                      </TouchableOpacity>
-                      <View style={[fS.box, { flex: 1 }]}>
-                        <TextInput
-                          style={[fS.input, { fontFamily: T.font.sans }]}
-                          value={phoneNumber}
-                          onChangeText={setPhoneNumber}
-                          placeholder="620 000 000"
-                          placeholderTextColor={T.dim + "55"}
-                          keyboardType="phone-pad"
-                          editable={!saving}
-                        />
-                      </View>
+                <View style={{ marginBottom: 12 }}>
+                  <Text style={[fS.label, { fontFamily: C.font.sans }]}>TÉLÉPHONE (MOBILE MONEY)</Text>
+                  <View style={s.phoneRow}>
+                    <TouchableOpacity style={s.dialBtn} onPress={() => setShowPhoneCodeModal(true)} activeOpacity={0.8}>
+                      <Text style={{ fontSize: 16 }}>{phoneCountry.flag}</Text>
+                      <Text style={[s.dialCode, { fontFamily: C.font.mono }]}>{phoneCountry.dialCode}</Text>
+                      <Ionicons name="caret-down" size={9} color={C.inkSoft} />
+                    </TouchableOpacity>
+                    <View style={[fS.box, { flex: 1 }]}>
+                      <TextInput
+                        style={[fS.input, { fontFamily: C.font.sans }]}
+                        value={phoneNumber} onChangeText={setPhoneNumber}
+                        placeholder="620 000 000" placeholderTextColor={C.inkSoft}
+                        keyboardType="phone-pad" editable={!saving}
+                        underlineColorAndroid="transparent"
+                      />
                     </View>
                   </View>
                 </View>
+              </View>
 
-                {/* Save Button */}
-                <TouchableOpacity
-                  style={[s.saveBtn, (!canSave || saving) && { opacity: 0.55 }]}
-                  onPress={onSave}
-                  disabled={!canSave || saving}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={[T.accent, T.accentSoft]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={s.saveBtnGrad}
-                  >
-                    {saving
-                      ? <ActivityIndicator color={T.g1} />
-                      : <>
-                          <Ionicons name="save-outline" size={18} color={T.g1} />
-                          <Text style={[s.saveBtnTxt, { fontFamily: T.font.sans }]}>ENREGISTRER</Text>
-                        </>
-                    }
-                  </LinearGradient>
-                </TouchableOpacity>
-              </>
-            )}
-
-            {/* ── Supprimer ── */}
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: T.red }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>ZONE DANGEREUSE</Text>
-            </View>
-
-            <TouchableOpacity
-              style={[s.deleteBtn, deleting && { opacity: 0.6 }]}
-              onPress={onDelete}
-              disabled={deleting}
-              activeOpacity={0.85}
-            >
-              {deleting
-                ? <ActivityIndicator color={T.red} />
-                : <>
-                    <Ionicons name="trash-outline" size={18} color={T.red} />
-                    <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer le bénéficiaire</Text>
-                  </>
-              }
-            </TouchableOpacity>
-
-            <View style={{ height: 80 }} />
-          </Animated.ScrollView>
-        </KeyboardAvoidingView>
-
-        {/* ── Modals ── */}
-        <PickerModal
-          visible={showCountryModal}
-          onClose={() => setShowCountryModal(false)}
-          title="Pays de résidence"
-          data={countriesList}
-          renderItem={({ item: c }: { item: CountryData }) => (
-            <TouchableOpacity
-              style={pmS2.item}
-              onPress={() => { setAddressCountry(c); setPhoneCountry(c); setCity(""); setShowCountryModal(false); }}
-            >
-              <Text style={{ fontSize: 22, marginRight: 12 }}>{c.flag}</Text>
-              <Text style={[pmS2.itemTxt, { fontFamily: T.font.sans }]}>{c.name}</Text>
-              {addressCountry.code === c.code && <Ionicons name="checkmark" size={18} color={T.accent} />}
-            </TouchableOpacity>
+              {/* Bouton Enregistrer */}
+              <TouchableOpacity
+                style={[s.saveBtn, (!canSave || saving) && { opacity: 0.4 }]}
+                onPress={onSave} disabled={!canSave || saving} activeOpacity={0.88}
+              >
+                <View style={s.saveBtnInner}>
+                  {saving
+                    ? <ActivityIndicator color={C.white} />
+                    : <>
+                        <Ionicons name="save-outline" size={16} color={C.white} />
+                        <Text style={[s.saveBtnTxt, { fontFamily: C.font.sans }]}>ENREGISTRER</Text>
+                      </>
+                  }
+                </View>
+              </TouchableOpacity>
+            </>
           )}
-        />
 
-        <PickerModal
-          visible={showCityModal}
-          onClose={() => setShowCityModal(false)}
-          title={`Villes · ${addressCountry.name}`}
-          data={availableCities}
-          renderItem={({ item: cityName }: { item: string }) => (
-            <TouchableOpacity
-              style={pmS2.item}
-              onPress={() => { setCity(cityName); setShowCityModal(false); }}
-            >
-              <Text style={[pmS2.itemTxt, { fontFamily: T.font.sans }]}>{cityName}</Text>
-              {city === cityName && <Ionicons name="checkmark" size={18} color={T.accent} />}
-            </TouchableOpacity>
-          )}
-        />
+          {/* ── Zone dangereuse ── */}
+          <View style={[s.sectionRow, { marginTop: 8 }]}>
+            <View style={[s.sectionDot, { backgroundColor: C.red }]} />
+            <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>ZONE DANGEREUSE</Text>
+          </View>
 
-        <PickerModal
-          visible={showPhoneCodeModal}
-          onClose={() => setShowPhoneCodeModal(false)}
-          title="Indicatif téléphonique"
-          data={countriesList}
-          renderItem={({ item: c }: { item: CountryData }) => (
-            <TouchableOpacity
-              style={pmS2.item}
-              onPress={() => { setPhoneCountry(c); setShowPhoneCodeModal(false); }}
-            >
-              <Text style={{ fontSize: 22, marginRight: 12 }}>{c.flag}</Text>
-              <Text style={[pmS2.itemTxt, { flex: 1, fontFamily: T.font.sans }]}>{c.name}</Text>
-              <Text style={[pmS2.dialCode, { fontFamily: T.font.mono }]}>{c.dialCode}</Text>
-              {phoneCountry.code === c.code && <Ionicons name="checkmark" size={18} color={T.accent} />}
-            </TouchableOpacity>
-          )}
-        />
-      </SafeAreaView>
-    </LinearGradient>
+          <TouchableOpacity
+            style={[s.deleteBtn, deleting && { opacity: 0.6 }]}
+            onPress={onDelete} disabled={deleting} activeOpacity={0.85}
+          >
+            {deleting
+              ? <ActivityIndicator color={C.red} />
+              : <>
+                  <Ionicons name="trash-outline" size={17} color={C.red} />
+                  <Text style={[s.deleteTxt, { fontFamily: C.font.sans }]}>Supprimer le bénéficiaire</Text>
+                </>
+            }
+          </TouchableOpacity>
+
+          <View style={{ height: 80 }} />
+        </Animated.ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* ── Modals ── */}
+      <PickerModal
+        visible={showCountryModal} onClose={() => setShowCountryModal(false)} title="Pays de résidence"
+        data={countriesList}
+        renderItem={({ item: c }: { item: CountryData }) => (
+          <TouchableOpacity style={pmItem.row} onPress={() => { setAddressCountry(c); setPhoneCountry(c); setCity(""); setShowCountryModal(false); }}>
+            <Text style={{ fontSize: 20, marginRight: 10 }}>{c.flag}</Text>
+            <Text style={[pmItem.txt, { fontFamily: C.font.sans }]}>{c.name}</Text>
+            {addressCountry.code === c.code && <Ionicons name="checkmark" size={16} color={C.green} />}
+          </TouchableOpacity>
+        )}
+      />
+
+      <PickerModal
+        visible={showCityModal} onClose={() => setShowCityModal(false)} title={`Villes · ${addressCountry.name}`}
+        data={availableCities}
+        renderItem={({ item: cityName }: { item: string }) => (
+          <TouchableOpacity style={pmItem.row} onPress={() => { setCity(cityName); setShowCityModal(false); }}>
+            <Text style={[pmItem.txt, { fontFamily: C.font.sans }]}>{cityName}</Text>
+            {city === cityName && <Ionicons name="checkmark" size={16} color={C.green} />}
+          </TouchableOpacity>
+        )}
+      />
+
+      <PickerModal
+        visible={showPhoneCodeModal} onClose={() => setShowPhoneCodeModal(false)} title="Indicatif téléphonique"
+        data={countriesList}
+        renderItem={({ item: c }: { item: CountryData }) => (
+          <TouchableOpacity style={pmItem.row} onPress={() => { setPhoneCountry(c); setShowPhoneCodeModal(false); }}>
+            <Text style={{ fontSize: 20, marginRight: 10 }}>{c.flag}</Text>
+            <Text style={[pmItem.txt, { fontFamily: C.font.sans }]}>{c.name}</Text>
+            <Text style={[pmItem.dial, { fontFamily: C.font.mono }]}>{c.dialCode}</Text>
+            {phoneCountry.code === c.code && <Ionicons name="checkmark" size={16} color={C.green} />}
+          </TouchableOpacity>
+        )}
+      />
+    </SafeAreaView>
   );
 }
 
-const pmS2 = StyleSheet.create({
-  item: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.inkBorder },
-  itemTxt: { color: T.white, fontSize: 14, fontWeight: "600", flex: 1 },
-  dialCode: { color: T.accent, fontSize: 12, fontWeight: "900", marginRight: 8 },
-});
-
 const s = StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
-  },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
-  headerTitle: { flex: 1, color: T.white, fontSize: 20, fontWeight: "700" },
-  editBtn: {
-    width: 40, height: 40, borderRadius: 12,
-    justifyContent: "center", alignItems: "center", borderWidth: 1,
-  },
-  cancelBtnHeader: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: T.ghost, justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
+  safe: { flex: 1, backgroundColor: C.pageBg },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 8 },
+  // Header
+  header: { flexDirection: "row", alignItems: "center", backgroundColor: C.white, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
+  backBtn:       { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.pageBg, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
+  headerTitle:   { flex: 1, color: C.ink, fontSize: 18, fontWeight: "700" },
+  editBtn:       { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, justifyContent: "center", alignItems: "center" },
+  cancelBtnHeader:{ width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.pageBg, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
 
-  heroRow: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24 },
-  avatarBox: {
-    width: 58, height: 58, borderRadius: 18,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: `${T.accent}25`,
-  },
-  avatarInitials: { color: T.accent, fontSize: 22, fontWeight: "900" },
-  heroName: { color: T.white, fontSize: 20, fontWeight: "700", marginBottom: 3 },
-  heroSub: { color: T.dim, fontSize: 12, fontWeight: "600", marginBottom: 6 },
-  phonePill: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: T.accentGlow, paddingHorizontal: 8, paddingVertical: 4,
-    borderRadius: 8, borderWidth: 1, borderColor: `${T.accent}20`, alignSelf: "flex-start",
-  },
-  phoneTxt: { color: T.accent, fontSize: 11, fontWeight: "800" },
+  scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
+  // Hero card
+  heroCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 18, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  avatar:        { width: 52, height: 52, borderRadius: 15, justifyContent: "center", alignItems: "center" },
+  avatarInitials:{ fontSize: 20, fontWeight: "900" },
+  heroName:      { fontSize: 18, fontWeight: "700", color: C.ink, marginBottom: 3 },
+  heroSub:       { fontSize: 12, color: C.inkSoft, fontWeight: "600", marginBottom: 6 },
+  phonePill:     { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: C.greenBorder, alignSelf: "flex-start" },
+  phoneTxt:      { color: C.green, fontSize: 11, fontWeight: "800" },
 
-  card: {
-    backgroundColor: T.ghost, borderRadius: T.radius.lg,
-    padding: 18, marginBottom: 14,
-    borderWidth: 1, borderColor: T.inkBorder,
-  },
-  rowTwo: { flexDirection: "row", gap: 12 },
+  // Sections
+  sectionRow:  { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
+  sectionDot:  { width: 5, height: 5, borderRadius: C.r.pill },
+  sectionLabel:{ fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
 
-  phoneRow: { flexDirection: "row", gap: 10 },
-  dialBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    backgroundColor: T.inkLight, borderWidth: 1, borderColor: T.inkBorder,
-    borderRadius: T.radius.md, paddingHorizontal: 12, paddingVertical: 12,
-  },
-  dialCode: { color: T.white, fontSize: 12, fontWeight: "800" },
+  // Edit card
+  card:    { backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  rowTwo:  { flexDirection: "row", gap: 10 },
+  phoneRow:{ flexDirection: "row", gap: 8 },
+  dialBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, paddingVertical: 10 },
+  dialCode:{ color: C.ink, fontSize: 11, fontWeight: "800" },
 
-  saveBtn: { borderRadius: T.radius.md, overflow: "hidden", marginBottom: 20 },
-  saveBtnGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 17, gap: 8 },
-  saveBtnTxt: { color: T.g1, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+  // Save
+  saveBtn:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 14 },
+  saveBtnInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 15, gap: 8, borderRadius: C.r.md },
+  saveBtnTxt:   { color: C.white, fontWeight: "900", fontSize: 12, letterSpacing: 0.8 },
 
-  deleteBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(239,68,68,0.08)", borderRadius: T.radius.md,
-    paddingVertical: 15, gap: 8,
-    borderWidth: 1, borderColor: "rgba(239,68,68,0.20)", marginBottom: 10,
-  },
-  deleteTxt: { color: T.red, fontWeight: "800", fontSize: 14 },
+  // Delete
+  deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: C.redBg, borderRadius: C.r.md, paddingVertical: 14, gap: 8, borderWidth: 1, borderColor: C.redBorder, marginBottom: 10 },
+  deleteTxt: { color: C.red, fontWeight: "800", fontSize: 13 },
 });
