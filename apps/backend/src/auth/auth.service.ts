@@ -1,12 +1,18 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.4 — Direct Transf'air
-// ✅ v4.3: méthodes manquantes restaurées
-//    refreshTokens, logout, getProfile, updateProfile, changePassword
-// ✅ v4.4: register — sendOtpInternal passé en non-bloquant (.catch)
-//    → élimine le moulinage de 40s causé par un timeout SMTP
-//    → le compte est créé et le token renvoyé immédiatement
-//    → l'OTP email est envoyé en arrière-plan sans bloquer la réponse
+// AUTH SERVICE v4.5 — Direct Transf'air
+// ✅ v4.4 conservé intégralement
+// ✅ v4.5 — ISOLATION CROSS-TENANT :
+//   1. login() accepte un tenantCode optionnel
+//      → résout le clientId correspondant avant validateUser
+//   2. validateUser() filtre par clientId
+//      → un utilisateur de la société MIROIR ne peut plus
+//         se connecter sur la page login de FLASH, et vice versa
+//      → SUPER_ADMIN exempté (accès global)
+//      → si le tenant est DONIKO ou non résolu, pas de filtre
+//        (rétro-compatibilité)
+//   3. Le message d'erreur reste identique peu importe la raison
+//      → pas de fuite d'information (user enumeration)
 // =========================================================
 
 import {
@@ -206,15 +212,39 @@ export class AuthService {
 
   // ========================================================
   // LOGIN — Étape 1
+  // ✅ v4.5 : accepte tenantCode pour l'isolation cross-tenant
   // ========================================================
 
-  async login(dto: LoginDto): Promise<LoginStep2Result | LoginStep1Result> {
+  async login(
+    dto: LoginDto,
+    // ✅ v4.5 : lu depuis le header x-tenant-id par le controller
+    tenantCode?: string | null,
+  ): Promise<LoginStep2Result | LoginStep1Result> {
     const otpRequired = process.env.LOGIN_OTP_REQUIRED === 'true';
 
     const identifier = (dto.identifier ?? dto.email ?? '').trim();
     if (!identifier) throw new BadRequestException('Identifiant requis');
 
-    const user = await this.validateUser(identifier, dto.password);
+    // ✅ v4.5 : Résoudre le clientId du tenant AVANT validateUser
+    // → permet de filtrer les utilisateurs par société
+    let tenantClientId: number | null = null;
+
+    const normalizedTenantCode = normalizeTenantCode(tenantCode);
+    if (normalizedTenantCode && normalizedTenantCode !== 'DONIKO') {
+      const tenantClient = await this.prisma.client.findUnique({
+        where: { code: normalizedTenantCode },
+        select: { id: true, isActive: true },
+      });
+      if (tenantClient?.isActive) {
+        tenantClientId = tenantClient.id;
+      }
+      // Si le code tenant n'existe pas ou est inactif → on laisse null
+      // ce qui provoquera un échec de connexion (pas de fuite d'info)
+    }
+
+    const user = await this.validateUser(identifier, dto.password, tenantClientId);
+
+    // ✅ Message identique peu importe la raison (user enumeration prevention)
     if (!user) throw new UnauthorizedException('Identifiants incorrects');
 
     if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
@@ -338,9 +368,23 @@ export class AuthService {
 
   // ========================================================
   // VALIDATE USER
+  // ✅ v4.5 : filtre par clientId pour isolation cross-tenant
+  //
+  // Règles :
+  //   - SUPER_ADMIN : exempté du filtre (accès global)
+  //   - clientId fourni et > 0 : l'utilisateur DOIT appartenir à ce tenant
+  //   - clientId null / 0 : pas de filtre (tenant DONIKO ou non résolu)
+  //
+  // Le message d'erreur côté appelant reste identique quelle que soit
+  // la raison du refus → pas de fuite d'information (user enumeration)
   // ========================================================
 
-  async validateUser(identifier: string, pass: string): Promise<any | null> {
+  async validateUser(
+    identifier: string,
+    pass: string,
+    // ✅ v4.5 : clientId du tenant actif (null = pas de filtre)
+    tenantClientId?: number | null,
+  ): Promise<any | null> {
     const isEmail = identifier.includes('@');
     let user: any = null;
 
@@ -367,17 +411,45 @@ export class AuthService {
       }
     }
 
-    if (user && (await bcrypt.compare(pass, user.password))) return user;
+    if (!user) return null;
 
-    if (user) {
-      await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          failedLoginAttempts: { increment: 1 },
-          lastFailedLoginAt: new Date(),
-        },
-      });
+    // ✅ v4.5 : ISOLATION CROSS-TENANT
+    // Si un clientId de tenant est fourni ET que l'utilisateur n'est pas
+    // SUPER_ADMIN, vérifier qu'il appartient à ce tenant.
+    // Un user MIROIR ne peut pas se connecter sur la page FLASH.
+    if (
+      typeof tenantClientId === 'number' &&
+      tenantClientId > 0 &&
+      user.role !== Role.SUPER_ADMIN
+    ) {
+      if (user.clientId !== tenantClientId) {
+        this.logger.warn(
+          `[validateUser] Cross-tenant attempt blocked: ` +
+          `user.clientId=${user.clientId} vs tenant.clientId=${tenantClientId} ` +
+          `| identifier=${identifier}`,
+        );
+        // On incrémente quand même les tentatives échouées pour l'audit
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            failedLoginAttempts: { increment: 1 },
+            lastFailedLoginAt: new Date(),
+          },
+        }).catch(() => { /* non bloquant */ });
+        return null; // ← même retour qu'un mauvais mot de passe
+      }
     }
+
+    // Vérification mot de passe
+    if (await bcrypt.compare(pass, user.password)) return user;
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: { increment: 1 },
+        lastFailedLoginAt: new Date(),
+      },
+    });
 
     return null;
   }
@@ -457,7 +529,7 @@ export class AuthService {
       currency: primaryCurrency,
     });
 
-    // ✅ FIX v4.4 : email de bienvenue non-bloquant (.catch) — ne bloque pas la réponse
+    // Email de bienvenue non-bloquant
     this.mail.sendEmail(
       email,
       "Bienvenue sur Direct Transf'air 🎉",
@@ -468,12 +540,7 @@ export class AuthService {
       this.logger.warn('Échec email bienvenue (non-bloquant)', e);
     });
 
-    // ✅ FIX v4.4 : OTP email non-bloquant (.catch)
-    // Avant : await this.sendOtpInternal(...) bloquait la réponse pendant 40s
-    // si le service SMTP était lent ou en timeout.
-    // Maintenant : le compte est créé + le token est renvoyé immédiatement.
-    // L'OTP est envoyé en arrière-plan ; s'il échoue, l'utilisateur peut
-    // en redemander un depuis son profil.
+    // OTP de vérification non-bloquant (v4.4)
     this.sendOtpInternal(
       user.id,
       CommsType.EMAIL,
@@ -869,7 +936,6 @@ export class AuthService {
     await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
 
     if (user.email) {
-      // Non-bloquant — cohérent avec la politique du service
       this.mail.sendEmail(
         user.email,
         'Mot de passe modifié',

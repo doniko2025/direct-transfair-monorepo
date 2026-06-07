@@ -1,10 +1,11 @@
 // apps/backend/src/auth/auth.controller.ts
 // =========================================================
-// AUTH CONTROLLER v4.0
-// ✅ Login (compat front actuel + nouveau flow OTP)
-// ✅ Refresh tokens
-// ✅ Devices push (FCM/APNS)
-// ✅ Sessions management
+// AUTH CONTROLLER v4.1
+// ✅ v4.0 conservé intégralement
+// ✅ v4.1 — ISOLATION CROSS-TENANT :
+//   login() lit le header x-tenant-id et le passe à authService.login()
+//   → authService résout le clientId et filtre validateUser en conséquence
+//   → un user de MIROIR ne peut plus se connecter sur la page FLASH
 // =========================================================
 
 import {
@@ -57,17 +58,25 @@ export class AuthController {
   }
 
   // ========================================================
-  // CONNEXION (étape 1) — compatible front actuel
+  // CONNEXION (étape 1)
+  // ✅ v4.1 : lit x-tenant-id et le passe au service
+  //   → le service résout le clientId du tenant et filtre
+  //     les utilisateurs — isolation complète cross-tenant
   // ========================================================
 
   @Public()
   @Post('login')
   @ApiOperation({
     summary:
-      'Connexion. Si LOGIN_OTP_REQUIRED=true, retourne {step:OTP_REQUIRED}. Sinon JWT direct.',
+      'Connexion avec isolation tenant. ' +
+      'Si LOGIN_OTP_REQUIRED=true, retourne {step:OTP_REQUIRED}. Sinon JWT direct.',
   })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    // ✅ v4.1 : header lu ici et transmis au service
+    @Headers('x-tenant-id') tenantId: string | undefined,
+  ) {
+    return this.authService.login(dto, tenantId ?? null);
   }
 
   // ========================================================

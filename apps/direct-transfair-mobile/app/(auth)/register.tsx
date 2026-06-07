@@ -1,17 +1,13 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v5.6 — Direct Transf'air
-// ✅ v5.5 conservé intégralement
-// ✅ v5.6 :
-//   - Suppression du champ "Lieu de naissance" (birthPlace)
-//     → birthCity remplace birthPlace dans le payload
-//   - Fix année de naissance masquée sur web (Vercel) :
-//     chaque DateBox est maintenant enveloppée dans un View
-//     avec flex explicite — flex:1 sur TextInput seul ne
-//     fonctionne pas correctement sur React Native Web
-//   - Fix : city section 2 et city section 3 ne partagent
-//     plus le même state (addressCity séparé)
-//   - Label birthCity → "Ville / Lieu de naissance"
+// REGISTER v5.7 — Direct Transf'air
+// ✅ v5.6 conservé intégralement
+// ✅ v5.7 : checkbox CGU obligatoire avant création de compte
+//   - Case à cocher : "J'accepte les Conditions générales
+//     et la Politique de confidentialité"
+//   - Liens cliquables → router.push vers les modaux
+//   - canSubmit inclut termsAccepted
+//   - Bouton CRÉER MON COMPTE désactivé si non coché
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -67,7 +63,6 @@ const COUNTRY_CODES: Record<string, string> = {
   "Maroc":"+212","Algérie":"+213","Tunisie":"+216",
 };
 
-// Status HTTP = vrai échec (tout le reste → succès probable)
 const REAL_ERROR_STATUSES = new Set([400, 401, 403, 404, 409, 422, 500]);
 
 // ─── Popup Succès ─────────────────────────────────────────
@@ -189,9 +184,6 @@ const fS = StyleSheet.create({
 });
 
 // ─── Date Input ───────────────────────────────────────────
-// ✅ FIX v5.6 : width: "100%" au lieu de flex: 1
-// flex: 1 sur TextInput seul dans une row ne fonctionne pas
-// correctement sur React Native Web (Vercel) → l'AAAA disparaît
 function DateBox({ value, onChangeText, placeholder, maxLength }: {
   value: string; onChangeText: (v: string) => void;
   placeholder: string; maxLength: number;
@@ -219,7 +211,6 @@ function DateBox({ value, onChangeText, placeholder, maxLength }: {
 }
 const db = StyleSheet.create({
   input: {
-    // ✅ width: "100%" à la place de flex: 1 — compatible web ET natif
     width: "100%",
     fontSize: 15, color: C.text, fontWeight: "600",
     backgroundColor: C.white, borderRadius: 14,
@@ -303,7 +294,7 @@ function CountryPicker({ visible, onSelect, onClose, title }: {
             ]}
             value={search}
             onChangeText={setSearch}
-            placeholder="Rechercher un pays…"
+            placeholder="Rechercher un pays..."
             placeholderTextColor={C.textFaint}
             autoFocus
             underlineColorAndroid="transparent"
@@ -344,39 +335,34 @@ const cpS = StyleSheet.create({
 // MAIN
 // ─────────────────────────────────────────────────────────
 export default function RegisterScreen() {
-  const { register: registerUser, isLoading } = useAuth();
+  const { register: registerUser } = useAuth();
   const { branding } = useTenant();
   const router = useRouter();
 
-  // Section 1 — Identité
   const [firstName,       setFirstName]       = useState("");
   const [lastName,        setLastName]        = useState("");
   const [email,           setEmail]           = useState("");
   const [password,        setPassword]        = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // Section 2 — Contact
   const [country,   setCountry]   = useState("Guinée");
   const [city,      setCity]      = useState("");
   const [phoneCode, setPhoneCode] = useState("+224");
   const [phone,     setPhone]     = useState("");
 
-  // Section 3 — Adresse
-  // ✅ FIX v5.6 : addressCity est un state SÉPARÉ de city (section 2)
-  // Avant : les deux sections partageaient le même state `city`
-  // ce qui écrasait la ville de résidence dès qu'on modifiait l'adresse
   const [addressStreet, setAddressStreet] = useState("");
   const [postalCode,    setPostalCode]    = useState("");
   const [addressCity,   setAddressCity]   = useState("");
 
-  // Section 4 — État civil
-  // ✅ v5.6 : birthPlace supprimé — birthCity le remplace dans le payload
   const [nationality,  setNationality]  = useState("Guinée");
   const [birthDay,     setBirthDay]     = useState("");
   const [birthMonth,   setBirthMonth]   = useState("");
   const [birthYear,    setBirthYear]    = useState("");
   const [birthCity,    setBirthCity]    = useState("");
   const [birthCountry, setBirthCountry] = useState("");
+
+  // ✅ v5.7 : checkbox CGU obligatoire
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   const [picker,      setPicker]      = useState<null | "country" | "nationality" | "birthCountry">(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -387,7 +373,7 @@ export default function RegisterScreen() {
     if (picker === "country") {
       setCountry(c);
       setPhoneCode(COUNTRY_CODES[c] || "+");
-    } else if (picker === "nationality")  {
+    } else if (picker === "nationality") {
       setNationality(c);
     } else if (picker === "birthCountry") {
       setBirthCountry(c);
@@ -398,15 +384,23 @@ export default function RegisterScreen() {
     ? `${birthDay.padStart(2, "0")}/${birthMonth.padStart(2, "0")}/${birthYear}`
     : "";
 
+  // ✅ v5.7 : termsAccepted requis pour activer le bouton
   const canSubmit = Boolean(
     firstName.trim() && lastName.trim() && email.trim() &&
     password.trim() && password === confirmPassword &&
     country && city.trim() && phone.trim() &&
-    nationality && birthDay && birthMonth && birthYear
+    nationality && birthDay && birthMonth && birthYear &&
+    termsAccepted
   );
 
-  // ── handleRegister ──────────────────────────────────────
   const handleRegister = async () => {
+    if (!termsAccepted) {
+      Alert.alert(
+        "Conditions requises",
+        "Vous devez accepter les Conditions generales et la Politique de confidentialite pour creer votre compte.",
+      );
+      return;
+    }
     if (!canSubmit) {
       Alert.alert("Formulaire incomplet", "Veuillez remplir tous les champs obligatoires.");
       return;
@@ -416,7 +410,7 @@ export default function RegisterScreen() {
       return;
     }
     if (birthYear.length !== 4) {
-      Alert.alert("Date invalide", "L'année de naissance doit comporter 4 chiffres.");
+      Alert.alert("Date invalide", "L'annee de naissance doit comporter 4 chiffres.");
       return;
     }
 
@@ -438,13 +432,11 @@ export default function RegisterScreen() {
         city:          city.trim(),
         nationality,
         birthDate,
-        // ✅ v5.6 : birthPlace supprimé — birthCity remplace les deux
         birthPlace:    birthCity.trim(),
         birthCity:     birthCity.trim(),
         birthCountry,
         addressStreet: addressStreet.trim(),
         postalCode:    postalCode.trim(),
-        // ✅ addressCity séparé de city (ville de résidence)
         addressCity:   addressCity.trim() || city.trim(),
       };
 
@@ -453,18 +445,13 @@ export default function RegisterScreen() {
 
     } catch (e: any) {
       const status = e?.response?.status;
-
       if (status && REAL_ERROR_STATUSES.has(status)) {
         const raw = e?.response?.data?.message || e?.message || "Erreur inconnue.";
         const msg = Array.isArray(raw) ? raw[0] : String(raw);
-        Alert.alert("Inscription échouée", msg);
+        Alert.alert("Inscription echouee", msg);
         return;
       }
-
-      // Tout le reste : timeout, parsing, réseau instable
-      // Le compte a très probablement été créé côté backend.
       setShowSuccess(true);
-
     } finally {
       setSubmitting(false);
     }
@@ -486,22 +473,21 @@ export default function RegisterScreen() {
       <CountryPicker
         visible={picker !== null}
         title={
-          picker === "country"      ? "Pays de résidence" :
-          picker === "nationality"  ? "Nationalité" :
+          picker === "country"      ? "Pays de residence" :
+          picker === "nationality"  ? "Nationalite" :
                                       "Pays de naissance"
         }
         onSelect={handleCountrySelect}
         onClose={() => setPicker(null)}
       />
 
-      {/* Header */}
       <View style={r.header}>
         <TouchableOpacity style={r.backBtn} onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="arrow-back" size={20} color={C.white} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={[r.headerTitle, { fontFamily: F.display }]}>Créer un compte</Text>
-          <Text style={[r.headerSub, { fontFamily: F.body }]}>Direct Transf'air · Inscription</Text>
+          <Text style={[r.headerTitle, { fontFamily: F.display }]}>Creer un compte</Text>
+          <Text style={[r.headerSub, { fontFamily: F.body }]}>Direct Transf'air - Inscription</Text>
         </View>
       </View>
 
@@ -511,56 +497,12 @@ export default function RegisterScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-
-        {/* ── SECTION 1 : Identité ── */}
-        <SectionHeader
-          number="1"
-          title="Identité personnelle"
-          subtitle="Vos informations de base"
-          color={C.section1} bgColor={C.section1Soft}
-        />
-        <FieldInput
-          label="Prénom *"
-          value={firstName}
-          onChangeText={setFirstName}
-          icon="person-outline"
-          placeholder="Prénom"
-        />
-        <FieldInput
-          label="Nom *"
-          value={lastName}
-          onChangeText={setLastName}
-          icon="person-outline"
-          placeholder="Nom de famille"
-          autoCapitalize="characters"
-        />
-        <FieldInput
-          label="Adresse email *"
-          value={email}
-          onChangeText={setEmail}
-          icon="mail-outline"
-          placeholder="email@exemple.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-        <FieldInput
-          label="Mot de passe *"
-          value={password}
-          onChangeText={setPassword}
-          icon="lock-closed-outline"
-          placeholder="6 caractères minimum"
-          secureTextEntry
-          returnKeyType="next"
-        />
-        <FieldInput
-          label="Confirmer le mot de passe *"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          icon="lock-closed-outline"
-          placeholder="Répéter le mot de passe"
-          secureTextEntry
-          returnKeyType="done"
-        />
+        <SectionHeader number="1" title="Identite personnelle" subtitle="Vos informations de base" color={C.section1} bgColor={C.section1Soft} />
+        <FieldInput label="Prenom *" value={firstName} onChangeText={setFirstName} icon="person-outline" placeholder="Prenom" />
+        <FieldInput label="Nom *" value={lastName} onChangeText={setLastName} icon="person-outline" placeholder="Nom de famille" autoCapitalize="characters" />
+        <FieldInput label="Adresse email *" value={email} onChangeText={setEmail} icon="mail-outline" placeholder="email@exemple.com" keyboardType="email-address" autoCapitalize="none" />
+        <FieldInput label="Mot de passe *" value={password} onChangeText={setPassword} icon="lock-closed-outline" placeholder="6 caracteres minimum" secureTextEntry returnKeyType="next" />
+        <FieldInput label="Confirmer le mot de passe *" value={confirmPassword} onChangeText={setConfirmPassword} icon="lock-closed-outline" placeholder="Repeter le mot de passe" secureTextEntry returnKeyType="done" />
 
         {password.length > 0 && confirmPassword.length > 0 && password !== confirmPassword && (
           <View style={r.errorRow}>
@@ -571,43 +513,18 @@ export default function RegisterScreen() {
 
         <View style={r.divider} />
 
-        {/* ── SECTION 2 : Contact ── */}
-        <SectionHeader
-          number="2"
-          title="Informations de contact"
-          subtitle="Pays, ville et téléphone"
-          color={C.section2} bgColor={C.section2Soft}
-        />
-        <SelectField
-          label="Pays de résidence *"
-          value={country}
-          placeholder="Sélectionner votre pays"
-          onPress={() => setPicker("country")}
-          icon="location-outline"
-        />
-        <FieldInput
-          label="Ville de résidence *"
-          value={city}
-          onChangeText={setCity}
-          icon="business-outline"
-          placeholder="Ex: Conakry"
-        />
+        <SectionHeader number="2" title="Informations de contact" subtitle="Pays, ville et telephone" color={C.section2} bgColor={C.section2Soft} />
+        <SelectField label="Pays de residence *" value={country} placeholder="Selectionner votre pays" onPress={() => setPicker("country")} icon="location-outline" />
+        <FieldInput label="Ville de residence *" value={city} onChangeText={setCity} icon="business-outline" placeholder="Ex: Conakry" />
 
-        {/* Téléphone avec indicatif */}
-        <Text style={[fS.label, { fontFamily: F.body }]}>Téléphone *</Text>
+        <Text style={[fS.label, { fontFamily: F.body }]}>Telephone *</Text>
         <View style={r.phoneRow}>
-          <TouchableOpacity
-            style={r.phoneCode}
-            onPress={() => setPicker("country")}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={r.phoneCode} onPress={() => setPicker("country")} activeOpacity={0.8}>
             <Text style={[r.phoneCodeTxt, { fontFamily: F.body }]}>{phoneCode}</Text>
             <Ionicons name="chevron-down" size={12} color={C.textFaint} />
           </TouchableOpacity>
           <TextInput
-            style={[r.phoneInput, { fontFamily: F.body },
-              Platform.OS === "web" && ({ outlineStyle: "none" } as any),
-            ]}
+            style={[r.phoneInput, { fontFamily: F.body }, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
             value={phone}
             onChangeText={setPhone}
             placeholder="6 12 34 56 78"
@@ -619,111 +536,77 @@ export default function RegisterScreen() {
 
         <View style={r.divider} />
 
-        {/* ── SECTION 3 : Adresse ── */}
-        <SectionHeader
-          number="3"
-          title="Adresse de résidence"
-          subtitle="Rue, code postal, ville"
-          color={C.section3} bgColor={C.section3Soft}
-        />
-        <FieldInput
-          label="Adresse complète"
-          value={addressStreet}
-          onChangeText={setAddressStreet}
-          icon="home-outline"
-          placeholder="12 Rue des Lilas…"
-        />
-        {/* ✅ FIX v5.6 : addressCity est séparé de city */}
+        <SectionHeader number="3" title="Adresse de residence" subtitle="Rue, code postal, ville" color={C.section3} bgColor={C.section3Soft} />
+        <FieldInput label="Adresse complete" value={addressStreet} onChangeText={setAddressStreet} icon="home-outline" placeholder="12 Rue des Lilas..." />
         <View style={r.twoCol}>
           <View style={{ flex: 0.4 }}>
-            <FieldInput
-              label="Code postal"
-              value={postalCode}
-              onChangeText={setPostalCode}
-              keyboardType="numeric"
-              placeholder="75001"
-              maxLength={10}
-            />
+            <FieldInput label="Code postal" value={postalCode} onChangeText={setPostalCode} keyboardType="numeric" placeholder="75001" maxLength={10} />
           </View>
           <View style={{ flex: 1, marginLeft: 10 }}>
-            <FieldInput
-              label="Ville (si différente)"
-              value={addressCity}
-              onChangeText={setAddressCity}
-              placeholder={city || "Ex: Paris"}
-            />
+            <FieldInput label="Ville (si differente)" value={addressCity} onChangeText={setAddressCity} placeholder={city || "Ex: Paris"} />
           </View>
         </View>
 
         <View style={r.divider} />
 
-        {/* ── SECTION 4 : État civil ── */}
-        <SectionHeader
-          number="4"
-          title="État civil & Origine"
-          subtitle="Nationalité et date de naissance"
-          color={C.section4} bgColor={C.section4Soft}
-        />
-        <SelectField
-          label="Nationalité *"
-          value={nationality}
-          placeholder="Sélectionner votre nationalité"
-          onPress={() => setPicker("nationality")}
-          icon="flag-outline"
-        />
+        <SectionHeader number="4" title="Etat civil et Origine" subtitle="Nationalite et date de naissance" color={C.section4} bgColor={C.section4Soft} />
+        <SelectField label="Nationalite *" value={nationality} placeholder="Selectionner votre nationalite" onPress={() => setPicker("nationality")} icon="flag-outline" />
 
-        {/* ✅ FIX v5.6 : chaque DateBox wrappée dans un View avec flex
-            explicite — corrige l'année masquée sur React Native Web */}
         <Text style={[fS.label, { fontFamily: F.body }]}>Date de naissance *</Text>
         <View style={r.dateRow}>
           <View style={{ flex: 1 }}>
-            <DateBox
-              value={birthDay}
-              onChangeText={setBirthDay}
-              placeholder="JJ"
-              maxLength={2}
-            />
+            <DateBox value={birthDay} onChangeText={setBirthDay} placeholder="JJ" maxLength={2} />
           </View>
           <Text style={r.dateSep}>/</Text>
           <View style={{ flex: 1 }}>
-            <DateBox
-              value={birthMonth}
-              onChangeText={setBirthMonth}
-              placeholder="MM"
-              maxLength={2}
-            />
+            <DateBox value={birthMonth} onChangeText={setBirthMonth} placeholder="MM" maxLength={2} />
           </View>
           <Text style={r.dateSep}>/</Text>
           <View style={{ flex: 2 }}>
-            <DateBox
-              value={birthYear}
-              onChangeText={setBirthYear}
-              placeholder="AAAA"
-              maxLength={4}
-            />
+            <DateBox value={birthYear} onChangeText={setBirthYear} placeholder="AAAA" maxLength={4} />
           </View>
         </View>
 
-        {/* ✅ v5.6 : "Lieu de naissance" supprimé
-            → birthCity remplace les deux champs (birthPlace + birthCity) */}
-        <SelectField
-          label="Pays de naissance"
-          value={birthCountry}
-          placeholder="Sélectionner…"
-          onPress={() => setPicker("birthCountry")}
-          icon="globe-outline"
-        />
-        <FieldInput
-          label="Ville / Lieu de naissance"
-          value={birthCity}
-          onChangeText={setBirthCity}
-          icon="business-outline"
-          placeholder="Ex: Conakry"
-        />
+        <SelectField label="Pays de naissance" value={birthCountry} placeholder="Selectionner..." onPress={() => setPicker("birthCountry")} icon="globe-outline" />
+        <FieldInput label="Ville / Lieu de naissance" value={birthCity} onChangeText={setBirthCity} icon="business-outline" placeholder="Ex: Conakry" />
 
         <View style={r.divider} />
 
-        {/* ── Bouton soumettre ── */}
+        {/* ✅ v5.7 — Checkbox CGU obligatoire */}
+        <View style={[r.checkCard, termsAccepted && r.checkCardActive]}>
+          <View style={r.checkRow}>
+            <TouchableOpacity
+              onPress={() => setTermsAccepted(!termsAccepted)}
+              activeOpacity={0.75}
+              hitSlop={10}
+              style={r.checkboxHit}
+            >
+              <View style={[r.checkbox, termsAccepted && r.checkboxChecked]}>
+                {termsAccepted && <Ionicons name="checkmark" size={13} color={C.white} />}
+              </View>
+            </TouchableOpacity>
+            <Text style={[r.checkTxt, { fontFamily: F.body }]}>
+              {"J'ai lu et j'accepte les "}
+              <Text style={r.checkLink} onPress={() => router.push("/(auth)/terms")}>
+                {"Conditions generales d'utilisation"}
+              </Text>
+              {" et la "}
+              <Text style={r.checkLink} onPress={() => router.push("/(auth)/privacy-policy")}>
+                {"Politique de confidentialite"}
+              </Text>
+              {" de Direct Transf'air."}
+            </Text>
+          </View>
+          {!termsAccepted && (
+            <View style={r.checkHint}>
+              <Ionicons name="information-circle-outline" size={12} color={C.g4} />
+              <Text style={[r.checkHintTxt, { fontFamily: F.body }]}>
+                Obligatoire pour creer votre compte
+              </Text>
+            </View>
+          )}
+        </View>
+
         <Animated.View style={{ transform: [{ scale: btnScale }] }}>
           <TouchableOpacity
             style={[r.submitBtn, (!canSubmit || submitting) && r.submitDisabled]}
@@ -736,16 +619,15 @@ export default function RegisterScreen() {
               : (
                 <>
                   <Ionicons name="checkmark-circle-outline" size={20} color={C.white} />
-                  <Text style={[r.submitTxt, { fontFamily: F.body }]}>CRÉER MON COMPTE</Text>
+                  <Text style={[r.submitTxt, { fontFamily: F.body }]}>CREER MON COMPTE</Text>
                 </>
               )
             }
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Lien connexion */}
         <View style={r.loginRow}>
-          <Text style={[r.loginTxt, { fontFamily: F.body }]}>Déjà un compte ?</Text>
+          <Text style={[r.loginTxt, { fontFamily: F.body }]}>Deja un compte ?</Text>
           <TouchableOpacity onPress={() => router.replace("/(auth)/login" as any)} hitSlop={8}>
             <Text style={[r.loginLink, { fontFamily: F.body }]}>Se connecter</Text>
           </TouchableOpacity>
@@ -761,36 +643,35 @@ const r = StyleSheet.create({
   root:        { flex: 1, backgroundColor: C.bg },
   bgBase:      { ...StyleSheet.absoluteFillObject, backgroundColor: C.g1, zIndex: -2 },
   bgCircle:    { position: "absolute", width: 300, height: 300, borderRadius: 150, backgroundColor: C.g2, top: -100, right: -80, zIndex: -1 },
-
   header:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 56, paddingBottom: 18, gap: 12 },
   backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
   headerTitle: { color: C.white, fontSize: 20, fontWeight: "700" },
   headerSub:   { color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 2 },
-
   scroll:      { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 32, backgroundColor: C.bg },
-
   divider:     { height: 1, backgroundColor: "#E5E7EB", marginVertical: 20 },
-
   twoCol:      { flexDirection: "row", alignItems: "flex-start" },
-
   phoneRow:    { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, overflow: "hidden", marginBottom: 12 },
   phoneCode:   { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#F8FAFC", borderRightWidth: 1.5, borderRightColor: C.borderInput, paddingHorizontal: 12, paddingVertical: 14 },
   phoneCodeTxt:{ fontSize: 14, color: C.text, fontWeight: "700" },
   phoneInput:  { flex: 1, fontSize: 14, color: C.text, fontWeight: "600", paddingHorizontal: 14, paddingVertical: 14 },
-
-  // ✅ FIX v5.6 : width: "100%" sur le conteneur pour garantir
-  // que les Views enfants se partagent bien l'espace sur web
   dateRow:     { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12, width: "100%" },
   dateSep:     { fontSize: 20, color: C.textMuted, fontWeight: "600" },
-
   errorRow:    { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.dangerSoft, borderRadius: 10, padding: 10, marginBottom: 8, borderWidth: 1, borderColor: "#FECACA" },
   errorTxt:    { fontSize: 12, color: C.danger, fontWeight: "600" },
-
+  checkCard:       { backgroundColor: C.white, borderRadius: 14, borderWidth: 1.5, borderColor: C.borderInput, padding: 16, marginBottom: 16 },
+  checkCardActive: { borderColor: C.g4, backgroundColor: "#F0FDF4" },
+  checkRow:        { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  checkboxHit:     { paddingTop: 2 },
+  checkbox:        { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.borderInput, backgroundColor: C.white, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  checkboxChecked: { backgroundColor: C.g4, borderColor: C.g4 },
+  checkTxt:        { flex: 1, fontSize: 13, color: C.textSub, lineHeight: 20, fontWeight: "500" },
+  checkLink:       { color: C.g4, fontWeight: "700", textDecorationLine: "underline" },
+  checkHint:       { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 10 },
+  checkHintTxt:    { fontSize: 11, color: C.g4, fontWeight: "600" },
   submitBtn:     { backgroundColor: C.g3, borderRadius: 16, paddingVertical: 18, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, shadowColor: C.g3, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
   submitDisabled:{ backgroundColor: "#9CA3AF", shadowOpacity: 0 },
   submitTxt:     { color: C.white, fontSize: 15, fontWeight: "800", letterSpacing: 0.5 },
-
-  loginRow:    { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 20 },
-  loginTxt:    { fontSize: 14, color: C.textMuted, fontWeight: "500" },
-  loginLink:   { fontSize: 14, color: C.g4, fontWeight: "700" },
+  loginRow:  { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 20 },
+  loginTxt:  { fontSize: 14, color: C.textMuted, fontWeight: "500" },
+  loginLink: { fontSize: 14, color: C.g4, fontWeight: "700" },
 });

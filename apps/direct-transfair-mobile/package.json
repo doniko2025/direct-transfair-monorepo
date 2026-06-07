@@ -4,7 +4,7 @@
   "main": "expo-router/entry",
   "private": true,
   "scripts": {
-    "start": "expo start",
+    "start": "cross-env EXPO_NO_DOCTOR=1 expo start --clear",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -44,6 +44,7 @@
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@types/react": "~19.1.17",
+    "cross-env": "^10.1.0",
     "typescript": "^5.1.3"
   }
 }

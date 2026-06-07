@@ -1,9 +1,16 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.3
-// ✅ FIX: bcrypt.hash — adminPassword garanti non-undefined
-// ✅ FIX: email/password castés en string pour Prisma
-// ✅ FIX: findPublicByCode dans la classe (plus hors-classe)
+// CLIENTS SERVICE v4.4
+// ✅ v4.3 conservé intégralement
+// ✅ v4.4 — FIXES BRANDING ISOLATION :
+//   1. create() : tagline / fontFamily / splashBgColor /
+//      welcomeMessage ajoutés dans tx.client.create
+//      → étaient dans le DTO mais jamais persistés en base
+//   2. findPublicByCode() : ces 4 champs ajoutés dans select
+//      + suppression du cast (as any) inutile et fragile
+//      → le /branding/:code retournait toujours null pour ces champs
+//   3. primaryColor default harmonisé : '#059669' partout
+//      (était '#F7931E' dans create, '#059669' dans findPublicByCode)
 // =========================================================
 
 import {
@@ -59,9 +66,8 @@ export class ClientsService {
   // ========================================================
 
   async create(dto: CreateClientDto) {
-    // ✅ Guards explicites sur les champs requis
-    if (!dto.adminEmail?.trim())    throw new BadRequestException('adminEmail requis');
-    if (!dto.adminPassword?.trim()) throw new BadRequestException('adminPassword requis');
+    if (!dto.adminEmail?.trim())     throw new BadRequestException('adminEmail requis');
+    if (!dto.adminPassword?.trim())  throw new BadRequestException('adminPassword requis');
     if (!dto.adminFirstName?.trim()) throw new BadRequestException('adminFirstName requis');
     if (!dto.adminLastName?.trim())  throw new BadRequestException('adminLastName requis');
 
@@ -77,7 +83,6 @@ export class ClientsService {
     if (existingUser)
       throw new ConflictException(`L'email "${dto.adminEmail}" est déjà utilisé.`);
 
-    // ✅ FIX: cast explicite en string — bcrypt n'accepte pas undefined
     const hashedPassword = await bcrypt.hash(String(dto.adminPassword), 10);
 
     const ownerCountryCode = dto.ownerCountry?.toUpperCase().substring(0, 2);
@@ -88,34 +93,52 @@ export class ClientsService {
         data: {
           code:               dto.code.toUpperCase(),
           name:               dto.name,
-          primaryColor:       dto.primaryColor    ?? '#F7931E',
-          secondaryColor:     dto.secondaryColor  ?? null,
+
+          // ─── Branding ────────────────────────────────────
+          // ✅ v4.4 : default harmonisé '#059669' (était '#F7931E')
+          primaryColor:       dto.primaryColor   ?? '#059669',
+          secondaryColor:     dto.secondaryColor ?? '#10B981',
+          logoUrl:            dto.logoUrl        ?? null,
+          // ✅ v4.4 : 4 champs AJOUTÉS — étaient dans le DTO mais jamais
+          //           persistés, donc branding toujours identique entre sociétés
+          tagline:            dto.tagline        ?? null,
+          fontFamily:         dto.fontFamily     ?? null,
+          splashBgColor:      dto.splashBgColor  ?? null,
+          welcomeMessage:     dto.welcomeMessage ?? null,
+
+          // ─── Abonnement ──────────────────────────────────
           subscriptionType:   dto.subscriptionType,
           subscriptionStatus: SubscriptionStatus.ACTIVE,
           defaultCurrency:    primaryCurrency,
-          country:            ownerCountryCode    ?? null,
-          logoUrl:            dto.logoUrl         ?? null,
-          // ✅ FIX: cast string — Prisma attend string, pas string | undefined
+
+          // ─── Coordonnées ─────────────────────────────────
+          country:            ownerCountryCode   ?? null,
           email:              String(dto.adminEmail),
-          phone:              dto.contactPhone    ?? null,
-          address:            dto.ownerAddress    ?? null,
+          phone:              dto.contactPhone   ?? null,
+          address:            dto.ownerAddress   ?? null,
+
+          // ─── Propriétaire légal ──────────────────────────
           ownerFirstName:     String(dto.adminFirstName),
           ownerLastName:      String(dto.adminLastName),
           ownerBirthDate:     dto.ownerBirthDate  ?? null,
           ownerBirthPlace:    dto.ownerBirthPlace ?? null,
           ownerCountry:       dto.ownerCountry    ?? null,
           ownerAddress:       dto.ownerAddress    ?? null,
-          contactEmail:       dto.contactEmail    ?? dto.adminEmail,
-          contactPhone:       dto.contactPhone    ?? null,
-          activitySector:     dto.activitySector  ?? null,
-          allowedCurrencies:  SUPPORTED_CURRENCIES,
+
+          // ─── Contact opérationnel ────────────────────────
+          contactEmail:       dto.contactEmail   ?? dto.adminEmail,
+          contactPhone:       dto.contactPhone   ?? null,
+          activitySector:     dto.activitySector ?? null,
+
+          // ─── Devises & features ──────────────────────────
+          allowedCurrencies:         SUPPORTED_CURRENCIES,
           featureScheduledTransfers: true,
           featureRateAlerts:         true,
           featureLoyaltyPoints:      false,
         },
       });
 
-      // Wallets société (un par devise)
+      // Wallets société (un par devise supportée)
       for (const currency of SUPPORTED_CURRENCIES) {
         await tx.wallet.create({
           data: {
@@ -131,17 +154,16 @@ export class ClientsService {
       // Admin COMPANY_ADMIN
       const admin = await tx.user.create({
         data: {
-          // ✅ FIX: cast string pour email et password
           email:           String(dto.adminEmail),
           password:        hashedPassword,
           firstName:       String(dto.adminFirstName),
           lastName:        String(dto.adminLastName),
           role:            Role.COMPANY_ADMIN,
           clientId:        client.id,
-          country:         ownerCountryCode     ?? null,
+          country:         ownerCountryCode    ?? null,
           primaryCurrency,
-          phone:           dto.contactPhone     ?? null,
-          addressStreet:   dto.ownerAddress     ?? null,
+          phone:           dto.contactPhone    ?? null,
+          addressStreet:   dto.ownerAddress    ?? null,
           kycLevel:        KycLevel.LEVEL_1,
           isEmailVerified: true,
           referralCode:    generateReferralCode(dto.adminFirstName, dto.adminLastName),
@@ -201,6 +223,8 @@ export class ClientsService {
   // ========================================================
   // BRANDING PUBLIC — aucune donnée sensible exposée
   // ✅ Appelé sans auth depuis GET /branding/:code
+  // ✅ v4.4 : tous les champs branding sélectionnés
+  //           + suppression du cast (as any) fragile
   // ========================================================
 
   async findPublicByCode(code: string) {
@@ -212,26 +236,29 @@ export class ClientsService {
         logoUrl:        true,
         primaryColor:   true,
         secondaryColor: true,
+        // ✅ v4.4 : champs branding ajoutés — existaient dans le schéma
+        //           mais n'étaient pas sélectionnés → toujours null côté frontend
+        tagline:        true,
+        fontFamily:     true,
+        splashBgColor:  true,
+        welcomeMessage: true,
         isActive:       true,
-        // tagline / fontFamily / splashBgColor / welcomeMessage
-        // → disponibles après migration Prisma
       },
     });
 
     if (!client) return null;
 
-    const c = client as any;
-
+    // ✅ v4.4 : plus de cast (as any) — tous les champs sont typés Prisma
     return {
       code:           client.code,
       name:           client.name,
       logoUrl:        client.logoUrl        ?? null,
       primaryColor:   client.primaryColor   ?? '#059669',
       secondaryColor: client.secondaryColor ?? '#10B981',
-      tagline:        c.tagline        ?? null,
-      fontFamily:     c.fontFamily     ?? null,
-      splashBgColor:  c.splashBgColor  ?? null,
-      welcomeMessage: c.welcomeMessage ?? null,
+      tagline:        client.tagline        ?? null,
+      fontFamily:     client.fontFamily     ?? null,
+      splashBgColor:  client.splashBgColor  ?? null,
+      welcomeMessage: client.welcomeMessage ?? null,
       isActive:       client.isActive,
     };
   }

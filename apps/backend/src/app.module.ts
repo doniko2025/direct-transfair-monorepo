@@ -1,9 +1,15 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v4.2 — Direct Transf'air
+// APP MODULE v4.3
 // ✅ v4.1 : LimitsModule ajouté
 // ✅ v4.2 : LocationsModule ajouté (endpoint public GET /locations)
-//           'locations' exclu du TenantMiddleware
+// ✅ v4.3 : 'branding' et 'branding/(.*)' exclus du TenantMiddleware
+//   → L'endpoint GET /branding/:code est appelé AVANT que le tenant
+//     soit connu (chargement du login). S'il passe par le middleware,
+//     ce dernier tente de résoudre un tenant depuis x-tenant-id=DONIKO,
+//     ce qui peut échouer ou retourner le mauvais contexte.
+//   → Exclure branding garantit que chaque société retourne son propre
+//     logo/couleur sans interférence du middleware tenant.
 // =========================================================
 
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
@@ -34,7 +40,7 @@ import { TreasuryModule }           from './treasury/treasury.module';
 import { ScheduledTransfersModule } from './scheduled-transfers/scheduled-transfers.module';
 import { RateAlertsModule }         from './rate-alerts/rate-alerts.module';
 import { LimitsModule }             from './limits/limits.module';
-import { LocationsModule }          from './locations/locations.module'; // ✅ AJOUT v4.2
+import { LocationsModule }          from './locations/locations.module';
 
 import { TenantMiddleware } from './tenants/tenant.middleware';
 
@@ -68,7 +74,7 @@ import { TenantMiddleware } from './tenants/tenant.middleware';
     ScheduledTransfersModule,
     RateAlertsModule,
     LimitsModule,
-    LocationsModule, // ✅ AJOUT v4.2
+    LocationsModule,
   ],
 })
 export class AppModule implements NestModule {
@@ -76,16 +82,30 @@ export class AppModule implements NestModule {
     consumer
       .apply(TenantMiddleware)
       .exclude(
-        'swagger',
-        'swagger/(.*)',
+        // Auth publique
         'auth/login',
         'auth/register',
         'auth/refresh',
+
+        // ✅ v4.3 : branding exclu — appelé AVANT que le tenant soit connu
+        // GET /branding/:code doit fonctionner sans x-tenant-id valide
+        // sinon le middleware échoue et le login de chaque société
+        // retombe sur le branding par défaut (DONIKO)
+        'branding',
+        'branding/(.*)',
+
+        // Infra
+        'swagger',
+        'swagger/(.*)',
         'health',
+
+        // Admin plateforme
         'admin/tenants',
         'admin/tenants/(.*)',
-        'locations',       // ✅ AJOUT v4.2 — endpoint public, pas de tenant requis
-        'locations/(.*)',  // ✅ AJOUT v4.2
+
+        // Locations publiques
+        'locations',
+        'locations/(.*)',
       )
       .forRoutes('*');
   }

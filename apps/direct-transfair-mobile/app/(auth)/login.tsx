@@ -1,10 +1,9 @@
 // apps/direct-transfair-mobile/app/(auth)/login.tsx
 // =========================================================
-// LOGIN v6.1 — Direct Transf'air
-// ✅ v6.0 conservé intégralement
-// ✅ v6.1 — Bouton biométrique :
-//    → visible si bio activée + refresh token présent
-//    → prompt natif → biometricLogin() → session restaurée
+// LOGIN v6.2 — Direct Transf'air
+// ✅ v6.1 conservé intégralement
+// ✅ v6.2 : lien "Assistance et cookies" branché
+//           → router.push("/(auth)/assistance")
 // =========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
@@ -24,13 +23,11 @@ import {
   promptBiometrics,
 } from "../../hooks/useBiometrics";
 
-// ─── Fonts ───────────────────────────────────────────────
 const F = {
   display: Platform.select({ ios: "Georgia",  android: "serif",      default: "serif" }),
   body:    Platform.select({ ios: "System",   android: "sans-serif", default: "sans-serif" }),
 };
 
-// ─── Color theme builder ──────────────────────────────────
 function hexToRgb(hex: string): [number, number, number] | null {
   const c = hex.replace("#", "");
   if (c.length !== 6) return null;
@@ -254,8 +251,8 @@ const tcmS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function LoginScreen() {
-  const { login, isLoading, biometricLogin }           = useAuth();
-  const { branding, isCustomBranding, loadBranding }   = useTenant();
+  const { login, isLoading, biometricLogin }         = useAuth();
+  const { branding, isCustomBranding, loadBranding } = useTenant();
   const router = useRouter();
 
   const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
@@ -264,25 +261,20 @@ export default function LoginScreen() {
   const [password,        setPassword]        = useState("");
   const [rememberMe,      setRememberMe]      = useState(false);
   const [showTenantModal, setShowTenantModal] = useState(false);
-
-  // ✅ Bouton biométrique
-  const [showBioBtn,  setShowBioBtn]  = useState(false);
-  const [bioLoading,  setBioLoading]  = useState(false);
+  const [showBioBtn,      setShowBioBtn]      = useState(false);
+  const [bioLoading,      setBioLoading]      = useState(false);
 
   const passRef  = useRef<TextInput | null>(null);
   const btnScale = useRef(new Animated.Value(1)).current;
 
-  // Vérifie si on peut proposer la connexion biométrique
   useFocusEffect(
     useCallback(() => {
       if (branding.code !== "DONIKO") {
         void (async () => { await (api as any).setTenant?.(branding.code); })();
       }
-
-      // ✅ Vérifie bio activée + refresh token présent
       const checkBio = async () => {
-        const enabled      = await getBiometricsEnabled();
-        const hasToken     = await hasStoredRefreshToken();
+        const enabled  = await getBiometricsEnabled();
+        const hasToken = await hasStoredRefreshToken();
         setShowBioBtn(enabled && hasToken);
       };
       void checkBio();
@@ -306,32 +298,25 @@ export default function LoginScreen() {
     }
   };
 
-  // ✅ Handler connexion biométrique
   const handleBiometricLogin = async () => {
     const success = await promptBiometrics("Connectez-vous à Direct Transf'air");
     if (!success) return;
     setBioLoading(true);
     try {
       await biometricLogin();
-      // La navigation est gérée par useEffect dans AuthProvider
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || "";
-      // Session expirée → masque le bouton bio et demande identifiants
       setShowBioBtn(false);
-      Alert.alert(
-        "Session expirée",
-        "Votre session a expiré. Veuillez vous reconnecter avec vos identifiants.",
-      );
-      console.warn("biometricLogin échoué:", msg);
+      Alert.alert("Session expirée", "Veuillez vous reconnecter avec vos identifiants.");
+      console.warn("biometricLogin échoué:", e?.message);
     } finally {
       setBioLoading(false);
     }
   };
 
-  const canSubmit  = identifier.trim().length > 0 && password.trim().length > 0;
-  const appName    = branding.name;
-  const tagline    = branding.tagline ?? "Transferts internationaux sécurisés";
-  const pillLabel  = isCustomBranding ? branding.name : "Choisir ma société →";
+  const canSubmit = identifier.trim().length > 0 && password.trim().length > 0;
+  const appName   = branding.name;
+  const tagline   = branding.tagline ?? "Transferts internationaux sécurisés";
+  const pillLabel = isCustomBranding ? branding.name : "Choisir ma société →";
 
   return (
     <KeyboardAvoidingView
@@ -409,7 +394,11 @@ export default function LoginScreen() {
           </View>
 
           {/* Remember me */}
-          <TouchableOpacity style={sL.rememberRow} onPress={() => setRememberMe(!rememberMe)} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={sL.rememberRow}
+            onPress={() => setRememberMe(!rememberMe)}
+            activeOpacity={0.8}
+          >
             <Text style={[sL.rememberTxt, { fontFamily: F.body }]}>Se souvenir de moi</Text>
             <View style={[sL.toggle, rememberMe && { backgroundColor: C.g4 }]}>
               <View style={[sL.thumb, rememberMe && sL.thumbOn]} />
@@ -441,7 +430,7 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* ✅ Bouton biométrique — visible uniquement si activé + token présent */}
+          {/* Bouton biométrique */}
           {showBioBtn && (
             <>
               <View style={sL.bioDivider}>
@@ -469,7 +458,10 @@ export default function LoginScreen() {
             </>
           )}
 
-          <TouchableOpacity style={sL.forgotBtn} onPress={() => router.push("/(auth)/forgot-password")}>
+          <TouchableOpacity
+            style={sL.forgotBtn}
+            onPress={() => router.push("/(auth)/forgot-password")}
+          >
             <Text style={[sL.forgotTxt, { color: C.g4, fontFamily: F.body }]}>
               Identifiant ou mot de passe perdu ?
             </Text>
@@ -487,7 +479,12 @@ export default function LoginScreen() {
             <Text style={[sL.registerTxt, { color: C.g3, fontFamily: F.body }]}>Devenir client</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={sL.helpRow}>
+          {/* ✅ v6.2 : lien branché vers assistance */}
+          <TouchableOpacity
+            style={sL.helpRow}
+            onPress={() => router.push("/(auth)/assistance")}
+            activeOpacity={0.75}
+          >
             <Ionicons name="chatbubble-ellipses-outline" size={14} color="rgba(255,255,255,0.6)" />
             <Text style={[sL.helpTxt, { fontFamily: F.body }]}>Assistance et cookies</Text>
           </TouchableOpacity>
@@ -532,20 +529,16 @@ const sL = StyleSheet.create({
   thumb:       { width: 20, height: 20, borderRadius: 99, backgroundColor: "#FFFFFF", shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2 },
   thumbOn:     { alignSelf: "flex-end" },
 
-  btn:        { borderRadius: 16, paddingVertical: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
-  btnDisabled:{ opacity: 0.45 },
-  btnTxt:     { color: "#FFFFFF", fontWeight: "800", fontSize: 16, letterSpacing: 0.3 },
-  btnArrow:   { width: 30, height: 30, borderRadius: 99, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginLeft: 10 },
+  btn:         { borderRadius: 16, paddingVertical: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
+  btnDisabled: { opacity: 0.45 },
+  btnTxt:      { color: "#FFFFFF", fontWeight: "800", fontSize: 16, letterSpacing: 0.3 },
+  btnArrow:    { width: 30, height: 30, borderRadius: 99, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", marginLeft: 10 },
 
-  // ✅ Biométrie
   bioDivider:     { flexDirection: "row", alignItems: "center", gap: 10, marginVertical: 16 },
   bioDividerLine: { flex: 1, height: 1 },
   bioDividerTxt:  { fontSize: 12, fontWeight: "700", opacity: 0.7 },
-  bioBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    borderRadius: 14, borderWidth: 1.5, paddingVertical: 14, marginBottom: 4,
-  },
-  bioTxt: { fontWeight: "700", fontSize: 15 },
+  bioBtn:         { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: 14, borderWidth: 1.5, paddingVertical: 14, marginBottom: 4 },
+  bioTxt:         { fontWeight: "700", fontSize: 15 },
 
   forgotBtn: { alignItems: "center", paddingVertical: 16 },
   forgotTxt: { fontSize: 13, fontWeight: "700" },

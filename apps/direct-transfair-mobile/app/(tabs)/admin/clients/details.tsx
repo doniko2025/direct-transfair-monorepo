@@ -1,8 +1,16 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/clients/details.tsx
 // =========================================================
-// CLIENT DETAILS v6.0 — Direct Transf'air
-// ✅ v6.0 : Section "Agences" ajoutée — agences filtrées par société
-//           Les agences s'affichent ICI, pas dans la liste globale
+// CLIENT DETAILS v6.1 — Direct Transf'air
+// ✅ v6.0 : Section "Agences" ajoutée
+// ✅ v6.1 : Suppression du bouton "+ Ajouter" agences
+//           et du lien "Créer la première agence →"
+//   RAISON : Le SuperAdmin n'a pas vocation à créer une agence.
+//   Pour quelle société la créerait-il ? La logique n'a pas
+//   de sens depuis cette vue. La création d'agence revient
+//   au COMPANY_ADMIN dans son propre espace.
+//   → La section affiche les agences existantes en lecture seule.
+//   Styles nettoyés : addAgencyBtn, addAgencyTxt,
+//                     createAgencyBtn, createAgencyTxt supprimés.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -151,15 +159,14 @@ const wrS = StyleSheet.create({
 });
 
 // ─── Agency Mini Card ──────────────────────────────────────
-// ✅ v6.0 : Affiche les agences de CETTE société uniquement
 function AgencyMiniCard({ agency, onPress }: { agency: any; onPress: () => void }) {
-  const isActive  = agency.isActive !== false;
-  const flagCode  = (agency.country ?? "").toUpperCase().substring(0, 2);
-  const flag      = FLAG_MAP[flagCode] ?? "🌍";
-  const wallets   = Array.isArray(agency.wallets) ? agency.wallets : [];
-  const pw        = wallets.find((w: any) => w.isDefault) ?? wallets[0];
-  const balance   = toNum(pw?.balance ?? agency.balance ?? 0);
-  const currency  = pw?.currency ?? agency.primaryCurrency ?? "XOF";
+  const isActive   = agency.isActive !== false;
+  const flagCode   = (agency.country ?? "").toUpperCase().substring(0, 2);
+  const flag       = FLAG_MAP[flagCode] ?? "🌍";
+  const wallets    = Array.isArray(agency.wallets) ? agency.wallets : [];
+  const pw         = wallets.find((w: any) => w.isDefault) ?? wallets[0];
+  const balance    = toNum(pw?.balance ?? agency.balance ?? 0);
+  const currency   = pw?.currency ?? agency.primaryCurrency ?? "XOF";
   const agentCount = toNum(agency.agents?.length ?? agency._count?.agents ?? 0);
 
   return (
@@ -258,6 +265,8 @@ const axS = StyleSheet.create({
 });
 
 // ─── Section Header ────────────────────────────────────────
+// ✅ v6.1 : prop `right` conservée pour usage futur, mais
+//           non utilisée dans la section agences
 function SH({ dot, label, right }: { dot: string; label: string; right?: React.ReactNode }) {
   return (
     <View style={shS.row}>
@@ -285,7 +294,7 @@ export default function ClientDetailsScreen() {
   const clientId = idStr && isDigitsOnly(idStr) ? Number(idStr) : NaN;
 
   const [client,     setClient]     = useState<any>(null);
-  const [agencies,   setAgencies]   = useState<any[]>([]);   // ✅ v6.0
+  const [agencies,   setAgencies]   = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [processing, setProcessing] = useState(false);
   const [errorMsg,   setErrorMsg]   = useState<string | null>(null);
@@ -298,13 +307,9 @@ export default function ClientDetailsScreen() {
       const data = await api.getClient(clientId);
       setClient(data);
 
-      // ✅ v6.0 : Agences depuis la réponse API du client
-      // Le backend inclut client.agencies dans getClient()
-      // Sinon, récupération via getAgencies() filtrée par clientId
       if (Array.isArray(data.agencies) && data.agencies.length > 0) {
         setAgencies(data.agencies);
       } else {
-        // Fallback : chercher parmi toutes les agences celles qui appartiennent à ce client
         try {
           const allAgencies = await api.getAgencies();
           const clientAgencies = allAgencies.filter(
@@ -470,10 +475,10 @@ export default function ClientDetailsScreen() {
         {/* ── Société & Contact ── */}
         <View style={s.card}>
           <SH dot={T.blue} label="Société & Contact" />
-          <InfoRow label="Email administrateur" value={client.email || client.contactEmail || ""}           icon="mail-outline"      accent={T.blue} />
-          <InfoRow label="Téléphone"            value={client.phone || client.contactPhone || ""}           icon="call-outline"      accent={T.blue} />
-          <InfoRow label="Secteur d'activité"   value={client.activitySector || ""}                         icon="briefcase-outline" accent={T.blue} />
-          <InfoRow label="Devise principale"    value={client.defaultCurrency || ""}                        icon="cash-outline"      accent={T.blue} />
+          <InfoRow label="Email administrateur" value={client.email || client.contactEmail || ""}  icon="mail-outline"      accent={T.blue} />
+          <InfoRow label="Téléphone"            value={client.phone || client.contactPhone || ""}  icon="call-outline"      accent={T.blue} />
+          <InfoRow label="Secteur d'activité"   value={client.activitySector || ""}                icon="briefcase-outline" accent={T.blue} />
+          <InfoRow label="Devise principale"    value={client.defaultCurrency || ""}               icon="cash-outline"      accent={T.blue} />
         </View>
 
         {/* ── Gérant ── */}
@@ -509,23 +514,13 @@ export default function ClientDetailsScreen() {
           </View>
         )}
 
-        {/* ── ✅ v6.0 AGENCES DE CETTE SOCIÉTÉ ── */}
+        {/* ── AGENCES DE CETTE SOCIÉTÉ ── */}
+        {/* ✅ v6.1 : lecture seule — pas de bouton création pour le SuperAdmin */}
         <View style={s.card}>
           <SH
             dot={T.teal}
             label={`Agences (${agencyCount})`}
-            right={
-              <TouchableOpacity
-                style={s.addAgencyBtn}
-                onPress={() => router.push({
-                  pathname: "/(tabs)/admin/agencies/create" as any,
-                  params:   { clientId: client.id },
-                })}
-              >
-                <Ionicons name="add" size={15} color={T.teal} />
-                <Text style={[s.addAgencyTxt, { fontFamily: T.font.sans }]}>Ajouter</Text>
-              </TouchableOpacity>
-            }
+            // ✅ v6.1 : prop right retirée — le SuperAdmin ne crée pas d'agence
           />
 
           {agencies.length === 0 ? (
@@ -534,17 +529,7 @@ export default function ClientDetailsScreen() {
               <Text style={[s.emptyAgenciesTxt, { fontFamily: T.font.sans }]}>
                 Aucune agence pour cette société
               </Text>
-              <TouchableOpacity
-                style={s.createAgencyBtn}
-                onPress={() => router.push({
-                  pathname: "/(tabs)/admin/agencies/create" as any,
-                  params:   { clientId: client.id },
-                })}
-              >
-                <Text style={[s.createAgencyTxt, { fontFamily: T.font.sans }]}>
-                  Créer la première agence →
-                </Text>
-              </TouchableOpacity>
+              {/* ✅ v6.1 : lien "Créer la première agence →" supprimé */}
             </View>
           ) : (
             agencies.map((agency: any) => (
@@ -603,41 +588,38 @@ const s = StyleSheet.create({
     paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 16,
     paddingBottom: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  backBtn: { width: 38, height: 38, borderRadius: 11, backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
-  headerTitle: { flex: 1, color: T.ink, fontSize: 18, fontWeight: "700", fontFamily: "System" },
-  editBtn: { width: 38, height: 38, borderRadius: 11, backgroundColor: T.blueLt, borderWidth: 1, borderColor: T.blueMd, justifyContent: "center", alignItems: "center" },
+  backBtn:         { width: 38, height: 38, borderRadius: 11, backgroundColor: T.pageBg, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center" },
+  headerTitle:     { flex: 1, color: T.ink, fontSize: 18, fontWeight: "700", fontFamily: "System" },
+  editBtn:         { width: 38, height: 38, borderRadius: 11, backgroundColor: T.blueLt, borderWidth: 1, borderColor: T.blueMd, justifyContent: "center", alignItems: "center" },
 
   scroll: { padding: 16 },
 
-  heroCard:        { backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 14, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
-  heroTopBar:      { height: 4 },
-  heroRow:         { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, paddingBottom: 12 },
-  heroAvatar:      { width: 50, height: 50, borderRadius: 14, justifyContent: "center", alignItems: "center" },
-  heroAvatarLetter:{ fontSize: 22, fontWeight: "800", color: T.blue },
-  heroName:        { fontSize: 17, fontWeight: "700", color: T.ink, marginBottom: 6 },
-  pillRow:         { flexDirection: "row", flexWrap: "wrap", gap: 6 },
-  codePill:        { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  codeTxt:         { fontSize: 10, fontWeight: "900", color: T.amber },
-  statusPill:      { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  statusDot:       { width: 5, height: 5, borderRadius: 99 },
-  statusTxt:       { fontSize: 9, fontWeight: "900" },
-  subPill:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
-  subTxt:          { fontSize: 10, fontWeight: "700" },
-  countersRow:     { flexDirection: "row", borderTopWidth: 1, borderTopColor: T.border },
-  counterBox:      { flex: 1, alignItems: "center", paddingVertical: 12 },
-  counterVal:      { fontSize: 22, fontWeight: "700" },
-  counterLbl:      { fontSize: 10, color: T.inkSub, fontWeight: "600", marginTop: 2 },
+  heroCard:         { backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 14, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
+  heroTopBar:       { height: 4 },
+  heroRow:          { flexDirection: "row", alignItems: "center", gap: 14, padding: 16, paddingBottom: 12 },
+  heroAvatar:       { width: 50, height: 50, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  heroAvatarLetter: { fontSize: 22, fontWeight: "800", color: T.blue },
+  heroName:         { fontSize: 17, fontWeight: "700", color: T.ink, marginBottom: 6 },
+  pillRow:          { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  codePill:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  codeTxt:          { fontSize: 10, fontWeight: "900", color: T.amber },
+  statusPill:       { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  statusDot:        { width: 5, height: 5, borderRadius: 99 },
+  statusTxt:        { fontSize: 9, fontWeight: "900" },
+  subPill:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  subTxt:           { fontSize: 10, fontWeight: "700" },
+  countersRow:      { flexDirection: "row", borderTopWidth: 1, borderTopColor: T.border },
+  counterBox:       { flex: 1, alignItems: "center", paddingVertical: 12 },
+  counterVal:       { fontSize: 22, fontWeight: "700" },
+  counterLbl:       { fontSize: 10, color: T.inkSub, fontWeight: "600", marginTop: 2 },
 
   card:      { backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
   addrBox:   { flexDirection: "row", gap: 12 },
   addrLine:  { fontSize: 14, fontWeight: "700", color: T.ink, marginBottom: 2 },
   actionsRow:{ flexDirection: "row", gap: 10 },
 
-  // ✅ v6.0 : Styles agences
-  addAgencyBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: T.tealLt, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: T.tealMd },
-  addAgencyTxt: { fontSize: 11, fontWeight: "800", color: T.teal },
-  emptyAgencies:{ alignItems: "center", paddingVertical: 20, gap: 8 },
+  // ✅ v6.1 : styles agences — lecture seule
+  // addAgencyBtn / addAgencyTxt / createAgencyBtn / createAgencyTxt supprimés
+  emptyAgencies:    { alignItems: "center", paddingVertical: 20, gap: 8 },
   emptyAgenciesTxt: { fontSize: 13, color: T.inkMuted, fontWeight: "600" },
-  createAgencyBtn:  { marginTop: 4 },
-  createAgencyTxt:  { fontSize: 12, color: T.teal, fontWeight: "700" },
 });

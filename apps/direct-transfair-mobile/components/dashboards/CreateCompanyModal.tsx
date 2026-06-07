@@ -1,14 +1,16 @@
 // apps/direct-transfair-mobile/components/dashboards/CreateCompanyModal.tsx
 // =========================================================
-// CREATE COMPANY MODAL v7.0 — Direct Transf'air
-// ✅ Code société ÉDITABLE manuellement + générateur
-// ✅ Mot de passe ÉDITABLE manuellement + générateur
-// ✅ Devise — liste déroulante (GNF, EUR, USD, GBP, XOF)
-// ✅ Secteur d'activité — liste complète intégrée
-// ✅ Pays — liste déroulante (countriesList)
-// ✅ Villes — liste déroulante selon pays (citiesByCountry)
-// ✅ Correction erreur TS: import api supprimé du login.tsx
-// ✅ Design premium refonte complète
+// CREATE COMPANY MODAL v7.1 — Direct Transf'air
+// ✅ v7.0 conservé intégralement
+// ✅ v7.1 — Suppression du champ "Complément" (section 04 ADRESSE)
+//   BUG : Le champ "Complément" utilisait `addrLabel` comme state,
+//         le même que "Libellé voie" — doublon exact du même champ.
+//         En plus, il n'apporte aucune valeur métier pour créer
+//         une société (pas de "Apt 3B" dans un siège social).
+//   FIX : Suppression du row2 "Code postal + Complément".
+//         "Code postal" devient un champ standalone.
+//         `addrLabel` n'est plus utilisé qu'une seule fois
+//         (section "Libellé voie").
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -40,58 +42,23 @@ const CURRENCIES = [
 
 // ─── Secteurs d'activité ──────────────────────────────────
 const ACTIVITY_SECTORS = [
-  // Finance & Transferts
-  "Transfert d'argent international",
-  "Transfert d'argent domestique",
-  "Services de paiement mobile",
-  "Change de devises",
-  "Microfinance & Épargne",
-  "Assurance vie & prévoyance",
-  "Courtage financier",
-  "Investissement & Bourse",
-  "Fintech & Paiements numériques",
-  "Banque & Services bancaires",
-  // Commerce & Distribution
-  "Commerce général",
-  "Import / Export",
-  "Grande distribution",
-  "Commerce de gros",
-  "Commerce de détail",
-  "Supermarchés & Épiceries",
-  "Électronique & High-Tech",
-  "Mode & Textile",
-  "Matériaux de construction",
-  "Automobiles & Pièces détachées",
-  "Pharmacie & Parapharmacie",
-  // Services
-  "Agence de voyage",
-  "Transport & Logistique",
-  "Hôtellerie & Restauration",
-  "Télécommunications",
-  "Éducation & Formation",
-  "Santé & Médical",
-  "Immobilier & Gestion locative",
-  "Conseil & Audit",
-  "Juridique & Notarial",
-  "Publicité & Communication",
-  "Informatique & Développement",
-  "Sécurité privée",
-  // Industrie & Production
-  "Agriculture & Agro-alimentaire",
-  "BTP & Génie civil",
-  "Industrie minière",
-  "Industrie pétrolière & gazière",
-  "Énergie & Électricité",
-  "Transformation alimentaire",
-  "Textile & Confection",
-  "Artisanat & Arts",
-  // ONG / Institutionnel
-  "ONG & Association humanitaire",
-  "Organisme gouvernemental",
-  "Coopérative",
-  "Fondation",
-  "Diaspora & Tontine",
-  "Autre",
+  "Transfert d'argent international", "Transfert d'argent domestique",
+  "Services de paiement mobile", "Change de devises", "Microfinance & Épargne",
+  "Assurance vie & prévoyance", "Courtage financier", "Investissement & Bourse",
+  "Fintech & Paiements numériques", "Banque & Services bancaires",
+  "Commerce général", "Import / Export", "Grande distribution",
+  "Commerce de gros", "Commerce de détail", "Supermarchés & Épiceries",
+  "Électronique & High-Tech", "Mode & Textile", "Matériaux de construction",
+  "Automobiles & Pièces détachées", "Pharmacie & Parapharmacie",
+  "Agence de voyage", "Transport & Logistique", "Hôtellerie & Restauration",
+  "Télécommunications", "Éducation & Formation", "Santé & Médical",
+  "Immobilier & Gestion locative", "Conseil & Audit", "Juridique & Notarial",
+  "Publicité & Communication", "Informatique & Développement", "Sécurité privée",
+  "Agriculture & Agro-alimentaire", "BTP & Génie civil", "Industrie minière",
+  "Industrie pétrolière & gazière", "Énergie & Électricité",
+  "Transformation alimentaire", "Textile & Confection", "Artisanat & Arts",
+  "ONG & Association humanitaire", "Organisme gouvernemental", "Coopérative",
+  "Fondation", "Diaspora & Tontine", "Autre",
 ];
 
 // ─── Design Tokens ─────────────────────────────────────────
@@ -128,7 +95,6 @@ const T = {
   },
 };
 
-// ─── Palette couleurs prédéfinies ─────────────────────────
 const COLOR_PALETTE = [
   "#1956F0","#059669","#7C3AED","#DC2626","#D97706",
   "#0F766E","#0284C7","#DB2777","#64748B","#B45309",
@@ -181,7 +147,6 @@ const shS = StyleSheet.create({
   badgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
 });
 
-// ─── Field standard ───────────────────────────────────────
 function Field({
   label, value, onChangeText, placeholder, keyboardType,
   autoCapitalize, secureTextEntry, multiline, editable = true,
@@ -239,16 +204,15 @@ function Field({
   );
 }
 const fS = StyleSheet.create({
-  wrap:     { marginBottom: 13 },
-  label:    { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" },
-  inputBox: { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderRadius: T.radius.md, overflow: "hidden" },
-  disabled: { backgroundColor: T.borderLt, opacity: 0.65 },
-  input:    { flex: 1, paddingHorizontal: 13, paddingVertical: 11, fontSize: 14, color: T.ink, fontWeight: "600" },
-  multiline:{ minHeight: 72, textAlignVertical: "top" },
-  eyeBtn:   { padding: 11 },
+  wrap:      { marginBottom: 13 },
+  label:     { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" },
+  inputBox:  { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderRadius: T.radius.md, overflow: "hidden" },
+  disabled:  { backgroundColor: T.borderLt, opacity: 0.65 },
+  input:     { flex: 1, paddingHorizontal: 13, paddingVertical: 11, fontSize: 14, color: T.ink, fontWeight: "600" },
+  multiline: { minHeight: 72, textAlignVertical: "top" },
+  eyeBtn:    { padding: 11 },
 });
 
-// ─── EditableCodeRow — code ou mdp éditable + bouton regen ─
 function EditableCodeRow({ label, value, onChange, onRegenerate, icon, accent = T.blue }: {
   label: string; value: string; onChange: (v: string) => void;
   onRegenerate: () => void; icon: string; accent?: string;
@@ -291,15 +255,10 @@ const ecS = StyleSheet.create({
   regenBtn: { width: 46, height: 46, borderRadius: T.radius.md, borderWidth: 1.5, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── SelectDropdown — liste déroulante inline ─────────────
 function SelectDropdown<T extends string>({ label, value, options, onChange, placeholder, accent = T.blue, required }: {
-  label: string;
-  value: T | "";
+  label: string; value: T | "";
   options: { value: T; label: string; sub?: string; left?: React.ReactNode }[];
-  onChange: (v: T) => void;
-  placeholder?: string;
-  accent?: string;
-  required?: boolean;
+  onChange: (v: T) => void; placeholder?: string; accent?: string; required?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -329,10 +288,7 @@ function SelectDropdown<T extends string>({ label, value, options, onChange, pla
             <Text style={[sdS.triggerSub, { fontFamily: T.font.sans }]}>{selected.sub}</Text>
           )}
         </View>
-        <Ionicons
-          name={open ? "chevron-up" : "chevron-down"}
-          size={16} color={open ? accent : T.inkMuted}
-        />
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color={open ? accent : T.inkMuted} />
       </TouchableOpacity>
 
       {open && (
@@ -397,23 +353,22 @@ function SelectDropdown<T extends string>({ label, value, options, onChange, pla
   );
 }
 const sdS = StyleSheet.create({
-  wrap:             { marginBottom: 13 },
-  label:            { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" },
-  trigger:          { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 13, paddingVertical: 11, gap: 8 },
-  leftSlot:         { marginRight: 4 },
-  triggerValue:     { fontSize: 14, color: T.ink, fontWeight: "600" },
+  wrap:              { marginBottom: 13 },
+  label:             { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" },
+  trigger:           { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 13, paddingVertical: 11, gap: 8 },
+  leftSlot:          { marginRight: 4 },
+  triggerValue:      { fontSize: 14, color: T.ink, fontWeight: "600" },
   triggerPlaceholder:{ fontSize: 14, color: T.inkMuted, fontWeight: "400" },
-  triggerSub:       { fontSize: 10, color: T.inkSub, marginTop: 1 },
-  dropdown:         { backgroundColor: T.surface, borderWidth: 1.5, borderRadius: T.radius.md, marginTop: 4, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
-  searchBox:        { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1 },
-  searchInput:      { flex: 1, fontSize: 13, color: T.ink, fontWeight: "600" },
-  option:           { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
-  optionTxt:        { fontSize: 13, color: T.ink, fontWeight: "600" },
-  optionSub:        { fontSize: 10, color: T.inkSub, marginTop: 1 },
-  empty:            { padding: 20, alignItems: "center" },
+  triggerSub:        { fontSize: 10, color: T.inkSub, marginTop: 1 },
+  dropdown:          { backgroundColor: T.surface, borderWidth: 1.5, borderRadius: T.radius.md, marginTop: 4, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6 },
+  searchBox:         { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 9, borderBottomWidth: 1 },
+  searchInput:       { flex: 1, fontSize: 13, color: T.ink, fontWeight: "600" },
+  option:            { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, gap: 8 },
+  optionTxt:         { fontSize: 13, color: T.ink, fontWeight: "600" },
+  optionSub:         { fontSize: 10, color: T.inkSub, marginTop: 1 },
+  empty:             { padding: 20, alignItems: "center" },
 });
 
-// ─── PillSelector ─────────────────────────────────────────
 function PillSelector({ label, options, value, onChange, accent = T.blue }: {
   label: string; options: { k: string; label: string }[];
   value: string; onChange: (v: string) => void; accent?: string;
@@ -451,7 +406,6 @@ const psS = StyleSheet.create({
   txt:   { fontSize: 13, fontWeight: "700", color: T.inkSub },
 });
 
-// ─── ColorPicker ──────────────────────────────────────────
 function ColorPicker({ label, value, onChange }: {
   label: string; value: string; onChange: (hex: string) => void;
 }) {
@@ -511,7 +465,6 @@ const cpS = StyleSheet.create({
   hexHint:     { paddingRight: 12, fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1 },
 });
 
-// ─── LogoPicker ───────────────────────────────────────────
 function LogoPicker({ value, onChange, disabled }: {
   value: string; onChange: (uri: string) => void; disabled?: boolean;
 }) {
@@ -600,13 +553,12 @@ const lpS = StyleSheet.create({
   urlInput:   { paddingHorizontal: 13, paddingVertical: 11, fontSize: 12, color: T.inkSub, fontWeight: "600" },
 });
 
-// ─── BrandingPreview ──────────────────────────────────────
 function BrandingPreview({ companyName, logoUrl, primaryColor, tagline, fontFamily: ff }: {
   companyName: string; logoUrl: string; primaryColor: string;
   tagline: string; fontFamily: string;
 }) {
-  const name      = companyName || "Nom de la société";
-  const hasImg    = logoUrl.startsWith("http") || logoUrl.startsWith("data:");
+  const name       = companyName || "Nom de la société";
+  const hasImg     = logoUrl.startsWith("http") || logoUrl.startsWith("data:");
   const safePrimary = /^#[0-9A-Fa-f]{6}$/.test(primaryColor) ? primaryColor : T.blue;
 
   return (
@@ -655,7 +607,6 @@ const bpS = StyleSheet.create({
   loginBtnTxt:  { color: T.white, fontSize: 9, fontWeight: "900" },
 });
 
-// ─── Séparateur de section ────────────────────────────────
 function Divider({ label }: { label?: string }) {
   if (!label) return <View style={{ height: 1, backgroundColor: T.borderLt, marginVertical: 14 }} />;
   return (
@@ -704,7 +655,7 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
 
   // ── Adresse ──
   const [addrNumber,     setAddrNumber]     = useState("");
-  const [addrLabel,      setAddrLabel]      = useState("");
+  const [addrLabel,      setAddrLabel]      = useState("");   // Libellé voie uniquement
   const [addrPostalCode, setAddrPostalCode] = useState("");
   const [addrCity,       setAddrCity]       = useState("");
   const [addrCountry,    setAddrCountry]    = useState("");
@@ -723,7 +674,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
 
   useEffect(() => { if (visible) resetForm(); }, [visible, resetForm]);
 
-  // Options pour listes
   const countryOptions = countriesList.map(c => ({
     value: c.name,
     label: c.name,
@@ -776,28 +726,28 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
       await api.createClient({
         name,
         code,
-        adminEmail:      email,
+        adminEmail:       email,
         adminPassword,
         subscriptionType: contractType,
-        activitySector:  activitySector.trim() || undefined,
-        defaultCurrency: defaultCurrency || undefined,
-        adminFirstName:  managerFirstName.trim(),
-        adminLastName:   managerLastName.trim(),
-        contactEmail:    email,
-        contactPhone:    managerPhone.trim() || undefined,
-        ownerFirstName:  managerFirstName.trim(),
-        ownerLastName:   managerLastName.trim(),
-        ownerBirthDate:  birthDate.trim()    || undefined,
-        ownerBirthPlace: birthCity.trim()    || undefined,
-        ownerCountry:    nationality.trim() || ownerCountry.trim() || undefined,
-        ownerAddress:    fullAddress         || undefined,
-        logoUrl:         logoUrl.trim()      || undefined,
-        primaryColor:    primaryColor        || undefined,
-        secondaryColor:  secondaryColor      || undefined,
-        tagline:         tagline.trim()      || undefined,
-        welcomeMessage:  welcomeMessage.trim()|| undefined,
-        splashBgColor:   splashBgColor       || undefined,
-        fontFamily:      fontFamily          || undefined,
+        activitySector:   activitySector.trim() || undefined,
+        defaultCurrency:  defaultCurrency || undefined,
+        adminFirstName:   managerFirstName.trim(),
+        adminLastName:    managerLastName.trim(),
+        contactEmail:     email,
+        contactPhone:     managerPhone.trim() || undefined,
+        ownerFirstName:   managerFirstName.trim(),
+        ownerLastName:    managerLastName.trim(),
+        ownerBirthDate:   birthDate.trim()     || undefined,
+        ownerBirthPlace:  birthCity.trim()     || undefined,
+        ownerCountry:     nationality.trim() || ownerCountry.trim() || undefined,
+        ownerAddress:     fullAddress          || undefined,
+        logoUrl:          logoUrl.trim()       || undefined,
+        primaryColor:     primaryColor         || undefined,
+        secondaryColor:   secondaryColor       || undefined,
+        tagline:          tagline.trim()       || undefined,
+        welcomeMessage:   welcomeMessage.trim()|| undefined,
+        splashBgColor:    splashBgColor        || undefined,
+        fontFamily:       fontFamily           || undefined,
       });
 
       showAlert(
@@ -833,63 +783,66 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
               <View style={s.headerIconBox}>
                 <Ionicons name="business" size={22} color={T.white} />
               </View>
-              <View style={{ flex: 1, paddingLeft: 12 }}>
-                <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Nouvelle Société</Text>
-                <Text style={[s.headerSub,   { fontFamily: T.font.sans   }]}>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={[s.headerTitle, { fontFamily: T.font.sans }]}>Nouvelle Société</Text>
+                <Text style={[s.headerSub, { fontFamily: T.font.sans }]}>
                   Code · MDP · Wallets créés automatiquement
                 </Text>
               </View>
-              <TouchableOpacity style={s.closeBtn} onPress={onClose} disabled={creating}>
-                <Ionicons name="close" size={17} color="rgba(255,255,255,0.85)" />
+              <TouchableOpacity style={s.closeBtn} onPress={onClose}>
+                <Ionicons name="close" size={17} color={T.white} />
               </TouchableOpacity>
             </LinearGradient>
 
             <ScrollView
-              showsVerticalScrollIndicator={false}
               contentContainerStyle={s.content}
+              showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-
               {/* ══ 1. SOCIÉTÉ ══ */}
               <View style={s.card}>
-                <SectionHeader icon="business-outline" title="Informations Société" color={T.blue} badge="01" />
+                <SectionHeader icon="business-outline" title="Identité & Accès Admin" color={T.blue} badge="01" />
 
                 <Field
-                  label="Nom de l'entreprise" value={companyName}
+                  label="Nom de l'entreprise"
+                  value={companyName}
                   onChangeText={setCompanyName}
-                  placeholder="Ex: Flash Transfert International"
-                  required editable={!creating} accent={T.blue}
+                  placeholder="Ex: Flash Transfer International"
+                  required
+                  editable={!creating}
+                  accent={T.blue}
                 />
 
                 <EditableCodeRow
-                  label="Code Société (auto · éditable)"
+                  label="CODE SOCIÉTÉ (7 car.)"
                   value={companyCode}
                   onChange={(v) => setCompanyCode(normalizeUpperAlnum(v).slice(0, 7))}
-                  onRegenerate={() => !creating && setCompanyCode(generateTenantCode7())}
+                  onRegenerate={() => setCompanyCode(generateTenantCode7())}
                   icon="refresh"
                   accent={T.blue}
                 />
 
                 <Field
-                  label="Email Administrateur" value={adminEmail}
+                  label="Email administrateur"
+                  value={adminEmail}
                   onChangeText={setAdminEmail}
                   placeholder="admin@societe.com"
-                  keyboardType="email-address" autoCapitalize="none"
-                  required editable={!creating} accent={T.blue}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  required
+                  editable={!creating}
+                  accent={T.blue}
                 />
 
                 <EditableCodeRow
-                  label="Mot de passe provisoire (éditable)"
+                  label="MOT DE PASSE TEMPORAIRE"
                   value={adminPassword}
                   onChange={setAdminPassword}
-                  onRegenerate={() => !creating && setAdminPassword(generateTempPassword6())}
-                  icon="key"
-                  accent={T.teal}
+                  onRegenerate={() => setAdminPassword(generateTempPassword6())}
+                  icon="key-outline"
+                  accent={T.purple}
                 />
 
-                <Divider label="PARAMÈTRES" />
-
-                {/* Secteur d'activité — liste déroulante */}
                 <SelectDropdown
                   label="Secteur d'activité"
                   value={activitySector as any}
@@ -899,7 +852,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                   accent={T.blue}
                 />
 
-                {/* Devise par défaut */}
                 <SelectDropdown
                   label="Devise par défaut"
                   value={defaultCurrency as any}
@@ -909,7 +861,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                   accent={T.amber}
                 />
 
-                {/* Pays — liste déroulante */}
                 <SelectDropdown
                   label="Pays (siège social)"
                   value={ownerCountry as any}
@@ -945,7 +896,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                 <ColorPicker label="Couleur Primaire (thème principal)" value={primaryColor} onChange={setPrimaryColor} />
                 <ColorPicker label="Couleur Fond Login (splash)" value={splashBgColor} onChange={setSplashBgColor} />
 
-                {/* Police */}
                 <View style={{ marginBottom: 13 }}>
                   <Text style={[{ fontSize: 10, fontWeight: "900" as const, color: T.inkMuted, letterSpacing: 1, marginBottom: 7, textTransform: "uppercase" as const }, { fontFamily: T.font.sans }]}>
                     POLICE D'ÉCRITURE
@@ -999,7 +949,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                 <PillSelector label="Genre" value={gender} onChange={(v) => setGender(v as "M" | "F")}
                   options={[{ k: "M", label: "Homme" }, { k: "F", label: "Femme" }]} accent={T.amber} />
 
-                {/* Nationalité — liste pays */}
                 <SelectDropdown
                   label="Nationalité"
                   value={nationality as any}
@@ -1020,7 +969,6 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                   </View>
                 </View>
 
-                {/* Pays de naissance — liste */}
                 <SelectDropdown
                   label="Pays de naissance"
                   value={birthCountry as any}
@@ -1035,6 +983,7 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
               <View style={s.card}>
                 <SectionHeader icon="location-outline" title="Adresse Société" color={T.green} badge="04" />
 
+                {/* N° + Libellé voie */}
                 <View style={s.row2}>
                   <View style={{ flex: 0.4 }}>
                     <Field label="N°" value={addrNumber} onChangeText={setAddrNumber}
@@ -1076,19 +1025,15 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                     placeholder="Ex: Paris" editable={!creating} accent={T.green} />
                 )}
 
-                <View style={s.row2}>
-                  <View style={{ flex: 0.45 }}>
-                    <Field label="Code postal" value={addrPostalCode}
-                      onChangeText={(v) => setAddrPostalCode(v.trim())}
-                      placeholder="75001" editable={!creating} accent={T.green} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    {/* Champ ville libre si aucune liste */}
-                    <Field label="Complément" value={addrLabel}
-                      onChangeText={setAddrLabel}
-                      placeholder="Apt, étage…" editable={!creating} accent={T.green} />
-                  </View>
-                </View>
+                {/* ✅ v7.1 : Code postal en champ standalone — "Complément" supprimé */}
+                <Field
+                  label="Code postal"
+                  value={addrPostalCode}
+                  onChangeText={(v) => setAddrPostalCode(v.trim())}
+                  placeholder="75001"
+                  editable={!creating}
+                  accent={T.green}
+                />
               </View>
 
               {/* ══ CTA ══ */}
@@ -1132,17 +1077,16 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
 }
 
 const s = StyleSheet.create({
-  overlay:  { flex: 1, backgroundColor: "rgba(9,18,48,0.55)", justifyContent: "flex-end" },
-  sheet:    {
+  overlay: { flex: 1, backgroundColor: "rgba(9,18,48,0.55)", justifyContent: "flex-end" },
+  sheet: {
     backgroundColor: T.pageBg,
     borderTopLeftRadius: T.radius.xxl, borderTopRightRadius: T.radius.xxl,
     maxHeight: "94%", overflow: "hidden",
     shadowColor: "#000", shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.15, shadowRadius: 24, elevation: 20,
   },
-  handle:   { width: 40, height: 4, borderRadius: 99, backgroundColor: T.borderMd, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+  handle: { width: 40, height: 4, borderRadius: 99, backgroundColor: T.borderMd, alignSelf: "center", marginTop: 12, marginBottom: 4 },
 
-  // Header gradient
   header:       { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: 14, paddingBottom: 16, overflow: "hidden" },
   headerDeco:   { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.06)", top: -80, right: -40 },
   headerIconBox:{ width: 44, height: 44, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", justifyContent: "center", alignItems: "center" },
@@ -1150,15 +1094,15 @@ const s = StyleSheet.create({
   headerSub:    { color: "rgba(255,255,255,0.7)", fontSize: 10, fontWeight: "600", marginTop: 2 },
   closeBtn:     { width: 32, height: 32, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
 
-  content:  { padding: 16 },
-  card:     {
+  content: { padding: 16 },
+  card: {
     backgroundColor: T.surface, borderRadius: T.radius.lg,
     padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: T.border,
     shadowColor: "#1240D6", shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 10, elevation: 3,
   },
-  row2:     { flexDirection: "row", gap: 12 },
+  row2: { flexDirection: "row", gap: 12 },
 
   primaryBtn:     { borderRadius: T.radius.lg, overflow: "hidden", marginTop: 8 },
   primaryGrad:    { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 12 },
