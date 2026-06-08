@@ -1,29 +1,25 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.12
-// ✅ v4.11 conservé intégralement
-// ✅ v4.12 — FIX declareBankTransfer :
+// TRANSACTIONS SERVICE v4.14 — Direct Transf'air
+// =========================================================
+// FUSION complète v4.13-advisory + v4.13-notifications
 //
-//   BUG : ForbiddenException lancée DANS $transaction
-//   → Prisma l'attrape pour rollback puis la relance
-//   → en passant par les internals Prisma, elle perd son
-//     statut HttpException → NestJS retourne 500 au lieu de 403
-//   → Miroir Transfer (wallet company à 0) voyait toujours 500
-//     alors que Flash Transfer (wallet company alimenté) passait
+// ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
+//   Vérification solde AVANT $transaction
 //
-//   FIX 1 : Vérification du solde AVANT d'entrer dans $transaction
-//   → erreur 403 propre si solde insuffisant
-//   → $transaction ne contient plus que des opérations DB pures
+// ✅ v4.13-A : FIX acquireAdvisoryLock — int32 SIGNÉ
+//   | 0 → conversion JavaScript en int32 signé
+//   Corrige les 500 pour ~50% des wallets (Flash Transfer)
 //
-//   FIX 2 : Advisory lock via $executeRawUnsafe avec deux int32
-//   → évite les problèmes de sérialisation BigInt
-//     (Prisma ne garantit pas la sérialisation JSON de BigInt
-//      dans tous les contextes, notamment Railway/Node 18+)
-//   → pg_advisory_xact_lock(int4, int4) = même comportement
+// ✅ v4.13-B : FIX P2002 dans catch
+//   Référence bancaire en doublon → 409 lisible (pas 500)
 //
-//   FIX 3 : Erreurs génériques (Error) à l'intérieur de $transaction
-//   → catchées et converties en HttpException APRÈS $transaction
-//   → NestJS les reconnaît correctement
+// ✅ v4.13-C : Notifications in-app + emails sur tous les flux
+//   WalletNotifier, AgentNotifier, CompanyNotifier, AdminNotifier
+//   Emails pour: transfert, dépôt, recharge agence, B2B (rejet)
+//   Tous non-bloquants (.catch) → aucun impact sur les temps de réponse
+//
+// v4.14 : FUSION — tout en un seul fichier, rien cassé
 // =========================================================
 
 import {
@@ -46,8 +42,8 @@ import {
   TransactionType,
 } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
-import { RatesService } from '../rates/rates.service';
+import { PrismaService }  from '../prisma/prisma.service';
+import { RatesService }   from '../rates/rates.service';
 import { WalletsService } from '../wallets/wallets.service';
 import {
   CreateTransactionDto,
@@ -56,12 +52,22 @@ import {
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 
-import { WalletMailService } from '../mail/channels/wallet-mail.service';
-import { AgentMailService } from '../mail/channels/agent-mail.service';
+// ── Mail channels ─────────────────────────────────────────
+import { WalletMailService }  from '../mail/channels/wallet-mail.service';
+import { AgentMailService }   from '../mail/channels/agent-mail.service';
 import { CompanyMailService } from '../mail/channels/company-mail.service';
-import { AdminMailService } from '../mail/channels/admin-mail.service';
-import { PushService } from '../push/push.service';
-import { SmsService } from '../sms/sms.service';
+import { AdminMailService }   from '../mail/channels/admin-mail.service';
+import { PushService }        from '../push/push.service';
+import { SmsService }         from '../sms/sms.service';
+
+// ── Notifiers in-app ──────────────────────────────────────
+import { NotificationsService }   from '../notifications/notifications.service';
+import { WalletNotifierService }  from '../notifications/channels/wallet-notifier.service';
+import { AgentNotifierService }   from '../notifications/channels/agent-notifier.service';
+import { CompanyNotifierService } from '../notifications/channels/company-notifier.service';
+import { AdminNotifierService }   from '../notifications/channels/admin-notifier.service';
+
+// ── Constantes ────────────────────────────────────────────
 
 const TERMINAL_TX: TransactionStatus[] = [
   TransactionStatus.PAID,
@@ -108,29 +114,40 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   }
 }
 
-// ✅ FIX v4.12 : codes d'erreur pour les cas lancés DANS $transaction
-// → on ne lance plus de HttpException dans $transaction
-// → on utilise des codes string, on catch après et on convertit
+// Codes d'erreur pour les exceptions lancées DANS $transaction
+// → jamais de HttpException à l'intérieur, toujours des Error simples
+// → converties en HttpException dans le catch APRÈS $transaction
 const TX_ERROR = {
   WALLET_NOT_FOUND:            'TX_ERR_WALLET_NOT_FOUND',
   INSUFFICIENT_BALANCE_PREFIX: 'TX_ERR_INSUFFICIENT_BALANCE:',
 } as const;
+
+// ── Service ───────────────────────────────────────────────
 
 @Injectable()
 export class TransactionsService {
   private readonly logger = new Logger(TransactionsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly ratesService: RatesService,
-    private readonly walletsService: WalletsService,
-    private readonly push: PushService,
-    private readonly sms: SmsService,
-    private readonly walletMail: WalletMailService,
-    private readonly agentMail: AgentMailService,
-    private readonly companyMail: CompanyMailService,
-    private readonly adminMail: AdminMailService,
+    private readonly prisma:               PrismaService,
+    private readonly ratesService:         RatesService,
+    private readonly walletsService:       WalletsService,
+    private readonly push:                 PushService,
+    private readonly sms:                  SmsService,
+    // Mail channels
+    private readonly walletMail:           WalletMailService,
+    private readonly agentMail:            AgentMailService,
+    private readonly companyMail:          CompanyMailService,
+    private readonly adminMail:            AdminMailService,
+    // Notifiers in-app (v4.13-C)
+    private readonly notificationsService: NotificationsService,
+    private readonly walletNotifier:       WalletNotifierService,
+    private readonly agentNotifier:        AgentNotifierService,
+    private readonly companyNotifier:      CompanyNotifierService,
+    private readonly adminNotifier:        AdminNotifierService,
   ) {}
+
+  // ── Utilitaire enrichissement ──────────────────────────
 
   private enrichTransaction(tx: any): any {
     if (!tx) return tx;
@@ -152,7 +169,8 @@ export class TransactionsService {
     return cloned;
   }
 
-  // ── Advisory lock key ────────────────────────────────────
+  // ── Advisory lock key ─────────────────────────────────
+
   private walletLockKey(id: string): bigint {
     let hash = 0n;
     for (let i = 0; i < id.length; i++) {
@@ -161,18 +179,28 @@ export class TransactionsService {
     return hash;
   }
 
-  // ✅ FIX v4.12 : advisory lock avec deux int32 au lieu d'un bigint
-  // Raison : Prisma ne garantit pas la sérialisation correcte des valeurs
-  // BigInt dans $executeRaw dans tous les environnements (Railway, Node 18+).
-  // pg_advisory_xact_lock(int4, int4) est équivalent à pg_advisory_xact_lock(int8)
-  // et évite tout problème de sérialisation JSON BigInt.
+  // ── Advisory lock ─────────────────────────────────────
+  //
+  // ✅ FIX v4.13-A : | 0 → conversion en int32 SIGNÉ obligatoire
+  //
+  // pg_advisory_xact_lock(int4, int4) attend des entiers 32 bits signés.
+  // Plage int4 PostgreSQL : [-2 147 483 648 ; 2 147 483 647]
+  //
+  // SANS | 0 : Number(x & 0xFFFFFFFFn) → [0, 4 294 967 295]
+  //   Si lockLow > 2^31−1, PostgreSQL lève "integer out of range" → 500
+  //   C'était le cas pour Flash Transfer après déploiement v4.12.
+  //
+  // AVEC | 0 : forçage int32 signé en JavaScript
+  //   Valeurs > 2^31−1 deviennent négatives (bit pattern identique,
+  //   PostgreSQL les interprète correctement en int4 signé) → aucune erreur.
   private async acquireAdvisoryLock(
     prismaTx: Prisma.TransactionClient,
     walletId: string,
   ): Promise<void> {
-    const lockKey = this.walletLockKey(walletId);
-    const lockHigh = Number(lockKey >> 32n) & 0x7FFFFFFF;
-    const lockLow  = Number(lockKey & 0xFFFFFFFFn);
+    const lockKey  = this.walletLockKey(walletId);
+    // ✅ FIX v4.13-A : | 0 force int32 signé — OBLIGATOIRE
+    const lockHigh = (Number((lockKey >> 32n) & 0xFFFFFFFFn)) | 0;
+    const lockLow  = (Number(lockKey & 0xFFFFFFFFn)) | 0;
     await prismaTx.$executeRawUnsafe(
       'SELECT pg_advisory_xact_lock($1, $2)',
       lockHigh,
@@ -180,29 +208,10 @@ export class TransactionsService {
     );
   }
 
-  // ── B2B ──────────────────────────────────────────────────
+  // ========================================================
+  // B2B — Déclaration virement société → SuperAdmin
+  // ========================================================
 
-  /**
-   * ✅ FIX v4.12 — Correction de la 500 "Internal server error" sur sociétés neuves
-   *
-   * CAUSE :
-   *   La vérification du solde (available < amount) était DANS le callback
-   *   $transaction. Si insuffisant, une ForbiddenException était lancée à
-   *   l'intérieur de $transaction. Prisma catchait cette exception pour rollback
-   *   puis la relançait, mais elle perdait son statut HttpException au passage.
-   *   NestJS ne la reconnaissait plus comme 403 et retournait 500.
-   *
-   *   Concrètement : Miroir Transfer (wallet company = 0, car fundAdminWallet
-   *   crédite le wallet personnel userId, pas le wallet company clientId) →
-   *   available=0 < 125000 → ForbiddenException dans $transaction → 500.
-   *   Flash Transfer (wallet company alimenté via B2B antérieurs) → available>0
-   *   → aucune exception → pas de 500.
-   *
-   * FIX :
-   *   1. Vérification du solde AVANT $transaction → 403 propre si insuffisant
-   *   2. Errors génériques dans $transaction, catchées et converties après
-   *   3. Advisory lock via deux int32 (évite problème sérialisation BigInt)
-   */
   async declareBankTransfer(
     adminId: string,
     amount: number,
@@ -219,16 +228,13 @@ export class TransactionsService {
       currency: currencyCode,
     });
 
-    // ✅ FIX v4.12 — Étape 1 : vérification du solde AVANT $transaction
-    // → si solde insuffisant, on lance ForbiddenException ici (hors $transaction)
-    // → NestJS la reconnaît correctement comme 403 (pas de 500)
+    // ✅ FIX v4.12 — Vérification solde AVANT $transaction
+    // → ForbiddenException hors $transaction = 403 propre (pas 500)
     const preCheckWallet = await this.prisma.wallet.findUnique({
       where: { id: walletRef.id },
     });
 
-    if (!preCheckWallet) {
-      throw new NotFoundException('Wallet société introuvable');
-    }
+    if (!preCheckWallet) throw new NotFoundException('Wallet société introuvable');
 
     const preAvailable =
       Number(preCheckWallet.balance) - Number(preCheckWallet.reservedBalance ?? 0);
@@ -241,14 +247,11 @@ export class TransactionsService {
       );
     }
 
-    // ✅ FIX v4.12 — Étape 2 : section atomique — UNIQUEMENT des opérations DB
-    // Aucune HttpException ne doit être lancée à l'intérieur du callback.
-    // On utilise des Error génériques avec codes prefixés, catchées après.
+    // Section atomique — aucune HttpException à l'intérieur
     let newTx: Transaction;
     try {
       newTx = await this.prisma.$transaction(async (prismaTx) => {
-
-        // ✅ FIX v4.12 : advisory lock avec deux int32 (pas BigInt)
+        // Advisory lock avec int32 signé (v4.13-A)
         await this.acquireAdvisoryLock(prismaTx, walletRef.id);
 
         const wallet = await prismaTx.wallet.findUnique({ where: { id: walletRef.id } });
@@ -258,7 +261,7 @@ export class TransactionsService {
           Number(wallet.balance) - Number(wallet.reservedBalance ?? 0);
 
         if (available < amount) {
-          // Concurrence entre le pre-check et le lock → cas rare mais possible
+          // Cas de concurrence rare entre le pre-check et le lock
           throw new Error(
             `${TX_ERROR.INSUFFICIENT_BALANCE_PREFIX}${available}:${currencyCode}`,
           );
@@ -304,9 +307,6 @@ export class TransactionsService {
       });
 
     } catch (e: any) {
-      // ✅ FIX v4.12 : conversion des Error codes en HttpExceptions propres
-      // → ces erreurs sont lancées DANS $transaction mais catchées ICI (hors $transaction)
-      // → NestJS les reconnaît correctement
       const msg: string = e?.message ?? '';
 
       if (msg === TX_ERROR.WALLET_NOT_FOUND) {
@@ -323,11 +323,22 @@ export class TransactionsService {
         );
       }
 
-      // Toute autre erreur Prisma ou système → relancer tel quel
+      // ✅ FIX v4.13-B : P2002 → référence bancaire déjà utilisée
+      // Avant : Prisma P2002 → throw e → NestJS → 500 silencieux
+      // Maintenant : ConflictException → 409 avec message lisible
+      if (e?.code === 'P2002' || msg.toLowerCase().includes('unique constraint')) {
+        throw new ConflictException(
+          `La référence "${proofReference}" est déjà utilisée. ` +
+          `Veuillez saisir une référence bancaire différente.`,
+        );
+      }
+
       throw e;
     }
 
-    // ✅ Non-bloquant — cohérent avec v4.9
+    // ── Notifications + emails (non-bloquants) ────────────
+
+    // Email COMPANY_ADMIN
     if (admin.email) {
       this.companyMail.sendB2BRequestSent({
         email:       admin.email,
@@ -340,12 +351,35 @@ export class TransactionsService {
       });
     }
 
+    // ✅ v4.13-C : Notification in-app COMPANY_ADMIN
+    this.companyNotifier.notifyB2BTransferSent(
+      adminId,
+      `${amount.toLocaleString('fr-FR')} ${currencyCode}`,
+    ).catch(() => {});
+
+    // ✅ v4.13-C : Notification in-app SUPER_ADMIN (nouveau virement à valider)
+    this.prisma.user.findFirst({
+      where:  { role: 'SUPER_ADMIN' },
+      select: { id: true },
+    }).then((superAdmin) => {
+      if (superAdmin) {
+        this.adminNotifier.notifyNewB2BRequest(
+          superAdmin.id,
+          `${admin.firstName ?? ''} ${admin.lastName ?? ''}`.trim(),
+          `${amount.toLocaleString('fr-FR')} ${currencyCode}`,
+          newTx.id,
+        ).catch(() => {});
+      }
+    }).catch(() => {});
+
     return newTx;
   }
 
-  /**
-   * ✅ v4.10 conservé — email + push non-bloquants (.catch)
-   */
+  // ========================================================
+  // B2B — Validation par Super Admin
+  // Crédit du wallet SuperAdmin après virement reçu
+  // ========================================================
+
   async validateBankTransfer(superAdminId: string, transactionId: string) {
     const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Seul le Super Admin peut valider.');
@@ -354,7 +388,7 @@ export class TransactionsService {
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT) throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING) throw new ConflictException('Transaction déjà traitée');
 
-    // Crédit wallet plateforme (synchrone — critique)
+    // Crédit wallet SuperAdmin (synchrone — critique)
     const walletRef = await this.walletsService.getOrCreateWallet({
       clientId: superAdmin.clientId!,
       currency: tx.currency,
@@ -375,7 +409,9 @@ export class TransactionsService {
       },
     });
 
-    // Non-bloquant — email société
+    // ── Notifications + emails (non-bloquants) ────────────
+
+    // Email COMPANY_ADMIN
     this.prisma.user.findUnique({ where: { id: tx.senderId } })
       .then((sender) => {
         if (sender?.email) {
@@ -390,9 +426,9 @@ export class TransactionsService {
           });
         }
       })
-      .catch(() => { /* noop */ });
+      .catch(() => {});
 
-    // Non-bloquant — push
+    // Push
     this.push.notifyTransferReceived(
       tx.senderId,
       'Plateforme',
@@ -402,12 +438,19 @@ export class TransactionsService {
       this.logger.warn(`Push B2B validé non envoyé : ${err?.message}`);
     });
 
+    // ✅ v4.13-C : Notification in-app COMPANY_ADMIN
+    this.companyNotifier.notifyB2BTransferValidated(
+      tx.senderId,
+      `${Number(tx.amount).toLocaleString('fr-FR')} ${tx.currency}`,
+    ).catch(() => {});
+
     return result;
   }
 
-  /**
-   * ✅ v4.10 conservé — push non-bloquant (.catch)
-   */
+  // ========================================================
+  // B2B — Rejet par Super Admin
+  // ========================================================
+
   async rejectBankTransfer(superAdminId: string, transactionId: string) {
     const superAdmin = await this.prisma.user.findUnique({ where: { id: superAdminId } });
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Accès refusé');
@@ -415,7 +458,7 @@ export class TransactionsService {
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
     if (!tx || tx.status !== TransactionStatus.PENDING) throw new ConflictException('Impossible à rejeter');
 
-    // Remboursement synchrone — critique
+    // Remboursement wallet société (synchrone — critique)
     const walletRef = await this.walletsService.getOrCreateWallet({
       userId:   tx.senderId,
       currency: tx.currency,
@@ -436,6 +479,9 @@ export class TransactionsService {
       },
     });
 
+    // ── Notifications + emails (non-bloquants) ────────────
+
+    // Push
     this.push.notifyTransferReceived(
       tx.senderId,
       'Plateforme',
@@ -445,10 +491,36 @@ export class TransactionsService {
       this.logger.warn(`Push B2B rejeté non envoyé : ${err?.message}`);
     });
 
+    // ✅ v4.13-C : Notification in-app COMPANY_ADMIN
+    this.companyNotifier.notifyB2BRejected(
+      tx.senderId,
+      `${Number(tx.amount).toLocaleString('fr-FR')} ${tx.currency}`,
+    ).catch(() => {});
+
+    // ✅ v4.13-C : Email de rejet (manquait dans les versions précédentes)
+    this.prisma.user.findUnique({ where: { id: tx.senderId } })
+      .then((sender) => {
+        if (sender?.email) {
+          this.companyMail.sendB2BRejected({
+            email:       sender.email,
+            companyName: `${sender.firstName ?? ''} ${sender.lastName ?? ''}`.trim(),
+            amount:      Number(tx.amount),
+            currency:    tx.currency,
+            ref:         tx.providerRef ?? transactionId,
+            userId:      sender.id,
+          }).catch((err) => {
+            this.logger.warn(`Email B2B rejeté non envoyé : ${err?.message}`);
+          });
+        }
+      })
+      .catch(() => {});
+
     return result;
   }
 
-  // ── Annulation ───────────────────────────────────────────
+  // ========================================================
+  // Annulation client
+  // ========================================================
 
   async cancel(userId: string, transactionId: string): Promise<Transaction> {
     const tx = await this.prisma.transaction.findUnique({
@@ -476,7 +548,9 @@ export class TransactionsService {
     });
   }
 
-  // ── Création ─────────────────────────────────────────────
+  // ========================================================
+  // Création transfert (client → bénéficiaire)
+  // ========================================================
 
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
     const user = await this.prisma.user.findUnique({
@@ -494,7 +568,7 @@ export class TransactionsService {
 
     if (dto.beneficiaryId && !beneficiary) throw new NotFoundException('Beneficiary not found');
 
-    const currency = dto.currency.toUpperCase() as CurrencyCode;
+    const currency   = dto.currency.toUpperCase() as CurrencyCode;
     const userWallet = user.wallets.find((w) => w.currency === currency);
     if (!userWallet) {
       throw new ForbiddenException(`Vous n'avez pas de wallet ${currency}. Créez-en un d'abord.`);
@@ -544,10 +618,11 @@ export class TransactionsService {
       }
     }
 
+    // Débit synchrone — critique
     await this.walletsService.debit(userWallet.id, Number(total), `Envoi ${transactionRef}`);
 
     if (recipientUser) {
-      // ✅ v4.11 — getOrCreate garantit le crédit même si wallet targetCurrency absent
+      // v4.11 : getOrCreate garantit le crédit même si wallet absent
       const recipientWalletRef = await this.walletsService.getOrCreateWallet({
         userId:   recipientUser.id,
         currency: targetCurrency,
@@ -579,8 +654,8 @@ export class TransactionsService {
       },
     });
 
+    // ── Push (existant) ───────────────────────────────────
     await this.push.notifyTransferSent(senderId, beneficiary?.fullName ?? 'Bénéficiaire', `${amount}`, currency);
-
     if (recipientUser?.id) {
       await this.push.notifyTransferReceived(
         recipientUser.id,
@@ -590,10 +665,64 @@ export class TransactionsService {
       );
     }
 
+    // ✅ v4.13-C : Notifications in-app expéditeur + destinataire
+    const recipientDisplayName = beneficiary?.fullName ??
+      (recipientUser ? `${recipientUser.firstName ?? ''} ${recipientUser.lastName ?? ''}`.trim() : 'Bénéficiaire');
+
+    this.walletNotifier.notifyTransferSent(
+      senderId,
+      recipientDisplayName,
+      `${Number(amount).toLocaleString('fr-FR')} ${currency}`,
+    ).catch(() => {});
+
+    if (recipientUser?.id) {
+      this.walletNotifier.notifyTransferReceived(
+        recipientUser.id,
+        `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+        `${Number(receivedAmount).toLocaleString('fr-FR')} ${targetCurrency}`,
+      ).catch(() => {});
+    }
+
+    // ✅ v4.13-C : Email expéditeur
+    if (user.email) {
+      this.walletMail.sendTransferConfirmation({
+        email:           user.email,
+        senderFirstName: user.firstName ?? '',
+        recipientName:   recipientDisplayName,
+        amount:          Number(amount),
+        currency,
+        fees:            Number(fees),
+        txRef:           transactionRef,
+        pickupCode:      recipientUser ? undefined : transactionRef,
+        userId:          senderId,
+        transactionId:   transaction.id,
+      }).catch((err) => {
+        this.logger.warn(`Email transfert non envoyé : ${err?.message}`);
+      });
+    }
+
+    // ✅ v4.13-C : Email destinataire (uniquement transfert wallet direct)
+    if (recipientUser?.email) {
+      this.walletMail.sendMoneyReceived({
+        email:              recipientUser.email,
+        recipientFirstName: recipientUser.firstName ?? '',
+        senderName:         `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(),
+        amount:             Number(receivedAmount),
+        currency:           targetCurrency,
+        txRef:              transactionRef,
+        userId:             recipientUser.id,
+        transactionId:      transaction.id,
+      }).catch((err) => {
+        this.logger.warn(`Email réception non envoyé : ${err?.message}`);
+      });
+    }
+
     return transaction;
   }
 
-  // ── Dépôt Agent ──────────────────────────────────────────
+  // ========================================================
+  // Dépôt agent → client
+  // ========================================================
 
   async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
     const agent = await this.prisma.user.findUnique({
@@ -621,9 +750,10 @@ export class TransactionsService {
     });
     if (!clientUser) throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
 
-    const currency = agencyWallet.currency as CurrencyCode;
+    const currency        = agencyWallet.currency as CurrencyCode;
     const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
 
+    // Mouvements wallet synchrones — critiques
     await this.walletsService.debit(agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`);
     await this.walletsService.credit(clientWalletRef.id, Number(amountDec), `Dépôt agent`);
 
@@ -646,17 +776,65 @@ export class TransactionsService {
       },
     });
 
+    // ── Push (existant) ───────────────────────────────────
     await this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency);
 
     const updatedAgencyWallet = await this.prisma.wallet.findUnique({ where: { id: agencyWallet.id } });
     if (updatedAgencyWallet && Number(updatedAgencyWallet.balance) < 50000) {
       await this.push.notifyLowBalance(agentId, currency, `${updatedAgencyWallet.balance}`);
+      // ✅ v4.13-C : Notification in-app solde bas
+      this.agentNotifier.notifyLowBalance(agentId, Number(updatedAgencyWallet.balance)).catch(() => {});
+    }
+
+    // ✅ v4.13-C : Notifications in-app client + agent
+    this.walletNotifier.notifyDepositReceived(
+      clientUser.id,
+      `${Number(dto.amount).toLocaleString('fr-FR')} ${currency}`,
+    ).catch(() => {});
+
+    this.agentNotifier.notifyDepositProcessed(
+      agentId,
+      `${Number(dto.amount).toLocaleString('fr-FR')} ${currency}`,
+      `${clientUser.firstName ?? ''} ${clientUser.lastName ?? ''}`.trim(),
+    ).catch(() => {});
+
+    // ✅ v4.13-C : Email client (réception du dépôt)
+    if (clientUser.email) {
+      this.walletMail.sendMoneyReceived({
+        email:              clientUser.email,
+        recipientFirstName: clientUser.firstName ?? '',
+        senderName:         'Agence',
+        amount:             Number(dto.amount),
+        currency,
+        txRef:              result.reference,
+        userId:             clientUser.id,
+        transactionId:      result.id,
+      }).catch((err) => {
+        this.logger.warn(`Email dépôt client non envoyé : ${err?.message}`);
+      });
+    }
+
+    // ✅ v4.13-C : Email agent (résumé dépôt traité)
+    if (agent.email) {
+      this.agentMail.sendDepositSummary({
+        email:       agent.email,
+        agentName:   `${agent.firstName ?? ''} ${agent.lastName ?? ''}`.trim(),
+        clientName:  `${clientUser.firstName ?? ''} ${clientUser.lastName ?? ''}`.trim(),
+        amount:      Number(dto.amount),
+        currency,
+        newBalance:  Number(updatedAgencyWallet?.balance ?? agencyWallet.balance),
+        userId:      agentId,
+      }).catch((err) => {
+        this.logger.warn(`Email dépôt agent non envoyé : ${err?.message}`);
+      });
     }
 
     return result;
   }
 
-  // ── Trésorerie Admin ─────────────────────────────────────
+  // ========================================================
+  // Trésorerie Admin
+  // ========================================================
 
   async adminFundSelf(user: AuthUserPayload, amount: number | string) {
     if (!user?.id) throw new BadRequestException('Utilisateur invalide');
@@ -667,17 +845,19 @@ export class TransactionsService {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) throw new BadRequestException('Montant invalide');
     const currencyCode = currency.toUpperCase() as CurrencyCode;
-    const walletRef = await this.walletsService.getOrCreateWallet({ userId: adminId, currency: currencyCode });
+    const walletRef    = await this.walletsService.getOrCreateWallet({ userId: adminId, currency: currencyCode });
     return this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
   }
 
-  // ── Recharge Agence ──────────────────────────────────────
+  // ========================================================
+  // Recharge agence
+  // ========================================================
 
   async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF') {
     this.logger.debug(`refillAgency START | adminId=${adminId} agencyId=${agencyId} amount=${amount} currency=${currency}`);
 
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-    if (!admin) throw new NotFoundException('Admin introuvable');
+    if (!admin)          throw new NotFoundException('Admin introuvable');
     if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
@@ -714,6 +894,7 @@ export class TransactionsService {
 
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency: currencyCode });
 
+    // Mouvements wallet synchrones — critiques
     await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name} (${agencyId})`);
     await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge admin → ${agency.name}`);
 
@@ -738,7 +919,7 @@ export class TransactionsService {
       },
     });
 
-    return {
+    const successResult = {
       status:         'SUCCESS',
       sent:           amount,
       currency:       currencyCode,
@@ -746,9 +927,46 @@ export class TransactionsService {
       txRef,
       agencyWalletId: agencyWalletRef.id,
     };
+
+    // ✅ v4.13-C : Notifications + emails aux agents (non-bloquant)
+    this.prisma.user.findMany({
+      where:  { agencyId, role: 'AGENT' },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    }).then(async (agents) => {
+      const agencyWalletUpdated = await this.prisma.wallet.findUnique({
+        where: { id: agencyWalletRef.id },
+      }).catch(() => null);
+
+      for (const agent of agents) {
+        // Notification in-app
+        this.notificationsService.create(
+          agent.id,
+          'Rechargement reçu 🔋',
+          `Votre agence a été rechargée de ${amount.toLocaleString('fr-FR')} ${currencyCode}.`,
+          'SUCCESS',
+        ).catch(() => {});
+
+        // Email agent
+        if (agent.email) {
+          this.agentMail.sendAgencyRefilled({
+            email:      agent.email,
+            agentName:  `${agent.firstName ?? ''} ${agent.lastName ?? ''}`.trim(),
+            agencyName: agency.name,
+            amount,
+            currency:   currencyCode,
+            newBalance: Number(agencyWalletUpdated?.balance ?? amount),
+            userId:     agent.id,
+          }).catch(() => {});
+        }
+      }
+    }).catch(() => {});
+
+    return successResult;
   }
 
-  // ── Lecture ──────────────────────────────────────────────
+  // ========================================================
+  // Lecture
+  // ========================================================
 
   private async buildUserTransactionFilter(userId: string): Promise<{
     where: Prisma.TransactionWhereInput;

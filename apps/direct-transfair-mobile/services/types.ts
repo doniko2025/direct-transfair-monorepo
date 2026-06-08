@@ -259,6 +259,7 @@ export interface AuthUser {
   nationality?: string;
   birthDate?: ISODate;
   birthPlace?: string;
+  birthCountry?: string;  // ← ajouter cette ligne
 
   jobTitle?: string;
   agencyName?: string;

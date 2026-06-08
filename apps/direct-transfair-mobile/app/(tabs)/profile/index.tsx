@@ -1,10 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.1 — Direct Transf'air
-// ✅ Toggle biométrie FONCTIONNEL
-//    → vérifie la dispo matérielle au montage
-//    → prompt biométrique avant activation
-//    → persistance SecureStore
+// PROFILE INDEX v5.2 — Direct Transf'air
+// ✅ v5.1 conservé intégralement
+// ✅ v5.2 : "Préférences de notifications" branché
+//   → onPress(() => {}) → router.push("/(tabs)/profile/notifications")
 // =========================================================
 
 import React, { useRef, useEffect, useState } from "react";
@@ -201,14 +200,12 @@ export default function ProfileScreen() {
     }
 
     if (!bioEnabled) {
-      // Activation : demande confirmation biométrique d'abord
       const success = await promptBiometrics("Activez la connexion biométrique");
-      if (!success) return; // l'utilisateur a annulé
+      if (!success) return;
       await setBiometricsEnabled(true);
       setBioEnabledState(true);
       Alert.alert("✅ Activé", "La connexion biométrique est maintenant activée.");
     } else {
-      // Désactivation : confirmation simple
       Alert.alert(
         "Désactiver la biométrie",
         "Vous devrez utiliser votre mot de passe pour vous reconnecter.",
@@ -364,12 +361,11 @@ export default function ProfileScreen() {
               accent={theme.accent}
               onPress={() => router.push("/(tabs)/profile/security")}
             />
-            {/* ✅ Toggle biométrie FONCTIONNEL */}
             <MenuRow
               icon="finger-print-outline"
               label={
                 bioAvailable
-                  ? `Biométrie (Face ID / Touch ID)`
+                  ? "Biométrie (Face ID / Touch ID)"
                   : "Biométrie (non disponible)"
               }
               accent={bioAvailable ? theme.accent : T.textDim}
@@ -399,11 +395,12 @@ export default function ProfileScreen() {
                 accent={theme.accent}
                 onPress={() => router.back()}
               />
+              {/* ✅ v5.2 : "Préférences de notifications" branché */}
               <MenuRow
                 icon="notifications-outline"
                 label="Préférences de notifications"
                 accent={theme.accent}
-                onPress={() => {}}
+                onPress={() => router.push("/(tabs)/profile/notifications")}
               />
             </Section>
           )}

@@ -23,3 +23,8 @@ export class LimitsController {
     return this.limits.getLimits(clientId, req.user.id);
   }
 }
+// limits.controller.ts — ajouter
+@Post('request')
+async requestIncrease(@Req() req: AuthTenantRequest, @Body() dto: { reason: string }) {
+  return this.limits.requestIncrease(req.tenantContext.clientId, req.user.id, dto.reason);
+}

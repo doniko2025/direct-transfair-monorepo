@@ -1,9 +1,19 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.3
-// ✅ FIX CRITIQUE : commission calculée sur fees CONVERTIS
-//    en devise de paiement (évite 750 XOF traités comme 750 EUR)
-// ✅ Inject RatesService pour la conversion
+// WITHDRAWALS SERVICE v4.4 — Direct Transf'air
+// ✅ v4.3 : commission calculée sur fees convertis en devise payout
+// ✅ v4.4 : Notifications in-app + emails (jamais envoyés avant)
+//
+//   CAUSE DU SILENCE :
+//   WalletNotifierService et AgentNotifierService n'étaient jamais
+//   injectés ici. WalletMailService et AgentMailService non plus.
+//   Résultat : aucune notif ni email sur retrait client ou
+//   validation paiement agent.
+//
+//   FIX :
+//   - Injection des 4 services
+//   - create()              → notif + email client (code de retrait)
+//   - agentProcessPayment() → notif + email agent (validation cash-out)
 // =========================================================
 
 import {
@@ -23,11 +33,19 @@ import {
   ProviderStatus,
 } from '@prisma/client';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
-import { RatesService } from '../rates/rates.service';           // ✅ AJOUT
-import { CreateWithdrawalDto } from './dto/create-withdrawal.dto';
+import { RatesService }   from '../rates/rates.service';
+import { CreateWithdrawalDto }      from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
+
+// ✅ v4.4 : Notifiers in-app (injectés pour la première fois)
+import { WalletNotifierService } from '../notifications/channels/wallet-notifier.service';
+import { AgentNotifierService }  from '../notifications/channels/agent-notifier.service';
+
+// ✅ v4.4 : Mail channels (injectés pour la première fois)
+import { WalletMailService } from '../mail/channels/wallet-mail.service';
+import { AgentMailService }  from '../mail/channels/agent-mail.service';
 
 const DEFAULT_AGENT_COMMISSION_RATE = 0.40;
 
@@ -36,14 +54,17 @@ export class WithdrawalsService {
   private readonly logger = new Logger(WithdrawalsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly walletsService: WalletsService,
-    private readonly ratesService: RatesService,               // ✅ AJOUT
+    private readonly prisma:          PrismaService,
+    private readonly walletsService:  WalletsService,
+    private readonly ratesService:    RatesService,
+    // ✅ v4.4 : Notifiers + mail
+    private readonly walletNotifier:  WalletNotifierService,
+    private readonly agentNotifier:   AgentNotifierService,
+    private readonly walletMail:      WalletMailService,
+    private readonly agentMail:       AgentMailService,
   ) {}
 
-  // ========================================================
-  // UTILITAIRE
-  // ========================================================
+  // ── Utilitaire enrichissement ─────────────────────────
 
   private enrichTransaction(tx: any) {
     if (!tx) return tx;
@@ -54,7 +75,7 @@ export class WithdrawalsService {
     ) {
       const parts = tx.providerRef.split('|');
       if (parts.length >= 2) {
-        tx.sender  = { ...tx.sender, firstName: parts[1], lastName: '(Client)' };
+        tx.sender     = { ...tx.sender, firstName: parts[1], lastName: '(Client)' };
         tx.providerRef = parts[0];
       }
     }
@@ -69,6 +90,7 @@ export class WithdrawalsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
+    // ── Chemin 1 : montant fourni → débit wallet + création transaction ──
     if (dto.amount) {
       const amount   = new Prisma.Decimal(dto.amount);
       const fees     = amount.mul(new Prisma.Decimal(0.015));
@@ -90,13 +112,14 @@ export class WithdrawalsService {
         100000000 + Math.random() * 900000000,
       ).toString();
 
+      // Débit synchrone — critique
       await this.walletsService.debit(
         walletRef.id,
         Number(total),
         `Demande retrait ${withdrawalCode}`,
       );
 
-      return this.prisma.$transaction(async (tx) => {
+      const withdrawal = await this.prisma.$transaction(async (tx) => {
         const txData: Prisma.TransactionUncheckedCreateInput = {
           reference:      `WD-${Date.now()}`,
           amount,
@@ -123,8 +146,31 @@ export class WithdrawalsService {
           },
         });
       });
+
+      // ✅ v4.4 : Notification in-app (non-bloquant)
+      this.walletNotifier.notifyWithdrawal(
+        userId,
+        `${Number(amount).toLocaleString('fr-FR')} ${currency}`,
+      ).catch(() => {});
+
+      // ✅ v4.4 : Email avec code de retrait (non-bloquant)
+      if (user.email) {
+        this.walletMail.sendWithdrawalRequested({
+          email:     user.email,
+          firstName: user.firstName ?? '',
+          amount:    Number(amount),
+          currency,
+          code:      withdrawalCode,
+          userId,
+        }).catch((err) => {
+          this.logger.warn(`Email retrait non envoyé : ${err?.message}`);
+        });
+      }
+
+      return withdrawal;
     }
 
+    // ── Chemin 2 : transactionId fourni → lien retrait sur tx existante ──
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) {
       throw new BadRequestException('Montant ou TransactionId requis');
@@ -177,19 +223,19 @@ export class WithdrawalsService {
       : 'International';
 
     return {
-      valid:           true,
-      amount:          richTx.amount,
-      currency:        richTx.currency,
-      receivedAmount:  richTx.receivedAmount,
-      targetCurrency:  richTx.targetCurrency,
-      senderName:      richTx.sender
+      valid:          true,
+      amount:         richTx.amount,
+      currency:       richTx.currency,
+      receivedAmount: richTx.receivedAmount,
+      targetCurrency: richTx.targetCurrency,
+      senderName:     richTx.sender
         ? `${richTx.sender.firstName ?? ''} ${richTx.sender.lastName ?? ''}`.trim()
         : 'Client Inconnu',
-      beneficiary:     richTx.beneficiary,
-      transactionId:   richTx.id,
-      status:          richTx.status,
+      beneficiary:    richTx.beneficiary,
+      transactionId:  richTx.id,
+      status:         richTx.status,
       originCountry,
-      reference:       richTx.reference,
+      reference:      richTx.reference,
     };
   }
 
@@ -235,7 +281,7 @@ export class WithdrawalsService {
       throw new ForbiddenException('Agent sans agence');
     }
 
-    // ─── Wallet agence ────────────────────────────────────
+    // ── Wallet agence ──────────────────────────────────────
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId: agent.agencyId, isActive: true },
     });
@@ -252,15 +298,12 @@ export class WithdrawalsService {
       );
     }
 
-    // Montant à remettre au client (déjà en payoutCurrency)
     const amountPaid =
       tx.receivedAmount && Number(tx.receivedAmount) > 0
         ? Number(tx.receivedAmount)
         : Number(tx.amount);
 
-    // ─── Calcul commission ────────────────────────────────
-    // ✅ FIX v4.3 : convertir tx.fees (en tx.currency, ex: GNF)
-    //    vers payoutCurrency (ex: EUR) AVANT d'appliquer le taux
+    // ── Calcul commission (v4.3 : conversion GNF→EUR etc.) ──
     const rawFees = Number(tx.fees ?? 0);
     let feesInPayoutCurrency = rawFees;
 
@@ -268,15 +311,13 @@ export class WithdrawalsService {
       try {
         feesInPayoutCurrency = await this.ratesService.convert(
           rawFees,
-          tx.currency,       // GNF / XOF / etc.
-          payoutCurrency,    // EUR / GBP / etc.
+          tx.currency,
+          payoutCurrency,
         );
         this.logger.log(
           `Conversion frais: ${rawFees} ${tx.currency} → ${feesInPayoutCurrency.toFixed(4)} ${payoutCurrency}`,
         );
       } catch {
-        // Fallback : si la conversion échoue, commission = 0
-        // (vaut mieux ne pas créditer que créditer une valeur fausse)
         feesInPayoutCurrency = 0;
         this.logger.warn(
           `Conversion frais impossible (${tx.currency}→${payoutCurrency}) — commission = 0`,
@@ -286,7 +327,6 @@ export class WithdrawalsService {
 
     let finalCommission = feesInPayoutCurrency * DEFAULT_AGENT_COMMISSION_RATE;
 
-    // Règle configurée en base (payerShare est en %) ?
     try {
       const rule = await this.prisma.commissionConfig.findFirst({
         where: { clientId },
@@ -306,9 +346,9 @@ export class WithdrawalsService {
       ` — Commission: ${finalCommission.toFixed(4)} ${payoutCurrency}`,
     );
 
-    return this.prisma.$transaction(async (prismaTx) => {
+    // ── Section atomique ───────────────────────────────────
+    const result = await this.prisma.$transaction(async (prismaTx) => {
 
-      // 1. Marquer la transaction comme PAID
       const updated = await prismaTx.transaction.updateMany({
         where: {
           id: tx.id,
@@ -326,8 +366,6 @@ export class WithdrawalsService {
         throw new ConflictException('Transaction déjà traitée par un autre agent.');
       }
 
-      // 2. Créditer le wallet agence
-      //    amountPaid + commission (tous deux en payoutCurrency)
       const totalCredit = amountPaid + finalCommission;
 
       await prismaTx.wallet.update({
@@ -335,7 +373,6 @@ export class WithdrawalsService {
         data:  { balance: { increment: new Prisma.Decimal(totalCredit) } },
       });
 
-      // Ledger — remboursement cash
       await prismaTx.ledgerEntry.create({
         data: {
           walletId:      agencyWallet.id,
@@ -344,13 +381,10 @@ export class WithdrawalsService {
           amount:        new Prisma.Decimal(amountPaid),
           currency:      agencyWallet.currency,
           description:   `Remboursement retrait ${cleanCode} — cash remis au client`,
-          balanceAfter:  new Prisma.Decimal(
-            Number(agencyWallet.balance) + amountPaid,
-          ),
+          balanceAfter:  new Prisma.Decimal(Number(agencyWallet.balance) + amountPaid),
         },
       });
 
-      // Ledger — commission (si > 0)
       if (finalCommission > 0) {
         await prismaTx.ledgerEntry.create({
           data: {
@@ -360,9 +394,7 @@ export class WithdrawalsService {
             amount:        new Prisma.Decimal(finalCommission),
             currency:      agencyWallet.currency,
             description:   `Commission retrait ${cleanCode} (${Math.round(DEFAULT_AGENT_COMMISSION_RATE * 100)}% des frais convertis)`,
-            balanceAfter:  new Prisma.Decimal(
-              Number(agencyWallet.balance) + totalCredit,
-            ),
+            balanceAfter:  new Prisma.Decimal(Number(agencyWallet.balance) + amountPaid + finalCommission),
           },
         });
 
@@ -371,7 +403,6 @@ export class WithdrawalsService {
         );
       }
 
-      // 3. Mettre à jour ou créer le withdrawal
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
@@ -401,6 +432,40 @@ export class WithdrawalsService {
         currency:   agencyWallet.currency,
       };
     });
+
+    // ── Notifications + emails post-transaction (non-bloquant) ──
+
+    // Solde agence mis à jour
+    const agencyWalletUpdated = await this.prisma.wallet.findUnique({
+      where: { id: agencyWallet.id },
+    }).catch(() => null);
+
+    // ✅ v4.4 : Notification in-app agent
+    this.agentNotifier.notifyWithdrawalProcessed(
+      agentId,
+      `${amountPaid.toLocaleString('fr-FR')} ${payoutCurrency}`,
+      `${finalCommission.toFixed(0)} ${payoutCurrency}`,
+    ).catch(() => {});
+
+    // ✅ v4.4 : Email agent (résumé du cash-out traité)
+    if (agent.email) {
+      this.agentMail.sendWithdrawalProcessed({
+        email:      agent.email,
+        agentName:  `${agent.firstName ?? ''} ${agent.lastName ?? ''}`.trim(),
+        clientName: tx.sender
+          ? `${tx.sender.firstName ?? ''} ${tx.sender.lastName ?? ''}`.trim()
+          : 'Client',
+        amount:     amountPaid,
+        currency:   payoutCurrency,
+        newBalance: Number(agencyWalletUpdated?.balance ?? agencyWallet.balance),
+        code:       cleanCode,
+        userId:     agentId,
+      }).catch((err) => {
+        this.logger.warn(`Email validation retrait agent non envoyé : ${err?.message}`);
+      });
+    }
+
+    return result;
   }
 
   // ========================================================
@@ -409,9 +474,9 @@ export class WithdrawalsService {
 
   async listMine(clientId: number, userId: string) {
     return this.prisma.withdrawal.findMany({
-      where:     { clientId, transaction: { senderId: userId } },
-      orderBy:   { requestedAt: 'desc' },
-      include:   { transaction: true },
+      where:   { clientId, transaction: { senderId: userId } },
+      orderBy: { requestedAt: 'desc' },
+      include: { transaction: true },
     });
   }
 

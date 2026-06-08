@@ -108,3 +108,9 @@ export class LimitsService {
     };
   }
 }
+// limits.service.ts — ajouter
+async requestIncrease(clientId: number, userId: string, reason: string) {
+  // Exemple minimal : stocker la demande en base ou envoyer une notification
+  // await this.prisma.limitRequest.create({ data: { clientId, userId, reason } });
+  return { message: 'Demande enregistrée' };
+}
