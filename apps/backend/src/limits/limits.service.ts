@@ -1,17 +1,10 @@
 // apps/backend/src/limits/limits.service.ts
 // =========================================================
-// LIMITS SERVICE v1.1 — Direct Transf'air
+// LIMITS SERVICE v1.2 — Direct Transf'air
 // ✅ v1.0 : version initiale
-// ✅ v1.1 :
-//   - Fallback currency → 'EUR' si primaryCurrency est null
-//     (utilisateur créé avant l'ajout du champ, ou pays manquant)
-//     Sans ce fallback, Intl.NumberFormat côté frontend plante
-//     avec une devise undefined
-//   - Fallback maxDaily/Monthly/Yearly → valeurs par défaut
-//     si les champs Client sont null (client créé avant v5.0)
-//   - Agrégat sur `amount` (montant transféré) et non `total`
-//     (total = amount + fees) — les plafonds réglementaires
-//     s'appliquent au montant envoyé, pas aux frais
+// ✅ v1.1 : fallback currency + limites par défaut + agrégat amount
+// ✅ v1.2 : requestIncrease déplacé DANS la classe LimitsService
+//           (était collé après l'accolade fermante → erreurs TS1434/TS2304)
 // =========================================================
 
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -36,14 +29,18 @@ const DEFAULT_LIMITS = {
 export class LimitsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // ======================================================
+  // LECTURE — Limites & utilisation courante
+  // ======================================================
+
   async getLimits(clientId: number, userId: string) {
     const [user, client] = await Promise.all([
       this.prisma.user.findFirst({
-        where: { id: userId, clientId },
+        where:  { id: userId, clientId },
         select: { kycLevel: true, primaryCurrency: true },
       }),
       this.prisma.client.findFirst({
-        where: { id: clientId },
+        where:  { id: clientId },
         select: {
           maxDailyTransferAmount:   true,
           maxMonthlyTransferAmount: true,
@@ -70,21 +67,20 @@ export class LimitsService {
       this.prisma.transaction.aggregate({
         where: { ...baseWhere, createdAt: { gte: startOfDay } },
         // ✅ v1.1 : `amount` (montant envoyé) et non `total` (amount + fees)
-        _sum: { amount: true },
+        _sum:  { amount: true },
       }),
       this.prisma.transaction.aggregate({
         where: { ...baseWhere, createdAt: { gte: startOfMonth } },
-        _sum: { amount: true },
+        _sum:  { amount: true },
       }),
       this.prisma.transaction.aggregate({
         where: { ...baseWhere, createdAt: { gte: startOfYear } },
-        _sum: { amount: true },
+        _sum:  { amount: true },
       }),
     ]);
 
     return {
       // ✅ v1.1 : fallback 'EUR' si primaryCurrency est null
-      // (utilisateur sans pays renseigné ou créé avant le champ)
       currency: user.primaryCurrency ?? 'EUR',
 
       kycLevel: user.kycLevel,
@@ -93,7 +89,7 @@ export class LimitsService {
       limits: {
         daily: {
           used: Number(daily._sum.amount   ?? 0),
-          // ✅ v1.1 : fallback si le champ Client n'est pas renseigné
+          // ✅ v1.1 : fallback si champ Client non renseigné
           max:  Number(client.maxDailyTransferAmount   ?? DEFAULT_LIMITS.daily),
         },
         monthly: {
@@ -107,10 +103,15 @@ export class LimitsService {
       },
     };
   }
-}
-// limits.service.ts — ajouter
-async requestIncrease(clientId: number, userId: string, reason: string) {
-  // Exemple minimal : stocker la demande en base ou envoyer une notification
-  // await this.prisma.limitRequest.create({ data: { clientId, userId, reason } });
-  return { message: 'Demande enregistrée' };
+
+  // ======================================================
+  // ÉCRITURE — Demande d'augmentation de plafond
+  // ✅ v1.2 : méthode déplacée DANS la classe (était après la `}` fermante)
+  // ======================================================
+
+  async requestIncrease(clientId: number, userId: string, reason: string) {
+    // Exemple minimal : stocker la demande ou envoyer une notification admin
+    // await this.prisma.limitRequest.create({ data: { clientId, userId, reason } });
+    return { message: 'Demande enregistrée' };
+  }
 }
