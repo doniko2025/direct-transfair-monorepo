@@ -23,6 +23,7 @@
       }
     },
     "android": {
+      "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -46,7 +47,8 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-image-picker"
+      "expo-image-picker",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

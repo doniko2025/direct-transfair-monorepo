@@ -3,47 +3,28 @@
   "private": true,
   "version": "0.1.0",
   "description": "DirectTransf'air backend (NestJS) — v4.0 multi-currency, OTP, push, AML",
-
   "scripts": {
     "postinstall": "prisma generate && prisma generate --schema prisma-platform/schema.prisma",
-
     "clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-
     "dev": "ts-node -r tsconfig-paths/register src/main.ts",
-
     "dev:watch": "tsx watch -r tsconfig-paths/register src/main.ts",
-
     "build": "pnpm run clean && nest build -p tsconfig.build.json && node -e \"const fs=require('fs'); fs.mkdirSync('dist/platform/generated', {recursive:true}); fs.cpSync('src/platform/generated/platform-client', 'dist/platform/generated/platform-client', {recursive:true})\"",
-
     "start": "node dist/main.js",
-
     "start:prod": "node dist/main.js",
-
     "vercel-build": "pnpm build",
-
     "prisma:generate": "prisma generate",
-
     "prisma:migrate": "prisma migrate dev",
-
     "prisma:deploy": "prisma migrate deploy",
-
     "prisma:reset": "prisma migrate reset --force",
-
     "prisma:seed": "ts-node --transpile-only prisma/seed.ts",
-
     "prisma:studio": "prisma studio",
-
     "prisma:platform:generate": "prisma generate --schema prisma-platform/schema.prisma",
-
     "prisma:platform:migrate": "prisma migrate dev --schema prisma-platform/schema.prisma",
-
     "prisma:platform:deploy": "prisma migrate deploy --schema prisma-platform/schema.prisma"
   },
-
   "prisma": {
     "seed": "ts-node --transpile-only prisma/seed.ts"
   },
-
   "dependencies": {
     "@nestjs/common": "^10.3.0",
     "@nestjs/config": "^3.1.1",
@@ -71,7 +52,6 @@
     "swagger-ui-express": "^5.0.1",
     "twilio": "^5.12.1"
   },
-
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",
     "@nestjs/schematics": "^10.1.0",
@@ -79,6 +59,7 @@
     "@types/bcrypt": "^5.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.11.30",
     "@types/nodemailer": "^7.0.9",
     "@types/passport-jwt": "^4.0.1",

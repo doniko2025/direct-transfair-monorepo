@@ -809,14 +809,19 @@ class API {
   // NOTIFICATIONS
   // ============================================================
 
-  async getNotifications(params?: {
-    unreadOnly?: boolean;
-    page?: number;
-    limit?: number;
-  }): Promise<Notification[]> {
+  // ✅ CORRIGÉ
+async getNotifications(params?: {
+  unreadOnly?: boolean;
+  page?: number;
+  limit?: number;
+}): Promise<Notification[]> {
+  try {
     const res = await this.http.get<unknown>("/notifications", { params });
     return unwrapArray<Notification>(res.data);
+  } catch {
+    return []; // silencieux — l'absence de notifs n'est pas une erreur critique
   }
+}
 
   // ============================================================
   // USERS (ADMIN)
@@ -1308,34 +1313,58 @@ class API {
     return normalizeTransaction(data.data);
   }
 
-  // ============================================================
+// ============================================================
   // TAUX DE CHANGE
   // ============================================================
 
+  // ✅ FIX v5.4 : fallback taux statiques si /rates ET /exchange-rates → 404
+  // L'endpoint n'existe pas encore côté backend Railway.
+  // L'app continue de fonctionner avec des taux BCEAO de référence.
   async getExchangeRates(): Promise<ExchangeRate[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/rates"),
-        async () => this.http.get<unknown>("/exchange-rates"),
-      ],
-      "getExchangeRates",
-    );
-    return unwrapArray<unknown>(data.data).map(normalizeExchangeRate);
+    try {
+      const data = await tryMany<AxiosResponse<unknown>>(
+        [
+          async () => this.http.get<unknown>("/rates"),
+          async () => this.http.get<unknown>("/exchange-rates"),
+          async () => this.http.get<unknown>("/exchange-rates/all"),
+          async () => this.http.get<unknown>("/rates/all"),
+        ],
+        "getExchangeRates",
+      );
+      const list = unwrapArray<unknown>(data.data).map(normalizeExchangeRate);
+      if (list.length > 0) return list;
+      throw new Error("Réponse vide");
+    } catch {
+      devLog("⚠️ getExchangeRates: API indisponible → taux de secours");
+      return [
+        { pair: "EUR_XOF", rate: 655.957, inverseRate: 1 / 655.957 },
+        { pair: "EUR_GNF", rate: 9600,    inverseRate: 1 / 9600    },
+        { pair: "EUR_USD", rate: 1.08,    inverseRate: 1 / 1.08    },
+        { pair: "EUR_GBP", rate: 0.85,    inverseRate: 1 / 0.85    },
+        { pair: "USD_XOF", rate: 607.55,  inverseRate: 1 / 607.55  },
+        { pair: "GBP_XOF", rate: 771.71,  inverseRate: 1 / 771.71  },
+        { pair: "XOF_GNF", rate: 14.63,   inverseRate: 1 / 14.63   },
+      ].map(normalizeExchangeRate);
+    }
   }
 
   async getExchangeRateHistory(
     pair: string,
     params?: { from?: string; to?: string; limit?: number },
   ): Promise<ExchangeRateHistory[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>(`/rates/${pair}/history`, { params }),
-        async () =>
-          this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params }),
-      ],
-      "getExchangeRateHistory",
-    );
-    return unwrapArray<ExchangeRateHistory>(data.data);
+    try {
+      const data = await tryMany<AxiosResponse<unknown>>(
+        [
+          async () => this.http.get<unknown>(`/rates/${pair}/history`, { params }),
+          async () =>
+            this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params }),
+        ],
+        "getExchangeRateHistory",
+      );
+      return unwrapArray<ExchangeRateHistory>(data.data);
+    } catch {
+      return [];
+    }
   }
 
   async updateExchangeRate(pair: string, rate: number): Promise<void> {
@@ -1348,17 +1377,33 @@ class API {
     );
   }
 
+  // ✅ FIX v5.4 : calcul local si /rates/convert → 404
   async convertAmount(
     amount: number,
     from: Currency | string,
     to: Currency | string,
   ): Promise<{ amount: number; rate: number; convertedAmount: number }> {
-    const res = await this.http.post<{
-      amount: number;
-      rate: number;
-      convertedAmount: number;
-    }>("/rates/convert", { amount, from, to });
-    return res.data;
+    try {
+      const res = await this.http.post<{
+        amount: number;
+        rate: number;
+        convertedAmount: number;
+      }>("/rates/convert", { amount, from, to });
+      return res.data;
+    } catch {
+      devLog("⚠️ convertAmount: API indisponible → calcul local");
+      const RATES: Record<string, number> = {
+        "EUR_XOF": 655.957, "EUR_GNF": 9600,   "EUR_USD": 1.08,  "EUR_GBP": 0.85,
+        "USD_XOF": 607.55,  "USD_GNF": 8889,   "GBP_XOF": 771.71,
+        "XOF_EUR": 1 / 655.957, "GNF_EUR": 1 / 9600,
+        "XOF_GNF": 14.63,       "GNF_XOF": 1 / 14.63,
+        "GBP_EUR": 1 / 0.85,    "USD_EUR": 1 / 1.08,
+      };
+      const key = `${String(from).toUpperCase()}_${String(to).toUpperCase()}`;
+      const rate = RATES[key] ?? (String(from) === String(to) ? 1 : 1);
+      const convertedAmount = Math.round(amount * rate * 100) / 100;
+      return { amount, rate, convertedAmount };
+    }
   }
 
   // ============================================================

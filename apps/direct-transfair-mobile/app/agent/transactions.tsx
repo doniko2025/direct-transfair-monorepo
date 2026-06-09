@@ -1,48 +1,65 @@
 // apps/direct-transfair-mobile/app/agent/transactions.tsx
 // =========================================================
-// AGENT TRANSACTIONS v5.3 — Direct Transf'air
-// ✅ v5.2 : retraits validés récupérés via /withdrawals
-// ✅ FIX v5.3 : resolveAgentDirection — fallback "Transaction" → "Envoi d'argent"
-//    AVANT : tout ce qui n'est pas REFILL/DEPOSIT/_agentPayout tombait dans
-//            le fallback générique qui retournait label: "Transaction"
-//    APRÈS  : le fallback distingue senderId === agentId → "Envoi d'argent"
-//             vs recipientId === agentId → "Transfert reçu"
-// ✅ FIX v5.3 : displayAmount — montant entrant avec conversion
-//    AVANT : l'agent voyait le montant en devise expéditeur (EUR)
-//    APRÈS  : si hasConversion && isIncoming → receivedAmount / targetCurrency
+// AGENT TRANSACTIONS v6.0 — Direct Transf'air
+// ✅ v5.3 : resolveAgentDirection fallback + displayAmount fix
+// ✅ v6.0 :
+//    - Violet → Bleu agent #2563EB (cohérent avec tous les héros)
+//    - Héro compact : paddingBottom 22→12, paddingTop 48→44
+//    - Arc concave Option C (react-native-svg) remplace borderRadius
+//    - pageBg + cardBorder → bleu pâle cohérent
+//    - Anomalie : C.violet dans les shadows → AGENT_BLUE
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator,
   RefreshControl, TouchableOpacity, SafeAreaView, StatusBar,
-  Platform, Animated, TextInput,
+  Platform, Animated, TextInput, Dimensions,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, Rect } from "react-native-svg";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import type { Transaction } from "../../services/types";
 
+const { width: SW } = Dimensions.get("window");
+
+// ─── Bleu agent cohérent avec héro d'accueil ─────────────
+const AGENT_BLUE = "#2563EB";
+const CONCAVE_H  = 70;
+
 const C = {
-  violet:      "#6C47FF", violetLight: "#F5F3FF", violetBorder: "#EDE9FE",
+  violet:      AGENT_BLUE,       // ✅ bleu au lieu de violet
+  violetLight: "#EFF6FF",
+  violetBorder:"#DBEAFE",
+
   heroGlass:   "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
-  heroDim:     "rgba(255,255,255,0.60)", heroGlow: "rgba(255,255,255,0.08)",
-  pageBg:      "#F4F2FF", white: "#FFFFFF", cardBorder: "#EDE9FE",
-  ink:         "#12082E", inkMid: "#4B3F72", inkSoft: "#8B80A8",
+  heroDim:     "rgba(255,255,255,0.65)", heroGlow: "rgba(255,255,255,0.07)",
+
+  pageBg:      "#EFF6FF",        // ✅ bleu pâle cohérent
+  white:       "#FFFFFF",
+  cardBorder:  "#DBEAFE",        // ✅ bleu pâle au lieu de violet pâle
+
+  ink:         "#0F172A",
+  inkMid:      "#374151",
+  inkSoft:     "#6B7280",
+
   green:       "#10B981", greenBg: "#ECFDF5", greenBorder: "#A7F3D0", greenDark: "#065F46",
-  red:         "#EF4444", redBg: "#FEF2F2", redBorder: "#FECACA",
-  blue:        "#3B82F6", blueBg: "#EFF6FF", blueBorder: "#BFDBFE",
+  red:         "#EF4444", redBg:   "#FEF2F2", redBorder:   "#FECACA",
+  blue:        "#3B82F6", blueBg:  "#EFF6FF", blueBorder:  "#BFDBFE",
   amber:       "#F59E0B", amberBg: "#FFFBEB", amberBorder: "#FDE68A",
-  teal:        "#0F766E", tealBg:  "#CCFBF1", tealBorder: "#5EEAD4",
+  teal:        "#0F766E", tealBg:  "#CCFBF1", tealBorder:  "#5EEAD4",
+
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
-    serif: Platform.select({ ios: "Georgia",     android: "serif",           default: "serif"      }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium",default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace",        default: "monospace"  }),
+    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
 
+// ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -58,6 +75,19 @@ function fmtDate(iso: string): string {
   if (now.getTime() - d.getTime() < 86400000)
     return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+}
+
+// ─── Arc concave — même technique que CompanyDashboard ────
+function HeroConcave() {
+  const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
+  const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
+  return (
+    <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
+      <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
+      <Path d={d} fill={AGENT_BLUE} />
+      <Path d={bd} fill="none" stroke="rgba(37,99,235,0.22)" strokeWidth={1.5} />
+    </Svg>
+  );
 }
 
 // =========================================================
@@ -79,7 +109,7 @@ function resolveAgentDirection(tx: any, agentId: string): {
   if (isRefill) {
     return {
       isIncoming: true,
-      label:   "Recharge caisse",
+      label:    "Recharge caisse",
       sublabel: tx.sender
         ? `${tx.sender.firstName ?? ""} ${tx.sender.lastName ?? ""}`.trim()
         : "Admin",
@@ -95,11 +125,11 @@ function resolveAgentDirection(tx: any, agentId: string): {
   if (isDeposit) {
     return {
       isIncoming: false,
-      label:   "Dépôt client",
+      label:    "Dépôt client",
       sublabel: tx.beneficiary?.fullName ?? tx.beneficiary?.phone ?? "Client",
       icon: "arrow-up-circle-outline", iconBg: C.amberBg, iconColor: C.amber,
       badgeLabel:  status === "PAID" ? "Déposé ✓" : "En attente",
-      badgeColor:  status === "PAID" ? C.amber   : C.violet,
+      badgeColor:  status === "PAID" ? C.amber : AGENT_BLUE,
       badgeBg:     status === "PAID" ? C.amberBg : C.violetLight,
       badgeBorder: status === "PAID" ? C.amberBorder : C.violetBorder,
       amountSign: "−", amountColor: C.amber,
@@ -114,14 +144,12 @@ function resolveAgentDirection(tx: any, agentId: string): {
         ?? (tx.sender ? `${tx.sender?.firstName ?? ""} ${tx.sender?.lastName ?? ""}`.trim() : "Client"),
       icon: "cash-outline", iconBg: C.greenBg, iconColor: C.green,
       badgeLabel:  "Payé ✓",
-      badgeColor:  C.green, badgeBg: C.greenBg, badgeBorder: C.greenBorder,
+      badgeColor: C.green, badgeBg: C.greenBg, badgeBorder: C.greenBorder,
       amountSign: "−", amountColor: C.green,
     };
   }
 
-  // ✅ FIX v5.3 — fallback générique
-  // AVANT : toujours isIncoming=false, label="Transaction", amountColor=violet
-  // APRÈS : on distingue selon senderId vs recipientId
+  // ✅ v5.3 — fallback distingue senderId vs recipientId
   const isOutgoing = String(tx.senderId ?? "") === agentId;
   return {
     isIncoming: !isOutgoing,
@@ -131,9 +159,9 @@ function resolveAgentDirection(tx: any, agentId: string): {
       : (tx.sender?.firstName
           ? `${tx.sender.firstName} ${tx.sender.lastName ?? ""}`.trim()
           : "Expéditeur"),
-    icon:    isOutgoing ? "paper-plane-outline"      : "arrow-down-circle-outline",
-    iconBg:  isOutgoing ? C.redBg                    : C.greenBg,
-    iconColor:isOutgoing ? C.red                     : C.green,
+    icon:      isOutgoing ? "paper-plane-outline"       : "arrow-down-circle-outline",
+    iconBg:    isOutgoing ? C.redBg                     : C.greenBg,
+    iconColor: isOutgoing ? C.red                       : C.green,
     badgeLabel:  status === "PAID" ? (isOutgoing ? "Payé ✓" : "Reçu ✓") : status,
     badgeColor:  isOutgoing ? C.green   : C.teal,
     badgeBg:     isOutgoing ? C.greenBg : C.tealBg,
@@ -158,10 +186,10 @@ function StatCard({ icon, label, value, accent, bg }: {
   );
 }
 const sc = StyleSheet.create({
-  card:   { flex: 1, backgroundColor: C.white, borderRadius: C.r.md, padding: 12, alignItems: "center", borderWidth: 1, shadowColor: C.violet, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-  iconBox:{ width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center", marginBottom: 6 },
-  value:  { fontSize: 18, fontWeight: "900", marginBottom: 2 },
-  label:  { fontSize: 9, fontWeight: "800", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center" },
+  card:    { flex: 1, backgroundColor: C.white, borderRadius: C.r.md, padding: 12, alignItems: "center", borderWidth: 1, shadowColor: AGENT_BLUE, shadowOpacity: 0.04, shadowRadius: 5, elevation: 1 },
+  iconBox: { width: 30, height: 30, borderRadius: 9, justifyContent: "center", alignItems: "center", marginBottom: 6 },
+  value:   { fontSize: 18, fontWeight: "900", marginBottom: 2 },
+  label:   { fontSize: 9, fontWeight: "800", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center" },
 });
 
 // ─── Tx Card ─────────────────────────────────────────────
@@ -171,15 +199,13 @@ function TxCard({ item, userId }: { item: Transaction; userId?: string }) {
   const tx     = item as any;
 
   const dir = resolveAgentDirection(tx, userId ?? "");
-
   const isMyPayout = tx._agentPayout === true;
 
-  // ✅ FIX v5.3 — displayAmount pour les entrants avec conversion
+  // ✅ v5.3 — displayAmount pour les entrants avec conversion
   let displayAmount   = toNum(tx.amount);
   let displayCurrency = tx.currency ?? "XOF";
 
   if (isMyPayout && toNum(tx.receivedAmount) > 0) {
-    // Retrait validé : montant en devise du bénéficiaire
     displayAmount   = toNum(tx.receivedAmount);
     displayCurrency = tx.targetCurrency ?? "GNF";
   } else if (
@@ -188,7 +214,6 @@ function TxCard({ item, userId }: { item: Transaction; userId?: string }) {
     tx.targetCurrency !== tx.currency &&
     toNum(tx.receivedAmount) > 0
   ) {
-    // Transfert entrant avec conversion : montant reçu en devise cible
     displayAmount   = toNum(tx.receivedAmount);
     displayCurrency = tx.targetCurrency;
   }
@@ -241,9 +266,9 @@ function TxCard({ item, userId }: { item: Transaction; userId?: string }) {
   );
 }
 const tc = StyleSheet.create({
-  card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, marginBottom: 10, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.violet, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2, overflow: "hidden" },
+  card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, marginBottom: 10, borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.05, shadowRadius: 7, elevation: 2, overflow: "hidden" },
   sideBar:   { width: 4 },
-  content:   { flex: 1, padding: 14 },
+  content:   { flex: 1, padding: 13 },
   topRow:    { flexDirection: "row", alignItems: "flex-start", gap: 11, marginBottom: 10 },
   iconBox:   { width: 36, height: 36, borderRadius: 11, justifyContent: "center", alignItems: "center" },
   label:     { color: C.ink, fontSize: 13, fontWeight: "700", marginBottom: 2 },
@@ -358,13 +383,13 @@ export default function AgentHistoryScreen() {
 
   const filtered = transactions.filter((tx) => {
     if (!q.trim()) return true;
-    const s = q.toLowerCase();
-    const t = tx as any;
+    const sq = q.toLowerCase();
+    const t  = tx as any;
     return (
-      (t.reference ?? "").toLowerCase().includes(s) ||
-      (t.beneficiary?.fullName ?? "").toLowerCase().includes(s) ||
-      (t.beneficiary?.phone ?? "").toLowerCase().includes(s) ||
-      `${t.sender?.firstName ?? ""} ${t.sender?.lastName ?? ""}`.toLowerCase().includes(s)
+      (t.reference ?? "").toLowerCase().includes(sq) ||
+      (t.beneficiary?.fullName ?? "").toLowerCase().includes(sq) ||
+      (t.beneficiary?.phone ?? "").toLowerCase().includes(sq) ||
+      `${t.sender?.firstName ?? ""} ${t.sender?.lastName ?? ""}`.toLowerCase().includes(sq)
     );
   });
 
@@ -374,45 +399,55 @@ export default function AgentHistoryScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.violet} />
+      {/* ✅ StatusBar bleu */}
+      <StatusBar barStyle="light-content" backgroundColor={AGENT_BLUE} />
 
-      {/* ── Hero ── */}
-      <View style={s.hero}>
-        <View style={s.glow} />
-        <View style={s.heroRow}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={20} color={C.white} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <View style={s.pill}>
-              <View style={s.pillDot} />
-              <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>AGENT</Text>
-            </View>
-            <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Historique</Text>
-            <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>
-              {filtered.length} opération{filtered.length > 1 ? "s" : ""}
-            </Text>
-          </View>
-          <TouchableOpacity style={s.backBtn} onPress={onRefresh}>
-            <Ionicons name="refresh" size={18} color={C.white} />
-          </TouchableOpacity>
-        </View>
+      {/* ══ HÉRO + ARC CONCAVE ══ */}
+      <View>
+        {/* ── Héro compact bleu ── */}
+        <View style={s.hero}>
+          <View style={s.glow} />
 
-        <View style={s.searchBox}>
-          <Ionicons name="search" size={15} color={C.heroDim} />
-          <TextInput
-            style={[s.searchInput, { fontFamily: C.font.sans }]}
-            value={q} onChangeText={setQ}
-            placeholder="Référence, nom, téléphone…"
-            placeholderTextColor="rgba(255,255,255,0.45)"
-            underlineColorAndroid="transparent"
-          />
-          {!!q && (
-            <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={15} color={C.heroDim} />
+          {/* Ligne : back + titre + refresh */}
+          <View style={s.heroRow}>
+            <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="arrow-back" size={20} color={C.white} />
             </TouchableOpacity>
-          )}
+            <View style={{ flex: 1 }}>
+              <View style={s.pill}>
+                <View style={s.pillDot} />
+                <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>AGENT</Text>
+              </View>
+              <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Historique</Text>
+              <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>
+                {filtered.length} opération{filtered.length > 1 ? "s" : ""}
+              </Text>
+            </View>
+            <TouchableOpacity style={s.iconBtn} onPress={onRefresh}>
+              <Ionicons name="refresh" size={18} color={C.white} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Barre de recherche */}
+          <View style={s.searchBox}>
+            <Ionicons name="search" size={15} color="rgba(255,255,255,0.65)" />
+            <TextInput
+              style={[s.searchInput, { fontFamily: C.font.sans }]}
+              value={q} onChangeText={setQ}
+              placeholder="Référence, nom, téléphone…"
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              underlineColorAndroid="transparent"
+            />
+            {!!q && (
+              <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.65)" />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
+
+        {/* ── Arc concave bleu → pageBg ── */}
+        <HeroConcave />
       </View>
 
       {/* Mini stats */}
@@ -426,7 +461,7 @@ export default function AgentHistoryScreen() {
 
       {loading && !refreshing ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator color={C.violet} size="large" />
+          <ActivityIndicator color={AGENT_BLUE} size="large" />
         </View>
       ) : (
         <Animated.FlatList
@@ -435,7 +470,9 @@ export default function AgentHistoryScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.violet} />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={AGENT_BLUE} />
+          }
           renderItem={({ item }) => <TxCard item={item} userId={user?.id} />}
           ListEmptyComponent={
             <View style={s.empty}>
@@ -455,23 +492,50 @@ export default function AgentHistoryScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe:   { flex: 1, backgroundColor: C.pageBg },
-  hero:   { backgroundColor: C.violet, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 48 : 16, paddingBottom: 20, overflow: "hidden" },
-  glow:   { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:{ flexDirection: "row", alignItems: "center", gap: 14 },
-  backBtn:{ width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
-  pill:   { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 4 },
-  pillDot:{ width: 4, height: 4, borderRadius: C.r.pill, backgroundColor: "#A5F3FC" },
-  pillTxt:{ color: "#E8E0FF", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
-  heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
-  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  searchBox: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 14, marginTop: 12, height: 44 },
-  searchInput: { flex: 1, fontSize: 14, color: C.white, fontWeight: "600" },
-  statsRow:  { flexDirection: "row", gap: 10, paddingHorizontal: 18, paddingVertical: 12, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.violetBorder },
-  list:  { paddingHorizontal: 18, paddingTop: 16 },
+  safe: { flex: 1, backgroundColor: C.pageBg },
+
+  // ✅ Héro bleu compact — sans borderRadius (arc concave)
+  hero: {
+    backgroundColor: AGENT_BLUE,
+    paddingHorizontal: 20,
+    paddingTop:    Platform.OS === "android" ? 44 : 14,
+    paddingBottom: 12,   // ✅ réduit (22→12)
+    overflow:      "hidden",
+  },
+  glow: { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
+
+  heroRow:  { flexDirection: "row", alignItems: "flex-start", gap: 14, marginBottom: 10 },
+  iconBtn:  {
+    width: 36, height: 36, borderRadius: C.r.sm,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
+    marginTop: 2,
+  },
+  pill:     { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 4 },
+  pillDot:  { width: 4, height: 4, borderRadius: C.r.pill, backgroundColor: "#BAE6FD" },
+  pillTxt:  { color: "#E0F2FE", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
+  heroTitle:{ color: C.white, fontSize: 22, fontWeight: "700" },
+  heroSub:  { color: "rgba(255,255,255,0.75)", fontSize: 11, fontWeight: "600", marginTop: 2 },
+
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
+    borderRadius: C.r.md, paddingHorizontal: 14, height: 42,
+  },
+  searchInput: { flex: 1, fontSize: 13, color: C.white, fontWeight: "600" },
+
+  statsRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  list:     { paddingHorizontal: 16, paddingTop: 8 },
+
   empty: { alignItems: "center", paddingVertical: 60, gap: 8 },
-  emptyIconBox: { width: 70, height: 70, borderRadius: 22, backgroundColor: C.white, borderWidth: 1, borderColor: C.violetBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  emptyTitle:   { color: C.ink, fontSize: 17, fontWeight: "700" },
-  emptySub:     { color: C.inkSoft, fontSize: 12, fontWeight: "600" },
+  emptyIconBox: {
+    width: 70, height: 70, borderRadius: 20,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder,
+    justifyContent: "center", alignItems: "center", marginBottom: 4,
+  },
+  emptyTitle: { color: C.ink, fontSize: 18, fontWeight: "700" },
+  emptySub:   { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },
 });

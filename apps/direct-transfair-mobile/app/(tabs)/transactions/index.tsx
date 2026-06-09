@@ -1,12 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.3 — Direct Transf'air
+// TRANSACTIONS HISTORY v6.4 — Direct Transf'air
 // ✅ v6.1 : AGENT : retraits validés récupérés via /withdrawals
 // ✅ FIX v6.2 : displayAmount / displayCurrency pour les entrants
-// ✅ FIX v6.3 : Filtres invisibles — 2 causes corrigées
-//    1. maxHeight: 52 → supprimé (tronquait les pills par le haut)
-//    2. C.inkSoft "#6B9E85" → "#475569" (contraste < 2.5 sur blanc)
-//    + Thème clair : header blanc au lieu du hero vert sombre
+// ✅ FIX v6.3 : Filtres invisibles — maxHeight + contraste
+// ✅ FIX v6.4 : Textes filtres masqués — cause racine :
+//    FlatList horizontal + gap non supporté dans certaines versions RN
+//    → ScrollView + marginRight sur chaque pill + color explicite
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
@@ -23,6 +23,7 @@ import {
   StatusBar,
   SafeAreaView,
   TextInput,
+  ScrollView,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,7 +35,7 @@ const C = {
   green:       "#059669", greenDark: "#047857", greenLight: "#F0FDF4",
   greenBorder: "#A7F3D0", greenPale:  "#ECFDF5",
   pageBg:      "#F0FDF8", white: "#FFFFFF", cardBorder: "#D1FAE5",
-  ink:         "#0D2B1F", inkMid: "#1F5C3A", inkSoft: "#6B9E85",
+  ink:         "#0D2B1F", inkMid: "#1F5C3A", inkSoft: "#475569",
   red:         "#EF4444", redBg: "#FEF2F2",  redBorder: "#FECACA",
   blue:        "#3B82F6", blueBg: "#EFF6FF",  blueBorder: "#BFDBFE",
   amber:       "#F59E0B", amberBg: "#FFFBEB", amberBorder: "#FDE68A",
@@ -54,13 +55,13 @@ const STATUS_MAP: Record<string, {
   label: string; labelIncoming: string;
   color: string; bg: string; border: string; icon: string;
 }> = {
-  PENDING:    { label: "En attente", labelIncoming: "En attente", color: C.amber,  bg: C.amberBg,  border: C.amberBorder,  icon: "time-outline"                   },
-  VALIDATED:  { label: "Disponible", labelIncoming: "Disponible", color: C.blue,   bg: C.blueBg,   border: C.blueBorder,   icon: "shield-checkmark-outline"        },
-  PAID:       { label: "Payé",       labelIncoming: "Reçu",       color: C.green,  bg: C.greenPale,border: C.greenBorder,  icon: "checkmark-done-circle-outline"   },
-  PROCESSING: { label: "Traitement", labelIncoming: "Traitement", color: C.purple, bg: C.purpleBg, border: C.purpleBorder, icon: "sync-outline"                    },
-  CANCELLED:  { label: "Annulé",     labelIncoming: "Annulé",     color: C.slate,  bg: C.slateBg,  border: C.slateBorder,  icon: "close-circle-outline"            },
-  FAILED:     { label: "Échoué",     labelIncoming: "Échoué",     color: C.red,    bg: C.redBg,    border: C.redBorder,    icon: "alert-circle-outline"            },
-  REFUNDED:   { label: "Remboursé",  labelIncoming: "Remboursé",  color: C.violet, bg: C.violetBg, border: C.violetBorder, icon: "return-down-back-outline"        },
+  PENDING:    { label: "En attente", labelIncoming: "En attente", color: C.amber,  bg: C.amberBg,  border: C.amberBorder,  icon: "time-outline"                  },
+  VALIDATED:  { label: "Disponible", labelIncoming: "Disponible", color: C.blue,   bg: C.blueBg,   border: C.blueBorder,   icon: "shield-checkmark-outline"       },
+  PAID:       { label: "Payé",       labelIncoming: "Reçu",       color: C.green,  bg: C.greenPale,border: C.greenBorder,  icon: "checkmark-done-circle-outline"  },
+  PROCESSING: { label: "Traitement", labelIncoming: "Traitement", color: C.purple, bg: C.purpleBg, border: C.purpleBorder, icon: "sync-outline"                   },
+  CANCELLED:  { label: "Annulé",     labelIncoming: "Annulé",     color: C.slate,  bg: C.slateBg,  border: C.slateBorder,  icon: "close-circle-outline"           },
+  FAILED:     { label: "Échoué",     labelIncoming: "Échoué",     color: C.red,    bg: C.redBg,    border: C.redBorder,    icon: "alert-circle-outline"           },
+  REFUNDED:   { label: "Remboursé",  labelIncoming: "Remboursé",  color: C.violet, bg: C.violetBg, border: C.violetBorder, icon: "return-down-back-outline"       },
 };
 
 const FILTERS = ["ALL", "PENDING", "VALIDATED", "PAID", "CANCELLED"] as const;
@@ -150,18 +151,15 @@ function TxCard({ item, userId, userRole }: {
   };
   const badgeLabel = dir.isIncoming ? rawSt.labelIncoming : rawSt.label;
 
-  // ✅ FIX v6.2 — Montant affiché pour les entrants avec conversion de devise
   const hasConversion =
     item.targetCurrency &&
     item.targetCurrency !== item.currency &&
     toNum(item.receivedAmount) > 0;
 
   const displayAmount: number   = dir.isIncoming && hasConversion
-    ? toNum(item.receivedAmount)
-    : toNum(item.amount);
+    ? toNum(item.receivedAmount) : toNum(item.amount);
   const displayCurrency: string = dir.isIncoming && hasConversion
-    ? (item.targetCurrency as string)
-    : (item.currency as string);
+    ? (item.targetCurrency as string) : (item.currency as string);
 
   const counterpart = dir.isIncoming
     ? (item.sender?.firstName
@@ -215,7 +213,6 @@ function TxCard({ item, userId, userRole }: {
           </View>
 
           <View style={tc.bottom}>
-            {/* Pill conversion — expéditeur uniquement (entrant affiche déjà receivedAmount) */}
             {!dir.isIncoming &&
               item.targetCurrency &&
               item.targetCurrency !== item.currency && (
@@ -302,7 +299,6 @@ export default function TransactionsScreen() {
         for (const tx of allTx) {
           const type = String(tx.type ?? "").toUpperCase();
           const txId = String(tx.id);
-
           if (type === "AGENCY_REFILL" || type === "REFILL") {
             if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
             continue;
@@ -370,18 +366,18 @@ export default function TransactionsScreen() {
     }, [load])
   );
 
-  // ── Filtrage + comptage ───────────────────────────────
+  // ── Filtrage ──────────────────────────────────────────
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
       if (filter !== "ALL" && tx.status !== filter) return false;
       if (q.trim()) {
-        const s = q.toLowerCase();
+        const sq = q.toLowerCase();
         return (
-          (tx.reference ?? "").toLowerCase().includes(s) ||
-          (tx.beneficiary?.fullName ?? "").toLowerCase().includes(s) ||
-          (tx.beneficiary?.phone ?? "").toLowerCase().includes(s) ||
-          `${tx.sender?.firstName ?? ""} ${tx.sender?.lastName ?? ""}`.toLowerCase().includes(s) ||
-          `${tx.senderFirstName ?? ""} ${tx.senderLastName ?? ""}`.toLowerCase().includes(s)
+          (tx.reference ?? "").toLowerCase().includes(sq) ||
+          (tx.beneficiary?.fullName ?? "").toLowerCase().includes(sq) ||
+          (tx.beneficiary?.phone ?? "").toLowerCase().includes(sq) ||
+          `${tx.sender?.firstName ?? ""} ${tx.sender?.lastName ?? ""}`.toLowerCase().includes(sq) ||
+          `${tx.senderFirstName ?? ""} ${tx.senderLastName ?? ""}`.toLowerCase().includes(sq)
         );
       }
       return true;
@@ -402,22 +398,14 @@ export default function TransactionsScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.white} />
 
-      {/* ═══ HEADER CLAIR ════════════════════════════════ */}
+      {/* ═══ HEADER ══════════════════════════════════════ */}
       <Animated.View
         style={{
           opacity:   headerAnim,
-          transform: [
-            {
-              translateY: headerAnim.interpolate({
-                inputRange:  [0, 1],
-                outputRange: [-8, 0],
-              }),
-            },
-          ],
+          transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
         }}
       >
         <View style={s.header}>
-          {/* Titre + rôle + refresh */}
           <View style={s.headerRow}>
             <View style={{ flex: 1 }}>
               <View style={s.rolePill}>
@@ -432,7 +420,6 @@ export default function TransactionsScreen() {
                 {pendingCount > 0 ? ` · ${pendingCount} en attente` : ""}
               </Text>
             </View>
-
             <TouchableOpacity
               style={s.refreshBtn}
               onPress={() => { setRefreshing(true); void load(); }}
@@ -461,19 +448,17 @@ export default function TransactionsScreen() {
         </View>
       </Animated.View>
 
-      {/* ═══ FILTRES ═════════════════════════════════════
-          FIX v6.3 :
-          • maxHeight supprimé → les pills ne sont plus tronquées
-          • couleur inactive "#475569" au lieu de C.inkSoft "#6B9E85"
-            (contraste 5.9:1 sur blanc vs 2.5:1 avant → WCAG AA ✓)  */}
-      <FlatList
+      {/* ═══ FILTRES v6.4 ════════════════════════════════
+          FIX : FlatList → ScrollView (gap non supporté dans certains RN)
+                + marginRight sur chaque pill (remplace gap)
+                + color explicite dans filterTxt             */}
+      <ScrollView
         horizontal
-        data={[...FILTERS]}
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.filtersRow}
         style={s.filtersWrap}
-        keyExtractor={(f) => f}
-        renderItem={({ item: f }) => {
+        contentContainerStyle={s.filtersRow}
+      >
+        {FILTERS.map((f) => {
           const active = filter === f;
           const st     = f !== "ALL" ? STATUS_MAP[f] : null;
           const count  = f === "ALL"
@@ -482,11 +467,12 @@ export default function TransactionsScreen() {
 
           return (
             <TouchableOpacity
+              key={f}
               style={[
                 s.filterPill,
                 active && {
                   backgroundColor: st?.bg ?? C.greenPale,
-                  borderColor:     `${st?.color ?? C.green}40`,
+                  borderColor: `${st?.color ?? C.green}40`,
                 },
               ]}
               onPress={() => setFilter(f)}
@@ -495,8 +481,7 @@ export default function TransactionsScreen() {
               {active && st && (
                 <Ionicons name={st.icon as any} size={10} color={st.color} />
               )}
-
-              {/* ✅ FIX : "#475569" remplace C.inkSoft "#6B9E85" */}
+              {/* ✅ color explicite dans filterTxt — pas de risque d'héritage */}
               <Text
                 style={[
                   s.filterTxt,
@@ -506,33 +491,24 @@ export default function TransactionsScreen() {
               >
                 {f === "ALL" ? "Toutes" : st?.label ?? f}
               </Text>
-
               {count > 0 && (
-                <View
-                  style={[
-                    s.filterBadge,
-                    {
-                      backgroundColor: active
-                        ? `${st?.color ?? C.green}15`
-                        : "#F1F5F9",
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      s.filterBadgeTxt,
-                      { fontFamily: C.font.mono },
-                      { color: active ? (st?.color ?? C.green) : "#64748B" },
-                    ]}
-                  >
+                <View style={[
+                  s.filterBadge,
+                  { backgroundColor: active ? `${st?.color ?? C.green}15` : "#F1F5F9" },
+                ]}>
+                  <Text style={[
+                    s.filterBadgeTxt,
+                    { fontFamily: C.font.mono },
+                    { color: active ? (st?.color ?? C.green) : "#64748B" },
+                  ]}>
                     {count}
                   </Text>
                 </View>
               )}
             </TouchableOpacity>
           );
-        }}
-      />
+        })}
+      </ScrollView>
 
       {/* ═══ LISTE ═══════════════════════════════════════ */}
       {loading && !refreshing ? (
@@ -580,7 +556,6 @@ export default function TransactionsScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ── Header clair ──────────────────────────────────────
   header: {
     backgroundColor: C.white,
     paddingHorizontal: 18,
@@ -611,7 +586,6 @@ const s = StyleSheet.create({
     marginTop: 4,
   },
 
-  // ── Recherche ──────────────────────────────────────────
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: C.greenLight, borderWidth: 1.5, borderColor: C.greenBorder,
@@ -619,33 +593,44 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
 
-  // ── Filtres (FIX v6.3) ─────────────────────────────────
-  // maxHeight supprimé → les pills ne sont plus tronquées par le conteneur
+  // ✅ FIX v6.4 : filtersWrap sans hauteur fixe — s'adapte au contenu
   filtersWrap: {
     backgroundColor: C.white,
-    borderBottomWidth: 1, borderBottomColor: "#E4E9F0",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E4E9F0",
+    flexShrink: 0,
   },
+  // ✅ FIX v6.4 : pas de gap ici — marginRight sur chaque pill à la place
   filtersRow: {
     paddingHorizontal: 14,
-    gap: 8,
     paddingVertical: 10,
-    // alignItems: "center" supprimé → ne force plus le centrage vertical
+    alignItems: "center",
   },
+  // ✅ FIX v6.4 : marginRight: 8 remplace gap dans le parent
   filterPill: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: C.r.pill,
     backgroundColor: C.white,
-    borderWidth: 1.5, borderColor: "#E2E8F0",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    marginRight: 8,  // ← remplace gap dans contentContainerStyle
   },
-  filterTxt: { fontSize: 11, fontWeight: "800" },
+  // ✅ FIX v6.4 : color "#475569" explicite dans le style de base
+  filterTxt: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#475569",  // visible sur fond blanc (contraste 5.9:1 WCAG AA)
+  },
   filterBadge: {
     minWidth: 18, paddingHorizontal: 5, paddingVertical: 2,
     borderRadius: 6, alignItems: "center",
   },
   filterBadgeTxt: { fontSize: 10, fontWeight: "900" },
 
-  // ── Liste ──────────────────────────────────────────────
   list:         { paddingHorizontal: 16, paddingTop: 14 },
   empty:        { alignItems: "center", paddingVertical: 60, gap: 8 },
   emptyIconBox: {

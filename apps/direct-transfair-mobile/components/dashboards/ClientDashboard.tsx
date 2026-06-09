@@ -1,24 +1,29 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v6.1 — Direct Transf'air
-// ✅ v5.1 : fix montant entrant converti (receivedAmount)
-// ✅ v6.0 : refonte UX — envoi rapide, stats mensuelles, taux live
-// ✅ v6.1 : suppression boutons "Envoyer/Historique" de la balance card
-//    → remplacés par 1 CTA principal "Envoyer de l'argent" dans le body
-//    → actions secondaires : Contacts · Taux · QR · Historique
-//    → stats : "0 XOF" au lieu de "—" quand pas de transaction ce mois
+// CLIENT DASHBOARD v7.0 — Direct Transf'air
+// ✅ v6.1 : fix montant entrant converti, suppression doublon CTA
+// ✅ v7.0 :
+//    - Héro compact : paddingBottom 28→14, balCard 20→14, amount 34→26
+//    - Arc concave (react-native-svg) remplace borderRadius 32
+//    - Fix : code JSX tronqué entre les 2 documents reconstruit complet
+//    - Fix : Animated.View séparé du style s.hero (arc inclus)
+//    - Thème vert intact
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
   ScrollView, SafeAreaView, StatusBar, Platform, Animated,
-  ActivityIndicator,
+  ActivityIndicator, Dimensions,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, Rect } from "react-native-svg";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+
+const { width: SW } = Dimensions.get("window");
+const CONCAVE_H = 70;
 
 // ─── Design System ──────────────────────────────────────
 const C = {
@@ -49,11 +54,11 @@ const C = {
   purpleBg:     "#F5F3FF",
   slate:        "#64748B",
   slateLight:   "#F1F5F9",
-  r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
+  r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 24, pill: 99 },
   font: {
-    serif: Platform.select({ ios: "Georgia",     android: "serif",           default: "serif"      }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium",default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace",        default: "monospace"  }),
+    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
 
@@ -88,15 +93,14 @@ const COUNTRY_CURRENCY: Record<string, string> = {
 };
 
 const TX_STATUS: Record<string, { color: string; bg: string; label: string }> = {
-  PAID:       { color: C.green,  bg: C.greenPale,   label: "Payé" },
-  VALIDATED:  { color: C.green,  bg: C.greenPale,   label: "Validé" },
-  PENDING:    { color: C.amber,  bg: C.amberBg,     label: "En cours" },
-  PROCESSING: { color: C.blue,   bg: C.blueBg,      label: "Traitement" },
-  CANCELLED:  { color: C.slate,  bg: C.slateLight,  label: "Annulé" },
-  FAILED:     { color: C.red,    bg: C.redBg,       label: "Échoué" },
+  PAID:       { color: C.green,  bg: C.greenPale,  label: "Payé" },
+  VALIDATED:  { color: C.green,  bg: C.greenPale,  label: "Validé" },
+  PENDING:    { color: C.amber,  bg: C.amberBg,    label: "En cours" },
+  PROCESSING: { color: C.blue,   bg: C.blueBg,     label: "Traitement" },
+  CANCELLED:  { color: C.slate,  bg: C.slateLight, label: "Annulé" },
+  FAILED:     { color: C.red,    bg: C.redBg,      label: "Échoué" },
 };
 
-// ─── Avatar coloré déterministe ──────────────────────────
 const AVATAR_PALETTES = [
   { bg: "#DCFCE7", text: "#15803D" }, { bg: "#DBEAFE", text: "#1D4ED8" },
   { bg: "#FEF3C7", text: "#B45309" }, { bg: "#F3E8FF", text: "#7E22CE" },
@@ -106,28 +110,35 @@ function avatarColors(name: string) {
   return AVATAR_PALETTES[(name?.charCodeAt(0) ?? 0) % AVATAR_PALETTES.length];
 }
 
+// ─── Arc concave vert ─────────────────────────────────────
+function HeroConcave() {
+  const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
+  const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
+  return (
+    <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
+      <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
+      <Path d={d} fill={C.green} />
+      <Path d={bd} fill="none" stroke="rgba(5,150,105,0.22)" strokeWidth={1.5} />
+    </Svg>
+  );
+}
+
 // ─── Quick Contact Chip ──────────────────────────────────
-// Affiche un des derniers contacts avec envoi en 1 tap
 function ContactChip({ name, phone, onPress }: { name: string; phone?: string; onPress: () => void }) {
   const initials = (name || "?").split(" ").map((s) => s[0] ?? "").join("").slice(0, 2).toUpperCase();
   const pal = avatarColors(name || "?");
   const scale = useRef(new Animated.Value(1)).current;
-
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={qc.chip}
-        onPress={onPress}
-        activeOpacity={1}
+        style={qc.chip} onPress={onPress} activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 60 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 40 }).start()}
       >
         <View style={[qc.avatar, { backgroundColor: pal.bg }]}>
           <Text style={[qc.initials, { color: pal.text, fontFamily: C.font.serif }]}>{initials}</Text>
         </View>
-        <Text style={[qc.name, { fontFamily: C.font.sans }]} numberOfLines={1}>
-          {name.split(" ")[0]}
-        </Text>
+        <Text style={[qc.name, { fontFamily: C.font.sans }]} numberOfLines={1}>{name.split(" ")[0]}</Text>
         <View style={qc.sendIcon}>
           <Ionicons name="paper-plane" size={10} color={C.green} />
         </View>
@@ -151,9 +162,7 @@ function ActionPill({ icon, label, color, bg, onPress }: {
   return (
     <Animated.View style={{ transform: [{ scale }], flex: 1, alignItems: "center", gap: 7 }}>
       <TouchableOpacity
-        style={[ap.circle, { backgroundColor: bg }]}
-        onPress={onPress}
-        activeOpacity={1}
+        style={[ap.circle, { backgroundColor: bg }]} onPress={onPress} activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.90, useNativeDriver: true, speed: 60 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 40 }).start()}
       >
@@ -172,20 +181,14 @@ const ap = StyleSheet.create({
 function TxRow({ tx, userId }: { tx: any; userId?: string }) {
   const isOut = tx.senderId === userId;
   const accent = isOut ? C.red : C.green;
-
-  // ✅ FIX v5.1 conservé : montant converti pour les entrants
   const hasConversion = !isOut && tx.targetCurrency && tx.targetCurrency !== tx.currency && toNum(tx.receivedAmount) > 0;
   const displayAmount:   number = hasConversion ? toNum(tx.receivedAmount) : toNum(tx.amount);
   const displayCurrency: string = hasConversion ? (tx.targetCurrency as string) : (tx.currency as string);
-
   const name = isOut
     ? (tx.beneficiary?.fullName ?? tx.recipient?.firstName ?? "Bénéficiaire")
-    : (tx.sender?.firstName
-        ? `${tx.sender.firstName} ${tx.sender.lastName ?? ""}`.trim()
-        : "Expéditeur");
-  const st = TX_STATUS[tx.status] ?? { color: C.slate, bg: C.slateLight, label: tx.status };
+    : (tx.sender?.firstName ? `${tx.sender.firstName} ${tx.sender.lastName ?? ""}`.trim() : "Expéditeur");
+  const st  = TX_STATUS[tx.status] ?? { color: C.slate, bg: C.slateLight, label: tx.status };
   const pal = avatarColors(name);
-
   return (
     <View style={tr.row}>
       <View style={[tr.avatar, { backgroundColor: pal.bg }]}>
@@ -231,18 +234,17 @@ export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
 
-  const [refreshing,   setRefreshing]   = useState(false);
-  const [txs,          setTxs]          = useState<any[]>([]);
-  const [loadingTxs,   setLoadingTxs]   = useState(true);
-  const [showBalance,  setShowBalance]  = useState(true);
-  const [eurXofRate,   setEurXofRate]   = useState<number | null>(null);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [txs,         setTxs]         = useState<any[]>([]);
+  const [loadingTxs,  setLoadingTxs]  = useState(true);
+  const [showBalance, setShowBalance] = useState(true);
+  const [eurXofRate,  setEurXofRate]  = useState<number | null>(null);
 
   const heroAnim    = useRef(new Animated.Value(0)).current;
   const contentAnim = useRef(new Animated.Value(0)).current;
 
   const firstName = user?.firstName ?? "Client";
 
-  // Devise principale
   const rawCountry      = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
   const primaryCurrency = (user as any)?.primaryCurrency || COUNTRY_CURRENCY[rawCountry] || "XOF";
   const wallets         = (user as any)?.wallets ?? [];
@@ -252,25 +254,19 @@ export default function ClientDashboard() {
   const reservedBalance  = toNum(mainWallet?.reservedBalance ?? 0);
   const availableBalance = balance - reservedBalance;
 
-  // ── Stats mensuelles vraies ───────────────────────────
-  const monthTxs    = txs.filter((t) => isThisMonth(t.createdAt));
-  const monthSent   = monthTxs
+  // Stats mensuelles
+  const monthTxs  = txs.filter((t) => isThisMonth(t.createdAt));
+  const monthSent = monthTxs
     .filter((t) => t.senderId === user?.id && t.status === "PAID")
     .reduce((acc, t) => acc + toNum(t.amount), 0);
-  const monthRecv   = monthTxs
-    .filter((t) => {
-      const isIn = t.recipientId === user?.id || (t.senderId !== user?.id && !t.beneficiaryId);
-      const hasConv = t.targetCurrency && t.targetCurrency !== t.currency && toNum(t.receivedAmount) > 0;
-      return isIn && t.status === "PAID";
-    })
+  const monthRecv = monthTxs
+    .filter((t) => (t.recipientId === user?.id || (t.senderId !== user?.id && !t.beneficiaryId)) && t.status === "PAID")
     .reduce((acc, t) => {
       const hasConv = t.targetCurrency && t.targetCurrency !== t.currency && toNum(t.receivedAmount) > 0;
       return acc + (hasConv ? toNum(t.receivedAmount) : toNum(t.amount));
     }, 0);
-  const monthSentCurrency = primaryCurrency;
-  const monthRecvCurrency = primaryCurrency;
 
-  // ── Contacts récents (3 derniers uniques côté envoi) ──
+  // Contacts récents
   const recentContacts = (() => {
     const seen = new Set<string>();
     const result: Array<{ name: string; phone?: string; beneficiaryId?: string }> = [];
@@ -294,18 +290,14 @@ export default function ClientDashboard() {
         api.getTransactions(),
         api.getExchangeRates(),
       ]);
-
       if (rawTxs.status === "fulfilled") {
         const safe = Array.isArray(rawTxs.value) ? rawTxs.value : [];
         setTxs(safe.sort((a, b) =>
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         ).slice(0, 10));
       }
-
       if (rates.status === "fulfilled" && Array.isArray(rates.value)) {
-        const pair = rates.value.find((r: any) =>
-          r.pair === "EUR/XOF" || r.pair === "EUR_XOF"
-        );
+        const pair = rates.value.find((r: any) => r.pair === "EUR/XOF" || r.pair === "EUR_XOF");
         if (pair?.rate) setEurXofRate(Number(pair.rate));
       }
     } catch {}
@@ -326,77 +318,78 @@ export default function ClientDashboard() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
 
-      {/* ═══════════════ HERO ════════════════ */}
-      <Animated.View style={[s.hero, {
+      {/* ══ HÉRO + ARC CONCAVE animés ensemble ══ */}
+      <Animated.View style={{
         opacity: heroAnim,
         transform: [{ scale: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
-      }]}>
-        <View style={s.glow1} />
-        <View style={s.glow2} />
+      }}>
+        {/* ── Héro compact vert ── */}
+        <View style={s.hero}>
+          <View style={s.glow1} />
+          <View style={s.glow2} />
 
-        {/* Top bar */}
-        <View style={s.topBar}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.greeting, { fontFamily: C.font.sans }]}>Bon retour 👋</Text>
-            <Text style={[s.heroName, { fontFamily: C.font.serif }]} numberOfLines={1}>{firstName}</Text>
-          </View>
-          <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-            <Ionicons name="notifications-outline" size={17} color={C.white} />
-            <View style={s.notifDot} />
-          </TouchableOpacity>
-          <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
-            <Text style={[s.avatarTxt, { fontFamily: C.font.serif }]}>{(firstName[0] ?? "C").toUpperCase()}</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Balance card */}
-        <View style={s.balCard}>
-          {/* Solde */}
-          <View style={s.balTop}>
+          {/* Top bar */}
+          <View style={s.topBar}>
             <View style={{ flex: 1 }}>
-              <View style={s.balLabelRow}>
-                <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>
-                  SOLDE DISPONIBLE · {primaryCurrency}
-                </Text>
-                <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
-                  <Ionicons
-                    name={showBalance ? "eye-outline" : "eye-off-outline"}
-                    size={14} color={C.inkSoft}
-                  />
-                </TouchableOpacity>
-              </View>
-              <Text style={[s.balAmount, { fontFamily: C.font.serif }]}
-                numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
-                {showBalance ? fmt(availableBalance, primaryCurrency) : "••••••"}
-              </Text>
-              <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{primaryCurrency}</Text>
+              <Text style={[s.greeting, { fontFamily: C.font.sans }]}>Bon retour 👋</Text>
+              <Text style={[s.heroName, { fontFamily: C.font.serif }]} numberOfLines={1}>{firstName}</Text>
             </View>
-            <View style={s.onlinePill}>
-              <View style={s.onlineDot} />
-              <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
-            </View>
+            <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
+              <Ionicons name="notifications-outline" size={17} color={C.white} />
+              <View style={s.notifDot} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
+              <Text style={[s.avatarTxt, { fontFamily: C.font.serif }]}>{(firstName[0] ?? "C").toUpperCase()}</Text>
+            </TouchableOpacity>
           </View>
 
-          {/* Barre de progression */}
-          {balance > 0 && (
-            <View style={s.progBg}>
-              <View style={[s.progFill, { width: `${Math.min((availableBalance / balance) * 100, 100)}%` as any }]} />
+          {/* Balance card compact */}
+          <View style={s.balCard}>
+            <View style={s.balTop}>
+              <View style={{ flex: 1 }}>
+                <View style={s.balLabelRow}>
+                  <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>
+                    SOLDE DISPONIBLE · {primaryCurrency}
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
+                    <Ionicons
+                      name={showBalance ? "eye-outline" : "eye-off-outline"}
+                      size={14} color={C.inkSoft}
+                    />
+                  </TouchableOpacity>
+                </View>
+                <Text style={[s.balAmount, { fontFamily: C.font.serif }]}
+                  numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.55}>
+                  {showBalance ? fmt(availableBalance, primaryCurrency) : "••••••"}
+                </Text>
+                <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{primaryCurrency}</Text>
+              </View>
+              <View style={s.onlinePill}>
+                <View style={s.onlineDot} />
+                <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
+              </View>
             </View>
-          )}
-          {balance > 0 && (
-            <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
-              Disponible <Text style={s.balFootVal}>{fmt(availableBalance, primaryCurrency)} {primaryCurrency}</Text>
-              {reservedBalance > 0 && (
-                <Text style={[s.balFootVal, { color: C.amber }]}
-                >  ·  Réservé {fmt(reservedBalance, primaryCurrency)}</Text>
-              )}
-            </Text>
-          )}
-
+            {balance > 0 && (
+              <>
+                <View style={s.progBg}>
+                  <View style={[s.progFill, { width: `${Math.min((availableBalance / balance) * 100, 100)}%` as any }]} />
+                </View>
+                <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
+                  Disponible <Text style={s.balFootVal}>{fmt(availableBalance, primaryCurrency)} {primaryCurrency}</Text>
+                  {reservedBalance > 0 && (
+                    <Text style={[s.balFootVal, { color: C.amber }]}>  ·  Réservé {fmt(reservedBalance, primaryCurrency)}</Text>
+                  )}
+                </Text>
+              </>
+            )}
+          </View>
         </View>
+
+        {/* ── Arc concave vert → pageBg ── */}
+        <HeroConcave />
       </Animated.View>
 
-      {/* ═══════════════ BODY ════════════════ */}
+      {/* ══ BODY ══ */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={s.body}
@@ -407,10 +400,10 @@ export default function ClientDashboard() {
       >
         <Animated.View style={{
           opacity: contentAnim,
-          transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) }],
+          transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
         }}>
 
-          {/* ── CTA PRINCIPAL — un seul endroit pour envoyer ── */}
+          {/* ── CTA principal ── */}
           <TouchableOpacity
             style={s.mainCta}
             onPress={() => router.push("/(tabs)/send")}
@@ -430,15 +423,16 @@ export default function ClientDashboard() {
             </View>
           </TouchableOpacity>
 
-          {/* ── ACTIONS secondaires (sans doublon Envoyer) ── */}
+          {/* ── Actions secondaires ── */}
           <View style={s.actionsRow}>
-            <ActionPill icon="people-outline"    label="Contacts"  color={C.green}  bg={C.greenPale} onPress={() => router.push("/(tabs)/beneficiaries")} />
-            <ActionPill icon="repeat-outline"    label="Taux"      color={C.blue}   bg={C.blueBg}    onPress={() => router.push("/(tabs)/rates")} />
-            <ActionPill icon="qr-code-outline"   label="QR Code"   color={C.amber}  bg={C.amberBg}   onPress={() => router.push("/(tabs)/qr")} />
-            <ActionPill icon="time-outline"      label="Historique" color={C.purple} bg={C.purpleBg}  onPress={() => router.push("/(tabs)/transactions")} />
+            <ActionPill icon="people-outline"  label="Contacts"  color={C.green}  bg={C.greenPale} onPress={() => router.push("/(tabs)/beneficiaries")} />
+            <ActionPill icon="repeat-outline"  label="Taux"      color={C.blue}   bg={C.blueBg}    onPress={() => router.push("/(tabs)/rates")} />
+            <ActionPill icon="qr-code-outline" label="QR Code"   color={C.amber}  bg={C.amberBg}   onPress={() => router.push("/(tabs)/qr")} />
+            {/* ✅ Fix v7.0 : ligne complète (code tronqué dans les docs) */}
+            <ActionPill icon="time-outline"    label="Historique" color={C.purple} bg={C.purpleBg} onPress={() => router.push("/(tabs)/transactions")} />
           </View>
 
-          {/* ── STATS MENSUELLES ── */}
+          {/* ── Stats du mois ── */}
           <View style={s.statsRow}>
             {/* Envoyé ce mois */}
             <View style={[s.statCard, { borderLeftColor: C.red }]}>
@@ -448,10 +442,10 @@ export default function ClientDashboard() {
                 </View>
                 <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>ENVOYÉ CE MOIS</Text>
               </View>
-              <Text style={[s.statAmount, { color: C.ink, fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                {fmt(monthSent, monthSentCurrency)}
+              <Text style={[s.statAmount, { color: C.red, fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {fmt(monthSent, primaryCurrency)}
               </Text>
-              <Text style={[s.statCur, { fontFamily: C.font.mono }]}>{monthSentCurrency}</Text>
+              <Text style={[s.statCur, { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
             </View>
 
             {/* Reçu ce mois */}
@@ -462,13 +456,13 @@ export default function ClientDashboard() {
                 </View>
                 <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>REÇU CE MOIS</Text>
               </View>
-              <Text style={[s.statAmount, { color: C.ink, fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                {fmt(monthRecv, monthRecvCurrency)}
+              <Text style={[s.statAmount, { color: C.green, fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                {fmt(monthRecv, primaryCurrency)}
               </Text>
-              <Text style={[s.statCur, { fontFamily: C.font.mono }]}>{monthRecvCurrency}</Text>
+              <Text style={[s.statCur, { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
             </View>
 
-            {/* Taux EUR→XOF */}
+            {/* Taux EUR → XOF */}
             <View style={[s.statCard, { borderLeftColor: C.blue }]}>
               <View style={s.statTop}>
                 <View style={[s.statIcon, { backgroundColor: C.blueBg }]}>
@@ -485,7 +479,7 @@ export default function ClientDashboard() {
             </View>
           </View>
 
-          {/* ── ENVOI RAPIDE ── */}
+          {/* ── Envoi rapide ── */}
           {recentContacts.length > 0 && (
             <>
               <View style={s.secRow}>
@@ -495,7 +489,6 @@ export default function ClientDashboard() {
                   <Text style={[s.seeAllTxt, { fontFamily: C.font.sans }]}>Tous →</Text>
                 </TouchableOpacity>
               </View>
-
               <View style={s.quickSendCard}>
                 <View style={s.quickSendRow}>
                   {recentContacts.map((c, i) => (
@@ -511,7 +504,6 @@ export default function ClientDashboard() {
                       })}
                     />
                   ))}
-                  {/* Bouton "Nouveau" */}
                   <TouchableOpacity
                     style={qc2.newBtn}
                     onPress={() => router.push("/(tabs)/beneficiaries/create")}
@@ -527,7 +519,7 @@ export default function ClientDashboard() {
             </>
           )}
 
-          {/* ── TRANSACTIONS RÉCENTES ── */}
+          {/* ── Transactions récentes ── */}
           <View style={[s.secRow, { marginTop: recentContacts.length > 0 ? 8 : 0 }]}>
             <View style={[s.secDot, { backgroundColor: C.blue }]} />
             <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>TRANSACTIONS RÉCENTES</Text>
@@ -556,13 +548,8 @@ export default function ClientDashboard() {
             ) : (
               <>
                 {recentTxs.map((tx) => <TxRow key={tx.id} tx={tx} userId={user?.id} />)}
-                <TouchableOpacity
-                  style={s.viewMore}
-                  onPress={() => router.push("/(tabs)/transactions")}
-                >
-                  <Text style={[s.viewMoreTxt, { fontFamily: C.font.sans }]}>
-                    Voir toutes les transactions
-                  </Text>
+                <TouchableOpacity style={s.viewMore} onPress={() => router.push("/(tabs)/transactions")}>
+                  <Text style={[s.viewMoreTxt, { fontFamily: C.font.sans }]}>Voir toutes les transactions</Text>
                   <Ionicons name="arrow-forward" size={13} color={C.green} />
                 </TouchableOpacity>
               </>
@@ -593,60 +580,52 @@ const qc2 = StyleSheet.create({
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ── Hero ──
+  // ── Héro compact v7 — sans borderRadius (arc concave) ──
   hero: {
     backgroundColor: C.green,
-    borderBottomLeftRadius: 32, borderBottomRightRadius: 32,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 48 : 14,
-    paddingBottom: 28,
-    overflow: "hidden",
-    zIndex: 10,
+    paddingTop:    Platform.OS === "android" ? 44 : 14, // ✅ réduit (48→44)
+    paddingBottom: 14,   // ✅ réduit (28→14)
+    overflow:      "hidden",
+    zIndex:        10,
   },
   glow1: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: C.heroGlow, top: -80,  right: -60 },
   glow2: { position: "absolute", width: 100, height: 100, borderRadius: 50,  backgroundColor: C.heroGlow, bottom: 20, left: -30 },
 
-  topBar:    { flexDirection: "row", alignItems: "flex-start", marginBottom: 22, gap: 10 },
+  topBar:    { flexDirection: "row", alignItems: "flex-start", marginBottom: 14, gap: 10 }, // ✅ réduit (22→14)
   greeting:  { color: C.heroDim, fontSize: 12, fontWeight: "600", marginBottom: 4 },
-  heroName:  { color: C.white, fontSize: 24, fontWeight: "700", letterSpacing: -0.3 },
-  iconBtn: {
-    width: 38, height: 38, borderRadius: C.r.sm,
-    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
-    justifyContent: "center", alignItems: "center",
-  },
+  heroName:  { color: C.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }, // ✅ réduit (24→22)
+  iconBtn:   { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
   notifDot:  { position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: C.green },
-  avatarBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: C.heroGlass, borderWidth: 1.5, borderColor: C.heroGlassBdr,
-    justifyContent: "center", alignItems: "center",
-  },
+  avatarBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.heroGlass, borderWidth: 1.5, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
   avatarTxt: { color: C.white, fontSize: 16, fontWeight: "800" },
 
+  // ── Balance card compact ──
   balCard: {
-    backgroundColor: C.white, borderRadius: C.r.xl, padding: 20,
-    shadowColor: "#000", shadowOpacity: 0.14, shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 }, elevation: 10,
+    backgroundColor: C.white, borderRadius: C.r.xl,
+    padding: 14, // ✅ réduit (20→14)
+    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 }, elevation: 8,
   },
-  balTop:      { flexDirection: "row", alignItems: "flex-start", marginBottom: 12 },
-  balLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 },
+  balTop:      { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
+  balLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
   balLabel:    { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
-  balAmount:   { fontSize: 34, fontWeight: "800", color: C.ink, letterSpacing: -1 },
-  balCur:      { fontSize: 12, fontWeight: "800", color: C.green, marginTop: 3 },
-  onlinePill: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 10, paddingVertical: 5 },
-  onlineDot:  { width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.green },
-  onlineTxt:  { color: C.greenDark, fontSize: 10, fontWeight: "700" },
-  progBg:     { height: 4, backgroundColor: C.greenLight, borderRadius: C.r.pill, overflow: "hidden", marginBottom: 7 },
-  progFill:   { height: 4, backgroundColor: C.green, borderRadius: C.r.pill },
-  balFootLbl: { fontSize: 10, fontWeight: "700", color: C.inkSoft, marginBottom: 0 },
-  balFootVal: { color: C.green, fontWeight: "900" },
+  balAmount:   { fontSize: 26, fontWeight: "800", color: C.ink, letterSpacing: -0.8 }, // ✅ réduit (34→26)
+  balCur:      { fontSize: 12, fontWeight: "800", color: C.green, marginTop: 2 },
+  onlinePill:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 10, paddingVertical: 5 },
+  onlineDot:   { width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.green },
+  onlineTxt:   { color: C.greenDark, fontSize: 10, fontWeight: "700" },
+  progBg:      { height: 4, backgroundColor: C.greenLight, borderRadius: C.r.pill, overflow: "hidden", marginBottom: 6 },
+  progFill:    { height: 4, backgroundColor: C.green, borderRadius: C.r.pill },
+  balFootLbl:  { fontSize: 10, fontWeight: "700", color: C.inkSoft },
+  balFootVal:  { color: C.green, fontWeight: "900" },
 
-  // ── CTA Principal ──
+  // ── CTA principal ──
   mainCta: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: C.greenDark,
-    borderRadius: C.r.lg, padding: 16, marginBottom: 16,
-    shadowColor: C.green, shadowOpacity: 0.30, shadowRadius: 14,
-    shadowOffset: { width: 0, height: 5 }, elevation: 7,
+    backgroundColor: C.greenDark, borderRadius: C.r.lg, padding: 16, marginBottom: 14,
+    shadowColor: C.green, shadowOpacity: 0.28, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
   mainCtaLeft:    { flexDirection: "row", alignItems: "center", gap: 13, flex: 1 },
   mainCtaIconBox: { width: 44, height: 44, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.18)", justifyContent: "center", alignItems: "center" },
@@ -655,49 +634,44 @@ const s = StyleSheet.create({
   mainCtaArrow:   { width: 34, height: 34, borderRadius: 11, backgroundColor: C.white, justifyContent: "center", alignItems: "center" },
 
   // ── Body ──
-  body: { paddingHorizontal: 18, paddingTop: 20 },
+  body: { paddingHorizontal: 18, paddingTop: 18 },
 
   actionsRow: {
     flexDirection: "row", justifyContent: "space-between",
     backgroundColor: C.white, borderRadius: C.r.lg,
-    paddingVertical: 18, paddingHorizontal: 12, marginBottom: 16,
+    paddingVertical: 18, paddingHorizontal: 12, marginBottom: 14,
     borderWidth: 1, borderColor: C.cardBorder,
     shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
 
-  // ── Stats mensuelles ──
-  statsRow:    { flexDirection: "row", gap: 10, marginBottom: 16 },
+  statsRow:  { flexDirection: "row", gap: 8, marginBottom: 14 },
   statCard: {
     flex: 1, backgroundColor: C.white, borderRadius: C.r.md,
-    padding: 12, borderWidth: 1, borderColor: C.cardBorder,
-    borderLeftWidth: 3,
-    shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    padding: 11, borderWidth: 1, borderColor: C.cardBorder, borderLeftWidth: 3,
+    shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 5, elevation: 1,
   },
-  statTop:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
-  statIcon:  { width: 22, height: 22, borderRadius: 6, justifyContent: "center", alignItems: "center" },
-  statLabel: { fontSize: 7, fontWeight: "900", color: C.inkSoft, letterSpacing: 0.8, flex: 1 },
-  statAmount:{ fontSize: 16, fontWeight: "800", color: C.ink },
+  statTop:   { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 7 },
+  statIcon:  { width: 20, height: 20, borderRadius: 6, justifyContent: "center", alignItems: "center" },
+  statLabel: { fontSize: 7, fontWeight: "900", color: C.inkSoft, letterSpacing: 0.6, flex: 1 },
+  statAmount:{ fontSize: 15, fontWeight: "800", color: C.ink },
   statCur:   { fontSize: 8, fontWeight: "900", color: C.inkSoft, marginTop: 2 },
 
-  // ── Section headers ──
   secRow:    { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   secDot:    { width: 5, height: 5, borderRadius: C.r.pill },
   secLbl:    { flex: 1, fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
   seeAllTxt: { fontSize: 12, fontWeight: "700", color: C.green },
 
-  // ── Envoi rapide ──
   quickSendCard: {
     backgroundColor: C.white, borderRadius: C.r.lg,
-    padding: 16, paddingBottom: 20, marginBottom: 16,
+    padding: 16, paddingBottom: 20, marginBottom: 14,
     borderWidth: 1, borderColor: C.cardBorder,
     shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   quickSendRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
 
-  // ── Transactions ──
   txCard: {
     backgroundColor: C.white, borderRadius: C.r.lg,
-    paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, marginBottom: 16,
+    paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8, marginBottom: 14,
     borderWidth: 1, borderColor: C.cardBorder,
     shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },

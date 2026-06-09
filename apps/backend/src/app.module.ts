@@ -43,6 +43,8 @@ import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
 
 import { TenantMiddleware } from './tenants/tenant.middleware';
+import { ExchangeRatesController } from './exchange-rates/exchange-rates.controller';
+import { ExchangeRatesService } from './exchange-rates/exchange-rates.service';
 
 @Module({
   imports: [
@@ -76,6 +78,8 @@ import { TenantMiddleware } from './tenants/tenant.middleware';
     LimitsModule,
     LocationsModule,
   ],
+  controllers: [ExchangeRatesController],
+  providers: [ExchangeRatesService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

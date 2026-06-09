@@ -1,18 +1,20 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
 // =========================================================
-// LOCATIONS v6.2 — Direct Transf'air
-// ✅ v6.2 : fetchAgencies multi-endpoints
-//           /agencies  → réservé aux admins (403 pour USER)
-//           /agencies/public → fallback si disponible
-//           /locations → fallback supplémentaire
-//           403/401   → liste vide silencieuse (pas d'erreur affichée)
-//           Aucune URL en dur dans la logique métier
+// LOCATIONS v6.3 — Direct Transf'air
+// ✅ v6.2 : fetchAgencies multi-endpoints, 403 silencieux
+// ✅ v6.3 :
+//    - Téléphone affiché sur chaque carte (si disponible)
+//    - Email affiché sur chaque carte (si disponible)
+//    - Chaque info cliquable : tel: / mailto: via Linking
+//    - Affichage conditionnel : rien si champ absent en base
+//    - Carte wrapper → View (pas de faux tap sans action)
 // =========================================================
 
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, FlatList,
-  SafeAreaView, StatusBar, Platform, ActivityIndicator, RefreshControl,
+  SafeAreaView, StatusBar, Platform, ActivityIndicator,
+  RefreshControl, Linking,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -30,14 +32,17 @@ const ROLE_THEMES = {
 } as const;
 
 const T = {
-  surface:  "#FFFFFF",
-  text:     "#0F172A",
-  textSub:  "#475569",
-  textDim:  "#94A3B8",
-  border:   "#E2E8F0",
-  green:    "#16A34A",
-  red:      "#DC2626",
-  radius:   { md: 14, lg: 20 },
+  surface: "#FFFFFF",
+  text:    "#0F172A",
+  textSub: "#475569",
+  textDim: "#94A3B8",
+  border:  "#E2E8F0",
+  borderLight: "#F1F5F9",
+  green:   "#16A34A",
+  red:     "#DC2626",
+  blue:    "#2563EB",
+  blueSoft:"#EFF6FF",
+  radius:  { md: 14, lg: 20 },
   font: {
     display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
@@ -45,9 +50,6 @@ const T = {
   },
 };
 
-// ─── Endpoints candidates — ordonnés du plus restrictif au plus public ───
-// Le premier qui répond avec succès est utilisé.
-// Les 403/401 sont ignorés et on passe au suivant.
 const AGENCY_ENDPOINTS = ["/agencies", "/agencies/public", "/locations"] as const;
 
 function unwrapAgencies(raw: unknown): Agency[] {
@@ -60,9 +62,17 @@ function unwrapAgencies(raw: unknown): Agency[] {
   return [];
 }
 
+// ─── Ouvre tel: ou mailto: sans crash ────────────────────
+async function openLink(url: string) {
+  try {
+    const supported = await Linking.canOpenURL(url);
+    if (supported) await Linking.openURL(url);
+  } catch { /* noop */ }
+}
+
 export default function LocationsScreen() {
-  const router    = useRouter();
-  const { user }  = useAuth();
+  const router   = useRouter();
+  const { user } = useAuth();
 
   const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
@@ -72,14 +82,6 @@ export default function LocationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error,      setError]      = useState<string | null>(null);
 
-  // ── Chargement multi-endpoints ──────────────────────────
-  // Stratégie :
-  //   1. Essayer chaque endpoint dans l'ordre
-  //   2. 403/401 = pas d'autorisation → endpoint suivant
-  //   3. Tous interdits → liste vide sans message d'erreur
-  //      (un client wallet ne peut pas voir les agences directement,
-  //       ce n'est pas une erreur à afficher à l'utilisateur)
-  //   4. Autre erreur (réseau, 500…) → afficher le message d'erreur
   const fetchAgencies = useCallback(async () => {
     try {
       setError(null);
@@ -88,32 +90,21 @@ export default function LocationsScreen() {
 
       for (const endpoint of AGENCY_ENDPOINTS) {
         try {
-          const res  = await api.http.get<unknown>(endpoint);
-          found      = unwrapAgencies(res.data);
+          const res = await api.http.get<unknown>(endpoint);
+          found        = unwrapAgencies(res.data);
           allForbidden = false;
-          break; // succès → on arrête
+          break;
         } catch (err: any) {
           const status = err?.response?.status as number | undefined;
-          if (status === 403 || status === 401) {
-            // Pas d'accès à cet endpoint → on tente le suivant
-            continue;
-          }
-          // Autre erreur → on remonte pour l'afficher
+          if (status === 403 || status === 401) continue;
           throw err;
         }
       }
 
-      // Si tous les endpoints sont interdits pour ce rôle,
-      // on affiche une liste vide proprement (pas de "Forbidden resource")
-      if (allForbidden) {
-        found = [];
-      }
-
-      setAgencies(found);
+      setAgencies(allForbidden ? [] : found);
     } catch (e: any) {
       const raw = e?.response?.data?.message;
-      const msg = Array.isArray(raw) ? raw[0] : (raw || "Impossible de charger les agences.");
-      setError(msg);
+      setError(Array.isArray(raw) ? raw[0] : (raw || "Impossible de charger les agences."));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -124,50 +115,116 @@ export default function LocationsScreen() {
 
   const onRefresh = () => { setRefreshing(true); void fetchAgencies(); };
 
-  // ── Rendu d'une agence ──────────────────────────────────
-  const renderItem = ({ item }: { item: Agency }) => (
-    <TouchableOpacity style={s.card} activeOpacity={0.8}>
-      <View style={[s.iconBox, { backgroundColor: theme.accentSoft }]}>
-        <Ionicons name="location" size={20} color={theme.accent} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[s.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={[s.address, { fontFamily: T.font.sans }]} numberOfLines={1}>
-          {[item.address, item.city, item.country].filter(Boolean).join(", ")}
-        </Text>
-        <View style={s.metaRow}>
-          <View style={[
-            s.openPill,
-            {
-              backgroundColor: item.isActive ? "#DCFCE7" : "#FEE2E2",
-              borderColor:     item.isActive ? "#16A34A40" : "#DC262640",
-            },
-          ]}>
-            <View style={[s.openDot, { backgroundColor: item.isActive ? T.green : T.red }]} />
-            <Text style={[s.openTxt, { color: item.isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
-              {item.isActive ? "Ouvert" : "Fermé"}
-            </Text>
-          </View>
-          {role === "SUPER_ADMIN" && (item as any).clientName ? (
-            <View style={[s.clientPill, { backgroundColor: theme.accentSoft }]}>
-              <Text style={[s.clientTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
-                {(item as any).clientName}
+  // ── Carte agence ─────────────────────────────────────────
+  const renderItem = ({ item }: { item: Agency }) => {
+    const ag = item as any;
+
+    // ✅ Champs contact — plusieurs noms possibles selon le backend
+    const phone = ag.phone || ag.phoneNumber || ag.tel || null;
+    const email = ag.email || ag.contactEmail || null;
+    const hasContact = !!(phone || email);
+
+    return (
+      <View style={s.card}>
+
+        {/* Icône agence */}
+        <View style={[s.iconBox, { backgroundColor: theme.accentSoft }]}>
+          <Ionicons name="location" size={20} color={theme.accent} />
+        </View>
+
+        <View style={{ flex: 1, minWidth: 0 }}>
+
+          {/* Nom */}
+          <Text style={[s.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+
+          {/* Adresse */}
+          <Text style={[s.address, { fontFamily: T.font.sans }]} numberOfLines={1}>
+            {[ag.address, item.city, item.country].filter(Boolean).join(", ")}
+          </Text>
+
+          {/* Statut + client (SuperAdmin) */}
+          <View style={s.metaRow}>
+            <View style={[
+              s.openPill,
+              {
+                backgroundColor: item.isActive ? "#DCFCE7" : "#FEE2E2",
+                borderColor:     item.isActive ? "#16A34A40" : "#DC262640",
+              },
+            ]}>
+              <View style={[s.openDot, { backgroundColor: item.isActive ? T.green : T.red }]} />
+              <Text style={[s.openTxt, { color: item.isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
+                {item.isActive ? "Ouvert" : "Fermé"}
               </Text>
             </View>
-          ) : null}
+            {role === "SUPER_ADMIN" && ag.clientName ? (
+              <View style={[s.clientPill, { backgroundColor: theme.accentSoft }]}>
+                <Text style={[s.clientTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
+                  {ag.clientName}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* ── Contact (téléphone + email) ── */}
+          {hasContact && (
+            <View>
+              <View style={s.contactDivider} />
+              <View style={s.contactRow}>
+
+                {/* Téléphone — cliquable */}
+                {phone && (
+                  <TouchableOpacity
+                    style={s.contactBtn}
+                    onPress={() => openLink(`tel:${phone.replace(/\s/g, "")}`)}
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                  >
+                    <View style={[s.contactIconBox, { backgroundColor: theme.accentSoft }]}>
+                      <Ionicons name="call-outline" size={11} color={theme.accent} />
+                    </View>
+                    <Text style={[s.contactTxt, { color: T.textSub, fontFamily: T.font.mono }]}>
+                      {phone}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Email — cliquable */}
+                {email && (
+                  <TouchableOpacity
+                    style={[s.contactBtn, { flex: 1 }]}
+                    onPress={() => openLink(`mailto:${email}`)}
+                    activeOpacity={0.7}
+                    hitSlop={8}
+                  >
+                    <View style={[s.contactIconBox, { backgroundColor: T.blueSoft }]}>
+                      <Ionicons name="mail-outline" size={11} color={T.blue} />
+                    </View>
+                    <Text
+                      style={[s.contactTxt, { color: T.textSub, fontFamily: T.font.sans }]}
+                      numberOfLines={1}
+                    >
+                      {email}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Badge devise */}
+        <View style={[s.currBox, { backgroundColor: theme.accentSoft, borderColor: theme.accent + "40" }]}>
+          <Text style={[s.currTxt, { color: theme.accent, fontFamily: T.font.mono }]}>
+            {item.primaryCurrency ?? "—"}
+          </Text>
         </View>
       </View>
-      <View style={[s.currBox, { backgroundColor: theme.accentSoft, borderColor: theme.accent + "40" }]}>
-        <Text style={[s.currTxt, { color: theme.accent, fontFamily: T.font.mono }]}>
-          {item.primaryCurrency ?? "—"}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
-  // ── Sous-titre du header ────────────────────────────────
   const headerSub = loading
     ? "Chargement…"
     : error
@@ -204,7 +261,7 @@ export default function LocationsScreen() {
           </View>
         )}
 
-        {/* ── Erreur réseau / serveur (pas 403) ── */}
+        {/* ── Erreur réseau ── */}
         {!loading && !!error && (
           <View style={s.centered}>
             <Ionicons name="cloud-offline-outline" size={44} color={T.red} />
@@ -218,7 +275,7 @@ export default function LocationsScreen() {
           </View>
         )}
 
-        {/* ── Liste (y compris liste vide si 403 sur tous les endpoints) ── */}
+        {/* ── Liste ── */}
         {!loading && !error && (
           <FlatList
             data={agencies}
@@ -284,13 +341,14 @@ const s = StyleSheet.create({
   sectionDot: { width: 6, height: 6, borderRadius: 99 },
   sectionLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
 
+  // ── Carte ──
   card: {
-    flexDirection: "row", alignItems: "center", gap: 12,
+    flexDirection: "row", alignItems: "flex-start", gap: 12,
     backgroundColor: T.surface, borderRadius: 16, padding: 14,
     marginBottom: 10, borderWidth: 1, borderColor: T.border,
     shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
   },
-  iconBox:  { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  iconBox:  { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 1, flexShrink: 0 },
   name:     { color: T.text, fontSize: 14, fontWeight: "700", marginBottom: 3 },
   address:  { color: T.textDim, fontSize: 11, fontWeight: "600", marginBottom: 6 },
   metaRow:  { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
@@ -299,15 +357,22 @@ const s = StyleSheet.create({
   openTxt:  { fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
   clientPill:{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7 },
   clientTxt: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-  currBox:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, alignItems: "center" },
+  currBox:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, alignItems: "center", alignSelf: "flex-start", marginTop: 2, flexShrink: 0 },
   currTxt:  { fontSize: 11, fontWeight: "800" },
 
+  // ── Contact ──
+  contactDivider: { height: 1, backgroundColor: T.borderLight, marginTop: 9, marginBottom: 7 },
+  contactRow:     { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  contactBtn:     { flexDirection: "row", alignItems: "center", gap: 5, minWidth: 0 },
+  contactIconBox: { width: 20, height: 20, borderRadius: 6, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  contactTxt:     { fontSize: 10, fontWeight: "700", color: T.textSub, flexShrink: 1 },
+
+  // ── États ──
   centered:   { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, padding: 32 },
   loadingTxt: { fontSize: 13, marginTop: 8 },
   errorTxt:   { color: T.red, fontSize: 13, textAlign: "center", lineHeight: 20 },
   retryBtn:   { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
   retryTxt:   { color: "#fff", fontSize: 13, fontWeight: "700" },
-
   emptyIcon:    { width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 4 },
   emptyTitle:   { color: T.text, fontSize: 16, fontWeight: "700", textAlign: "center" },
   emptySubtxt:  { color: T.textDim, fontSize: 12, textAlign: "center", lineHeight: 18 },

@@ -1,41 +1,56 @@
 // apps/direct-transfair-mobile/components/dashboards/AgentDashboard.tsx
 // =========================================================
-// AGENT DASHBOARD v5.2 — Direct Transf'air
-// ✅ FIX : stats opérations calculées depuis les vraies
-//    transactions de l'agent (plus de valeurs codées en dur)
+// AGENT DASHBOARD v6.0 — Direct Transf'air
+// ✅ v5.2 : stats réelles depuis les transactions agent
+// ✅ v6.0 :
+//    - Violet → Bleu professionnel (#2563EB), non agressif
+//    - Héro plus compact (paddingBottom 18→10, balCard 16→12)
+//    - Arc concave Option C (react-native-svg) comme CompanyAdmin
+//    - pageBg bleu clair (#EFF6FF) au lieu de violet pâle
+//    - Icône notification → router.push("/(tabs)/notifications")
 // =========================================================
 
 import React, { useState, useRef, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, RefreshControl,
   ScrollView, SafeAreaView, StatusBar, Animated, Platform,
-  useWindowDimensions,
+  useWindowDimensions, Dimensions,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, Rect } from "react-native-svg";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
+const { width: SW } = Dimensions.get("window");
+
+// ─── Bleu agent — non agressif ───────────────────────────
+const AGENT_BLUE      = "#2563EB"; // bleu-600 Tailwind, professionnel
+const AGENT_BLUE_DARK = "#1D4ED8"; // bleu-700
+const CONCAVE_H       = 70;        // profondeur arc concave
+
 // ─── Design System ──────────────────────────────────────
 const C = {
-  violet:       "#6C47FF",
-  violetDark:   "#5535E0",
-  violetLight:  "#F5F3FF",
-  violetBorder: "#EDE9FE",
+  // ✅ Violet remplacé par bleu professionnel
+  violet:       AGENT_BLUE,
+  violetDark:   AGENT_BLUE_DARK,
+  violetLight:  "#EFF6FF",
+  violetBorder: "#DBEAFE",
 
   heroGlass:    "rgba(255,255,255,0.14)",
   heroGlassBdr: "rgba(255,255,255,0.22)",
-  heroDim:      "rgba(255,255,255,0.65)",
+  heroDim:      "rgba(255,255,255,0.72)",
   heroGlow1:    "rgba(255,255,255,0.07)",
   heroGlow2:    "rgba(255,255,255,0.04)",
 
-  pageBg:       "#F4F2FF",
+  // ✅ pageBg bleu clair au lieu de violet pâle
+  pageBg:       "#EFF6FF",
   white:        "#FFFFFF",
-  cardBorder:   "#EDE9FE",
+  cardBorder:   "#DBEAFE",
 
-  ink:          "#12082E",
-  inkMid:       "#4B3F72",
-  inkSoft:      "#8B80A8",
+  ink:          "#0F172A",
+  inkMid:       "#374151",
+  inkSoft:      "#6B7280",
 
   green:        "#10B981",
   greenBg:      "#ECFDF5",
@@ -59,7 +74,6 @@ const C = {
   purpleBorder: "#DDD6FE",
 
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
-
   font: {
     serif:   Platform.select({ ios: "Georgia",     android: "serif",             default: "serif" }),
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif",        default: "sans-serif" }),
@@ -79,6 +93,20 @@ function fmt(n: number, currency: string): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
   catch { return n.toFixed(d); }
+}
+
+// ─── Arc Concave — même technique que CompanyDashboard ───
+// Remplit les coins (couleur héro bleu), courbe montante au centre
+function HeroConcave() {
+  const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
+  const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
+  return (
+    <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
+      <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
+      <Path d={d} fill={AGENT_BLUE} />
+      <Path d={bd} fill="none" stroke="rgba(37,99,235,0.22)" strokeWidth={1.5} />
+    </Svg>
+  );
 }
 
 // ─── Op Card ────────────────────────────────────────────
@@ -114,7 +142,7 @@ function OpCard({ title, subtitle, icon, accent, bg, onPress, badge }: {
   );
 }
 const op = StyleSheet.create({
-  card:     { backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.violet, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, overflow: "hidden", minHeight: 130 },
+  card:     { backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, overflow: "hidden", minHeight: 130 },
   corner:   { position: "absolute", top: -16, right: -16, width: 56, height: 56, borderRadius: 28, opacity: 0.45 },
   iconWrap: { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 10 },
   badge:    { position: "absolute", top: 9, right: 9, paddingHorizontal: 6, paddingVertical: 2, borderRadius: C.r.xs, borderWidth: 1 },
@@ -154,7 +182,7 @@ function ReportRow({ title, sub, icon, accent, bg, onPress, value }: {
   );
 }
 const rr = StyleSheet.create({
-  row:     { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.md, padding: 13, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.violet, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
+  row:     { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.md, padding: 13, borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
   iconBox: { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
   title:   { fontSize: 13, fontWeight: "500", color: C.ink, marginBottom: 2 },
   sub:     { fontSize: 10, fontWeight: "400", color: C.inkSoft },
@@ -172,7 +200,7 @@ function StatChip({ label, value, accent }: { label: string; value: string; acce
   );
 }
 const sc = StyleSheet.create({
-  chip: { flex: 1, backgroundColor: C.white, borderRadius: C.r.md, padding: 11, alignItems: "center", borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.violet, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
+  chip: { flex: 1, backgroundColor: C.white, borderRadius: C.r.md, padding: 11, alignItems: "center", borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
   val:  { fontSize: 16, fontWeight: "600", marginBottom: 2 },
   lbl:  { fontSize: 9, fontWeight: "400", color: C.inkSoft, letterSpacing: 0.5, textTransform: "uppercase" },
 });
@@ -186,8 +214,6 @@ export default function AgentDashboard() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [agencyData, setAgencyData] = useState<any>(null);
-
-  // ✅ Stats réelles — initialisées à 0
   const [stats, setStats] = useState({ total: 0, validated: 0, pending: 0 });
 
   const COUNTRY_CURRENCY_MAP: Record<string, string> = {
@@ -214,29 +240,24 @@ export default function AgentDashboard() {
   const loadData = useCallback(async () => {
     setRefreshing(true);
     try {
-      // Agence
       if (user?.agencyId) {
         const data = await api.getAgency(user.agencyId as string);
         setAgencyData(data);
       }
 
-      // ✅ Transactions réelles de l'agent uniquement
       const [txRes, wdRes] = await Promise.allSettled([
         api.getTransactions(),
         api.getWithdrawals(),
       ]);
-
       const allTx: any[] = txRes.status === "fulfilled" ? txRes.value : [];
       const allWd: any[] = wdRes.status === "fulfilled" ? wdRes.value : [];
 
-      // Retraits validés par cet agent
       const processedWdTxIds = new Set(
         allWd
           .filter((w) => String(w.processedById ?? "") === myId && w.transactionId)
           .map((w) => String(w.transactionId))
       );
 
-      // ✅ Filtrer uniquement les tx qui concernent cet agent
       const agentTxs = allTx.filter((tx) => {
         const type = String(tx.type ?? "").toUpperCase();
         if (type === "AGENCY_REFILL" || type === "REFILL") return true;
@@ -246,16 +267,11 @@ export default function AgentDashboard() {
         return false;
       });
 
-      // ✅ Calcul des stats réelles
-      const total     = agentTxs.length;
-      const validated = agentTxs.filter((tx) =>
-        tx.status === "PAID" || tx.status === "VALIDATED"
-      ).length;
-      const pending = agentTxs.filter((tx) =>
-        tx.status === "PENDING" || tx.status === "PROCESSING"
-      ).length;
-
-      setStats({ total, validated, pending });
+      setStats({
+        total:     agentTxs.length,
+        validated: agentTxs.filter((tx) => tx.status === "PAID" || tx.status === "VALIDATED").length,
+        pending:   agentTxs.filter((tx) => tx.status === "PENDING" || tx.status === "PROCESSING").length,
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -270,68 +286,88 @@ export default function AgentDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.violet} />
+      <StatusBar barStyle="light-content" backgroundColor={AGENT_BLUE} />
 
-      {/* ══ HERO ══ */}
-      <Animated.View style={[s.hero, {
+      {/* ══ HÉRO + ARC CONCAVE animés ensemble ══ */}
+      <Animated.View style={{
         opacity: headerAnim,
         transform: [{ scale: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
-      }]}>
-        <View style={s.glow1} />
-        <View style={s.glow2} />
+      }}>
+        {/* ── Héro compact bleu ── */}
+        <View style={s.hero}>
+          {/* Glows décoratifs */}
+          <View style={s.glow1} />
+          <View style={s.glow2} />
 
-        <View style={s.topBar}>
-          <View style={{ flex: 1 }}>
-            <View style={s.pill}>
-              <View style={s.pillDot} />
-              <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>ESPACE GUICHET</Text>
-            </View>
-            <Text style={[s.heroName, { fontFamily: C.font.serif }]}>
-              Bonjour, {user?.firstName || "Agent"} 👋
-            </Text>
-            <View style={s.agencyRow}>
-              <Ionicons name="storefront-outline" size={11} color={C.heroDim} />
-              <Text style={[s.agencyTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>{agencyName}</Text>
-            </View>
-          </View>
-          <View style={s.topActions}>
-            <TouchableOpacity style={s.iconBtn} onPress={loadData}>
-              <Ionicons name="refresh" size={16} color={C.white} />
-            </TouchableOpacity>
-            <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/admin/notifications")}>
-              <Ionicons name="notifications-outline" size={16} color={C.white} />
-              {stats.pending > 0 && <View style={s.notifBadge} />}
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Balance Card */}
-        <View style={s.balCard}>
-          <View style={s.balTop}>
+          {/* Ligne du haut : badge + nom + actions */}
+          <View style={s.topBar}>
             <View style={{ flex: 1 }}>
-              <Text style={[s.balLbl, { fontFamily: C.font.sans }]}>solde agence · {currency.toLowerCase()}</Text>
-              <Text style={[s.balAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
-                {fmt(balance, currency)}
+              <View style={s.pill}>
+                <View style={s.pillDot} />
+                <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>ESPACE GUICHET</Text>
+              </View>
+              <Text style={[s.heroName, { fontFamily: C.font.serif }]}>
+                Bonjour, {user?.firstName || "Agent"} 👋
               </Text>
-              <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{currency}</Text>
+              <View style={s.agencyRow}>
+                <Ionicons name="storefront-outline" size={11} color={C.heroDim} />
+                <Text style={[s.agencyTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
+                  {agencyName}
+                </Text>
+              </View>
             </View>
-            <View style={s.onlinePill}>
-              <View style={s.onlineDot} />
-              <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
+            <View style={s.topActions}>
+              <TouchableOpacity style={s.iconBtn} onPress={loadData}>
+                <Ionicons name="refresh" size={16} color={C.white} />
+              </TouchableOpacity>
+              {/* ✅ Route notifications corrigée */}
+              <TouchableOpacity
+                style={s.iconBtn}
+                onPress={() => router.push("/(tabs)/notifications")}
+              >
+                <Ionicons name="notifications-outline" size={16} color={C.white} />
+                {stats.pending > 0 && <View style={s.notifBadge} />}
+              </TouchableOpacity>
             </View>
           </View>
-          <View style={s.progBg}>
-            <View style={[s.progFill, { width: `${availPct}%` as any }]} />
-          </View>
-          <View style={s.balFooter}>
-            <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
-              Disponible <Text style={s.balFootVal}>{fmt(available, currency)} {currency}</Text>
-            </Text>
-            <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
-              Réservé <Text style={[s.balFootVal, { color: "#C4B5FD" }]}>{fmt(reserved, currency)} {currency}</Text>
-            </Text>
+
+          {/* Carte solde — plus compacte */}
+          <View style={s.balCard}>
+            <View style={s.balTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.balLbl, { fontFamily: C.font.sans }]}>
+                  solde agence · {currency.toLowerCase()}
+                </Text>
+                <Text
+                  style={[s.balAmt, { fontFamily: C.font.serif }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {fmt(balance, currency)}
+                </Text>
+                <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{currency}</Text>
+              </View>
+              <View style={s.onlinePill}>
+                <View style={s.onlineDot} />
+                <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
+              </View>
+            </View>
+            <View style={s.progBg}>
+              <View style={[s.progFill, { width: `${availPct}%` as any }]} />
+            </View>
+            <View style={s.balFooter}>
+              <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
+                Disponible <Text style={s.balFootVal}>{fmt(available, currency)} {currency}</Text>
+              </Text>
+              <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
+                Réservé <Text style={[s.balFootVal, { color: "#93C5FD" }]}>{fmt(reserved, currency)} {currency}</Text>
+              </Text>
+            </View>
           </View>
         </View>
+
+        {/* ── Arc concave bleu → pageBg ── */}
+        <HeroConcave />
       </Animated.View>
 
       {/* ══ BODY ══ */}
@@ -339,52 +375,46 @@ export default function AgentDashboard() {
         style={{ flex: 1 }}
         contentContainerStyle={[s.body, isDesktop && { maxWidth: 960, alignSelf: "center", width: "100%" }]}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.violet} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={AGENT_BLUE} />
+        }
       >
-        {/* ✅ Stats réelles */}
+        {/* Stats réelles */}
         <View style={s.statsRow}>
-          <StatChip label="Opérations" value={String(stats.total)}     accent={C.violet} />
-          <StatChip label="Validées"   value={String(stats.validated)} accent={C.green}  />
-          <StatChip label="En attente" value={String(stats.pending)}   accent={C.amber}  />
+          <StatChip label="Opérations" value={String(stats.total)}     accent={AGENT_BLUE} />
+          <StatChip label="Validées"   value={String(stats.validated)} accent={C.green}    />
+          <StatChip label="En attente" value={String(stats.pending)}   accent={C.amber}    />
         </View>
 
         {/* Opérations rapides */}
         <View style={s.secRow}>
-          <View style={[s.secDot, { backgroundColor: C.violet }]} />
+          <View style={[s.secDot, { backgroundColor: AGENT_BLUE }]} />
           <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>OPÉRATIONS RAPIDES</Text>
         </View>
 
         <View style={s.opsRow}>
           <OpCard
-            title="Dépôt Client"
-            subtitle="Recharger un compte"
-            icon="arrow-down-circle-outline"
-            accent={C.green} bg={C.greenBg}
+            title="Dépôt Client"   subtitle="Recharger un compte"
+            icon="arrow-down-circle-outline" accent={C.green} bg={C.greenBg}
             onPress={() => router.push("/agent/deposit")}
           />
           <OpCard
-            title="Retrait Client"
-            subtitle="Payer un code"
-            icon="arrow-up-circle-outline"
-            accent={C.red} bg={C.redBg}
+            title="Retrait Client" subtitle="Payer un code"
+            icon="arrow-up-circle-outline"   accent={C.red}   bg={C.redBg}
             onPress={() => router.push("/agent/withdraw")}
           />
         </View>
 
         <View style={[s.opsRow, { marginBottom: 22 }]}>
           <OpCard
-            title="Envoi Cash"
-            subtitle="Sans compte"
-            icon="paper-plane-outline"
-            accent={C.blue} bg={C.blueBg}
+            title="Envoi Cash"   subtitle="Sans compte"
+            icon="paper-plane-outline" accent={C.blue} bg={C.blueBg}
             onPress={() => router.push("/agent/send-cash")}
             badge="Nouveau"
           />
           <OpCard
-            title="Clôture Jour"
-            subtitle="Bilan & commissions"
-            icon="calculator-outline"
-            accent={C.violet} bg={C.violetLight}
+            title="Clôture Jour" subtitle="Bilan & commissions"
+            icon="calculator-outline" accent={C.purple} bg={C.purpleBg}
             onPress={() => router.push("/agent/commissions")}
           />
         </View>
@@ -396,24 +426,18 @@ export default function AgentDashboard() {
         </View>
 
         <ReportRow
-          title="Journal de Caisse"
-          sub="Toutes les opérations du jour"
-          icon="list-outline"
-          accent={C.amber} bg={C.amberBg}
+          title="Journal de Caisse"  sub="Toutes les opérations du jour"
+          icon="list-outline"        accent={C.amber}  bg={C.amberBg}
           onPress={() => router.push("/agent/transactions")}
         />
         <ReportRow
-          title="Mes Commissions"
-          sub="Gains, paliers et historique"
-          icon="bar-chart-outline"
-          accent={C.purple} bg={C.purpleBg}
+          title="Mes Commissions"    sub="Gains, paliers et historique"
+          icon="bar-chart-outline"   accent={C.purple} bg={C.purpleBg}
           onPress={() => router.push("/agent/commissions")}
         />
         <ReportRow
-          title="Taux du Jour"
-          sub="Devises & taux de change"
-          icon="trending-up-outline"
-          accent={C.green} bg={C.greenBg}
+          title="Taux du Jour"       sub="Devises & taux de change"
+          icon="trending-up-outline" accent={C.green}  bg={C.greenBg}
           onPress={() => router.push("/(tabs)/rates")}
           value="1 EUR"
         />
@@ -428,48 +452,61 @@ export default function AgentDashboard() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
+  // ── Héro v6 — bleu compact, sans borderRadius bas (arc concave) ──
   hero: {
-    backgroundColor: C.violet,
-    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+    backgroundColor: AGENT_BLUE,
     paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 14,
-    paddingBottom: 18,
-    overflow: "hidden", zIndex: 10,
+    paddingTop:    Platform.OS === "android" ? 44 : 14,
+    paddingBottom: 10,   // ✅ réduit (18→10)
+    overflow:      "hidden",
+    zIndex:        10,
   },
+
   glow1: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: C.heroGlow1, top: -60, right: -50 },
   glow2: { position: "absolute", width: 100, height: 100, borderRadius: 50, backgroundColor: C.heroGlow2, bottom: 10, left: -30 },
 
-  topBar:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  topBar:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
   pill:       { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 9, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
-  pillDot:    { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: "#A5F3FC" },
-  pillTxt:    { color: "#E8E0FF", fontSize: 8, fontWeight: "500", letterSpacing: 1.5 },
-  heroName:   { color: C.white, fontSize: 20, fontWeight: "600", marginBottom: 3, letterSpacing: -0.2 },
+  pillDot:    { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: "#BAE6FD" },
+  pillTxt:    { color: "#E0F2FE", fontSize: 8, fontWeight: "500", letterSpacing: 1.5 },
+  heroName:   { color: C.white, fontSize: 18, fontWeight: "600", marginBottom: 2, letterSpacing: -0.2 },
   agencyRow:  { flexDirection: "row", alignItems: "center", gap: 4 },
   agencyTxt:  { color: C.heroDim, fontSize: 11, fontWeight: "400" },
   topActions: { flexDirection: "row", gap: 8, paddingTop: 2 },
   iconBtn:    { width: 34, height: 34, borderRadius: C.r.xs, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", position: "relative" },
-  notifBadge: { position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: C.violet },
+  notifBadge: { position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: AGENT_BLUE },
 
-  balCard:    { backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8 },
-  balTop:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 12 },
-  balLbl:     { fontSize: 9, fontWeight: "400", color: C.inkSoft, letterSpacing: 0.8, marginBottom: 4, textTransform: "lowercase" },
-  balAmt:     { fontSize: 28, fontWeight: "700", color: C.ink, letterSpacing: -0.5 },
-  balCur:     { fontSize: 11, fontWeight: "500", color: C.violet, marginTop: 2 },
-  onlinePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.greenBg, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 9, paddingVertical: 4 },
-  onlineDot:  { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: C.green },
-  onlineTxt:  { fontSize: 9, fontWeight: "600", color: C.greenDark },
-  progBg:     { height: 4, backgroundColor: C.violetBorder, borderRadius: C.r.pill, overflow: "hidden", marginBottom: 10 },
-  progFill:   { height: 4, backgroundColor: C.violet, borderRadius: C.r.pill },
+  // ── Carte solde — padding réduit ──
+  balCard: {
+    backgroundColor: C.white,
+    borderRadius: C.r.lg,
+    padding: 12,        // ✅ réduit (16→12)
+    shadowColor: AGENT_BLUE,
+    shadowOpacity: 0.10,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  balTop:     { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 },
+  balLbl:     { fontSize: 10, fontWeight: "500", color: "#64748B", letterSpacing: 0.5, marginBottom: 3 },
+  balAmt:     { fontSize: 26, fontWeight: "700", color: "#1E293B", letterSpacing: -0.5 }, // ✅ réduit
+  balCur:     { fontSize: 12, fontWeight: "600", color: AGENT_BLUE, marginTop: 1 },
+
+  onlinePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#ECFDF5", borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "#A7F3D0" },
+  onlineDot:  { width: 6, height: 6, borderRadius: 99, backgroundColor: "#10B981" },
+  onlineTxt:  { fontSize: 10, fontWeight: "600", color: "#065F46" },
+
+  progBg:   { height: 4, backgroundColor: "#E2E8F0", borderRadius: 99, overflow: "hidden", marginBottom: 8 },
+  progFill: { height: 4, backgroundColor: AGENT_BLUE, borderRadius: 99 },
+
   balFooter:  { flexDirection: "row", justifyContent: "space-between" },
-  balFootLbl: { fontSize: 10, color: C.inkSoft, fontWeight: "400" },
-  balFootVal: { fontWeight: "600", color: C.ink },
+  balFootLbl: { fontSize: 10, fontWeight: "500", color: "#64748B" },
+  balFootVal: { fontWeight: "700", color: AGENT_BLUE },
 
-  body:    { paddingHorizontal: 16, paddingTop: 16 },
-  statsRow:{ flexDirection: "row", gap: 10, marginBottom: 22 },
-
-  secRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  secDot:  { width: 6, height: 6, borderRadius: C.r.pill },
-  secLbl:  { fontSize: 9, fontWeight: "700", color: C.inkSoft, letterSpacing: 1.5 },
-
-  opsRow:  { flexDirection: "row", gap: 10, marginBottom: 10 },
+  // ── Body ──
+  body:     { paddingHorizontal: 16, paddingTop: 12 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
+  secRow:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
+  secDot:   { width: 5, height: 5, borderRadius: 99 },
+  secLbl:   { fontSize: 9, fontWeight: "700", color: "#64748B", letterSpacing: 1.5 },
+  opsRow:   { flexDirection: "row", gap: 10, marginBottom: 10 },
 });
