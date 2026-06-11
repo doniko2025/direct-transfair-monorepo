@@ -1,13 +1,12 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v7.0 — Direct Transf'air
-// ✅ v6.1 : fix montant entrant converti, suppression doublon CTA
-// ✅ v7.0 :
-//    - Héro compact : paddingBottom 28→14, balCard 20→14, amount 34→26
-//    - Arc concave (react-native-svg) remplace borderRadius 32
-//    - Fix : code JSX tronqué entre les 2 documents reconstruit complet
-//    - Fix : Animated.View séparé du style s.hero (arc inclus)
-//    - Thème vert intact
+// CLIENT DASHBOARD v8.0 — Direct Transf'air
+// ✅ v7.0 : héro compact, arc concave, fix JSX tronqué
+// ✅ v8.0 :
+//    - Héro réduit de ~50 % : paddingTop, polices, paddings divisés
+//    - CONCAVE_H 70 → 50
+//    - Tout le contenu conservé, rien omis
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -23,7 +22,7 @@ import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
 const { width: SW } = Dimensions.get("window");
-const CONCAVE_H = 70;
+const CONCAVE_H = 50;  // ✅ v8 : réduit (70→50)
 
 // ─── Design System ──────────────────────────────────────
 const C = {
@@ -323,7 +322,7 @@ export default function ClientDashboard() {
         opacity: heroAnim,
         transform: [{ scale: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
       }}>
-        {/* ── Héro compact vert ── */}
+        {/* ── Héro compact v8 ── */}
         <View style={s.hero}>
           <View style={s.glow1} />
           <View style={s.glow2} />
@@ -335,7 +334,7 @@ export default function ClientDashboard() {
               <Text style={[s.heroName, { fontFamily: C.font.serif }]} numberOfLines={1}>{firstName}</Text>
             </View>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-              <Ionicons name="notifications-outline" size={17} color={C.white} />
+              <Ionicons name="notifications-outline" size={15} color={C.white} />
               <View style={s.notifDot} />
             </TouchableOpacity>
             <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
@@ -354,7 +353,7 @@ export default function ClientDashboard() {
                   <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
                     <Ionicons
                       name={showBalance ? "eye-outline" : "eye-off-outline"}
-                      size={14} color={C.inkSoft}
+                      size={12} color={C.inkSoft}
                     />
                   </TouchableOpacity>
                 </View>
@@ -425,11 +424,10 @@ export default function ClientDashboard() {
 
           {/* ── Actions secondaires ── */}
           <View style={s.actionsRow}>
-            <ActionPill icon="people-outline"  label="Contacts"  color={C.green}  bg={C.greenPale} onPress={() => router.push("/(tabs)/beneficiaries")} />
-            <ActionPill icon="repeat-outline"  label="Taux"      color={C.blue}   bg={C.blueBg}    onPress={() => router.push("/(tabs)/rates")} />
-            <ActionPill icon="qr-code-outline" label="QR Code"   color={C.amber}  bg={C.amberBg}   onPress={() => router.push("/(tabs)/qr")} />
-            {/* ✅ Fix v7.0 : ligne complète (code tronqué dans les docs) */}
-            <ActionPill icon="time-outline"    label="Historique" color={C.purple} bg={C.purpleBg} onPress={() => router.push("/(tabs)/transactions")} />
+            <ActionPill icon="people-outline"  label="Contacts"   color={C.green}  bg={C.greenPale} onPress={() => router.push("/(tabs)/beneficiaries")} />
+            <ActionPill icon="repeat-outline"  label="Taux"       color={C.blue}   bg={C.blueBg}    onPress={() => router.push("/(tabs)/rates")} />
+            <ActionPill icon="qr-code-outline" label="QR Code"    color={C.amber}  bg={C.amberBg}   onPress={() => router.push("/(tabs)/qr")} />
+            <ActionPill icon="time-outline"    label="Historique" color={C.purple} bg={C.purpleBg}  onPress={() => router.push("/(tabs)/transactions")} />
           </View>
 
           {/* ── Stats du mois ── */}
@@ -580,44 +578,50 @@ const qc2 = StyleSheet.create({
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ── Héro compact v7 — sans borderRadius (arc concave) ──
+  // ── Héro v8 — réduit ~50%, arc concave, sans borderRadius bas ──
   hero: {
     backgroundColor: C.green,
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 44 : 14, // ✅ réduit (48→44)
-    paddingBottom: 14,   // ✅ réduit (28→14)
+    paddingTop:    Platform.OS === "android" ? 28 : 6,  // ✅ v8 : réduit (44→28 / 14→6)
+    paddingBottom: 5,                                    // ✅ v8 : réduit (14→5)
     overflow:      "hidden",
     zIndex:        10,
   },
-  glow1: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: C.heroGlow, top: -80,  right: -60 },
-  glow2: { position: "absolute", width: 100, height: 100, borderRadius: 50,  backgroundColor: C.heroGlow, bottom: 20, left: -30 },
+  glow1: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: C.heroGlow, top: -70, right: -50 },
+  glow2: { position: "absolute", width: 80,  height: 80,  borderRadius: 40, backgroundColor: C.heroGlow, bottom: 10, left: -20 },
 
-  topBar:    { flexDirection: "row", alignItems: "flex-start", marginBottom: 14, gap: 10 }, // ✅ réduit (22→14)
-  greeting:  { color: C.heroDim, fontSize: 12, fontWeight: "600", marginBottom: 4 },
-  heroName:  { color: C.white, fontSize: 22, fontWeight: "700", letterSpacing: -0.3 }, // ✅ réduit (24→22)
-  iconBtn:   { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
-  notifDot:  { position: "absolute", top: 7, right: 7, width: 7, height: 7, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: C.green },
-  avatarBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.heroGlass, borderWidth: 1.5, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
-  avatarTxt: { color: C.white, fontSize: 16, fontWeight: "800" },
+  topBar:   { flexDirection: "row", alignItems: "flex-start", marginBottom: 5, gap: 8 }, // ✅ v8 : réduit (14→5)
+  greeting: { color: C.heroDim, fontSize: 9, fontWeight: "600", marginBottom: 2 },       // ✅ v8 : réduit (12→9)
+  heroName: { color: C.white, fontSize: 16, fontWeight: "700", letterSpacing: -0.3 },    // ✅ v8 : réduit (22→16)
 
-  // ── Balance card compact ──
+  iconBtn:  {
+    width: 32, height: 32,      // ✅ v8 : réduit (38→32)
+    borderRadius: 9,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
+  },
+  notifDot: { position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: C.green },
+  avatarBtn:{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.heroGlass, borderWidth: 1.5, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" }, // ✅ v8 : réduit (38→32)
+  avatarTxt:{ color: C.white, fontSize: 13, fontWeight: "800" }, // ✅ v8 : réduit (16→13)
+
+  // ── Balance card compact v8 ──
   balCard: {
     backgroundColor: C.white, borderRadius: C.r.xl,
-    padding: 14, // ✅ réduit (20→14)
-    shadowColor: "#000", shadowOpacity: 0.12, shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 }, elevation: 8,
+    padding: 8,                 // ✅ v8 : réduit (14→8)
+    shadowColor: "#000", shadowOpacity: 0.10, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
-  balTop:      { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
-  balLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  balLabel:    { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
-  balAmount:   { fontSize: 26, fontWeight: "800", color: C.ink, letterSpacing: -0.8 }, // ✅ réduit (34→26)
-  balCur:      { fontSize: 12, fontWeight: "800", color: C.green, marginTop: 2 },
-  onlinePill:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 10, paddingVertical: 5 },
-  onlineDot:   { width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.green },
-  onlineTxt:   { color: C.greenDark, fontSize: 10, fontWeight: "700" },
-  progBg:      { height: 4, backgroundColor: C.greenLight, borderRadius: C.r.pill, overflow: "hidden", marginBottom: 6 },
-  progFill:    { height: 4, backgroundColor: C.green, borderRadius: C.r.pill },
-  balFootLbl:  { fontSize: 10, fontWeight: "700", color: C.inkSoft },
+  balTop:      { flexDirection: "row", alignItems: "flex-start", marginBottom: 5 },  // ✅ v8 : réduit (10→5)
+  balLabelRow: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 2 }, // ✅ v8 : réduit (6,4→5,2)
+  balLabel:    { fontSize: 8, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.2, textTransform: "uppercase" }, // ✅ v8 : réduit (9→8)
+  balAmount:   { fontSize: 17, fontWeight: "800", color: C.ink, letterSpacing: -0.8 }, // ✅ v8 : réduit (26→17)
+  balCur:      { fontSize: 10, fontWeight: "800", color: C.green, marginTop: 1 },      // ✅ v8 : réduit (12→10, 2→1)
+  onlinePill:  { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 7, paddingVertical: 3 }, // ✅ v8 : réduit (10,5→7,3)
+  onlineDot:   { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: C.green },
+  onlineTxt:   { color: C.greenDark, fontSize: 9, fontWeight: "700" },   // ✅ v8 : réduit (10→9)
+  progBg:      { height: 3, backgroundColor: C.greenLight, borderRadius: C.r.pill, overflow: "hidden", marginBottom: 4 }, // ✅ v8 : réduit (4→3, 6→4)
+  progFill:    { height: 3, backgroundColor: C.green, borderRadius: C.r.pill },        // ✅ v8 : réduit (4→3)
+  balFootLbl:  { fontSize: 9, fontWeight: "700", color: C.inkSoft },  // ✅ v8 : réduit (10→9)
   balFootVal:  { color: C.green, fontWeight: "900" },
 
   // ── CTA principal ──
@@ -644,7 +648,7 @@ const s = StyleSheet.create({
     shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
 
-  statsRow:  { flexDirection: "row", gap: 8, marginBottom: 14 },
+  statsRow: { flexDirection: "row", gap: 8, marginBottom: 14 },
   statCard: {
     flex: 1, backgroundColor: C.white, borderRadius: C.r.md,
     padding: 11, borderWidth: 1, borderColor: C.cardBorder, borderLeftWidth: 3,

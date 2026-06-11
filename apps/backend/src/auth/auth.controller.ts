@@ -1,11 +1,12 @@
 // apps/backend/src/auth/auth.controller.ts
 // =========================================================
-// AUTH CONTROLLER v4.1
-// ✅ v4.0 conservé intégralement
-// ✅ v4.1 — ISOLATION CROSS-TENANT :
-//   login() lit le header x-tenant-id et le passe à authService.login()
-//   → authService résout le clientId et filtre validateUser en conséquence
-//   → un user de MIROIR ne peut plus se connecter sur la page FLASH
+// AUTH CONTROLLER v4.2
+// ✅ v4.1 conservé intégralement
+// ✅ v4.2 : POST /auth/login-by-phone
+//   → connexion sans mot de passe par numéro de téléphone
+//   → délègue à authService.loginByPhone()
+//   → retourne { userId, maskedPhone }
+//   → la vérification OTP reste sur POST /auth/login/verify-otp
 // =========================================================
 
 import {
@@ -58,10 +59,8 @@ export class AuthController {
   }
 
   // ========================================================
-  // CONNEXION (étape 1)
+  // CONNEXION (étape 1) — Email / Mot de passe
   // ✅ v4.1 : lit x-tenant-id et le passe au service
-  //   → le service résout le clientId du tenant et filtre
-  //     les utilisateurs — isolation complète cross-tenant
   // ========================================================
 
   @Public()
@@ -73,14 +72,38 @@ export class AuthController {
   })
   async login(
     @Body() dto: LoginDto,
-    // ✅ v4.1 : header lu ici et transmis au service
     @Headers('x-tenant-id') tenantId: string | undefined,
   ) {
     return this.authService.login(dto, tenantId ?? null);
   }
 
   // ========================================================
+  // CONNEXION PAR TÉLÉPHONE — ✅ v4.2
+  // Sans mot de passe : envoie un OTP à 4 chiffres par SMS.
+  // La vérification se fait ensuite via POST /auth/login/verify-otp.
+  // ========================================================
+
+  @Public()
+  @Post('login-by-phone')
+  @ApiOperation({
+    summary:
+      'Connexion sans mot de passe — envoie un OTP à 4 chiffres par SMS. ' +
+      'Retourne { userId, maskedPhone }. ' +
+      'Vérifier le code sur POST /auth/login/verify-otp.',
+  })
+  async loginByPhone(
+    @Body() body: { phone: string },
+    @Headers('x-tenant-id') tenantId: string | undefined,
+  ) {
+    if (!body.phone?.trim()) {
+      throw new BadRequestException('Numéro de téléphone requis');
+    }
+    return this.authService.loginByPhone(body.phone.trim(), tenantId ?? null);
+  }
+
+  // ========================================================
   // CONNEXION — Étape 2 : Vérification OTP → JWT
+  // Utilisée par : login email OTP + loginByPhone
   // ========================================================
 
   @Public()

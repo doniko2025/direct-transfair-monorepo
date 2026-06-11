@@ -48,7 +48,8 @@
       "expo-secure-store",
       "expo-font",
       "expo-image-picker",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

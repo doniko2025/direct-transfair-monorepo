@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/components/dashboards/AgentDashboard.tsx
 // =========================================================
-// AGENT DASHBOARD v6.0 — Direct Transf'air
+// AGENT DASHBOARD v7.0 — Direct Transf'air
 // ✅ v5.2 : stats réelles depuis les transactions agent
 // ✅ v6.0 :
 //    - Violet → Bleu professionnel (#2563EB), non agressif
@@ -8,6 +8,10 @@
 //    - Arc concave Option C (react-native-svg) comme CompanyAdmin
 //    - pageBg bleu clair (#EFF6FF) au lieu de violet pâle
 //    - Icône notification → router.push("/(tabs)/notifications")
+// ✅ v7.0 :
+//    - Héro réduit de ~50 % : paddingTop, polices, paddings divisés
+//    - Tout le contenu conservé, rien omis
+//    - CONCAVE_H 70 → 50 pour proportionner l'arc au héro plus court
 // =========================================================
 
 import React, { useState, useRef, useCallback } from "react";
@@ -27,7 +31,7 @@ const { width: SW } = Dimensions.get("window");
 // ─── Bleu agent — non agressif ───────────────────────────
 const AGENT_BLUE      = "#2563EB"; // bleu-600 Tailwind, professionnel
 const AGENT_BLUE_DARK = "#1D4ED8"; // bleu-700
-const CONCAVE_H       = 70;        // profondeur arc concave
+const CONCAVE_H       = 50;        // ✅ v7 : réduit (70→50) pour proportionner l'arc
 
 // ─── Design System ──────────────────────────────────────
 const C = {
@@ -43,7 +47,7 @@ const C = {
   heroGlow1:    "rgba(255,255,255,0.07)",
   heroGlow2:    "rgba(255,255,255,0.04)",
 
-  // ✅ pageBg bleu clair au lieu de violet pâle
+  // ✅ pageBg bleu clair
   pageBg:       "#EFF6FF",
   white:        "#FFFFFF",
   cardBorder:   "#DBEAFE",
@@ -96,7 +100,6 @@ function fmt(n: number, currency: string): string {
 }
 
 // ─── Arc Concave — même technique que CompanyDashboard ───
-// Remplit les coins (couleur héro bleu), courbe montante au centre
 function HeroConcave() {
   const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
   const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
@@ -293,7 +296,7 @@ export default function AgentDashboard() {
         opacity: headerAnim,
         transform: [{ scale: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
       }}>
-        {/* ── Héro compact bleu ── */}
+        {/* ── Héro compact v7 ── */}
         <View style={s.hero}>
           {/* Glows décoratifs */}
           <View style={s.glow1} />
@@ -318,20 +321,20 @@ export default function AgentDashboard() {
             </View>
             <View style={s.topActions}>
               <TouchableOpacity style={s.iconBtn} onPress={loadData}>
-                <Ionicons name="refresh" size={16} color={C.white} />
+                <Ionicons name="refresh" size={15} color={C.white} />
               </TouchableOpacity>
               {/* ✅ Route notifications corrigée */}
               <TouchableOpacity
                 style={s.iconBtn}
                 onPress={() => router.push("/(tabs)/notifications")}
               >
-                <Ionicons name="notifications-outline" size={16} color={C.white} />
+                <Ionicons name="notifications-outline" size={15} color={C.white} />
                 {stats.pending > 0 && <View style={s.notifBadge} />}
               </TouchableOpacity>
             </View>
           </View>
 
-          {/* Carte solde — plus compacte */}
+          {/* Carte solde — ultra-compacte v7 */}
           <View style={s.balCard}>
             <View style={s.balTop}>
               <View style={{ flex: 1 }}>
@@ -452,61 +455,124 @@ export default function AgentDashboard() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ── Héro v6 — bleu compact, sans borderRadius bas (arc concave) ──
+  // ── Héro v7 — ~50 % plus court, sans borderRadius bas (arc concave) ──
   hero: {
     backgroundColor: AGENT_BLUE,
     paddingHorizontal: 18,
-    paddingTop:    Platform.OS === "android" ? 44 : 14,
-    paddingBottom: 10,   // ✅ réduit (18→10)
-    overflow:      "hidden",
-    zIndex:        10,
+    paddingTop:    Platform.OS === "android" ? 32 : 6,   // ✅ v7 : réduit (44→32 / 14→6)
+    paddingBottom: 4,                                     // ✅ v7 : réduit (10→4)
+    overflow: "hidden",
   },
 
-  glow1: { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: C.heroGlow1, top: -60, right: -50 },
-  glow2: { position: "absolute", width: 100, height: 100, borderRadius: 50, backgroundColor: C.heroGlow2, bottom: 10, left: -30 },
+  // Glows décoratifs
+  glow1: {
+    position: "absolute", top: -30, right: -30,
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: C.heroGlow1,
+  },
+  glow2: {
+    position: "absolute", bottom: 0, left: -20,
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: C.heroGlow2,
+  },
 
-  topBar:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
-  pill:       { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, borderRadius: C.r.pill, paddingHorizontal: 9, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 6 },
-  pillDot:    { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: "#BAE6FD" },
-  pillTxt:    { color: "#E0F2FE", fontSize: 8, fontWeight: "500", letterSpacing: 1.5 },
-  heroName:   { color: C.white, fontSize: 18, fontWeight: "600", marginBottom: 2, letterSpacing: -0.2 },
-  agencyRow:  { flexDirection: "row", alignItems: "center", gap: 4 },
-  agencyTxt:  { color: C.heroDim, fontSize: 11, fontWeight: "400" },
-  topActions: { flexDirection: "row", gap: 8, paddingTop: 2 },
-  iconBtn:    { width: 34, height: 34, borderRadius: C.r.xs, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", position: "relative" },
-  notifBadge: { position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: C.r.pill, backgroundColor: C.red, borderWidth: 1.5, borderColor: AGENT_BLUE },
+  // ── Top bar ──
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 5,           // ✅ v7 : réduit
+  },
 
-  // ── Carte solde — padding réduit ──
+  // Badge "ESPACE GUICHET"
+  pill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: 7, paddingVertical: 2,
+    borderRadius: 20, alignSelf: "flex-start",
+    marginBottom: 3,           // ✅ v7 : réduit
+  },
+  pillDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.green },
+  pillTxt: { fontSize: 8, fontWeight: "700", color: C.white, letterSpacing: 1 },
+
+  // Nom
+  heroName: {
+    fontSize: 19,              // ✅ v7 : réduit (~28→19)
+    fontWeight: "700",
+    color: C.white,
+    marginBottom: 2,
+  },
+
+  // Agence
+  agencyRow: { flexDirection: "row", alignItems: "center", gap: 4 },
+  agencyTxt: { fontSize: 10, color: C.heroDim },
+
+  // Boutons actions
+  topActions: { flexDirection: "row", gap: 7 },
+  iconBtn: {
+    width: 30, height: 30,     // ✅ v7 : réduit (34×34 → 30×30)
+    borderRadius: 9,
+    backgroundColor: C.heroGlass,
+    borderWidth: 1, borderColor: C.heroGlassBdr,
+    justifyContent: "center", alignItems: "center",
+  },
+  notifBadge: {
+    position: "absolute", top: 5, right: 5,
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: C.red,
+    borderWidth: 1.5, borderColor: AGENT_BLUE,
+  },
+
+  // ── Carte solde ──
   balCard: {
     backgroundColor: C.white,
-    borderRadius: C.r.lg,
-    padding: 12,        // ✅ réduit (16→12)
-    shadowColor: AGENT_BLUE,
-    shadowOpacity: 0.10,
-    shadowRadius: 12,
-    elevation: 4,
+    borderRadius: C.r.md,
+    padding: 9,                // ✅ v7 : réduit (~14→9)
+    marginTop: 5,              // ✅ v7 : réduit
   },
-  balTop:     { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 },
-  balLbl:     { fontSize: 10, fontWeight: "500", color: "#64748B", letterSpacing: 0.5, marginBottom: 3 },
-  balAmt:     { fontSize: 26, fontWeight: "700", color: "#1E293B", letterSpacing: -0.5 }, // ✅ réduit
-  balCur:     { fontSize: 12, fontWeight: "600", color: AGENT_BLUE, marginTop: 1 },
+  balTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 5,           // ✅ v7 : réduit
+  },
+  balLbl:  { fontSize: 9, color: C.inkSoft, marginBottom: 1 },
+  balAmt:  {
+    fontSize: 24,              // ✅ v7 : réduit (~44→24)
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.5,
+  },
+  balCur:  {
+    fontSize: 10,              // ✅ v7 : réduit (~14→10)
+    fontWeight: "600",
+    color: AGENT_BLUE,
+    marginTop: 1,
+  },
 
-  onlinePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#ECFDF5", borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, borderWidth: 1, borderColor: "#A7F3D0" },
-  onlineDot:  { width: 6, height: 6, borderRadius: 99, backgroundColor: "#10B981" },
-  onlineTxt:  { fontSize: 10, fontWeight: "600", color: "#065F46" },
+  // Pill "En ligne"
+  onlinePill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: C.greenBg,
+    borderWidth: 1, borderColor: C.greenBorder,
+    paddingHorizontal: 7, paddingVertical: 3,
+    borderRadius: 20,
+  },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  onlineTxt: { fontSize: 9, fontWeight: "500", color: C.greenDark },
 
-  progBg:   { height: 4, backgroundColor: "#E2E8F0", borderRadius: 99, overflow: "hidden", marginBottom: 8 },
-  progFill: { height: 4, backgroundColor: AGENT_BLUE, borderRadius: 99 },
+  // Barre de progression
+  progBg:   { height: 3, backgroundColor: C.blueBorder, borderRadius: 2, marginBottom: 4 }, // ✅ v7 : réduit (5→3)
+  progFill: { height: 3, backgroundColor: AGENT_BLUE,   borderRadius: 2 },
 
+  // Pied de carte (Disponible / Réservé)
   balFooter:  { flexDirection: "row", justifyContent: "space-between" },
-  balFootLbl: { fontSize: 10, fontWeight: "500", color: "#64748B" },
-  balFootVal: { fontWeight: "700", color: AGENT_BLUE },
+  balFootLbl: { fontSize: 9, color: C.inkSoft },
+  balFootVal: { fontWeight: "600", color: AGENT_BLUE },
 
-  // ── Body ──
+  // ── Corps (sous le héro) ──
   body:     { paddingHorizontal: 16, paddingTop: 12 },
-  statsRow: { flexDirection: "row", gap: 10, marginBottom: 20 },
-  secRow:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
-  secDot:   { width: 5, height: 5, borderRadius: 99 },
-  secLbl:   { fontSize: 9, fontWeight: "700", color: "#64748B", letterSpacing: 1.5 },
-  opsRow:   { flexDirection: "row", gap: 10, marginBottom: 10 },
+  statsRow: { flexDirection: "row", gap: 10, marginBottom: 18 },
+  secRow:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  secDot:   { width: 6, height: 6, borderRadius: 3 },
+  secLbl:   { fontSize: 10, fontWeight: "700", color: C.inkSoft, letterSpacing: 1 },
+  opsRow:   { flexDirection: "row", gap: 12, marginBottom: 12 },
 });

@@ -1,8 +1,11 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// FIX v5.3 — Ajout biometricLogin
-// ✅ biometricLogin : refreshToken → getMe → restaure session
-// ✅ Tout le reste identique à v5.2
+// AUTH PROVIDER v5.5 — Direct Transf'air
+// ✅ v5.4 conservé intégralement
+// ✅ v5.5 : loginWithPhoneOtp(userId, code)
+//   → étape 2 de la connexion par téléphone
+//   → appelle api.loginStep2({ userId, code })
+//   → met à jour l'état React exactement comme login()
 // =========================================================
 
 import React, {
@@ -27,6 +30,8 @@ type AuthContextValue = {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   biometricLogin: () => Promise<void>;
+  /** ✅ v5.5 : étape 2 connexion par téléphone — vérifie le code OTP et ouvre la session */
+  loginWithPhoneOtp: (userId: string, code: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -208,11 +213,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── Guard navigation ─────────────────────────────────────
   useEffect(() => {
     if (isLoading) return;
+
     const inAuthGroup = segments[0] === "(auth)";
-    if (!user && !inAuthGroup) router.replace("/(auth)/login");
-    else if (user && inAuthGroup) router.replace("/(tabs)/home");
+
+    // ✅ FIX v5.4 : écrans légaux/modaux accessibles à tous
+    const isLegalScreen =
+      segments[1] === "terms" ||
+      segments[1] === "privacy-policy" ||
+      segments[1] === "assistance";
+
+    if (!user && !inAuthGroup) {
+      router.replace("/(auth)/login");
+    } else if (user && inAuthGroup && !isLegalScreen) {
+      router.replace("/(tabs)/home");
+    }
   }, [user, isLoading, segments, router]);
 
   // ─── Login ────────────────────────────────────────────────
@@ -287,13 +304,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ─── biometricLogin ───────────────────────────────────────
-  // Utilise le refresh token conservé après logout pour restaurer la session
-  // sans que l'utilisateur ait à retaper ses identifiants.
   const biometricLogin = useCallback(async () => {
     setIsLoading(true);
     try {
       await ensureTenantReady();
-      // Utilise le refresh token stocké (non effacé au logout)
       const result = await api.refreshAccessToken();
       const newToken = result.access_token;
 
@@ -318,10 +332,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── loginWithPhoneOtp ────────────────────────────────────
+  // ✅ v5.5 : étape 2 de la connexion par téléphone.
+  // Appelée depuis otp-phone.tsx après que l'utilisateur
+  // a saisi son code OTP à 4 chiffres.
+  // Utilise api.loginStep2 (POST /auth/login/verify-otp)
+  // puis met à jour l'état exactement comme login().
+  const loginWithPhoneOtp = useCallback(async (userId: string, code: string) => {
+    setIsLoading(true);
+    try {
+      await ensureTenantReady();
+      // api.loginStep2 gère aussi le stockage interne (AsyncStorage + SecureStore)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: LoginResponse = await (api as any).loginStep2({ userId, code });
+
+      const clientCode = (res.user as any)?.client?.code;
+      if (clientCode) await applyTenant(clientCode);
+
+      api.setToken(res.access_token);
+      setToken(res.access_token);
+      tokenRef.current = res.access_token;
+
+      const enrichedUser = injectCurrencyToUser(res.user);
+      setUser(enrichedUser);
+
+      // Persistance AuthProvider (dt_token, dt_user)
+      await setStorage(TOKEN_KEY, res.access_token);
+      await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+    } catch (e: unknown) {
+      throw e;
+    } finally {
+      setIsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <AuthContext.Provider value={{
       user, token, isLoading,
-      login, register, logout, refreshUser, biometricLogin,
+      login, register, logout, refreshUser, biometricLogin, loginWithPhoneOtp,
     }}>
       {children}
     </AuthContext.Provider>

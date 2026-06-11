@@ -1,19 +1,11 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.4 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.5 — Direct Transf'air
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails (jamais envoyés avant)
-//
-//   CAUSE DU SILENCE :
-//   WalletNotifierService et AgentNotifierService n'étaient jamais
-//   injectés ici. WalletMailService et AgentMailService non plus.
-//   Résultat : aucune notif ni email sur retrait client ou
-//   validation paiement agent.
-//
-//   FIX :
-//   - Injection des 4 services
-//   - create()              → notif + email client (code de retrait)
-//   - agentProcessPayment() → notif + email agent (validation cash-out)
+// ✅ v4.5 :
+//    - listByAgent() ajouté — retraits traités par un agent donné
+//      (nécessaire pour GET /withdrawals quand role === 'AGENT')
 // =========================================================
 
 import {
@@ -36,14 +28,14 @@ import {
 import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RatesService }   from '../rates/rates.service';
-import { CreateWithdrawalDto }      from './dto/create-withdrawal.dto';
+import { CreateWithdrawalDto }       from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 
-// ✅ v4.4 : Notifiers in-app (injectés pour la première fois)
+// ✅ v4.4 : Notifiers in-app
 import { WalletNotifierService } from '../notifications/channels/wallet-notifier.service';
 import { AgentNotifierService }  from '../notifications/channels/agent-notifier.service';
 
-// ✅ v4.4 : Mail channels (injectés pour la première fois)
+// ✅ v4.4 : Mail channels
 import { WalletMailService } from '../mail/channels/wallet-mail.service';
 import { AgentMailService }  from '../mail/channels/agent-mail.service';
 
@@ -54,17 +46,17 @@ export class WithdrawalsService {
   private readonly logger = new Logger(WithdrawalsService.name);
 
   constructor(
-    private readonly prisma:          PrismaService,
-    private readonly walletsService:  WalletsService,
-    private readonly ratesService:    RatesService,
+    private readonly prisma:         PrismaService,
+    private readonly walletsService: WalletsService,
+    private readonly ratesService:   RatesService,
     // ✅ v4.4 : Notifiers + mail
-    private readonly walletNotifier:  WalletNotifierService,
-    private readonly agentNotifier:   AgentNotifierService,
-    private readonly walletMail:      WalletMailService,
-    private readonly agentMail:       AgentMailService,
+    private readonly walletNotifier: WalletNotifierService,
+    private readonly agentNotifier:  AgentNotifierService,
+    private readonly walletMail:     WalletMailService,
+    private readonly agentMail:      AgentMailService,
   ) {}
 
-  // ── Utilitaire enrichissement ─────────────────────────
+  // ── Utilitaire enrichissement ─────────────────────────────
 
   private enrichTransaction(tx: any) {
     if (!tx) return tx;
@@ -82,9 +74,9 @@ export class WithdrawalsService {
     return tx;
   }
 
-  // ========================================================
+  // =========================================================
   // CRÉATION — Demande de retrait (CLIENT)
-  // ========================================================
+  // =========================================================
 
   async create(clientId: number, userId: string, dto: CreateWithdrawalDto) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -191,9 +183,9 @@ export class WithdrawalsService {
     });
   }
 
-  // ========================================================
+  // =========================================================
   // AGENT — Vérifier un code de retrait
-  // ========================================================
+  // =========================================================
 
   async agentCheckCode(clientId: number, code: string) {
     const cleanCode = String(code ?? '').trim();
@@ -239,9 +231,9 @@ export class WithdrawalsService {
     };
   }
 
-  // ========================================================
+  // =========================================================
   // AGENT — Valider un paiement (Cash-Out)
-  // ========================================================
+  // =========================================================
 
   async agentProcessPayment(clientId: number, agentId: string, code: string) {
     const cleanCode = String(code ?? '').trim();
@@ -394,7 +386,9 @@ export class WithdrawalsService {
             amount:        new Prisma.Decimal(finalCommission),
             currency:      agencyWallet.currency,
             description:   `Commission retrait ${cleanCode} (${Math.round(DEFAULT_AGENT_COMMISSION_RATE * 100)}% des frais convertis)`,
-            balanceAfter:  new Prisma.Decimal(Number(agencyWallet.balance) + amountPaid + finalCommission),
+            balanceAfter:  new Prisma.Decimal(
+              Number(agencyWallet.balance) + amountPaid + finalCommission,
+            ),
           },
         });
 
@@ -435,7 +429,6 @@ export class WithdrawalsService {
 
     // ── Notifications + emails post-transaction (non-bloquant) ──
 
-    // Solde agence mis à jour
     const agencyWalletUpdated = await this.prisma.wallet.findUnique({
       where: { id: agencyWallet.id },
     }).catch(() => null);
@@ -461,17 +454,20 @@ export class WithdrawalsService {
         code:       cleanCode,
         userId:     agentId,
       }).catch((err) => {
-        this.logger.warn(`Email validation retrait agent non envoyé : ${err?.message}`);
+        this.logger.warn(
+          `Email validation retrait agent non envoyé : ${err?.message}`,
+        );
       });
     }
 
     return result;
   }
 
-  // ========================================================
+  // =========================================================
   // LECTURE
-  // ========================================================
+  // =========================================================
 
+  // ── CLIENT : ses propres demandes de retrait ─────────────
   async listMine(clientId: number, userId: string) {
     return this.prisma.withdrawal.findMany({
       where:   { clientId, transaction: { senderId: userId } },
@@ -480,6 +476,26 @@ export class WithdrawalsService {
     });
   }
 
+  // ✅ v4.5 — AGENT : retraits qu'il a traités ──────────────
+  // Utilisé par GET /withdrawals quand role === 'AGENT'
+  // Nécessaire pour alimenter le dashboard agent (stats retraits traités)
+  async listByAgent(clientId: number, agentId: string) {
+    return this.prisma.withdrawal.findMany({
+      where: {
+        clientId,
+        processedById: agentId,  // champ existant en DB (agentProcessPayment l'écrit)
+      },
+      include: {
+        transaction: {
+          include: { sender: true, beneficiary: true },
+        },
+      },
+      orderBy: { processedAt: 'desc' },
+      take: 50,
+    });
+  }
+
+  // ── ADMIN : tous les retraits du tenant ──────────────────
   async adminListAll(clientId: number) {
     return this.prisma.withdrawal.findMany({
       where:   { clientId },
@@ -490,11 +506,12 @@ export class WithdrawalsService {
     });
   }
 
+  // ── ADMIN : mise à jour manuelle du statut ───────────────
   async adminUpdateStatus(
     clientId: number,
-    adminId: string,
-    id: string,
-    dto: UpdateWithdrawalStatusDto,
+    adminId:  string,
+    id:       string,
+    dto:      UpdateWithdrawalStatusDto,
   ) {
     return this.prisma.withdrawal.update({
       where: { id },

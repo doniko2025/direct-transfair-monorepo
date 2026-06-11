@@ -1,9 +1,9 @@
 // apps/direct-transfair-mobile/app/(auth)/_layout.tsx
 // =========================================================
-// AUTH LAYOUT v2.0 — Direct Transf'air
-// ✅ v1.0 : login, register, forgot-password
-// ✅ v2.0 : privacy-policy, terms, assistance ajoutés
-//           en présentation modale (slide depuis le bas)
+// AUTH LAYOUT v3.0 — Direct Transf'air
+// ✅ v2.0 : privacy-policy, terms, assistance (modaux)
+// ✅ v3.0 : otp-phone ajouté
+//           → écran de connexion par téléphone (non modal)
 // =========================================================
 
 import { Stack } from "expo-router";
@@ -18,7 +18,13 @@ export default function AuthLayout() {
       <Stack.Screen name="register"        options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
 
-      {/* ✅ Écrans légaux — présentation modale */}
+      {/* ✅ v3.0 : Connexion par téléphone OTP */}
+      <Stack.Screen
+        name="otp-phone"
+        options={{ headerShown: false }}
+      />
+
+      {/* Écrans légaux — présentation modale */}
       <Stack.Screen
         name="privacy-policy"
         options={{

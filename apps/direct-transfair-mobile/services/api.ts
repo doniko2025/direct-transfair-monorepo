@@ -656,6 +656,14 @@ class API {
     const res = await this.http.post<LoginStep1Response>("/auth/login", data);
     return res.data;
   }
+  // ✅ v6.4 — Connexion par téléphone : envoie un OTP 4 chiffres par SMS
+// Retourne { userId, maskedPhone } — vérification via loginStep2
+  async loginByPhone(phone: string,): Promise<{ userId: string; maskedPhone: string }> {
+  const res = await this.http.post<{ userId: string; maskedPhone: string }>(
+    '/auth/login-by-phone',
+    { phone }, );
+    return res.data;
+  }
 
   async loginStep2(data: VerifyLoginOtpPayload): Promise<LoginResponse> {
     const res = await this.http.post<LoginResponse>("/auth/login/verify-otp", data);
@@ -1188,65 +1196,74 @@ async getNotifications(params?: {
 
   async cancelScheduledTransfer(id: string): Promise<ScheduledTransfer> {
     const res = await this.http.patch<ScheduledTransfer>(
-      `/scheduled-transfers/${id}/cancel`,
+      `/scheduled-transfers/${id}/cancel`, 
     );
     return res.data;
   }
+// ============================================================
+// WITHDRAWALS
+// ============================================================
 
-  // ============================================================
-  // WITHDRAWALS
-  // ============================================================
+async requestWithdrawal(data: {
+  amount?: number;
+  transactionId?: string;
+  currency?: Currency | string;
+}): Promise<unknown> {
+  const res = await this.http.post("/withdrawals", data);
+  return res.data;
+}
 
-  async requestWithdrawal(data: {
-    amount?: number;
-    transactionId?: string;
-    currency?: Currency | string;
-  }): Promise<unknown> {
-    const res = await this.http.post("/withdrawals", data);
-    return res.data;
-  }
+// ✅ Fix v5.4 : fallback /withdrawals/me si GET /withdrawals → 404
+// Le backend ne déclarait pas GET /withdrawals (corrigé en v4.5 backend).
+// Le fallback /me garantit qu'aucun 404 ne pollue les logs en attendant
+// le déploiement du backend corrigé.
+async getWithdrawals(params?: {
+  page?: number;
+  limit?: number;
+}): Promise<Withdrawal[]> {
+  const data = await tryMany<AxiosResponse<unknown>>(
+    [
+      async () => this.http.get<unknown>("/withdrawals",    { params }),
+      async () => this.http.get<unknown>("/withdrawals/me", { params }),
+    ],
+    "getWithdrawals",
+  );
+  return unwrapArray<Withdrawal>(data.data);
+}
 
-  async getWithdrawals(params?: {
-    page?: number;
-    limit?: number;
-  }): Promise<Withdrawal[]> {
-    const res = await this.http.get<unknown>("/withdrawals", { params });
-    return unwrapArray<Withdrawal>(res.data);
-  }
+async checkWithdrawalCode(code: string): Promise<unknown> {
+  return tryMany<unknown>(
+    [
+      async () => {
+        const res = await this.http.post("/withdrawals/agent/check", { code });
+        return res.data;
+      },
+      async () => {
+        const res = await this.http.post("/withdrawals/check", { code });
+        return res.data;
+      },
+    ],
+    "checkWithdrawalCode",
+  );
+}
 
-  async checkWithdrawalCode(code: string): Promise<unknown> {
-    return tryMany<unknown>(
-      [
-        async () => {
-          const res = await this.http.post("/withdrawals/agent/check", { code });
-          return res.data;
-        },
-        async () => {
-          const res = await this.http.post("/withdrawals/check", { code });
-          return res.data;
-        },
-      ],
-      "checkWithdrawalCode",
-    );
-  }
+async processWithdrawalPayment(code: string): Promise<unknown> {
+  return tryMany<unknown>(
+    [
+      async () => {
+        const res = await this.http.post("/withdrawals/agent/pay", { code });
+        return res.data;
+      },
+      async () => {
+        const res = await this.http.post("/withdrawals/pay", { code });
+        return res.data;
+      },
+    ],
+    "processWithdrawalPayment",
+  );
+}
 
-  async processWithdrawalPayment(code: string): Promise<unknown> {
-    return tryMany<unknown>(
-      [
-        async () => {
-          const res = await this.http.post("/withdrawals/agent/pay", { code });
-          return res.data;
-        },
-        async () => {
-          const res = await this.http.post("/withdrawals/pay", { code });
-          return res.data;
-        },
-      ],
-      "processWithdrawalPayment",
-    );
-  }
-
-  // ============================================================
+// ============================================================
   // ADMIN TRANSACTIONS
   // ============================================================
 

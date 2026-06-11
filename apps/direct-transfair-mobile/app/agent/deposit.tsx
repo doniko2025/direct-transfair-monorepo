@@ -1,14 +1,13 @@
 // apps/direct-transfair-mobile/app/agent/deposit.tsx
 // =========================================================
-// AGENT DEPOSIT (CASH-IN) v6.0 — Direct Transf'air
+// AGENT DEPOSIT (CASH-IN) v7.0 — Direct Transf'air
 // ✅ v5.1 : devise dynamique depuis wallets
-// ✅ v6.0 :
-//    - Violet #6C47FF → Bleu #2563EB (cohérent tous héros)
-//    - Arc concave (react-native-svg) remplace borderRadius
-//    - Indicatif pays + sélecteur sur le champ téléphone
-//    - Champ montant compact (30→20px, padding 14→11)
-//    - Montants rapides : ScrollView horizontal
-//    - pageBg + cardBorder bleu pâle
+// ✅ v6.0 : Bleu #2563EB, arc concave, sélecteur indicatif,
+//           montants rapides ScrollView horizontal
+// ✅ v7.0 :
+//    - Héro pill "• AGENT" (cohérent historique/retrait)
+//    - paddingTop Android 44 → 32
+//    - Après dépôt validé → navigation vers reçu imprimable
 // =========================================================
 
 import React, { useState, useRef, useEffect } from "react";
@@ -28,20 +27,20 @@ import { countriesList, type CountryData } from "../../data/countries";
 const { width: SW } = Dimensions.get("window");
 
 // ─── Bleu agent ──────────────────────────────────────────
-const AGENT_BLUE = "#2563EB";
-const CONCAVE_H  = 60;
+const AGENT_BLUE      = "#2563EB";
+const CONCAVE_H       = 60;
 const DEFAULT_COUNTRY = countriesList.find(c => c.code === "SN") ?? countriesList[0];
 
 // ─── Design System ──────────────────────────────────────
 const C = {
-  violet:       AGENT_BLUE,        // ✅ bleu au lieu de violet
+  violet:       AGENT_BLUE,
   violetLight:  "#EFF6FF",
   violetBorder: "#DBEAFE",
   heroGlass:    "rgba(255,255,255,0.14)",
   heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:      "rgba(255,255,255,0.65)",
   heroGlow:     "rgba(255,255,255,0.07)",
-  pageBg:       "#EFF6FF",         // ✅ bleu pâle
+  pageBg:       "#EFF6FF",
   white:        "#FFFFFF",
   cardBorder:   "#DBEAFE",
   inputBg:      "#F4F7FF",
@@ -88,7 +87,7 @@ function HeroConcave() {
   );
 }
 
-// ─── Sélecteur pays (indicatif) ──────────────────────────
+// ─── CountryPickerModal ──────────────────────────────────
 function CountryPickerModal({ visible, onClose, onSelect }: {
   visible: boolean; onClose: () => void; onSelect: (c: CountryData) => void;
 }) {
@@ -117,7 +116,8 @@ function CountryPickerModal({ visible, onClose, onSelect }: {
             <TextInput
               style={[cp.searchInput, { fontFamily: C.font.sans }]}
               value={q} onChangeText={setQ}
-              placeholder="Pays ou indicatif…" placeholderTextColor={C.inkSoft}
+              placeholder="Pays ou indicatif…"
+              placeholderTextColor={C.inkSoft}
               autoFocus
             />
             {!!q && (
@@ -127,11 +127,16 @@ function CountryPickerModal({ visible, onClose, onSelect }: {
             )}
           </View>
           <FlatList
-            data={filtered} keyExtractor={(c) => c.code}
+            data={filtered}
+            keyExtractor={(c) => c.code}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 30 }}
             renderItem={({ item: c }) => (
-              <TouchableOpacity style={cp.item} onPress={() => { onSelect(c); close(); }} activeOpacity={0.75}>
+              <TouchableOpacity
+                style={cp.item}
+                onPress={() => { onSelect(c); close(); }}
+                activeOpacity={0.75}
+              >
                 <Text style={{ fontSize: 22, marginRight: 12 }}>{c.flag}</Text>
                 <Text style={[cp.itemName, { fontFamily: C.font.sans }]}>{c.name}</Text>
                 <View style={cp.chip}>
@@ -149,19 +154,19 @@ function CountryPickerModal({ visible, onClose, onSelect }: {
   );
 }
 const cp = StyleSheet.create({
-  overlay:   { flex: 1, backgroundColor: "rgba(15,23,42,0.45)", justifyContent: "flex-end" },
-  sheet:     { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
-  handle:    { width: 36, height: 4, borderRadius: C.r.pill, backgroundColor: C.cardBorder, alignSelf: "center", marginTop: 14, marginBottom: 4 },
-  head:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
-  title:     { color: C.ink, fontSize: 17, fontWeight: "700" },
-  closeBtn:  { width: 30, height: 30, borderRadius: 9, backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center" },
-  search:    { flexDirection: "row", alignItems: "center", gap: 10, margin: 14, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 12, height: 42 },
+  overlay:    { flex: 1, backgroundColor: "rgba(15,23,42,0.45)", justifyContent: "flex-end" },
+  sheet:      { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
+  handle:     { width: 36, height: 4, borderRadius: C.r.pill, backgroundColor: C.cardBorder, alignSelf: "center", marginTop: 14, marginBottom: 4 },
+  head:       { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 18, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
+  title:      { color: C.ink, fontSize: 17, fontWeight: "700" },
+  closeBtn:   { width: 30, height: 30, borderRadius: 9, backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center" },
+  search:     { flexDirection: "row", alignItems: "center", gap: 10, margin: 14, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 12, height: 42 },
   searchInput:{ flex: 1, fontSize: 14, color: C.ink, fontWeight: "600" },
-  item:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
-  itemName:  { flex: 1, color: C.ink, fontSize: 14, fontWeight: "600" },
-  chip:      { backgroundColor: C.violetLight, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: C.violetBorder },
-  chipTxt:   { color: AGENT_BLUE, fontSize: 11, fontWeight: "900" },
-  empty:     { color: C.inkSoft, textAlign: "center", padding: 24, fontWeight: "600" },
+  item:       { flexDirection: "row", alignItems: "center", paddingHorizontal: 18, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
+  itemName:   { flex: 1, color: C.ink, fontSize: 14, fontWeight: "600" },
+  chip:       { backgroundColor: C.violetLight, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: C.violetBorder },
+  chipTxt:    { color: AGENT_BLUE, fontSize: 11, fontWeight: "900" },
+  empty:      { color: C.inkSoft, textAlign: "center", padding: 24, fontWeight: "600" },
 });
 
 // ─── Field ──────────────────────────────────────────────
@@ -191,28 +196,26 @@ const f = StyleSheet.create({
   wrap:    { marginBottom: 16 },
   label:   { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   box:     { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
-  focused: { borderColor: AGENT_BLUE, backgroundColor: C.white }, // ✅ bleu
+  focused: { borderColor: AGENT_BLUE, backgroundColor: C.white },
   input:   { paddingHorizontal: 14, paddingVertical: 13, fontSize: 15, color: C.ink, fontWeight: "600" },
 });
 
 // ─── Main ───────────────────────────────────────────────
 export default function AgentDepositScreen() {
-  const router = useRouter();
+  const router   = useRouter();
   const { user } = useAuth();
 
-  // ── Indicatif pays ──
-  const [country,     setCountry]     = useState<CountryData>(DEFAULT_COUNTRY);
-  const [showPicker,  setShowPicker]  = useState(false);
-
-  const [phone,          setPhone]          = useState("");
-  const [amount,         setAmount]         = useState("");
-  const [loading,        setLoading]        = useState(false);
-  const [agentCurrency,  setAgentCurrency]  = useState<string>(
+  const [country,       setCountry]       = useState<CountryData>(DEFAULT_COUNTRY);
+  const [showPicker,    setShowPicker]    = useState(false);
+  const [phone,         setPhone]         = useState("");
+  const [amount,        setAmount]        = useState("");
+  const [loading,       setLoading]       = useState(false);
+  const [agentCurrency, setAgentCurrency] = useState<string>(
     (user as any)?.primaryCurrency ?? "XOF"
   );
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // ── Charge la devise de l'agence ──────────────────────
+  // ── Charge la devise de l'agence ──
   useEffect(() => {
     const loadCurrency = async () => {
       try {
@@ -234,7 +237,6 @@ export default function AgentDepositScreen() {
   const canSubmit    = phone.trim().length >= 6 && numAmount > 0;
   const quickAmounts = QUICK_BY_CURRENCY[agentCurrency] ?? QUICK_BY_CURRENCY.XOF;
 
-  // ── Animation résumé ──────────────────────────────────
   const updateAnim = (phoneVal: string, amtVal: string) => {
     const n = parseFloat(amtVal) || 0;
     Animated.timing(fadeAnim, {
@@ -269,6 +271,7 @@ export default function AgentDepositScreen() {
     }
   };
 
+  // ✅ v7 : navigation vers le reçu après dépôt validé
   const process = async () => {
     setLoading(true);
     try {
@@ -278,10 +281,20 @@ export default function AgentDepositScreen() {
       });
       const creditedCurrency: string = result?.data?.currency ?? agentCurrency;
       const creditedAmount:   number = result?.data?.amount   ?? numAmount;
-      showAlertCross(
-        "✅ Dépôt effectué",
-        `${fmt(creditedAmount, creditedCurrency)} ${creditedCurrency} crédités sur ${fullPhone}.`,
-        () => router.back(),
+
+      const receiptData = {
+        type:             "DEPOT" as const,
+        reference:        result?.data?.reference ?? `DEP-${Date.now()}`,
+        date:             new Date().toISOString(),
+        amount:           creditedAmount,
+        currency:         creditedCurrency,
+        beneficiaryName:  fullPhone,
+        beneficiaryPhone: fullPhone,
+        agencyName:       (user as any)?.agency?.name  || undefined,
+        agentName:        `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined,
+      };
+      router.push(
+        `/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`
       );
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Le dépôt a échoué.";
@@ -299,19 +312,24 @@ export default function AgentDepositScreen() {
       <View>
         <View style={s.hero}>
           <View style={s.glow} />
-          <View style={s.heroRow}>
-            <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="arrow-back" size={20} color={C.white} />
+
+          {/* Ligne 1 : [← iconBtn] [• AGENT pill] spacer [devise badge] */}
+          <View style={s.heroTopRow}>
+            <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="arrow-back" size={18} color={C.white} />
             </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Dépôt Client</Text>
-              <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>Cash-In · Crédit Wallet</Text>
+            <View style={s.agentPill}>
+              <View style={s.pillDot} />
+              <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>AGENT</Text>
             </View>
-            {/* Badge devise dynamique */}
-            <View style={s.heroBadge}>
-              <Text style={[s.heroBadgeTxt, { fontFamily: C.font.mono }]}>{agentCurrency}</Text>
+            <View style={{ flex: 1 }} />
+            <View style={s.currBadge}>
+              <Text style={[s.currBadgeTxt, { fontFamily: C.font.mono }]}>{agentCurrency}</Text>
             </View>
           </View>
+
+          <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Dépôt Client</Text>
+          <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>Cash-In · Crédit Wallet</Text>
         </View>
         <HeroConcave />
       </View>
@@ -344,18 +362,16 @@ export default function AgentDepositScreen() {
               <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>INFORMATIONS DÉPÔT</Text>
             </View>
 
-            {/* ── Téléphone + indicatif pays ── */}
+            {/* Téléphone + indicatif pays */}
             <Text style={[f.label, { fontFamily: C.font.sans }]}>
               Numéro du client <Text style={{ color: C.red }}>*</Text>
             </Text>
             <View style={s.phoneRow}>
-              {/* Bouton indicatif */}
               <TouchableOpacity style={s.dialBtn} onPress={() => setShowPicker(true)} activeOpacity={0.75}>
                 <Text style={{ fontSize: 18 }}>{country.flag}</Text>
                 <Text style={[s.dialCode, { fontFamily: C.font.mono }]}>+{country.dialCode}</Text>
                 <Ionicons name="caret-down" size={10} color={C.inkSoft} />
               </TouchableOpacity>
-              {/* Champ numéro */}
               <View style={s.phoneInput}>
                 <TextInput
                   style={[s.phoneInputTxt, { fontFamily: C.font.sans }]}
@@ -370,7 +386,7 @@ export default function AgentDepositScreen() {
 
             <View style={s.divider} />
 
-            {/* ── Montant compact ── */}
+            {/* Montant compact */}
             <Text style={[f.label, { fontFamily: C.font.sans, marginBottom: 8 }]}>
               Montant <Text style={{ color: C.red }}>*</Text>
             </Text>
@@ -388,7 +404,7 @@ export default function AgentDepositScreen() {
               </View>
             </View>
 
-            {/* ── Montants rapides — ScrollView horizontal ── */}
+            {/* Montants rapides — ScrollView horizontal */}
             <Text style={[s.quickLbl, { fontFamily: C.font.sans }]}>MONTANTS RAPIDES</Text>
             <ScrollView
               horizontal
@@ -463,94 +479,67 @@ export default function AgentDepositScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Sélecteur indicatif */}
       <CountryPickerModal
         visible={showPicker}
         onClose={() => setShowPicker(false)}
-        onSelect={(c) => { setCountry(c); setShowPicker(false); }}
+        onSelect={setCountry}
       />
     </SafeAreaView>
   );
 }
 
+// ─── Styles ─────────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ✅ Héro bleu compact + sans borderRadius (arc)
+  // ── Héro v7 — pill style, arc concave, paddingTop réduit ──
   hero: {
     backgroundColor: AGENT_BLUE,
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 16,  // ✅ réduit (24→16)
+    paddingTop:    Platform.OS === "android" ? 32 : 6,   // ✅ v7 : réduit (44→32)
+    paddingBottom: 16,
     overflow:      "hidden",
   },
-  glow:     { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:  { flexDirection: "row", alignItems: "center", gap: 14 },
-  backBtn:  { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
-  heroTitle:{ color: C.white, fontSize: 22, fontWeight: "700" },
-  heroSub:  { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  heroBadge:{ height: 38, paddingHorizontal: 12, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
-  heroBadgeTxt: { color: C.white, fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  glow:         { position: "absolute", width: 150, height: 150, borderRadius: 75, backgroundColor: C.heroGlow, top: -50, right: -30 },
+  heroTopRow:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  iconBtn:      { width: 30, height: 30, borderRadius: 9, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
+  agentPill:    { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  pillDot:      { width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.green },
+  pillTxt:      { fontSize: 8, fontWeight: "700", color: C.white, letterSpacing: 1 },
+  currBadge:    { height: 28, paddingHorizontal: 10, borderRadius: 8, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
+  currBadgeTxt: { color: C.white, fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+  heroTitle:    { color: C.white, fontSize: 26, fontWeight: "700", marginBottom: 3 },
+  heroSub:      { color: C.heroDim, fontSize: 11, fontWeight: "600" },
 
   scroll: { paddingHorizontal: 18, paddingTop: 16 },
 
-  banner: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: C.blueBg, borderRadius: C.r.md,
-    padding: 13, borderWidth: 1, borderColor: C.blueBorder, marginBottom: 16,
-  },
+  banner:        { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.blueBg, borderRadius: C.r.md, padding: 13, borderWidth: 1, borderColor: C.blueBorder, marginBottom: 16 },
   bannerIconBox: { width: 32, height: 32, borderRadius: 9, backgroundColor: "#DBEAFE", justifyContent: "center", alignItems: "center", flexShrink: 0 },
   bannerTxt:     { flex: 1, color: "#1D4ED8", fontSize: 12, fontWeight: "600", lineHeight: 18 },
 
-  card: {
-    backgroundColor: C.white, borderRadius: C.r.lg,
-    padding: 17, marginBottom: 14,
-    borderWidth: 1, borderColor: C.cardBorder,
-    shadowColor: AGENT_BLUE, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
-  },
+  card:   { backgroundColor: C.white, borderRadius: C.r.lg, padding: 17, marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   secRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
   secDot: { width: 5, height: 5, borderRadius: C.r.pill },
   secLbl: { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
 
-  // ── Téléphone + indicatif ──
   phoneRow:     { flexDirection: "row", gap: 8, marginBottom: 14 },
   dialBtn:      { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, paddingVertical: 12, flexShrink: 0 },
   dialCode:     { color: C.ink, fontSize: 12, fontWeight: "800" },
   phoneInput:   { flex: 1, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, overflow: "hidden" },
   phoneInputTxt:{ paddingHorizontal: 12, paddingVertical: 12, fontSize: 15, color: C.ink, fontWeight: "600" },
+  divider:      { height: 1, backgroundColor: "#F1F5F9", marginBottom: 14 },
 
-  divider: { height: 1, backgroundColor: "#F1F5F9", marginBottom: 14 },
+  amtBox:          { flexDirection: "row", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, overflow: "hidden", marginBottom: 16 },
+  amtInput:        { flex: 1, paddingHorizontal: 14, paddingVertical: 11, fontSize: 20, color: C.ink, fontWeight: "800" },
+  curBox:          { paddingHorizontal: 14, paddingVertical: 11, backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder, justifyContent: "center" },
+  curTxt:          { color: AGENT_BLUE, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  quickLbl:        { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
+  quickRow:        { gap: 7, paddingBottom: 2 },
+  quickPill:       { paddingHorizontal: 12, paddingVertical: 8, borderRadius: C.r.md, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder },
+  quickPillActive: { backgroundColor: C.violetLight, borderColor: `${AGENT_BLUE}50` },
+  quickTxt:        { fontSize: 11, fontWeight: "700", color: C.inkSoft },
 
-  // ── Montant compact ✅ ──
-  amtBox: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder,
-    borderRadius: C.r.md, overflow: "hidden", marginBottom: 16,
-  },
-  amtInput: {
-    flex: 1, paddingHorizontal: 14, paddingVertical: 11,  // ✅ 14→11
-    fontSize: 20, color: C.ink, fontWeight: "800",         // ✅ 30→20
-  },
-  curBox: {
-    paddingHorizontal: 14, paddingVertical: 11,
-    backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder,
-    justifyContent: "center",
-  },
-  curTxt: { color: AGENT_BLUE, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
-
-  // ── Montants rapides horizontaux ──
-  quickLbl:      { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
-  quickRow:      { gap: 7, paddingBottom: 2 },
-  quickPill:     { paddingHorizontal: 12, paddingVertical: 8, borderRadius: C.r.md, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder },
-  quickPillActive:{ backgroundColor: C.violetLight, borderColor: `${AGENT_BLUE}50` },
-  quickTxt:      { fontSize: 11, fontWeight: "700", color: C.inkSoft },
-
-  summary: {
-    backgroundColor: C.white, borderRadius: C.r.lg,
-    padding: 17, marginBottom: 14,
-    borderWidth: 1.5, borderColor: C.violetBorder,
-    shadowColor: AGENT_BLUE, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
-  },
+  summary:        { backgroundColor: C.white, borderRadius: C.r.lg, padding: 17, marginBottom: 14, borderWidth: 1.5, borderColor: C.violetBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3 },
   summaryHead:    { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 13 },
   summaryIconBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.violetLight, justifyContent: "center", alignItems: "center" },
   summaryTitle:   { fontSize: 12, fontWeight: "900", color: AGENT_BLUE, letterSpacing: 0.5 },

@@ -1,9 +1,10 @@
 // apps/direct-transfair-mobile/app/(auth)/login.tsx
 // =========================================================
-// LOGIN v6.2 — Direct Transf'air
-// ✅ v6.1 conservé intégralement
-// ✅ v6.2 : lien "Assistance et cookies" branché
-//           → router.push("/(auth)/assistance")
+// LOGIN v6.4 — Direct Transf'air
+// ✅ v6.3 conservé intégralement (fix fond vert Android)
+// ✅ v6.4 : bouton "Se connecter par téléphone"
+//           → router.push("/(auth)/otp-phone")
+//           → positionné au-dessus de "Devenir client"
 // =========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
@@ -319,20 +320,25 @@ export default function LoginScreen() {
   const pillLabel = isCustomBranding ? branding.name : "Choisir ma société →";
 
   return (
+    // ✅ FIX v6.3 : backgroundColor sur le conteneur racine pour Android
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: C.g3 }}
     >
       <StatusBar barStyle="light-content" backgroundColor={C.g2} />
 
+      {/* Fond plein */}
       <View style={[sL.bgBase, { backgroundColor: C.g3 }]} />
+      {/* Cercles décoratifs */}
       <View style={sL.bgCircle1} />
       <View style={sL.bgCircle2} />
 
+      {/* ✅ FIX v6.3 : transparent pour ne pas couvrir le bgBase */}
       <ScrollView
         contentContainerStyle={sL.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        style={{ flex: 1, backgroundColor: "transparent" }}
       >
         {/* ══ HERO ══ */}
         <View style={sL.hero}>
@@ -393,7 +399,7 @@ export default function LoginScreen() {
             />
           </View>
 
-          {/* Remember me */}
+          {/* Se souvenir de moi */}
           <TouchableOpacity
             style={sL.rememberRow}
             onPress={() => setRememberMe(!rememberMe)}
@@ -470,6 +476,25 @@ export default function LoginScreen() {
 
         {/* ══ BOTTOM ══ */}
         <View style={sL.bottom}>
+
+          {/* ✅ v6.4 : Connexion par téléphone (OTP) */}
+          <TouchableOpacity
+            style={sL.phoneOtpBtn}
+            onPress={() => router.push("/(auth)/otp-phone")}
+            activeOpacity={0.85}
+          >
+            <Ionicons
+              name="phone-portrait-outline"
+              size={16}
+              color="rgba(255,255,255,0.85)"
+              style={{ marginRight: 8 }}
+            />
+            <Text style={[sL.phoneOtpTxt, { fontFamily: F.body }]}>
+              Se connecter par téléphone
+            </Text>
+          </TouchableOpacity>
+
+          {/* Devenir client */}
           <TouchableOpacity
             style={sL.registerBtn}
             onPress={() => router.push("/(auth)/register")}
@@ -479,7 +504,7 @@ export default function LoginScreen() {
             <Text style={[sL.registerTxt, { color: C.g3, fontFamily: F.body }]}>Devenir client</Text>
           </TouchableOpacity>
 
-          {/* ✅ v6.2 : lien branché vers assistance */}
+          {/* ✅ v6.2 : Assistance et cookies */}
           <TouchableOpacity
             style={sL.helpRow}
             onPress={() => router.push("/(auth)/assistance")}
@@ -504,7 +529,7 @@ export default function LoginScreen() {
 }
 
 const sL = StyleSheet.create({
-  bgBase:    { ...StyleSheet.absoluteFillObject },
+  bgBase:    { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: { position: "absolute", width: 320, height: 320, borderRadius: 160, backgroundColor: "rgba(255,255,255,0.05)", top: -80, right: -80 },
   bgCircle2: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.04)", top: 120, left: -60 },
   scroll:    { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 56 : 64 },
@@ -544,6 +569,17 @@ const sL = StyleSheet.create({
   forgotTxt: { fontSize: 13, fontWeight: "700" },
 
   bottom:      { marginTop: 16, alignItems: "center", gap: 8 },
+
+  // ✅ v6.4 : bouton connexion par téléphone
+  phoneOtpBtn: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.28)",
+    width: "100%",
+  },
+  phoneOtpTxt: { color: "rgba(255,255,255,0.9)", fontWeight: "700", fontSize: 14 },
+
   registerBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#FFFFFF", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, elevation: 3, width: "100%", justifyContent: "center" },
   registerTxt: { fontWeight: "800", fontSize: 15 },
   helpRow:     { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8 },

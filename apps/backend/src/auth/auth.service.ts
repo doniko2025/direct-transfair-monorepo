@@ -1,18 +1,13 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.5 — Direct Transf'air
-// ✅ v4.4 conservé intégralement
-// ✅ v4.5 — ISOLATION CROSS-TENANT :
-//   1. login() accepte un tenantCode optionnel
-//      → résout le clientId correspondant avant validateUser
-//   2. validateUser() filtre par clientId
-//      → un utilisateur de la société MIROIR ne peut plus
-//         se connecter sur la page login de FLASH, et vice versa
-//      → SUPER_ADMIN exempté (accès global)
-//      → si le tenant est DONIKO ou non résolu, pas de filtre
-//        (rétro-compatibilité)
-//   3. Le message d'erreur reste identique peu importe la raison
-//      → pas de fuite d'information (user enumeration)
+// AUTH SERVICE v4.6 — Direct Transf'air
+// ✅ v4.5 conservé intégralement
+// ✅ v4.6 : loginByPhone()
+//   → connexion sans mot de passe par numéro de téléphone
+//   → OTP à 4 chiffres envoyé par SMS
+//   → isolation cross-tenant identique à login()
+//   → sendOtpInternal : nouveau paramètre codeLength (4|6, défaut 6)
+//   → generateOtpCode4() ajouté dans les helpers
 // =========================================================
 
 import {
@@ -181,8 +176,14 @@ function maskPhone(phone: string): string {
   return `${phone.substring(0, 4)}${'*'.repeat(Math.max(2, phone.length - 6))}${last2}`;
 }
 
+// OTP à 6 chiffres — connexion email/OTP global
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// ✅ v4.6 : OTP à 4 chiffres — connexion par téléphone uniquement
+function generateOtpCode4(): string {
+  return Math.floor(1000 + Math.random() * 9000).toString();
 }
 
 function generateRefreshToken(): string {
@@ -217,7 +218,6 @@ export class AuthService {
 
   async login(
     dto: LoginDto,
-    // ✅ v4.5 : lu depuis le header x-tenant-id par le controller
     tenantCode?: string | null,
   ): Promise<LoginStep2Result | LoginStep1Result> {
     const otpRequired = process.env.LOGIN_OTP_REQUIRED === 'true';
@@ -225,8 +225,6 @@ export class AuthService {
     const identifier = (dto.identifier ?? dto.email ?? '').trim();
     if (!identifier) throw new BadRequestException('Identifiant requis');
 
-    // ✅ v4.5 : Résoudre le clientId du tenant AVANT validateUser
-    // → permet de filtrer les utilisateurs par société
     let tenantClientId: number | null = null;
 
     const normalizedTenantCode = normalizeTenantCode(tenantCode);
@@ -238,13 +236,10 @@ export class AuthService {
       if (tenantClient?.isActive) {
         tenantClientId = tenantClient.id;
       }
-      // Si le code tenant n'existe pas ou est inactif → on laisse null
-      // ce qui provoquera un échec de connexion (pas de fuite d'info)
     }
 
     const user = await this.validateUser(identifier, dto.password, tenantClientId);
 
-    // ✅ Message identique peu importe la raison (user enumeration prevention)
     if (!user) throw new UnauthorizedException('Identifiants incorrects');
 
     if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
@@ -369,20 +364,11 @@ export class AuthService {
   // ========================================================
   // VALIDATE USER
   // ✅ v4.5 : filtre par clientId pour isolation cross-tenant
-  //
-  // Règles :
-  //   - SUPER_ADMIN : exempté du filtre (accès global)
-  //   - clientId fourni et > 0 : l'utilisateur DOIT appartenir à ce tenant
-  //   - clientId null / 0 : pas de filtre (tenant DONIKO ou non résolu)
-  //
-  // Le message d'erreur côté appelant reste identique quelle que soit
-  // la raison du refus → pas de fuite d'information (user enumeration)
   // ========================================================
 
   async validateUser(
     identifier: string,
     pass: string,
-    // ✅ v4.5 : clientId du tenant actif (null = pas de filtre)
     tenantClientId?: number | null,
   ): Promise<any | null> {
     const isEmail = identifier.includes('@');
@@ -413,10 +399,6 @@ export class AuthService {
 
     if (!user) return null;
 
-    // ✅ v4.5 : ISOLATION CROSS-TENANT
-    // Si un clientId de tenant est fourni ET que l'utilisateur n'est pas
-    // SUPER_ADMIN, vérifier qu'il appartient à ce tenant.
-    // Un user MIROIR ne peut pas se connecter sur la page FLASH.
     if (
       typeof tenantClientId === 'number' &&
       tenantClientId > 0 &&
@@ -428,7 +410,6 @@ export class AuthService {
           `user.clientId=${user.clientId} vs tenant.clientId=${tenantClientId} ` +
           `| identifier=${identifier}`,
         );
-        // On incrémente quand même les tentatives échouées pour l'audit
         await this.prisma.user.update({
           where: { id: user.id },
           data: {
@@ -436,11 +417,10 @@ export class AuthService {
             lastFailedLoginAt: new Date(),
           },
         }).catch(() => { /* non bloquant */ });
-        return null; // ← même retour qu'un mauvais mot de passe
+        return null;
       }
     }
 
-    // Vérification mot de passe
     if (await bcrypt.compare(pass, user.password)) return user;
 
     await this.prisma.user.update({
@@ -452,6 +432,66 @@ export class AuthService {
     });
 
     return null;
+  }
+
+  // ========================================================
+  // LOGIN BY PHONE — ✅ v4.6
+  // Connexion sans mot de passe pour les utilisateurs mobiles.
+  // Envoie un OTP à 4 chiffres par SMS puis renvoie userId +
+  // numéro masqué. La vérification du code se fait via le
+  // endpoint existant POST /auth/login/verify-otp.
+  //
+  // Isolation cross-tenant : même règle que login() —
+  // un user MIROIR ne peut pas utiliser la page FLASH.
+  // ========================================================
+
+  async loginByPhone(
+    phone: string,
+    tenantCode?: string | null,
+  ): Promise<{ userId: string; maskedPhone: string }> {
+    const normalized = normalizePhone(phone);
+    if (!normalized) throw new BadRequestException('Numéro de téléphone invalide');
+
+    // Résolution tenant pour isolation cross-tenant
+    let tenantClientId: number | null = null;
+    const normalizedTenantCode = normalizeTenantCode(tenantCode);
+    if (normalizedTenantCode && normalizedTenantCode !== 'DONIKO') {
+      const tenantClient = await this.prisma.client.findUnique({
+        where: { code: normalizedTenantCode },
+        select: { id: true, isActive: true },
+      });
+      if (tenantClient?.isActive) tenantClientId = tenantClient.id;
+    }
+
+    const userWhere: any = { phone: normalized };
+    // Filtre par tenant si résolu
+    if (tenantClientId) userWhere.clientId = tenantClientId;
+
+    const user = await this.prisma.user.findFirst({
+      where: userWhere,
+      select: { id: true, phone: true, isSuspended: true, clientId: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Numéro de téléphone non reconnu sur cette plateforme.');
+    }
+    if (user.isSuspended) {
+      throw new UnauthorizedException('Compte suspendu');
+    }
+
+    // OTP à 4 chiffres pour la connexion par téléphone
+    await this.sendOtpInternal(user.id, CommsType.SMS, OtpPurpose.LOGIN, normalized, 4);
+
+    await this.audit(user.id, user.clientId, AuditAction.OTP_REQUEST, {
+      purpose: OtpPurpose.LOGIN,
+      channel: CommsType.SMS,
+      source: 'loginByPhone',
+    });
+
+    return {
+      userId: user.id,
+      maskedPhone: maskPhone(normalized),
+    };
   }
 
   // ========================================================
@@ -540,7 +580,7 @@ export class AuthService {
       this.logger.warn('Échec email bienvenue (non-bloquant)', e);
     });
 
-    // OTP de vérification non-bloquant (v4.4)
+    // OTP de vérification non-bloquant
     this.sendOtpInternal(
       user.id,
       CommsType.EMAIL,
@@ -630,6 +670,9 @@ export class AuthService {
 
   // ========================================================
   // OTP — Interne
+  // ✅ v4.6 : paramètre codeLength (4 | 6, défaut 6)
+  //   → 6 chiffres : usage général (email, mot de passe…)
+  //   → 4 chiffres : connexion par téléphone (loginByPhone)
   // ========================================================
 
   private async sendOtpInternal(
@@ -637,8 +680,10 @@ export class AuthService {
     channel: CommsType,
     purpose: OtpPurpose,
     recipient: string,
+    codeLength: 4 | 6 = 6,
   ): Promise<void> {
-    const code = generateOtpCode();
+    // ✅ v4.6 : choix du générateur selon la longueur demandée
+    const code = codeLength === 4 ? generateOtpCode4() : generateOtpCode();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
     await this.prisma.otpLog.updateMany({
