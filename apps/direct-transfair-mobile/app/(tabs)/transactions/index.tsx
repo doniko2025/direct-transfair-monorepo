@@ -1,12 +1,17 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.4 — Direct Transf'air
+// TRANSACTIONS HISTORY v6.5 — Direct Transf'air
 // ✅ v6.1 : AGENT : retraits validés récupérés via /withdrawals
 // ✅ FIX v6.2 : displayAmount / displayCurrency pour les entrants
 // ✅ FIX v6.3 : Filtres invisibles — maxHeight + contraste
 // ✅ FIX v6.4 : Textes filtres masqués — cause racine :
 //    FlatList horizontal + gap non supporté dans certaines versions RN
 //    → ScrollView + marginRight sur chaque pill + color explicite
+// ✅ FIX v6.5 : Espace vide excessif sous header —
+//    ScrollView horizontal sans contrainte de hauteur s'étire sur tout
+//    l'espace disponible dans la SafeAreaView flex:1
+//    → filtersWrap : flexGrow: 0 (empêche l'expansion verticale)
+//    → Animated.FlatList : flex: 1 (prend l'espace restant)
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
@@ -448,10 +453,9 @@ export default function TransactionsScreen() {
         </View>
       </Animated.View>
 
-      {/* ═══ FILTRES v6.4 ════════════════════════════════
-          FIX : FlatList → ScrollView (gap non supporté dans certains RN)
-                + marginRight sur chaque pill (remplace gap)
-                + color explicite dans filterTxt             */}
+      {/* ═══ FILTRES v6.5 ════════════════════════════════
+          FIX v6.5 : flexGrow: 0 sur filtersWrap — empêche le ScrollView
+          horizontal de s'étirer verticalement dans la SafeAreaView flex:1  */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -481,7 +485,6 @@ export default function TransactionsScreen() {
               {active && st && (
                 <Ionicons name={st.icon as any} size={10} color={st.color} />
               )}
-              {/* ✅ color explicite dans filterTxt — pas de risque d'héritage */}
               <Text
                 style={[
                   s.filterTxt,
@@ -516,8 +519,9 @@ export default function TransactionsScreen() {
           <ActivityIndicator color={C.green} size="large" />
         </View>
       ) : (
+        // ✅ FIX v6.5 : flex: 1 — prend tout l'espace restant après header + filtres
         <Animated.FlatList
-          style={{ opacity: fadeAnim }}
+          style={{ opacity: fadeAnim, flex: 1 }}
           data={filtered}
           keyExtractor={(item) => item.id ?? String(Math.random())}
           contentContainerStyle={s.list}
@@ -593,20 +597,20 @@ const s = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
 
-  // ✅ FIX v6.4 : filtersWrap sans hauteur fixe — s'adapte au contenu
+  // ✅ FIX v6.5 : flexGrow: 0 — le ScrollView horizontal ne s'étire plus
+  //              verticalement dans la SafeAreaView flex:1
   filtersWrap: {
     backgroundColor: C.white,
     borderBottomWidth: 1,
     borderBottomColor: "#E4E9F0",
     flexShrink: 0,
+    flexGrow: 0,   // ← clé du fix : empêche l'expansion verticale
   },
-  // ✅ FIX v6.4 : pas de gap ici — marginRight sur chaque pill à la place
   filtersRow: {
     paddingHorizontal: 14,
     paddingVertical: 10,
     alignItems: "center",
   },
-  // ✅ FIX v6.4 : marginRight: 8 remplace gap dans le parent
   filterPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -617,13 +621,12 @@ const s = StyleSheet.create({
     backgroundColor: C.white,
     borderWidth: 1.5,
     borderColor: "#E2E8F0",
-    marginRight: 8,  // ← remplace gap dans contentContainerStyle
+    marginRight: 8,
   },
-  // ✅ FIX v6.4 : color "#475569" explicite dans le style de base
   filterTxt: {
     fontSize: 11,
     fontWeight: "800",
-    color: "#475569",  // visible sur fond blanc (contraste 5.9:1 WCAG AA)
+    color: "#475569",
   },
   filterBadge: {
     minWidth: 18, paddingHorizontal: 5, paddingVertical: 2,
