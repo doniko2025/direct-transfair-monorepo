@@ -1,16 +1,17 @@
 // apps/direct-transfair-mobile/app/wallet-transfer.tsx
 // =========================================================
-// WALLET TRANSFER v6.0 — Direct Transf'air
-// ✅ v5.2 : fix beneficiaryId + auto-suggestion par téléphone
-// ✅ v6.0 :
-//    - Fix PRINCIPAL : solde XOF/GNF avec virgules
-//      Math.round avant formatage + mise à jour atomique (1 setState)
-//    - Arc concave vert (react-native-svg) comme les autres pages
-//    - Héro compact : paddingBottom 24→14, balAmt 28→22
-//    - Quick amounts adaptés à la devise (XOF: 5k→200k, EUR: 10→500)
-//    - Conversion box compacte (fontSize 26→20)
-//    - Toggle affichage solde (icône œil)
-//    - Default devise : XOF (au lieu de EUR) pour éviter le format 2 décimales
+// WALLET TRANSFER v6.1 — Direct Transf'air
+// ✅ v6.1 sur base v6.0 :
+//    - pageBg #F0FDF8 → #FAFAFA (fond neutre quasi-blanc)
+//    - inputBg #F8FFFC → #F8F8F8 (inputsBG neutre)
+//    - cardBorder #D1FAE5 → #E5E5EA (bordures neutres)
+//    - freeBanner : fond blanc ombré (plus de greenPale)
+//    - card : ombre neutre renforcée (#000), padding 16→12, mb 12→8
+//    - convInput fontSize 20→14 (montants plus compacts)
+//    - convBox padding 12→10
+//    - scroll paddingTop 16→8 (moins de vide)
+//    - recapCard : ombre neutre
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -29,16 +30,16 @@ import { api } from "../services/api";
 const { width: SW } = Dimensions.get("window");
 const CONCAVE_H = 60;
 
-// ─── Design System ──────────────────────────────────────
+// ─── Design System v6.1 ──────────────────────────────────
 const C = {
   green:       "#059669", greenDark:   "#047857",
   greenLight:  "#F0FDF4", greenBorder: "#A7F3D0", greenPale: "#ECFDF5",
   heroGlass:   "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)", heroGlow: "rgba(255,255,255,0.08)",
-  pageBg:      "#F0FDF8",
+  pageBg:      "#FAFAFA",            // ← était #F0FDF8 (vert pâle supprimé)
   white:       "#FFFFFF",
-  cardBorder:  "#D1FAE5",
-  inputBg:     "#F8FFFC",
+  cardBorder:  "#E5E5EA",            // ← était #D1FAE5 (bordure neutre)
+  inputBg:     "#F8F8F8",            // ← était #F8FFFC (input neutre)
   ink:         "#0D2B1F", inkMid: "#1F5C3A", inkSoft: "#6B9E85",
   red:         "#EF4444", redBg:  "#FEF2F2",
   amber:       "#F59E0B", amberBg: "#FFFBEB", amberBorder: "#FDE68A",
@@ -79,23 +80,15 @@ interface LookupResult {
   primaryCurrency?:string;
 }
 
-// ✅ Fix v6.0 : Math.round avant formatage pour XOF/GNF → plus de virgules
 function fmt(n: number, currency = "XOF"): string {
   const isWhole = currency === "GNF" || currency === "XOF";
-  const value   = isWhole ? Math.round(n) : n; // force entier pour CFA/GNF
+  const value   = isWhole ? Math.round(n) : n;
   const d       = isWhole ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(value);
-  } catch {
-    return value.toFixed(d);
-  }
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(value);
+  } catch { return value.toFixed(d); }
 }
 
-// ─── Quick amounts par devise ─────────────────────────────
-// ✅ Fix v6.0 : montants adaptés à chaque devise (10 XOF = rien)
 const QUICK_AMOUNTS: Record<string, number[]> = {
   XOF: [5_000,  10_000,  25_000,  50_000, 100_000, 200_000],
   GNF: [50_000, 100_000, 200_000, 500_000, 1_000_000, 2_000_000],
@@ -104,7 +97,7 @@ const QUICK_AMOUNTS: Record<string, number[]> = {
   GBP: [10,  20,  50, 100, 200, 500],
 };
 
-// ─── Arc concave vert ────────────────────────────────────
+// ─── Arc concave vert (transition hero → pageBg #FAFAFA) ──
 function HeroConcave() {
   const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
   const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
@@ -112,7 +105,7 @@ function HeroConcave() {
     <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
       <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
       <Path d={d} fill={C.green} />
-      <Path d={bd} fill="none" stroke="rgba(5,150,105,0.22)" strokeWidth={1.5} />
+      <Path d={bd} fill="none" stroke="rgba(5,150,105,0.18)" strokeWidth={1.5} />
     </Svg>
   );
 }
@@ -182,8 +175,8 @@ function NotFoundCard({ onAdd }: { onAdd: () => void }) {
   );
 }
 const nfc = StyleSheet.create({
-  card:    { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#F8FFFC", borderRadius: C.r.md, padding: 12, borderWidth: 1, borderColor: C.cardBorder, marginTop: 8 },
-  iconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
+  card:    { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.md, padding: 12, borderWidth: 1, borderColor: C.cardBorder, marginTop: 8 },
+  iconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
   label:   { fontSize: 12, fontWeight: "700", color: C.inkSoft, marginBottom: 2 },
   action:  { fontSize: 12, fontWeight: "800" },
 });
@@ -207,11 +200,10 @@ export default function WalletTransferScreen() {
   const [amountFocused,   setAmountFocused]   = useState(false);
   const [showBalance,     setShowBalance]     = useState(true);
 
-  // ✅ Fix v6.0 : état wallet atomique (1 setState) → plus de race condition
   const [wallet, setWallet] = useState<{
     currency: string; balance: number; loaded: boolean;
   }>({
-    currency: ((user as any)?.primaryCurrency ?? "XOF") as string, // XOF par défaut (pas EUR)
+    currency: ((user as any)?.primaryCurrency ?? "XOF") as string,
     balance:  0,
     loaded:   false,
   });
@@ -225,27 +217,15 @@ export default function WalletTransferScreen() {
 
   useEffect(() => {
     Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
-
-    // ✅ Fix v6.0 : mise à jour atomique currency + balance en 1 setState
     api.getMyWallets().then((wallets) => {
       if (Array.isArray(wallets) && wallets.length > 0) {
         const primary = wallets.find((w) => w.isDefault) ?? wallets[0];
         if (primary?.currency) {
           const w = wallets.find((x) => x.currency === primary.currency) ?? primary;
-          setWallet({
-            currency: primary.currency,
-            balance:  Number(w?.balance ?? 0), // sera arrondi dans fmt()
-            loaded:   true,
-          });
-        } else {
-          setWallet(prev => ({ ...prev, loaded: true }));
-        }
-      } else {
-        setWallet(prev => ({ ...prev, loaded: true }));
-      }
-    }).catch(() => {
-      setWallet(prev => ({ ...prev, loaded: true }));
-    });
+          setWallet({ currency: primary.currency, balance: Number(w?.balance ?? 0), loaded: true });
+        } else { setWallet(prev => ({ ...prev, loaded: true })); }
+      } else { setWallet(prev => ({ ...prev, loaded: true })); }
+    }).catch(() => { setWallet(prev => ({ ...prev, loaded: true })); });
   }, []);
 
   const numAmount      = parseFloat(amount) || 0;
@@ -255,7 +235,6 @@ export default function WalletTransferScreen() {
   const showSummary    = numAmount > 0 && lookupResult?.found === true;
   const quickAmounts   = QUICK_AMOUNTS[senderCurrency] ?? QUICK_AMOUNTS.XOF;
 
-  // ── Lookup par téléphone ─────────────────────────────
   const lookupDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const cleanPhone = phone.replace(/[^0-9]/g, "");
@@ -273,7 +252,6 @@ export default function WalletTransferScreen() {
     return () => { if (lookupDebounce.current) clearTimeout(lookupDebounce.current); };
   }, [phone, selectedCode.code]);
 
-  // ── Conversion temps réel ───────────────────────────
   const convertDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fetchConversion = useCallback(async (amt: number, from: string, to: string) => {
     if (amt <= 0 || from === to) { setConvertedAmount(amt > 0 ? amt : null); setConvRate(1); return; }
@@ -297,7 +275,6 @@ export default function WalletTransferScreen() {
     Animated.timing(summaryAnim, { toValue: showSummary ? 1 : 0, duration: 200, useNativeDriver: true }).start();
   }, [showSummary]);
 
-  // ── Soumission ──────────────────────────────────────
   const handleTransfer = () => {
     if (!canSend) return;
     const recipientName = lookupResult?.fullName || `${lookupResult?.firstName ?? ""} ${lookupResult?.lastName ?? ""}`.trim() || phone.trim();
@@ -373,7 +350,6 @@ export default function WalletTransferScreen() {
       }}>
         <View style={s.hero}>
           <View style={s.glow} />
-
           <View style={s.heroRow}>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
               <Ionicons name="arrow-back" size={20} color={C.white} />
@@ -382,23 +358,17 @@ export default function WalletTransferScreen() {
               <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Transfert Wallet</Text>
               <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>Wallet → Wallet · 0 frais</Text>
             </View>
-            {/* Toggle affichage solde */}
             <TouchableOpacity style={s.iconBtn} onPress={() => setShowBalance(!showBalance)}>
               <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.white} />
             </TouchableOpacity>
           </View>
 
-          {/* Carte solde compacte */}
+          {/* Carte solde */}
           <View style={s.balCard}>
             <View style={{ flex: 1 }}>
               <Text style={[s.balLbl, { fontFamily: C.font.sans }]}>SOLDE DISPONIBLE</Text>
-              {/* ✅ Fix : affiche "—" pendant le chargement → évite le flash decimal */}
               <Text style={[s.balAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
-                {!wallet.loaded
-                  ? "—"
-                  : showBalance
-                    ? fmt(currentBalance, senderCurrency)
-                    : "••••••"}
+                {!wallet.loaded ? "—" : showBalance ? fmt(currentBalance, senderCurrency) : "••••••"}
               </Text>
               <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{senderCurrency}</Text>
             </View>
@@ -417,15 +387,13 @@ export default function WalletTransferScreen() {
             </View>
           </View>
         </View>
-
-        {/* Arc concave vert */}
         <HeroConcave />
       </Animated.View>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          {/* Bannière gratuit */}
+          {/* Bannière gratuit — fond blanc ombré */}
           <View style={s.freeBanner}>
             <View style={s.freeIconBox}>
               <Ionicons name="flash" size={15} color={C.green} />
@@ -479,7 +447,7 @@ export default function WalletTransferScreen() {
             )}
           </View>
 
-          {/* ── Montant (visible seulement si destinataire trouvé) ── */}
+          {/* ── Montant ── */}
           {lookupResult?.found && (
             <View style={s.card}>
               <View style={s.secRow}>
@@ -530,7 +498,6 @@ export default function WalletTransferScreen() {
                 </View>
               )}
 
-              {/* ✅ Quick amounts adaptés à la devise */}
               <Text style={[s.quickLbl, { fontFamily: C.font.sans }]}>MONTANTS RAPIDES</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.quickRow}>
                 {quickAmounts.map((v) => {
@@ -628,7 +595,7 @@ export default function WalletTransferScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── Modal sélecteur pays ── */}
+      {/* Modal sélecteur pays */}
       <Modal visible={showPicker} transparent animationType="slide" onRequestClose={() => setShowPicker(false)}>
         <View style={pk.overlay}>
           <View style={pk.sheet}>
@@ -665,7 +632,7 @@ export default function WalletTransferScreen() {
 const pk = StyleSheet.create({
   overlay:  { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:    { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, maxHeight: "70%", paddingBottom: Platform.OS === "ios" ? 36 : 18 },
-  handle:   { width: 40, height: 4, borderRadius: 99, backgroundColor: "#D1FAE5", alignSelf: "center", marginBottom: 14 },
+  handle:   { width: 40, height: 4, borderRadius: 99, backgroundColor: "#E5E5EA", alignSelf: "center", marginBottom: 14 },
   title:    { fontSize: 16, fontWeight: "900", color: C.ink, marginBottom: 10 },
   item:     { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingHorizontal: 8, borderRadius: 10, marginBottom: 3 },
   itemName: { fontSize: 14, fontWeight: "700", color: C.ink },
@@ -673,46 +640,68 @@ const pk = StyleSheet.create({
   itemCode: { fontSize: 13, fontWeight: "800" },
 });
 
+// ─── Styles v6.1 ──────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
 
-  // ── Héro compact v6 — sans borderRadius (arc concave) ──
+  // Héro (reste vert)
   hero: {
     backgroundColor: C.green,
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 44 : 14, // ✅ réduit (48→44)
-    paddingBottom: 14,   // ✅ réduit (24→14)
+    paddingTop:    Platform.OS === "android" ? 44 : 14,
+    paddingBottom: 14,
     overflow:      "hidden",
   },
   glow:     { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
-  heroRow:  { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 }, // ✅ réduit (18→12)
+  heroRow:  { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
   iconBtn:  { width: 36, height: 36, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
   heroTitle:{ color: C.white, fontSize: 19, fontWeight: "700" },
   heroSub:  { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 1 },
 
-  // ── Carte solde compacte ──
   balCard: {
     backgroundColor: C.white, borderRadius: C.r.xl,
-    padding: 12,     // ✅ réduit (18→12)
+    padding: 12,
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     shadowColor: "#000", shadowOpacity: 0.10, shadowRadius: 14,
     shadowOffset: { width: 0, height: 5 }, elevation: 6,
   },
   balLbl:     { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 3, textTransform: "uppercase" },
-  balAmt:     { fontSize: 22, fontWeight: "800", color: C.ink, letterSpacing: -0.3 }, // ✅ réduit (28→22)
+  balAmt:     { fontSize: 22, fontWeight: "800", color: C.ink, letterSpacing: -0.3 },
   balCur:     { fontSize: 11, fontWeight: "800", color: C.green, marginTop: 2 },
   balBadge:   { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, borderRadius: C.r.pill, paddingHorizontal: 10, paddingVertical: 5 },
   balDot:     { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: C.green },
   balBadgeTxt:{ fontSize: 10, fontWeight: "700" },
 
-  scroll: { paddingHorizontal: 18, paddingTop: 16 },
+  // ← paddingTop 16→8 (moins de vide en haut du scroll)
+  scroll: { paddingHorizontal: 18, paddingTop: 8 },
 
-  freeBanner: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.greenPale, borderRadius: C.r.md, padding: 11, borderWidth: 1, borderColor: C.greenBorder, marginBottom: 14 },
-  freeIconBox:{ width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenLight, justifyContent: "center", alignItems: "center" },
+  // ← fond blanc + ombre neutre (était greenPale + greenBorder, pas d'ombre)
+  freeBanner: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: C.white,
+    borderRadius: C.r.md, padding: 11,
+    borderWidth: 1, borderColor: C.cardBorder,
+    marginBottom: 10,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
+  },
+  freeIconBox:{ width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
   freeTxt:    { flex: 1, color: C.inkMid, fontSize: 11, fontWeight: "600", lineHeight: 17 },
 
-  card: { backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOpacity: 0.05, shadowRadius: 7, elevation: 2 },
-  secRow:  { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
+  // ← padding 16→12, mb 12→8, shadowColor "#000" (était C.green)
+  card: {
+    backgroundColor: C.white, borderRadius: C.r.lg,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 5 },
+      android: { elevation: 3 },
+    }),
+  },
+  secRow:  { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
   secDot:  { width: 5, height: 5, borderRadius: C.r.pill },
   secLbl:  { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
 
@@ -722,15 +711,16 @@ const s = StyleSheet.create({
   dialDivider: { width: 1, height: 28, backgroundColor: C.cardBorder },
   phoneInput:  { flex: 1, paddingHorizontal: 11, paddingVertical: 11, fontSize: 14, color: C.ink, fontWeight: "600" },
 
-  // ── Boîte de conversion compacte ──
-  convBox:   { flexDirection: "row", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, padding: 12, marginBottom: 8 },
+  // ← padding 12→10
+  convBox:   { flexDirection: "row", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, padding: 10, marginBottom: 8 },
   convSide:  { flex: 1 },
-  convLabel: { fontSize: 8, fontWeight: "900", color: C.inkSoft, letterSpacing: 1, marginBottom: 5, textTransform: "uppercase" },
-  convInput: { fontSize: 20, fontWeight: "800", letterSpacing: -0.3 }, // ✅ réduit (26→20)
+  convLabel: { fontSize: 8, fontWeight: "900", color: C.inkSoft, letterSpacing: 1, marginBottom: 4, textTransform: "uppercase" },
+  // ← fontSize 20→14 (montants plus compacts, les "000" ne débordent plus)
+  convInput: { fontSize: 14, fontWeight: "800", letterSpacing: -0.3 },
   convCur:   { fontSize: 9, fontWeight: "900", marginTop: 3, letterSpacing: 1 },
   convArrow: { width: 32, alignItems: "center" },
 
-  rateRow:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderRadius: C.r.xs, padding: 7, marginBottom: 12, borderWidth: 1, borderColor: C.greenBorder },
+  rateRow:  { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, borderRadius: C.r.xs, padding: 7, marginBottom: 10, borderWidth: 1, borderColor: C.greenBorder },
   rateTxt:  { fontSize: 10, fontWeight: "700", color: C.greenDark },
 
   quickLbl: { fontSize: 8, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 7, textTransform: "uppercase", marginTop: 4 },
@@ -738,7 +728,15 @@ const s = StyleSheet.create({
   quickPill:{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: C.r.md, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder },
   quickTxt: { fontSize: 11, fontWeight: "800" },
 
-  recapCard:     { backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: C.greenBorder, shadowColor: C.green, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3 },
+  // ← shadowColor "#000" (était C.green)
+  recapCard: {
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 12,
+    borderWidth: 1.5, borderColor: C.greenBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
   recapHead:     { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12 },
   recapIconBox:  { width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   recapTitle:    { fontSize: 11, fontWeight: "900", color: C.green, letterSpacing: 0.5 },

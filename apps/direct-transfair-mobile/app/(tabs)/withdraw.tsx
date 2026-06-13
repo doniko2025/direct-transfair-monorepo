@@ -1,8 +1,14 @@
 // apps/direct-transfair-mobile/app/(tabs)/withdraw.tsx
 // =========================================================
-// AGENT WITHDRAW (TABS) v5.0 — Direct Transf'air
-// Design: Thème clair · Vert #059669 · Ultra-moderne
-// ✅ Vérification code 9 chiffres → Détail → Confirmation
+// AGENT WITHDRAW v5.1 — Direct Transf'air
+// ✅ v5.1 : fond blanc neutre, cartes blanches ombrées
+//    - pageBg #F0FDF8 → #FAFAFA
+//    - cardBorder #D1FAE5 → #E5E5EA (neutre)
+//    - inputBg #F8FFFC → #F8F8F8 (neutre)
+//    - amtCard : blanc ombré avec accent border vert (plus de greenPale)
+//    - qrBox : fond #F5F5F5 (plus de greenPale)
+//    - Ombres cartes : shadowColor green → #000
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -15,7 +21,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../services/api";
 
-// ─── Design System ──────────────────────────────────────
+// ─── Design System v5.1 ──────────────────────────────────
 const C = {
   green:        "#059669",
   greenDark:    "#047857",
@@ -28,10 +34,10 @@ const C = {
   heroDim:      "rgba(255,255,255,0.65)",
   heroGlow:     "rgba(255,255,255,0.08)",
 
-  pageBg:       "#F0FDF8",
+  pageBg:       "#FAFAFA",   // ← était #F0FDF8
   white:        "#FFFFFF",
-  cardBorder:   "#D1FAE5",
-  inputBg:      "#F8FFFC",
+  cardBorder:   "#E5E5EA",   // ← était #D1FAE5
+  inputBg:      "#F8F8F8",   // ← était #F8FFFC
 
   ink:          "#0D2B1F",
   inkMid:       "#1F5C3A",
@@ -99,8 +105,8 @@ export default function AgentWithdrawScreen() {
   const [checking,    setChecking]    = useState(false);
   const [paying,      setPaying]      = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const scaleAnim  = useRef(new Animated.Value(0.95)).current;
+  const fadeAnim   = useRef(new Animated.Value(0)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
@@ -123,8 +129,7 @@ export default function AgentWithdrawScreen() {
         Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: true }),
       ]).start();
     } catch (e: any) {
-      const msg = e.response?.data?.message || "Code invalide ou introuvable";
-      showAlert("Erreur", msg);
+      showAlert("Erreur", e.response?.data?.message || "Code invalide ou introuvable");
     } finally { setChecking(false); }
   };
 
@@ -146,8 +151,7 @@ export default function AgentWithdrawScreen() {
       if (Platform.OS === "web") { alert("✅ Paiement validé !"); router.back(); }
       else Alert.alert("✅ Succès", "Paiement validé et commission créditée.", [{ text: "OK", onPress: () => router.back() }]);
     } catch (e: any) {
-      const msg = e.response?.data?.message || "Échec de la validation";
-      showAlert("Erreur", msg);
+      showAlert("Erreur", e.response?.data?.message || "Échec de la validation");
     } finally { setPaying(false); }
   };
 
@@ -194,6 +198,7 @@ export default function AgentWithdrawScreen() {
           {!transaction ? (
             /* ── SAISIE CODE ── */
             <View style={s.centerBox}>
+              {/* Icône QR — fond neutre */}
               <View style={s.qrBox}>
                 <Ionicons name="qr-code-outline" size={48} color={C.green} />
               </View>
@@ -215,7 +220,6 @@ export default function AgentWithdrawScreen() {
                 />
               </View>
 
-              {/* Progress dots */}
               <View style={s.dotsRow}>
                 {Array.from({ length: 9 }).map((_, i) => (
                   <View key={i} style={[s.dot, i < code.length && { backgroundColor: C.green, transform: [{ scale: 1.2 }] }]} />
@@ -243,15 +247,12 @@ export default function AgentWithdrawScreen() {
             /* ── RÉSULTAT ── */
             <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
 
-              {/* Valid badge */}
               <View style={s.validBadge}>
-                <View style={s.validIcon}>
-                  <Ionicons name="checkmark-circle" size={18} color={C.green} />
-                </View>
+                <View style={s.validIcon}><Ionicons name="checkmark-circle" size={18} color={C.green} /></View>
                 <Text style={[s.validTxt, { fontFamily: C.font.sans }]}>CODE VALIDE — Transaction trouvée</Text>
               </View>
 
-              {/* Montant hero */}
+              {/* Montant — card blanche avec accent vert */}
               <View style={s.amtCard}>
                 <Text style={[s.amtLbl, { fontFamily: C.font.sans }]}>MONTANT À REMETTRE AU CLIENT</Text>
                 <Text style={[s.amtVal, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -269,7 +270,6 @@ export default function AgentWithdrawScreen() {
                 )}
               </View>
 
-              {/* Bénéficiaire */}
               <View style={s.card}>
                 <View style={s.secRow}>
                   <View style={[s.secDot, { backgroundColor: C.blue }]} />
@@ -279,7 +279,6 @@ export default function AgentWithdrawScreen() {
                 <InfoRow label="Téléphone"   value={transaction.beneficiary?.phone || "—"} icon="call-outline" color={C.blue} />
               </View>
 
-              {/* Expéditeur */}
               <View style={s.card}>
                 <View style={s.secRow}>
                   <View style={[s.secDot, { backgroundColor: C.green }]} />
@@ -291,7 +290,6 @@ export default function AgentWithdrawScreen() {
                 <InfoRow label="Statut" value={transaction.status || "—"} icon="checkmark-circle-outline" color={C.blue} />
               </View>
 
-              {/* Warning */}
               <View style={s.warning}>
                 <Ionicons name="warning-outline" size={16} color={C.amber} />
                 <Text style={[s.warningTxt, { fontFamily: C.font.sans }]}>
@@ -299,13 +297,7 @@ export default function AgentWithdrawScreen() {
                 </Text>
               </View>
 
-              {/* CTA paiement */}
-              <TouchableOpacity
-                style={[s.payBtn, paying && { opacity: 0.65 }]}
-                onPress={handlePayOut}
-                disabled={paying}
-                activeOpacity={0.88}
-              >
+              <TouchableOpacity style={[s.payBtn, paying && { opacity: 0.65 }]} onPress={handlePayOut} disabled={paying} activeOpacity={0.88}>
                 <View style={s.payBtnInner}>
                   {paying
                     ? <ActivityIndicator color={C.white} />
@@ -333,7 +325,7 @@ export default function AgentWithdrawScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
 
   hero: {
     backgroundColor: C.green,
@@ -344,63 +336,75 @@ const s = StyleSheet.create({
   },
   glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
   heroRow:   { flexDirection: "row", alignItems: "center", gap: 14 },
-  backBtn: {
-    width: 38, height: 38, borderRadius: C.r.sm,
-    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
-    justifyContent: "center", alignItems: "center",
-  },
+  backBtn:   { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
   heroTitle: { color: C.white, fontSize: 22, fontWeight: "700" },
   heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
-  heroBadge: {
-    width: 38, height: 38, borderRadius: C.r.sm,
-    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr,
-    justifyContent: "center", alignItems: "center",
-  },
+  heroBadge: { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
 
   scroll: { paddingHorizontal: 20, paddingTop: 20 },
 
-  // Saisie code
   centerBox: { alignItems: "center", paddingTop: 10 },
+  // ← fond #F5F5F5 neutre (était greenPale)
   qrBox: {
     width: 96, height: 96, borderRadius: 24, marginBottom: 20,
-    backgroundColor: C.greenPale, borderWidth: 1.5, borderColor: C.greenBorder,
+    backgroundColor: "#F5F5F5", borderWidth: 1.5, borderColor: C.cardBorder,
     justifyContent: "center", alignItems: "center",
   },
   qrHint:   { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24, lineHeight: 19, paddingHorizontal: 10 },
+  // ← ombre neutre (shadowColor "#000")
   codeWrap: {
     width: "100%", marginBottom: 16,
     backgroundColor: C.white, borderWidth: 2, borderColor: C.cardBorder,
     borderRadius: C.r.md,
-    shadowColor: C.green, shadowOpacity: 0.07, shadowRadius: 10, elevation: 3,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 10 },
+      android: { elevation: 4 },
+    }),
   },
-  codeInput: {
-    paddingVertical: 22, paddingHorizontal: 20,
-    fontSize: 30, color: C.ink, fontWeight: "900", letterSpacing: 8,
-  },
-  dotsRow:  { flexDirection: "row", gap: 8, marginBottom: 24 },
-  dot:      { width: 8, height: 8, borderRadius: C.r.pill, backgroundColor: C.cardBorder },
+  codeInput: { paddingVertical: 22, paddingHorizontal: 20, fontSize: 30, color: C.ink, fontWeight: "900", letterSpacing: 8 },
+  dotsRow:   { flexDirection: "row", gap: 8, marginBottom: 24 },
+  dot:       { width: 8, height: 8, borderRadius: C.r.pill, backgroundColor: C.cardBorder },
 
   cta:      { width: "100%", borderRadius: C.r.md, overflow: "hidden" },
-  ctaInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
-  ctaTxt:   { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
+  ctaInner: {
+    backgroundColor: C.green, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md,
+    ...Platform.select({
+      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
+  },
+  ctaTxt: { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 
-  // Résultat
   validBadge: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.greenPale, borderRadius: C.r.md, padding: 13, borderWidth: 1, borderColor: C.greenBorder, marginBottom: 14 },
   validIcon:  { width: 28, height: 28, borderRadius: 9, backgroundColor: "#D1FAE5", justifyContent: "center", alignItems: "center" },
   validTxt:   { color: C.greenDark, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, flex: 1 },
 
-  amtCard:  { backgroundColor: C.greenPale, borderRadius: C.r.xl, padding: 22, marginBottom: 14, borderWidth: 1.5, borderColor: C.greenBorder },
+  // ← blanc ombré avec accent vert (était greenPale sans ombre)
+  amtCard: {
+    backgroundColor: C.white,
+    borderRadius: C.r.xl, padding: 22, marginBottom: 14,
+    borderWidth: 2, borderColor: C.greenBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.09, shadowRadius: 10 },
+      android: { elevation: 4 },
+    }),
+  },
   amtLbl:   { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
   amtVal:   { color: C.ink, fontSize: 38, fontWeight: "900", letterSpacing: -0.5 },
   amtCur:   { color: C.green, fontSize: 12, fontWeight: "900", marginTop: 4, letterSpacing: 1 },
   rateRow:  { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
   rateTxt:  { color: C.inkSoft, fontSize: 11, fontWeight: "700" },
 
+  // ← ombre neutre (shadowColor "#000")
   card: {
     backgroundColor: C.white, borderRadius: C.r.lg,
     padding: 16, marginBottom: 12,
     borderWidth: 1, borderColor: C.cardBorder,
-    shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
   },
   secRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   secDot: { width: 5, height: 5, borderRadius: C.r.pill },
@@ -410,8 +414,15 @@ const s = StyleSheet.create({
   warningTxt: { flex: 1, color: "#92400E", fontSize: 12, fontWeight: "600", lineHeight: 17 },
 
   payBtn:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
-  payBtnInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
-  payBtnTxt:   { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
+  payBtnInner: {
+    backgroundColor: C.green, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md,
+    ...Platform.select({
+      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
+  },
+  payBtnTxt: { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
 
   cancelBtn: { alignItems: "center", paddingVertical: 14 },
   cancelTxt: { color: C.inkSoft, fontWeight: "800", fontSize: 14 },

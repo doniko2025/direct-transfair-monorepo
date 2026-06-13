@@ -1,72 +1,58 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/limits.tsx
 // =========================================================
-// LIMITS SCREEN v6.2 — Direct Transf'air
-// ✅ v6.1 : fetch brut → api.http (x-tenant-id automatique)
-// ✅ v6.2 :
-//   - useSafeAreaInsets : paddingBottom du ScrollView = inset natif + 90
-//     → la barre de navigation inférieure ne masque plus le contenu
-//   - Bouton "Demander une augmentation" : modal bottom sheet inline
-//     → champ motif + appel POST /limits/request (à créer côté backend)
+// LIMITS SCREEN v6.3 — Direct Transf'air
+// ✅ v6.3 : fond blanc neutre #FAFAFA
+//    - T.bg #F0FDF4 → #FAFAFA
+//    - Fix TypeScript : StyleSheet.absoluteFillObject → StyleSheet.absoluteFill
+//    - Ombres cartes neutres renforcées
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+  ActivityIndicator, KeyboardAvoidingView, Modal, Platform,
+  SafeAreaView, ScrollView, StatusBar, StyleSheet, Text,
+  TextInput, TouchableOpacity, View,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v6.2
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../../../services/api";
 
-// ─── Tokens de design ────────────────────────────────────────────────────────
 const T = {
-  bg: "#F0FDF4", accent: "#16A34A", accentLight: "#DCFCE7",
-  white: "#FFFFFF", cardBg: "#FFFFFF", border: "#E5E8EF", borderLight: "#EFF1F5",
+  bg: "#FAFAFA",          // ← était #F0FDF4
+  accent: "#16A34A", accentLight: "#DCFCE7",
+  white: "#FFFFFF", cardBg: "#FFFFFF",
+  border: "#E5E5EA",      // ← neutre (était #E5E8EF)
+  borderLight: "#F0F0F0",
   text: "#111827", textSub: "#6B7280", textMuted: "#9CA3AF",
-  blue: "#2563EB", blueBg: "#DBEAFE", amber: "#D97706",
+  blue: "#2563EB", blueBg: "#DBEAFE",
+  amber: "#D97706",
   purple: "#7C3AED", purpleBg: "#EDE9FE", red: "#DC2626",
   radius: { md: 12, lg: 16, xl: 20 },
   shadow: {
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3,
   },
   font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
+    mono:    Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
 };
 
-// ─── Types ───────────────────────────────────────────────────────────────────
 type LimitEntry = { used: number; max: number };
 type LimitsData = {
   currency: string; kycLevel: string; kycLabel: string;
   limits: { daily: LimitEntry; monthly: LimitEntry; yearly: LimitEntry };
 };
 
-// ─── Utilitaire de formatage ──────────────────────────────────────────────────
 function fmt(n: number, currency = "EUR"): string {
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency", currency, maximumFractionDigits: 0,
-    }).format(n);
-  } catch {
-    return `${n} ${currency}`;
-  }
+    return new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
+  } catch { return `${n} ${currency}`; }
 }
 
-// ─── Carte de plafond ─────────────────────────────────────────────────────────
 function LimitCard({ title, period, used, max, currency, color, colorBg }: {
   title: string; period: string; used: number; max: number;
   currency: string; color: string; colorBg: string;
@@ -89,11 +75,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
         </View>
       </View>
       <View style={lcS.amountRow}>
-        <Text
-          style={[lcS.used, { color, fontFamily: T.font.display }]}
-          numberOfLines={1}
-          adjustsFontSizeToFit
-        >
+        <Text style={[lcS.used, { color, fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
           {fmt(used, currency)}
         </Text>
         <Text style={[lcS.slash, { fontFamily: T.font.sans }]}>/</Text>
@@ -103,11 +85,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
         <View style={[lcS.progFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
       </View>
       <View style={lcS.footRow}>
-        <Ionicons
-          name={isDanger ? "alert-circle-outline" : "checkmark-circle-outline"}
-          size={13}
-          color={isDanger ? T.red : T.textMuted}
-        />
+        <Ionicons name={isDanger ? "alert-circle-outline" : "checkmark-circle-outline"} size={13} color={isDanger ? T.red : T.textMuted} />
         <Text style={[lcS.remaining, { color: isDanger ? T.red : T.textSub, fontFamily: T.font.sans }]}>
           {fmt(remaining, currency)} restant{isDanger ? " · Limite presque atteinte" : ""}
         </Text>
@@ -133,7 +111,6 @@ const lcS = StyleSheet.create({
   remaining: { fontSize: 11, fontWeight: "600" },
 });
 
-// ─── Constantes KYC ──────────────────────────────────────────────────────────
 const KYC_COLOR: Record<string, string> = {
   LEVEL_0: T.amber, LEVEL_1: T.accent, LEVEL_2: T.blue, LEVEL_3: T.purple,
 };
@@ -141,129 +118,82 @@ const KYC_BG: Record<string, string> = {
   LEVEL_0: "#FEF3C7", LEVEL_1: T.accentLight, LEVEL_2: T.blueBg, LEVEL_3: T.purpleBg,
 };
 
-// ─── Modal demande d'augmentation ─────────────────────────────────────────────
-// ✅ v6.2 : bottom sheet inline — appelle POST /limits/request (à créer backend)
-function RequestLimitModal({
-  visible, onClose, currency,
-}: {
+// ─── Modal demande augmentation ──────────────────────────
+function RequestLimitModal({ visible, onClose, currency }: {
   visible: boolean; onClose: () => void; currency: string;
 }) {
   const { bottom } = useSafeAreaInsets();
-
   const [reason,     setReason]     = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success,    setSuccess]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
 
-  const handleClose = () => {
-    setReason(""); setSuccess(false); setError(null);
-    onClose();
-  };
+  const handleClose = () => { setReason(""); setSuccess(false); setError(null); onClose(); };
 
   const handleSubmit = async () => {
-    if (!reason.trim()) {
-      setError("Veuillez préciser la raison de votre demande.");
-      return;
-    }
+    if (!reason.trim()) { setError("Veuillez préciser la raison de votre demande."); return; }
     try {
-      setSubmitting(true);
-      setError(null);
-      // 📌 Backend : créer POST /limits/request dans LimitsController / LimitsService
+      setSubmitting(true); setError(null);
       await api.http.post("/limits/request", { reason: reason.trim() });
       setSuccess(true);
     } catch (e: any) {
       const raw = e?.response?.data?.message ?? e?.message ?? "Erreur lors de l'envoi";
       setError(Array.isArray(raw) ? raw[0] : String(raw));
-    } finally {
-      setSubmitting(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      statusBarTranslucent
-      onRequestClose={handleClose}
-    >
-      <KeyboardAvoidingView
-        style={mS.overlay}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        {/* Fond semi-transparent cliquable pour fermer */}
-        <TouchableOpacity style={mS.backdrop} activeOpacity={1} onPress={handleClose} />
-
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={handleClose}>
+      <KeyboardAvoidingView style={mS.overlay} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        {/* ✅ Fix TypeScript : StyleSheet.absoluteFill (était absoluteFillObject) */}
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={handleClose} />
         <View style={[mS.sheet, { paddingBottom: (bottom || 0) + 20 }]}>
-          {/* Poignée */}
           <View style={mS.handle} />
-
           {success ? (
-            /* ── État succès ────────────────────────────────────── */
             <View style={mS.successBox}>
               <Ionicons name="checkmark-circle" size={52} color={T.accent} />
               <Text style={[mS.successTitle, { fontFamily: T.font.display }]}>Demande envoyée</Text>
               <Text style={[mS.successSub, { fontFamily: T.font.sans }]}>
                 Votre demande a été transmise. Nous vous répondrons dans les plus brefs délais.
               </Text>
-              <TouchableOpacity
-                style={[mS.btn, { backgroundColor: T.accent, alignSelf: "stretch" }]}
-                onPress={handleClose}
-                activeOpacity={0.85}
-              >
+              <TouchableOpacity style={[mS.btn, { backgroundColor: T.accent, alignSelf: "stretch" }]} onPress={handleClose} activeOpacity={0.85}>
                 <Text style={[mS.btnTxt, { fontFamily: T.font.sans }]}>Fermer</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            /* ── Formulaire ─────────────────────────────────────── */
             <>
               <View style={mS.headerRow}>
                 <View style={[mS.iconBox, { backgroundColor: T.accentLight }]}>
                   <Ionicons name="trending-up-outline" size={20} color={T.accent} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[mS.sheetTitle, { fontFamily: T.font.display }]}>
-                    Augmenter mes plafonds
-                  </Text>
-                  <Text style={[mS.sheetSub, { fontFamily: T.font.sans }]}>
-                    Demande soumise à validation
-                  </Text>
+                  <Text style={[mS.sheetTitle, { fontFamily: T.font.display }]}>Augmenter mes plafonds</Text>
+                  <Text style={[mS.sheetSub, { fontFamily: T.font.sans }]}>Demande soumise à validation</Text>
                 </View>
                 <TouchableOpacity onPress={handleClose} hitSlop={12}>
                   <Ionicons name="close-circle-outline" size={26} color={T.textMuted} />
                 </TouchableOpacity>
               </View>
-
               <Text style={[mS.label, { fontFamily: T.font.sans }]}>MOTIF DE LA DEMANDE</Text>
               <TextInput
                 style={[mS.input, { fontFamily: T.font.sans }]}
-                multiline
-                numberOfLines={4}
+                multiline numberOfLines={4}
                 placeholder="Ex. : augmentation d'activité, virements professionnels réguliers…"
                 placeholderTextColor={T.textMuted}
-                value={reason}
-                onChangeText={setReason}
-                maxLength={500}
-                textAlignVertical="top"
+                value={reason} onChangeText={setReason} maxLength={500} textAlignVertical="top"
               />
               <Text style={[mS.counter, { fontFamily: T.font.mono }]}>{reason.length} / 500</Text>
-
               {!!error && (
                 <View style={mS.errorRow}>
                   <Ionicons name="alert-circle-outline" size={14} color={T.red} />
                   <Text style={[mS.errorTxt, { fontFamily: T.font.sans }]}>{error}</Text>
                 </View>
               )}
-
               <TouchableOpacity
                 style={[mS.btn, { backgroundColor: submitting ? T.textMuted : T.accent }]}
-                onPress={handleSubmit}
-                disabled={submitting}
-                activeOpacity={0.85}
+                onPress={handleSubmit} disabled={submitting} activeOpacity={0.85}
               >
-                {submitting ? (
-                  <ActivityIndicator size="small" color={T.white} />
-                ) : (
+                {submitting ? <ActivityIndicator size="small" color={T.white} /> : (
                   <>
                     <Ionicons name="paper-plane-outline" size={16} color={T.white} />
                     <Text style={[mS.btnTxt, { fontFamily: T.font.sans }]}>Envoyer la demande</Text>
@@ -280,59 +210,42 @@ function RequestLimitModal({
 
 const mS = StyleSheet.create({
   overlay:      { flex: 1, justifyContent: "flex-end" },
-  backdrop:     { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.45)" },
-  sheet:        {
-    backgroundColor: T.cardBg,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    paddingHorizontal: 20, paddingTop: 12,
-  },
+  // ✅ backdrop as a named style (not absoluteFillObject)
+  sheet:        { backgroundColor: T.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12 },
   handle:       { width: 40, height: 4, backgroundColor: T.border, borderRadius: 99, alignSelf: "center", marginBottom: 20 },
   headerRow:    { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 20 },
   iconBox:      { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   sheetTitle:   { color: T.text, fontSize: 16, fontWeight: "700" },
   sheetSub:     { color: T.textSub, fontSize: 11, fontWeight: "600", marginTop: 2 },
   label:        { fontSize: 9, fontWeight: "800", color: T.textMuted, letterSpacing: 1.2, marginBottom: 8 },
-  input:        {
-    backgroundColor: T.bg, borderRadius: T.radius.md, borderWidth: 1,
-    borderColor: T.border, padding: 14, fontSize: 13, color: T.text,
-    minHeight: 100, marginBottom: 6,
-  },
+  input:        { backgroundColor: "#F5F5F5", borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, padding: 14, fontSize: 13, color: T.text, minHeight: 100, marginBottom: 6 },
   counter:      { fontSize: 10, color: T.textMuted, textAlign: "right", marginBottom: 16 },
   errorRow:     { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
   errorTxt:     { color: T.red, fontSize: 12, fontWeight: "600", flex: 1 },
-  btn:          {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 15, borderRadius: T.radius.md, marginTop: 4,
-  },
+  btn:          { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 15, borderRadius: T.radius.md, marginTop: 4 },
   btnTxt:       { color: T.white, fontWeight: "800", fontSize: 13, letterSpacing: 0.4 },
   successBox:   { alignItems: "center", paddingVertical: 24, gap: 12 },
   successTitle: { color: T.text, fontSize: 20, fontWeight: "700" },
   successSub:   { color: T.textSub, fontSize: 13, textAlign: "center", lineHeight: 20, paddingHorizontal: 10 },
 });
 
-// ─── Écran principal ──────────────────────────────────────────────────────────
 export default function LimitsScreen() {
   const router     = useRouter();
-  const { bottom } = useSafeAreaInsets(); // ✅ v6.2
-
+  const { bottom } = useSafeAreaInsets();
   const [data,      setData]      = useState<LimitsData | null>(null);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState<string | null>(null);
-  const [showModal, setShowModal] = useState(false); // ✅ v6.2
+  const [showModal, setShowModal] = useState(false);
 
-  // ✅ v6.1 : api.http.get ajoute automatiquement x-tenant-id
   const fetchLimits = useCallback(async () => {
     try {
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       const res = await api.http.get<LimitsData>("/limits");
       setData(res.data);
     } catch (e: any) {
       const raw = e?.response?.data?.message ?? e?.message ?? "Impossible de charger les plafonds";
       setError(Array.isArray(raw) ? raw[0] : String(raw));
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { void fetchLimits(); }, [fetchLimits]);
@@ -345,24 +258,18 @@ export default function LimitsScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
-        {/* ── En-tête ─────────────────────────────────────────────── */}
         <View style={s.header}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
             <Ionicons name="arrow-back" size={22} color={T.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Mes Plafonds</Text>
-            <Text style={[s.headerSub,   { color: T.accent, fontFamily: T.font.sans }]}>
-              Transferts & virements
-            </Text>
+            <Text style={[s.headerSub,   { color: T.accent, fontFamily: T.font.sans }]}>Transferts & virements</Text>
           </View>
         </View>
 
-        {/* ── États ──────────────────────────────────────────────── */}
         {loading ? (
-          <View style={s.loader}>
-            <ActivityIndicator size="large" color={T.accent} />
-          </View>
+          <View style={s.loader}><ActivityIndicator size="large" color={T.accent} /></View>
         ) : error ? (
           <View style={s.loader}>
             <Ionicons name="alert-circle-outline" size={36} color={T.red} />
@@ -373,12 +280,9 @@ export default function LimitsScreen() {
           </View>
         ) : data ? (
           <ScrollView
-            // ✅ v6.2 : paddingBottom = inset natif + 90 → plus de masquage par la tab bar
-            //           remplace l'ancien spacer <View style={{ height: 80 }} /> fixe
             contentContainerStyle={[s.scroll, { paddingBottom: (bottom || 0) + 90 }]}
             showsVerticalScrollIndicator={false}
           >
-            {/* Bandeau réglementaire */}
             <View style={s.infoBanner}>
               <View style={[s.infoIconBox, { backgroundColor: T.blueBg }]}>
                 <Ionicons name="information-circle-outline" size={18} color={T.blue} />
@@ -388,7 +292,6 @@ export default function LimitsScreen() {
               </Text>
             </View>
 
-            {/* Carte KYC */}
             <View style={s.kycCard}>
               <View style={s.kycRow}>
                 <View style={[s.kycIconBox, { backgroundColor: kycBg }]}>
@@ -396,48 +299,25 @@ export default function LimitsScreen() {
                 </View>
                 <View>
                   <Text style={[s.kycLabel, { fontFamily: T.font.sans }]}>NIVEAU DE VÉRIFICATION</Text>
-                  <Text style={[s.kycValue, { color: kycColor, fontFamily: T.font.display }]}>
-                    {data.kycLabel}
-                  </Text>
+                  <Text style={[s.kycValue, { color: kycColor, fontFamily: T.font.display }]}>{data.kycLabel}</Text>
                 </View>
               </View>
               <View style={s.kycHintRow}>
                 <Ionicons name="arrow-up-circle-outline" size={13} color={T.textMuted} />
-                <Text style={[s.kycHint, { fontFamily: T.font.sans }]}>
-                  Complétez votre vérification pour augmenter vos plafonds
-                </Text>
+                <Text style={[s.kycHint, { fontFamily: T.font.sans }]}>Complétez votre vérification pour augmenter vos plafonds</Text>
               </View>
             </View>
 
-            {/* Titre section */}
             <View style={s.sectionRow}>
               <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
               <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>PLAFONDS ACTIFS</Text>
             </View>
 
-            {/* Cartes de plafond */}
-            <LimitCard
-              title="Plafond Journalier" period="AUJOURD'HUI"
-              {...data.limits.daily}   currency={data.currency}
-              color={T.accent} colorBg={T.accentLight}
-            />
-            <LimitCard
-              title="Plafond Mensuel" period="CE MOIS"
-              {...data.limits.monthly} currency={data.currency}
-              color={T.blue}   colorBg={T.blueBg}
-            />
-            <LimitCard
-              title="Plafond Annuel" period="CETTE ANNÉE"
-              {...data.limits.yearly}  currency={data.currency}
-              color={T.purple} colorBg={T.purpleBg}
-            />
+            <LimitCard title="Plafond Journalier" period="AUJOURD'HUI"  {...data.limits.daily}   currency={data.currency} color={T.accent} colorBg={T.accentLight} />
+            <LimitCard title="Plafond Mensuel"    period="CE MOIS"      {...data.limits.monthly} currency={data.currency} color={T.blue}   colorBg={T.blueBg} />
+            <LimitCard title="Plafond Annuel"     period="CETTE ANNÉE"  {...data.limits.yearly}  currency={data.currency} color={T.purple} colorBg={T.purpleBg} />
 
-            {/* ✅ v6.2 : onPress câblé → ouvre le modal */}
-            <TouchableOpacity
-              style={[s.requestBtn, { backgroundColor: T.accent }]}
-              activeOpacity={0.85}
-              onPress={() => setShowModal(true)}
-            >
+            <TouchableOpacity style={[s.requestBtn, { backgroundColor: T.accent }]} activeOpacity={0.85} onPress={() => setShowModal(true)}>
               <Ionicons name="trending-up-outline" size={17} color={T.white} />
               <Text style={[s.requestTxt, { fontFamily: T.font.sans }]}>Demander une augmentation</Text>
             </TouchableOpacity>
@@ -445,27 +325,23 @@ export default function LimitsScreen() {
         ) : null}
       </SafeAreaView>
 
-      {/* ✅ v6.2 : modal hors SafeAreaView pour couvrir tout l'écran */}
-      <RequestLimitModal
-        visible={showModal}
-        onClose={() => setShowModal(false)}
-        currency={data?.currency ?? "EUR"}
-      />
+      <RequestLimitModal visible={showModal} onClose={() => setShowModal(false)} currency={data?.currency ?? "EUR"} />
     </View>
   );
 }
 
-// ─── Styles de l'écran principal ─────────────────────────────────────────────
 const s = StyleSheet.create({
   root:        { flex: 1 },
   header:      {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14,
+    backgroundColor: T.white, borderBottomWidth: 1, borderBottomColor: T.border,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
   },
-  backBtn:     {
-    width: 40, height: 40, borderRadius: T.radius.md, backgroundColor: T.cardBg,
-    justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border, ...T.shadow,
-  },
+  backBtn:     { width: 40, height: 40, borderRadius: T.radius.md, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border, ...T.shadow },
   headerTitle: { color: T.text, fontSize: 22, fontWeight: "700" },
   headerSub:   { fontSize: 11, fontWeight: "700", marginTop: 2 },
   loader:      { flex: 1, justifyContent: "center", alignItems: "center", gap: 12 },
@@ -473,18 +349,10 @@ const s = StyleSheet.create({
   retryBtn:    { paddingHorizontal: 24, paddingVertical: 10, backgroundColor: T.accentLight, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.accent },
   retryTxt:    { color: T.accent, fontWeight: "800", fontSize: 13 },
   scroll:      { paddingHorizontal: 20, paddingTop: 8 },
-  infoBanner:  {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: T.blueBg, borderRadius: T.radius.md, padding: 14,
-    borderWidth: 1, borderColor: "#BFDBFE", marginBottom: 14,
-  },
+  infoBanner:  { flexDirection: "row", alignItems: "flex-start", gap: 12, backgroundColor: T.blueBg, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: "#BFDBFE", marginBottom: 14 },
   infoIconBox: { width: 32, height: 32, borderRadius: 9, justifyContent: "center", alignItems: "center", marginTop: 1 },
   infoTxt:     { flex: 1, color: T.blue, fontSize: 12, fontWeight: "600", lineHeight: 17 },
-  kycCard:     {
-    backgroundColor: T.cardBg, borderRadius: T.radius.lg, padding: 16, marginBottom: 20,
-    borderWidth: 1, borderColor: T.border,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
-  },
+  kycCard:     { backgroundColor: T.cardBg, borderRadius: T.radius.lg, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: T.border, ...T.shadow },
   kycRow:      { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
   kycIconBox:  { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   kycLabel:    { fontSize: 9, fontWeight: "800", color: T.textMuted, letterSpacing: 1.2, marginBottom: 2 },
@@ -494,9 +362,6 @@ const s = StyleSheet.create({
   sectionRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   sectionDot:  { width: 5, height: 5, borderRadius: 99 },
   sectionLabel:{ fontSize: 11, fontWeight: "800", color: T.textMuted, letterSpacing: 1.5 },
-  requestBtn:  {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, paddingVertical: 16, borderRadius: T.radius.md, marginTop: 8,
-  },
+  requestBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, borderRadius: T.radius.md, marginTop: 8, ...T.shadow },
   requestTxt:  { color: T.white, fontWeight: "800", fontSize: 13, letterSpacing: 0.4 },
 });

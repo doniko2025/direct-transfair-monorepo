@@ -1,14 +1,24 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/fees.tsx
 // =========================================================
-// FRAIS DE TRANSACTION v1.0 — Direct Transf'air
-// ✅ Frais par méthode de paiement (cash, banque, mobile money)
-// ✅ Paliers de frais par montant (tiered fees)
-// ✅ Remises partenaires négociées (per-beneficiary custom fee)
-// ✅ Wallet → Wallet toujours GRATUIT (non modifiable)
-// ✅ Frais appliqués en base via transactions.service.ts
+// FRAIS DE TRANSACTION v1.1 — Direct Transf'air
+// ✅ v1.0 : Frais par méthode, paliers, remises partenaires
+// ✅ v1.1 : 3 bugs critiques corrigés
+//
+//  BUG 1 — sourceType: "FEE" invalide → backend rejette → reset au refresh
+//    FIX  → sourceType: "WALLET" (valeur d'enum valide), + payoutMethod + feeRate
+//
+//  BUG 2 — Stale closure dans load()
+//    FIX  → setMethods(prev => ...) au lieu de [...methods] (élimine la dépendance)
+//
+//  BUG 3 — rule.platformCommission inexistant → fixedFee toujours 0
+//    FIX  → rule.feeRate (nouveau champ DB) avec fallback sur rule.senderShare
+//           rule.fixedFee (nouveau champ DB)
+//
+//  BUG 4 — FeeMethodRow fixedInput ne se synchronise pas après chargement DB
+//    FIX  → useEffect sur method.fixedFee dans FeeMethodRow
 // =========================================================
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   SafeAreaView, StatusBar, Platform, Animated, TextInput,
@@ -78,35 +88,35 @@ const T = {
 
 // ─── Types ───────────────────────────────────────────────
 interface FeeMethod {
-  key:     string;
-  label:   string;
-  icon:    string;
-  color:   string;
-  bg:      string;
-  rate:    number;   // % (ex: 1.5 = 1.5%)
-  fixedFee:number;   // Montant fixe additionnel (ex: 200 XOF)
-  isFree:  boolean;  // Toujours gratuit (wallet)
+  key:      string;
+  label:    string;
+  icon:     string;
+  color:    string;
+  bg:       string;
+  rate:     number;    // % (ex: 1.5 = 1.5%)
+  fixedFee: number;    // Montant fixe additionnel
+  isFree:   boolean;
 }
 
 interface FeeTier {
-  id:       string;
-  minAmount:number;
-  maxAmount:number | null; // null = illimité
-  rate:     number;
-  fixedFee: number;
+  id:        string;
+  minAmount: number;
+  maxAmount: number | null;
+  rate:      number;
+  fixedFee:  number;
 }
 
 interface FeeOverride {
-  id:          string;
-  label:       string;    // Nom partenaire / bénéficiaire
-  phone:       string;
-  rate:        number;    // Taux réduit en %
-  validUntil:  string;    // ISO date, "" = permanent
-  note:        string;
+  id:         string;
+  label:      string;
+  phone:      string;
+  rate:       number;
+  validUntil: string;
+  note:       string;
 }
 
-const STORAGE_KEY_TIERS     = "fee_tiers_v1";
-const STORAGE_KEY_OVERRIDES  = "fee_overrides_v1";
+const STORAGE_KEY_TIERS    = "fee_tiers_v1";
+const STORAGE_KEY_OVERRIDES = "fee_overrides_v1";
 
 const FEE_STEPS = [0, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5];
 
@@ -144,6 +154,11 @@ function FeeMethodRow({ method, onChange }: {
   onChange: (key: string, rate: number, fixedFee: number) => void;
 }) {
   const [fixedInput, setFixedInput] = useState(String(method.fixedFee));
+
+  // ✅ FIX BUG 4 : synchronise l'input quand le parent recharge depuis la DB
+  useEffect(() => {
+    setFixedInput(String(method.fixedFee));
+  }, [method.fixedFee]);
 
   if (method.isFree) {
     return (
@@ -581,9 +596,12 @@ export default function FeesScreen() {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // ✅ FIX BUG 2 : useCallback sans `methods` dans les dépendances
+  //    → setMethods(prev => ...) évite le stale closure
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // AsyncStorage : paliers et remises (données locales mobile)
       const [tiersJson, ovJson] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY_TIERS),
         AsyncStorage.getItem(STORAGE_KEY_OVERRIDES),
@@ -591,30 +609,38 @@ export default function FeesScreen() {
       if (tiersJson) setTiers(JSON.parse(tiersJson));
       if (ovJson)    setOverrides(JSON.parse(ovJson));
 
+      // Backend : taux de frais par méthode
       try {
         const rules = await api.getCommissionRules() as any[];
         if (Array.isArray(rules)) {
-          const updatedMethods = [...methods];
-          for (const rule of rules) {
-            if (rule.sourceType === "FEE" && rule.payoutMethod) {
-              const idx = updatedMethods.findIndex((m) => m.key === rule.payoutMethod);
-              if (idx !== -1) {
-                updatedMethods[idx] = {
-                  ...updatedMethods[idx],
-                  rate:     rule.senderShare ?? updatedMethods[idx].rate,
-                  fixedFee: rule.platformCommission ?? updatedMethods[idx].fixedFee,
-                };
+          // ✅ FIX BUG 2 : setMethods(prev => ...) — pas de stale closure
+          setMethods(prev => {
+            const updated = [...prev];
+            for (const rule of rules) {
+              // ✅ FIX BUG 1 + 3 : identifier les fee configs par payoutMethod
+              //    (sourceType === "WALLET" ET payoutMethod présent)
+              if (rule.payoutMethod && rule.sourceType === "WALLET") {
+                const idx = updated.findIndex((m) => m.key === rule.payoutMethod);
+                if (idx !== -1) {
+                  updated[idx] = {
+                    ...updated[idx],
+                    // ✅ FIX BUG 3 : utiliser feeRate (nouveau champ DB)
+                    //    avec fallback sur senderShare (rétrocompatibilité)
+                    rate:     rule.feeRate    ?? rule.senderShare ?? updated[idx].rate,
+                    fixedFee: rule.fixedFee   ?? updated[idx].fixedFee,
+                  };
+                }
               }
             }
-          }
-          setMethods(updatedMethods);
+            return updated;
+          });
         }
-      } catch { /* Taux par défaut utilisés */ }
+      } catch { /* Taux par défaut utilisés si backend inaccessible */ }
 
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch { /* noop */ }
     finally { setLoading(false); }
-  }, []);
+  }, [fadeAnim]); // ✅ FIX : `methods` retiré des dépendances
 
   useFocusEffect(useCallback(() => {
     fadeAnim.setValue(0);
@@ -622,7 +648,7 @@ export default function FeesScreen() {
   }, [load]));
 
   const handleMethodChange = (key: string, rate: number, fixedFee: number) => {
-    setMethods((prev) => prev.map((m) => m.key === key ? { ...m, rate, fixedFee } : m));
+    setMethods(prev => prev.map((m) => m.key === key ? { ...m, rate, fixedFee } : m));
   };
 
   const handleAddTier = (tier: Omit<FeeTier, "id">) => {
@@ -650,32 +676,42 @@ export default function FeesScreen() {
     ]);
   };
 
+  // ✅ FIX BUG 1 : sourceType "WALLET" (valeur d'enum valide)
+  //    + payoutMethod + feeRate → backend accepte et persiste en DB
   const handleSave = async () => {
     setSaving(true);
     try {
+      // Paliers et remises → AsyncStorage (mobile uniquement)
       await Promise.all([
-        AsyncStorage.setItem(STORAGE_KEY_TIERS,    JSON.stringify(tiers)),
-        AsyncStorage.setItem(STORAGE_KEY_OVERRIDES, JSON.stringify(overrides)),
+        AsyncStorage.setItem(STORAGE_KEY_TIERS,     JSON.stringify(tiers)),
+        AsyncStorage.setItem(STORAGE_KEY_OVERRIDES,  JSON.stringify(overrides)),
       ]);
 
-      for (const method of methods) {
-        if (!method.isFree) {
-          try {
-            await api.saveCommissionRule({
-              sourceType:   "FEE",
-              destType:     "SUBSIDIARY",
-              payoutMethod: method.key,
-              senderShare:  method.rate,
+      // Taux par méthode → backend (CommissionConfig en DB)
+      const results = await Promise.allSettled(
+        methods
+          .filter((m) => !m.isFree)
+          .map((method) =>
+            api.saveCommissionRule({
+              sourceType:   "WALLET" as any,     // ✅ FIX : WALLET est un enum valide
+              destType:     "SUBSIDIARY" as any,
+              payoutMethod: method.key,           // ✅ FIX : champ requis côté backend
+              feeRate:      method.rate,          // ✅ FIX : nouveau champ DB (% réel)
+              fixedFee:     method.fixedFee,      // ✅ FIX : nouveau champ DB (montant fixe)
+              senderShare:  method.rate,          // rétrocompatibilité
               payerShare:   0,
-              platformShare: 100 - method.rate,
-            } as any);
-          } catch { /* On continue même si un envoi échoue */ }
-        }
-      }
+              platformShare: Math.max(0, 100 - method.rate),
+            } as any)
+          )
+      );
+
+      const failed = results.filter((r) => r.status === "rejected").length;
 
       Alert.alert(
-        "✅ Frais sauvegardés",
-        `${methods.filter((m) => !m.isFree).length} méthodes · ${tiers.length} palier(s) · ${overrides.length} remise(s)`,
+        failed === 0 ? "✅ Frais sauvegardés" : "⚠️ Partiellement sauvegardé",
+        failed === 0
+          ? `${methods.filter((m) => !m.isFree).length} méthodes · ${tiers.length} palier(s) · ${overrides.length} remise(s)`
+          : `${results.length - failed}/${results.length} méthodes sauvegardées. Vérifiez la connexion.`,
       );
     } catch (e: any) {
       Alert.alert("Erreur", e?.message ?? "Impossible de sauvegarder.");
@@ -719,7 +755,7 @@ export default function FeesScreen() {
       </View>
 
       <Animated.ScrollView
-        style={{ opacity: fadeAnim }}
+        style={{ opacity: fadeAnim, flex: 1 }}
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -733,7 +769,8 @@ export default function FeesScreen() {
             </Text>
             <Text style={[s.infoText, { color: T.indigo, fontFamily: T.font.sub }]}>
               Les frais sont prélevés sur le montant envoyé. Le virement Wallet → Wallet est
-              toujours gratuit. Les remises négociées s'appliquent par numéro de téléphone.
+              toujours gratuit. Les taux configurés ici s'appliquent immédiatement à toutes
+              les nouvelles transactions.
             </Text>
           </View>
         </View>
@@ -850,11 +887,12 @@ export default function FeesScreen() {
 
         {/* Note intégration backend */}
         <View style={[s.infoNote, { backgroundColor: T.amberLt, borderColor: T.amberMd }]}>
-          <Ionicons name="construct-outline" size={14} color={T.amber} />
+          <Ionicons name="checkmark-done-outline" size={14} color={T.amber} />
           <Text style={[s.infoNoteTxt, { fontFamily: T.font.sub }]}>
-            Les paliers et remises sont synchronisés lors de la création d'une transaction via
-            <Text style={{ fontWeight: "700" }}> transactions.service.ts → getFeeRate()</Text>.
-            Assurez-vous que la méthode est bien appelée dans le service backend.
+            Les taux sont lus en temps réel depuis{" "}
+            <Text style={{ fontWeight: "700" }}>CommissionConfig</Text>
+            {" "}à chaque création de transaction via{" "}
+            <Text style={{ fontWeight: "700" }}>transactions.service.ts</Text>.
           </Text>
         </View>
 
@@ -885,23 +923,27 @@ const s = StyleSheet.create({
   infoTitle:   { fontSize: 12, fontWeight: "800", marginBottom: 4 },
   infoText:    { fontSize: 11, lineHeight: 16 },
 
-  card:        { backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: T.border, ...T.shadow.card },
+  card: {
+    backgroundColor: T.surface, borderRadius: T.radius.xl,
+    padding: 18, marginBottom: 16, borderWidth: 1, borderColor: T.border,
+    ...T.shadow.card,
+  },
 
-  addBtn:      { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: T.radius.md, borderWidth: 1.5, borderStyle: "dashed", marginTop: 12 },
-  addBtnTxt:   { fontSize: 13, fontWeight: "800" },
+  saveBtn:    { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 16 },
+  saveBtnTxt: { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
 
-  saveBtn:     { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 16 },
-  saveBtnTxt:  { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
+  addBtn:    { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: T.radius.md, borderWidth: 1.5, borderStyle: "dashed", marginTop: 8 },
+  addBtnTxt: { fontSize: 13, fontWeight: "800" },
 
-  emptyRow:    { flexDirection: "row", alignItems: "center", gap: 8, padding: 16, backgroundColor: T.borderLt, borderRadius: T.radius.sm },
-  emptyTxt:    { flex: 1, color: T.inkMuted, fontSize: 12 },
+  emptyRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, backgroundColor: T.borderLt, borderRadius: T.radius.sm, marginBottom: 12 },
+  emptyTxt: { fontSize: 11, color: T.inkMuted, fontWeight: "600", flex: 1 },
 
-  summaryStrip:  { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 10, borderRadius: T.radius.md, borderWidth: 1, marginBottom: 12, gap: 20 },
-  summaryItem:   { alignItems: "center", gap: 2 },
-  summaryVal:    { fontSize: 20, fontWeight: "900" },
-  summaryLbl:    { fontSize: 9, fontWeight: "700", color: T.inkSub },
-  summaryDivider:{ width: 1, height: 28 },
+  summaryStrip:   { flexDirection: "row", borderRadius: T.radius.sm, borderWidth: 1, padding: 12, marginBottom: 14, alignItems: "center" },
+  summaryItem:    { flex: 1, alignItems: "center" },
+  summaryVal:     { fontSize: 22, fontWeight: "900" },
+  summaryLbl:     { fontSize: 9, fontWeight: "800", color: T.inkSub, letterSpacing: 0.5 },
+  summaryDivider: { width: 1, height: 30 },
 
-  infoNote:    { flexDirection: "row", gap: 8, padding: 12, borderRadius: T.radius.md, borderWidth: 1, alignItems: "flex-start" },
-  infoNoteTxt: { flex: 1, fontSize: 10, color: T.amber, lineHeight: 15 },
+  infoNote:    { flexDirection: "row", gap: 10, padding: 12, borderRadius: T.radius.sm, borderWidth: 1, marginBottom: 8, alignItems: "flex-start" },
+  infoNoteTxt: { fontSize: 10, color: T.inkSub, flex: 1, lineHeight: 15 },
 });

@@ -1,8 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/index.tsx
 // =========================================================
-// BENEFICIARIES v6.0 — Direct Transf'air
-// ✅ UI compacte : polices plus petites, cards plus denses
-// ✅ Groupage alphabétique + badge compteur
+// BENEFICIARIES v6.1 — Direct Transf'air
+// ✅ v6.0 : UI compacte, groupage alphabétique, badge compteur
+// ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -25,10 +25,10 @@ const C = {
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)",
   heroGlow:    "rgba(255,255,255,0.08)",
-  pageBg:      "#F0FDF8",
+  pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
-  cardBorder:  "#D1FAE5",
-  inputBg:     "#F8FFFC",
+  cardBorder:  "#E5E5EA",   // ← était #D1FAE5
+  inputBg:     "#F8F8F8",   // ← était #F8FFFC
   ink:         "#0D2B1F",
   inkMid:      "#1F5C3A",
   inkSoft:     "#6B9E85",
@@ -63,12 +63,9 @@ function BenefCard({ item }: { item: any }) {
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
-        {/* Avatar */}
         <View style={[bc.avatar, { backgroundColor: colors.bg }]}>
           <Text style={[bc.initials, { color: colors.text, fontFamily: C.font.serif }]}>{initials}</Text>
         </View>
-
-        {/* Infos */}
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={[bc.name, { fontFamily: C.font.sans }]} numberOfLines={1}>{item.fullName}</Text>
           <View style={bc.meta}>
@@ -88,8 +85,6 @@ function BenefCard({ item }: { item: any }) {
             )}
           </View>
         </View>
-
-        {/* Actions */}
         <View style={bc.actions}>
           <TouchableOpacity
             style={[bc.actionBtn, { backgroundColor: C.greenPale }]}
@@ -98,7 +93,7 @@ function BenefCard({ item }: { item: any }) {
           >
             <Ionicons name="paper-plane-outline" size={13} color={C.green} />
           </TouchableOpacity>
-          <View style={[bc.chevronBtn, { backgroundColor: C.greenLight }]}>
+          <View style={[bc.chevronBtn, { backgroundColor: "#F5F5F5" }]}>
             <Ionicons name="chevron-forward" size={12} color={C.green} />
           </View>
         </View>
@@ -107,7 +102,15 @@ function BenefCard({ item }: { item: any }) {
   );
 }
 const bc = StyleSheet.create({
-  card:      { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.md, padding: 12, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  card:      {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.white, borderRadius: C.r.md, padding: 12,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOpacity: 0.07, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+      android: { elevation: 2 },
+    }),
+  },
   avatar:    { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   initials:  { fontSize: 15, fontWeight: "900" },
   name:      { fontSize: 13, fontWeight: "700", color: C.ink, marginBottom: 4 },
@@ -122,12 +125,10 @@ const bc = StyleSheet.create({
 // ─── Main ───────────────────────────────────────────────
 export default function BeneficiariesScreen() {
   const router = useRouter();
-
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
   const [q,             setQ]             = useState("");
-
   const fadeAnim   = useRef(new Animated.Value(0)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
@@ -165,7 +166,6 @@ export default function BeneficiariesScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
 
-      {/* ── Hero ── */}
       <Animated.View style={[s.hero, {
         opacity: headerAnim,
         transform: [{ scale: headerAnim.interpolate({ inputRange: [0,1], outputRange: [0.97,1] }) }],
@@ -187,7 +187,6 @@ export default function BeneficiariesScreen() {
             <Ionicons name="person-add-outline" size={16} color={C.white} />
           </TouchableOpacity>
         </View>
-
         <View style={s.searchBox}>
           <Ionicons name="search" size={13} color={C.heroDim} />
           <TextInput
@@ -251,7 +250,6 @@ export default function BeneficiariesScreen() {
         </Animated.ScrollView>
       )}
 
-      {/* FAB */}
       <TouchableOpacity style={s.fab} onPress={() => router.push("/(tabs)/beneficiaries/create")} activeOpacity={0.88}>
         <Ionicons name="add" size={24} color={C.white} />
       </TouchableOpacity>
@@ -279,15 +277,34 @@ const s = StyleSheet.create({
 
   letterHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6, marginTop: 4 },
   letterTxt:    { fontSize: 12, fontWeight: "900", color: C.inkSoft },
-  letterBadge:  { backgroundColor: C.cardBorder, borderRadius: C.r.pill, paddingHorizontal: 6, paddingVertical: 1 },
+  // ← fond neutre (était C.cardBorder vert pâle)
+  letterBadge:  { backgroundColor: "#EEEEEE", borderRadius: C.r.pill, paddingHorizontal: 6, paddingVertical: 1 },
   letterCount:  { fontSize: 9, fontWeight: "900", color: C.inkMid },
 
   empty:       { alignItems: "center", paddingVertical: 50, gap: 6 },
-  emptyIconBox:{ width: 64, height: 64, borderRadius: 20, backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  emptyIconBox:{
+    width: 64, height: 64, borderRadius: 20,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder,
+    justifyContent: "center", alignItems: "center", marginBottom: 4,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 5 },
+      android: { elevation: 2 },
+    }),
+  },
   emptyTitle:  { color: C.ink, fontSize: 16, fontWeight: "700" },
   emptySub:    { color: C.inkSoft, fontSize: 12, fontWeight: "600", textAlign: "center" },
   emptyBtn:    { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, backgroundColor: C.greenPale, borderRadius: C.r.md, paddingHorizontal: 18, paddingVertical: 11, borderWidth: 1, borderColor: C.greenBorder },
   emptyBtnTxt: { color: C.green, fontWeight: "800", fontSize: 13 },
 
-  fab: { position: "absolute", bottom: 90, right: 18, width: 52, height: 52, borderRadius: 26, backgroundColor: C.green, justifyContent: "center", alignItems: "center", shadowColor: C.green, shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 7 },
+  // ← FAB : ombre neutre (était ombre verte)
+  fab: {
+    position: "absolute", bottom: 90, right: 18,
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: C.green,
+    justifyContent: "center", alignItems: "center",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 10 },
+      android: { elevation: 7 },
+    }),
+  },
 });

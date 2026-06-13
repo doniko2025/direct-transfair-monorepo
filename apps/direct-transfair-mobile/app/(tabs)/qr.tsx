@@ -1,8 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/qr.tsx
 // =========================================================
-// QR CODE SCREEN v5.0 — Direct Transf'air
-// Design: Thème clair par rôle · Ultra-moderne
-// ✅ Héro coloré par rôle, card QR blanche, actions épurées
+// QR CODE SCREEN v5.1 — Direct Transf'air
+// ✅ v5.1 : fond blanc neutre #FAFAFA sur tous les rôles
+//    - pageBg unifié (plus de teinte verte/ambrée par rôle)
+//    - Héro rôle coloré conservé (identité visuelle forte)
+//    - Ombres cartes renforcées
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useRef } from "react";
@@ -14,23 +17,27 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 
-// ─── Thèmes clairs par rôle ──────────────────────────────
+// ─── Thèmes par rôle — pageBg unifié blanc neutre ────────
 const ROLE_THEMES = {
   SUPER_ADMIN:   {
     primary: "#B45309", light: "#FFFBEB", pale: "#FEF3C7", border: "#FDE68A",
-    pageBg: "#FFFDF5", heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
+    pageBg: "#FAFAFA",  // ← unifié (était #FFFDF5)
+    heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
   COMPANY_ADMIN: {
     primary: "#059669", light: "#F0FDF4", pale: "#ECFDF5", border: "#A7F3D0",
-    pageBg: "#F0FDF8", heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
+    pageBg: "#FAFAFA",  // ← unifié (était #F0FDF8)
+    heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
   AGENT: {
     primary: "#D97706", light: "#FFFBEB", pale: "#FEF3C7", border: "#FDE68A",
-    pageBg: "#FFFDF5", heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
+    pageBg: "#FAFAFA",  // ← unifié (était #FFFDF5)
+    heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
   USER: {
     primary: "#059669", light: "#F0FDF4", pale: "#ECFDF5", border: "#A7F3D0",
-    pageBg: "#F0FDF8", heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
+    pageBg: "#FAFAFA",  // ← unifié (était #F0FDF8)
+    heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
 } as const;
 
@@ -39,8 +46,8 @@ const BASE = {
   ink:        "#0D1F14",
   inkMid:     "#1F5C3A",
   inkSoft:    "#6B9E85",
-  cardBorder: "#E2F0E8",
-  slateBg:    "#F8FAF9",
+  cardBorder: "#E5E5EA",  // ← neutre (était #E2F0E8)
+  slateBg:    "#F5F5F5",  // ← neutre (était #F8FAF9)
 
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
@@ -82,8 +89,9 @@ function ActionBtn({ icon, label, accent, bg, onPress, filled = false }: {
         style={[
           ab.btn,
           filled
-            ? { backgroundColor: accent }
-            : { backgroundColor: bg, borderColor: `${accent}30`, borderWidth: 1.5 },
+            ? { backgroundColor: accent, ...Platform.select({ ios: { shadowColor: accent, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8 }, android: { elevation: 4 } }) }
+            : { backgroundColor: BASE.white, borderColor: BASE.cardBorder, borderWidth: 1.5,
+                ...Platform.select({ ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6 }, android: { elevation: 3 } }) },
         ]}
         onPress={onPress}
         activeOpacity={1}
@@ -122,7 +130,7 @@ export default function QRCodeScreen() {
     <SafeAreaView style={[s.safe, { backgroundColor: theme.pageBg }]}>
       <StatusBar barStyle="light-content" backgroundColor={theme.primary} />
 
-      {/* ── Hero coloré ── */}
+      {/* ── Hero coloré par rôle ── */}
       <Animated.View style={[s.hero, {
         backgroundColor: theme.primary,
         opacity: heroAnim,
@@ -145,12 +153,10 @@ export default function QRCodeScreen() {
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} bounces={false}>
 
-        {/* ── QR Card blanche ── */}
+        {/* ── QR Card blanche ombrée ── */}
         <View style={s.qrCard}>
-          {/* Bande accent haut */}
           <View style={[s.qrCardTop, { backgroundColor: theme.primary }]} />
 
-          {/* Identité */}
           <View style={s.identityRow}>
             <View style={[s.avatarBox, { backgroundColor: theme.pale, borderColor: theme.border }]}>
               <Text style={[s.avatarInitials, { color: theme.primary, fontFamily: BASE.font.serif }]}>{initials}</Text>
@@ -168,7 +174,6 @@ export default function QRCodeScreen() {
 
           <View style={s.divider} />
 
-          {/* Zone QR */}
           <View style={s.qrArea}>
             <View style={[s.qrBox, { borderColor: `${theme.primary}20` }]}>
               <QRFrame accent={theme.primary} />
@@ -181,7 +186,6 @@ export default function QRCodeScreen() {
             </View>
           </View>
 
-          {/* Infos rapides */}
           <View style={s.infoStrip}>
             <View style={s.infoItem}>
               <Ionicons name="flash-outline" size={14} color={theme.primary} />
@@ -206,7 +210,6 @@ export default function QRCodeScreen() {
           <ActionBtn icon="copy-outline"  label="Copier ID" accent={theme.primary} bg={theme.pale}        onPress={() => {}} />
         </View>
 
-        {/* Note sécurité */}
         <View style={s.secNote}>
           <Ionicons name="shield-checkmark-outline" size={13} color={theme.primary} />
           <Text style={[s.secTxt, { color: BASE.inkSoft, fontFamily: BASE.font.sans }]}>
@@ -238,14 +241,15 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 20, paddingTop: 20, alignItems: "center" },
 
-  // QR Card
   qrCard: {
     backgroundColor: BASE.white,
     borderRadius: BASE.r.xl, width: "100%", maxWidth: 400,
     overflow: "hidden", marginBottom: 16,
     borderWidth: 1, borderColor: BASE.cardBorder,
-    shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 }, elevation: 6,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.10, shadowRadius: 16 },
+      android: { elevation: 6 },
+    }),
   },
   qrCardTop:    { height: 4, width: "100%" },
   identityRow:  { flexDirection: "row", alignItems: "center", gap: 14, padding: 20, paddingBottom: 16 },
@@ -259,10 +263,7 @@ const s = StyleSheet.create({
   divider: { height: 1, backgroundColor: BASE.cardBorder, marginHorizontal: 20 },
 
   qrArea: { alignItems: "center", padding: 24, gap: 14 },
-  qrBox:  {
-    padding: 16, borderRadius: BASE.r.lg,
-    backgroundColor: BASE.slateBg, borderWidth: 1,
-  },
+  qrBox:  { padding: 16, borderRadius: BASE.r.lg, backgroundColor: BASE.slateBg, borderWidth: 1 },
   qrActiveBadge: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: BASE.r.pill, borderWidth: 1 },
   qrActiveDot:   { width: 5, height: 5, borderRadius: BASE.r.pill },
   qrActiveTxt:   { fontSize: 9, fontWeight: "900", letterSpacing: 1 },
@@ -273,7 +274,6 @@ const s = StyleSheet.create({
   infoSep:   { width: 1, height: 14, marginHorizontal: 4 },
 
   actionsRow: { flexDirection: "row", gap: 12, width: "100%", maxWidth: 400, marginBottom: 14 },
-
-  secNote: { flexDirection: "row", alignItems: "center", gap: 6 },
-  secTxt:  { fontSize: 11, fontWeight: "600" },
+  secNote:    { flexDirection: "row", alignItems: "center", gap: 6 },
+  secTxt:     { fontSize: 11, fontWeight: "600" },
 });

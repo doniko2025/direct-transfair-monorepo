@@ -1,34 +1,20 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.5 — Direct Transf'air
-// ✅ v6.1 : AGENT : retraits validés récupérés via /withdrawals
-// ✅ FIX v6.2 : displayAmount / displayCurrency pour les entrants
-// ✅ FIX v6.3 : Filtres invisibles — maxHeight + contraste
-// ✅ FIX v6.4 : Textes filtres masqués — cause racine :
-//    FlatList horizontal + gap non supporté dans certaines versions RN
-//    → ScrollView + marginRight sur chaque pill + color explicite
-// ✅ FIX v6.5 : Espace vide excessif sous header —
-//    ScrollView horizontal sans contrainte de hauteur s'étire sur tout
-//    l'espace disponible dans la SafeAreaView flex:1
-//    → filtersWrap : flexGrow: 0 (empêche l'expansion verticale)
-//    → Animated.FlatList : flex: 1 (prend l'espace restant)
+// TRANSACTIONS HISTORY v6.6 — Direct Transf'air
+// ✅ v6.6 : Fond blanc neutre (#FAFAFA), cartes ombrées
+//    - pageBg #F0FDF8 → #FAFAFA (suppression fond vert pâle)
+//    - cardBorder #D1FAE5 → #E5E5EA (bordures neutres)
+//    - Ombres cartes : shadowColor green → #000, opacity 0.05→0.08
+//    - searchBox : fond blanc + bordure neutre
+//    - refreshBtn : style neutre
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useCallback, useMemo, useRef } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  ActivityIndicator,
-  RefreshControl,
-  TouchableOpacity,
-  Platform,
-  Animated,
-  StatusBar,
-  SafeAreaView,
-  TextInput,
-  ScrollView,
+  View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl,
+  TouchableOpacity, Platform, Animated, StatusBar, SafeAreaView,
+  TextInput, ScrollView,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,7 +25,9 @@ import { useAuth } from "../../../providers/AuthProvider";
 const C = {
   green:       "#059669", greenDark: "#047857", greenLight: "#F0FDF4",
   greenBorder: "#A7F3D0", greenPale:  "#ECFDF5",
-  pageBg:      "#F0FDF8", white: "#FFFFFF", cardBorder: "#D1FAE5",
+  pageBg:      "#FAFAFA",            // ← #F0FDF8 → fond neutre quasi-blanc
+  white:       "#FFFFFF",
+  cardBorder:  "#E5E5EA",            // ← #D1FAE5 → bordure neutre
   ink:         "#0D2B1F", inkMid: "#1F5C3A", inkSoft: "#475569",
   red:         "#EF4444", redBg: "#FEF2F2",  redBorder: "#FECACA",
   blue:        "#3B82F6", blueBg: "#EFF6FF",  blueBorder: "#BFDBFE",
@@ -49,9 +37,9 @@ const C = {
   violet:      "#7C3AED", violetBg: "#EDE9FE",  violetBorder: "#C4B5FD",
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
-    serif: Platform.select({ ios: "Georgia",     android: "serif",            default: "serif"      }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
+    serif: Platform.select({ ios: "Georgia",      android: "serif",             default: "serif"      }),
+    sans:  Platform.select({ ios: "Avenir Next",  android: "sans-serif-medium", default: "sans-serif" }),
+    mono:  Platform.select({ ios: "Courier New",  android: "monospace",         default: "monospace"  }),
   },
 };
 
@@ -61,7 +49,7 @@ const STATUS_MAP: Record<string, {
   color: string; bg: string; border: string; icon: string;
 }> = {
   PENDING:    { label: "En attente", labelIncoming: "En attente", color: C.amber,  bg: C.amberBg,  border: C.amberBorder,  icon: "time-outline"                  },
-  VALIDATED:  { label: "Disponible", labelIncoming: "Disponible", color: C.blue,   bg: C.blueBg,   border: C.blueBorder,   icon: "shield-checkmark-outline"       },
+  VALIDATED:  { label: "Disponible", labelIncoming: "Disponible", color: "#3B82F6", bg: "#EFF6FF",  border: "#BFDBFE",      icon: "shield-checkmark-outline"       },
   PAID:       { label: "Payé",       labelIncoming: "Reçu",       color: C.green,  bg: C.greenPale,border: C.greenBorder,  icon: "checkmark-done-circle-outline"  },
   PROCESSING: { label: "Traitement", labelIncoming: "Traitement", color: C.purple, bg: C.purpleBg, border: C.purpleBorder, icon: "sync-outline"                   },
   CANCELLED:  { label: "Annulé",     labelIncoming: "Annulé",     color: C.slate,  bg: C.slateBg,  border: C.slateBorder,  icon: "close-circle-outline"           },
@@ -80,9 +68,7 @@ function toNum(v: unknown): number {
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d, maximumFractionDigits: d,
-    }).format(n);
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch { return n.toFixed(d); }
 }
 function fmtDate(iso: string): string {
@@ -128,8 +114,8 @@ function resolveDirection(tx: any, userId?: string, role?: string): {
       if (isDeposit)
         return { isIncoming: false, label: "Dépôt vers client",     icon: "arrow-up-circle-outline",   iconBg: C.amberBg,   iconColor: C.amber };
       return tx.senderId === userId
-        ? { isIncoming: false, label: "Envoi d'argent",   icon: "paper-plane-outline",      iconBg: C.redBg,     iconColor: C.red   }
-        : { isIncoming: true,  label: "Transfert reçu",   icon: "arrow-down-circle-outline",iconBg: C.greenPale, iconColor: C.green };
+        ? { isIncoming: false, label: "Envoi d'argent",   icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red   }
+        : { isIncoming: true,  label: "Transfert reçu",   icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green };
     }
     default: {
       const incoming = isDeposit || tx.recipientId === userId || (tx.senderId !== userId && !tx.beneficiaryId);
@@ -222,7 +208,7 @@ function TxCard({ item, userId, userRole }: {
               item.targetCurrency &&
               item.targetCurrency !== item.currency && (
                 <View style={tc.convPill}>
-                  <Ionicons name="swap-horizontal-outline" size={10} color={C.blue} />
+                  <Ionicons name="swap-horizontal-outline" size={10} color="#3B82F6" />
                   <Text style={[tc.convTxt, { fontFamily: C.font.mono }]}>
                     {fmt(toNum(item.receivedAmount), item.targetCurrency)} {item.targetCurrency}
                   </Text>
@@ -242,7 +228,8 @@ function TxCard({ item, userId, userRole }: {
 }
 
 const tc = StyleSheet.create({
-  card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  // ← shadowColor "#000" + shadowOpacity 0.08 (était C.green / 0.05)
+  card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   sideBar:   { width: 4 },
   content:   { flex: 1, padding: 14 },
   top:       { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 10 },
@@ -254,8 +241,8 @@ const tc = StyleSheet.create({
   amount:    { fontSize: 15, fontWeight: "800" },
   currency:  { fontSize: 9, color: C.inkSoft, fontWeight: "700", marginTop: 1 },
   bottom:    { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 },
-  convPill:  { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.blueBg, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: C.blueBorder },
-  convTxt:   { fontSize: 9, fontWeight: "800", color: C.blue },
+  convPill:  { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "#EFF6FF", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#BFDBFE" },
+  convTxt:   { fontSize: 9, fontWeight: "800", color: "#3B82F6" },
   statusPill:{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
   statusTxt: { fontSize: 9, fontWeight: "900" },
 });
@@ -276,7 +263,6 @@ export default function TransactionsScreen() {
   const fadeAnim   = useRef(new Animated.Value(0)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
-  // ── Chargement ────────────────────────────────────────
   const load = useCallback(async () => {
     try {
       let list: any[] = [];
@@ -350,9 +336,7 @@ export default function TransactionsScreen() {
           new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         )
       );
-      Animated.spring(fadeAnim, {
-        toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3,
-      }).start();
+      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch {
       setTransactions([]);
     } finally {
@@ -365,13 +349,10 @@ export default function TransactionsScreen() {
     useCallback(() => {
       fadeAnim.setValue(0);
       void load();
-      Animated.spring(headerAnim, {
-        toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4,
-      }).start();
+      Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
     }, [load])
   );
 
-  // ── Filtrage ──────────────────────────────────────────
   const filtered = useMemo(() => {
     return transactions.filter((tx) => {
       if (filter !== "ALL" && tx.status !== filter) return false;
@@ -398,18 +379,14 @@ export default function TransactionsScreen() {
     USER:          "CLIENT",
   };
 
-  // ── Rendu ────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="dark-content" backgroundColor={C.white} />
 
-      {/* ═══ HEADER ══════════════════════════════════════ */}
-      <Animated.View
-        style={{
-          opacity:   headerAnim,
-          transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
-        }}
-      >
+      <Animated.View style={{
+        opacity:   headerAnim,
+        transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
+      }}>
         <View style={s.header}>
           <View style={s.headerRow}>
             <View style={{ flex: 1 }}>
@@ -433,7 +410,7 @@ export default function TransactionsScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Barre de recherche */}
+          {/* Barre de recherche — fond blanc, bordure neutre */}
           <View style={s.searchBox}>
             <Ionicons name="search" size={15} color={C.inkSoft} />
             <TextInput
@@ -453,9 +430,7 @@ export default function TransactionsScreen() {
         </View>
       </Animated.View>
 
-      {/* ═══ FILTRES v6.5 ════════════════════════════════
-          FIX v6.5 : flexGrow: 0 sur filtersWrap — empêche le ScrollView
-          horizontal de s'étirer verticalement dans la SafeAreaView flex:1  */}
+      {/* Filtres */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -513,13 +488,11 @@ export default function TransactionsScreen() {
         })}
       </ScrollView>
 
-      {/* ═══ LISTE ═══════════════════════════════════════ */}
       {loading && !refreshing ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator color={C.green} size="large" />
         </View>
       ) : (
-        // ✅ FIX v6.5 : flex: 1 — prend tout l'espace restant après header + filtres
         <Animated.FlatList
           style={{ opacity: fadeAnim, flex: 1 }}
           data={filtered}
@@ -556,9 +529,9 @@ export default function TransactionsScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────
+// ─── Styles v6.6 ──────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
 
   header: {
     backgroundColor: C.white,
@@ -566,10 +539,14 @@ const s = StyleSheet.create({
     paddingTop:    Platform.OS === "android" ? 44 : 12,
     paddingBottom: 12,
     borderBottomWidth: 1, borderBottomColor: "#E4E9F0",
+    // ombre légère pour séparer header du contenu
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+      android: { elevation: 3 },
+    }),
   },
   headerRow: {
-    flexDirection: "row", alignItems: "flex-start",
-    marginBottom: 12,
+    flexDirection: "row", alignItems: "flex-start", marginBottom: 12,
   },
   rolePill: {
     flexDirection: "row", alignItems: "center", gap: 5,
@@ -583,63 +560,51 @@ const s = StyleSheet.create({
   headerTitle:{ fontSize: 22, fontWeight: "700", color: "#0F172A", lineHeight: 26 },
   headerSub:  { fontSize: 11, fontWeight: "700", color: C.green, marginTop: 2 },
 
+  // ← fond neutre + bordure neutre (était greenPale + greenBorder)
   refreshBtn: {
     width: 38, height: 38, borderRadius: 11,
-    backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder,
+    backgroundColor: "#F5F5F5",
+    borderWidth: 1, borderColor: "#E5E5EA",
     justifyContent: "center", alignItems: "center",
     marginTop: 4,
   },
 
+  // ← fond blanc + bordure neutre (était greenLight + greenBorder)
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.greenLight, borderWidth: 1.5, borderColor: C.greenBorder,
+    backgroundColor: C.white, borderWidth: 1.5, borderColor: "#E5E5EA",
     borderRadius: C.r.md, paddingHorizontal: 14, height: 44,
   },
   searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
 
-  // ✅ FIX v6.5 : flexGrow: 0 — le ScrollView horizontal ne s'étire plus
-  //              verticalement dans la SafeAreaView flex:1
   filtersWrap: {
     backgroundColor: C.white,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E4E9F0",
-    flexShrink: 0,
-    flexGrow: 0,   // ← clé du fix : empêche l'expansion verticale
+    borderBottomWidth: 1, borderBottomColor: "#E4E9F0",
+    flexShrink: 0, flexGrow: 0,
   },
-  filtersRow: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
+  filtersRow: { paddingHorizontal: 14, paddingVertical: 10, alignItems: "center" },
   filterPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: C.r.pill,
-    backgroundColor: C.white,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    backgroundColor: C.white, borderWidth: 1.5, borderColor: "#E2E8F0",
     marginRight: 8,
   },
-  filterTxt: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#475569",
-  },
-  filterBadge: {
-    minWidth: 18, paddingHorizontal: 5, paddingVertical: 2,
-    borderRadius: 6, alignItems: "center",
-  },
+  filterTxt:      { fontSize: 11, fontWeight: "800", color: "#475569" },
+  filterBadge:    { minWidth: 18, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, alignItems: "center" },
   filterBadgeTxt: { fontSize: 10, fontWeight: "900" },
 
-  list:         { paddingHorizontal: 16, paddingTop: 14 },
-  empty:        { alignItems: "center", paddingVertical: 60, gap: 8 },
+  list:  { paddingHorizontal: 16, paddingTop: 14 },
+  empty: { alignItems: "center", paddingVertical: 60, gap: 8 },
   emptyIconBox: {
     width: 70, height: 70, borderRadius: 22,
-    backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder,
+    backgroundColor: C.white,
+    borderWidth: 1, borderColor: "#E5E5EA",  // ← était C.cardBorder vert
     justifyContent: "center", alignItems: "center", marginBottom: 4,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 5 },
+      android: { elevation: 2 },
+    }),
   },
   emptyTitle: { color: C.ink, fontSize: 18, fontWeight: "700" },
   emptySub:   { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },

@@ -1,7 +1,14 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.1 — Direct Transf'air
-// ✅ fmt() → max 2 décimales (ex: 348 054,88 XOF, pas de ,00)
+// SEND MONEY v2.2 — Direct Transf'air
+// ✅ v2.1 : fmt() max 2 décimales
+// ✅ v2.2 : fond blanc neutre #FAFAFA
+//    - bg #F0FDF9 → #FAFAFA (suppression teinte verte)
+//    - tabsWrap : fond #F0F0F0 neutre (était #E8F5F0)
+//    - amountInput fontSize 32→24, amountReceived 28→22 (plus compact)
+//    - CTA shadow neutre (shadowColor #000)
+//    - Inputs fond neutre via C.bg auto-update
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -28,8 +35,11 @@ const F = {
 const C = {
   g1: "#022C22", g2: "#064E3B", g3: "#065F46", g4: "#059669",
   g5: "#10B981", g6: "#34D399", gSoft: "#ECFDF5", gBorder: "#A7F3D0",
-  white: "#FFFFFF", bg: "#F0FDF9", surface: "#FFFFFF",
-  border: "#E2E8F0", borderLight: "#F1F5F9",
+  white: "#FFFFFF",
+  bg: "#FAFAFA",          // ← était #F0FDF9 (fond vert supprimé)
+  surface: "#FFFFFF",
+  border: "#E5E5EA",      // ← légèrement neutralisé (était #E2E8F0)
+  borderLight: "#F0F0F0", // ← neutralisé (était #F1F5F9)
   text: "#0F172A", textSub: "#374151", textMuted: "#64748B", textFaint: "#9CA3AF",
   danger: "#EF4444", dangerSoft: "#FEF2F2",
   amber: "#D97706", amberSoft: "#FFFBEB",
@@ -37,7 +47,7 @@ const C = {
   orange: "#EA580C", orangeSoft: "#FFF7ED",
 };
 
-// ─── Helpers ─────────────────────────────────────────────
+// ─── Helpers (inchangés) ──────────────────────────────────
 const getCountryData = (countryName: string): CountryData => {
   const normalized = (countryName || "").toLowerCase();
   return (
@@ -46,7 +56,6 @@ const getCountryData = (countryName: string): CountryData => {
   );
 };
 
-// ✅ FIX v2.1 : max 2 décimales, jamais de ,882 — mais conserve la virgule fr-FR
 const fmt = (val: number) =>
   val.toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
@@ -57,12 +66,15 @@ function toNum(v: unknown): number {
   return 0;
 }
 
-// ─── Mode Tab ────────────────────────────────────────────
+// ─── Mode Tab — style iOS segment control ────────────────
 function ModeTab({ label, icon, active, onPress }: {
   label: string; icon: string; active: boolean; onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={[tS.tab, active && tS.tabActive]} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={[tS.tab, active && tS.tabActive]}
+      onPress={onPress} activeOpacity={0.85}
+    >
       <Ionicons name={icon as any} size={17} color={active ? C.g4 : C.textMuted} style={{ marginBottom: 4 }} />
       <Text style={[tS.txt, { fontFamily: F.body }, active && tS.txtActive]}>{label}</Text>
     </TouchableOpacity>
@@ -70,12 +82,18 @@ function ModeTab({ label, icon, active, onPress }: {
 }
 const tS = StyleSheet.create({
   tab:       { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 14, gap: 2 },
-  tabActive: { backgroundColor: C.white, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
+  tabActive: {
+    backgroundColor: C.white,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.09, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
+  },
   txt:       { fontSize: 12, fontWeight: "600", color: C.textMuted },
   txtActive: { color: C.g4, fontWeight: "800" },
 });
 
-// ─── Beneficiary Card ─────────────────────────────────────
+// ─── Beneficiary Card (inchangée) ─────────────────────────
 function BeneficiaryCard({ item, selected, onPress }: {
   item: Beneficiary; selected: boolean; onPress: () => void;
 }) {
@@ -99,9 +117,7 @@ function BeneficiaryCard({ item, selected, onPress }: {
         </Text>
         <Text style={bS.flag}>{cd.flag}</Text>
         {selected && (
-          <View style={bS.check}>
-            <Ionicons name="checkmark" size={10} color={C.white} />
-          </View>
+          <View style={bS.check}><Ionicons name="checkmark" size={10} color={C.white} /></View>
         )}
       </TouchableOpacity>
     </Animated.View>
@@ -118,7 +134,7 @@ const bS = StyleSheet.create({
   check:          { position: "absolute", top: -5, right: -5, backgroundColor: C.g4, borderRadius: 99, width: 20, height: 20, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: C.white },
 });
 
-// ─── Summary Row ─────────────────────────────────────────
+// ─── Summary Row (inchangé) ───────────────────────────────
 function SummaryRow({ label, value, valueColor, large }: {
   label: string; value: string; valueColor?: string; large?: boolean;
 }) {
@@ -139,7 +155,7 @@ const srS = StyleSheet.create({
   valueLarge: { fontSize: 26, color: C.g4, letterSpacing: -0.5 },
 });
 
-// ─── Fallback Modal ───────────────────────────────────────
+// ─── Fallback Modal (inchangé) ────────────────────────────
 function FallbackModal({ visible, missing, currency, onClose, onOrangeMoney, onCard }: {
   visible: boolean; missing: number; currency: string;
   onClose: () => void; onOrangeMoney: () => void; onCard: () => void;
@@ -355,7 +371,10 @@ export default function SendMoneyScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.g2} />
 
-      <Animated.View style={[s.header, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0,1], outputRange: [-20,0] }) }] }]}>
+      <Animated.View style={[s.header, {
+        opacity: headerAnim,
+        transform: [{ translateY: headerAnim.interpolate({ inputRange: [0,1], outputRange: [-20,0] }) }],
+      }]}>
         <View style={s.hdeco1} /><View style={s.hdeco2} />
         <View style={s.headerTop}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
@@ -386,6 +405,7 @@ export default function SendMoneyScreen() {
           <Animated.View style={{ opacity: cardAnim, transform: [{ translateY: cardAnim.interpolate({ inputRange: [0,1], outputRange: [30,0] }) }] }}>
 
             {!isModeLocked && (
+              // ← fond #F0F0F0 neutre (était #E8F5F0 vert pâle)
               <View style={s.tabsWrap}>
                 <ModeTab label="Vers un Wallet"  icon="phone-portrait-outline" active={mode === "WALLET"} onPress={() => setMode("WALLET")} />
                 <ModeTab label="Retrait Espèces" icon="cash-outline"           active={mode === "CASH"}   onPress={() => setMode("CASH")}   />
@@ -483,19 +503,27 @@ export default function SendMoneyScreen() {
                 <View style={s.amountSide}>
                   <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>VOUS ENVOYEZ</Text>
                   <View style={s.amountInputRow}>
-                    <TextInput style={[s.amountInput, { fontFamily: F.display }]} value={rawAmount} onChangeText={setRawAmount} keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint} />
-                    <View style={[s.currBadge, { backgroundColor: C.gSoft }]}><Text style={[s.currTxt, { color: C.g4, fontFamily: F.body }]}>{userCurrency}</Text></View>
+                    <TextInput
+                      style={[s.amountInput, { fontFamily: F.display }]}
+                      value={rawAmount} onChangeText={setRawAmount}
+                      keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint}
+                    />
+                    <View style={[s.currBadge, { backgroundColor: C.gSoft }]}>
+                      <Text style={[s.currTxt, { color: C.g4, fontFamily: F.body }]}>{userCurrency}</Text>
+                    </View>
                   </View>
                 </View>
                 <View style={s.amountArrow}><Ionicons name="swap-horizontal-outline" size={18} color={C.g4} /></View>
                 <View style={s.amountSide}>
                   <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>
-                    {detectedBeneficiary?.fullName?.split(" ")[0] ?? selectedCashId
-                      ? (beneficiaries.find((b) => String(b.id) === selectedCashId)?.fullName?.split(" ")[0] ?? "") : "REÇOIT"}
+                    {detectedBeneficiary?.fullName?.split(" ")[0] ?? (selectedCashId
+                      ? (beneficiaries.find((b) => String(b.id) === selectedCashId)?.fullName?.split(" ")[0] ?? "") : "REÇOIT")}
                   </Text>
                   <View style={s.amountInputRow}>
                     <Text style={[s.amountReceived, { fontFamily: F.display }]}>{sendAmount > 0 ? fmt(Math.round(receivedAmt)) : "0"}</Text>
-                    <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}><Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text></View>
+                    <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}>
+                      <Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text>
+                    </View>
                   </View>
                 </View>
               </View>
@@ -556,7 +584,6 @@ export default function SendMoneyScreen() {
               <Ionicons name="shield-checkmark-outline" size={13} color={C.g5} />
               <Text style={[s.secTxt, { fontFamily: F.body }]}>Transfert sécurisé · Crypté de bout en bout</Text>
             </View>
-            {/* ✅ FIX : espace suffisant pour que la tab bar ne masque pas le contenu */}
             <View style={{ height: 120 }} />
           </Animated.View>
         </ScrollView>
@@ -603,33 +630,49 @@ export default function SendMoneyScreen() {
 }
 
 const s = StyleSheet.create({
-  safe:    { flex: 1, backgroundColor: C.bg },
-  loader:  { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.bg, gap: 12 },
+  safe:      { flex: 1, backgroundColor: C.bg },  // ← #FAFAFA
+  loader:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.bg, gap: 12 },
   loaderTxt: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
-  header: { backgroundColor: C.g3, paddingTop: Platform.OS === "android" ? 44 : 10, paddingBottom: 28, paddingHorizontal: 20, overflow: "hidden" },
+
+  header: {
+    backgroundColor: C.g3,
+    paddingTop: Platform.OS === "android" ? 44 : 10, paddingBottom: 28, paddingHorizontal: 20, overflow: "hidden",
+  },
   hdeco1: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.05)", top: -60, right: -40 },
   hdeco2: { position: "absolute", width: 120, height: 120, borderRadius: 60,  backgroundColor: "rgba(255,255,255,0.04)", bottom: -30, left: 20 },
-  headerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
-  backBtn:   { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
+  headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 20, color: C.white, letterSpacing: -0.2 },
-  eyeBtn:    { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center" },
+  eyeBtn:      { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center" },
   balanceHero: { alignItems: "center", gap: 4 },
   balanceLbl:  { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
   balanceVal:  { color: C.white, fontSize: 36, letterSpacing: -0.8 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
-  scroll:   { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 20 },
-  tabsWrap: { flexDirection: "row", backgroundColor: "#E8F5F0", borderRadius: 18, padding: 6, marginBottom: 16 },
-  block:       { backgroundColor: C.surface, borderRadius: 22, borderWidth: 1, borderColor: C.border, padding: 18, marginBottom: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+
+  scroll: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
+  // ← fond #F0F0F0 neutre (était #E8F5F0 vert pâle)
+  tabsWrap: { flexDirection: "row", backgroundColor: "#F0F0F0", borderRadius: 18, padding: 6, marginBottom: 16 },
+
+  block: {
+    backgroundColor: C.surface, borderRadius: 22, borderWidth: 1, borderColor: C.border,
+    padding: 18, marginBottom: 14,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
   blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
   blockNum:    { width: 30, height: 30, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   blockTitle:  { fontSize: 14, fontWeight: "800", color: C.text },
+
   phoneWrap:     { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, overflow: "hidden" },
   dialBtn:       { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border },
   dialFlag:      { fontSize: 18 },
   dialCode:      { fontSize: 13, fontWeight: "700", color: C.text },
   phoneInput:    { flex: 1, paddingHorizontal: 12, paddingVertical: 14, fontSize: 15, color: C.text },
   clearInputBtn: { paddingHorizontal: 12 },
+
   detectedCard:      { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, backgroundColor: C.gSoft, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: C.gBorder },
   detectedAvatar:    { width: 40, height: 40, borderRadius: 12, backgroundColor: `${C.g4}20`, justifyContent: "center", alignItems: "center" },
   detectedAvatarTxt: { fontSize: 18, fontWeight: "900", color: C.g4 },
@@ -642,34 +685,50 @@ const s = StyleSheet.create({
   addHintIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: `${C.g4}20`, justifyContent: "center", alignItems: "center" },
   addHintTxt:  { fontSize: 12, color: C.textMuted, fontWeight: "600" },
   addHintLink: { fontSize: 13, color: C.g4, fontWeight: "800" },
+
   amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 16, borderWidth: 1.5, borderColor: C.border, padding: 16, gap: 8 },
   amountSide:      { flex: 1 },
   amountSideLabel: { fontSize: 10, fontWeight: "900", color: C.textFaint, letterSpacing: 0.8, marginBottom: 6 },
   amountInputRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
-  amountInput:     { fontSize: 32, color: C.text, letterSpacing: -0.5, minWidth: 60 },
-  amountReceived:  { fontSize: 28, color: C.text, letterSpacing: -0.5 },
-  amountArrow:     { width: 36, height: 36, borderRadius: 10, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
-  currBadge:       { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  currTxt:         { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  // ← fontSize 32→24 (plus compact, les "000" ne débordent plus)
+  amountInput:    { fontSize: 24, color: C.text, letterSpacing: -0.5, minWidth: 60 },
+  // ← fontSize 28→22
+  amountReceived: { fontSize: 22, color: C.text, letterSpacing: -0.5 },
+  amountArrow:    { width: 36, height: 36, borderRadius: 10, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
+  currBadge:      { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  currTxt:        { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+
   rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.gSoft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
   rateTxt:  { fontSize: 12, color: C.g4, fontWeight: "700" },
+
   summaryDivider:     { height: 1, backgroundColor: C.borderLight, marginVertical: 2 },
   insufficientBar:    { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginTop: 8 },
   insufficientBarTxt: { fontSize: 13, color: C.amber, fontWeight: "600", flex: 1 },
-  cta:         { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: C.g4, borderRadius: 18, paddingVertical: 18, marginTop: 8, shadowColor: C.g3, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
+
+  // ← shadowColor "#000" (était C.g3 vert foncé)
+  cta: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+    backgroundColor: C.g4, borderRadius: 18, paddingVertical: 18, marginTop: 8,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.20, shadowRadius: 12 },
+      android: { elevation: 6 },
+    }),
+  },
   ctaAlt:      { backgroundColor: C.amber },
   ctaDisabled: { backgroundColor: C.border },
   ctaIcon:     { width: 32, height: 32, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
   ctaTxt:      { fontSize: 15, fontWeight: "900", color: C.white, letterSpacing: 0.3 },
+
   secNote: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 16 },
   secTxt:  { fontSize: 11, color: C.textFaint, fontWeight: "600" },
+
   modalOverlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   modalSheet:       { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: "70%" },
   modalHandle:      { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
   modalHeaderRow:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   modalTitle:       { fontSize: 18, color: C.text },
-  modalClose:       { width: 32, height: 32, borderRadius: 10, backgroundColor: C.bg, justifyContent: "center", alignItems: "center" },
-  modalSearch:      { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.bg, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: C.border },
+  modalClose:       { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center" },
+  modalSearch:      { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F5F5F5", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: C.border },
   modalSearchInput: { flex: 1, fontSize: 14, color: C.text },
   modalItem:        { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.borderLight },
   modalItemFlag:    { fontSize: 22 },

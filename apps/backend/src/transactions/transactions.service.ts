@@ -522,7 +522,7 @@ export class TransactionsService {
     });
   }
 
-  // ========================================================
+ // ========================================================
   // Création transfert (client → bénéficiaire)
   // ========================================================
 
@@ -548,11 +548,42 @@ export class TransactionsService {
       throw new ForbiddenException(`Vous n'avez pas de wallet ${currency}. Créez-en un d'abord.`);
     }
 
-    const isWalletTransfer = dto.payoutMethod === PayoutMethod.MOBILE_MONEY || dto.payoutMethod === PayoutMethod.WALLET;
-    const feeRate = isWalletTransfer ? 0 : 0.015;
-    const amount  = new Prisma.Decimal(dto.amount);
-    const fees    = amount.mul(new Prisma.Decimal(feeRate));
-    const total   = amount.plus(fees);
+    const isWalletTransfer =
+      dto.payoutMethod === PayoutMethod.MOBILE_MONEY ||
+      dto.payoutMethod === PayoutMethod.WALLET;
+
+    // ✅ v4.16 : taux dynamique configuré par l'admin via fees.tsx
+    //   Avant : hardcodé à 0.015 (1.5%) pour tout le monde
+    //   Après : lu depuis commission_configs (payoutMethod IS SET)
+    //   Fallback : 1.5% si aucune config admin en base
+    let feeRatePct  = 0;
+    let fixedFeeAmt = 0;
+
+    if (!isWalletTransfer) {
+      try {
+        const feeConfig = await this.prisma.commissionConfig.findFirst({
+          where: {
+            clientId,
+            payoutMethod: dto.payoutMethod ?? 'CASH_PICKUP',
+            isActive: true,
+          },
+        });
+        if (feeConfig) {
+          feeRatePct  = (feeConfig as any).feeRate  ?? 1.5;
+          fixedFeeAmt = (feeConfig as any).fixedFee ?? 0;
+        } else {
+          feeRatePct = 1.5; // fallback si l'admin n'a pas encore configuré
+        }
+      } catch {
+        feeRatePct = 1.5; // fallback si la migration n'est pas encore appliquée
+      }
+    }
+
+    const amount = new Prisma.Decimal(dto.amount);
+    const fees   = amount
+      .mul(new Prisma.Decimal(feeRatePct / 100))
+      .plus(new Prisma.Decimal(fixedFeeAmt));
+    const total  = amount.plus(fees);
 
     const available = Number(userWallet.balance) - Number(userWallet.reservedBalance);
     if (available < Number(total)) {
@@ -689,8 +720,6 @@ export class TransactionsService {
 
     return transaction;
   }
-
-  // ========================================================
   // Dépôt agent → client
   // ========================================================
 

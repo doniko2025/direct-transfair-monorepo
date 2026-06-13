@@ -1608,6 +1608,11 @@ model CommissionConfig {
   // Devise de référence (null = s'applique à toutes)
   currency CurrencyCode?
 
+  // ✅ Champs fee config — ajoutés pour fees.tsx (v1.1)
+  payoutMethod String?           // "CASH_PICKUP" | "BANK_DEPOSIT" | "MOBILE_MONEY" | "IBAN_TRANSFER"
+  feeRate      Float @default(0) // Taux réel prélevé sur l'expéditeur (ex: 1.5 = 1.5%)
+  fixedFee     Float @default(0) // Frais fixe en devise locale (ex: 200 = 200 XOF)
+
   senderShare   Float @default(0)
   payerShare    Float @default(0)
   platformShare Float @default(100)

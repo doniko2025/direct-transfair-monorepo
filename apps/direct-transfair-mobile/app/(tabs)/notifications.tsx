@@ -1,15 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/notifications.tsx
 // =========================================================
-// NOTIFICATIONS v5.0 — Direct Transf'air
-// ✅ v4.0 : Filtres Toutes / Non lues · Marquer comme lu
-// ✅ v5.0 :
-//    - Thème 100% CLAIR (suppression LinearGradient dark)
-//    - Couleurs accent par rôle conservées sur fond clair
-//    - AGENT → Bleu #2563EB (cohérent avec les autres pages)
-//    - Cartes notifications redessinées pour fond blanc
-//    - StatusBar dark-content
-//    - Fix anomalie : parsing API robuste (paginated ou array)
-//    - Fix : types non reconnus → fallback INFO
+// NOTIFICATIONS v5.1 — Direct Transf'air
+// ✅ v5.1 : fond blanc neutre #FAFAFA unifié sur tous les rôles
+//    - pageBg unifié #FAFAFA (suppression des teintes rôle-dépendantes)
+//    - Cartes notifications : ombre renforcée, bord neutre
+//    - Bouton backBtn : fond neutre #F5F5F5
+//    - Logique métier 100 % inchangée
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -23,12 +19,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
-// ─── Thèmes par rôle — version CLAIRE ────────────────────
+// ─── Thèmes par rôle — pageBg unifié blanc neutre ────────
 const ROLE_THEMES = {
-  SUPER_ADMIN:   { pageBg: "#FFFDF7", headerBg: "#FFFFFF", accent: "#D97706", border: "#FDE68A", soft: "#FFFBEB" },
-  COMPANY_ADMIN: { pageBg: "#F4F6FF", headerBg: "#FFFFFF", accent: "#4F46E5", border: "#C7D2FE", soft: "#EEF2FF" },
-  AGENT:         { pageBg: "#EFF6FF", headerBg: "#FFFFFF", accent: "#2563EB", border: "#DBEAFE", soft: "#EFF6FF" },
-  USER:          { pageBg: "#F0FDF4", headerBg: "#FFFFFF", accent: "#059669", border: "#A7F3D0", soft: "#ECFDF5" },
+  SUPER_ADMIN:   { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#D97706", border: "#FDE68A", soft: "#FFFBEB" },
+  COMPANY_ADMIN: { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#4F46E5", border: "#C7D2FE", soft: "#EEF2FF" },
+  AGENT:         { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#2563EB", border: "#DBEAFE", soft: "#EFF6FF" },
+  USER:          { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#059669", border: "#A7F3D0", soft: "#ECFDF5" },
 } as const;
 
 // ─── Types de notification ────────────────────────────────
@@ -43,10 +39,9 @@ const NOTIF_TYPES = {
   SYSTEM:      { icon: "settings",           color: "#64748B", bg: "rgba(100,116,139,0.09)"},
 } as const;
 
-// ─── Design tokens CLAIRS ────────────────────────────────
 const T = {
   surface:    "#FFFFFF",
-  border:     "#E4E9F5",
+  border:     "#E5E5EA",  // ← neutre (était #E4E9F5)
   text:       "#0F172A",
   textSoft:   "#64748B",
   textMuted:  "#94A3B8",
@@ -59,30 +54,23 @@ const T = {
 };
 
 interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  type: string; // string (pas keyof) → évite les erreurs runtime
-  createdAt: string;
-  isRead: boolean;
+  id: string; title: string; message: string;
+  type: string; createdAt: string; isRead: boolean;
 }
 
-// ─── Format date ─────────────────────────────────────────
 function fmtDate(iso: string): string {
-  const d = new Date(iso);
-  const now = new Date();
+  const d = new Date(iso), now = new Date();
   const diff = now.getTime() - d.getTime();
   if (diff < 3600000)  return `Il y a ${Math.round(diff / 60000)} min`;
   if (diff < 86400000) return `Il y a ${Math.round(diff / 3600000)} h`;
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 
-// ─── Notification Card — thème clair ────────────────────
+// ─── Notification Card ────────────────────────────────────
 function NotifCard({ item, accent, onPress }: {
   item: NotificationItem; accent: string; onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
-  // ✅ Fix : fallback INFO pour les types non reconnus
   const cfg = NOTIF_TYPES[item.type as keyof typeof NOTIF_TYPES] ?? NOTIF_TYPES.INFO;
 
   return (
@@ -97,44 +85,24 @@ function NotifCard({ item, accent, onPress }: {
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
-        {/* Icône */}
         <View style={[ncS.iconBox, { backgroundColor: cfg.bg }]}>
           <Ionicons name={cfg.icon as any} size={22} color={cfg.color} />
         </View>
-
-        {/* Contenu */}
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={ncS.topRow}>
-            <Text
-              style={[ncS.title, { fontFamily: T.font.sans }, !item.isRead && { color: T.text }]}
-              numberOfLines={1}
-            >
+            <Text style={[ncS.title, { fontFamily: T.font.sans }, !item.isRead && { color: T.text }]} numberOfLines={1}>
               {item.title}
             </Text>
-            <Text style={[ncS.time, { fontFamily: T.font.sans }]}>
-              {fmtDate(item.createdAt)}
-            </Text>
+            <Text style={[ncS.time, { fontFamily: T.font.sans }]}>{fmtDate(item.createdAt)}</Text>
           </View>
-          <Text
-            style={[ncS.message, { fontFamily: T.font.sans }]}
-            numberOfLines={3}
-          >
-            {item.message}
-          </Text>
-          {/* Type badge */}
+          <Text style={[ncS.message, { fontFamily: T.font.sans }]} numberOfLines={3}>{item.message}</Text>
           {item.type && item.type !== "INFO" && (
             <View style={[ncS.typeBadge, { backgroundColor: cfg.bg }]}>
-              <Text style={[ncS.typeTxt, { color: cfg.color, fontFamily: T.font.sans }]}>
-                {item.type}
-              </Text>
+              <Text style={[ncS.typeTxt, { color: cfg.color, fontFamily: T.font.sans }]}>{item.type}</Text>
             </View>
           )}
         </View>
-
-        {/* Dot non lu */}
-        {!item.isRead && (
-          <View style={[ncS.unreadDot, { backgroundColor: accent }]} />
-        )}
+        {!item.isRead && <View style={[ncS.unreadDot, { backgroundColor: accent }]} />}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -146,7 +114,10 @@ const ncS = StyleSheet.create({
     borderRadius: T.r.lg,
     padding: 14, marginBottom: 10, gap: 12,
     borderWidth: 1, borderColor: T.border,
-    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 6 },
+      android: { elevation: 3 },
+    }),
   },
   iconBox:   { width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center", flexShrink: 0 },
   topRow:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
@@ -158,7 +129,7 @@ const ncS = StyleSheet.create({
   unreadDot: { width: 8, height: 8, borderRadius: 99, marginTop: 4, flexShrink: 0 },
 });
 
-// ─── Main Screen ─────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router   = useRouter();
   const { user } = useAuth();
@@ -175,27 +146,15 @@ export default function NotificationsScreen() {
   const fetchNotifs = useCallback(async () => {
     try {
       const res = await api.http.get("/notifications");
-
-      // ✅ Fix anomalie : parsing robuste — API paginée ou tableau simple
       let list: NotificationItem[] = [];
-      if (Array.isArray(res.data)) {
-        list = res.data;
-      } else if (Array.isArray(res.data?.data)) {
-        list = res.data.data;                           // { data: [...], total }
-      } else if (Array.isArray(res.data?.notifications)) {
-        list = res.data.notifications;                  // { notifications: [...] }
-      } else if (Array.isArray(res.data?.items)) {
-        list = res.data.items;                          // { items: [...] }
-      }
-
+      if (Array.isArray(res.data))                    list = res.data;
+      else if (Array.isArray(res.data?.data))         list = res.data.data;
+      else if (Array.isArray(res.data?.notifications))list = res.data.notifications;
+      else if (Array.isArray(res.data?.items))        list = res.data.items;
       setNotifs(list);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch (e) {
-      console.error("Erreur notifs:", e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    } catch (e) { console.error("Erreur notifs:", e); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { void fetchNotifs(); }, [fetchNotifs]);
@@ -203,32 +162,25 @@ export default function NotificationsScreen() {
   const handleMarkAsRead = async (id: string, isRead: boolean) => {
     if (isRead) return;
     setNotifs((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true } : n));
-    try {
-      await api.http.patch(`/notifications/${id}/read`);
-    } catch {
-      void fetchNotifs();
-    }
+    try { await api.http.patch(`/notifications/${id}/read`); }
+    catch { void fetchNotifs(); }
   };
 
   const handleMarkAllAsRead = async () => {
     if (!notifs.some((n) => !n.isRead)) return;
     setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    try {
-      await api.http.patch("/notifications/read-all");
-    } catch {
-      void fetchNotifs();
-    }
+    try { await api.http.patch("/notifications/read-all"); }
+    catch { void fetchNotifs(); }
   };
 
   const filtered    = filter === "ALL" ? notifs : notifs.filter((n) => !n.isRead);
   const unreadCount = notifs.filter((n) => !n.isRead).length;
 
   return (
-    // ✅ Fond clair selon le rôle
     <SafeAreaView style={[s.safe, { backgroundColor: theme.pageBg }]}>
       <StatusBar barStyle="dark-content" backgroundColor={theme.headerBg} />
 
-      {/* ── Header clair ── */}
+      {/* ── Header ── */}
       <View style={[s.header, { backgroundColor: theme.headerBg, borderBottomColor: T.border }]}>
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
           <Ionicons name="arrow-back" size={20} color={T.text} />
@@ -267,26 +219,13 @@ export default function NotificationsScreen() {
               onPress={() => setFilter(f)}
               activeOpacity={0.8}
             >
-              {isActive && (
-                <View style={[s.tabDot, { backgroundColor: theme.accent }]} />
-              )}
-              <Text style={[
-                s.tabTxt,
-                { fontFamily: T.font.sans },
-                isActive ? { color: theme.accent } : { color: T.textSoft },
-              ]}>
+              {isActive && <View style={[s.tabDot, { backgroundColor: theme.accent }]} />}
+              <Text style={[s.tabTxt, { fontFamily: T.font.sans }, isActive ? { color: theme.accent } : { color: T.textSoft }]}>
                 {f === "ALL" ? "Toutes" : "Non lues"}
               </Text>
               {count > 0 && (
-                <View style={[
-                  s.tabCount,
-                  { backgroundColor: isActive ? theme.accent : "#F1F5F9" },
-                ]}>
-                  <Text style={[
-                    s.tabCountTxt,
-                    { fontFamily: T.font.mono },
-                    { color: isActive ? "#fff" : T.textSoft },
-                  ]}>
+                <View style={[s.tabCount, { backgroundColor: isActive ? theme.accent : "#F0F0F0" }]}>
+                  <Text style={[s.tabCountTxt, { fontFamily: T.font.mono }, { color: isActive ? "#fff" : T.textSoft }]}>
                     {count > 99 ? "99+" : count}
                   </Text>
                 </View>
@@ -309,31 +248,19 @@ export default function NotificationsScreen() {
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => { setRefreshing(true); void fetchNotifs(); }}
-              tintColor={theme.accent}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void fetchNotifs(); }} tintColor={theme.accent} />
           }
           renderItem={({ item }) => (
-            <NotifCard
-              item={item}
-              accent={theme.accent}
-              onPress={() => handleMarkAsRead(item.id, item.isRead)}
-            />
+            <NotifCard item={item} accent={theme.accent} onPress={() => handleMarkAsRead(item.id, item.isRead)} />
           )}
           ListEmptyComponent={
             <View style={s.empty}>
               <View style={[s.emptyIconBox, { borderColor: `${theme.accent}25`, backgroundColor: theme.soft }]}>
                 <Ionicons name="notifications-off-outline" size={34} color={theme.accent} />
               </View>
-              <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>
-                Aucune notification
-              </Text>
+              <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>Aucune notification</Text>
               <Text style={[s.emptySub, { fontFamily: T.font.sans }]}>
-                {filter === "UNREAD"
-                  ? "Vous avez tout lu ✓"
-                  : "Vos alertes apparaîtront ici."}
+                {filter === "UNREAD" ? "Vous avez tout lu ✓" : "Vos alertes apparaîtront ici."}
               </Text>
             </View>
           }
@@ -347,33 +274,30 @@ export default function NotificationsScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1 },
 
-  // ── Header clair ──
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 18,
     paddingTop:    Platform.OS === "android" ? 44 : 14,
     paddingBottom: 12, gap: 12,
     borderBottomWidth: 1,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
   },
+  // ← fond neutre #F5F5F5 (était #F4F6FF bleuté)
   backBtn: {
     width: 38, height: 38, borderRadius: 11,
-    backgroundColor: "#F4F6FF", borderWidth: 1, borderColor: "#E4E9F5",
+    backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: T.border,
     justifyContent: "center", alignItems: "center",
   },
   headerTitle: { color: T.text, fontSize: 20, fontWeight: "700" },
   headerSub:   { fontSize: 11, fontWeight: "700", marginTop: 1 },
-  readAllBtn:  {
-    width: 38, height: 38, borderRadius: 11,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1,
-  },
+  readAllBtn:  { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center", borderWidth: 1 },
 
-  // ── Tabs clairs ──
   tabs: {
-    flexDirection: "row",
-    paddingHorizontal: 18, paddingVertical: 10,
-    gap: 10,
-    borderBottomWidth: 1,
+    flexDirection: "row", paddingHorizontal: 18, paddingVertical: 10,
+    gap: 10, borderBottomWidth: 1,
   },
   tab: {
     flexDirection: "row", alignItems: "center", gap: 6,
@@ -382,20 +306,12 @@ const s = StyleSheet.create({
   },
   tabDot:      { width: 5, height: 5, borderRadius: 99 },
   tabTxt:      { fontSize: 12, fontWeight: "800", letterSpacing: 0.3 },
-  tabCount: {
-    minWidth: 18, paddingHorizontal: 5, paddingVertical: 2,
-    borderRadius: 6, alignItems: "center",
-  },
+  tabCount:    { minWidth: 18, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, alignItems: "center" },
   tabCountTxt: { fontSize: 10, fontWeight: "900" },
 
-  list: { paddingHorizontal: 16, paddingTop: 12 },
-
+  list:  { paddingHorizontal: 16, paddingTop: 12 },
   empty: { alignItems: "center", paddingVertical: 60, gap: 10 },
-  emptyIconBox: {
-    width: 72, height: 72, borderRadius: 22,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1.5, marginBottom: 4,
-  },
-  emptyTitle: { color: T.text, fontSize: 18, fontWeight: "700" },
-  emptySub:   { color: T.textSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },
+  emptyIconBox: { width: 72, height: 72, borderRadius: 22, justifyContent: "center", alignItems: "center", borderWidth: 1.5, marginBottom: 4 },
+  emptyTitle:   { color: T.text, fontSize: 18, fontWeight: "700" },
+  emptySub:     { color: T.textSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },
 });

@@ -24,7 +24,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../providers/AuthProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
+// Type local — évite l'incompatibilité de version avec expo-router
+type BottomTabBarProps = {
+  state: {
+    index: number;
+    routes: Array<{ name: string; key: string }>;
+  };
+  navigation: {
+    navigate: (name: string, params?: object) => void;
+  };
+  descriptors: Record<string, unknown>;
+};
 
 const ROLE_THEMES = {
   SUPER_ADMIN:   { primary: "#D4A853", inactive: "#94A3B8" },
@@ -37,7 +47,7 @@ const ROLE_THEMES = {
 type TabDef = {
   name: string;
   label: string;
-  icon: string;        // nom Ionicons
+  icon: string;
   isCenter?: boolean;
   routeOverride?: string;
 };
@@ -75,8 +85,8 @@ function CustomTabBar({
   state: BottomTabBarProps["state"];
   navigation: BottomTabBarProps["navigation"];
 }) {
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const insets   = useSafeAreaInsets();
+  const router   = useRouter();
   const pathname = usePathname();
 
   const bottom = Platform.OS === "ios"
@@ -86,7 +96,8 @@ function CustomTabBar({
   return (
     <View style={[s.barWrapper, { bottom }]}>
       {tabs.map((tab) => {
-        const isActive = pathname.includes(tab.name) ||
+        const isActive =
+          pathname.includes(tab.name) ||
           state.routes[state.index]?.name === tab.name;
 
         if (tab.isCenter) {
@@ -99,29 +110,27 @@ function CustomTabBar({
                 if (tab.routeOverride) {
                   router.push(tab.routeOverride as any);
                 } else {
-                  const idx = state.routes.findIndex(r => r.name === tab.name);
-                  if (idx >= 0) {
-                    navigation.navigate(state.routes[idx].name);
-                  }
+                  const idx = state.routes.findIndex((r) => r.name === tab.name);
+                  if (idx >= 0) navigation.navigate(state.routes[idx].name);
                 }
               }}
             >
               <LinearGradient
                 colors={[accent, `${accent}CC`]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={[s.centerBtn, {
-                  shadowColor: accent,
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.4,
-                  shadowRadius: 12,
-                  elevation: 8,
-                }]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  s.centerBtn,
+                  {
+                    shadowColor:   accent,
+                    shadowOffset:  { width: 0, height: 6 },
+                    shadowOpacity: 0.4,
+                    shadowRadius:  12,
+                    elevation:     8,
+                  },
+                ]}
               >
-                <Ionicons
-                  name={tab.icon as any}
-                  size={24}
-                  color="#FFFFFF"
-                />
+                <Ionicons name={tab.icon as any} size={24} color="#FFFFFF" />
               </LinearGradient>
             </TouchableOpacity>
           );
@@ -132,21 +141,28 @@ function CustomTabBar({
             key={tab.name}
             style={s.tabItem}
             onPress={() => {
-              const idx = state.routes.findIndex(r => r.name === tab.name);
-              if (idx >= 0) {
-                navigation.navigate(state.routes[idx].name);
-              }
+              const idx = state.routes.findIndex((r) => r.name === tab.name);
+              if (idx >= 0) navigation.navigate(state.routes[idx].name);
             }}
           >
             <Ionicons
-              name={isActive ? tab.icon as any : `${tab.icon}-outline` as any}
+              name={
+                isActive
+                  ? (tab.icon as any)
+                  : (`${tab.icon}-outline` as any)
+              }
               size={22}
               color={isActive ? accent : "#94A3B8"}
             />
-            <Text style={[s.tabLabel, {
-              color: isActive ? "#0F172A" : "#94A3B8",
-              fontWeight: isActive ? "700" : "500",
-            }]}>
+            <Text
+              style={[
+                s.tabLabel,
+                {
+                  color:      isActive ? "#0F172A" : "#94A3B8",
+                  fontWeight: isActive ? "700"     : "500",
+                },
+              ]}
+            >
               {tab.label}
             </Text>
             {isActive && (
@@ -159,7 +175,7 @@ function CustomTabBar({
   );
 }
 
-// ─── Layouts par rôle ────────────────────────────────────────
+// ─── Layout par rôle ─────────────────────────────────────────
 function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
   return (
     <Tabs
@@ -173,9 +189,6 @@ function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
         />
       )}
     >
-      {/* On déclare TOUS les screens de l'app mais sans tabBar native */}
-      {/* ✅ FIX v9.1 : "agencies" retiré — n'existe pas à la racine de (tabs)/ */}
-      {/*    Les agences sont accessibles via (tabs)/admin/agencies             */}
       <Tabs.Screen name="home" />
       <Tabs.Screen name="transactions" />
       <Tabs.Screen name="send" />
@@ -216,11 +229,12 @@ export default function TabLayout() {
 
 const s = StyleSheet.create({
   loader: {
-    flex: 1, justifyContent: "center", alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
     backgroundColor: "#F8FAFC",
   },
 
-  // Barre flottante pill
   barWrapper: {
     position: "absolute",
     left: 16,
@@ -230,9 +244,8 @@ const s = StyleSheet.create({
     borderRadius: 24,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-around",  // ← équidistance garantie
+    justifyContent: "space-around",
     paddingHorizontal: 4,
-    // Ombre
     shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.07,
@@ -240,7 +253,6 @@ const s = StyleSheet.create({
     elevation: 12,
   },
 
-  // Onglet standard — flex:1 pour occupation égale
   tabItem: {
     flex: 1,
     height: "100%",
@@ -257,18 +269,18 @@ const s = StyleSheet.create({
   },
 
   activeDot: {
-    width: 4, height: 4,
+    width: 4,
+    height: 4,
     borderRadius: 2,
     marginTop: 2,
   },
 
-  // Bouton central flottant
   centerWrap: {
     width: 68,
     height: 68,
     alignItems: "center",
     justifyContent: "center",
-    marginTop: -28,         // lève le bouton au-dessus de la barre
+    marginTop: -28,
   },
 
   centerBtn: {

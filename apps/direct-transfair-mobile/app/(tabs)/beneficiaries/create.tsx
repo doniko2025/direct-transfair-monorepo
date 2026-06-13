@@ -1,9 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
-// BENEFICIARY CREATE v6.0 — Direct Transf'air
-// ✅ Anti-doublon : vérifie fullName + téléphone avant ajout
-// ✅ UI compacte : polices plus petites, cards plus denses
-// ✅ Accès contacts natifs (expo-contacts)
+// BENEFICIARY CREATE v6.1 — Direct Transf'air
+// ✅ v6.0 : Anti-doublon, UI compacte, contacts natifs
+// ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -15,13 +14,11 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Contacts from "expo-contacts";
-
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
 import { citiesByCountry } from "../../../data/cities";
 
-// ─── Design System ──────────────────────────────────────
 const C = {
   green:       "#059669",
   greenDark:   "#047857",
@@ -32,10 +29,10 @@ const C = {
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)",
   heroGlow:    "rgba(255,255,255,0.08)",
-  pageBg:      "#F0FDF8",
+  pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
-  cardBorder:  "#D1FAE5",
-  inputBg:     "#F8FFFC",
+  cardBorder:  "#E5E5EA",   // ← était #D1FAE5
+  inputBg:     "#F8F8F8",   // ← était #F8FFFC
   ink:         "#0D2B1F",
   inkMid:      "#1F5C3A",
   inkSoft:     "#6B9E85",
@@ -57,7 +54,6 @@ const AVATAR_COLORS = [
 ];
 function avatarColor(name: string) { return AVATAR_COLORS[name.charCodeAt(0) % AVATAR_COLORS.length]; }
 
-// ─── Normalisation numéro ────────────────────────────────
 function normalizePhone(phone: string): string {
   return phone.replace(/[\s\-\(\)\+]/g, "").toLowerCase();
 }
@@ -154,12 +150,12 @@ function PickerModal({ visible, onClose, title, data, renderItem }: any) {
   );
 }
 const pm = StyleSheet.create({
-  overlay:     { flex: 1, backgroundColor: "rgba(13,43,31,0.4)", justifyContent: "flex-end" },
+  overlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
-  handle:      { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: C.cardBorder, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+  handle:      { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: "#DDDDDD", alignSelf: "center", marginTop: 12, marginBottom: 4 },
   head:        { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
   title:       { color: C.ink, fontSize: 16, fontWeight: "700" },
-  closeBtn:    { width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenLight, justifyContent: "center", alignItems: "center" },
+  closeBtn:    { width: 28, height: 28, borderRadius: 8, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center" },
   search:      { flexDirection: "row", alignItems: "center", gap: 8, margin: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, height: 38 },
   searchInput: { flex: 1, fontSize: 13, color: C.ink, fontWeight: "600" },
   empty:       { color: C.inkSoft, textAlign: "center", padding: 20, fontWeight: "600" },
@@ -224,7 +220,6 @@ export default function BeneficiaryCreateScreen() {
     phoneNumber.trim().length > 0,
   ];
 
-  // ── Accès contacts natifs ──
   const openPhoneContacts = async () => {
     setLoadingContacts(true);
     try {
@@ -261,10 +256,8 @@ export default function BeneficiaryCreateScreen() {
     return `${c.firstName ?? ""} ${c.lastName ?? ""}`.toLowerCase().includes(s) || (c.phoneNumbers?.[0]?.number ?? "").includes(s);
   });
 
-  // ── ✅ Création avec vérification doublon ──
   const handleCreate = async () => {
     if (!canSubmit) { showAlert("Validation", "Veuillez remplir le nom, le prénom et la ville."); return; }
-
     setSubmitting(true);
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
@@ -274,31 +267,17 @@ export default function BeneficiaryCreateScreen() {
         const num  = phoneNumber.trim().replace(/^0+/, "");
         fullPhone  = `+${dial}${num}`;
       }
-
-      // ✅ Vérification doublon côté client avant l'appel API
       const existing = await api.getBeneficiaries();
       const duplicate = existing.find((b) => {
         const sameName  = (b.fullName ?? "").trim().toLowerCase() === fullName.toLowerCase();
-        const samePhone = fullPhone && b.phone &&
-          normalizePhone(b.phone) === normalizePhone(fullPhone);
+        const samePhone = fullPhone && b.phone && normalizePhone(b.phone) === normalizePhone(fullPhone);
         return sameName || !!samePhone;
       });
-
       if (duplicate) {
-        showAlert(
-          "Contact déjà existant",
-          `"${duplicate.fullName}" est déjà dans vos contacts${duplicate.phone ? ` (${duplicate.phone})` : ""}.`
-        );
-        setSubmitting(false);
-        return;
+        showAlert("Contact déjà existant", `"${duplicate.fullName}" est déjà dans vos contacts${duplicate.phone ? ` (${duplicate.phone})` : ""}.`);
+        setSubmitting(false); return;
       }
-
-      await api.createBeneficiary({
-        fullName,
-        country: addressCountry.name,
-        city:    city.trim(),
-        phone:   fullPhone,
-      });
+      await api.createBeneficiary({ fullName, country: addressCountry.name, city: city.trim(), phone: fullPhone });
       showAlert("✅ Ajouté", "Contact ajouté avec succès.", () => router.back());
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Erreur lors de la création.";
@@ -310,7 +289,6 @@ export default function BeneficiaryCreateScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.green} />
 
-      {/* ── Hero ── */}
       <View style={s.hero}>
         <View style={s.glow} />
         <View style={s.heroRow}>
@@ -332,7 +310,7 @@ export default function BeneficiaryCreateScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-          {/* ── Import contacts ── */}
+          {/* Import contacts */}
           <TouchableOpacity style={s.importBtn} onPress={openPhoneContacts} disabled={loadingContacts} activeOpacity={0.88}>
             <View style={s.importIconBox}>
               {loadingContacts ? <ActivityIndicator color={C.green} size="small" /> : <Ionicons name="people-outline" size={18} color={C.green} />}
@@ -350,7 +328,7 @@ export default function BeneficiaryCreateScreen() {
             <View style={s.orLine} />
           </View>
 
-          {/* ── Identité ── */}
+          {/* Identité */}
           <View style={s.secRow}>
             <View style={[s.secDot, { backgroundColor: progress[0] ? C.green : C.inkSoft }]} />
             <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>IDENTITÉ</Text>
@@ -373,7 +351,7 @@ export default function BeneficiaryCreateScreen() {
             )}
           </View>
 
-          {/* ── Localisation ── */}
+          {/* Localisation */}
           <View style={s.secRow}>
             <View style={[s.secDot, { backgroundColor: progress[1] ? C.green : C.inkSoft }]} />
             <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>LOCALISATION</Text>
@@ -383,12 +361,10 @@ export default function BeneficiaryCreateScreen() {
             <SelectBtn label="Ville"              value={city}               onPress={() => setShowCityModal(true)} required />
           </View>
 
-          {/* ── Téléphone ── */}
+          {/* Téléphone */}
           <View style={s.secRow}>
             <View style={[s.secDot, { backgroundColor: progress[2] ? C.green : C.inkSoft }]} />
-            <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>
-              TÉLÉPHONE <Text style={{ color: C.inkSoft, fontSize: 8 }}>(optionnel)</Text>
-            </Text>
+            <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>TÉLÉPHONE <Text style={{ color: C.inkSoft, fontSize: 8 }}>(optionnel)</Text></Text>
           </View>
           <View style={s.card}>
             <Text style={[f.lbl, { fontFamily: C.font.sans }]}>Mobile Money</Text>
@@ -411,7 +387,7 @@ export default function BeneficiaryCreateScreen() {
             <Text style={[s.phoneTip, { fontFamily: C.font.sans }]}>Utilisé pour les transferts Mobile Money directs.</Text>
           </View>
 
-          {/* ── CTA ── */}
+          {/* CTA */}
           <TouchableOpacity
             style={[s.cta, (!canSubmit || submitting) && { opacity: 0.4 }]}
             onPress={handleCreate} disabled={!canSubmit || submitting} activeOpacity={0.88}
@@ -433,7 +409,7 @@ export default function BeneficiaryCreateScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── Modal Contacts téléphone ── */}
+      {/* Modal Contacts */}
       <Modal visible={showContactsModal} animationType="slide" transparent onRequestClose={() => { setShowContactsModal(false); setContactSearch(""); }}>
         <View style={pm.overlay}>
           <View style={[pm.sheet, { maxHeight: "85%" }]}>
@@ -471,7 +447,6 @@ export default function BeneficiaryCreateScreen() {
         </View>
       </Modal>
 
-      {/* ── Modals Pays / Ville / Code ── */}
       <PickerModal
         visible={showCountryModal} onClose={() => setShowCountryModal(false)} title="Pays de résidence"
         data={countriesList}
@@ -523,20 +498,37 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  importBtn:    { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14, borderWidth: 1.5, borderColor: C.greenBorder, shadowColor: C.green, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2 },
+  // ← ombre neutre (était shadowColor: C.green)
+  importBtn: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
+    borderWidth: 1.5, borderColor: C.greenBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
+  },
   importIconBox:{ width: 38, height: 38, borderRadius: 11, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
   importTitle:  { fontSize: 13, fontWeight: "800", color: C.ink, marginBottom: 1 },
   importSub:    { fontSize: 10, fontWeight: "600", color: C.inkSoft },
 
   orRow:  { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
-  orLine: { flex: 1, height: 1, backgroundColor: C.cardBorder },
+  orLine: { flex: 1, height: 1, backgroundColor: "#EEEEEE" },
   orTxt:  { fontSize: 10, fontWeight: "700", color: C.inkSoft },
 
   secRow: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
   secDot: { width: 4, height: 4, borderRadius: C.r.pill },
   secLbl: { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 1.2 },
 
-  card: { backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  // ← ombre neutre (était shadowColor: C.green)
+  card: {
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
+  },
 
   previewPill:     { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.greenPale, borderRadius: C.r.md, padding: 8, borderWidth: 1, borderColor: C.greenBorder },
   previewAvatar:   { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
@@ -549,7 +541,14 @@ const s = StyleSheet.create({
   phoneTip: { color: C.inkSoft, fontSize: 10, fontWeight: "600" },
 
   cta:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 8 },
-  ctaInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 15, gap: 8, borderRadius: C.r.md },
+  ctaInner: {
+    backgroundColor: C.green, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", paddingVertical: 15, gap: 8, borderRadius: C.r.md,
+    ...Platform.select({
+      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
+  },
   ctaTxt:   { color: C.white, fontWeight: "900", fontSize: 12, letterSpacing: 0.8 },
 
   cancelBtn: { alignItems: "center", paddingVertical: 12 },

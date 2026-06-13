@@ -1,9 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // =========================================================
-// BENEFICIARY DETAIL v5.0 — Direct Transf'air
-// ✅ v5.0 : Thème CLAIR — cohérent avec index.tsx et create.tsx
-// ✅ Voir / Modifier / Supprimer un bénéficiaire
-// ✅ Actions rapides Wallet + Cash
+// BENEFICIARY DETAIL v5.1 — Direct Transf'air
+// ✅ v5.0 : Thème clair, voir/modifier/supprimer, actions rapides
+// ✅ v5.1 : fond blanc neutre #FAFAFA, ombres neutres
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -14,14 +13,12 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-
 import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
 import { citiesByCountry } from "../../../data/cities";
 
-// ─── Design Tokens — LIGHT ───────────────────────────────
 const C = {
   green:       "#059669",
   greenDark:   "#047857",
@@ -32,10 +29,10 @@ const C = {
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.70)",
   heroGlow:    "rgba(255,255,255,0.08)",
-  pageBg:      "#F0FDF8",
+  pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
-  cardBorder:  "#D1FAE5",
-  inputBg:     "#F8FFFC",
+  cardBorder:  "#E5E5EA",   // ← était #D1FAE5
+  inputBg:     "#F8F8F8",   // ← était #F8FFFC
   ink:         "#0D2B1F",
   inkMid:      "#1F5C3A",
   inkSoft:     "#6B9E85",
@@ -54,7 +51,6 @@ const C = {
   },
 };
 
-// ─── Helpers ─────────────────────────────────────────────
 function getIdParam(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.id;
   if (typeof raw === "string") { const v = raw.trim(); return v.length > 0 && v !== "undefined" ? v : null; }
@@ -108,9 +104,7 @@ function SelectBtn({ label, value, onPress, icon }: {
       <TouchableOpacity style={sbS.btn} onPress={onPress} activeOpacity={0.8}>
         <View style={sbS.left}>
           {icon && <Text style={{ fontSize: 18, marginRight: 8 }}>{icon}</Text>}
-          <Text style={[sbS.value, { fontFamily: C.font.sans }, !value && { color: C.inkSoft }]}>
-            {value || "Sélectionner…"}
-          </Text>
+          <Text style={[sbS.value, { fontFamily: C.font.sans }, !value && { color: C.inkSoft }]}>{value || "Sélectionner…"}</Text>
         </View>
         <View style={sbS.chevron}>
           <Ionicons name="chevron-down" size={12} color={C.green} />
@@ -128,15 +122,13 @@ const sbS = StyleSheet.create({
 
 // ─── Picker Modal ─────────────────────────────────────────
 function PickerModal({ visible, onClose, title, data, renderItem }: {
-  visible: boolean; onClose: () => void; title: string;
-  data: any[]; renderItem: any;
+  visible: boolean; onClose: () => void; title: string; data: any[]; renderItem: any;
 }) {
   const [q, setQ] = useState("");
   const filtered = q.trim()
     ? data.filter((item: any) => (typeof item === "string" ? item : item.name ?? "").toLowerCase().includes(q.toLowerCase()))
     : data;
   const close = () => { onClose(); setQ(""); };
-
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={close}>
       <View style={pmS.overlay}>
@@ -150,19 +142,12 @@ function PickerModal({ visible, onClose, title, data, renderItem }: {
           </View>
           <View style={pmS.search}>
             <Ionicons name="search" size={13} color={C.inkSoft} />
-            <TextInput
-              style={[pmS.searchInput, { fontFamily: C.font.sans }]}
-              value={q} onChangeText={setQ}
-              placeholder="Rechercher…" placeholderTextColor={C.inkSoft}
-              autoFocus underlineColorAndroid="transparent"
-            />
+            <TextInput style={[pmS.searchInput, { fontFamily: C.font.sans }]} value={q} onChangeText={setQ} placeholder="Rechercher…" placeholderTextColor={C.inkSoft} autoFocus underlineColorAndroid="transparent" />
             {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close" size={13} color={C.inkSoft} /></TouchableOpacity>}
           </View>
           <FlatList
-            data={filtered}
-            keyExtractor={(item, i) => (item?.code ?? item ?? i).toString()}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
+            data={filtered} keyExtractor={(item, i) => (item?.code ?? item ?? i).toString()}
+            renderItem={renderItem} showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 30 }}
             ListEmptyComponent={<Text style={[pmS.empty, { fontFamily: C.font.sans }]}>Aucun résultat</Text>}
           />
@@ -172,12 +157,12 @@ function PickerModal({ visible, onClose, title, data, renderItem }: {
   );
 }
 const pmS = StyleSheet.create({
-  overlay:   { flex: 1, backgroundColor: "rgba(13,43,31,0.4)", justifyContent: "flex-end" },
+  overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:     { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
-  handle:    { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: C.cardBorder, alignSelf: "center", marginTop: 12, marginBottom: 4 },
+  handle:    { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: "#DDDDDD", alignSelf: "center", marginTop: 12, marginBottom: 4 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
   title:     { color: C.ink, fontSize: 16, fontWeight: "700" },
-  closeBtn:  { width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenLight, justifyContent: "center", alignItems: "center" },
+  closeBtn:  { width: 28, height: 28, borderRadius: 8, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center" },
   search:    { flexDirection: "row", alignItems: "center", gap: 8, margin: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, height: 38 },
   searchInput: { flex: 1, fontSize: 13, color: C.ink, fontWeight: "600" },
   empty:     { color: C.inkSoft, textAlign: "center", padding: 20, fontWeight: "600" },
@@ -191,16 +176,13 @@ const pmItem = StyleSheet.create({
 
 // ─── Action Card ──────────────────────────────────────────
 function ActionCard({ icon, iconBg, iconColor, title, subtitle, onPress }: {
-  icon: string; iconBg: string; iconColor: string;
-  title: string; subtitle: string; onPress: () => void;
+  icon: string; iconBg: string; iconColor: string; title: string; subtitle: string; onPress: () => void;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
-        style={aS.card}
-        onPress={onPress}
-        activeOpacity={1}
+        style={aS.card} onPress={onPress} activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
@@ -219,7 +201,15 @@ function ActionCard({ icon, iconBg, iconColor, title, subtitle, onPress }: {
   );
 }
 const aS = StyleSheet.create({
-  card:      { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: C.r.lg, padding: 15, marginBottom: 10, gap: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  card: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 15, marginBottom: 10, gap: 14,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
   iconBox:   { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   title:     { color: C.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
   sub:       { color: C.inkSoft, fontSize: 11, fontWeight: "600" },
@@ -270,8 +260,7 @@ export default function BeneficiaireDetailScreen() {
     if (!id) return;
     try {
       const b = await api.getBeneficiary(id);
-      setItem(b);
-      hydrateForm(b);
+      setItem(b); hydrateForm(b);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch { showAlert("Erreur", "Impossible de charger le bénéficiaire."); }
     finally { setLoading(false); }
@@ -402,47 +391,27 @@ export default function BeneficiaireDetailScreen() {
           </View>
 
           {!editing ? (
-            /* ── Vue lecture ── */
             <>
               <View style={s.sectionRow}>
                 <View style={[s.sectionDot, { backgroundColor: C.green }]} />
                 <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>ENVOYER DE L'ARGENT</Text>
               </View>
-
-              <ActionCard
-                icon="wallet-outline"
-                iconBg={C.greenPale}
-                iconColor={C.green}
-                title="Vers un Wallet"
-                subtitle="Transfert direct Mobile Money"
-                onPress={goSendWallet}
-              />
-              <ActionCard
-                icon="cash-outline"
-                iconBg={C.blueBg}
-                iconColor={C.blue}
-                title="Envoi d'argent"
-                subtitle="Retrait en agence"
-                onPress={goSendCash}
-              />
+              <ActionCard icon="wallet-outline"  iconBg={C.greenPale} iconColor={C.green} title="Vers un Wallet"   subtitle="Transfert direct Mobile Money" onPress={goSendWallet} />
+              <ActionCard icon="cash-outline"    iconBg={C.blueBg}    iconColor={C.blue}  title="Envoi d'argent"  subtitle="Retrait en agence"            onPress={goSendCash} />
             </>
           ) : (
-            /* ── Formulaire édition ── */
             <>
               <View style={s.sectionRow}>
                 <View style={[s.sectionDot, { backgroundColor: C.green }]} />
                 <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>MODIFIER LES INFORMATIONS</Text>
               </View>
-
               <View style={s.card}>
                 <View style={s.rowTwo}>
                   <View style={{ flex: 1 }}><Field label="PRÉNOM" value={firstName} onChangeText={setFirstName} placeholder="Mamadou" editable={!saving} /></View>
                   <View style={{ flex: 1 }}><Field label="NOM"    value={lastName}  onChangeText={setLastName}  placeholder="Diallo"  editable={!saving} /></View>
                 </View>
-
                 <SelectBtn label="PAYS DE RÉSIDENCE" value={addressCountry.name} icon={addressCountry.flag} onPress={() => setShowCountryModal(true)} />
                 <SelectBtn label="VILLE"              value={city}               onPress={() => setShowCityModal(true)} />
-
                 <View style={{ marginBottom: 12 }}>
                   <Text style={[fS.label, { fontFamily: C.font.sans }]}>TÉLÉPHONE (MOBILE MONEY)</Text>
                   <View style={s.phoneRow}>
@@ -463,49 +432,32 @@ export default function BeneficiaireDetailScreen() {
                   </View>
                 </View>
               </View>
-
-              {/* Bouton Enregistrer */}
-              <TouchableOpacity
-                style={[s.saveBtn, (!canSave || saving) && { opacity: 0.4 }]}
-                onPress={onSave} disabled={!canSave || saving} activeOpacity={0.88}
-              >
+              <TouchableOpacity style={[s.saveBtn, (!canSave || saving) && { opacity: 0.4 }]} onPress={onSave} disabled={!canSave || saving} activeOpacity={0.88}>
                 <View style={s.saveBtnInner}>
                   {saving
                     ? <ActivityIndicator color={C.white} />
-                    : <>
-                        <Ionicons name="save-outline" size={16} color={C.white} />
-                        <Text style={[s.saveBtnTxt, { fontFamily: C.font.sans }]}>ENREGISTRER</Text>
-                      </>
+                    : <><Ionicons name="save-outline" size={16} color={C.white} /><Text style={[s.saveBtnTxt, { fontFamily: C.font.sans }]}>ENREGISTRER</Text></>
                   }
                 </View>
               </TouchableOpacity>
             </>
           )}
 
-          {/* ── Zone dangereuse ── */}
+          {/* Zone dangereuse */}
           <View style={[s.sectionRow, { marginTop: 8 }]}>
             <View style={[s.sectionDot, { backgroundColor: C.red }]} />
             <Text style={[s.sectionLabel, { fontFamily: C.font.sans }]}>ZONE DANGEREUSE</Text>
           </View>
-
-          <TouchableOpacity
-            style={[s.deleteBtn, deleting && { opacity: 0.6 }]}
-            onPress={onDelete} disabled={deleting} activeOpacity={0.85}
-          >
+          <TouchableOpacity style={[s.deleteBtn, deleting && { opacity: 0.6 }]} onPress={onDelete} disabled={deleting} activeOpacity={0.85}>
             {deleting
               ? <ActivityIndicator color={C.red} />
-              : <>
-                  <Ionicons name="trash-outline" size={17} color={C.red} />
-                  <Text style={[s.deleteTxt, { fontFamily: C.font.sans }]}>Supprimer le bénéficiaire</Text>
-                </>
+              : <><Ionicons name="trash-outline" size={17} color={C.red} /><Text style={[s.deleteTxt, { fontFamily: C.font.sans }]}>Supprimer le bénéficiaire</Text></>
             }
           </TouchableOpacity>
-
           <View style={{ height: 80 }} />
         </Animated.ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── Modals ── */}
       <PickerModal
         visible={showCountryModal} onClose={() => setShowCountryModal(false)} title="Pays de résidence"
         data={countriesList}
@@ -517,7 +469,6 @@ export default function BeneficiaireDetailScreen() {
           </TouchableOpacity>
         )}
       />
-
       <PickerModal
         visible={showCityModal} onClose={() => setShowCityModal(false)} title={`Villes · ${addressCountry.name}`}
         data={availableCities}
@@ -528,7 +479,6 @@ export default function BeneficiaireDetailScreen() {
           </TouchableOpacity>
         )}
       />
-
       <PickerModal
         visible={showPhoneCodeModal} onClose={() => setShowPhoneCodeModal(false)} title="Indicatif téléphonique"
         data={countriesList}
@@ -548,17 +498,35 @@ export default function BeneficiaireDetailScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // Header
-  header: { flexDirection: "row", alignItems: "center", backgroundColor: C.white, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 14, gap: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
-  backBtn:       { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.pageBg, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
-  headerTitle:   { flex: 1, color: C.ink, fontSize: 18, fontWeight: "700" },
-  editBtn:       { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, justifyContent: "center", alignItems: "center" },
-  cancelBtnHeader:{ width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.pageBg, borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
+  // ← header avec ombre subtile
+  header: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.white, paddingHorizontal: 18,
+    paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 14,
+    gap: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
+      android: { elevation: 2 },
+    }),
+  },
+  // ← fond neutre (était C.pageBg vert pâle)
+  backBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
+  headerTitle:    { flex: 1, color: C.ink, fontSize: 18, fontWeight: "700" },
+  editBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, justifyContent: "center", alignItems: "center" },
+  cancelBtnHeader:{ width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  // Hero card
-  heroCard: { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 18, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  // ← ombre neutre (était shadowColor: C.green)
+  heroCard: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 18,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8 },
+      android: { elevation: 2 },
+    }),
+  },
   avatar:        { width: 52, height: 52, borderRadius: 15, justifyContent: "center", alignItems: "center" },
   avatarInitials:{ fontSize: 20, fontWeight: "900" },
   heroName:      { fontSize: 18, fontWeight: "700", color: C.ink, marginBottom: 3 },
@@ -566,24 +534,35 @@ const s = StyleSheet.create({
   phonePill:     { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.greenPale, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: C.greenBorder, alignSelf: "flex-start" },
   phoneTxt:      { color: C.green, fontSize: 11, fontWeight: "800" },
 
-  // Sections
-  sectionRow:  { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
-  sectionDot:  { width: 5, height: 5, borderRadius: C.r.pill },
-  sectionLabel:{ fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
+  sectionRow:   { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10 },
+  sectionDot:   { width: 5, height: 5, borderRadius: C.r.pill },
+  sectionLabel: { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
 
-  // Edit card
-  card:    { backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: C.green, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2 },
+  // ← ombre neutre
+  card: {
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
+    borderWidth: 1, borderColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
+  },
   rowTwo:  { flexDirection: "row", gap: 10 },
   phoneRow:{ flexDirection: "row", gap: 8 },
   dialBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, paddingVertical: 10 },
   dialCode:{ color: C.ink, fontSize: 11, fontWeight: "800" },
 
-  // Save
   saveBtn:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 14 },
-  saveBtnInner: { backgroundColor: C.green, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 15, gap: 8, borderRadius: C.r.md },
-  saveBtnTxt:   { color: C.white, fontWeight: "900", fontSize: 12, letterSpacing: 0.8 },
+  saveBtnInner: {
+    backgroundColor: C.green, flexDirection: "row", alignItems: "center",
+    justifyContent: "center", paddingVertical: 15, gap: 8, borderRadius: C.r.md,
+    ...Platform.select({
+      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
+  },
+  saveBtnTxt: { color: C.white, fontWeight: "900", fontSize: 12, letterSpacing: 0.8 },
 
-  // Delete
   deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: C.redBg, borderRadius: C.r.md, paddingVertical: 14, gap: 8, borderWidth: 1, borderColor: C.redBorder, marginBottom: 10 },
   deleteTxt: { color: C.red, fontWeight: "800", fontSize: 13 },
 });

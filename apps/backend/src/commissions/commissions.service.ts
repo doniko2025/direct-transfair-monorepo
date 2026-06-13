@@ -1,12 +1,11 @@
 // apps/backend/src/commissions/commissions.service.ts
 // =========================================================
-// COMMISSIONS SERVICE v4.2
-// ✅ FIX CRITIQUE : withdrawal include processedBy + agency
-//    Avant : processedBy n'était pas chargé → agencyId = undefined
-//    → myCommission = 0 même si l'agent avait validé le retrait
-// ✅ FIX : recherche par processedById direct (plus fiable)
-//    si la relation processedBy ne retourne rien
-// ✅ Reste identique à v4.1 sinon
+// COMMISSIONS SERVICE v4.3
+// ✅ v4.2 : withdrawal include processedBy + agency
+// ✅ v4.3 :
+//    - getFeeRate()      : lit le taux dynamique par méthode de paiement
+//    - upsertFeeConfig() : sauvegarde le taux configuré par l'admin
+//    → Fin du taux hardcodé 0.015 dans transactions.service.ts
 // =========================================================
 
 import { BadRequestException, Injectable } from '@nestjs/common';
@@ -14,6 +13,7 @@ import {
   AgencyType,
   CommissionDestType,
   CommissionSourceType,
+  CurrencyCode,
   TransactionStatus,
 } from '@prisma/client';
 
@@ -24,12 +24,123 @@ const DEFAULT_PAYER_SHARE    = 40;
 const DEFAULT_SENDER_SHARE   = 20;
 const DEFAULT_PLATFORM_SHARE = 40;
 
+// ── Mapping payoutMethod → slot de devise (contournement contrainte unique) ──
+// On utilise la colonne currency comme discriminant pour que chaque
+// fee config ait un (clientId, WALLET, SUBSIDIARY, currency) unique.
+// Aucune migration de contrainte nécessaire.
+const PAYOUT_CURRENCY_SLOT: Record<string, CurrencyCode> = {
+  CASH_PICKUP:   CurrencyCode.XOF,
+  BANK_DEPOSIT:  CurrencyCode.EUR,
+  MOBILE_MONEY:  CurrencyCode.GNF,
+  IBAN_TRANSFER: CurrencyCode.USD,
+};
+
 @Injectable()
 export class CommissionsService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ========================================================
-  // RÈGLES
+  // FEE CONFIG — lire / écrire un taux de frais par méthode
+  // ========================================================
+
+  /**
+   * Retourne le taux de frais configuré par l'admin pour une méthode de paiement.
+   * Appelé par TransactionsService.create() à chaque création de transaction.
+   *
+   * @param clientId  ID de la société cliente
+   * @param payoutMethod  ex: "CASH_PICKUP", "BANK_DEPOSIT", "MOBILE_MONEY", "IBAN_TRANSFER"
+   * @returns { rate: number, fixedFee: number }
+   *   rate     = pourcentage (ex: 1.5 pour 1.5%)
+   *   fixedFee = montant fixe en devise locale (ex: 200 pour 200 XOF)
+   */
+  async getFeeRate(
+    clientId: number,
+    payoutMethod: string,
+  ): Promise<{ rate: number; fixedFee: number }> {
+    // Wallet/MobileMoney toujours gratuit
+    if (!payoutMethod || payoutMethod === 'WALLET' || payoutMethod === 'MOBILE_MONEY') {
+      return { rate: 0, fixedFee: 0 };
+    }
+
+    try {
+      const config = await this.prisma.commissionConfig.findFirst({
+        where: {
+          clientId,
+          payoutMethod,
+          isActive: true,
+        },
+      });
+
+      if (config) {
+        return {
+          rate:     (config as any).feeRate   ?? 1.5,
+          fixedFee: (config as any).fixedFee  ?? 0,
+        };
+      }
+    } catch {
+      // Colonne pas encore migrée → fallback
+    }
+
+    // Fallback : 1.5% si aucune config admin en base
+    return { rate: 1.5, fixedFee: 0 };
+  }
+
+  /**
+   * Crée ou met à jour la config de frais pour une méthode de paiement.
+   * Appelé depuis CommissionsController.updateRule() quand dto.payoutMethod est présent.
+   */
+  async upsertFeeConfig(
+    clientId: number,
+    payoutMethod: string,
+    feeRate: number,
+    fixedFee: number,
+  ) {
+    const currency = PAYOUT_CURRENCY_SLOT[payoutMethod] ?? null;
+
+    // Chercher une config existante pour ce payoutMethod
+    const existing = await this.prisma.commissionConfig.findFirst({
+      where: { clientId, payoutMethod },
+    });
+
+    if (existing) {
+      return this.prisma.commissionConfig.update({
+        where: { id: existing.id },
+        data: {
+          senderShare:   feeRate,
+          platformShare: Math.max(0, 100 - feeRate),
+          description:   `FEE:${payoutMethod}`,
+          // Colonnes ajoutées par la migration
+          ...(Object.fromEntries([
+            ['feeRate',  feeRate],
+            ['fixedFee', fixedFee],
+            ['payoutMethod', payoutMethod],
+          ])),
+        },
+      });
+    }
+
+    return this.prisma.commissionConfig.create({
+      data: {
+        clientId,
+        sourceType:    CommissionSourceType.WALLET,
+        destType:      CommissionDestType.SUBSIDIARY,
+        currency:      currency as CurrencyCode | undefined,
+        senderShare:   feeRate,
+        payerShare:    0,
+        platformShare: Math.max(0, 100 - feeRate),
+        description:   `FEE:${payoutMethod}`,
+        // Colonnes ajoutées par la migration
+        ...(Object.fromEntries([
+          ['feeRate',  feeRate],
+          ['fixedFee', fixedFee],
+          ['payoutMethod', payoutMethod],
+        ])),
+      },
+    });
+  }
+
+  // ========================================================
+  // RÈGLES de répartition de commission (existant)
   // ========================================================
 
   async getClientRules(clientId: number) {
@@ -60,7 +171,7 @@ export class CommissionsService {
   }
 
   // ========================================================
-  // HISTORIQUE PAR AGENCE
+  // HISTORIQUE PAR AGENCE (identique v4.2)
   // ========================================================
 
   async getHistory(clientId: number, agencyId: string, period: string) {
@@ -73,24 +184,14 @@ export class CommissionsService {
         createdAt: { gte: startDate },
         OR: [
           { sender: { agencyId } },
-          // ✅ FIX : chercher par processedById aussi (agent de l'agence)
-          {
-            withdrawal: {
-              processedBy: { agencyId },
-            },
-          },
+          { withdrawal: { processedBy: { agencyId } } },
         ],
       },
       orderBy: { createdAt: 'desc' },
       include: {
         sender: { include: { agency: true } },
-        // ✅ FIX CRITIQUE : inclure processedBy + agency dans le include
         withdrawal: {
-          include: {
-            processedBy: {
-              include: { agency: true },
-            },
-          },
+          include: { processedBy: { include: { agency: true } } },
         },
       },
     });
@@ -99,9 +200,8 @@ export class CommissionsService {
       where: { clientId },
     });
 
-    // ✅ FIX : récupérer les agents de cette agence pour matching par processedById
     const agencyAgents = await this.prisma.user.findMany({
-      where: { agencyId },
+      where:  { agencyId },
       select: { id: true },
     });
     const agencyAgentIds = new Set(agencyAgents.map((u) => u.id));
@@ -122,30 +222,31 @@ export class CommissionsService {
           : CommissionDestType.SUBSIDIARY;
       }
 
-      const rule = rules.find((r) => r.sourceType === sourceT && r.destType === destT);
+      // Exclure les fee configs de la recherche de règle de répartition
+      const rule = rules.find((r) =>
+        r.sourceType === sourceT &&
+        r.destType   === destT &&
+        !(r as any).payoutMethod, // ← ignorer les fee configs
+      );
       const fees = Number(tx.fees);
 
       const senderShare = rule ? rule.senderShare : DEFAULT_SENDER_SHARE;
       const senderCom   = (fees * senderShare) / 100;
 
-      const payerShare = rule ? rule.payerShare : DEFAULT_PAYER_SHARE;
-      const txStatus   = tx.status as string;
-      const payerCom   =
+      const payerShare  = rule ? rule.payerShare : DEFAULT_PAYER_SHARE;
+      const txStatus    = tx.status as string;
+      const payerCom    =
         txStatus === TransactionStatus.PAID || txStatus === TransactionStatus.VALIDATED
-          ? (fees * payerShare) / 100
-          : 0;
+          ? (fees * payerShare) / 100 : 0;
 
       let myCommission = 0;
 
-      // Commission expéditeur : l'agent qui a envoyé appartient à cette agence
       if (tx.sender?.agencyId === agencyId) {
         myCommission += senderCom;
       }
 
-      // ✅ FIX : commission payeur — vérifier via relation ET via agencyAgentIds
-      const processedById = (tx.withdrawal as any)?.processedById;
+      const processedById      = (tx.withdrawal as any)?.processedById;
       const processedByAgencyId = (tx.withdrawal as any)?.processedBy?.agencyId;
-
       const isProcessedByThisAgency =
         processedByAgencyId === agencyId ||
         (processedById && agencyAgentIds.has(processedById));
@@ -154,18 +255,12 @@ export class CommissionsService {
         myCommission += payerCom;
       }
 
-      // Fallback : si aucune commission mais agence impliquée
       if (myCommission === 0 && fees > 0) {
-        if (isProcessedByThisAgency)
-          myCommission = (fees * DEFAULT_PAYER_SHARE) / 100;
-        else if (tx.sender?.agencyId === agencyId)
-          myCommission = (fees * DEFAULT_SENDER_SHARE) / 100;
+        if (isProcessedByThisAgency) myCommission = (fees * DEFAULT_PAYER_SHARE) / 100;
+        else if (tx.sender?.agencyId === agencyId) myCommission = (fees * DEFAULT_SENDER_SHARE) / 100;
       }
 
-      const origin =
-        tx.sender?.agency?.name ??
-        processedByAgency?.name ??
-        'Client Wallet';
+      const origin = tx.sender?.agency?.name ?? processedByAgency?.name ?? 'Client Wallet';
 
       return {
         id:               tx.id,
@@ -181,7 +276,7 @@ export class CommissionsService {
   }
 
   // ========================================================
-  // STATS AGENT
+  // STATS AGENT (identique v4.2)
   // ========================================================
 
   async getMyStats(clientId: number, agencyId: string, period: string) {
