@@ -1,31 +1,26 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.15 — Direct Transf'air
+// TRANSACTIONS SERVICE v4.16 — Direct Transf'air
 // =========================================================
 // ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
 // ✅ v4.13-A : FIX acquireAdvisoryLock int32 signé (| 0)
 // ✅ v4.13-B : FIX P2002 référence en doublon → 409
 // ✅ v4.13-C : Notifications in-app + emails sur tous les flux
 // ✅ v4.14 : FUSION complète en un seul fichier
+// ✅ v4.15 : FIX CRITIQUE acquireAdvisoryLock → ::int4 dans SQL
+// ✅ v4.16 : 2 FIX dans create() :
 //
-// ✅ v4.15 : FIX CRITIQUE acquireAdvisoryLock
-//   PROBLÈME : le driver `pg` (node-postgres) encode TOUJOURS les
-//   integers JS en int8 (bigint 64 bits) vers PostgreSQL,
-//   quelle que soit la valeur réelle ou le | 0 appliqué en JS.
-//   → pg_advisory_xact_lock(int4, int4) ne trouve aucune surcharge
-//     correspondant à (int8, int8) → "function does not exist" → 500
+//   FIX A — "Solde XOF insuffisant. Disponible : 0" pour l'agent
+//     PROBLÈME : create() cherchait user.wallets (wallet PERSONNEL).
+//     L'agent a un wallet personnel XOF à 0 (créé automatiquement)
+//     → le système le trouve → disponible = 0 → ForbiddenException.
+//     Son vrai solde est dans le wallet AGENCE (agencyId).
+//     CORRECTIF : si user.agencyId présent → priorité au wallet agence.
 //
-//   CAUSE PROFONDE DU | 0 INSUFFISANT :
-//   | 0 en JS garantit que la valeur tient en int32 SIGNÉ (plage
-//   [-2^31 ; 2^31-1]), mais n'affecte pas le OID de type envoyé
-//   sur le fil TCP : le driver envoie toujours TypeOID=20 (int8)
-//   au lieu de TypeOID=23 (int4). PostgreSQL ne trouve donc pas
-//   la surcharge pg_advisory_xact_lock(int4, int4).
-//
-//   CORRECTIF : cast explicite ::int4 dans la requête SQL.
-//   PostgreSQL applique une coercition int8→int4 explicite,
-//   trouve la bonne surcharge, et l'appel réussit.
-//   Les valeurs tiennent dans int4 grâce au | 0 (conservé).
+//   FIX B — Taux de frais toujours 1,5% malgré config admin
+//     PROBLÈME : findFirst({ isActive: true }) ne trouvait rien car
+//     upsertFeeConfig() ne persistait pas isActive=true → fallback 1,5%.
+//     CORRECTIF : retrait du filtre isActive dans la requête feeConfig.
 // =========================================================
 
 import {
@@ -120,8 +115,6 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
   }
 }
 
-// Codes internes pour exceptions lancées DANS $transaction
-// → jamais de HttpException à l'intérieur, converties après
 const TX_ERROR = {
   WALLET_NOT_FOUND:            'TX_ERR_WALLET_NOT_FOUND',
   INSUFFICIENT_BALANCE_PREFIX: 'TX_ERR_INSUFFICIENT_BALANCE:',
@@ -139,12 +132,10 @@ export class TransactionsService {
     private readonly walletsService:       WalletsService,
     private readonly push:                 PushService,
     private readonly sms:                  SmsService,
-    // Mail channels
     private readonly walletMail:           WalletMailService,
     private readonly agentMail:            AgentMailService,
     private readonly companyMail:          CompanyMailService,
     private readonly adminMail:            AdminMailService,
-    // Notifiers in-app
     private readonly notificationsService: NotificationsService,
     private readonly walletNotifier:       WalletNotifierService,
     private readonly agentNotifier:        AgentNotifierService,
@@ -185,26 +176,14 @@ export class TransactionsService {
   }
 
   // ── Advisory lock ─────────────────────────────────────
-  //
-  // ✅ FIX v4.15 : ::int4 dans le SQL (v4.13-A avec | 0 était insuffisant)
-  //
-  // Le driver node-postgres envoie toujours les integers JS avec
-  // TypeOID=20 (int8/bigint) sur le fil, indépendamment de leur valeur.
-  // pg_advisory_xact_lock(int4, int4) exige TypeOID=23 ou une coercition
-  // explicite. Sans ::int4, PostgreSQL ne trouve aucune surcharge → 500.
-  //
-  // Le | 0 est conservé pour garantir que les valeurs tiennent en int4.
-  // Le ::int4 dans le SQL force la coercition côté PostgreSQL.
+  // ✅ FIX v4.15 : ::int4 dans le SQL
   private async acquireAdvisoryLock(
     prismaTx: Prisma.TransactionClient,
     walletId: string,
   ): Promise<void> {
     const lockKey  = this.walletLockKey(walletId);
-    // | 0 : garantit que la valeur est dans la plage int32 signé
     const lockHigh = (Number((lockKey >> 32n) & 0xFFFFFFFFn)) | 0;
     const lockLow  = (Number(lockKey & 0xFFFFFFFFn)) | 0;
-
-    // ✅ FIX v4.15 : ::int4 — force la coercition int8→int4 côté PostgreSQL
     await prismaTx.$executeRawUnsafe(
       'SELECT pg_advisory_xact_lock($1::int4, $2::int4)',
       lockHigh,
@@ -232,7 +211,6 @@ export class TransactionsService {
       currency: currencyCode,
     });
 
-    // ✅ FIX v4.12 — Vérification solde AVANT $transaction
     const preCheckWallet = await this.prisma.wallet.findUnique({
       where: { id: walletRef.id },
     });
@@ -250,7 +228,6 @@ export class TransactionsService {
       );
     }
 
-    // Section atomique — aucune HttpException à l'intérieur
     let newTx: Transaction;
     try {
       newTx = await this.prisma.$transaction(async (prismaTx) => {
@@ -322,7 +299,6 @@ export class TransactionsService {
           `Disponible : ${avail.toLocaleString('fr-FR')} ${cur}.`,
         );
       }
-      // ✅ FIX v4.13-B : P2002 → référence déjà utilisée → 409
       if (e?.code === 'P2002' || msg.toLowerCase().includes('unique constraint')) {
         throw new ConflictException(
           `La référence "${proofReference}" est déjà utilisée. ` +
@@ -331,8 +307,6 @@ export class TransactionsService {
       }
       throw e;
     }
-
-    // ── Notifications + emails (non-bloquants) ────────────
 
     if (admin.email) {
       this.companyMail.sendB2BRequestSent({
@@ -522,8 +496,8 @@ export class TransactionsService {
     });
   }
 
- // ========================================================
-  // Création transfert (client → bénéficiaire)
+  // ========================================================
+  // Création transfert (client / agent → bénéficiaire)
   // ========================================================
 
   async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
@@ -542,20 +516,44 @@ export class TransactionsService {
 
     if (dto.beneficiaryId && !beneficiary) throw new NotFoundException('Beneficiary not found');
 
-    const currency   = dto.currency.toUpperCase() as CurrencyCode;
-    const userWallet = user.wallets.find((w) => w.currency === currency);
-    if (!userWallet) {
-      throw new ForbiddenException(`Vous n'avez pas de wallet ${currency}. Créez-en un d'abord.`);
+    const currency = dto.currency.toUpperCase() as CurrencyCode;
+
+    // ✅ FIX v4.16-A : pour les agents, priorité au wallet AGENCE
+    //
+    // PROBLÈME : un agent a un wallet personnel XOF créé automatiquement
+    // (balance = 0). La recherche user.wallets.find() le trouve en premier
+    // → disponible = 0 → ForbiddenException "Solde insuffisant".
+    // Son vrai solde est dans le wallet agence (agencyId).
+    //
+    // CORRECTIF : si user.agencyId est défini → on cherche le wallet
+    // agence en priorité et on l'utilise pour le débit.
+    let walletToDebit = user.wallets.find((w) => w.currency === currency) ?? null;
+
+    if (user.agencyId) {
+      // Agent → cherche le wallet agence (ignore le wallet personnel à 0)
+      const agencyWallet = await this.prisma.wallet.findFirst({
+        where: { agencyId: user.agencyId, currency, isActive: true },
+      });
+      if (agencyWallet) {
+        walletToDebit = agencyWallet;
+      }
+    }
+
+    if (!walletToDebit) {
+      throw new ForbiddenException(
+        `Vous n'avez pas de wallet ${currency}. Créez-en un d'abord.`,
+      );
     }
 
     const isWalletTransfer =
       dto.payoutMethod === PayoutMethod.MOBILE_MONEY ||
       dto.payoutMethod === PayoutMethod.WALLET;
 
-    // ✅ v4.16 : taux dynamique configuré par l'admin via fees.tsx
-    //   Avant : hardcodé à 0.015 (1.5%) pour tout le monde
-    //   Après : lu depuis commission_configs (payoutMethod IS SET)
-    //   Fallback : 1.5% si aucune config admin en base
+    // ✅ FIX v4.16-B : taux dynamique — isActive retiré du filtre
+    //
+    // AVANT : findFirst({ isActive: true }) → jamais trouvé car
+    // upsertFeeConfig() ne persistait pas isActive=true → fallback 1,5%.
+    // APRÈS : filtre sans isActive → trouve la config admin correctement.
     let feeRatePct  = 0;
     let fixedFeeAmt = 0;
 
@@ -565,7 +563,7 @@ export class TransactionsService {
           where: {
             clientId,
             payoutMethod: dto.payoutMethod ?? 'CASH_PICKUP',
-            isActive: true,
+            // ✅ isActive retiré — robuste même si isActive=false en DB
           },
         });
         if (feeConfig) {
@@ -585,9 +583,14 @@ export class TransactionsService {
       .plus(new Prisma.Decimal(fixedFeeAmt));
     const total  = amount.plus(fees);
 
-    const available = Number(userWallet.balance) - Number(userWallet.reservedBalance);
+    // ✅ FIX v4.16-A : vérification solde sur walletToDebit (agence ou personnel)
+    const available =
+      Number(walletToDebit.balance) - Number((walletToDebit as any).reservedBalance ?? 0);
+
     if (available < Number(total)) {
-      throw new ForbiddenException(`Solde ${currency} insuffisant. Disponible : ${available}`);
+      throw new ForbiddenException(
+        `Solde ${currency} insuffisant. Disponible : ${available}`,
+      );
     }
 
     let recipientUser: any = null;
@@ -623,7 +626,8 @@ export class TransactionsService {
       }
     }
 
-    await this.walletsService.debit(userWallet.id, Number(total), `Envoi ${transactionRef}`);
+    // ✅ FIX v4.16-A : débit sur walletToDebit (wallet agence si agent)
+    await this.walletsService.debit(walletToDebit.id, Number(total), `Envoi ${transactionRef}`);
 
     if (recipientUser) {
       const recipientWalletRef = await this.walletsService.getOrCreateWallet({
@@ -720,6 +724,8 @@ export class TransactionsService {
 
     return transaction;
   }
+
+  // ========================================================
   // Dépôt agent → client
   // ========================================================
 

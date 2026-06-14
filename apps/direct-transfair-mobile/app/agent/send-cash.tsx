@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/agent/send-cash.tsx
 // =========================================================
-// AGENT SEND CASH (GUICHET) v7.2 — Direct Transf'air
+// AGENT SEND CASH (GUICHET) v7.3 — Direct Transf'air
 // ✅ v5.0 : Envoi espèces, frais auto, résumé, code retrait
 // ✅ v6.0 : Bleu #2563EB, arc concave, sélecteurs indicatif
 // ✅ v7.0 :
@@ -65,8 +65,14 @@ const C = {
   },
 };
 
-function fmt(n: number): string {
-  try { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(n); }
+function fmt(n: number, currency = "XOF"): string {
+  const decimals = currency === "EUR" || currency === "GBP" || currency === "USD" ? 2 : 0;
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(n);
+  }
   catch { return Math.round(n).toString(); }
 }
 
@@ -231,6 +237,12 @@ export default function AgentSendCashScreen() {
   const [feeRate,  setFeeRate]  = useState(0.015);
   const [feeLabel, setFeeLabel] = useState("1,5");
 
+  // ✅ v7.3 : montant reçu dans la devise du pays de destination
+  const [allRates,       setAllRates]       = useState<any[]>([]);
+  const [targetCurrency, setTargetCurrency] = useState("XOF");
+  const [receivedAmount, setReceivedAmount] = useState(0);
+  const [exchangeRate,   setExchangeRate]   = useState(1);
+
   const [showSenderModal,   setShowSenderModal]   = useState(false);
   const [showReceiverModal, setShowReceiverModal] = useState(false);
 
@@ -253,13 +265,49 @@ export default function AgentSendCashScreen() {
       });
   }, []);
 
-  // ✅ v7.1 FIX : dépend de feeRate (dynamique) au lieu du 0.015 hardcodé
+  // ✅ v7.3 : chargement des taux de change au mount
+  useEffect(() => {
+    api.getExchangeRates()
+      .then((rates: any[]) => setAllRates(rates))
+      .catch(() => {}); // taux de secours appliqués dans le calcul
+  }, []);
+
+  // ✅ v7.3 : devise cible déduite du pays de destination
+  useEffect(() => {
+    const cn = receiverCountry.name.toLowerCase();
+    let curr = "XOF";
+    if (cn.includes("guinée") && !cn.includes("bissau") && !cn.includes("équat")) curr = "GNF";
+    else if (cn.includes("maroc")) curr = "MAD";
+    else if (cn.includes("grande-bretagne") || cn.includes("royaume-uni")) curr = "GBP";
+    else if (cn.includes("états-unis") || cn.includes("usa")) curr = "USD";
+    else if (
+      cn.includes("france")  || cn.includes("belgi")   || cn.includes("allem") ||
+      cn.includes("espagne") || cn.includes("italie")  || cn.includes("portug") ||
+      cn.includes("pays-bas")|| cn.includes("autriche")
+    ) curr = "EUR";
+    setTargetCurrency(curr);
+  }, [receiverCountry]);
+
+  // ✅ v7.3 : calcul du taux XOF → devise cible
+  useEffect(() => {
+    if (targetCurrency === "XOF") { setExchangeRate(1); return; }
+    const getR = (pair: string, fb: number): number =>
+      (allRates as any[]).find((r: any) => r.pair === pair)?.rate ?? fb;
+    // XOF → EUR → devise cible
+    const xofToEur   = 1 / getR("EUR_XOF", 655.957);
+    const eurToTarget = targetCurrency === "EUR" ? 1 : getR(`EUR_${targetCurrency}`, 1);
+    setExchangeRate(xofToEur * eurToTarget);
+  }, [allRates, targetCurrency]);
+
+  // ✅ v7.1 FIX + v7.3 : calcul frais et montant reçu dans la devise cible
   useEffect(() => {
     const val = parseFloat(amount) || 0;
     const fee = Math.ceil(val * feeRate);
     setFees(fee);
     setTotal(val + fee);
-  }, [amount, feeRate]);
+    // Montant reçu = montant envoyé converti (frais restent côté expéditeur)
+    setReceivedAmount(Math.round(val * exchangeRate));
+  }, [amount, feeRate, exchangeRate]);
 
   const canSubmit =
     senderFirstName.trim()   && senderLastName.trim()   && senderPhone.trim() &&
@@ -457,6 +505,33 @@ export default function AgentSendCashScreen() {
                   <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais ({feeLabel} %)</Text>
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(fees)} XOF</Text>
                 </View>
+
+                {/* ✅ v7.3 : montant reçu dans la devise du pays de destination */}
+                {receivedAmount > 0 && (
+                  <>
+                    <View style={s.feesRowDivider} />
+                    <View style={s.feesRow}>
+                      <View style={s.receivedLblWrap}>
+                        <Ionicons name="arrow-down-circle-outline" size={12} color={C.green} />
+                        <Text style={[s.receivedLbl, { fontFamily: C.font.sans }]}>
+                          Reçoit ({targetCurrency})
+                        </Text>
+                      </View>
+                      <Text style={[s.receivedVal, { fontFamily: C.font.mono }]}>
+                        {fmt(receivedAmount, targetCurrency)} {targetCurrency}
+                      </Text>
+                    </View>
+                    {targetCurrency !== "XOF" && (
+                      <View style={s.rateChip}>
+                        <Ionicons name="swap-horizontal-outline" size={11} color={C.green} />
+                        <Text style={[s.rateChipTxt, { fontFamily: C.font.mono }]}>
+                          1 XOF = {exchangeRate.toFixed(4)} {targetCurrency}
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
+
                 <View style={[s.feesRow, s.totalRow]}>
                   <Text style={[s.totalLbl, { fontFamily: C.font.sans }]}>Total à débiter</Text>
                   <Text style={[s.totalVal, { fontFamily: C.font.mono }]}>{fmt(total)} XOF</Text>
@@ -557,10 +632,17 @@ const s = StyleSheet.create({
   curTxt:   { color: AGENT_BLUE, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
 
   // Tableau frais
-  feesCard: { backgroundColor: C.blueBg, borderRadius: C.r.md, padding: 14, borderWidth: 1, borderColor: C.blueBorder },
-  feesRow:  { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
-  feesLbl:  { fontSize: 11, color: C.inkSoft, fontWeight: "600" },
-  feesVal:  { fontSize: 12, color: C.ink, fontWeight: "700" },
+  feesCard:       { backgroundColor: C.blueBg, borderRadius: C.r.md, padding: 14, borderWidth: 1, borderColor: C.blueBorder },
+  feesRow:        { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  feesRowDivider: { height: 1, backgroundColor: C.blueBorder, marginVertical: 4 },
+  feesLbl:        { fontSize: 11, color: C.inkSoft, fontWeight: "600" },
+  feesVal:        { fontSize: 12, color: C.ink, fontWeight: "700" },
+  // ✅ v7.3 : styles montant reçu + chip taux
+  receivedLblWrap:{ flexDirection: "row", alignItems: "center", gap: 5 },
+  receivedLbl:    { fontSize: 11, color: C.green, fontWeight: "700" },
+  receivedVal:    { fontSize: 13, color: C.green, fontWeight: "900" },
+  rateChip:       { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-end", backgroundColor: `${C.green}12`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: C.r.pill, marginBottom: 6 },
+  rateChipTxt:    { fontSize: 9, color: C.green, fontWeight: "700" },
   totalRow: { borderTopWidth: 1, borderTopColor: C.blueBorder, marginTop: 4, paddingTop: 10, marginBottom: 0 },
   totalLbl: { fontSize: 12, fontWeight: "900", color: C.ink },
   totalVal: { fontSize: 18, fontWeight: "900", color: AGENT_BLUE },
