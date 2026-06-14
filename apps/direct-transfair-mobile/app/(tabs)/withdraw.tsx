@@ -1,14 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/withdraw.tsx
 // =========================================================
-// AGENT WITHDRAW v5.1 — Direct Transf'air
+// AGENT WITHDRAW v5.2 — Direct Transf'air
 // ✅ v5.1 : fond blanc neutre, cartes blanches ombrées
-//    - pageBg #F0FDF8 → #FAFAFA
-//    - cardBorder #D1FAE5 → #E5E5EA (neutre)
-//    - inputBg #F8FFFC → #F8F8F8 (neutre)
-//    - amtCard : blanc ombré avec accent border vert (plus de greenPale)
-//    - qrBox : fond #F5F5F5 (plus de greenPale)
-//    - Ombres cartes : shadowColor green → #000
-//    - Logique métier 100 % inchangée
+// ✅ v5.2 : Affichage commission après validation du retrait
+//    - processPayment() capture la réponse backend v4.7
+//    - Alert succès : affiche la commission versée à l'agence
+//    - Logique métier et UI 100 % inchangées
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -34,10 +31,10 @@ const C = {
   heroDim:      "rgba(255,255,255,0.65)",
   heroGlow:     "rgba(255,255,255,0.08)",
 
-  pageBg:       "#FAFAFA",   // ← était #F0FDF8
+  pageBg:       "#FAFAFA",
   white:        "#FFFFFF",
-  cardBorder:   "#E5E5EA",   // ← était #D1FAE5
-  inputBg:      "#F8F8F8",   // ← était #F8FFFC
+  cardBorder:   "#E5E5EA",
+  inputBg:      "#F8F8F8",
 
   ink:          "#0D2B1F",
   inkMid:       "#1F5C3A",
@@ -61,9 +58,9 @@ const C = {
 
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
-    serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
+    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif" }),
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace" }),
   },
 };
 
@@ -74,12 +71,17 @@ function toNum(v: unknown): number {
 }
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
-  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
-  catch { return n.toFixed(d); }
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: d, maximumFractionDigits: d,
+    }).format(n);
+  } catch { return n.toFixed(d); }
 }
 
-// ─── Info Row ───────────────────────────────────────────
-function InfoRow({ label, value, icon, color = C.green }: { label: string; value: string; icon: string; color?: string }) {
+// ─── Info Row ─────────────────────────────────────────────
+function InfoRow({ label, value, icon, color = C.green }: {
+  label: string; value: string; icon: string; color?: string;
+}) {
   return (
     <View style={ir.row}>
       <View style={[ir.iconBox, { backgroundColor: `${color}18` }]}>
@@ -99,18 +101,23 @@ const ir = StyleSheet.create({
   val:     { fontSize: 13, fontWeight: "700", color: C.ink },
 });
 
+// ─── Main ─────────────────────────────────────────────────
 export default function AgentWithdrawScreen() {
   const router = useRouter();
+
   const [code,        setCode]        = useState("");
   const [checking,    setChecking]    = useState(false);
   const [paying,      setPaying]      = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
+
   const scaleAnim  = useRef(new Animated.Value(0.95)).current;
   const fadeAnim   = useRef(new Animated.Value(0)).current;
   const headerAnim = useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
+    Animated.spring(headerAnim, {
+      toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4,
+    }).start();
   }, []);
 
   const showAlert = (title: string, msg: string) => {
@@ -119,8 +126,12 @@ export default function AgentWithdrawScreen() {
   };
 
   const handleCheckCode = async () => {
-    if (code.length !== 9) { showAlert("Erreur", "Le code doit contenir 9 chiffres"); return; }
-    setChecking(true); setTransaction(null);
+    if (code.length !== 9) {
+      showAlert("Erreur", "Le code doit contenir 9 chiffres");
+      return;
+    }
+    setChecking(true);
+    setTransaction(null);
     try {
       const res = await api.http.post("/withdrawals/agent/check", { code });
       setTransaction(res.data);
@@ -136,26 +147,56 @@ export default function AgentWithdrawScreen() {
   const handlePayOut = () => {
     const amount   = toNum(transaction?.receivedAmount || transaction?.amount);
     const currency = transaction?.targetCurrency || transaction?.currency || "XOF";
-    const msg = `Confirmez-vous avoir remis ${fmt(amount, currency)} ${currency} au client ?`;
-    if (Platform.OS === "web") { if (window.confirm(msg)) void processPayment(); }
-    else Alert.alert("Confirmation", msg, [
-      { text: "Annuler", style: "cancel" },
-      { text: "CONFIRMER", onPress: () => void processPayment() },
-    ]);
+    const msg      = `Confirmez-vous avoir remis ${fmt(amount, currency)} ${currency} au client ?`;
+
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) void processPayment();
+    } else {
+      Alert.alert("Confirmation", msg, [
+        { text: "Annuler", style: "cancel" },
+        { text: "CONFIRMER", onPress: () => void processPayment() },
+      ]);
+    }
   };
 
+  // ✅ v5.2 : capture la réponse backend v4.7 et affiche la commission
   const processPayment = async () => {
     setPaying(true);
     try {
-      await api.http.post("/withdrawals/agent/pay", { code });
-      if (Platform.OS === "web") { alert("✅ Paiement validé !"); router.back(); }
-      else Alert.alert("✅ Succès", "Paiement validé et commission créditée.", [{ text: "OK", onPress: () => router.back() }]);
+      const res  = await api.http.post("/withdrawals/agent/pay", { code });
+      const data = res.data as any;
+
+      // Récupération de la commission agence depuis la réponse v4.7
+      const commission = toNum(data?.commissions?.payerAgency?.amount ?? 0);
+      const currency   = data?.currency ?? (transaction?.targetCurrency || transaction?.currency || "XOF");
+
+      if (Platform.OS === "web") {
+        alert(
+          commission > 0
+            ? `✅ Retrait validé !\nCommission : +${fmt(commission, currency)} ${currency}`
+            : "✅ Retrait validé !",
+        );
+        router.back();
+      } else {
+        Alert.alert(
+          "✅ Retrait validé",
+          commission > 0
+            ? `Fonds remis au client.\n\n💰 Commission créditée : +${fmt(commission, currency)} ${currency}`
+            : "Fonds remis au client avec succès.",
+          [{ text: "OK", onPress: () => router.back() }],
+        );
+      }
     } catch (e: any) {
       showAlert("Erreur", e.response?.data?.message || "Échec de la validation");
     } finally { setPaying(false); }
   };
 
-  const resetForm = () => { setTransaction(null); setCode(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
+  const resetForm = () => {
+    setTransaction(null);
+    setCode("");
+    fadeAnim.setValue(0);
+    scaleAnim.setValue(0.95);
+  };
 
   const displayAmount   = toNum(transaction?.receivedAmount || transaction?.amount);
   const displayCurrency = transaction?.targetCurrency || transaction?.currency || "XOF";
@@ -192,13 +233,19 @@ export default function AgentWithdrawScreen() {
         </View>
       </Animated.View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
 
           {!transaction ? (
             /* ── SAISIE CODE ── */
             <View style={s.centerBox}>
-              {/* Icône QR — fond neutre */}
               <View style={s.qrBox}>
                 <Ionicons name="qr-code-outline" size={48} color={C.green} />
               </View>
@@ -222,7 +269,10 @@ export default function AgentWithdrawScreen() {
 
               <View style={s.dotsRow}>
                 {Array.from({ length: 9 }).map((_, i) => (
-                  <View key={i} style={[s.dot, i < code.length && { backgroundColor: C.green, transform: [{ scale: 1.2 }] }]} />
+                  <View
+                    key={i}
+                    style={[s.dot, i < code.length && { backgroundColor: C.green, transform: [{ scale: 1.2 }] }]}
+                  />
                 ))}
               </View>
 
@@ -237,25 +287,38 @@ export default function AgentWithdrawScreen() {
                     ? <ActivityIndicator color={C.white} />
                     : <>
                         <Ionicons name="search-outline" size={18} color={C.white} />
-                        <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>VÉRIFIER LE CODE</Text>
+                        <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>
+                          VÉRIFIER LE CODE
+                        </Text>
                       </>
                   }
                 </View>
               </TouchableOpacity>
             </View>
+
           ) : (
             /* ── RÉSULTAT ── */
             <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
 
               <View style={s.validBadge}>
-                <View style={s.validIcon}><Ionicons name="checkmark-circle" size={18} color={C.green} /></View>
-                <Text style={[s.validTxt, { fontFamily: C.font.sans }]}>CODE VALIDE — Transaction trouvée</Text>
+                <View style={s.validIcon}>
+                  <Ionicons name="checkmark-circle" size={18} color={C.green} />
+                </View>
+                <Text style={[s.validTxt, { fontFamily: C.font.sans }]}>
+                  CODE VALIDE — Transaction trouvée
+                </Text>
               </View>
 
-              {/* Montant — card blanche avec accent vert */}
+              {/* Montant à remettre */}
               <View style={s.amtCard}>
-                <Text style={[s.amtLbl, { fontFamily: C.font.sans }]}>MONTANT À REMETTRE AU CLIENT</Text>
-                <Text style={[s.amtVal, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
+                <Text style={[s.amtLbl, { fontFamily: C.font.sans }]}>
+                  MONTANT À REMETTRE AU CLIENT
+                </Text>
+                <Text
+                  style={[s.amtVal, { fontFamily: C.font.serif }]}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {fmt(displayAmount, displayCurrency)}
                 </Text>
                 <Text style={[s.amtCur, { fontFamily: C.font.mono }]}>{displayCurrency}</Text>
@@ -264,32 +327,73 @@ export default function AgentWithdrawScreen() {
                     <Ionicons name="swap-horizontal" size={12} color={C.inkSoft} />
                     <Text style={[s.rateTxt, { fontFamily: C.font.mono }]}>
                       {fmt(toNum(transaction.amount), transaction.currency)} {transaction.currency}
-                      {transaction.exchangeRate ? ` · Taux : ${Number(transaction.exchangeRate).toFixed(2)}` : ""}
+                      {transaction.exchangeRate
+                        ? ` · Taux : ${Number(transaction.exchangeRate).toFixed(2)}`
+                        : ""}
                     </Text>
                   </View>
                 )}
               </View>
 
+              {/* Bénéficiaire */}
               <View style={s.card}>
                 <View style={s.secRow}>
                   <View style={[s.secDot, { backgroundColor: C.blue }]} />
-                  <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>BÉNÉFICIAIRE · VÉRIFIER IDENTITÉ</Text>
+                  <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>
+                    BÉNÉFICIAIRE · VÉRIFIER IDENTITÉ
+                  </Text>
                 </View>
-                <InfoRow label="Nom complet" value={transaction.beneficiary?.fullName || transaction.senderName || "Non spécifié"} icon="person-outline" color={C.blue} />
-                <InfoRow label="Téléphone"   value={transaction.beneficiary?.phone || "—"} icon="call-outline" color={C.blue} />
+                <InfoRow
+                  label="Nom complet"
+                  value={transaction.beneficiary?.fullName || transaction.senderName || "Non spécifié"}
+                  icon="person-outline"
+                  color={C.blue}
+                />
+                <InfoRow
+                  label="Téléphone"
+                  value={transaction.beneficiary?.phone || "—"}
+                  icon="call-outline"
+                  color={C.blue}
+                />
               </View>
 
+              {/* Expéditeur */}
               <View style={s.card}>
                 <View style={s.secRow}>
                   <View style={[s.secDot, { backgroundColor: C.green }]} />
                   <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>EXPÉDITEUR</Text>
                 </View>
-                <InfoRow label="Nom" value={transaction.senderName || `${transaction.sender?.firstName ?? ""} ${transaction.sender?.lastName ?? ""}`.trim() || "—"} icon="person-circle-outline" color={C.green} />
-                <InfoRow label="Pays d'origine" value={transaction.originCountry || transaction.sender?.country || "—"} icon="flag-outline" color={C.green} />
-                <InfoRow label="Réf. Transaction" value={`TX-${code}`} icon="document-text-outline" color={C.inkSoft} />
-                <InfoRow label="Statut" value={transaction.status || "—"} icon="checkmark-circle-outline" color={C.blue} />
+                <InfoRow
+                  label="Nom"
+                  value={
+                    transaction.senderName ||
+                    `${transaction.sender?.firstName ?? ""} ${transaction.sender?.lastName ?? ""}`.trim() ||
+                    "—"
+                  }
+                  icon="person-circle-outline"
+                  color={C.green}
+                />
+                <InfoRow
+                  label="Pays d'origine"
+                  value={transaction.originCountry || transaction.sender?.country || "—"}
+                  icon="flag-outline"
+                  color={C.green}
+                />
+                <InfoRow
+                  label="Réf. Transaction"
+                  value={`TX-${code}`}
+                  icon="document-text-outline"
+                  color={C.inkSoft}
+                />
+                <InfoRow
+                  label="Statut"
+                  value={transaction.status || "—"}
+                  icon="checkmark-circle-outline"
+                  color={C.blue}
+                />
               </View>
 
+              {/* Avertissement */}
               <View style={s.warning}>
                 <Ionicons name="warning-outline" size={16} color={C.amber} />
                 <Text style={[s.warningTxt, { fontFamily: C.font.sans }]}>
@@ -297,7 +401,13 @@ export default function AgentWithdrawScreen() {
                 </Text>
               </View>
 
-              <TouchableOpacity style={[s.payBtn, paying && { opacity: 0.65 }]} onPress={handlePayOut} disabled={paying} activeOpacity={0.88}>
+              {/* CTA Payer */}
+              <TouchableOpacity
+                style={[s.payBtn, paying && { opacity: 0.65 }]}
+                onPress={handlePayOut}
+                disabled={paying}
+                activeOpacity={0.88}
+              >
                 <View style={s.payBtnInner}>
                   {paying
                     ? <ActivityIndicator color={C.white} />
@@ -312,8 +422,11 @@ export default function AgentWithdrawScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity style={s.cancelBtn} onPress={resetForm} disabled={paying}>
-                <Text style={[s.cancelTxt, { fontFamily: C.font.sans }]}>Annuler · Nouveau code</Text>
+                <Text style={[s.cancelTxt, { fontFamily: C.font.sans }]}>
+                  Annuler · Nouveau code
+                </Text>
               </TouchableOpacity>
+
             </Animated.View>
           )}
 
@@ -324,15 +437,17 @@ export default function AgentWithdrawScreen() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
+  safe: { flex: 1, backgroundColor: C.pageBg },
 
   hero: {
     backgroundColor: C.green,
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 48 : 16,
-    paddingBottom: 24, overflow: "hidden",
+    paddingTop:    Platform.OS === "android" ? 48 : 16,
+    paddingBottom: 24,
+    overflow: "hidden",
   },
   glow:      { position: "absolute", width: 160, height: 160, borderRadius: 80, backgroundColor: C.heroGlow, top: -60, right: -40 },
   heroRow:   { flexDirection: "row", alignItems: "center", gap: 14 },
@@ -341,17 +456,16 @@ const s = StyleSheet.create({
   heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600", marginTop: 2 },
   heroBadge: { width: 38, height: 38, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
 
-  scroll: { paddingHorizontal: 20, paddingTop: 20 },
-
+  scroll:    { paddingHorizontal: 20, paddingTop: 20 },
   centerBox: { alignItems: "center", paddingTop: 10 },
-  // ← fond #F5F5F5 neutre (était greenPale)
+
   qrBox: {
     width: 96, height: 96, borderRadius: 24, marginBottom: 20,
     backgroundColor: "#F5F5F5", borderWidth: 1.5, borderColor: C.cardBorder,
     justifyContent: "center", alignItems: "center",
   },
-  qrHint:   { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24, lineHeight: 19, paddingHorizontal: 10 },
-  // ← ombre neutre (shadowColor "#000")
+  qrHint: { color: C.inkSoft, fontSize: 13, fontWeight: "600", textAlign: "center", marginBottom: 24, lineHeight: 19, paddingHorizontal: 10 },
+
   codeWrap: {
     width: "100%", marginBottom: 16,
     backgroundColor: C.white, borderWidth: 2, borderColor: C.cardBorder,
@@ -380,7 +494,6 @@ const s = StyleSheet.create({
   validIcon:  { width: 28, height: 28, borderRadius: 9, backgroundColor: "#D1FAE5", justifyContent: "center", alignItems: "center" },
   validTxt:   { color: C.greenDark, fontSize: 11, fontWeight: "800", letterSpacing: 0.3, flex: 1 },
 
-  // ← blanc ombré avec accent vert (était greenPale sans ombre)
   amtCard: {
     backgroundColor: C.white,
     borderRadius: C.r.xl, padding: 22, marginBottom: 14,
@@ -390,13 +503,12 @@ const s = StyleSheet.create({
       android: { elevation: 4 },
     }),
   },
-  amtLbl:   { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
-  amtVal:   { color: C.ink, fontSize: 38, fontWeight: "900", letterSpacing: -0.5 },
-  amtCur:   { color: C.green, fontSize: 12, fontWeight: "900", marginTop: 4, letterSpacing: 1 },
-  rateRow:  { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
-  rateTxt:  { color: C.inkSoft, fontSize: 11, fontWeight: "700" },
+  amtLbl:  { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
+  amtVal:  { color: C.ink, fontSize: 38, fontWeight: "900", letterSpacing: -0.5 },
+  amtCur:  { color: C.green, fontSize: 12, fontWeight: "900", marginTop: 4, letterSpacing: 1 },
+  rateRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  rateTxt: { color: C.inkSoft, fontSize: 11, fontWeight: "700" },
 
-  // ← ombre neutre (shadowColor "#000")
   card: {
     backgroundColor: C.white, borderRadius: C.r.lg,
     padding: 16, marginBottom: 12,
@@ -413,7 +525,7 @@ const s = StyleSheet.create({
   warning:    { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: C.amberBg, borderRadius: C.r.md, padding: 14, borderWidth: 1, borderColor: C.amberBorder, marginBottom: 16 },
   warningTxt: { flex: 1, color: "#92400E", fontSize: 12, fontWeight: "600", lineHeight: 17 },
 
-  payBtn:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
+  payBtn: { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
   payBtnInner: {
     backgroundColor: C.green, flexDirection: "row", alignItems: "center",
     justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md,
@@ -423,7 +535,6 @@ const s = StyleSheet.create({
     }),
   },
   payBtnTxt: { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
-
   cancelBtn: { alignItems: "center", paddingVertical: 14 },
-  cancelTxt: { color: C.inkSoft, fontWeight: "800", fontSize: 14 },
+  cancelTxt: { color: C.inkSoft, fontWeight: "700", fontSize: 14 },
 });

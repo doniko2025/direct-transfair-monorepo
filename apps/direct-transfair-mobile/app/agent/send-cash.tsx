@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/agent/send-cash.tsx
 // =========================================================
-// AGENT SEND CASH (GUICHET) v7.0 — Direct Transf'air
+// AGENT SEND CASH (GUICHET) v7.2 — Direct Transf'air
 // ✅ v5.0 : Envoi espèces, frais auto, résumé, code retrait
 // ✅ v6.0 : Bleu #2563EB, arc concave, sélecteurs indicatif
 // ✅ v7.0 :
@@ -8,6 +8,13 @@
 //    - paddingTop Android 44 → 32
 //    - SuccessModal remplacé par navigation vers reçu imprimable
 //    - user extrait de useAuth pour alimenter agencyName/agentName
+// ✅ v7.1 :
+//    - FIX : taux de frais chargé dynamiquement (suppression du 1,5% hardcodé)
+// ✅ v7.2 :
+//    - FIX : getCommissionRules() → GET /commissions/fees
+//      → endpoint accessible à tous les rôles (AGENT inclus)
+//      → getCommissionRules() requiert COMPANY_ADMIN → 403 pour l'agent
+//      → fallback silencieux à 1,5% si réseau inaccessible
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -203,7 +210,7 @@ const sh = StyleSheet.create({
 // ─── Main ───────────────────────────────────────────────
 export default function AgentSendCashScreen() {
   const router                  = useRouter();
-  const { refreshUser, user }   = useAuth(); // ✅ v7 : user pour le reçu
+  const { refreshUser, user }   = useAuth();
 
   const [senderFirstName,   setSenderFirstName]   = useState("");
   const [senderLastName,    setSenderLastName]    = useState("");
@@ -220,14 +227,39 @@ export default function AgentSendCashScreen() {
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
 
+  // ✅ v7.1 FIX : taux dynamique (défaut 1,5% si API inaccessible ou 403 agent)
+  const [feeRate,  setFeeRate]  = useState(0.015);
+  const [feeLabel, setFeeLabel] = useState("1,5");
+
   const [showSenderModal,   setShowSenderModal]   = useState(false);
   const [showReceiverModal, setShowReceiverModal] = useState(false);
 
+  // ✅ v7.2 FIX : GET /commissions/fees (accessible AGENT, pas seulement COMPANY_ADMIN)
+  // getCommissionRules() → GET /commissions → rôle COMPANY_ADMIN requis → 403 pour agent
+  // GET /commissions/fees → endpoint sans restriction de rôle (commissions.controller.ts v4.2)
+  useEffect(() => {
+    (api.http as any).get("/commissions/fees")
+      .then((res: any) => {
+        const list: any[] = Array.isArray(res.data) ? res.data : [];
+        const r = list.find((c: any) => c.payoutMethod === "CASH_PICKUP");
+        if (r) {
+          const raw = Number(r.feeRate ?? 1.5);
+          setFeeRate(raw / 100);
+          setFeeLabel(raw.toFixed(1).replace(".", ","));
+        }
+      })
+      .catch(() => {
+        // Fallback silencieux → 1,5% par défaut
+      });
+  }, []);
+
+  // ✅ v7.1 FIX : dépend de feeRate (dynamique) au lieu du 0.015 hardcodé
   useEffect(() => {
     const val = parseFloat(amount) || 0;
-    const fee = Math.ceil(val * 0.015);
-    setFees(fee); setTotal(val + fee);
-  }, [amount]);
+    const fee = Math.ceil(val * feeRate);
+    setFees(fee);
+    setTotal(val + fee);
+  }, [amount, feeRate]);
 
   const canSubmit =
     senderFirstName.trim()   && senderLastName.trim()   && senderPhone.trim() &&
@@ -421,46 +453,45 @@ export default function AgentSendCashScreen() {
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(amtNum)} XOF</Text>
                 </View>
                 <View style={s.feesRow}>
-                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais (1,5 %)</Text>
+                  {/* ✅ v7.1 FIX : label dynamique au lieu de "1,5 %" hardcodé */}
+                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais ({feeLabel} %)</Text>
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(fees)} XOF</Text>
                 </View>
                 <View style={[s.feesRow, s.totalRow]}>
                   <Text style={[s.totalLbl, { fontFamily: C.font.sans }]}>Total à débiter</Text>
-                  <Text style={[s.totalVal, { fontFamily: C.font.serif }]}>{fmt(total)} XOF</Text>
+                  <Text style={[s.totalVal, { fontFamily: C.font.mono }]}>{fmt(total)} XOF</Text>
                 </View>
               </View>
             )}
           </View>
 
-          {/* ── CTA Envoi ── */}
+          {/* ── CTA ── */}
           <TouchableOpacity
-            style={[s.cta, (!canSubmit || loading) && { opacity: 0.4 }]}
+            style={[s.cta, (!canSubmit || loading) && { opacity: 0.6 }]}
             onPress={handleSend}
             disabled={!canSubmit || loading}
-            activeOpacity={0.88}
+            activeOpacity={0.85}
           >
             <View style={s.ctaInner}>
               {loading
-                ? <ActivityIndicator color={C.white} />
+                ? <ActivityIndicator color={C.white} size="small" />
                 : <>
-                    <Ionicons name="paper-plane-outline" size={18} color={C.white} />
+                    <Ionicons name="paper-plane-outline" size={16} color={C.white} />
                     <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>
-                      ENVOYER{amtNum > 0 ? ` — ${fmt(total)} XOF` : ""}
+                      ENVOYER — {fmt(total)} XOF
                     </Text>
                   </>
               }
             </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={s.cancelBtn} onPress={() => router.back()} disabled={loading}>
+          <TouchableOpacity style={s.cancelBtn} onPress={() => router.back()}>
             <Text style={[s.cancelTxt, { fontFamily: C.font.sans }]}>Annuler</Text>
           </TouchableOpacity>
 
-          <View style={{ height: 80 }} />
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Modals indicatifs */}
       <PickerModal
         visible={showSenderModal}
         onClose={() => setShowSenderModal(false)}
@@ -471,7 +502,7 @@ export default function AgentSendCashScreen() {
       <PickerModal
         visible={showReceiverModal}
         onClose={() => setShowReceiverModal(false)}
-        title="Pays bénéficiaire"
+        title="Pays de destination"
         data={countriesList}
         onSelect={setReceiverCountry}
       />
@@ -487,7 +518,7 @@ const s = StyleSheet.create({
   hero: {
     backgroundColor: AGENT_BLUE,
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 32 : 6,   // ✅ v7 : réduit (44→32)
+    paddingTop:    Platform.OS === "android" ? 32 : 6,
     paddingBottom: 16,
     overflow:      "hidden",
   },
