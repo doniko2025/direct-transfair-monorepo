@@ -1,11 +1,25 @@
 // apps/backend/src/commissions/commissions.service.ts
 // =========================================================
-// COMMISSIONS SERVICE v4.3
+// COMMISSIONS SERVICE v4.4
 // ✅ v4.2 : withdrawal include processedBy + agency
 // ✅ v4.3 :
 //    - getFeeRate()      : lit le taux dynamique par méthode de paiement
 //    - upsertFeeConfig() : sauvegarde le taux configuré par l'admin
-//    → Fin du taux hardcodé 0.015 dans transactions.service.ts
+// ✅ v4.4 : FIX commission affichée = 0 malgré versement réel
+//
+//   PROBLÈME :
+//     getHistory() calculait la commission sur tx.fees EN DEVISE SOURCE
+//     (ex: 1 XOF). Pour une transaction XOF→GNF :
+//       senderCom = (1 XOF * 20%) = 0.20 XOF → arrondi à 0
+//       payerCom  = (1 XOF * 40%) = 0.40 XOF → arrondi à 0
+//     Affiché : +0 XOF ❌
+//     Alors que le vrai versement (withdrawals.service.ts) était en GNF :
+//       feesConverted ≈ 14.4 GNF → payerCom = 5.76 GNF ≈ 6 GNF ✅
+//
+//   CORRECTIF :
+//     Conversion des frais en devise payout via tx.exchangeRate (déjà
+//     stocké sur la transaction) avant tout calcul de commission.
+//     Si pas de conversion nécessaire (même devise), inchangé.
 // =========================================================
 
 import { BadRequestException, Injectable } from '@nestjs/common';
@@ -24,10 +38,7 @@ const DEFAULT_PAYER_SHARE    = 40;
 const DEFAULT_SENDER_SHARE   = 20;
 const DEFAULT_PLATFORM_SHARE = 40;
 
-// ── Mapping payoutMethod → slot de devise (contournement contrainte unique) ──
-// On utilise la colonne currency comme discriminant pour que chaque
-// fee config ait un (clientId, WALLET, SUBSIDIARY, currency) unique.
-// Aucune migration de contrainte nécessaire.
+// ── Mapping payoutMethod → slot de devise ─────────────────
 const PAYOUT_CURRENCY_SLOT: Record<string, CurrencyCode> = {
   CASH_PICKUP:   CurrencyCode.XOF,
   BANK_DEPOSIT:  CurrencyCode.EUR,
@@ -43,34 +54,18 @@ export class CommissionsService {
   // FEE CONFIG — lire / écrire un taux de frais par méthode
   // ========================================================
 
-  /**
-   * Retourne le taux de frais configuré par l'admin pour une méthode de paiement.
-   * Appelé par TransactionsService.create() à chaque création de transaction.
-   *
-   * @param clientId  ID de la société cliente
-   * @param payoutMethod  ex: "CASH_PICKUP", "BANK_DEPOSIT", "MOBILE_MONEY", "IBAN_TRANSFER"
-   * @returns { rate: number, fixedFee: number }
-   *   rate     = pourcentage (ex: 1.5 pour 1.5%)
-   *   fixedFee = montant fixe en devise locale (ex: 200 pour 200 XOF)
-   */
   async getFeeRate(
     clientId: number,
     payoutMethod: string,
   ): Promise<{ rate: number; fixedFee: number }> {
-    // Wallet/MobileMoney toujours gratuit
     if (!payoutMethod || payoutMethod === 'WALLET' || payoutMethod === 'MOBILE_MONEY') {
       return { rate: 0, fixedFee: 0 };
     }
 
     try {
       const config = await this.prisma.commissionConfig.findFirst({
-        where: {
-          clientId,
-          payoutMethod,
-          isActive: true,
-        },
+        where: { clientId, payoutMethod, isActive: true },
       });
-
       if (config) {
         return {
           rate:     (config as any).feeRate   ?? 1.5,
@@ -81,14 +76,9 @@ export class CommissionsService {
       // Colonne pas encore migrée → fallback
     }
 
-    // Fallback : 1.5% si aucune config admin en base
     return { rate: 1.5, fixedFee: 0 };
   }
 
-  /**
-   * Crée ou met à jour la config de frais pour une méthode de paiement.
-   * Appelé depuis CommissionsController.updateRule() quand dto.payoutMethod est présent.
-   */
   async upsertFeeConfig(
     clientId: number,
     payoutMethod: string,
@@ -97,7 +87,6 @@ export class CommissionsService {
   ) {
     const currency = PAYOUT_CURRENCY_SLOT[payoutMethod] ?? null;
 
-    // Chercher une config existante pour ce payoutMethod
     const existing = await this.prisma.commissionConfig.findFirst({
       where: { clientId, payoutMethod },
     });
@@ -106,13 +95,13 @@ export class CommissionsService {
       return this.prisma.commissionConfig.update({
         where: { id: existing.id },
         data: {
+          isActive:      true,
           senderShare:   feeRate,
           platformShare: Math.max(0, 100 - feeRate),
           description:   `FEE:${payoutMethod}`,
-          // Colonnes ajoutées par la migration
           ...(Object.fromEntries([
-            ['feeRate',  feeRate],
-            ['fixedFee', fixedFee],
+            ['feeRate',      feeRate],
+            ['fixedFee',     fixedFee],
             ['payoutMethod', payoutMethod],
           ])),
         },
@@ -121,6 +110,7 @@ export class CommissionsService {
 
     return this.prisma.commissionConfig.create({
       data: {
+        isActive:      true,
         clientId,
         sourceType:    CommissionSourceType.WALLET,
         destType:      CommissionDestType.SUBSIDIARY,
@@ -129,10 +119,9 @@ export class CommissionsService {
         payerShare:    0,
         platformShare: Math.max(0, 100 - feeRate),
         description:   `FEE:${payoutMethod}`,
-        // Colonnes ajoutées par la migration
         ...(Object.fromEntries([
-          ['feeRate',  feeRate],
-          ['fixedFee', fixedFee],
+          ['feeRate',      feeRate],
+          ['fixedFee',     fixedFee],
           ['payoutMethod', payoutMethod],
         ])),
       },
@@ -140,12 +129,12 @@ export class CommissionsService {
   }
 
   // ========================================================
-  // RÈGLES de répartition de commission (existant)
+  // RÈGLES de répartition (split rules)
   // ========================================================
 
   async getClientRules(clientId: number) {
     return this.prisma.commissionConfig.findMany({
-      where: { clientId },
+      where:   { clientId },
       include: { tiers: true },
       orderBy: [{ sourceType: 'asc' }, { destType: 'asc' }],
     });
@@ -162,7 +151,7 @@ export class CommissionsService {
     if (existing) {
       return this.prisma.commissionConfig.update({
         where: { id: existing.id },
-        data: { senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
+        data:  { senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
       });
     }
     return this.prisma.commissionConfig.create({
@@ -171,7 +160,7 @@ export class CommissionsService {
   }
 
   // ========================================================
-  // HISTORIQUE PAR AGENCE (identique v4.2)
+  // HISTORIQUE PAR AGENCE
   // ========================================================
 
   async getHistory(clientId: number, agencyId: string, period: string) {
@@ -180,10 +169,10 @@ export class CommissionsService {
     const transactions = await this.prisma.transaction.findMany({
       where: {
         clientId,
-        status: { in: [TransactionStatus.VALIDATED, TransactionStatus.PAID] },
+        status:    { in: [TransactionStatus.VALIDATED, TransactionStatus.PAID] },
         createdAt: { gte: startDate },
         OR: [
-          { sender: { agencyId } },
+          { sender:     { agencyId } },
           { withdrawal: { processedBy: { agencyId } } },
         ],
       },
@@ -222,30 +211,51 @@ export class CommissionsService {
           : CommissionDestType.SUBSIDIARY;
       }
 
-      // Exclure les fee configs de la recherche de règle de répartition
+      // Exclure les fee configs — on veut la split rule uniquement
       const rule = rules.find((r) =>
         r.sourceType === sourceT &&
         r.destType   === destT &&
-        !(r as any).payoutMethod, // ← ignorer les fee configs
+        !(r as any).payoutMethod,
       );
+
+      // ── Frais en devise source ────────────────────────
       const fees = Number(tx.fees);
 
+      // ✅ FIX v4.4 : conversion des frais en devise payout (targetCurrency)
+      //
+      // AVANT : commission = fees (XOF) * share% → 1 XOF * 40% = 0.4 → affiché 0
+      // APRÈS : feesConverted = fees * exchangeRate → 1 XOF * 14.4 = 14.4 GNF
+      //         commission = 14.4 GNF * 40% = 5.76 GNF ✅
+      //
+      // tx.exchangeRate est le taux source→payout stocké à la création
+      // de la transaction (ex: XOF→GNF = 14.4000).
+      // Si la devise source = devise payout → pas de conversion.
+      const payoutCurrency: string = (tx as any).targetCurrency ?? tx.currency;
+      let feesConverted = fees;
+
+      if (fees > 0 && tx.currency !== payoutCurrency && (tx as any).exchangeRate) {
+        feesConverted = fees * Number((tx as any).exchangeRate);
+      }
+
+      // ── Calcul des parts sur les frais convertis ──────
       const senderShare = rule ? rule.senderShare : DEFAULT_SENDER_SHARE;
-      const senderCom   = (fees * senderShare) / 100;
+      const senderCom   = (feesConverted * senderShare) / 100;
 
-      const payerShare  = rule ? rule.payerShare : DEFAULT_PAYER_SHARE;
-      const txStatus    = tx.status as string;
-      const payerCom    =
+      const payerShare = rule ? rule.payerShare : DEFAULT_PAYER_SHARE;
+      const txStatus   = tx.status as string;
+      const payerCom   =
         txStatus === TransactionStatus.PAID || txStatus === TransactionStatus.VALIDATED
-          ? (fees * payerShare) / 100 : 0;
+          ? (feesConverted * payerShare) / 100
+          : 0;
 
+      // ── Attribution à l'agence ────────────────────────
       let myCommission = 0;
 
       if (tx.sender?.agencyId === agencyId) {
         myCommission += senderCom;
       }
 
-      const processedById      = (tx.withdrawal as any)?.processedById;
+      const processedById       = (tx.withdrawal as any)?.processedById;
       const processedByAgencyId = (tx.withdrawal as any)?.processedBy?.agencyId;
       const isProcessedByThisAgency =
         processedByAgencyId === agencyId ||
@@ -255,28 +265,34 @@ export class CommissionsService {
         myCommission += payerCom;
       }
 
-      if (myCommission === 0 && fees > 0) {
-        if (isProcessedByThisAgency) myCommission = (fees * DEFAULT_PAYER_SHARE) / 100;
-        else if (tx.sender?.agencyId === agencyId) myCommission = (fees * DEFAULT_SENDER_SHARE) / 100;
+      // Fallback si aucune règle trouvée mais frais présents
+      if (myCommission === 0 && feesConverted > 0) {
+        if (isProcessedByThisAgency) {
+          myCommission = (feesConverted * DEFAULT_PAYER_SHARE) / 100;
+        } else if (tx.sender?.agencyId === agencyId) {
+          myCommission = (feesConverted * DEFAULT_SENDER_SHARE) / 100;
+        }
       }
 
       const origin = tx.sender?.agency?.name ?? processedByAgency?.name ?? 'Client Wallet';
 
       return {
-        id:               tx.id,
-        createdAt:        tx.createdAt,
+        id:                 tx.id,
+        createdAt:          tx.createdAt,
         origin,
-        amount:           Number(tx.amount),
-        currency:         tx.currency,
-        fees,
+        amount:             Number(tx.amount),
+        currency:           tx.currency,           // devise source (pour le volume)
+        fees,                                       // frais en devise source
+        feesConverted,                              // frais en devise payout (pour info)
+        commissionCurrency: payoutCurrency,         // devise de la commission
         myCommission,
-        agencyCommission: myCommission,
+        agencyCommission:   myCommission,
       };
     });
   }
 
   // ========================================================
-  // STATS AGENT (identique v4.2)
+  // STATS AGENT
   // ========================================================
 
   async getMyStats(clientId: number, agencyId: string, period: string) {
