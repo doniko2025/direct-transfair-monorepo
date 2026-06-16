@@ -1,145 +1,141 @@
 // apps/direct-transfair-mobile/app/agent/receipt.tsx
 // =========================================================
-// REÇU AGENT v1.0 — Direct Transf'air
-// ✅ Types couverts : RETRAIT · DÉPÔT · ENVOI ESPÈCES
-// ✅ Prévisualisation native React Native (style Sendwave)
-// ✅ Impression PDF via expo-print
-// ✅ Partage (WhatsApp, email…) via expo-sharing
-// ✅ HTML professionnel avec signatures, branding, mentions légales
-//
-// Prérequis : npx expo install expo-print expo-sharing
-//
-// Navigation : router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`)
-// Retour     : router.back() ou router.replace("/(tabs)")
+// REÇU AGENT v2.0 — Direct Transf'air
+// ✅ v1.0 : types RETRAIT / DÉPÔT / ENVOI, PDF, partage
+// ✅ v2.0 : Refonte complète style Sendwave
+//   - Fond blanc pur, zéro héro bleu
+//   - Montant large centré en haut (sans couleur de fond)
+//   - Sections en lignes compactes séparées par de fines lignes
+//   - Code de retrait dans un cadre sobre gris
+//   - Lignes de signature simplifiées
+//   - Boutons d'action modernes en bas (sticky)
+//   - Le PDF HTML reste inchangé (branding complet)
 // =========================================================
 
 import React, { useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, SafeAreaView, StatusBar, Platform, Alert,
-  Dimensions,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Svg, { Path, Rect } from "react-native-svg";
 import * as Print   from "expo-print";
 import * as Sharing from "expo-sharing";
 
-const { width: SW } = Dimensions.get("window");
-
-// ─── Types ──────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────
 export type ReceiptType = "RETRAIT" | "DEPOT" | "ENVOI";
 
 export interface ReceiptData {
-  type:             ReceiptType;
-  reference:        string;
-  date:             string;          // ISO string
-
-  // Montants
-  amount:           number;
-  currency:         string;
-  fees?:            number;
-  totalAmount?:     number;
-  receivedAmount?:  number;          // en devise cible (retrait / envoi)
-  targetCurrency?:  string;
-  exchangeRate?:    number;
-
-  // Bénéficiaire / Client
-  beneficiaryName:     string;
-  beneficiaryPhone?:   string;
+  type:              ReceiptType;
+  reference:         string;
+  date:              string;
+  amount:            number;
+  currency:          string;
+  fees?:             number;
+  totalAmount?:      number;
+  receivedAmount?:   number;
+  targetCurrency?:   string;
+  exchangeRate?:     number;
+  beneficiaryName:   string;
+  beneficiaryPhone?: string;
   beneficiaryCountry?: string;
-
-  // Expéditeur
-  senderName?:     string;
-  senderPhone?:    string;
-  senderCountry?:  string;
-
-  // Code de retrait
-  code?:           string;
-
-  // Agence
-  agencyName?:     string;
-  agentName?:      string;
+  senderName?:       string;
+  senderPhone?:      string;
+  senderCountry?:    string;
+  code?:             string;
+  agencyName?:       string;
+  agentName?:        string;
 }
 
-// ─── Design ─────────────────────────────────────────────
-const BLUE  = "#2563EB";
-const DARK  = "#1D4ED8";
-const CONCAVE_H = 40;
-
-const C = {
-  blue:        BLUE,
-  dark:        DARK,
-  blueBg:      "#EFF6FF",
-  blueBorder:  "#DBEAFE",
-  white:       "#FFFFFF",
-  pageBg:      "#EFF6FF",
-  cardBorder:  "#DBEAFE",
-  ink:         "#0F172A",
-  inkMid:      "#374151",
-  inkSoft:     "#6B7280",
-  green:       "#10B981", greenBg: "#ECFDF5", greenBorder: "#A7F3D0", greenDark: "#065F46",
-  purple:      "#8B5CF6", purpleBg: "#F5F3FF", purpleBorder: "#DDD6FE",
-  r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
+// ─── Design tokens — reçu minimaliste ────────────────────
+const T = {
+  bg:         "#FFFFFF",
+  surface:    "#FFFFFF",
+  ink:        "#0F172A",
+  inkSub:     "#475569",
+  inkMuted:   "#94A3B8",
+  divider:    "#F1F5F9",
+  dividerMd:  "#E2E8F0",
+  codeBg:     "#F8FAFF",
+  codeBorder: "#CBD5E1",
+  green:      "#059669",
+  greenBg:    "#DCFCE7",
+  greenText:  "#065F46",
+  blue:       "#2563EB",
   font: {
-    serif:  Platform.select({ ios: "Georgia",     android: "serif",             default: "serif" }),
-    sans:   Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:   Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace" }),
+    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
 
-// ─── Helpers ────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
   catch { return n.toFixed(d); }
 }
 
-function fmtDate(iso: string): { short: string; full: string } {
+function fmtDate(iso: string): { short: string; full: string; day: string; time: string } {
   try {
     const d = new Date(iso);
     return {
-      short: d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
-        + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      full: d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
-        + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      short: d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      full:  d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long",    year: "numeric" }) + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      day:   d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long",    year: "numeric" }),
+      time:  d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
     };
-  } catch { return { short: iso, full: iso }; }
+  } catch { return { short: iso, full: iso, day: iso, time: "" }; }
 }
 
 function typeInfo(type: ReceiptType) {
   switch (type) {
-    case "RETRAIT": return { label: "RETRAIT ESPÈCES",  icon: "arrow-up-circle",    color: "#EF4444", bg: "#FEF2F2", amtLabel: "MONTANT REMIS AU CLIENT" };
-    case "DEPOT":   return { label: "DÉPÔT CLIENT",     icon: "arrow-down-circle",  color: BLUE,      bg: "#EFF6FF", amtLabel: "MONTANT CRÉDITÉ" };
-    case "ENVOI":   return { label: "ENVOI ESPÈCES",    icon: "paper-plane",        color: "#8B5CF6", bg: "#F5F3FF", amtLabel: "MONTANT ENVOYÉ" };
+    case "RETRAIT": return { label: "Retrait espèces",  icon: "arrow-up-circle-outline",   amtLabel: "Montant remis" };
+    case "DEPOT":   return { label: "Dépôt client",     icon: "arrow-down-circle-outline",  amtLabel: "Montant crédité" };
+    case "ENVOI":   return { label: "Envoi espèces",    icon: "paper-plane-outline",        amtLabel: "Montant envoyé" };
   }
 }
 
-// ─── Arc concave ─────────────────────────────────────────
-function HeroConcave() {
-  const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
-  const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
+// ─── Composants UI minimalistes ───────────────────────────
+
+/** Ligne label / valeur compacte */
+function Row({ label, value, mono, bold, top }: {
+  label: string; value: string; mono?: boolean; bold?: boolean; top?: boolean;
+}) {
   return (
-    <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
-      <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
-      <Path d={d} fill={BLUE} />
-      <Path d={bd} fill="none" stroke="rgba(37,99,235,0.22)" strokeWidth={1.5} />
-    </Svg>
+    <View style={[ro.row, top && { borderTopWidth: 1, borderTopColor: T.divider, marginTop: 0, paddingTop: 12 }]}>
+      <Text style={[ro.label, { fontFamily: T.font.sans }]}>{label}</Text>
+      <Text style={[ro.value, { fontFamily: mono ? T.font.mono : T.font.sans }, bold && ro.bold]}>
+        {value}
+      </Text>
+    </View>
   );
 }
+const ro = StyleSheet.create({
+  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: T.divider },
+  label: { fontSize: 13, color: T.inkSub, fontWeight: "500", flex: 1 },
+  value: { fontSize: 13, color: T.ink,    fontWeight: "600", textAlign: "right", flex: 2 },
+  bold:  { fontWeight: "800", color: T.ink, fontSize: 14 },
+});
 
-// ─── HTML Receipt Generator ──────────────────────────────
+/** Titre de section */
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <Text style={[st.txt, { fontFamily: T.font.sans }]}>{children}</Text>
+  );
+}
+const st = StyleSheet.create({
+  txt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingTop: 18, paddingBottom: 4 },
+});
+
+// ─── HTML receipt (inchangé — branding complet) ───────────
 function buildHtml(d: ReceiptData): string {
   const ti   = typeInfo(d.type);
   const dt   = fmtDate(d.date);
-  const isXOFLike = d.currency === "XOF" || d.currency === "GNF";
-
-  const mainAmt  = d.type === "RETRAIT" && d.receivedAmount
-    ? fmt(d.receivedAmount, d.targetCurrency ?? d.currency)
-    : fmt(d.amount, d.currency);
+  const mainAmt  = d.type === "RETRAIT" && d.receivedAmount ? fmt(d.receivedAmount, d.targetCurrency ?? d.currency) : fmt(d.amount, d.currency);
   const mainCurr = d.type === "RETRAIT" && d.targetCurrency ? d.targetCurrency : d.currency;
+  const hasFees  = d.fees !== undefined && d.type !== "DEPOT";
 
-  // Bloc code de retrait
   const codeHtml = d.code ? `
   <div class="code-box">
     <div class="code-label">CODE DE RETRAIT</div>
@@ -147,25 +143,11 @@ function buildHtml(d: ReceiptData): string {
     <div class="code-tip">À conserver — justificatif de la transaction</div>
   </div>` : "";
 
-  // Lignes montants
-  const hasFees = d.fees !== undefined && d.type !== "DEPOT";
   const amtHtml = hasFees ? `
-  <div class="amt-row">
-    <span class="amt-lbl">Montant envoyé</span>
-    <span class="amt-val">${fmt(d.amount, d.currency)} ${d.currency}</span>
-  </div>
-  <div class="amt-row">
-    <span class="amt-lbl">Frais de service</span>
-    <span class="amt-val">${fmt(d.fees ?? 0, d.currency)} ${d.currency}</span>
-  </div>
-  <div class="amt-row total">
-    <span class="amt-lbl bold">Total débité</span>
-    <span class="amt-val blue">${fmt(d.totalAmount ?? d.amount, d.currency)} ${d.currency}</span>
-  </div>` : `
-  <div class="amt-row">
-    <span class="amt-lbl">Montant</span>
-    <span class="amt-val blue">${fmt(d.amount, d.currency)} ${d.currency}</span>
-  </div>`;
+  <div class="amt-row"><span class="amt-lbl">Montant envoyé</span><span class="amt-val">${fmt(d.amount, d.currency)} ${d.currency}</span></div>
+  <div class="amt-row"><span class="amt-lbl">Frais de service</span><span class="amt-val">${fmt(d.fees ?? 0, d.currency)} ${d.currency}</span></div>
+  <div class="amt-row total"><span class="amt-lbl bold">Total débité</span><span class="amt-val blue">${fmt(d.totalAmount ?? d.amount, d.currency)} ${d.currency}</span></div>`
+  : `<div class="amt-row"><span class="amt-lbl">Montant</span><span class="amt-val blue">${fmt(d.amount, d.currency)} ${d.currency}</span></div>`;
 
   const receivedHtml = d.receivedAmount && d.targetCurrency && d.targetCurrency !== d.currency ? `
   <div class="received-row">
@@ -177,12 +159,8 @@ function buildHtml(d: ReceiptData): string {
   </div>` : "";
 
   const rateHtml = d.exchangeRate ? `
-  <div class="amt-row">
-    <span class="amt-lbl">Taux de change</span>
-    <span class="amt-val mono">1 ${d.currency} = ${Number(d.exchangeRate).toFixed(isXOFLike ? 0 : 4)} ${d.targetCurrency ?? ""}</span>
-  </div>` : "";
+  <div class="amt-row"><span class="amt-lbl">Taux de change</span><span class="amt-val mono">1 ${d.currency} = ${Number(d.exchangeRate).toFixed(2)} ${d.targetCurrency ?? ""}</span></div>` : "";
 
-  // Section expéditeur
   const senderHtml = d.senderName ? `
   <div class="section">
     <div class="section-title purple">Expéditeur</div>
@@ -191,17 +169,12 @@ function buildHtml(d: ReceiptData): string {
     ${d.senderCountry ? `<div class="field-row"><span class="f-lbl">Pays</span><span class="f-val">${d.senderCountry}</span></div>` : ""}
   </div>` : "";
 
-  return `<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+  return `<!DOCTYPE html><html lang="fr"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Reçu Direct Transf'air — ${d.reference}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto;background:#fff;color:#0F172A}
-
-/* ── Header ── */
 .header{background:linear-gradient(140deg,#2563EB 0%,#1D4ED8 100%);padding:24px 22px 36px;text-align:center;position:relative}
 .header::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:22px;background:#fff;border-radius:50% 50% 0 0/22px 22px 0 0}
 .logo{color:#fff;font-size:17px;font-weight:900;letter-spacing:3px;text-transform:uppercase;margin-bottom:2px}
@@ -210,8 +183,6 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .amt-label{font-size:8px;letter-spacing:1.5px;color:rgba(255,255,255,0.6);text-transform:uppercase;margin-bottom:5px}
 .amt-big{font-size:38px;font-weight:900;color:#fff;letter-spacing:-1px;line-height:1}
 .amt-curr{font-size:14px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:2px;margin-top:4px}
-
-/* ── Body ── */
 .body{padding:20px 20px 0}
 .meta-row{display:flex;justify-content:space-between;align-items:center;background:#F8FAFF;border:1px solid #DBEAFE;border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .meta-lbl{font-size:8px;font-weight:700;color:#9CA3AF;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
@@ -219,14 +190,10 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .meta-val.sm{font-size:10px}
 .status-row{text-align:center;margin-bottom:14px}
 .status-badge{display:inline-block;background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;padding:5px 18px;border-radius:20px;font-size:10px;font-weight:900;letter-spacing:0.5px}
-
-/* ── Code ── */
-.code-box{background:#EFF6FF;border:2px solid #2563EB;border-radius:12px;padding:18px;text-align:center;margin-bottom:16px}
+.code-box{background:#F8FAFF;border:2px solid #2563EB;border-radius:12px;padding:18px;text-align:center;margin-bottom:16px}
 .code-label{font-size:8px;font-weight:900;color:#2563EB;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
 .code-value{font-size:28px;font-weight:900;color:#1D4ED8;letter-spacing:6px;font-family:monospace;margin-bottom:6px}
 .code-tip{font-size:9px;color:#6B7280;font-style:italic}
-
-/* ── Section ── */
 .section{margin-bottom:16px}
 .section-title{font-size:8px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#2563EB;border-bottom:1.5px solid #2563EB;padding-bottom:5px;margin-bottom:10px}
 .section-title.purple{color:#8B5CF6;border-bottom-color:#8B5CF6}
@@ -235,8 +202,6 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .f-lbl{font-size:10px;color:#6B7280;font-weight:600;flex-shrink:0;margin-right:8px}
 .f-val{font-size:11px;color:#0F172A;font-weight:700;text-align:right}
 .f-val.mono{font-family:monospace}
-
-/* ── Amounts ── */
 .amounts-card{background:#F8FAFF;border:1px solid #DBEAFE;border-radius:10px;padding:14px;margin-bottom:14px}
 .amt-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .amt-row:last-child{margin-bottom:0}
@@ -250,145 +215,62 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .received-icon{font-size:16px}
 .received-lbl{font-size:8px;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
 .received-amt{font-size:15px;font-weight:900;color:#065F46;font-family:monospace}
-
-/* ── Signatures ── */
 .sig-area{display:flex;justify-content:space-between;margin:24px 0 16px}
 .sig-box{width:44%;text-align:center}
 .sig-line{border-top:1px solid #0F172A;margin-top:36px;margin-bottom:6px}
 .sig-lbl{font-size:9px;color:#6B7280;font-weight:600}
-
-/* ── Footer ── */
 .footer{background:#F8FAFF;border-top:2px solid #DBEAFE;padding:16px 20px}
 .f-logo{font-size:12px;font-weight:900;color:#2563EB;letter-spacing:2px;margin-bottom:5px}
 .f-legal{font-size:8px;color:#9CA3AF;line-height:1.6;margin-bottom:10px}
 .f-ref{font-size:8px;color:#9CA3AF;text-align:center;border-top:1px dashed #DBEAFE;padding-top:8px;font-style:italic}
-@media print{.no-print{display:none}}
-</style>
-</head>
-<body>
-
+</style></head><body>
 <div class="header">
   <div class="logo">DIRECT TRANSF'AIR</div>
   <div class="logo-sub">Transfert d'argent international</div>
-  <div class="type-badge">${ti.label}</div>
-  <div class="amt-label">${ti.amtLabel}</div>
+  <div class="type-badge">${ti.label.toUpperCase()}</div>
+  <div class="amt-label">${ti.amtLabel.toUpperCase()}</div>
   <div class="amt-big">${mainAmt}</div>
   <div class="amt-curr">${mainCurr}</div>
 </div>
-
 <div class="body">
-
   <div class="meta-row">
-    <div>
-      <div class="meta-lbl">Référence</div>
-      <div class="meta-val">${d.reference}</div>
-    </div>
-    <div style="text-align:right">
-      <div class="meta-lbl">Date &amp; Heure</div>
-      <div class="meta-val sm">${dt.full}</div>
-    </div>
+    <div><div class="meta-lbl">Référence</div><div class="meta-val">${d.reference}</div></div>
+    <div style="text-align:right"><div class="meta-lbl">Date &amp; Heure</div><div class="meta-val sm">${dt.full}</div></div>
   </div>
-
-  <div class="status-row">
-    <span class="status-badge">✓ TRANSACTION VALIDÉE</span>
-  </div>
-
+  <div class="status-row"><span class="status-badge">✓ TRANSACTION VALIDÉE</span></div>
   ${codeHtml}
-
   <div class="section">
     <div class="section-title">Détails financiers</div>
-    <div class="amounts-card">
-      ${amtHtml}
-      ${rateHtml}
-      ${receivedHtml}
-    </div>
+    <div class="amounts-card">${amtHtml}${rateHtml}${receivedHtml}</div>
   </div>
-
   <div class="section">
     <div class="section-title">Bénéficiaire</div>
     <div class="field-row"><span class="f-lbl">Nom complet</span><span class="f-val">${d.beneficiaryName}</span></div>
     ${d.beneficiaryPhone   ? `<div class="field-row"><span class="f-lbl">Téléphone</span><span class="f-val mono">${d.beneficiaryPhone}</span></div>` : ""}
     ${d.beneficiaryCountry ? `<div class="field-row"><span class="f-lbl">Pays</span><span class="f-val">${d.beneficiaryCountry}</span></div>` : ""}
   </div>
-
   ${senderHtml}
-
   <div class="section">
     <div class="section-title gray">Agence émettrice</div>
     <div class="field-row"><span class="f-lbl">Agence</span><span class="f-val">${d.agencyName ?? "—"}</span></div>
     <div class="field-row"><span class="f-lbl">Agent</span><span class="f-val">${d.agentName ?? "—"}</span></div>
   </div>
-
   <div class="sig-area">
-    <div class="sig-box">
-      <div class="sig-line"></div>
-      <div class="sig-lbl">Signature Agent</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-line"></div>
-      <div class="sig-lbl">Signature Client</div>
-    </div>
+    <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Signature Agent</div></div>
+    <div class="sig-box"><div class="sig-line"></div><div class="sig-lbl">Signature Client</div></div>
   </div>
-
 </div>
-
 <div class="footer">
   <div class="f-logo">DIRECT TRANSF'AIR</div>
-  <div class="f-legal">
-    Ce reçu constitue une preuve officielle d'exécution de la transaction indiquée ci-dessus.
-    Conservez ce document précieusement. Pour toute réclamation, contactez votre agence
-    Direct Transf'air dans les 48 heures suivant la transaction. Direct Transf'air décline
-    toute responsabilité en cas de perte ou d'utilisation frauduleuse de ce document.
-  </div>
+  <div class="f-legal">Ce reçu constitue une preuve officielle d'exécution de la transaction ci-dessus. Conservez ce document précieusement. Pour toute réclamation, contactez votre agence dans les 48 heures.</div>
   <div class="f-ref">Réf. ${d.reference} · ${dt.short}</div>
 </div>
-
-</body>
-</html>`;
+</body></html>`;
 }
 
-// ─── Mini-composants natifs ──────────────────────────────
-function ReceiptRow({ label, value, mono, highlight }: {
-  label: string; value: string; mono?: boolean; highlight?: boolean;
-}) {
-  return (
-    <View style={rr.row}>
-      <Text style={[rr.label, { fontFamily: C.font.sans }]}>{label}</Text>
-      <Text style={[
-        rr.value,
-        { fontFamily: mono ? C.font.mono : C.font.sans },
-        highlight && { color: BLUE, fontSize: 15, fontWeight: "800" as any },
-      ]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-const rr = StyleSheet.create({
-  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline", marginBottom: 9 },
-  label: { fontSize: 11, color: C.inkSoft, fontWeight: "600", flex: 1, marginRight: 8 },
-  value: { fontSize: 12, color: C.ink, fontWeight: "700", textAlign: "right", flex: 2 },
-});
-
-function Sect({ title, color = BLUE, children }: {
-  title: string; color?: string; children: React.ReactNode;
-}) {
-  return (
-    <View style={ss.wrap}>
-      <View style={[ss.bar, { borderBottomColor: color }]}>
-        <Text style={[ss.title, { color, fontFamily: C.font.sans }]}>{title}</Text>
-      </View>
-      {children}
-    </View>
-  );
-}
-const ss = StyleSheet.create({
-  wrap:  { marginBottom: 12 },
-  bar:   { borderBottomWidth: 1.5, paddingBottom: 5, marginBottom: 10 },
-  title: { fontSize: 9, fontWeight: "900", letterSpacing: 1.5, textTransform: "uppercase" },
-});
-
-// ─── Écran principal ─────────────────────────────────────
+// ─────────────────────────────────────────────────────────
+// MAIN SCREEN — Style Sendwave
+// ─────────────────────────────────────────────────────────
 export default function AgentReceiptScreen() {
   const router = useRouter();
   const { data: raw } = useLocalSearchParams<{ data: string }>();
@@ -398,17 +280,12 @@ export default function AgentReceiptScreen() {
     catch { return null; }
   }, [raw]);
 
-  // ── Impression PDF ──
   const handlePrint = useCallback(async () => {
     if (!data) return;
-    try {
-      await Print.printAsync({ html: buildHtml(data) });
-    } catch {
-      Alert.alert("Erreur", "Impossible d'imprimer le reçu.");
-    }
+    try { await Print.printAsync({ html: buildHtml(data) }); }
+    catch { Alert.alert("Erreur", "Impression impossible."); }
   }, [data]);
 
-  // ── Partage PDF ──
   const handleShare = useCallback(async () => {
     if (!data) return;
     try {
@@ -418,135 +295,121 @@ export default function AgentReceiptScreen() {
       } else {
         Alert.alert("Non disponible", "Le partage n'est pas disponible sur cet appareil.");
       }
-    } catch {
-      Alert.alert("Erreur", "Impossible de générer le PDF.");
-    }
+    } catch { Alert.alert("Erreur", "Impossible de générer le PDF."); }
   }, [data]);
 
-  // ── Données invalides ──
   if (!data) {
     return (
       <SafeAreaView style={s.safe}>
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Ionicons name="alert-circle-outline" size={56} color={C.inkSoft} />
-          <Text style={[s.errTxt, { fontFamily: C.font.sans }]}>Données du reçu introuvables</Text>
+          <Ionicons name="alert-circle-outline" size={48} color={T.inkMuted} />
+          <Text style={[s.errTxt, { fontFamily: T.font.sans }]}>Données du reçu introuvables</Text>
           <TouchableOpacity style={s.errBtn} onPress={() => router.back()}>
-            <Text style={[s.errBtnTxt, { fontFamily: C.font.sans }]}>Retour</Text>
+            <Text style={[s.errBtnTxt, { fontFamily: T.font.sans }]}>Retour</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  const ti       = typeInfo(data.type);
-  const dt       = fmtDate(data.date);
+  const ti      = typeInfo(data.type);
+  const dt      = fmtDate(data.date);
+  const hasFees = data.fees !== undefined && data.type !== "DEPOT";
+
+  // Montant principal affiché
   const mainAmt  = data.type === "RETRAIT" && data.receivedAmount
     ? fmt(data.receivedAmount, data.targetCurrency ?? data.currency)
     : fmt(data.amount, data.currency);
-  const mainCurr = data.type === "RETRAIT" && data.targetCurrency ? data.targetCurrency : data.currency;
-  const hasFees  = data.fees !== undefined && data.type !== "DEPOT";
+  const mainCurr = data.type === "RETRAIT" && data.targetCurrency
+    ? data.targetCurrency
+    : data.currency;
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={BLUE} />
+      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
-      {/* ══ Héro bleu ══ */}
-      <View style={s.hero}>
-        {/* Glow */}
-        <View style={s.glow} />
-
-        {/* Ligne haut : fermer + label + badge type */}
-        <View style={s.heroTop}>
-          <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="close" size={18} color="#fff" />
-          </TouchableOpacity>
-          <Text style={[s.heroLabel, { fontFamily: C.font.sans }]}>REÇU DE TRANSACTION</Text>
-          <View style={[s.typeBadge, { backgroundColor: ti.bg }]}>
-            <Text style={[s.typeBadgeTxt, { color: ti.color, fontFamily: C.font.sans }]}>{ti.label}</Text>
-          </View>
-        </View>
-
-        {/* Montant */}
-        <View style={s.heroAmt}>
-          <Text style={[s.heroAmtLabel, { fontFamily: C.font.sans }]}>{ti.amtLabel}</Text>
-          <Text style={[s.heroAmtValue, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
-            {mainAmt}
-          </Text>
-          <Text style={[s.heroAmtCurr, { fontFamily: C.font.mono }]}>{mainCurr}</Text>
-        </View>
-
-        {/* Statut */}
-        <View style={s.statusPill}>
-          <Ionicons name="checkmark-circle" size={14} color={C.green} />
-          <Text style={[s.statusTxt, { fontFamily: C.font.sans }]}>TRANSACTION VALIDÉE</Text>
-        </View>
+      {/* ── Header minimaliste ── */}
+      <View style={s.topBar}>
+        <TouchableOpacity style={s.closeBtn} onPress={() => router.back()} hitSlop={12}>
+          <Ionicons name="close" size={20} color={T.ink} />
+        </TouchableOpacity>
+        <Text style={[s.topTitle, { fontFamily: T.font.sans }]}>REÇU</Text>
+        <View style={{ width: 34 }} />
       </View>
 
-      <HeroConcave />
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+      >
 
-      {/* ══ Contenu scrollable ══ */}
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* ════ BLOC MONTANT ════ */}
+        <View style={s.amtBlock}>
+          {/* Badge statut */}
+          <View style={s.statusBadge}>
+            <Ionicons name="checkmark-circle" size={13} color={T.green} />
+            <Text style={[s.statusTxt, { fontFamily: T.font.sans }]}>Transaction confirmée</Text>
+          </View>
 
-        {/* Référence + date */}
-        <View style={s.refCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.metaLbl, { fontFamily: C.font.sans }]}>Référence</Text>
-            <Text style={[s.metaVal, { fontFamily: C.font.mono }]}>{data.reference}</Text>
-          </View>
-          <View style={s.refDivider} />
-          <View style={{ flex: 1.6, alignItems: "flex-end" }}>
-            <Text style={[s.metaLbl, { fontFamily: C.font.sans }]}>Date & Heure</Text>
-            <Text style={[s.metaVal, { fontFamily: C.font.sans, fontSize: 10 }]}>{dt.full}</Text>
-          </View>
+          {/* Type */}
+          <Text style={[s.typeLabel, { fontFamily: T.font.sans }]}>{ti.label}</Text>
+
+          {/* Montant principal */}
+          <Text style={[s.amtMain, { fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
+            {mainAmt}
+          </Text>
+          <Text style={[s.amtCurr, { fontFamily: T.font.mono }]}>{mainCurr}</Text>
         </View>
 
-        {/* Code de retrait */}
+        <View style={s.hairline} />
+
+        {/* ════ RÉFÉRENCE & DATE ════ */}
+        <View style={s.section}>
+          <Row label="Référence" value={data.reference} mono />
+          <Row label="Date"      value={dt.day} />
+          <Row label="Heure"     value={dt.time} />
+        </View>
+
+        {/* ════ CODE DE RETRAIT ════ */}
         {data.code && (
-          <View style={s.codeCard}>
-            <Ionicons name="qr-code-outline" size={16} color={BLUE} style={{ marginBottom: 6 }} />
-            <Text style={[s.codeLbl, { fontFamily: C.font.sans }]}>CODE DE RETRAIT</Text>
-            <Text style={[s.codeVal, { fontFamily: C.font.mono }]}>{data.code}</Text>
-            <Text style={[s.codeTip, { fontFamily: C.font.sans }]}>
-              À conserver — justificatif de la transaction
-            </Text>
-          </View>
+          <>
+            <View style={s.hairline} />
+            <View style={s.section}>
+              <SectionTitle>Code de retrait</SectionTitle>
+              <View style={s.codeBox}>
+                <Text style={[s.codeValue, { fontFamily: T.font.mono }]}>{data.code}</Text>
+                <Text style={[s.codeTip, { fontFamily: T.font.sans }]}>
+                  À conserver · justificatif officiel
+                </Text>
+              </View>
+            </View>
+          </>
         )}
 
-        {/* Montants */}
-        <View style={s.card}>
-          <Sect title="Détails financiers">
-            {hasFees ? (
-              <>
-                <ReceiptRow label="Montant envoyé" value={`${fmt(data.amount, data.currency)} ${data.currency}`} />
-                <ReceiptRow label="Frais de service" value={`${fmt(data.fees ?? 0, data.currency)} ${data.currency}`} />
-                <View style={s.totalRow}>
-                  <Text style={[s.totalLbl, { fontFamily: C.font.sans }]}>Total débité</Text>
-                  <Text style={[s.totalVal, { fontFamily: C.font.serif }]}>
-                    {fmt(data.totalAmount ?? data.amount, data.currency)} {data.currency}
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <ReceiptRow label="Montant" value={`${fmt(data.amount, data.currency)} ${data.currency}`} highlight />
-            )}
-            {data.exchangeRate && (
-              <ReceiptRow
-                label="Taux de change"
-                value={`1 ${data.currency} = ${Number(data.exchangeRate).toFixed(2)} ${data.targetCurrency ?? ""}`}
-                mono
-              />
-            )}
-          </Sect>
-
-          {/* Montant reçu (conversion) */}
+        {/* ════ DÉTAILS FINANCIERS ════ */}
+        <View style={s.hairline} />
+        <View style={s.section}>
+          <SectionTitle>Détails financiers</SectionTitle>
+          {hasFees ? (
+            <>
+              <Row label="Montant envoyé"  value={`${fmt(data.amount, data.currency)} ${data.currency}`} />
+              <Row label="Frais de service" value={`${fmt(data.fees ?? 0, data.currency)} ${data.currency}`} />
+              <Row label="Total débité"    value={`${fmt(data.totalAmount ?? data.amount, data.currency)} ${data.currency}`} bold />
+            </>
+          ) : (
+            <Row label={ti.amtLabel} value={`${fmt(data.amount, data.currency)} ${data.currency}`} bold />
+          )}
+          {data.exchangeRate && (
+            <Row label="Taux de change" value={`1 ${data.currency} = ${Number(data.exchangeRate).toFixed(2)} ${data.targetCurrency ?? ""}`} mono />
+          )}
           {data.receivedAmount && data.targetCurrency && data.targetCurrency !== data.currency && (
-            <View style={s.receivedBox}>
-              <View style={s.receivedIcon}>
-                <Ionicons name="swap-horizontal" size={14} color={C.green} />
-              </View>
-              <View>
-                <Text style={[s.receivedLbl, { fontFamily: C.font.sans }]}>Montant reçu par le bénéficiaire</Text>
-                <Text style={[s.receivedAmt, { fontFamily: C.font.serif }]}>
+            <View style={s.receivedRow}>
+              <Ionicons name="swap-horizontal-outline" size={14} color={T.green} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.receivedLbl, { fontFamily: T.font.sans }]}>
+                  Montant reçu par le bénéficiaire
+                </Text>
+                <Text style={[s.receivedAmt, { fontFamily: T.font.display }]}>
                   {fmt(data.receivedAmount, data.targetCurrency)} {data.targetCurrency}
                 </Text>
               </View>
@@ -554,160 +417,170 @@ export default function AgentReceiptScreen() {
           )}
         </View>
 
-        {/* Bénéficiaire */}
-        <View style={s.card}>
-          <Sect title="Bénéficiaire" color={BLUE}>
-            <ReceiptRow label="Nom complet" value={data.beneficiaryName} />
-            {data.beneficiaryPhone   && <ReceiptRow label="Téléphone" value={data.beneficiaryPhone} mono />}
-            {data.beneficiaryCountry && <ReceiptRow label="Pays" value={data.beneficiaryCountry} />}
-          </Sect>
+        {/* ════ BÉNÉFICIAIRE ════ */}
+        <View style={s.hairline} />
+        <View style={s.section}>
+          <SectionTitle>Bénéficiaire</SectionTitle>
+          <Row label="Nom complet" value={data.beneficiaryName} />
+          {data.beneficiaryPhone   && <Row label="Téléphone" value={data.beneficiaryPhone} mono />}
+          {data.beneficiaryCountry && <Row label="Pays"      value={data.beneficiaryCountry} />}
         </View>
 
-        {/* Expéditeur */}
+        {/* ════ EXPÉDITEUR ════ */}
         {data.senderName && (
-          <View style={s.card}>
-            <Sect title="Expéditeur" color={C.purple}>
-              <ReceiptRow label="Nom" value={data.senderName} />
-              {data.senderPhone   && <ReceiptRow label="Téléphone" value={data.senderPhone} mono />}
-              {data.senderCountry && <ReceiptRow label="Pays" value={data.senderCountry} />}
-            </Sect>
-          </View>
+          <>
+            <View style={s.hairline} />
+            <View style={s.section}>
+              <SectionTitle>Expéditeur</SectionTitle>
+              <Row label="Nom"       value={data.senderName} />
+              {data.senderPhone   && <Row label="Téléphone" value={data.senderPhone} mono />}
+              {data.senderCountry && <Row label="Pays"      value={data.senderCountry} />}
+            </View>
+          </>
         )}
 
-        {/* Agence */}
-        <View style={s.card}>
-          <Sect title="Agence émettrice" color={C.inkSoft}>
-            <ReceiptRow label="Agence" value={data.agencyName ?? "—"} />
-            <ReceiptRow label="Agent"  value={data.agentName  ?? "—"} />
-          </Sect>
+        {/* ════ AGENCE ════ */}
+        <View style={s.hairline} />
+        <View style={s.section}>
+          <SectionTitle>Agence émettrice</SectionTitle>
+          <Row label="Agence" value={data.agencyName ?? "—"} />
+          <Row label="Agent"  value={data.agentName  ?? "—"} />
         </View>
 
-        {/* Signatures */}
+        {/* ════ SIGNATURES ════ */}
+        <View style={s.hairline} />
         <View style={s.sigArea}>
           <View style={s.sigBox}>
             <View style={s.sigLine} />
-            <Text style={[s.sigLbl, { fontFamily: C.font.sans }]}>Signature Agent</Text>
+            <Text style={[s.sigLbl, { fontFamily: T.font.sans }]}>Signature Agent</Text>
           </View>
           <View style={s.sigBox}>
             <View style={s.sigLine} />
-            <Text style={[s.sigLbl, { fontFamily: C.font.sans }]}>Signature Client</Text>
+            <Text style={[s.sigLbl, { fontFamily: T.font.sans }]}>Signature Client</Text>
           </View>
         </View>
 
-        {/* Mention légale */}
-        <Text style={[s.legal, { fontFamily: C.font.sans }]}>
-          Ce reçu constitue une preuve officielle d'exécution de la transaction ci-dessus.
-          Pour toute réclamation, contactez votre agence dans les 48 heures.
-        </Text>
-
-        {/* Branding pied */}
-        <View style={s.brandFoot}>
-          <Text style={[s.brandLogo, { fontFamily: C.font.sans }]}>DIRECT TRANSF'AIR</Text>
-          <Text style={[s.brandSub,  { fontFamily: C.font.sans }]}>Transfert d'argent international</Text>
-          <Text style={[s.brandRef,  { fontFamily: C.font.mono  }]}>Réf. {data.reference} · {dt.short}</Text>
+        {/* ════ BRANDING & LÉGAL ════ */}
+        <View style={s.hairline} />
+        <View style={s.footer}>
+          <Text style={[s.footLogo,  { fontFamily: T.font.sans }]}>DIRECT TRANSF'AIR</Text>
+          <Text style={[s.footSub,   { fontFamily: T.font.sans }]}>Transfert d'argent international</Text>
+          <Text style={[s.footLegal, { fontFamily: T.font.sans }]}>
+            Ce reçu constitue une preuve officielle d'exécution de la transaction ci-dessus.
+            Pour toute réclamation, contactez votre agence dans les 48 heures suivant la transaction.
+          </Text>
+          <Text style={[s.footRef, { fontFamily: T.font.mono }]}>
+            Réf. {data.reference} · {dt.short}
+          </Text>
         </View>
 
         <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* ══ Barre actions fixe ══ */}
-      <View style={s.footer}>
-        <TouchableOpacity style={[s.footBtn, s.shareBtn]} onPress={handleShare} activeOpacity={0.85}>
-          <Ionicons name="share-outline" size={18} color={BLUE} />
-          <Text style={[s.shareTxt, { fontFamily: C.font.sans }]}>Partager PDF</Text>
+      {/* ════ ACTIONS FIXÉES EN BAS ════ */}
+      <View style={s.actions}>
+        <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
+          <Ionicons name="share-outline" size={17} color={T.ink} />
+          <Text style={[s.shareTxt, { fontFamily: T.font.sans }]}>Partager PDF</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[s.footBtn, s.printBtn]} onPress={handlePrint} activeOpacity={0.88}>
-          <Ionicons name="print-outline" size={18} color="#fff" />
-          <Text style={[s.printTxt, { fontFamily: C.font.sans }]}>Imprimer</Text>
+        <TouchableOpacity style={s.printBtn} onPress={handlePrint} activeOpacity={0.88}>
+          <Ionicons name="print-outline" size={17} color="#fff" />
+          <Text style={[s.printTxt, { fontFamily: T.font.sans }]}>Imprimer</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  safe: { flex: 1, backgroundColor: T.bg },
 
   // Erreur
-  errTxt:    { fontSize: 15, color: C.inkSoft, marginTop: 14, fontWeight: "600", textAlign: "center" },
-  errBtn:    { marginTop: 18, paddingVertical: 10, paddingHorizontal: 28, backgroundColor: C.blueBg, borderRadius: 12, borderWidth: 1, borderColor: BLUE },
-  errBtnTxt: { color: BLUE, fontWeight: "700", fontSize: 14 },
+  errTxt:    { fontSize: 14, color: T.inkMuted, marginTop: 14, fontWeight: "600", textAlign: "center" },
+  errBtn:    { marginTop: 18, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1.5, borderColor: T.codeBorder },
+  errBtnTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
 
-  // ── Héro ──
-  hero: {
-    backgroundColor: BLUE,
+  // Top bar
+  topBar: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 32 : 6,
-    paddingBottom: 16,
-    overflow: "hidden",
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: T.divider,
   },
-  glow: {
-    position: "absolute", top: -50, right: -30,
-    width: 150, height: 150, borderRadius: 75,
-    backgroundColor: "rgba(255,255,255,0.07)",
+  closeBtn:  { width: 34, height: 34, borderRadius: 10, backgroundColor: T.divider, justifyContent: "center", alignItems: "center" },
+  topTitle:  { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 2 },
+
+  scroll: { paddingHorizontal: 22 },
+
+  // ── Bloc montant principal ──
+  amtBlock: { alignItems: "center", paddingTop: 28, paddingBottom: 24 },
+  statusBadge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: T.greenBg, paddingHorizontal: 12, paddingVertical: 5,
+    borderRadius: 20, marginBottom: 14,
   },
-  heroTop:      { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
-  iconBtn:      { width: 30, height: 30, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.14)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)", justifyContent: "center", alignItems: "center" },
-  heroLabel:    { flex: 1, color: "rgba(255,255,255,0.72)", fontSize: 9, fontWeight: "700", letterSpacing: 1.5 },
-  typeBadge:    { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
-  typeBadgeTxt: { fontSize: 9, fontWeight: "900", letterSpacing: 0.5 },
+  statusTxt: { fontSize: 11, fontWeight: "700", color: T.greenText },
+  typeLabel: { fontSize: 11, fontWeight: "700", color: T.inkMuted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 },
+  amtMain:   { fontSize: 48, fontWeight: "900", color: T.ink, letterSpacing: -1.5, textAlign: "center" },
+  amtCurr:   { fontSize: 16, fontWeight: "700", color: T.inkSub, marginTop: 4, letterSpacing: 2 },
 
-  heroAmt:      { alignItems: "center", marginBottom: 12 },
-  heroAmtLabel: { fontSize: 8, color: "rgba(255,255,255,0.6)", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 5 },
-  heroAmtValue: { fontSize: 42, fontWeight: "900", color: "#fff", letterSpacing: -1 },
-  heroAmtCurr:  { fontSize: 14, fontWeight: "700", color: "rgba(255,255,255,0.8)", marginTop: 4, letterSpacing: 2 },
+  // Séparateurs
+  hairline: { height: 1, backgroundColor: T.dividerMd, marginVertical: 0 },
 
-  statusPill: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.12)", paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
-  statusTxt:  { color: "#fff", fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+  // Sections
+  section: { paddingVertical: 4 },
 
-  // ── Scroll ──
-  scroll: { paddingHorizontal: 18, paddingTop: 14 },
+  // Code de retrait
+  codeBox: {
+    borderWidth: 1, borderColor: T.codeBorder, borderRadius: 12,
+    backgroundColor: T.codeBg, padding: 18, alignItems: "center",
+    marginTop: 8, marginBottom: 6,
+  },
+  codeValue: { fontSize: 28, fontWeight: "900", color: T.ink, letterSpacing: 6, marginBottom: 6 },
+  codeTip:   { fontSize: 10, color: T.inkMuted, textAlign: "center" },
 
-  // Ref card
-  refCard:    { flexDirection: "row", alignItems: "center", backgroundColor: C.white, borderRadius: C.r.md, padding: 13, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
-  refDivider: { width: 1, height: 34, backgroundColor: C.cardBorder, marginHorizontal: 13 },
-  metaLbl:    { fontSize: 8, fontWeight: "700", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 3 },
-  metaVal:    { fontSize: 12, fontWeight: "800", color: C.ink },
-
-  // Code card
-  codeCard: { backgroundColor: C.blueBg, borderRadius: C.r.md, padding: 18, marginBottom: 12, borderWidth: 2, borderColor: BLUE, alignItems: "center" },
-  codeLbl:  { fontSize: 8, fontWeight: "900", color: BLUE, letterSpacing: 2, textTransform: "uppercase", marginBottom: 9 },
-  codeVal:  { fontSize: 30, fontWeight: "900", color: DARK, letterSpacing: 6, marginBottom: 6 },
-  codeTip:  { fontSize: 10, color: C.inkSoft, textAlign: "center" },
-
-  // Card générique
-  card: { backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder, shadowColor: BLUE, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
-
-  // Total
-  totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderTopWidth: 1, borderTopColor: C.cardBorder, marginTop: 8, paddingTop: 10 },
-  totalLbl: { fontSize: 12, fontWeight: "900", color: C.ink },
-  totalVal: { fontSize: 18, fontWeight: "900", color: BLUE },
-
-  // Received
-  receivedBox:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.greenBg, borderRadius: 10, padding: 11, marginTop: 10, borderWidth: 1, borderColor: C.greenBorder },
-  receivedIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: "#D1FAE5", justifyContent: "center", alignItems: "center" },
-  receivedLbl:  { fontSize: 9, color: C.inkSoft, fontWeight: "600", marginBottom: 2 },
-  receivedAmt:  { fontSize: 16, fontWeight: "900", color: C.greenDark },
+  // Montant reçu (conversion)
+  receivedRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: T.greenBg, borderRadius: 10,
+    padding: 12, marginTop: 6, marginBottom: 2,
+  },
+  receivedLbl: { fontSize: 10, color: T.inkSub, fontWeight: "600", marginBottom: 3 },
+  receivedAmt: { fontSize: 20, fontWeight: "900", color: T.greenText },
 
   // Signatures
-  sigArea: { flexDirection: "row", justifyContent: "space-between", backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder },
-  sigBox:  { width: "44%", alignItems: "center" },
-  sigLine: { width: "100%", height: 1, backgroundColor: C.ink, marginTop: 38, marginBottom: 6 },
-  sigLbl:  { fontSize: 9, color: C.inkSoft, fontWeight: "600" },
+  sigArea: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 24 },
+  sigBox:  { width: "43%", alignItems: "center" },
+  sigLine: { width: "100%", height: 1, backgroundColor: T.ink, marginBottom: 7, marginTop: 40 },
+  sigLbl:  { fontSize: 10, color: T.inkMuted, fontWeight: "600" },
 
-  // Légal + branding
-  legal:     { fontSize: 10, color: C.inkSoft, lineHeight: 16, textAlign: "center", paddingHorizontal: 6, marginBottom: 16 },
-  brandFoot: { alignItems: "center", paddingVertical: 16, borderTopWidth: 1, borderTopColor: C.cardBorder },
-  brandLogo: { fontSize: 13, fontWeight: "900", color: BLUE, letterSpacing: 2.5, marginBottom: 2 },
-  brandSub:  { fontSize: 9, color: C.inkSoft, letterSpacing: 1, marginBottom: 5 },
-  brandRef:  { fontSize: 9, color: C.inkSoft },
+  // Pied de page
+  footer:    { paddingVertical: 20, alignItems: "center" },
+  footLogo:  { fontSize: 12, fontWeight: "900", color: T.ink, letterSpacing: 2.5, marginBottom: 3 },
+  footSub:   { fontSize: 10, color: T.inkMuted, letterSpacing: 0.5, marginBottom: 12 },
+  footLegal: { fontSize: 10, color: T.inkMuted, lineHeight: 16, textAlign: "center", marginBottom: 10 },
+  footRef:   { fontSize: 9,  color: T.inkMuted },
 
-  // ── Footer fixe ──
-  footer:   { flexDirection: "row", gap: 12, paddingHorizontal: 18, paddingVertical: 12, paddingBottom: Platform.OS === "ios" ? 26 : 12, backgroundColor: C.white, borderTopWidth: 1, borderTopColor: C.cardBorder },
-  footBtn:  { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: C.r.md },
-  shareBtn: { backgroundColor: C.blueBg, borderWidth: 1.5, borderColor: BLUE },
-  printBtn: { backgroundColor: BLUE },
-  shareTxt: { color: BLUE, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
-  printTxt: { color: "#fff", fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
+  // ── Barre d'actions fixe ──
+  actions: {
+    flexDirection: "row", gap: 12,
+    paddingHorizontal: 20, paddingVertical: 12,
+    paddingBottom: Platform.OS === "ios" ? 26 : 12,
+    backgroundColor: T.bg,
+    borderTopWidth: 1, borderTopColor: T.dividerMd,
+  },
+  shareBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: T.bg, borderWidth: 1.5, borderColor: T.dividerMd,
+  },
+  printBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    paddingVertical: 14, borderRadius: 14,
+    backgroundColor: T.ink,
+  },
+  shareTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
+  printTxt: { color: "#fff", fontWeight: "700", fontSize: 13 },
 });

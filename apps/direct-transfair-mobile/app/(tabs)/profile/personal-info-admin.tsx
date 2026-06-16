@@ -1,15 +1,17 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-admin.tsx
 // =========================================================
-// PERSONAL INFO — COMPANY ADMIN v5.4
-// ✅ v5.1 : fix danse clavier (Animated.View séparé du ScrollView)
+// PERSONAL INFO — COMPANY ADMIN v5.5
+// ✅ v5.1 : fix danse clavier
 // ✅ v5.2 : paddingBottom 120
-// ✅ v5.3 : fixes TypeScript (gender, birthCity, GenderPill.onChange)
-// ✅ v5.4 :
-//    - Section Localisation : CountrySelector pour Pays (déjà présent
-//      pour Nationalité/Naissance, maintenant aussi pour Résidence)
-//    - Section Localisation : CitySelector modal si villes disponibles
-//      (citiesByCountry), sinon champ texte libre
-//    - Changement de pays → ville réinitialisée si elle n'est plus dispo
+// ✅ v5.3 : fixes TypeScript
+// ✅ v5.4 : CountrySelector + CitySelector pour Localisation
+// ✅ v5.5 : Fond blanc pur — plus de vert/teal en background
+//    - bg        = #FFFFFF (était #F0FDFA vert transparent)
+//    - surfaceAlt = #F4F7FA (gris neutre pour champs disabled/alt)
+//    - border    = #E4E9F0 (gris neutre — plus de teal en bordure)
+//    - accentSoft = #E8F9F6 (teal très doux conservé pour focus/sélection)
+//    - SectionCard : ombre portée + bande teal gauche pour distinguer
+//      les liens du fond blanc
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -25,15 +27,16 @@ import { api }     from "../../../services/api";
 import { countriesList, type CountryData } from "../../../data/countries";
 import { citiesByCountry }                 from "../../../data/cities";
 
-// ─── Design tokens ────────────────────────────────────────
+// ─── Design tokens v5.5 ──────────────────────────────────
+// Fond blanc pur — vert/teal uniquement pour les accents interactifs
 const T = {
-  bg:          "#F0FDFA",
+  bg:          "#FFFFFF",   // ✅ v5.5 : était #F0FDFA (vert transparent)
   surface:     "#FFFFFF",
-  surfaceAlt:  "#F0FDFA",
-  border:      "#CCFBF1",
-  borderFocus: "#0D9488",
+  surfaceAlt:  "#F4F7FA",   // ✅ v5.5 : gris très léger pour disabled/alt
+  border:      "#E4E9F0",   // ✅ v5.5 : gris neutre (était #CCFBF1 teal)
+  borderFocus: "#0D9488",   // teal conservé pour le focus uniquement
   accent:      "#0D9488",
-  accentSoft:  "#CCFBF1",
+  accentSoft:  "#E8F9F6",   // ✅ v5.5 : teal très doux (était #CCFBF1)
   accentText:  "#0F766E",
   text:        "#0F172A",
   textSub:     "#374151",
@@ -73,30 +76,54 @@ function Field({ label, value, onChange, editable = true, style, placeholder, ke
 }
 const fS = StyleSheet.create({
   label:         { fontSize: 10, fontWeight: "800", color: T.textSub, letterSpacing: 1.2, marginBottom: 6, textTransform: "uppercase" },
-  box:           { backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, flexDirection: "row", alignItems: "center" },
-  boxFocused:    { borderColor: T.borderFocus, shadowColor: T.accent, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
-  boxDisabled:   { backgroundColor: T.surfaceAlt },
+  // ✅ v5.5 : fond blanc + bordure grise neutre — focus bascule en teal
+  box:           { backgroundColor: T.surface,    borderWidth: 1.5, borderColor: T.border,      borderRadius: T.radius.md, flexDirection: "row", alignItems: "center" },
+  boxFocused:    { borderColor: T.borderFocus,    backgroundColor: "#FAFFFE",
+                   shadowColor: T.accent, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  boxDisabled:   { backgroundColor: T.surfaceAlt, borderColor: "#EAEEF4" },
   input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600" },
   inputDisabled: { color: T.textSub },
 });
 
 // ─── Section Card ─────────────────────────────────────────
+// ✅ v5.5 : ombre portée + bande accent gauche pour distinguer du fond blanc
 function SectionCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
     <View style={sC.card}>
-      <View style={sC.header}>
-        <View style={sC.iconBox}><Ionicons name={icon as any} size={14} color={T.accentText} /></View>
-        <Text style={[sC.title, { fontFamily: T.font.sans }]}>{title}</Text>
+      {/* Bande teal gauche — repère visuel sur fond blanc */}
+      <View style={sC.accentBar} />
+      <View style={sC.inner}>
+        <View style={sC.header}>
+          <View style={sC.iconBox}><Ionicons name={icon as any} size={14} color={T.accentText} /></View>
+          <Text style={[sC.title, { fontFamily: T.font.sans }]}>{title}</Text>
+        </View>
+        {children}
       </View>
-      {children}
     </View>
   );
 }
 const sC = StyleSheet.create({
-  card:    { backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
-  header:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  iconBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center" },
-  title:   { fontSize: 11, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
+  card: {
+    backgroundColor: T.surface,
+    borderRadius:    T.radius.lg,
+    marginBottom:    14,
+    borderWidth:     1,
+    borderColor:     T.border,
+    flexDirection:   "row",
+    overflow:        "hidden",
+    // ✅ v5.5 : ombre accentuée pour faire ressortir les cartes sur blanc
+    shadowColor:     "#64748B",
+    shadowOffset:    { width: 0, height: 4 },
+    shadowOpacity:   0.10,
+    shadowRadius:    14,
+    elevation:       5,
+  },
+  // ✅ v5.5 : bande teal 4px sur le côté gauche
+  accentBar: { width: 4, backgroundColor: T.accent },
+  inner:     { flex: 1, padding: 18 },
+  header:    { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
+  iconBox:   { width: 28, height: 28, borderRadius: 8, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center" },
+  title:     { fontSize: 11, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
 });
 
 // ─── Gender Pill ──────────────────────────────────────────
@@ -138,7 +165,7 @@ const gpS = StyleSheet.create({
   labelActive: { color: T.accentText, fontWeight: "800" },
 });
 
-// ─── Styles partagés pour les modals picker ───────────────
+// ─── Styles partagés modals picker ────────────────────────
 const cpS = StyleSheet.create({
   overlay:     { flex: 1, backgroundColor: "rgba(15,23,42,0.5)", justifyContent: "flex-end" },
   sheet:       { backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "75%", borderWidth: 1, borderColor: T.border },
@@ -196,11 +223,7 @@ function CountryPickerModal({ visible, onClose, onSelect, title }: {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 30 }}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={cpS.item}
-                onPress={() => { onSelect(item); close(); }}
-                activeOpacity={0.75}
-              >
+              <TouchableOpacity style={cpS.item} onPress={() => { onSelect(item); close(); }} activeOpacity={0.75}>
                 <Text style={cpS.flag}>{item.flag}</Text>
                 <Text style={[cpS.itemName, { fontFamily: T.font.sans }]}>{item.name}</Text>
               </TouchableOpacity>
@@ -213,7 +236,7 @@ function CountryPickerModal({ visible, onClose, onSelect, title }: {
   );
 }
 
-// ─── Country Selector (champ + modal intégré) ─────────────
+// ─── Country Selector ─────────────────────────────────────
 function CountrySelector({ label, value, onSelect, editable = true }: {
   label: string; value: string;
   onSelect: (c: CountryData) => void; editable?: boolean;
@@ -242,7 +265,7 @@ function CountrySelector({ label, value, onSelect, editable = true }: {
   );
 }
 
-// ─── City Selector ✅ v5.4 ────────────────────────────────
+// ─── City Selector ────────────────────────────────────────
 function CitySelector({ label, value, onSelect, cities, editable = true }: {
   label: string; value: string;
   onSelect: (city: string) => void;
@@ -307,10 +330,7 @@ function CitySelector({ label, value, onSelect, cities, editable = true }: {
                   onPress={() => { onSelect(item); close(); }}
                   activeOpacity={0.75}
                 >
-                  <Text style={[
-                    cpS.itemName, { fontFamily: T.font.sans },
-                    value === item && { color: T.accentText, fontWeight: "700" },
-                  ]}>
+                  <Text style={[cpS.itemName, { fontFamily: T.font.sans }, value === item && { color: T.accentText, fontWeight: "700" }]}>
                     {item}
                   </Text>
                   {value === item && <Ionicons name="checkmark-circle" size={16} color={T.accent} />}
@@ -350,18 +370,18 @@ export default function PersonalInfoAdmin() {
 
   useEffect(() => {
     if (!user) return;
-    setFirstName(user.firstName                                   || "");
-    setLastName(user.lastName                                     || "");
-    setPhone((user as any).phone                                  || "");
-    setJobTitle((user as any).jobTitle                            || "");
+    setFirstName(user.firstName                                         || "");
+    setLastName(user.lastName                                           || "");
+    setPhone((user as any).phone                                        || "");
+    setJobTitle((user as any).jobTitle                                  || "");
     setAgencyName((user as any).agency?.name || (user as any).agencyName || "");
-    setGender(((user as any).gender as "M" | "F")                || "M");
-    setNationality(user.nationality                               || "");
-    setBirthDate(user.birthDate                                   || "");
-    setBirthCity(user.birthPlace                                  || "");
-    setBirthCountry((user as any).birthCountry                    || "");
-    setCity(user.city                                             || "");
-    setCountry(user.country                                       || "");
+    setGender(((user as any).gender as "M" | "F")                       || "M");
+    setNationality(user.nationality                                     || "");
+    setBirthDate(user.birthDate                                         || "");
+    setBirthCity(user.birthPlace                                        || "");
+    setBirthCountry((user as any).birthCountry                          || "");
+    setCity(user.city                                                   || "");
+    setCountry(user.country                                             || "");
     Animated.parallel([
       Animated.spring(fadeAnim,  { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 2 }),
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 2 }),
@@ -370,17 +390,17 @@ export default function PersonalInfoAdmin() {
 
   const cancelEdit = () => {
     if (!user) return;
-    setFirstName(user.firstName              || "");
-    setLastName(user.lastName                || "");
-    setPhone((user as any).phone             || "");
-    setJobTitle((user as any).jobTitle       || "");
+    setFirstName(user.firstName                || "");
+    setLastName(user.lastName                  || "");
+    setPhone((user as any).phone               || "");
+    setJobTitle((user as any).jobTitle         || "");
     setGender(((user as any).gender as "M" | "F") || "M");
-    setNationality(user.nationality          || "");
-    setBirthDate(user.birthDate              || "");
-    setBirthCity(user.birthPlace             || "");
+    setNationality(user.nationality            || "");
+    setBirthDate(user.birthDate                || "");
+    setBirthCity(user.birthPlace               || "");
     setBirthCountry((user as any).birthCountry || "");
-    setCity(user.city                        || "");
-    setCountry(user.country                  || "");
+    setCity(user.city                          || "");
+    setCountry(user.country                    || "");
     setIsEditing(false);
   };
 
@@ -412,7 +432,7 @@ export default function PersonalInfoAdmin() {
     } finally { setLoading(false); }
   };
 
-  // ── Villes disponibles pour le pays de résidence ── ✅ v5.4
+  // Villes disponibles pour le pays de résidence
   const countryName = countriesList.find(c => c.code === country || c.name === country)?.name ?? country;
   const locCities   = citiesByCountry[countryName] ?? [];
   const showCityPicker = isEditing && locCities.length > 0;
@@ -445,10 +465,12 @@ export default function PersonalInfoAdmin() {
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          // ✅ v5.5 : fond blanc explicite sur le scroll
+          style={{ backgroundColor: T.bg }}
         >
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
-            {/* Avatar */}
+            {/* Avatar card */}
             <View style={s.avatarCard}>
               <View style={s.avatarCircle}>
                 <Text style={[s.avatarText, { fontFamily: T.font.display }]}>{initials || "CA"}</Text>
@@ -471,53 +493,36 @@ export default function PersonalInfoAdmin() {
                 <Field label="Prénom" value={firstName} onChange={setFirstName} editable={isEditing} style={{ flex: 1 }} placeholder="Prénom" />
                 <Field label="Nom"    value={lastName}  onChange={setLastName}  editable={isEditing} style={{ flex: 1 }} placeholder="Nom"    />
               </View>
-              <Field label="Téléphone" value={phone}    onChange={setPhone}     editable={isEditing} keyboardType="phone-pad" placeholder="+224 620 000 000" />
-              <Field label="Fonction"  value={jobTitle} onChange={setJobTitle}  editable={isEditing} placeholder="Directeur Général…" />
+              <Field label="Téléphone" value={phone}      onChange={setPhone}    editable={isEditing} keyboardType="phone-pad" placeholder="+224 620 000 000" />
+              <Field label="Fonction"  value={jobTitle}   onChange={setJobTitle} editable={isEditing} placeholder="Directeur Général…" />
               <Field label="Société"   value={agencyName} editable={false} />
             </SectionCard>
 
             {/* 02 — Identité Civile */}
             <SectionCard icon="id-card-outline" title="Identité Civile">
               <GenderPill value={gender} onChange={setGender} editable={isEditing} />
-              <CountrySelector
-                label="Nationalité"
-                value={nationality}
-                onSelect={(c) => setNationality(c.name)}
-                editable={isEditing}
-              />
+              <CountrySelector label="Nationalité" value={nationality} onSelect={(c) => setNationality(c.name)} editable={isEditing} />
               <View style={{ flexDirection: "row", gap: 12 }}>
-                <Field label="Date naissance" value={birthDate}  onChange={setBirthDate} editable={isEditing} placeholder="JJ/MM/AAAA" style={{ flex: 1 }} />
-                <Field label="Lieu naissance" value={birthCity}  onChange={setBirthCity} editable={isEditing} placeholder="Conakry"    style={{ flex: 1 }} />
+                <Field label="Date naissance" value={birthDate} onChange={setBirthDate} editable={isEditing} placeholder="JJ/MM/AAAA" style={{ flex: 1 }} />
+                <Field label="Lieu naissance" value={birthCity} onChange={setBirthCity} editable={isEditing} placeholder="Conakry"    style={{ flex: 1 }} />
               </View>
-              <CountrySelector
-                label="Pays de naissance"
-                value={birthCountry}
-                onSelect={(c) => setBirthCountry(c.name)}
-                editable={isEditing}
-              />
+              <CountrySelector label="Pays de naissance" value={birthCountry} onSelect={(c) => setBirthCountry(c.name)} editable={isEditing} />
             </SectionCard>
 
-            {/* 03 — Localisation ✅ v5.4 : CountrySelector + CitySelector */}
+            {/* 03 — Localisation */}
             <SectionCard icon="location-outline" title="Localisation">
               <CountrySelector
                 label="Pays"
                 value={country}
                 onSelect={(c) => {
                   setCountry(c.name);
-                  // Réinitialise la ville si elle n'existe plus dans le nouveau pays
                   const cities = citiesByCountry[c.name] ?? [];
                   if (city && cities.length > 0 && !cities.includes(city)) setCity("");
                 }}
                 editable={isEditing}
               />
               {showCityPicker ? (
-                <CitySelector
-                  label="Ville"
-                  value={city}
-                  onSelect={setCity}
-                  cities={locCities}
-                  editable={isEditing}
-                />
+                <CitySelector label="Ville" value={city} onSelect={setCity} cities={locCities} editable={isEditing} />
               ) : (
                 <Field label="Ville" value={city} onChange={setCity} editable={isEditing} placeholder="Paris" />
               )}
@@ -527,9 +532,7 @@ export default function PersonalInfoAdmin() {
             {isEditing && (
               <TouchableOpacity
                 style={[s.saveBtn, loading && { opacity: 0.6 }]}
-                onPress={save}
-                disabled={loading}
-                activeOpacity={0.85}
+                onPress={save} disabled={loading} activeOpacity={0.85}
               >
                 {loading
                   ? <ActivityIndicator color="#FFFFFF" />
@@ -548,15 +551,17 @@ export default function PersonalInfoAdmin() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 20,
     paddingTop:    Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 16,
-    gap: 12,
-    backgroundColor: T.surface,
+    paddingBottom: 16, gap: 12,
+    // ✅ v5.5 : header blanc avec séparateur neutre
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1, borderBottomColor: T.border,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 3,
   },
   backBtn:       { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
   headerTitle:   { color: T.text, fontSize: 17, fontWeight: "700" },
@@ -564,7 +569,14 @@ const s = StyleSheet.create({
   editBtn:       { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
   editBtnCancel: { backgroundColor: T.redSoft, borderColor: T.redBorder },
 
-  avatarCard:   { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  // ✅ v5.5 : avatar card avec ombre neutre (pas de fond vert)
+  avatarCard: {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: "#FFFFFF",
+    borderRadius: T.radius.xl, padding: 18, marginBottom: 16,
+    borderWidth: 1, borderColor: T.border,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 14, elevation: 4,
+  },
   avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: T.borderFocus },
   avatarText:   { fontSize: 20, fontWeight: "700", color: T.accentText },
   name:         { fontSize: 17, fontWeight: "700", color: T.text },
@@ -572,6 +584,6 @@ const s = StyleSheet.create({
   badge:        { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, backgroundColor: T.accentSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, alignSelf: "flex-start" },
   badgeText:    { fontSize: 10, fontWeight: "700", color: T.accentText, letterSpacing: 0.5 },
 
-  saveBtn: { backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
+  saveBtn: { backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
   saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 });

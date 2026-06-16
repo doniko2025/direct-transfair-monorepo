@@ -1,14 +1,15 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.4 — Direct Transf'air
+// SEND MONEY v2.5 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
 // ✅ v2.4 : Motif du transfert
-//    - Composant MotifModal avec 9 motifs (radio buttons)
-//    - Sélecteur compact entre Montant et Récapitulatif
-//    - Motif passé comme `note` dans createTransaction
-//    - Optionnel : n'empêche pas l'envoi si non renseigné
+// ✅ v2.5 : FIX solde avec décimales
+//    - fmt() passe désormais la devise explicitement partout
+//    - XOF/GNF → 0 décimales (Math.round interne)
+//    - EUR/USD/GBP → 2 décimales
+//    - Fin du "348 054,88 XOF" → affiche "348 055 XOF"
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -69,8 +70,20 @@ const getCountryData = (countryName: string): CountryData => {
   );
 };
 
-const fmt = (val: number) =>
-  val.toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+// ✅ fmt currency-aware : 0 décimales pour XOF/GNF, 2 pour EUR/USD/GBP
+// ✅ v2.5 : fmt() currency-aware — Intl.NumberFormat pour espacement fiable
+// XOF/GNF → 0 décimales | EUR/USD/GBP → 2 décimales
+// Ancien bug : .toLocaleString() se chaînait sur Math.pow() (pas sur le résultat)
+//   → renvoyait un nombre brut sans espacement → "348055" au lieu de "348 055"
+const fmt = (val: number, currency?: string): string => {
+  const d = !currency || currency === "XOF" || currency === "GNF" ? 0 : 2;
+  try {
+    return new Intl.NumberFormat("fr-FR", {
+      minimumFractionDigits: d,
+      maximumFractionDigits: d,
+    }).format(val);
+  } catch { return val.toFixed(d); }
+};
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -183,7 +196,7 @@ function FallbackModal({ visible, missing, currency, onClose, onOrangeMoney, onC
             <View style={{ flex: 1 }}>
               <Text style={[fbS.warnTitle, { fontFamily: F.body }]}>Solde insuffisant</Text>
               <Text style={[fbS.warnSub, { fontFamily: F.body }]}>
-                Il vous manque <Text style={fbS.warnAmount}>{fmt(missing)} {currency}</Text>
+                Il vous manque <Text style={fbS.warnAmount}>{fmt(missing, currency)} {currency}</Text>
               </Text>
             </View>
           </View>
@@ -444,6 +457,15 @@ export default function SendMoneyScreen() {
 
   const sendAmount = parseFloat(rawAmount.replace(/\s/g, "").replace(",", ".")) || 0;
 
+  // ✅ v2.5 : prénom du bénéficiaire pour le récapitulatif ("Mountaga reçoit")
+  const beneficiaryLabel = React.useMemo(() => {
+    if (mode === "WALLET") {
+      return detectedBeneficiary?.fullName?.split(" ")[0] ?? "Le bénéficiaire";
+    }
+    const sel = beneficiaries.find(b => String(b.id) === selectedCashId);
+    return sel?.fullName?.split(" ")[0] ?? "Le bénéficiaire";
+  }, [mode, detectedBeneficiary, beneficiaries, selectedCashId]);
+
   const feesRate    = mode === "WALLET" ? 0 : cashFeeRate;
   const feesAmt     = sendAmount * feesRate;
   const totalAmt    = sendAmount + feesAmt;
@@ -540,7 +562,7 @@ export default function SendMoneyScreen() {
           {loadingWallet
             ? <ActivityIndicator color="rgba(255,255,255,0.7)" size="small" />
             : <Text style={[s.balanceVal, { fontFamily: F.display }]}>
-                {showBalance ? `${fmt(walletBalance)} ${userCurrency}` : "• • • • •"}
+                {showBalance ? `${fmt(walletBalance, userCurrency)} ${userCurrency}` : "• • • • •"}
               </Text>
           }
           {insufficient && sendAmount > 0 && (
@@ -712,7 +734,7 @@ export default function SendMoneyScreen() {
                   </Text>
                   <View style={s.amountInputRow}>
                     <Text style={[s.amountReceived, { fontFamily: F.display }]}>
-                      {sendAmount > 0 ? fmt(Math.round(receivedAmt)) : "0"}
+                      {sendAmount > 0 ? fmt(Math.round(receivedAmt), targetCurrency) : "0"}
                     </Text>
                     <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}>
                       <Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text>
@@ -773,18 +795,28 @@ export default function SendMoneyScreen() {
                   </View>
                   <Text style={[s.blockTitle, { fontFamily: F.body }]}>Récapitulatif</Text>
                 </View>
-                <SummaryRow label="Montant envoyé" value={`${fmt(sendAmount)} ${userCurrency}`} />
+                <SummaryRow label="Montant envoyé" value={`${fmt(sendAmount, userCurrency)} ${userCurrency}`} />
                 <View style={s.summaryDivider} />
                 <SummaryRow
                   label="Frais de transfert"
-                  value={feesAmt === 0 ? "Offerts ✓" : `${fmt(feesAmt)} ${userCurrency}`}
+                  value={feesAmt === 0 ? "Offerts ✓" : `${fmt(feesAmt, userCurrency)} ${userCurrency}`}
                   valueColor={feesAmt === 0 ? C.g4 : undefined}
                 />
-                {targetCurrency !== userCurrency && (
-                  <>
-                    <View style={s.summaryDivider} />
-                    <SummaryRow label="Montant reçu" value={`${fmt(Math.round(receivedAmt))} ${targetCurrency}`} valueColor={C.blue} />
-                  </>
+                {/* ✅ v2.5 : montant reçu toujours affiché, même devise identique */}
+                <View style={s.summaryDivider} />
+                <SummaryRow
+                  label={`${beneficiaryLabel} reçoit`}
+                  value={`${fmt(Math.round(receivedAmt > 0 ? receivedAmt : sendAmount), targetCurrency)} ${targetCurrency}`}
+                  valueColor={C.blue}
+                />
+                {/* Taux de change — uniquement si les devises diffèrent */}
+                {targetCurrency !== userCurrency && rate !== 1 && (
+                  <View style={s.rateChip}>
+                    <Ionicons name="trending-up-outline" size={13} color={C.g4} />
+                    <Text style={[s.rateTxt, { fontFamily: F.body }]}>
+                      1 {userCurrency} = {rate.toFixed(4)} {targetCurrency}
+                    </Text>
+                  </View>
                 )}
                 {/* ✅ v2.4 : affiche le motif dans le récap si renseigné */}
                 {motif && (
@@ -796,7 +828,7 @@ export default function SendMoneyScreen() {
                 <View style={[s.summaryDivider, { backgroundColor: C.gBorder, height: 1.5 }]} />
                 <SummaryRow
                   label="TOTAL À PAYER"
-                  value={`${fmt(totalAmt)} ${userCurrency}`}
+                  value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`}
                   valueColor={insufficient ? C.danger : C.g4}
                   large
                 />
@@ -804,7 +836,7 @@ export default function SendMoneyScreen() {
                   <View style={s.insufficientBar}>
                     <Ionicons name="wallet-outline" size={16} color={C.amber} />
                     <Text style={[s.insufficientBarTxt, { fontFamily: F.body }]}>
-                      Il vous manque <Text style={{ fontWeight: "800" }}>{fmt(missingAmount)} {userCurrency}</Text>
+                      Il vous manque <Text style={{ fontWeight: "800" }}>{fmt(missingAmount, userCurrency)} {userCurrency}</Text>
                     </Text>
                   </View>
                 )}

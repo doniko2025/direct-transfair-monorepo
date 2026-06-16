@@ -1,9 +1,15 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.2 — Direct Transf'air
+// PROFILE INDEX v5.3 — Direct Transf'air
 // ✅ v5.1 conservé intégralement
 // ✅ v5.2 : "Préférences de notifications" branché
-//   → onPress(() => {}) → router.push("/(tabs)/profile/notifications")
+// ✅ v5.3 : Fond blanc pur — plus de dégradé vert/teal
+//    - LinearGradient de fond → View blanc #FFFFFF
+//    - Hero card : blanc + bande accent haut (4px) + ombre
+//    - Section cards : bande accent gauche (4px, couleur du rôle)
+//      + ombre portée accentuée → clairement distincts du fond blanc
+//    - MenuRow : fond icône + flèche accentués pour lisibilité
+//    - StatusBar : dark-content sur fond blanc
 // =========================================================
 
 import React, { useRef, useEffect, useState } from "react";
@@ -23,47 +29,50 @@ import {
 } from "../../../hooks/useBiometrics";
 
 // ─── Thèmes par rôle ────────────────────────────────────
+// ✅ v5.3 : bg1/bg2 supprimés (plus utilisés — fond blanc)
+// On conserve accent, accentSoft, label, icon
 const ROLE_THEMES = {
   SUPER_ADMIN: {
-    bg1: "#F8FAFF", bg2: "#EEF2FF",
     accent: "#1D4ED8", accentSoft: "#EFF6FF",
-    label: "Super Admin", icon: "shield-checkmark"
+    accentMid: "#DBEAFE",
+    label: "Super Admin", icon: "shield-checkmark",
   },
   COMPANY_ADMIN: {
-    bg1: "#F0FDFA", bg2: "#ECFDF5",
-    accent: "#0D9488", accentSoft: "#CCFBF1",
-    label: "Admin Société", icon: "business"
+    accent: "#0D9488", accentSoft: "#E8F9F6",
+    accentMid: "#CCFBF1",
+    label: "Admin Société", icon: "business",
   },
   AGENT: {
-    bg1: "#FFFBEB", bg2: "#FEF3C7",
-    accent: "#D97706", accentSoft: "#FEF3C7",
-    label: "Agent", icon: "briefcase"
+    accent: "#D97706", accentSoft: "#FFFBEB",
+    accentMid: "#FEF3C7",
+    label: "Agent", icon: "briefcase",
   },
   USER: {
-    bg1: "#F0FDF4", bg2: "#ECFDF5",
-    accent: "#059669", accentSoft: "#DCFCE7",
-    label: "Client", icon: "wallet"
+    accent: "#059669", accentSoft: "#ECFDF5",
+    accentMid: "#A7F3D0",
+    label: "Client", icon: "wallet",
   },
 } as const;
 
 const T = {
-  white: "#FFFFFF",
-  text: "#0F172A",
+  bg:      "#FFFFFF",   // ✅ v5.3 : fond blanc pur
+  pageBg:  "#F8FAFF",   // très légère teinte pour le scroll
+  white:   "#FFFFFF",
+  text:    "#0F172A",
   textSub: "#475569",
   textDim: "#94A3B8",
-  border: "#E2E8F0",
-  shadow: "rgba(0,0,0,0.08)",
-  red: "#DC2626",
+  border:  "#E8EDF5",   // ✅ v5.3 : gris neutre (était #E2E8F0)
+  red:     "#DC2626",
   redSoft: "#FEE2E2",
   radius: { sm: 10, md: 14, lg: 20, xl: 28 },
   font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
+    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
+    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
 
-// ─── Menu Row ──────────────────────────────────────────
+// ─── Menu Row ────────────────────────────────────────────
 function MenuRow({
   icon, label, accent, onPress, rightElement, danger = false, disabled = false,
 }: {
@@ -71,6 +80,7 @@ function MenuRow({
   rightElement?: React.ReactNode; danger?: boolean; disabled?: boolean;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
+  const color = danger ? T.red : accent;
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
@@ -78,18 +88,23 @@ function MenuRow({
         onPress={onPress}
         disabled={disabled || !onPress}
         activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.985, useNativeDriver: true, speed: 50 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,     useNativeDriver: true, speed: 30 }).start()}
       >
-        <View style={[mrS.iconBox, { backgroundColor: danger ? "#FEE2E2" : `${accent}15` }]}>
-          <Ionicons name={icon as any} size={18} color={danger ? T.red : accent} />
+        {/* Icône */}
+        <View style={[mrS.iconBox, { backgroundColor: danger ? "#FEE2E2" : `${color}12` }]}>
+          <Ionicons name={icon as any} size={18} color={color} />
         </View>
+
+        {/* Label */}
         <Text style={[mrS.label, { fontFamily: T.font.sans, color: danger ? T.red : T.text }]}>
           {label}
         </Text>
+
+        {/* Right element ou chevron */}
         {rightElement ?? (
-          <View style={[mrS.chevronBox, { backgroundColor: `${accent}10` }]}>
-            <Ionicons name="chevron-forward" size={13} color={danger ? T.red : accent} />
+          <View style={[mrS.chevronBox, { backgroundColor: `${color}10` }]}>
+            <Ionicons name="chevron-forward" size={13} color={color} />
           </View>
         )}
       </TouchableOpacity>
@@ -102,44 +117,60 @@ const mrS = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 14,
     paddingVertical: 15, borderBottomWidth: 1,
   },
-  iconBox: { width: 38, height: 38, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  label: { flex: 1, fontSize: 14, fontWeight: "600" },
+  iconBox:    { width: 38, height: 38, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
+  label:      { flex: 1, fontSize: 14, fontWeight: "600" },
   chevronBox: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Section ───────────────────────────────────────────
+// ─── Section ─────────────────────────────────────────────
+// ✅ v5.3 : bande accent gauche + ombre portée pour se distinguer du fond blanc
 function Section({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
   return (
     <View style={{ marginBottom: 20 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+      {/* Titre de section */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <View style={[sS.dot, { backgroundColor: accent }]} />
         <Text style={[sS.title, { fontFamily: T.font.sans }]}>{title}</Text>
       </View>
-      <View style={[sS.card, { shadowColor: T.shadow }]}>{children}</View>
+
+      {/* Carte blanche avec bande colorée gauche + ombre */}
+      <View style={sS.card}>
+        {/* Bande verticale accent (4px, couleur du rôle) */}
+        <View style={[sS.accentBar, { backgroundColor: accent }]} />
+        {/* Contenu */}
+        <View style={sS.inner}>{children}</View>
+      </View>
     </View>
   );
 }
 
 const sS = StyleSheet.create({
-  dot: { width: 6, height: 6, borderRadius: 99 },
+  dot:   { width: 6, height: 6, borderRadius: 99 },
   title: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
   card: {
-    backgroundColor: T.white, borderRadius: T.radius.lg,
-    paddingHorizontal: 16, borderWidth: 1, borderColor: T.border,
-    shadowOpacity: 0.08, shadowRadius: 12, elevation: 2,
+    backgroundColor: T.white,
+    borderRadius:    T.radius.lg,
+    borderWidth:     1,
+    borderColor:     T.border,
+    flexDirection:   "row",
+    overflow:        "hidden",
+    // ✅ v5.3 : ombre accentuée pour faire ressortir les cartes sur fond blanc
+    shadowColor:     "#64748B",
+    shadowOffset:    { width: 0, height: 5 },
+    shadowOpacity:   0.10,
+    shadowRadius:    16,
+    elevation:       6,
   },
+  accentBar: { width: 4 },
+  inner:     { flex: 1, paddingHorizontal: 14 },
 });
 
-// ─── BiometricToggle ───────────────────────────────────
+// ─── BiometricToggle ─────────────────────────────────────
 function BiometricToggle({ enabled, onToggle, accent }: {
   enabled: boolean; onToggle: () => void; accent: string;
 }) {
   return (
-    <TouchableOpacity
-      onPress={onToggle}
-      activeOpacity={0.85}
-      style={btS.row}
-    >
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.85} style={btS.row}>
       <View style={[btS.track, enabled && { backgroundColor: accent }]}>
         <View style={[btS.knob, enabled && btS.knobOn]} />
       </View>
@@ -148,60 +179,45 @@ function BiometricToggle({ enabled, onToggle, accent }: {
 }
 
 const btS = StyleSheet.create({
-  row: { justifyContent: "center", alignItems: "center" },
-  track: {
-    width: 46, height: 26, borderRadius: 99,
-    backgroundColor: "#CBD5E1",
-    justifyContent: "center", padding: 3,
-  },
-  knob: {
-    width: 20, height: 20, borderRadius: 99,
-    backgroundColor: T.white,
-    shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
-  },
-  knobOn: { alignSelf: "flex-end" },
+  row:   { justifyContent: "center", alignItems: "center" },
+  track: { width: 46, height: 26, borderRadius: 99, backgroundColor: "#CBD5E1", justifyContent: "center", padding: 3 },
+  knob:  { width: 20, height: 20, borderRadius: 99, backgroundColor: T.white, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2 },
+  knobOn:{ alignSelf: "flex-end" },
 });
 
-// ─── Main Screen ───────────────────────────────────────
+// ─── Main Screen ─────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
 
-  const role = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
+  const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
 
   const isAdmin = role === "SUPER_ADMIN" || role === "COMPANY_ADMIN";
   const isAgent = role === "AGENT";
   const isUser  = role === "USER";
 
-  // ─── Biométrie ─────────────────────────────────────────
+  // ─── Biométrie ───────────────────────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
   const [bioAvailable, setBioAvailableState] = useState(false);
 
   useEffect(() => {
-    const loadBioState = async () => {
+    const load = async () => {
       const available = await isBiometricsAvailable();
       setBioAvailableState(available);
-      if (available) {
-        const enabled = await getBiometricsEnabled();
-        setBioEnabledState(enabled);
-      }
+      if (available) setBioEnabledState(await getBiometricsEnabled());
     };
-    void loadBioState();
+    void load();
   }, []);
 
   const handleToggleBio = async () => {
     if (!bioAvailable) {
-      Alert.alert(
-        "Biométrie indisponible",
-        "Votre appareil ne supporte pas la biométrie ou aucune empreinte n'est enregistrée.",
-      );
+      Alert.alert("Biométrie indisponible", "Votre appareil ne supporte pas la biométrie ou aucune empreinte n'est enregistrée.");
       return;
     }
-
     if (!bioEnabled) {
-      const success = await promptBiometrics("Activez la connexion biométrique");
-      if (!success) return;
+      const ok = await promptBiometrics("Activez la connexion biométrique");
+      if (!ok) return;
       await setBiometricsEnabled(true);
       setBioEnabledState(true);
       Alert.alert("✅ Activé", "La connexion biométrique est maintenant activée.");
@@ -211,20 +227,12 @@ export default function ProfileScreen() {
         "Vous devrez utiliser votre mot de passe pour vous reconnecter.",
         [
           { text: "Annuler", style: "cancel" },
-          {
-            text: "Désactiver",
-            style: "destructive",
-            onPress: async () => {
-              await setBiometricsEnabled(false);
-              setBioEnabledState(false);
-            },
-          },
+          { text: "Désactiver", style: "destructive", onPress: async () => { await setBiometricsEnabled(false); setBioEnabledState(false); } },
         ],
       );
     }
   };
 
-  // ─── UI ────────────────────────────────────────────────
   const displayName = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ""}`.trim()
     : "Utilisateur";
@@ -244,8 +252,7 @@ export default function ProfileScreen() {
       [
         { text: "Annuler", style: "cancel" },
         {
-          text: "Me déconnecter",
-          style: "destructive",
+          text: "Me déconnecter", style: "destructive",
           onPress: async () => {
             await logout();
             if (router.canDismiss()) router.dismissAll();
@@ -257,19 +264,22 @@ export default function ProfileScreen() {
   };
 
   return (
-    <LinearGradient colors={[theme.bg1, theme.bg2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={theme.bg1} />
+    // ✅ v5.3 : fond blanc pur — plus de LinearGradient coloré
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-          {/* ── Hero card ── */}
-          <LinearGradient
-            colors={[theme.accentSoft, "rgba(255,255,255,0.5)"]}
-            style={s.hero}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          >
-            <View style={[s.avatarBox, { backgroundColor: `${theme.accent}20`, borderColor: theme.accent }]}>
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: T.bg }}
+      >
+        {/* ── Hero card ───────────────────────────────── */}
+        {/* ✅ v5.3 : blanc + barre top colorée + ombre → plus de gradient */}
+        <View style={s.hero}>
+          {/* Bande colorée en haut du hero */}
+          <View style={[s.heroTopBar, { backgroundColor: theme.accent }]} />
+          <View style={s.heroBody}>
+            <View style={[s.avatarBox, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}40` }]}>
               <Text style={[s.initials, { color: theme.accent, fontFamily: T.font.display }]}>
                 {initials}
               </Text>
@@ -279,195 +289,150 @@ export default function ProfileScreen() {
               <Text style={[s.userId, { fontFamily: T.font.mono }]}>
                 {user?.id?.slice(0, 12).toUpperCase() ?? "—"}
               </Text>
-              <View style={[s.rolePill, { backgroundColor: theme.accentSoft, borderColor: theme.accent }]}>
+              <View style={[s.rolePill, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}40` }]}>
                 <Ionicons name={theme.icon as any} size={11} color={theme.accent} />
                 <Text style={[s.roleLabel, { color: theme.accent, fontFamily: T.font.sans }]}>
                   {theme.label}
                 </Text>
               </View>
             </View>
-          </LinearGradient>
+          </View>
+        </View>
 
-          {/* ── Security gauge (Users only) ── */}
-          {isUser && (
-            <View style={[s.secCard, { borderColor: theme.accent }]}>
-              <View style={s.secTop}>
-                <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
-                <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
-                <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
-                  {bioEnabled ? "100%" : "85%"}
-                </Text>
-              </View>
-              <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
-                <View style={[s.secBarFill, {
-                  width: bioEnabled ? "100%" : "85%",
-                  backgroundColor: theme.accent,
-                }]} />
-              </View>
-              <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
-                {bioEnabled
-                  ? "🔒 Compte entièrement sécurisé"
-                  : "Activez la biométrie pour atteindre 100%"
-                }
+        {/* ── Security gauge (Users only) ── */}
+        {isUser && (
+          <View style={[s.secCard, { borderColor: `${theme.accent}30` }]}>
+            <View style={s.secTop}>
+              <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
+              <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
+              <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
+                {bioEnabled ? "100%" : "85%"}
               </Text>
             </View>
-          )}
+            <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
+              <View style={[s.secBarFill, { width: bioEnabled ? "100%" : "85%", backgroundColor: theme.accent }]} />
+            </View>
+            <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
+              {bioEnabled ? "🔒 Compte entièrement sécurisé" : "Activez la biométrie pour atteindre 100%"}
+            </Text>
+          </View>
+        )}
 
-          {/* ── MON COMPTE ── */}
-          <Section title="MON COMPTE" accent={theme.accent}>
-            <MenuRow
-              icon="person-outline"
-              label="Informations personnelles"
-              accent={theme.accent}
-              onPress={() => router.push("/(tabs)/profile/personal-info")}
-            />
-            {isUser && (
-              <>
-                <MenuRow
-                  icon="card-outline"
-                  label="Moyens de paiement"
-                  accent={theme.accent}
-                  onPress={() => router.push("/(tabs)/profile/payment-methods")}
-                />
-                <MenuRow
-                  icon="speedometer-outline"
-                  label="Mes plafonds de transfert"
-                  accent={theme.accent}
-                  onPress={() => router.push("/(tabs)/profile/limits")}
-                />
-              </>
-            )}
-            {(isUser || isAgent) && (
-              <MenuRow
-                icon="location-outline"
-                label="Points Direct Transf'air"
-                accent={theme.accent}
-                onPress={() => router.push("/(tabs)/profile/locations")}
-              />
-            )}
-          </Section>
-
-          {/* ── SÉCURITÉ & APPAREILS ── */}
-          <Section title="SÉCURITÉ & APPAREILS" accent={theme.accent}>
-            <MenuRow
-              icon="phone-portrait-outline"
-              label="Appareils connectés"
-              accent={theme.accent}
-              onPress={() => router.push("/(tabs)/profile/devices")}
-            />
-            <MenuRow
-              icon="keypad-outline"
-              label="Modifier mon code secret"
-              accent={theme.accent}
-              onPress={() => router.push("/(tabs)/profile/security")}
-            />
-            <MenuRow
-              icon="finger-print-outline"
-              label={
-                bioAvailable
-                  ? "Biométrie (Face ID / Touch ID)"
-                  : "Biométrie (non disponible)"
-              }
-              accent={bioAvailable ? theme.accent : T.textDim}
-              disabled={!bioAvailable}
-              rightElement={
-                bioAvailable ? (
-                  <BiometricToggle
-                    enabled={bioEnabled}
-                    onToggle={handleToggleBio}
-                    accent={theme.accent}
-                  />
-                ) : (
-                  <View style={{ width: 46, height: 26, borderRadius: 99, backgroundColor: "#E2E8F0", justifyContent: "center", padding: 3 }}>
-                    <View style={{ width: 20, height: 20, borderRadius: 99, backgroundColor: T.white }} />
-                  </View>
-                )
-              }
-            />
-          </Section>
-
-          {/* ── ADMIN ONLY ── */}
-          {isAdmin && (
-            <Section title="ADMINISTRATION" accent={theme.accent}>
-              <MenuRow
-                icon="analytics-outline"
-                label="Tableau de bord admin"
-                accent={theme.accent}
-                onPress={() => router.back()}
-              />
-              {/* ✅ v5.2 : "Préférences de notifications" branché */}
-              <MenuRow
-                icon="notifications-outline"
-                label="Préférences de notifications"
-                accent={theme.accent}
-                onPress={() => router.push("/(tabs)/profile/notifications")}
-              />
-            </Section>
-          )}
-
-          {/* ── LOGOUT ── */}
-          <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-            <Ionicons name="power-outline" size={18} color={T.red} />
-            <Text style={[s.logoutTxt, { fontFamily: T.font.sans }]}>Fermer la session</Text>
-          </TouchableOpacity>
-
+        {/* ── MON COMPTE ── */}
+        <Section title="MON COMPTE" accent={theme.accent}>
+          <MenuRow icon="person-outline" label="Informations personnelles" accent={theme.accent} onPress={() => router.push("/(tabs)/profile/personal-info")} />
           {isUser && (
-            <TouchableOpacity style={s.deleteBtn} activeOpacity={0.7}>
-              <Ionicons name="warning-outline" size={14} color={T.textDim} />
-              <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer mon compte</Text>
-            </TouchableOpacity>
+            <>
+              <MenuRow icon="card-outline"        label="Moyens de paiement"         accent={theme.accent} onPress={() => router.push("/(tabs)/profile/payment-methods")} />
+              <MenuRow icon="speedometer-outline" label="Mes plafonds de transfert"  accent={theme.accent} onPress={() => router.push("/(tabs)/profile/limits")} />
+            </>
           )}
+          {(isUser || isAgent) && (
+            <MenuRow icon="location-outline" label="Points Direct Transf'air" accent={theme.accent} onPress={() => router.push("/(tabs)/profile/locations")} />
+          )}
+        </Section>
 
-          <Text style={[s.version, { fontFamily: T.font.mono }]}>
-            Direct Transf'air v5.0 · Build 501
-          </Text>
+        {/* ── SÉCURITÉ & APPAREILS ── */}
+        <Section title="SÉCURITÉ & APPAREILS" accent={theme.accent}>
+          <MenuRow icon="phone-portrait-outline" label="Appareils connectés"        accent={theme.accent} onPress={() => router.push("/(tabs)/profile/devices")} />
+          <MenuRow icon="keypad-outline"         label="Modifier mon code secret"   accent={theme.accent} onPress={() => router.push("/(tabs)/profile/security")} />
+          <MenuRow
+            icon={bioAvailable ? "finger-print-outline" : "finger-print-outline"}
+            label={bioAvailable ? "Biométrie (Face ID / Touch ID)" : "Biométrie (non disponible)"}
+            accent={bioAvailable ? theme.accent : T.textDim}
+            disabled={!bioAvailable}
+            rightElement={
+              bioAvailable ? (
+                <BiometricToggle enabled={bioEnabled} onToggle={handleToggleBio} accent={theme.accent} />
+              ) : (
+                <View style={{ width: 46, height: 26, borderRadius: 99, backgroundColor: "#E2E8F0", justifyContent: "center", padding: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 99, backgroundColor: T.white }} />
+                </View>
+              )
+            }
+          />
+        </Section>
 
-          <View style={{ height: 110 }} />
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+        {/* ── ADMIN ONLY ── */}
+        {isAdmin && (
+          <Section title="ADMINISTRATION" accent={theme.accent}>
+            <MenuRow icon="analytics-outline"      label="Tableau de bord admin"            accent={theme.accent} onPress={() => router.back()} />
+            <MenuRow icon="notifications-outline"  label="Préférences de notifications"     accent={theme.accent} onPress={() => router.push("/(tabs)/profile/notifications")} />
+          </Section>
+        )}
+
+        {/* ── Déconnexion ── */}
+        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
+          <Ionicons name="power-outline" size={18} color={T.red} />
+          <Text style={[s.logoutTxt, { fontFamily: T.font.sans }]}>Fermer la session</Text>
+        </TouchableOpacity>
+
+        {isUser && (
+          <TouchableOpacity style={s.deleteBtn} activeOpacity={0.7}>
+            <Ionicons name="warning-outline" size={14} color={T.textDim} />
+            <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer mon compte</Text>
+          </TouchableOpacity>
+        )}
+
+        <Text style={[s.version, { fontFamily: T.font.mono }]}>
+          Direct Transf'air v5.0 · Build 501
+        </Text>
+        <View style={{ height: 110 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  scroll: { paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 54 : 20, paddingBottom: 20 },
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 54 : 20,
+    paddingBottom: 20,
+  },
 
+  // ✅ v5.3 : hero blanc + barre top colorée + ombre portée
   hero: {
-    flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 24,
-    borderRadius: T.radius.xl, padding: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.5)",
-    shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 16, elevation: 3,
+    backgroundColor: T.white,
+    borderRadius:    T.radius.xl,
+    marginBottom:    24,
+    borderWidth:     1,
+    borderColor:     T.border,
+    overflow:        "hidden",
+    shadowColor:     "#64748B",
+    shadowOffset:    { width: 0, height: 6 },
+    shadowOpacity:   0.10,
+    shadowRadius:    18,
+    elevation:       7,
   },
-  avatarBox: {
-    width: 60, height: 60, borderRadius: T.radius.lg,
-    justifyContent: "center", alignItems: "center", borderWidth: 2,
-  },
-  initials: { fontSize: 24, fontWeight: "900" },
-  name: { color: T.text, fontSize: 20, fontWeight: "700", marginBottom: 3 },
-  userId: { color: T.textDim, fontSize: 10, fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
-  rolePill: {
-    flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start",
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: T.radius.sm, borderWidth: 1.5,
-  },
-  roleLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+  heroTopBar: { height: 4, width: "100%" },
+  heroBody:   { flexDirection: "row", alignItems: "center", gap: 16, padding: 20 },
+
+  avatarBox:  { width: 60, height: 60, borderRadius: T.radius.lg, justifyContent: "center", alignItems: "center", borderWidth: 2 },
+  initials:   { fontSize: 24, fontWeight: "900" },
+  name:       { color: T.text, fontSize: 20, fontWeight: "700", marginBottom: 3 },
+  userId:     { color: T.textDim, fontSize: 10, fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
+  rolePill:   { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: T.radius.sm, borderWidth: 1.5 },
+  roleLabel:  { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
 
   secCard: {
     backgroundColor: T.white, borderRadius: T.radius.lg,
     padding: 16, marginBottom: 20, borderWidth: 1.5,
-    shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 12, elevation: 2,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
   },
-  secTop: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  secTitle: { flex: 1, fontSize: 13, fontWeight: "700", color: T.text },
-  secScore: { fontSize: 18, fontWeight: "900" },
-  secBarBg: { height: 5, borderRadius: 99, marginBottom: 10, overflow: "hidden" },
+  secTop:     { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  secTitle:   { flex: 1, fontSize: 13, fontWeight: "700", color: T.text },
+  secScore:   { fontSize: 18, fontWeight: "900" },
+  secBarBg:   { height: 5, borderRadius: 99, marginBottom: 10, overflow: "hidden" },
   secBarFill: { height: 5, borderRadius: 99 },
-  secHint: { color: T.textDim, fontSize: 11, fontWeight: "600" },
+  secHint:    { color: T.textDim, fontSize: 11, fontWeight: "600" },
 
   logoutBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
     backgroundColor: T.redSoft, borderRadius: T.radius.md,
     paddingVertical: 16, marginTop: 8, marginBottom: 12,
     borderWidth: 1.5, borderColor: "#FECACA",
-    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+    shadowColor: "#DC2626", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3,
   },
   logoutTxt: { color: T.red, fontWeight: "800", fontSize: 14, letterSpacing: 0.5 },
 
