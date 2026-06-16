@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v8.0 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v8.1 — Direct Transf'air
 // ✅ v7.0 : refonte visuelle — thème 100% clair
 // ✅ v8.0 :
 //    - Héro : arc concave Option C (react-native-svg)
@@ -8,6 +8,9 @@
 //    - "Flash transfer" sur 1 ligne (numberOfLines={1})
 //    - Stats sorties du héro → carte blanche sous l'arc
 //    - Bouton notification → router.push("/(tabs)/notifications")
+// ✅ v8.1 :
+//    - Ajout carte "Clients Wallet" dans la grille Pilotage Société
+//      (case vide orange visible sur le dashboard)
 // =========================================================
 
 import React, { useMemo, useState, useCallback, useRef } from "react";
@@ -467,20 +470,13 @@ const ccs = StyleSheet.create({
 });
 
 // ─── Arc Concave — transition héro → corps ────────────────
-// Technique SVG : remplit les coins (couleur HERO_BG),
-// laisse la courbe montante au centre (couleur PAGE_BG)
 function HeroConcave() {
-  // Chemin : haut-gauche → bas-gauche → courbe concave → bas-droite → haut-droite → ferme
   const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
-  // Ligne de bordure sur la courbe
   const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
   return (
     <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
-      {/* Fond = couleur page */}
       <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={T.pageBg} />
-      {/* Coins héro */}
       <Path d={d} fill={HERO_BG} />
-      {/* Bordure courbe */}
       <Path d={bd} fill="none" stroke="rgba(79,70,229,0.20)" strokeWidth={1.5} />
     </Svg>
   );
@@ -801,7 +797,7 @@ export default function CompanyDashboard() {
           </View>
         </TouchableOpacity>
 
-        {/* Pilotage société */}
+        {/* ── Pilotage société ── */}
         <View style={s.secRow}>
           <View style={[s.secDot, { backgroundColor: T.primary }]} />
           <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
@@ -812,6 +808,8 @@ export default function CompanyDashboard() {
           <ActionCard title="Trésorerie"          subtitle="Vue détaillée"        icon="wallet-outline"     color={T.warning}  bg={T.warningSoft}   onPress={() => router.push("/(tabs)/admin/treasury")} />
           <ActionCard title="Frais & Commissions" subtitle="Taux par méthode"     icon="pricetag-outline"   color="#D97706"    bg="#FEF3C7"          onPress={() => router.push("/(tabs)/admin/fees")} />
           <ActionCard title="Paramètres"          subtitle="Compte & société"     icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"          onPress={() => router.push("/(tabs)/admin/settings")} />
+          {/* ✅ v8.1 — Clients Wallet (remplace la case vide orange du dashboard) */}
+          <ActionCard title="Clients Wallet"      subtitle="Gestion des comptes"  icon="people-outline"     color="#F97316"    bg="#FFF7ED"          onPress={() => router.push("/(tabs)/admin/wallet-clients" as any)} />
         </View>
 
         {/* Agences */}
@@ -966,7 +964,7 @@ const s = StyleSheet.create({
     position: "absolute", bottom: -1, right: -1,
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: "#10B981",
-    borderWidth: 2, borderColor: HERO_BG, // ✅ couleur héro au lieu de T.surface
+    borderWidth: 2, borderColor: HERO_BG,
   },
 
   heroBadge:    { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(238,242,255,0.7)", borderWidth: 1, borderColor: T.primaryBorder, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, alignSelf: "flex-start", marginBottom: 3 },
@@ -985,7 +983,7 @@ const s = StyleSheet.create({
     position: "absolute", top: 5, right: 5,
     width: 6, height: 6, borderRadius: 99,
     backgroundColor: "#EF4444",
-    borderWidth: 1.5, borderColor: HERO_BG, // ✅ couleur héro
+    borderWidth: 1.5, borderColor: HERO_BG,
   },
 
   heroWelcome: {

@@ -1,20 +1,27 @@
 // apps/direct-transfair-mobile/app/agent/send-cash.tsx
 // =========================================================
-// AGENT SEND CASH (GUICHET) v7.3 — Direct Transf'air
+// AGENT SEND CASH (GUICHET) v7.4 — Direct Transf'air
 // ✅ v5.0 : Envoi espèces, frais auto, résumé, code retrait
 // ✅ v6.0 : Bleu #2563EB, arc concave, sélecteurs indicatif
-// ✅ v7.0 :
-//    - Héro pill "• AGENT" (cohérent historique/retrait/dépôt)
-//    - paddingTop Android 44 → 32
-//    - SuccessModal remplacé par navigation vers reçu imprimable
-//    - user extrait de useAuth pour alimenter agencyName/agentName
-// ✅ v7.1 :
-//    - FIX : taux de frais chargé dynamiquement (suppression du 1,5% hardcodé)
-// ✅ v7.2 :
-//    - FIX : getCommissionRules() → GET /commissions/fees
-//      → endpoint accessible à tous les rôles (AGENT inclus)
-//      → getCommissionRules() requiert COMPANY_ADMIN → 403 pour l'agent
-//      → fallback silencieux à 1,5% si réseau inaccessible
+// ✅ v7.0 : Héro pill, arc concave, reçu imprimable, user context
+// ✅ v7.1 : Taux de frais dynamique (GET /commissions/fees)
+// ✅ v7.2 : Route /commissions/fees sans restriction de rôle
+// ✅ v7.3 : Montant reçu dans la devise du destinataire
+// ✅ v7.4 : ZÉRO code en dur — tout est détecté automatiquement
+//
+//   PROBLÈME v7.3 : devise envoyée hardcodée "XOF"
+//     → un agent guinéen (GNF) envoyait currency:"XOF"
+//     → le backend cherchait un wallet XOF agence → solde 0 → 403
+//
+//   CORRECTIFS v7.4 :
+//   A) agentCurrency : chargé depuis user.country/primaryCurrency
+//      + confirmé via api.getMyWallets() → premier wallet de l'agence
+//   B) Indicatif téléphonique expéditeur : initialisé sur le pays
+//      de l'agence (Guinée → +224, Sénégal → +221…)
+//   C) Devise de l'expéditeur dans le reçu = agentCurrency
+//   D) Taux d'échange : calculé depuis agentCurrency (pas XOF)
+//   E) Précision adaptative du taux affiché :
+//      < 0.01 → 6 décimales | < 1 → 4 décimales | sinon → 2
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -33,11 +40,11 @@ import { api } from "../../services/api";
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Bleu agent ──────────────────────────────────────────
+// ─── Couleur agent ────────────────────────────────────────
 const AGENT_BLUE = "#2563EB";
 const CONCAVE_H  = 60;
 
-// ─── Design System ──────────────────────────────────────
+// ─── Design System ───────────────────────────────────────
 const C = {
   violet:       AGENT_BLUE,
   violetLight:  "#EFF6FF",
@@ -65,6 +72,9 @@ const C = {
   },
 };
 
+// ─── Helpers ──────────────────────────────────────────────
+
+/** Formate un nombre selon la devise (0 décimales pour GNF/XOF, 2 pour EUR…) */
 function fmt(n: number, currency = "XOF"): string {
   const decimals = currency === "EUR" || currency === "GBP" || currency === "USD" ? 2 : 0;
   try {
@@ -72,11 +82,39 @@ function fmt(n: number, currency = "XOF"): string {
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
     }).format(n);
-  }
-  catch { return Math.round(n).toString(); }
+  } catch { return Math.round(n).toString(); }
 }
 
-// ─── Arc concave ─────────────────────────────────────────
+/**
+ * Déduit la devise locale depuis le nom de pays de l'agence.
+ * Utilisé pour initialiser agentCurrency avant confirmation via API.
+ */
+function getCurrencyFromCountry(country: string): string {
+  const cn = (country || "").toLowerCase().trim();
+  if (cn.includes("guinée") && !cn.includes("bissau") && !cn.includes("équat")) return "GNF";
+  if (cn.includes("maroc"))                                                        return "MAD";
+  if (cn.includes("grande-bretagne") || cn.includes("royaume-uni"))               return "GBP";
+  if (cn.includes("états-unis")      || cn.includes("usa"))                       return "USD";
+  if (
+    cn.includes("france")   || cn.includes("belgi")   || cn.includes("allem")  ||
+    cn.includes("espagne")  || cn.includes("italie")  || cn.includes("portug") ||
+    cn.includes("pays-bas") || cn.includes("autriche")
+  ) return "EUR";
+  return "XOF"; // Zone UEMOA par défaut
+}
+
+/**
+ * Précision adaptative pour l'affichage du taux de change.
+ * Évite "0.0015" (trompeur) pour des taux très petits comme GNF→EUR.
+ */
+function rateDecimals(rate: number): number {
+  if (rate < 0.01)  return 6; // ex: GNF→EUR  = 0.000104
+  if (rate < 1)     return 4; // ex: XOF→EUR  = 0.0015
+  if (rate >= 100)  return 2; // ex: EUR→XOF  = 655.96
+  return 4;                    // ex: XOF→GNF = 14.4000
+}
+
+// ─── Arc concave ──────────────────────────────────────────
 function HeroConcave() {
   const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
   const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
@@ -89,7 +127,7 @@ function HeroConcave() {
   );
 }
 
-// ─── Field ──────────────────────────────────────────────
+// ─── Field ────────────────────────────────────────────────
 function Field({ label, value, onChangeText, placeholder, keyboardType, editable = true }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; editable?: boolean;
@@ -118,7 +156,7 @@ const f = StyleSheet.create({
   input:   { paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: C.ink, fontWeight: "600" },
 });
 
-// ─── PickerModal ─────────────────────────────────────────
+// ─── PickerModal ──────────────────────────────────────────
 function PickerModal({ visible, onClose, title, data, onSelect }: {
   visible: boolean; onClose: () => void; title: string;
   data: CountryData[]; onSelect: (c: CountryData) => void;
@@ -192,7 +230,7 @@ const pm = StyleSheet.create({
   dial:       { color: AGENT_BLUE, fontSize: 11, fontWeight: "900" },
 });
 
-// ─── Section Header ──────────────────────────────────────
+// ─── Section Header ───────────────────────────────────────
 function SectionHeader({ step, title, icon, color }: {
   step: string; title: string; icon: string; color: string;
 }) {
@@ -213,31 +251,40 @@ const sh = StyleSheet.create({
   title:   { flex: 1, fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5, textTransform: "uppercase" },
 });
 
-// ─── Main ───────────────────────────────────────────────
+// ─── Main ─────────────────────────────────────────────────
 export default function AgentSendCashScreen() {
-  const router                  = useRouter();
-  const { refreshUser, user }   = useAuth();
+  const router                = useRouter();
+  const { refreshUser, user } = useAuth();
 
-  const [senderFirstName,   setSenderFirstName]   = useState("");
-  const [senderLastName,    setSenderLastName]    = useState("");
-  const [senderPhone,       setSenderPhone]       = useState("");
-  const [senderPhoneCode,   setSenderPhoneCode]   = useState<CountryData>(countriesList[0]);
+  // ── Expéditeur ────────────────────────────────────────
+  const [senderFirstName, setSenderFirstName] = useState("");
+  const [senderLastName,  setSenderLastName]  = useState("");
+  const [senderPhone,     setSenderPhone]     = useState("");
+  // Initialisé sur countriesList[0] puis mis à jour depuis le profil agent
+  const [senderPhoneCode, setSenderPhoneCode] = useState<CountryData>(countriesList[0]);
 
+  // ── Bénéficiaire ──────────────────────────────────────
   const [receiverFirstName, setReceiverFirstName] = useState("");
   const [receiverLastName,  setReceiverLastName]  = useState("");
   const [receiverCountry,   setReceiverCountry]   = useState<CountryData>(countriesList[0]);
   const [receiverPhone,     setReceiverPhone]     = useState("");
 
+  // ── Montant & frais ───────────────────────────────────
   const [amount,  setAmount]  = useState("");
   const [fees,    setFees]    = useState(0);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
 
-  // ✅ v7.1 FIX : taux dynamique (défaut 1,5% si API inaccessible ou 403 agent)
+  // ── Taux de frais (dynamique, via /commissions/fees) ──
   const [feeRate,  setFeeRate]  = useState(0.015);
   const [feeLabel, setFeeLabel] = useState("1,5");
 
-  // ✅ v7.3 : montant reçu dans la devise du pays de destination
+  // ── Devise de l'agent (dynamique) ─────────────────────
+  // ✅ v7.4 : déduite du profil agent, confirmée via les wallets
+  // Plus "XOF" hardcodé : un agent guinéen → "GNF", etc.
+  const [agentCurrency, setAgentCurrency] = useState("XOF");
+
+  // ── Taux de change & montant reçu ─────────────────────
   const [allRates,       setAllRates]       = useState<any[]>([]);
   const [targetCurrency, setTargetCurrency] = useState("XOF");
   const [receivedAmount, setReceivedAmount] = useState(0);
@@ -246,9 +293,51 @@ export default function AgentSendCashScreen() {
   const [showSenderModal,   setShowSenderModal]   = useState(false);
   const [showReceiverModal, setShowReceiverModal] = useState(false);
 
-  // ✅ v7.2 FIX : GET /commissions/fees (accessible AGENT, pas seulement COMPANY_ADMIN)
-  // getCommissionRules() → GET /commissions → rôle COMPANY_ADMIN requis → 403 pour agent
-  // GET /commissions/fees → endpoint sans restriction de rôle (commissions.controller.ts v4.2)
+  // ─────────────────────────────────────────────────────
+  // ✅ v7.4 — Auto-détection devise et pays de l'agence
+  // Étape 1 : depuis user.country ou user.agency.country (synchrone)
+  // Étape 2 : confirmé via api.getMyWallets() (asynchrone)
+  // ─────────────────────────────────────────────────────
+  useEffect(() => {
+    // Étape 1 : depuis le profil utilisateur
+    const country =
+      (user as any)?.country            ||
+      (user as any)?.agency?.country    ||
+      (user as any)?.primaryCountry     ||
+      "";
+
+    if (country) {
+      const currency = getCurrencyFromCountry(country);
+      setAgentCurrency(currency);
+
+      // Pré-sélectionner l'indicatif téléphonique du pays de l'agence
+      const countryData = countriesList.find((c) =>
+        c.name.toLowerCase().includes(
+          country.toLowerCase().split(",")[0].trim(),
+        ),
+      );
+      if (countryData) setSenderPhoneCode(countryData);
+    }
+
+    // Étape 2 : confirmation via les wallets (le plus fiable)
+    api.getMyWallets()
+      .then((wallets) => {
+        // Le wallet de l'agence est souvent le premier ou celui avec agencyId
+        const agencyWallet =
+          wallets.find((w: any) => w.agencyId) ??
+          wallets.find((w: any) => w.isDefault) ??
+          wallets[0];
+
+        if (agencyWallet?.currency) {
+          setAgentCurrency(agencyWallet.currency);
+        }
+      })
+      .catch(() => {
+        // Garde la valeur déduite du pays en étape 1
+      });
+  }, [user]);
+
+  // ✅ v7.2 : taux de frais depuis /commissions/fees (accessible AGENT)
   useEffect(() => {
     (api.http as any).get("/commissions/fees")
       .then((res: any) => {
@@ -260,52 +349,65 @@ export default function AgentSendCashScreen() {
           setFeeLabel(raw.toFixed(1).replace(".", ","));
         }
       })
-      .catch(() => {
-        // Fallback silencieux → 1,5% par défaut
-      });
+      .catch(() => {});
   }, []);
 
-  // ✅ v7.3 : chargement des taux de change au mount
+  // ✅ v7.3 : taux de change au mount
   useEffect(() => {
     api.getExchangeRates()
       .then((rates: any[]) => setAllRates(rates))
-      .catch(() => {}); // taux de secours appliqués dans le calcul
+      .catch(() => {});
   }, []);
 
-  // ✅ v7.3 : devise cible déduite du pays de destination
+  // ✅ v7.3 : devise cible depuis le pays du bénéficiaire
   useEffect(() => {
     const cn = receiverCountry.name.toLowerCase();
     let curr = "XOF";
     if (cn.includes("guinée") && !cn.includes("bissau") && !cn.includes("équat")) curr = "GNF";
-    else if (cn.includes("maroc")) curr = "MAD";
-    else if (cn.includes("grande-bretagne") || cn.includes("royaume-uni")) curr = "GBP";
-    else if (cn.includes("états-unis") || cn.includes("usa")) curr = "USD";
+    else if (cn.includes("maroc"))                                                  curr = "MAD";
+    else if (cn.includes("grande-bretagne") || cn.includes("royaume-uni"))         curr = "GBP";
+    else if (cn.includes("états-unis")      || cn.includes("usa"))                 curr = "USD";
     else if (
-      cn.includes("france")  || cn.includes("belgi")   || cn.includes("allem") ||
-      cn.includes("espagne") || cn.includes("italie")  || cn.includes("portug") ||
-      cn.includes("pays-bas")|| cn.includes("autriche")
+      cn.includes("france")   || cn.includes("belgi")   || cn.includes("allem")  ||
+      cn.includes("espagne")  || cn.includes("italie")  || cn.includes("portug") ||
+      cn.includes("pays-bas") || cn.includes("autriche")
     ) curr = "EUR";
     setTargetCurrency(curr);
   }, [receiverCountry]);
 
-  // ✅ v7.3 : calcul du taux XOF → devise cible
+  // ✅ v7.4 : taux agentCurrency → targetCurrency (plus XOF hardcodé)
   useEffect(() => {
-    if (targetCurrency === "XOF") { setExchangeRate(1); return; }
+    if (targetCurrency === agentCurrency) {
+      setExchangeRate(1);
+      return;
+    }
     const getR = (pair: string, fb: number): number =>
       (allRates as any[]).find((r: any) => r.pair === pair)?.rate ?? fb;
-    // XOF → EUR → devise cible
-    const xofToEur   = 1 / getR("EUR_XOF", 655.957);
-    const eurToTarget = targetCurrency === "EUR" ? 1 : getR(`EUR_${targetCurrency}`, 1);
-    setExchangeRate(xofToEur * eurToTarget);
-  }, [allRates, targetCurrency]);
 
-  // ✅ v7.1 FIX + v7.3 : calcul frais et montant reçu dans la devise cible
+    const FALLBACKS: Record<string, number> = {
+      EUR_XOF: 655.957, EUR_GNF: 9600, EUR_GBP: 0.85,
+      EUR_USD: 1.08,    EUR_MAD: 10.8,
+    };
+
+    // agentCurrency → EUR
+    const agentToEur = agentCurrency === "EUR"
+      ? 1
+      : 1 / getR(`EUR_${agentCurrency}`, FALLBACKS[`EUR_${agentCurrency}`] ?? 1);
+
+    // EUR → targetCurrency
+    const eurToTarget = targetCurrency === "EUR"
+      ? 1
+      : getR(`EUR_${targetCurrency}`, FALLBACKS[`EUR_${targetCurrency}`] ?? 1);
+
+    setExchangeRate(agentToEur * eurToTarget);
+  }, [allRates, targetCurrency, agentCurrency]);
+
+  // ✅ calcul frais + montant reçu
   useEffect(() => {
     const val = parseFloat(amount) || 0;
     const fee = Math.ceil(val * feeRate);
     setFees(fee);
     setTotal(val + fee);
-    // Montant reçu = montant envoyé converti (frais restent côté expéditeur)
     setReceivedAmount(Math.round(val * exchangeRate));
   }, [amount, feeRate, exchangeRate]);
 
@@ -314,7 +416,6 @@ export default function AgentSendCashScreen() {
     receiverFirstName.trim() && receiverLastName.trim() && receiverPhone.trim() &&
     parseFloat(amount) > 0;
 
-  // ✅ v7 : navigation vers le reçu à la place du SuccessModal
   const handleSend = async () => {
     if (!canSubmit) { Alert.alert("Erreur", "Veuillez remplir tous les champs."); return; }
     setLoading(true);
@@ -325,26 +426,32 @@ export default function AgentSendCashScreen() {
         country:  receiverCountry.name,
         city:     "Inconnue",
       });
+
+      // ✅ v7.4 : currency = agentCurrency (plus "XOF" hardcodé)
       const transaction = await api.createTransaction({
         amount:          parseFloat(amount),
-        currency:        "XOF",
+        currency:        agentCurrency,
         beneficiaryId:   String(beneficiary.id),
         payoutMethod:    "CASH_PICKUP",
         senderFirstName: senderFirstName.trim(),
         senderLastName:  senderLastName.trim(),
         senderPhone:     `${senderPhoneCode.dialCode}${senderPhone.trim()}`,
       });
+
       await refreshUser();
 
-      // ── Construction des données du reçu ──────────────
+      // ✅ v7.4 : reçu avec devise dynamique + montant reçu
       const receiptData = {
         type:               "ENVOI" as const,
         reference:          transaction.reference,
         date:               new Date().toISOString(),
         amount:             parseFloat(amount),
-        currency:           "XOF",
+        currency:           agentCurrency,
         fees,
         totalAmount:        total,
+        receivedAmount,
+        targetCurrency,
+        exchangeRate,
         beneficiaryName:    `${receiverFirstName.trim()} ${receiverLastName.trim()}`,
         beneficiaryPhone:   `+${receiverCountry.dialCode}${receiverPhone.trim()}`,
         beneficiaryCountry: receiverCountry.name,
@@ -354,8 +461,9 @@ export default function AgentSendCashScreen() {
         agencyName:         (user as any)?.agency?.name || undefined,
         agentName:          `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined,
       };
+
       router.push(
-        `/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`
+        `/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`,
       );
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Erreur lors de l'envoi.";
@@ -364,6 +472,8 @@ export default function AgentSendCashScreen() {
   };
 
   const amtNum = parseFloat(amount) || 0;
+  // ✅ v7.4 : précision adaptative (plus "toFixed(4)" qui tronquait 0.0001...)
+  const rateDisplay = exchangeRate.toFixed(rateDecimals(exchangeRate));
 
   return (
     <SafeAreaView style={s.safe}>
@@ -373,8 +483,6 @@ export default function AgentSendCashScreen() {
       <View>
         <View style={s.hero}>
           <View style={s.glow} />
-
-          {/* Ligne 1 : [← iconBtn] [• AGENT pill] spacer [NOUVEAU badge] */}
           <View style={s.heroTopRow}>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
               <Ionicons name="arrow-back" size={18} color={C.white} />
@@ -388,7 +496,6 @@ export default function AgentSendCashScreen() {
               <Text style={[s.newBadgeTxt, { fontFamily: C.font.sans }]}>NOUVEAU</Text>
             </View>
           </View>
-
           <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Envoi Espèces</Text>
           <Text style={[s.heroSub,   { fontFamily: C.font.sans  }]}>Guichet · Cash-Out</Text>
         </View>
@@ -410,11 +517,12 @@ export default function AgentSendCashScreen() {
                 <Field label="Prénom" value={senderFirstName} onChangeText={setSenderFirstName} placeholder="Moussa" />
               </View>
               <View style={{ flex: 1 }}>
-                <Field label="Nom"    value={senderLastName}  onChangeText={setSenderLastName}  placeholder="Diop" />
+                <Field label="Nom" value={senderLastName} onChangeText={setSenderLastName} placeholder="Diop" />
               </View>
             </View>
             <Text style={[f.label, { fontFamily: C.font.sans }]}>Téléphone</Text>
             <View style={s.phoneRow}>
+              {/* ✅ v7.4 : indicatif pré-sélectionné sur le pays de l'agence */}
               <TouchableOpacity style={s.dialBtn} onPress={() => setShowSenderModal(true)} activeOpacity={0.75}>
                 <Text style={{ fontSize: 18 }}>{senderPhoneCode.flag}</Text>
                 <Text style={[s.dialCode, { fontFamily: C.font.mono }]}>+{senderPhoneCode.dialCode}</Text>
@@ -435,7 +543,6 @@ export default function AgentSendCashScreen() {
           <View style={s.card}>
             <SectionHeader step="2" title="Bénéficiaire" icon="location-outline" color={C.blue} />
 
-            {/* Sélecteur pays de destination */}
             <Text style={[f.label, { fontFamily: C.font.sans }]}>Pays de destination</Text>
             <TouchableOpacity style={s.countryBtn} onPress={() => setShowReceiverModal(true)} activeOpacity={0.75}>
               <Text style={{ fontSize: 22 }}>{receiverCountry.flag}</Text>
@@ -453,13 +560,12 @@ export default function AgentSendCashScreen() {
                 <Field label="Prénom" value={receiverFirstName} onChangeText={setReceiverFirstName} placeholder="Abdoul" />
               </View>
               <View style={{ flex: 1 }}>
-                <Field label="Nom"    value={receiverLastName}  onChangeText={setReceiverLastName}  placeholder="Diallo" />
+                <Field label="Nom" value={receiverLastName} onChangeText={setReceiverLastName} placeholder="Diallo" />
               </View>
             </View>
 
             <Text style={[f.label, { fontFamily: C.font.sans }]}>Téléphone bénéficiaire</Text>
             <View style={s.phoneRow}>
-              {/* Indicatif non-interactif (issu du pays sélectionné) */}
               <View style={s.dialBtnStatic}>
                 <Text style={{ fontSize: 18 }}>{receiverCountry.flag}</Text>
                 <Text style={[s.dialCode, { fontFamily: C.font.mono }]}>+{receiverCountry.dialCode}</Text>
@@ -479,6 +585,7 @@ export default function AgentSendCashScreen() {
           <View style={s.card}>
             <SectionHeader step="3" title="Montant & Frais" icon="cash-outline" color={C.green} />
 
+            {/* ✅ v7.4 : label devise dynamique (agentCurrency) */}
             <View style={[s.amtBox, amtNum > 0 && { borderColor: AGENT_BLUE }]}>
               <TextInput
                 style={[s.amtInput, { fontFamily: C.font.serif }]}
@@ -489,24 +596,30 @@ export default function AgentSendCashScreen() {
                 keyboardType="numeric"
               />
               <View style={s.curBox}>
-                <Text style={[s.curTxt, { fontFamily: C.font.mono }]}>XOF</Text>
+                <Text style={[s.curTxt, { fontFamily: C.font.mono }]}>{agentCurrency}</Text>
               </View>
             </View>
 
-            {/* Tableau frais (visible dès qu'un montant est saisi) */}
+            {/* Tableau (visible dès qu'un montant est saisi) */}
             {amtNum > 0 && (
               <View style={s.feesCard}>
+                {/* Montant envoyé */}
                 <View style={s.feesRow}>
                   <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Montant envoyé</Text>
-                  <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(amtNum)} XOF</Text>
-                </View>
-                <View style={s.feesRow}>
-                  {/* ✅ v7.1 FIX : label dynamique au lieu de "1,5 %" hardcodé */}
-                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais ({feeLabel} %)</Text>
-                  <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(fees)} XOF</Text>
+                  <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>
+                    {fmt(amtNum, agentCurrency)} {agentCurrency}
+                  </Text>
                 </View>
 
-                {/* ✅ v7.3 : montant reçu dans la devise du pays de destination */}
+                {/* Frais */}
+                <View style={s.feesRow}>
+                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais ({feeLabel} %)</Text>
+                  <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>
+                    {fmt(fees, agentCurrency)} {agentCurrency}
+                  </Text>
+                </View>
+
+                {/* ✅ v7.3 + v7.4 : montant reçu dans la devise du destinataire */}
                 {receivedAmount > 0 && (
                   <>
                     <View style={s.feesRowDivider} />
@@ -521,20 +634,24 @@ export default function AgentSendCashScreen() {
                         {fmt(receivedAmount, targetCurrency)} {targetCurrency}
                       </Text>
                     </View>
-                    {targetCurrency !== "XOF" && (
+                    {/* ✅ v7.4 : précision adaptive (toFixed dynamique) */}
+                    {targetCurrency !== agentCurrency && (
                       <View style={s.rateChip}>
                         <Ionicons name="swap-horizontal-outline" size={11} color={C.green} />
                         <Text style={[s.rateChipTxt, { fontFamily: C.font.mono }]}>
-                          1 XOF = {exchangeRate.toFixed(4)} {targetCurrency}
+                          1 {agentCurrency} = {rateDisplay} {targetCurrency}
                         </Text>
                       </View>
                     )}
                   </>
                 )}
 
+                {/* Total */}
                 <View style={[s.feesRow, s.totalRow]}>
                   <Text style={[s.totalLbl, { fontFamily: C.font.sans }]}>Total à débiter</Text>
-                  <Text style={[s.totalVal, { fontFamily: C.font.mono }]}>{fmt(total)} XOF</Text>
+                  <Text style={[s.totalVal, { fontFamily: C.font.mono }]}>
+                    {fmt(total, agentCurrency)} {agentCurrency}
+                  </Text>
                 </View>
               </View>
             )}
@@ -552,8 +669,9 @@ export default function AgentSendCashScreen() {
                 ? <ActivityIndicator color={C.white} size="small" />
                 : <>
                     <Ionicons name="paper-plane-outline" size={16} color={C.white} />
+                    {/* ✅ v7.4 : devise dynamique dans le CTA */}
                     <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>
-                      ENVOYER — {fmt(total)} XOF
+                      ENVOYER — {fmt(total, agentCurrency)} {agentCurrency}
                     </Text>
                   </>
               }
@@ -585,11 +703,10 @@ export default function AgentSendCashScreen() {
   );
 }
 
-// ─── Styles ─────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // ── Héro v7 — pill style, arc concave, paddingTop réduit ──
   hero: {
     backgroundColor: AGENT_BLUE,
     paddingHorizontal: 20,
@@ -613,41 +730,37 @@ const s = StyleSheet.create({
   card:  { backgroundColor: C.white, borderRadius: C.r.lg, padding: 17, marginBottom: 14, borderWidth: 1, borderColor: C.cardBorder, shadowColor: AGENT_BLUE, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
   row2:  { flexDirection: "row", gap: 10 },
 
-  // Téléphone
   phoneRow:     { flexDirection: "row", gap: 8, marginBottom: 14 },
   dialBtn:      { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, paddingVertical: 12, flexShrink: 0 },
   dialBtnStatic:{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, paddingVertical: 12, flexShrink: 0 },
   dialCode:     { color: C.ink, fontSize: 12, fontWeight: "800" },
 
-  // Pays destination
   countryBtn:  { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, padding: 13, marginBottom: 14 },
   countryName: { fontSize: 14, fontWeight: "700", color: C.ink },
   countryDial: { fontSize: 11, color: C.inkSoft, fontWeight: "600", marginTop: 1 },
   chevron:     { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
 
-  // Montant
   amtBox:   { flexDirection: "row", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, overflow: "hidden", marginBottom: 14 },
   amtInput: { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 22, color: C.ink, fontWeight: "800" },
   curBox:   { paddingHorizontal: 14, paddingVertical: 12, backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder, justifyContent: "center" },
   curTxt:   { color: AGENT_BLUE, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
 
-  // Tableau frais
   feesCard:       { backgroundColor: C.blueBg, borderRadius: C.r.md, padding: 14, borderWidth: 1, borderColor: C.blueBorder },
   feesRow:        { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   feesRowDivider: { height: 1, backgroundColor: C.blueBorder, marginVertical: 4 },
   feesLbl:        { fontSize: 11, color: C.inkSoft, fontWeight: "600" },
   feesVal:        { fontSize: 12, color: C.ink, fontWeight: "700" },
-  // ✅ v7.3 : styles montant reçu + chip taux
+
   receivedLblWrap:{ flexDirection: "row", alignItems: "center", gap: 5 },
   receivedLbl:    { fontSize: 11, color: C.green, fontWeight: "700" },
   receivedVal:    { fontSize: 13, color: C.green, fontWeight: "900" },
   rateChip:       { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-end", backgroundColor: `${C.green}12`, paddingHorizontal: 8, paddingVertical: 3, borderRadius: C.r.pill, marginBottom: 6 },
   rateChipTxt:    { fontSize: 9, color: C.green, fontWeight: "700" },
+
   totalRow: { borderTopWidth: 1, borderTopColor: C.blueBorder, marginTop: 4, paddingTop: 10, marginBottom: 0 },
   totalLbl: { fontSize: 12, fontWeight: "900", color: C.ink },
   totalVal: { fontSize: 18, fontWeight: "900", color: AGENT_BLUE },
 
-  // CTA
   cta:       { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
   ctaInner:  { backgroundColor: AGENT_BLUE, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 17, gap: 8, borderRadius: C.r.md },
   ctaTxt:    { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },

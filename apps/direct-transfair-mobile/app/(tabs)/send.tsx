@@ -1,17 +1,14 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.3 — Direct Transf'air
+// SEND MONEY v2.4 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
-//    - bg #F0FDF9 → #FAFAFA (suppression teinte verte)
-//    - tabsWrap : fond #F0F0F0 neutre
-//    - amountInput fontSize 32→24, amountReceived 28→22
-//    - CTA shadow neutre (shadowColor #000)
-// ✅ v2.3 : FIX taux hardcodé 1,5%
-//    - cashFeeRate et cashFeeLabel chargés depuis GET /commissions/fees
-//    - feesRate = mode === "WALLET" ? 0 : cashFeeRate (plus hardcodé)
-//    - Label "Frais (X %)" dynamique
-//    - Fallback silencieux à 1,5% si endpoint inaccessible
+// ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
+// ✅ v2.4 : Motif du transfert
+//    - Composant MotifModal avec 9 motifs (radio buttons)
+//    - Sélecteur compact entre Montant et Récapitulatif
+//    - Motif passé comme `note` dans createTransaction
+//    - Optionnel : n'empêche pas l'envoi si non renseigné
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -49,6 +46,19 @@ const C = {
   blue: "#2563EB", blueSoft: "#EFF6FF",
   orange: "#EA580C", orangeSoft: "#FFF7ED",
 };
+
+// ─── Motifs du transfert ──────────────────────────────────
+const MOTIFS = [
+  { icon: "👨‍👩‍👧", label: "Assistance familiale" },
+  { icon: "🪙",    label: "Épargne / Investissements" },
+  { icon: "💗",    label: "Oeuvre caritative / Don" },
+  { icon: "🛒",    label: "Paiement de marchandises" },
+  { icon: "✈️",    label: "Frais de voyage" },
+  { icon: "📚",    label: "Frais scolaires" },
+  { icon: "🏠",    label: "Loyer / Hypothèque" },
+  { icon: "🏥",    label: "Assistance médicale" },
+  { icon: "💳",    label: "Paiement de taxes" },
+] as const;
 
 // ─── Helpers ──────────────────────────────────────────────
 const getCountryData = (countryName: string): CountryData => {
@@ -220,6 +230,80 @@ const fbS = StyleSheet.create({
   cancelTxt:  { fontSize: 15, fontWeight: "700", color: C.textMuted },
 });
 
+// ─── ✅ v2.4 — Motif Modal ────────────────────────────────
+function MotifModal({ visible, selected, onSelect, onClose }: {
+  visible: boolean;
+  selected: string | null;
+  onSelect: (m: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={mmS.overlay}>
+        <View style={mmS.sheet}>
+          <View style={mmS.handle} />
+
+          {/* Header */}
+          <View style={mmS.head}>
+            <View>
+              <Text style={[mmS.title, { fontFamily: F.display }]}>Motif du transfert</Text>
+              <Text style={[mmS.sub, { fontFamily: F.body }]}>
+                Choisissez un motif ci-dessous.{"\n"}Cette information restera confidentielle.
+              </Text>
+            </View>
+            <TouchableOpacity style={mmS.closeBtn} onPress={onClose}>
+              <Ionicons name="close" size={18} color={C.textSub} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Liste */}
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
+            {MOTIFS.map((m) => {
+              const isSelected = selected === m.label;
+              return (
+                <TouchableOpacity
+                  key={m.label}
+                  style={[mmS.item, isSelected && mmS.itemSelected]}
+                  onPress={() => { onSelect(m.label); onClose(); }}
+                  activeOpacity={0.75}
+                >
+                  <Text style={mmS.itemIcon}>{m.icon}</Text>
+                  <Text style={[
+                    mmS.itemLabel, { fontFamily: F.body },
+                    isSelected && { color: C.g4, fontWeight: "800" },
+                  ]}>
+                    {m.label}
+                  </Text>
+                  {/* Radio button */}
+                  <View style={[mmS.radio, isSelected && mmS.radioSelected]}>
+                    {isSelected && <View style={mmS.radioDot} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const mmS = StyleSheet.create({
+  overlay:      { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet:        { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "85%", paddingHorizontal: 20, paddingTop: 0, paddingBottom: 0 },
+  handle:       { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginTop: 14, marginBottom: 8 },
+  head:         { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: C.borderLight, marginBottom: 8 },
+  title:        { fontSize: 20, color: C.text, fontWeight: "700", marginBottom: 6 },
+  sub:          { fontSize: 13, color: C.textMuted, fontWeight: "500", lineHeight: 20 },
+  closeBtn:     { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center", marginTop: 2 },
+  item:         { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 17, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  itemSelected: {},
+  itemIcon:     { fontSize: 22, width: 32, textAlign: "center" },
+  itemLabel:    { flex: 1, fontSize: 15, color: C.text, fontWeight: "600" },
+  radio:        { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.border, justifyContent: "center", alignItems: "center" },
+  radioSelected:{ borderColor: C.g4 },
+  radioDot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: C.g4 },
+});
+
 // ─── Main ─────────────────────────────────────────────────
 export default function SendMoneyScreen() {
   const router = useRouter();
@@ -236,6 +320,10 @@ export default function SendMoneyScreen() {
   const [walletBalance,    setWalletBalance]    = useState(0);
   const [loadingWallet,    setLoadingWallet]    = useState(true);
 
+  // ✅ v2.4 — Motif du transfert
+  const [motif,          setMotif]          = useState<string | null>(null);
+  const [showMotifModal, setShowMotifModal] = useState(false);
+
   const userCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
 
   const [mode,         setMode]        = useState<"WALLET" | "CASH">("WALLET");
@@ -249,7 +337,7 @@ export default function SendMoneyScreen() {
   const [rawAmount,         setRawAmount]        = useState("");
   const [countrySearch,     setCountrySearch]    = useState("");
 
-  // ✅ v2.3 FIX : taux dynamique (défaut 1,5% si GET /commissions/fees inaccessible)
+  // ✅ v2.3 FIX : taux dynamique
   const [cashFeeRate,  setCashFeeRate]  = useState(0.015);
   const [cashFeeLabel, setCashFeeLabel] = useState("1,5");
 
@@ -273,7 +361,6 @@ export default function SendMoneyScreen() {
   }, [params]);
 
   // ✅ v2.3 FIX : charge le taux CASH_PICKUP depuis /commissions/fees
-  // Endpoint public (tous rôles authentifiés), fallback silencieux à 1,5%
   useEffect(() => {
     (api.http as any).get("/commissions/fees")
       .then((res: any) => {
@@ -285,9 +372,7 @@ export default function SendMoneyScreen() {
           setCashFeeLabel(raw.toFixed(1).replace(".", ","));
         }
       })
-      .catch(() => {
-        // Fallback silencieux → 1,5% par défaut
-      });
+      .catch(() => {});
   }, []);
 
   const fetchWalletBalance = useCallback(async () => {
@@ -359,7 +444,6 @@ export default function SendMoneyScreen() {
 
   const sendAmount = parseFloat(rawAmount.replace(/\s/g, "").replace(",", ".")) || 0;
 
-  // ✅ v2.3 FIX : cashFeeRate dynamique (plus 0.015 hardcodé)
   const feesRate    = mode === "WALLET" ? 0 : cashFeeRate;
   const feesAmt     = sendAmount * feesRate;
   const totalAmt    = sendAmount + feesAmt;
@@ -384,6 +468,8 @@ export default function SendMoneyScreen() {
           currency:        userCurrency,
           beneficiaryId:   detectedBeneficiary ? String(detectedBeneficiary.id) : undefined,
           payoutMethod:    "MOBILE_MONEY",
+          // ✅ v2.4 : motif passé comme note
+          note:            motif ?? undefined,
         });
         Alert.alert("✓ Envoyé", "Transfert wallet effectué avec succès !");
       } else {
@@ -396,6 +482,8 @@ export default function SendMoneyScreen() {
           currency:      userCurrency,
           beneficiaryId: selectedCashId,
           payoutMethod:  "CASH_PICKUP",
+          // ✅ v2.4 : motif passé comme note
+          note:          motif ?? undefined,
         });
         Alert.alert("✓ Code généré", "Le bénéficiaire peut retirer l'argent avec le code.");
       }
@@ -419,6 +507,9 @@ export default function SendMoneyScreen() {
       </View>
     );
   }
+
+  // ─── Motif actuel (pour affichage dans le sélecteur) ──
+  const selectedMotif = MOTIFS.find((m) => m.label === motif);
 
   return (
     <SafeAreaView style={s.safe}>
@@ -444,7 +535,6 @@ export default function SendMoneyScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Balance */}
         <View style={s.balanceHero}>
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
           {loadingWallet
@@ -590,7 +680,6 @@ export default function SendMoneyScreen() {
                 <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
                   <Ionicons name="cash-outline" size={14} color={C.g4} />
                 </View>
-                {/* ✅ v2.3 FIX : cashFeeLabel dynamique (plus "1,5" hardcodé) */}
                 <Text style={[s.blockTitle, { fontFamily: F.body }]}>
                   Montant{feesRate > 0 && (
                     <Text style={{ color: C.amber }}> (Frais {cashFeeLabel} %)</Text>
@@ -641,6 +730,40 @@ export default function SendMoneyScreen() {
               )}
             </View>
 
+            {/* ── ✅ v2.4 — Motif du transfert ── */}
+            <TouchableOpacity
+              style={s.motifRow}
+              onPress={() => setShowMotifModal(true)}
+              activeOpacity={0.85}
+            >
+              <View style={s.motifLeft}>
+                {/* Icône : emoji du motif sélectionné ou icône par défaut */}
+                {selectedMotif ? (
+                  <Text style={s.motifEmoji}>{selectedMotif.icon}</Text>
+                ) : (
+                  <View style={s.motifIconBox}>
+                    <Ionicons name="document-text-outline" size={17} color={C.textMuted} />
+                  </View>
+                )}
+                <Text style={[
+                  s.motifTxt, { fontFamily: F.body },
+                  motif ? { color: C.text, fontWeight: "700" } : { color: C.textFaint },
+                ]}>
+                  {motif ?? "Motif du transfert"}
+                </Text>
+                {motif && (
+                  <TouchableOpacity
+                    onPress={(e) => { e.stopPropagation(); setMotif(null); }}
+                    hitSlop={8}
+                    style={s.motifClear}
+                  >
+                    <Ionicons name="close-circle" size={16} color={C.textFaint} />
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+            </TouchableOpacity>
+
             {/* ── Récapitulatif ── */}
             {sendAmount > 0 && (
               <View style={s.block}>
@@ -661,6 +784,13 @@ export default function SendMoneyScreen() {
                   <>
                     <View style={s.summaryDivider} />
                     <SummaryRow label="Montant reçu" value={`${fmt(Math.round(receivedAmt))} ${targetCurrency}`} valueColor={C.blue} />
+                  </>
+                )}
+                {/* ✅ v2.4 : affiche le motif dans le récap si renseigné */}
+                {motif && (
+                  <>
+                    <View style={s.summaryDivider} />
+                    <SummaryRow label="Motif" value={`${selectedMotif?.icon ?? ""} ${motif}`} />
                   </>
                 )}
                 <View style={[s.summaryDivider, { backgroundColor: C.gBorder, height: 1.5 }]} />
@@ -722,6 +852,14 @@ export default function SendMoneyScreen() {
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── ✅ v2.4 — Motif Modal ── */}
+      <MotifModal
+        visible={showMotifModal}
+        selected={motif}
+        onSelect={setMotif}
+        onClose={() => setShowMotifModal(false)}
+      />
 
       {/* ── Country Picker ── */}
       <Modal visible={showCountryModal} animationType="slide" transparent>
@@ -846,6 +984,22 @@ const s = StyleSheet.create({
 
   rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.gSoft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
   rateTxt:  { fontSize: 12, color: C.g4, fontWeight: "700" },
+
+  // ✅ v2.4 — Motif row styles
+  motifRow:    {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
+    padding: 16, marginBottom: 14,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
+      android: { elevation: 1 },
+    }),
+  },
+  motifLeft:   { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  motifEmoji:  { fontSize: 20, width: 28, textAlign: "center" },
+  motifIconBox:{ width: 28, height: 28, justifyContent: "center", alignItems: "center" },
+  motifTxt:    { fontSize: 14, flex: 1 },
+  motifClear:  { padding: 2 },
 
   summaryDivider:     { height: 1, backgroundColor: C.borderLight, marginVertical: 2 },
   insufficientBar:    { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.amberSoft, borderRadius: 10, padding: 10, marginTop: 8 },
