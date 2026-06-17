@@ -210,7 +210,6 @@ const ai = StyleSheet.create({
     width: 58, height: 58, borderRadius: 15,
     backgroundColor: C.white,
     justifyContent: "center", alignItems: "center",
-    // ombre portée → se détache clairement du fond blanc de la carte
     ...Platform.select({
       ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.10, shadowRadius: 7 },
       android: { elevation: 4 },
@@ -288,7 +287,7 @@ export default function ClientDashboard() {
 
   const firstName = user?.firstName ?? "Client";
 
-  // ── Données wallet — logique 100 % inchangée ──
+  // ── Données wallet ──
   const rawCountry      = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
   const primaryCurrency = (user as any)?.primaryCurrency || COUNTRY_CURRENCY[rawCountry] || "XOF";
   const wallets         = (user as any)?.wallets ?? [];
@@ -298,7 +297,7 @@ export default function ClientDashboard() {
   const reservedBalance  = toNum(mainWallet?.reservedBalance ?? 0);
   const availableBalance = balance - reservedBalance;
 
-  // ── Stats mensuelles — logique 100 % inchangée ──
+  // ── Stats mensuelles ──
   const monthTxs  = txs.filter((t) => isThisMonth(t.createdAt));
   const monthSent = monthTxs
     .filter((t) => t.senderId === user?.id && t.status === "PAID")
@@ -310,7 +309,7 @@ export default function ClientDashboard() {
       return acc + (hasConv ? toNum(t.receivedAmount) : toNum(t.amount));
     }, 0);
 
-  // ── Contacts récents — logique 100 % inchangée ──
+  // ── Contacts récents ──
   const recentContacts = (() => {
     const seen = new Set<string>();
     const result: Array<{ name: string; phone?: string; beneficiaryId?: string }> = [];
@@ -326,7 +325,7 @@ export default function ClientDashboard() {
     return result;
   })();
 
-  // ── loadData — logique 100 % inchangée ──
+  // ── loadData ──
   const loadData = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -470,11 +469,8 @@ export default function ClientDashboard() {
             <SectionHeader title="Actions rapides" />
             <View style={s.actionsRow}>
               <ActionItem icon="people-outline"  label="Contacts"   onPress={() => router.push("/(tabs)/beneficiaries")} />
-              {/* ⚠️ TODO : vérifier la route exacte pour "Taux" */}
               <ActionItem icon="repeat-outline"  label="Taux"       onPress={() => router.push("/(tabs)/rates")} />
-              {/* ⚠️ TODO : vérifier la route exacte pour "QR Code" */}
               <ActionItem icon="qr-code-outline" label="QR Code"    onPress={() => router.push("/(tabs)/qr")} />
-              {/* ✅ Route confirmée depuis app/(tabs)/transactions/index.tsx */}
               <ActionItem icon="time-outline"    label="Historique" onPress={() => router.push("/(tabs)/transactions")} />
             </View>
           </View>
@@ -533,7 +529,7 @@ export default function ClientDashboard() {
             <SectionHeader
               title="Transactions récentes"
               action="Voir tout"
-              onAction={() => router.push("/(tabs)/history")}
+              onAction={() => router.push("/(tabs)/transactions")}
             />
             {loadingTxs ? (
               <View style={s.emptyBox}>
@@ -570,7 +566,7 @@ const s = StyleSheet.create({
     backgroundColor: C.green,
     paddingHorizontal: 20,
     paddingTop: 2,
-    paddingBottom: 16,   // ↓ réduit (28→16)
+    paddingBottom: 16,
   },
 
   // Top bar
@@ -578,7 +574,7 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 12,   // ↓ réduit (18→12)
+    marginBottom: 12,
   },
   greeting: {
     fontSize: 11, fontWeight: "500",
@@ -586,7 +582,7 @@ const s = StyleSheet.create({
     marginBottom: 1,
   },
   heroName: {
-    fontSize: 19, fontWeight: "800",  // ↓ réduit (22→19)
+    fontSize: 19, fontWeight: "800",
     color: C.white, letterSpacing: -0.3,
   },
   iconBtn: {
@@ -624,18 +620,17 @@ const s = StyleSheet.create({
   },
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#4ADE80" },
   onlineTxt: { fontSize: 10, color: C.white, fontWeight: "600" },
-  // Devise + montant côte à côte (EUR 214,78)
   balAmountRow: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 3 },
   balCurPrefix: { fontSize: 17, fontWeight: "700", color: "rgba(255,255,255,0.80)" },
   balAmount: {
-    fontSize: 32, fontWeight: "800",   // ↓ réduit (38→32)
+    fontSize: 32, fontWeight: "800",
     color: C.white, letterSpacing: -0.8,
   },
   balReserved: { fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2 },
 
   // ── CTA principal — blanc ombré ──
   mainCta: {
-    backgroundColor: C.white,         // ← plus de vert, fond blanc
+    backgroundColor: C.white,
     borderRadius: C.r.lg,
     padding: 16,
     flexDirection: "row",
@@ -650,14 +645,14 @@ const s = StyleSheet.create({
   mainCtaLeft:  { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
   mainCtaIcon: {
     width: 44, height: 44, borderRadius: 12,
-    backgroundColor: C.greenPale,     // fond émeraude pâle
+    backgroundColor: C.greenPale,
     justifyContent: "center", alignItems: "center",
   },
-  mainCtaTitle: { fontSize: 15, fontWeight: "800", color: C.ink, marginBottom: 2 },  // texte foncé
+  mainCtaTitle: { fontSize: 15, fontWeight: "800", color: C.ink, marginBottom: 2 },
   mainCtaSub:   { fontSize: 11, color: C.inkSoft },
   mainCtaArrow: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: C.green,         // bouton émeraude à droite
+    backgroundColor: C.green,
     justifyContent: "center", alignItems: "center",
   },
 

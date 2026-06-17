@@ -1,9 +1,25 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 // =========================================================
-// TRÉSORERIE — ROUTEUR PAR RÔLE v3.1
+// TRÉSORERIE — ROUTEUR PAR RÔLE v3.3
 // ✅ v3.1 : Suppression de la carte "Solde total agences"
 //           (somme multi-devises incohérente sans conversion)
 //           Les 3 KPI restants sont affichés sur une seule ligne.
+// ✅ v3.2 : Accès rapide — grille 2×2 EXPLICITE (2 lignes de 2
+//           boutons, flex:1 par carte) au lieu d'un flexWrap qui
+//           pouvait ne pas wrapper correctement selon la largeur
+//           d'écran réelle (cause du bug visuel signalé : boutons
+//           empilés avec espace vide à droite).
+//           Cartes uniformisées en BLANC PUR (#FFFFFF), bordure
+//           neutre, icône/texte en T.ink — fin des 4 couleurs
+//           différentes par bouton (bleu/vert/violet/ambre).
+// ✅ v3.3 : FIX route 404 — "Sociétés" pointait vers
+//           "/(tabs)/admin/clients" (pas d'index.tsx, 404 confirmé).
+//           → Redirigé vers "/(tabs)/admin/agencies", qui affiche déjà
+//           la liste des sociétés pour SUPER_ADMIN (flag isSA dans
+//           agencies/index.tsx). Aucun risque de mélange de rôle :
+//           TreasurySuperAdmin ne s'affiche que pour role===SUPER_ADMIN,
+//           et agencies/index.tsx bascule sociétés/agences selon ce
+//           même rôle — le Company Admin garde sa vue agences inchangée.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -373,22 +389,32 @@ function TreasuryCompanyAdmin() {
           </View>
 
           {/* ── Accès rapide ── */}
+          {/* ✅ v3.2 : grille 2×2 explicite + cartes blanches uniformes */}
           <SL dot={T.green} label="ACCÈS RAPIDE" />
           <View style={s.quickGrid}>
             {[
-              { label: "Transactions", icon: "analytics-outline",  color: T.caAccent, bg: T.caAccentLt, route: "/(tabs)/admin/transactions" },
-              { label: "Agences",      icon: "storefront-outline", color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/agencies"     },
-              { label: "Paramètres",   icon: "settings-outline",   color: T.purple,   bg: T.purpleLt,   route: "/(tabs)/admin/settings"     },
-              { label: "Retour",       icon: "arrow-back-outline",  color: T.amber,    bg: T.amberLt,    route: null                          },
-            ].map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
-                onPress={() => item.route ? router.push(item.route as any) : router.back()}
-              >
-                <Ionicons name={item.icon as any} size={18} color={item.color} />
-                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>{item.label}</Text>
-              </TouchableOpacity>
+              [
+                { label: "Transactions", icon: "analytics-outline",  route: "/(tabs)/admin/transactions" },
+                { label: "Agences",      icon: "storefront-outline", route: "/(tabs)/admin/agencies"     },
+              ],
+              [
+                { label: "Paramètres",   icon: "settings-outline",    route: "/(tabs)/admin/settings" },
+                { label: "Retour",       icon: "arrow-back-outline",  route: null                       },
+              ],
+            ].map((row, ri) => (
+              <View key={ri} style={s.quickRow}>
+                {row.map((item) => (
+                  <TouchableOpacity
+                    key={item.label}
+                    style={s.quickCard}
+                    onPress={() => item.route ? router.push(item.route as any) : router.back()}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={item.icon as any} size={18} color={T.ink} />
+                    <Text style={[s.quickTxt, { fontFamily: T.font.sans }]}>{item.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             ))}
           </View>
 
@@ -583,24 +609,36 @@ function TreasurySuperAdmin() {
             {kpis.map((k, i) => <KpiCard key={i} {...k} />)}
           </View>
 
+          {/* ✅ v3.2 : grille 2×2 explicite + cartes blanches uniformes */}
           <SL dot={T.green} label="ACCÈS RAPIDE" />
           <View style={s.quickGrid}>
             {[
-              { label: "Transactions", icon: "analytics-outline",        color: T.saAccent, bg: T.saAccentLt, route: "/(tabs)/admin/transactions" },
-              { label: "Supervision",  icon: "shield-checkmark-outline", color: T.green,    bg: T.greenLt,    route: "/(tabs)/admin/supervision"  },
-              { label: "Sociétés",     icon: "business-outline",         color: T.amber,    bg: T.amberLt,    route: "/(tabs)/admin/clients"      },
-              { label: "Retour",       icon: "arrow-back-outline",        color: T.purple,   bg: T.purpleLt,   route: null                          },
-            ].map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                style={[s.quickCard, { backgroundColor: item.bg, borderColor: `${item.color}30` }]}
-                onPress={() => item.route ? router.push(item.route as any) : router.back()}
-              >
-                <Ionicons name={item.icon as any} size={18} color={item.color} />
-                <Text style={[s.quickTxt, { color: item.color, fontFamily: T.font.sans }]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
+              [
+                { label: "Transactions", icon: "analytics-outline",        route: "/(tabs)/admin/transactions" },
+                { label: "Supervision",  icon: "shield-checkmark-outline", route: "/(tabs)/admin/supervision"  },
+              ],
+              [
+                // ✅ v3.3 : admin/agencies affiche déjà la liste des sociétés
+                // pour SUPER_ADMIN (flag isSA) — plus de 404
+                { label: "Sociétés",     icon: "business-outline",   route: "/(tabs)/admin/agencies" },
+                { label: "Retour",       icon: "arrow-back-outline", route: null                       },
+              ],
+            ].map((row, ri) => (
+              <View key={ri} style={s.quickRow}>
+                {row.map((item) => (
+                  <TouchableOpacity
+                    key={item.label}
+                    style={s.quickCard}
+                    onPress={() => item.route ? router.push(item.route as any) : router.back()}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name={item.icon as any} size={18} color={T.ink} />
+                    <Text style={[s.quickTxt, { fontFamily: T.font.sans }]}>
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             ))}
           </View>
 
@@ -665,9 +703,18 @@ const s = StyleSheet.create({
   // kpiGrid conservé pour le Super Admin (4 cartes en 2×2)
   kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
 
-  quickGrid:{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 16 },
-  quickCard:{ width: (SW - 42) / 2, flexDirection: "row", alignItems: "center", gap: 8, padding: 14, borderRadius: T.radius.md, borderWidth: 1 },
-  quickTxt: { fontSize: 12, fontWeight: "700" },
+  // ✅ v3.2 : quickGrid = pile verticale de lignes (2 boutons/ligne)
+  //           quickCard en flex:1 → garantit 2 colonnes égales, peu
+  //           importe la largeur d'écran (fin du bug de wrap raté)
+  quickGrid:{ gap: 10, marginBottom: 16 },
+  quickRow: { flexDirection: "row", gap: 10 },
+  quickCard:{
+    flex: 1, flexDirection: "row", alignItems: "center", gap: 8,
+    padding: 14, borderRadius: T.radius.md,
+    backgroundColor: T.white, borderWidth: 1, borderColor: T.border,
+    ...T.shadow.soft,
+  },
+  quickTxt: { fontSize: 12, fontWeight: "700", color: T.ink },
 
   rankCard:      { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
   rankBox:       { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },

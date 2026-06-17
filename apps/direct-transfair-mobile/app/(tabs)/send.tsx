@@ -1,15 +1,21 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.5 — Direct Transf'air
+// SEND MONEY v2.7 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
 // ✅ v2.4 : Motif du transfert
 // ✅ v2.5 : FIX solde avec décimales
-//    - fmt() passe désormais la devise explicitement partout
-//    - XOF/GNF → 0 décimales (Math.round interne)
-//    - EUR/USD/GBP → 2 décimales
-//    - Fin du "348 054,88 XOF" → affiche "348 055 XOF"
+// ✅ v2.6 : Bouton "+" AddBeneficiaryCard dans Cash Pickup
+// ✅ v2.7 : Layout compact — suppression des espaces vides excessifs
+//    - Hero : paddingBottom 28→16, headerTop marginBottom 20→12
+//    - balanceVal fontSize 36→30
+//    - scroll paddingTop 16→10, gap inter-blocs 14→10
+//    - block padding 18→13, blockHeader marginBottom 16→10
+//    - ModeTab paddingVertical 12→8
+//    - BeneficiaryCard/AddBeneficiaryCard : taille réduite (76→72px)
+//    - amountCard padding 16→12, inputs 24→22px
+//    - motifRow padding 16→12
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -70,11 +76,6 @@ const getCountryData = (countryName: string): CountryData => {
   );
 };
 
-// ✅ fmt currency-aware : 0 décimales pour XOF/GNF, 2 pour EUR/USD/GBP
-// ✅ v2.5 : fmt() currency-aware — Intl.NumberFormat pour espacement fiable
-// XOF/GNF → 0 décimales | EUR/USD/GBP → 2 décimales
-// Ancien bug : .toLocaleString() se chaînait sur Math.pow() (pas sur le résultat)
-//   → renvoyait un nombre brut sans espacement → "348055" au lieu de "348 055"
 const fmt = (val: number, currency?: string): string => {
   const d = !currency || currency === "XOF" || currency === "GNF" ? 0 : 2;
   try {
@@ -107,7 +108,7 @@ function ModeTab({ label, icon, active, onPress }: {
   );
 }
 const tS = StyleSheet.create({
-  tab:       { flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 14, gap: 2 },
+  tab:       { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 13, gap: 2 },
   tabActive: {
     backgroundColor: C.white,
     ...Platform.select({
@@ -150,14 +151,49 @@ function BeneficiaryCard({ item, selected, onPress }: {
   );
 }
 const bS = StyleSheet.create({
-  card:           { width: 76, alignItems: "center", marginRight: 12, padding: 12, backgroundColor: C.surface, borderRadius: 20, borderWidth: 1.5, borderColor: C.border },
+  card:           { width: 72, alignItems: "center", marginRight: 10, padding: 9, backgroundColor: C.surface, borderRadius: 18, borderWidth: 1.5, borderColor: C.border },
   cardSelected:   { borderColor: C.g4, backgroundColor: C.gSoft },
-  avatar:         { width: 44, height: 44, borderRadius: 14, backgroundColor: "#E0F2FE", justifyContent: "center", alignItems: "center", marginBottom: 6 },
+  avatar:         { width: 40, height: 40, borderRadius: 12, backgroundColor: "#E0F2FE", justifyContent: "center", alignItems: "center", marginBottom: 4 },
   avatarSelected: { backgroundColor: `${C.g4}20` },
   avatarTxt:      { fontSize: 16, fontWeight: "900", color: "#0284C7" },
   name:           { fontSize: 11, fontWeight: "700", color: C.textSub, textAlign: "center" },
   flag:           { fontSize: 14, marginTop: 4 },
   check:          { position: "absolute", top: -5, right: -5, backgroundColor: C.g4, borderRadius: 99, width: 20, height: 20, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: C.white },
+});
+
+// ─── ✅ v2.6 — Add Beneficiary Card (bouton "+") ──────────
+function AddBeneficiaryCard({ onPress }: { onPress: () => void }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={abS.card}
+        onPress={onPress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.94, useNativeDriver: true, speed: 50 }).start()}
+        onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
+        activeOpacity={1}
+      >
+        <View style={abS.iconBox}>
+          <Ionicons name="add" size={26} color={C.g4} />
+        </View>
+        <Text style={[abS.label, { fontFamily: F.body }]}>Nouveau</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+const abS = StyleSheet.create({
+  card:    {
+    width: 72, alignItems: "center", marginRight: 10, padding: 9,
+    backgroundColor: C.gSoft, borderRadius: 18,
+    borderWidth: 1.5, borderColor: C.g4,
+    borderStyle: "dashed",
+  },
+  iconBox: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: `${C.g4}18`,
+    justifyContent: "center", alignItems: "center", marginBottom: 4,
+  },
+  label:   { fontSize: 11, fontWeight: "700", color: C.g4, textAlign: "center" },
 });
 
 // ─── Summary Row ──────────────────────────────────────────
@@ -243,7 +279,7 @@ const fbS = StyleSheet.create({
   cancelTxt:  { fontSize: 15, fontWeight: "700", color: C.textMuted },
 });
 
-// ─── ✅ v2.4 — Motif Modal ────────────────────────────────
+// ─── Motif Modal ──────────────────────────────────────────
 function MotifModal({ visible, selected, onSelect, onClose }: {
   visible: boolean;
   selected: string | null;
@@ -255,8 +291,6 @@ function MotifModal({ visible, selected, onSelect, onClose }: {
       <View style={mmS.overlay}>
         <View style={mmS.sheet}>
           <View style={mmS.handle} />
-
-          {/* Header */}
           <View style={mmS.head}>
             <View>
               <Text style={[mmS.title, { fontFamily: F.display }]}>Motif du transfert</Text>
@@ -268,8 +302,6 @@ function MotifModal({ visible, selected, onSelect, onClose }: {
               <Ionicons name="close" size={18} color={C.textSub} />
             </TouchableOpacity>
           </View>
-
-          {/* Liste */}
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
             {MOTIFS.map((m) => {
               const isSelected = selected === m.label;
@@ -287,7 +319,6 @@ function MotifModal({ visible, selected, onSelect, onClose }: {
                   ]}>
                     {m.label}
                   </Text>
-                  {/* Radio button */}
                   <View style={[mmS.radio, isSelected && mmS.radioSelected]}>
                     {isSelected && <View style={mmS.radioDot} />}
                   </View>
@@ -333,7 +364,6 @@ export default function SendMoneyScreen() {
   const [walletBalance,    setWalletBalance]    = useState(0);
   const [loadingWallet,    setLoadingWallet]    = useState(true);
 
-  // ✅ v2.4 — Motif du transfert
   const [motif,          setMotif]          = useState<string | null>(null);
   const [showMotifModal, setShowMotifModal] = useState(false);
 
@@ -350,7 +380,6 @@ export default function SendMoneyScreen() {
   const [rawAmount,         setRawAmount]        = useState("");
   const [countrySearch,     setCountrySearch]    = useState("");
 
-  // ✅ v2.3 FIX : taux dynamique
   const [cashFeeRate,  setCashFeeRate]  = useState(0.015);
   const [cashFeeLabel, setCashFeeLabel] = useState("1,5");
 
@@ -373,7 +402,6 @@ export default function SendMoneyScreen() {
     }
   }, [params]);
 
-  // ✅ v2.3 FIX : charge le taux CASH_PICKUP depuis /commissions/fees
   useEffect(() => {
     (api.http as any).get("/commissions/fees")
       .then((res: any) => {
@@ -457,7 +485,6 @@ export default function SendMoneyScreen() {
 
   const sendAmount = parseFloat(rawAmount.replace(/\s/g, "").replace(",", ".")) || 0;
 
-  // ✅ v2.5 : prénom du bénéficiaire pour le récapitulatif ("Mountaga reçoit")
   const beneficiaryLabel = React.useMemo(() => {
     if (mode === "WALLET") {
       return detectedBeneficiary?.fullName?.split(" ")[0] ?? "Le bénéficiaire";
@@ -490,7 +517,6 @@ export default function SendMoneyScreen() {
           currency:        userCurrency,
           beneficiaryId:   detectedBeneficiary ? String(detectedBeneficiary.id) : undefined,
           payoutMethod:    "MOBILE_MONEY",
-          // ✅ v2.4 : motif passé comme note
           note:            motif ?? undefined,
         });
         Alert.alert("✓ Envoyé", "Transfert wallet effectué avec succès !");
@@ -504,7 +530,6 @@ export default function SendMoneyScreen() {
           currency:      userCurrency,
           beneficiaryId: selectedCashId,
           payoutMethod:  "CASH_PICKUP",
-          // ✅ v2.4 : motif passé comme note
           note:          motif ?? undefined,
         });
         Alert.alert("✓ Code généré", "Le bénéficiaire peut retirer l'argent avec le code.");
@@ -530,7 +555,6 @@ export default function SendMoneyScreen() {
     );
   }
 
-  // ─── Motif actuel (pour affichage dans le sélecteur) ──
   const selectedMotif = MOTIFS.find((m) => m.label === motif);
 
   return (
@@ -665,7 +689,12 @@ export default function SendMoneyScreen() {
                 </>
               ) : (
                 <>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 4 }}>
+                  {/* ✅ v2.6 — Liste horizontale + bouton "+" à la fin */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 4 }}
+                  >
                     {beneficiaries.map((item) => (
                       <BeneficiaryCard
                         key={String(item.id)}
@@ -674,6 +703,9 @@ export default function SendMoneyScreen() {
                         onPress={() => setSelectedCashId(String(item.id))}
                       />
                     ))}
+                    <AddBeneficiaryCard
+                      onPress={() => router.push("/(tabs)/beneficiaries")}
+                    />
                   </ScrollView>
 
                   {(() => {
@@ -752,14 +784,13 @@ export default function SendMoneyScreen() {
               )}
             </View>
 
-            {/* ── ✅ v2.4 — Motif du transfert ── */}
+            {/* ── Motif du transfert ── */}
             <TouchableOpacity
               style={s.motifRow}
               onPress={() => setShowMotifModal(true)}
               activeOpacity={0.85}
             >
               <View style={s.motifLeft}>
-                {/* Icône : emoji du motif sélectionné ou icône par défaut */}
                 {selectedMotif ? (
                   <Text style={s.motifEmoji}>{selectedMotif.icon}</Text>
                 ) : (
@@ -802,14 +833,12 @@ export default function SendMoneyScreen() {
                   value={feesAmt === 0 ? "Offerts ✓" : `${fmt(feesAmt, userCurrency)} ${userCurrency}`}
                   valueColor={feesAmt === 0 ? C.g4 : undefined}
                 />
-                {/* ✅ v2.5 : montant reçu toujours affiché, même devise identique */}
                 <View style={s.summaryDivider} />
                 <SummaryRow
                   label={`${beneficiaryLabel} reçoit`}
                   value={`${fmt(Math.round(receivedAmt > 0 ? receivedAmt : sendAmount), targetCurrency)} ${targetCurrency}`}
                   valueColor={C.blue}
                 />
-                {/* Taux de change — uniquement si les devises diffèrent */}
                 {targetCurrency !== userCurrency && rate !== 1 && (
                   <View style={s.rateChip}>
                     <Ionicons name="trending-up-outline" size={13} color={C.g4} />
@@ -818,7 +847,6 @@ export default function SendMoneyScreen() {
                     </Text>
                   </View>
                 )}
-                {/* ✅ v2.4 : affiche le motif dans le récap si renseigné */}
                 {motif && (
                   <>
                     <View style={s.summaryDivider} />
@@ -885,7 +913,7 @@ export default function SendMoneyScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ── ✅ v2.4 — Motif Modal ── */}
+      {/* ── Motif Modal ── */}
       <MotifModal
         visible={showMotifModal}
         selected={motif}
@@ -955,33 +983,33 @@ const s = StyleSheet.create({
   header: {
     backgroundColor: C.g3,
     paddingTop: Platform.OS === "android" ? 44 : 10,
-    paddingBottom: 28, paddingHorizontal: 20, overflow: "hidden",
+    paddingBottom: 16, paddingHorizontal: 20, overflow: "hidden",
   },
   hdeco1: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.05)", top: -60, right: -40 },
   hdeco2: { position: "absolute", width: 120, height: 120, borderRadius: 60,  backgroundColor: "rgba(255,255,255,0.04)", bottom: -30, left: 20 },
-  headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
+  headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 20, color: C.white, letterSpacing: -0.2 },
   eyeBtn:      { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center" },
-  balanceHero: { alignItems: "center", gap: 4 },
-  balanceLbl:  { color: "rgba(255,255,255,0.65)", fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  balanceVal:  { color: C.white, fontSize: 36, letterSpacing: -0.8 },
+  balanceHero: { alignItems: "center", gap: 2 },
+  balanceLbl:  { color: "rgba(255,255,255,0.65)", fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
+  balanceVal:  { color: C.white, fontSize: 30, letterSpacing: -0.8 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
 
-  scroll:   { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 20 },
-  tabsWrap: { flexDirection: "row", backgroundColor: "#F0F0F0", borderRadius: 18, padding: 6, marginBottom: 16 },
+  scroll:   { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16 },
+  tabsWrap: { flexDirection: "row", backgroundColor: "#F0F0F0", borderRadius: 16, padding: 4, marginBottom: 10 },
 
   block: {
-    backgroundColor: C.surface, borderRadius: 22, borderWidth: 1, borderColor: C.border,
-    padding: 18, marginBottom: 14,
+    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
+    padding: 13, marginBottom: 10,
     ...Platform.select({
       ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
       android: { elevation: 2 },
     }),
   },
-  blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-  blockNum:    { width: 30, height: 30, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
+  blockNum:    { width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   blockTitle:  { fontSize: 14, fontWeight: "800", color: C.text },
 
   phoneWrap:     { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, overflow: "hidden" },
@@ -1004,24 +1032,23 @@ const s = StyleSheet.create({
   addHintTxt:  { fontSize: 12, color: C.textMuted, fontWeight: "600" },
   addHintLink: { fontSize: 13, color: C.g4, fontWeight: "800" },
 
-  amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 16, borderWidth: 1.5, borderColor: C.border, padding: 16, gap: 8 },
+  amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, padding: 12, gap: 8 },
   amountSide:      { flex: 1 },
-  amountSideLabel: { fontSize: 10, fontWeight: "900", color: C.textFaint, letterSpacing: 0.8, marginBottom: 6 },
+  amountSideLabel: { fontSize: 9, fontWeight: "900", color: C.textFaint, letterSpacing: 0.8, marginBottom: 3 },
   amountInputRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
-  amountInput:     { fontSize: 24, color: C.text, letterSpacing: -0.5, minWidth: 60 },
-  amountReceived:  { fontSize: 22, color: C.text, letterSpacing: -0.5 },
-  amountArrow:     { width: 36, height: 36, borderRadius: 10, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
+  amountInput:     { fontSize: 22, color: C.text, letterSpacing: -0.5, minWidth: 60 },
+  amountReceived:  { fontSize: 20, color: C.text, letterSpacing: -0.5 },
+  amountArrow:     { width: 32, height: 32, borderRadius: 9, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
   currBadge:       { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   currTxt:         { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
 
   rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.gSoft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
   rateTxt:  { fontSize: 12, color: C.g4, fontWeight: "700" },
 
-  // ✅ v2.4 — Motif row styles
   motifRow:    {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
-    padding: 16, marginBottom: 14,
+    backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border,
+    padding: 12, marginBottom: 10,
     ...Platform.select({
       ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
       android: { elevation: 1 },
