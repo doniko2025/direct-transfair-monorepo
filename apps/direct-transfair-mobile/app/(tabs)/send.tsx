@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.7 — Direct Transf'air
+// SEND MONEY v2.8 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -16,6 +16,20 @@
 //    - BeneficiaryCard/AddBeneficiaryCard : taille réduite (76→72px)
 //    - amountCard padding 16→12, inputs 24→22px
 //    - motifRow padding 16→12
+// ✅ v2.8 : Remplacement des Alert.alert "succès" (Wallet ET Cash Pickup)
+//    par une modale Reçu réutilisable (ReceiptModal) :
+//    - Affiche montant, bénéficiaire, code de retrait (Cash Pickup),
+//      référence, devise/montant reçu
+//    - Bouton "Partager" → sélecteur natif (WhatsApp, email, SMS…)
+//      via l'API Share de React Native
+//    - Bouton "Copier le code" via expo-clipboard (Cash Pickup uniquement)
+//      ⚠️ nécessite `npx expo install expo-clipboard` si pas déjà installé
+//    - La navigation vers /(tabs)/transactions se fait à la fermeture
+//      de la modale (bouton "Terminé"), au lieu d'être immédiate
+//    - Code de retrait lu depuis transaction.providerRef (== reference,
+//      confirmé via transactions.service.ts backend tant que
+//      senderFirstName n'est pas envoyé), avec découpe défensive du
+//      format "code|prénom" utilisé pour les expéditeurs invités
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -23,8 +37,9 @@ import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, Pressable,
   ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform,
   ScrollView, Alert, Modal, FlatList, StatusBar, Animated,
-  Dimensions,
+  Dimensions, Share,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "../../services/api";
@@ -348,6 +363,145 @@ const mmS = StyleSheet.create({
   radioDot:     { width: 10, height: 10, borderRadius: 5, backgroundColor: C.g4 },
 });
 
+// ─── Receipt Modal — ✅ v2.8 ────────────────────────────────
+type ReceiptData = {
+  mode: "WALLET" | "CASH";
+  sentAmount: number;
+  sentCurrency: string;
+  fees: number;
+  total: number;
+  receivedAmount: number;
+  receivedCurrency: string;
+  beneficiaryName: string;
+  reference: string;
+  code?: string;       // code de retrait (Cash Pickup uniquement)
+  motif?: string | null;
+  date: Date;
+};
+
+function buildReceiptText(r: ReceiptData): string {
+  const lines = [
+    "🧾 Reçu Direct Transf'air",
+    "",
+    `Type : ${r.mode === "WALLET" ? "Transfert Wallet" : "Cash Pickup"}`,
+    `Bénéficiaire : ${r.beneficiaryName}`,
+    `Montant envoyé : ${fmt(r.sentAmount, r.sentCurrency)} ${r.sentCurrency}`,
+  ];
+  if (r.fees > 0) lines.push(`Frais : ${fmt(r.fees, r.sentCurrency)} ${r.sentCurrency}`);
+  lines.push(`Total payé : ${fmt(r.total, r.sentCurrency)} ${r.sentCurrency}`);
+  lines.push(`${r.beneficiaryName.split(" ")[0]} reçoit : ${fmt(Math.round(r.receivedAmount), r.receivedCurrency)} ${r.receivedCurrency}`);
+  if (r.code) lines.push("", `🔐 Code de retrait : ${r.code}`, "Ce code permet de retirer l'argent en agence.");
+  if (r.motif) lines.push("", `Motif : ${r.motif}`);
+  lines.push("", `Réf. : ${r.reference}`, `Date : ${r.date.toLocaleString("fr-FR")}`);
+  return lines.join("\n");
+}
+
+function ReceiptModal({ visible, data, onClose }: {
+  visible: boolean; data: ReceiptData | null; onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  if (!data) return null;
+
+  const handleShare = async () => {
+    try {
+      await Share.share({ message: buildReceiptText(data) });
+    } catch {}
+  };
+
+  const handleCopyCode = async () => {
+    if (!data.code) return;
+    try {
+      await Clipboard.setStringAsync(data.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={rcS.overlay}>
+        <View style={rcS.sheet}>
+          <View style={rcS.handle} />
+
+          <View style={rcS.successIconWrap}>
+            <Ionicons name="checkmark-circle" size={56} color={C.g4} />
+          </View>
+          <Text style={[rcS.title, { fontFamily: F.display }]}>
+            {data.mode === "WALLET" ? "Transfert effectué" : "Code généré"}
+          </Text>
+          <Text style={[rcS.subtitle, { fontFamily: F.body }]}>
+            {data.mode === "WALLET"
+              ? `Envoyé à ${data.beneficiaryName}`
+              : "Le bénéficiaire peut retirer l'argent avec ce code"}
+          </Text>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+            {data.code && (
+              <View style={rcS.codeBox}>
+                <Text style={[rcS.codeLabel, { fontFamily: F.body }]}>CODE DE RETRAIT</Text>
+                <Text style={[rcS.codeValue, { fontFamily: F.display }]}>{data.code}</Text>
+                <TouchableOpacity style={rcS.copyBtn} onPress={handleCopyCode} activeOpacity={0.8}>
+                  <Ionicons name={copied ? "checkmark" : "copy-outline"} size={14} color={C.g4} />
+                  <Text style={[rcS.copyTxt, { fontFamily: F.body }]}>{copied ? "Copié !" : "Copier le code"}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View style={rcS.recapBox}>
+              <SummaryRow label="Bénéficiaire" value={data.beneficiaryName} />
+              <View style={s.summaryDivider} />
+              <SummaryRow label="Montant envoyé" value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
+              {data.fees > 0 && (
+                <>
+                  <View style={s.summaryDivider} />
+                  <SummaryRow label="Frais" value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} />
+                </>
+              )}
+              <View style={s.summaryDivider} />
+              <SummaryRow
+                label={`${data.beneficiaryName.split(" ")[0]} reçoit`}
+                value={`${fmt(Math.round(data.receivedAmount), data.receivedCurrency)} ${data.receivedCurrency}`}
+                valueColor={C.blue}
+              />
+              <View style={s.summaryDivider} />
+              <SummaryRow label="Référence" value={data.reference} />
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity style={rcS.shareBtn} onPress={handleShare} activeOpacity={0.88}>
+            <Ionicons name="share-social-outline" size={18} color={C.white} />
+            <Text style={[rcS.shareTxt, { fontFamily: F.body }]}>PARTAGER LE REÇU</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={rcS.doneBtn} onPress={onClose} activeOpacity={0.8}>
+            <Text style={[rcS.doneTxt, { fontFamily: F.body }]}>Terminé</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: Platform.OS === "ios" ? 24 : 12 }} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const rcS = StyleSheet.create({
+  overlay:          { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet:            { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: "88%" },
+  handle:           { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
+  successIconWrap:  { alignSelf: "center", marginBottom: 10 },
+  title:            { fontSize: 20, color: C.text, textAlign: "center", marginBottom: 4 },
+  subtitle:         { fontSize: 13, color: C.textMuted, textAlign: "center", fontWeight: "600", marginBottom: 18 },
+  codeBox:          { backgroundColor: C.gSoft, borderRadius: 18, borderWidth: 1.5, borderColor: C.gBorder, padding: 18, alignItems: "center", marginBottom: 14 },
+  codeLabel:        { fontSize: 10, fontWeight: "900", color: C.g4, letterSpacing: 1.2, marginBottom: 6 },
+  codeValue:        { fontSize: 30, fontWeight: "700", color: C.text, letterSpacing: 4, marginBottom: 12 },
+  copyBtn:          { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.white, borderRadius: 99, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: C.gBorder },
+  copyTxt:          { fontSize: 12, fontWeight: "700", color: C.g4 },
+  recapBox:         { backgroundColor: C.bg, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16 },
+  shareBtn:         { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: C.g4, borderRadius: 16, paddingVertical: 16, marginBottom: 10 },
+  shareTxt:         { fontSize: 14, fontWeight: "900", color: C.white, letterSpacing: 0.4 },
+  doneBtn:          { alignItems: "center", paddingVertical: 12 },
+  doneTxt:          { fontSize: 14, fontWeight: "700", color: C.textMuted },
+});
+
 // ─── Main ─────────────────────────────────────────────────
 export default function SendMoneyScreen() {
   const router = useRouter();
@@ -366,6 +520,10 @@ export default function SendMoneyScreen() {
 
   const [motif,          setMotif]          = useState<string | null>(null);
   const [showMotifModal, setShowMotifModal] = useState(false);
+
+  // ✅ v2.8 — Reçu transférable (Wallet & Cash Pickup)
+  const [receiptData,  setReceiptData]  = useState<ReceiptData | null>(null);
+  const [showReceipt,  setShowReceipt]  = useState(false);
 
   const userCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
 
@@ -512,30 +670,66 @@ export default function SendMoneyScreen() {
           setSending(false);
           return Alert.alert("Erreur", "Numéro trop court ou contact introuvable.");
         }
-        await api.createTransaction({
+        const tx: any = await api.createTransaction({
           amount:          sendAmount,
           currency:        userCurrency,
           beneficiaryId:   detectedBeneficiary ? String(detectedBeneficiary.id) : undefined,
           payoutMethod:    "MOBILE_MONEY",
           note:            motif ?? undefined,
         });
-        Alert.alert("✓ Envoyé", "Transfert wallet effectué avec succès !");
+        // ✅ "id" confirmé comme champ de référence (utilisé par cancelTransaction/getTransaction dans api.ts)
+        const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
+        setReceiptData({
+          mode: "WALLET",
+          sentAmount: sendAmount,
+          sentCurrency: userCurrency,
+          fees: 0,
+          total: totalAmt,
+          receivedAmount: receivedAmt,
+          receivedCurrency: targetCurrency,
+          beneficiaryName: detectedBeneficiary?.fullName ?? walletInput,
+          reference: String(reference),
+          motif,
+          date: new Date(),
+        });
       } else {
         if (!selectedCashId) {
           setSending(false);
           return Alert.alert("Erreur", "Sélectionnez un bénéficiaire.");
         }
-        await api.createTransaction({
+        const tx: any = await api.createTransaction({
           amount:        sendAmount,
           currency:      userCurrency,
           beneficiaryId: selectedCashId,
           payoutMethod:  "CASH_PICKUP",
           note:          motif ?? undefined,
         });
-        Alert.alert("✓ Code généré", "Le bénéficiaire peut retirer l'argent avec le code.");
+        const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
+        // ✅ Confirmé via transactions.service.ts : storedRef (providerRef)
+        // == transactionRef (reference) tant que senderFirstName n'est pas
+        // envoyé (jamais le cas ici) → providerRef contient le même code
+        // 9 chiffres que reference. Découpe "code|prénom" conservée par
+        // robustesse si ce comportement évolue côté backend.
+        let code = String(tx?.providerRef ?? tx?.reference ?? tx?.code ?? "—");
+        if (code.includes("|")) code = code.split("|")[0];
+        const sel = beneficiaries.find((b) => String(b.id) === selectedCashId);
+        setReceiptData({
+          mode: "CASH",
+          sentAmount: sendAmount,
+          sentCurrency: userCurrency,
+          fees: feesAmt,
+          total: totalAmt,
+          receivedAmount: receivedAmt,
+          receivedCurrency: targetCurrency,
+          beneficiaryName: sel?.fullName ?? "Bénéficiaire",
+          reference: String(reference),
+          code,
+          motif,
+          date: new Date(),
+        });
       }
       void fetchWalletBalance();
-      router.push("/(tabs)/transactions");
+      setShowReceipt(true);
     } catch (e: any) {
       const msg = e.response?.data?.message || "Une erreur est survenue.";
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
@@ -969,6 +1163,16 @@ export default function SendMoneyScreen() {
         onClose={() => setShowFallback(false)}
         onOrangeMoney={() => { setShowFallback(false); router.push("/topup?method=orange" as any); }}
         onCard={() => { setShowFallback(false); router.push("/topup?method=card" as any); }}
+      />
+
+      {/* ✅ v2.8 — Reçu transférable */}
+      <ReceiptModal
+        visible={showReceipt}
+        data={receiptData}
+        onClose={() => {
+          setShowReceipt(false);
+          router.push("/(tabs)/transactions");
+        }}
       />
     </SafeAreaView>
   );
