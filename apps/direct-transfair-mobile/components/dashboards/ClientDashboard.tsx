@@ -1,5 +1,5 @@
 // =========================================================
-// CLIENT DASHBOARD v9.1 — Direct Transf'air
+// CLIENT DASHBOARD v9.4 — Direct Transf'air
 // ✅ v9.1 sur base v9.0 :
 //    - Vert émeraude #17A45F (plus vif, moins corporate)
 //    - Hero réduit : paddingBottom 28→16, nom 22→19
@@ -7,6 +7,54 @@
 //    - CTA "Envoyer" : bouton BLANC ombré (plus de vert)
 //    - Icônes actions rapides : carrés blancs ombrés + icône émeraude
 //    - Logique métier 100 % inchangée
+// ✅ v9.2 : FIX — liste des transactions cachée derrière la tab bar.
+//           Ajout de useSafeAreaInsets + TAB_BAR_HEIGHT pour calculer
+//           un paddingBottom dynamique (au lieu du spacer fixe de 24px
+//           qui ne suffisait pas à libérer la zone sous la tab bar).
+// ✅ v9.3 : REFONTE VISUELLE "Blanc pur · Cartes flottantes · Vert émeraude"
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (loadData, calculs monthSent/monthRecv, recentContacts, wallets,
+//    helpers toNum/fmt/fmtDate, navigation : tout identique).
+//    - Hero : fond vert plein → fond blanc pur. Le solde passe en texte
+//      sombre, le préfixe devise (EUR) repasse en vert émeraude au lieu
+//      de blanc semi-transparent.
+//    - StatusBar : light-content → dark-content (fond clair désormais).
+//    - Notification/avatar : boutons adaptés à un fond clair (cercle
+//      gris très pâle + bordure pour la cloche, cercle vert plein pour
+//      l'avatar — au lieu des cercles "glass" blanc transparent qui
+//      n'étaient visibles que sur fond vert).
+//    - NOUVEAU bandeau taux sous le solde ("EUR → XOF · 655,96 · Envoi
+//      wallet 0 frais") : réutilise simplement l'état `eurXofRate` déjà
+//      récupéré par loadData() (aucun nouvel appel API). Tap → /(tabs)/rates,
+//      comme le bouton "Taux" des actions rapides.
+//    - En conséquence, la 3ème carte "EUR → XOF" de la rangée de stats
+//      est retirée (elle ferait doublon avec ce nouveau bandeau). Le
+//      state eurXofRate et son fetch restent inchangés, seul l'endroit
+//      où on l'affiche change.
+//    - Cartes "Actions rapides" : bordure verte très pâle ajoutée pour
+//      l'effet "carte flottante" du mockup, au lieu du blanc + ombre seule.
+// ✅ v9.4 : HERO SANS VERT + CARTE FLOTTANTE
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (mêmes states, mêmes calculs, mêmes appels API, mêmes routes).
+//    - Plus aucune couleur verte dans le Hero : avatar (vert → encre
+//      anthracite), préfixe devise (vert → encre sourdine), pastille
+//      "En ligne" (vert → bleu, réutilise le token déjà existant pour
+//      le statut "Traitement", donc rien de neuf dans la palette).
+//    - Le Hero passe d'un fond blanc plat à un fond gris (même teinte
+//      que le corps de page) : Hero et body se fondent en un seul
+//      canevas continu, plus de rupture visuelle en bas du Hero.
+//    - Le bloc solde devient une carte flottante blanche détachée
+//      (nouveau style `balanceCard`) avec une ombre plus marquée
+//      (`heroCardShadow`) que les autres cartes, pour bien la mettre
+//      en avant comme élément central de l'écran.
+//    - Élément signature : léger filigrane (icône "wallet") en
+//      arrière-plan de la carte solde, posé en coin, opacité quasi
+//      nulle — clin d'œil "carte bancaire premium" sans surcharger.
+//    - Bouton notification : fond blanc + légère ombre (au lieu du
+//      gris pâle) pour bien se détacher du nouveau fond gris du Hero.
+//    - SafeAreaView / StatusBar : fond blanc → fond gris (cohérent
+//      avec le nouveau Hero gris, pour une transition invisible sous
+//      l'encoche / la barre de statut).
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -25,8 +73,12 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+
+// Hauteur approximative de la tab bar native (cohérente avec les autres dashboards)
+const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 84 : 70;
 
 // ─── Design System ──────────────────────────────────────
 const C = {
@@ -75,6 +127,14 @@ const C = {
 const cardShadow = Platform.select({
   ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4 },
   android: { elevation: 2 },
+  default: {},
+});
+
+// ✅ v9.4 — Ombre plus marquée, réservée à la carte solde du Hero
+// (élément central de l'écran : doit "flotter" plus que les cartes du body)
+const heroCardShadow = Platform.select({
+  ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 20 },
+  android: { elevation: 6 },
   default: {},
 });
 
@@ -209,10 +269,11 @@ const ai = StyleSheet.create({
   box: {
     width: 58, height: 58, borderRadius: 15,
     backgroundColor: C.white,
+    borderWidth: 1, borderColor: C.greenPale,
     justifyContent: "center", alignItems: "center",
     ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.10, shadowRadius: 7 },
-      android: { elevation: 4 },
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      android: { elevation: 2 },
       default: {},
     }),
   },
@@ -275,6 +336,7 @@ const tr = StyleSheet.create({
 export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [refreshing,  setRefreshing]  = useState(false);
   const [txs,         setTxs]         = useState<any[]>([]);
@@ -360,10 +422,10 @@ export default function ClientDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.green} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.pageBg} />
 
       {/* ══════════════════════════════════════════════════
-          HERO — vert plat, sans arc, sans glow
+          HERO — fond gris (fondu avec le body), sans vert
       ══════════════════════════════════════════════════ */}
       <Animated.View style={{
         opacity: heroAnim,
@@ -378,7 +440,7 @@ export default function ClientDashboard() {
               <Text style={[s.heroName, { fontFamily: C.font.sans }]} numberOfLines={1}>{firstName}</Text>
             </View>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-              <Ionicons name="notifications-outline" size={19} color={C.white} />
+              <Ionicons name="notifications-outline" size={19} color={C.inkMid} />
               <View style={s.notifDot} />
             </TouchableOpacity>
             <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
@@ -386,15 +448,23 @@ export default function ClientDashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Solde — devise DEVANT le montant */}
-          <View style={s.balArea}>
+          {/* ✅ v9.4 — Carte solde flottante (détachée du Hero, ombre marquée) */}
+          <View style={s.balanceCard}>
+            {/* Filigrane décoratif — élément signature, très discret */}
+            <Ionicons
+              name="wallet-outline"
+              size={56}
+              color="rgba(28,28,30,0.045)"
+              style={s.balanceWatermark}
+            />
+
             <View style={s.balHeaderRow}>
               <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>SOLDE DISPONIBLE</Text>
               <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
                 <Ionicons
                   name={showBalance ? "eye-outline" : "eye-off-outline"}
                   size={13}
-                  color="rgba(255,255,255,0.65)"
+                  color={C.inkSoft}
                 />
               </TouchableOpacity>
               <View style={s.onlinePill}>
@@ -418,6 +488,20 @@ export default function ClientDashboard() {
               </Text>
             </View>
 
+            {/* Bandeau taux, réutilise eurXofRate déjà fetché par loadData() */}
+            {eurXofRate != null && (
+              <TouchableOpacity
+                style={s.rateRow}
+                onPress={() => router.push("/(tabs)/rates")}
+                activeOpacity={0.7}
+              >
+                <Text style={[s.rateTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
+                  {primaryCurrency} → XOF · {fmt(eurXofRate, "XOF")} · Envoi wallet 0 frais
+                </Text>
+                <Ionicons name="create-outline" size={12} color={C.inkSoft} />
+              </TouchableOpacity>
+            )}
+
             {reservedBalance > 0 && (
               <Text style={[s.balReserved, { fontFamily: C.font.sans }]}>
                 Réservé {fmt(reservedBalance, primaryCurrency)} {primaryCurrency}
@@ -433,7 +517,7 @@ export default function ClientDashboard() {
       ══════════════════════════════════════════════════ */}
       <ScrollView
         style={s.scroll}
-        contentContainerStyle={s.body}
+        contentContainerStyle={[s.body, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.green} />
@@ -515,13 +599,6 @@ export default function ClientDashboard() {
               <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthRecv, primaryCurrency)}</Text>
               <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
             </View>
-            {eurXofRate != null && (
-              <View style={[s.statCard, { borderLeftColor: C.blue }]}>
-                <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>EUR → XOF</Text>
-                <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(eurXofRate, "XOF")}</Text>
-                <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>XOF</Text>
-              </View>
-            )}
           </View>
 
           {/* ── Transactions récentes ── */}
@@ -545,7 +622,7 @@ export default function ClientDashboard() {
             )}
           </View>
 
-          <View style={{ height: 24 }} />
+          <View style={{ height: 8 }} />
         </Animated.View>
       </ScrollView>
     </SafeAreaView>
@@ -556,17 +633,18 @@ export default function ClientDashboard() {
 const s = StyleSheet.create({
 
   // ── Structure ──
-  safe:   { flex: 1, backgroundColor: C.green },
+  // ✅ v9.4 — fond gris (au lieu de blanc) pour fondre le Hero dans le body
+  safe:   { flex: 1, backgroundColor: C.pageBg },
   scroll: { flex: 1, backgroundColor: C.pageBg },
   body:   { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
   bodyInner: { gap: 12 },
 
-  // ── Hero ──
+  // ── Hero — ✅ v9.4 : fond gris (était blanc en v9.3, vert en v9.0-9.2) ──
   hero: {
-    backgroundColor: C.green,
+    backgroundColor: C.pageBg,
     paddingHorizontal: 20,
     paddingTop: 2,
-    paddingBottom: 16,
+    paddingBottom: 6,
   },
 
   // Top bar
@@ -574,59 +652,93 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   greeting: {
     fontSize: 11, fontWeight: "500",
-    color: "rgba(255,255,255,0.72)",
+    color: C.inkSoft,
     marginBottom: 1,
   },
   heroName: {
     fontSize: 19, fontWeight: "800",
-    color: C.white, letterSpacing: -0.3,
+    color: C.ink, letterSpacing: -0.3,
   },
   iconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: C.white,
+    borderWidth: 1, borderColor: C.border,
     justifyContent: "center", alignItems: "center",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
+      android: { elevation: 1 },
+      default: {},
+    }),
   },
   notifDot: {
     position: "absolute", top: 7, right: 7,
     width: 7, height: 7, borderRadius: 4,
     backgroundColor: "#F59E0B",
-    borderWidth: 1.5, borderColor: C.green,
+    borderWidth: 1.5, borderColor: C.white,
   },
+  // ✅ v9.4 — encre anthracite au lieu du vert (plus aucune couleur de marque dans le Hero)
   avatarBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.22)",
+    backgroundColor: C.ink,
     justifyContent: "center", alignItems: "center",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 5 },
+      android: { elevation: 2 },
+      default: {},
+    }),
   },
   avatarTxt: { fontSize: 14, fontWeight: "800", color: C.white },
 
+  // ✅ v9.4 — Carte solde flottante (nouveau conteneur, remplace l'ancien `balArea` plat)
+  balanceCard: {
+    backgroundColor: C.white,
+    borderRadius: C.r.xl,
+    padding: 18,
+    marginBottom: 4,
+    position: "relative",
+    ...heroCardShadow,
+  },
+  balanceWatermark: {
+    position: "absolute",
+    bottom: 12,
+    right: 12,
+  },
+
   // Balance
-  balArea:      { gap: 3 },
   balHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   balLabel: {
     fontSize: 10, fontWeight: "700",
-    color: "rgba(255,255,255,0.68)",
+    color: C.inkSoft,
     letterSpacing: 0.5,
   },
+  // ✅ v9.4 — bleu (token déjà existant pour le statut "Traitement") au lieu du vert
   onlinePill: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    backgroundColor: C.blueBg,
     paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: C.r.pill,
     marginLeft: "auto",
   },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#4ADE80" },
-  onlineTxt: { fontSize: 10, color: C.white, fontWeight: "600" },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.blue },
+  onlineTxt: { fontSize: 10, color: C.blue, fontWeight: "700" },
   balAmountRow: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 3 },
-  balCurPrefix: { fontSize: 17, fontWeight: "700", color: "rgba(255,255,255,0.80)" },
+  // ✅ v9.4 — encre sourdine au lieu du vert
+  balCurPrefix: { fontSize: 16, fontWeight: "700", color: C.inkSoft, letterSpacing: 0.5 },
   balAmount: {
     fontSize: 32, fontWeight: "800",
-    color: C.white, letterSpacing: -0.8,
+    color: C.ink, letterSpacing: -0.8,
   },
-  balReserved: { fontSize: 10, color: "rgba(255,255,255,0.55)", marginTop: 2 },
+  // Bandeau taux sous le solde
+  rateRow: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    marginTop: 8,
+  },
+  rateTxt: { fontSize: 12, color: C.inkSoft, fontWeight: "600", flexShrink: 1 },
+  balReserved: { fontSize: 10, color: C.inkSoft, marginTop: 4 },
 
   // ── CTA principal — blanc ombré ──
   mainCta: {

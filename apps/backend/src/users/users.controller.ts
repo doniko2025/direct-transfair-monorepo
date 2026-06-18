@@ -1,6 +1,6 @@
 // apps/backend/src/users/users.controller.ts
 // =========================================================
-// USERS CONTROLLER v4.1
+// USERS CONTROLLER v4.2
 // ✅ v4.0 : GET /users, POST /users
 // ✅ v4.1 : Ajout des 5 routes manquantes :
 //   - GET  /users/:id           → fiche complète du client wallet
@@ -18,6 +18,21 @@
 //   ACCÈS :
 //   - SUPER_ADMIN  : accès total (tous les clients)
 //   - COMPANY_ADMIN : scoped à son clientId uniquement
+//
+// ✅ v4.2 : Ajout GET /users/public/:id
+//   PROBLÈME : aucune route n'était accessible à un utilisateur normal
+//   (CLIENT/AGENT) pour résoudre l'identité d'un autre utilisateur.
+//   GET /users/:id existant est restreint à SUPER_ADMIN/COMPANY_ADMIN
+//   (@Roles), donc inutilisable pour le flux QR / paiement P2P côté
+//   mobile (un client qui scanne le QR d'un autre client).
+//
+//   CORRECTIF : nouvelle route 'public/:id', sans décorateur @Roles
+//   (donc accessible à tout rôle authentifié — RolesGuard laisse
+//   passer quand aucune métadonnée 'roles' n'est définie sur la route).
+//   Champs volontairement limités (id, firstName, lastName, phone,
+//   primaryCurrency) — jamais l'email, les wallets, le KYC. Scopée
+//   au même clientId (tenant) que l'appelant, comme assertClientAccess.
+//   Déclarée AVANT GET ':id' pour ne pas risquer de conflit de route.
 // =========================================================
 
 import {
@@ -207,6 +222,42 @@ export class UsersController {
   ) {
     await assertClientAccess(req.user!, id, this.usersService);
     return this.usersService.reactivate(id);
+  }
+
+  // ──────────────────────────────────────────────────────
+  // ✅ v4.2 — GET /users/public/:id
+  // Fiche minimale, accessible à TOUT utilisateur authentifié
+  // (pas de @Roles → RolesGuard laisse passer n'importe quel rôle).
+  // Utilisé par le flux QR / paiement P2P (app/scan.tsx côté mobile) :
+  // un client scanne le QR d'un autre client, l'app résout son nom
+  // pour confirmation avant l'envoi, sans jamais exposer l'email,
+  // les wallets ou les documents KYC.
+  // Scopé au même clientId (tenant) que l'appelant.
+  // Déclaré AVANT GET :id pour rester aussi explicite que les routes
+  // /suspend et /reactivate ci-dessus.
+  // ──────────────────────────────────────────────────────
+  @Get('public/:id')
+  @ApiOperation({ summary: 'Résoudre l\'identité publique d\'un utilisateur (QR / P2P)' })
+  async findPublic(
+    @Req() req: { user?: AuthUserPayload },
+    @Param('id') id: string,
+  ) {
+    const target = await this.usersService.findById(id);
+    if (!target || !target.isActive || target.deletedAt) {
+      throw new NotFoundException('Utilisateur introuvable');
+    }
+    if (target.clientId !== req.user?.clientId) {
+      throw new ForbiddenException(
+        'Cet utilisateur n\'appartient pas à votre société.',
+      );
+    }
+    return {
+      id:              target.id,
+      firstName:       target.firstName,
+      lastName:        target.lastName,
+      phone:           target.phone,
+      primaryCurrency: target.primaryCurrency,
+    };
   }
 
   // ──────────────────────────────────────────────────────

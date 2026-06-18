@@ -1,21 +1,44 @@
 // apps/direct-transfair-mobile/app/(tabs)/qr.tsx
 // =========================================================
-// QR CODE SCREEN v5.1 — Direct Transf'air
+// QR CODE SCREEN v5.2 — Direct Transf'air
 // ✅ v5.1 : fond blanc neutre #FAFAFA sur tous les rôles
 //    - pageBg unifié (plus de teinte verte/ambrée par rôle)
 //    - Héro rôle coloré conservé (identité visuelle forte)
 //    - Ombres cartes renforcées
 //    - Logique métier 100 % inchangée
+// ✅ v5.2 : QR CODE RÉEL + ACTIONS FONCTIONNELLES
+//    PROBLÈME : l'ancien écran affichait juste l'icône statique
+//    Ionicons "qr-code" — pas un vrai QR, n'encodait rien. Les boutons
+//    "Scanner", "Copier ID" et le partage en en-tête avaient des
+//    onPress vides ou absents.
+//    CORRECTIF :
+//    - QRFrame génère un vrai QR via react-native-qrcode-svg, encodant
+//      un deep link `directtransfair://pay/{userId}` (scheme déclaré
+//      dans app.json). N'importe quel scanner peut le lire ; s'il est
+//      scanné depuis l'app Direct Transf'air, ça ouvre directement
+//      l'écran de paiement vers ce destinataire.
+//    - "Copier ID" copie l'ID utilisateur via expo-clipboard, avec
+//      feedback visuel "Copié !" pendant 2s.
+//    - Le bouton de partage en en-tête utilise l'API Share native
+//      (WhatsApp, SMS, email…) pour partager le lien de paiement.
+//    - "Scanner" navigue vers /scan (nouvel écran caméra).
+//    ⚠️ Dépendances requises : `npx expo install react-native-qrcode-svg
+//      react-native-svg expo-clipboard` si pas déjà installées.
 // =========================================================
 
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import {
   View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Platform, StatusBar, Animated, ScrollView,
+  Platform, StatusBar, Animated, ScrollView, Share,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import QRCode from "react-native-qrcode-svg";
+import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../../providers/AuthProvider";
+
+// ✅ v5.2 — Scheme déclaré dans app.json ("scheme": "directtransfair")
+const DEEP_LINK_SCHEME = "directtransfair";
 
 // ─── Thèmes par rôle — pageBg unifié blanc neutre ────────
 const ROLE_THEMES = {
@@ -57,8 +80,8 @@ const BASE = {
   },
 };
 
-// ─── QR Frame décoratif ───────────────────────────────────
-function QRFrame({ accent }: { accent: string }) {
+// ─── QR Frame — ✅ v5.2 : vrai QR scannable ───────────────
+function QRFrame({ accent, value }: { accent: string; value: string | null }) {
   const CORNER = 28;
   const THICK  = 3;
   const corners = [
@@ -72,7 +95,11 @@ function QRFrame({ accent }: { accent: string }) {
       {corners.map((c, i) => (
         <View key={i} style={[{ position: "absolute", width: CORNER, height: CORNER, borderRadius: 4, borderColor: accent }, c as any]} />
       ))}
-      <Ionicons name="qr-code" size={160} color={BASE.ink} style={{ opacity: 0.85 }} />
+      {value ? (
+        <QRCode value={value} size={160} color={BASE.ink} backgroundColor="transparent" />
+      ) : (
+        <Ionicons name="qr-code" size={160} color={BASE.ink} style={{ opacity: 0.25 }} />
+      )}
     </View>
   );
 }
@@ -117,6 +144,8 @@ export default function QRCodeScreen() {
   const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
 
+  const [copied, setCopied] = useState(false);
+
   const heroAnim = useRef(new Animated.Value(0)).current;
   React.useEffect(() => {
     Animated.spring(heroAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
@@ -125,6 +154,27 @@ export default function QRCodeScreen() {
   const initials    = user?.firstName ? `${user.firstName[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() : "DT";
   const displayName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Client";
   const userId      = user?.id?.slice(0, 12).toUpperCase() ?? "—";
+
+  // ✅ v5.2 — Lien de paiement encodé dans le QR
+  const qrValue = user?.id ? `${DEEP_LINK_SCHEME}://pay/${user.id}` : null;
+
+  const handleCopyId = async () => {
+    if (!user?.id) return;
+    try {
+      await Clipboard.setStringAsync(user.id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* noop */ }
+  };
+
+  const handleShare = async () => {
+    if (!qrValue) return;
+    try {
+      await Share.share({
+        message: `Envoyez-moi de l'argent sur Direct Transf'air 💸\n\n${displayName}\n${qrValue}`,
+      });
+    } catch { /* noop */ }
+  };
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: theme.pageBg }]}>
@@ -142,7 +192,7 @@ export default function QRCodeScreen() {
             <Ionicons name="arrow-back" size={20} color={BASE.white} />
           </TouchableOpacity>
           <Text style={[s.heroTitle, { fontFamily: BASE.font.serif }]}>Mon QR Code</Text>
-          <TouchableOpacity style={[s.shareBtn, { backgroundColor: theme.heroGlass, borderColor: theme.heroGlassBdr }]} hitSlop={8}>
+          <TouchableOpacity style={[s.shareBtn, { backgroundColor: theme.heroGlass, borderColor: theme.heroGlassBdr }]} onPress={handleShare} hitSlop={8}>
             <Ionicons name="share-outline" size={18} color={BASE.white} />
           </TouchableOpacity>
         </View>
@@ -176,7 +226,7 @@ export default function QRCodeScreen() {
 
           <View style={s.qrArea}>
             <View style={[s.qrBox, { borderColor: `${theme.primary}20` }]}>
-              <QRFrame accent={theme.primary} />
+              <QRFrame accent={theme.primary} value={qrValue} />
             </View>
             <View style={[s.qrActiveBadge, { backgroundColor: theme.pale, borderColor: theme.border }]}>
               <View style={[s.qrActiveDot, { backgroundColor: theme.primary }]} />
@@ -206,8 +256,16 @@ export default function QRCodeScreen() {
 
         {/* Actions */}
         <View style={s.actionsRow}>
-          <ActionBtn icon="scan-outline"  label="Scanner"   accent={theme.primary} bg={theme.pale} filled onPress={() => {}} />
-          <ActionBtn icon="copy-outline"  label="Copier ID" accent={theme.primary} bg={theme.pale}        onPress={() => {}} />
+          <ActionBtn
+            icon="scan-outline" label="Scanner" accent={theme.primary} bg={theme.pale} filled
+            onPress={() => router.push("/scan" as any)}
+          />
+          <ActionBtn
+            icon={copied ? "checkmark-outline" : "copy-outline"}
+            label={copied ? "Copié !" : "Copier ID"}
+            accent={theme.primary} bg={theme.pale}
+            onPress={handleCopyId}
+          />
         </View>
 
         <View style={s.secNote}>

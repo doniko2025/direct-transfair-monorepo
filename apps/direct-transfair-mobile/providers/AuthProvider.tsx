@@ -1,11 +1,23 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v5.5 — Direct Transf'air
+// AUTH PROVIDER v5.6 — Direct Transf'air
 // ✅ v5.4 conservé intégralement
 // ✅ v5.5 : loginWithPhoneOtp(userId, code)
 //   → étape 2 de la connexion par téléphone
 //   → appelle api.loginStep2({ userId, code })
 //   → met à jour l'état React exactement comme login()
+// ✅ v5.6 : FIX — aucun appareil n'était jamais enregistré
+//   PROBLÈME : api.registerDevice() n'était appelé nulle part dans ce
+//   fichier → l'écran "Appareils connectés" (devices.tsx) affichait
+//   toujours "0 appareil", même en build natif, et AsyncStorage["deviceId"]
+//   n'était jamais écrit (donc "appareil actuel" non détectable).
+//   CORRECTIF : appel de registerCurrentDeviceIfNeeded() (nouveau module
+//   services/deviceRegistration.ts) en "fire-and-forget" (sans await,
+//   ne bloque jamais la connexion) après chaque connexion réussie —
+//   login, register (chemin direct), biometricLogin, loginWithPhoneOtp —
+//   et dans initAuth() quand une session existante est restaurée avec
+//   succès. Le module lui-même évite les doublons (no-op si un
+//   "deviceId" est déjà stocké localement).
 // =========================================================
 
 import React, {
@@ -16,6 +28,7 @@ import * as SecureStore from "expo-secure-store";
 import * as Linking from "expo-linking";
 import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
+import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
 import { getCurrencyByCountry } from "../data/countries";
 import type {
   AuthUser, LoginPayload, RegisterPayload, LoginResponse,
@@ -198,6 +211,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (meCode) await applyTenant(meCode);
             setUser(enrichedMe);
             await setStorage(USER_KEY, JSON.stringify(enrichedMe));
+            // ✅ v5.6 — session existante restaurée avec succès :
+            // fire-and-forget, n'attend pas, n'échoue jamais l'init
+            void registerCurrentDeviceIfNeeded();
           } catch (e: any) {
             const status = e?.response?.status;
             if (status === 401 || status === 403) await logout();
@@ -247,6 +263,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(enrichedUser);
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+      // ✅ v5.6 — fire-and-forget, ne bloque jamais la connexion
+      void registerCurrentDeviceIfNeeded();
     } catch (e: unknown) {
       throw e;
     } finally {
@@ -275,6 +293,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(enrichedUser);
         await setStorage(TOKEN_KEY, res.access_token);
         await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+        // ✅ v5.6 — fire-and-forget
+        void registerCurrentDeviceIfNeeded();
         return;
       }
       await login({ identifier: data.email ?? data.phone ?? "", password: data.password });
@@ -324,6 +344,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(enrichedUser);
       await setStorage(TOKEN_KEY, newToken);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+      // ✅ v5.6 — fire-and-forget
+      void registerCurrentDeviceIfNeeded();
     } catch (e: unknown) {
       throw e;
     } finally {
@@ -359,6 +381,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Persistance AuthProvider (dt_token, dt_user)
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+      // ✅ v5.6 — fire-and-forget
+      void registerCurrentDeviceIfNeeded();
     } catch (e: unknown) {
       throw e;
     } finally {

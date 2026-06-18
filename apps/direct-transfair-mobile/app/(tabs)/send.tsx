@@ -30,6 +30,24 @@
 //      confirmé via transactions.service.ts backend tant que
 //      senderFirstName n'est pas envoyé), avec découpe défensive du
 //      format "code|prénom" utilisé pour les expéditeurs invités
+// ✅ v2.9 : HERO SANS VERT + CARTE FLOTTANTE (même traitement que le
+//    Client Dashboard v9.4) — PUREMENT PRÉSENTATIONNEL, aucune ligne de
+//    logique métier touchée (mêmes states, mêmes calculs, mêmes appels API).
+//    - Fond du header : vert (#065F46) → gris clair, fondu avec le fond
+//      de page (C.bg), pour ne plus faire "bloc vert" en haut d'écran.
+//    - Cercles décoratifs translucides blancs (hdeco1/hdeco2, pensés pour
+//      un fond vert) supprimés — plus pertinents sur fond clair.
+//    - Bouton retour / bouton œil : cercles "glass" blancs → cercles
+//      blancs pleins avec bordure + légère ombre, icônes en encre foncée
+//      (au lieu de blanc sur vert).
+//    - Titre du header : blanc → encre foncée (C.text).
+//    - Bloc solde : devient une carte flottante blanche détachée
+//      (`balanceCard`) avec ombre marquée, libellé et montant en encre
+//      foncée/sourdine (au lieu de blanc sur vert), + léger filigrane
+//      décoratif (icône wallet, opacité quasi nulle), même esprit que le
+//      Client Dashboard. Le badge "Solde insuffisant" reste ambre,
+//      inchangé.
+//    - StatusBar : light-content/vert → dark-content/gris clair.
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -560,7 +578,7 @@ export default function SendMoneyScreen() {
     }
   }, [params]);
 
-  useEffect(() => {
+useEffect(() => {
     (api.http as any).get("/commissions/fees")
       .then((res: any) => {
         const list: any[] = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
@@ -753,32 +771,35 @@ export default function SendMoneyScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.g2} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       {/* ══ HEADER ══ */}
       <Animated.View style={[s.header, {
         opacity: headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0,1], outputRange: [-20,0] }) }],
       }]}>
-        <View style={s.hdeco1} />
-        <View style={s.hdeco2} />
-
         <View style={s.headerTop}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color={C.white} />
+            <Ionicons name="arrow-back" size={20} color={C.text} />
           </TouchableOpacity>
           <Text style={[s.headerTitle, { fontFamily: F.display }]}>
             {mode === "WALLET" ? "Transfert Wallet" : "Envoi d'Argent"}
           </Text>
           <TouchableOpacity style={s.eyeBtn} onPress={() => setShowBalance(!showBalance)}>
-            <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color="rgba(255,255,255,0.8)" />
+            <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.textMuted} />
           </TouchableOpacity>
         </View>
 
-        <View style={s.balanceHero}>
+        <View style={s.balanceCard}>
+          <Ionicons
+            name="wallet-outline"
+            size={48}
+            color="rgba(15,23,42,0.045)"
+            style={s.balanceWatermark}
+          />
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
           {loadingWallet
-            ? <ActivityIndicator color="rgba(255,255,255,0.7)" size="small" />
+            ? <ActivityIndicator color={C.textMuted} size="small" />
             : <Text style={[s.balanceVal, { fontFamily: F.display }]}>
                 {showBalance ? `${fmt(walletBalance, userCurrency)} ${userCurrency}` : "• • • • •"}
               </Text>
@@ -1185,19 +1206,46 @@ const s = StyleSheet.create({
   loaderTxt: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
 
   header: {
-    backgroundColor: C.g3,
+    backgroundColor: C.bg,
     paddingTop: Platform.OS === "android" ? 44 : 10,
-    paddingBottom: 16, paddingHorizontal: 20, overflow: "hidden",
+    paddingBottom: 14, paddingHorizontal: 20,
   },
-  hdeco1: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.05)", top: -60, right: -40 },
-  hdeco2: { position: "absolute", width: 120, height: 120, borderRadius: 60,  backgroundColor: "rgba(255,255,255,0.04)", bottom: -30, left: 20 },
   headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 20, color: C.white, letterSpacing: -0.2 },
-  eyeBtn:      { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center" },
-  balanceHero: { alignItems: "center", gap: 2 },
-  balanceLbl:  { color: "rgba(255,255,255,0.65)", fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  balanceVal:  { color: C.white, fontSize: 30, letterSpacing: -0.8 },
+  backBtn:     {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    justifyContent: "center", alignItems: "center",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
+      android: { elevation: 1 },
+    }),
+  },
+  headerTitle: { fontSize: 20, color: C.text, letterSpacing: -0.2 },
+  eyeBtn:      {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    justifyContent: "center", alignItems: "center",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
+      android: { elevation: 1 },
+    }),
+  },
+  balanceCard: {
+    backgroundColor: C.white,
+    borderRadius: 20,
+    paddingVertical: 18, paddingHorizontal: 16,
+    marginTop: 6,
+    alignItems: "center", gap: 2,
+    position: "relative",
+    borderWidth: 1, borderColor: C.border,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 20 },
+      android: { elevation: 6 },
+    }),
+  },
+  balanceWatermark:  { position: "absolute", bottom: 10, right: 12 },
+  balanceLbl:  { color: C.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
+  balanceVal:  { color: C.text, fontSize: 30, letterSpacing: -0.8 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
 

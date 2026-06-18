@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.3
+// DIRECT TRANSF'AIR — API Service v5.4
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -13,6 +13,10 @@
 //    après timeout → 500 Internal server error sur le 2ème essai)
 // ✅ declareBankTransfer — timeout réduit à 15s (au lieu de 30s)
 // ✅ declareBankTransfer — devise par défaut corrigée XOF (était EUR)
+// v5.4 — Ajout getPublicUser(id) : résolution d'identité pour le flux
+//    QR / paiement P2P (utilisé par app/scan.tsx). Appelle la nouvelle
+//    route backend GET /users/public/:id, accessible à tout utilisateur
+//    authentifié (pas réservée aux admins), scopée au même tenant.
 // =========================================================
 
 import axios, {
@@ -870,6 +874,28 @@ async getNotifications(params?: {
   async reactivateUser(userId: string): Promise<unknown> {
     const res = await this.http.patch(`/users/${userId}/reactivate`);
     return res.data;
+  }
+
+  // ✅ v5.4 — Résolution d'identité publique pour le flux QR / P2P.
+  // Appelle GET /users/public/:id (route accessible à tout utilisateur
+  // authentifié, scopée au même tenant — voir users.controller.ts).
+  // Retourne uniquement id/firstName/lastName/phone/primaryCurrency,
+  // jamais l'email, les wallets ou les données KYC.
+  async getPublicUser(id: string): Promise<{
+    id: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    primaryCurrency?: string;
+  }> {
+    const res = await this.http.get(`/users/public/${id}`);
+    return res.data as {
+      id: string;
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      primaryCurrency?: string;
+    };
   }
 
   // ============================================================
@@ -1878,4 +1904,4 @@ async processWithdrawalPayment(code: string): Promise<unknown> {
   }
 }
 
-export const api = new API(); 
+export const api = new API();

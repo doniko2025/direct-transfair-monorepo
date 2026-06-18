@@ -1,11 +1,31 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/payment-methods.tsx
 // =========================================================
-// PAYMENT METHODS v6.1 — Direct Transf'air
+// PAYMENT METHODS v6.2 — Direct Transf'air
 // ✅ v6.1 : Remplacement du fetch brut par api.http
 //           Le fetch brut n'envoyait pas x-tenant-id
 //           → TenantGuard rejetait avant d'atteindre la route
 //           → "Cannot GET /payments/methods"
 //           api.http ajoute automatiquement x-tenant-id via l'intercepteur
+// ✅ v6.2 : FORMULAIRE D'AJOUT DE CARTE — refonte complète
+//    PROBLÈME : formulaire minimal (numéro + expiration seulement),
+//    pas de nom du titulaire, pas de CVV, pas de formatage de saisie.
+//    AJOUTS :
+//    - Champ "Titulaire de la carte" (cardholderName), envoyé au backend
+//    - Champ CVV (3-4 chiffres, secureTextEntry) — ⚠️ collecté pour la
+//      complétude du formulaire mais JAMAIS envoyé au backend ni stocké.
+//      Règle PCI-DSS de base : le CVV ne doit jamais être persisté,
+//      même chiffré, après une autorisation. Si un vrai prestataire de
+//      paiement (Stripe, etc.) tokenise la carte côté client, le CVV
+//      doit lui être transmis directement, jamais via votre propre API.
+//    - Aperçu de carte en temps réel (CardPreview) : numéro masqué,
+//      titulaire, expiration, et badge de marque détectée
+//    - Formatage automatique du numéro de carte (espace tous les 4
+//      chiffres) et de l'expiration (MM/AA avec "/" auto-inséré)
+//    - Détection de marque (Visa/Mastercard/Amex) côté client, purement
+//      visuelle pour l'aperçu — le backend reste seul responsable du
+//      champ `brand` retourné et affiché dans la liste des cartes
+//    - Validation étendue : nom non vide, CVV 3-4 chiffres
+//    Logique de chargement/suppression/liaison wallet mobile inchangée.
 // =========================================================
 
 import React, { useCallback, useEffect, useState } from "react";
@@ -75,6 +95,79 @@ type MobileWallet = {
   recordId: string | null;
 };
 
+// ─── ✅ v6.2 — Helpers de formatage / détection carte ─────
+function formatCardNumber(text: string): string {
+  const digits = text.replace(/\D/g, "").slice(0, 16);
+  return digits.replace(/(.{4})/g, "$1 ").trim();
+}
+function formatExpiry(text: string): string {
+  const digits = text.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+function detectBrand(cardNumber: string): { label: string; icon: string } {
+  const digits = cardNumber.replace(/\D/g, "");
+  if (/^4/.test(digits))        return { label: "VISA",       icon: "card" };
+  if (/^5[1-5]/.test(digits))   return { label: "MASTERCARD",  icon: "card" };
+  if (/^3[47]/.test(digits))    return { label: "AMEX",        icon: "card" };
+  if (digits.length === 0)      return { label: "CARTE",       icon: "card-outline" };
+  return { label: "CARTE", icon: "card-outline" };
+}
+
+// ─── ✅ v6.2 — Aperçu de carte en temps réel ──────────────
+function CardPreview({
+  number, name, expiry,
+}: { number: string; name: string; expiry: string }) {
+  const brand = detectBrand(number);
+  const digits = number.replace(/\D/g, "");
+  const groups = [0, 1, 2, 3].map((i) => {
+    const slice = digits.slice(i * 4, i * 4 + 4);
+    return slice.length > 0 ? slice.padEnd(4, "•") : "••••";
+  });
+  return (
+    <LinearGradient
+      colors={["#1E293B", "#0F172A"]}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      style={cp.card}
+    >
+      <View style={cp.topRow}>
+        <Ionicons name="wifi" size={18} color="rgba(255,255,255,0.55)" style={{ transform: [{ rotate: "90deg" }] }} />
+        <Text style={[cp.brand, { fontFamily: T.font.sans }]}>{brand.label}</Text>
+      </View>
+      <Text style={[cp.number, { fontFamily: T.font.mono }]}>{groups.join("  ")}</Text>
+      <View style={cp.bottomRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={[cp.label, { fontFamily: T.font.sans }]}>TITULAIRE</Text>
+          <Text style={[cp.value, { fontFamily: T.font.sans }]} numberOfLines={1}>
+            {name.trim() ? name.trim().toUpperCase() : "VOTRE NOM"}
+          </Text>
+        </View>
+        <View>
+          <Text style={[cp.label, { fontFamily: T.font.sans }]}>EXP.</Text>
+          <Text style={[cp.value, { fontFamily: T.font.mono }]}>{expiry || "MM/AA"}</Text>
+        </View>
+      </View>
+    </LinearGradient>
+  );
+}
+const cp = StyleSheet.create({
+  card: {
+    borderRadius: 18, padding: 18, marginBottom: 18,
+    height: 160, justifyContent: "space-between",
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 12 },
+      android: { elevation: 5 },
+      default: {},
+    }),
+  },
+  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  brand:  { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "800", letterSpacing: 1 },
+  number: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 1.5 },
+  bottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
+  label:  { color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 3 },
+  value:  { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+});
+
 // ─── Light Modal ───────────────────────────────────────
 function LightModal({ visible, onClose, title, children }: {
   visible: boolean; onClose: () => void; title: string; children: React.ReactNode;
@@ -98,7 +191,7 @@ function LightModal({ visible, onClose, title, children }: {
 }
 const dmS = StyleSheet.create({
   overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.15)", justifyContent: "flex-end" },
-  sheet:     { backgroundColor: T.surface, borderTopLeftRadius: T.radius.xl, borderTopRightRadius: T.radius.xl, maxHeight: "75%", borderWidth: 1, borderColor: T.border, paddingBottom: 30 },
+  sheet:     { backgroundColor: T.surface, borderTopLeftRadius: T.radius.xl, borderTopRightRadius: T.radius.xl, maxHeight: "88%", borderWidth: 1, borderColor: T.border, paddingBottom: 30 },
   handle:    { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border },
   title:     { color: T.text, fontSize: 18, fontWeight: "700" },
@@ -117,9 +210,20 @@ export default function PaymentMethodsScreen() {
   const [showCardModal,   setShowCardModal]   = useState(false);
   const [showPhoneModal,  setShowPhoneModal]  = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+
+  // ✅ v6.2 — nouveaux champs : titulaire + CVV (CVV jamais envoyé au backend)
+  const [newCardName,   setNewCardName]   = useState("");
   const [newCardNumber, setNewCardNumber] = useState("");
   const [newCardExpiry, setNewCardExpiry] = useState("");
+  const [newCardCvv,    setNewCardCvv]    = useState("");
   const [newPhone,      setNewPhone]      = useState("");
+
+  const resetCardForm = () => {
+    setNewCardName("");
+    setNewCardNumber("");
+    setNewCardExpiry("");
+    setNewCardCvv("");
+  };
 
   // ── ✅ v6.1 : Chargement via api.http (x-tenant-id ajouté automatiquement) ──
   const fetchMethods = useCallback(async () => {
@@ -140,22 +244,40 @@ export default function PaymentMethodsScreen() {
 
   useEffect(() => { void fetchMethods(); }, [fetchMethods]);
 
-  // ── ✅ v6.1 : Ajouter une carte via api.http ──
+  // ── ✅ v6.2 : Ajouter une carte — validation étendue (nom + CVV) ──
+  // ⚠️ Le CVV (newCardCvv) n'est INTENTIONNELLEMENT PAS envoyé dans le
+  // payload ci-dessous — voir le commentaire d'en-tête du fichier.
   const handleAddCard = async () => {
-    const clean = newCardNumber.replace(/\s/g, "");
-    if (clean.length < 13 || newCardExpiry.length < 4) {
-      Alert.alert("Erreur", "Informations de carte invalides.");
+    const cleanNumber = newCardNumber.replace(/\s/g, "");
+    const cleanName   = newCardName.trim();
+
+    if (!cleanName) {
+      Alert.alert("Erreur", "Le nom du titulaire est requis.");
       return;
     }
+    if (cleanNumber.length < 13) {
+      Alert.alert("Erreur", "Numéro de carte invalide.");
+      return;
+    }
+    if (newCardExpiry.length < 5) {
+      Alert.alert("Erreur", "Date d'expiration invalide.");
+      return;
+    }
+    if (newCardCvv.length < 3) {
+      Alert.alert("Erreur", "Code de sécurité (CVV) invalide.");
+      return;
+    }
+
     try {
       setSaving(true);
       await api.http.post("/payments/cards", {
-        cardNumber: clean,
-        expiry: newCardExpiry,
+        cardholderName: cleanName,
+        cardNumber:     cleanNumber,
+        expiry:         newCardExpiry,
+        // cvv volontairement omis — non persisté côté backend (PCI-DSS)
       });
       setShowCardModal(false);
-      setNewCardNumber("");
-      setNewCardExpiry("");
+      resetCardForm();
       await fetchMethods();
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? "Erreur lors de l'ajout";
@@ -351,25 +473,62 @@ export default function PaymentMethodsScreen() {
           </ScrollView>
         )}
 
-        {/* ── Modal Carte ── */}
-        <LightModal visible={showCardModal} onClose={() => setShowCardModal(false)} title="Ajouter une Carte">
-          <View style={{ padding: 20 }}>
-            <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>NUMÉRO DE CARTE</Text>
+        {/* ── Modal Carte — ✅ v6.2 : refonte avec aperçu live + nom + CVV ── */}
+        <LightModal
+          visible={showCardModal}
+          onClose={() => { setShowCardModal(false); resetCardForm(); }}
+          title="Ajouter une Carte"
+        >
+          <ScrollView style={{ padding: 20 }} keyboardShouldPersistTaps="handled">
+            <CardPreview number={newCardNumber} name={newCardName} expiry={newCardExpiry} />
+
+            <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>TITULAIRE DE LA CARTE</Text>
+            <TextInput
+              style={[s.input, { fontFamily: T.font.sans, textTransform: "uppercase" }]}
+              value={newCardName} onChangeText={setNewCardName}
+              placeholder="NOM PRÉNOM" placeholderTextColor={T.textDim}
+              autoCapitalize="characters"
+            />
+
+            <Text style={[s.inputLabel, { fontFamily: T.font.sans, marginTop: 14 }]}>NUMÉRO DE CARTE</Text>
             <TextInput
               style={[s.input, { fontFamily: T.font.mono }]}
-              value={newCardNumber} onChangeText={setNewCardNumber}
+              value={newCardNumber}
+              onChangeText={(t) => setNewCardNumber(formatCardNumber(t))}
               placeholder="0000 0000 0000 0000" placeholderTextColor={T.textDim}
               keyboardType="numeric" maxLength={19}
             />
-            <Text style={[s.inputLabel, { fontFamily: T.font.sans, marginTop: 14 }]}>
-              DATE EXPIRATION (MM/AA)
-            </Text>
-            <TextInput
-              style={[s.input, { fontFamily: T.font.mono }]}
-              value={newCardExpiry} onChangeText={setNewCardExpiry}
-              placeholder="MM/AA" placeholderTextColor={T.textDim}
-              keyboardType="numeric" maxLength={5}
-            />
+
+            <View style={{ flexDirection: "row", gap: 12, marginTop: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>EXPIRATION</Text>
+                <TextInput
+                  style={[s.input, { fontFamily: T.font.mono }]}
+                  value={newCardExpiry}
+                  onChangeText={(t) => setNewCardExpiry(formatExpiry(t))}
+                  placeholder="MM/AA" placeholderTextColor={T.textDim}
+                  keyboardType="numeric" maxLength={5}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>CVV</Text>
+                <TextInput
+                  style={[s.input, { fontFamily: T.font.mono }]}
+                  value={newCardCvv}
+                  onChangeText={(t) => setNewCardCvv(t.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="•••" placeholderTextColor={T.textDim}
+                  keyboardType="numeric" maxLength={4} secureTextEntry
+                />
+              </View>
+            </View>
+
+            <View style={s.secureNote}>
+              <Ionicons name="lock-closed" size={12} color={T.textDim} />
+              <Text style={[s.secureNoteTxt, { fontFamily: T.font.sans }]}>
+                Vos informations sont chiffrées. Le CVV n'est jamais stocké.
+              </Text>
+            </View>
+
             <TouchableOpacity style={s.confirmBtn} onPress={handleAddCard} activeOpacity={0.85} disabled={saving}>
               <LinearGradient colors={[T.blue, "#0369A1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.confirmGrad}>
                 {saving
@@ -378,7 +537,7 @@ export default function PaymentMethodsScreen() {
                 }
               </LinearGradient>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </LightModal>
 
         {/* ── Modal Wallet ── */}
@@ -454,6 +613,8 @@ const s = StyleSheet.create({
 
   inputLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   input:      { backgroundColor: "#F9FAFB", borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.text, fontWeight: "600", marginBottom: 4 },
+  secureNote: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  secureNoteTxt: { fontSize: 10.5, color: T.textDim, fontWeight: "600", flexShrink: 1 },
   confirmBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 20 },
   confirmGrad:{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 8 },
   confirmTxt: { color: T.surface, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
