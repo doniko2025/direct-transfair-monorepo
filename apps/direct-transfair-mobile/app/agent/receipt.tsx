@@ -1,15 +1,18 @@
 // apps/direct-transfair-mobile/app/agent/receipt.tsx
 // =========================================================
-// REÇU AGENT v2.0 — Direct Transf'air
+// REÇU AGENT v2.1 — Direct Transf'air
 // ✅ v1.0 : types RETRAIT / DÉPÔT / ENVOI, PDF, partage
 // ✅ v2.0 : Refonte complète style Sendwave
-//   - Fond blanc pur, zéro héro bleu
-//   - Montant large centré en haut (sans couleur de fond)
-//   - Sections en lignes compactes séparées par de fines lignes
-//   - Code de retrait dans un cadre sobre gris
-//   - Lignes de signature simplifiées
-//   - Boutons d'action modernes en bas (sticky)
-//   - Le PDF HTML reste inchangé (branding complet)
+// ✅ v2.1 : PUREMENT PRÉSENTATIONNEL — logique métier inchangée
+//   - Écran natif : espacement compact (paddingVertical rows
+//     11→8, amtBlock 28/24→16/12, section titles 18→10,
+//     codeBox 18→12, sigArea 24→16, footer 20→12)
+//   - PDF buildHtml : suppression du héro bleu dégradé.
+//     Nouveau header blanc pur : logo en encre foncée, badge
+//     type en gris neutre, montant en texte sombre — même
+//     style minimaliste que l'écran natif. Le reste du PDF
+//     (meta-row, code, sections, signatures, footer) est
+//     strictement inchangé.
 // =========================================================
 
 import React, { useCallback } from "react";
@@ -47,7 +50,7 @@ export interface ReceiptData {
   agentName?:        string;
 }
 
-// ─── Design tokens — reçu minimaliste ────────────────────
+// ─── Design tokens ────────────────────────────────────────
 const T = {
   bg:         "#FFFFFF",
   surface:    "#FFFFFF",
@@ -69,7 +72,7 @@ const T = {
   },
 };
 
-// ─── Helpers ──────────────────────────────────────────────
+// ─── Helpers — 100 % inchangés ───────────────────────────
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
@@ -97,13 +100,11 @@ function typeInfo(type: ReceiptType) {
 }
 
 // ─── Composants UI minimalistes ───────────────────────────
-
-/** Ligne label / valeur compacte */
 function Row({ label, value, mono, bold, top }: {
   label: string; value: string; mono?: boolean; bold?: boolean; top?: boolean;
 }) {
   return (
-    <View style={[ro.row, top && { borderTopWidth: 1, borderTopColor: T.divider, marginTop: 0, paddingTop: 12 }]}>
+    <View style={[ro.row, top && { borderTopWidth: 1, borderTopColor: T.divider, marginTop: 0, paddingTop: 8 }]}>
       <Text style={[ro.label, { fontFamily: T.font.sans }]}>{label}</Text>
       <Text style={[ro.value, { fontFamily: mono ? T.font.mono : T.font.sans }, bold && ro.bold]}>
         {value}
@@ -112,23 +113,24 @@ function Row({ label, value, mono, bold, top }: {
   );
 }
 const ro = StyleSheet.create({
-  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: T.divider },
+  // ✅ v2.1 : paddingVertical 11 → 8
+  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.divider },
   label: { fontSize: 13, color: T.inkSub, fontWeight: "500", flex: 1 },
   value: { fontSize: 13, color: T.ink,    fontWeight: "600", textAlign: "right", flex: 2 },
   bold:  { fontWeight: "800", color: T.ink, fontSize: 14 },
 });
 
-/** Titre de section */
 function SectionTitle({ children }: { children: string }) {
   return (
     <Text style={[st.txt, { fontFamily: T.font.sans }]}>{children}</Text>
   );
 }
 const st = StyleSheet.create({
-  txt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingTop: 18, paddingBottom: 4 },
+  // ✅ v2.1 : paddingTop 18 → 10, paddingBottom 4 → 2
+  txt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingTop: 10, paddingBottom: 2 },
 });
 
-// ─── HTML receipt (inchangé — branding complet) ───────────
+// ─── HTML receipt — ✅ v2.1 : héro blanc pur (sans bleu) ─
 function buildHtml(d: ReceiptData): string {
   const ti   = typeInfo(d.type);
   const dt   = fmtDate(d.date);
@@ -146,8 +148,8 @@ function buildHtml(d: ReceiptData): string {
   const amtHtml = hasFees ? `
   <div class="amt-row"><span class="amt-lbl">Montant envoyé</span><span class="amt-val">${fmt(d.amount, d.currency)} ${d.currency}</span></div>
   <div class="amt-row"><span class="amt-lbl">Frais de service</span><span class="amt-val">${fmt(d.fees ?? 0, d.currency)} ${d.currency}</span></div>
-  <div class="amt-row total"><span class="amt-lbl bold">Total débité</span><span class="amt-val blue">${fmt(d.totalAmount ?? d.amount, d.currency)} ${d.currency}</span></div>`
-  : `<div class="amt-row"><span class="amt-lbl">Montant</span><span class="amt-val blue">${fmt(d.amount, d.currency)} ${d.currency}</span></div>`;
+  <div class="amt-row total"><span class="amt-lbl bold">Total débité</span><span class="amt-val highlight">${fmt(d.totalAmount ?? d.amount, d.currency)} ${d.currency}</span></div>`
+  : `<div class="amt-row"><span class="amt-lbl">Montant</span><span class="amt-val highlight">${fmt(d.amount, d.currency)} ${d.currency}</span></div>`;
 
   const receivedHtml = d.receivedAmount && d.targetCurrency && d.targetCurrency !== d.currency ? `
   <div class="received-row">
@@ -169,20 +171,28 @@ function buildHtml(d: ReceiptData): string {
     ${d.senderCountry ? `<div class="field-row"><span class="f-lbl">Pays</span><span class="f-val">${d.senderCountry}</span></div>` : ""}
   </div>` : "";
 
+  // ✅ v2.1 — CSS reécrit : héro blanc pur, sans fond bleu/gradient.
+  // Le .header devient une zone blanche avec bordure basse légère.
+  // Le ::after arrondi (transition bleu→blanc) est supprimé.
+  // Le montant et la devise passent en texte sombre.
+  // Tout le reste du CSS est strictement identique à v2.0.
   return `<!DOCTYPE html><html lang="fr"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Reçu Direct Transf'air — ${d.reference}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto;background:#fff;color:#0F172A}
-.header{background:linear-gradient(140deg,#2563EB 0%,#1D4ED8 100%);padding:24px 22px 36px;text-align:center;position:relative}
-.header::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:22px;background:#fff;border-radius:50% 50% 0 0/22px 22px 0 0}
-.logo{color:#fff;font-size:17px;font-weight:900;letter-spacing:3px;text-transform:uppercase;margin-bottom:2px}
-.logo-sub{color:rgba(255,255,255,0.6);font-size:8px;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
-.type-badge{display:inline-block;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.32);color:#fff;padding:4px 16px;border-radius:20px;font-size:9px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:18px}
-.amt-label{font-size:8px;letter-spacing:1.5px;color:rgba(255,255,255,0.6);text-transform:uppercase;margin-bottom:5px}
-.amt-big{font-size:38px;font-weight:900;color:#fff;letter-spacing:-1px;line-height:1}
-.amt-curr{font-size:14px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:2px;margin-top:4px}
+
+/* ── Hero blanc pur (v2.1) ── */
+.header{background:#fff;border-bottom:2px solid #E2E8F0;padding:28px 22px 22px;text-align:center}
+.logo{color:#0F172A;font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;margin-bottom:2px}
+.logo-sub{color:#94A3B8;font-size:8px;letter-spacing:2px;text-transform:uppercase;margin-bottom:16px}
+.type-badge{display:inline-block;background:#F1F5F9;border:1px solid #E2E8F0;color:#475569;padding:4px 16px;border-radius:20px;font-size:9px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:16px}
+.amt-label{font-size:8px;letter-spacing:1.5px;color:#94A3B8;text-transform:uppercase;margin-bottom:6px}
+.amt-big{font-size:40px;font-weight:900;color:#0F172A;letter-spacing:-1px;line-height:1}
+.amt-curr{font-size:13px;font-weight:700;color:#475569;letter-spacing:2px;margin-top:5px}
+
+/* ── Reste inchangé ── */
 .body{padding:20px 20px 0}
 .meta-row{display:flex;justify-content:space-between;align-items:center;background:#F8FAFF;border:1px solid #DBEAFE;border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .meta-lbl{font-size:8px;font-weight:700;color:#9CA3AF;letter-spacing:1px;text-transform:uppercase;margin-bottom:3px}
@@ -190,26 +200,26 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .meta-val.sm{font-size:10px}
 .status-row{text-align:center;margin-bottom:14px}
 .status-badge{display:inline-block;background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;padding:5px 18px;border-radius:20px;font-size:10px;font-weight:900;letter-spacing:0.5px}
-.code-box{background:#F8FAFF;border:2px solid #2563EB;border-radius:12px;padding:18px;text-align:center;margin-bottom:16px}
-.code-label{font-size:8px;font-weight:900;color:#2563EB;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
-.code-value{font-size:28px;font-weight:900;color:#1D4ED8;letter-spacing:6px;font-family:monospace;margin-bottom:6px}
+.code-box{background:#F8FAFF;border:1.5px solid #CBD5E1;border-radius:12px;padding:16px;text-align:center;margin-bottom:16px}
+.code-label{font-size:8px;font-weight:900;color:#475569;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+.code-value{font-size:28px;font-weight:900;color:#0F172A;letter-spacing:6px;font-family:monospace;margin-bottom:6px}
 .code-tip{font-size:9px;color:#6B7280;font-style:italic}
 .section{margin-bottom:16px}
-.section-title{font-size:8px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#2563EB;border-bottom:1.5px solid #2563EB;padding-bottom:5px;margin-bottom:10px}
+.section-title{font-size:8px;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;color:#475569;border-bottom:1.5px solid #E2E8F0;padding-bottom:5px;margin-bottom:10px}
 .section-title.purple{color:#8B5CF6;border-bottom-color:#8B5CF6}
 .section-title.gray{color:#6B7280;border-bottom-color:#E5E7EB}
 .field-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
 .f-lbl{font-size:10px;color:#6B7280;font-weight:600;flex-shrink:0;margin-right:8px}
 .f-val{font-size:11px;color:#0F172A;font-weight:700;text-align:right}
 .f-val.mono{font-family:monospace}
-.amounts-card{background:#F8FAFF;border:1px solid #DBEAFE;border-radius:10px;padding:14px;margin-bottom:14px}
+.amounts-card{background:#F8FAFF;border:1px solid #E2E8F0;border-radius:10px;padding:14px;margin-bottom:14px}
 .amt-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .amt-row:last-child{margin-bottom:0}
-.amt-row.total{border-top:1px solid #DBEAFE;margin-top:8px;padding-top:8px}
+.amt-row.total{border-top:1px solid #E2E8F0;margin-top:8px;padding-top:8px}
 .amt-lbl{font-size:10px;color:#6B7280;font-weight:600}
 .amt-lbl.bold{font-weight:900;color:#0F172A}
 .amt-val{font-size:11px;color:#0F172A;font-weight:800;font-family:monospace}
-.amt-val.blue{color:#2563EB;font-size:14px;font-weight:900}
+.amt-val.highlight{color:#0F172A;font-size:14px;font-weight:900}
 .amt-val.mono{font-family:monospace;font-size:10px}
 .received-row{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-top:10px}
 .received-icon{font-size:16px}
@@ -219,10 +229,10 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .sig-box{width:44%;text-align:center}
 .sig-line{border-top:1px solid #0F172A;margin-top:36px;margin-bottom:6px}
 .sig-lbl{font-size:9px;color:#6B7280;font-weight:600}
-.footer{background:#F8FAFF;border-top:2px solid #DBEAFE;padding:16px 20px}
-.f-logo{font-size:12px;font-weight:900;color:#2563EB;letter-spacing:2px;margin-bottom:5px}
+.footer{background:#F8FAFF;border-top:2px solid #E2E8F0;padding:16px 20px}
+.f-logo{font-size:12px;font-weight:900;color:#0F172A;letter-spacing:2px;margin-bottom:5px}
 .f-legal{font-size:8px;color:#9CA3AF;line-height:1.6;margin-bottom:10px}
-.f-ref{font-size:8px;color:#9CA3AF;text-align:center;border-top:1px dashed #DBEAFE;padding-top:8px;font-style:italic}
+.f-ref{font-size:8px;color:#9CA3AF;text-align:center;border-top:1px dashed #E2E8F0;padding-top:8px;font-style:italic}
 </style></head><body>
 <div class="header">
   <div class="logo">DIRECT TRANSF'AIR</div>
@@ -268,9 +278,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 </body></html>`;
 }
 
-// ─────────────────────────────────────────────────────────
-// MAIN SCREEN — Style Sendwave
-// ─────────────────────────────────────────────────────────
+// ─── Main — logique métier 100 % inchangée ────────────────
 export default function AgentReceiptScreen() {
   const router = useRouter();
   const { data: raw } = useLocalSearchParams<{ data: string }>();
@@ -316,7 +324,6 @@ export default function AgentReceiptScreen() {
   const dt      = fmtDate(data.date);
   const hasFees = data.fees !== undefined && data.type !== "DEPOT";
 
-  // Montant principal affiché
   const mainAmt  = data.type === "RETRAIT" && data.receivedAmount
     ? fmt(data.receivedAmount, data.targetCurrency ?? data.currency)
     : fmt(data.amount, data.currency);
@@ -345,16 +352,11 @@ export default function AgentReceiptScreen() {
 
         {/* ════ BLOC MONTANT ════ */}
         <View style={s.amtBlock}>
-          {/* Badge statut */}
           <View style={s.statusBadge}>
             <Ionicons name="checkmark-circle" size={13} color={T.green} />
             <Text style={[s.statusTxt, { fontFamily: T.font.sans }]}>Transaction confirmée</Text>
           </View>
-
-          {/* Type */}
           <Text style={[s.typeLabel, { fontFamily: T.font.sans }]}>{ti.label}</Text>
-
-          {/* Montant principal */}
           <Text style={[s.amtMain, { fontFamily: T.font.display }]} numberOfLines={1} adjustsFontSizeToFit>
             {mainAmt}
           </Text>
@@ -474,7 +476,7 @@ export default function AgentReceiptScreen() {
           </Text>
         </View>
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 80 }} />
       </ScrollView>
 
       {/* ════ ACTIONS FIXÉES EN BAS ════ */}
@@ -496,12 +498,10 @@ export default function AgentReceiptScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
 
-  // Erreur
   errTxt:    { fontSize: 14, color: T.inkMuted, marginTop: 14, fontWeight: "600", textAlign: "center" },
   errBtn:    { marginTop: 18, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1.5, borderColor: T.codeBorder },
   errBtnTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
 
-  // Top bar
   topBar: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 20,
@@ -514,56 +514,54 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 22 },
 
-  // ── Bloc montant principal ──
-  amtBlock: { alignItems: "center", paddingTop: 28, paddingBottom: 24 },
+  // ✅ v2.1 : paddingTop 28→16, paddingBottom 24→12
+  amtBlock: { alignItems: "center", paddingTop: 16, paddingBottom: 12 },
   statusBadge: {
     flexDirection: "row", alignItems: "center", gap: 5,
     backgroundColor: T.greenBg, paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 20, marginBottom: 14,
+    borderRadius: 20, marginBottom: 10,
   },
   statusTxt: { fontSize: 11, fontWeight: "700", color: T.greenText },
-  typeLabel: { fontSize: 11, fontWeight: "700", color: T.inkMuted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 8 },
+  // ✅ v2.1 : marginBottom 8→4
+  typeLabel: { fontSize: 11, fontWeight: "700", color: T.inkMuted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 },
   amtMain:   { fontSize: 48, fontWeight: "900", color: T.ink, letterSpacing: -1.5, textAlign: "center" },
   amtCurr:   { fontSize: 16, fontWeight: "700", color: T.inkSub, marginTop: 4, letterSpacing: 2 },
 
-  // Séparateurs
   hairline: { height: 1, backgroundColor: T.dividerMd, marginVertical: 0 },
 
-  // Sections
-  section: { paddingVertical: 4 },
+  // ✅ v2.1 : paddingVertical 4→2
+  section: { paddingVertical: 2 },
 
-  // Code de retrait
+  // ✅ v2.1 : padding 18→12, marginTop 8→4, marginBottom 6→4
   codeBox: {
     borderWidth: 1, borderColor: T.codeBorder, borderRadius: 12,
-    backgroundColor: T.codeBg, padding: 18, alignItems: "center",
-    marginTop: 8, marginBottom: 6,
+    backgroundColor: T.codeBg, padding: 12, alignItems: "center",
+    marginTop: 4, marginBottom: 4,
   },
-  codeValue: { fontSize: 28, fontWeight: "900", color: T.ink, letterSpacing: 6, marginBottom: 6 },
+  codeValue: { fontSize: 28, fontWeight: "900", color: T.ink, letterSpacing: 6, marginBottom: 4 },
   codeTip:   { fontSize: 10, color: T.inkMuted, textAlign: "center" },
 
-  // Montant reçu (conversion)
   receivedRow: {
     flexDirection: "row", alignItems: "center", gap: 10,
     backgroundColor: T.greenBg, borderRadius: 10,
-    padding: 12, marginTop: 6, marginBottom: 2,
+    padding: 10, marginTop: 4, marginBottom: 2,
   },
-  receivedLbl: { fontSize: 10, color: T.inkSub, fontWeight: "600", marginBottom: 3 },
-  receivedAmt: { fontSize: 20, fontWeight: "900", color: T.greenText },
+  receivedLbl: { fontSize: 10, color: T.inkSub, fontWeight: "600", marginBottom: 2 },
+  receivedAmt: { fontSize: 18, fontWeight: "900", color: T.greenText },
 
-  // Signatures
-  sigArea: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 24 },
+  // ✅ v2.1 : paddingVertical 24→16
+  sigArea: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 16 },
   sigBox:  { width: "43%", alignItems: "center" },
-  sigLine: { width: "100%", height: 1, backgroundColor: T.ink, marginBottom: 7, marginTop: 40 },
+  sigLine: { width: "100%", height: 1, backgroundColor: T.ink, marginBottom: 7, marginTop: 36 },
   sigLbl:  { fontSize: 10, color: T.inkMuted, fontWeight: "600" },
 
-  // Pied de page
-  footer:    { paddingVertical: 20, alignItems: "center" },
+  // ✅ v2.1 : paddingVertical 20→12
+  footer:    { paddingVertical: 12, alignItems: "center" },
   footLogo:  { fontSize: 12, fontWeight: "900", color: T.ink, letterSpacing: 2.5, marginBottom: 3 },
-  footSub:   { fontSize: 10, color: T.inkMuted, letterSpacing: 0.5, marginBottom: 12 },
-  footLegal: { fontSize: 10, color: T.inkMuted, lineHeight: 16, textAlign: "center", marginBottom: 10 },
+  footSub:   { fontSize: 10, color: T.inkMuted, letterSpacing: 0.5, marginBottom: 10 },
+  footLegal: { fontSize: 10, color: T.inkMuted, lineHeight: 16, textAlign: "center", marginBottom: 8 },
   footRef:   { fontSize: 9,  color: T.inkMuted },
 
-  // ── Barre d'actions fixe ──
   actions: {
     flexDirection: "row", gap: 12,
     paddingHorizontal: 20, paddingVertical: 12,

@@ -1,24 +1,35 @@
 // apps/backend/src/withdrawals/withdrawals.module.ts
-import { Module } from '@nestjs/common';
-import { WithdrawalsService } from './withdrawals.service';
-import { WithdrawalsController } from './withdrawals.controller';
-import { PrismaModule } from '../prisma/prisma.module';
-import { RatesService } from '../rates/rates.service';
-import { AuthModule } from '../auth/auth.module';
-import { WalletsModule } from '../wallets/wallets.module';
+// =========================================================
+// WITHDRAWALS MODULE v2.0
+// ✅ v1.0 : PrismaModule, AuthModule, WalletsModule, TenantsModule
+// ✅ v2.0 : NotificationsModule ajouté explicitement
+//   WithdrawalsService injecte WalletNotifierService et
+//   AgentNotifierService (fournis par NotificationsModule).
+//   NotificationsModule est @Global() mais on l'importe
+//   explicitement pour garantir la résolution des dépendances
+//   quel que soit l'ordre de chargement dans AppModule.
+// =========================================================
 
-// ✅ CORRECTION CHIRURGICALE : Import du module Tenants pour fournir le TenantResolverService au TenantGuard
-import { TenantsModule } from '../tenants/tenants.module';
+import { Module } from '@nestjs/common';
+import { WithdrawalsService }    from './withdrawals.service';
+import { WithdrawalsController } from './withdrawals.controller';
+import { PrismaModule }          from '../prisma/prisma.module';
+import { AuthModule }            from '../auth/auth.module';
+import { WalletsModule }         from '../wallets/wallets.module';
+import { TenantsModule }         from '../tenants/tenants.module';
+import { NotificationsModule }   from '../notifications/notifications.module'; // ✅ v2.0
+import { RatesService }          from '../rates/rates.service';
 
 @Module({
   imports: [
     PrismaModule,
     AuthModule,
-    WalletsModule, // ✅ Requis pour WalletsService (débit wallet)
-    TenantsModule, // <-- C'est l'ajout qui résout ton erreur de dépendance
+    WalletsModule,        // WalletsService (débit/crédit)
+    TenantsModule,        // TenantGuard
+    NotificationsModule,  // ✅ WalletNotifierService + AgentNotifierService
   ],
   controllers: [WithdrawalsController],
-  providers: [WithdrawalsService, RatesService],
-  exports: [WithdrawalsService],
+  providers:   [WithdrawalsService, RatesService],
+  exports:     [WithdrawalsService],
 })
 export class WithdrawalsModule {}

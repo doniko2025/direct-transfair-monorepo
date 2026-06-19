@@ -1,10 +1,32 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/settings.tsx
 // =========================================================
-// PARAMÈTRES SOCIÉTÉ v2.0 — Direct Transf'air
+// PARAMÈTRES SOCIÉTÉ v2.1 — Direct Transf'air
 // ✅ Commissions : 4 règles distinctes
 //    → Filiale  : part plateforme à l'ENVOI + au RETRAIT
 //    → Partenaire : part plateforme à l'ENVOI + au RETRAIT
 // ✅ Taux de change : toutes combinaisons GNF/EUR/XOF/USD/GBP
+// ✅ FIX v2.1 — handleSaveComm() avait 2 bugs :
+//    1. senderShare: 0 toujours hardcodé → l'agent ENVOYEUR ne
+//       percevait jamais de commission.
+//    2. 4 règles sauvegardées pour (SUBSIDIARY/SEND, SUBSIDIARY/
+//       WITHDRAWAL, PARTNER/SEND, PARTNER/WITHDRAWAL) → toutes
+//       avaient le même (sourceType, destType) en DB → chaque appel
+//       successif ÉCRASAIT le précédent → seule la dernière règle
+//       (WITHDRAWAL PARTNER) restait en base.
+//    Architecture correcte (CommissionConfig déjà en place côté
+//    backend) : UNE seule règle par paire (sourceType, destType),
+//    avec senderShare (agent qui envoie) + payerShare (agent qui
+//    encaisse au retrait) + platformShare, le tout sommant à 100.
+//    → 2 règles désormais sauvegardées (Filiale, Partenaire), calculées
+//      depuis les sliders :
+//        senderShare   = 100 - subsidSend / partnerSend
+//        payerShare    = 100 - subsidWithdraw / partnerWithdraw
+//        platformShare = subsidSend + subsidWithdraw - 100 (idem partenaire)
+//      Validation ajoutée : platformShare doit être ≥ 0, donc
+//      (part plateforme Envoi + part plateforme Retrait) doit être ≥ 100%.
+//    loadSettings() mis à jour en miroir : on relit désormais
+//    senderShare/payerShare (1 règle par type d'agence) au lieu de
+//    platformShare sur 4 règles distinctes.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -378,23 +400,19 @@ export default function SettingsScreen() {
       try {
         const commRules = await api.getCommissionRules() as any[];
         if (Array.isArray(commRules) && commRules.length > 0) {
-          // ✅ Cherche par sourceType + transactionType
-          const find = (sourceType: string, txType: string) =>
-            commRules.find(
-              (r: any) =>
-                r.sourceType === sourceType &&
-                (r.transactionType === txType || r.txType === txType)
-            );
+          // ✅ FIX v2.1 : 1 règle par type d'agence, lire senderShare + payerShare
+          const subsidRule  = commRules.find((r: any) => r.sourceType === "SUBSIDIARY" && !r.payoutMethod);
+          const partnerRule = commRules.find((r: any) => r.sourceType === "PARTNER"    && !r.payoutMethod);
 
-          const subsidSendRule     = find("SUBSIDIARY", "SEND");
-          const subsidWithdrawRule = find("SUBSIDIARY", "WITHDRAWAL");
-          const partnerSendRule    = find("PARTNER",    "SEND");
-          const partnerWithdrawRule= find("PARTNER",    "WITHDRAWAL");
-
-          if (subsidSendRule?.platformShare     !== undefined) setSubsidSend(Math.round(subsidSendRule.platformShare));
-          if (subsidWithdrawRule?.platformShare !== undefined) setSubsidWithdraw(Math.round(subsidWithdrawRule.platformShare));
-          if (partnerSendRule?.platformShare    !== undefined) setPartnerSend(Math.round(partnerSendRule.platformShare));
-          if (partnerWithdrawRule?.platformShare!== undefined) setPartnerWithdraw(Math.round(partnerWithdrawRule.platformShare));
+          if (subsidRule) {
+            // Reconvertit en "part plateforme" pour les sliders
+            setSubsidSend(    Math.max(0, Math.min(100, 100 - Math.round(subsidRule.senderShare  ?? 0))));
+            setSubsidWithdraw(Math.max(0, Math.min(100, 100 - Math.round(subsidRule.payerShare   ?? 0))));
+          }
+          if (partnerRule) {
+            setPartnerSend(    Math.max(0, Math.min(100, 100 - Math.round(partnerRule.senderShare ?? 0))));
+            setPartnerWithdraw(Math.max(0, Math.min(100, 100 - Math.round(partnerRule.payerShare  ?? 0))));
+          }
         }
       } catch { /* commissions optionnelles */ }
 
@@ -431,34 +449,83 @@ export default function SettingsScreen() {
   };
 
   // ── Sauvegarder commissions ─────────────────────────────
-  // ✅ 4 règles : Filiale/Envoi, Filiale/Retrait, Partenaire/Envoi, Partenaire/Retrait
+  // ✅ FIX v2.1 — 2 règles (une par type d'agence) avec senderShare + payerShare corrects.
+  //
+  // Architecture CommissionConfig :
+  //   senderShare   = % pour l'agence qui ENVOIE l'argent
+  //   payerShare    = % pour l'agence qui ENCAISSE (retrait espèces)
+  //   platformShare = ce qui reste à la plateforme
+  //   senderShare + payerShare + platformShare = 100 ✓
+  //
+  // Formules depuis les sliders "part plateforme" :
+  //   senderShare   = 100 - subsidSend
+  //   payerShare    = 100 - subsidWithdraw
+  //   platformShare = subsidSend + subsidWithdraw - 100
+  //
+  // Validation : platformShare ≥ 0 → subsidSend + subsidWithdraw ≥ 100
+  //   (ex : plateforme garde 70% envoi + 60% retrait → surplus agent = 30%)
   const handleSaveComm = async () => {
     setSavingComm(true);
     try {
-      const rules = [
-        { sourceType: "SUBSIDIARY", transactionType: "SEND",       platform: subsidSend     },
-        { sourceType: "SUBSIDIARY", transactionType: "WITHDRAWAL",  platform: subsidWithdraw },
-        { sourceType: "PARTNER",    transactionType: "SEND",        platform: partnerSend    },
-        { sourceType: "PARTNER",    transactionType: "WITHDRAWAL",  platform: partnerWithdraw},
-      ];
+      const subsidPlatform = subsidSend + subsidWithdraw - 100;
+      const partnerPlatform = partnerSend + partnerWithdraw - 100;
 
-      for (const rule of rules) {
-        await api.saveCommissionRule({
-          type:            "PERCENTAGE",
-          value:           rule.platform,
-          sourceType:      rule.sourceType,
-          destType:        rule.sourceType,        // ✅ requis par le backend
-          transactionType: rule.transactionType,
-          platformShare:   rule.platform,
-          senderShare:     0,
-          payerShare:      100 - rule.platform,
-        } as any);
+      if (subsidPlatform < 0) {
+        Alert.alert(
+          "Configuration invalide",
+          `Agences Filiales : la somme des parts plateforme (${subsidSend}% + ${subsidWithdraw}%) doit être ≥ 100%.`,
+        );
+        setSavingComm(false);
+        return;
+      }
+      if (partnerPlatform < 0) {
+        Alert.alert(
+          "Configuration invalide",
+          `Agences Partenaires : la somme des parts plateforme (${partnerSend}% + ${partnerWithdraw}%) doit être ≥ 100%.`,
+        );
+        setSavingComm(false);
+        return;
       }
 
-      Alert.alert("✅ Commissions sauvegardées", "Les 4 règles ont été mises à jour.");
+      const rules = [
+        {
+          sourceType:    "SUBSIDIARY" as any,
+          destType:      "SUBSIDIARY" as any,
+          senderShare:   100 - subsidSend,      // % agent ENVOYEUR (filiale)
+          payerShare:    100 - subsidWithdraw,  // % agent PAYEUR / retrait (filiale)
+          platformShare: subsidPlatform,         // % plateforme
+        },
+        {
+          sourceType:    "PARTNER" as any,
+          destType:      "PARTNER" as any,
+          senderShare:   100 - partnerSend,
+          payerShare:    100 - partnerWithdraw,
+          platformShare: partnerPlatform,
+        },
+      ];
+
+      const results = await Promise.allSettled(
+        rules.map((rule) => api.saveCommissionRule(rule as any))
+      );
+
+      const failed = results.filter((r) => r.status === "rejected").length;
+
+      Alert.alert(
+        failed === 0 ? "✅ Commissions sauvegardées" : "⚠️ Partiellement sauvegardé",
+        failed === 0
+          ? [
+              `Filiale  — Envoi : ${100 - subsidSend}% agent · ${subsidSend - (100 - subsidWithdraw)}% plateforme`,
+              `Filiale  — Retrait : ${100 - subsidWithdraw}% agent`,
+              `Partenaire — Envoi : ${100 - partnerSend}% agent · ${partnerSend - (100 - partnerWithdraw)}% plateforme`,
+              `Partenaire — Retrait : ${100 - partnerWithdraw}% agent`,
+            ].join("\n")
+          : `${failed}/2 règle(s) en erreur. Vérifiez la connexion.`,
+      );
     } catch (e: any) {
       Alert.alert("Erreur", e?.response?.data?.message ?? "Sauvegarde impossible.");
-    } finally { setSavingComm(false); }
+    } finally {
+      setSavingComm(false);
+    }
   };
 
   // Groupement paires par devise source

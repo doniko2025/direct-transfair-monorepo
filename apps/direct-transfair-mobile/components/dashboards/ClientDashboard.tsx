@@ -1,5 +1,5 @@
 // =========================================================
-// CLIENT DASHBOARD v9.4 — Direct Transf'air
+// CLIENT DASHBOARD v9.7 — Direct Transf'air
 // ✅ v9.1 sur base v9.0 :
 //    - Vert émeraude #17A45F (plus vif, moins corporate)
 //    - Hero réduit : paddingBottom 28→16, nom 22→19
@@ -55,6 +55,27 @@
 //    - SafeAreaView / StatusBar : fond blanc → fond gris (cohérent
 //      avec le nouveau Hero gris, pour une transition invisible sous
 //      l'encoche / la barre de statut).
+// ✅ v9.5 : FIX — "Bon retour / Fatim" + cloche/avatar recouverts par la
+//    barre de statut système (surtout visible sur Android). En cause :
+//    SafeAreaView importé depuis "react-native" ne réserve l'espace de
+//    la status bar que sur iOS, pas sur Android. Le Hero utilise déjà
+//    `insets` (useSafeAreaInsets, importé depuis react-native-safe-area-
+//    context et déjà utilisé pour le paddingBottom du ScrollView) : on
+//    applique maintenant `insets.top + 8` en paddingTop du Hero, qui
+//    fonctionne de façon fiable sur les deux plateformes.
+//    Fix annexe : paddingHorizontal du Hero 20 → 10 pour agrandir la
+//    carte solde.
+// ✅ v9.6 : 2 retouches ponctuelles — paddingHorizontal Hero 10 → 6,
+//    et fond marron plein ajouté derrière l'icône wallet.
+// ✅ v9.7 : CORRECTIF de la v9.6 — rien d'autre touché.
+//    1) Filigrane portefeuille : retour à l'icône SEULE, SANS le carré
+//       de fond ajouté en v9.6 (ce carré peignait le CONTENANT de
+//       l'icône, pas l'icône elle-même — erreur signalée). Remplacé par
+//       l'icône pleine "wallet" (au lieu de "wallet-outline") directement
+//       en brun plein #8E562E (même couleur que celle tracée sur le
+//       mockup), sans aucun cadre ni case derrière.
+//    2) Carte solde élargie davantage : paddingHorizontal du Hero
+//       6 → 2, pour coller au rectangle quasi bord-à-bord du mockup.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -431,7 +452,7 @@ export default function ClientDashboard() {
         opacity: heroAnim,
         transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }],
       }}>
-        <View style={s.hero}>
+        <View style={[s.hero, { paddingTop: insets.top + 8 }]}>
 
           {/* Barre du haut */}
           <View style={s.topBar}>
@@ -450,11 +471,13 @@ export default function ClientDashboard() {
 
           {/* ✅ v9.4 — Carte solde flottante (détachée du Hero, ombre marquée) */}
           <View style={s.balanceCard}>
-            {/* Filigrane décoratif — élément signature, très discret */}
+            {/* ✅ v9.7 — Filigrane portefeuille : icône SEULE, sans conteneur/
+                fond derrière (le carré marron de la v9.6 peignait le contenant,
+                pas l'icône). Icône pleine "wallet" en brun plein #8E562E. */}
             <Ionicons
-              name="wallet-outline"
+              name="wallet"
               size={56}
-              color="rgba(28,28,30,0.045)"
+              color="#8E562E"
               style={s.balanceWatermark}
             />
 
@@ -640,10 +663,17 @@ const s = StyleSheet.create({
   bodyInner: { gap: 12 },
 
   // ── Hero — ✅ v9.4 : fond gris (était blanc en v9.3, vert en v9.0-9.2) ──
+  // ✅ v9.5 : paddingTop n'est plus fixe — voir insets.top + 8 appliqué
+  // inline sur la balise (FIX recouvrement par la barre de statut système,
+  // surtout visible sur Android où SafeAreaView de "react-native" ne
+  // réserve pas d'espace pour la status bar, contrairement à iOS).
+  // ✅ v9.5 fix : paddingHorizontal 20 → 10 pour agrandir la carte solde
+  // ✅ v9.6 fix : paddingHorizontal 10 → 6
+  // ✅ v9.7 fix : paddingHorizontal 6 → 2, pour coller au rectangle
+  // quasi bord-à-bord tracé sur le mockup
   hero: {
     backgroundColor: C.pageBg,
-    paddingHorizontal: 20,
-    paddingTop: 2,
+    paddingHorizontal: 2,
     paddingBottom: 6,
   },
 
@@ -693,15 +723,17 @@ const s = StyleSheet.create({
   },
   avatarTxt: { fontSize: 14, fontWeight: "800", color: C.white },
 
-  // ✅ v9.4 — Carte solde flottante (nouveau conteneur, remplace l'ancien `balArea` plat)
+  // ✅ v9.5 : blanc pur sans border (ombre seule définit les bords)
   balanceCard: {
-    backgroundColor: C.white,
+    backgroundColor: "#FFFFFF",
     borderRadius: C.r.xl,
     padding: 18,
     marginBottom: 4,
     position: "relative",
     ...heroCardShadow,
   },
+  // ✅ v9.7 — icône seule, sans conteneur/fond derrière (cf. note plus haut).
+  // Juste un positionnement absolu dans le coin de la carte, comme avant.
   balanceWatermark: {
     position: "absolute",
     bottom: 12,

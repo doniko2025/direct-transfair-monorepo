@@ -1,24 +1,30 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.2
+// TRANSACTION DETAIL v6.3
 // ✅ v6.1 : logique isIncoming correcte par rôle
-// ✅ FIX v6.2 : montant hero + "Montant crédité" pour les entrants avec conversion
-//    AVANT : le destinataire voyait "+26,00 EUR" et "Montant crédité : 26,00 EUR"
-//    APRÈS  : "+17 055 XOF" et "Montant crédité : 17 055 XOF"
-//    Règle  : si isIncoming ET targetCurrency ≠ currency ET receivedAmount > 0
-//             → afficher receivedAmount / targetCurrency
+// ✅ v6.2 : montant hero + "Montant crédité" pour les entrants avec conversion
+// ✅ FIX v6.3 : handleShare navigue désormais vers l'écran client-receipt.tsx
+//    avec toutes les données de la transaction, au lieu d'ouvrir le partage
+//    natif avec un texte brut à 3 lignes.
+//    AVANT : Share.share({ message: "Reçu...\nRéf:...\nMontant:..." })
+//    APRÈS  : router.push("/(tabs)/transactions/client-receipt", { data })
+//    Note   : import `Share` de react-native retiré (plus utilisé nulle part
+//             ailleurs dans ce fichier) pour éviter un import mort / warning lint.
+//    Bouton : libellé "Partager le reçu" → "Voir le reçu" (cohérent avec la
+//             nouvelle navigation qui affiche un écran avant tout partage réel).
 // =========================================================
 
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Share, Alert, Platform, SafeAreaView, StatusBar,
+  ActivityIndicator, Alert, Platform, SafeAreaView, StatusBar,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
+import type { ClientReceiptData } from "./client-receipt";
 
 const FONTS = {
   heading: Platform.OS === "ios" ? "Cochin"      : "serif",
@@ -83,13 +89,42 @@ export default function TransactionDetailScreen() {
     finally { setLoading(false); }
   };
 
-  const handleShare = async () => {
+  // ✅ FIX v6.3 — handleShare construit désormais un objet ClientReceiptData
+  // complet et navigue vers l'écran client-receipt.tsx au lieu d'ouvrir
+  // le partage natif avec un texte brut. isIncoming, heroDisplayAmount,
+  // heroDisplayCurrency, senderName, recipientName, getTxLabel() sont
+  // déjà calculées plus bas dans le rendu de ce composant ; comme il
+  // s'agit d'une closure réévaluée à chaque rendu, ces valeurs sont à
+  // jour au moment où l'utilisateur appuie sur le bouton.
+  const handleShare = () => {
     if (!transaction) return;
-    try {
-      await Share.share({
-        message: `Reçu Direct Transf'air\nRéf: ${transaction.reference}\nMontant: ${fmt(toNum(transaction.amount), transaction.currency)} ${transaction.currency}`,
-      });
-    } catch {}
+    const receiptData: ClientReceiptData = {
+      reference:           transaction.reference ?? "—",
+      date:                transaction.createdAt,
+      status:              transaction.status,
+      isIncoming,
+      txLabel:             getTxLabel(),
+      payoutMethod:        transaction.payoutMethod,
+      sentAmount:          toNum(transaction.amount),
+      sentCurrency:        transaction.currency,
+      receivedAmount:      toNum(transaction.receivedAmount),
+      receivedCurrency:    transaction.targetCurrency,
+      exchangeRate:        transaction.exchangeRate
+                             ? toNum(transaction.exchangeRate)
+                             : undefined,
+      fees:                toNum(transaction.fees),
+      total:               toNum(transaction.total ?? transaction.amount),
+      heroDisplayAmount,
+      heroDisplayCurrency,
+      senderName:          isIncoming ? senderName : "Vous",
+      recipientName:       isIncoming ? "Vous" : recipientName,
+      recipientPhone:      transaction.beneficiary?.phone ?? undefined,
+      recipientCountry:    transaction.beneficiary?.country ?? undefined,
+    };
+    router.push({
+      pathname: "/(tabs)/transactions/client-receipt",
+      params:   { data: encodeURIComponent(JSON.stringify(receiptData)) },
+    });
   };
 
   const handleCopyCode = async () => {
@@ -383,7 +418,7 @@ export default function TransactionDetailScreen() {
         {showShareReceipt && (
           <TouchableOpacity style={[s.shareBtn, { backgroundColor: theme.primary }]} onPress={handleShare}>
             <Ionicons name="share-outline" size={18} color="#FFF" />
-            <Text style={[s.shareBtnTxt, { fontFamily: FONTS.body }]}>Partager le reçu</Text>
+            <Text style={[s.shareBtnTxt, { fontFamily: FONTS.body }]}>Voir le reçu</Text>
           </TouchableOpacity>
         )}
 

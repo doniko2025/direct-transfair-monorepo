@@ -1,24 +1,32 @@
 // apps/direct-transfair-mobile/app/agent/commissions.tsx
 // =========================================================
-// AGENT COMMISSIONS v6.1 — Direct Transf'air
+// AGENT COMMISSIONS v6.2 — Direct Transf'air
 // ✅ v6.0 : bleu agent, hero compact, filtres ScrollView
 // ✅ v6.1 :
-//   FIX espaces vides :
-//     - Animated.FlatList + loading view → flex: 1 ajouté
-//       (même bug que wallet-clients : sans flex:1 le FlatList
-//        ne prend pas l'espace dispo et laisse un grand vide)
-//   Filtre période redesigné :
-//     - ScrollView de pills horizontal SUPPRIMÉ
-//     - Remplacé par 1 bouton compact "Période sélectionnée ˅"
-//     - Tap → bottom sheet vertical avec la liste des 5 périodes
-//       (radio button + icône + description par option)
+//   FIX espaces vides (flex:1 sur FlatList)
+//   Filtre période redesigné : bottom sheet vertical
+// ✅ v6.2 : FIX "Commissions du jour = 0 même après une opération"
+//   PROBLÈME : la carte principale affichait `todayCommissions`
+//   (toujours filtré sur AUJOURD'HUI côté backend), alors que
+//   `totalCommissions` contient déjà le total de la PÉRIODE choisie.
+//   Résultat : sélectionner "7 Jours" affichait 0 si aucune opération
+//   n'avait eu lieu AUJOURD'HUI, même avec 386 XOF sur la semaine.
+//
+//   CORRECTION (purement frontend — logique métier backend inchangée) :
+//   - Carte principale → affiche `totalCommissions` (total de la période)
+//   - Titre de la carte → dynamique selon la période sélectionnée
+//     ("Commissions du Jour", "Commissions de la Semaine", etc.)
+//   - Badge "Temps réel" → remplacé par le sous-libellé de période
+//   - Barre de progression "X% du total" → supprimée (n'avait plus
+//     de sens quand le numérateur = dénominateur)
+//   - Ajout d'un libellé Volume moyen sous le montant principal
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, FlatList, ActivityIndicator,
   SafeAreaView, TouchableOpacity, Platform, StatusBar,
-  Animated, ScrollView, Modal,
+  Animated, Modal,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -35,7 +43,7 @@ const C = {
   heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:      "rgba(255,255,255,0.65)",
   heroGlow:     "rgba(255,255,255,0.08)",
-  pageBg:       "#FFFFFF",   // ✅ v6.1 : blanc pur (cohérent avec les autres pages)
+  pageBg:       "#FFFFFF",
   white:        "#FFFFFF",
   cardBorder:   "#E8EDF5",
   ink:          "#0F172A",
@@ -53,16 +61,26 @@ const C = {
   },
 };
 
-// ─── Périodes avec métadonnées ────────────────────────────
+// ─── Périodes ─────────────────────────────────────────────
 const PERIODS = [
-  { key: "day",     label: "Aujourd'hui", desc: "Transactions du jour",     icon: "sunny-outline"      },
-  { key: "week",    label: "7 Jours",     desc: "7 derniers jours",         icon: "calendar-outline"   },
+  { key: "day",     label: "Aujourd'hui", desc: "Transactions du jour",     icon: "sunny-outline"           },
+  { key: "week",    label: "7 Jours",     desc: "7 derniers jours",         icon: "calendar-outline"        },
   { key: "month",   label: "Ce Mois",     desc: "Mois en cours",            icon: "calendar-number-outline" },
-  { key: "quarter", label: "Trimestre",   desc: "90 derniers jours",        icon: "stats-chart-outline"},
-  { key: "year",    label: "Année",       desc: "12 derniers mois",         icon: "trending-up-outline"},
+  { key: "quarter", label: "Trimestre",   desc: "90 derniers jours",        icon: "stats-chart-outline"     },
+  { key: "year",    label: "Année",       desc: "12 derniers mois",         icon: "trending-up-outline"     },
 ] as const;
 type PeriodKey = (typeof PERIODS)[number]["key"];
 
+// ✅ v6.2 — Labels dynamiques pour la carte principale selon la période
+const PERIOD_CARD_LABELS: Record<PeriodKey, { title: string; sub: string }> = {
+  day:     { title: "Commissions du Jour",       sub: "Aujourd'hui" },
+  week:    { title: "Commissions de la Semaine", sub: "7 derniers jours" },
+  month:   { title: "Commissions du Mois",       sub: "Mois en cours" },
+  quarter: { title: "Commissions du Trimestre",  sub: "90 derniers jours" },
+  year:    { title: "Commissions de l'Année",    sub: "12 derniers mois" },
+};
+
+// ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -79,7 +97,7 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 
-// ─── ✅ v6.1 — Period Dropdown Modal (liste verticale) ───
+// ─── Period Dropdown Modal ────────────────────────────────
 function PeriodDropdown({ visible, current, onSelect, onClose }: {
   visible: boolean;
   current: PeriodKey;
@@ -102,20 +120,15 @@ function PeriodDropdown({ visible, current, onSelect, onClose }: {
                 onPress={() => { onSelect(p.key); onClose(); }}
                 activeOpacity={0.8}
               >
-                {/* Icône */}
                 <View style={[pd.iconBox, isActive && { backgroundColor: `${AGENT_BLUE}18` }]}>
                   <Ionicons name={p.icon as any} size={17} color={isActive ? AGENT_BLUE : C.inkSoft} />
                 </View>
-
-                {/* Label + description */}
                 <View style={{ flex: 1 }}>
                   <Text style={[pd.label, { fontFamily: C.font.sans, color: isActive ? AGENT_BLUE : C.ink, fontWeight: isActive ? "800" : "600" }]}>
                     {p.label}
                   </Text>
                   <Text style={[pd.desc, { fontFamily: C.font.sans }]}>{p.desc}</Text>
                 </View>
-
-                {/* Radio button */}
                 <View style={[pd.radio, isActive && pd.radioActive]}>
                   {isActive && <View style={pd.radioDot} />}
                 </View>
@@ -190,13 +203,15 @@ function CommRow({ item }: { item: any }) {
             </View>
           </View>
           <View style={cr.right}>
-            <Text style={[cr.amount, { fontFamily: C.font.mono }]}>{fmt(amount)} XOF</Text>
+            <Text style={[cr.amount, { fontFamily: C.font.mono }]}>{fmt(amount)} {item.currency ?? "XOF"}</Text>
             <Text style={[cr.fees,   { fontFamily: C.font.sans  }]}>Frais : {fmt(fees)}</Text>
           </View>
         </View>
         <View style={cr.commPill}>
           <Ionicons name="trending-up" size={11} color={C.green} />
-          <Text style={[cr.commTxt, { fontFamily: C.font.mono }]}>+ {fmt(commission)} XOF</Text>
+          <Text style={[cr.commTxt, { fontFamily: C.font.mono }]}>
+            + {fmt(commission)} {item.commissionCurrency ?? "XOF"}
+          </Text>
         </View>
       </View>
     </View>
@@ -221,12 +236,11 @@ const cr = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function AgentCommissionsScreen() {
-  const router   = useRouter();
-  const [period,          setPeriod]          = useState<PeriodKey>("day");
-  const [data,            setData]            = useState<any>(null);
-  const [loading,         setLoading]         = useState(true);
-  // ✅ v6.1 : état pour le dropdown période
-  const [showPeriodDrop,  setShowPeriodDrop]  = useState(false);
+  const router  = useRouter();
+  const [period,         setPeriod]         = useState<PeriodKey>("day");
+  const [data,           setData]           = useState<any>(null);
+  const [loading,        setLoading]        = useState(true);
+  const [showPeriodDrop, setShowPeriodDrop] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const loadStats = async () => {
@@ -241,58 +255,86 @@ export default function AgentCommissionsScreen() {
 
   useEffect(() => { void loadStats(); }, [period]);
 
-  const todayComm  = toNum(data?.todayCommissions);
-  const totalComm  = toNum(data?.totalCommissions);
-  const totalVol   = toNum(data?.totalVolume);
-  const count      = toNum(data?.count);
-  const history: any[] = Array.isArray(data?.history) ? data.history : [];
-  const progressPct = totalComm > 0 ? Math.min((todayComm / totalComm) * 100, 100) : 0;
+  // ✅ v6.2 : utilise totalCommissions (total de la période) comme valeur principale
+  // Avant : todayCommissions → toujours filtré sur AUJOURD'HUI côté backend
+  // Après : totalCommissions → reflète exactement la période sélectionnée
+  const totalComm = toNum(data?.totalCommissions);
+  const totalVol  = toNum(data?.totalVolume);
+  const count     = toNum(data?.count);
 
-  const currentPeriod = PERIODS.find(p => p.key === period)!;
+  const history: any[] = Array.isArray(data?.history) ? data.history : [];
+
+  const currentPeriod      = PERIODS.find(p => p.key === period)!;
+  const currentPeriodLabel = PERIOD_CARDS[period];
+
+  // ── Avg commission per operation ──
+  const avgComm = count > 0 ? totalComm / count : 0;
 
   const renderHeader = () => (
     <View>
-      {/* Carte commission */}
+      {/* ✅ v6.2 — Carte principale : totalComm + titre dynamique */}
       <View style={h.heroCard}>
         <View style={h.heroTop}>
           <View style={[h.heroIconBox, { backgroundColor: C.violetLight }]}>
             <Ionicons name="trending-up" size={15} color={AGENT_BLUE} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[h.heroLbl, { fontFamily: C.font.sans }]}>COMMISSIONS DU JOUR</Text>
+            {/* ✅ Titre dynamique selon la période */}
+            <Text style={[h.heroLbl, { fontFamily: C.font.sans }]}>
+              {currentPeriodLabel.title.toUpperCase()}
+            </Text>
             <View style={h.heroBadge}>
               <View style={h.heroBadgeDot} />
-              <Text style={[h.heroBadgeTxt, { fontFamily: C.font.sans }]}>Temps réel</Text>
+              {/* ✅ Sous-label période au lieu de "Temps réel" fixe */}
+              <Text style={[h.heroBadgeTxt, { fontFamily: C.font.sans }]}>
+                {currentPeriodLabel.sub}
+              </Text>
             </View>
           </View>
+          {/* Badge opérations */}
           <View style={h.periodTotal}>
-            <Text style={[h.periodTotalLbl, { fontFamily: C.font.sans }]}>PÉRIODE</Text>
+            <Text style={[h.periodTotalLbl, { fontFamily: C.font.sans }]}>OPÉ.</Text>
             <Text style={[h.periodTotalVal, { fontFamily: C.font.mono, color: AGENT_BLUE }]}>
-              {fmt(totalComm)}
+              {Math.round(count)}
             </Text>
           </View>
         </View>
+
+        {/* ✅ v6.2 : montant principal = totalComm (période sélectionnée) */}
         <View style={h.amtRow}>
           <Text style={[h.heroAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
-            {fmt(todayComm)}
+            {fmt(totalComm)}
           </Text>
           <View style={h.heroCurBadge}>
             <Text style={[h.heroCur, { fontFamily: C.font.mono }]}>XOF</Text>
           </View>
         </View>
-        <View style={h.progRow}>
-          <View style={h.progBg}>
-            <View style={[h.progFill, { width: `${progressPct}%` as any }]} />
+
+        {/* ✅ v6.2 : Indicateurs secondaires (volume + moy. par opération) */}
+        {count > 0 && (
+          <View style={h.metaRow}>
+            <View style={h.metaItem}>
+              <Ionicons name="analytics-outline" size={11} color={C.inkSoft} />
+              <Text style={[h.metaTxt, { fontFamily: C.font.sans }]}>
+                Vol. {fmt(totalVol)} XOF
+              </Text>
+            </View>
+            <View style={h.metaDot} />
+            <View style={h.metaItem}>
+              <Ionicons name="star-outline" size={11} color={C.inkSoft} />
+              <Text style={[h.metaTxt, { fontFamily: C.font.sans }]}>
+                Moy. {fmt(avgComm)} XOF / op.
+              </Text>
+            </View>
           </View>
-          <Text style={[h.progTxt, { fontFamily: C.font.sans }]}>{Math.round(progressPct)}% du total</Text>
-        </View>
+        )}
       </View>
 
       {/* Stats row */}
       <View style={h.statsRow}>
         <StatBox icon="analytics-outline" label="Volume"     value={fmt(totalVol)}             accent={C.blue}   bg={C.blueBg}   />
         <StatBox icon="list-outline"      label="Opérations" value={String(Math.round(count))} accent={C.green}  bg={C.greenBg}  />
-        <StatBox icon="star-outline"      label="Moy./op."   value={count > 0 ? fmt(totalVol / count) : "0"} accent={C.purple} bg={C.purpleBg} />
+        <StatBox icon="star-outline"      label="Moy./op."   value={count > 0 ? fmt(avgComm) : "0"} accent={C.purple} bg={C.purpleBg} />
       </View>
 
       {history.length > 0 && (
@@ -330,14 +372,13 @@ export default function AgentCommissionsScreen() {
         </View>
       </View>
 
-      {/* ✅ v6.1 — BOUTON DROPDOWN PÉRIODE (remplace la ligne de pills) */}
+      {/* ── Bouton sélecteur de période ── */}
       <View style={s.periodBar}>
         <TouchableOpacity
           style={s.periodBtn}
           onPress={() => setShowPeriodDrop(true)}
           activeOpacity={0.85}
         >
-          {/* Icône de la période sélectionnée */}
           <View style={s.periodBtnIcon}>
             <Ionicons name={currentPeriod.icon as any} size={16} color={AGENT_BLUE} />
           </View>
@@ -345,7 +386,6 @@ export default function AgentCommissionsScreen() {
             <Text style={[s.periodBtnLabel, { fontFamily: C.font.sans }]}>{currentPeriod.label}</Text>
             <Text style={[s.periodBtnDesc,  { fontFamily: C.font.sans }]}>{currentPeriod.desc}</Text>
           </View>
-          {/* Badge du nom de période actif */}
           <View style={s.periodBtnBadge}>
             <Text style={[s.periodBtnBadgeTxt, { fontFamily: C.font.sans }]}>
               {PERIODS.findIndex(p => p.key === period) + 1}/{PERIODS.length}
@@ -355,14 +395,13 @@ export default function AgentCommissionsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ✅ v6.1 FIX espaces vides : flex:1 sur le FlatList + loading */}
       {loading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator color={AGENT_BLUE} size="large" />
         </View>
       ) : (
         <Animated.FlatList
-          style={{ flex: 1, opacity: fadeAnim }}   // ← ✅ flex:1 ajouté
+          style={{ flex: 1, opacity: fadeAnim }}
           data={history}
           keyExtractor={(item) => item.id ?? Math.random().toString()}
           contentContainerStyle={s.list}
@@ -382,7 +421,7 @@ export default function AgentCommissionsScreen() {
         />
       )}
 
-      {/* ✅ v6.1 — Modal dropdown période */}
+      {/* Modal sélecteur période */}
       <PeriodDropdown
         visible={showPeriodDrop}
         current={period}
@@ -392,6 +431,16 @@ export default function AgentCommissionsScreen() {
     </SafeAreaView>
   );
 }
+
+// ✅ v6.2 — Labels de la carte principale par période
+// Séparé de PERIODS pour ne pas alourdir la liste de filtres
+const PERIOD_CARDS: Record<PeriodKey, { title: string; sub: string }> = {
+  day:     { title: "Commissions du Jour",       sub: "Aujourd'hui" },
+  week:    { title: "Commissions de la Semaine", sub: "7 derniers jours" },
+  month:   { title: "Commissions du Mois",       sub: "Mois en cours" },
+  quarter: { title: "Commissions du Trimestre",  sub: "90 derniers jours" },
+  year:    { title: "Commissions de l'Année",    sub: "12 derniers mois" },
+};
 
 // ─── Styles hero card ────────────────────────────────────
 const h = StyleSheet.create({
@@ -409,25 +458,27 @@ const h = StyleSheet.create({
   periodTotal: { alignItems: "flex-end", paddingLeft: 8 },
   periodTotalLbl: { fontSize: 8, fontWeight: "700", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 2 },
   periodTotalVal: { fontSize: 13, fontWeight: "900" },
-  amtRow:      { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 8 },
-  heroAmt:     { color: C.ink, fontSize: 24, fontWeight: "800", letterSpacing: -0.3 },
+  amtRow:      { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 10 },
+  heroAmt:     { color: C.ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.3, flex: 1 },
   heroCurBadge:{ backgroundColor: C.violetLight, borderRadius: C.r.xs, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: C.violetBorder },
   heroCur:     { color: AGENT_BLUE, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-  progRow:     { flexDirection: "row", alignItems: "center", gap: 10 },
-  progBg:      { flex: 1, height: 4, backgroundColor: C.violetLight, borderRadius: C.r.pill, overflow: "hidden" },
-  progFill:    { height: 4, backgroundColor: AGENT_BLUE, borderRadius: C.r.pill },
-  progTxt:     { fontSize: 10, fontWeight: "700", color: C.inkSoft, minWidth: 70, textAlign: "right" },
-  statsRow:    { flexDirection: "row", gap: 8, marginBottom: 18 },
-  secRow:      { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
-  secDot:      { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: AGENT_BLUE },
-  secLbl:      { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
+
+  // ✅ v6.2 — Remplace la barre de progression "X% du total"
+  metaRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
+  metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metaDot:  { width: 3, height: 3, borderRadius: 2, backgroundColor: C.cardBorder },
+  metaTxt:  { fontSize: 10, color: C.inkSoft, fontWeight: "600" },
+
+  statsRow: { flexDirection: "row", gap: 8, marginBottom: 18 },
+  secRow:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  secDot:   { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: AGENT_BLUE },
+  secLbl:   { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
 });
 
 // ─── Styles page ──────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  // Héro bleu compact
   hero: {
     backgroundColor: AGENT_BLUE,
     borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
@@ -445,7 +496,6 @@ const s = StyleSheet.create({
   pillTxt:   { color: "#E0F2FE", fontSize: 8, fontWeight: "900", letterSpacing: 1.5 },
   heroTitle: { color: C.white, fontSize: 20, fontWeight: "700" },
 
-  // ✅ v6.1 : barre dropdown période — compact, 1 seule ligne
   periodBar: {
     paddingHorizontal: 16, paddingVertical: 10,
     backgroundColor: C.white,
@@ -457,11 +507,11 @@ const s = StyleSheet.create({
     borderWidth: 1.5, borderColor: `${AGENT_BLUE}25`,
     borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
   },
-  periodBtnIcon:  { width: 34, height: 34, borderRadius: 10, backgroundColor: `${AGENT_BLUE}14`, justifyContent: "center", alignItems: "center" },
-  periodBtnLabel: { fontSize: 13, fontWeight: "700", color: AGENT_BLUE },
-  periodBtnDesc:  { fontSize: 10, color: C.inkSoft, fontWeight: "500", marginTop: 1 },
-  periodBtnBadge: { paddingHorizontal: 7, paddingVertical: 3, backgroundColor: `${AGENT_BLUE}15`, borderRadius: 8 },
-  periodBtnBadgeTxt: { fontSize: 10, fontWeight: "800", color: AGENT_BLUE },
+  periodBtnIcon:    { width: 34, height: 34, borderRadius: 10, backgroundColor: `${AGENT_BLUE}14`, justifyContent: "center", alignItems: "center" },
+  periodBtnLabel:   { fontSize: 13, fontWeight: "700", color: AGENT_BLUE },
+  periodBtnDesc:    { fontSize: 10, color: C.inkSoft, fontWeight: "500", marginTop: 1 },
+  periodBtnBadge:   { paddingHorizontal: 7, paddingVertical: 3, backgroundColor: `${AGENT_BLUE}15`, borderRadius: 8 },
+  periodBtnBadgeTxt:{ fontSize: 10, fontWeight: "800", color: AGENT_BLUE },
 
   list:  { paddingHorizontal: 16, paddingTop: 14 },
   empty: { alignItems: "center", paddingVertical: 40, gap: 8 },

@@ -1,29 +1,49 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.7 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.9 — Direct Transf'air
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails
 // ✅ v4.5 : listByAgent()
 // ✅ v4.6 : FIX commission = 0 (mauvaise règle retournée par findFirst)
 // ✅ v4.7 : DISTRIBUTION COMPLÈTE DES COMMISSIONS
-//
 //   Dès que le retrait est traité, 3 parts sont versées automatiquement :
+//   ┌────────────────────────────────────────────────────────┐
+//   │  Part           │ Destinataire                         │
+//   ├────────────────────────────────────────────────────────│
+//   │  payerShare %   │ Wallet agence qui paye le cash       │
+//   │  senderShare %  │ Wallet agence d'origine du client    │
+//   │                 │  → company admin si pas d'agence     │
+//   │                 │  → agence payeuse si même agence     │
+//   │  platformShare% │ Wallet company admin (société)       │
+//   └────────────────────────────────────────────────────────┘
+// ✅ v4.8 : NOTIFICATIONS COMPLÈTES
+//   Ajouts dans agentProcessPayment() — tout en .catch(() => {})
+//   pour ne jamais bloquer le flux de paiement :
 //
-//   ┌─────────────────────────────────────────────────────────┐
-//   │  Part            │ Destinataire                         │
-//   ├─────────────────────────────────────────────────────────│
-//   │  payerShare  %   │ Wallet agence qui paye le cash       │
-//   │  senderShare %   │ Wallet agence d'origine du client    │
-//   │                  │  → company admin si pas d'agence     │
-//   │                  │  → agence payeuse si même agence     │
-//   │  platformShare % │ Wallet company admin (société)       │
-//   └─────────────────────────────────────────────────────────┘
+//   ① Notification client expéditeur (tx.senderId) :
+//      "Le cash a été retiré par [bénéficiaire]" via
+//      walletNotifier.notifyTransferSent() avec mention du retrait.
+//      + email walletMail si senderId a un email (requête async).
 //
-//   ⚠️  Les wallets clients (rôle CLIENT/WALLET) ne perçoivent
-//       JAMAIS de commission — uniquement admins et agents.
+//   ② Notification agence d'envoi (si différente de l'agence payeuse)
+//      quand finalSenderCommission > 0 → agentNotifier sur le
+//      premier agent trouvé dans l'agence expéditrice.
 //
-//   Defaults si aucune règle configurée :
-//     payerShare = 40%, senderShare = 20%, platformShare = 40%
+//   ③ Alerte solde faible : si balance agence payeuse < 50 000
+//      après paiement → agentNotifier.notifyLowBalance().
+//
+//   Ajout dans create() :
+//   ④ Notification in-app walletNotifier.notifyCodeReady() quand
+//      le code de retrait est généré (en plus de l'email existant).
+//
+// ✅ v4.9 : FIX TS5076 — "Les opérations '??' et '||' ne peuvent pas
+//   être mélangées sans parenthèses" (ligne ~546, calcul de
+//   beneficiaryName dans agentProcessPayment()).
+//   → Le nom complet du sender (firstName + lastName trim) est
+//   maintenant calculé dans une variable intermédiaire
+//   `senderFullName`, puis utilisé comme fallback via un seul
+//   opérateur `??`. Logique identique, juste rendue explicite
+//   pour satisfaire TypeScript.
 // =========================================================
 
 import {
@@ -55,18 +75,12 @@ import { WalletMailService }     from '../mail/channels/wallet-mail.service';
 import { AgentMailService }      from '../mail/channels/agent-mail.service';
 
 // ── Defaults si aucune split rule configurée ──────────────
-const DEFAULT_PAYER_SHARE    = 40; // % agence qui paye le cash
-const DEFAULT_SENDER_SHARE   = 20; // % agence d'origine
-const DEFAULT_PLATFORM_SHARE = 40; // % company admin
+const DEFAULT_PAYER_SHARE    = 40;
+const DEFAULT_SENDER_SHARE   = 20;
+const DEFAULT_PLATFORM_SHARE = 40;
 
-// ── Type interne pour la résolution des wallets ───────────
-interface CommissionTarget {
-  walletId:    string;
-  amount:      number;
-  currency:    string;
-  description: string;
-  balanceBefore: number;
-}
+// Seuil d'alerte solde faible agence (en devise payout)
+const LOW_BALANCE_THRESHOLD = 50_000;
 
 @Injectable()
 export class WithdrawalsService {
@@ -161,11 +175,16 @@ export class WithdrawalsService {
         });
       });
 
-      this.walletNotifier.notifyWithdrawal(
+      // ── Notification in-app ──────────────────────────────
+      // ✅ v4.8 ① : notifyCodeReady dès la création du code
+      this.walletNotifier.notifyCodeReady(
         userId,
+        'votre bénéficiaire',
         `${Number(amount).toLocaleString('fr-FR')} ${currency}`,
+        withdrawalCode,
       ).catch(() => {});
 
+      // ── Email ────────────────────────────────────────────
       if (user.email) {
         this.walletMail.sendWithdrawalRequested({
           email:     user.email,
@@ -259,7 +278,7 @@ export class WithdrawalsService {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
 
-    // ── Récupération transaction avec toutes les relations ──
+    // ── Récupération transaction ──────────────────────────
     const tx = await this.prisma.transaction.findFirst({
       where: {
         clientId,
@@ -270,8 +289,9 @@ export class WithdrawalsService {
         ],
       },
       include: {
-        withdrawal: true,
-        sender:     { include: { agency: true } },
+        withdrawal:  true,
+        sender:      { include: { agency: true } },
+        beneficiary: true,
       },
     });
 
@@ -286,7 +306,7 @@ export class WithdrawalsService {
     if (tx.status !== TransactionStatus.VALIDATED)
       throw new ForbiddenException(`Statut invalide: ${tx.status}`);
 
-    // ── Agent et son agence ───────────────────────────────
+    // ── Agent et agence ───────────────────────────────────
     const agent = await this.prisma.user.findUnique({
       where:   { id: agentId },
       include: { agency: true },
@@ -295,7 +315,6 @@ export class WithdrawalsService {
       throw new ForbiddenException('Agent sans agence');
     }
 
-    // ── Wallet agence du payeur ───────────────────────────
     const payoutCurrency = tx.targetCurrency ?? tx.currency;
 
     const agencyWallets = await this.prisma.wallet.findMany({
@@ -307,9 +326,7 @@ export class WithdrawalsService {
       agencyWallets[0];
 
     if (!agencyWallet) {
-      throw new ForbiddenException(
-        `Wallet agence ${payoutCurrency} introuvable.`,
-      );
+      throw new ForbiddenException(`Wallet agence ${payoutCurrency} introuvable.`);
     }
 
     const amountPaid =
@@ -338,103 +355,60 @@ export class WithdrawalsService {
       }
     }
 
-    // =======================================================
-    // ✅ v4.7 — CALCUL DES 3 PARTS DE COMMISSION
-    // =======================================================
-
-    // ── 1. Lecture de la split rule (exclure les fee configs) ─
-    // FIX v4.6 : payoutMethod: null → uniquement les règles de répartition
-    // (sans ce filtre, findFirst retournait une fee config avec payerShare=0)
+    // ── Calcul split rule ─────────────────────────────────
     let payerSharePct    = DEFAULT_PAYER_SHARE;
     let senderSharePct   = DEFAULT_SENDER_SHARE;
     let platformSharePct = DEFAULT_PLATFORM_SHARE;
 
     try {
       const splitRule = await this.prisma.commissionConfig.findFirst({
-        where: {
-          clientId,
-          payoutMethod: null, // ← exclure les fee configs
-        },
+        where: { clientId, payoutMethod: null },
       });
       if (splitRule) {
         payerSharePct    = splitRule.payerShare;
         senderSharePct   = splitRule.senderShare;
         platformSharePct = splitRule.platformShare;
-        this.logger.log(
-          `Split rule trouvée — payer:${payerSharePct}% ` +
-          `sender:${senderSharePct}% platform:${platformSharePct}%`,
-        );
-      } else {
-        this.logger.log(
-          `Aucune split rule → defaults ` +
-          `payer:${payerSharePct}% sender:${senderSharePct}% platform:${platformSharePct}%`,
-        );
       }
     } catch (e) {
-      this.logger.warn(
-        `Lecture split rule impossible — defaults appliqués : ${(e as any)?.message}`,
-      );
+      this.logger.warn(`Split rule indisponible — defaults : ${(e as any)?.message}`);
     }
 
-    // ── 2. Montants bruts ─────────────────────────────────
+    // ── Montants bruts ────────────────────────────────────
     const payerCommission    = feesInPayoutCurrency * payerSharePct    / 100;
     const senderCommission   = feesInPayoutCurrency * senderSharePct   / 100;
     const platformCommission = feesInPayoutCurrency * platformSharePct / 100;
 
-    // ── 3. Résolution des destinataires ───────────────────
-    //
-    // Règles métier :
-    //  - Wallet CLIENT → jamais de commission (uniquement admins et agents)
-    //  - Agence d'envoi = agence de paiement → la même agence cumule les 2 parts
-    //  - Client sans agence (wallet pur) → sa part (senderShare) va à la company
-    //
+    // ── Résolution destinataires ──────────────────────────
     const senderAgencyId = (tx.sender as any)?.agencyId ?? null;
     const isSameAgency   = senderAgencyId && senderAgencyId === agent.agencyId;
-    const senderIsClient = !senderAgencyId; // pas d'agence → client wallet
+    const senderIsClient = !senderAgencyId;
 
-    // Part finale de l'agence payeuse
-    let finalPayerCommission  = payerCommission;
-    // Part finale de l'agence d'envoi
-    let finalSenderCommission = senderCommission;
-    // Part finale de la company (admin société)
+    let finalPayerCommission    = payerCommission;
+    let finalSenderCommission   = senderCommission;
     let finalPlatformCommission = platformCommission;
 
     if (senderIsClient) {
-      // Client wallet sans agence → senderShare revient à la company
       finalPlatformCommission += senderCommission;
       finalSenderCommission    = 0;
-      this.logger.log(
-        `Sender = client wallet (pas d'agence) → ` +
-        `senderShare (${senderCommission.toFixed(2)}) ajouté à platformCommission`,
-      );
     } else if (isSameAgency) {
-      // Même agence envoie et paye → cumul payer + sender
       finalPayerCommission  += senderCommission;
       finalSenderCommission  = 0;
-      this.logger.log(
-        `Même agence (envoi et paiement) → ` +
-        `commission cumulée: ${finalPayerCommission.toFixed(2)} ${payoutCurrency}`,
-      );
     }
 
-    // ── 4. Wallet company admin ───────────────────────────
+    // ── Wallet company admin ──────────────────────────────
     let companyWallet: { id: string; balance: Prisma.Decimal } | null = null;
     if (finalPlatformCommission > 0) {
       try {
         companyWallet = await this.walletsService.getOrCreateWallet({
-          clientId,
-          currency: payoutCurrency,
+          clientId, currency: payoutCurrency,
         }) as any;
       } catch (e) {
-        this.logger.warn(
-          `Wallet company introuvable (clientId=${clientId}, ${payoutCurrency}) : ` +
-          `${(e as any)?.message} — platformCommission non versée`,
-        );
+        this.logger.warn(`Wallet company introuvable : ${(e as any)?.message}`);
         finalPlatformCommission = 0;
       }
     }
 
-    // ── 5. Wallet agence d'envoi (si différente) ─────────
+    // ── Wallet agence d'envoi ─────────────────────────────
     let senderAgencyWallet: { id: string; balance: Prisma.Decimal } | null = null;
     if (finalSenderCommission > 0 && senderAgencyId) {
       try {
@@ -449,208 +423,206 @@ export class WithdrawalsService {
         ) as any;
 
         if (!senderAgencyWallet) {
-          // Wallet agence d'envoi introuvable → revient à la company
-          this.logger.warn(
-            `Wallet agence d'envoi ${senderAgencyId} introuvable ` +
-            `→ senderShare revient à la company`,
-          );
-          if (companyWallet) {
-            finalPlatformCommission += finalSenderCommission;
-          }
+          this.logger.warn(`Wallet agence envoi ${senderAgencyId} introuvable → revient company`);
+          if (companyWallet) finalPlatformCommission += finalSenderCommission;
           finalSenderCommission = 0;
         }
       } catch (e) {
-        this.logger.warn(
-          `Erreur récupération wallet agence d'envoi : ${(e as any)?.message}`,
-        );
+        this.logger.warn(`Erreur wallet agence envoi : ${(e as any)?.message}`);
         finalSenderCommission = 0;
       }
     }
 
-    // ── Récapitulatif avant transaction ───────────────────
     this.logger.log(
       `\n┌─── DISTRIBUTION COMMISSIONS — retrait ${cleanCode} ───────────────\n` +
       `│  Frais bruts : ${rawFees} ${tx.currency}\n` +
       `│  Frais convertis : ${feesInPayoutCurrency.toFixed(2)} ${payoutCurrency}\n` +
-      `│  ── Parts ──\n` +
-      `│  Agence payeuse (${agent.agency.name}) : ${finalPayerCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Agence d'envoi (${senderAgencyId ?? 'aucune'}) : ${finalSenderCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Company admin : ${finalPlatformCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Montant cash remis : ${amountPaid} ${payoutCurrency}\n` +
+      `│  Agence payeuse : ${finalPayerCommission.toFixed(2)} ${payoutCurrency}\n` +
+      `│  Agence d'envoi : ${finalSenderCommission.toFixed(2)} ${payoutCurrency}\n` +
+      `│  Company admin  : ${finalPlatformCommission.toFixed(2)} ${payoutCurrency}\n` +
+      `│  Cash remis     : ${amountPaid} ${payoutCurrency}\n` +
       `└──────────────────────────────────────────────────────────────`,
     );
 
-    // =======================================================
-    // ✅ SECTION ATOMIQUE — tout ou rien
-    // =======================================================
-
+    // ── Transaction atomique ──────────────────────────────
     const result = await this.prisma.$transaction(async (prismaTx) => {
 
-      // ── Verrouillage optimiste : un seul agent peut traiter ──
+      // Verrouillage optimiste
       const updated = await prismaTx.transaction.updateMany({
-        where: {
-          id: tx.id,
-          clientId,
-          status: TransactionStatus.VALIDATED,
-        },
-        data: {
-          status:         TransactionStatus.PAID,
-          paidAt:         new Date(),
-          providerStatus: ProviderStatus.SUCCESS,
-        },
+        where: { id: tx.id, clientId, status: TransactionStatus.VALIDATED },
+        data:  { status: TransactionStatus.PAID, paidAt: new Date(), providerStatus: ProviderStatus.SUCCESS },
       });
-
       if (updated.count !== 1) {
-        throw new ConflictException(
-          'Transaction déjà traitée par un autre agent.',
-        );
+        throw new ConflictException('Transaction déjà traitée par un autre agent.');
       }
 
-      // ────────────────────────────────────────────────────
-      // CRÉDIT 1 : Agence payeuse (remboursement cash + commission)
-      // ────────────────────────────────────────────────────
+      // ── CRÉDIT 1 : Agence payeuse (cash + commission) ──
       const totalPayerCredit = amountPaid + finalPayerCommission;
-
       await prismaTx.wallet.update({
         where: { id: agencyWallet.id },
         data:  { balance: { increment: new Prisma.Decimal(totalPayerCredit) } },
       });
-
-      // Ledger — remboursement montant cash
       await prismaTx.ledgerEntry.create({
         data: {
-          walletId:      agencyWallet.id,
-          transactionId: tx.id,
-          type:          'CREDIT',
-          amount:        new Prisma.Decimal(amountPaid),
-          currency:      agencyWallet.currency,
-          description:   `Remboursement cash retrait ${cleanCode}`,
-          balanceAfter:  new Prisma.Decimal(
-            Number(agencyWallet.balance) + amountPaid,
-          ),
+          walletId: agencyWallet.id, transactionId: tx.id, type: 'CREDIT',
+          amount: new Prisma.Decimal(amountPaid), currency: agencyWallet.currency,
+          description: `Remboursement cash retrait ${cleanCode}`,
+          balanceAfter: new Prisma.Decimal(Number(agencyWallet.balance) + amountPaid),
         },
       });
-
-      // Ledger — commission agence payeuse
       if (finalPayerCommission > 0) {
         await prismaTx.ledgerEntry.create({
           data: {
-            walletId:      agencyWallet.id,
-            transactionId: tx.id,
-            type:          'CREDIT',
-            amount:        new Prisma.Decimal(finalPayerCommission),
-            currency:      agencyWallet.currency,
-            description:   `Commission paiement ${cleanCode} (${payerSharePct}${isSameAgency ? `+${senderSharePct}` : ''}%)`,
-            balanceAfter:  new Prisma.Decimal(
-              Number(agencyWallet.balance) + totalPayerCredit,
-            ),
+            walletId: agencyWallet.id, transactionId: tx.id, type: 'CREDIT',
+            amount: new Prisma.Decimal(finalPayerCommission), currency: agencyWallet.currency,
+            description: `Commission paiement ${cleanCode} (${payerSharePct}${isSameAgency ? `+${senderSharePct}` : ''}%)`,
+            balanceAfter: new Prisma.Decimal(Number(agencyWallet.balance) + totalPayerCredit),
           },
         });
       }
 
-      // ────────────────────────────────────────────────────
-      // CRÉDIT 2 : Agence d'envoi (si différente de la payeuse)
-      // ────────────────────────────────────────────────────
+      // ── CRÉDIT 2 : Agence d'envoi (si différente) ──────
       if (finalSenderCommission > 0 && senderAgencyWallet) {
         await prismaTx.wallet.update({
           where: { id: senderAgencyWallet.id },
           data:  { balance: { increment: new Prisma.Decimal(finalSenderCommission) } },
         });
-
         await prismaTx.ledgerEntry.create({
           data: {
-            walletId:      senderAgencyWallet.id,
-            transactionId: tx.id,
-            type:          'CREDIT',
-            amount:        new Prisma.Decimal(finalSenderCommission),
-            currency:      payoutCurrency,
-            description:   `Commission envoi ${cleanCode} (${senderSharePct}%)`,
-            balanceAfter:  new Prisma.Decimal(
-              Number(senderAgencyWallet.balance) + finalSenderCommission,
-            ),
+            walletId: senderAgencyWallet.id, transactionId: tx.id, type: 'CREDIT',
+            amount: new Prisma.Decimal(finalSenderCommission), currency: payoutCurrency,
+            description: `Commission envoi ${cleanCode} (${senderSharePct}%)`,
+            balanceAfter: new Prisma.Decimal(Number(senderAgencyWallet.balance) + finalSenderCommission),
           },
         });
       }
 
-      // ────────────────────────────────────────────────────
-      // CRÉDIT 3 : Wallet company admin (part plateforme)
-      // ────────────────────────────────────────────────────
+      // ── CRÉDIT 3 : Company admin (plateforme) ───────────
       if (finalPlatformCommission > 0 && companyWallet) {
         await prismaTx.wallet.update({
           where: { id: companyWallet.id },
           data:  { balance: { increment: new Prisma.Decimal(finalPlatformCommission) } },
         });
-
         await prismaTx.ledgerEntry.create({
           data: {
-            walletId:      companyWallet.id,
-            transactionId: tx.id,
-            type:          'CREDIT',
-            amount:        new Prisma.Decimal(finalPlatformCommission),
-            currency:      payoutCurrency,
-            description:   `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`,
-            balanceAfter:  new Prisma.Decimal(
-              Number(companyWallet.balance) + finalPlatformCommission,
-            ),
+            walletId: companyWallet.id, transactionId: tx.id, type: 'CREDIT',
+            amount: new Prisma.Decimal(finalPlatformCommission), currency: payoutCurrency,
+            description: `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`,
+            balanceAfter: new Prisma.Decimal(Number(companyWallet.balance) + finalPlatformCommission),
           },
         });
       }
 
-      // ── Mise à jour du withdrawal ──────────────────────
+      // ── Withdrawal ──────────────────────────────────────
       if (tx.withdrawal) {
         await prismaTx.withdrawal.update({
           where: { id: tx.withdrawal.id },
-          data: {
-            status:        WithdrawalStatus.PAID,
-            processedById: agentId,
-            processedAt:   new Date(),
-          },
+          data:  { status: WithdrawalStatus.PAID, processedById: agentId, processedAt: new Date() },
         });
       } else {
         await prismaTx.withdrawal.create({
           data: {
-            clientId,
-            transactionId: tx.id,
-            method:        tx.payoutMethod,
-            status:        WithdrawalStatus.PAID,
-            processedById: agentId,
-            processedAt:   new Date(),
+            clientId, transactionId: tx.id, method: tx.payoutMethod,
+            status: WithdrawalStatus.PAID, processedById: agentId, processedAt: new Date(),
           },
         });
       }
 
       return {
-        success:              true,
-        message:              'Retrait validé. Commissions distribuées.',
-        currency:             payoutCurrency,
+        success: true,
+        message: 'Retrait validé. Commissions distribuées.',
+        currency: payoutCurrency,
         amountPaid,
-        feesConverted:        feesInPayoutCurrency,
+        feesConverted: feesInPayoutCurrency,
         commissions: {
-          payerAgency:      { amount: finalPayerCommission,    share: payerSharePct },
-          senderAgency:     { amount: finalSenderCommission,   share: senderIsClient ? 0 : senderSharePct },
-          companyAdmin:     { amount: finalPlatformCommission, share: platformSharePct + (senderIsClient ? senderSharePct : 0) },
+          payerAgency:  { amount: finalPayerCommission,   share: payerSharePct },
+          senderAgency: { amount: finalSenderCommission,  share: senderIsClient ? 0 : senderSharePct },
+          companyAdmin: { amount: finalPlatformCommission, share: platformSharePct + (senderIsClient ? senderSharePct : 0) },
         },
       };
     });
 
-    // ── Notifications post-transaction (non-bloquant) ─────
+    // =========================================================
+    // ✅ v4.8 — NOTIFICATIONS POST-TRANSACTION (non-bloquant)
+    // =========================================================
+
+    // Lecture du nouveau solde agence (pour les alertes)
     const agencyWalletUpdated = await this.prisma.wallet
       .findUnique({ where: { id: agencyWallet.id } })
       .catch(() => null);
 
+    // ✅ v4.9 : nom complet du sender calculé séparément pour éviter
+    // le mélange '??' / '||' (TS5076). Un seul '??' final.
+    const senderFullName =
+      `${(tx.sender as any)?.firstName ?? ''} ${(tx.sender as any)?.lastName ?? ''}`.trim();
+
+    const beneficiaryName =
+      (tx as any).beneficiary?.fullName ??
+      (senderFullName || 'Le bénéficiaire');
+
+    // ── ① Notifier l'expéditeur (client) que le cash a été retiré ──
+    if (tx.senderId) {
+      this.walletNotifier.notifyTransferSent(
+        tx.senderId,
+        `${beneficiaryName} (retrait validé ✓)`,
+        `${amountPaid.toLocaleString('fr-FR')} ${payoutCurrency}`,
+        cleanCode,
+      ).catch(() => {});
+
+      // Email de confirmation au client expéditeur (async, non-bloquant)
+      this.prisma.user
+        .findUnique({ where: { id: tx.senderId }, select: { email: true, firstName: true } })
+        .then((sender) => {
+          if (sender?.email) {
+            this.walletMail.sendMoneyReceived({
+              email:              sender.email,
+              recipientFirstName: sender.firstName ?? '',
+              senderName:         `Agence ${agent.agency?.name ?? ''} (${agent.firstName ?? ''})`,
+              amount:             amountPaid,
+              currency:           payoutCurrency,
+              txRef:              cleanCode,
+              userId:             tx.senderId!,
+              transactionId:      tx.id,
+            }).catch((err) => {
+              this.logger.warn(`Email confirmation retrait client non envoyé : ${err?.message}`);
+            });
+          }
+        })
+        .catch(() => {});
+    }
+
+    // ── ② Notifier l'agence d'envoi (si différente + commission > 0) ──
+    if (finalSenderCommission > 0 && senderAgencyId && !isSameAgency) {
+      this.prisma.user
+        .findFirst({
+          where:  { agencyId: senderAgencyId, role: 'AGENT', isActive: true },
+          select: { id: true },
+        })
+        .then((senderAgent) => {
+          if (senderAgent) {
+            this.agentNotifier.notifyWithdrawalProcessed(
+              senderAgent.id,
+              `${finalSenderCommission.toFixed(0)} ${payoutCurrency}`,
+              `${finalSenderCommission.toFixed(0)} ${payoutCurrency}`,
+            ).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }
+
+    // ── ③ Notification agent (commission reçue) ─────────
     this.agentNotifier.notifyWithdrawalProcessed(
       agentId,
       `${amountPaid.toLocaleString('fr-FR')} ${payoutCurrency}`,
       `${finalPayerCommission.toFixed(0)} ${payoutCurrency}`,
     ).catch(() => {});
 
+    // ── Email agent ──────────────────────────────────────
     if (agent.email) {
       this.agentMail.sendWithdrawalProcessed({
         email:      agent.email,
         agentName:  `${agent.firstName ?? ''} ${agent.lastName ?? ''}`.trim(),
-        clientName: tx.sender
-          ? `${(tx.sender as any).firstName ?? ''} ${(tx.sender as any).lastName ?? ''}`.trim()
-          : 'Client',
+        clientName: beneficiaryName,
         amount:     amountPaid,
         currency:   payoutCurrency,
         newBalance: Number(agencyWalletUpdated?.balance ?? agencyWallet.balance),
@@ -659,6 +631,22 @@ export class WithdrawalsService {
       }).catch((err) => {
         this.logger.warn(`Email agent non envoyé : ${err?.message}`);
       });
+    }
+
+    // ── ④ Alerte solde faible agence payeuse ────────────
+    if (
+      agencyWalletUpdated &&
+      Number(agencyWalletUpdated.balance) < LOW_BALANCE_THRESHOLD
+    ) {
+      this.agentNotifier.notifyLowBalance(
+        agentId,
+        Number(agencyWalletUpdated.balance),
+      ).catch(() => {});
+
+      this.logger.warn(
+        `⚠️  Solde agence ${agent.agency.name} bas : ` +
+        `${Number(agencyWalletUpdated.balance)} ${payoutCurrency}`,
+      );
     }
 
     return result;
