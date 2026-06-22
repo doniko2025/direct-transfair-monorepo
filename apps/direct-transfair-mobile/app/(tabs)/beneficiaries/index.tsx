@@ -1,8 +1,15 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/index.tsx
 // =========================================================
-// BENEFICIARIES v6.1 — Direct Transf'air
+// BENEFICIARIES v6.2 — Direct Transf'air
 // ✅ v6.0 : UI compacte, groupage alphabétique, badge compteur
 // ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
+// ✅ v6.2 : Héro blanc neutre — plus de fond vert
+//   - StatusBar → dark-content / blanc
+//   - Titre + sous-titre → encre foncée
+//   - Barre de recherche → fond gris clair, texte sombre
+//   - Bouton "+" → vert plein sur fond blanc
+//   - Cercle décoratif (glow) → supprimé
+//   - Bordure basse héro → séparateur neutre
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -21,17 +28,15 @@ const C = {
   greenLight:  "#F0FDF4",
   greenBorder: "#A7F3D0",
   greenPale:   "#ECFDF5",
-  heroGlass:   "rgba(255,255,255,0.14)",
-  heroGlassBdr:"rgba(255,255,255,0.22)",
-  heroDim:     "rgba(255,255,255,0.65)",
-  heroGlow:    "rgba(255,255,255,0.08)",
-  pageBg:      "#FAFAFA",   // ← était #F0FDF8
+  pageBg:      "#FAFAFA",
   white:       "#FFFFFF",
-  cardBorder:  "#E5E5EA",   // ← était #D1FAE5
-  inputBg:     "#F8F8F8",   // ← était #F8FFFC
+  cardBorder:  "#E5E5EA",
+  inputBg:     "#F0F0F0",
   ink:         "#0D2B1F",
   inkMid:      "#1F5C3A",
   inkSoft:     "#6B9E85",
+  inkMuted:    "#94A3B8",
+  borderLight: "#F0F0F0",
   r: { xs: 6, sm: 10, md: 14, lg: 18, xl: 24, pill: 99 },
   font: {
     serif: Platform.select({ ios: "Georgia",      android: "serif",              default: "serif"      }),
@@ -164,13 +169,14 @@ export default function BeneficiariesScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.green} />
+      {/* ✅ v6.2 : StatusBar sombre sur fond blanc */}
+      <StatusBar barStyle="dark-content" backgroundColor={C.white} />
 
+      {/* ✅ v6.2 : Héro blanc neutre */}
       <Animated.View style={[s.hero, {
         opacity: headerAnim,
         transform: [{ scale: headerAnim.interpolate({ inputRange: [0,1], outputRange: [0.97,1] }) }],
       }]}>
-        <View style={s.glow} />
         <View style={s.heroRow}>
           <View style={{ flex: 1 }}>
             <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Mes Contacts</Text>
@@ -187,18 +193,19 @@ export default function BeneficiariesScreen() {
             <Ionicons name="person-add-outline" size={16} color={C.white} />
           </TouchableOpacity>
         </View>
+        {/* ✅ v6.2 : Barre recherche neutre sur fond blanc */}
         <View style={s.searchBox}>
-          <Ionicons name="search" size={13} color={C.heroDim} />
+          <Ionicons name="search" size={13} color={C.inkMuted} />
           <TextInput
             style={[s.searchInput, { fontFamily: C.font.sans }]}
             value={q} onChangeText={setQ}
             placeholder="Rechercher un contact…"
-            placeholderTextColor="rgba(255,255,255,0.45)"
+            placeholderTextColor={C.inkMuted}
             underlineColorAndroid="transparent"
           />
           {!!q && (
             <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={14} color={C.heroDim} />
+              <Ionicons name="close-circle" size={14} color={C.inkMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -260,24 +267,57 @@ export default function BeneficiariesScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  hero: { backgroundColor: C.green, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 18, overflow: "hidden" },
-  glow:      { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: C.heroGlow, top: -50, right: -30 },
-  heroRow:   { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
-  heroTitle: { color: C.white, fontSize: 22, fontWeight: "700", marginBottom: 4 },
-  heroSubRow:{ flexDirection: "row", alignItems: "center", gap: 6 },
-  countBadge:{ backgroundColor: "rgba(255,255,255,0.25)", borderRadius: C.r.pill, paddingHorizontal: 7, paddingVertical: 2 },
-  countTxt:  { color: C.white, fontSize: 11, fontWeight: "900" },
-  heroSub:   { color: C.heroDim, fontSize: 11, fontWeight: "600" },
-  addBtn: { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center", marginTop: 4 },
+  // ✅ v6.2 : Héro blanc avec bordure basse neutre
+  hero: {
+    backgroundColor: C.white,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: Platform.OS === "android" ? 44 : 14,
+    paddingBottom: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: C.cardBorder,
+    ...Platform.select({
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12 },
+      android: { elevation: 3 },
+    }),
+  },
 
-  searchBox: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", borderRadius: C.r.md, paddingHorizontal: 12, height: 40 },
-  searchInput: { flex: 1, fontSize: 13, color: C.white, fontWeight: "600" },
+  heroRow:   { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
+  // ✅ v6.2 : titre foncé (était blanc)
+  heroTitle: { color: "#0F172A", fontSize: 22, fontWeight: "700", marginBottom: 4 },
+  heroSubRow:{ flexDirection: "row", alignItems: "center", gap: 6 },
+  // ✅ v6.2 : badge neutre gris (était blanc transparent)
+  countBadge:{ backgroundColor: "#F0F0F0", borderRadius: C.r.pill, paddingHorizontal: 7, paddingVertical: 2 },
+  countTxt:  { color: C.ink, fontSize: 11, fontWeight: "900" },
+  // ✅ v6.2 : sous-titre foncé (était blanc semi-transparent)
+  heroSub:   { color: C.inkSoft, fontSize: 11, fontWeight: "600" },
+
+  // ✅ v6.2 : bouton "+" vert plein (était glass sur fond vert)
+  addBtn: {
+    width: 36, height: 36, borderRadius: C.r.sm,
+    backgroundColor: C.green,
+    justifyContent: "center", alignItems: "center",
+    marginTop: 2,
+    ...Platform.select({
+      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
+      android: { elevation: 4 },
+    }),
+  },
+
+  // ✅ v6.2 : barre de recherche neutre (était glass blanc sur fond vert)
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: C.inputBg,
+    borderWidth: 1, borderColor: C.cardBorder,
+    borderRadius: C.r.md, paddingHorizontal: 12, height: 40,
+  },
+  searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
 
   list: { paddingHorizontal: 14, paddingTop: 14 },
 
   letterHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6, marginTop: 4 },
   letterTxt:    { fontSize: 12, fontWeight: "900", color: C.inkSoft },
-  // ← fond neutre (était C.cardBorder vert pâle)
   letterBadge:  { backgroundColor: "#EEEEEE", borderRadius: C.r.pill, paddingHorizontal: 6, paddingVertical: 1 },
   letterCount:  { fontSize: 9, fontWeight: "900", color: C.inkMid },
 
@@ -296,7 +336,6 @@ const s = StyleSheet.create({
   emptyBtn:    { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, backgroundColor: C.greenPale, borderRadius: C.r.md, paddingHorizontal: 18, paddingVertical: 11, borderWidth: 1, borderColor: C.greenBorder },
   emptyBtnTxt: { color: C.green, fontWeight: "800", fontSize: 13 },
 
-  // ← FAB : ombre neutre (était ombre verte)
   fab: {
     position: "absolute", bottom: 90, right: 18,
     width: 52, height: 52, borderRadius: 26,

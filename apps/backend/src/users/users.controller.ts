@@ -1,38 +1,26 @@
 // apps/backend/src/users/users.controller.ts
 // =========================================================
-// USERS CONTROLLER v4.2
-// ✅ v4.0 : GET /users, POST /users
-// ✅ v4.1 : Ajout des 5 routes manquantes :
-//   - GET  /users/:id           → fiche complète du client wallet
-//   - PATCH /users/:id          → modification infos (nom, email, ville…)
-//   - DELETE /users/:id         → soft delete (deletedAt + isActive=false)
-//   - PATCH /users/:id/suspend  → suspension avec raison optionnelle
-//   - PATCH /users/:id/reactivate → réactivation
+// USERS CONTROLLER v4.3
+// ✅ v4.0-4.2 : toutes les routes admin (findAll, create, findById,
+//   update, softDelete, suspend, reactivate, findPublic)
+// ✅ v4.3 : Ajout GET /users/by-phone?q=775099993
 //
-//   ⚠️ ORDRE DES ROUTES NestJS :
-//   Les routes à segments fixes (:id/suspend, :id/reactivate) sont
-//   déclarées AVANT la route paramétrique générique (:id) pour éviter
-//   tout conflit de capture — même si NestJS distingue déjà par le
-//   nombre de segments, c'est une bonne pratique de l'expliciter.
+//   PROBLÈME RÉSOLU :
+//   Dans send.tsx, taper un numéro de téléphone ne retournait rien
+//   si la personne n'était pas dans les bénéficiaires sauvegardés
+//   de l'utilisateur. Pourtant elle pouvait être inscrite sur la
+//   plateforme.
 //
-//   ACCÈS :
-//   - SUPER_ADMIN  : accès total (tous les clients)
-//   - COMPANY_ADMIN : scoped à son clientId uniquement
+//   CORRECTIF :
+//   Nouvelle route accessible à TOUT utilisateur authentifié
+//   (pas de @Roles → RolesGuard laisse passer), scopée au même
+//   clientId (tenant). Délègue à usersService.findByPhoneInTenant().
+//   Ne retourne que les champs publics nécessaires au formulaire
+//   d'envoi : id, firstName, lastName, phone, country, primaryCurrency.
 //
-// ✅ v4.2 : Ajout GET /users/public/:id
-//   PROBLÈME : aucune route n'était accessible à un utilisateur normal
-//   (CLIENT/AGENT) pour résoudre l'identité d'un autre utilisateur.
-//   GET /users/:id existant est restreint à SUPER_ADMIN/COMPANY_ADMIN
-//   (@Roles), donc inutilisable pour le flux QR / paiement P2P côté
-//   mobile (un client qui scanne le QR d'un autre client).
-//
-//   CORRECTIF : nouvelle route 'public/:id', sans décorateur @Roles
-//   (donc accessible à tout rôle authentifié — RolesGuard laisse
-//   passer quand aucune métadonnée 'roles' n'est définie sur la route).
-//   Champs volontairement limités (id, firstName, lastName, phone,
-//   primaryCurrency) — jamais l'email, les wallets, le KYC. Scopée
-//   au même clientId (tenant) que l'appelant, comme assertClientAccess.
-//   Déclarée AVANT GET ':id' pour ne pas risquer de conflit de route.
+//   ORDRE des routes :
+//   'by-phone' est déclaré AVANT ':id' et 'public/:id' pour éviter
+//   tout risque de capture par la route paramétrique générique.
 // =========================================================
 
 import {
@@ -49,11 +37,12 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
@@ -112,13 +101,13 @@ interface UpdateUserBody {
   mobileMoneyNumber?: string;
 }
 
-// ─── Helper : vérifie que le COMPANY_ADMIN accède à un user de son client ──
+// ─── Helper ───────────────────────────────────────────────
 async function assertClientAccess(
   admin: AuthUserPayload,
   userId: string,
   usersService: UsersService,
 ): Promise<void> {
-  if (admin.role === 'SUPER_ADMIN') return; // Accès total
+  if (admin.role === 'SUPER_ADMIN') return;
 
   const target = await usersService.findById(userId);
   if (!target) throw new NotFoundException('Utilisateur introuvable');
@@ -139,7 +128,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   // ──────────────────────────────────────────────────────
-  // GET /users — Liste tous les utilisateurs (scopé au client)
+  // GET /users — Liste
   // ──────────────────────────────────────────────────────
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -152,7 +141,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // POST /users — Créer un utilisateur
+  // POST /users — Créer
   // ──────────────────────────────────────────────────────
   @Post()
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -169,9 +158,7 @@ export class UsersController {
         : currentUser?.clientId;
 
     if (!targetClientId) {
-      throw new ConflictException(
-        'Impossible de déterminer la société cible.',
-      );
+      throw new ConflictException('Impossible de déterminer la société cible.');
     }
 
     const existing = await this.usersService.findByEmail(body.email);
@@ -194,8 +181,40 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.1 — PATCH /users/:id/suspend
-  // Déclaré AVANT PATCH :id pour éviter tout conflit de capture
+  // ✅ v4.3 — GET /users/by-phone?q=775099993
+  //
+  // Recherche un utilisateur de la plateforme par numéro de téléphone.
+  // Accessible à TOUT utilisateur authentifié (pas de @Roles).
+  // Utilisé par send.tsx pour auto-détecter un destinataire lors
+  // de la saisie du numéro, même s'il n'est pas encore sauvegardé
+  // comme bénéficiaire.
+  //
+  // Scopé au même clientId → un CLIENT ne peut pas trouver un user
+  // d'une autre société.
+  //
+  // ⚠️ Déclaré EN PREMIER, AVANT toutes les routes paramétriques
+  // (:id, public/:id, :id/suspend, :id/reactivate) pour éviter tout
+  // conflit de capture par NestJS.
+  // ──────────────────────────────────────────────────────
+  @Get('by-phone')
+  @ApiOperation({ summary: 'Trouver un utilisateur de la plateforme par téléphone' })
+  @ApiQuery({ name: 'q', description: 'Numéro de téléphone (chiffres uniquement ou avec indicatif)', example: '775099993' })
+  async findByPhone(
+    @Req() req: { user?: AuthUserPayload },
+    @Query('q') q: string,
+  ) {
+    if (!q || q.replace(/\D/g, '').length < 6) {
+      return null;
+    }
+
+    const clientId = req.user?.clientId;
+    if (!clientId) return null;
+
+    return this.usersService.findByPhoneInTenant(q, clientId);
+  }
+
+  // ──────────────────────────────────────────────────────
+  // PATCH /users/:id/suspend
   // ──────────────────────────────────────────────────────
   @Patch(':id/suspend')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -210,8 +229,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.1 — PATCH /users/:id/reactivate
-  // Déclaré AVANT PATCH :id pour éviter tout conflit de capture
+  // PATCH /users/:id/reactivate
   // ──────────────────────────────────────────────────────
   @Patch(':id/reactivate')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -225,16 +243,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.2 — GET /users/public/:id
-  // Fiche minimale, accessible à TOUT utilisateur authentifié
-  // (pas de @Roles → RolesGuard laisse passer n'importe quel rôle).
-  // Utilisé par le flux QR / paiement P2P (app/scan.tsx côté mobile) :
-  // un client scanne le QR d'un autre client, l'app résout son nom
-  // pour confirmation avant l'envoi, sans jamais exposer l'email,
-  // les wallets ou les documents KYC.
-  // Scopé au même clientId (tenant) que l'appelant.
-  // Déclaré AVANT GET :id pour rester aussi explicite que les routes
-  // /suspend et /reactivate ci-dessus.
+  // GET /users/public/:id (inchangé v4.2)
   // ──────────────────────────────────────────────────────
   @Get('public/:id')
   @ApiOperation({ summary: 'Résoudre l\'identité publique d\'un utilisateur (QR / P2P)' })
@@ -261,8 +270,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.1 — GET /users/:id
-  // Fiche complète : infos, wallets, agency, client
+  // GET /users/:id
   // ──────────────────────────────────────────────────────
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -274,7 +282,6 @@ export class UsersController {
     const user = await this.usersService.findById(id);
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    // COMPANY_ADMIN : accès uniquement aux users de son propre client
     if (
       req.user?.role !== 'SUPER_ADMIN' &&
       user.clientId !== req.user?.clientId
@@ -286,9 +293,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.1 — PATCH /users/:id
-  // Modification des infos personnelles (nom, email, téléphone, ville…)
-  // Ne touche PAS au mot de passe, rôle, clientId, agencyId
+  // PATCH /users/:id
   // ──────────────────────────────────────────────────────
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -300,7 +305,6 @@ export class UsersController {
   ) {
     await assertClientAccess(req.user!, id, this.usersService);
 
-    // Champs autorisés uniquement — jamais rôle / mot de passe / clientId
     const allowed: UpdateUserBody = {
       firstName:           body.firstName,
       lastName:            body.lastName,
@@ -317,7 +321,6 @@ export class UsersController {
       mobileMoneyNumber:   body.mobileMoneyNumber,
     };
 
-    // Supprime les clés undefined pour ne pas écraser des données existantes
     const clean = Object.fromEntries(
       Object.entries(allowed).filter(([, v]) => v !== undefined),
     );
@@ -326,9 +329,7 @@ export class UsersController {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.1 — DELETE /users/:id
-  // Soft delete : marque deletedAt + isActive=false
-  // Les données sont conservées (conformité réglementaire)
+  // DELETE /users/:id
   // ──────────────────────────────────────────────────────
   @Delete(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)

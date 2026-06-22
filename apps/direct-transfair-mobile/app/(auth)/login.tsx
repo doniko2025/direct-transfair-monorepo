@@ -1,10 +1,18 @@
 // apps/direct-transfair-mobile/app/(auth)/login.tsx
 // =========================================================
-// LOGIN v6.4 — Direct Transf'air
-// ✅ v6.3 conservé intégralement (fix fond vert Android)
-// ✅ v6.4 : bouton "Se connecter par téléphone"
-//           → router.push("/(auth)/otp-phone")
-//           → positionné au-dessus de "Devenir client"
+// LOGIN v6.5 — Direct Transf'air
+// ✅ v6.4 conservé intégralement
+// ✅ v6.5 — Isolation portail + auto-redirect société :
+//   handleLogin() :
+//     — Intercepte USE_COMPANY_PORTAL (HTTP 403 backend v4.7)
+//     — Web : redirige vers le portail dédié de la société
+//       (customDomain → subdomain → loadBranding+retry)
+//     — Mobile : loadBranding(code) silencieux + retry login
+//     — Intercepte USE_DEFAULT_PORTAL : informe le SA
+//   handleBiometricLogin() : inchangé
+//   cardSub : adapté selon portail (SA vs société)
+//   Section "bottom" : boutons société cachés sur portail SA
+//   TenantCodeModal : inchangé
 // =========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
@@ -17,6 +25,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { useTenant } from "../../providers/TenantProvider";
+import { buildCompanyPortalUrl } from "../../providers/TenantProvider";
 import { api } from "../../services/api";
 import {
   getBiometricsEnabled,
@@ -189,7 +198,7 @@ function TenantCodeModal({
             ]}
             value={code}
             onChangeText={(v) => { setCode(v.toUpperCase().replace(/[^A-Z0-9_-]/g, "")); setError(""); }}
-            placeholder="Ex : ACME · BARAKA · NAFA"
+            placeholder="Ex : FLASH · MIROIR · BARAKA"
             placeholderTextColor="#9CA3AF"
             autoCapitalize="characters"
             autoCorrect={false}
@@ -282,6 +291,7 @@ export default function LoginScreen() {
     }, [branding.code])
   );
 
+  // ─── handleLogin ✅ v6.5 ─────────────────────────────────
   const handleLogin = async () => {
     if (!identifier.trim() || !password.trim()) {
       return Alert.alert("Champs requis", "Veuillez renseigner vos identifiants.");
@@ -290,15 +300,85 @@ export default function LoginScreen() {
       Animated.spring(btnScale, { toValue: 0.96, useNativeDriver: true, speed: 50 }),
       Animated.spring(btnScale, { toValue: 1,    useNativeDriver: true, speed: 30 }),
     ]).start();
+
     try {
       await login({ identifier: identifier.trim(), password } as any);
     } catch (e: any) {
+      const data = e?.response?.data;
+
+      // ── ✅ v6.5 : Portail incorrect → redirection société ──
+      if (data?.code === "USE_COMPANY_PORTAL") {
+        const { clientCode, subdomain, customDomain } = data;
+
+        // Sur web : construire l'URL et rediriger directement
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          const targetUrl = customDomain
+            ? `https://${customDomain}`
+            : subdomain
+              ? `https://${subdomain}.direct-transfer.com`
+              : null;
+
+          if (targetUrl) {
+            Alert.alert(
+              "Redirection vers votre espace",
+              `Votre compte appartient à l'espace « ${clientCode ?? subdomain ?? "votre société"} ».\n\nVous allez être redirigé automatiquement.`,
+              [{
+                text: "Accéder à mon espace →",
+                onPress: () => {
+                  // Redirect vers le portail dédié
+                  window.location.href = targetUrl;
+                },
+              }],
+              { cancelable: false },
+            );
+            return;
+          }
+        }
+
+        // Sur mobile OU si pas d'URL dédiée configurée :
+        // Charger le branding par code et retenter la connexion silencieusement
+        if (clientCode) {
+          try {
+            await loadBranding(clientCode); // Met à jour le tenant dans api.http
+            await login({ identifier: identifier.trim(), password } as any);
+            // Succès → AuthProvider redirige vers /(tabs)/home
+            return;
+          } catch (retryErr: any) {
+            const msg = retryErr?.response?.data?.message ?? "Connexion échouée après redirection.";
+            Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+            return;
+          }
+        }
+
+        // Fallback si aucune info disponible
+        Alert.alert(
+          "Portail incorrect",
+          "Ce compte appartient à une société. Connectez-vous depuis le portail de votre société ou saisissez votre code société.",
+          [
+            { text: "Saisir mon code société", onPress: () => setShowTenantModal(true) },
+            { text: "Annuler", style: "cancel" },
+          ],
+        );
+        return;
+      }
+
+      // ── ✅ v6.5 : Super Admin sur portail société ──────────
+      if (data?.code === "USE_DEFAULT_PORTAL") {
+        Alert.alert(
+          "Portail réservé aux sociétés",
+          "Le Super Admin doit se connecter via le portail principal Direct Transf'air.",
+        );
+        return;
+      }
+
+      // ── Erreur standard ─────────────────────────────────────
       const msg  = e.response?.data?.message || "Erreur de connexion au serveur.";
       const text = Array.isArray(msg) ? msg[0] : msg;
       Platform.OS === "web" ? alert(text) : Alert.alert("Connexion échouée", text);
     }
   };
 
+  // ─── handleBiometricLogin ────────────────────────────────
   const handleBiometricLogin = async () => {
     const success = await promptBiometrics("Connectez-vous à Direct Transf'air");
     if (!success) return;
@@ -308,7 +388,6 @@ export default function LoginScreen() {
     } catch (e: any) {
       setShowBioBtn(false);
       Alert.alert("Session expirée", "Veuillez vous reconnecter avec vos identifiants.");
-      console.warn("biometricLogin échoué:", e?.message);
     } finally {
       setBioLoading(false);
     }
@@ -320,20 +399,16 @@ export default function LoginScreen() {
   const pillLabel = isCustomBranding ? branding.name : "Choisir ma société →";
 
   return (
-    // ✅ FIX v6.3 : backgroundColor sur le conteneur racine pour Android
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={{ flex: 1, backgroundColor: C.g3 }}
     >
       <StatusBar barStyle="light-content" backgroundColor={C.g2} />
 
-      {/* Fond plein */}
       <View style={[sL.bgBase, { backgroundColor: C.g3 }]} />
-      {/* Cercles décoratifs */}
       <View style={sL.bgCircle1} />
       <View style={sL.bgCircle2} />
 
-      {/* ✅ FIX v6.3 : transparent pour ne pas couvrir le bgBase */}
       <ScrollView
         contentContainerStyle={sL.scroll}
         showsVerticalScrollIndicator={false}
@@ -357,11 +432,24 @@ export default function LoginScreen() {
           </View>
           <Text style={[sL.appName, { fontFamily: branding.fontFamily ?? F.display }]}>{appName}</Text>
           <Text style={[sL.tagline, { fontFamily: F.body }]}>{tagline}</Text>
-          <TouchableOpacity style={sL.pill} onPress={() => setShowTenantModal(true)} activeOpacity={0.8}>
-            <View style={[sL.pillDot, { backgroundColor: isCustomBranding ? "#4ADE80" : "#FCD34D" }]} />
-            <Text style={[sL.pillTxt, { fontFamily: F.body }]}>{pillLabel}</Text>
-            <Ionicons name="chevron-down" size={11} color="rgba(255,255,255,0.8)" />
-          </TouchableOpacity>
+
+          {/* ✅ v6.5 : Pill "choisir société" cachée sur portail SA sans branding custom */}
+          {/* Sur portail par défaut (SA) : pas de pill, interface épurée */}
+          {/* Sur portail société : pill pour changer de société si besoin */}
+          {isCustomBranding && (
+            <TouchableOpacity style={sL.pill} onPress={() => setShowTenantModal(true)} activeOpacity={0.8}>
+              <View style={[sL.pillDot, { backgroundColor: "#4ADE80" }]} />
+              <Text style={[sL.pillTxt, { fontFamily: F.body }]}>{pillLabel}</Text>
+              <Ionicons name="chevron-down" size={11} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+          )}
+          {!isCustomBranding && (
+            <TouchableOpacity style={sL.pill} onPress={() => setShowTenantModal(true)} activeOpacity={0.8}>
+              <View style={[sL.pillDot, { backgroundColor: "#FCD34D" }]} />
+              <Text style={[sL.pillTxt, { fontFamily: F.body }]}>Choisir ma société →</Text>
+              <Ionicons name="chevron-down" size={11} color="rgba(255,255,255,0.8)" />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ══ CARD ══ */}
@@ -371,8 +459,13 @@ export default function LoginScreen() {
           <Text style={[sL.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
             Connectez-vous
           </Text>
+
+          {/* ✅ v6.5 : sous-titre différent selon portail SA vs société */}
           <Text style={[sL.cardSub, { fontFamily: F.body }]}>
-            {branding.welcomeMessage ?? `Saisissez votre email ou votre identifiant ${appName}.`}
+            {!isCustomBranding
+              ? "Espace réservé aux Super Administrateurs Direct Transf'air."
+              : branding.welcomeMessage
+                ?? `Saisissez votre email ou votre identifiant ${appName}.`}
           </Text>
 
           <View style={{ marginTop: 22 }}>
@@ -475,36 +568,41 @@ export default function LoginScreen() {
         </View>
 
         {/* ══ BOTTOM ══ */}
+        {/* ✅ v6.5 : boutons société UNIQUEMENT sur portail isCustomBranding */}
+        {/* Portail SA (défaut) → interface épurée, pas de "Devenir client" */}
         <View style={sL.bottom}>
+          {isCustomBranding && (
+            <>
+              {/* Connexion par téléphone — réservée aux portails société */}
+              <TouchableOpacity
+                style={sL.phoneOtpBtn}
+                onPress={() => router.push("/(auth)/otp-phone")}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name="phone-portrait-outline"
+                  size={16}
+                  color="rgba(255,255,255,0.85)"
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={[sL.phoneOtpTxt, { fontFamily: F.body }]}>
+                  Se connecter par téléphone
+                </Text>
+              </TouchableOpacity>
 
-          {/* ✅ v6.4 : Connexion par téléphone (OTP) */}
-          <TouchableOpacity
-            style={sL.phoneOtpBtn}
-            onPress={() => router.push("/(auth)/otp-phone")}
-            activeOpacity={0.85}
-          >
-            <Ionicons
-              name="phone-portrait-outline"
-              size={16}
-              color="rgba(255,255,255,0.85)"
-              style={{ marginRight: 8 }}
-            />
-            <Text style={[sL.phoneOtpTxt, { fontFamily: F.body }]}>
-              Se connecter par téléphone
-            </Text>
-          </TouchableOpacity>
+              {/* Devenir client — réservé aux portails société */}
+              <TouchableOpacity
+                style={sL.registerBtn}
+                onPress={() => router.push("/(auth)/register")}
+                activeOpacity={0.9}
+              >
+                <Ionicons name="person-add-outline" size={18} color={C.g4} style={{ marginRight: 8 }} />
+                <Text style={[sL.registerTxt, { color: C.g3, fontFamily: F.body }]}>Devenir client</Text>
+              </TouchableOpacity>
+            </>
+          )}
 
-          {/* Devenir client */}
-          <TouchableOpacity
-            style={sL.registerBtn}
-            onPress={() => router.push("/(auth)/register")}
-            activeOpacity={0.9}
-          >
-            <Ionicons name="person-add-outline" size={18} color={C.g4} style={{ marginRight: 8 }} />
-            <Text style={[sL.registerTxt, { color: C.g3, fontFamily: F.body }]}>Devenir client</Text>
-          </TouchableOpacity>
-
-          {/* ✅ v6.2 : Assistance et cookies */}
+          {/* Assistance — toujours visible */}
           <TouchableOpacity
             style={sL.helpRow}
             onPress={() => router.push("/(auth)/assistance")}
@@ -570,7 +668,6 @@ const sL = StyleSheet.create({
 
   bottom:      { marginTop: 16, alignItems: "center", gap: 8 },
 
-  // ✅ v6.4 : bouton connexion par téléphone
   phoneOtpBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(255,255,255,0.10)",

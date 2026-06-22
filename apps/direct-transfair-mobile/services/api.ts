@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.4
+// DIRECT TRANSF'AIR — API Service v5.5
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -9,14 +9,15 @@
 // ✅ clearTokens — nettoie les deux storages
 // ✅ Logs de diagnostic tenant étendus (isDev)
 // v5.3 — Fix moulinage declareBankTransfer
-// ✅ declareBankTransfer — suppression tryMany (causait double appel
-//    après timeout → 500 Internal server error sur le 2ème essai)
-// ✅ declareBankTransfer — timeout réduit à 15s (au lieu de 30s)
-// ✅ declareBankTransfer — devise par défaut corrigée XOF (était EUR)
-// v5.4 — Ajout getPublicUser(id) : résolution d'identité pour le flux
-//    QR / paiement P2P (utilisé par app/scan.tsx). Appelle la nouvelle
-//    route backend GET /users/public/:id, accessible à tout utilisateur
-//    authentifié (pas réservée aux admins), scopée au même tenant.
+// ✅ declareBankTransfer — suppression tryMany (causait double appel)
+// ✅ declareBankTransfer — timeout réduit à 15s
+// ✅ declareBankTransfer — devise par défaut corrigée XOF
+// v5.4 — Ajout getPublicUser(id) : résolution d'identité QR/P2P
+// v5.5 — getBrandingByHost() : détection tenant depuis hostname web
+//   CORRECTIONS v5.5 :
+//   — Suppression du doublon getBrandingByHost() / getClientPublicBranding()
+//     qui avait été inséré deux fois (AUTH + WALLETS)
+//   — Version unique conservée dans la section WALLETS
 // =========================================================
 
 import axios, {
@@ -660,12 +661,13 @@ class API {
     const res = await this.http.post<LoginStep1Response>("/auth/login", data);
     return res.data;
   }
+
   // ✅ v6.4 — Connexion par téléphone : envoie un OTP 4 chiffres par SMS
-// Retourne { userId, maskedPhone } — vérification via loginStep2
-  async loginByPhone(phone: string,): Promise<{ userId: string; maskedPhone: string }> {
-  const res = await this.http.post<{ userId: string; maskedPhone: string }>(
-    '/auth/login-by-phone',
-    { phone }, );
+  async loginByPhone(phone: string): Promise<{ userId: string; maskedPhone: string }> {
+    const res = await this.http.post<{ userId: string; maskedPhone: string }>(
+      "/auth/login-by-phone",
+      { phone },
+    );
     return res.data;
   }
 
@@ -821,19 +823,18 @@ class API {
   // NOTIFICATIONS
   // ============================================================
 
-  // ✅ CORRIGÉ
-async getNotifications(params?: {
-  unreadOnly?: boolean;
-  page?: number;
-  limit?: number;
-}): Promise<Notification[]> {
-  try {
-    const res = await this.http.get<unknown>("/notifications", { params });
-    return unwrapArray<Notification>(res.data);
-  } catch {
-    return []; // silencieux — l'absence de notifs n'est pas une erreur critique
+  async getNotifications(params?: {
+    unreadOnly?: boolean;
+    page?: number;
+    limit?: number;
+  }): Promise<Notification[]> {
+    try {
+      const res = await this.http.get<unknown>("/notifications", { params });
+      return unwrapArray<Notification>(res.data);
+    } catch {
+      return [];
+    }
   }
-}
 
   // ============================================================
   // USERS (ADMIN)
@@ -876,11 +877,7 @@ async getNotifications(params?: {
     return res.data;
   }
 
-  // ✅ v5.4 — Résolution d'identité publique pour le flux QR / P2P.
-  // Appelle GET /users/public/:id (route accessible à tout utilisateur
-  // authentifié, scopée au même tenant — voir users.controller.ts).
-  // Retourne uniquement id/firstName/lastName/phone/primaryCurrency,
-  // jamais l'email, les wallets ou les données KYC.
+  // ✅ v5.4 — Résolution d'identité publique pour le flux QR / P2P
   async getPublicUser(id: string): Promise<{
     id: string;
     firstName?: string;
@@ -907,8 +904,40 @@ async getNotifications(params?: {
     return unwrapArray<Wallet>(res.data).map(normalizeWallet);
   }
 
+  // ✅ v5.5 — Branding depuis un hostname (sous-domaine ou domaine custom)
+  // Appelé par TenantProvider.tsx au démarrage si Platform.OS === 'web'
+  // GET /branding/by-host?host=flash.direct-transfer.com
+  async getBrandingByHost(host: string): Promise<{
+    code:           string;
+    name:           string;
+    logoUrl:        string | null;
+    primaryColor:   string;
+    secondaryColor: string;
+    tagline:        string | null;
+    fontFamily:     string | null;
+    splashBgColor:  string | null;
+    welcomeMessage: string | null;
+    subdomain:      string | null;
+    customDomain:   string | null;
+    isActive:       boolean;
+  } | null> {
+    try {
+      const res = await this.http.get(
+        `/branding/by-host?host=${encodeURIComponent(host)}`,
+        { headers: { "x-tenant-id": "DONIKO" } },
+      );
+      return res.data ?? null;
+    } catch (e) {
+      devLog(`⚠️ getBrandingByHost("${host}"): non trouvé →`, extractAxiosErrorMessage(e));
+      return null;
+    }
+  }
+
   async getClientPublicBranding(code: string): Promise<any> {
-    const res = await this.http.get(`/branding/${code.trim().toUpperCase()}`);
+    const res = await this.http.get(
+      `/branding/${code.trim().toUpperCase()}`,
+      { headers: { "x-tenant-id": "DONIKO" } },
+    );
     return res.data;
   }
 
@@ -1000,20 +1029,7 @@ async getNotifications(params?: {
     }
   }
 
-  // ✅ FIX v5.3 — declareBankTransfer
-  //
-  // AVANT (v5.2) :
-  //   tryMany([endpoint1, endpoint2]) avec timeout global 30s
-  //   → si endpoint1 timeout (ex: email SMTP lent côté Railway),
-  //     tryMany essayait endpoint2 → 2ème transaction créée en DB → 500
-  //   → le frontend moulinait 30s puis affichait un faux message d'erreur
-  //
-  // MAINTENANT (v5.3) :
-  //   - Un seul appel direct, timeout réduit à 15s
-  //   - Pas de retry : si le backend a répondu (même lentement),
-  //     la transaction existe → on ne réessaie pas
-  //   - Devise par défaut corrigée : XOF (était EUR par erreur)
-  //   - Le catch dans CompanyDashboard.tsx gère le timeout comme un succès
+  // ✅ FIX v5.3 — un seul appel direct, timeout 15s, pas de retry
   async declareBankTransfer(
     amount: number,
     refBancaire?: string,
@@ -1222,74 +1238,71 @@ async getNotifications(params?: {
 
   async cancelScheduledTransfer(id: string): Promise<ScheduledTransfer> {
     const res = await this.http.patch<ScheduledTransfer>(
-      `/scheduled-transfers/${id}/cancel`, 
+      `/scheduled-transfers/${id}/cancel`,
     );
     return res.data;
   }
-// ============================================================
-// WITHDRAWALS
-// ============================================================
 
-async requestWithdrawal(data: {
-  amount?: number;
-  transactionId?: string;
-  currency?: Currency | string;
-}): Promise<unknown> {
-  const res = await this.http.post("/withdrawals", data);
-  return res.data;
-}
+  // ============================================================
+  // WITHDRAWALS
+  // ============================================================
 
-// ✅ Fix v5.4 : fallback /withdrawals/me si GET /withdrawals → 404
-// Le backend ne déclarait pas GET /withdrawals (corrigé en v4.5 backend).
-// Le fallback /me garantit qu'aucun 404 ne pollue les logs en attendant
-// le déploiement du backend corrigé.
-async getWithdrawals(params?: {
-  page?: number;
-  limit?: number;
-}): Promise<Withdrawal[]> {
-  const data = await tryMany<AxiosResponse<unknown>>(
-    [
-      async () => this.http.get<unknown>("/withdrawals",    { params }),
-      async () => this.http.get<unknown>("/withdrawals/me", { params }),
-    ],
-    "getWithdrawals",
-  );
-  return unwrapArray<Withdrawal>(data.data);
-}
+  async requestWithdrawal(data: {
+    amount?: number;
+    transactionId?: string;
+    currency?: Currency | string;
+  }): Promise<unknown> {
+    const res = await this.http.post("/withdrawals", data);
+    return res.data;
+  }
 
-async checkWithdrawalCode(code: string): Promise<unknown> {
-  return tryMany<unknown>(
-    [
-      async () => {
-        const res = await this.http.post("/withdrawals/agent/check", { code });
-        return res.data;
-      },
-      async () => {
-        const res = await this.http.post("/withdrawals/check", { code });
-        return res.data;
-      },
-    ],
-    "checkWithdrawalCode",
-  );
-}
+  async getWithdrawals(params?: {
+    page?: number;
+    limit?: number;
+  }): Promise<Withdrawal[]> {
+    const data = await tryMany<AxiosResponse<unknown>>(
+      [
+        async () => this.http.get<unknown>("/withdrawals",    { params }),
+        async () => this.http.get<unknown>("/withdrawals/me", { params }),
+      ],
+      "getWithdrawals",
+    );
+    return unwrapArray<Withdrawal>(data.data);
+  }
 
-async processWithdrawalPayment(code: string): Promise<unknown> {
-  return tryMany<unknown>(
-    [
-      async () => {
-        const res = await this.http.post("/withdrawals/agent/pay", { code });
-        return res.data;
-      },
-      async () => {
-        const res = await this.http.post("/withdrawals/pay", { code });
-        return res.data;
-      },
-    ],
-    "processWithdrawalPayment",
-  );
-}
+  async checkWithdrawalCode(code: string): Promise<unknown> {
+    return tryMany<unknown>(
+      [
+        async () => {
+          const res = await this.http.post("/withdrawals/agent/check", { code });
+          return res.data;
+        },
+        async () => {
+          const res = await this.http.post("/withdrawals/check", { code });
+          return res.data;
+        },
+      ],
+      "checkWithdrawalCode",
+    );
+  }
 
-// ============================================================
+  async processWithdrawalPayment(code: string): Promise<unknown> {
+    return tryMany<unknown>(
+      [
+        async () => {
+          const res = await this.http.post("/withdrawals/agent/pay", { code });
+          return res.data;
+        },
+        async () => {
+          const res = await this.http.post("/withdrawals/pay", { code });
+          return res.data;
+        },
+      ],
+      "processWithdrawalPayment",
+    );
+  }
+
+  // ============================================================
   // ADMIN TRANSACTIONS
   // ============================================================
 
@@ -1356,13 +1369,10 @@ async processWithdrawalPayment(code: string): Promise<unknown> {
     return normalizeTransaction(data.data);
   }
 
-// ============================================================
+  // ============================================================
   // TAUX DE CHANGE
   // ============================================================
 
-  // ✅ FIX v5.4 : fallback taux statiques si /rates ET /exchange-rates → 404
-  // L'endpoint n'existe pas encore côté backend Railway.
-  // L'app continue de fonctionner avec des taux BCEAO de référence.
   async getExchangeRates(): Promise<ExchangeRate[]> {
     try {
       const data = await tryMany<AxiosResponse<unknown>>(
@@ -1420,7 +1430,6 @@ async processWithdrawalPayment(code: string): Promise<unknown> {
     );
   }
 
-  // ✅ FIX v5.4 : calcul local si /rates/convert → 404
   async convertAmount(
     amount: number,
     from: Currency | string,

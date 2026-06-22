@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.8 — Direct Transf'air
+// SEND MONEY v2.10 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -48,6 +48,23 @@
 //      Client Dashboard. Le badge "Solde insuffisant" reste ambre,
 //      inchangé.
 //    - StatusBar : light-content/vert → dark-content/gris clair.
+// ✅ v2.10 : DÉTECTION FACILE NOM/PRÉNOM PAR NUMÉRO DE TÉLÉPHONE
+//    - FIX normalisation : la regex fragile qui retirait les 3 premiers
+//      chiffres (pensant que c'était l'indicatif pays) est remplacée par
+//      une comparaison par SUFFIXE sur tous les chiffres saisis
+//      (inputDigits), robuste à n'importe quel indicatif (+221, 00221…).
+//    - NOUVEAU : si aucun bénéficiaire SAUVEGARDÉ ne correspond et que
+//      l'input contient ≥ 7 chiffres → fallback debouncé (450ms) vers
+//      GET /users/by-phone?q=<chiffres> pour détecter un utilisateur
+//      Direct Transf'air déjà inscrit mais non enregistré comme contact.
+//      Le nom/prénom retournés sont injectés dans `detectedBeneficiary`
+//      (même state qu'avant, aucun changement de l'API publique du
+//      composant) via un pseudo-bénéficiaire marqué `isFavorite: false`.
+//    - UI : badge "TROUVÉ" (vert, contact sauvegardé) vs badge
+//      "UTILISATEUR DIRECT TRANSF'AIR" (bleu, détecté sur la plateforme
+//      mais pas encore enregistré), avec lien "+ Enregistrer comme
+//      contact" sous la carte dans ce second cas.
+//    - Aucune autre logique métier touchée (calculs, envoi, devises).
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -638,18 +655,87 @@ useEffect(() => {
     setRate(toEurTarget / toEurUser);
   }, [allRates, userCurrency]);
 
+  // ✅ v2.10 — Détection bénéficiaire par téléphone/email/nom
+  //   1) Recherche dans les bénéficiaires SAUVEGARDÉS, comparaison
+  //      téléphone par SUFFIXE (robuste à l'indicatif pays).
+  //   2) Si rien trouvé ET input ≥ 7 chiffres → fallback debouncé (450ms)
+  //      vers GET /users/by-phone pour détecter un utilisateur
+  //      Direct Transf'air inscrit mais non sauvegardé comme contact.
+  //      Son nom/prénom est injecté dans detectedBeneficiary avec
+  //      isFavorite: false (sert de marqueur pour le badge dans le JSX).
   useEffect(() => {
-    if (mode === "WALLET" && walletInput.length >= 3) {
-      const q = walletInput.toLowerCase().trim();
-      const cleanPhone = walletInput.replace(/^\+?\d{1,3}/, "").replace(/^0+/, "").replace(/\s/g, "");
-      const found = beneficiaries.find((b) =>
-        (b.phone && b.phone.includes(cleanPhone)) ||
-        (b.email && b.email.toLowerCase().includes(q)) ||
-        (b.fullName && b.fullName.toLowerCase().includes(q))
-      );
-      if (found) { setDetectedBeneficiary(found); updateCurrencyContext(found.country); }
-      else setDetectedBeneficiary(null);
-    } else setDetectedBeneficiary(null);
+    // Pas en mode WALLET ou input trop court → reset et sortie
+    if (mode !== "WALLET" || walletInput.length < 3) {
+      setDetectedBeneficiary(null);
+      return;
+    }
+
+    const q           = walletInput.toLowerCase().trim();
+    const inputDigits = walletInput.replace(/\D/g, "");
+
+    // ── Étape 1 : Recherche dans les bénéficiaires sauvegardés ──
+    const found = beneficiaries.find((b) => {
+      const storedDigits = (b.phone ?? "").replace(/\D/g, "");
+      const phoneMatch   =
+        storedDigits.length > 0 &&
+        inputDigits.length  > 0 &&
+        (storedDigits.endsWith(inputDigits) ||
+         inputDigits.endsWith(storedDigits.slice(-inputDigits.length)));
+
+      const emailMatch = b.email ? b.email.toLowerCase().includes(q) : false;
+      const nameMatch  = b.fullName ? b.fullName.toLowerCase().includes(q) : false;
+
+      return phoneMatch || emailMatch || nameMatch;
+    });
+
+    if (found) {
+      setDetectedBeneficiary(found);
+      updateCurrencyContext(found.country);
+      return;
+    }
+
+    // Aucun bénéficiaire sauvegardé trouvé → reset
+    setDetectedBeneficiary(null);
+
+    // ── Étape 2 : Fallback plateforme (debounce 450ms) ──────────
+    // Seulement si l'input ressemble à un numéro (≥ 7 chiffres)
+    if (inputDigits.length < 7) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const res = await (api.http as any).get(
+          `/users/by-phone?q=${encodeURIComponent(inputDigits)}`,
+        );
+        const platformUser = res.data;
+        if (platformUser?.id) {
+          // ── Pseudo-bénéficiaire pour réutiliser l'UI existante ──
+          // isFavorite: false = signal "utilisateur plateforme non
+          // sauvegardé" → testé dans le JSX pour le badge différencié.
+          setDetectedBeneficiary({
+            id:         platformUser.id,
+            fullName:   [platformUser.firstName, platformUser.lastName]
+                          .filter(Boolean).join(" ") || "Utilisateur",
+            phone:      platformUser.phone ?? walletInput,
+            email:      undefined as any,
+            country:    platformUser.country ?? "Sénégal",
+            city:       undefined as any,
+            isFavorite: false,
+          } as any);
+
+          if (platformUser.country) {
+            updateCurrencyContext(platformUser.country);
+          }
+        }
+      } catch {
+        // Endpoint non dispo ou erreur réseau → silent fail
+        // (l'UI retombe sur le hint "Aucun contact trouvé")
+      }
+    }, 450);
+
+    return () => clearTimeout(timer); // cleanup si l'input change avant le délai
+
   }, [walletInput, beneficiaries, mode, updateCurrencyContext]);
 
   useEffect(() => {
@@ -768,6 +854,9 @@ useEffect(() => {
   }
 
   const selectedMotif = MOTIFS.find((m) => m.label === motif);
+  // ✅ v2.10 — true si le bénéficiaire détecté est un utilisateur
+  // plateforme (non sauvegardé), false/undefined sinon
+  const isPlatformOnly = (detectedBeneficiary as any)?.isFavorite === false;
 
   return (
     <SafeAreaView style={s.safe}>
@@ -792,11 +881,11 @@ useEffect(() => {
 
         <View style={s.balanceCard}>
           <Ionicons
-            name="wallet-outline"
-            size={48}
-            color="rgba(15,23,42,0.045)"
-            style={s.balanceWatermark}
-          />
+          name="wallet"
+          size={48}
+          color="#8E562E"
+         style={s.balanceWatermark}
+        />
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
           {loadingWallet
             ? <ActivityIndicator color={C.textMuted} size="small" />
@@ -867,22 +956,57 @@ useEffect(() => {
                   </View>
 
                   {detectedBeneficiary ? (
-                    <View style={s.detectedCard}>
-                      <View style={s.detectedAvatar}>
-                        <Text style={[s.detectedAvatarTxt, { fontFamily: F.display }]}>{detectedBeneficiary.fullName[0]}</Text>
+                    <>
+                      <View style={[s.detectedCard, isPlatformOnly && s.detectedCardPlatform]}>
+                        <View style={[s.detectedAvatar, isPlatformOnly && s.detectedAvatarPlatform]}>
+                          <Text style={[
+                            s.detectedAvatarTxt, { fontFamily: F.display },
+                            isPlatformOnly && { color: C.blue },
+                          ]}>
+                            {detectedBeneficiary.fullName[0]}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[
+                            s.detectedLabel, { fontFamily: F.body },
+                            isPlatformOnly && { color: C.blue },
+                          ]}>
+                            {isPlatformOnly ? "UTILISATEUR DIRECT TRANSF'AIR" : "TROUVÉ"}
+                          </Text>
+                          <Text style={[s.detectedName,  { fontFamily: F.body }]}>{detectedBeneficiary.fullName}</Text>
+                          {detectedBeneficiary.phone && (
+                            <Text style={[s.detectedPhone, { fontFamily: F.body }]}>{detectedBeneficiary.phone}</Text>
+                          )}
+                        </View>
+                        <View style={[s.detectedCheck, isPlatformOnly && s.detectedCheckPlatform]}>
+                          <Ionicons
+                            name={isPlatformOnly ? "person-outline" : "checkmark"}
+                            size={14} color={C.white}
+                          />
+                        </View>
+                        <Text style={s.detectedFlag}>{getCountryData(detectedBeneficiary.country).flag}</Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.detectedLabel, { fontFamily: F.body }]}>TROUVÉ</Text>
-                        <Text style={[s.detectedName,  { fontFamily: F.body }]}>{detectedBeneficiary.fullName}</Text>
-                        {detectedBeneficiary.phone && (
-                          <Text style={[s.detectedPhone, { fontFamily: F.body }]}>{detectedBeneficiary.phone}</Text>
-                        )}
-                      </View>
-                      <View style={s.detectedCheck}>
-                        <Ionicons name="checkmark" size={14} color={C.white} />
-                      </View>
-                      <Text style={s.detectedFlag}>{getCountryData(detectedBeneficiary.country).flag}</Text>
-                    </View>
+
+                      {/* ✅ v2.10 — Utilisateur plateforme détecté, pas encore sauvegardé */}
+                      {isPlatformOnly && (
+                        <TouchableOpacity
+                          style={s.platformAddRow}
+                          onPress={() => router.push({
+                            pathname: "/(tabs)/beneficiaries/create",
+                            params: {
+                              phone: detectedBeneficiary.phone ?? walletInput,
+                              name:  detectedBeneficiary.fullName,
+                            },
+                          } as any)}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="person-add-outline" size={14} color={C.blue} />
+                          <Text style={[s.platformAddTxt, { fontFamily: F.body }]}>
+                            + Enregistrer comme contact
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </>
                   ) : walletInput.length >= 3 ? (
                     <View style={s.addHint}>
                       <View style={s.addHintIcon}>
@@ -1272,13 +1396,20 @@ const s = StyleSheet.create({
   clearInputBtn: { paddingHorizontal: 12 },
 
   detectedCard:      { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, backgroundColor: C.gSoft, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: C.gBorder },
+  // ✅ v2.10 — variante "utilisateur plateforme détecté, non sauvegardé"
+  detectedCardPlatform:   { backgroundColor: C.blueSoft, borderColor: "#BFDBFE" },
   detectedAvatar:    { width: 40, height: 40, borderRadius: 12, backgroundColor: `${C.g4}20`, justifyContent: "center", alignItems: "center" },
+  detectedAvatarPlatform: { backgroundColor: `${C.blue}20` },
   detectedAvatarTxt: { fontSize: 18, fontWeight: "900", color: C.g4 },
   detectedLabel:     { fontSize: 10, fontWeight: "900", color: C.g4, letterSpacing: 0.8, marginBottom: 2 },
   detectedName:      { fontSize: 14, fontWeight: "800", color: C.text },
   detectedPhone:     { fontSize: 12, color: C.textMuted, fontWeight: "600", marginTop: 2 },
   detectedCheck:     { width: 28, height: 28, borderRadius: 99, backgroundColor: C.g4, justifyContent: "center", alignItems: "center" },
+  detectedCheckPlatform:  { backgroundColor: C.blue },
   detectedFlag:      { fontSize: 24 },
+  // ✅ v2.10 — lien "Enregistrer comme contact" sous la carte plateforme
+  platformAddRow:    { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8, paddingHorizontal: 4 },
+  platformAddTxt:    { fontSize: 13, color: C.blue, fontWeight: "800" },
   addHint:     { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, padding: 12, backgroundColor: C.gSoft, borderRadius: 14, borderWidth: 1, borderColor: C.gBorder, borderStyle: "dashed" },
   addHintIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: `${C.g4}20`, justifyContent: "center", alignItems: "center" },
   addHintTxt:  { fontSize: 12, color: C.textMuted, fontWeight: "600" },

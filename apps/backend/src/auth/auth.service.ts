@@ -1,13 +1,15 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v4.6 — Direct Transf'air
-// ✅ v4.5 conservé intégralement
-// ✅ v4.6 : loginByPhone()
-//   → connexion sans mot de passe par numéro de téléphone
-//   → OTP à 4 chiffres envoyé par SMS
-//   → isolation cross-tenant identique à login()
-//   → sendOtpInternal : nouveau paramètre codeLength (4|6, défaut 6)
-//   → generateOtpCode4() ajouté dans les helpers
+// AUTH SERVICE v4.7 — Direct Transf'air
+// ✅ v4.6 conservé intégralement
+// ✅ v4.7 : Isolation portail
+//   — HttpException ajouté dans les imports
+//   — login() : portail DONIKO → SUPER_ADMIN uniquement
+//     portail société → SUPER_ADMIN bloqué
+//   — loginByPhone() : même isolation portail
+//   CORRECTIONS v4.7 :
+//   — Suppression du doublon login() v4.5 (remplacé par v4.7)
+//   — Suppression du doublon loginByPhone() v4.6 (remplacé par v4.7)
 // =========================================================
 
 import {
@@ -16,6 +18,7 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  HttpException,      // ✅ v4.7 — ajouté pour USE_COMPANY_PORTAL / USE_DEFAULT_PORTAL
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -176,7 +179,6 @@ function maskPhone(phone: string): string {
   return `${phone.substring(0, 4)}${'*'.repeat(Math.max(2, phone.length - 6))}${last2}`;
 }
 
-// OTP à 6 chiffres — connexion email/OTP global
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -212,8 +214,7 @@ export class AuthService {
   ) {}
 
   // ========================================================
-  // LOGIN — Étape 1
-  // ✅ v4.5 : accepte tenantCode pour l'isolation cross-tenant
+  // LOGIN — Étape 1 ✅ v4.7 : isolation portail
   // ========================================================
 
   async login(
@@ -239,10 +240,43 @@ export class AuthService {
     }
 
     const user = await this.validateUser(identifier, dto.password, tenantClientId);
-
     if (!user) throw new UnauthorizedException('Identifiants incorrects');
-
     if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
+
+    // ── ✅ v4.7 : Isolation portail ──────────────────────────
+    const isDefaultPortal =
+      !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
+
+    if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode:   403,
+          code:         'USE_COMPANY_PORTAL',
+          clientCode:   user.client?.code         ?? null,
+          subdomain:    user.client?.subdomain     ?? null,
+          customDomain: user.client?.customDomain  ?? null,
+          message:
+            user.client?.code
+              ? `Ce compte appartient à l'espace "${user.client.code}". ` +
+                `Connectez-vous via le portail de votre société.`
+              : `Ce compte ne peut pas se connecter via ce portail. ` +
+                `Connectez-vous via le portail de votre société.`,
+        },
+        403,
+      );
+    }
+
+    if (!isDefaultPortal && user.role === Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode: 403,
+          code:    'USE_DEFAULT_PORTAL',
+          message: `Le Super Admin doit se connecter via le portail principal Direct Transf'air.`,
+        },
+        403,
+      );
+    }
+    // ── fin isolation portail ─────────────────────────────────
 
     if (otpRequired) {
       const isPhone = isPhoneIdentifier(identifier);
@@ -364,6 +398,8 @@ export class AuthService {
   // ========================================================
   // VALIDATE USER
   // ✅ v4.5 : filtre par clientId pour isolation cross-tenant
+  // include: { client: true } → user.client.subdomain +
+  // user.client.customDomain disponibles sans modification
   // ========================================================
 
   async validateUser(
@@ -435,14 +471,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // LOGIN BY PHONE — ✅ v4.6
-  // Connexion sans mot de passe pour les utilisateurs mobiles.
-  // Envoie un OTP à 4 chiffres par SMS puis renvoie userId +
-  // numéro masqué. La vérification du code se fait via le
-  // endpoint existant POST /auth/login/verify-otp.
-  //
-  // Isolation cross-tenant : même règle que login() —
-  // un user MIROIR ne peut pas utiliser la page FLASH.
+  // LOGIN BY PHONE — ✅ v4.7 : isolation portail
   // ========================================================
 
   async loginByPhone(
@@ -452,7 +481,6 @@ export class AuthService {
     const normalized = normalizePhone(phone);
     if (!normalized) throw new BadRequestException('Numéro de téléphone invalide');
 
-    // Résolution tenant pour isolation cross-tenant
     let tenantClientId: number | null = null;
     const normalizedTenantCode = normalizeTenantCode(tenantCode);
     if (normalizedTenantCode && normalizedTenantCode !== 'DONIKO') {
@@ -464,12 +492,24 @@ export class AuthService {
     }
 
     const userWhere: any = { phone: normalized };
-    // Filtre par tenant si résolu
     if (tenantClientId) userWhere.clientId = tenantClientId;
 
     const user = await this.prisma.user.findFirst({
       where: userWhere,
-      select: { id: true, phone: true, isSuspended: true, clientId: true },
+      select: {
+        id:          true,
+        phone:       true,
+        isSuspended: true,
+        clientId:    true,
+        role:        true,
+        client: {
+          select: {
+            code:         true,
+            subdomain:    true,
+            customDomain: true,
+          },
+        },
+      },
     });
 
     if (!user) {
@@ -479,7 +519,40 @@ export class AuthService {
       throw new UnauthorizedException('Compte suspendu');
     }
 
-    // OTP à 4 chiffres pour la connexion par téléphone
+    // ── ✅ v4.7 : Isolation portail ──────────────────────────
+    const isDefaultPortal =
+      !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
+
+    if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode:   403,
+          code:         'USE_COMPANY_PORTAL',
+          clientCode:   user.client?.code         ?? null,
+          subdomain:    user.client?.subdomain     ?? null,
+          customDomain: user.client?.customDomain  ?? null,
+          message:
+            user.client?.code
+              ? `Ce compte appartient à l'espace "${user.client.code}". ` +
+                `Connectez-vous via le portail de votre société.`
+              : `Ce compte ne peut pas se connecter via ce portail.`,
+        },
+        403,
+      );
+    }
+
+    if (!isDefaultPortal && user.role === Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode: 403,
+          code:    'USE_DEFAULT_PORTAL',
+          message: `Le Super Admin doit se connecter via le portail principal Direct Transf'air.`,
+        },
+        403,
+      );
+    }
+    // ── fin isolation portail ─────────────────────────────────
+
     await this.sendOtpInternal(user.id, CommsType.SMS, OtpPurpose.LOGIN, normalized, 4);
 
     await this.audit(user.id, user.clientId, AuditAction.OTP_REQUEST, {
@@ -489,7 +562,7 @@ export class AuthService {
     });
 
     return {
-      userId: user.id,
+      userId:      user.id,
       maskedPhone: maskPhone(normalized),
     };
   }
@@ -569,7 +642,6 @@ export class AuthService {
       currency: primaryCurrency,
     });
 
-    // Email de bienvenue non-bloquant
     this.mail.sendEmail(
       email,
       "Bienvenue sur Direct Transf'air 🎉",
@@ -580,7 +652,6 @@ export class AuthService {
       this.logger.warn('Échec email bienvenue (non-bloquant)', e);
     });
 
-    // OTP de vérification non-bloquant
     this.sendOtpInternal(
       user.id,
       CommsType.EMAIL,
@@ -671,8 +742,6 @@ export class AuthService {
   // ========================================================
   // OTP — Interne
   // ✅ v4.6 : paramètre codeLength (4 | 6, défaut 6)
-  //   → 6 chiffres : usage général (email, mot de passe…)
-  //   → 4 chiffres : connexion par téléphone (loginByPhone)
   // ========================================================
 
   private async sendOtpInternal(
@@ -682,7 +751,6 @@ export class AuthService {
     recipient: string,
     codeLength: 4 | 6 = 6,
   ): Promise<void> {
-    // ✅ v4.6 : choix du générateur selon la longueur demandée
     const code = codeLength === 4 ? generateOtpCode4() : generateOtpCode();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 

@@ -1,16 +1,21 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.4
-// ✅ v4.3 conservé intégralement
-// ✅ v4.4 — FIXES BRANDING ISOLATION :
-//   1. create() : tagline / fontFamily / splashBgColor /
-//      welcomeMessage ajoutés dans tx.client.create
-//      → étaient dans le DTO mais jamais persistés en base
-//   2. findPublicByCode() : ces 4 champs ajoutés dans select
-//      + suppression du cast (as any) inutile et fragile
-//      → le /branding/:code retournait toujours null pour ces champs
-//   3. primaryColor default harmonisé : '#059669' partout
-//      (était '#F7931E' dans create, '#059669' dans findPublicByCode)
+// CLIENTS SERVICE v4.5
+// ✅ v4.4 conservé intégralement
+// ✅ v4.5 — Portail web dédié par société :
+//   1. mapPublicBranding() : helper privé partagé entre
+//      findPublicByCode() et findPublicByHost()
+//      → supprime la duplication, garantit la cohérence
+//      → retourne désormais subdomain + customDomain
+//   2. findPublicByCode() : refactorisé via mapPublicBranding()
+//      → sélectionne subdomain + customDomain en plus
+//   3. findPublicByHost(host) : NOUVEAU
+//      → recherche par customDomain exact (domaine custom)
+//      → puis par subdomain (ex: "flash" dans flash.direct-transfer.com)
+//      → puis par code comme fallback (ex: "FLASH")
+//      → appelé par GET /branding/by-host?host=flash.direct-transfer.com
+//   4. create() : persiste subdomain + customDomain depuis le DTO
+//      → normalisation : lowercase + trim sur les deux champs
 // =========================================================
 
 import {
@@ -25,6 +30,7 @@ import * as bcrypt from 'bcryptjs';
 import { CurrencyCode, KycLevel, Role, SubscriptionStatus } from '@prisma/client';
 import * as crypto from 'crypto';
 
+// ─── Constantes ──────────────────────────────────────────
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
   CurrencyCode.XOF,
   CurrencyCode.EUR,
@@ -45,6 +51,7 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
+// ─── Helpers ─────────────────────────────────────────────
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {
   if (!country) return CurrencyCode.XOF;
   const code = country.toUpperCase().trim().substring(0, 2);
@@ -57,12 +64,68 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
   return `${prefix}${suffix}`;
 }
 
+// ─── Type retour branding public ─────────────────────────
+type PublicBranding = {
+  code:           string;
+  name:           string;
+  logoUrl:        string | null;
+  primaryColor:   string;
+  secondaryColor: string;
+  tagline:        string | null;
+  fontFamily:     string | null;
+  splashBgColor:  string | null;
+  welcomeMessage: string | null;
+  subdomain:      string | null;  // ✅ v4.5
+  customDomain:   string | null;  // ✅ v4.5
+  isActive:       boolean;
+};
+
+// ─── Sélection Prisma partagée ────────────────────────────
+const PUBLIC_BRANDING_SELECT = {
+  code:           true,
+  name:           true,
+  logoUrl:        true,
+  primaryColor:   true,
+  secondaryColor: true,
+  tagline:        true,
+  fontFamily:     true,
+  splashBgColor:  true,
+  welcomeMessage: true,
+  subdomain:      true,  // ✅ v4.5
+  customDomain:   true,  // ✅ v4.5
+  isActive:       true,
+} as const;
+
 @Injectable()
 export class ClientsService {
   constructor(private prisma: PrismaService) {}
 
   // ========================================================
+  // HELPER PRIVÉ — mapping branding public ✅ v4.5
+  // Centralisé pour garantir la cohérence entre findPublicByCode()
+  // et findPublicByHost() (plus de duplication, plus de divergence)
+  // ========================================================
+
+  private mapPublicBranding(client: any): PublicBranding {
+    return {
+      code:           client.code,
+      name:           client.name,
+      logoUrl:        client.logoUrl        ?? null,
+      primaryColor:   client.primaryColor   ?? '#059669',
+      secondaryColor: client.secondaryColor ?? '#10B981',
+      tagline:        client.tagline        ?? null,
+      fontFamily:     client.fontFamily     ?? null,
+      splashBgColor:  client.splashBgColor  ?? null,
+      welcomeMessage: client.welcomeMessage ?? null,
+      subdomain:      client.subdomain      ?? null,  // ✅ v4.5
+      customDomain:   client.customDomain   ?? null,  // ✅ v4.5
+      isActive:       client.isActive,
+    };
+  }
+
+  // ========================================================
   // CRÉATION
+  // ✅ v4.5 : subdomain + customDomain persistés depuis le DTO
   // ========================================================
 
   async create(dto: CreateClientDto) {
@@ -83,8 +146,24 @@ export class ClientsService {
     if (existingUser)
       throw new ConflictException(`L'email "${dto.adminEmail}" est déjà utilisé.`);
 
-    const hashedPassword = await bcrypt.hash(String(dto.adminPassword), 10);
+    // ✅ v4.5 — Vérification unicité subdomain/customDomain avant transaction
+    if (dto.subdomain) {
+      const existingSub = await this.prisma.client.findUnique({
+        where: { subdomain: dto.subdomain.toLowerCase().trim() },
+      });
+      if (existingSub)
+        throw new ConflictException(`Le sous-domaine "${dto.subdomain}" est déjà utilisé.`);
+    }
 
+    if (dto.customDomain) {
+      const existingDomain = await this.prisma.client.findUnique({
+        where: { customDomain: dto.customDomain.toLowerCase().trim() },
+      });
+      if (existingDomain)
+        throw new ConflictException(`Le domaine "${dto.customDomain}" est déjà utilisé.`);
+    }
+
+    const hashedPassword = await bcrypt.hash(String(dto.adminPassword), 10);
     const ownerCountryCode = dto.ownerCountry?.toUpperCase().substring(0, 2);
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(ownerCountryCode);
 
@@ -95,19 +174,20 @@ export class ClientsService {
           name:               dto.name,
 
           // ─── Branding ────────────────────────────────────
-          // ✅ v4.4 : default harmonisé '#059669' (était '#F7931E')
           primaryColor:       dto.primaryColor   ?? '#059669',
           secondaryColor:     dto.secondaryColor ?? '#10B981',
           logoUrl:            dto.logoUrl        ?? null,
-          // ✅ v4.4 : 4 champs AJOUTÉS — étaient dans le DTO mais jamais
-          //           persistés, donc branding toujours identique entre sociétés
           tagline:            dto.tagline        ?? null,
           fontFamily:         dto.fontFamily     ?? null,
           splashBgColor:      dto.splashBgColor  ?? null,
           welcomeMessage:     dto.welcomeMessage ?? null,
 
+          // ─── Portail web dédié ✅ v4.5 ───────────────────
+          subdomain:    dto.subdomain?.toLowerCase().trim()    ?? null,
+          customDomain: dto.customDomain?.toLowerCase().trim() ?? null,
+
           // ─── Abonnement ──────────────────────────────────
-          subscriptionType:   dto.subscriptionType,
+          subscriptionType:   dto.subscriptionType ?? 'RENTAL',
           subscriptionStatus: SubscriptionStatus.ACTIVE,
           defaultCurrency:    primaryCurrency,
 
@@ -186,7 +266,7 @@ export class ClientsService {
   }
 
   // ========================================================
-  // LECTURE
+  // LECTURE — Liste
   // ========================================================
 
   async findAll() {
@@ -221,46 +301,65 @@ export class ClientsService {
   }
 
   // ========================================================
-  // BRANDING PUBLIC — aucune donnée sensible exposée
-  // ✅ Appelé sans auth depuis GET /branding/:code
-  // ✅ v4.4 : tous les champs branding sélectionnés
-  //           + suppression du cast (as any) fragile
+  // BRANDING PUBLIC PAR CODE
+  // ✅ v4.5 : refactorisé via mapPublicBranding() + subdomain/customDomain
   // ========================================================
 
-  async findPublicByCode(code: string) {
+  async findPublicByCode(code: string): Promise<PublicBranding | null> {
     const client = await this.prisma.client.findFirst({
       where: { code: code.toUpperCase(), isActive: true },
-      select: {
-        code:           true,
-        name:           true,
-        logoUrl:        true,
-        primaryColor:   true,
-        secondaryColor: true,
-        // ✅ v4.4 : champs branding ajoutés — existaient dans le schéma
-        //           mais n'étaient pas sélectionnés → toujours null côté frontend
-        tagline:        true,
-        fontFamily:     true,
-        splashBgColor:  true,
-        welcomeMessage: true,
-        isActive:       true,
-      },
+      select: PUBLIC_BRANDING_SELECT,
     });
 
     if (!client) return null;
+    return this.mapPublicBranding(client);
+  }
 
-    // ✅ v4.4 : plus de cast (as any) — tous les champs sont typés Prisma
-    return {
-      code:           client.code,
-      name:           client.name,
-      logoUrl:        client.logoUrl        ?? null,
-      primaryColor:   client.primaryColor   ?? '#059669',
-      secondaryColor: client.secondaryColor ?? '#10B981',
-      tagline:        client.tagline        ?? null,
-      fontFamily:     client.fontFamily     ?? null,
-      splashBgColor:  client.splashBgColor  ?? null,
-      welcomeMessage: client.welcomeMessage ?? null,
-      isActive:       client.isActive,
-    };
+  // ========================================================
+  // BRANDING PUBLIC PAR HOSTNAME — ✅ v4.5 NOUVEAU
+  // Appelé par GET /branding/by-host?host=flash.direct-transfer.com
+  //
+  // Stratégie de résolution (dans l'ordre) :
+  //   1. customDomain exact  → "www.flash-transfer.com"
+  //   2. subdomain extrait   → "flash" de "flash.direct-transfer.com"
+  //   3. code = subdomain    → fallback si subdomain non renseigné mais code = sous-domaine
+  //
+  // Sécurité : isActive: true → sociétés suspendues bloquées à la source
+  // ========================================================
+
+  async findPublicByHost(host: string): Promise<PublicBranding | null> {
+    const normalizedHost = host.toLowerCase().trim();
+
+    // Extraire le sous-domaine potentiel : "flash" depuis "flash.direct-transfer.com"
+    const parts = normalizedHost.split('.');
+    // Un sous-domaine valide = premier segment si le host a ≥ 3 parties et le premier n'est pas "www"
+    const extractedSub =
+      parts.length >= 3 && parts[0] !== 'www' ? parts[0] : null;
+
+    const orConditions: any[] = [
+      // Priorité 1 : domaine custom exact
+      { customDomain: normalizedHost },
+    ];
+
+    if (extractedSub) {
+      // Priorité 2 : sous-domaine Prisma
+      orConditions.push({ subdomain: extractedSub });
+      // Priorité 3 : code société = sous-domaine (fallback rétrocompat)
+      orConditions.push({ code: extractedSub.toUpperCase() });
+    }
+
+    const client = await this.prisma.client.findFirst({
+      where: {
+        isActive: true,
+        OR: orConditions,
+      },
+      // Priorité customDomain > subdomain > code : ordonné par pertinence
+      orderBy: { createdAt: 'asc' },
+      select: PUBLIC_BRANDING_SELECT,
+    });
+
+    if (!client) return null;
+    return this.mapPublicBranding(client);
   }
 
   // ========================================================
@@ -285,6 +384,14 @@ export class ClientsService {
         ?.toUpperCase()
         .substring(0, 2);
       updateData.defaultCurrency = getCurrencyFromCountry(countryCode);
+    }
+
+    // ✅ v4.5 : normaliser subdomain/customDomain si fournis
+    if (updateData.subdomain) {
+      updateData.subdomain = String(updateData.subdomain).toLowerCase().trim() || null;
+    }
+    if (updateData.customDomain) {
+      updateData.customDomain = String(updateData.customDomain).toLowerCase().trim() || null;
     }
 
     return this.prisma.client.update({ where: { id }, data: updateData });

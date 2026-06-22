@@ -1,13 +1,15 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.2
-// ✅ v5.1 : paddingBottom 40 → 120
-// ✅ v5.2 :
-//    - Fix danse clavier : ScrollView normal + Animated.View intérieur
-//      (Animated.ScrollView causait une boucle à chaque focus de champ)
-//    - CityPicker modal pour le champ Ville dans "Adresse de Résidence"
-//      (si des villes sont disponibles pour le pays sélectionné)
-//    - Changement de pays → ville réinitialisée si elle n'est plus dispo
+// PERSONAL INFO — CLIENT (WALLET) v5.3
+// ✅ v5.2 conservé intégralement
+// ✅ v5.3 : Fond blanc neutre — plus de vert sur les fonds
+//   - T.bg      : "#ECFDF5" → "#FAFAFA" (blanc cassé neutre)
+//   - T.surfaceAlt : "#F0FDF4" → "#F5F5F5" (gris clair neutre)
+//   - T.border  : "#A7F3D0" → "#E5E5EA" (bordure neutre)
+//   - accentSoft : "#D1FAE5" → conservé uniquement sur éléments actifs
+//   - StatusBar → backgroundColor blanc
+//   - Header    → fond blanc, bordure neutre
+//   - SectionCard → bordure neutre
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -23,15 +25,15 @@ import { api }    from "../../../services/api";
 import { COUNTRIES }        from "../../../utils/countries";
 import { citiesByCountry }  from "../../../data/cities";
 
-// ─── Design tokens ────────────────────────────────────────
+// ─── Design tokens — ✅ v5.3 : fonds neutres ──────────────
 const T = {
-  bg:          "#ECFDF5",
+  bg:          "#FAFAFA",    // ✅ était "#ECFDF5" (vert pâle)
   surface:     "#FFFFFF",
-  surfaceAlt:  "#F0FDF4",
-  border:      "#A7F3D0",
-  borderFocus: "#059669",
+  surfaceAlt:  "#F5F5F5",   // ✅ était "#F0FDF4" (vert pâle)
+  border:      "#E5E5EA",   // ✅ était "#A7F3D0" (vert)
+  borderFocus: "#059669",   // conservé — accent interactif
   accent:      "#059669",
-  accentSoft:  "#D1FAE5",
+  accentSoft:  "#D1FAE5",   // conservé — uniquement sur badges/avatars actifs
   accentText:  "#065F46",
   text:        "#0F172A",
   textSub:     "#374151",
@@ -81,7 +83,7 @@ const fS = StyleSheet.create({
   inputDisabled: { color: T.textSub },
 });
 
-// ─── CountryPicker (pays — liste texte via COUNTRIES) ──────
+// ─── CountryPicker ────────────────────────────────────────
 function CountryPicker({ label, value, onChange, editable }: any) {
   const [visible, setVisible] = useState(false);
   const [q, setQ] = useState("");
@@ -257,9 +259,19 @@ function SectionCard({ icon, title, children }: { icon: string; title: string; c
   );
 }
 const sC = StyleSheet.create({
-  card:    { backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 6, elevation: 1 },
+  card:    {
+    backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14,
+    // ✅ v5.3 : bordure neutre (était verte)
+    borderWidth: 1.5, borderColor: T.border,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
+  },
   header:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  iconBox: { width: 28, height: 28, borderRadius: 8, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center" },
+  iconBox: {
+    width: 28, height: 28, borderRadius: 8,
+    // ✅ v5.3 : icône sur fond vert pâle conservé car élément de couleur intentionnelle
+    backgroundColor: T.accentSoft,
+    justifyContent: "center", alignItems: "center",
+  },
   title:   { fontSize: 11, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
 });
 
@@ -372,13 +384,15 @@ export default function PersonalInfoWallet() {
   };
 
   // ── Villes disponibles pour le pays de résidence ✅ v5.2
-  const residenceCities  = citiesByCountry[country] ?? [];
+  const residenceCities  = (citiesByCountry as any)[country] ?? [];
   const showCityPicker   = isEditing && residenceCities.length > 0;
 
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 
   return (
+    // ✅ v5.3 : fond blanc neutre (était vert pâle)
     <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
+      {/* ✅ v5.3 : StatusBar sombre sur fond blanc */}
       <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
       {/* Header */}
@@ -398,13 +412,13 @@ export default function PersonalInfoWallet() {
         </TouchableOpacity>
       </View>
 
-      {/* ✅ Fix danse clavier : ScrollView normal + Animated.View intérieur */}
+      {/* ✅ v5.2 Fix danse clavier : ScrollView normal + Animated.View intérieur */}
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: 20,
             paddingTop: 16,
-            paddingBottom: 120,  // espace tab bar flottante
+            paddingBottom: 120,
           }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -489,7 +503,7 @@ export default function PersonalInfoWallet() {
                 value={country}
                 onChange={(newCountry: string) => {
                   setCountry(newCountry);
-                  const cities = citiesByCountry[newCountry] ?? [];
+                  const cities = (citiesByCountry as any)[newCountry] ?? [];
                   if (city && cities.length > 0 && !cities.includes(city)) setCity("");
                 }}
                 editable={isEditing}
@@ -522,32 +536,70 @@ export default function PersonalInfoWallet() {
 }
 
 const s = StyleSheet.create({
+  // ✅ v5.3 : header blanc neutre (était bg vert pâle)
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 20,
     paddingTop:    Platform.OS === "android" ? 44 : 16,
     paddingBottom: 16,
     gap: 12,
-    backgroundColor: T.surface,
-    borderBottomWidth: 1, borderBottomColor: T.border,
+    backgroundColor: "#FFFFFF",
+    // ✅ v5.3 : bordure neutre (était verte)
+    borderBottomWidth: 1, borderBottomColor: "#E5E5EA",
   },
-  backBtn:       { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  backBtn:       {
+    width: 38, height: 38, borderRadius: T.radius.sm,
+    // ✅ v5.3 : fond neutre (était vert pâle)
+    backgroundColor: "#F5F5F5",
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: "#E5E5EA",
+  },
   headerTitle:   { color: T.text, fontSize: 17, fontWeight: "700" },
   headerSub:     { color: T.textDim, fontSize: 12, marginTop: 1 },
-  editBtn:       { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  editBtn:       {
+    width: 38, height: 38, borderRadius: T.radius.sm,
+    backgroundColor: T.accentSoft,
+    justifyContent: "center", alignItems: "center",
+    // ✅ v5.3 : bordure neutre
+    borderWidth: 1, borderColor: "#E5E5EA",
+  },
   editBtnCancel: { backgroundColor: T.redSoft, borderColor: T.redBorder },
 
-  avatarCard:   { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14, borderWidth: 1.5, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
-  avatarCircle: { width: 56, height: 56, borderRadius: 28, backgroundColor: T.accentSoft, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: T.borderFocus },
+  // ✅ v5.3 : carte avatar — bordure neutre
+  avatarCard:   {
+    flexDirection: "row", alignItems: "center", gap: 14,
+    backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14,
+    borderWidth: 1.5, borderColor: T.border,
+    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+  },
+  avatarCircle: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: T.accentSoft,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 2, borderColor: T.borderFocus,
+  },
   avatarText:   { fontSize: 20, fontWeight: "700", color: T.accentText },
   name:         { fontSize: 17, fontWeight: "700", color: T.text },
   emailText:    { fontSize: 12, color: T.textSub, marginTop: 2 },
-  badge:        { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, backgroundColor: T.accentSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, alignSelf: "flex-start" },
+  badge:        {
+    flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6,
+    backgroundColor: T.accentSoft,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 99, alignSelf: "flex-start",
+  },
   badgeText:    { fontSize: 10, fontWeight: "700", color: T.accentText, letterSpacing: 0.5 },
 
-  infoBanner: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: T.infoSoft, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: "#BAE6FD", marginBottom: 14 },
+  infoBanner: {
+    flexDirection: "row", alignItems: "flex-start", gap: 10,
+    backgroundColor: T.infoSoft, borderRadius: T.radius.md,
+    padding: 14, borderWidth: 1, borderColor: "#BAE6FD", marginBottom: 14,
+  },
   infoText:   { flex: 1, color: T.info, fontSize: 12, fontWeight: "600", lineHeight: 18 },
 
-  saveBtn: { backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4 },
+  saveBtn: {
+    backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 16,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
+    shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4,
+  },
   saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 });

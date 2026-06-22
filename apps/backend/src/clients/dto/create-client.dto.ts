@@ -1,9 +1,12 @@
 // apps/backend/src/clients/dto/create-client.dto.ts
 // =========================================================
-// CREATE CLIENT DTO v2.1
-// ✅ FIX: contactPhone, contactEmail ajoutés (manquaient)
-// ✅ FIX: adminEmail + adminPassword requis (non optionnels)
-// ✅ Champs branding : logoUrl, primaryColor, secondaryColor
+// CREATE CLIENT DTO v2.2
+// ✅ v2.1 conservé intégralement
+// ✅ v2.2 : subdomain + customDomain ajoutés
+//   - subdomain : "flash" → flash.direct-transfer.com
+//     Validation : minuscules, chiffres, tirets uniquement
+//   - customDomain : "www.flash-transfer.com"
+//     Validation : format domaine valide
 // =========================================================
 
 import {
@@ -30,12 +33,16 @@ export class CreateClientDto {
 
   @IsOptional()
   @IsString()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'primaryColor doit être une couleur hex valide ex: #059669' })
+  @Matches(/^#[0-9A-Fa-f]{6}$/, {
+    message: 'primaryColor doit être une couleur hex valide ex: #059669',
+  })
   primaryColor?: string;
 
   @IsOptional()
   @IsString()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'secondaryColor doit être une couleur hex valide ex: #10B981' })
+  @Matches(/^#[0-9A-Fa-f]{6}$/, {
+    message: 'secondaryColor doit être une couleur hex valide ex: #10B981',
+  })
   secondaryColor?: string;
 
   @IsOptional()
@@ -53,6 +60,29 @@ export class CreateClientDto {
   @IsOptional()
   @IsString()
   welcomeMessage?: string;
+
+  // ═══ PORTAIL WEB DÉDIÉ ✅ v2.2 ═══════════════════════════
+  // Sous-domaine auto : "flash" → flash.direct-transfer.com
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/, {
+    message:
+      'subdomain: minuscules/chiffres/tirets uniquement, 3–32 caractères, ' +
+      'sans tiret en début ou fin. Ex: "flash", "miroir-transfer"',
+  })
+  subdomain?: string;
+
+  // Domaine personnalisé : "www.flash-transfer.com"
+  @IsOptional()
+  @IsString()
+  @Matches(
+    /^(www\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/,
+    {
+      message:
+        'customDomain invalide. Ex: "www.flash-transfer.com" ou "flash-transfer.com"',
+    },
+  )
+  customDomain?: string;
 
   // ═══ COORDONNÉES SOCIÉTÉ ═════════════════════════════════
   @IsOptional()
@@ -83,7 +113,6 @@ export class CreateClientDto {
   @IsString()
   activitySector?: string;
 
-  // ✅ FIX — champs manquants dans l'ancien DTO
   @IsOptional()
   @IsString()
   contactPhone?: string;
@@ -131,7 +160,6 @@ export class CreateClientDto {
   representativeName?: string;
 
   // ═══ ADMIN À CRÉER (COMPANY_ADMIN) ═══════════════════════
-  // ✅ Requis — sans ça la création échoue
   @IsEmail()
   @IsNotEmpty()
   adminEmail: string;

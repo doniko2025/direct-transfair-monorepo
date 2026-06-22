@@ -1,15 +1,24 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.2 → v4.3
-// ✅ v4.0-4.2 : findAll, findByEmail, findById, create, update
-//               + CurrencyCode enum cast, getCurrencyFromCountry
-// ✅ v4.3 : Ajout des 3 méthodes manquantes pour le controller v4.1 :
-//   - suspend(id, reason)   → isSuspended=true + horodatage
-//   - reactivate(id)        → isSuspended=false + nettoyage raison
-//   - softDelete(id)        → deletedAt + isActive=false (données conservées)
-//   - serializeForAdmin(user) → sérialisation complète pour la fiche admin
+// USERS SERVICE v4.4
+// ✅ v4.0-4.3 : findAll, findByEmail, findById, create, update,
+//               suspend, reactivate, softDelete, serializeForAdmin
+// ✅ v4.4 : Ajout findByPhoneInTenant()
+//   PROBLÈME RÉSOLU :
+//   Dans send.tsx, la saisie d'un numéro de téléphone ne détectait
+//   que les bénéficiaires SAUVEGARDÉS (getBeneficiaries).
+//   Si l'utilisateur est inscrit sur la plateforme mais pas encore
+//   sauvegardé comme bénéficiaire, il n'était jamais trouvé.
 //
-//   AUCUNE modification des méthodes existantes.
+//   CORRECTIF :
+//   Nouvelle méthode qui cherche un utilisateur par numéro de téléphone
+//   dans le même tenant (clientId), scopée à isActive=true uniquement.
+//   Normalise l'entrée en gardant uniquement les chiffres, puis cherche
+//   en base via une correspondance de fin de chaîne (suffix) pour gérer
+//   les numéros avec/sans indicatif (+221, 00221, 221…).
+//   Retourne uniquement les champs publics nécessaires au formulaire
+//   d'envoi (id, firstName, lastName, phone, country, primaryCurrency).
+//   Jamais l'email, le mot de passe, le KYC ou les wallets.
 // =========================================================
 
 import { Injectable, NotFoundException } from '@nestjs/common';
@@ -36,7 +45,6 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
-// ✅ Gère les noms complets en plus des codes ISO (inchangé v4.2)
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {
   if (!country) return CurrencyCode.XOF;
   const raw = country.trim();
@@ -156,7 +164,7 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // findById (inchangé v4.2) — utilisé par le controller v4.1
+  // findById (inchangé v4.2)
   // ──────────────────────────────────────────────────────
   async findById(id: string) {
     return this.prisma.user.findUnique({
@@ -170,6 +178,82 @@ export class UsersService {
         },
       },
     });
+  }
+
+  // ──────────────────────────────────────────────────────
+  // ✅ v4.4 — findByPhoneInTenant
+  //
+  // Recherche un utilisateur actif par numéro de téléphone
+  // dans le même tenant (clientId).
+  //
+  // Stratégie de normalisation :
+  //   - On ne garde que les chiffres de l'input (ex: "775099993")
+  //   - On cherche en base les users dont le téléphone CONTIENT
+  //     cette séquence (covers +221775099993, 00221775099993…)
+  //   - On filtre ensuite en JS avec une vérification de suffixe
+  //     pour éviter les faux positifs (ex: "09993" dans "09993456")
+  //
+  // Retourne uniquement les champs publics nécessaires au formulaire
+  // d'envoi (pas d'email, pas de wallets, pas de KYC).
+  // ──────────────────────────────────────────────────────
+  async findByPhoneInTenant(
+    phone: string,
+    clientId: number,
+  ): Promise<{
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    phone: string | null;
+    country: string | null;
+    primaryCurrency: string;
+  } | null> {
+    // Ne garder que les chiffres (ex: "+221 77 509 9993" → "221775099993")
+    const digits = phone.replace(/\D/g, '');
+
+    if (digits.length < 6) return null;
+
+    // Requête large : Prisma ne supporte pas nativement LIKE avec suffix,
+    // on filtre donc côté JS sur les résultats (<20 résultats attendus)
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        clientId,
+        isActive:  true,
+        deletedAt: null,
+        phone: {
+          not: null,
+          // Contient la séquence de chiffres (coverage large)
+          contains: digits.length >= 7 ? digits.slice(-7) : digits,
+        },
+      },
+      select: {
+        id:              true,
+        firstName:       true,
+        lastName:        true,
+        phone:           true,
+        country:         true,
+        primaryCurrency: true,
+      },
+      take: 10, // Sécurité : jamais plus de 10 candidats
+    });
+
+    // Vérification précise côté JS : le téléphone stocké doit se TERMINER
+    // par les chiffres saisis (évite les faux positifs entre numéros similaires)
+    const match = candidates.find((u) => {
+      if (!u.phone) return false;
+      const storedDigits = u.phone.replace(/\D/g, '');
+      return storedDigits.endsWith(digits) || digits.endsWith(storedDigits.slice(-digits.length));
+    });
+
+    if (!match) return null;
+
+    return {
+      id:              match.id,
+      firstName:       match.firstName,
+      lastName:        match.lastName,
+      phone:           match.phone,
+      country:         match.country,
+      primaryCurrency: String(match.primaryCurrency ?? 'XOF'),
+    };
   }
 
   // ──────────────────────────────────────────────────────
@@ -226,9 +310,7 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.3 — suspend
-  // Marque le compte comme suspendu avec une raison optionnelle.
-  // N'affecte pas les wallets ni les transactions existantes.
+  // ✅ v4.3 — suspend (inchangé)
   // ──────────────────────────────────────────────────────
   async suspend(id: string, reason?: string) {
     const user = await this.prisma.user.findUnique({
@@ -258,8 +340,7 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.3 — reactivate
-  // Remet le compte en état actif, efface la raison de suspension.
+  // ✅ v4.3 — reactivate (inchangé)
   // ──────────────────────────────────────────────────────
   async reactivate(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -289,12 +370,7 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.3 — softDelete
-  // Soft delete conforme RGPD/fintech :
-  //   - deletedAt → horodatage de suppression
-  //   - isActive  → false (compte inaccessible)
-  // Les données (transactions, wallets) sont conservées pour
-  // la traçabilité réglementaire et l'audit financier.
+  // ✅ v4.3 — softDelete (inchangé)
   // ──────────────────────────────────────────────────────
   async softDelete(id: string) {
     const user = await this.prisma.user.findUnique({
@@ -303,7 +379,6 @@ export class UsersService {
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    // Idempotent : déjà supprimé → on retourne l'état actuel
     if (user.deletedAt) {
       return {
         id,
@@ -318,7 +393,7 @@ export class UsersService {
       data: {
         deletedAt:   new Date(),
         isActive:    false,
-        isSuspended: true, // Empêche toute connexion résiduelle
+        isSuspended: true,
       },
       select: {
         id: true,
@@ -338,9 +413,7 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.3 — serializeForAdmin
-  // Prépare la réponse complète pour la fiche admin :
-  // balances numériques, champs sensibles exclus (password, otpCode…)
+  // ✅ v4.3 — serializeForAdmin (inchangé)
   // ──────────────────────────────────────────────────────
   serializeForAdmin(user: any) {
     const {
