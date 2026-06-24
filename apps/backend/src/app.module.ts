@@ -1,27 +1,30 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v4.3
-// ✅ v4.1 : LimitsModule ajouté
-// ✅ v4.2 : LocationsModule ajouté (endpoint public GET /locations)
-// ✅ v4.3 : 'branding' et 'branding/(.*)' exclus du TenantMiddleware
-//   → L'endpoint GET /branding/:code est appelé AVANT que le tenant
-//     soit connu (chargement du login). S'il passe par le middleware,
-//     ce dernier tente de résoudre un tenant depuis x-tenant-id=DONIKO,
-//     ce qui peut échouer ou retourner le mauvais contexte.
-//   → Exclure branding garantit que chaque société retourne son propre
-//     logo/couleur sans interférence du middleware tenant.
+// APP MODULE v4.5
+// ✅ v4.4 : exclusion auth/v2/(.*) du TenantMiddleware
+// ✅ v4.5 : ThrottlerModule global — rate limiting par IP
+//   Prérequis : npm install @nestjs/throttler
+//
+//   3 niveaux configurés :
+//   — default : 100 req / 60s  (APIs normales)
+//   — auth    :   5 req / 60s  (login, register → @Throttle sur controller)
+//   — otp     :  10 req /  1h  (envoi OTP → @Throttle sur controller)
+//
+//   APP_GUARD ThrottlerGuard appliqué globalement.
+//   Exempter une route : @SkipThrottle() sur le handler.
 // =========================================================
 
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'; // ✅ v4.5
+import { APP_GUARD }    from '@nestjs/core';                          // ✅ v4.5
 
 import { PrismaModule }   from './prisma/prisma.module';
 import { PlatformModule } from './platform/platform.module';
-
-import { MailModule } from './mail/mail.module';
-import { SmsModule }  from './sms/sms.module';
-import { PushModule } from './push/push.module';
+import { MailModule }     from './mail/mail.module';
+import { SmsModule }      from './sms/sms.module';
+import { PushModule }     from './push/push.module';
 
 import { NotificationsModule }      from './notifications/notifications.module';
 import { UsersModule }              from './users/users.module';
@@ -42,22 +45,39 @@ import { RateAlertsModule }         from './rate-alerts/rate-alerts.module';
 import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
 
-import { TenantMiddleware } from './tenants/tenant.middleware';
+import { TenantMiddleware }        from './tenants/tenant.middleware';
 import { ExchangeRatesController } from './exchange-rates/exchange-rates.controller';
-import { ExchangeRatesService } from './exchange-rates/exchange-rates.service';
+import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
 
+    // ✅ v4.5 : Rate limiting global par IP
+    ThrottlerModule.forRoot([
+      {
+        name:  'default',
+        ttl:   60_000,   // 1 minute
+        limit: 100,      // 100 req/min → APIs standard
+      },
+      {
+        name:  'auth',
+        ttl:   60_000,   // 1 minute
+        limit: 5,        // 5 req/min → login, register (voir v2-auth.controller.ts)
+      },
+      {
+        name:  'otp',
+        ttl:   3_600_000, // 1 heure
+        limit: 10,        // 10/h → envoi OTP (couche IP en plus du rate limit service)
+      },
+    ]),
+
     PrismaModule,
     PlatformModule,
-
     MailModule,
     SmsModule,
     PushModule,
-
     NotificationsModule,
     UsersModule,
     ClientsModule,
@@ -70,7 +90,6 @@ import { ExchangeRatesService } from './exchange-rates/exchange-rates.service';
     RatesModule,
     AgenciesModule,
     CommissionsModule,
-
     WalletsModule,
     TreasuryModule,
     ScheduledTransfersModule,
@@ -78,36 +97,34 @@ import { ExchangeRatesService } from './exchange-rates/exchange-rates.service';
     LimitsModule,
     LocationsModule,
   ],
+
   controllers: [ExchangeRatesController],
-  providers: [ExchangeRatesService],
+
+  providers: [
+    ExchangeRatesService,
+    // ✅ v4.5 : ThrottlerGuard appliqué globalement sur toutes les routes
+    {
+      provide:  APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(TenantMiddleware)
       .exclude(
-        // Auth publique
         'auth/login',
         'auth/register',
         'auth/refresh',
-
-        // ✅ v4.3 : branding exclu — appelé AVANT que le tenant soit connu
-        // GET /branding/:code doit fonctionner sans x-tenant-id valide
-        // sinon le middleware échoue et le login de chaque société
-        // retombe sur le branding par défaut (DONIKO)
+        'auth/v2/(.*)',       // ✅ v4.4
         'branding',
-        'branding/(.*)',
-
-        // Infra
+        'branding/(.*)',      // ✅ v4.3
         'swagger',
         'swagger/(.*)',
         'health',
-
-        // Admin plateforme
         'admin/tenants',
         'admin/tenants/(.*)',
-
-        // Locations publiques
         'locations',
         'locations/(.*)',
       )

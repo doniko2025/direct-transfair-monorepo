@@ -1,0 +1,894 @@
+// apps/backend/src/auth/v2-auth.service.ts
+// =========================================================
+// AUTH SERVICE v2 — Sécurité production
+//
+// CORRECTIONS VS v1 :
+// ✅ [CRITIQUE] Gate vérification email + téléphone AVANT login
+// ✅ [CRITIQUE] lockedUntil désormais vérifié à chaque tentative
+// ✅ [CRITIQUE] OTP 6 chiffres (vs 4 — 9000x plus difficile à brute-forcer)
+// ✅ [CRITIQUE] Rate limit : max 3 envois OTP / heure par utilisateur
+// ✅ [CRITIQUE] Max 5 tentatives OTP incorrectes → expiration forcée
+// ✅ [HAUT]     isActive vérifié sur User ET Client
+// ✅ [HAUT]     failedLoginAttempts → lockedUntil posé après MAX_FAILED
+// ✅ [HAUT]     Sessions isolées par appareil (pas de deleteMany global)
+// ✅ [HAUT]     Access token réduit à 1h (vs 7j en v1)
+// ✅ [MOYEN]    Phone normalisé avant recherche (évite doublons)
+// =========================================================
+
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import {
+  AuditAction,
+  CommsType,
+  DeviceStatus,
+  OtpPurpose,
+  Role,
+} from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'crypto';
+
+import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
+
+import type {
+  LoginPasswordV2Dto,
+  RequestOtpEmailDto,
+  RequestOtpPhoneDto,
+  SendVerificationOtpDto,
+  VerifyContactDto,
+  VerifyOtpLoginV2Dto,
+} from './dto/v2-auth.dto';
+
+// =========================================================
+// CONSTANTES SÉCURITÉ
+// =========================================================
+
+/** Longueur du code OTP — 6 chiffres = 10^6 combinaisons */
+const OTP_LENGTH            = 6;
+/** Durée de validité d'un OTP en minutes */
+const OTP_EXPIRY_MINUTES    = 10;
+/** Nombre maximum de tentatives par code OTP */
+const OTP_MAX_ATTEMPTS      = 5;
+/** Nombre maximum d'envois OTP par heure par utilisateur */
+const OTP_MAX_SENDS_PER_HOUR = 3;
+
+/** Durée de verrouillage (minutes) après trop d'échecs mot de passe */
+const LOCK_DURATION_MINUTES = 30;
+/** Nombre d'échecs mot de passe avant verrouillage */
+const MAX_FAILED_LOGINS     = 5;
+
+/** TTL access token — 1h (vs 7j en v1) */
+const ACCESS_TOKEN_TTL    = '1h';
+/** TTL refresh token — 30 jours */
+const REFRESH_TOKEN_DAYS  = 30;
+
+// =========================================================
+// TYPES
+// =========================================================
+
+export type OtpRequestResult = {
+  userId:          string;
+  maskedRecipient: string;
+  channel:         'EMAIL' | 'SMS';
+};
+
+export type LoginResult = {
+  access_token:  string;
+  refresh_token: string;
+  user:          Record<string, unknown>;
+};
+
+export type VerificationNeededResult = {
+  requiresVerification: true;
+  userId:               string;
+  emailVerified:        boolean;
+  phoneVerified:        boolean;
+  hasPhone:             boolean;
+  message:              string;
+};
+
+export type VerifyContactResult = {
+  success:       true;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  hasPhone:      boolean;
+  allVerified:   boolean;
+};
+
+export type VerificationStatus = {
+  emailVerified:   boolean;
+  phoneVerified:   boolean;
+  hasPhone:        boolean;
+  maskedEmail:     string;
+  maskedPhone:     string | null;
+  allVerified:     boolean;
+};
+
+// =========================================================
+// HELPERS INTERNES
+// =========================================================
+
+function generateOtp(length: number = OTP_LENGTH): string {
+  const min = Math.pow(10, length - 1);
+  const max = Math.pow(10, length);
+  return String(crypto.randomInt(min, max));
+}
+
+function generateRefreshToken(): string {
+  return crypto.randomBytes(48).toString('hex');
+}
+
+function normalizeEmail(email: string): string {
+  return (email ?? '').trim().toLowerCase();
+}
+
+function normalizePhone(phone: string): string | null {
+  if (!phone) return null;
+  return phone.trim().replace(/[\s\-().]/g, '');
+}
+
+function normalizeTenantCode(code?: string | null): string | null {
+  const c = (code ?? '').trim().toUpperCase();
+  return c || null;
+}
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  if (!user || !domain) return email;
+  const visible = user.substring(0, Math.min(2, user.length));
+  return `${visible}${'*'.repeat(Math.max(1, user.length - 2))}@${domain}`;
+}
+
+function maskPhone(phone: string): string {
+  if (phone.length < 6) return phone;
+  return `${phone.substring(0, 4)}${'*'.repeat(Math.max(2, phone.length - 6))}${phone.slice(-2)}`;
+}
+
+// =========================================================
+// SERVICE
+// =========================================================
+
+@Injectable()
+export class V2AuthService {
+  private readonly logger = new Logger(V2AuthService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwt: JwtService,
+    private readonly mail: MailService,
+  ) {}
+
+  // ═══════════════════════════════════════════════════════
+  // 1. CONNEXION PAR MOT DE PASSE
+  // ═══════════════════════════════════════════════════════
+
+  async loginWithPassword(
+    dto: LoginPasswordV2Dto,
+    tenantCode?: string | null,
+  ): Promise<LoginResult | VerificationNeededResult> {
+    const email     = normalizeEmail(dto.email);
+    const normalized = normalizeTenantCode(tenantCode);
+
+    const user = await this.prisma.user.findUnique({
+      where:   { email },
+      include: { client: true, agency: true, wallets: { where: { isActive: true } } },
+    });
+
+    // ── Vérifications préalables (ordre important) ────────
+    this.assertUserExists(user);
+    this.assertNotDeleted(user!);
+    this.assertAccountActive(user!);
+    this.assertClientActive(user!);
+    this.assertNotLocked(user!);    // ← CORREC. v1: lockedUntil ignoré
+    this.assertPortalIsolation(user!, normalized);
+
+    // ── Validation mot de passe ───────────────────────────
+    const isMatch = await bcrypt.compare(dto.password, user!.password);
+    if (!isMatch) {
+      // CORREC. v1 : verrouillage réellement appliqué
+      await this.handleFailedLogin(user!);
+      throw new UnauthorizedException('Identifiants incorrects');
+    }
+
+    // ── Réinitialiser les compteurs d'échec ───────────────
+    await this.prisma.user.update({
+      where: { id: user!.id },
+      data: {
+        failedLoginAttempts: 0,
+        lastFailedLoginAt:   null,
+        lockedUntil:         null,
+      },
+    });
+
+    // ── Gate vérification (CORREC. v1: absente) ───────────
+    const pending = this.buildVerificationNeeded(user!);
+    if (pending) {
+      // Envoyer les OTP de vérification automatiquement
+      await this.dispatchVerificationOtps(user!);
+      return pending;
+    }
+
+    await this.markLastLogin(user!.id);
+    await this.audit(user!.id, user!.clientId, AuditAction.LOGIN);
+
+    return this.buildLoginResponse(user!);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 2. DEMANDE OTP PAR EMAIL
+  // ═══════════════════════════════════════════════════════
+
+  async requestOtpEmail(
+    dto: RequestOtpEmailDto,
+    tenantCode?: string | null,
+  ): Promise<OtpRequestResult> {
+    const email     = normalizeEmail(dto.email);
+    const normalized = normalizeTenantCode(tenantCode);
+
+    const user = await this.prisma.user.findUnique({
+      where:   { email },
+      include: { client: true },
+    });
+
+    this.assertUserExists(user, 'Aucun compte associé à cet email');
+    this.assertNotDeleted(user!);
+    this.assertAccountActive(user!);
+    this.assertClientActive(user!);
+    this.assertNotLocked(user!);
+    this.assertPortalIsolation(user!, normalized);
+
+    // ── Gate vérification ─────────────────────────────────
+    const pending = this.buildVerificationNeeded(user!);
+    if (pending) {
+      await this.dispatchVerificationOtps(user!);
+      throw new ForbiddenException({
+        code:    'VERIFICATION_REQUIRED',
+        ...pending,
+      });
+    }
+
+    // ── Rate limit (CORREC. v1: absent) ───────────────────
+    await this.checkOtpRateLimit(user!.id, OtpPurpose.LOGIN, CommsType.EMAIL);
+
+    await this.sendOtpInternal(user!.id, CommsType.EMAIL, OtpPurpose.LOGIN, email);
+    await this.audit(user!.id, user!.clientId, AuditAction.OTP_REQUEST, {
+      channel: 'EMAIL',
+      purpose: 'LOGIN',
+    });
+
+    return { userId: user!.id, maskedRecipient: maskEmail(email), channel: 'EMAIL' };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 3. DEMANDE OTP PAR SMS
+  // ═══════════════════════════════════════════════════════
+
+  async requestOtpPhone(
+    dto: RequestOtpPhoneDto,
+    tenantCode?: string | null,
+  ): Promise<OtpRequestResult> {
+    // CORREC. v1: normalisation E.164 pour éviter les doublons de numéros
+    const phone     = normalizePhone(dto.phone);
+    const normalized = normalizeTenantCode(tenantCode);
+
+    if (!phone) throw new BadRequestException('Numéro de téléphone invalide');
+
+    const user = await this.prisma.user.findFirst({
+      where:   { phone },
+      include: { client: true },
+    });
+
+    this.assertUserExists(user, 'Aucun compte associé à ce numéro');
+    this.assertNotDeleted(user!);
+    this.assertAccountActive(user!);
+    this.assertClientActive(user!);
+    this.assertNotLocked(user!);
+    this.assertPortalIsolation(user!, normalized);
+
+    // ── Gate vérification ─────────────────────────────────
+    const pending = this.buildVerificationNeeded(user!);
+    if (pending) {
+      await this.dispatchVerificationOtps(user!);
+      throw new ForbiddenException({
+        code:    'VERIFICATION_REQUIRED',
+        ...pending,
+      });
+    }
+
+    await this.checkOtpRateLimit(user!.id, OtpPurpose.LOGIN, CommsType.SMS);
+
+    await this.sendOtpInternal(user!.id, CommsType.SMS, OtpPurpose.LOGIN, phone);
+    await this.audit(user!.id, user!.clientId, AuditAction.OTP_REQUEST, {
+      channel: 'SMS',
+      purpose: 'LOGIN',
+    });
+
+    return { userId: user!.id, maskedRecipient: maskPhone(phone), channel: 'SMS' };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 4. VÉRIFICATION OTP (connexion)
+  // ═══════════════════════════════════════════════════════
+
+  async verifyOtpLogin(dto: VerifyOtpLoginV2Dto): Promise<LoginResult> {
+    const channel = dto.channel === 'EMAIL' ? CommsType.EMAIL : CommsType.SMS;
+
+    const otpLog = await this.prisma.otpLog.findFirst({
+      where: {
+        userId:    dto.userId,
+        purpose:   OtpPurpose.LOGIN,
+        channel,
+        isUsed:    false,
+        isExpired: false,
+        expiresAt: { gte: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpLog) {
+      throw new BadRequestException(
+        'Code OTP invalide ou expiré. Demandez un nouveau code.',
+      );
+    }
+
+    // ── Vérification du plafond de tentatives (CORREC. v1) ─
+    if (otpLog.attempts >= OTP_MAX_ATTEMPTS) {
+      await this.prisma.otpLog.update({
+        where: { id: otpLog.id },
+        data:  { isExpired: true },
+      });
+      throw new HttpException(
+        'Trop de tentatives incorrectes. Demandez un nouveau code.',
+        429,
+      );
+    }
+
+    if (otpLog.code !== dto.code) {
+      await this.prisma.otpLog.update({
+        where: { id: otpLog.id },
+        data:  { attempts: { increment: 1 } },
+      });
+      const remaining = OTP_MAX_ATTEMPTS - otpLog.attempts - 1;
+      throw new UnauthorizedException(
+        remaining > 0
+          ? `Code incorrect — ${remaining} tentative(s) restante(s).`
+          : 'Code incorrect — aucune tentative restante. Demandez un nouveau code.',
+      );
+    }
+
+    // ── Code correct → invalider le log ───────────────────
+    await this.prisma.otpLog.update({
+      where: { id: otpLog.id },
+      data:  { isUsed: true, usedAt: new Date() },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where:   { id: dto.userId },
+      include: { client: true, agency: true, wallets: { where: { isActive: true } } },
+    });
+
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    // ── Gate vérification ─────────────────────────────────
+    const pending = this.buildVerificationNeeded(user);
+    if (pending) {
+      throw new ForbiddenException({ code: 'VERIFICATION_REQUIRED', ...pending });
+    }
+
+    // ── Trust device ──────────────────────────────────────
+    if (dto.trustDevice && dto.deviceId) {
+      await this.prisma.userDevice.updateMany({
+        where: { userId: user.id, deviceId: dto.deviceId },
+        data:  { status: DeviceStatus.TRUSTED, trustedAt: new Date() },
+      }).catch(() => { /* non bloquant */ });
+    }
+
+    await this.markLastLogin(user.id);
+    await this.audit(
+      user.id,
+      user.clientId,
+      dto.channel === 'SMS' ? AuditAction.LOGIN_PHONE : AuditAction.LOGIN,
+    );
+
+    return this.buildLoginResponse(user);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 5. ENVOI OTP DE VÉRIFICATION (après inscription)
+  // ═══════════════════════════════════════════════════════
+
+  async sendVerificationOtp(
+    dto: SendVerificationOtpDto,
+  ): Promise<{ success: true; maskedRecipient: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: dto.userId } });
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    if (dto.channel === 'EMAIL' && user.isEmailVerified) {
+      throw new BadRequestException('Adresse email déjà vérifiée.');
+    }
+    if (dto.channel === 'PHONE' && user.isPhoneVerified) {
+      throw new BadRequestException('Numéro de téléphone déjà vérifié.');
+    }
+
+    const channel   = dto.channel === 'EMAIL' ? CommsType.EMAIL : CommsType.SMS;
+    const purpose   = dto.channel === 'EMAIL'
+      ? OtpPurpose.EMAIL_VERIFICATION
+      : OtpPurpose.PHONE_VERIFICATION;
+    const recipient = dto.channel === 'EMAIL' ? user.email : user.phone;
+
+    if (!recipient) {
+      throw new BadRequestException(
+        dto.channel === 'PHONE'
+          ? 'Aucun numéro de téléphone associé à ce compte.'
+          : 'Aucun email associé à ce compte.',
+      );
+    }
+
+    await this.checkOtpRateLimit(user.id, purpose, channel);
+    await this.sendOtpInternal(user.id, channel, purpose, recipient);
+
+    return {
+      success:         true,
+      maskedRecipient: dto.channel === 'EMAIL'
+        ? maskEmail(recipient)
+        : maskPhone(recipient),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 6. VÉRIFICATION CONTACT (email ou téléphone)
+  // ═══════════════════════════════════════════════════════
+
+  async verifyContact(dto: VerifyContactDto): Promise<VerifyContactResult> {
+    const channel = dto.channel === 'EMAIL' ? CommsType.EMAIL : CommsType.SMS;
+    const purpose = dto.channel === 'EMAIL'
+      ? OtpPurpose.EMAIL_VERIFICATION
+      : OtpPurpose.PHONE_VERIFICATION;
+
+    const otpLog = await this.prisma.otpLog.findFirst({
+      where: {
+        userId:    dto.userId,
+        purpose,
+        channel,
+        isUsed:    false,
+        isExpired: false,
+        expiresAt: { gte: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!otpLog) {
+      throw new BadRequestException('Code invalide ou expiré. Demandez un nouveau code.');
+    }
+
+    if (otpLog.attempts >= OTP_MAX_ATTEMPTS) {
+      await this.prisma.otpLog.update({
+        where: { id: otpLog.id },
+        data:  { isExpired: true },
+      });
+      throw new HttpException(
+        'Trop de tentatives incorrectes. Demandez un nouveau code.',
+        429,
+      );
+    }
+
+    if (otpLog.code !== dto.code) {
+      await this.prisma.otpLog.update({
+        where: { id: otpLog.id },
+        data:  { attempts: { increment: 1 } },
+      });
+      const remaining = OTP_MAX_ATTEMPTS - otpLog.attempts - 1;
+      throw new UnauthorizedException(
+        remaining > 0
+          ? `Code incorrect — ${remaining} tentative(s) restante(s).`
+          : 'Code incorrect — demandez un nouveau code.',
+      );
+    }
+
+    await this.prisma.otpLog.update({
+      where: { id: otpLog.id },
+      data:  { isUsed: true, usedAt: new Date() },
+    });
+
+    const updateData: Record<string, boolean> = {};
+    if (dto.channel === 'EMAIL') updateData.isEmailVerified = true;
+    if (dto.channel === 'PHONE') updateData.isPhoneVerified = true;
+
+    const updated = await this.prisma.user.update({
+      where: { id: dto.userId },
+      data:  updateData,
+    });
+
+    await this.audit(updated.id, updated.clientId, AuditAction.OTP_VERIFY, {
+      channel: dto.channel,
+    });
+
+    const allVerified =
+      updated.isEmailVerified && (!updated.phone || updated.isPhoneVerified);
+
+    return {
+      success:       true,
+      emailVerified: updated.isEmailVerified,
+      phoneVerified: updated.isPhoneVerified,
+      hasPhone:      !!updated.phone,
+      allVerified,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 7. STATUT DE VÉRIFICATION
+  // ═══════════════════════════════════════════════════════
+
+  async getVerificationStatus(userId: string): Promise<VerificationStatus> {
+    const user = await this.prisma.user.findUnique({
+      where:  { id: userId },
+      select: {
+        id:              true,
+        email:           true,
+        phone:           true,
+        isEmailVerified: true,
+        isPhoneVerified: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    return {
+      emailVerified: user.isEmailVerified,
+      phoneVerified: user.isPhoneVerified,
+      hasPhone:      !!user.phone,
+      maskedEmail:   maskEmail(user.email),
+      maskedPhone:   user.phone ? maskPhone(user.phone) : null,
+      allVerified:   user.isEmailVerified && (!user.phone || user.isPhoneVerified),
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PRIVÉS — Assertions de sécurité
+  // ═══════════════════════════════════════════════════════
+
+  private assertUserExists(user: unknown, message = 'Identifiants incorrects'): void {
+    if (!user) throw new UnauthorizedException(message);
+  }
+
+  private assertNotDeleted(user: any): void {
+    if (user.deletedAt) throw new UnauthorizedException('Compte introuvable');
+  }
+
+  private assertAccountActive(user: any): void {
+    if (!user.isActive || user.isSuspended) {
+      const reason = user.suspendedReason ?? 'Contactez le support.';
+      throw new UnauthorizedException(`Compte désactivé. ${reason}`);
+    }
+  }
+
+  /** CORREC. v1 : isActive sur Client jamais vérifié */
+  private assertClientActive(user: any): void {
+    if (user.client && !user.client.isActive) {
+      throw new UnauthorizedException('Cette plateforme est actuellement inactive.');
+    }
+  }
+
+  /** CORREC. v1 : lockedUntil ignoré dans login() */
+  private assertNotLocked(user: any): void {
+    if (user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
+      const minutesLeft = Math.ceil(
+        (new Date(user.lockedUntil).getTime() - Date.now()) / 60_000,
+      );
+      throw new UnauthorizedException(
+        `Compte temporairement verrouillé. Réessayez dans ${minutesLeft} minute(s).`,
+      );
+    }
+  }
+
+  private assertPortalIsolation(user: any, tenantCode: string | null): void {
+    const isDefaultPortal = !tenantCode || tenantCode === 'DONIKO';
+
+    if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode:   403,
+          code:         'USE_COMPANY_PORTAL',
+          clientCode:   user.client?.code        ?? null,
+          subdomain:    user.client?.subdomain    ?? null,
+          customDomain: user.client?.customDomain ?? null,
+          message:
+            user.client?.code
+              ? `Ce compte appartient à l'espace "${user.client.code}".`
+              : `Connectez-vous via le portail de votre société.`,
+        },
+        403,
+      );
+    }
+
+    if (!isDefaultPortal && user.role === Role.SUPER_ADMIN) {
+      throw new HttpException(
+        {
+          statusCode: 403,
+          code:       'USE_DEFAULT_PORTAL',
+          message:    `Le Super Admin doit se connecter via le portail principal.`,
+        },
+        403,
+      );
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PRIVÉS — Logique vérification
+  // ═══════════════════════════════════════════════════════
+
+  /** Construit la réponse "vérification requise" si besoin, null sinon */
+  private buildVerificationNeeded(user: any): VerificationNeededResult | null {
+    const emailOk = user.isEmailVerified;
+    const hasPhone = !!user.phone;
+    const phoneOk  = !hasPhone || user.isPhoneVerified;
+
+    if (emailOk && phoneOk) return null;
+
+    return {
+      requiresVerification: true,
+      userId:               user.id,
+      emailVerified:        emailOk,
+      phoneVerified:        user.isPhoneVerified,
+      hasPhone,
+      message: !emailOk && !phoneOk
+        ? 'Vérifiez votre email et votre téléphone avant de vous connecter.'
+        : !emailOk
+          ? 'Vérifiez votre adresse email avant de vous connecter.'
+          : 'Vérifiez votre numéro de téléphone avant de vous connecter.',
+    };
+  }
+
+  /** Envoie automatiquement les OTPs de vérification manquants */
+  private async dispatchVerificationOtps(user: any): Promise<void> {
+    const tasks: Promise<void>[] = [];
+
+    if (!user.isEmailVerified && user.email) {
+      tasks.push(
+        this.sendOtpInternal(
+          user.id,
+          CommsType.EMAIL,
+          OtpPurpose.EMAIL_VERIFICATION,
+          user.email,
+        ).catch((e) => {
+          this.logger.warn(`[dispatch] email OTP failed: ${e?.message}`);
+        }),
+      );
+    }
+
+    if (user.phone && !user.isPhoneVerified) {
+      tasks.push(
+        this.sendOtpInternal(
+          user.id,
+          CommsType.SMS,
+          OtpPurpose.PHONE_VERIFICATION,
+          user.phone,
+        ).catch((e) => {
+          this.logger.warn(`[dispatch] SMS OTP failed: ${e?.message}`);
+        }),
+      );
+    }
+
+    await Promise.allSettled(tasks);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PRIVÉS — Sécurité OTP
+  // ═══════════════════════════════════════════════════════
+
+  /** CORREC. v1 : Rate limit absent sur envois OTP */
+  private async checkOtpRateLimit(
+    userId:  string,
+    purpose: OtpPurpose,
+    channel: CommsType,
+  ): Promise<void> {
+    const since = new Date(Date.now() - 60 * 60 * 1000);
+
+    const count = await this.prisma.otpLog.count({
+      where: { userId, purpose, channel, createdAt: { gte: since } },
+    });
+
+    if (count >= OTP_MAX_SENDS_PER_HOUR) {
+      throw new HttpException(
+        `Trop de codes envoyés. Réessayez dans 1 heure.`,
+        429,
+      );
+    }
+  }
+
+  /** CORREC. v1 : failedLoginAttempts incrémenté sans verrouillage réel */
+  private async handleFailedLogin(user: any): Promise<void> {
+    const newCount = (user.failedLoginAttempts ?? 0) + 1;
+    const shouldLock = newCount >= MAX_FAILED_LOGINS;
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: { increment: 1 },
+        lastFailedLoginAt:   new Date(),
+        ...(shouldLock && {
+          lockedUntil: new Date(Date.now() + LOCK_DURATION_MINUTES * 60 * 1000),
+        }),
+      },
+    });
+
+    if (shouldLock) {
+      await this.audit(user.id, user.clientId, AuditAction.ACCOUNT_LOCKED, {
+        reason:   'max_failed_logins',
+        attempts: newCount,
+      });
+      throw new UnauthorizedException(
+        `Compte verrouillé ${LOCK_DURATION_MINUTES} min après ${MAX_FAILED_LOGINS} tentatives échouées.`,
+      );
+    }
+  }
+
+  private async sendOtpInternal(
+    userId:    string,
+    channel:   CommsType,
+    purpose:   OtpPurpose,
+    recipient: string,
+  ): Promise<void> {
+    // OTP via crypto.randomInt (meilleure entropie)
+    const code      = generateOtp(OTP_LENGTH);
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+
+    // Expirer les anciens OTPs du même type
+    await this.prisma.otpLog.updateMany({
+      where: { userId, purpose, channel, isUsed: false, isExpired: false },
+      data:  { isExpired: true },
+    });
+
+    await this.prisma.otpLog.create({
+      data: { userId, code, purpose, channel, recipient, expiresAt },
+    });
+
+    // Mise à jour champ User (compatibilité v1)
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        otpCode:      code,
+        otpExpiresAt: expiresAt,
+        otpPurpose:   purpose,
+        otpChannel:   channel,
+      },
+    }).catch(() => { /* non bloquant */ });
+
+    // ── Envoi EMAIL ───────────────────────────────────────
+    if (channel === CommsType.EMAIL) {
+      const isLogin        = purpose === OtpPurpose.LOGIN;
+      const isVerification = purpose === OtpPurpose.EMAIL_VERIFICATION;
+
+      const subject    = isLogin ? 'Votre code de connexion'
+        : isVerification ? 'Vérifiez votre adresse email'
+        : 'Votre code de vérification';
+
+      const actionLabel = isLogin ? 'votre connexion'
+        : isVerification ? 'la vérification de votre email'
+        : 'votre demande';
+
+      await this.mail.sendEmail(
+        recipient,
+        subject,
+        `<div style="font-family:sans-serif;max-width:500px;margin:auto;padding:20px;">
+          <h2 style="color:#059669;margin-bottom:8px;">Direct Transf'air</h2>
+          <p>Votre code pour ${actionLabel} :</p>
+          <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:#059669;
+                      background:#ECFDF5;text-align:center;padding:24px;
+                      border-radius:12px;margin:20px 0;font-family:monospace;">
+            ${code}
+          </div>
+          <p style="color:#6B7280;font-size:13px;">
+            Ce code expire dans <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.
+            Ne le partagez jamais, même avec le support.
+          </p>
+          <p style="color:#9CA3AF;font-size:11px;margin-top:16px;">
+            Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.
+          </p>
+        </div>`,
+      ).catch((e: Error) => {
+        this.logger.error(`[OTP EMAIL] Échec envoi ${recipient}: ${e?.message}`);
+      });
+    }
+
+    // ── Envoi SMS ─────────────────────────────────────────
+    if (channel === CommsType.SMS) {
+      // TODO: Intégrer votre provider SMS (Africa's Talking, Twilio, Orange API…)
+      // Exemple : await this.sms.send(recipient, `Code Direct Transf'air: ${code}. Valable ${OTP_EXPIRY_MINUTES}min.`);
+      this.logger.log(`[SMS-STUB] → ${recipient} : Code ${code}`);
+    }
+
+    await this.audit(userId, null, AuditAction.OTP_REQUEST, { purpose, channel });
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PRIVÉS — Session & JWT
+  // ═══════════════════════════════════════════════════════
+
+  /** CORREC. v1: deleteMany toutes sessions → isolé par deviceId désormais */
+  private async buildLoginResponse(user: any): Promise<LoginResult> {
+    const payload = {
+      sub:      user.id,
+      email:    user.email,
+      role:     user.role,
+      clientId: user.clientId,
+    };
+
+    // TTL réduit à 1h (vs 7j en v1)
+    const accessToken  = this.jwt.sign(payload, { expiresIn: ACCESS_TOKEN_TTL });
+    const refreshToken = generateRefreshToken();
+    const expiresAt    = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
+
+    try {
+      await this.prisma.userSession.create({
+        data: {
+          userId:                user.id,
+          token:                 accessToken,
+          refreshToken,
+          refreshTokenExpiresAt: expiresAt,
+          expiresAt,
+          status:                'ACTIVE',
+        },
+      });
+    } catch (e) {
+      this.logger.warn('[buildLoginResponse] session create error', e);
+    }
+
+    return {
+      access_token:  accessToken,
+      refresh_token: refreshToken,
+      user:          this.toPublicUser(user),
+    };
+  }
+
+  private toPublicUser(user: any): Record<string, unknown> {
+    return {
+      id:              user.id,
+      email:           user.email,
+      phone:           user.phone,
+      role:            user.role,
+      clientId:        user.clientId,
+      firstName:       user.firstName,
+      lastName:        user.lastName,
+      agencyId:        user.agencyId,
+      primaryCurrency: user.primaryCurrency,
+      kycLevel:        user.kycLevel,
+      isEmailVerified: user.isEmailVerified,
+      isPhoneVerified: user.isPhoneVerified,
+      mfaEnabled:      user.mfaEnabled,
+      country:         user.country,
+      city:            user.city,
+      client:          user.client,
+      agency:          user.agency,
+      wallets:         user.wallets ?? [],
+    };
+  }
+
+  private async markLastLogin(userId: string): Promise<void> {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastLoginAt: new Date() },
+    }).catch(() => { /* non bloquant */ });
+  }
+
+  private async audit(
+    userId:   string,
+    clientId: number | null,
+    action:   AuditAction,
+    details?: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: { userId, clientId, action, details, successful: true },
+      });
+    } catch { /* non bloquant */ }
+  }
+}

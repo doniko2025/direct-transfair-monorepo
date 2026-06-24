@@ -1,23 +1,24 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v5.6 — Direct Transf'air
-// ✅ v5.4 conservé intégralement
+// AUTH PROVIDER v6.0 — Direct Transf'air
+// ✅ v5.4 : écrans légaux/modaux accessibles à tous (isLegalScreen)
 // ✅ v5.5 : loginWithPhoneOtp(userId, code)
-//   → étape 2 de la connexion par téléphone
-//   → appelle api.loginStep2({ userId, code })
-//   → met à jour l'état React exactement comme login()
-// ✅ v5.6 : FIX — aucun appareil n'était jamais enregistré
-//   PROBLÈME : api.registerDevice() n'était appelé nulle part dans ce
-//   fichier → l'écran "Appareils connectés" (devices.tsx) affichait
-//   toujours "0 appareil", même en build natif, et AsyncStorage["deviceId"]
-//   n'était jamais écrit (donc "appareil actuel" non détectable).
-//   CORRECTIF : appel de registerCurrentDeviceIfNeeded() (nouveau module
-//   services/deviceRegistration.ts) en "fire-and-forget" (sans await,
-//   ne bloque jamais la connexion) après chaque connexion réussie —
-//   login, register (chemin direct), biometricLogin, loginWithPhoneOtp —
-//   et dans initAuth() quand une session existante est restaurée avec
-//   succès. Le module lui-même évite les doublons (no-op si un
-//   "deviceId" est déjà stocké localement).
+// ✅ v5.6 : FIX enregistrement appareil (registerCurrentDeviceIfNeeded)
+// ✅ v6.0 : Guard navigation renforcé + applyLoginResult()
+//
+//   applyLoginResult(accessToken, refreshToken?, user) :
+//     Méthode publique permettant à login-v2.tsx de compléter
+//     une connexion v2 sans passer par login().
+//     Hydrate correctement : api.setToken(), setToken(), tokenRef,
+//     setUser(), stockage SecureStore/localStorage, tenant, device.
+//     NÉCESSAIRE car storeTokens() dans login-v2 appelait api.setToken()
+//     mais ne mettait pas à jour tokenRef.current → refreshUser()
+//     lisait tokenRef === null → retournait sans rien faire → guard muet.
+//
+//   Guard navigation v6.0 :
+//     isVerifyScreen   : évite les boucles si user sur verify-contact
+//     needsVerification: redirige si email ou téléphone non vérifié
+//     login redirect   : /(auth)/login → /(auth)/login-v2
 // =========================================================
 
 import React, {
@@ -35,16 +36,26 @@ import type {
 } from "../services/types";
 
 type AuthContextValue = {
-  user: AuthUser | null;
-  token: string | null;
+  user:      AuthUser | null;
+  token:     string | null;
   isLoading: boolean;
-  login: (data: LoginPayload) => Promise<void>;
-  register: (data: RegisterPayload, tenantCode?: string) => Promise<void>;
-  logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
-  biometricLogin: () => Promise<void>;
+  login:              (data: LoginPayload) => Promise<void>;
+  register:           (data: RegisterPayload, tenantCode?: string) => Promise<void>;
+  logout:             () => Promise<void>;
+  refreshUser:        () => Promise<void>;
+  biometricLogin:     () => Promise<void>;
   /** ✅ v5.5 : étape 2 connexion par téléphone — vérifie le code OTP et ouvre la session */
-  loginWithPhoneOtp: (userId: string, code: string) => Promise<void>;
+  loginWithPhoneOtp:  (userId: string, code: string) => Promise<void>;
+  /**
+   * ✅ v6.0 : Hydrate AuthProvider depuis une connexion externe (login-v2.tsx)
+   * Appelé après v2Auth.loginPassword / verifyOtpLogin pour que le guard
+   * voie le changement d'état et redirige vers home.
+   */
+  applyLoginResult: (
+    accessToken:  string,
+    refreshToken: string | null | undefined,
+    rawUser:      any,
+  ) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -180,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await removeStorage(USER_KEY);
       // ✅ NE PAS supprimer le refresh token ici
       // → il est conservé pour permettre la reconnexion biométrique
-      router.replace("/(auth)/login");
+      router.replace("/(auth)/login-v2"); // ✅ v6.0 : login → login-v2
     } catch (e) {
       console.error("Erreur logout", e);
     }
@@ -211,8 +222,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (meCode) await applyTenant(meCode);
             setUser(enrichedMe);
             await setStorage(USER_KEY, JSON.stringify(enrichedMe));
-            // ✅ v5.6 — session existante restaurée avec succès :
-            // fire-and-forget, n'attend pas, n'échoue jamais l'init
+            // ✅ v5.6 — session existante restaurée avec succès
             void registerCurrentDeviceIfNeeded();
           } catch (e: any) {
             const status = e?.response?.status;
@@ -235,18 +245,86 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const inAuthGroup = segments[0] === "(auth)";
 
-    // ✅ FIX v5.4 : écrans légaux/modaux accessibles à tous
+    // ✅ v5.4 : écrans légaux/modaux accessibles à tous
     const isLegalScreen =
       segments[1] === "terms" ||
       segments[1] === "privacy-policy" ||
       segments[1] === "assistance";
 
+    // ✅ v6.0 : écran de vérification — évite les boucles de redirection
+    const isVerifyScreen = segments[1] === "verify-contact";
+
     if (!user && !inAuthGroup) {
-      router.replace("/(auth)/login");
-    } else if (user && inAuthGroup && !isLegalScreen) {
+      router.replace("/(auth)/login-v2"); // ✅ v6.0 : login → login-v2
+      return;
+    }
+
+    // ✅ v6.0 : Bloquer l'accès à l'app si email ou téléphone non vérifié.
+    // Condition : user connecté, pas dans le groupe auth, pas sur verify-contact.
+    // Le téléphone est requis uniquement si l'utilisateur en a un (field non nul).
+    const needsVerification =
+      user &&
+      !inAuthGroup &&
+      !isVerifyScreen &&
+      (
+        !(user as any).isEmailVerified ||
+        ((user as any).phone && !(user as any).isPhoneVerified)
+      );
+
+    if (needsVerification) {
+      router.replace({
+        pathname: "/(auth)/verify-contact",
+        params: {
+          userId:        (user as any).id,
+          emailVerified: (user as any).isEmailVerified ? "1" : "0",
+          phoneVerified: (user as any).isPhoneVerified ? "1" : "0",
+          hasPhone:      (user as any).phone           ? "1" : "0",
+        },
+      } as any);
+      return;
+    }
+
+    if (user && inAuthGroup && !isLegalScreen && !isVerifyScreen) {
       router.replace("/(tabs)/home");
     }
   }, [user, isLoading, segments, router]);
+
+  // ─── applyLoginResult ─────────────────────────────────────
+  // ✅ v6.0 : Hydrate AuthProvider depuis une connexion externe.
+  // Appelé par login-v2.tsx après loginPassword() ou verifyOtpLogin()
+  // pour que le guard voie le changement d'état et redirige vers home.
+  // Remplace le pattern storeTokens() + refreshUser() qui était cassé
+  // (refreshUser lisait tokenRef.current === null et retournait tôt).
+  const applyLoginResult = useCallback(async (
+    accessToken:  string,
+    refreshToken: string | null | undefined,
+    rawUser:      any,
+  ) => {
+    const clientCode = rawUser?.client?.code;
+    if (clientCode) await applyTenant(clientCode);
+
+    // Met à jour l'instance API
+    api.setToken(accessToken);
+
+    // Met à jour l'état React ET la ref synchrone
+    setToken(accessToken);
+    tokenRef.current = accessToken;
+
+    // Enrichit et hydrate le user
+    const enrichedUser = injectCurrencyToUser(rawUser as AuthUser);
+    setUser(enrichedUser);
+
+    // Persiste dans SecureStore / localStorage
+    await setStorage(TOKEN_KEY, accessToken);
+    await setStorage(USER_KEY, JSON.stringify(enrichedUser));
+    if (refreshToken) {
+      await setStorage("refreshToken", refreshToken);
+    }
+
+    // Enregistre l'appareil (fire-and-forget, ne bloque jamais)
+    void registerCurrentDeviceIfNeeded();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Login ────────────────────────────────────────────────
   const login = useCallback(async (data: LoginPayload) => {
@@ -356,15 +434,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ─── loginWithPhoneOtp ────────────────────────────────────
   // ✅ v5.5 : étape 2 de la connexion par téléphone.
-  // Appelée depuis otp-phone.tsx après que l'utilisateur
-  // a saisi son code OTP à 4 chiffres.
-  // Utilise api.loginStep2 (POST /auth/login/verify-otp)
-  // puis met à jour l'état exactement comme login().
   const loginWithPhoneOtp = useCallback(async (userId: string, code: string) => {
     setIsLoading(true);
     try {
       await ensureTenantReady();
-      // api.loginStep2 gère aussi le stockage interne (AsyncStorage + SecureStore)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res: LoginResponse = await (api as any).loginStep2({ userId, code });
 
@@ -378,7 +451,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const enrichedUser = injectCurrencyToUser(res.user);
       setUser(enrichedUser);
 
-      // Persistance AuthProvider (dt_token, dt_user)
       await setStorage(TOKEN_KEY, res.access_token);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
       // ✅ v5.6 — fire-and-forget
@@ -394,7 +466,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, token, isLoading,
-      login, register, logout, refreshUser, biometricLogin, loginWithPhoneOtp,
+      login, register, logout, refreshUser, biometricLogin,
+      loginWithPhoneOtp,
+      applyLoginResult, // ✅ v6.0
     }}>
       {children}
     </AuthContext.Provider>
