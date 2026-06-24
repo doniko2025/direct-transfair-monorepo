@@ -887,7 +887,7 @@ export class V2AuthService {
   ): Promise<void> {
     try {
       await this.prisma.auditLog.create({
-        data: { userId, clientId, action, details, successful: true },
+        data: { userId, clientId, action, details: (details ?? undefined) as any, successful: true },
       });
     } catch { /* non bloquant */ }
   }
