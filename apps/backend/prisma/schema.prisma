@@ -35,8 +35,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")    // ← déjà là
+  directUrl = env("DIRECT_URL")      // ← ajouter cette ligne
 }
 
 // =========================================================

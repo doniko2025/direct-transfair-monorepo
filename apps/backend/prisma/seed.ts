@@ -1,15 +1,13 @@
 // =========================================================
-// SEED v4.0 — Direct Transf'air
-// ✅ Super Admin uniquement (le reste se crée via UI)
-// ✅ Tenant + Client DONIKO (plateforme)
-// ✅ 5 devises : XOF, EUR, USD, GNF, GBP
-// ✅ Taux de change pour toutes les paires importantes
-// ✅ Map pays → devise (CountryCurrency)
-// =========================================================
-
-// =========================================================
-// SEED v4.1 — Direct Transf'air
-// ✅ Cleanup étendu aux nouveaux modèles v4.1
+// SEED v4.2 — Direct Transf'air
+// ✅ v4.0 : Super Admin + Client DONIKO + taux + pays
+// ✅ v4.1 : Cleanup étendu nouveaux modèles
+// ✅ v4.2 : FIX cleanup — TRUNCATE CASCADE SQL brut
+//   RAISON : prisma['model'] via bracket notation retourne un
+//   proxy Prisma sur Neon (pas undefined), le check if() passe
+//   mais l'invocation .deleteMany() plante avec "Invalid invocation".
+//   Solution : TRUNCATE de toutes les tables publiques en SQL pur,
+//   qui ignore l'ordre des FK grâce à CASCADE.
 // =========================================================
 
 const { PrismaClient } = require('@prisma/client');
@@ -18,54 +16,54 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 const Role = {
-  SUPER_ADMIN: 'SUPER_ADMIN',
+  SUPER_ADMIN:   'SUPER_ADMIN',
   COMPANY_ADMIN: 'COMPANY_ADMIN',
-  AGENT: 'AGENT',
-  USER: 'USER',
+  AGENT:         'AGENT',
+  USER:          'USER',
 };
 
-const SubscriptionType = { PURCHASE: 'PURCHASE', RENTAL: 'RENTAL' };
+const SubscriptionType   = { PURCHASE: 'PURCHASE', RENTAL: 'RENTAL' };
 const SubscriptionStatus = { ACTIVE: 'ACTIVE' };
-const KycLevel = { LEVEL_3: 'LEVEL_3' };
+const KycLevel           = { LEVEL_3: 'LEVEL_3' };
 
-const SUPER_ADMIN_EMAIL = 'thiernodoniko@gmail.com';
+const SUPER_ADMIN_EMAIL    = 'thiernodoniko@gmail.com';
 const SUPER_ADMIN_PASSWORD = 'Lcd123456!';
 
 const COUNTRY_CURRENCIES = [
   // Eurozone
-  { countryCode: 'FR', countryName: 'France',       currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇫🇷' },
-  { countryCode: 'DE', countryName: 'Allemagne',    currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇩🇪' },
-  { countryCode: 'IT', countryName: 'Italie',       currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇮🇹' },
-  { countryCode: 'ES', countryName: 'Espagne',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇪🇸' },
-  { countryCode: 'BE', countryName: 'Belgique',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇧🇪' },
-  { countryCode: 'PT', countryName: 'Portugal',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇵🇹' },
-  { countryCode: 'NL', countryName: 'Pays-Bas',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇳🇱' },
-  { countryCode: 'AT', countryName: 'Autriche',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇦🇹' },
-  { countryCode: 'IE', countryName: 'Irlande',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇮🇪' },
-  { countryCode: 'LU', countryName: 'Luxembourg',   currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇱🇺' },
-  { countryCode: 'GR', countryName: 'Grèce',        currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇬🇷' },
-  { countryCode: 'FI', countryName: 'Finlande',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇫🇮' },
+  { countryCode: 'FR', countryName: 'France',        currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇫🇷' },
+  { countryCode: 'DE', countryName: 'Allemagne',     currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇩🇪' },
+  { countryCode: 'IT', countryName: 'Italie',        currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇮🇹' },
+  { countryCode: 'ES', countryName: 'Espagne',       currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇪🇸' },
+  { countryCode: 'BE', countryName: 'Belgique',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇧🇪' },
+  { countryCode: 'PT', countryName: 'Portugal',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇵🇹' },
+  { countryCode: 'NL', countryName: 'Pays-Bas',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇳🇱' },
+  { countryCode: 'AT', countryName: 'Autriche',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇦🇹' },
+  { countryCode: 'IE', countryName: 'Irlande',       currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇮🇪' },
+  { countryCode: 'LU', countryName: 'Luxembourg',    currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇱🇺' },
+  { countryCode: 'GR', countryName: 'Grèce',         currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇬🇷' },
+  { countryCode: 'FI', countryName: 'Finlande',      currencyCode: 'EUR', currencyName: 'Euro',             currencySymbol: '€',   flagEmoji: '🇫🇮' },
   // GBP
-  { countryCode: 'GB', countryName: 'Royaume-Uni',  currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇬🇧' },
-  { countryCode: 'GG', countryName: 'Guernesey',    currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇬🇬' },
-  { countryCode: 'JE', countryName: 'Jersey',       currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇯🇪' },
-  { countryCode: 'IM', countryName: "Île de Man",   currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇮🇲' },
+  { countryCode: 'GB', countryName: 'Royaume-Uni',   currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇬🇧' },
+  { countryCode: 'GG', countryName: 'Guernesey',     currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇬🇬' },
+  { countryCode: 'JE', countryName: 'Jersey',        currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇯🇪' },
+  { countryCode: 'IM', countryName: "Île de Man",    currencyCode: 'GBP', currencyName: 'Livre sterling',   currencySymbol: '£',   flagEmoji: '🇮🇲' },
   // USD
-  { countryCode: 'US', countryName: 'États-Unis',   currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇺🇸' },
-  { countryCode: 'SV', countryName: 'Salvador',     currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇸🇻' },
-  { countryCode: 'PA', countryName: 'Panama',       currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇵🇦' },
-  { countryCode: 'EC', countryName: 'Équateur',     currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇪🇨' },
+  { countryCode: 'US', countryName: 'États-Unis',    currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇺🇸' },
+  { countryCode: 'SV', countryName: 'Salvador',      currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇸🇻' },
+  { countryCode: 'PA', countryName: 'Panama',        currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇵🇦' },
+  { countryCode: 'EC', countryName: 'Équateur',      currencyCode: 'USD', currencyName: 'Dollar américain', currencySymbol: '$',   flagEmoji: '🇪🇨' },
   // GNF
-  { countryCode: 'GN', countryName: 'Guinée',       currencyCode: 'GNF', currencyName: 'Franc guinéen',    currencySymbol: 'FG',  flagEmoji: '🇬🇳' },
+  { countryCode: 'GN', countryName: 'Guinée',        currencyCode: 'GNF', currencyName: 'Franc guinéen',    currencySymbol: 'FG',  flagEmoji: '🇬🇳' },
   // XOF
-  { countryCode: 'SN', countryName: 'Sénégal',           currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇸🇳' },
-  { countryCode: 'CI', countryName: "Côte d'Ivoire",     currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇨🇮' },
-  { countryCode: 'ML', countryName: 'Mali',               currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇲🇱' },
-  { countryCode: 'BF', countryName: 'Burkina Faso',       currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇧🇫' },
-  { countryCode: 'BJ', countryName: 'Bénin',              currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇧🇯' },
-  { countryCode: 'TG', countryName: 'Togo',               currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇹🇬' },
-  { countryCode: 'NE', countryName: 'Niger',              currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇳🇪' },
-  { countryCode: 'GW', countryName: 'Guinée-Bissau',      currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇬🇼' },
+  { countryCode: 'SN', countryName: 'Sénégal',          currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇸🇳' },
+  { countryCode: 'CI', countryName: "Côte d'Ivoire",    currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇨🇮' },
+  { countryCode: 'ML', countryName: 'Mali',              currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇲🇱' },
+  { countryCode: 'BF', countryName: 'Burkina Faso',      currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇧🇫' },
+  { countryCode: 'BJ', countryName: 'Bénin',             currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇧🇯' },
+  { countryCode: 'TG', countryName: 'Togo',              currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇹🇬' },
+  { countryCode: 'NE', countryName: 'Niger',             currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇳🇪' },
+  { countryCode: 'GW', countryName: 'Guinée-Bissau',     currencyCode: 'XOF', currencyName: 'Franc CFA', currencySymbol: 'CFA', flagEmoji: '🇬🇼' },
 ];
 
 const EXCHANGE_RATES = [
@@ -88,61 +86,38 @@ const EXCHANGE_RATES = [
 ];
 
 async function main() {
-  console.log('🔥 NETTOYAGE DE LA BASE...');
-
-  const cleanupOps = [
-    // ✅ AJOUT v4.1 — nouveaux modèles en premier (dépendants)
-    'supportTicketReply',
-    'supportTicket',
-    'complianceCase',
-    'userMobileWallet',
-    'userCard',
-    'loginHistory',
-    // Existants
-    'webhookDelivery',
-    'webhookEndpoint',
-    'apiKey',
-    'auditLog',
-    'alert',
-    'amlFlag',
-    'communicationLog',
-    'commsTemplate',
-    'notification',
-    'kycDocument',
-    'otpLog',
-    'userDevice',
-    'userSession',
-    'loyaltyTransaction',
-    'loyaltyConfig',
-    'rateAlert',
-    'scheduledTransfer',
-    'promotionUse',
-    'promotion',
-    'commissionTier',
-    'commissionConfig',
-    'ledgerEntry',
-    'wallet',
-    'withdrawal',
-    'transaction',
-    'beneficiary',
-    'user',
-    'agency',
-    'treasurySnapshot',
-    'exchangeRateHistory',
-    'exchangeRate',
-    'countryCurrency',
-    'client',
-    'tenant',
-  ];
-
-  for (const model of cleanupOps) {
-    try {
-      if (prisma[model]) {
-        await prisma[model].deleteMany();
-      }
-    } catch (e: any) {
-      console.log(`   ↳ skip ${model}: ${(e && e.message ? e.message : e).toString().substring(0, 80)}`);
-    }
+  // ═══════════════════════════════════════════════════════
+  // CLEANUP — TRUNCATE CASCADE (v4.2)
+  // Plus fiable que les deleteMany() en boucle :
+  //  • Ignore l'ordre des FK grâce à CASCADE
+  //  • Ne plante pas si un modèle n'existe pas dans le schéma
+  //  • Remet les séquences auto-increment à zéro
+  // ═══════════════════════════════════════════════════════
+  console.log('🔥 NETTOYAGE DE LA BASE (TRUNCATE CASCADE)...');
+  try {
+    await prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        tbl RECORD;
+      BEGIN
+        FOR tbl IN
+          SELECT tablename
+          FROM   pg_tables
+          WHERE  schemaname = 'public'
+            AND  tablename  != '_prisma_migrations'
+        LOOP
+          EXECUTE format(
+            'TRUNCATE TABLE public.%I RESTART IDENTITY CASCADE',
+            tbl.tablename
+          );
+        END LOOP;
+      END
+      $$;
+    `);
+    console.log('   ✅ Toutes les tables vidées\n');
+  } catch (e: any) {
+    console.error('   ❌ Erreur TRUNCATE:', e.message ?? e);
+    process.exit(1);
   }
 
   console.log('🌱 DÉBUT DU SEEDING...\n');
@@ -169,21 +144,21 @@ async function main() {
   // ── 3. Client ───────────────────────────────────────────
   const doniko = await prisma.client.create({
     data: {
-      code:                'DONIKO',
-      name:                'Doniko SAS',
-      primaryColor:        '#DC2626',
-      secondaryColor:      '#1E40AF',
-      timezone:            'Europe/Paris',
-      locale:              'fr-FR',
-      defaultCurrency:     'EUR',
-      country:             'FR',
-      city:                'Paris',
-      subscriptionType:    SubscriptionType.PURCHASE,
-      subscriptionStatus:  SubscriptionStatus.ACTIVE,
-      email:               'contact@doniko.com',
-      phone:               '+33600000000',
-      address:             'Paris, France',
-      allowedCurrencies:   ['XOF', 'EUR', 'USD', 'GNF', 'GBP'],
+      code:               'DONIKO',
+      name:               'Doniko SAS',
+      primaryColor:       '#DC2626',
+      secondaryColor:     '#1E40AF',
+      timezone:           'Europe/Paris',
+      locale:             'fr-FR',
+      defaultCurrency:    'EUR',
+      country:            'FR',
+      city:               'Paris',
+      subscriptionType:   SubscriptionType.PURCHASE,
+      subscriptionStatus: SubscriptionStatus.ACTIVE,
+      email:              'contact@doniko.com',
+      phone:              '+33600000000',
+      address:            'Paris, France',
+      allowedCurrencies:  ['XOF', 'EUR', 'USD', 'GNF', 'GBP'],
       featureScheduledTransfers: true,
       featureRateAlerts:         true,
       featureLoyaltyPoints:      true,
@@ -208,8 +183,7 @@ async function main() {
   console.log(`💼 5 wallets plateforme créés (${platformCurrencies.join(', ')})\n`);
 
   // ── 5. Super Admin ──────────────────────────────────────
-  const password = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10);
-
+  const password   = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10);
   const superAdmin = await prisma.user.create({
     data: {
       email:             SUPER_ADMIN_EMAIL,
