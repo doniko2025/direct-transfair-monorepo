@@ -64,8 +64,17 @@ const CLOUD_HOST_SUFFIXES = [
   ".railway.app",
 ];
 
+// ✅ FIX : "localhost" et les IPs locales sont traités comme des
+// hôtes de déploiement technique — on n'en extrait JAMAIS de tenant.
+// AVANT : extractTenantFromUrl("http://localhost:8081/...") retournait
+// "LOCALHOST", qui écrasait le tenant FLASH avec DONIKO à chaque
+// re-montage de AuthProvider en dev mode.
 function isCloudDeploymentHost(host: string): boolean {
   const lower = host.toLowerCase();
+  // Dev local
+  if (lower === "localhost") return true;
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower)) return true;
+  // Déploiements cloud techniques
   return CLOUD_HOST_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
