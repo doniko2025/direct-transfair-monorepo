@@ -629,8 +629,11 @@ export class V2AuthService {
 
   private buildVerificationNeeded(user: any): VerificationNeededResult | null {
     const emailOk  = user.isEmailVerified;
-    const hasPhone = !!user.phone;
-    const phoneOk  = !hasPhone || user.isPhoneVerified;
+    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
+    // const hasPhone = !!user.phone;
+    // const phoneOk  = !hasPhone || user.isPhoneVerified;
+    const hasPhone = false; // DEV bypass
+    const phoneOk  = true;  // DEV bypass
 
     if (emailOk && phoneOk) return null;
 
@@ -640,11 +643,9 @@ export class V2AuthService {
       emailVerified:        emailOk,
       phoneVerified:        user.isPhoneVerified,
       hasPhone,
-      message: !emailOk && !phoneOk
-        ? 'Vérifiez votre email et votre téléphone avant de vous connecter.'
-        : !emailOk
-          ? 'Vérifiez votre adresse email avant de vous connecter.'
-          : 'Vérifiez votre numéro de téléphone avant de vous connecter.',
+      message: !emailOk
+        ? 'Vérifiez votre adresse email avant de vous connecter.'
+        : 'Vérifiez votre numéro de téléphone avant de vous connecter.',
     };
   }
 
@@ -685,33 +686,19 @@ export class V2AuthService {
       }
     }
 
-    if (user.phone && !user.isPhoneVerified) {
-      const hasRecent = await this.prisma.otpLog.count({
-        where: {
-          userId:    user.id,
-          purpose:   OtpPurpose.PHONE_VERIFICATION,
-          channel:   CommsType.SMS,
-          isUsed:    false,
-          isExpired: false,
-          expiresAt: { gte: new Date() },
-          createdAt: { gte: recentCutoff },
-        },
-      });
-
-      if (!hasRecent) {
-        tasks.push(
-          this.sendOtpInternal(
-            user.id, CommsType.SMS, OtpPurpose.PHONE_VERIFICATION, user.phone,
-          ).catch((e) => {
-            this.logger.warn(`[dispatch] SMS OTP failed: ${e?.message}`);
-          }),
-        );
-      } else {
-        this.logger.log(
-          `[dispatch] OTP PHONE_VERIFICATION récent trouvé pour ${user.id} — renvoi ignoré`,
-        );
-      }
-    }
+    // ── DEV : dispatch SMS commenté — décommenter pour la prod ──
+    // if (user.phone && !user.isPhoneVerified) {
+    //   const hasRecent = await this.prisma.otpLog.count({ ... });
+    //   if (!hasRecent) {
+    //     tasks.push(
+    //       this.sendOtpInternal(
+    //         user.id, CommsType.SMS, OtpPurpose.PHONE_VERIFICATION, user.phone,
+    //       ).catch((e) => {
+    //         this.logger.warn(`[dispatch] SMS OTP failed: ${e?.message}`);
+    //       }),
+    //     );
+    //   }
+    // }
 
     await Promise.allSettled(tasks);
   }

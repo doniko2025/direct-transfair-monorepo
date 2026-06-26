@@ -173,7 +173,8 @@ export default function VerifyContactScreen() {
   const stepsRequired = useMemo<Step[]>(() => {
     const steps: Step[] = [];
     if (!emailVerified) steps.push('email');
-    if (!phoneVerified && hasPhone) steps.push('phone');
+    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
+    // if (!phoneVerified && hasPhone) steps.push('phone');
     return steps;
   }, [emailVerified, phoneVerified, hasPhone]);
 

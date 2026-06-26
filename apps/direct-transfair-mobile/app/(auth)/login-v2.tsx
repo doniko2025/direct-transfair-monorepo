@@ -180,7 +180,9 @@ export default function LoginV2Screen() {
 
   const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
 
-  const [method,  setMethod]  = useState<Method>('CHOOSE');
+  // ✅ DEV MODE — Connexion par mot de passe uniquement.
+  // Changer 'PASSWORD' → 'CHOOSE' pour réactiver le choix de méthode (OTP email / SMS).
+  const [method,  setMethod]  = useState<Method>('PASSWORD');
   const [loading, setLoading] = useState(false);
 
   // ── MESSAGE PORTAIL — affiché pendant le switch invisible ──
@@ -508,6 +510,7 @@ export default function LoginV2Screen() {
             </Text>
 
             <View style={{ marginTop: 20, gap: 12 }}>
+              {/* ── DEV : OTP email commenté — décommenter pour la prod ──
               <TouchableOpacity
                 style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
                 onPress={() => setMethod('OTP_EMAIL')}
@@ -522,8 +525,9 @@ export default function LoginV2Screen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
+              ── */}
 
-              {/* SMS — 4 chiffres (v1 OTP) */}
+              {/* ── DEV : OTP SMS commenté — décommenter pour la prod ──
               <TouchableOpacity
                 style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
                 onPress={() => router.push('/(auth)/otp-phone')}
@@ -538,6 +542,7 @@ export default function LoginV2Screen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
+              ── */}
 
               <TouchableOpacity
                 style={[s.methodBtn, { borderColor: C.g4 + '40' }]}

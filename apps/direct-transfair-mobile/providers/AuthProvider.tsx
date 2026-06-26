@@ -252,13 +252,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // ✅ Bloquer l'accès si email non vérifié.
+    // DEV : la vérification téléphone est commentée — décommenter pour la prod.
     const needsVerification =
       user &&
       !inAuthGroup &&
       !isVerifyScreen &&
       (
-        !(user as any).isEmailVerified ||
-        ((user as any).phone && !(user as any).isPhoneVerified)
+        !(user as any).isEmailVerified
+        // ── DEV : téléphone commenté — décommenter pour la prod ──
+        // || ((user as any).phone && !(user as any).isPhoneVerified)
       );
 
     if (needsVerification) {
