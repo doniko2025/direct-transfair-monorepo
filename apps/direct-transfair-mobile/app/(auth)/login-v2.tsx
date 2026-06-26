@@ -794,7 +794,7 @@ export default function LoginV2Screen() {
               }}
               activeOpacity={0.75}
             >
-              <Ionicons name="swap-outline" size={14} color="rgba(255,255,255,0.6)" />
+              <Ionicons name="sync-outline" size={14} color="rgba(255,255,255,0.6)" />
               <Text style={[s.helpTxt, { fontFamily: F.body }]}>Portail principal</Text>
             </TouchableOpacity>
           )}

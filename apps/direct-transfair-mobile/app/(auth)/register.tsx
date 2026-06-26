@@ -384,7 +384,7 @@ function CountryPicker({ visible, onSelect, onClose, title }: {
 }
 
 const cpS = StyleSheet.create({
-  overlay:    { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end", zIndex: 100 },
+  overlay:    { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end", zIndex: 100 },
   sheet:      { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingBottom: Platform.OS === "ios" ? 40 : 20, maxHeight: "75%" },
   header:     { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 18 },
   title:      { fontSize: 22, color: C.text },
@@ -908,7 +908,7 @@ export default function RegisterScreen() {
 
 const r = StyleSheet.create({
   root:        { flex: 1, backgroundColor: C.bg },
-  bgBase:      { ...StyleSheet.absoluteFillObject, backgroundColor: C.g1, zIndex: -2 },
+  bgBase:      { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0, backgroundColor: C.g1, zIndex: -2 },
   bgCircle:    { position: "absolute", width: 300, height: 300, borderRadius: 150, backgroundColor: C.g2, top: -100, right: -80, zIndex: -1 },
   header:      { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 56, paddingBottom: 18, gap: 12 },
   backBtn:     { width: 38, height: 38, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center" },
