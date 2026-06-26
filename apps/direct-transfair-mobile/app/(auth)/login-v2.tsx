@@ -1,17 +1,34 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.1 — 3 méthodes de connexion
-// ✅ Email + mot de passe
-// ✅ OTP par email (6 chiffres)
-// ✅ OTP par SMS → otp-phone.tsx
-// ✅ Isolation portail (SA vs société)
-// ✅ Redirection vers verify-contact si non vérifié
+// LOGIN v2.3 — 3 méthodes de connexion
 // ✅ v2.1 : applyLoginResult() remplace storeTokens() + refreshUser()
-//   PROBLÈME CORRIGÉ : storeTokens appelait api.setToken() mais ne
-//   mettait pas à jour tokenRef.current dans AuthProvider.
-//   refreshUser() lisait tokenRef === null → retournait tôt → guard muet.
-//   CORRECTIF : applyLoginResult() hydrate correctement tout l'état
-//   React (user, token, tokenRef, SecureStore) en un seul appel.
+// ✅ v2.2 : clearBranding / USE_DEFAULT_PORTAL / bouton portail principal
+// ✅ v2.3 : AUTO-RETRY TRANSPARENT après switch de portail
+//
+//   PROBLÈME RÉGLÉ :
+//   Avant v2.3, un switch de portail (ex: SuperAdmin sur portail
+//   Flash Transfer) nécessitait 2 clics :
+//     1. Clic → USE_DEFAULT_PORTAL → Alert → clearBranding()
+//     2. Re-clic manuellement → login réussi
+//
+//   SOLUTION :
+//   handlePortalError() accepte maintenant un retryFn callback.
+//   Après clearBranding() ou loadBranding(), le login est relancé
+//   automatiquement avec les mêmes credentials — de façon transparente,
+//   sans interruption, sans Alert intermédiaire.
+//
+//   FLOWS COUVERTS :
+//     • SuperAdmin sur portail société → USE_DEFAULT_PORTAL
+//         → clearBranding() → auto-retry DONIKO → ✅ 1 clic
+//     • Admin/client sur portail DONIKO → USE_COMPANY_PORTAL
+//         → loadBranding(clientCode) → auto-retry tenant société → ✅ 1 clic
+//     • Web : redirection vers sous-domaine/domaine custom (inchangé)
+//     • OTP email : même logique de retry transparent
+//     • Bouton "Portail principal" : switch manuel (inchangé)
+//
+//   GARDE-FOU ANTI-BOUCLE :
+//     retryFn est appelé avec isRetry=true. Sur erreur au retry,
+//     on affiche l'erreur normalement sans relancer un nouveau cycle.
 // =========================================================
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -109,7 +126,7 @@ function FloatingInput({
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
-          onBlur={()  => setFocused(false)}
+          onBlur={() => setFocused(false)}
           secureTextEntry={secureTextEntry && !show}
           keyboardType={keyboardType ?? 'default'}
           returnKeyType={returnKeyType}
@@ -137,17 +154,46 @@ const fi = StyleSheet.create({
   eye:   { padding: 4 },
 });
 
-// ─── Écran principal ─────────────────────────────────────
+// ─── Indicateur de portail actif ─────────────────────────
+// Affiché quand un switch se produit pour informer l'utilisateur
+function PortalBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={[pb.wrap, { backgroundColor: color + '18', borderColor: color + '40' }]}>
+      <Ionicons name="swap-horizontal-outline" size={12} color={color} />
+      <Text style={[pb.txt, { color, fontFamily: F.body }]}>{label}</Text>
+    </View>
+  );
+}
+
+const pb = StyleSheet.create({
+  wrap: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 12 },
+  txt:  { fontSize: 11, fontWeight: '700' },
+});
+
+// =========================================================
+// ÉCRAN PRINCIPAL
+// =========================================================
 export default function LoginV2Screen() {
-  const { branding, isCustomBranding, loadBranding } = useTenant();
-  // ✅ v2.1 : applyLoginResult() remplace storeTokens() + refreshUser()
-  const { applyLoginResult, loginWithPhoneOtp } = useAuth();
+  const { branding, isCustomBranding, loadBranding, clearBranding } = useTenant();
+  const { applyLoginResult } = useAuth();
   const router = useRouter();
 
   const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
 
   const [method,  setMethod]  = useState<Method>('CHOOSE');
   const [loading, setLoading] = useState(false);
+
+  // ── MESSAGE PORTAIL — affiché pendant le switch invisible ──
+  // ex: "Portail DONIKO chargé" — 2 secondes puis disparaît
+  const [portalMsg, setPortalMsg] = useState<string | null>(null);
+  const portalMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showPortalMsg = (msg: string) => {
+    setPortalMsg(msg);
+    if (portalMsgTimer.current) clearTimeout(portalMsgTimer.current);
+    portalMsgTimer.current = setTimeout(() => setPortalMsg(null), 3000);
+  };
+
   const btnScale = useRef(new Animated.Value(1)).current;
 
   // ── PASSWORD state ────────────────────────────────────
@@ -190,10 +236,7 @@ export default function LoginV2Screen() {
     });
   };
 
-  // ── Réponse login réussie ─────────────────────────────
-  // ✅ v2.1 : applyLoginResult() hydrate correctement tout l'état
-  // AuthProvider (user, token, tokenRef, SecureStore) en un seul appel.
-  // Le guard voit le changement de `user` et redirige vers /(tabs)/home.
+  // ── Login réussi → hydrate AuthProvider ───────────────
   const handleLoginSuccess = async (result: any) => {
     await applyLoginResult(
       result.access_token,
@@ -202,12 +245,33 @@ export default function LoginV2Screen() {
     );
   };
 
-  // ── Erreur portail ────────────────────────────────────
-  const handlePortalError = async (e: any) => {
+  // ══════════════════════════════════════════════════════
+  // handlePortalError v2.3 — AUTO-RETRY TRANSPARENT
+  //
+  // @param e         L'erreur axios interceptée
+  // @param retryFn   Callback à exécuter après le switch de portail.
+  //                  Appelé avec isRetry=true pour éviter les boucles.
+  //
+  // LOGIQUE :
+  //   USE_COMPANY_PORTAL → loadBranding(clientCode) → await retryFn()
+  //   USE_DEFAULT_PORTAL → clearBranding()          → await retryFn()
+  //   Autre erreur       → Alert normal, pas de retry
+  //
+  // GARDE-FOU : retryFn est enveloppé dans try/catch ici.
+  //   Les erreurs du retry sont gérées DANS retryFn (isRetry=true),
+  //   pas ici, pour éviter la double gestion.
+  // ══════════════════════════════════════════════════════
+  const handlePortalError = async (
+    e: any,
+    retryFn?: () => Promise<void>,
+  ): Promise<void> => {
     const data = e?.response?.data;
 
+    // ── Cas 1 : User doit aller sur le portail de sa société ──
     if (data?.code === 'USE_COMPANY_PORTAL') {
       const { clientCode, subdomain, customDomain } = data;
+
+      // Web : redirection directe vers le sous-domaine/domaine custom
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const targetUrl = customDomain
           ? `https://${customDomain}`
@@ -215,74 +279,126 @@ export default function LoginV2Screen() {
             ? `https://${subdomain}.direct-transfer.com`
             : null;
         if (targetUrl) {
-          Alert.alert('Redirection', `Redirection vers l'espace ${clientCode ?? 'votre société'}…`, [
-            { text: 'Accéder →', onPress: () => { window.location.href = targetUrl; } },
-          ], { cancelable: false });
+          Alert.alert(
+            'Redirection',
+            `Redirection vers l'espace ${clientCode ?? 'votre société'}…`,
+            [{ text: 'Accéder →', onPress: () => { window.location.href = targetUrl; } }],
+            { cancelable: false },
+          );
           return;
         }
       }
+
+      // Mobile : charger le branding de la société + auto-retry
       if (clientCode) {
-        await loadBranding(clientCode).catch(() => {});
-        Alert.alert('Portail mis à jour', `L'espace "${clientCode}" est maintenant chargé. Reconnectez-vous.`);
+        try {
+          await loadBranding(clientCode);
+        } catch {
+          // Branding en erreur → on continue quand même le retry
+        }
+        showPortalMsg(`Espace "${clientCode}" chargé — connexion en cours…`);
+        if (retryFn) {
+          // Le retry s'exécute avec le nouveau tenant déjà appliqué
+          await retryFn().catch(() => {
+            // Erreur gérée à l'intérieur de retryFn (isRetry=true)
+          });
+        }
+        return;
       }
       return;
     }
 
+    // ── Cas 2 : SuperAdmin doit aller sur le portail principal ──
     if (data?.code === 'USE_DEFAULT_PORTAL') {
-      Alert.alert('Portail incorrect', "Le Super Admin se connecte via le portail principal Direct Transf'air.");
+      // Réinitialise branding → tenant = DONIKO (synchrone)
+      clearBranding();
+      showPortalMsg('Portail principal chargé — connexion en cours…');
+      if (retryFn) {
+        await retryFn().catch(() => {
+          // Erreur gérée à l'intérieur de retryFn (isRetry=true)
+        });
+      }
       return;
     }
 
+    // ── Cas 3 : Toute autre erreur → affichage normal ──
     const msg = v2Auth.extractMessage(e);
     Platform.OS === 'web'
       ? alert(msg)
       : Alert.alert('Connexion échouée', msg);
   };
 
-  // ═══════════════════════════════════════════════════════
-  // HANDLERS
-  // ═══════════════════════════════════════════════════════
-
-  const handlePasswordLogin = async () => {
+  // ══════════════════════════════════════════════════════
+  // CONNEXION PAR MOT DE PASSE
+  //
+  // isRetry=false (défaut) : premier essai, auto-retry autorisé
+  // isRetry=true           : deuxième essai post-switch, pas de retry
+  //   → si ça échoue encore, c'est vraiment une erreur à afficher
+  // ══════════════════════════════════════════════════════
+  const handlePasswordLogin = async (isRetry = false) => {
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
-      const result = await v2Auth.loginPassword(email, password);
+      const result = await v2Auth.loginPassword(email.trim(), password);
+
       if ('requiresVerification' in result && result.requiresVerification) {
         goToVerification(result);
         return;
       }
+
       await handleLoginSuccess(result);
+
     } catch (e: any) {
-      await handlePortalError(e);
+      if (!isRetry) {
+        // Premier essai : tenter un switch de portail puis auto-retry
+        await handlePortalError(e, () => handlePasswordLogin(true));
+      } else {
+        // Deuxième essai (post-switch) : afficher l'erreur directement
+        const msg = v2Auth.extractMessage(e);
+        Platform.OS === 'web'
+          ? alert(msg)
+          : Alert.alert('Connexion échouée', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRequestOtpEmail = async () => {
+  // ══════════════════════════════════════════════════════
+  // DEMANDE OTP PAR EMAIL — même logique de retry
+  // ══════════════════════════════════════════════════════
+  const handleRequestOtpEmail = async (isRetry = false) => {
     if (!emailForOtp.trim()) return;
     setLoading(true);
     try {
-      const result = await v2Auth.requestOtpEmail(emailForOtp);
+      const result = await v2Auth.requestOtpEmail(emailForOtp.trim());
       setOtpUserId(result.userId);
       setMaskedRec(result.maskedRecipient);
       setOtpChannel('EMAIL');
       setOtpValues(['', '', '', '', '', '']);
       setOtpEmailStep('verify');
       setTimeout(() => otpRefs[0].current?.focus(), 200);
+
     } catch (e: any) {
       const data = e?.response?.data;
       if (data?.code === 'VERIFICATION_REQUIRED') {
         goToVerification(data);
         return;
       }
-      await handlePortalError(e);
+      if (!isRetry) {
+        await handlePortalError(e, () => handleRequestOtpEmail(true));
+      } else {
+        const msg = v2Auth.extractMessage(e);
+        Platform.OS === 'web'
+          ? alert(msg)
+          : Alert.alert('Connexion échouée', msg);
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // ── Gestion saisie OTP ────────────────────────────────
   const handleOtpChange = (text: string, index: number) => {
     const digit = text.replace(/\D/g, '').slice(-1);
     const next  = [...otpValues];
@@ -303,6 +419,7 @@ export default function LoginV2Screen() {
     }
   };
 
+  // ── Vérification OTP de connexion ─────────────────────
   const handleVerifyOtp = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
     if (code.length < 6) return;
@@ -325,29 +442,40 @@ export default function LoginV2Screen() {
     }
   };
 
-  // ═══════════════════════════════════════════════════════
-  // RENDU
-  // ═══════════════════════════════════════════════════════
-
   const canSubmitPassword = email.trim().length > 0 && password.trim().length > 0;
 
+  // ══════════════════════════════════════════════════════
+  // RENDU
+  // ══════════════════════════════════════════════════════
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: C.g3 }}>
-      <StatusBar barStyle='light-content' backgroundColor={C.g2} />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1, backgroundColor: C.g3 }}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={C.g2} />
       <View style={[s.bgBase, { backgroundColor: C.g3 }]} />
       <View style={s.bgCircle1} />
       <View style={s.bgCircle2} />
 
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps='handled' style={{ flex: 1, backgroundColor: 'transparent' }}>
-
-        {/* ── Header ── */}
+      <ScrollView
+        contentContainerStyle={s.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+      >
+        {/* ── Bouton retour ── */}
         {method !== 'CHOOSE' && (
           <TouchableOpacity
             style={s.backBtn}
-            onPress={() => { setMethod('CHOOSE'); setOtpEmailStep('input'); setOtpValues(['', '', '', '', '', '']); }}
+            onPress={() => {
+              setMethod('CHOOSE');
+              setOtpEmailStep('input');
+              setOtpValues(['', '', '', '', '', '']);
+              setPortalMsg(null);
+            }}
             activeOpacity={0.75}
           >
-            <Ionicons name='arrow-back' size={20} color='rgba(255,255,255,0.9)' />
+            <Ionicons name="arrow-back" size={20} color="rgba(255,255,255,0.9)" />
           </TouchableOpacity>
         )}
 
@@ -355,7 +483,7 @@ export default function LoginV2Screen() {
         <View style={s.hero}>
           <View style={s.logoOuter}>
             <View style={s.logoInner}>
-              <Ionicons name='swap-horizontal' size={28} color={C.g4} />
+              <Ionicons name="swap-horizontal" size={28} color={C.g4} />
             </View>
           </View>
           <Text style={[s.appName, { fontFamily: branding.fontFamily ?? F.display }]}>
@@ -366,9 +494,9 @@ export default function LoginV2Screen() {
           </Text>
         </View>
 
-        {/* ═══════════════════════════════════════════════ */}
-        {/* CARD — CHOOSE                                  */}
-        {/* ═══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════ */}
+        {/* CARD — CHOOSE                                 */}
+        {/* ══════════════════════════════════════════════ */}
         {method === 'CHOOSE' && (
           <View style={[s.card, { shadowColor: C.g1 }]}>
             <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
@@ -380,136 +508,255 @@ export default function LoginV2Screen() {
             </Text>
 
             <View style={{ marginTop: 20, gap: 12 }}>
-              {/* Email OTP */}
-              <TouchableOpacity style={[s.methodBtn, { borderColor: C.g4 + '40' }]} onPress={() => setMethod('OTP_EMAIL')} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                onPress={() => setMethod('OTP_EMAIL')}
+                activeOpacity={0.85}
+              >
                 <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name='mail-outline' size={22} color={C.g4} />
+                  <Ionicons name="mail-outline" size={22} color={C.g4} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.methodTitle, { fontFamily: F.body }]}>Code par email</Text>
                   <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 6 chiffres</Text>
                 </View>
-                <Ionicons name='chevron-forward' size={18} color={C.g5} />
+                <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
 
-              {/* SMS OTP */}
-              <TouchableOpacity style={[s.methodBtn, { borderColor: C.g4 + '40' }]} onPress={() => router.push('/(auth)/otp-phone')} activeOpacity={0.85}>
+              {/* SMS — 4 chiffres (v1 OTP) */}
+              <TouchableOpacity
+                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                onPress={() => router.push('/(auth)/otp-phone')}
+                activeOpacity={0.85}
+              >
                 <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name='phone-portrait-outline' size={22} color={C.g4} />
+                  <Ionicons name="phone-portrait-outline" size={22} color={C.g4} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.methodTitle, { fontFamily: F.body }]}>Code par SMS</Text>
-                  <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 6 chiffres</Text>
+                  <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 4 chiffres</Text>
                 </View>
-                <Ionicons name='chevron-forward' size={18} color={C.g5} />
+                <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
 
-              {/* Mot de passe */}
-              <TouchableOpacity style={[s.methodBtn, { borderColor: C.g4 + '40' }]} onPress={() => setMethod('PASSWORD')} activeOpacity={0.85}>
+              <TouchableOpacity
+                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                onPress={() => setMethod('PASSWORD')}
+                activeOpacity={0.85}
+              >
                 <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name='lock-closed-outline' size={22} color={C.g4} />
+                  <Ionicons name="lock-closed-outline" size={22} color={C.g4} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.methodTitle, { fontFamily: F.body }]}>Mot de passe</Text>
                   <Text style={[s.methodDesc, { fontFamily: F.body }]}>Email + mot de passe</Text>
                 </View>
-                <Ionicons name='chevron-forward' size={18} color={C.g5} />
+                <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {/* ═══════════════════════════════════════════════ */}
-        {/* CARD — MOT DE PASSE                            */}
-        {/* ═══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════ */}
+        {/* CARD — MOT DE PASSE                           */}
+        {/* ══════════════════════════════════════════════ */}
         {method === 'PASSWORD' && (
           <View style={[s.card, { shadowColor: C.g1 }]}>
             <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
-            <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>Mot de passe</Text>
-            <Text style={[s.cardSub, { fontFamily: F.body }]}>Connectez-vous avec votre email et mot de passe.</Text>
+            <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+              Mot de passe
+            </Text>
+            <Text style={[s.cardSub, { fontFamily: F.body }]}>
+              Connectez-vous avec votre email et mot de passe.
+            </Text>
 
-            <View style={{ marginTop: 20 }}>
-              <FloatingInput label='Email' value={email} onChangeText={setEmail} icon='mail-outline' keyboardType='email-address' returnKeyType='next' onSubmitEditing={() => passRef.current?.focus()} accentColor={C.g4} />
-              <FloatingInput label='Mot de passe' value={password} onChangeText={setPassword} icon='lock-closed-outline' secureTextEntry returnKeyType='done' onSubmitEditing={canSubmitPassword ? handlePasswordLogin : undefined} inputRef={passRef} accentColor={C.g4} />
+            {/* ✅ v2.3 : Badge informatif après switch de portail */}
+            {portalMsg && (
+              <PortalBadge label={portalMsg} color={C.g4} />
+            )}
+
+            <View style={{ marginTop: portalMsg ? 4 : 20 }}>
+              <FloatingInput
+                label="Email"
+                value={email}
+                onChangeText={setEmail}
+                icon="mail-outline"
+                keyboardType="email-address"
+                returnKeyType="next"
+                onSubmitEditing={() => passRef.current?.focus()}
+                accentColor={C.g4}
+              />
+              <FloatingInput
+                label="Mot de passe"
+                value={password}
+                onChangeText={setPassword}
+                icon="lock-closed-outline"
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={canSubmitPassword ? () => handlePasswordLogin() : undefined}
+                inputRef={passRef}
+                accentColor={C.g4}
+              />
             </View>
 
             <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-              <TouchableOpacity style={[s.btn, { backgroundColor: C.g3, shadowColor: C.g3 }, !canSubmitPassword && s.btnDisabled]} onPress={handlePasswordLogin} disabled={loading || !canSubmitPassword} activeOpacity={0.9}>
-                {loading ? <ActivityIndicator color='#FFFFFF' /> : (
+              <TouchableOpacity
+                style={[
+                  s.btn,
+                  { backgroundColor: C.g3, shadowColor: C.g3 },
+                  (!canSubmitPassword || loading) && s.btnDisabled,
+                ]}
+                onPress={() => handlePasswordLogin()}
+                disabled={loading || !canSubmitPassword}
+                activeOpacity={0.9}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
                   <>
                     <Text style={[s.btnTxt, { fontFamily: F.body }]}>Se connecter</Text>
-                    <View style={s.btnArrow}><Ionicons name='arrow-forward' size={16} color={C.g4} /></View>
+                    <View style={s.btnArrow}>
+                      <Ionicons name="arrow-forward" size={16} color={C.g4} />
+                    </View>
                   </>
                 )}
               </TouchableOpacity>
             </Animated.View>
 
-            <TouchableOpacity style={s.forgotBtn} onPress={() => router.push('/(auth)/forgot-password')}>
-              <Text style={[s.forgotTxt, { color: C.g4, fontFamily: F.body }]}>Mot de passe oublié ?</Text>
+            <TouchableOpacity
+              style={s.linkBtn}
+              onPress={() => router.push('/(auth)/forgot-password')}
+            >
+              <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
+                Mot de passe oublié ?
+              </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* ═══════════════════════════════════════════════ */}
-        {/* CARD — OTP EMAIL                               */}
-        {/* ═══════════════════════════════════════════════ */}
+        {/* ══════════════════════════════════════════════ */}
+        {/* CARD — OTP EMAIL                              */}
+        {/* ══════════════════════════════════════════════ */}
         {method === 'OTP_EMAIL' && (
           <View style={[s.card, { shadowColor: C.g1 }]}>
             <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
 
+            {/* ── Étape 1 : saisie email ── */}
             {otpEmailStep === 'input' && (
               <>
-                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>Code par email</Text>
-                <Text style={[s.cardSub, { fontFamily: F.body }]}>Saisissez votre email pour recevoir un code à 6 chiffres.</Text>
-                <View style={{ marginTop: 20 }}>
-                  <FloatingInput label='Email' value={emailForOtp} onChangeText={setEmailForOtp} icon='mail-outline' keyboardType='email-address' returnKeyType='done' onSubmitEditing={handleRequestOtpEmail} accentColor={C.g4} />
+                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                  Code par email
+                </Text>
+                <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                  Saisissez votre email pour recevoir un code à 6 chiffres.
+                </Text>
+
+                {portalMsg && (
+                  <PortalBadge label={portalMsg} color={C.g4} />
+                )}
+
+                <View style={{ marginTop: portalMsg ? 4 : 20 }}>
+                  <FloatingInput
+                    label="Email"
+                    value={emailForOtp}
+                    onChangeText={setEmailForOtp}
+                    icon="mail-outline"
+                    keyboardType="email-address"
+                    returnKeyType="done"
+                    onSubmitEditing={() => handleRequestOtpEmail()}
+                    accentColor={C.g4}
+                  />
                 </View>
-                <TouchableOpacity style={[s.btn, { backgroundColor: C.g3, shadowColor: C.g3 }, (!emailForOtp.trim() || loading) && s.btnDisabled]} onPress={handleRequestOtpEmail} disabled={!emailForOtp.trim() || loading} activeOpacity={0.9}>
-                  {loading ? <ActivityIndicator color='#FFFFFF' /> : (
+
+                <TouchableOpacity
+                  style={[
+                    s.btn,
+                    { backgroundColor: C.g3, shadowColor: C.g3 },
+                    (!emailForOtp.trim() || loading) && s.btnDisabled,
+                  ]}
+                  onPress={() => handleRequestOtpEmail()}
+                  disabled={!emailForOtp.trim() || loading}
+                  activeOpacity={0.9}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
                     <>
                       <Text style={[s.btnTxt, { fontFamily: F.body }]}>Envoyer le code</Text>
-                      <View style={s.btnArrow}><Ionicons name='arrow-forward' size={16} color={C.g4} /></View>
+                      <View style={s.btnArrow}>
+                        <Ionicons name="arrow-forward" size={16} color={C.g4} />
+                      </View>
                     </>
                   )}
                 </TouchableOpacity>
               </>
             )}
 
+            {/* ── Étape 2 : saisie du code ── */}
             {otpEmailStep === 'verify' && (
               <>
-                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>Code reçu</Text>
-                <Text style={[s.cardSub, { fontFamily: F.body }]}>Code envoyé à {maskedRec}. Saisissez les 6 chiffres.</Text>
+                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                  Code reçu
+                </Text>
+                <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                  Code envoyé à {maskedRec}. Saisissez les 6 chiffres.
+                </Text>
 
                 <View style={s.otpRow}>
                   {([0, 1, 2, 3, 4, 5] as const).map((i) => (
                     <TextInput
                       key={i}
                       ref={otpRefs[i] as any}
-                      style={[s.otpBox, otpValues[i] ? { borderColor: C.g4 } : {}, Platform.OS === 'web' && ({ outlineStyle: 'none' } as any)]}
+                      style={[
+                        s.otpBox,
+                        otpValues[i] ? { borderColor: C.g4 } : {},
+                        Platform.OS === 'web' && ({ outlineStyle: 'none' } as any),
+                      ]}
                       value={otpValues[i]}
                       onChangeText={(t) => handleOtpChange(t, i)}
                       onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, i)}
-                      keyboardType='number-pad'
+                      keyboardType="number-pad"
                       maxLength={1}
-                      textAlign='center'
+                      textAlign="center"
                       caretHidden
                       selectTextOnFocus
-                      underlineColorAndroid='transparent'
+                      underlineColorAndroid="transparent"
                     />
                   ))}
                 </View>
 
-                <TouchableOpacity style={[s.btn, { backgroundColor: C.g3, shadowColor: C.g3 }, (otpValues.some((d) => !d) || loading) && s.btnDisabled]} onPress={() => handleVerifyOtp()} disabled={otpValues.some((d) => !d) || loading} activeOpacity={0.9}>
-                  {loading ? <ActivityIndicator color='#FFFFFF' /> : (
+                <TouchableOpacity
+                  style={[
+                    s.btn,
+                    { backgroundColor: C.g3, shadowColor: C.g3 },
+                    (otpValues.some((d) => !d) || loading) && s.btnDisabled,
+                  ]}
+                  onPress={() => handleVerifyOtp()}
+                  disabled={otpValues.some((d) => !d) || loading}
+                  activeOpacity={0.9}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
                     <>
                       <Text style={[s.btnTxt, { fontFamily: F.body }]}>Confirmer</Text>
-                      <View style={s.btnArrow}><Ionicons name='checkmark' size={16} color={C.g4} /></View>
+                      <View style={s.btnArrow}>
+                        <Ionicons name="checkmark" size={16} color={C.g4} />
+                      </View>
                     </>
                   )}
                 </TouchableOpacity>
 
-                <TouchableOpacity style={s.resendBtn} onPress={() => { setOtpEmailStep('input'); setOtpValues(['', '', '', '', '', '']); }}>
-                  <Text style={[s.resendTxt, { color: C.g4, fontFamily: F.body }]}>Renvoyer le code</Text>
+                <TouchableOpacity
+                  style={s.linkBtn}
+                  onPress={() => {
+                    setOtpEmailStep('input');
+                    setOtpValues(['', '', '', '', '', '']);
+                  }}
+                >
+                  <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
+                    Renvoyer le code
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -519,13 +766,45 @@ export default function LoginV2Screen() {
         {/* ── Bas de page ── */}
         <View style={s.bottom}>
           {isCustomBranding && (
-            <TouchableOpacity style={s.registerBtn} onPress={() => router.push('/(auth)/register')} activeOpacity={0.9}>
-              <Ionicons name='person-add-outline' size={18} color={C.g4} style={{ marginRight: 8 }} />
-              <Text style={[s.registerTxt, { color: C.g3, fontFamily: F.body }]}>Devenir client</Text>
+            <TouchableOpacity
+              style={s.registerBtn}
+              onPress={() => router.push('/(auth)/register')}
+              activeOpacity={0.9}
+            >
+              <Ionicons name="person-add-outline" size={18} color={C.g4} style={{ marginRight: 8 }} />
+              <Text style={[s.registerTxt, { color: C.g3, fontFamily: F.body }]}>
+                Devenir client
+              </Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={s.helpRow} onPress={() => router.push('/(auth)/assistance')} activeOpacity={0.75}>
-            <Ionicons name='chatbubble-ellipses-outline' size={14} color='rgba(255,255,255,0.6)' />
+
+          {/* ✅ v2.2 : Switch manuel → portail principal */}
+          {isCustomBranding && (
+            <TouchableOpacity
+              style={s.helpRow}
+              onPress={() => {
+                Alert.alert(
+                  'Changer de portail',
+                  "Accéder au portail principal Direct Transf'air (Super Admin) ?",
+                  [
+                    { text: 'Annuler', style: 'cancel' },
+                    { text: 'Portail principal', onPress: () => clearBranding() },
+                  ],
+                );
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="swap-outline" size={14} color="rgba(255,255,255,0.6)" />
+              <Text style={[s.helpTxt, { fontFamily: F.body }]}>Portail principal</Text>
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={s.helpRow}
+            onPress={() => router.push('/(auth)/assistance')}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color="rgba(255,255,255,0.6)" />
             <Text style={[s.helpTxt, { fontFamily: F.body }]}>Assistance</Text>
           </TouchableOpacity>
         </View>
@@ -536,12 +815,22 @@ export default function LoginV2Screen() {
   );
 }
 
+// ─────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   bgBase:    { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: 'rgba(255,255,255,0.05)', top: -80, right: -80 },
   bgCircle2: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.04)', top: 120, left: -60 },
   scroll:    { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 56 : 64 },
-  backBtn:   { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+
+  backBtn: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center', alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+  },
 
   hero:      { alignItems: 'center', marginBottom: 24 },
   logoOuter: { width: 78, height: 78, borderRadius: 26, backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', justifyContent: 'center', alignItems: 'center', marginBottom: 14 },
@@ -567,11 +856,8 @@ const s = StyleSheet.create({
   otpRow: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginVertical: 20 },
   otpBox: { width: 48, height: 58, backgroundColor: '#F8FAFC', borderRadius: 14, borderWidth: 2, borderColor: '#E2E8F0', fontSize: 24, fontWeight: '900', color: '#0F172A', textAlign: 'center' },
 
-  resendBtn: { alignItems: 'center', paddingVertical: 14 },
-  resendTxt: { fontSize: 14, fontWeight: '600' },
-
-  forgotBtn: { alignItems: 'center', paddingVertical: 14 },
-  forgotTxt: { fontSize: 13, fontWeight: '700' },
+  linkBtn: { alignItems: 'center', paddingVertical: 14 },
+  linkTxt: { fontSize: 14, fontWeight: '600' },
 
   bottom:      { marginTop: 16, alignItems: 'center', gap: 8 },
   registerBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22, width: '100%', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },

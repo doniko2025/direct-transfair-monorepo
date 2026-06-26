@@ -1,33 +1,34 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
-// VERIFY CONTACT v1.0 — Direct Transf'air
+// VERIFY CONTACT v1.1 — Direct Transf'air
+// ✅ v1.0 conservé intégralement
+// ✅ v1.1 : CORRECTIFS UX ERREUR RÉSEAU
 //
-// Vérification obligatoire email + téléphone avant toute connexion.
-// Déclenché dans 2 contextes :
+//   FIX 1 — State sendError + UI de retry inline
+//     AVANT : Alert.alert() suivi de rien → l'utilisateur
+//     voyait un écran vide (isSending=false, codeSent=false)
+//     sans possibilité de retry.
+//     APRÈS : setSendError(msg) → la card affiche le message
+//     d'erreur + bouton "Réessayer" sans quitter l'écran.
 //
-//   Cas A — Post-inscription (JWT existant, user non vérifié)
-//     → Le guard AuthProvider redirige ici depuis /(tabs)/home
-//     → Après allVerified, appelle refreshUser() → guard → home
+//   FIX 2 — Rate limit silencieux amélioré
+//     La détection inclut maintenant "heure" en plus de "rate"
+//     et "3" pour capturer tous les formats backend possibles.
 //
-//   Cas B — Post-login bloqué (pas de JWT)
-//     → login-v2.tsx redirige ici avec requiresVerification:true
-//     → Après allVerified, naviguer vers login-v2 (message succès)
+//   FIX 3 — Reset sendError dans moveToNextStep
+//     Sans ce reset, une erreur de l'étape email persistait
+//     sur l'étape téléphone.
 //
-// Paramètres reçus (chaînes '0'/'1') :
-//   userId, emailVerified, phoneVerified, hasPhone
-//
-// Design : cohérent avec login-v2.tsx et otp-phone.tsx
-//   - Même buildTheme(), mêmes fonts F.display / F.body
-//   - 6 cases OTP (codes 6 chiffres vs 4 chiffres en v1)
-//   - Progress bar 2 étapes si email+téléphone requis
-//   - Rate limit : 3 envois/heure max, countdown 60s entre envois
+//   FIX 4 — sendCode ne spam plus l'alerte
+//     Sur mobile, l'Alert dupliquait l'info déjà visible en
+//     inline → supprimée au profit du state sendError.
 // =========================================================
 
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, KeyboardAvoidingView,
+  ActivityIndicator, Animated, KeyboardAvoidingView,
   Platform, ScrollView, StatusBar, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -188,6 +189,8 @@ export default function VerifyContactScreen() {
   const [isVerifying, setIsVerifying] = useState(false);
   const [codeSent,    setCodeSent]    = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
+  // ✅ v1.1 : state erreur inline (remplace Alert.alert)
+  const [sendError,   setSendError]   = useState<string | null>(null);
 
   // ── Minuteur renvoi ──────────────────────────────────────
   const [countdown, setCountdown] = useState(0);
@@ -229,10 +232,13 @@ export default function VerifyContactScreen() {
   ];
 
   // ── Envoi du code ────────────────────────────────────────
+  // ✅ v1.1 : setSendError au lieu d'Alert + reset error au départ
   const sendCode = useCallback(async (step: Step) => {
     if (!userId) return;
     setIsSending(true);
     setRateLimited(false);
+    setSendError(null); // Reset l'erreur précédente
+
     try {
       const channel = step === 'email' ? 'EMAIL' : 'PHONE';
       const res = await v2Auth.sendVerification(userId, channel);
@@ -242,13 +248,18 @@ export default function VerifyContactScreen() {
       setTimeout(() => otpRefs[0]?.current?.focus(), 250);
     } catch (e: any) {
       const msg = v2Auth.extractMessage(e);
-      if (msg.toLowerCase().includes('rate') || msg.includes('3')) {
+      const isRateLimit =
+        msg.toLowerCase().includes('rate')  ||
+        msg.toLowerCase().includes('heure') ||
+        msg.includes('3');
+
+      if (isRateLimit) {
+        // Rate limit : afficher UI OTP quand même (code peut déjà exister)
         setRateLimited(true);
-        setCodeSent(true); // ne pas bloquer l'UI — code peut déjà exister
+        setCodeSent(true);
       } else {
-        Platform.OS === 'web'
-          ? alert(msg)
-          : Alert.alert('Envoi impossible', msg);
+        // ✅ v1.1 : erreur inline avec retry, pas d'Alert
+        setSendError(msg);
       }
     } finally {
       setIsSending(false);
@@ -268,6 +279,7 @@ export default function VerifyContactScreen() {
     setCodeSent(false);
     setRateLimited(false);
     setCountdown(0);
+    setSendError(null); // ✅ v1.1 : reset l'erreur
     checkScale.setValue(0);
     setCurrentStepIndex((i) => i + 1);
   };
@@ -298,10 +310,7 @@ export default function VerifyContactScreen() {
   // ── Vérification ─────────────────────────────────────────
   const handleVerify = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
-    if (code.length < OTP_LENGTH) {
-      Alert.alert('Code incomplet', `Veuillez saisir les ${OTP_LENGTH} chiffres.`);
-      return;
-    }
+    if (code.length < OTP_LENGTH) return;
     if (currentStep === 'done') return;
 
     setIsVerifying(true);
@@ -312,11 +321,9 @@ export default function VerifyContactScreen() {
       if (res.allVerified) {
         animateSuccess();
         setTimeout(async () => {
-          // Cas A — JWT existant : refreshUser, le guard navigue vers home
           if (token) {
-            try { await refreshUser(); } catch { /* guard s'occupe de la nav */ }
+            try { await refreshUser(); } catch {}
           } else {
-            // Cas B — pas de JWT : retour login-v2 avec message succès
             router.replace({
               pathname: '/(auth)/login-v2',
               params: { verified: '1' },
@@ -326,16 +333,18 @@ export default function VerifyContactScreen() {
         return;
       }
 
-      // Encore une étape : passer à la suivante
       if (!res.allVerified) {
         animateSuccess();
         setTimeout(() => moveToNextStep(), 700);
       }
     } catch (e: any) {
       const msg = v2Auth.extractMessage(e);
-      Platform.OS === 'web'
-        ? alert(msg)
-        : Alert.alert('Code invalide', msg);
+      if (Platform.OS === 'web') {
+        alert(msg);
+      } else {
+        const { Alert } = require('react-native');
+        Alert.alert('Code invalide', msg);
+      }
       setOtpValues(emptyOtp());
       setTimeout(() => otpRefs[0]?.current?.focus(), 100);
     } finally {
@@ -348,13 +357,13 @@ export default function VerifyContactScreen() {
     if (countdown > 0 || isSending || currentStep === 'done') return;
     setOtpValues(emptyOtp());
     setCodeSent(false);
+    setSendError(null);
     await sendCode(currentStep as Step);
   };
 
   // ── Cas : rien à vérifier ────────────────────────────────
   useEffect(() => {
     if (stepsRequired.length === 0) {
-      // Déjà tout vérifié — cas inattendu, on laisse passer
       if (token) {
         void refreshUser();
       } else {
@@ -420,7 +429,6 @@ export default function VerifyContactScreen() {
       >
         {/* ══ EN-TÊTE ══ */}
         <View style={s.header}>
-          {/* Pas de retour arrière intentionnel — vérification obligatoire */}
           <View style={s.headerSpacer} />
           {totalSteps > 1 && (
             <Text style={[s.stepCounter, { fontFamily: F.body }]}>
@@ -436,9 +444,7 @@ export default function VerifyContactScreen() {
               style={[
                 s.iconInner,
                 { backgroundColor: '#FFFFFF' },
-                currentStep === 'done' && {
-                  transform: [{ scale: checkScale }],
-                },
+                currentStep === 'done' && { transform: [{ scale: checkScale }] },
               ]}
             >
               <Ionicons name={stepConfig.icon} size={28} color={C.g4} />
@@ -452,12 +458,7 @@ export default function VerifyContactScreen() {
             {stepConfig.subtitle}
           </Text>
 
-          {/* Barre de progression */}
-          <ProgressBar
-            current={stepNumber}
-            total={totalSteps}
-            accentColor={C.g4}
-          />
+          <ProgressBar current={stepNumber} total={totalSteps} accentColor={C.g4} />
         </View>
 
         {/* ══ CARD ══ */}
@@ -494,12 +495,36 @@ export default function VerifyContactScreen() {
               </Text>
 
               {/* Chargement initial */}
-              {isSending && !codeSent && (
+              {isSending && !codeSent && !sendError && (
                 <View style={s.sendingWrap}>
                   <ActivityIndicator color={C.g4} />
                   <Text style={[s.sendingTxt, { fontFamily: F.body }]}>
                     Envoi du code…
                   </Text>
+                </View>
+              )}
+
+              {/* ✅ v1.1 : Erreur d'envoi avec bouton Réessayer inline */}
+              {!isSending && !codeSent && !!sendError && (
+                <View style={[s.errorBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.errorTxt, { fontFamily: F.body }]}>
+                      {sendError}
+                    </Text>
+                    <TouchableOpacity
+                      style={[s.btn, { backgroundColor: C.g3, paddingVertical: 13, marginTop: 12 }]}
+                      onPress={() => void sendCode(currentStep as Step)}
+                      activeOpacity={0.9}
+                    >
+                      <Text style={[s.btnTxt, { fontFamily: F.body, fontSize: 14 }]}>
+                        Réessayer
+                      </Text>
+                      <View style={s.btnArrow}>
+                        <Ionicons name="refresh-outline" size={14} color={C.g4} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
@@ -524,7 +549,7 @@ export default function VerifyContactScreen() {
                     style={[
                       s.btn,
                       { backgroundColor: C.g3, shadowColor: C.g3 },
-                      (!canVerify) && s.btnDisabled,
+                      !canVerify && s.btnDisabled,
                     ]}
                     onPress={() => handleVerify()}
                     disabled={!canVerify}
@@ -556,7 +581,10 @@ export default function VerifyContactScreen() {
                     ) : (
                       <Text style={[
                         s.resendTxt,
-                        { color: (countdown > 0 || rateLimited) ? '#9CA3AF' : C.g4, fontFamily: F.body },
+                        {
+                          color: (countdown > 0 || rateLimited) ? '#9CA3AF' : C.g4,
+                          fontFamily: F.body,
+                        },
                       ]}>
                         {countdown > 0
                           ? `Renvoyer dans ${countdown}s`
@@ -604,33 +632,34 @@ const s = StyleSheet.create({
 
   scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 48 : 60 },
 
-  // ── Header ──
   header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 },
   headerSpacer:{ flex: 1 },
   stepCounter: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 0.5 },
 
-  // ── Hero ──
   hero:      { alignItems: 'center', marginBottom: 24 },
   iconBox:   { width: 78, height: 78, borderRadius: 26, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   iconInner: { width: 58, height: 58, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
   heroTitle: { fontSize: 26, color: '#FFFFFF', letterSpacing: -0.3, marginBottom: 8, textAlign: 'center', fontWeight: '800' },
   heroSub:   { fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20, fontWeight: '500', paddingHorizontal: 10, marginBottom: 12 },
 
-  // ── Progress ──
   progressWrap: { flexDirection: 'row', gap: 8, marginTop: 4 },
   progressDot:  { width: 24, height: 4, borderRadius: 99 },
 
-  // ── Card ──
   card:       { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 24, overflow: 'hidden', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 10, maxWidth: 520, alignSelf: 'center', width: '100%' },
   cardAccent: { height: 4, position: 'absolute', top: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   cardTitle:  { fontSize: 20, fontWeight: '800', color: '#0F172A', marginBottom: 4, marginTop: 6 },
   cardSub:    { fontSize: 13, color: '#6B7280', fontWeight: '500', lineHeight: 19, marginBottom: 20 },
 
-  // ── Chargement initial ──
   sendingWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'center', paddingVertical: 20 },
   sendingTxt:  { fontSize: 14, color: '#6B7280', fontWeight: '500' },
 
-  // ── OTP ──
+  // ✅ v1.1 : Boîte d'erreur inline
+  errorBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
+    borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8,
+  },
+  errorTxt: { fontSize: 13, color: '#EF4444', fontWeight: '500', lineHeight: 19 },
+
   otpRow: {
     flexDirection: 'row', justifyContent: 'center',
     gap: Platform.OS === 'web' ? 8 : 7,
@@ -649,27 +678,22 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
 
-  // ── Bouton CTA ──
   btn:         { borderRadius: 16, paddingVertical: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
   btnDisabled: { opacity: 0.45 },
   btnTxt:      { color: '#FFFFFF', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
   btnArrow:    { width: 30, height: 30, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
 
-  // ── Renvoi ──
   resendBtn: { alignItems: 'center', paddingVertical: 14 },
   resendTxt: { fontSize: 13, fontWeight: '600' },
 
-  // ── Note sécurité ──
   noteBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 4 },
   noteTxt: { flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 17 },
 
-  // ── Succès ──
   doneWrap:   { alignItems: 'center', paddingVertical: 24 },
   doneCircle: { width: 100, height: 100, borderRadius: 99, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   doneTitle:  { fontSize: 22, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
   doneSub:    { fontSize: 14, color: '#6B7280', fontWeight: '500', textAlign: 'center', lineHeight: 21 },
 
-  // ── Bottom ──
   bottom:    { marginTop: 20, alignItems: 'center', paddingHorizontal: 16 },
   bottomTxt: { fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', lineHeight: 18, fontWeight: '500' },
 });
