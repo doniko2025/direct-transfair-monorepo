@@ -1,12 +1,12 @@
 // apps/direct-transfair-mobile/components/dashboards/SuperAdminDashboard.tsx
 // =========================================================
-// SUPER ADMIN DASHBOARD v14.2 (Clean Light Theme)
-// ✅ v14.1 : padding bottom FlatList
-// ✅ v14.1 : DONIKO filtré côté frontend
-// ✅ v14.1 : SafeAreaView depuis react-native-safe-area-context
-// ✅ v14.2 : ClientCard complète avec avatar coloré + badge statut
-// ✅ v14.2 : getMyWallets() affiche les soldes réels du SA
-//            (fonctionne après le fix backend wallets.service v5.3)
+// SUPER ADMIN DASHBOARD v15.0 — Blanc Pur Premium
+// ✅ Hero : fond blanc, avatar dégradé (seul élément coloré)
+//          greeting dynamique heure-of-day
+// ✅ StatStrip : barre-accent top 3px, chiffres au premier plan
+// ✅ ActionGrid : barre-accent gauche 3px, layout vertical
+// ✅ CurrencyStack : tinte subtile couleur-devise sur la carte
+// ✅ Logique métier 100% intouchée
 // =========================================================
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -36,8 +36,9 @@ import CreateCompanyModal from "./CreateCompanyModal";
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Design Tokens — Clean Light ─────────────────────────
+// ─── Design Tokens ─────────────────────────────────────────
 const T = {
+  // Gradient avatar (seul élément coloré du hero)
   heroA: "#4F46E5",
   heroB: "#7C3AED",
 
@@ -46,9 +47,10 @@ const T = {
   brandLt:   "#EEF2FF",
   brandMd:   "#E0E7FF",
 
-  pageBg:    "#F5F7FF",
+  // Fond neutre froid — distinct des cartes blanches
+  pageBg:    "#F3F5F9",
   surface:   "#FFFFFF",
-  surfaceAlt:"#FAFBFF",
+  surfaceAlt:"#F8F9FD",
   border:    "#E8EDFB",
   borderMd:  "#D1D9F5",
 
@@ -77,11 +79,11 @@ const T = {
   black: "#000000",
 
   currencies: {
-    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#4F46E5", colorDark: "#3730A3", bg: "#EEF2FF", name: "Euro" },
-    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#059669", colorDark: "#065F46", bg: "#ECFDF5", name: "Dollar US" },
-    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#92400E", bg: "#FFFBEB", name: "Franc CFA" },
-    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#991B1B", bg: "#FEF2F2", name: "Franc Guinéen" },
-    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#F5F3FF", name: "Livre Sterling" },
+    EUR: { code: "EUR", symbol: "€",   flag: "🇪🇺", color: "#4F46E5", colorDark: "#3730A3", bg: "#EEF2FF", name: "Euro"            },
+    USD: { code: "USD", symbol: "$",   flag: "🇺🇸", color: "#059669", colorDark: "#065F46", bg: "#ECFDF5", name: "Dollar US"        },
+    XOF: { code: "XOF", symbol: "CFA", flag: "🌍",  color: "#D97706", colorDark: "#92400E", bg: "#FFFBEB", name: "Franc CFA"        },
+    GNF: { code: "GNF", symbol: "FG",  flag: "🇬🇳", color: "#DC2626", colorDark: "#991B1B", bg: "#FEF2F2", name: "Franc Guinéen"    },
+    GBP: { code: "GBP", symbol: "£",   flag: "🇬🇧", color: "#7C3AED", colorDark: "#6D28D9", bg: "#F5F3FF", name: "Livre Sterling"   },
   },
 
   statusColors: {
@@ -113,35 +115,34 @@ const T = {
     card: {
       shadowColor: "#4F46E5",
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
+      shadowOpacity: 0.05,
       shadowRadius: 10,
       elevation: 2,
     },
     float: {
-      shadowColor: "#4F46E5",
-      shadowOffset: { width: 0, height: 6 },
-      shadowOpacity: 0.10,
-      shadowRadius: 18,
-      elevation: 5,
+      shadowColor: "#1E1B4B",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.12,
+      shadowRadius: 20,
+      elevation: 6,
     },
     hero: {
-      shadowColor: "#3730A3",
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.14,
-      shadowRadius: 20,
-      elevation: 7,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.06,
+      shadowRadius: 12,
+      elevation: 4,
     },
   },
 };
 
-const TAB_BAR_HEIGHT    = Platform.OS === "ios" ? 84 : 70;
+const TAB_BAR_HEIGHT      = Platform.OS === "ios" ? 84 : 70;
 const LIST_BOTTOM_PADDING = TAB_BAR_HEIGHT + 16;
-
-const CURRENCIES_ORDER = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
-const STACK_W          = SW - 40;
-const STACK_H          = 130;
-const STACK_OFFSET_Y   = 10;
-const PLATFORM_CODE    = "DONIKO";
+const CURRENCIES_ORDER    = ["EUR", "USD", "XOF", "GNF", "GBP"] as const;
+const STACK_W             = SW - 40;
+const STACK_H             = 130;
+const STACK_OFFSET_Y      = 10;
+const PLATFORM_CODE       = "DONIKO";
 
 // ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
@@ -163,11 +164,11 @@ function fmtAmount(n: number, currency: string): string {
   }
 }
 
-// ─── Currency Stack Card ──────────────────────────────────
+// ─── Currency Stack ────────────────────────────────────────
 function CurrencyStack({ wallets }: { wallets: any[] }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const translateX = useRef(new Animated.Value(0)).current;
-  const total = CURRENCIES_ORDER.length;
+  const total      = CURRENCIES_ORDER.length;
 
   const panResponder = useRef(
     PanResponder.create({
@@ -175,8 +176,8 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
       onMoveShouldSetPanResponder:  (_, gs) => Math.abs(gs.dx) > 6,
       onPanResponderMove:           (_, gs) => { translateX.setValue(gs.dx); },
       onPanResponderRelease:        (_, gs) => {
-        if (gs.dx < -48)      setActiveIdx((p) => Math.min(p + 1, total - 1));
-        else if (gs.dx > 48)  setActiveIdx((p) => Math.max(p - 1, 0));
+        if (gs.dx < -48)     setActiveIdx((p) => Math.min(p + 1, total - 1));
+        else if (gs.dx > 48) setActiveIdx((p) => Math.max(p - 1, 0));
         Animated.spring(translateX, {
           toValue: 0, useNativeDriver: true, speed: 28, bounciness: 5,
         }).start();
@@ -184,21 +185,22 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
     })
   ).current;
 
-  const activeCur  = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
-  const activeCfg  = T.currencies[activeCur];
-  const activeW    = wallets.find((x) => x.currency === activeCur);
-  const balance    = toNum(activeW?.balance);
-  const reserved   = toNum(activeW?.reservedBalance);
-  const available  = balance - reserved;
+  const activeCur   = CURRENCIES_ORDER[activeIdx] as keyof typeof T.currencies;
+  const activeCfg   = T.currencies[activeCur];
+  const activeW     = wallets.find((x) => x.currency === activeCur);
+  const balance     = toNum(activeW?.balance);
+  const reserved    = toNum(activeW?.reservedBalance);
+  const available   = balance - reserved;
   const behindCount = Math.min(2, total - activeIdx - 1);
 
   return (
     <View style={stk.wrapper} {...panResponder.panHandlers}>
+      {/* Cards behind */}
       {([2, 1] as const)
         .filter((d) => d <= behindCount)
         .map((d) => {
           const behindCur = CURRENCIES_ORDER[activeIdx + d] as keyof typeof T.currencies;
-          const cfg = T.currencies[behindCur];
+          const cfg       = T.currencies[behindCur];
           return (
             <View
               key={`behind-${d}`}
@@ -209,7 +211,7 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
                   bottom:   d * STACK_OFFSET_Y,
                   transform: [{ scale: 1 - d * 0.03 }],
                   width:    STACK_W,
-                  opacity:  0.55 - d * 0.18,
+                  opacity:  0.45 - d * 0.12,   // d=1 → 33 %, d=2 → 21 % — très discret
                   zIndex:   10 - d,
                   backgroundColor: d === 1 ? "#F0F3FF" : "#E8EEFF",
                 },
@@ -224,7 +226,14 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
           );
         })}
 
-      <Animated.View style={[stk.card, stk.front, { transform: [{ translateX }] }]}>
+      {/* Front card — fond blanc pur, barre accent latérale pour la couleur */}
+      <Animated.View
+        style={[
+          stk.card,
+          stk.front,
+          { transform: [{ translateX }] },
+        ]}
+      >
         <View style={[stk.accentBar, { backgroundColor: activeCfg.color }]} />
         <View style={stk.inner}>
           <View style={stk.row1}>
@@ -269,7 +278,7 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
                 <Text style={[stk.balSym, { color: T.inkSub }]}>{activeCfg.symbol}</Text>
               </Text>
             </View>
-            <View style={[stk.availPill, { backgroundColor: activeCfg.bg }]}>
+            <View style={[stk.availPill, { backgroundColor: activeCfg.bg, borderColor: `${activeCfg.color}25` }]}>
               <Text style={[stk.availLbl, { color: activeCfg.colorDark, fontFamily: T.font.sans }]}>Disponible</Text>
               <Text style={[stk.availAmt, { color: activeCfg.color, fontFamily: T.font.display }]}>
                 {fmtAmount(available, activeCur)} {activeCfg.symbol}
@@ -284,13 +293,15 @@ function CurrencyStack({ wallets }: { wallets: any[] }) {
                 onPress={() => setActiveIdx(i)}
                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
               >
-                <View style={[
-                  stk.dot,
-                  {
-                    width: i === activeIdx ? 16 : 4,
-                    backgroundColor: i === activeIdx ? activeCfg.color : T.borderMd,
-                  },
-                ]} />
+                <View
+                  style={[
+                    stk.dot,
+                    {
+                      width: i === activeIdx ? 16 : 4,
+                      backgroundColor: i === activeIdx ? activeCfg.color : T.borderMd,
+                    },
+                  ]}
+                />
               </TouchableOpacity>
             ))}
           </View>
@@ -314,131 +325,212 @@ const stk = StyleSheet.create({
   cardCode:  { fontSize: 14, fontWeight: "700" },
   cardName:  { fontSize: 11, marginTop: 1 },
   navArea:   { flexDirection: "row", alignItems: "center", gap: 4 },
-  navBtn:    { width: 26, height: 26, borderRadius: T.radius.xs, backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
+  navBtn:    { width: 26, height: 26, borderRadius: T.radius.xs, backgroundColor: T.surface, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
   navCount:  { fontSize: 10, fontWeight: "500" },
   divider:   { height: 1, backgroundColor: T.border, marginBottom: 10 },
   row2:      { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 10 },
   balLabel:  { fontSize: 9, fontWeight: "700", letterSpacing: 0.6, marginBottom: 3, textTransform: "uppercase" },
   balAmount: { fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
   balSym:    { fontSize: 14, fontWeight: "400" },
-  availPill: { alignItems: "flex-end", paddingHorizontal: 10, paddingVertical: 6, borderRadius: T.radius.sm },
+  availPill: { alignItems: "flex-end", paddingHorizontal: 10, paddingVertical: 6, borderRadius: T.radius.sm, borderWidth: 1 },
   availLbl:  { fontSize: 9, fontWeight: "600", marginBottom: 2, textTransform: "uppercase" },
   availAmt:  { fontSize: 13, fontWeight: "700" },
   dots:      { flexDirection: "row", gap: 4, marginTop: 10, alignItems: "center", justifyContent: "center" },
   dot:       { height: 4, borderRadius: T.radius.full },
 });
 
-// ─── Hero ─────────────────────────────────────────────────
-function DashHero({ animValue, user, onRefresh, onNotif }: {
+// ─── Hero — fond blanc pur ─────────────────────────────────
+// Signature : l'avatar dégradé est le SEUL élément coloré du hero.
+// Tout le reste est typographie sombre sur blanc.
+function DashHero({
+  animValue,
+  user,
+  onRefresh,
+  onNotif,
+}: {
   animValue: Animated.Value;
   user: any;
   onRefresh: () => void;
   onNotif:   () => void;
 }) {
-  const insets = useSafeAreaInsets();
-  return (
-    <Animated.View style={[
-      hS.outer,
-      {
-        opacity: animValue,
-        transform: [{
-          translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }),
-        }],
-      },
-    ]}>
-      <LinearGradient
-        colors={[T.heroA, T.heroB, "#9333EA"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[hS.gradient, { paddingTop: insets.top + 14, paddingBottom: 28 }]}
-      >
-        <View style={hS.deco1} />
-        <View style={hS.deco2} />
+  const insets  = useSafeAreaInsets();
+  const initial = (user?.firstName ?? "A")[0].toUpperCase();
+  const hour    = new Date().getHours();
+  const greeting =
+    hour < 5  ? "Bonne nuit,"       :
+    hour < 12 ? "Bonjour,"          :
+    hour < 18 ? "Bon après-midi,"   :
+                "Bonsoir,";
 
+  return (
+    <Animated.View
+      style={[
+        hS.outer,
+        {
+          opacity: animValue,
+          transform: [{
+            translateY: animValue.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }),
+          }],
+        },
+      ]}
+    >
+      <View style={[hS.card, { paddingTop: insets.top + 14 }]}>
+
+        {/* ── Ligne principale : avatar · info · boutons ── */}
         <View style={hS.topBar}>
-          <View style={hS.topLeft}>
-            <View style={hS.badge}>
-              <View style={hS.activeDot} />
-              <Text style={[hS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
-            </View>
+
+          {/* Avatar dégradé — seul splash de couleur */}
+          <LinearGradient
+            colors={[T.heroA, T.heroB]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={hS.avatar}
+          >
+            <Text style={[hS.avatarTxt, { fontFamily: T.font.display }]}>{initial}</Text>
+          </LinearGradient>
+
+          {/* Texte */}
+          <View style={{ flex: 1 }}>
+            <Text style={[hS.greeting, { fontFamily: T.font.subtitle }]}>{greeting}</Text>
             <Text style={[hS.name, { fontFamily: T.font.display }]}>
               {user?.firstName ?? "Console"}
             </Text>
-            <Text style={[hS.sub, { fontFamily: T.font.subtitle }]}>
-              Direct Transf'air™ · Trésorerie globale
-            </Text>
           </View>
+
+          {/* Boutons d'action */}
           <View style={hS.btns}>
             <TouchableOpacity style={hS.btn} onPress={onRefresh} activeOpacity={0.7}>
-              <Ionicons name="refresh-outline" size={17} color={T.white} />
+              <Ionicons name="refresh-outline" size={18} color={T.inkSub} />
             </TouchableOpacity>
             <TouchableOpacity style={hS.btn} onPress={onNotif} activeOpacity={0.7}>
-              <Ionicons name="notifications-outline" size={17} color={T.white} />
+              <Ionicons name="notifications-outline" size={18} color={T.inkSub} />
               <View style={hS.notifDot} />
             </TouchableOpacity>
           </View>
         </View>
-      </LinearGradient>
+
+        {/* ── Ligne bas : badge rôle + sous-titre ── */}
+        <View style={hS.footRow}>
+          <View style={hS.badge}>
+            <View style={hS.activeDot} />
+            <Text style={[hS.badgeTxt, { fontFamily: T.font.sans }]}>SUPER ADMIN</Text>
+          </View>
+          <Text style={[hS.sub, { fontFamily: T.font.subtitle }]}>
+            Direct Transf'air™ · Trésorerie globale
+          </Text>
+        </View>
+      </View>
     </Animated.View>
   );
 }
 
 const hS = StyleSheet.create({
-  outer:     { zIndex: 10 },
-  gradient:  { borderBottomLeftRadius: T.radius.xl, borderBottomRightRadius: T.radius.xl, overflow: "hidden" },
-  deco1:     { position: "absolute", width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(255,255,255,0.05)", top: -40, right: -40 },
-  deco2:     { position: "absolute", width: 100, height: 100, borderRadius: 50,  backgroundColor: "rgba(255,255,255,0.06)", bottom: 10, left: 30 },
-  topBar:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20 },
-  topLeft:   { flex: 1 },
-  badge:     { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: T.radius.xs, paddingHorizontal: 8, paddingVertical: 3, alignSelf: "flex-start", marginBottom: 8 },
-  activeDot: { width: 5, height: 5, borderRadius: T.radius.full, backgroundColor: "#34D399" },
-  badgeTxt:  { color: T.white, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
-  name:      { color: T.white, fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
-  sub:       { color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 3 },
-  btns:      { flexDirection: "row", gap: 8 },
-  btn:       { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: "rgba(255,255,255,0.12)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.15)" },
-  notifDot:  { position: "absolute", top: 9, right: 9, width: 7, height: 7, borderRadius: T.radius.full, backgroundColor: "#F87171", borderWidth: 1.5, borderColor: T.white },
+  outer: { zIndex: 10 },
+  card: {
+    backgroundColor: T.white,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: T.border,
+    ...T.shadow.hero,
+  },
+  topBar: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 14 },
+
+  // ── Avatar ──
+  avatar: {
+    width: 54, height: 54, borderRadius: 27,
+    justifyContent: "center", alignItems: "center",
+    flexShrink: 0,
+  },
+  avatarTxt: { color: T.white, fontSize: 22, fontWeight: "700" },
+
+  // ── Texte ──
+  greeting: { fontSize: 11, color: T.inkSub, marginBottom: 3, letterSpacing: 0.2 },
+  name:     { fontSize: 26, fontWeight: "700", color: T.ink, letterSpacing: -0.5 },
+
+  // ── Boutons ──
+  btns: { flexDirection: "row", gap: 8 },
+  btn: {
+    width: 40, height: 40, borderRadius: T.radius.md,
+    backgroundColor: T.surfaceAlt,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1, borderColor: T.border,
+  },
+  notifDot: {
+    position: "absolute", top: 9, right: 9,
+    width: 7, height: 7, borderRadius: T.radius.full,
+    backgroundColor: T.rose, borderWidth: 1.5, borderColor: T.white,
+  },
+
+  // ── Footer row ──
+  footRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  badge: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: T.brandLt,
+    borderRadius: T.radius.xs,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 1, borderColor: T.brandMd,
+  },
+  activeDot: { width: 5, height: 5, borderRadius: T.radius.full, backgroundColor: T.green },
+  badgeTxt:  { color: T.brandDark, fontSize: 9, fontWeight: "700", letterSpacing: 0.8 },
+  sub:       { flex: 1, fontSize: 11, color: T.inkSub },
 });
 
 // ─── Stat Strip ───────────────────────────────────────────
+// Chiffre au premier plan, barre d'accent top 3 px per card
 function StatStrip({ stats }: { stats: { total: number; active: number; inactive: number } }) {
   const items = [
-    { label: "Sociétés",  value: stats.total,    color: T.brand, bg: T.brandLt, icon: "business-outline" as const },
-    { label: "Actives",   value: stats.active,   color: T.green, bg: T.greenLt, icon: "checkmark-circle-outline" as const },
-    { label: "Inactives", value: stats.inactive, color: T.red,   bg: T.redLt,   icon: "close-circle-outline" as const },
+    { label: "Sociétés",  value: stats.total,    color: T.brand, icon: "business-outline"          as const },
+    { label: "Actives",   value: stats.active,   color: T.green, icon: "checkmark-circle-outline"  as const },
+    { label: "Inactives", value: stats.inactive, color: T.red,   icon: "close-circle-outline"      as const },
   ];
   return (
     <View style={ssS.row}>
       {items.map((it, idx) => (
         <View key={idx} style={ssS.card}>
-          <View style={[ssS.iconWrap, { backgroundColor: it.bg }]}>
-            <Ionicons name={it.icon} size={14} color={it.color} />
+          <View style={[ssS.accentTop, { backgroundColor: it.color }]} />
+          <Text style={[ssS.val, { fontFamily: T.font.display }]}>{it.value}</Text>
+          <View style={ssS.footer}>
+            <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
+            <Ionicons name={it.icon} size={12} color={it.color} />
           </View>
-          <Text style={[ssS.val, { color: it.color, fontFamily: T.font.display }]}>{it.value}</Text>
-          <Text style={[ssS.lbl, { fontFamily: T.font.sans }]}>{it.label}</Text>
         </View>
       ))}
     </View>
   );
 }
+
 const ssS = StyleSheet.create({
-  row:     { flexDirection: "row", gap: 10, marginBottom: 20, marginTop: 10 },
-  card:    { flex: 1, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 14, borderWidth: 1, borderColor: T.border, alignItems: "center", gap: 4, ...T.shadow.card },
-  iconWrap:{ width: 28, height: 28, borderRadius: T.radius.xs, justifyContent: "center", alignItems: "center", marginBottom: 2 },
-  val:     { fontSize: 24, fontWeight: "700", letterSpacing: -0.5 },
-  lbl:     { fontSize: 11, color: T.inkSub, fontWeight: "500" },
+  row: { flexDirection: "row", gap: 10, marginBottom: 20, marginTop: 10 },
+  card: {
+    flex: 1,
+    backgroundColor: T.surface,
+    borderRadius: T.radius.md,
+    paddingTop: 18, paddingHorizontal: 14, paddingBottom: 12,
+    borderWidth: 1, borderColor: T.border,
+    overflow: "hidden",
+    ...T.shadow.card,
+  },
+  accentTop: { position: "absolute", top: 0, left: 0, right: 0, height: 3 },
+  val:    { fontSize: 30, fontWeight: "700", letterSpacing: -1, color: T.ink, marginBottom: 6 },
+  footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  lbl:    { fontSize: 10, color: T.inkSub, fontWeight: "600" },
 });
 
 // ─── Action Grid ──────────────────────────────────────────
+// Barre-accent gauche 3 px — icône + titre + sous-titre empilés
 function ActionGrid({ actions }: { actions: any[] }) {
   return (
     <View style={agS.grid}>
       {actions.map((a) => (
         <TouchableOpacity key={a.title} style={agS.card} onPress={a.onPress} activeOpacity={0.82}>
-          <View style={[agS.iconBox, { backgroundColor: a.bgColor }]}>
-            <Ionicons name={a.icon} size={18} color={a.color} />
-          </View>
-          <View style={{ flex: 1 }}>
+          {/* Barre couleur gauche */}
+          <View style={[agS.leftBar, { backgroundColor: a.color }]} />
+
+          <View style={agS.content}>
+            <View style={[agS.iconBox, { backgroundColor: a.bgColor }]}>
+              <Ionicons name={a.icon} size={16} color={a.color} />
+            </View>
             <Text style={[agS.title, { fontFamily: T.font.sans, color: T.ink }]} numberOfLines={1}>
               {a.title}
             </Text>
@@ -446,18 +538,36 @@ function ActionGrid({ actions }: { actions: any[] }) {
               {a.subtitle}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={12} color={T.borderMd} />
+
+          <Ionicons name="chevron-forward" size={11} color={T.borderMd} style={{ paddingRight: 12 }} />
         </TouchableOpacity>
       ))}
     </View>
   );
 }
+
 const agS = StyleSheet.create({
-  grid:    { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
-  card:    { width: "48.5%", flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: T.border, ...T.shadow.card },
-  iconBox: { width: 36, height: 36, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  title:   { fontSize: 12, fontWeight: "600" },
-  sub:     { fontSize: 10, marginTop: 1 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 20 },
+  card: {
+    width: "48.5%",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: T.surface,
+    borderRadius: T.radius.md,
+    marginBottom: 10,
+    borderWidth: 1, borderColor: T.border,
+    overflow: "hidden",
+    ...T.shadow.card,
+  },
+  leftBar: { width: 3, alignSelf: "stretch" },
+  content: { flex: 1, padding: 12 },
+  iconBox: {
+    width: 30, height: 30, borderRadius: T.radius.xs,
+    justifyContent: "center", alignItems: "center",
+    marginBottom: 8,
+  },
+  title: { fontSize: 12, fontWeight: "700" },
+  sub:   { fontSize: 10, marginTop: 2 },
 });
 
 // ─── Client Card ──────────────────────────────────────────
@@ -466,7 +576,6 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
   const statusColor = T.statusColors[statusKey] ?? T.inkMuted;
   const statusBg    = T.statusBg[statusKey]    ?? T.pageBg;
 
-  // Couleur d'avatar dérivée de la première lettre du nom
   const AVATAR_COLORS = [
     { bg: T.brandLt,  border: T.brandMd,  text: T.brand  },
     { bg: T.violetLt, border: T.violetMd, text: T.violet },
@@ -475,9 +584,8 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
     { bg: T.amberLt,  border: "#FDE68A",  text: T.amber  },
     { bg: T.roseLt,   border: "#FECDD3",  text: T.rose   },
   ];
-  const nameChar  = (item.name ?? "?")[0].toUpperCase();
-  const colorIdx  = nameChar.charCodeAt(0) % AVATAR_COLORS.length;
-  const avCfg     = AVATAR_COLORS[colorIdx];
+  const nameChar = (item.name ?? "?")[0].toUpperCase();
+  const avCfg    = AVATAR_COLORS[nameChar.charCodeAt(0) % AVATAR_COLORS.length];
 
   const statusLabel: Record<string, string> = {
     ACTIVE:    "ACTIF",
@@ -489,28 +597,21 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
 
   return (
     <TouchableOpacity style={ccS.card} onPress={onPress} activeOpacity={0.85}>
-      {/* Barre colorée gauche selon statut */}
       <View style={[ccS.statusBar, { backgroundColor: statusColor }]} />
 
-      {/* Avatar */}
       <View style={[ccS.avatar, { backgroundColor: avCfg.bg, borderColor: avCfg.border }]}>
         <Text style={[ccS.avatarTxt, { color: avCfg.text, fontFamily: T.font.display }]}>
           {nameChar}
         </Text>
       </View>
 
-      {/* Infos */}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[ccS.name, { fontFamily: T.font.display }]} numberOfLines={1}>
-          {item.name}
-        </Text>
+        <Text style={[ccS.name, { fontFamily: T.font.display }]} numberOfLines={1}>{item.name}</Text>
         <Text style={[ccS.code, { fontFamily: T.font.mono }]} numberOfLines={1}>
-          {item.code}
-          {item.subscriptionType ? `  ·  ${item.subscriptionType}` : ""}
+          {item.code}{item.subscriptionType ? `  ·  ${item.subscriptionType}` : ""}
         </Text>
       </View>
 
-      {/* Badge statut */}
       <View style={[ccS.badge, { backgroundColor: statusBg, borderColor: `${statusColor}40` }]}>
         <View style={[ccS.dot, { backgroundColor: statusColor }]} />
         <Text style={[ccS.badgeTxt, { color: statusColor, fontFamily: T.font.sans }]}>
@@ -518,12 +619,13 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
         </Text>
       </View>
 
-      <Ionicons name="chevron-forward" size={13} color={T.borderMd} style={{ marginLeft: 4 }} />
+      <Ionicons name="chevron-forward" size={13} color={T.borderMd} style={{ marginLeft: 4, marginRight: 12 }} />
     </TouchableOpacity>
   );
 }
+
 const ccS = StyleSheet.create({
-  card:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", gap: 0, ...T.shadow.card },
+  card:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
   statusBar: { width: 4, alignSelf: "stretch" },
   avatar:    { width: 40, height: 40, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center", borderWidth: 1, marginLeft: 12, marginRight: 10, flexShrink: 0 },
   avatarTxt: { fontSize: 16, fontWeight: "700" },
@@ -535,7 +637,11 @@ const ccS = StyleSheet.create({
 });
 
 // ─── Section Header ───────────────────────────────────────
-function SH({ accentColor = T.brand, label, right }: {
+function SH({
+  accentColor = T.brand,
+  label,
+  right,
+}: {
   accentColor?: string;
   label: string;
   right?: React.ReactNode;
@@ -548,6 +654,7 @@ function SH({ accentColor = T.brand, label, right }: {
     </View>
   );
 }
+
 const shS = StyleSheet.create({
   row:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10, marginTop: 4, gap: 8 },
   accent: { width: 3, height: 13, borderRadius: T.radius.full },
@@ -558,9 +665,9 @@ const shS = StyleSheet.create({
 const LIST_H_PAD = 16;
 
 export default function SuperAdminDashboard() {
-  const router      = useRouter();
-  const { user }    = useAuth();
-  const insets      = useSafeAreaInsets();
+  const router     = useRouter();
+  const { user }   = useAuth();
+  const insets     = useSafeAreaInsets();
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const [clients,    setClients]    = useState<any[]>([]);
@@ -639,15 +746,17 @@ export default function SuperAdminDashboard() {
   }), [clients]);
 
   const actions = useMemo(() => [
-    { title: "Trésorerie",   subtitle: "Vue globale",      icon: "wallet-outline",           color: T.brand,  bgColor: T.brandLt,  onPress: () => router.push("/(tabs)/admin/treasury")    },
-    { title: "Supervision",  subtitle: "Logs système",     icon: "shield-checkmark-outline", color: T.teal,   bgColor: T.tealLt,   onPress: () => router.push("/(tabs)/admin/supervision")  },
-    { title: "Transactions", subtitle: "Audit temps réel", icon: "analytics-outline",        color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
-    { title: "Utilisateurs", subtitle: "Accès & Rôles",    icon: "people-outline",           color: T.violet, bgColor: T.violetLt, onPress: () => router.push("/(tabs)/admin/users")        },
+    { title: "Trésorerie",   subtitle: "Vue globale",      icon: "wallet-outline"           as const, color: T.brand,  bgColor: T.brandLt,  onPress: () => router.push("/(tabs)/admin/treasury")    },
+    { title: "Supervision",  subtitle: "Logs système",     icon: "shield-checkmark-outline" as const, color: T.teal,   bgColor: T.tealLt,   onPress: () => router.push("/(tabs)/admin/supervision")  },
+    { title: "Transactions", subtitle: "Audit temps réel", icon: "analytics-outline"        as const, color: T.green,  bgColor: T.greenLt,  onPress: () => router.push("/(tabs)/admin/transactions") },
+    { title: "Utilisateurs", subtitle: "Accès & Rôles",    icon: "people-outline"           as const, color: T.violet, bgColor: T.violetLt, onPress: () => router.push("/(tabs)/admin/users")        },
   ], [router]);
 
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
-      <StatusBar backgroundColor={T.heroA} barStyle="light-content" translucent={false} />
+      {/* StatusBar dark-content pour fond blanc */}
+      <StatusBar backgroundColor={T.white} barStyle="dark-content" translucent={false} />
+
       <View style={s.screen}>
         <DashHero
           animValue={headerAnim}
@@ -662,10 +771,12 @@ export default function SuperAdminDashboard() {
           renderItem={({ item }) => (
             <ClientCard
               item={item}
-              onPress={() => router.push({
-                pathname: "/(tabs)/admin/clients/details",
-                params:   { id: item.id },
-              })}
+              onPress={() =>
+                router.push({
+                  pathname: "/(tabs)/admin/clients/details",
+                  params:   { id: item.id },
+                })
+              }
             />
           )}
           contentContainerStyle={[
@@ -683,22 +794,27 @@ export default function SuperAdminDashboard() {
             />
           }
           ListHeaderComponent={
-            <Animated.View style={{
-              opacity: contentAnim,
-              transform: [{
-                translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
-              }],
-            }}>
-              {/* Stack devises — affiche le solde réel du SA après fix v5.3 */}
+            <Animated.View
+              style={{
+                opacity: contentAnim,
+                transform: [{
+                  translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }),
+                }],
+              }}
+            >
+              {/* ── Carte devises ── */}
               <View style={s.stackWrapper}>
                 <CurrencyStack wallets={wallets} />
               </View>
 
+              {/* ── Stats ── */}
               <StatStrip stats={stats} />
 
+              {/* ── Actions ── */}
               <SH accentColor={T.brand} label="Pilotage réseau" />
               <ActionGrid actions={actions} />
 
+              {/* ── Recherche ── */}
               <View style={s.searchBox}>
                 <Ionicons name="search" size={15} color={T.inkMuted} />
                 <TextInput
@@ -721,6 +837,7 @@ export default function SuperAdminDashboard() {
                 )}
               </View>
 
+              {/* ── Header liste clients ── */}
               <SH
                 accentColor={T.green}
                 label={`Clients SaaS (${filtered.length})`}
@@ -772,12 +889,15 @@ export default function SuperAdminDashboard() {
   );
 }
 
+// ─── Styles globaux ────────────────────────────────────────
 const s = StyleSheet.create({
-  safe:         { flex: 1, backgroundColor: T.heroA },
-  screen:       { flex: 1, backgroundColor: T.pageBg },
+  safe:   { flex: 1, backgroundColor: T.white }, // blanc (ex-heroA) — le hero est blanc
+  screen: { flex: 1, backgroundColor: T.pageBg },
+
   list:         { paddingHorizontal: LIST_H_PAD, paddingTop: 6 },
   stackWrapper: { marginTop: 18, marginBottom: 14 },
-  searchBox:    {
+
+  searchBox: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: T.surface, borderRadius: T.radius.md,
     paddingHorizontal: 12, height: 44,
@@ -785,24 +905,26 @@ const s = StyleSheet.create({
     marginBottom: 16, gap: 8,
     ...T.shadow.card,
   },
-  searchInput:  { flex: 1, fontSize: 13, color: T.ink },
-  clearBtn:     {
+  searchInput: { flex: 1, fontSize: 13, color: T.ink },
+  clearBtn: {
     width: 20, height: 20, borderRadius: T.radius.full,
     backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: T.border,
   },
-  addBtn:       {
+
+  addBtn: {
     width: 30, height: 30, borderRadius: T.radius.sm,
     backgroundColor: T.brandLt,
     justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: T.brandMd,
   },
-  empty:        { alignItems: "center", paddingVertical: 48, gap: 8 },
-  emptyIcon:    {
+
+  empty: { alignItems: "center", paddingVertical: 48, gap: 8 },
+  emptyIcon: {
     width: 52, height: 52, borderRadius: T.radius.md,
     backgroundColor: T.surface, justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: T.border,
   },
-  emptyTitle:   { color: T.ink, fontSize: 15, fontWeight: "600" },
-  emptySub:     { color: T.inkMuted, fontSize: 12, textAlign: "center", paddingHorizontal: 36 },
+  emptyTitle: { color: T.ink,     fontSize: 15, fontWeight: "600" },
+  emptySub:   { color: T.inkMuted, fontSize: 12, textAlign: "center", paddingHorizontal: 36 },
 });

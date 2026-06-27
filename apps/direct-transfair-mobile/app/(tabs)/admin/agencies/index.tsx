@@ -1,9 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/index.tsx
 // =========================================================
-// AGENCIES LIST v6.4 — Direct Transf'air
+// AGENCIES LIST v6.5 — Direct Transf'air
 // ✅ v6.4 : Pour SUPER_ADMIN, les agences NE s'affichent PLUS ici
 //           → Cliquer sur une société → clients/details (agences filtrées)
 //           Pour COMPANY_ADMIN / AGENT, comportement inchangé
+// ✅ v6.5 : Hero blanc pur — cohérent avec les autres pages
+//           Fix : api.getClients() sans cast `any` ni optional chaining
+//                 (aligné sur SuperAdminDashboard + gestion .data)
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -20,6 +23,7 @@ import { useAuth } from "../../../../providers/AuthProvider";
 import CreateCompanyModal from "../../../../components/dashboards/CreateCompanyModal";
 import RefillAgencyModal from "../../../../components/agencies/RefillAgencyModal";
 
+// ─── Design Tokens ─────────────────────────────────────────
 const T = {
   pageBg:   "#F2F4F8", surface:  "#FFFFFF", border:   "#E4E9F0", borderLt: "#F1F5F9",
   ink:      "#0F172A", inkMid:   "#1E293B", inkSub:   "#6B7280", inkMuted: "#94A3B8",
@@ -30,7 +34,7 @@ const T = {
   green:    "#16A34A", greenLt:  "#DCFCE7",
   red:      "#DC2626", redLt:    "#FEE2E2",
   amber:    "#D97706", amberLt:  "#FEF3C7",
-  white: "#FFFFFF",
+  white:    "#FFFFFF",
   radius: { sm: 8, md: 12, lg: 16, xl: 20 },
   font: {
     display:  Platform.select({ ios: "Trebuchet MS", android: "sans-serif-condensed", default: "Trebuchet MS" }),
@@ -41,14 +45,15 @@ const T = {
   shadow: {
     card: { shadowColor: "#1240D6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 },
     soft: { shadowColor: "#64748B", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8,  elevation: 3 },
-    hero: { shadowColor: "#000",    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 14 },
+    hero: { shadowColor: "#000",    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 12, elevation: 4 },
   },
 };
 
-const ROLE_HERO: Record<string, { g1: string; g2: string }> = {
-  SUPER_ADMIN:   { g1: "#5B5BD6", g2: "#3232A8" },
-  COMPANY_ADMIN: { g1: "#38BDF8", g2: "#0284C7" },
-  AGENT:         { g1: "#38BDF8", g2: "#0284C7" },
+// accent : couleur utilisée pour le bouton +, l'indicateur de chargement, etc.
+const ROLE_HERO: Record<string, { g1: string; g2: string; accent: string }> = {
+  SUPER_ADMIN:   { g1: "#5B5BD6", g2: "#3232A8", accent: T.blue },
+  COMPANY_ADMIN: { g1: "#38BDF8", g2: "#0284C7", accent: T.sky  },
+  AGENT:         { g1: "#38BDF8", g2: "#0284C7", accent: T.sky  },
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -62,6 +67,7 @@ const FLAG_MAP: Record<string, string> = {
 
 const PLATFORM_CODE = "DONIKO";
 
+// ─── Helpers ──────────────────────────────────────────────
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -73,6 +79,7 @@ function fmt(n: number, currency = "XOF"): string {
   catch { return n.toFixed(d); }
 }
 
+// ─── SectionBlock ─────────────────────────────────────────
 function SectionBlock({ icon, title, desc, color, colorLt, colorMd, count }: any) {
   return (
     <View style={[sbS.wrap, { borderColor: colorMd, borderLeftColor: color }]}>
@@ -99,15 +106,15 @@ const sbS = StyleSheet.create({
 });
 
 // ─── SocieteCard ──────────────────────────────────────────
-// ✅ v6.4 : onPress → clients/details (affiche les agences de la société)
 function SocieteCard({ item, onPress }: { item: any; onPress: () => void }) {
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale       = useRef(new Animated.Value(1)).current;
   const statusColor = STATUS_COLORS[item.subscriptionStatus?.toUpperCase()] ?? T.inkMuted;
   const agencyCount = toNum(item._count?.agencies ?? item.agencies?.length ?? 0);
   const userCount   = toNum(item._count?.users    ?? item.users?.length    ?? 0);
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity style={scS.card} onPress={onPress} activeOpacity={1}
+      <TouchableOpacity
+        style={scS.card} onPress={onPress} activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
@@ -115,7 +122,9 @@ function SocieteCard({ item, onPress }: { item: any; onPress: () => void }) {
         <View style={scS.body}>
           <View style={scS.topRow}>
             <View style={scS.avatar}>
-              <Text style={[scS.avatarLetter, { fontFamily: T.font.display }]}>{(item.name?.[0] ?? "S").toUpperCase()}</Text>
+              <Text style={[scS.avatarLetter, { fontFamily: T.font.display }]}>
+                {(item.name?.[0] ?? "S").toUpperCase()}
+              </Text>
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={scS.nameRow}>
@@ -129,24 +138,34 @@ function SocieteCard({ item, onPress }: { item: any; onPress: () => void }) {
                 <Text style={[scS.code, { fontFamily: T.font.mono }]}>{item.code}</Text>
                 <View style={[scS.statusPill, { backgroundColor: statusColor + "14", borderColor: statusColor + "30" }]}>
                   <View style={[scS.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={[scS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>{item.subscriptionStatus}</Text>
+                  <Text style={[scS.statusTxt, { color: statusColor, fontFamily: T.font.sans }]}>
+                    {item.subscriptionStatus}
+                  </Text>
                 </View>
               </View>
             </View>
-            <View style={scS.chevron}><Ionicons name="chevron-forward" size={13} color={T.blue} /></View>
+            <View style={scS.chevron}>
+              <Ionicons name="chevron-forward" size={13} color={T.blue} />
+            </View>
           </View>
           <View style={scS.counters}>
             <View style={[scS.cPill, { backgroundColor: T.blueLt, borderColor: T.blueMd }]}>
               <Ionicons name="business-outline" size={9} color={T.blue} />
-              <Text style={[scS.cTxt, { color: T.blue, fontFamily: T.font.mono }]}>{agencyCount} agence{agencyCount > 1 ? "s" : ""}</Text>
+              <Text style={[scS.cTxt, { color: T.blue, fontFamily: T.font.mono }]}>
+                {agencyCount} agence{agencyCount > 1 ? "s" : ""}
+              </Text>
             </View>
             <View style={[scS.cPill, { backgroundColor: T.purpleLt, borderColor: T.purple + "30" }]}>
               <Ionicons name="people-outline" size={9} color={T.purple} />
-              <Text style={[scS.cTxt, { color: T.purple, fontFamily: T.font.mono }]}>{userCount} utilisateur{userCount > 1 ? "s" : ""}</Text>
+              <Text style={[scS.cTxt, { color: T.purple, fontFamily: T.font.mono }]}>
+                {userCount} utilisateur{userCount > 1 ? "s" : ""}
+              </Text>
             </View>
             <View style={[scS.cPill, { backgroundColor: T.amberLt, borderColor: T.amber + "30" }]}>
               <Ionicons name="repeat-outline" size={9} color={T.amber} />
-              <Text style={[scS.cTxt, { color: T.amber, fontFamily: T.font.mono }]}>{item.subscriptionType === "PURCHASE" ? "Achat" : "Location"}</Text>
+              <Text style={[scS.cTxt, { color: T.amber, fontFamily: T.font.mono }]}>
+                {item.subscriptionType === "PURCHASE" ? "Achat" : "Location"}
+              </Text>
             </View>
           </View>
         </View>
@@ -176,6 +195,7 @@ const scS = StyleSheet.create({
   cTxt:         { fontSize: 9, fontWeight: "800" },
 });
 
+// ─── AgenceCard ───────────────────────────────────────────
 function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
   const scale    = useRef(new Animated.Value(1)).current;
   const isActive = item.isActive !== false && item.status !== "INACTIVE";
@@ -187,7 +207,8 @@ function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
   const flag     = item.country ? (FLAG_MAP[item.country.toUpperCase().substring(0, 2)] ?? "🌍") : "🌍";
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity style={agcS.card} onPress={onPress} activeOpacity={1}
+      <TouchableOpacity
+        style={agcS.card} onPress={onPress} activeOpacity={1}
         onPressIn={() => Animated.spring(scale, { toValue: 0.98, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
       >
@@ -198,14 +219,22 @@ function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={agcS.nameRow}>
                 <Text style={[agcS.name, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.name}</Text>
-                <View style={[agcS.typeBadge, { backgroundColor: item.type === "PARTNER" ? T.amberLt : T.tealLt, borderColor: item.type === "PARTNER" ? T.amber + "30" : T.tealMd }]}>
+                <View style={[
+                  agcS.typeBadge,
+                  {
+                    backgroundColor: item.type === "PARTNER" ? T.amberLt : T.tealLt,
+                    borderColor:     item.type === "PARTNER" ? T.amber + "30" : T.tealMd,
+                  },
+                ]}>
                   <Ionicons name="storefront-outline" size={8} color={item.type === "PARTNER" ? T.amber : T.teal} />
                   <Text style={[agcS.typeTxt, { color: item.type === "PARTNER" ? T.amber : T.teal, fontFamily: T.font.sans }]}>
                     {item.type === "PARTNER" ? "PARTENAIRE" : "FILIALE"}
                   </Text>
                 </View>
               </View>
-              <Text style={[agcS.city, { fontFamily: T.font.subtitle }]}>{item.city ?? "—"}{item.country ? `  ·  ${item.country}` : ""}</Text>
+              <Text style={[agcS.city, { fontFamily: T.font.subtitle }]}>
+                {item.city ?? "—"}{item.country ? `  ·  ${item.country}` : ""}
+              </Text>
             </View>
             <View style={agcS.right}>
               <Text style={[agcS.balance, { color: T.teal, fontFamily: T.font.mono }]}>{fmt(balance, currency)}</Text>
@@ -213,14 +242,24 @@ function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
             </View>
           </View>
           <View style={agcS.footRow}>
-            <View style={[agcS.statusPill, { backgroundColor: isActive ? T.tealLt : T.redLt, borderColor: isActive ? T.tealMd : T.red + "35" }]}>
+            <View style={[
+              agcS.statusPill,
+              {
+                backgroundColor: isActive ? T.tealLt : T.redLt,
+                borderColor:     isActive ? T.tealMd : T.red + "35",
+              },
+            ]}>
               <View style={[agcS.dot, { backgroundColor: isActive ? T.teal : T.red }]} />
-              <Text style={[agcS.statusTxt, { color: isActive ? T.teal : T.red, fontFamily: T.font.sans }]}>{isActive ? "Opérationnelle" : "Suspendue"}</Text>
+              <Text style={[agcS.statusTxt, { color: isActive ? T.teal : T.red, fontFamily: T.font.sans }]}>
+                {isActive ? "Opérationnelle" : "Suspendue"}
+              </Text>
             </View>
             {item.managerName && (
               <View style={agcS.managerRow}>
                 <Ionicons name="person-outline" size={10} color={T.inkMuted} />
-                <Text style={[agcS.managerTxt, { fontFamily: T.font.sans }]} numberOfLines={1}>{item.managerName}</Text>
+                <Text style={[agcS.managerTxt, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                  {item.managerName}
+                </Text>
               </View>
             )}
           </View>
@@ -230,29 +269,31 @@ function AgenceCard({ item, onPress }: { item: any; onPress: () => void }) {
   );
 }
 const agcS = StyleSheet.create({
-  card:      { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.tealMd, overflow: "hidden", ...T.shadow.soft },
-  sideBar:   { width: 5 },
-  body:      { flex: 1, padding: 13 },
-  topRow:    { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 10 },
-  flagBox:   { width: 42, height: 42, borderRadius: 12, backgroundColor: T.tealLt, borderWidth: 1.5, borderColor: T.tealMd, justifyContent: "center", alignItems: "center" },
-  nameRow:   { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 3 },
-  name:      { fontSize: 14, fontWeight: "700", color: T.ink, flexShrink: 1 },
-  typeBadge: { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, borderWidth: 1 },
-  typeTxt:   { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
-  city:      { fontSize: 10, color: T.inkSub },
-  right:     { alignItems: "flex-end" },
-  balance:   { fontSize: 14, fontWeight: "800", marginBottom: 2 },
-  currency:  { fontSize: 8, color: T.teal, fontWeight: "700" },
-  footRow:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  statusPill:{ flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
-  dot:       { width: 5, height: 5, borderRadius: 99 },
-  statusTxt: { fontSize: 9, fontWeight: "800" },
-  managerRow:{ flexDirection: "row", alignItems: "center", gap: 4, maxWidth: "45%" },
-  managerTxt:{ fontSize: 9, color: T.inkMuted, fontWeight: "600" },
+  card:       { flexDirection: "row", backgroundColor: T.surface, borderRadius: T.radius.lg, marginBottom: 10, borderWidth: 1, borderColor: T.tealMd, overflow: "hidden", ...T.shadow.soft },
+  sideBar:    { width: 5 },
+  body:       { flex: 1, padding: 13 },
+  topRow:     { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 10 },
+  flagBox:    { width: 42, height: 42, borderRadius: 12, backgroundColor: T.tealLt, borderWidth: 1.5, borderColor: T.tealMd, justifyContent: "center", alignItems: "center" },
+  nameRow:    { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 3 },
+  name:       { fontSize: 14, fontWeight: "700", color: T.ink, flexShrink: 1 },
+  typeBadge:  { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5, borderWidth: 1 },
+  typeTxt:    { fontSize: 8, fontWeight: "900", letterSpacing: 0.5 },
+  city:       { fontSize: 10, color: T.inkSub },
+  right:      { alignItems: "flex-end" },
+  balance:    { fontSize: 14, fontWeight: "800", marginBottom: 2 },
+  currency:   { fontSize: 8, color: T.teal, fontWeight: "700" },
+  footRow:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  statusPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  dot:        { width: 5, height: 5, borderRadius: 99 },
+  statusTxt:  { fontSize: 9, fontWeight: "800" },
+  managerRow: { flexDirection: "row", alignItems: "center", gap: 4, maxWidth: "45%" },
+  managerTxt: { fontSize: 9, color: T.inkMuted, fontWeight: "600" },
 });
 
-// ─── Action Sheet ─────────────────────────────────────────
-function AgenceActionSheet({ agency, visible, isSuperAdmin, onClose, onViewDetails, onEdit, onRefill, onDelete }: {
+// ─── AgenceActionSheet ────────────────────────────────────
+function AgenceActionSheet({
+  agency, visible, isSuperAdmin, onClose, onViewDetails, onEdit, onRefill, onDelete,
+}: {
   agency: any; visible: boolean; isSuperAdmin: boolean;
   onClose: () => void; onViewDetails: () => void;
   onEdit: () => void; onRefill: () => void; onDelete: () => void;
@@ -275,19 +316,23 @@ function AgenceActionSheet({ agency, visible, isSuperAdmin, onClose, onViewDetai
   };
 
   const actions = [
-    { icon: "eye-outline",             label: "Voir les détails",   color: T.blue,   bg: T.blueLt,   onPress: onViewDetails,              show: true          },
-    { icon: "arrow-up-circle-outline", label: "Recharger",          color: T.teal,   bg: T.tealLt,   onPress: onRefill,                   show: !isSuperAdmin },
-    { icon: "pencil-outline",          label: "Modifier",           color: T.inkSub, bg: T.borderLt, onPress: onEdit,                     show: true          },
-    { icon: "trash-outline",           label: "Supprimer l'agence", color: T.red,    bg: T.redLt,    onPress: () => setDeleteFlow(true),  show: true          },
+    { icon: "eye-outline",             label: "Voir les détails",   color: T.blue,   bg: T.blueLt,   onPress: onViewDetails,             show: true          },
+    { icon: "arrow-up-circle-outline", label: "Recharger",          color: T.teal,   bg: T.tealLt,   onPress: onRefill,                  show: !isSuperAdmin },
+    { icon: "pencil-outline",          label: "Modifier",           color: T.inkSub, bg: T.borderLt, onPress: onEdit,                    show: true          },
+    { icon: "trash-outline",           label: "Supprimer l'agence", color: T.red,    bg: T.redLt,    onPress: () => setDeleteFlow(true), show: true          },
   ].filter((a) => a.show);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={() => { onClose(); reset(); }}>
+    <Modal
+      visible={visible} transparent animationType="slide"
+      onRequestClose={() => { onClose(); reset(); }}
+    >
       <View style={asS.overlay}>
         <View style={asS.sheet}>
           <View style={asS.handle} />
           <Text style={[asS.title, { fontFamily: T.font.display }]} numberOfLines={1}>{agency?.name}</Text>
           <Text style={[asS.sub, { fontFamily: T.font.sans }]}>{agency?.city}</Text>
+
           {!deleteFlow ? (
             <View style={asS.actions}>
               {actions.map((a) => (
@@ -304,18 +349,32 @@ function AgenceActionSheet({ agency, visible, isSuperAdmin, onClose, onViewDetai
             <View style={asS.actions}>
               <View style={asS.warningBox}>
                 <Ionicons name="warning-outline" size={20} color={T.red} />
-                <Text style={[asS.warningTxt, { fontFamily: T.font.sans }]}>Action irréversible. Confirmez avec votre numéro.</Text>
+                <Text style={[asS.warningTxt, { fontFamily: T.font.sans }]}>
+                  Action irréversible. Confirmez avec votre numéro.
+                </Text>
               </View>
               <Text style={[asS.inputLabel, { fontFamily: T.font.sans }]}>NUMÉRO ADMINISTRATEUR</Text>
-              <TextInput style={[asS.input, { fontFamily: T.font.sans }]} value={phone} onChangeText={setPhone} placeholder="Ex: 620 000 000" placeholderTextColor={T.inkMuted} keyboardType="phone-pad" editable={!deleting} />
-              <TouchableOpacity style={[asS.deleteConfirmBtn, deleting && { opacity: 0.6 }]} onPress={confirmDelete} disabled={deleting}>
-                {deleting ? <ActivityIndicator color={T.white} size="small" /> : <Text style={[asS.deleteConfirmTxt, { fontFamily: T.font.sans }]}>CONFIRMER LA SUPPRESSION</Text>}
+              <TextInput
+                style={[asS.input, { fontFamily: T.font.sans }]}
+                value={phone} onChangeText={setPhone}
+                placeholder="Ex: 620 000 000" placeholderTextColor={T.inkMuted}
+                keyboardType="phone-pad" editable={!deleting}
+              />
+              <TouchableOpacity
+                style={[asS.deleteConfirmBtn, deleting && { opacity: 0.6 }]}
+                onPress={confirmDelete} disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color={T.white} size="small" />
+                  : <Text style={[asS.deleteConfirmTxt, { fontFamily: T.font.sans }]}>CONFIRMER LA SUPPRESSION</Text>
+                }
               </TouchableOpacity>
               <TouchableOpacity style={asS.cancelRow} onPress={() => reset()}>
                 <Text style={[asS.cancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
               </TouchableOpacity>
             </View>
           )}
+
           <TouchableOpacity style={asS.dismissRow} onPress={() => { onClose(); reset(); }}>
             <Text style={[asS.dismissTxt, { fontFamily: T.font.sans }]}>Fermer</Text>
           </TouchableOpacity>
@@ -356,11 +415,11 @@ export default function AgenciesScreen() {
   const heroTheme = ROLE_HERO[role] ?? ROLE_HERO.COMPANY_ADMIN;
   const isSA      = role === "SUPER_ADMIN";
 
-  const [clients,     setClients]     = useState<any[]>([]);
-  const [agencies,    setAgencies]    = useState<any[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [q,           setQ]           = useState("");
+  const [clients,      setClients]      = useState<any[]>([]);
+  const [agencies,     setAgencies]     = useState<any[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [q,            setQ]            = useState("");
   const [sheetAgency,  setSheetAgency]  = useState<any>(null);
   const [sheetVisible, setSheetVisible] = useState(false);
   const [refillAgency,  setRefillAgency]  = useState<any>(null);
@@ -368,17 +427,20 @@ export default function AgenciesScreen() {
   const [showCreateCompany, setShowCreateCompany] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // ✅ v6.5 Fix : api.getClients() sans cast `any`
+  // Cohérent avec SuperAdminDashboard (gestion tableau OU objet .data)
   const fetchData = useCallback(async () => {
     try {
-      // ✅ v6.4 : Pour SA, on ne charge les agences que si non-SA
-      // (les agences s'affichent dans clients/details)
       if (!isSA) {
         const agencyList = await api.getAgencies();
         setAgencies(Array.isArray(agencyList) ? agencyList : []);
       }
       if (isSA) {
-        const clientList = await (api as any).getClients?.() ?? [];
-        setClients(Array.isArray(clientList) ? clientList.filter((c: any) => c.code !== PLATFORM_CODE) : []);
+        const rawClients = await api.getClients().catch(() => []);
+        const clientList = Array.isArray(rawClients)
+          ? rawClients
+          : ((rawClients as any)?.data ?? []);
+        setClients(clientList.filter((c: any) => c.code !== PLATFORM_CODE));
       }
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e) { console.error(e); }
@@ -390,120 +452,184 @@ export default function AgenciesScreen() {
   const onRefresh  = () => { setRefreshing(true); fetchData(); };
   const openSheet  = (agency: any) => { setSheetAgency(agency); setSheetVisible(true); };
   const closeSheet = () => { setSheetVisible(false); setTimeout(() => setSheetAgency(null), 300); };
-  const openRefill = (agency: any) => { closeSheet(); setTimeout(() => { setRefillAgency(agency); setRefillVisible(true); }, 350); };
+  const openRefill = (agency: any) => {
+    closeSheet();
+    setTimeout(() => { setRefillAgency(agency); setRefillVisible(true); }, 350);
+  };
 
-  const filteredAgencies = agencies.filter((a) => !q.trim() || `${a.name} ${a.city} ${a.country}`.toLowerCase().includes(q.toLowerCase()));
-  const filteredClients  = clients.filter((c)  => !q.trim() || `${c.name} ${c.code}`.toLowerCase().includes(q.toLowerCase()));
+  const filteredAgencies = agencies.filter(
+    (a) => !q.trim() || `${a.name} ${a.city} ${a.country}`.toLowerCase().includes(q.toLowerCase())
+  );
+  const filteredClients = clients.filter(
+    (c) => !q.trim() || `${c.name} ${c.code}`.toLowerCase().includes(q.toLowerCase())
+  );
 
   return (
-    <LinearGradient colors={[heroTheme.g1, heroTheme.g2]} style={{ flex: 1 }}>
+    // ✅ v6.5 : fond blanc pur — pas de gradient couleur en hero
+    <View style={s.root}>
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="dark-content" backgroundColor={T.surface} />
 
+        {/* ── Hero blanc ── */}
         <View style={s.hero}>
+          {/* Avatar dégradé — seul élément coloré */}
+          <LinearGradient
+            colors={[heroTheme.g1, heroTheme.g2]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+            style={s.heroAvatar}
+          >
+            <Ionicons
+              name={isSA ? "briefcase" : "storefront"}
+              size={20} color={T.white}
+            />
+          </LinearGradient>
+
           <View style={{ flex: 1 }}>
-            <Text style={[s.heroTitle, { fontFamily: T.font.display }]}>{isSA ? "Réseau & Sociétés" : "Réseau d'Agences"}</Text>
+            <Text style={[s.heroTitle, { fontFamily: T.font.display }]}>
+              {isSA ? "Réseau & Sociétés" : "Réseau d'Agences"}
+            </Text>
             <Text style={[s.heroSub, { fontFamily: T.font.sans }]}>
               {isSA
                 ? `${clients.length} société${clients.length > 1 ? "s" : ""}`
                 : `${agencies.length} agence${agencies.length > 1 ? "s" : ""}`}
             </Text>
           </View>
+
           <TouchableOpacity
-            style={s.addBtn}
-            onPress={() => isSA ? setShowCreateCompany(true) : router.push("/(tabs)/admin/agencies/create" as any)}
+            style={[s.addBtn, {
+              backgroundColor: `${heroTheme.accent}14`,
+              borderColor:     `${heroTheme.accent}40`,
+            }]}
+            onPress={() =>
+              isSA
+                ? setShowCreateCompany(true)
+                : router.push("/(tabs)/admin/agencies/create" as any)
+            }
           >
-            <Ionicons name="add" size={24} color={T.white} />
+            <Ionicons name="add" size={24} color={heroTheme.accent} />
           </TouchableOpacity>
         </View>
 
-        <View style={s.searchWrap}>
-          <View style={s.searchBox}>
-            <Ionicons name="search" size={16} color="rgba(255,255,255,0.6)" />
-            <TextInput
-              style={[s.searchInput, { fontFamily: T.font.sans }]}
-              value={q} onChangeText={setQ}
-              placeholder="Rechercher..." placeholderTextColor="rgba(255,255,255,0.45)"
-            />
-            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close-circle" size={16} color="rgba(255,255,255,0.6)" /></TouchableOpacity>}
+        {/* ── Séparateur ── */}
+        <View style={s.divider} />
+
+        {/* ── Zone contenu (fond page) ── */}
+        <View style={{ flex: 1, backgroundColor: T.pageBg }}>
+
+          {/* Barre de recherche */}
+          <View style={s.searchWrap}>
+            <View style={s.searchBox}>
+              <Ionicons name="search" size={16} color={T.inkMuted} />
+              <TextInput
+                style={[s.searchInput, { fontFamily: T.font.sans }]}
+                value={q} onChangeText={setQ}
+                placeholder="Rechercher..."
+                placeholderTextColor={T.inkMuted}
+              />
+              {!!q && (
+                <TouchableOpacity onPress={() => setQ("")}>
+                  <Ionicons name="close-circle" size={16} color={T.inkMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
+
+          {loading ? (
+            <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+              <ActivityIndicator color={heroTheme.accent} size="large" />
+            </View>
+          ) : (
+            <Animated.ScrollView
+              style={{ opacity: fadeAnim, flex: 1 }}
+              contentContainerStyle={s.list}
+              showsVerticalScrollIndicator={false}
+              refreshControl={
+                <RefreshControl
+                  refreshing={refreshing} onRefresh={onRefresh}
+                  tintColor={heroTheme.accent} colors={[heroTheme.accent]}
+                />
+              }
+            >
+              {/* ── SUPER ADMIN : liste des sociétés ── */}
+              {isSA && (
+                <>
+                  <SectionBlock
+                    icon="briefcase-outline"
+                    title="SOCIÉTÉS SAAS"
+                    desc="Clients abonnés à la plateforme"
+                    color={T.blue} colorLt={T.blueLt} colorMd={T.blueMd}
+                    count={filteredClients.length}
+                  />
+                  {filteredClients.map((item) => (
+                    <SocieteCard
+                      key={item.id}
+                      item={item}
+                      onPress={() => router.push({
+                        pathname: "/(tabs)/admin/clients/details",
+                        params:   { id: item.id },
+                      })}
+                    />
+                  ))}
+                  {filteredClients.length === 0 && (
+                    <View style={s.empty}>
+                      <Ionicons name="business-outline" size={32} color={T.inkMuted} />
+                      <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>
+                        {q ? "Aucun résultat" : "Aucune société"}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              {/* ── COMPANY ADMIN / AGENT : liste des agences ── */}
+              {!isSA && (
+                <>
+                  <SectionBlock
+                    icon="storefront-outline"
+                    title="AGENCES DU RÉSEAU"
+                    desc="Points de service — filiales et partenaires opérationnels"
+                    color={T.teal} colorLt={T.tealLt} colorMd={T.tealMd}
+                    count={filteredAgencies.length}
+                  />
+                  {filteredAgencies.map((item) => (
+                    <AgenceCard key={item.id} item={item} onPress={() => openSheet(item)} />
+                  ))}
+                  {filteredAgencies.length === 0 && (
+                    <View style={s.empty}>
+                      <Ionicons name="storefront-outline" size={32} color={T.inkMuted} />
+                      <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>
+                        {q ? "Aucun résultat" : "Aucune agence"}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              )}
+
+              <View style={{ height: 80 }} />
+            </Animated.ScrollView>
+          )}
         </View>
 
-        {loading ? (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <ActivityIndicator color={T.white} size="large" />
-          </View>
-        ) : (
-          <Animated.ScrollView
-            style={[s.listContainer, { opacity: fadeAnim }]}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.white} />}
-          >
-            {/* ── SUPER ADMIN : uniquement la liste des sociétés ── */}
-            {isSA && (
-              <>
-                <SectionBlock
-                  icon="briefcase-outline"
-                  title="SOCIÉTÉS SAAS"
-                  desc="Clients abonnés à la plateforme"
-                  color={T.blue} colorLt={T.blueLt} colorMd={T.blueMd}
-                  count={filteredClients.length}
-                />
-                {filteredClients.map((item) => (
-                  <SocieteCard
-                    key={item.id}
-                    item={item}
-                    // ✅ v6.4 : Redirige vers clients/details qui affiche les agences de la société
-                    onPress={() => router.push({
-                      pathname: "/(tabs)/admin/clients/details",
-                      params:   { id: item.id },
-                    })}
-                  />
-                ))}
-                {filteredClients.length === 0 && !loading && (
-                  <View style={s.empty}>
-                    <Ionicons name="business-outline" size={32} color="rgba(255,255,255,0.3)" />
-                    <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>{q ? "Aucun résultat" : "Aucune société"}</Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* ── COMPANY ADMIN / AGENT : liste des agences ── */}
-            {!isSA && (
-              <>
-                <SectionBlock
-                  icon="storefront-outline"
-                  title="AGENCES DU RÉSEAU"
-                  desc="Points de service — filiales et partenaires opérationnels"
-                  color={T.teal} colorLt={T.tealLt} colorMd={T.tealMd}
-                  count={filteredAgencies.length}
-                />
-                {filteredAgencies.map((item) => (
-                  <AgenceCard key={item.id} item={item} onPress={() => openSheet(item)} />
-                ))}
-                {filteredAgencies.length === 0 && !loading && (
-                  <View style={s.empty}>
-                    <Ionicons name="storefront-outline" size={32} color="rgba(255,255,255,0.3)" />
-                    <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>{q ? "Aucun résultat" : "Aucune agence"}</Text>
-                  </View>
-                )}
-              </>
-            )}
-
-            <View style={{ height: 80 }} />
-          </Animated.ScrollView>
-        )}
-
-        {/* Action sheet (uniquement pour non-SA) */}
+        {/* ── Modals ── */}
         {!isSA && (
           <AgenceActionSheet
             agency={sheetAgency} visible={sheetVisible}
             isSuperAdmin={isSA}
             onClose={closeSheet}
-            onViewDetails={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/details" as any, params: { id: sheetAgency?.id } }); }}
-            onEdit={() => { closeSheet(); router.push({ pathname: "/(tabs)/admin/agencies/edit" as any, params: { id: sheetAgency?.id } }); }}
+            onViewDetails={() => {
+              closeSheet();
+              router.push({
+                pathname: "/(tabs)/admin/agencies/details" as any,
+                params:   { id: sheetAgency?.id },
+              });
+            }}
+            onEdit={() => {
+              closeSheet();
+              router.push({
+                pathname: "/(tabs)/admin/agencies/edit" as any,
+                params:   { id: sheetAgency?.id },
+              });
+            }}
             onRefill={() => openRefill(sheetAgency)}
             onDelete={() => fetchData()}
           />
@@ -524,20 +650,60 @@ export default function AgenciesScreen() {
           />
         )}
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  hero:          { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 14 },
-  heroTitle:     { color: T.white, fontSize: 22, fontWeight: "800" },
-  heroSub:       { color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: "600", marginTop: 2 },
-  addBtn:        { width: 42, height: 42, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.22)", borderWidth: 1, borderColor: "rgba(255,255,255,0.35)", justifyContent: "center", alignItems: "center" },
-  searchWrap:    { paddingHorizontal: 16, paddingBottom: 12 },
-  searchBox:     { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  searchInput:   { flex: 1, fontSize: 14, color: T.white, fontWeight: "600" },
-  listContainer: { borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: T.pageBg, flex: 1 },
-  list:          { paddingHorizontal: 16, paddingTop: 20 },
-  empty:         { alignItems: "center", paddingVertical: 40, gap: 10 },
-  emptyTxt:      { color: "rgba(255,255,255,0.45)", fontSize: 14, fontWeight: "600" },
+  // Fond blanc pur (remplace LinearGradient)
+  root: { flex: 1, backgroundColor: T.surface },
+
+  // Hero : fond blanc, ombre légère vers le bas
+  hero: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "android" ? 44 : 16,
+    paddingBottom: 16,
+    gap: 14,
+    backgroundColor: T.surface,
+    ...T.shadow.hero,
+  },
+
+  // Avatar dégradé (seul élément coloré)
+  heroAvatar: {
+    width: 48, height: 48, borderRadius: 14,
+    justifyContent: "center", alignItems: "center",
+  },
+
+  heroTitle: { color: T.ink,    fontSize: 22, fontWeight: "800" },
+  heroSub:   { color: T.inkSub, fontSize: 12, fontWeight: "600", marginTop: 2 },
+
+  // Bouton + rôle-coloré sur fond blanc
+  addBtn: {
+    width: 42, height: 42, borderRadius: 13,
+    justifyContent: "center", alignItems: "center",
+    borderWidth: 1,
+  },
+
+  // Séparateur hero / contenu
+  divider: { height: 1, backgroundColor: T.border },
+
+  // Barre de recherche sur fond page
+  searchWrap: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  searchBox: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    backgroundColor: T.surface, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: T.border,
+    ...T.shadow.soft,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: T.ink, fontWeight: "600" },
+
+  // Liste
+  list: { paddingHorizontal: 16, paddingTop: 6 },
+
+  // État vide — texte sombre sur fond page
+  empty:    { alignItems: "center", paddingVertical: 40, gap: 10 },
+  emptyTxt: { color: T.inkMuted, fontSize: 14, fontWeight: "600" },
 });
