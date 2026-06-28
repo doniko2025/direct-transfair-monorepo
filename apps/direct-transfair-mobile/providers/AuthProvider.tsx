@@ -1,13 +1,14 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v6.1 — Direct Transf'air
-// ✅ v6.0 conservé intégralement
-// ✅ v6.1 : register() retourne AuthUser | null
-//   RAISON : register.tsx a besoin des infos du user créé
-//   (id, phone, isEmailVerified) pour naviguer directement
-//   vers verify-contact sans passer par /(tabs)/home.
-//   Avant : register() retournait void → register.tsx ne
-//   pouvait pas savoir vers où naviguer après le succès.
+// AUTH PROVIDER v6.2 — Direct Transf'air
+// ✅ v6.1 conservé intégralement
+// ✅ v6.2 : biometricLogin() déclenche VRAIMENT Face ID / Touch ID
+//   AVANT de rafraîchir le token.
+//   AVANT : api.refreshAccessToken() appelé sans prompt → biométrie
+//           jamais déclenchée, toggle purement décoratif.
+//   APRÈS : promptBiometrics() appelé en premier → si l'utilisateur
+//           annule ou échoue, on throw sans jamais toucher au token.
+//           Si succès → refreshAccessToken() → user hydraté.
 // =========================================================
 
 import React, {
@@ -20,6 +21,7 @@ import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
 import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
 import { getCurrencyByCountry } from "../data/countries";
+import { promptBiometrics } from "../hooks/useBiometrics"; // ✅ v6.2
 import type {
   AuthUser, LoginPayload, RegisterPayload, LoginResponse,
 } from "../services/types";
@@ -29,17 +31,11 @@ type AuthContextValue = {
   token:     string | null;
   isLoading: boolean;
   login:              (data: LoginPayload) => Promise<void>;
-  /** ✅ v6.1 : retourne AuthUser | null pour que register.tsx puisse
-   *  naviguer directement vers verify-contact avec les bons params */
   register:           (data: RegisterPayload, tenantCode?: string) => Promise<AuthUser | null>;
   logout:             () => Promise<void>;
   refreshUser:        () => Promise<void>;
   biometricLogin:     () => Promise<void>;
-  /** ✅ v5.5 : étape 2 connexion par téléphone */
   loginWithPhoneOtp:  (userId: string, code: string) => Promise<void>;
-  /**
-   * ✅ v6.0 : Hydrate AuthProvider depuis une connexion externe (login-v2.tsx)
-   */
   applyLoginResult: (
     accessToken:  string,
     refreshToken: string | null | undefined,
@@ -64,17 +60,10 @@ const CLOUD_HOST_SUFFIXES = [
   ".railway.app",
 ];
 
-// ✅ FIX : "localhost" et les IPs locales sont traités comme des
-// hôtes de déploiement technique — on n'en extrait JAMAIS de tenant.
-// AVANT : extractTenantFromUrl("http://localhost:8081/...") retournait
-// "LOCALHOST", qui écrasait le tenant FLASH avec DONIKO à chaque
-// re-montage de AuthProvider en dev mode.
 function isCloudDeploymentHost(host: string): boolean {
   const lower = host.toLowerCase();
-  // Dev local
   if (lower === "localhost") return true;
   if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(lower)) return true;
-  // Déploiements cloud techniques
   return CLOUD_HOST_SUFFIXES.some((suffix) => lower.endsWith(suffix));
 }
 
@@ -187,10 +176,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tokenRef.current = null;
       await removeStorage(TOKEN_KEY);
       await removeStorage(USER_KEY);
+      // ✅ Le refresh token est intentionnellement conservé pour
+      // permettre la reconnexion biométrique après logout.
       router.replace("/(auth)/login-v2");
     } catch (e) {
       console.error("Erreur logout", e);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   // ─── Init ─────────────────────────────────────────────────
@@ -238,13 +230,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
-
-    const isLegalScreen =
-      segments[1] === "terms" ||
-      segments[1] === "privacy-policy" ||
-      segments[1] === "assistance";
-
+    const inAuthGroup    = segments[0] === "(auth)";
+    const isLegalScreen  = segments[1] === "terms" || segments[1] === "privacy-policy" || segments[1] === "assistance";
     const isVerifyScreen = segments[1] === "verify-contact";
 
     if (!user && !inAuthGroup) {
@@ -252,17 +239,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // ✅ Bloquer l'accès si email non vérifié.
-    // DEV : la vérification téléphone est commentée — décommenter pour la prod.
     const needsVerification =
       user &&
       !inAuthGroup &&
       !isVerifyScreen &&
-      (
-        !(user as any).isEmailVerified
-        // ── DEV : téléphone commenté — décommenter pour la prod ──
-        // || ((user as any).phone && !(user as any).isPhoneVerified)
-      );
+      (!(user as any).isEmailVerified);
 
     if (needsVerification) {
       router.replace({
@@ -333,9 +314,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ─── Register ─────────────────────────────────────────────
-  // ✅ v6.1 : retourne AuthUser | null (au lieu de void)
-  // → register.tsx peut récupérer l'id/phone pour naviguer
-  //   directement vers verify-contact sans passer par home
   const register = useCallback(async (
     data: RegisterPayload,
     tenantCode?: string,
@@ -362,9 +340,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await setStorage("refreshToken", res.refresh_token);
         }
         void registerCurrentDeviceIfNeeded();
-        return enrichedUser; // ✅ v6.1 : retourne le user
+        return enrichedUser;
       }
-      // Fallback : login classique si pas de token dans la réponse
       await login({ identifier: data.email ?? data.phone ?? "", password: data.password });
       return null;
     } catch (e: unknown) {
@@ -393,11 +370,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ─── biometricLogin ───────────────────────────────────────
+  // ✅ v6.2 : promptBiometrics() déclenché EN PREMIER.
+  // Avant : token rafraîchi silencieusement sans aucune vérif
+  //         biométrique → Face ID / Touch ID jamais affiché.
+  // Après : si l'utilisateur annule ou que le scan échoue,
+  //         on throw immédiatement, le token n'est jamais touché.
   const biometricLogin = useCallback(async () => {
+    // ── Étape 1 : Déclencher le prompt natif Face ID / Touch ID ──
+    const ok = await promptBiometrics("Connectez-vous avec Face ID / Touch ID");
+    if (!ok) {
+      throw new Error("Authentification biométrique annulée ou échouée");
+    }
+
+    // ── Étape 2 : Biométrie validée → rafraîchir le token ──
     setIsLoading(true);
     try {
       await ensureTenantReady();
-      const result = await api.refreshAccessToken();
+      const result   = await api.refreshAccessToken();
       const newToken = result.access_token;
 
       api.setToken(newToken);

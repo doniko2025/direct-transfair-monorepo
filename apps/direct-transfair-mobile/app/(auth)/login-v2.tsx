@@ -1,34 +1,23 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.3 — 3 méthodes de connexion
-// ✅ v2.1 : applyLoginResult() remplace storeTokens() + refreshUser()
-// ✅ v2.2 : clearBranding / USE_DEFAULT_PORTAL / bouton portail principal
-// ✅ v2.3 : AUTO-RETRY TRANSPARENT après switch de portail
-//
-//   PROBLÈME RÉGLÉ :
-//   Avant v2.3, un switch de portail (ex: SuperAdmin sur portail
-//   Flash Transfer) nécessitait 2 clics :
-//     1. Clic → USE_DEFAULT_PORTAL → Alert → clearBranding()
-//     2. Re-clic manuellement → login réussi
+// LOGIN v2.4 — Direct Transf'air
+// ✅ v2.3 conservé intégralement (auto-retry transparent)
+// ✅ v2.4 : Bouton biométrique (Face ID / Touch ID)
+//   PROBLÈME RÉSOLU :
+//   Le toggle biométrie du profil sauvegardait une préférence
+//   que personne ne lisait sur l'écran de login.
+//   biometricLogin() n'était jamais appelé depuis login-v2.tsx.
 //
 //   SOLUTION :
-//   handlePortalError() accepte maintenant un retryFn callback.
-//   Après clearBranding() ou loadBranding(), le login est relancé
-//   automatiquement avec les mêmes credentials — de façon transparente,
-//   sans interruption, sans Alert intermédiaire.
-//
-//   FLOWS COUVERTS :
-//     • SuperAdmin sur portail société → USE_DEFAULT_PORTAL
-//         → clearBranding() → auto-retry DONIKO → ✅ 1 clic
-//     • Admin/client sur portail DONIKO → USE_COMPANY_PORTAL
-//         → loadBranding(clientCode) → auto-retry tenant société → ✅ 1 clic
-//     • Web : redirection vers sous-domaine/domaine custom (inchangé)
-//     • OTP email : même logique de retry transparent
-//     • Bouton "Portail principal" : switch manuel (inchangé)
-//
-//   GARDE-FOU ANTI-BOUCLE :
-//     retryFn est appelé avec isRetry=true. Sur erreur au retry,
-//     on affiche l'erreur normalement sans relancer un nouveau cycle.
+//   - Import hasStoredRefreshToken, isBiometricsAvailable,
+//     getBiometricsEnabled depuis hooks/useBiometrics
+//   - bioReady : true si appareil compatible + préférence activée
+//     + refresh token disponible (les 3 conditions doivent être vraies)
+//   - Bouton "Face ID / Touch ID" affiché dans la card PASSWORD
+//     uniquement si bioReady === true
+//   - handleBiometricLogin() appelle useAuth().biometricLogin()
+//     qui déclenche maintenant le vrai prompt natif (fix v6.2 AuthProvider)
+//   - Erreur "annulée" silencieuse — les vraies erreurs s'affichent
 // =========================================================
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -53,6 +42,13 @@ import { useAuth }   from '../../providers/AuthProvider';
 import { useTenant } from '../../providers/TenantProvider';
 import { api }       from '../../services/api';
 import { v2Auth }    from '../../services/v2-auth';
+
+// ✅ v2.4 : imports biométrie
+import {
+  hasStoredRefreshToken,
+  isBiometricsAvailable,
+  getBiometricsEnabled,
+} from '../../hooks/useBiometrics';
 
 // ─── Types ────────────────────────────────────────────────
 type Method = 'CHOOSE' | 'PASSWORD' | 'OTP_EMAIL' | 'OTP_PHONE';
@@ -96,7 +92,6 @@ function buildTheme(primary: string) {
   };
 }
 
-// ─── Polices ─────────────────────────────────────────────
 const F = {
   display: Platform.select({ ios: 'Georgia',  android: 'serif',      default: 'serif' }),
   body:    Platform.select({ ios: 'System',   android: 'sans-serif', default: 'sans-serif' }),
@@ -154,8 +149,7 @@ const fi = StyleSheet.create({
   eye:   { padding: 4 },
 });
 
-// ─── Indicateur de portail actif ─────────────────────────
-// Affiché quand un switch se produit pour informer l'utilisateur
+// ─── PortalBadge ─────────────────────────────────────────
 function PortalBadge({ label, color }: { label: string; color: string }) {
   return (
     <View style={[pb.wrap, { backgroundColor: color + '18', borderColor: color + '40' }]}>
@@ -164,7 +158,6 @@ function PortalBadge({ label, color }: { label: string; color: string }) {
     </View>
   );
 }
-
 const pb = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 12 },
   txt:  { fontSize: 11, fontWeight: '700' },
@@ -175,26 +168,19 @@ const pb = StyleSheet.create({
 // =========================================================
 export default function LoginV2Screen() {
   const { branding, isCustomBranding, loadBranding, clearBranding } = useTenant();
-  const { applyLoginResult } = useAuth();
+  const { applyLoginResult, biometricLogin } = useAuth(); // ✅ v2.4 : + biometricLogin
   const router = useRouter();
 
   const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
 
-  // ✅ DEV MODE — Connexion par mot de passe uniquement.
-  // Changer 'PASSWORD' → 'CHOOSE' pour réactiver le choix de méthode (OTP email / SMS).
   const [method,  setMethod]  = useState<Method>('PASSWORD');
   const [loading, setLoading] = useState(false);
 
-  // ── MESSAGE PORTAIL — affiché pendant le switch invisible ──
-  // ex: "Portail DONIKO chargé" — 2 secondes puis disparaît
   const [portalMsg, setPortalMsg] = useState<string | null>(null);
   const portalMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showPortalMsg = (msg: string) => {
-    setPortalMsg(msg);
-    if (portalMsgTimer.current) clearTimeout(portalMsgTimer.current);
-    portalMsgTimer.current = setTimeout(() => setPortalMsg(null), 3000);
-  };
+  // ✅ v2.4 : état biométrie
+  const [bioReady, setBioReady] = useState(false);
 
   const btnScale = useRef(new Animated.Value(1)).current;
 
@@ -217,6 +203,7 @@ export default function LoginV2Screen() {
     useRef<TextInput>(null), useRef<TextInput>(null),
   ];
 
+  // ── Focus effect 1 : sync tenant ─────────────────────
   useFocusEffect(
     useCallback(() => {
       if (branding.code !== 'DONIKO') {
@@ -224,6 +211,34 @@ export default function LoginV2Screen() {
       }
     }, [branding.code]),
   );
+
+  // ✅ v2.4 : Focus effect 2 — vérifie si biométrie dispo
+  // Les 3 conditions doivent être vraies pour afficher le bouton :
+  // 1. Appareil compatible (hardware + empreinte enrollée)
+  // 2. Préférence activée par l'utilisateur dans le profil
+  // 3. Un refresh token est stocké (user s'est déjà connecté)
+  useFocusEffect(
+    useCallback(() => {
+      const checkBio = async () => {
+        if (Platform.OS === 'web') { setBioReady(false); return; }
+        try {
+          const available  = await isBiometricsAvailable();
+          const enabled    = await getBiometricsEnabled();
+          const hasToken   = await hasStoredRefreshToken();
+          setBioReady(available && enabled && hasToken);
+        } catch {
+          setBioReady(false);
+        }
+      };
+      void checkBio();
+    }, []),
+  );
+
+  const showPortalMsg = (msg: string) => {
+    setPortalMsg(msg);
+    if (portalMsgTimer.current) clearTimeout(portalMsgTimer.current);
+    portalMsgTimer.current = setTimeout(() => setPortalMsg(null), 3000);
+  };
 
   // ── Navigation vers verify-contact ────────────────────
   const goToVerification = (res: any) => {
@@ -247,33 +262,39 @@ export default function LoginV2Screen() {
     );
   };
 
-  // ══════════════════════════════════════════════════════
-  // handlePortalError v2.3 — AUTO-RETRY TRANSPARENT
-  //
-  // @param e         L'erreur axios interceptée
-  // @param retryFn   Callback à exécuter après le switch de portail.
-  //                  Appelé avec isRetry=true pour éviter les boucles.
-  //
-  // LOGIQUE :
-  //   USE_COMPANY_PORTAL → loadBranding(clientCode) → await retryFn()
-  //   USE_DEFAULT_PORTAL → clearBranding()          → await retryFn()
-  //   Autre erreur       → Alert normal, pas de retry
-  //
-  // GARDE-FOU : retryFn est enveloppé dans try/catch ici.
-  //   Les erreurs du retry sont gérées DANS retryFn (isRetry=true),
-  //   pas ici, pour éviter la double gestion.
-  // ══════════════════════════════════════════════════════
+  // ✅ v2.4 : Connexion biométrique
+  // handleBiometricLogin est appelé quand l'utilisateur tape
+  // le bouton Face ID / Touch ID.
+  // biometricLogin() dans AuthProvider (v6.2) déclenche maintenant
+  // le vrai prompt natif AVANT de rafraîchir le token.
+  // Erreur "annulée" → silencieuse (pas d'alert intempestive si l'user
+  // appuie sur Annuler). Vraies erreurs → alert.
+  const handleBiometricLogin = async () => {
+    setLoading(true);
+    try {
+      await biometricLogin();
+      // Si succès, AuthProvider navigue automatiquement via le guard
+    } catch (e: any) {
+      const msg = e?.message ?? '';
+      // Ignorer silencieusement les annulations volontaires
+      if (!msg.toLowerCase().includes('annulée') && !msg.toLowerCase().includes('cancel')) {
+        Alert.alert('Biométrie', msg || 'Authentification biométrique échouée.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── handlePortalError v2.3 ────────────────────────────
   const handlePortalError = async (
     e: any,
     retryFn?: () => Promise<void>,
   ): Promise<void> => {
     const data = e?.response?.data;
 
-    // ── Cas 1 : User doit aller sur le portail de sa société ──
     if (data?.code === 'USE_COMPANY_PORTAL') {
       const { clientCode, subdomain, customDomain } = data;
 
-      // Web : redirection directe vers le sous-domaine/domaine custom
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const targetUrl = customDomain
           ? `https://${customDomain}`
@@ -291,52 +312,33 @@ export default function LoginV2Screen() {
         }
       }
 
-      // Mobile : charger le branding de la société + auto-retry
       if (clientCode) {
-        try {
-          await loadBranding(clientCode);
-        } catch {
-          // Branding en erreur → on continue quand même le retry
-        }
+        try { await loadBranding(clientCode); } catch {}
         showPortalMsg(`Espace "${clientCode}" chargé — connexion en cours…`);
         if (retryFn) {
-          // Le retry s'exécute avec le nouveau tenant déjà appliqué
-          await retryFn().catch(() => {
-            // Erreur gérée à l'intérieur de retryFn (isRetry=true)
-          });
+          await retryFn().catch(() => {});
         }
         return;
       }
       return;
     }
 
-    // ── Cas 2 : SuperAdmin doit aller sur le portail principal ──
     if (data?.code === 'USE_DEFAULT_PORTAL') {
-      // Réinitialise branding → tenant = DONIKO (synchrone)
       clearBranding();
       showPortalMsg('Portail principal chargé — connexion en cours…');
       if (retryFn) {
-        await retryFn().catch(() => {
-          // Erreur gérée à l'intérieur de retryFn (isRetry=true)
-        });
+        await retryFn().catch(() => {});
       }
       return;
     }
 
-    // ── Cas 3 : Toute autre erreur → affichage normal ──
     const msg = v2Auth.extractMessage(e);
     Platform.OS === 'web'
       ? alert(msg)
       : Alert.alert('Connexion échouée', msg);
   };
 
-  // ══════════════════════════════════════════════════════
-  // CONNEXION PAR MOT DE PASSE
-  //
-  // isRetry=false (défaut) : premier essai, auto-retry autorisé
-  // isRetry=true           : deuxième essai post-switch, pas de retry
-  //   → si ça échoue encore, c'est vraiment une erreur à afficher
-  // ══════════════════════════════════════════════════════
+  // ── Connexion par mot de passe ────────────────────────
   const handlePasswordLogin = async (isRetry = false) => {
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
@@ -352,10 +354,8 @@ export default function LoginV2Screen() {
 
     } catch (e: any) {
       if (!isRetry) {
-        // Premier essai : tenter un switch de portail puis auto-retry
         await handlePortalError(e, () => handlePasswordLogin(true));
       } else {
-        // Deuxième essai (post-switch) : afficher l'erreur directement
         const msg = v2Auth.extractMessage(e);
         Platform.OS === 'web'
           ? alert(msg)
@@ -366,9 +366,7 @@ export default function LoginV2Screen() {
     }
   };
 
-  // ══════════════════════════════════════════════════════
-  // DEMANDE OTP PAR EMAIL — même logique de retry
-  // ══════════════════════════════════════════════════════
+  // ── OTP Email ─────────────────────────────────────────
   const handleRequestOtpEmail = async (isRetry = false) => {
     if (!emailForOtp.trim()) return;
     setLoading(true);
@@ -380,7 +378,6 @@ export default function LoginV2Screen() {
       setOtpValues(['', '', '', '', '', '']);
       setOtpEmailStep('verify');
       setTimeout(() => otpRefs[0].current?.focus(), 200);
-
     } catch (e: any) {
       const data = e?.response?.data;
       if (data?.code === 'VERIFICATION_REQUIRED') {
@@ -400,7 +397,6 @@ export default function LoginV2Screen() {
     }
   };
 
-  // ── Gestion saisie OTP ────────────────────────────────
   const handleOtpChange = (text: string, index: number) => {
     const digit = text.replace(/\D/g, '').slice(-1);
     const next  = [...otpValues];
@@ -421,7 +417,6 @@ export default function LoginV2Screen() {
     }
   };
 
-  // ── Vérification OTP de connexion ─────────────────────
   const handleVerifyOtp = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
     if (code.length < 6) return;
@@ -510,40 +505,6 @@ export default function LoginV2Screen() {
             </Text>
 
             <View style={{ marginTop: 20, gap: 12 }}>
-              {/* ── DEV : OTP email commenté — décommenter pour la prod ──
-              <TouchableOpacity
-                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
-                onPress={() => setMethod('OTP_EMAIL')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name="mail-outline" size={22} color={C.g4} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.methodTitle, { fontFamily: F.body }]}>Code par email</Text>
-                  <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 6 chiffres</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={C.g5} />
-              </TouchableOpacity>
-              ── */}
-
-              {/* ── DEV : OTP SMS commenté — décommenter pour la prod ──
-              <TouchableOpacity
-                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
-                onPress={() => router.push('/(auth)/otp-phone')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name="phone-portrait-outline" size={22} color={C.g4} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.methodTitle, { fontFamily: F.body }]}>Code par SMS</Text>
-                  <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 4 chiffres</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={C.g5} />
-              </TouchableOpacity>
-              ── */}
-
               <TouchableOpacity
                 style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
                 onPress={() => setMethod('PASSWORD')}
@@ -558,6 +519,28 @@ export default function LoginV2Screen() {
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
+
+              {/* ✅ v2.4 : Biométrie dans CHOOSE aussi */}
+              {bioReady && (
+                <TouchableOpacity
+                  style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                  onPress={handleBiometricLogin}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
+                    <Ionicons name="finger-print-outline" size={22} color={C.g4} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.methodTitle, { fontFamily: F.body }]}>Face ID / Touch ID</Text>
+                    <Text style={[s.methodDesc, { fontFamily: F.body }]}>Connexion biométrique rapide</Text>
+                  </View>
+                  {loading
+                    ? <ActivityIndicator size="small" color={C.g4} />
+                    : <Ionicons name="chevron-forward" size={18} color={C.g5} />
+                  }
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -575,10 +558,7 @@ export default function LoginV2Screen() {
               Connectez-vous avec votre email et mot de passe.
             </Text>
 
-            {/* ✅ v2.3 : Badge informatif après switch de portail */}
-            {portalMsg && (
-              <PortalBadge label={portalMsg} color={C.g4} />
-            )}
+            {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
 
             <View style={{ marginTop: portalMsg ? 4 : 20 }}>
               <FloatingInput
@@ -636,6 +616,37 @@ export default function LoginV2Screen() {
                 Mot de passe oublié ?
               </Text>
             </TouchableOpacity>
+
+            {/* ✅ v2.4 : Bouton biométrique dans la card PASSWORD */}
+            {bioReady && (
+              <>
+                <View style={s.dividerRow}>
+                  <View style={s.dividerLine} />
+                  <Text style={[s.dividerTxt, { fontFamily: F.body }]}>ou</Text>
+                  <View style={s.dividerLine} />
+                </View>
+                <TouchableOpacity
+                  style={[s.bioBtn, {
+                    borderColor:     C.g4 + '40',
+                    backgroundColor: C.g4 + '08',
+                  }]}
+                  onPress={handleBiometricLogin}
+                  disabled={loading}
+                  activeOpacity={0.85}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color={C.g4} />
+                  ) : (
+                    <>
+                      <Ionicons name="finger-print-outline" size={22} color={C.g4} />
+                      <Text style={[s.bioBtnTxt, { color: C.g4, fontFamily: F.body }]}>
+                        Face ID / Touch ID
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -646,7 +657,6 @@ export default function LoginV2Screen() {
           <View style={[s.card, { shadowColor: C.g1 }]}>
             <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
 
-            {/* ── Étape 1 : saisie email ── */}
             {otpEmailStep === 'input' && (
               <>
                 <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
@@ -656,9 +666,7 @@ export default function LoginV2Screen() {
                   Saisissez votre email pour recevoir un code à 6 chiffres.
                 </Text>
 
-                {portalMsg && (
-                  <PortalBadge label={portalMsg} color={C.g4} />
-                )}
+                {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
 
                 <View style={{ marginTop: portalMsg ? 4 : 20 }}>
                   <FloatingInput
@@ -697,7 +705,6 @@ export default function LoginV2Screen() {
               </>
             )}
 
-            {/* ── Étape 2 : saisie du code ── */}
             {otpEmailStep === 'verify' && (
               <>
                 <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
@@ -783,7 +790,6 @@ export default function LoginV2Screen() {
             </TouchableOpacity>
           )}
 
-          {/* ✅ v2.2 : Switch manuel → portail principal */}
           {isCustomBranding && (
             <TouchableOpacity
               style={s.helpRow}
@@ -820,9 +826,7 @@ export default function LoginV2Screen() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
   bgBase:    { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: 'rgba(255,255,255,0.05)', top: -80, right: -80 },
@@ -863,6 +867,17 @@ const s = StyleSheet.create({
 
   linkBtn: { alignItems: 'center', paddingVertical: 14 },
   linkTxt: { fontSize: 14, fontWeight: '600' },
+
+  // ✅ v2.4 : styles bouton biométrique
+  dividerRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: '#E2E8F0' },
+  dividerTxt:  { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
+  bioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 10, borderRadius: 14, paddingVertical: 15,
+    borderWidth: 1.5, marginTop: 2,
+  },
+  bioBtnTxt: { fontSize: 15, fontWeight: '700' },
 
   bottom:      { marginTop: 16, alignItems: 'center', gap: 8 },
   registerBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22, width: '100%', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },

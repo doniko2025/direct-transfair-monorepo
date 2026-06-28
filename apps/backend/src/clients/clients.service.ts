@@ -1,21 +1,12 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.5
-// ✅ v4.4 conservé intégralement
-// ✅ v4.5 — Portail web dédié par société :
-//   1. mapPublicBranding() : helper privé partagé entre
-//      findPublicByCode() et findPublicByHost()
-//      → supprime la duplication, garantit la cohérence
-//      → retourne désormais subdomain + customDomain
-//   2. findPublicByCode() : refactorisé via mapPublicBranding()
-//      → sélectionne subdomain + customDomain en plus
-//   3. findPublicByHost(host) : NOUVEAU
-//      → recherche par customDomain exact (domaine custom)
-//      → puis par subdomain (ex: "flash" dans flash.direct-transfer.com)
-//      → puis par code comme fallback (ex: "FLASH")
-//      → appelé par GET /branding/by-host?host=flash.direct-transfer.com
-//   4. create() : persiste subdomain + customDomain depuis le DTO
-//      → normalisation : lowercase + trim sur les deux champs
+// CLIENTS SERVICE v4.6
+// ✅ v4.5 conservé intégralement
+// ✅ v4.6 : Email de bienvenue automatique après création
+//   → sendWelcomeCompanyAdmin() déclenché après la transaction
+//   → Non-bloquant : un échec mail ne casse jamais la création
+//   → Logger NestJS pour traçabilité des erreurs mail
+//   → Logger + CompanyMailService injectés
 // =========================================================
 
 import {
@@ -23,12 +14,15 @@ import {
   ConflictException,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import * as bcrypt from 'bcryptjs';
 import { CurrencyCode, KycLevel, Role, SubscriptionStatus } from '@prisma/client';
 import * as crypto from 'crypto';
+
+import { CompanyMailService } from '../mail/channels/company-mail.service';
 
 // ─── Constantes ──────────────────────────────────────────
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
@@ -75,8 +69,8 @@ type PublicBranding = {
   fontFamily:     string | null;
   splashBgColor:  string | null;
   welcomeMessage: string | null;
-  subdomain:      string | null;  // ✅ v4.5
-  customDomain:   string | null;  // ✅ v4.5
+  subdomain:      string | null;
+  customDomain:   string | null;
   isActive:       boolean;
 };
 
@@ -91,19 +85,26 @@ const PUBLIC_BRANDING_SELECT = {
   fontFamily:     true,
   splashBgColor:  true,
   welcomeMessage: true,
-  subdomain:      true,  // ✅ v4.5
-  customDomain:   true,  // ✅ v4.5
+  subdomain:      true,
+  customDomain:   true,
   isActive:       true,
 } as const;
 
+// =========================================================
+// SERVICE
+// =========================================================
+
 @Injectable()
 export class ClientsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ClientsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private readonly companyMailService: CompanyMailService,
+  ) {}
 
   // ========================================================
-  // HELPER PRIVÉ — mapping branding public ✅ v4.5
-  // Centralisé pour garantir la cohérence entre findPublicByCode()
-  // et findPublicByHost() (plus de duplication, plus de divergence)
+  // HELPER PRIVÉ — mapping branding public
   // ========================================================
 
   private mapPublicBranding(client: any): PublicBranding {
@@ -117,15 +118,15 @@ export class ClientsService {
       fontFamily:     client.fontFamily     ?? null,
       splashBgColor:  client.splashBgColor  ?? null,
       welcomeMessage: client.welcomeMessage ?? null,
-      subdomain:      client.subdomain      ?? null,  // ✅ v4.5
-      customDomain:   client.customDomain   ?? null,  // ✅ v4.5
+      subdomain:      client.subdomain      ?? null,
+      customDomain:   client.customDomain   ?? null,
       isActive:       client.isActive,
     };
   }
 
   // ========================================================
   // CRÉATION
-  // ✅ v4.5 : subdomain + customDomain persistés depuis le DTO
+  // ✅ v4.6 : email de bienvenue envoyé après la transaction
   // ========================================================
 
   async create(dto: CreateClientDto) {
@@ -146,7 +147,6 @@ export class ClientsService {
     if (existingUser)
       throw new ConflictException(`L'email "${dto.adminEmail}" est déjà utilisé.`);
 
-    // ✅ v4.5 — Vérification unicité subdomain/customDomain avant transaction
     if (dto.subdomain) {
       const existingSub = await this.prisma.client.findUnique({
         where: { subdomain: dto.subdomain.toLowerCase().trim() },
@@ -163,17 +163,21 @@ export class ClientsService {
         throw new ConflictException(`Le domaine "${dto.customDomain}" est déjà utilisé.`);
     }
 
-    const hashedPassword = await bcrypt.hash(String(dto.adminPassword), 10);
+    // ✅ v4.6 : on garde le mot de passe en clair AVANT le hachage
+    // pour pouvoir l'inclure dans l'email de bienvenue
+    const plainPassword   = String(dto.adminPassword);
+    const hashedPassword  = await bcrypt.hash(plainPassword, 10);
     const ownerCountryCode = dto.ownerCountry?.toUpperCase().substring(0, 2);
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(ownerCountryCode);
 
-    return this.prisma.$transaction(async (tx) => {
+    // ─── Transaction Prisma ─────────────────────────────
+    const result = await this.prisma.$transaction(async (tx) => {
       const client = await tx.client.create({
         data: {
           code:               dto.code.toUpperCase(),
           name:               dto.name,
 
-          // ─── Branding ────────────────────────────────────
+          // ─── Branding ──────────────────────────────────
           primaryColor:       dto.primaryColor   ?? '#059669',
           secondaryColor:     dto.secondaryColor ?? '#10B981',
           logoUrl:            dto.logoUrl        ?? null,
@@ -182,22 +186,22 @@ export class ClientsService {
           splashBgColor:      dto.splashBgColor  ?? null,
           welcomeMessage:     dto.welcomeMessage ?? null,
 
-          // ─── Portail web dédié ✅ v4.5 ───────────────────
+          // ─── Portail web dédié ─────────────────────────
           subdomain:    dto.subdomain?.toLowerCase().trim()    ?? null,
           customDomain: dto.customDomain?.toLowerCase().trim() ?? null,
 
-          // ─── Abonnement ──────────────────────────────────
+          // ─── Abonnement ────────────────────────────────
           subscriptionType:   dto.subscriptionType ?? 'RENTAL',
           subscriptionStatus: SubscriptionStatus.ACTIVE,
           defaultCurrency:    primaryCurrency,
 
-          // ─── Coordonnées ─────────────────────────────────
+          // ─── Coordonnées ───────────────────────────────
           country:            ownerCountryCode   ?? null,
           email:              String(dto.adminEmail),
           phone:              dto.contactPhone   ?? null,
           address:            dto.ownerAddress   ?? null,
 
-          // ─── Propriétaire légal ──────────────────────────
+          // ─── Propriétaire légal ────────────────────────
           ownerFirstName:     String(dto.adminFirstName),
           ownerLastName:      String(dto.adminLastName),
           ownerBirthDate:     dto.ownerBirthDate  ?? null,
@@ -205,12 +209,12 @@ export class ClientsService {
           ownerCountry:       dto.ownerCountry    ?? null,
           ownerAddress:       dto.ownerAddress    ?? null,
 
-          // ─── Contact opérationnel ────────────────────────
+          // ─── Contact opérationnel ──────────────────────
           contactEmail:       dto.contactEmail   ?? dto.adminEmail,
           contactPhone:       dto.contactPhone   ?? null,
           activitySector:     dto.activitySector ?? null,
 
-          // ─── Devises & features ──────────────────────────
+          // ─── Devises & features ────────────────────────
           allowedCurrencies:         SUPPORTED_CURRENCIES,
           featureScheduledTransfers: true,
           featureRateAlerts:         true,
@@ -263,6 +267,28 @@ export class ClientsService {
 
       return { client, admin };
     });
+
+    // ─── Email de bienvenue ─────────────────────────────
+    // ✅ v4.6 : exécuté APRÈS la transaction, non-bloquant.
+    // Un échec d'envoi ne rollback jamais la création.
+    void this.companyMailService
+      .sendWelcomeCompanyAdmin({
+        email:             String(dto.adminEmail),
+        firstName:         String(dto.adminFirstName),
+        lastName:          String(dto.adminLastName),
+        companyName:       dto.name,
+        companyCode:       dto.code.toUpperCase(),
+        temporaryPassword: plainPassword,
+        userId:            result.admin.id,
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `⚠️  Email de bienvenue non envoyé à ${dto.adminEmail} — société ${dto.code}`,
+          err?.message ?? err,
+        );
+      });
+
+    return result;
   }
 
   // ========================================================
@@ -302,7 +328,6 @@ export class ClientsService {
 
   // ========================================================
   // BRANDING PUBLIC PAR CODE
-  // ✅ v4.5 : refactorisé via mapPublicBranding() + subdomain/customDomain
   // ========================================================
 
   async findPublicByCode(code: string): Promise<PublicBranding | null> {
@@ -316,35 +341,22 @@ export class ClientsService {
   }
 
   // ========================================================
-  // BRANDING PUBLIC PAR HOSTNAME — ✅ v4.5 NOUVEAU
-  // Appelé par GET /branding/by-host?host=flash.direct-transfer.com
-  //
-  // Stratégie de résolution (dans l'ordre) :
-  //   1. customDomain exact  → "www.flash-transfer.com"
-  //   2. subdomain extrait   → "flash" de "flash.direct-transfer.com"
-  //   3. code = subdomain    → fallback si subdomain non renseigné mais code = sous-domaine
-  //
-  // Sécurité : isActive: true → sociétés suspendues bloquées à la source
+  // BRANDING PUBLIC PAR HOSTNAME
   // ========================================================
 
   async findPublicByHost(host: string): Promise<PublicBranding | null> {
     const normalizedHost = host.toLowerCase().trim();
 
-    // Extraire le sous-domaine potentiel : "flash" depuis "flash.direct-transfer.com"
     const parts = normalizedHost.split('.');
-    // Un sous-domaine valide = premier segment si le host a ≥ 3 parties et le premier n'est pas "www"
     const extractedSub =
       parts.length >= 3 && parts[0] !== 'www' ? parts[0] : null;
 
     const orConditions: any[] = [
-      // Priorité 1 : domaine custom exact
       { customDomain: normalizedHost },
     ];
 
     if (extractedSub) {
-      // Priorité 2 : sous-domaine Prisma
       orConditions.push({ subdomain: extractedSub });
-      // Priorité 3 : code société = sous-domaine (fallback rétrocompat)
       orConditions.push({ code: extractedSub.toUpperCase() });
     }
 
@@ -353,7 +365,6 @@ export class ClientsService {
         isActive: true,
         OR: orConditions,
       },
-      // Priorité customDomain > subdomain > code : ordonné par pertinence
       orderBy: { createdAt: 'asc' },
       select: PUBLIC_BRANDING_SELECT,
     });
@@ -386,7 +397,6 @@ export class ClientsService {
       updateData.defaultCurrency = getCurrencyFromCountry(countryCode);
     }
 
-    // ✅ v4.5 : normaliser subdomain/customDomain si fournis
     if (updateData.subdomain) {
       updateData.subdomain = String(updateData.subdomain).toLowerCase().trim() || null;
     }
