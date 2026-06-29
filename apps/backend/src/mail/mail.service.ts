@@ -1,47 +1,73 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.0
-// ✅ Templates multi-devises (XOF, EUR, USD, GNF, GBP)
-// ✅ CommunicationLog tracé en base
-// ✅ Brand color dynamique (par société)
-// ✅ Compatible Gmail / SMTP
+// MAIL SERVICE v4.1 — Direct Transf'air
+// ✅ v4.0 conservé intégralement
+// ✅ v4.1 : DIAGNOSTIC SMTP au démarrage — isReady flag
+//   PROBLÈME RÉSOLU : les emails ne partaient jamais en prod.
+//   nodemailer créait le transporter sans erreur même si
+//   MAIL_USER/MAIL_PASS étaient absents sur Railway, puis
+//   échouait silencieusement à l'envoi (catch interne).
+//
+//   FIX 1 — Détection credentials manquants au boot
+//     Si MAIL_USER ou MAIL_PASS vides → isReady=false
+//     + log d'erreur explicite dans Railway Logs.
+//     sendEmail() / sendRaw() skippent proprement.
+//
+//   FIX 2 — verify() au démarrage (non bloquant)
+//     Test SMTP réel 3 secondes après le boot.
+//     Railway → onglet Logs → chercher "[MAIL]".
+//     ✅ "[MAIL] ✅ Connexion SMTP vérifiée" → OK
+//     ❌ "[MAIL] ❌ Test SMTP échoué"         → config à corriger
+//
+//   FIX 3 — Meilleur logging dans le catch d'envoi
+//     L'erreur exact (ex: "Invalid login", "ECONNREFUSED")
+//     est désormais incluse dans le log Railway.
+//
+//   ──────────────────────────────────────────────────────
+//   CONFIGURATION RAILWAY (Settings → Variables) :
+//
+//   ► Option Gmail (recommandé, gratuit) :
+//       MAIL_SERVICE = gmail
+//       MAIL_USER    = votre@gmail.com
+//       MAIL_PASS    = xxxx xxxx xxxx xxxx   ← APP PASSWORD
+//       MAIL_FROM    = votre@gmail.com
+//       ⚠️  App Password ≠ mot de passe Google normal
+//       Google Account → Security → 2-Step Verification
+//       → App Passwords → "Mail" → Générer
+//
+//   ► Option Resend (gratuit, 3000 emails/mois) :
+//       MAIL_HOST    = smtp.resend.com
+//       MAIL_PORT    = 465
+//       MAIL_SECURE  = true
+//       MAIL_USER    = resend
+//       MAIL_PASS    = re_xxxxxxxxxxxxxxxx   ← API Key Resend
+//       MAIL_FROM    = noreply@votredomaine.com
+//
+//   ► Option Brevo / Mailgun / etc — même structure SMTP
+//   ──────────────────────────────────────────────────────
 // =========================================================
 
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
-
 import { PrismaService } from '../prisma/prisma.service';
 
 // =========================================================
-// CURRENCY HELPERS
+// CURRENCY HELPERS (inchangés v4.0)
 // =========================================================
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
-  EUR: '€',
-  USD: '$',
-  GBP: '£',
-  GNF: 'FG',
-  XOF: 'FCFA',
+  EUR: '€', USD: '$', GBP: '£', GNF: 'FG', XOF: 'FCFA',
 };
 
 const CURRENCY_LOCALES: Record<string, string> = {
-  EUR: 'fr-FR',
-  USD: 'en-US',
-  GBP: 'en-GB',
-  GNF: 'fr-GN',
-  XOF: 'fr-SN',
+  EUR: 'fr-FR', USD: 'en-US', GBP: 'en-GB', GNF: 'fr-GN', XOF: 'fr-SN',
 };
 
-export function formatAmount(
-  amount: number | string,
-  currency: string = 'XOF',
-): string {
+export function formatAmount(amount: number | string, currency: string = 'XOF'): string {
   const n = typeof amount === 'number' ? amount : Number(amount);
   if (!Number.isFinite(n)) return `0 ${CURRENCY_SYMBOLS[currency] ?? currency}`;
-
   const locale = CURRENCY_LOCALES[currency] ?? 'fr-FR';
   const symbol = CURRENCY_SYMBOLS[currency] ?? currency;
-
   try {
     const formatted = new Intl.NumberFormat(locale, {
       minimumFractionDigits: currency === 'GNF' || currency === 'XOF' ? 0 : 2,
@@ -54,7 +80,7 @@ export function formatAmount(
 }
 
 // =========================================================
-// SERVICE
+// TYPES
 // =========================================================
 
 export interface SendEmailOptions {
@@ -63,38 +89,95 @@ export interface SendEmailOptions {
   htmlContent: string;
   userId?: string;
   transactionId?: string;
-  brandColor?: string; // Override couleur de la marque
-  brandName?: string;  // Nom de la société
+  brandColor?: string;
+  brandName?: string;
 }
+
+// =========================================================
+// SERVICE
+// =========================================================
 
 @Injectable()
 export class MailService {
-  private transporter: nodemailer.Transporter;
+  // ✅ v4.1 : null si non configuré, pour éviter les crashes
+  private transporter: nodemailer.Transporter | null = null;
+  // ✅ v4.1 : false tant que credentials non vérifiés
+  private isReady = false;
   private readonly logger = new Logger(MailService.name);
 
   constructor(private readonly prisma: PrismaService) {
-    // ✅ Support Gmail simplifié OU SMTP custom
+    // ✅ v4.1 : init déplacé dans une méthode dédiée pour clarté
+    this.initTransporter();
+  }
+
+  // ========================================================
+  // ✅ v4.1 — INIT TRANSPORTER avec validation + verify()
+  // ========================================================
+
+  private initTransporter(): void {
+    const user = process.env.MAIL_USER?.trim();
+    const pass = (process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD)?.trim();
     const useGmailService = (process.env.MAIL_SERVICE ?? '').toLowerCase() === 'gmail';
 
+    // ── FIX 1 : Credentials obligatoires ──────────────────
+    if (!user || !pass) {
+      this.logger.error(
+        '[MAIL] ❌ SMTP non configuré — AUCUN EMAIL ne sera envoyé.\n' +
+        `  Variables manquantes sur Railway :\n` +
+        (!user ? `  → MAIL_USER  (ex: votre@gmail.com)\n`               : '') +
+        (!pass ? `  → MAIL_PASS  (App Password Gmail ou clé SMTP)\n`     : '') +
+        `  → Ajoutez ces variables : Railway → Settings → Variables → Redéployez.`,
+      );
+      return; // isReady reste false, transporter reste null
+    }
+
+    // ── Création du transporter ────────────────────────────
     if (useGmailService) {
       this.transporter = nodemailer.createTransport({
         service: 'gmail',
-        auth: {
-          user: process.env.MAIL_USER,
-          pass: process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD,
-        },
+        auth:    { user, pass },
       });
+      this.logger.log(`[MAIL] Transporter Gmail créé (${user})`);
     } else {
+      const host = process.env.MAIL_HOST;
+      const port = Number(process.env.MAIL_PORT) || 587;
+      if (!host) {
+        this.logger.error(
+          '[MAIL] ❌ MAIL_HOST manquant pour le mode SMTP.\n' +
+          `  → Définissez MAIL_HOST sur Railway, ou passez en mode Gmail :\n` +
+          `     MAIL_SERVICE=gmail`,
+        );
+        return;
+      }
       this.transporter = nodemailer.createTransport({
-        host: process.env.MAIL_HOST,
-        port: Number(process.env.MAIL_PORT) || 587,
+        host,
+        port,
         secure: process.env.MAIL_SECURE === 'true',
-        auth: {
-          user: process.env.MAIL_USER,
-          pass: process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD,
-        },
+        auth:   { user, pass },
       });
+      this.logger.log(`[MAIL] Transporter SMTP créé (${host}:${port})`);
     }
+
+    this.isReady = true;
+
+    // ── FIX 2 : Test de connexion SMTP au démarrage ────────
+    // Délai 3s pour laisser NestJS finir son boot sans bloquer
+    setTimeout(() => {
+      void this.transporter!
+        .verify()
+        .then(() => {
+          this.logger.log('[MAIL] ✅ Connexion SMTP vérifiée — emails opérationnels');
+        })
+        .catch((err: Error) => {
+          this.isReady = false;
+          this.logger.error(
+            `[MAIL] ❌ Test SMTP échoué : ${err.message}\n` +
+            `  → Gmail : utilisez un App Password, PAS votre mot de passe Google.\n` +
+            `       Google Account → Security → 2-Step Verification → App Passwords\n` +
+            `  → SMTP : vérifiez MAIL_HOST / MAIL_PORT / MAIL_SECURE sur Railway.`,
+          );
+        });
+    }, 3000);
   }
 
   // ========================================================
@@ -106,97 +189,101 @@ export class MailService {
     subject?: string,
     htmlContent?: string,
   ): Promise<void> {
-    // Support des deux signatures (string ou options)
     const opts: SendEmailOptions =
       typeof toOrOptions === 'string'
-        ? {
-            to: toOrOptions,
-            subject: subject ?? '',
-            htmlContent: htmlContent ?? '',
-          }
+        ? { to: toOrOptions, subject: subject ?? '', htmlContent: htmlContent ?? '' }
         : toOrOptions;
 
     if (!opts.to || !opts.subject) {
-      this.logger.warn('Email skip: to/subject manquant');
+      this.logger.warn('[MAIL] Email skip: to/subject manquant');
       return;
     }
 
-    // ✅ Crée un CommunicationLog en PENDING
+    // ✅ v4.1 : Skip propre si SMTP non configuré ou test échoué
+    if (!this.isReady || !this.transporter) {
+      this.logger.warn(
+        `[MAIL] ⚠️  Email NON envoyé (SMTP non prêt) :\n` +
+        `  → Destinataire : ${opts.to}\n` +
+        `  → Objet        : ${opts.subject}\n` +
+        `  → Action       : configurez MAIL_USER + MAIL_PASS sur Railway et redéployez.`,
+      );
+      return;
+    }
+
+    // ── CommunicationLog (inchangé v4.0) ──────────────────
     let logId: string | null = null;
     try {
       const log = await this.prisma.communicationLog.create({
         data: {
-          userId: opts.userId ?? null,
+          userId:        opts.userId        ?? null,
           transactionId: opts.transactionId ?? null,
-          type: 'EMAIL',
-          recipient: opts.to,
-          subject: opts.subject,
-          htmlBody: opts.htmlContent,
-          status: 'PENDING',
-          providerName: 'nodemailer',
+          type:          'EMAIL',
+          recipient:     opts.to,
+          subject:       opts.subject,
+          htmlBody:      opts.htmlContent,
+          status:        'PENDING',
+          providerName:  'nodemailer',
         },
       });
       logId = log.id;
     } catch (e) {
-      this.logger.warn('CommunicationLog création échouée', e);
+      this.logger.warn('[MAIL] CommunicationLog création échouée', e);
     }
 
     try {
       const info = await this.transporter.sendMail({
-        from: process.env.MAIL_FROM ?? process.env.MAIL_USER,
-        to: opts.to,
+        from:    process.env.MAIL_FROM ?? process.env.MAIL_USER,
+        to:      opts.to,
         subject: opts.subject,
-        html: this.wrapHtml(opts.subject, opts.htmlContent, {
+        html:    this.wrapHtml(opts.subject, opts.htmlContent, {
           brandColor: opts.brandColor,
-          brandName: opts.brandName,
+          brandName:  opts.brandName,
         }),
       });
 
-      this.logger.log(`✉️  Email → ${opts.to} (${info.messageId})`);
+      this.logger.log(`[MAIL] ✉️  Envoyé → ${opts.to} (messageId: ${info.messageId})`);
 
-      // ✅ Update log → SENT
       if (logId) {
         await this.prisma.communicationLog
           .update({
             where: { id: logId },
-            data: {
-              status: 'SENT',
-              sentAt: new Date(),
-              providerId: info.messageId,
-            },
+            data:  { status: 'SENT', sentAt: new Date(), providerId: info.messageId },
           })
           .catch(() => {});
       }
     } catch (error: any) {
-      this.logger.error(`❌ Email → ${opts.to}`, error);
+      // ✅ v4.1 : FIX 3 — message d'erreur inclus dans le log Railway
+      this.logger.error(
+        `[MAIL] ❌ Échec envoi → ${opts.to} : ${error?.message ?? String(error)}`,
+      );
 
       if (logId) {
         await this.prisma.communicationLog
           .update({
             where: { id: logId },
-            data: {
-              status: 'FAILED',
-              errorMsg: String(error?.message ?? error),
+            data:  {
+              status:     'FAILED',
+              errorMsg:   String(error?.message ?? error),
               retryCount: { increment: 1 },
             },
           })
           .catch(() => {});
       }
-      // On ne throw pas pour ne pas casser une transaction critique
+      // On ne throw pas — comportement v4.0 conservé
     }
   }
 
   // ========================================================
-  // TEMPLATE HTML PRO (responsive, dark-mode safe)
+  // TEMPLATE HTML PRO (inchangé v4.0)
   // ========================================================
 
   private wrapHtml(
-    title: string,
+    title:   string,
     content: string,
-    opts: { brandColor?: string; brandName?: string } = {},
+    opts:    { brandColor?: string; brandName?: string } = {},
   ): string {
     const brandColor = opts.brandColor ?? '#DC2626';
-    const brandName = opts.brandName ?? "Direct Transf'air";
+    const brandName  = opts.brandName  ?? "Direct Transf'air";
 
     return `
 <!DOCTYPE html>
@@ -210,8 +297,8 @@ export class MailService {
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#F4F3EE;padding:24px 12px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0" style="max-width:600px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
-          <!-- Header gradient -->
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"
+          style="max-width:600px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
           <tr>
             <td style="background:linear-gradient(135deg,${brandColor} 0%,${this.darken(brandColor)} 100%);padding:28px 32px;text-align:left;">
               <h1 style="margin:0;color:#fff;font-size:18px;font-weight:500;letter-spacing:.3px;">
@@ -219,14 +306,14 @@ export class MailService {
               </h1>
             </td>
           </tr>
-          <!-- Content -->
           <tr>
             <td style="padding:32px;color:#1f1f1f;line-height:1.7;font-size:15px;">
-              <h2 style="margin:0 0 16px 0;color:${brandColor};font-size:20px;font-weight:500;">${title}</h2>
+              <h2 style="margin:0 0 16px 0;color:${brandColor};font-size:20px;font-weight:500;">
+                ${title}
+              </h2>
               ${content}
             </td>
           </tr>
-          <!-- Footer -->
           <tr>
             <td style="padding:20px 32px;background:#FAFAF7;border-top:1px solid #EAEAE5;color:#888;font-size:12px;line-height:1.6;">
               Ceci est un message automatique — merci de ne pas y répondre.<br/>
@@ -238,26 +325,30 @@ export class MailService {
     </tr>
   </table>
 </body>
-</html>
-    `.trim();
+</html>`.trim();
   }
 
   private darken(hex: string): string {
-    // Variante plus sombre pour gradient
     if (!hex.startsWith('#') || hex.length !== 7) return hex;
     const r = Math.max(0, parseInt(hex.slice(1, 3), 16) - 40);
     const g = Math.max(0, parseInt(hex.slice(3, 5), 16) - 40);
     const b = Math.max(0, parseInt(hex.slice(5, 7), 16) - 40);
-    return `#${r.toString(16).padStart(2, '0')}${g
-      .toString(16)
-      .padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
   }
 
   // ========================================================
-  // RAW SEND (sans wrapping HTML — pour intégrations externes)
+  // RAW SEND — ✅ v4.1 : isReady check ajouté
   // ========================================================
 
   async sendRaw(to: string, subject: string, html: string, text?: string) {
+    // ✅ v4.1 : même garde que sendEmail()
+    if (!this.isReady || !this.transporter) {
+      this.logger.warn(
+        `[MAIL] ⚠️  sendRaw NON envoyé (SMTP non prêt) → ${to} | ${subject}`,
+      );
+      return;
+    }
+
     try {
       const info = await this.transporter.sendMail({
         from: process.env.MAIL_FROM ?? process.env.MAIL_USER,
@@ -266,10 +357,10 @@ export class MailService {
         html,
         text,
       });
-      this.logger.log(`Raw email → ${to} (${info.messageId})`);
+      this.logger.log(`[MAIL] Raw email → ${to} (${info.messageId})`);
       return info;
-    } catch (e) {
-      this.logger.error(`Raw email failed → ${to}`, e);
+    } catch (e: any) {
+      this.logger.error(`[MAIL] ❌ sendRaw échoué → ${to} : ${e?.message ?? e}`);
     }
   }
 }
