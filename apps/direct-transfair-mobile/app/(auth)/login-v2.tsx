@@ -1,23 +1,15 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.4 — Direct Transf'air
-// ✅ v2.3 conservé intégralement (auto-retry transparent)
-// ✅ v2.4 : Bouton biométrique (Face ID / Touch ID)
-//   PROBLÈME RÉSOLU :
-//   Le toggle biométrie du profil sauvegardait une préférence
-//   que personne ne lisait sur l'écran de login.
-//   biometricLogin() n'était jamais appelé depuis login-v2.tsx.
-//
-//   SOLUTION :
-//   - Import hasStoredRefreshToken, isBiometricsAvailable,
-//     getBiometricsEnabled depuis hooks/useBiometrics
-//   - bioReady : true si appareil compatible + préférence activée
-//     + refresh token disponible (les 3 conditions doivent être vraies)
-//   - Bouton "Face ID / Touch ID" affiché dans la card PASSWORD
-//     uniquement si bioReady === true
-//   - handleBiometricLogin() appelle useAuth().biometricLogin()
-//     qui déclenche maintenant le vrai prompt natif (fix v6.2 AuthProvider)
-//   - Erreur "annulée" silencieuse — les vraies erreurs s'affichent
+// LOGIN v2.5 — Direct Transf'air
+// ✅ v2.4 conservé intégralement (biométrie)
+// ✅ v2.5 : FIX fond jaune autofill navigateur web
+//   CAUSE : Chrome injecte :-webkit-autofill → fond jaune
+//   sur les <input> HTML. Impossible à surcharger avec
+//   backgroundColor normal.
+//   FIX : WebkitBoxShadow inset de la même couleur que le
+//   fond du champ → écrase visuellement le jaune Chrome.
+//   WebkitTextFillColor → garde la couleur du texte correcte.
+//   outlineStyle + outlineWidth → supprime le cadre bleu web.
 // =========================================================
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -43,7 +35,6 @@ import { useTenant } from '../../providers/TenantProvider';
 import { api }       from '../../services/api';
 import { v2Auth }    from '../../services/v2-auth';
 
-// ✅ v2.4 : imports biométrie
 import {
   hasStoredRefreshToken,
   isBiometricsAvailable,
@@ -52,6 +43,29 @@ import {
 
 // ─── Types ────────────────────────────────────────────────
 type Method = 'CHOOSE' | 'PASSWORD' | 'OTP_EMAIL' | 'OTP_PHONE';
+
+// ─── Fix web global ───────────────────────────────────────
+// ✅ v2.5 : Surcharge le fond jaune autofill Chrome/Edge/Safari
+// WebkitBoxShadow inset remplace visuellement la couleur autofill
+// WebkitTextFillColor garantit que le texte reste lisible
+const WEB_INPUT_FIX: any = Platform.OS === 'web'
+  ? {
+      WebkitBoxShadow:    '0 0 0px 1000px #F8FAFC inset',
+      WebkitTextFillColor:'#0F172A',
+      outlineStyle:       'none',
+      outlineWidth:       0,
+    }
+  : {};
+
+// Même fix mais pour le fond blanc (cas champ focus)
+const WEB_INPUT_FIX_WHITE: any = Platform.OS === 'web'
+  ? {
+      WebkitBoxShadow:    '0 0 0px 1000px #FFFFFF inset',
+      WebkitTextFillColor:'#0F172A',
+      outlineStyle:       'none',
+      outlineWidth:       0,
+    }
+  : {};
 
 // ─── Palette ──────────────────────────────────────────────
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -114,10 +128,17 @@ function FloatingInput({
     <View style={[fi.wrap, focused && { borderColor: accentColor }]}>
       <Ionicons name={icon} size={18} color={focused ? accentColor : '#9CA3AF'} style={fi.icon} />
       <View style={{ flex: 1 }}>
-        <Text style={[fi.label, { color: (value || focused) ? accentColor : '#9CA3AF' }]}>{label}</Text>
+        <Text style={[fi.label, { color: (value || focused) ? accentColor : '#9CA3AF' }]}>
+          {label}
+        </Text>
         <TextInput
           ref={inputRef}
-          style={fi.input}
+          style={[
+            fi.input,
+            // ✅ v2.5 : Fix autofill jaune navigateur web
+            // Le fond du wrap étant #F8FAFC, on surcharge avec la même couleur
+            WEB_INPUT_FIX,
+          ]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -142,7 +163,13 @@ function FloatingInput({
 }
 
 const fi = StyleSheet.create({
-  wrap:  { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 14, borderWidth: 1.5, borderColor: '#E2E8F0', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10, marginBottom: 12 },
+  wrap:  {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14, borderWidth: 1.5, borderColor: '#E2E8F0',
+    paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10,
+    marginBottom: 12,
+  },
   icon:  { marginRight: 10, marginTop: 4 },
   label: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 2 },
   input: { fontSize: 15, color: '#0F172A', fontWeight: '600', paddingVertical: 0 },
@@ -159,8 +186,13 @@ function PortalBadge({ label, color }: { label: string; color: string }) {
   );
 }
 const pb = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, alignSelf: 'flex-start', marginBottom: 12 },
-  txt:  { fontSize: 11, fontWeight: '700' },
+  wrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 8, borderWidth: 1,
+    paddingHorizontal: 10, paddingVertical: 6,
+    alignSelf: 'flex-start', marginBottom: 12,
+  },
+  txt: { fontSize: 11, fontWeight: '700' },
 });
 
 // =========================================================
@@ -168,7 +200,7 @@ const pb = StyleSheet.create({
 // =========================================================
 export default function LoginV2Screen() {
   const { branding, isCustomBranding, loadBranding, clearBranding } = useTenant();
-  const { applyLoginResult, biometricLogin } = useAuth(); // ✅ v2.4 : + biometricLogin
+  const { applyLoginResult, biometricLogin } = useAuth();
   const router = useRouter();
 
   const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
@@ -179,7 +211,6 @@ export default function LoginV2Screen() {
   const [portalMsg, setPortalMsg] = useState<string | null>(null);
   const portalMsgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ✅ v2.4 : état biométrie
   const [bioReady, setBioReady] = useState(false);
 
   const btnScale = useRef(new Animated.Value(1)).current;
@@ -212,19 +243,15 @@ export default function LoginV2Screen() {
     }, [branding.code]),
   );
 
-  // ✅ v2.4 : Focus effect 2 — vérifie si biométrie dispo
-  // Les 3 conditions doivent être vraies pour afficher le bouton :
-  // 1. Appareil compatible (hardware + empreinte enrollée)
-  // 2. Préférence activée par l'utilisateur dans le profil
-  // 3. Un refresh token est stocké (user s'est déjà connecté)
+  // ── Focus effect 2 : biométrie ────────────────────────
   useFocusEffect(
     useCallback(() => {
       const checkBio = async () => {
         if (Platform.OS === 'web') { setBioReady(false); return; }
         try {
-          const available  = await isBiometricsAvailable();
-          const enabled    = await getBiometricsEnabled();
-          const hasToken   = await hasStoredRefreshToken();
+          const available = await isBiometricsAvailable();
+          const enabled   = await getBiometricsEnabled();
+          const hasToken  = await hasStoredRefreshToken();
           setBioReady(available && enabled && hasToken);
         } catch {
           setBioReady(false);
@@ -240,7 +267,6 @@ export default function LoginV2Screen() {
     portalMsgTimer.current = setTimeout(() => setPortalMsg(null), 3000);
   };
 
-  // ── Navigation vers verify-contact ────────────────────
   const goToVerification = (res: any) => {
     router.push({
       pathname: '/(auth)/verify-contact',
@@ -253,30 +279,17 @@ export default function LoginV2Screen() {
     });
   };
 
-  // ── Login réussi → hydrate AuthProvider ───────────────
   const handleLoginSuccess = async (result: any) => {
-    await applyLoginResult(
-      result.access_token,
-      result.refresh_token,
-      result.user,
-    );
+    await applyLoginResult(result.access_token, result.refresh_token, result.user);
   };
 
-  // ✅ v2.4 : Connexion biométrique
-  // handleBiometricLogin est appelé quand l'utilisateur tape
-  // le bouton Face ID / Touch ID.
-  // biometricLogin() dans AuthProvider (v6.2) déclenche maintenant
-  // le vrai prompt natif AVANT de rafraîchir le token.
-  // Erreur "annulée" → silencieuse (pas d'alert intempestive si l'user
-  // appuie sur Annuler). Vraies erreurs → alert.
+  // ── Biométrie ─────────────────────────────────────────
   const handleBiometricLogin = async () => {
     setLoading(true);
     try {
       await biometricLogin();
-      // Si succès, AuthProvider navigue automatiquement via le guard
     } catch (e: any) {
       const msg = e?.message ?? '';
-      // Ignorer silencieusement les annulations volontaires
       if (!msg.toLowerCase().includes('annulée') && !msg.toLowerCase().includes('cancel')) {
         Alert.alert('Biométrie', msg || 'Authentification biométrique échouée.');
       }
@@ -285,16 +298,12 @@ export default function LoginV2Screen() {
     }
   };
 
-  // ── handlePortalError v2.3 ────────────────────────────
-  const handlePortalError = async (
-    e: any,
-    retryFn?: () => Promise<void>,
-  ): Promise<void> => {
+  // ── handlePortalError ─────────────────────────────────
+  const handlePortalError = async (e: any, retryFn?: () => Promise<void>): Promise<void> => {
     const data = e?.response?.data;
 
     if (data?.code === 'USE_COMPANY_PORTAL') {
       const { clientCode, subdomain, customDomain } = data;
-
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const targetUrl = customDomain
           ? `https://${customDomain}`
@@ -311,13 +320,10 @@ export default function LoginV2Screen() {
           return;
         }
       }
-
       if (clientCode) {
         try { await loadBranding(clientCode); } catch {}
         showPortalMsg(`Espace "${clientCode}" chargé — connexion en cours…`);
-        if (retryFn) {
-          await retryFn().catch(() => {});
-        }
+        if (retryFn) await retryFn().catch(() => {});
         return;
       }
       return;
@@ -326,40 +332,31 @@ export default function LoginV2Screen() {
     if (data?.code === 'USE_DEFAULT_PORTAL') {
       clearBranding();
       showPortalMsg('Portail principal chargé — connexion en cours…');
-      if (retryFn) {
-        await retryFn().catch(() => {});
-      }
+      if (retryFn) await retryFn().catch(() => {});
       return;
     }
 
     const msg = v2Auth.extractMessage(e);
-    Platform.OS === 'web'
-      ? alert(msg)
-      : Alert.alert('Connexion échouée', msg);
+    Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
   };
 
-  // ── Connexion par mot de passe ────────────────────────
+  // ── Connexion mot de passe ────────────────────────────
   const handlePasswordLogin = async (isRetry = false) => {
     if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
       const result = await v2Auth.loginPassword(email.trim(), password);
-
       if ('requiresVerification' in result && result.requiresVerification) {
         goToVerification(result);
         return;
       }
-
       await handleLoginSuccess(result);
-
     } catch (e: any) {
       if (!isRetry) {
         await handlePortalError(e, () => handlePasswordLogin(true));
       } else {
         const msg = v2Auth.extractMessage(e);
-        Platform.OS === 'web'
-          ? alert(msg)
-          : Alert.alert('Connexion échouée', msg);
+        Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
       }
     } finally {
       setLoading(false);
@@ -380,17 +377,12 @@ export default function LoginV2Screen() {
       setTimeout(() => otpRefs[0].current?.focus(), 200);
     } catch (e: any) {
       const data = e?.response?.data;
-      if (data?.code === 'VERIFICATION_REQUIRED') {
-        goToVerification(data);
-        return;
-      }
+      if (data?.code === 'VERIFICATION_REQUIRED') { goToVerification(data); return; }
       if (!isRetry) {
         await handlePortalError(e, () => handleRequestOtpEmail(true));
       } else {
         const msg = v2Auth.extractMessage(e);
-        Platform.OS === 'web'
-          ? alert(msg)
-          : Alert.alert('Connexion échouée', msg);
+        Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
       }
     } finally {
       setLoading(false);
@@ -426,10 +418,7 @@ export default function LoginV2Screen() {
       await handleLoginSuccess(result);
     } catch (e: any) {
       const data = e?.response?.data;
-      if (data?.code === 'VERIFICATION_REQUIRED') {
-        goToVerification(data);
-        return;
-      }
+      if (data?.code === 'VERIFICATION_REQUIRED') { goToVerification(data); return; }
       const msg = v2Auth.extractMessage(e);
       Alert.alert('Code invalide', msg);
       setOtpValues(['', '', '', '', '', '']);
@@ -520,7 +509,6 @@ export default function LoginV2Screen() {
                 <Ionicons name="chevron-forward" size={18} color={C.g5} />
               </TouchableOpacity>
 
-              {/* ✅ v2.4 : Biométrie dans CHOOSE aussi */}
               {bioReady && (
                 <TouchableOpacity
                   style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
@@ -617,7 +605,6 @@ export default function LoginV2Screen() {
               </Text>
             </TouchableOpacity>
 
-            {/* ✅ v2.4 : Bouton biométrique dans la card PASSWORD */}
             {bioReady && (
               <>
                 <View style={s.dividerRow}>
@@ -626,10 +613,7 @@ export default function LoginV2Screen() {
                   <View style={s.dividerLine} />
                 </View>
                 <TouchableOpacity
-                  style={[s.bioBtn, {
-                    borderColor:     C.g4 + '40',
-                    backgroundColor: C.g4 + '08',
-                  }]}
+                  style={[s.bioBtn, { borderColor: C.g4 + '40', backgroundColor: C.g4 + '08' }]}
                   onPress={handleBiometricLogin}
                   disabled={loading}
                   activeOpacity={0.85}
@@ -665,9 +649,7 @@ export default function LoginV2Screen() {
                 <Text style={[s.cardSub, { fontFamily: F.body }]}>
                   Saisissez votre email pour recevoir un code à 6 chiffres.
                 </Text>
-
                 {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
-
                 <View style={{ marginTop: portalMsg ? 4 : 20 }}>
                   <FloatingInput
                     label="Email"
@@ -680,7 +662,6 @@ export default function LoginV2Screen() {
                     accentColor={C.g4}
                   />
                 </View>
-
                 <TouchableOpacity
                   style={[
                     s.btn,
@@ -722,7 +703,8 @@ export default function LoginV2Screen() {
                       style={[
                         s.otpBox,
                         otpValues[i] ? { borderColor: C.g4 } : {},
-                        Platform.OS === 'web' && ({ outlineStyle: 'none' } as any),
+                        // ✅ v2.5 : fix autofill sur cases OTP aussi
+                        WEB_INPUT_FIX_WHITE,
                       ]}
                       value={otpValues[i]}
                       onChangeText={(t) => handleOtpChange(t, i)}
@@ -868,16 +850,11 @@ const s = StyleSheet.create({
   linkBtn: { alignItems: 'center', paddingVertical: 14 },
   linkTxt: { fontSize: 14, fontWeight: '600' },
 
-  // ✅ v2.4 : styles bouton biométrique
   dividerRow:  { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 4 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E2E8F0' },
   dividerTxt:  { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
-  bioBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, borderRadius: 14, paddingVertical: 15,
-    borderWidth: 1.5, marginTop: 2,
-  },
-  bioBtnTxt: { fontSize: 15, fontWeight: '700' },
+  bioBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, borderRadius: 14, paddingVertical: 15, borderWidth: 1.5, marginTop: 2 },
+  bioBtnTxt:   { fontSize: 15, fontWeight: '700' },
 
   bottom:      { marginTop: 16, alignItems: 'center', gap: 8 },
   registerBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 22, width: '100%', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, elevation: 3 },
