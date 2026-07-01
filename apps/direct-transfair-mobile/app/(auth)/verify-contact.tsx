@@ -268,9 +268,14 @@ export default function VerifyContactScreen() {
   }, [userId, startCountdown]);
 
   // ── Envoi automatique au montage et changement d'étape ───
-  useEffect(() => {
-    if (currentStep !== 'done' && !codeSent) {
-      void sendCode(currentStep);
+  const hasSentRef = useRef(false); // ← ajoute cette ligne avec les autres refs
+
+ useEffect(() => {
+  // ✅ Guard anti-double-appel (React StrictMode + Railway)
+  // Sans ce guard : 3 appels → rate limit immédiat → plus aucun email
+  if (currentStep !== 'done' && !codeSent && !hasSentRef.current) {
+    hasSentRef.current = true;
+    void sendCode(currentStep);
     }
   }, [currentStep]);
 
