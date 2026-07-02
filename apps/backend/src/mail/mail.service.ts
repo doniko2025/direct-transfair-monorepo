@@ -1,27 +1,38 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.1 — Direct Transf'air
+// MAIL SERVICE v4.2 — Direct Transf'air
 // ✅ v4.0 conservé intégralement
-// ✅ v4.1 : DIAGNOSTIC SMTP au démarrage — isReady flag
-//   PROBLÈME RÉSOLU : les emails ne partaient jamais en prod.
-//   nodemailer créait le transporter sans erreur même si
-//   MAIL_USER/MAIL_PASS étaient absents sur Railway, puis
-//   échouait silencieusement à l'envoi (catch interne).
+// ✅ v4.1 conservé intégralement (diagnostic SMTP au démarrage)
+// ✅ v4.2 : FIX IPv6 (ENETUNREACH) + timeouts fail-fast
 //
-//   FIX 1 — Détection credentials manquants au boot
-//     Si MAIL_USER ou MAIL_PASS vides → isReady=false
-//     + log d'erreur explicite dans Railway Logs.
-//     sendEmail() / sendRaw() skippent proprement.
+//   PROBLÈME RÉSOLU (v4.2) :
+//   En prod (Railway), le transporter Gmail tentait de résoudre
+//   smtp.gmail.com en IPv6 (ex: 2a00:1450:4025:401::6c:587), mais
+//   le réseau sortant de Railway ne route pas correctement l'IPv6
+//   → connect ENETUNREACH → isReady repasse à false → aucun email
+//   n'est envoyé, malgré des credentials MAIL_USER/MAIL_PASS valides.
 //
-//   FIX 2 — verify() au démarrage (non bloquant)
-//     Test SMTP réel 3 secondes après le boot.
-//     Railway → onglet Logs → chercher "[MAIL]".
-//     ✅ "[MAIL] ✅ Connexion SMTP vérifiée" → OK
-//     ❌ "[MAIL] ❌ Test SMTP échoué"         → config à corriger
+//   Pire : comme sendEmail() est await-é dans le flux de login
+//   (dispatchVerificationOtps → sendOtpInternal), une tentative de
+//   connexion SMTP qui traîne bloque toute la requête HTTP appelante
+//   jusqu'au timeout client (30s côté mobile) — même si l'email
+//   finit par échouer proprement côté serveur.
 //
-//   FIX 3 — Meilleur logging dans le catch d'envoi
-//     L'erreur exact (ex: "Invalid login", "ECONNREFUSED")
-//     est désormais incluse dans le log Railway.
+//   FIX 4 — family: 4 forcé sur les deux transporters
+//     Force la résolution DNS en IPv4 uniquement, évite ENETUNREACH
+//     sur les réseaux qui ne routent pas l'IPv6 sortant.
+//     ⚠️ Complément recommandé (hors code) : variable Railway
+//        NODE_OPTIONS=--dns-result-order=ipv4first
+//        (protège aussi les autres appels réseau de l'app)
+//
+//   FIX 5 — Timeouts SMTP explicites (fail-fast)
+//     AVANT : timeouts par défaut de nodemailer/socket pouvaient
+//     laisser une tentative de connexion traîner plusieurs dizaines
+//     de secondes en cas d'incident réseau, bloquant l'appelant.
+//     APRÈS : connectionTimeout/greetingTimeout/socketTimeout à 10s
+//     → en cas de souci réseau, sendEmail() échoue vite et proprement
+//     (catch interne, ne throw jamais) au lieu de faire attendre
+//     l'utilisateur jusqu'au timeout du client mobile.
 //
 //   ──────────────────────────────────────────────────────
 //   CONFIGURATION RAILWAY (Settings → Variables) :
@@ -44,6 +55,9 @@
 //       MAIL_FROM    = noreply@votredomaine.com
 //
 //   ► Option Brevo / Mailgun / etc — même structure SMTP
+//
+//   ► Recommandé en complément (Railway → Variables) :
+//       NODE_OPTIONS = --dns-result-order=ipv4first
 //   ──────────────────────────────────────────────────────
 // =========================================================
 
@@ -105,6 +119,11 @@ export class MailService {
   private isReady = false;
   private readonly logger = new Logger(MailService.name);
 
+  // ✅ v4.2 : timeouts SMTP fail-fast (évite de bloquer l'appelant)
+  private static readonly SMTP_CONNECTION_TIMEOUT_MS = 10_000;
+  private static readonly SMTP_GREETING_TIMEOUT_MS   = 10_000;
+  private static readonly SMTP_SOCKET_TIMEOUT_MS      = 10_000;
+
   constructor(private readonly prisma: PrismaService) {
     // ✅ v4.1 : init déplacé dans une méthode dédiée pour clarté
     this.initTransporter();
@@ -112,6 +131,7 @@ export class MailService {
 
   // ========================================================
   // ✅ v4.1 — INIT TRANSPORTER avec validation + verify()
+  // ✅ v4.2 — family: 4 (IPv4 forcé) + timeouts fail-fast
   // ========================================================
 
   private initTransporter(): void {
@@ -131,13 +151,22 @@ export class MailService {
       return; // isReady reste false, transporter reste null
     }
 
+    // ✅ v4.2 : options communes IPv4 + timeouts, appliquées aux deux modes
+    const commonTransportOptions = {
+      family: 4, // ← force IPv4 : évite ENETUNREACH sur réseaux sans IPv6 sortant (Railway)
+      connectionTimeout: MailService.SMTP_CONNECTION_TIMEOUT_MS,
+      greetingTimeout:   MailService.SMTP_GREETING_TIMEOUT_MS,
+      socketTimeout:     MailService.SMTP_SOCKET_TIMEOUT_MS,
+    };
+
     // ── Création du transporter ────────────────────────────
     if (useGmailService) {
       this.transporter = nodemailer.createTransport({
         service: 'gmail',
         auth:    { user, pass },
+        ...commonTransportOptions,
       });
-      this.logger.log(`[MAIL] Transporter Gmail créé (${user})`);
+      this.logger.log(`[MAIL] Transporter Gmail créé (${user}) — IPv4 forcé`);
     } else {
       const host = process.env.MAIL_HOST;
       const port = Number(process.env.MAIL_PORT) || 587;
@@ -154,8 +183,9 @@ export class MailService {
         port,
         secure: process.env.MAIL_SECURE === 'true',
         auth:   { user, pass },
+        ...commonTransportOptions,
       });
-      this.logger.log(`[MAIL] Transporter SMTP créé (${host}:${port})`);
+      this.logger.log(`[MAIL] Transporter SMTP créé (${host}:${port}) — IPv4 forcé`);
     }
 
     this.isReady = true;
@@ -174,7 +204,10 @@ export class MailService {
             `[MAIL] ❌ Test SMTP échoué : ${err.message}\n` +
             `  → Gmail : utilisez un App Password, PAS votre mot de passe Google.\n` +
             `       Google Account → Security → 2-Step Verification → App Passwords\n` +
-            `  → SMTP : vérifiez MAIL_HOST / MAIL_PORT / MAIL_SECURE sur Railway.`,
+            `  → SMTP : vérifiez MAIL_HOST / MAIL_PORT / MAIL_SECURE sur Railway.\n` +
+            `  → Réseau : si l'erreur mentionne ENETUNREACH avec une adresse IPv6 ` +
+            `(ex: 2a00:...), le family:4 aurait dû l'empêcher — vérifiez que ce ` +
+            `déploiement inclut bien le correctif v4.2.`,
           );
         });
     }, 3000);
