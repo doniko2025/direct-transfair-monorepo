@@ -1,7 +1,31 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.2
-// ✅ FIX: CurrencyCode enum cast (migration v4.1)
+// SCHEDULED TRANSFERS SERVICE v4.3
+// ✅ v4.2 conservé : CurrencyCode enum cast (migration v4.1)
+// ✅ v4.3 : retry auto sur perte de connexion DB dans le cron
+//
+//   PROBLÈME RÉSOLU (v4.3) :
+//   Neon met son compute en veille après 5 min d'inactivité par
+//   défaut. Le cron tournant toutes les 5 minutes, la connexion
+//   poolée devient obsolète entre deux exécutions → le findMany()
+//   suivant plantait avec PrismaClientKnownRequestError [P1017]
+//   "Server has closed the connection". Prisma ne relance jamais
+//   automatiquement une requête après une erreur de connexion
+//   (confirmé par l'équipe Prisma elle-même) : il faut le faire
+//   côté appli — et sans ce filet, l'exception remontait hors du
+//   cron sans être rattrapée, avec un risque de unhandled rejection.
+//
+//   FIX — withRetry() intercepte P1017 / P1001 / P1002 (et messages
+//   équivalents), force une reconnexion via $connect(), puis relance
+//   la requête une fois. Appliqué UNIQUEMENT à la lecture des
+//   virements dus (idempotente, sans risque à relancer).
+//
+//   ⚠️ Je n'ai PAS ajouté de retry automatique à l'intérieur
+//   d'executeTransfer() : retenter un débit de wallet ou une
+//   création de transaction sans garde-fou d'idempotence risquerait
+//   un double traitement d'argent. Si vous voulez sécuriser cette
+//   partie aussi, ça mérite un traitement dédié (clé d'idempotence,
+//   transaction Prisma atomique) plutôt qu'un retry générique.
 // =========================================================
 
 import {
@@ -37,6 +61,8 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 @Injectable()
 export class ScheduledTransfersService {
   private readonly logger = new Logger(ScheduledTransfersService.name);
+
+  private static readonly CONNECTION_ERROR_CODES = new Set(['P1017', 'P1001', 'P1002']);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -153,23 +179,58 @@ export class ScheduledTransfersService {
   async processScheduledTransfers(): Promise<void> {
     const now = new Date();
 
-    const due = await this.prisma.scheduledTransfer.findMany({
-      where: {
-        status: ScheduledStatus.ACTIVE,
-        nextExecutionAt: { lte: now },
-      },
-      include: {
-        user: { include: { wallets: { where: { isActive: true } } } },
-        beneficiary: true,
-        client: true,
-      },
+    const due = await this.withRetry(() =>
+      this.prisma.scheduledTransfer.findMany({
+        where: {
+          status: ScheduledStatus.ACTIVE,
+          nextExecutionAt: { lte: now },
+        },
+        include: {
+          user: { include: { wallets: { where: { isActive: true } } } },
+          beneficiary: true,
+          client: true,
+        },
+      }),
+    ).catch((error: any) => {
+      this.logger.error(
+        `❌ Impossible de récupérer les virements dus (connexion DB) : ${error?.message ?? error}`,
+      );
+      return null;
     });
 
-    if (due.length === 0) return;
+    if (!due || due.length === 0) return;
     this.logger.log(`⏰ ${due.length} virements programmés à exécuter`);
 
     for (const transfer of due) {
       await this.executeTransfer(transfer);
+    }
+  }
+
+  /**
+   * Relance une requête Prisma en cas de perte de connexion (typiquement Neon
+   * qui a suspendu son compute pendant une période d'inactivité). Ne pas
+   * utiliser autour d'écritures non idempotentes (débits, créations de
+   * transaction) sans garde-fou dédié.
+   */
+  private async withRetry<T>(fn: () => Promise<T>, retries = 1): Promise<T> {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const code = err?.code;
+      const msg = String(err?.message ?? '');
+      const isConnectionIssue =
+        ScheduledTransfersService.CONNECTION_ERROR_CODES.has(code) ||
+        msg.includes('closed the connection') ||
+        msg.includes("Can't reach database server");
+
+      if (isConnectionIssue && retries > 0) {
+        this.logger.warn(
+          `⚠️ Connexion DB perdue (${code ?? 'sans code'}) — reconnexion et nouvel essai...`,
+        );
+        await this.prisma.$connect().catch(() => {});
+        return this.withRetry(fn, retries - 1);
+      }
+      throw err;
     }
   }
 

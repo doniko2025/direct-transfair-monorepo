@@ -1,43 +1,47 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.4 — Direct Transf'air
-// ✅ v4.3 conservé intégralement (double provider, IPv4, timeouts)
-// ✅ v4.4 : FALLBACK BASCULÉ EN HTTP API (contourne blocage SMTP)
+// MAIL SERVICE v4.5 — Direct Transf'air
+// ✅ v4.4 conservé (provider HTTPS Resend disponible)
+// ✅ v4.5 : le provider HTTP (Resend) devient PRINCIPAL
 //
-//   PROBLÈME RÉSOLU (v4.4) :
-//   Le fallback Resend en SMTP (port 465) timeout systématiquement
-//   depuis Railway, alors que Resend est un service fiable. Ça
-//   confirme que Railway bloque/restreint les connexions SMTP
-//   sortantes sur ce projet — pas un souci spécifique à Gmail.
+//   POURQUOI CE CHANGEMENT :
+//   Railway bloque le SMTP sortant (ports 25/465/587/2525) sur les
+//   plans Free / Trial / Hobby — disponible uniquement à partir du
+//   plan Pro. Peu importe MAIL_SERVICE / MAIL_HOST / la famille IP
+//   forcée : sur ces plans, aucune connexion SMTP ne passera jamais,
+//   y compris vers Gmail.
+//   → https://docs.railway.com/networking/outbound-networking
 //
-//   FIX 8 — Fallback via l'API REST de Resend (HTTPS, port 443)
-//     Au lieu de nodemailer + SMTP pour le fallback, on appelle
-//     directement https://api.resend.com/emails en HTTPS classique.
-//     Le port 443 n'est quasiment jamais bloqué par les hébergeurs,
-//     contrairement aux ports SMTP dédiés (25/465/587).
-//     Réutilise MAIL_FALLBACK_PASS comme clé API Resend (re_xxx)
-//     et MAIL_FALLBACK_FROM comme expéditeur — aucune nouvelle
-//     variable Railway nécessaire.
-//     MAIL_FALLBACK_HOST/PORT/SECURE/USER ne sont plus utilisées
-//     (laissées sans danger si présentes).
+//   Par ailleurs, l'ENETUNREACH observé sur l'adresse IPv6 de Gmail
+//   n'était de toute façon pas corrigible via `family: 4` : nodemailer
+//   ne lit tout simplement pas cette option dans SMTPConnection
+//   (vérifié dans les sources de nodemailer@9.0.3) — elle n'a jamais
+//   eu d'effet, ici ou ailleurs.
 //
-//   Le primary (Gmail SMTP) reste inchangé et tenté en premier :
-//   s'il fonctionne un jour (réseau Railway débloqué, ou switch
-//   vers un autre provider SMTP non bloqué), rien à changer.
+//   FIX v4.5 — On inverse l'ordre de tentative : le provider HTTP
+//   (Resend, port 443, jamais bloqué par Railway) est tenté EN
+//   PREMIER pour CHAQUE envoi. Le SMTP (Gmail par défaut) passe en
+//   second, comme filet de sécurité : il continue de fonctionner en
+//   local (le SMTP n'y est pas bloqué) et fonctionnera sur Railway
+//   si vous passez un jour au plan Pro — mais l'appli ne dépend plus
+//   de lui pour délivrer un email.
 //
 //   ──────────────────────────────────────────────────────
-//   CONFIGURATION RAILWAY (Settings → Variables) :
+//   CONFIGURATION RAILWAY (Settings → Variables) — noms INCHANGÉS,
+//   aucune variable à renommer :
 //
-//   ► Provider primaire — Gmail (peut échouer si SMTP bloqué) :
+//   ► Provider HTTP — Resend (tenté en premier, marche partout) :
+//       MAIL_FALLBACK_PASS = re_xxxxxxxxxxxxxxxx   ← API Key Resend
+//       MAIL_FALLBACK_FROM = onboarding@resend.dev  (ou domaine vérifié)
+//
+//   ► Provider SMTP — Gmail (tenté en second, filet de sécurité) :
 //       MAIL_SERVICE = gmail
 //       MAIL_USER    = votre@gmail.com
 //       MAIL_PASS    = xxxx xxxx xxxx xxxx   ← APP PASSWORD
 //       MAIL_FROM    = votre@gmail.com
-//
-//   ► Provider fallback — Resend via API HTTP (recommandé, fiable) :
-//       MAIL_FALLBACK_PASS = re_xxxxxxxxxxxxxxxx   ← API Key Resend
-//       MAIL_FALLBACK_FROM = onboarding@resend.dev (ou domaine vérifié)
-//       ⚠️ Régénérez votre clé si elle a été exposée par le passé.
+//       ⚠️ Ne fonctionnera pas sur Railway tant que le plan est en
+//          dessous de Pro (SMTP bloqué côté plateforme) — c'est
+//          normal, le provider HTTP prend le relais automatiquement.
 //   ──────────────────────────────────────────────────────
 // =========================================================
 
@@ -46,7 +50,7 @@ import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 
 // =========================================================
-// CURRENCY HELPERS (inchangés v4.0)
+// CURRENCY HELPERS (inchangés)
 // =========================================================
 
 const CURRENCY_SYMBOLS: Record<string, string> = {
@@ -87,12 +91,7 @@ export interface SendEmailOptions {
   brandName?: string;
 }
 
-type ProviderName = 'primary' | 'fallback';
-
-interface SendResult {
-  messageId: string;
-  usedProvider: ProviderName;
-}
+type ProviderName = 'http' | 'smtp';
 
 // =========================================================
 // SERVICE
@@ -100,133 +99,46 @@ interface SendResult {
 
 @Injectable()
 export class MailService {
-  // ✅ v4.3 : transporter SMTP pour le primary (Gmail)
-  private transporterPrimary: nodemailer.Transporter | null = null;
-  private isPrimaryReady = false;
+  private smtpTransporter: nodemailer.Transporter | null = null;
+  private isSmtpReady = false;
 
-  // ✅ v4.4 : le fallback n'utilise plus SMTP — juste une clé API
-  private fallbackApiKey: string | null = null;
-  private fallbackFrom: string = 'onboarding@resend.dev';
-  private isFallbackReady = false;
+  // Le provider HTTP (Resend) n'a pas besoin de "transporter" : un fetch() suffit.
+  private isHttpConfigured = false;
 
   private readonly logger = new Logger(MailService.name);
 
   private static readonly SMTP_CONNECTION_TIMEOUT_MS = 10_000;
   private static readonly SMTP_GREETING_TIMEOUT_MS   = 10_000;
   private static readonly SMTP_SOCKET_TIMEOUT_MS      = 10_000;
-  private static readonly RESEND_API_TIMEOUT_MS       = 10_000;
-  private static readonly RESEND_API_URL              = 'https://api.resend.com/emails';
+  private static readonly API_TIMEOUT_MS              = 10_000;
 
   constructor(private readonly prisma: PrismaService) {
-    this.initPrimaryTransporter();
-    this.initFallbackApi();
+    this.initHttpProvider();
+    this.initSmtpTransporter();
   }
 
   // ========================================================
-  // ✅ v4.3 — INIT PRIMARY (Gmail par défaut, ou SMTP générique)
+  // ✅ PROVIDER HTTP (Resend) — tenté en premier, marche partout
   // ========================================================
 
-  private initPrimaryTransporter(): void {
-    const user = process.env.MAIL_USER?.trim();
-    const pass = (process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD)?.trim();
-    const useGmailService = (process.env.MAIL_SERVICE ?? '').toLowerCase() === 'gmail';
-
-    if (!user || !pass) {
-      this.logger.error(
-        '[MAIL][primary] ❌ SMTP non configuré — MAIL_USER/MAIL_PASS manquants.\n' +
-        `  Variables manquantes sur Railway :\n` +
-        (!user ? `  → MAIL_USER  (ex: votre@gmail.com)\n`               : '') +
-        (!pass ? `  → MAIL_PASS  (App Password Gmail ou clé SMTP)\n`     : '') +
-        `  → Ajoutez ces variables : Railway → Settings → Variables → Redéployez.`,
-      );
-      return;
-    }
-
-    const commonOptions = {
-      family: 4,
-      connectionTimeout: MailService.SMTP_CONNECTION_TIMEOUT_MS,
-      greetingTimeout:   MailService.SMTP_GREETING_TIMEOUT_MS,
-      socketTimeout:     MailService.SMTP_SOCKET_TIMEOUT_MS,
-    };
-
-    if (useGmailService) {
-      this.transporterPrimary = nodemailer.createTransport({
-        service: 'gmail',
-        auth:    { user, pass },
-        ...commonOptions,
-      } as any);
-      this.logger.log(`[MAIL][primary] Transporter Gmail créé (${user})`);
-    } else {
-      const host = process.env.MAIL_HOST;
-      const port = Number(process.env.MAIL_PORT) || 587;
-      if (!host) {
-        this.logger.error(
-          '[MAIL][primary] ❌ MAIL_HOST manquant pour le mode SMTP.\n' +
-          `  → Définissez MAIL_HOST sur Railway, ou passez en mode Gmail :\n` +
-          `     MAIL_SERVICE=gmail`,
-        );
-        return;
-      }
-      this.transporterPrimary = nodemailer.createTransport({
-        host,
-        port,
-        secure: process.env.MAIL_SECURE === 'true',
-        auth:   { user, pass },
-        ...commonOptions,
-      } as any);
-      this.logger.log(`[MAIL][primary] Transporter SMTP créé (${host}:${port})`);
-    }
-
-    this.isPrimaryReady = true;
-
-    // Test de connexion au démarrage (non bloquant)
-    setTimeout(() => {
-      if (!this.transporterPrimary) return;
-      void this.transporterPrimary
-        .verify()
-        .then(() => {
-          this.logger.log('[MAIL][primary] ✅ Connexion SMTP vérifiée — opérationnel');
-        })
-        .catch((err: Error) => {
-          this.isPrimaryReady = false;
-          this.logger.error(
-            `[MAIL][primary] ❌ Test SMTP échoué : ${err.message}\n` +
-            `  → Si l'erreur est un timeout/ENETUNREACH, le réseau sortant ` +
-            `bloque probablement le SMTP direct sur ce projet Railway.\n` +
-            `  → Le fallback Resend (API HTTP) prendra le relais si configuré.`,
-          );
-        });
-    }, 3000);
-  }
-
-  // ========================================================
-  // ✅ v4.4 — INIT FALLBACK via l'API HTTP Resend (pas de SMTP)
-  // ========================================================
-
-  private initFallbackApi(): void {
+  private initHttpProvider(): void {
     const apiKey = process.env.MAIL_FALLBACK_PASS?.trim();
-    const from   = process.env.MAIL_FALLBACK_FROM?.trim();
+    const from = (process.env.MAIL_FALLBACK_FROM ?? process.env.MAIL_FALLBACK_USER)?.trim();
 
-    if (!apiKey) {
+    if (!apiKey || !from) {
       this.logger.warn(
-        '[MAIL][fallback] ⚠️ Non configuré (MAIL_FALLBACK_PASS absente) ' +
-        '— aucun secours en cas d\'échec du provider primaire.',
+        '[MAIL][http] ⚠️ Non configuré (MAIL_FALLBACK_PASS et/ou MAIL_FALLBACK_FROM ' +
+        'absents) — aucun envoi possible tant que le SMTP reste bloqué (Railway < plan Pro).',
       );
       return;
     }
 
-    this.fallbackApiKey = apiKey;
-    if (from) this.fallbackFrom = from;
-    this.isFallbackReady = true;
-
+    this.isHttpConfigured = true;
     this.logger.log(
-      `[MAIL][fallback] Prêt via API Resend (HTTPS) — from: ${this.fallbackFrom}`,
+      `[MAIL][http] API Resend configurée (from: ${from}) — provider principal, ` +
+      `utilisé pour chaque envoi.`,
     );
   }
-
-  // ========================================================
-  // ✅ v4.4 — Envoi via l'API HTTP Resend
-  // ========================================================
 
   private async sendViaResendApi(mailOptions: {
     to: string;
@@ -234,29 +146,32 @@ export class MailService {
     html: string;
     text?: string;
   }): Promise<{ messageId: string }> {
-    if (!this.fallbackApiKey) {
-      throw new Error('Clé API Resend (MAIL_FALLBACK_PASS) manquante');
+    const apiKey = process.env.MAIL_FALLBACK_PASS?.trim();
+    const from = (process.env.MAIL_FALLBACK_FROM ?? process.env.MAIL_FALLBACK_USER)?.trim();
+
+    if (!apiKey || !from) {
+      throw new Error('Provider HTTP non configuré (MAIL_FALLBACK_PASS/FROM manquants)');
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(
+    const timeoutHandle = setTimeout(
       () => controller.abort(),
-      MailService.RESEND_API_TIMEOUT_MS,
+      MailService.API_TIMEOUT_MS,
     );
 
     try {
-      const res = await fetch(MailService.RESEND_API_URL, {
+      const res = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${this.fallbackApiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from:    this.fallbackFrom,
-          to:      [mailOptions.to],
+          from,
+          to: [mailOptions.to],
           subject: mailOptions.subject,
-          html:    mailOptions.html,
-          text:    mailOptions.text,
+          html: mailOptions.html,
+          ...(mailOptions.text ? { text: mailOptions.text } : {}),
         }),
         signal: controller.signal,
       });
@@ -266,64 +181,145 @@ export class MailService {
         throw new Error(`Resend API ${res.status} : ${errBody || res.statusText}`);
       }
 
-      const data = (await res.json().catch(() => ({}))) as { id?: string };
+      const data = (await res.json()) as { id?: string };
       return { messageId: data.id ?? 'unknown' };
     } finally {
-      clearTimeout(timeoutId);
+      clearTimeout(timeoutHandle);
     }
   }
 
   // ========================================================
-  // ✅ v4.4 — Envoi avec fallback automatique (SMTP → API HTTP)
+  // ✅ PROVIDER SMTP (Gmail par défaut) — filet de sécurité.
+  //    Fonctionne en local. Sur Railway, uniquement à partir du plan
+  //    Pro (SMTP bloqué en dessous, quelle que soit la config).
   // ========================================================
 
-  private async sendWithFallback(
-    mailOptions: { to: string; subject: string; html: string; text?: string },
-    recipientForLog: string,
-  ): Promise<SendResult | null> {
-    // ── Tentative 1 : primary (Gmail SMTP) ─────────────────
-    if (this.isPrimaryReady && this.transporterPrimary) {
-      try {
-        const from = process.env.MAIL_FROM ?? process.env.MAIL_USER;
-        const info = await this.transporterPrimary.sendMail({ ...mailOptions, from });
-        this.logger.log(
-          `[MAIL][primary] ✉️  Envoyé → ${recipientForLog} (messageId: ${info.messageId})`,
-        );
-        return { messageId: info.messageId, usedProvider: 'primary' };
-      } catch (error: any) {
-        this.logger.warn(
-          `[MAIL][primary] ⚠️ Échec → ${recipientForLog} : ${error?.message ?? error} ` +
-          `— tentative fallback (Resend API)...`,
-        );
-      }
-    } else {
-      this.logger.warn('[MAIL][primary] Non prêt — passage direct au fallback');
+  private initSmtpTransporter(): void {
+    const user = process.env.MAIL_USER?.trim();
+    const pass = (process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD)?.trim();
+    const useGmailService = (process.env.MAIL_SERVICE ?? '').toLowerCase() === 'gmail';
+
+    if (!user || !pass) {
+      this.logger.warn(
+        '[MAIL][smtp] Non configuré — MAIL_USER/MAIL_PASS manquants. ' +
+        'Sans impact si le provider HTTP est prêt : il gère déjà tous les envois.',
+      );
+      return;
     }
 
-    // ── Tentative 2 : fallback (Resend, API HTTP) ──────────
-    if (this.isFallbackReady) {
+    const commonOptions = {
+      family: 4, // ⚠️ ignoré par nodemailer@9 (jamais lu par SMTPConnection) — laissé
+                 // en place pour rester explicite sur l'intention, sans effet réel.
+      connectionTimeout: MailService.SMTP_CONNECTION_TIMEOUT_MS,
+      greetingTimeout:   MailService.SMTP_GREETING_TIMEOUT_MS,
+      socketTimeout:     MailService.SMTP_SOCKET_TIMEOUT_MS,
+    };
+
+    if (useGmailService) {
+      this.smtpTransporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth:    { user, pass },
+        ...commonOptions,
+      } as any);
+      this.logger.log(`[MAIL][smtp] Transporter Gmail créé (${user})`);
+    } else {
+      const host = process.env.MAIL_HOST;
+      const port = Number(process.env.MAIL_PORT) || 587;
+      if (!host) {
+        this.logger.warn(
+          '[MAIL][smtp] MAIL_HOST manquant pour le mode SMTP générique. ' +
+          'Définissez MAIL_HOST, ou MAIL_SERVICE=gmail pour utiliser le shortcut Gmail.',
+        );
+        return;
+      }
+      this.smtpTransporter = nodemailer.createTransport({
+        host,
+        port,
+        secure: process.env.MAIL_SECURE === 'true',
+        auth:   { user, pass },
+        ...commonOptions,
+      } as any);
+      this.logger.log(`[MAIL][smtp] Transporter SMTP créé (${host}:${port})`);
+    }
+
+    this.isSmtpReady = true;
+    this.verifySmtp();
+  }
+
+  private verifySmtp(): void {
+    setTimeout(() => {
+      if (!this.smtpTransporter) return;
+      void this.smtpTransporter
+        .verify()
+        .then(() => {
+          this.logger.log('[MAIL][smtp] ✅ Connexion SMTP vérifiée — opérationnel');
+        })
+        .catch((err: Error) => {
+          this.isSmtpReady = false;
+          this.logger.warn(
+            `[MAIL][smtp] ❌ Test SMTP échoué : ${err.message}\n` +
+            `  → Attendu sur Railway en dessous du plan Pro (SMTP sortant bloqué côté ` +
+            `plateforme, quels que soient MAIL_HOST/MAIL_PORT/MAIL_SECURE) : ` +
+            `https://docs.railway.com/networking/outbound-networking\n` +
+            `  → Le provider HTTP (Resend) prend le relais si configuré. Sinon, ` +
+            `vérifiez MAIL_USER / MAIL_PASS, ou passez au plan Pro pour débloquer le SMTP.`,
+          );
+        });
+    }, 3000);
+  }
+
+  // ========================================================
+  // ✅ Envoi avec double provider : HTTP en premier, SMTP en secours
+  // ========================================================
+
+  private async sendMail(
+    mailOptions: { to: string; subject: string; html: string; text?: string },
+    recipientForLog: string,
+  ): Promise<{ messageId: string; usedProvider: ProviderName } | null> {
+    // ── Tentative 1 : HTTP (Resend) — jamais bloqué par Railway ────
+    if (this.isHttpConfigured) {
       try {
         const result = await this.sendViaResendApi(mailOptions);
         this.logger.log(
-          `[MAIL][fallback] ✉️  Envoyé via API Resend → ${recipientForLog} ` +
-          `(messageId: ${result.messageId})`,
+          `[MAIL][http] ✉️  Envoyé → ${recipientForLog} (messageId: ${result.messageId})`,
         );
-        return { messageId: result.messageId, usedProvider: 'fallback' };
+        return { messageId: result.messageId, usedProvider: 'http' };
       } catch (error: any) {
-        this.logger.error(
-          `[MAIL][fallback] ❌ Échec API Resend → ${recipientForLog} : ${error?.message ?? error}`,
+        this.logger.warn(
+          `[MAIL][http] ⚠️ Échec → ${recipientForLog} : ${error?.message ?? error} ` +
+          `— tentative SMTP...`,
         );
       }
+    } else {
+      this.logger.warn('[MAIL][http] Non configuré — passage direct au SMTP');
+    }
+
+    // ── Tentative 2 : SMTP (Gmail) — filet de sécurité ─────────────
+    if (this.isSmtpReady && this.smtpTransporter) {
+      try {
+        const from = process.env.MAIL_FROM ?? process.env.MAIL_USER;
+        const info = await this.smtpTransporter.sendMail({ ...mailOptions, from });
+        this.logger.log(
+          `[MAIL][smtp] ✉️  Envoyé → ${recipientForLog} (messageId: ${info.messageId})`,
+        );
+        return { messageId: info.messageId, usedProvider: 'smtp' };
+      } catch (error: any) {
+        this.logger.error(
+          `[MAIL][smtp] ❌ Échec → ${recipientForLog} : ${error?.message ?? error}`,
+        );
+      }
+    } else {
+      this.logger.warn('[MAIL][smtp] Non prêt — aucun autre provider disponible');
     }
 
     this.logger.error(
-      `[MAIL] ❌ Échec total (primary + fallback) → ${recipientForLog}`,
+      `[MAIL] ❌ Échec total (http + smtp) → ${recipientForLog}`,
     );
     return null;
   }
 
   // ========================================================
-  // ENVOI GÉNÉRIQUE (avec log en base)
+  // ENVOI GÉNÉRIQUE (avec log en base) — signature inchangée
   // ========================================================
 
   async sendEmail(
@@ -341,13 +337,13 @@ export class MailService {
       return;
     }
 
-    if (!this.isPrimaryReady && !this.isFallbackReady) {
+    if (!this.isHttpConfigured && !this.isSmtpReady) {
       this.logger.warn(
         `[MAIL] ⚠️  Aucun provider prêt — email NON envoyé :\n` +
         `  → Destinataire : ${opts.to}\n` +
         `  → Objet        : ${opts.subject}\n` +
-        `  → Action       : configurez MAIL_USER + MAIL_PASS (primary) et/ou ` +
-        `MAIL_FALLBACK_PASS (fallback API Resend) sur Railway et redéployez.`,
+        `  → Action       : configurez MAIL_FALLBACK_PASS + MAIL_FALLBACK_FROM (HTTP, ` +
+        `recommandé) et/ou MAIL_USER + MAIL_PASS (SMTP) sur Railway et redéployez.`,
       );
       return;
     }
@@ -371,7 +367,7 @@ export class MailService {
       this.logger.warn('[MAIL] CommunicationLog création échouée', e);
     }
 
-    const result = await this.sendWithFallback(
+    const result = await this.sendMail(
       {
         to:      opts.to,
         subject: opts.subject,
@@ -403,7 +399,7 @@ export class MailService {
           where: { id: logId },
           data: {
             status:     'FAILED',
-            errorMsg:   'Échec primary + fallback',
+            errorMsg:   'Échec http + smtp',
             retryCount: { increment: 1 },
           },
         })
@@ -412,7 +408,7 @@ export class MailService {
   }
 
   // ========================================================
-  // TEMPLATE HTML PRO (inchangé v4.0)
+  // TEMPLATE HTML PRO (inchangé)
   // ========================================================
 
   private wrapHtml(
@@ -475,18 +471,18 @@ export class MailService {
   }
 
   // ========================================================
-  // RAW SEND — ✅ v4.4 avec fallback API HTTP
+  // RAW SEND — signature inchangée
   // ========================================================
 
   async sendRaw(to: string, subject: string, html: string, text?: string) {
-    if (!this.isPrimaryReady && !this.isFallbackReady) {
+    if (!this.isHttpConfigured && !this.isSmtpReady) {
       this.logger.warn(
         `[MAIL] ⚠️  sendRaw NON envoyé (aucun provider prêt) → ${to} | ${subject}`,
       );
       return;
     }
 
-    const result = await this.sendWithFallback({ to, subject, html, text }, to);
+    const result = await this.sendMail({ to, subject, html, text }, to);
     return result ? { messageId: result.messageId } : undefined;
   }
 }
