@@ -1,43 +1,34 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.2 — Direct Transf'air
-// ✅ v4.0 conservé intégralement
-// ✅ v4.1 conservé intégralement (diagnostic SMTP au démarrage)
-// ✅ v4.2 : FIX IPv6 (ENETUNREACH) + timeouts fail-fast
+// MAIL SERVICE v4.3 — Direct Transf'air
+// ✅ v4.2 conservé intégralement (IPv4 forcé + timeouts fail-fast)
+// ✅ v4.3 : DOUBLE PROVIDER avec fallback automatique
 //
-//   PROBLÈME RÉSOLU (v4.2) :
-//   En prod (Railway), le transporter Gmail tentait de résoudre
-//   smtp.gmail.com en IPv6 (ex: 2a00:1450:4025:401::6c:587), mais
-//   le réseau sortant de Railway ne route pas correctement l'IPv6
-//   → connect ENETUNREACH → isReady repasse à false → aucun email
-//   n'est envoyé, malgré des credentials MAIL_USER/MAIL_PASS valides.
+//   PROBLÈME RÉSOLU (v4.3) :
+//   Gmail peut timeout de façon intermittente depuis Railway
+//   (throttling/blocage IP datacenter, cf. v4.2). Plutôt que
+//   d'abandonner l'envoi, on retente automatiquement avec un
+//   second provider (Resend) avant de déclarer l'échec.
 //
-//   Pire : comme sendEmail() est await-é dans le flux de login
-//   (dispatchVerificationOtps → sendOtpInternal), une tentative de
-//   connexion SMTP qui traîne bloque toute la requête HTTP appelante
-//   jusqu'au timeout client (30s côté mobile) — même si l'email
-//   finit par échouer proprement côté serveur.
+//   FIX 6 — transporterPrimary (Gmail) + transporterFallback (Resend)
+//     sendEmail()/sendRaw() essaient d'abord le primary.
+//     Si échec (catch), tentative automatique sur le fallback,
+//     avec log clair indiquant lequel a servi.
+//     Le fallback est optionnel : si ses variables ne sont pas
+//     configurées, le comportement reste identique à la v4.2
+//     (échec silencieux et proprement loggé, sans throw).
 //
-//   FIX 4 — family: 4 forcé sur les deux transporters
-//     Force la résolution DNS en IPv4 uniquement, évite ENETUNREACH
-//     sur les réseaux qui ne routent pas l'IPv6 sortant.
-//     ⚠️ Complément recommandé (hors code) : variable Railway
-//        NODE_OPTIONS=--dns-result-order=ipv4first
-//        (protège aussi les autres appels réseau de l'app)
-//
-//   FIX 5 — Timeouts SMTP explicites (fail-fast)
-//     AVANT : timeouts par défaut de nodemailer/socket pouvaient
-//     laisser une tentative de connexion traîner plusieurs dizaines
-//     de secondes en cas d'incident réseau, bloquant l'appelant.
-//     APRÈS : connectionTimeout/greetingTimeout/socketTimeout à 10s
-//     → en cas de souci réseau, sendEmail() échoue vite et proprement
-//     (catch interne, ne throw jamais) au lieu de faire attendre
-//     l'utilisateur jusqu'au timeout du client mobile.
+//   FIX 7 — `as any` sur les options createTransport()
+//     Les types nodemailer n'infèrent pas correctement la bonne
+//     surcharge quand on fusionne `service`/`host` avec des options
+//     SMTP additionnelles (family, timeouts...) via spread.
+//     Cast nécessaire pour satisfaire TypeScript ; sans impact
+//     runtime, nodemailer ignore les clés qu'il ne reconnaît pas.
 //
 //   ──────────────────────────────────────────────────────
 //   CONFIGURATION RAILWAY (Settings → Variables) :
 //
-//   ► Option Gmail (recommandé, gratuit) :
+//   ► Provider primaire — Gmail (recommandé, gratuit) :
 //       MAIL_SERVICE = gmail
 //       MAIL_USER    = votre@gmail.com
 //       MAIL_PASS    = xxxx xxxx xxxx xxxx   ← APP PASSWORD
@@ -46,18 +37,24 @@
 //       Google Account → Security → 2-Step Verification
 //       → App Passwords → "Mail" → Générer
 //
-//   ► Option Resend (gratuit, 3000 emails/mois) :
-//       MAIL_HOST    = smtp.resend.com
-//       MAIL_PORT    = 465
-//       MAIL_SECURE  = true
-//       MAIL_USER    = resend
-//       MAIL_PASS    = re_xxxxxxxxxxxxxxxx   ← API Key Resend
-//       MAIL_FROM    = noreply@votredomaine.com
+//   ► Provider primaire (alternative) — SMTP générique :
+//       MAIL_HOST    = smtp.xxx.com
+//       MAIL_PORT    = 587
+//       MAIL_SECURE  = false
+//       MAIL_USER    = ...
+//       MAIL_PASS    = ...
+//       MAIL_FROM    = ...
+//       (ne pas définir MAIL_SERVICE dans ce cas)
 //
-//   ► Option Brevo / Mailgun / etc — même structure SMTP
-//
-//   ► Recommandé en complément (Railway → Variables) :
-//       NODE_OPTIONS = --dns-result-order=ipv4first
+//   ► Provider fallback — Resend (gratuit, 3000 emails/mois) :
+//       MAIL_FALLBACK_HOST   = smtp.resend.com
+//       MAIL_FALLBACK_PORT   = 465
+//       MAIL_FALLBACK_SECURE = true
+//       MAIL_FALLBACK_USER   = resend
+//       MAIL_FALLBACK_PASS   = re_xxxxxxxxxxxxxxxx   ← API Key Resend
+//       MAIL_FALLBACK_FROM   = noreply@votredomaine.com (ou onboarding@resend.dev)
+//       ⚠️ Optionnel : si absent, aucun fallback n'est utilisé,
+//          comportement identique à la v4.2.
 //   ──────────────────────────────────────────────────────
 // =========================================================
 
@@ -107,110 +104,228 @@ export interface SendEmailOptions {
   brandName?: string;
 }
 
+type ProviderName = 'primary' | 'fallback';
+
 // =========================================================
 // SERVICE
 // =========================================================
 
 @Injectable()
 export class MailService {
-  // ✅ v4.1 : null si non configuré, pour éviter les crashes
-  private transporter: nodemailer.Transporter | null = null;
-  // ✅ v4.1 : false tant que credentials non vérifiés
-  private isReady = false;
+  // ✅ v4.3 : deux transporters distincts
+  private transporterPrimary: nodemailer.Transporter | null = null;
+  private transporterFallback: nodemailer.Transporter | null = null;
+
+  private isPrimaryReady = false;
+  private isFallbackReady = false;
+
   private readonly logger = new Logger(MailService.name);
 
-  // ✅ v4.2 : timeouts SMTP fail-fast (évite de bloquer l'appelant)
   private static readonly SMTP_CONNECTION_TIMEOUT_MS = 10_000;
   private static readonly SMTP_GREETING_TIMEOUT_MS   = 10_000;
   private static readonly SMTP_SOCKET_TIMEOUT_MS      = 10_000;
 
   constructor(private readonly prisma: PrismaService) {
-    // ✅ v4.1 : init déplacé dans une méthode dédiée pour clarté
-    this.initTransporter();
+    this.initPrimaryTransporter();
+    this.initFallbackTransporter();
   }
 
   // ========================================================
-  // ✅ v4.1 — INIT TRANSPORTER avec validation + verify()
-  // ✅ v4.2 — family: 4 (IPv4 forcé) + timeouts fail-fast
+  // ✅ v4.3 — INIT PRIMARY (Gmail par défaut, ou SMTP générique)
   // ========================================================
 
-  private initTransporter(): void {
+  private initPrimaryTransporter(): void {
     const user = process.env.MAIL_USER?.trim();
     const pass = (process.env.MAIL_PASS ?? process.env.MAIL_PASSWORD)?.trim();
     const useGmailService = (process.env.MAIL_SERVICE ?? '').toLowerCase() === 'gmail';
 
-    // ── FIX 1 : Credentials obligatoires ──────────────────
     if (!user || !pass) {
       this.logger.error(
-        '[MAIL] ❌ SMTP non configuré — AUCUN EMAIL ne sera envoyé.\n' +
+        '[MAIL][primary] ❌ SMTP non configuré — MAIL_USER/MAIL_PASS manquants.\n' +
         `  Variables manquantes sur Railway :\n` +
         (!user ? `  → MAIL_USER  (ex: votre@gmail.com)\n`               : '') +
         (!pass ? `  → MAIL_PASS  (App Password Gmail ou clé SMTP)\n`     : '') +
         `  → Ajoutez ces variables : Railway → Settings → Variables → Redéployez.`,
       );
-      return; // isReady reste false, transporter reste null
+      return;
     }
 
-    // ✅ v4.2 : options communes IPv4 + timeouts, appliquées aux deux modes
-    const commonTransportOptions = {
-      family: 4, // ← force IPv4 : évite ENETUNREACH sur réseaux sans IPv6 sortant (Railway)
+    // ✅ v4.2 : options communes IPv4 + timeouts fail-fast
+    const commonOptions = {
+      family: 4, // ← force IPv4 : évite ENETUNREACH sur réseaux sans IPv6 sortant
       connectionTimeout: MailService.SMTP_CONNECTION_TIMEOUT_MS,
       greetingTimeout:   MailService.SMTP_GREETING_TIMEOUT_MS,
       socketTimeout:     MailService.SMTP_SOCKET_TIMEOUT_MS,
     };
 
-    // ── Création du transporter ────────────────────────────
     if (useGmailService) {
-      this.transporter = nodemailer.createTransport({
+      // ✅ v4.3 FIX 7 : cast `as any` — les types nodemailer n'infèrent pas
+      // correctement la surcharge quand on fusionne `service` + options SMTP.
+      this.transporterPrimary = nodemailer.createTransport({
         service: 'gmail',
         auth:    { user, pass },
-        ...commonTransportOptions,
-      });
-      this.logger.log(`[MAIL] Transporter Gmail créé (${user}) — IPv4 forcé`);
+        ...commonOptions,
+      } as any);
+      this.logger.log(`[MAIL][primary] Transporter Gmail créé (${user}) — IPv4 forcé`);
     } else {
       const host = process.env.MAIL_HOST;
       const port = Number(process.env.MAIL_PORT) || 587;
       if (!host) {
         this.logger.error(
-          '[MAIL] ❌ MAIL_HOST manquant pour le mode SMTP.\n' +
+          '[MAIL][primary] ❌ MAIL_HOST manquant pour le mode SMTP.\n' +
           `  → Définissez MAIL_HOST sur Railway, ou passez en mode Gmail :\n` +
           `     MAIL_SERVICE=gmail`,
         );
         return;
       }
-      this.transporter = nodemailer.createTransport({
+      this.transporterPrimary = nodemailer.createTransport({
         host,
         port,
         secure: process.env.MAIL_SECURE === 'true',
         auth:   { user, pass },
-        ...commonTransportOptions,
-      });
-      this.logger.log(`[MAIL] Transporter SMTP créé (${host}:${port}) — IPv4 forcé`);
+        ...commonOptions,
+      } as any);
+      this.logger.log(`[MAIL][primary] Transporter SMTP créé (${host}:${port}) — IPv4 forcé`);
     }
 
-    this.isReady = true;
+    this.isPrimaryReady = true;
+    this.verifyTransporter('primary');
+  }
 
-    // ── FIX 2 : Test de connexion SMTP au démarrage ────────
-    // Délai 3s pour laisser NestJS finir son boot sans bloquer
+  // ========================================================
+  // ✅ v4.3 — INIT FALLBACK (Resend, optionnel)
+  // ========================================================
+
+  private initFallbackTransporter(): void {
+    const host = process.env.MAIL_FALLBACK_HOST?.trim();
+    const user = process.env.MAIL_FALLBACK_USER?.trim();
+    const pass = process.env.MAIL_FALLBACK_PASS?.trim();
+    const port = Number(process.env.MAIL_FALLBACK_PORT) || 465;
+    const secure = process.env.MAIL_FALLBACK_SECURE !== 'false'; // true par défaut
+
+    if (!host || !user || !pass) {
+      this.logger.warn(
+        '[MAIL][fallback] ⚠️ Non configuré (MAIL_FALLBACK_HOST/USER/PASS absents) ' +
+        '— aucun secours en cas d\'échec du provider primaire.',
+      );
+      return;
+    }
+
+    // ✅ v4.3 FIX 7 : cast `as any` — même raison que le primary
+    this.transporterFallback = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      family: 4,
+      connectionTimeout: MailService.SMTP_CONNECTION_TIMEOUT_MS,
+      greetingTimeout:   MailService.SMTP_GREETING_TIMEOUT_MS,
+      socketTimeout:     MailService.SMTP_SOCKET_TIMEOUT_MS,
+    } as any);
+
+    this.isFallbackReady = true;
+    this.logger.log(`[MAIL][fallback] Transporter créé (${host}:${port}) — IPv4 forcé`);
+    this.verifyTransporter('fallback');
+  }
+
+  // ========================================================
+  // ✅ v4.3 — Vérification SMTP au démarrage (non bloquant)
+  // ========================================================
+
+  private verifyTransporter(which: ProviderName): void {
     setTimeout(() => {
-      void this.transporter!
+      const transporter =
+        which === 'primary' ? this.transporterPrimary : this.transporterFallback;
+      if (!transporter) return;
+
+      void transporter
         .verify()
         .then(() => {
-          this.logger.log('[MAIL] ✅ Connexion SMTP vérifiée — emails opérationnels');
+          this.logger.log(`[MAIL][${which}] ✅ Connexion SMTP vérifiée — opérationnel`);
         })
         .catch((err: Error) => {
-          this.isReady = false;
+          if (which === 'primary') this.isPrimaryReady = false;
+          else this.isFallbackReady = false;
           this.logger.error(
-            `[MAIL] ❌ Test SMTP échoué : ${err.message}\n` +
-            `  → Gmail : utilisez un App Password, PAS votre mot de passe Google.\n` +
-            `       Google Account → Security → 2-Step Verification → App Passwords\n` +
-            `  → SMTP : vérifiez MAIL_HOST / MAIL_PORT / MAIL_SECURE sur Railway.\n` +
-            `  → Réseau : si l'erreur mentionne ENETUNREACH avec une adresse IPv6 ` +
-            `(ex: 2a00:...), le family:4 aurait dû l'empêcher — vérifiez que ce ` +
-            `déploiement inclut bien le correctif v4.2.`,
+            `[MAIL][${which}] ❌ Test SMTP échoué : ${err.message}\n` +
+            (which === 'primary'
+              ? `  → Gmail : utilisez un App Password, PAS votre mot de passe Google.\n` +
+                `       Google Account → Security → 2-Step Verification → App Passwords\n` +
+                `  → SMTP : vérifiez MAIL_HOST / MAIL_PORT / MAIL_SECURE sur Railway.\n` +
+                `  → Si le fallback (Resend) est configuré, il prendra le relais.`
+              : `  → Vérifiez MAIL_FALLBACK_HOST / MAIL_FALLBACK_USER / MAIL_FALLBACK_PASS sur Railway.`),
           );
         });
     }, 3000);
+  }
+
+  // ========================================================
+  // ✅ v4.3 — Envoi via un transporter donné
+  // ========================================================
+
+  private async sendViaTransporter(
+    which: ProviderName,
+    mailOptions: nodemailer.SendMailOptions,
+  ): Promise<nodemailer.SentMessageInfo> {
+    const transporter =
+      which === 'primary' ? this.transporterPrimary : this.transporterFallback;
+    if (!transporter) throw new Error(`Transporter ${which} non initialisé`);
+
+    // Le "from" doit correspondre au provider utilisé
+    const from =
+      which === 'primary'
+        ? (process.env.MAIL_FROM ?? process.env.MAIL_USER)
+        : (process.env.MAIL_FALLBACK_FROM ?? process.env.MAIL_FALLBACK_USER);
+
+    return transporter.sendMail({ ...mailOptions, from });
+  }
+
+  // ========================================================
+  // ✅ v4.3 — Envoi avec fallback automatique
+  // ========================================================
+
+  private async sendWithFallback(
+    mailOptions: nodemailer.SendMailOptions,
+    recipientForLog: string,
+  ): Promise<{ info: nodemailer.SentMessageInfo; usedProvider: ProviderName } | null> {
+    // ── Tentative 1 : primary ──────────────────────────────
+    if (this.isPrimaryReady && this.transporterPrimary) {
+      try {
+        const info = await this.sendViaTransporter('primary', mailOptions);
+        this.logger.log(
+          `[MAIL][primary] ✉️  Envoyé → ${recipientForLog} (messageId: ${info.messageId})`,
+        );
+        return { info, usedProvider: 'primary' };
+      } catch (error: any) {
+        this.logger.warn(
+          `[MAIL][primary] ⚠️ Échec → ${recipientForLog} : ${error?.message ?? error} ` +
+          `— tentative fallback...`,
+        );
+      }
+    } else {
+      this.logger.warn('[MAIL][primary] Non prêt — passage direct au fallback');
+    }
+
+    // ── Tentative 2 : fallback ──────────────────────────────
+    if (this.isFallbackReady && this.transporterFallback) {
+      try {
+        const info = await this.sendViaTransporter('fallback', mailOptions);
+        this.logger.log(
+          `[MAIL][fallback] ✉️  Envoyé → ${recipientForLog} (messageId: ${info.messageId})`,
+        );
+        return { info, usedProvider: 'fallback' };
+      } catch (error: any) {
+        this.logger.error(
+          `[MAIL][fallback] ❌ Échec → ${recipientForLog} : ${error?.message ?? error}`,
+        );
+      }
+    }
+
+    // ── Les deux ont échoué (ou ne sont pas configurés) ────
+    this.logger.error(
+      `[MAIL] ❌ Échec total (primary + fallback) → ${recipientForLog}`,
+    );
+    return null;
   }
 
   // ========================================================
@@ -232,13 +347,14 @@ export class MailService {
       return;
     }
 
-    // ✅ v4.1 : Skip propre si SMTP non configuré ou test échoué
-    if (!this.isReady || !this.transporter) {
+    // ✅ v4.3 : skip si aucun des deux providers n'est prêt
+    if (!this.isPrimaryReady && !this.isFallbackReady) {
       this.logger.warn(
-        `[MAIL] ⚠️  Email NON envoyé (SMTP non prêt) :\n` +
+        `[MAIL] ⚠️  Aucun provider prêt — email NON envoyé :\n` +
         `  → Destinataire : ${opts.to}\n` +
         `  → Objet        : ${opts.subject}\n` +
-        `  → Action       : configurez MAIL_USER + MAIL_PASS sur Railway et redéployez.`,
+        `  → Action       : configurez MAIL_USER + MAIL_PASS (primary) et/ou ` +
+        `MAIL_FALLBACK_* (fallback) sur Railway et redéployez.`,
       );
       return;
     }
@@ -263,46 +379,44 @@ export class MailService {
       this.logger.warn('[MAIL] CommunicationLog création échouée', e);
     }
 
-    try {
-      const info = await this.transporter.sendMail({
-        from:    process.env.MAIL_FROM ?? process.env.MAIL_USER,
+    // ── Envoi avec fallback automatique ────────────────────
+    const result = await this.sendWithFallback(
+      {
         to:      opts.to,
         subject: opts.subject,
         html:    this.wrapHtml(opts.subject, opts.htmlContent, {
           brandColor: opts.brandColor,
           brandName:  opts.brandName,
         }),
-      });
+      },
+      opts.to,
+    );
 
-      this.logger.log(`[MAIL] ✉️  Envoyé → ${opts.to} (messageId: ${info.messageId})`);
+    if (!logId) return;
 
-      if (logId) {
-        await this.prisma.communicationLog
-          .update({
-            where: { id: logId },
-            data:  { status: 'SENT', sentAt: new Date(), providerId: info.messageId },
-          })
-          .catch(() => {});
-      }
-    } catch (error: any) {
-      // ✅ v4.1 : FIX 3 — message d'erreur inclus dans le log Railway
-      this.logger.error(
-        `[MAIL] ❌ Échec envoi → ${opts.to} : ${error?.message ?? String(error)}`,
-      );
-
-      if (logId) {
-        await this.prisma.communicationLog
-          .update({
-            where: { id: logId },
-            data:  {
-              status:     'FAILED',
-              errorMsg:   String(error?.message ?? error),
-              retryCount: { increment: 1 },
-            },
-          })
-          .catch(() => {});
-      }
-      // On ne throw pas — comportement v4.0 conservé
+    if (result) {
+      await this.prisma.communicationLog
+        .update({
+          where: { id: logId },
+          data: {
+            status:       'SENT',
+            sentAt:       new Date(),
+            providerId:   result.info.messageId,
+            providerName: `nodemailer:${result.usedProvider}`,
+          },
+        })
+        .catch(() => {});
+    } else {
+      await this.prisma.communicationLog
+        .update({
+          where: { id: logId },
+          data: {
+            status:     'FAILED',
+            errorMsg:   'Échec primary + fallback',
+            retryCount: { increment: 1 },
+          },
+        })
+        .catch(() => {});
     }
   }
 
@@ -370,30 +484,18 @@ export class MailService {
   }
 
   // ========================================================
-  // RAW SEND — ✅ v4.1 : isReady check ajouté
+  // RAW SEND — ✅ v4.3 avec fallback automatique
   // ========================================================
 
   async sendRaw(to: string, subject: string, html: string, text?: string) {
-    // ✅ v4.1 : même garde que sendEmail()
-    if (!this.isReady || !this.transporter) {
+    if (!this.isPrimaryReady && !this.isFallbackReady) {
       this.logger.warn(
-        `[MAIL] ⚠️  sendRaw NON envoyé (SMTP non prêt) → ${to} | ${subject}`,
+        `[MAIL] ⚠️  sendRaw NON envoyé (aucun provider prêt) → ${to} | ${subject}`,
       );
       return;
     }
 
-    try {
-      const info = await this.transporter.sendMail({
-        from: process.env.MAIL_FROM ?? process.env.MAIL_USER,
-        to,
-        subject,
-        html,
-        text,
-      });
-      this.logger.log(`[MAIL] Raw email → ${to} (${info.messageId})`);
-      return info;
-    } catch (e: any) {
-      this.logger.error(`[MAIL] ❌ sendRaw échoué → ${to} : ${e?.message ?? e}`);
-    }
+    const result = await this.sendWithFallback({ to, subject, html, text }, to);
+    return result?.info;
   }
 }
