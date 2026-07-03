@@ -1,14 +1,27 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v6.2 — Direct Transf'air
-// ✅ v6.1 conservé intégralement
-// ✅ v6.2 : biometricLogin() déclenche VRAIMENT Face ID / Touch ID
-//   AVANT de rafraîchir le token.
-//   AVANT : api.refreshAccessToken() appelé sans prompt → biométrie
-//           jamais déclenchée, toggle purement décoratif.
-//   APRÈS : promptBiometrics() appelé en premier → si l'utilisateur
-//           annule ou échoue, on throw sans jamais toucher au token.
-//           Si succès → refreshAccessToken() → user hydraté.
+// AUTH PROVIDER v6.3 — Direct Transf'air
+// ✅ v6.1, v6.2 conservés intégralement
+// ✅ v6.3 : FIX synchronisation refresh token en mémoire
+//
+//   PROBLÈME RÉSOLU (v6.3) :
+//   register() et applyLoginResult() persistaient le refresh token
+//   en storage (setStorage("refreshToken", ...)) mais ne mettaient
+//   jamais à jour le champ privé `refreshToken` de l'instance `api`
+//   — seuls login()/loginStep2()/attemptTokenRefresh() (internes à
+//   la classe API) le faisaient. Résultat : pour toute session issue
+//   de l'inscription ou de la connexion v2 (login-v2.tsx →
+//   applyLoginResult), `api`'s refreshToken restait `null` en
+//   mémoire. Conséquence concrète : l'intercepteur axios qui doit
+//   rafraîchir automatiquement le token sur un 401 ne se déclenchait
+//   jamais pour ces sessions (il vérifie `this.refreshToken` en
+//   mémoire, pas le storage) — un token expiré menait directement à
+//   un logout silencieux au lieu d'un rafraîchissement transparent.
+//
+//   FIX — api.setRefreshToken(...) appelé en plus de setStorage(),
+//   partout où un refresh token est reçu hors de login()/loginStep2().
+//   Nécessite l'ajout de la méthode publique setRefreshToken() dans
+//   api.ts (voir patch fourni séparément).
 // =========================================================
 
 import React, {
@@ -283,6 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await setStorage(USER_KEY, JSON.stringify(enrichedUser));
     if (refreshToken) {
       await setStorage("refreshToken", refreshToken);
+      api.setRefreshToken(refreshToken); // ✅ v6.3 — synchronise l'instance api
     }
 
     void registerCurrentDeviceIfNeeded();
@@ -338,6 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await setStorage(USER_KEY, JSON.stringify(enrichedUser));
         if (res.refresh_token) {
           await setStorage("refreshToken", res.refresh_token);
+          api.setRefreshToken(res.refresh_token); // ✅ v6.3 — synchronise l'instance api
         }
         void registerCurrentDeviceIfNeeded();
         return enrichedUser;

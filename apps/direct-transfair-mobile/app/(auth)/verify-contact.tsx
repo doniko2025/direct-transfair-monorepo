@@ -1,27 +1,25 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
-// VERIFY CONTACT v1.2 — Direct Transf'air
-// ✅ v1.0 conservé intégralement
-// ✅ v1.1 conservé intégralement (UI erreur réseau + retry inline)
-// ✅ v1.2 : FIX écran figé sur "Connexion en cours..."
+// VERIFY CONTACT v1.3 — Direct Transf'air
+// ✅ v1.0, v1.1, v1.2 conservés intégralement
+// ✅ v1.3 : FIX RÉEL de l'écran figé sur "Connexion en cours..."
 //
-//   PROBLÈME RÉSOLU (v1.2) :
-//   Après vérification réussie (allVerified: true) avec un token
-//   présent, refreshUser() était appelé dans un try/catch vide.
-//   Si refreshUser() échouait, l'erreur était avalée en silence et
-//   rien ne se passait ensuite : l'écran restait bloqué sur
-//   "Compte activé ! Connexion en cours..." indéfiniment, sans
-//   navigation ni message d'erreur.
+//   CAUSE RÉELLE (confirmée via AuthProvider.tsx) :
+//   Après un utilisateur déjà token-é (inscription → access_token
+//   émis avant vérification email) qui termine avec succès
+//   (allVerified: true), le code appelait refreshUser() puis ne
+//   naviguait jamais explicitement ailleurs. Le garde de navigation
+//   global dans AuthProvider exclut délibérément cet écran
+//   (isVerifyScreen) de ses deux redirections automatiques — il est
+//   fait pour nous y AMENER quand nécessaire, jamais pour nous en
+//   faire SORTIR. Résultat : rien ne quittait jamais cet écran,
+//   de façon 100% déterministe (pas un problème réseau/timing).
 //
-//   FIX — Le catch n'est plus vide : en cas d'échec de
-//   refreshUser(), on retombe sur la redirection vers /login-v2
-//   (le même filet de sécurité que le cas "pas de token"), pour
-//   ne jamais laisser l'utilisateur bloqué sur un spinner mort.
-//
-//   ⚠️ Si refreshUser() ne rejette jamais (promesse qui ne se
-//   résout ni ne rejette — un vrai "hang"), ce filet ne suffira
-//   pas : il faudrait un timeout de course (Promise.race) côté
-//   AuthProvider. À vérifier si le blocage persiste après ce fix.
+//   FIX — Navigation explicite vers /(tabs)/home après refreshUser(),
+//   qu'il ait réussi ou non (refreshUser() avale déjà ses propres
+//   erreurs sauf 401/403 → logout(), qui redirige lui-même vers
+//   /login-v2 ; si ça arrive, le garde global renverra de toute
+//   façon vers /login-v2 au prochain rendu puisque user sera null).
 // =========================================================
 
 import React, {
@@ -314,9 +312,9 @@ export default function VerifyContactScreen() {
   };
 
   // ── Vérification ─────────────────────────────────────────
-  // ✅ v1.2 — le catch autour de refreshUser() n'est plus vide :
-  // en cas d'échec, on retombe sur la redirection vers /login-v2
-  // au lieu de laisser l'écran figé sur "Connexion en cours...".
+  // ✅ v1.3 — navigation EXPLICITE après refreshUser() : le garde
+  // global de navigation exclut délibérément cet écran de ses
+  // redirections auto, donc rien d'autre ne nous en fera sortir.
   const handleVerify = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
     if (code.length < OTP_LENGTH) return;
@@ -331,17 +329,15 @@ export default function VerifyContactScreen() {
         animateSuccess();
         setTimeout(async () => {
           if (token) {
-            try {
-              await refreshUser();
-            } catch (refreshErr) {
-              // ✅ v1.2 : filet de sécurité — ne jamais rester bloqué
-              // sur le spinner si refreshUser() échoue.
+            await refreshUser().catch((refreshErr) => {
+              // refreshUser() avale déjà ses propres erreurs (sauf 401/403,
+              // qui déclenchent logout() en interne) — ce catch est juste
+              // une trace de diagnostic, pas un vrai filet de sécurité.
               console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
-              router.replace({
-                pathname: '/(auth)/login-v2',
-                params: { verified: '1' },
-              } as any);
-            }
+            });
+            // ✅ v1.3 — FIX : sans cet appel, l'écran restait figé pour
+            // toujours sur "Connexion en cours...".
+            router.replace('/(tabs)/home' as any);
           } else {
             router.replace({
               pathname: '/(auth)/login-v2',

@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.5
+// DIRECT TRANSF'AIR — API Service v5.6
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -18,6 +18,16 @@
 //   — Suppression du doublon getBrandingByHost() / getClientPublicBranding()
 //     qui avait été inséré deux fois (AUTH + WALLETS)
 //   — Version unique conservée dans la section WALLETS
+// v5.6 — FIX synchronisation refresh token (AuthProvider v6.3)
+//   AVANT : register()/applyLoginResult() persistaient le refresh
+//   token en storage mais n'avaient aucun moyen de mettre à jour le
+//   champ privé `refreshToken` de cette instance — seuls
+//   login()/loginStep2()/attemptTokenRefresh() le faisaient. Résultat :
+//   pour les sessions issues de l'inscription ou du login v2, le
+//   refresh automatique sur 401 (dans l'intercepteur ci-dessous) ne se
+//   déclenchait jamais, puisqu'il vérifie this.refreshToken en mémoire.
+//   APRÈS : ajout de setRefreshToken(), méthode publique symétrique à
+//   setToken(), pour permettre à AuthProvider de synchroniser l'état.
 // =========================================================
 
 import axios, {
@@ -617,6 +627,18 @@ class API {
 
   clearToken(): void {
     this.token = null;
+  }
+
+  // ✅ v5.6 — permet à AuthProvider de synchroniser le refresh token en
+  // mémoire après register()/applyLoginResult(), qui ne passent pas par
+  // login()/loginStep2() (les seuls endroits qui le faisaient jusqu'ici).
+  // Sans ça, this.refreshToken restait null en mémoire même si le
+  // refresh token était bien persisté en storage — et le refresh
+  // automatique sur 401 (dans l'intercepteur ci-dessus) ne se
+  // déclenchait donc jamais pour les sessions issues de l'inscription
+  // ou du login v2.
+  setRefreshToken(token: string | null): void {
+    this.refreshToken = token;
   }
 
   private async clearTokens(): Promise<void> {
