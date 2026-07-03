@@ -4,6 +4,14 @@
 // Wrapping des endpoints /auth/v2/* sans modifier api.ts
 // Utilise l'instance api existante pour hériter du tenant,
 // des intercepteurs et du refresh token automatique.
+//
+// ✅ FIX — suppression des `(api as any)` : api.http est déjà
+//   déclaré `public http: AxiosInstance` dans api.ts. Le cast en
+//   `any` cassait le typage et déclenchait TS2347 ("Untyped
+//   function calls may not accept type arguments") sur chaque
+//   appel avec generic (<Type>). Sans effet en runtime (les
+//   generics sont effacés à la transpilation), mais aucune raison
+//   de le garder — confirmé avec tsc --strict.
 // =========================================================
 
 import { api } from './api';
@@ -86,7 +94,7 @@ export const v2Auth = {
     email:    string,
     password: string,
   ): Promise<LoginV2Response> {
-    const res = await (api as any).http.post<LoginV2Response>(
+    const res = await api.http.post<LoginV2Response>(
       '/auth/v2/login-password',
       { email: email.trim().toLowerCase(), password },
     );
@@ -98,7 +106,7 @@ export const v2Auth = {
    * Retourne { userId, maskedRecipient, channel:'EMAIL' }
    */
   async requestOtpEmail(email: string): Promise<OtpRequestResult> {
-    const res = await (api as any).http.post<OtpRequestResult>(
+    const res = await api.http.post<OtpRequestResult>(
       '/auth/v2/request-otp-email',
       { email: email.trim().toLowerCase() },
     );
@@ -110,7 +118,7 @@ export const v2Auth = {
    * Retourne { userId, maskedRecipient, channel:'SMS' }
    */
   async requestOtpPhone(phone: string): Promise<OtpRequestResult> {
-    const res = await (api as any).http.post<OtpRequestResult>(
+    const res = await api.http.post<OtpRequestResult>(
       '/auth/v2/request-otp-phone',
       { phone: phone.trim() },
     );
@@ -126,7 +134,7 @@ export const v2Auth = {
     channel:   'EMAIL' | 'SMS',
     deviceId?: string,
   ): Promise<LoginV2Result> {
-    const res = await (api as any).http.post<LoginV2Result>(
+    const res = await api.http.post<LoginV2Result>(
       '/auth/v2/verify-otp-login',
       { userId, code, channel, deviceId },
     );
@@ -141,7 +149,7 @@ export const v2Auth = {
     userId:  string,
     channel: 'EMAIL' | 'PHONE',
   ): Promise<{ success: true; maskedRecipient: string }> {
-    const res = await (api as any).http.post(
+    const res = await api.http.post(
       '/auth/v2/send-verification',
       { userId, channel },
     );
@@ -156,7 +164,7 @@ export const v2Auth = {
     code:    string,
     channel: 'EMAIL' | 'PHONE',
   ): Promise<VerifyContactResult> {
-    const res = await (api as any).http.post<VerifyContactResult>(
+    const res = await api.http.post<VerifyContactResult>(
       '/auth/v2/verify-contact',
       { userId, code, channel },
     );
@@ -167,7 +175,7 @@ export const v2Auth = {
    * Statut de vérification d'un utilisateur
    */
   async getVerificationStatus(userId: string): Promise<VerificationStatus> {
-    const res = await (api as any).http.get<VerificationStatus>(
+    const res = await api.http.get<VerificationStatus>(
       `/auth/v2/verification-status/${userId}`,
     );
     return res.data;

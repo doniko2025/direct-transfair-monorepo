@@ -1,27 +1,27 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
-// VERIFY CONTACT v1.1 — Direct Transf'air
+// VERIFY CONTACT v1.2 — Direct Transf'air
 // ✅ v1.0 conservé intégralement
-// ✅ v1.1 : CORRECTIFS UX ERREUR RÉSEAU
+// ✅ v1.1 conservé intégralement (UI erreur réseau + retry inline)
+// ✅ v1.2 : FIX écran figé sur "Connexion en cours..."
 //
-//   FIX 1 — State sendError + UI de retry inline
-//     AVANT : Alert.alert() suivi de rien → l'utilisateur
-//     voyait un écran vide (isSending=false, codeSent=false)
-//     sans possibilité de retry.
-//     APRÈS : setSendError(msg) → la card affiche le message
-//     d'erreur + bouton "Réessayer" sans quitter l'écran.
+//   PROBLÈME RÉSOLU (v1.2) :
+//   Après vérification réussie (allVerified: true) avec un token
+//   présent, refreshUser() était appelé dans un try/catch vide.
+//   Si refreshUser() échouait, l'erreur était avalée en silence et
+//   rien ne se passait ensuite : l'écran restait bloqué sur
+//   "Compte activé ! Connexion en cours..." indéfiniment, sans
+//   navigation ni message d'erreur.
 //
-//   FIX 2 — Rate limit silencieux amélioré
-//     La détection inclut maintenant "heure" en plus de "rate"
-//     et "3" pour capturer tous les formats backend possibles.
+//   FIX — Le catch n'est plus vide : en cas d'échec de
+//   refreshUser(), on retombe sur la redirection vers /login-v2
+//   (le même filet de sécurité que le cas "pas de token"), pour
+//   ne jamais laisser l'utilisateur bloqué sur un spinner mort.
 //
-//   FIX 3 — Reset sendError dans moveToNextStep
-//     Sans ce reset, une erreur de l'étape email persistait
-//     sur l'étape téléphone.
-//
-//   FIX 4 — sendCode ne spam plus l'alerte
-//     Sur mobile, l'Alert dupliquait l'info déjà visible en
-//     inline → supprimée au profit du state sendError.
+//   ⚠️ Si refreshUser() ne rejette jamais (promesse qui ne se
+//   résout ni ne rejette — un vrai "hang"), ce filet ne suffira
+//   pas : il faudrait un timeout de course (Promise.race) côté
+//   AuthProvider. À vérifier si le blocage persiste après ce fix.
 // =========================================================
 
 import React, {
@@ -314,6 +314,9 @@ export default function VerifyContactScreen() {
   };
 
   // ── Vérification ─────────────────────────────────────────
+  // ✅ v1.2 — le catch autour de refreshUser() n'est plus vide :
+  // en cas d'échec, on retombe sur la redirection vers /login-v2
+  // au lieu de laisser l'écran figé sur "Connexion en cours...".
   const handleVerify = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
     if (code.length < OTP_LENGTH) return;
@@ -328,7 +331,17 @@ export default function VerifyContactScreen() {
         animateSuccess();
         setTimeout(async () => {
           if (token) {
-            try { await refreshUser(); } catch {}
+            try {
+              await refreshUser();
+            } catch (refreshErr) {
+              // ✅ v1.2 : filet de sécurité — ne jamais rester bloqué
+              // sur le spinner si refreshUser() échoue.
+              console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
+              router.replace({
+                pathname: '/(auth)/login-v2',
+                params: { verified: '1' },
+              } as any);
+            }
           } else {
             router.replace({
               pathname: '/(auth)/login-v2',
