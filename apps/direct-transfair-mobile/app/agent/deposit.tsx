@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/agent/deposit.tsx
 // =========================================================
-// AGENT DEPOSIT (CASH-IN) v8.0 — Direct Transf'air
+// AGENT DEPOSIT (CASH-IN) v8.2 — Direct Transf'air
 // ✅ v7.0 : héro pill, navigation vers reçu imprimable
 // ✅ v7.1 : fond blanc pur, héro rectangulaire gradient
 // ✅ v8.0 :
@@ -11,6 +11,30 @@
 //   - Avertissement si numéro introuvable (n'empêche pas la validation)
 //   - Modal de confirmation custom : avatar · nom · téléphone · montant
 //   - Récapitulatif et reçu mis à jour avec le nom du client
+// ✅ v8.1 :
+//   - Normalisation du numéro : buildFullPhone() retire "00", l'indicatif
+//     déjà présent et le "0" initial avant de préfixer par l'indicatif du
+//     pays sélectionné. Garde-fou utile mais PAS la cause du problème.
+//   - ✅ FIX RÉEL numéro introuvable : le lookup appelait GET /users/by-phone
+//     avec ?phone=..., mais users.controller.ts lit @Query('q') — le
+//     paramètre n'arrivait donc jamais au backend, qui renvoyait null
+//     systématiquement quel que soit le format testé. Corrigé en ?q=.
+//   - FIX indicatif par défaut : resolveDefaultCountry() dérive
+//     l'indicatif initial du pays de l'agence de l'agent connecté via
+//     getCountryByName() (data/countries.ts), au lieu du Sénégal codé
+//     en dur. Repli sur Sénégal si l'agence n'a pas de pays ou si le
+//     nom ne correspond à rien dans la liste.
+//   - FIX badge devise masqué : flexShrink: 0 sur curBox + minWidth: 0
+//     sur amtInput. Sur React Native Web, un TextInput en flex:1 sans
+//     minWidth:0 refuse de rétrécir sous sa largeur de contenu et
+//     pousse le badge hors du cadre (overflow:hidden le coupe). La
+//     ligne téléphone avait déjà ce réflexe sur dialBtn — il manquait
+//     juste sur curBox.
+// ✅ v8.2 :
+//   - resolveDefaultCountry() essaie maintenant le nom ET le code ISO
+//     pour agency.country (format réel incertain — cf. commentaire
+//     de la fonction). Ajout d'un console.log temporaire pour
+//     confirmer la valeur réelle renvoyée par /auth/me.
 // =========================================================
 
 import React, { useState, useRef, useEffect } from "react";
@@ -24,11 +48,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
-import { countriesList, type CountryData } from "../../data/countries";
+import { countriesList, getCountryByName, type CountryData } from "../../data/countries";
 
 const AGENT_BLUE      = "#2563EB";
 const AGENT_BLUE_DARK = "#1D4ED8";
-const DEFAULT_COUNTRY = countriesList.find(c => c.code === "SN") ?? countriesList[0];
+const FALLBACK_COUNTRY = countriesList.find(c => c.code === "SN") ?? countriesList[0];
 
 const QUICK_BY_CURRENCY: Record<string, number[]> = {
   XOF: [1_000, 2_000, 5_000, 10_000, 25_000, 50_000, 100_000],
@@ -69,6 +93,38 @@ function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
   catch { return n.toFixed(d); }
+}
+
+// ✅ v8.1 — Normalise la saisie de l'agent avant de la préfixer par
+// l'indicatif du pays sélectionné. Garde-fou frontend : gère le 0
+// initial, un "00" international, un "+", ou l'indicatif déjà collé.
+// ⚠️ Ne résout pas seul un éventuel souci de correspondance côté
+// backend (/users/by-phone) — voir le message associé à ce fichier.
+function buildFullPhone(dialCode: string, rawInput: string): string {
+  let digits = rawInput.replace(/\D/g, "");
+  if (digits.startsWith("00")) digits = digits.slice(2);
+  if (dialCode && digits.startsWith(dialCode)) digits = digits.slice(dialCode.length);
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  return `${dialCode}${digits}`;
+}
+
+// ✅ v8.2 — Détermine l'indicatif par défaut à partir du pays de
+// l'agence de l'agent connecté (agency.country). On ne sait pas avec
+// certitude si ce champ est stocké en toutes lettres ("France") ou en
+// code ISO ("FR") — AuthProvider.tsx suppose un nom complet, mais
+// agencies/index.tsx (FLAG_MAP) suppose plutôt un code à 2 lettres.
+// On essaie donc les deux : nom complet d'abord (getCountryByName,
+// cohérent avec getCurrencyByCountry), puis code ISO en repli, avant
+// de retomber sur Sénégal si rien ne correspond.
+function resolveDefaultCountry(agencyCountry: string | null | undefined): CountryData {
+  const raw = (agencyCountry ?? "").trim();
+  if (raw) {
+    const byName = getCountryByName(raw);
+    if (byName) return byName;
+    const byCode = countriesList.find(c => c.code.toLowerCase() === raw.toLowerCase());
+    if (byCode) return byCode;
+  }
+  return FALLBACK_COUNTRY;
 }
 
 // ─── CountryPickerModal ───────────────────────────────────
@@ -326,7 +382,12 @@ export default function AgentDepositScreen() {
   const router   = useRouter();
   const { user } = useAuth();
 
-  const [country,       setCountry]       = useState<CountryData>(DEFAULT_COUNTRY);
+  // ✅ v8.1 — Pays de l'agence (ex. "France"), utilisé pour l'indicatif par défaut.
+  const agencyCountry = (user as any)?.agency?.country as string | null | undefined;
+  // 🔍 DEBUG temporaire — à retirer une fois la valeur confirmée.
+  console.log('[DEBUG] user.agency:', (user as any)?.agency, '| agencyCountry:', agencyCountry);
+
+  const [country,       setCountry]       = useState<CountryData>(() => resolveDefaultCountry(agencyCountry));
   const [showPicker,    setShowPicker]    = useState(false);
   const [phone,         setPhone]         = useState("");
   const [amount,        setAmount]        = useState("");
@@ -350,7 +411,9 @@ export default function AgentDepositScreen() {
     }).catch(() => { const p = (user as any)?.primaryCurrency; if (p) setAgentCurrency(p); });
   }, []);
 
-  // ✅ v8.0 : Lookup client par téléphone avec debounce 600ms
+  // ✅ v8.1 : Lookup client par téléphone avec debounce 600ms —
+  // utilise buildFullPhone() (garde-fou frontend, voir note en tête
+  // de fichier sur la nécessité de vérifier aussi /users/by-phone).
   useEffect(() => {
     setClientInfo(null);
     const trimmed = phone.trim();
@@ -360,8 +423,9 @@ export default function AgentDepositScreen() {
       setLookingUp(true);
       try {
         // ⚠️ Adapter l'endpoint à votre API si nécessaire
-        const fullPhone = `${country.dialCode}${trimmed}`;
-        const res = await api.http.get(`/users/by-phone?phone=${encodeURIComponent(fullPhone)}`);
+        // ✅ v8.1 — FIX : le backend (users.controller.ts) lit ?q=, pas ?phone=
+        const fullPhoneForLookup = buildFullPhone(country.dialCode, trimmed);
+        const res = await api.http.get(`/users/by-phone?q=${encodeURIComponent(fullPhoneForLookup)}`);
         const d = res.data;
         if (d?.firstName || d?.lastName) {
           setClientInfo({ firstName: d.firstName ?? "", lastName: d.lastName ?? "" });
@@ -380,7 +444,9 @@ export default function AgentDepositScreen() {
   }, [phone, country.dialCode]);
 
   const numAmount      = parseFloat(amount) || 0;
-  const fullPhone      = `${country.dialCode}${phone.trim()}`;
+  // ✅ v8.1 — même normalisation que le lookup : une seule source de
+  // vérité pour le numéro réellement envoyé au backend.
+  const fullPhone       = buildFullPhone(country.dialCode, phone.trim());
   const clientFullName = clientInfo ? `${clientInfo.firstName} ${clientInfo.lastName}`.trim() : null;
   const canSubmit      = phone.trim().length >= 6 && numAmount > 0;
   const quickAmounts   = QUICK_BY_CURRENCY[agentCurrency] ?? QUICK_BY_CURRENCY.XOF;
@@ -694,9 +760,11 @@ const s = StyleSheet.create({
   },
   clientNotFoundTxt: { flex: 1, fontSize: 12, color: "#92400E", fontWeight: "600" },
 
+  // ✅ v8.1 — flexShrink:0 sur curBox + minWidth:0 sur amtInput :
+  // fix du badge devise masqué/coupé sur React Native Web.
   amtBox:          { flexDirection: "row", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, overflow: "hidden", marginBottom: 16 },
-  amtInput:        { flex: 1, paddingHorizontal: 14, paddingVertical: 11, fontSize: 20, color: C.ink, fontWeight: "800" },
-  curBox:          { paddingHorizontal: 14, paddingVertical: 11, backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder, justifyContent: "center" },
+  amtInput:        { flex: 1, minWidth: 0, paddingHorizontal: 14, paddingVertical: 11, fontSize: 20, color: C.ink, fontWeight: "800" },
+  curBox:          { flexShrink: 0, paddingHorizontal: 14, paddingVertical: 11, backgroundColor: C.violetLight, borderLeftWidth: 1, borderLeftColor: C.violetBorder, justifyContent: "center" },
   curTxt:          { color: AGENT_BLUE, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   quickLbl:        { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, marginBottom: 8, textTransform: "uppercase" },
   quickRow:        { gap: 7, paddingBottom: 2 },

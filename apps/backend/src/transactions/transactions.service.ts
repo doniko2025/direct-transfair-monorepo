@@ -1,6 +1,6 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.16 — Direct Transf'air
+// TRANSACTIONS SERVICE v4.17 — Direct Transf'air
 // =========================================================
 // ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
 // ✅ v4.13-A : FIX acquireAdvisoryLock int32 signé (| 0)
@@ -8,19 +8,28 @@
 // ✅ v4.13-C : Notifications in-app + emails sur tous les flux
 // ✅ v4.14 : FUSION complète en un seul fichier
 // ✅ v4.15 : FIX CRITIQUE acquireAdvisoryLock → ::int4 dans SQL
-// ✅ v4.16 : 2 FIX dans create() :
+// ✅ v4.16 : 2 FIX dans create() (wallet agence + fee config)
+// ✅ v4.17 : FIX recherche client dans deposit()
 //
-//   FIX A — "Solde XOF insuffisant. Disponible : 0" pour l'agent
-//     PROBLÈME : create() cherchait user.wallets (wallet PERSONNEL).
-//     L'agent a un wallet personnel XOF à 0 (créé automatiquement)
-//     → le système le trouve → disponible = 0 → ForbiddenException.
-//     Son vrai solde est dans le wallet AGENCE (agencyId).
-//     CORRECTIF : si user.agencyId présent → priorité au wallet agence.
+//   PROBLÈME RÉSOLU (v4.17) :
+//   deposit() cherchait le client via
+//     phone: { contains: cleanPhone }
+//   où cleanPhone est le numéro complet envoyé par le frontend. Si le
+//   format stocké en base diffère (avec/sans indicatif, avec/sans 0
+//   initial — ex. stocké "0766736226" mais reçu "33766736226"), la
+//   chaîne complète ne matche jamais, même si c'est le même numéro.
 //
-//   FIX B — Taux de frais toujours 1,5% malgré config admin
-//     PROBLÈME : findFirst({ isActive: true }) ne trouvait rien car
-//     upsertFeeConfig() ne persistait pas isActive=true → fallback 1,5%.
-//     CORRECTIF : retrait du filtre isActive dans la requête feeConfig.
+//   Pendant ce temps, UsersService.findByPhoneInTenant() (utilisé par
+//   le lookup live GET /users/by-phone) utilise une stratégie plus
+//   tolérante : contains sur les 7 derniers chiffres + vérification de
+//   suffixe en JS. Résultat possible avant ce fix : le badge "CLIENT
+//   TROUVÉ ✓" s'affiche correctement pendant la saisie, mais la
+//   validation du dépôt échoue quand même avec "Client introuvable".
+//
+//   CORRECTIF : deposit() utilise maintenant exactement la même
+//   stratégie de correspondance (suffixe sur 7 chiffres) que
+//   findByPhoneInTenant(), pour un comportement cohérent entre le
+//   lookup et la validation réelle.
 // =========================================================
 
 import {
@@ -163,6 +172,41 @@ export class TransactionsService {
       }
     }
     return cloned;
+  }
+
+  // ── Recherche client par téléphone (tolérante au format) ──
+  // ✅ v4.17 — même stratégie que UsersService.findByPhoneInTenant() :
+  // contains() sur les 7 derniers chiffres pour la requête DB (large),
+  // puis vérification de suffixe en JS pour éviter les faux positifs.
+  // Évite le piège d'un contains() sur la chaîne complète, qui échoue
+  // dès que le format stocké diffère du format envoyé (indicatif, 0
+  // initial, etc.) alors qu'il s'agit du même numéro.
+  private async findClientByPhoneTolerant(
+    rawPhone: string,
+    clientId: number,
+  ) {
+    const digits = (rawPhone ?? '').replace(/\D/g, '');
+    if (digits.length < 6) return null;
+
+    const candidates = await this.prisma.user.findMany({
+      where: {
+        clientId,
+        isActive: true,
+        deletedAt: null,
+        phone: {
+          not: null,
+          contains: digits.length >= 7 ? digits.slice(-7) : digits,
+        },
+      },
+      include: { wallets: { where: { isActive: true } } },
+      take: 10,
+    });
+
+    return candidates.find((u) => {
+      if (!u.phone) return false;
+      const storedDigits = u.phone.replace(/\D/g, '');
+      return storedDigits.endsWith(digits) || digits.endsWith(storedDigits.slice(-digits.length));
+    }) ?? null;
   }
 
   // ── Advisory lock key ─────────────────────────────────
@@ -595,11 +639,8 @@ export class TransactionsService {
 
     let recipientUser: any = null;
     if (isWalletTransfer && beneficiary?.phone) {
-      const cleanPhone = beneficiary.phone.replace(/[^0-9]/g, '');
-      recipientUser = await this.prisma.user.findFirst({
-        where:   { phone: { contains: cleanPhone }, clientId },
-        include: { wallets: { where: { isActive: true } } },
-      });
+      // ✅ v4.17 — même stratégie tolérante que findByPhoneInTenant()
+      recipientUser = await this.findClientByPhoneTolerant(beneficiary.phone, clientId);
     }
 
     const targetCurrency: CurrencyCode = beneficiary?.country
@@ -748,11 +789,11 @@ export class TransactionsService {
     const available = Number(agencyWallet.balance) - Number(agencyWallet.reservedBalance);
     if (available < Number(amountDec)) throw new ForbiddenException('Solde agence insuffisant');
 
-    const cleanPhone = (dto.userPhone ?? '').replace(/[^0-9]/g, '');
-    const clientUser = await this.prisma.user.findFirst({
-      where:   { phone: { contains: cleanPhone }, clientId: agent.clientId },
-      include: { wallets: { where: { isActive: true } } },
-    });
+    // ✅ FIX v4.17 — recherche tolérante au format (mêmes règles que
+    // findByPhoneInTenant, utilisé par le lookup live côté frontend).
+    // Avant : phone: { contains: cleanPhone } sur la chaîne complète,
+    // qui échouait si le format stocké différait du format envoyé.
+    const clientUser = await this.findClientByPhoneTolerant(dto.userPhone ?? '', agent.clientId);
     if (!clientUser) throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
 
     const currency        = agencyWallet.currency as CurrencyCode;
