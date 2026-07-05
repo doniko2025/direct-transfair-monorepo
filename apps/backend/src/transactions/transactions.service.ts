@@ -1139,7 +1139,7 @@ export class TransactionsService {
         await prismaTx.withdrawal.updateMany({
           where: { transactionId: id },
           data:  { status: WithdrawalStatus.CANCELLED },
-        });
+        }); 
         return updated;
       });
     }

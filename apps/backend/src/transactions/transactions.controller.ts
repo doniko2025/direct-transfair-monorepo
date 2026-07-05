@@ -244,4 +244,4 @@ export class TransactionsController {
     const userId = this.getUserId(req);
     return this.transactionsService.findOneForUser(id, userId);
   }
-}
+} 

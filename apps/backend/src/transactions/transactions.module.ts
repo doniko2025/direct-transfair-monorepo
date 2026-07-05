@@ -34,4 +34,4 @@ import { NotificationsModule }    from '../notifications/notifications.module'; 
   providers:   [TransactionsService],
   exports:     [TransactionsService],
 })
-export class TransactionsModule {}
+export class TransactionsModule {} 
