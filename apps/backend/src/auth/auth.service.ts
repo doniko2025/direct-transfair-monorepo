@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.0 — Direct Transf'air
+// AUTH SERVICE v5.1 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -34,6 +34,17 @@
 //   FIX 6 — verifyLoginOtp() marque email vérifié si canal EMAIL
 //     La vérification d'OTP via EMAIL prouve la possession de
 //     l'email → on marque isEmailVerified=true si besoin.
+//
+// ✅ v5.1 : FIX 7 — 🚨 normalisation téléphone centralisée (sécurité)
+//     La fonction normalizePhone() locale de ce fichier (juste un
+//     replace des espaces) ne gérait pas la conversion "00" → "+",
+//     ce qui a permis à deux comptes de stocker le même numéro réel
+//     sous deux formats différents et à un dépôt de 50 000 € d'être
+//     crédité sur le mauvais compte. Détail complet du bug et du
+//     correctif dans common/utils/phone.util.ts et
+//     transactions.service.ts (v4.18). Remplacée ici par
+//     normalizePhoneE164() dans register(), loginByPhone(),
+//     validateUser(), findAccount() et updateProfile().
 // =========================================================
 
 import {
@@ -62,6 +73,7 @@ import { UsersService }  from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService }   from '../mail/mail.service';
 import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
+import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v5.1
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
@@ -148,10 +160,12 @@ function normalizeEmail(email: string): string {
   return String(email ?? '').trim().toLowerCase();
 }
 
-function normalizePhone(phone?: string | null): string | null {
-  if (!phone) return null;
-  return String(phone).replace(/\s+/g, '');
-}
+// ✅ v5.1 : normalizePhone() locale SUPPRIMÉE — remplacée par
+// normalizePhoneE164() importée de ../common/utils/phone.util.
+// Cette version locale ne gérait pas la conversion "00" → "+", ce
+// qui a permis à deux comptes de stocker le même numéro réel sous
+// deux formats différents (voir phone.util.ts pour le détail complet
+// du bug et du correctif).
 
 function normalizeTenantCode(code?: string | null): string | null {
   const c = String(code ?? '').trim();
@@ -451,7 +465,7 @@ export class AuthService {
         include: { client: true, agency: true, wallets: { where: { isActive: true } } },
       });
     } else {
-      const phone = normalizePhone(identifier);
+      const phone = normalizePhoneE164(identifier); // ✅ v5.1
       if (phone) {
         user = await this.prisma.user.findFirst({
           where:   { phone },
@@ -524,7 +538,7 @@ export class AuthService {
     phone:      string,
     tenantCode?: string | null,
   ): Promise<{ userId: string; maskedPhone: string }> {
-    const normalized = normalizePhone(phone);
+    const normalized = normalizePhoneE164(phone); // ✅ v5.1
     if (!normalized) throw new BadRequestException('Numéro de téléphone invalide');
 
     let tenantClientId: number | null = null;
@@ -585,7 +599,14 @@ export class AuthService {
 
   async register(dto: RegisterDto, tenantFromHeader?: string | null) {
     const email = normalizeEmail(dto.email);
-    const phone = normalizePhone(dto.phone);
+    // ✅ v5.1 : normalizePhoneE164() centralisée — voir
+    // common/utils/phone.util.ts pour le détail du bug de collision
+    // de téléphone corrigé (deux comptes stockant le même numéro
+    // sous "+33..." et "0033..." respectivement).
+    const phone = normalizePhoneE164(dto.phone);
+    if (dto.phone && !phone) {
+      throw new BadRequestException('Numéro de téléphone invalide.');
+    }
 
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
     if (existingEmail) throw new ConflictException('Cet email est déjà utilisé.');
@@ -671,7 +692,7 @@ export class AuthService {
     if (isEmail) {
       user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(identifier) } });
     } else {
-      const phone = normalizePhone(identifier);
+      const phone = normalizePhoneE164(identifier); // ✅ v5.1
       if (phone) user = await this.prisma.user.findFirst({ where: { phone } });
     }
     if (!user) throw new NotFoundException('Compte introuvable');
@@ -876,7 +897,7 @@ export class AuthService {
      'loyaltyPoints','loyaltyTier','referralCode','wallets','client','agency']
       .forEach((k) => delete updateData[k]);
 
-    if (updateData.phone) updateData.phone = normalizePhone(updateData.phone);
+    if (updateData.phone) updateData.phone = normalizePhoneE164(updateData.phone); // ✅ v5.1
     if (updateData.country) {
       const newCurrency: CurrencyCode = getCurrencyFromCountry(updateData.country);
       updateData.primaryCurrency = newCurrency;

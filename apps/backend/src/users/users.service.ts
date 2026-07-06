@@ -1,6 +1,6 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.4
+// USERS SERVICE v4.5
 // ✅ v4.0-4.3 : findAll, findByEmail, findById, create, update,
 //               suspend, reactivate, softDelete, serializeForAdmin
 // ✅ v4.4 : Ajout findByPhoneInTenant()
@@ -19,13 +19,33 @@
 //   Retourne uniquement les champs publics nécessaires au formulaire
 //   d'envoi (id, firstName, lastName, phone, country, primaryCurrency).
 //   Jamais l'email, le mot de passe, le KYC ou les wallets.
+//
+// ✅ v4.5 : 🚨 FIX SÉCURITÉ CRITIQUE — collision de téléphone
+//   PROBLÈME RÉSOLU :
+//   La stratégie de suffixe de v4.4 (contains 7 derniers chiffres +
+//   endsWith en JS) est symétrique : si le numéro d'un compte A est
+//   un suffixe strict du numéro d'un compte B (typiquement une
+//   confusion "+33766736226" vs "0033766736226" — même numéro réel,
+//   préfixe international différent), LES DEUX comptes matchent la
+//   même recherche. Incident réel : un dépôt agent de 50 000 € a été
+//   crédité sur le mauvais compte à cause de cette ambiguïté.
+//
+//   CORRECTIF :
+//   findByPhoneInTenant() normalise maintenant l'entrée via
+//   normalizePhoneE164() (source unique — voir
+//   common/utils/phone.util.ts) et fait une correspondance EXACTE
+//   sur le champ `phone`. create() et update() normalisent et
+//   vérifient l'unicité du téléphone AVANT toute écriture, avec un
+//   message d'erreur clair au lieu de laisser deux comptes partager
+//   silencieusement le même numéro sous des formats différents.
 // =========================================================
 
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { CurrencyCode, KycLevel, Role, User } from '@prisma/client';
 import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePhoneE164 } from '../common/utils/phone.util';
 
 // =========================================================
 // HELPERS (inchangés depuis v4.2)
@@ -92,7 +112,7 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
 type UserExtraFields = {
   firstName?: string;
   lastName?: string;
-  phone?: string;
+  phone?: string | null; // ✅ v4.5 : nullable pour permettre l'effacement explicite
   gender?: string;
   jobTitle?: string;
   addressStreet?: string;
@@ -181,20 +201,32 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.4 — findByPhoneInTenant
+  // ✅ v4.5 — findByPhoneInTenant — SÉCURITÉ CRITIQUE
   //
-  // Recherche un utilisateur actif par numéro de téléphone
-  // dans le même tenant (clientId).
+  // 🚨 BUG CORRIGÉ (juillet 2026) :
+  //   La v4.4 faisait un matching par SUFFIXE (contains 7 derniers
+  //   chiffres + endsWith en JS) pour tolérer les formats +224 /
+  //   00224 / etc. Problème : cette logique est symétrique et ne
+  //   distingue pas "0033766736226" (Thierno, admin) de
+  //   "33766736226" / "+33766736226" (Alpha, client) — le second est
+  //   un suffixe strict du premier. Les DEUX comptes matchaient la
+  //   recherche, et .find() renvoyait le premier candidat retourné
+  //   par la requête (ordre non garanti, aucun ORDER BY) → un dépôt
+  //   destiné à Alpha a crédité le wallet de Thierno.
   //
-  // Stratégie de normalisation :
-  //   - On ne garde que les chiffres de l'input (ex: "775099993")
-  //   - On cherche en base les users dont le téléphone CONTIENT
-  //     cette séquence (covers +221775099993, 00221775099993…)
-  //   - On filtre ensuite en JS avec une vérification de suffixe
-  //     pour éviter les faux positifs (ex: "09993" dans "09993456")
+  // CORRECTIF :
+  //   On normalise l'entrée avec normalizePhoneE164() (même fonction
+  //   utilisée à l'écriture — voir users.create/update, auth.register)
+  //   puis on fait une correspondance EXACTE sur le champ `phone`
+  //   (colonne @unique). Plus aucune ambiguïté possible : soit le
+  //   numéro normalisé correspond à un seul utilisateur, soit à
+  //   aucun. Fini le "contains" + heuristique de suffixe.
   //
-  // Retourne uniquement les champs publics nécessaires au formulaire
-  // d'envoi (pas d'email, pas de wallets, pas de KYC).
+  // ⚠️ Cette méthode suppose que `phone` est stocké normalisé en
+  // base pour tous les utilisateurs. Si des comptes plus anciens
+  // n'ont pas encore été migrés, exécuter
+  // scripts/backfill-phone-normalized.ts avant de déployer ce
+  // correctif (voir ce script pour le détail).
   // ──────────────────────────────────────────────────────
   async findByPhoneInTenant(
     phone: string,
@@ -207,23 +239,15 @@ export class UsersService {
     country: string | null;
     primaryCurrency: string;
   } | null> {
-    // Ne garder que les chiffres (ex: "+221 77 509 9993" → "221775099993")
-    const digits = phone.replace(/\D/g, '');
+    const normalized = normalizePhoneE164(phone);
+    if (!normalized) return null;
 
-    if (digits.length < 6) return null;
-
-    // Requête large : Prisma ne supporte pas nativement LIKE avec suffix,
-    // on filtre donc côté JS sur les résultats (<20 résultats attendus)
-    const candidates = await this.prisma.user.findMany({
+    const match = await this.prisma.user.findFirst({
       where: {
         clientId,
         isActive:  true,
         deletedAt: null,
-        phone: {
-          not: null,
-          // Contient la séquence de chiffres (coverage large)
-          contains: digits.length >= 7 ? digits.slice(-7) : digits,
-        },
+        phone:     normalized, // ✅ correspondance EXACTE, plus de contains/suffix
       },
       select: {
         id:              true,
@@ -233,15 +257,6 @@ export class UsersService {
         country:         true,
         primaryCurrency: true,
       },
-      take: 10, // Sécurité : jamais plus de 10 candidats
-    });
-
-    // Vérification précise côté JS : le téléphone stocké doit se TERMINER
-    // par les chiffres saisis (évite les faux positifs entre numéros similaires)
-    const match = candidates.find((u) => {
-      if (!u.phone) return false;
-      const storedDigits = u.phone.replace(/\D/g, '');
-      return storedDigits.endsWith(digits) || digits.endsWith(storedDigits.slice(-digits.length));
     });
 
     if (!match) return null;
@@ -257,7 +272,10 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // create (inchangé v4.2)
+  // create — ✅ v4.5 : normalisation + vérification d'unicité du
+  // téléphone AVANT création (en plus de la contrainte @unique en
+  // base, qui reste le filet de sécurité final en cas de course
+  // entre deux requêtes concurrentes).
   // ──────────────────────────────────────────────────────
   async create(
     email: string,
@@ -268,36 +286,67 @@ export class UsersService {
   ): Promise<User> {
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(extra.country);
 
-    return this.prisma.$transaction(async (tx) => {
-      const user = await tx.user.create({
-        data: {
-          email: email.trim().toLowerCase(),
-          password: passwordHash,
-          role,
-          clientId,
-          primaryCurrency,
-          kycLevel: KycLevel.LEVEL_0,
-          referralCode: generateReferralCode(extra.firstName, extra.lastName),
-          ...extra,
-        },
-      });
+    const rawPhone = extra.phone ? String(extra.phone).trim() : '';
+    const normalizedPhone = rawPhone ? normalizePhoneE164(rawPhone) : null;
 
-      await tx.wallet.create({
-        data: {
-          userId:    user.id,
-          currency:  primaryCurrency,
-          balance:   0,
-          isDefault: true,
-          isActive:  true,
-        },
-      });
+    if (rawPhone && !normalizedPhone) {
+      throw new BadRequestException('Numéro de téléphone invalide.');
+    }
 
-      return user;
-    });
+    if (normalizedPhone) {
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone: normalizedPhone },
+        select: { id: true },
+      });
+      if (existingPhone) {
+        throw new ConflictException(
+          'Ce numéro de téléphone est déjà associé à un autre compte.',
+        );
+      }
+    }
+
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+          data: {
+            email: email.trim().toLowerCase(),
+            password: passwordHash,
+            role,
+            clientId,
+            primaryCurrency,
+            kycLevel: KycLevel.LEVEL_0,
+            referralCode: generateReferralCode(extra.firstName, extra.lastName),
+            ...extra,
+            phone: normalizedPhone, // ✅ toujours la version normalisée (ou null)
+          },
+        });
+
+        await tx.wallet.create({
+          data: {
+            userId:    user.id,
+            currency:  primaryCurrency,
+            balance:   0,
+            isDefault: true,
+            isActive:  true,
+          },
+        });
+
+        return user;
+      });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException(
+          'Cet email ou ce numéro de téléphone est déjà utilisé par un autre compte.',
+        );
+      }
+      throw e;
+    }
   }
 
   // ──────────────────────────────────────────────────────
-  // update (inchangé v4.2)
+  // update — ✅ v4.5 : normalisation + vérification d'unicité du
+  // téléphone AVANT mise à jour (exclut le user courant de la
+  // vérification de doublon), + filet de sécurité P2002.
   // ──────────────────────────────────────────────────────
   async update(
     id: string,
@@ -306,7 +355,42 @@ export class UsersService {
     if (data.country) {
       data.primaryCurrency = getCurrencyFromCountry(data.country);
     }
-    return this.prisma.user.update({ where: { id }, data });
+
+    if (data.phone !== undefined) {
+      const trimmedPhone = data.phone ? String(data.phone).trim() : '';
+
+      if (!trimmedPhone) {
+        data.phone = null; // autorise l'effacement explicite du numéro
+      } else {
+        const normalizedPhone = normalizePhoneE164(trimmedPhone);
+        if (!normalizedPhone) {
+          throw new BadRequestException('Numéro de téléphone invalide.');
+        }
+
+        const existingPhone = await this.prisma.user.findFirst({
+          where: { phone: normalizedPhone, id: { not: id } },
+          select: { id: true },
+        });
+        if (existingPhone) {
+          throw new ConflictException(
+            'Ce numéro de téléphone est déjà associé à un autre compte.',
+          );
+        }
+
+        data.phone = normalizedPhone;
+      }
+    }
+
+    try {
+      return await this.prisma.user.update({ where: { id }, data });
+    } catch (e: any) {
+      if (e?.code === 'P2002') {
+        throw new ConflictException(
+          'Cette valeur est déjà utilisée par un autre compte.',
+        );
+      }
+      throw e;
+    }
   }
 
   // ──────────────────────────────────────────────────────

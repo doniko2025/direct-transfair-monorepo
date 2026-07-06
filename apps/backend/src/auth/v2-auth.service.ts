@@ -1,6 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
-// AUTH SERVICE v2.1 — Sécurité production
+// AUTH SERVICE v2.2 — Sécurité production
 //
 // ✅ v2.0 : Toutes les corrections de sécurité originales conservées
 // ✅ v2.1 : CORRECTIFS RATE LIMIT
@@ -22,6 +22,16 @@
 //     register() en v1), on retourne success sans renvoyer.
 //     Le user utilise le code qu'il a déjà reçu dans sa boîte.
 //     Si OTP > 9 min (proche expiration), on en génère un nouveau.
+//
+// ✅ v2.2 : FIX 3 — 🚨 normalisation téléphone centralisée (sécurité)
+//     La fonction normalizePhone() locale de ce fichier gérait les
+//     espaces/tirets/parenthèses/points mais pas la conversion
+//     "00" → "+", ce qui a permis à deux comptes de stocker le même
+//     numéro réel sous deux formats différents et à un dépôt de
+//     50 000 € d'être crédité sur le mauvais compte. Détail complet
+//     dans common/utils/phone.util.ts et transactions.service.ts
+//     (v4.18). Remplacée ici par normalizePhoneE164() dans
+//     requestOtpPhone().
 // =========================================================
 
 import {
@@ -46,6 +56,7 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
 
 import type {
   LoginPasswordV2Dto,
@@ -132,10 +143,11 @@ function normalizeEmail(email: string): string {
   return (email ?? '').trim().toLowerCase();
 }
 
-function normalizePhone(phone: string): string | null {
-  if (!phone) return null;
-  return phone.trim().replace(/[\s\-().]/g, '');
-}
+// ✅ v2.2 : normalizePhone() locale SUPPRIMÉE — remplacée par
+// normalizePhoneE164() importée de ../common/utils/phone.util.
+// Cette version locale gérait les espaces/tirets/parenthèses/points
+// mais pas la conversion "00" → "+" (voir phone.util.ts pour le
+// détail complet du bug de collision de téléphone corrigé).
 
 function normalizeTenantCode(code?: string | null): string | null {
   const c = (code ?? '').trim().toUpperCase();
@@ -259,7 +271,7 @@ export class V2AuthService {
     dto: RequestOtpPhoneDto,
     tenantCode?: string | null,
   ): Promise<OtpRequestResult> {
-    const phone      = normalizePhone(dto.phone);
+    const phone      = normalizePhoneE164(dto.phone); // ✅ v2.2
     const normalized = normalizeTenantCode(tenantCode);
 
     if (!phone) throw new BadRequestException('Numéro de téléphone invalide');

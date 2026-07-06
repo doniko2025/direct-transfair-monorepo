@@ -1,6 +1,6 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-// TRANSACTIONS SERVICE v4.17 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.18 — Direct Transf'air
 // =========================================================
 // ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
 // ✅ v4.13-A : FIX acquireAdvisoryLock int32 signé (| 0)
@@ -30,6 +30,27 @@
 //   stratégie de correspondance (suffixe sur 7 chiffres) que
 //   findByPhoneInTenant(), pour un comportement cohérent entre le
 //   lookup et la validation réelle.
+//
+// ✅ v4.18 : 🚨 FIX SÉCURITÉ CRITIQUE — collision de téléphone
+//
+//   PROBLÈME RÉSOLU (v4.18) :
+//   Le v4.17 unifiait deposit() avec la stratégie de suffixe de
+//   findByPhoneInTenant() — mais cette stratégie est elle-même
+//   dangereuse : si deux comptes stockent LE MÊME numéro réel sous
+//   deux formats différents ("+33766736226" et "0033766736226" —
+//   confusion entre préfixe international "+" et "00"), l'un est un
+//   suffixe strict de l'autre et LES DEUX comptes matchent la même
+//   recherche. Incident réel : un dépôt agent de 50 000 € destiné à
+//   un client a été crédité par erreur sur le wallet d'un compte
+//   admin partageant le même numéro sous un format différent.
+//
+//   CORRECTIF : findClientByPhoneTolerant() normalise maintenant le
+//   numéro reçu via normalizePhoneE164() (source unique — voir
+//   common/utils/phone.util.ts) puis fait une correspondance EXACTE
+//   sur le champ `phone` (colonne @unique, normalisée à l'écriture —
+//   voir UsersService.create/update et AuthService.register). Un
+//   numéro normalisé ne peut plus correspondre qu'à un seul compte,
+//   ou à aucun.
 // =========================================================
 
 import {
@@ -55,6 +76,7 @@ import {
 import { PrismaService }  from '../prisma/prisma.service';
 import { RatesService }   from '../rates/rates.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { normalizePhoneE164 } from '../common/utils/phone.util';
 import {
   CreateTransactionDto,
   CreateDepositDto,
@@ -174,39 +196,48 @@ export class TransactionsService {
     return cloned;
   }
 
-  // ── Recherche client par téléphone (tolérante au format) ──
-  // ✅ v4.17 — même stratégie que UsersService.findByPhoneInTenant() :
-  // contains() sur les 7 derniers chiffres pour la requête DB (large),
-  // puis vérification de suffixe en JS pour éviter les faux positifs.
-  // Évite le piège d'un contains() sur la chaîne complète, qui échoue
-  // dès que le format stocké diffère du format envoyé (indicatif, 0
-  // initial, etc.) alors qu'il s'agit du même numéro.
+  // ── Recherche client par téléphone — ✅ v4.18 SÉCURITÉ CRITIQUE ──
+  //
+  // 🚨 BUG CORRIGÉ (juillet 2026) : la v4.17 introduisait volontairement
+  // la MÊME logique de suffixe que findByPhoneInTenant() pour unifier
+  // le comportement du lookup live et de la validation. Sauf que cette
+  // logique de suffixe est elle-même dangereuse : deux comptes dont les
+  // numéros stockés sont l'un le suffixe de l'autre (typiquement
+  // "0033766736226" vs "+33766736226"/"33766736226", confusion 00/+)
+  // matchent TOUS LES DEUX la même recherche. Résultat vécu en prod :
+  // un dépôt agent de 50 000 EUR destiné à un client (Alpha DIALLO,
+  // wallet à 0) a été crédité sur le wallet d'un compte ADMIN
+  // (Thierno DIALLO) qui partageait "le même" numéro sous un format
+  // différent. Aucune erreur, aucun avertissement — juste le mauvais
+  // compte crédité.
+  //
+  // CORRECTIF DÉFINITIF : on normalise le numéro reçu avec
+  // normalizePhoneE164() (source unique — voir
+  // common/utils/phone.util.ts) et on fait une correspondance EXACTE
+  // sur le champ `phone`, qui est @unique en base et normalisé à
+  // l'écriture (voir UsersService.create/update, AuthService.register).
+  // Un numéro normalisé ne peut matcher qu'UN SEUL compte, ou aucun.
+  //
+  // (Le nom de la méthode reste "Tolerant" — elle tolère toujours les
+  // différents FORMATS de saisie en entrée grâce à normalizePhoneE164,
+  // ce qui a changé c'est qu'elle ne tolère plus l'AMBIGUÏTÉ.)
+  // ──────────────────────────────────────────────────────────────
   private async findClientByPhoneTolerant(
     rawPhone: string,
     clientId: number,
   ) {
-    const digits = (rawPhone ?? '').replace(/\D/g, '');
-    if (digits.length < 6) return null;
+    const normalized = normalizePhoneE164(rawPhone);
+    if (!normalized) return null;
 
-    const candidates = await this.prisma.user.findMany({
+    return this.prisma.user.findFirst({
       where: {
         clientId,
         isActive: true,
         deletedAt: null,
-        phone: {
-          not: null,
-          contains: digits.length >= 7 ? digits.slice(-7) : digits,
-        },
+        phone: normalized, // ✅ correspondance EXACTE, plus de contains/suffix
       },
       include: { wallets: { where: { isActive: true } } },
-      take: 10,
     });
-
-    return candidates.find((u) => {
-      if (!u.phone) return false;
-      const storedDigits = u.phone.replace(/\D/g, '');
-      return storedDigits.endsWith(digits) || digits.endsWith(storedDigits.slice(-digits.length));
-    }) ?? null;
   }
 
   // ── Advisory lock key ─────────────────────────────────
