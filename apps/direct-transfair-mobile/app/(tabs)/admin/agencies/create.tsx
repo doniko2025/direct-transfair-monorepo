@@ -1,8 +1,25 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/create.tsx
 // =========================================================
-// AGENCY CREATE v5.1 — Direct Transf'air
-// ✅ FIX : type "PARTNER" / "SUBSIDIARY" envoyé au backend
-// ✅ FIX : bouton création remonté (paddingBottom nav)
+// AGENCY CREATE v5.2 — Direct Transf'air
+// ✅ v5.1 : type "PARTNER" / "SUBSIDIARY" envoyé au backend
+//          bouton création remonté (paddingBottom nav)
+//
+// ✅ v5.2 : 2 correctifs UX téléphone — harmonisés avec edit.tsx v2.1
+//   (edit.tsx a le bug visible du doublon d'indicatif car il précharge
+//   un numéro existant ; create.tsx pars toujours d'un champ vide donc
+//   n'a jamais eu ce bug précis, mais partage exactement les 2 mêmes
+//   soucis résiduels ci-dessous, corrigés ici pour rester cohérent.)
+//
+//   FIX 1 — Nombre de chiffres non adapté au pays
+//     Ajout de la même table de longueurs nationales par indicatif que
+//     edit.tsx (partagée depuis data/phoneRules.ts — une seule source
+//     de vérité pour les deux écrans) : limite la saisie via maxLength,
+//     affiche un indice sous le champ, bloque l'envoi si hors plage.
+//
+//   FIX 2 — Cadre rectangulaire orange au focus (web)
+//     Même correctif que edit.tsx : outlineStyle: 'none' (web
+//     uniquement) + indicateur de focus "maison" sur le champ
+//     téléphone pour ne pas perdre le retour visuel.
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -18,6 +35,7 @@ import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 import { countriesList, CountryData } from "../../../../data/countries";
 import { citiesByCountry } from "../../../../data/cities";
+import { getPhoneDigitRange, phoneRangeHint } from "../../../../data/phoneRules";
 
 const T = {
   pageBg:   "#F2F4F8",
@@ -104,8 +122,15 @@ const fS = StyleSheet.create({
   label:    { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   box:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, overflow: "hidden" },
   disabled: { backgroundColor: T.borderLt, opacity: 0.7 },
-  input:    { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, fontWeight: "600" },
+  // ✅ v5.2 FIX 2 : supprime l'anneau de focus natif du navigateur (web
+  // uniquement — ignoré sur iOS/Android), remplacé par la bordure
+  // bleue déjà gérée par le state `focused` ci-dessus.
+  input:    {
+    flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   eyeBtn:   { padding: 12 },
+  hint:     { fontSize: 10, color: T.inkMuted, fontWeight: "600", marginTop: -8, marginBottom: 14 },
 });
 
 function SelectButton({ label, value, onPress, required }: { label: string; value: string; onPress: () => void; required?: boolean }) {
@@ -197,7 +222,11 @@ const pmS = StyleSheet.create({
   title:   { color: T.ink, fontSize: 18, fontWeight: "700" },
   closeBtn:{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 10, margin: 16, backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, height: 44 },
-  searchInput: { flex: 1, fontSize: 14, color: T.ink, fontWeight: "600" },
+  // ✅ v5.2 FIX 2 : même correctif d'anneau de focus natif que fS.input
+  searchInput: {
+    flex: 1, fontSize: 14, color: T.ink, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   item:    { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
   empty:   { color: T.inkMuted, textAlign: "center", padding: 24, fontWeight: "600" },
 });
@@ -273,6 +302,7 @@ export default function CreateAgencyScreen() {
   const [managerFirstName, setManagerFirstName] = useState("");
   const [managerLastName,  setManagerLastName]  = useState("");
   const [phone,            setPhone]            = useState("");
+  const [phoneFocused,     setPhoneFocused]     = useState(false);
   const [address,          setAddress]          = useState("");
   const [isPartner,        setIsPartner]        = useState(false);
   const [submitting,       setSubmitting]       = useState(false);
@@ -307,14 +337,35 @@ export default function CreateAgencyScreen() {
   const agencyCurrency = (selectedCountry as any).currency ?? COUNTRY_CURRENCY_MAP[countryCode] ?? "XOF";
   const availableCities = (citiesByCountry as any)[selectedCountry.name] ?? [];
 
+  // ✅ v5.2 FIX 1 : plage de chiffres attendue pour l'indicatif actuel
+  // (voir data/phoneRules.ts — partagé avec edit.tsx)
+  const phoneRange = getPhoneDigitRange(selectedPhoneCode.dialCode);
+
   const handleCreate = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !managerFirstName.trim() || !managerLastName.trim() || !selectedCity) {
       Alert.alert("Champs manquants", "Tous les champs marqués * sont obligatoires.");
       return;
     }
+
+    const nationalDigits = phone.replace(/\D/g, "");
+
+    // ✅ v5.2 FIX 1 : validation souple adaptée au pays choisi
+    // (ignorée si le champ est vide, le téléphone reste optionnel ici)
+    if (nationalDigits && (nationalDigits.length < phoneRange.min || nationalDigits.length > phoneRange.max)) {
+      Alert.alert(
+        "Numéro invalide",
+        `Le numéro doit contenir ${phoneRangeHint(phoneRange)} pour l'indicatif ${selectedPhoneCode.dialCode}.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const fullPhone = `${selectedPhoneCode.dialCode}${phone.trim()}`;
+      const dialDigits = (selectedPhoneCode.dialCode ?? "").replace(/\D/g, "");
+      // ✅ Reconstruction à partir des chiffres seuls (plus robuste que
+      // l'ancienne concaténation de chaînes, qui aurait pu embarquer
+      // des espaces tapés au clavier physique sur le champ national).
+      const fullPhone = nationalDigits ? `+${dialDigits}${nationalDigits}` : "";
       const autoCode  = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
 
       const payload = {
@@ -417,7 +468,7 @@ export default function CreateAgencyScreen() {
 
                 {/* Indicatif + numéro */}
                 <Text style={[fS.label, { fontFamily: T.font.sans, marginBottom: 6 }]}>TÉLÉPHONE</Text>
-                <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
+                <View style={{ flexDirection: "row", gap: 10, marginBottom: 6 }}>
                   <TouchableOpacity
                     style={[sbS.btn, { width: 110 }]}
                     onPress={() => setShowPhoneCodeModal(true)}
@@ -427,15 +478,19 @@ export default function CreateAgencyScreen() {
                     </Text>
                     <Ionicons name="chevron-down" size={13} color={T.sky} />
                   </TouchableOpacity>
-                  <View style={[fS.box, { flex: 1 }]}>
+                  <View style={[fS.box, { flex: 1 }, phoneFocused && { borderColor: T.skyMd, backgroundColor: T.skyLt + "40" }]}>
                     <TextInput
                       style={[fS.input, { fontFamily: T.font.sans }]}
-                      value={phone} onChangeText={setPhone}
+                      value={phone} onChangeText={(v) => setPhone(v.replace(/\D/g, ""))}
                       placeholder="620 000 000" placeholderTextColor={T.inkMuted}
                       keyboardType="phone-pad"
+                      maxLength={phoneRange.max}
+                      onFocus={() => setPhoneFocused(true)} onBlur={() => setPhoneFocused(false)}
                     />
                   </View>
                 </View>
+                {/* ✅ v5.2 FIX 1 : repère du format attendu pour l'indicatif choisi */}
+                <Text style={[fS.hint, { fontFamily: T.font.sans }]}>{phoneRangeHint(phoneRange)}</Text>
               </View>
 
               {/* Localisation */}
@@ -470,7 +525,7 @@ export default function CreateAgencyScreen() {
                 </View>
               </View>
 
-              {/* Bouton créer — ✅ padding bottom suffisant pour passer au-dessus de la tab bar */}
+              {/* Bouton créer — padding bottom suffisant pour passer au-dessus de la tab bar */}
               <TouchableOpacity
                 style={[s.createBtn, submitting && { opacity: 0.65 }]}
                 onPress={handleCreate}

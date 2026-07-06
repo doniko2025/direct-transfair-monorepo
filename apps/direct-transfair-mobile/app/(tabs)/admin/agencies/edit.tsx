@@ -1,10 +1,42 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agencies/edit.tsx
 // =========================================================
-// AGENCY EDIT v2.0 — Direct Transf'air
-// ✅ Tous les champs du formulaire de création présents
-// ✅ Type agence (Filiale / Partenaire) modifiable
-// ✅ Pays + devise auto + indicatif téléphonique
-// ✅ Thème cohérent avec create.tsx
+// AGENCY EDIT v2.1 — Direct Transf'air
+// ✅ v2.0 : Tous les champs du formulaire de création présents
+//          Type agence (Filiale / Partenaire) modifiable
+//          Pays + devise auto + indicatif téléphonique
+//          Thème cohérent avec create.tsx
+//
+// ✅ v2.1 : 🐛 3 correctifs UX sur le champ téléphone
+//
+//   FIX 1 — Indicatif affiché en double
+//     PROBLÈME : fetchDetails() plaçait data.phone (numéro COMPLET
+//     venant du backend, ex. "33751244722") tel quel dans le champ
+//     texte, alors que le sélecteur d'indicatif à côté affiche déjà
+//     "FR 33". Résultat à l'écran : "FR 33" + "33751244722" —
+//     l'indicatif apparaît deux fois.
+//     CORRECTIF : stripDialCodeIfPresent() (data/phoneRules.ts)
+//     retire l'indicatif du numéro chargé avant de l'afficher, en ne
+//     gardant que le numéro national dans le champ — comme dans
+//     create.tsx où le champ ne contient jamais l'indicatif.
+//
+//   FIX 2 — Nombre de chiffres non adapté au pays
+//     Le champ acceptait n'importe quelle longueur de saisie. Ajout
+//     d'une table de longueurs nationales par indicatif
+//     (data/phoneRules.ts, ex : 9-10 chiffres pour la France, 8 pour
+//     le Mali, 10 pour la Côte d'Ivoire/Bénin depuis leurs
+//     renumérotations respectives). Limite la saisie via maxLength,
+//     affiche un indice sous le champ, et bloque l'enregistrement
+//     avec un message clair si la longueur est hors plage.
+//
+//   FIX 3 — Cadre rectangulaire orange au focus (web)
+//     React Native Web laisse le navigateur dessiner son propre
+//     contour de focus par défaut sur les <TextInput> (souvent teinté
+//     par l'accent système de l'utilisateur — d'où le rectangle
+//     orange constaté, incohérent avec la charte bleue de l'app).
+//     Corrigé via outlineStyle: 'none' (web uniquement, aucun impact
+//     iOS/Android) + un indicateur de focus "maison" (bordure bleue)
+//     ajouté sur le champ téléphone pour ne pas perdre le retour
+//     visuel au focus.
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -19,6 +51,7 @@ import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
 import { countriesList, CountryData } from "../../../../data/countries";
 import { citiesByCountry } from "../../../../data/cities";
+import { getPhoneDigitRange, stripDialCodeIfPresent, phoneRangeHint } from "../../../../data/phoneRules";
 
 const T = {
   pageBg:   "#F2F4F8",
@@ -104,8 +137,16 @@ const fS = StyleSheet.create({
   label:    { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   box:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, overflow: "hidden" },
   disabled: { backgroundColor: T.borderLt, opacity: 0.7 },
-  input:    { flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, fontWeight: "600" },
+  // ✅ v2.1 FIX 3 : supprime l'anneau de focus natif du navigateur (web
+  // uniquement — ignoré sur iOS/Android). Le retour visuel au focus
+  // reste géré par le changement de bordure/fond du state `focused`
+  // (et `phoneFocused` pour le champ téléphone, plus bas).
+  input:    {
+    flex: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.ink, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   eyeBtn:   { padding: 12 },
+  hint:     { fontSize: 10, color: T.inkMuted, fontWeight: "600", marginTop: -8, marginBottom: 14 },
 });
 
 // ─── SelectButton ─────────────────────────────────────────
@@ -200,7 +241,11 @@ const pmS = StyleSheet.create({
   title:   { color: T.ink, fontSize: 18, fontWeight: "700" },
   closeBtn:{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.borderLt, justifyContent: "center", alignItems: "center" },
   searchBox: { flexDirection: "row", alignItems: "center", gap: 10, margin: 16, backgroundColor: T.borderLt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, height: 44 },
-  searchInput: { flex: 1, fontSize: 14, color: T.ink, fontWeight: "600" },
+  // ✅ v2.1 FIX 3 : même correctif d'anneau de focus natif que fS.input
+  searchInput: {
+    flex: 1, fontSize: 14, color: T.ink, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   item:    { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.borderLt },
   empty:   { color: T.inkMuted, textAlign: "center", padding: 24, fontWeight: "600" },
 });
@@ -279,6 +324,7 @@ export default function EditAgencyScreen() {
   const [managerFirstName, setManagerFirstName] = useState("");
   const [managerLastName,  setManagerLastName]  = useState("");
   const [phone,            setPhone]            = useState("");
+  const [phoneFocused,     setPhoneFocused]     = useState(false);
 
   // Localisation
   const [address, setAddress] = useState("");
@@ -300,6 +346,10 @@ export default function EditAgencyScreen() {
   const agencyCurrency = (selectedCountry as any).currency ?? COUNTRY_CURRENCY_MAP[countryCode] ?? "XOF";
   const availableCities = (citiesByCountry as any)[selectedCountry.name] ?? [];
 
+  // ✅ v2.1 FIX 2 : plage de chiffres attendue pour l'indicatif actuel
+  // (voir data/phoneRules.ts — recalculée à chaque changement d'indicatif)
+  const phoneRange = getPhoneDigitRange(selectedPhoneCode.dialCode);
+
   useEffect(() => {
     if (id) void fetchDetails();
   }, [id]);
@@ -311,7 +361,6 @@ export default function EditAgencyScreen() {
       setName(data.name ?? "");
       setCode((data as any).code ?? "");
       setEmail(data.email ?? "");
-      setPhone(data.phone ?? "");
       setAddress(data.address ?? "");
       setCity(data.city ?? "");
 
@@ -330,13 +379,28 @@ export default function EditAgencyScreen() {
         setManagerLastName(parts.slice(1).join(" ") ?? "");
       }
 
-      // Pays
+      // Pays — déterminé AVANT le téléphone pour pouvoir retirer
+      // correctement l'indicatif déjà présent dans data.phone (FIX 1)
+      let matchedCountry: CountryData | null = null;
       if (data.country) {
         const found = countriesList.find(
           (c) => c.code?.toUpperCase() === data.country?.toUpperCase() || c.name === data.country
         );
-        if (found) { setSelectedCountry(found); setSelectedPhoneCode(found); }
+        if (found) {
+          matchedCountry = found;
+          setSelectedCountry(found);
+          setSelectedPhoneCode(found);
+        }
       }
+
+      // ✅ v2.1 FIX 1 : l'indicatif s'affichait deux fois (une fois dans
+      // le sélecteur "FR 33", une fois au début du champ texte
+      // "33751244722") car data.phone renvoyé par le backend contient
+      // déjà l'indicatif complet, et on le recopiait tel quel dans le
+      // champ censé ne contenir que le numéro national (comme dans
+      // create.tsx). On retire maintenant l'indicatif avant affichage.
+      const dialCodeForStrip = matchedCountry?.dialCode ?? selectedPhoneCode.dialCode;
+      setPhone(stripDialCodeIfPresent(data.phone, dialCodeForStrip));
 
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch {
@@ -352,11 +416,30 @@ export default function EditAgencyScreen() {
       Alert.alert("Champs requis", "Le nom et l'email sont obligatoires.");
       return;
     }
+
+    const nationalDigits = phone.replace(/\D/g, "");
+    const dialDigits     = (selectedPhoneCode.dialCode ?? "").replace(/\D/g, "");
+
+    // ✅ v2.1 FIX 2 : validation souple adaptée au pays choisi
+    // (ex : 9-10 chiffres pour la France, 8 pour le Mali, 10 pour la
+    // Côte d'Ivoire…). Ignorée si le champ est vide (téléphone optionnel).
+    if (nationalDigits && (nationalDigits.length < phoneRange.min || nationalDigits.length > phoneRange.max)) {
+      Alert.alert(
+        "Numéro invalide",
+        `Le numéro doit contenir ${phoneRangeHint(phoneRange)} pour l'indicatif ${selectedPhoneCode.dialCode}.`,
+      );
+      return;
+    }
+
     setSaving(true);
     try {
-      const fullPhone = phone.startsWith(selectedPhoneCode.dialCode ?? "")
-        ? phone
-        : `${selectedPhoneCode.dialCode}${phone.trim()}`;
+      // ✅ v2.1 FIX 1 : on reconstruit toujours l'indicatif + le numéro
+      // national à partir de zéro, plutôt que l'ancien
+      // `phone.startsWith(dialCode) ? phone : dialCode + phone` qui
+      // laissait passer un indicatif déjà présent dans `phone` (d'où le
+      // doublon visible à l'écran) et qui pouvait produire un numéro
+      // composé uniquement de l'indicatif si le champ était vide.
+      const fullPhone = nationalDigits ? `+${dialDigits}${nationalDigits}` : "";
 
       await api.updateAgency(id as string, {
         name:            name.trim(),
@@ -457,7 +540,7 @@ export default function EditAgencyScreen() {
               </View>
 
               <Text style={[fS.label, { fontFamily: T.font.sans, marginBottom: 6 }]}>TÉLÉPHONE</Text>
-              <View style={{ flexDirection: "row", gap: 10, marginBottom: 14 }}>
+              <View style={{ flexDirection: "row", gap: 10, marginBottom: 6 }}>
                 <TouchableOpacity
                   style={[sbS.btn, { width: 110 }]}
                   onPress={() => setShowPhoneCodeModal(true)}
@@ -467,15 +550,19 @@ export default function EditAgencyScreen() {
                   </Text>
                   <Ionicons name="chevron-down" size={13} color={T.sky} />
                 </TouchableOpacity>
-                <View style={[fS.box, { flex: 1 }]}>
+                <View style={[fS.box, { flex: 1 }, phoneFocused && { borderColor: T.skyMd, backgroundColor: T.skyLt + "40" }]}>
                   <TextInput
                     style={[fS.input, { fontFamily: T.font.sans }]}
-                    value={phone} onChangeText={setPhone}
+                    value={phone} onChangeText={(v) => setPhone(v.replace(/\D/g, ""))}
                     placeholder="620 000 000" placeholderTextColor={T.inkMuted}
                     keyboardType="phone-pad"
+                    maxLength={phoneRange.max}
+                    onFocus={() => setPhoneFocused(true)} onBlur={() => setPhoneFocused(false)}
                   />
                 </View>
               </View>
+              {/* ✅ v2.1 FIX 2 : repère du format attendu pour l'indicatif choisi */}
+              <Text style={[fS.hint, { fontFamily: T.font.sans }]}>{phoneRangeHint(phoneRange)}</Text>
             </View>
 
             {/* Localisation */}
