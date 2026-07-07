@@ -38,10 +38,21 @@
 //   vérifient l'unicité du téléphone AVANT toute écriture, avec un
 //   message d'erreur clair au lieu de laisser deux comptes partager
 //   silencieusement le même numéro sous des formats différents.
+//
+// ✅ v4.6 : update() accepte maintenant un client Prisma transactionnel
+//   optionnel (tx), pour pouvoir être appelé DEPUIS la transaction
+//   d'un autre service (ex: AgenciesService.update() synchronisant le
+//   téléphone du responsable d'agence) sans casser l'atomicité. Sans
+//   ça, un appel à ce service depuis un autre `$transaction` utilise
+//   une connexion Prisma différente : si l'étape suivante de la
+//   transaction appelante échoue, la modification faite ici via
+//   users.service ne serait PAS annulée avec le reste.
+//   Comportement inchangé pour tous les appels existants (le
+//   paramètre est optionnel, retombe sur `this.prisma` par défaut).
 // =========================================================
 
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { CurrencyCode, KycLevel, Role, User } from '@prisma/client';
+import { CurrencyCode, KycLevel, Prisma, Role, User } from '@prisma/client';
 import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -125,6 +136,9 @@ type UserExtraFields = {
   mobileMoneyOperator?: string;
   mobileMoneyNumber?: string;
 };
+
+// ✅ v4.6 : client Prisma générique (PrismaService ou TransactionClient)
+type Db = PrismaService | Prisma.TransactionClient;
 
 // =========================================================
 // SERVICE
@@ -347,11 +361,19 @@ export class UsersService {
   // update — ✅ v4.5 : normalisation + vérification d'unicité du
   // téléphone AVANT mise à jour (exclut le user courant de la
   // vérification de doublon), + filet de sécurité P2002.
+  //
+  // ✅ v4.6 : accepte un client transactionnel `tx` optionnel — voir
+  // le bandeau de version en tête de fichier. Quand `tx` est fourni,
+  // TOUTES les requêtes (vérification d'unicité + écriture) passent
+  // par lui, pour rester atomique avec la transaction appelante.
   // ──────────────────────────────────────────────────────
   async update(
     id: string,
     data: Partial<UserExtraFields & { primaryCurrency?: CurrencyCode }>,
+    tx?: Prisma.TransactionClient,
   ) {
+    const db: Db = tx ?? this.prisma;
+
     if (data.country) {
       data.primaryCurrency = getCurrencyFromCountry(data.country);
     }
@@ -367,7 +389,7 @@ export class UsersService {
           throw new BadRequestException('Numéro de téléphone invalide.');
         }
 
-        const existingPhone = await this.prisma.user.findFirst({
+        const existingPhone = await db.user.findFirst({
           where: { phone: normalizedPhone, id: { not: id } },
           select: { id: true },
         });
@@ -382,7 +404,7 @@ export class UsersService {
     }
 
     try {
-      return await this.prisma.user.update({ where: { id }, data });
+      return await db.user.update({ where: { id }, data });
     } catch (e: any) {
       if (e?.code === 'P2002') {
         throw new ConflictException(

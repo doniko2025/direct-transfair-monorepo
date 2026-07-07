@@ -685,6 +685,18 @@ model Agency {
   agents  User[]   @relation("AgencyAgents")
   wallets Wallet[] // Un wallet par devise supportée
 
+  // ✅ v5.1 : Responsable désigné de l'agence.
+  // AVANT : aucune façon fiable de savoir "qui gère cette agence" —
+  // le frontend devinait via le premier agent d'une liste non triée
+  // (agents: User[] sans ORDER BY garanti), et le backend n'avait
+  // aucune notion de responsable du tout. Résultat concret : modifier
+  // le téléphone/nom du "RESPONSABLE" dans l'app ne se répercutait
+  // jamais sur le compte User réel de l'agent.
+  // Un manager ne gère qu'une seule agence à la fois (cohérent avec
+  // User.agencyId, qui limite déjà un user à une agence).
+  managerId String? @unique
+  manager   User?   @relation("AgencyManager", fields: [managerId], references: [id])
+
   deletedAt DateTime? // Soft delete
 
   createdAt DateTime @default(now())
@@ -793,6 +805,10 @@ model User {
 
   agencyId String?
   agency   Agency? @relation("AgencyAgents", fields: [agencyId], references: [id])
+
+  // ✅ v5.1 : pointeur inverse — si ce user est LE responsable désigné
+  // d'une agence (voir Agency.managerId ci-dessus)
+  managedAgency Agency? @relation("AgencyManager")
 
   // Relations financières
   wallets              Wallet[]

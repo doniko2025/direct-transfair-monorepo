@@ -1,7 +1,40 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.2
-// ✅ FIX: CurrencyCode enum cast (migration v4.1)
+// AGENCIES SERVICE v4.3
+// ✅ v4.2 : FIX CurrencyCode enum cast (migration v4.1)
+//
+// ✅ v4.3 : 🐛 FIX — modification du responsable sans effet
+//
+//   PROBLÈME RÉSOLU :
+//   "Modifier l'Agence" → section RESPONSABLE (téléphone, prénom,
+//   nom) mettait à jour uniquement la table Agency. Le compte User
+//   de l'agent lié n'était JAMAIS synchronisé après la création
+//   initiale (où les deux étaient bien écrits ensemble dans
+//   create()). Résultat : un admin change le téléphone via l'écran
+//   "Modifier l'Agence", ça a l'air de marcher (Agency.phone est bien
+//   à jour), mais le compte réel de l'agent (login, profil affiché
+//   dans l'app, etc.) garde son ancien numéro partout ailleurs.
+//
+//   CORRECTIF :
+//   - Ajout de Agency.managerId (schema.prisma v5.1) : désigne
+//     explicitement LE responsable, au lieu de deviner via le
+//     "premier agent" d'une liste non triée (même famille de bug que
+//     la collision de téléphone : une ambiguïté d'identité qui finit
+//     par tromper une logique métier).
+//   - update() résout maintenant explicitement ce responsable
+//     (auto-résolution + auto-réparation pour les agences créées
+//     avant l'introduction de managerId), puis répercute téléphone
+//     et nom sur SON compte User via UsersService.update() — réutilise
+//     la même normalisation + vérification d'unicité du téléphone que
+//     partout ailleurs dans l'app, plutôt que de la dupliquer.
+//   - Le tout dans LA MÊME transaction Prisma que la mise à jour de
+//     l'agence : si le nouveau téléphone est déjà pris par un autre
+//     compte, TOUT est annulé ensemble (rien n'est à moitié appliqué).
+//   - Email : ciblait auparavant TOUS les agents (role: AGENT) via
+//     updateMany — cassait dès qu'une agence avait 2+ agents, car
+//     `email` est @unique sur User (impossible d'assigner la même
+//     valeur à 2 lignes). Ciblé maintenant sur le seul responsable
+//     résolu ci-dessus.
 // =========================================================
 
 import {
@@ -15,6 +48,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { UsersService } from '../users/users.service';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
 
@@ -50,13 +84,29 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
   return `${prefix}${suffix}`;
 }
 
+// ✅ v4.3 — même règle de résolution "responsable" que le frontend
+// (edit.tsx / details.tsx) : premier agent AGENT/COMPANY_ADMIN par
+// ordre de création, à défaut le tout premier agent restant. Utilisée
+// uniquement en filet de secours quand managerId n'est pas encore
+// renseigné (agences créées avant l'introduction de ce champ).
+function resolveManagerFallback<T extends { role: Role }>(agents: T[]): T | null {
+  return (
+    agents.find((a) => a.role === Role.COMPANY_ADMIN || a.role === Role.AGENT) ??
+    agents[0] ??
+    null
+  );
+}
+
 // =========================================================
 // SERVICE
 // =========================================================
 
 @Injectable()
 export class AgenciesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly usersService: UsersService,
+  ) {}
 
   // ========================================================
   // CRÉATION
@@ -98,7 +148,7 @@ export class AgenciesService {
           primaryCurrency,
           isActive: true,
           clientId,
-          // ✅ FIX : type agence persisté
+          // ✅ FIX: type agence persisté
           type: (dto.type === 'PARTNER' ? 'PARTNER' : 'SUBSIDIARY') as any,
         },
       });
@@ -143,7 +193,20 @@ export class AgenciesService {
         },
       });
 
-      return { agency: this.serializeAgency(agency), agent: this.serializeUser(agent) };
+      // ✅ v4.3 — Désigne explicitement cet agent comme responsable de
+      // l'agence (Agency.managerId). Ordre obligatoire : l'agence doit
+      // déjà exister pour créer l'agent (agencyId), et l'agent doit
+      // déjà exister pour pointer managerId dessus — d'où cette mise
+      // à jour en 3ᵉ étape plutôt qu'un champ direct à la création.
+      const updatedAgency = await tx.agency.update({
+        where: { id: agency.id },
+        data: { managerId: agent.id },
+      });
+
+      return {
+        agency: this.serializeAgency(updatedAgency),
+        agent: this.serializeUser(agent),
+      };
     });
   }
 
@@ -152,7 +215,16 @@ export class AgenciesService {
   // ========================================================
 
   async update(id: string, clientId: number, dto: UpdateAgencyDto) {
-    const agency = await this.prisma.agency.findFirst({ where: { id, clientId } });
+    const agency = await this.prisma.agency.findFirst({
+      where: { id, clientId },
+      include: {
+        manager: true,
+        agents: {
+          where:   { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
     if (!agency) throw new NotFoundException('Agence introuvable');
 
     return this.prisma.$transaction(async (tx) => {
@@ -162,7 +234,7 @@ export class AgenciesService {
         address: dto.address,
         phone: dto.phone,
         code: dto.code,
-        // ✅ FIX : type agence mis à jour
+        // ✅ FIX: type agence mis à jour
         ...(dto.type !== undefined && {
           type: dto.type === 'PARTNER' ? 'PARTNER' : 'SUBSIDIARY',
         }),
@@ -178,22 +250,68 @@ export class AgenciesService {
         updateData.isActive = (dto as any).isActive;
       }
 
+      // ✅ v4.3 — Résolution du responsable de l'agence.
+      // Si managerId n'est pas encore renseigné (agence créée avant
+      // l'introduction de ce champ), on retombe sur la même règle que
+      // le frontend utilise déjà pour pré-remplir le formulaire, et on
+      // fixe managerId dès maintenant pour ne plus jamais avoir à
+      // deviner la prochaine fois (auto-réparation, une seule fois).
+      let manager = agency.manager;
+      if (!manager) {
+        manager = resolveManagerFallback(agency.agents);
+        if (manager) {
+          updateData.managerId = manager.id;
+        }
+      }
+
       Object.keys(updateData).forEach((k) => {
         if (updateData[k] === undefined) delete updateData[k];
       });
 
       const updatedAgency = await tx.agency.update({ where: { id }, data: updateData });
 
-      if (dto.email && dto.email !== agency.email) {
+      // ✅ v4.3 — Synchronisation téléphone + nom du responsable vers
+      // son compte User. Réutilise UsersService.update() — même
+      // normalisation + vérification d'unicité du téléphone que
+      // partout ailleurs (voir le correctif de collision de
+      // téléphone) — en lui passant `tx` pour rester dans LA MÊME
+      // transaction : si le numéro est déjà pris par un autre compte,
+      // tout (y compris les changements sur l'agence) est annulé
+      // ensemble plutôt que de laisser un état à moitié appliqué.
+      if (manager) {
+        const managerUpdate: Record<string, unknown> = {};
+
+        if (dto.phone !== undefined) {
+          managerUpdate.phone = dto.phone;
+        }
+
+        if (dto.managerName !== undefined) {
+          const parts = safeTrim(dto.managerName).split(' ').filter(Boolean);
+          if (parts.length > 0) {
+            managerUpdate.firstName = parts[0];
+            managerUpdate.lastName = parts.slice(1).join(' ') || manager.lastName;
+          }
+        }
+
+        if (Object.keys(managerUpdate).length > 0) {
+          await this.usersService.update(manager.id, managerUpdate, tx);
+        }
+      }
+
+      // ── Email : login du responsable ────────────────────────
+      // ✅ FIX v4.3 : ciblait auparavant TOUS les agents (role: AGENT)
+      // via updateMany — cassait dès qu'une agence avait 2+ agents,
+      // `email` étant @unique sur User (impossible d'assigner la même
+      // valeur à 2 lignes en une seule requête). Ciblé maintenant sur
+      // le seul responsable résolu ci-dessus.
+      if (dto.email && dto.email !== agency.email && manager) {
         const newEmail = safeTrim(dto.email).toLowerCase();
-        const exists = await tx.user.findUnique({ where: { email: newEmail } });
+        const exists = await tx.user.findFirst({
+          where: { email: newEmail, id: { not: manager.id } },
+        });
         if (exists) throw new ConflictException('Cet email est déjà pris.');
 
-        await tx.user.updateMany({
-          where: { agencyId: id, role: Role.AGENT },
-          data: { email: newEmail },
-        });
-
+        await tx.user.update({ where: { id: manager.id }, data: { email: newEmail } });
         await tx.agency.update({ where: { id }, data: { email: newEmail } });
       }
 
@@ -215,6 +333,13 @@ export class AgenciesService {
         select: { id: true },
       });
       const agentIds = agents.map((a) => a.id);
+
+      // ✅ v4.3 — Détache managerId AVANT de supprimer les agents,
+      // sinon la contrainte de clé étrangère Agency.managerId → User.id
+      // empêcherait la suppression du user désigné comme responsable.
+      if (agency.managerId) {
+        await tx.agency.update({ where: { id }, data: { managerId: null } });
+      }
 
       if (agentIds.length > 0) {
         try { await tx.otpLog.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
@@ -345,6 +470,10 @@ export class AgenciesService {
       clientName: a.client?.name ?? null,
       clientCode: a.client?.code ?? null,
       type: a.type,
+      // ✅ v4.3 — expose managerId : source de vérité pour "qui est le
+      // responsable", à préférer côté frontend à une déduction locale
+      // (premier agent d'une liste non triée).
+      managerId: a.managerId ?? null,
       wallets: Array.isArray(a.wallets)
         ? a.wallets.map((w: any) => ({
             id: w.id,
