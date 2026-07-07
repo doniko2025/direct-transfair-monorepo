@@ -1,9 +1,24 @@
 // apps/backend/src/clients/clients.controller.ts
 // =========================================================
-// CLIENTS CONTROLLER v4.1
-// ✅ Double import @nestjs/common supprimé
-// ✅ SetMetadata importé proprement (plus de require())
-// ✅ RolesGuard et Roles déclarés avant le controller
+// CLIENTS CONTROLLER v4.2
+// ✅ v4.1 : Double import @nestjs/common supprimé
+//          SetMetadata importé proprement (plus de require())
+//          RolesGuard et Roles déclarés avant le controller
+//
+// ✅ v4.2 : Ajout PATCH /clients/me/company-name
+//   PROBLÈME RÉSOLU :
+//   Le champ "Société" du profil admin (mobile) était verrouillé en
+//   dur, sans aucune route permettant à un COMPANY_ADMIN de corriger
+//   le nom de sa propre société.
+//
+//   CORRECTIF :
+//   Route dédiée, séparée de PATCH /clients/:id (qui reste réservée
+//   à SUPER_ADMIN et accepte n'importe quel champ sans restriction).
+//   Ici : le clientId vient TOUJOURS de req.user.clientId (le token
+//   JWT de l'appelant), jamais d'un paramètre d'URL — un COMPANY_ADMIN
+//   ne peut donc structurellement modifier que sa propre société.
+//   Et le service sous-jacent (updateOwnName) ne touche que `name`,
+//   jamais subscriptionStatus, devise, branding, etc.
 // =========================================================
 
 import {
@@ -17,6 +32,7 @@ import {
   Delete,
   Patch,
   ForbiddenException,
+  BadRequestException,
   Req,
   CanActivate,
   ExecutionContext,
@@ -74,6 +90,27 @@ export class ClientsController {
     return this.clientsService.findAll();
   }
 
+  // ──────────────────────────────────────────────────────
+  // ✅ v4.2 — PATCH /clients/me/company-name (self-service)
+  //
+  // Déclarée AVANT les routes paramétriques (:id) par convention,
+  // même si aucun conflit réel n'est possible ici : "me/company-name"
+  // est un chemin à deux segments, ":id" n'en matche qu'un seul.
+  // ──────────────────────────────────────────────────────
+  @Patch('me/company-name')
+  @Roles(Role.COMPANY_ADMIN)
+  @ApiOperation({ summary: 'Modifier le nom de sa propre société (self-service)' })
+  async updateMyCompanyName(
+    @Req() req: { user?: AuthUserPayload },
+    @Body('name') name: string,
+  ) {
+    const clientId = req.user?.clientId;
+    if (!clientId) {
+      throw new BadRequestException('Aucune société associée à ce compte.');
+    }
+    return this.clientsService.updateOwnName(clientId, name);
+  }
+
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
   @ApiOperation({ summary: 'Voir une société spécifique' })
@@ -113,4 +150,4 @@ export class ClientsController {
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.clientsService.remove(id);
   }
-} 
+}

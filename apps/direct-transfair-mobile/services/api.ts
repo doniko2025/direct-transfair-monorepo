@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.6
+// DIRECT TRANSF'AIR — API Service v5.7
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -28,6 +28,10 @@
 //   déclenchait jamais, puisqu'il vérifie this.refreshToken en mémoire.
 //   APRÈS : ajout de setRefreshToken(), méthode publique symétrique à
 //   setToken(), pour permettre à AuthProvider de synchroniser l'état.
+//
+// v5.7 — Ajout updateMyCompanyName() : self-service COMPANY_ADMIN pour
+//   corriger le nom de sa propre société depuis l'écran de profil
+//   (voir PATCH /clients/me/company-name côté backend).
 // =========================================================
 
 import axios, {
@@ -1827,6 +1831,16 @@ class API {
   async updateClient(id: number | string, data: unknown): Promise<unknown> {
     const headers = this.platformHeaders();
     const res = await this.http.patch(`/clients/${id}`, data, { headers });
+    return res.data;
+  }
+
+  // ✅ v5.7 — Self-service COMPANY_ADMIN : corrige le nom de SA PROPRE
+  // société (voir PATCH /clients/me/company-name côté backend). Pas
+  // de platformHeaders() ici : on veut le tenant/contexte normal de
+  // l'utilisateur connecté, pas le header plateforme réservé à
+  // l'usage SUPER_ADMIN des autres méthodes ci-dessus.
+  async updateMyCompanyName(name: string): Promise<unknown> {
+    const res = await this.http.patch("/clients/me/company-name", { name });
     return res.data;
   }
 

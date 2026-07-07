@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.1 — Direct Transf'air
+// AUTH SERVICE v5.2 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -45,6 +45,13 @@
 //     transactions.service.ts (v4.18). Remplacée ici par
 //     normalizePhoneE164() dans register(), loginByPhone(),
 //     validateUser(), findAccount() et updateProfile().
+//
+// ✅ v5.2 : FIX — gender/jobTitle/birthCountry jamais renvoyés
+//     toPublicUser() (utilisée par login, register, refresh ET
+//     getProfile()) omettait ces 3 champs. Ils pouvaient être écrits
+//     en base sans problème (rien ne les bloquait dans updateProfile()),
+//     mais n'étaient jamais renvoyés au frontend — donnant l'impression
+//     que "Fonction" et "Pays de naissance" ne se sauvegardaient jamais.
 // =========================================================
 
 import {
@@ -126,8 +133,12 @@ export type PublicUser = {
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
   mfaEnabled?: boolean;
+  // ✅ v5.2 : champs manquants ajoutés — voir toPublicUser() ci-dessous
+  gender?: string | null;
+  jobTitle?: string | null;
   birthDate?: string | null;
   birthPlace?: string | null;
+  birthCountry?: string | null;
   nationality?: string | null;
   addressStreet?: string | null;
   postalCode?: string | null;
@@ -990,6 +1001,15 @@ export class AuthService {
     }
   }
 
+  // ✅ v5.2 — FIX : gender, jobTitle et birthCountry manquaient ici.
+  // Conséquence concrète : même quand ces champs étaient bien
+  // enregistrés en base par updateProfile() (rien ne les bloquait),
+  // ils n'étaient JAMAIS renvoyés au frontend — ni juste après la
+  // sauvegarde (le retour de updateProfile() passe par cette même
+  // fonction), ni au chargement suivant (getProfile()/getMe() aussi).
+  // Résultat observé : "Fonction" et "Pays de naissance" semblaient
+  // ne jamais se sauvegarder, alors que la sauvegarde elle-même
+  // fonctionnait — c'est la relecture qui perdait ces 3 champs.
   private toPublicUser(user: any): PublicUser {
     return {
       id: user.id, email: user.email, phone: user.phone,
@@ -998,8 +1018,11 @@ export class AuthService {
       agencyId: user.agencyId, primaryCurrency: user.primaryCurrency,
       kycLevel: user.kycLevel, balance: 0,
       isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified,
-      mfaEnabled: user.mfaEnabled, birthDate: user.birthDate,
+      mfaEnabled: user.mfaEnabled,
+      gender: user.gender, jobTitle: user.jobTitle, // ✅ v5.2
+      birthDate: user.birthDate,
       birthPlace: user.birthPlace, nationality: user.nationality,
+      birthCountry: user.birthCountry, // ✅ v5.2
       addressStreet: user.addressStreet, postalCode: user.postalCode,
       city: user.city, country: user.country,
       client: user.client, agency: user.agency, wallets: user.wallets,

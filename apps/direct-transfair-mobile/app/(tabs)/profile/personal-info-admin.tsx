@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-admin.tsx
 // =========================================================
-// PERSONAL INFO — COMPANY ADMIN v5.5
+// PERSONAL INFO — COMPANY ADMIN v5.6
 // ✅ v5.1 : fix danse clavier
 // ✅ v5.2 : paddingBottom 120
 // ✅ v5.3 : fixes TypeScript
@@ -12,6 +12,34 @@
 //    - accentSoft = #E8F9F6 (teal très doux conservé pour focus/sélection)
 //    - SectionCard : ombre portée + bande teal gauche pour distinguer
 //      les liens du fond blanc
+//
+// ✅ v5.6 : 🐛 3 correctifs
+//
+//   FIX 1 — "Société" : mauvaise source de lecture + verrouillé en dur
+//     PROBLÈME : agencyName lisait user.agency?.name / user.agencyName,
+//     deux champs qui n'existent jamais pour un COMPANY_ADMIN (il n'est
+//     rattaché à aucune Agency — agency est réservé aux AGENT). Le nom
+//     de LA société d'un admin vit dans user.client.name. Résultat :
+//     le champ affichait toujours vide, et en plus était figé en dur
+//     (editable={false}, sans onChange).
+//     CORRECTIF : lecture depuis user.client?.name en priorité, champ
+//     rendu éditable (comme les autres), sauvegardé séparément via le
+//     nouvel endpoint self-service PATCH /clients/me/company-name
+//     (voir api.updateMyCompanyName()) — updateProfile() (/auth/me)
+//     ne peut pas modifier Client.name, ce n'est pas un champ User.
+//
+//   FIX 2 — Genre/Nationalité/Naissance qui semblaient ne jamais se
+//     sauvegarder
+//     Ce n'était pas ce fichier : AuthService.toPublicUser() (backend)
+//     omettait gender/jobTitle/birthCountry dans sa réponse — même
+//     bien enregistrés en base, ces 3 champs n'étaient jamais renvoyés
+//     après une sauvegarde ni au chargement suivant. Corrigé côté
+//     backend (auth.service.ts v5.2). Rien à changer ici pour ce point.
+//
+//   FIX 3 — Cadre rectangulaire au focus (web)
+//     Même correctif que sur les autres écrans (agencies/edit.tsx,
+//     agents.tsx…) : outlineStyle: 'none' sur les <TextInput>, web
+//     uniquement, sans impact iOS/Android.
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -81,7 +109,13 @@ const fS = StyleSheet.create({
   boxFocused:    { borderColor: T.borderFocus,    backgroundColor: "#FAFFFE",
                    shadowColor: T.accent, shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   boxDisabled:   { backgroundColor: T.surfaceAlt, borderColor: "#EAEEF4" },
-  input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600" },
+  // ✅ v5.6 FIX 3 : supprime l'anneau de focus natif du navigateur (web
+  // uniquement — ignoré sur iOS/Android). Le retour visuel au focus
+  // reste géré par boxFocused ci-dessus.
+  input:         {
+    flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   inputDisabled: { color: T.textSub },
 });
 
@@ -174,7 +208,11 @@ const cpS = StyleSheet.create({
   title:       { fontSize: 17, fontWeight: "700", color: T.text },
   closeBtn:    { width: 32, height: 32, borderRadius: 9, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center" },
   searchBox:   { flexDirection: "row", alignItems: "center", gap: 10, margin: 16, backgroundColor: T.surfaceAlt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, height: 44 },
-  searchInput: { flex: 1, fontSize: 14, color: T.text, fontWeight: "600" },
+  // ✅ v5.6 FIX 3 : même correctif d'anneau de focus natif que fS.input
+  searchInput: {
+    flex: 1, fontSize: 14, color: T.text, fontWeight: "600",
+    ...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : null),
+  },
   item:        { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F1F5F9" },
   flag:        { fontSize: 22 },
   itemName:    { flex: 1, fontSize: 14, fontWeight: "600", color: T.text },
@@ -368,13 +406,23 @@ export default function PersonalInfoAdmin() {
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
 
-  useEffect(() => {
+  // ✅ v5.6 FIX 1 : nom de société — pour ne l'envoyer à la sauvegarde
+  // QUE s'il a réellement changé (évite un appel réseau inutile).
+  const initialAgencyNameRef = useRef("");
+
+  const loadFromUser = () => {
     if (!user) return;
     setFirstName(user.firstName                                         || "");
     setLastName(user.lastName                                           || "");
     setPhone((user as any).phone                                        || "");
     setJobTitle((user as any).jobTitle                                  || "");
-    setAgencyName((user as any).agency?.name || (user as any).agencyName || "");
+    // ✅ v5.6 FIX 1 : user.client.name en priorité — un COMPANY_ADMIN
+    // n'a pas d'agence (agency est réservé aux AGENT), donc
+    // user.agency?.name / user.agencyName sont toujours vides pour ce
+    // rôle. Le vrai nom de la société vit sur user.client.name.
+    const companyName = (user as any).client?.name || (user as any).agency?.name || (user as any).agencyName || "";
+    setAgencyName(companyName);
+    initialAgencyNameRef.current = companyName;
     setGender(((user as any).gender as "M" | "F")                       || "M");
     setNationality(user.nationality                                     || "");
     setBirthDate(user.birthDate                                         || "");
@@ -382,6 +430,11 @@ export default function PersonalInfoAdmin() {
     setBirthCountry((user as any).birthCountry                          || "");
     setCity(user.city                                                   || "");
     setCountry(user.country                                             || "");
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    loadFromUser();
     Animated.parallel([
       Animated.spring(fadeAnim,  { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 2 }),
       Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 2 }),
@@ -389,18 +442,7 @@ export default function PersonalInfoAdmin() {
   }, [user]);
 
   const cancelEdit = () => {
-    if (!user) return;
-    setFirstName(user.firstName                || "");
-    setLastName(user.lastName                  || "");
-    setPhone((user as any).phone               || "");
-    setJobTitle((user as any).jobTitle         || "");
-    setGender(((user as any).gender as "M" | "F") || "M");
-    setNationality(user.nationality            || "");
-    setBirthDate(user.birthDate                || "");
-    setBirthCity(user.birthPlace               || "");
-    setBirthCountry((user as any).birthCountry || "");
-    setCity(user.city                          || "");
-    setCountry(user.country                    || "");
+    loadFromUser();
     setIsEditing(false);
   };
 
@@ -411,6 +453,7 @@ export default function PersonalInfoAdmin() {
     }
     try {
       setLoading(true);
+
       await api.updateProfile({
         firstName:    firstName.trim(),
         lastName:     lastName.trim(),
@@ -424,11 +467,22 @@ export default function PersonalInfoAdmin() {
         city:         city.trim()         || undefined,
         country:      country.trim()      || undefined,
       });
+
+      // ✅ v5.6 FIX 1 — Société : Client.name n'est PAS un champ User,
+      // donc updateProfile() (/auth/me) ne peut pas le modifier. On
+      // appelle l'endpoint self-service dédié, uniquement si la valeur
+      // a changé (évite un appel réseau inutile à chaque sauvegarde).
+      const trimmedAgencyName = agencyName.trim();
+      if (trimmedAgencyName && trimmedAgencyName !== initialAgencyNameRef.current) {
+        await api.updateMyCompanyName(trimmedAgencyName);
+      }
+
       await refreshUser?.();
       setIsEditing(false);
       Alert.alert("Succès", "Profil mis à jour avec succès.");
-    } catch {
-      Alert.alert("Erreur", "Impossible de sauvegarder les modifications.");
+    } catch (e: any) {
+      const msg = e?.response?.data?.message;
+      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : (msg || "Impossible de sauvegarder les modifications."));
     } finally { setLoading(false); }
   };
 
@@ -495,7 +549,9 @@ export default function PersonalInfoAdmin() {
               </View>
               <Field label="Téléphone" value={phone}      onChange={setPhone}    editable={isEditing} keyboardType="phone-pad" placeholder="+224 620 000 000" />
               <Field label="Fonction"  value={jobTitle}   onChange={setJobTitle} editable={isEditing} placeholder="Directeur Général…" />
-              <Field label="Société"   value={agencyName} editable={false} />
+              {/* ✅ v5.6 FIX 1 : déverrouillé, source de lecture corrigée
+                  (user.client.name), sauvegarde via endpoint dédié dans save() */}
+              <Field label="Société"   value={agencyName} onChange={setAgencyName} editable={isEditing} placeholder="Nom de la société" />
             </SectionCard>
 
             {/* 02 — Identité Civile */}

@@ -1,12 +1,27 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.6
+// CLIENTS SERVICE v4.7
 // ✅ v4.5 conservé intégralement
 // ✅ v4.6 : Email de bienvenue automatique après création
 //   → sendWelcomeCompanyAdmin() déclenché après la transaction
 //   → Non-bloquant : un échec mail ne casse jamais la création
 //   → Logger NestJS pour traçabilité des erreurs mail
 //   → Logger + CompanyMailService injectés
+//
+// ✅ v4.7 : Ajout updateOwnName() — self-service COMPANY_ADMIN
+//   PROBLÈME RÉSOLU :
+//   Le champ "Société" du profil admin était verrouillé en dur côté
+//   frontend (editable={false}), sans aucun moyen pour un
+//   COMPANY_ADMIN de corriger le nom de sa propre société.
+//
+//   CORRECTIF :
+//   Nouvelle méthode dédiée, volontairement DISTINCTE de update()
+//   (qui reste réservée à SUPER_ADMIN et accepte n'importe quel champ
+//   Client sans restriction). updateOwnName() ne touche QUE `name`,
+//   et le clientId vient du token JWT de l'appelant (jamais d'un
+//   paramètre d'URL) — voir clients.controller.ts : impossible pour
+//   un COMPANY_ADMIN de modifier une société autre que la sienne,
+//   et impossible de toucher subscriptionStatus, devise, branding, etc.
 // =========================================================
 
 import {
@@ -374,7 +389,7 @@ export class ClientsService {
   }
 
   // ========================================================
-  // MISE À JOUR
+  // MISE À JOUR — SUPER_ADMIN (tous champs, sans restriction)
   // ========================================================
 
   async update(id: number, data: any) {
@@ -405,6 +420,35 @@ export class ClientsService {
     }
 
     return this.prisma.client.update({ where: { id }, data: updateData });
+  }
+
+  // ========================================================
+  // ✅ v4.7 — MISE À JOUR SELF-SERVICE — COMPANY_ADMIN
+  //
+  // Volontairement séparée de update() ci-dessus : celle-ci ne
+  // touche QUE `name`, jamais subscriptionStatus, devise, branding,
+  // etc. Le clientId doit venir du token JWT de l'appelant (voir
+  // clients.controller.ts) — jamais d'un paramètre d'URL — pour qu'un
+  // COMPANY_ADMIN ne puisse structurellement modifier que sa PROPRE
+  // société, sans avoir besoin de vérification de propriété ici.
+  // ========================================================
+
+  async updateOwnName(clientId: number, name: string) {
+    const trimmed = (name ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('Le nom de la société est requis.');
+    }
+    if (trimmed.length > 120) {
+      throw new BadRequestException('Le nom de la société est trop long (120 caractères max).');
+    }
+
+    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    if (!client) throw new NotFoundException('Société introuvable');
+
+    return this.prisma.client.update({
+      where: { id: clientId },
+      data:  { name: trimmed },
+    });
   }
 
   async updateStatus(id: number, status: SubscriptionStatus) {
