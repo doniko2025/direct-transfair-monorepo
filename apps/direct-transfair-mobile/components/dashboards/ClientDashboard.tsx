@@ -1,5 +1,5 @@
 // =========================================================
-// CLIENT DASHBOARD v9.7 — Direct Transf'air
+// CLIENT DASHBOARD v9.8 — Direct Transf'air
 // ✅ v9.1 sur base v9.0 :
 //    - Vert émeraude #17A45F (plus vif, moins corporate)
 //    - Hero réduit : paddingBottom 28→16, nom 22→19
@@ -76,6 +76,37 @@
 //       mockup), sans aucun cadre ni case derrière.
 //    2) Carte solde élargie davantage : paddingHorizontal du Hero
 //       6 → 2, pour coller au rectangle quasi bord-à-bord du mockup.
+// ✅ v9.8 : REFONTE HERO — dégradé sombre + solde intégré + sheet arrondie
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (mêmes states, mêmes calculs, mêmes appels API, mêmes routes, mêmes
+//    animations heroAnim/contentAnim, même fix insets.top + 8).
+//    - Hero : fond gris plat → dégradé sombre (expo-linear-gradient, du
+//      quasi-noir #0A0F0D vers un vert forêt #123324) qui redonne une
+//      identité de marque forte au premier écran.
+//    - La carte solde flottante (`balanceCard` / `heroCardShadow`) est
+//      supprimée : le solde vit maintenant à même le hero, en plus
+//      grand (32→40), comme le mockup validé.
+//    - Filigrane wallet : déplacé à même le hero, couleur adaptée (vert
+//      très translucide au lieu de brun, illisible sur fond sombre).
+//    - Pastille "En ligne" : bleu → vert translucide (le bleu avait été
+//      choisi en v9.4 pour bannir le vert d'un hero clair ; ce n'est
+//      plus nécessaire, le hero a maintenant sa propre identité verte).
+//    - Avatar : encre → vert plein (même raison).
+//    - Bouton notification : style "verre" (fond blanc à 8 % d'opacité)
+//      pour rester lisible sur fond sombre.
+//    - paddingHorizontal du Hero : 2 → 24. Le 2px de la v9.7 calibrait
+//      la CARTE solde au bord ; sans carte flottante, le texte a besoin
+//      de sa propre marge pour ne plus toucher les bords de l'écran.
+//    - NOUVEAU : le body (ScrollView) est enveloppé dans une "sheet" à
+//      coins arrondis (28) qui chevauche le bas du hero (marginTop -28)
+//      pour la transition sombre → clair. Fond de la sheet : toujours
+//      C.pageBg (gris clair) → AUCUN changement sur les cartes
+//      existantes (mainCta, Actions rapides, Envoi rapide, stats,
+//      Transactions), leur style reste identique à la v9.7.
+//    - StatusBar : dark-content → light-content (hero sombre désormais),
+//      backgroundColor aligné sur le premier ton du dégradé.
+//    - NOUVELLE DÉPENDANCE : expo-linear-gradient
+//      → npx expo install expo-linear-gradient
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -94,6 +125,7 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
@@ -110,6 +142,12 @@ const C = {
   // Backgrounds — uniquement neutre, plus de vert en fond
   pageBg: "#F5F5F5",
   white:  "#FFFFFF",
+
+  // ✅ v9.8 — dégradé du hero (quasi-noir → vert forêt), dérivé de `green`
+  heroFrom: "#0A0F0D",
+  heroTo:   "#123324",
+  // ✅ v9.8 — texte secondaire sur fond sombre (labels, icônes muettes du hero)
+  heroMuted: "rgba(255,255,255,0.55)",
 
   // Badges statut (pale, usage uniquement dans les pills)
   greenPale:  "#E8FAF2",  // ajusté pour émeraude #17A45F
@@ -148,14 +186,6 @@ const C = {
 const cardShadow = Platform.select({
   ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4 },
   android: { elevation: 2 },
-  default: {},
-});
-
-// ✅ v9.4 — Ombre plus marquée, réservée à la carte solde du Hero
-// (élément central de l'écran : doit "flotter" plus que les cartes du body)
-const heroCardShadow = Platform.select({
-  ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 20 },
-  android: { elevation: 6 },
   default: {},
 });
 
@@ -443,16 +473,34 @@ export default function ClientDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.pageBg} />
+      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
 
       {/* ══════════════════════════════════════════════════
-          HERO — fond gris (fondu avec le body), sans vert
+          HERO — ✅ v9.8 : dégradé sombre, solde intégré (plus de
+          carte flottante séparée)
       ══════════════════════════════════════════════════ */}
       <Animated.View style={{
         opacity: heroAnim,
         transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }],
       }}>
-        <View style={[s.hero, { paddingTop: insets.top + 8 }]}>
+        <LinearGradient
+          colors={[C.heroFrom, C.heroTo]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={[s.hero, { paddingTop: insets.top + 8 }]}
+        >
+          {/* Halo décoratif — élément signature, discret */}
+          <View style={s.heroGlow} pointerEvents="none" />
+
+          {/* Filigrane portefeuille — vert translucide (au lieu du brun,
+              illisible sur fond sombre), à même le hero désormais */}
+          <Ionicons
+            name="wallet"
+            size={80}
+            color="rgba(23,164,95,0.12)"
+            style={s.balanceWatermark}
+            pointerEvents="none"
+          />
 
           {/* Barre du haut */}
           <View style={s.topBar}>
@@ -461,7 +509,7 @@ export default function ClientDashboard() {
               <Text style={[s.heroName, { fontFamily: C.font.sans }]} numberOfLines={1}>{firstName}</Text>
             </View>
             <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-              <Ionicons name="notifications-outline" size={19} color={C.inkMid} />
+              <Ionicons name="notifications-outline" size={19} color={C.heroMuted} />
               <View style={s.notifDot} />
             </TouchableOpacity>
             <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
@@ -469,185 +517,177 @@ export default function ClientDashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* ✅ v9.4 — Carte solde flottante (détachée du Hero, ombre marquée) */}
-          <View style={s.balanceCard}>
-            {/* ✅ v9.7 — Filigrane portefeuille : icône SEULE, sans conteneur/
-                fond derrière (le carré marron de la v9.6 peignait le contenant,
-                pas l'icône). Icône pleine "wallet" en brun plein #8E562E. */}
-            <Ionicons
-              name="wallet"
-              size={56}
-              color="#8E562E"
-              style={s.balanceWatermark}
-            />
-
-            <View style={s.balHeaderRow}>
-              <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>SOLDE DISPONIBLE</Text>
-              <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
-                <Ionicons
-                  name={showBalance ? "eye-outline" : "eye-off-outline"}
-                  size={13}
-                  color={C.inkSoft}
-                />
-              </TouchableOpacity>
-              <View style={s.onlinePill}>
-                <View style={s.onlineDot} />
-                <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
-              </View>
+          {/* Solde — directement dans le hero */}
+          <View style={s.balHeaderRow}>
+            <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>SOLDE DISPONIBLE</Text>
+            <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
+              <Ionicons
+                name={showBalance ? "eye-outline" : "eye-off-outline"}
+                size={13}
+                color={C.heroMuted}
+              />
+            </TouchableOpacity>
+            <View style={s.onlinePill}>
+              <View style={s.onlineDot} />
+              <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
             </View>
-
-            {/* Devise · Montant sur la même ligne */}
-            <View style={s.balAmountRow}>
-              {showBalance && (
-                <Text style={[s.balCurPrefix, { fontFamily: C.font.sans }]}>{primaryCurrency}</Text>
-              )}
-              <Text
-                style={[s.balAmount, { fontFamily: C.font.serif }]}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.55}
-              >
-                {showBalance ? fmt(availableBalance, primaryCurrency) : "••••••"}
-              </Text>
-            </View>
-
-            {/* Bandeau taux, réutilise eurXofRate déjà fetché par loadData() */}
-            {eurXofRate != null && (
-              <TouchableOpacity
-                style={s.rateRow}
-                onPress={() => router.push("/(tabs)/rates")}
-                activeOpacity={0.7}
-              >
-                <Text style={[s.rateTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
-                  {primaryCurrency} → XOF · {fmt(eurXofRate, "XOF")} · Envoi wallet 0 frais
-                </Text>
-                <Ionicons name="create-outline" size={12} color={C.inkSoft} />
-              </TouchableOpacity>
-            )}
-
-            {reservedBalance > 0 && (
-              <Text style={[s.balReserved, { fontFamily: C.font.sans }]}>
-                Réservé {fmt(reservedBalance, primaryCurrency)} {primaryCurrency}
-              </Text>
-            )}
           </View>
 
-        </View>
+          {/* Devise · Montant sur la même ligne */}
+          <View style={s.balAmountRow}>
+            {showBalance && (
+              <Text style={[s.balCurPrefix, { fontFamily: C.font.sans }]}>{primaryCurrency}</Text>
+            )}
+            <Text
+              style={[s.balAmount, { fontFamily: C.font.serif }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.55}
+            >
+              {showBalance ? fmt(availableBalance, primaryCurrency) : "••••••"}
+            </Text>
+          </View>
+
+          {/* Bandeau taux, réutilise eurXofRate déjà fetché par loadData() */}
+          {eurXofRate != null && (
+            <TouchableOpacity
+              style={s.rateRow}
+              onPress={() => router.push("/(tabs)/rates")}
+              activeOpacity={0.7}
+            >
+              <Text style={[s.rateTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
+                {primaryCurrency} → XOF · {fmt(eurXofRate, "XOF")} · Envoi wallet 0 frais
+              </Text>
+              <Ionicons name="create-outline" size={12} color={C.heroMuted} />
+            </TouchableOpacity>
+          )}
+
+          {reservedBalance > 0 && (
+            <Text style={[s.balReserved, { fontFamily: C.font.sans }]}>
+              Réservé {fmt(reservedBalance, primaryCurrency)} {primaryCurrency}
+            </Text>
+          )}
+        </LinearGradient>
       </Animated.View>
 
       {/* ══════════════════════════════════════════════════
-          BODY — fond gris neutre, cartes blanches
+          SHEET — ✅ v9.8 : enveloppe arrondie qui chevauche le hero.
+          Fond C.pageBg inchangé → cartes du body strictement identiques
+          à la v9.7 (mainCta, Actions rapides, Envoi rapide, stats,
+          Transactions récentes).
       ══════════════════════════════════════════════════ */}
-      <ScrollView
-        style={s.scroll}
-        contentContainerStyle={[s.body, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.green} />
-        }
-      >
-        <Animated.View style={[s.bodyInner, {
-          opacity: contentAnim,
-          transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-        }]}>
+      <View style={s.sheet}>
+        <ScrollView
+          style={s.scroll}
+          contentContainerStyle={[s.body, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.green} />
+          }
+        >
+          <Animated.View style={[s.bodyInner, {
+            opacity: contentAnim,
+            transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+          }]}>
 
-          {/* ── CTA principal ── */}
-          <TouchableOpacity
-            style={s.mainCta}
-            onPress={() => router.push("/(tabs)/send")}
-            activeOpacity={0.88}
-          >
-            <View style={s.mainCtaLeft}>
-              <View style={s.mainCtaIcon}>
-                <Ionicons name="paper-plane-outline" size={22} color={C.green} />
+            {/* ── CTA principal ── */}
+            <TouchableOpacity
+              style={s.mainCta}
+              onPress={() => router.push("/(tabs)/send")}
+              activeOpacity={0.88}
+            >
+              <View style={s.mainCtaLeft}>
+                <View style={s.mainCtaIcon}>
+                  <Ionicons name="paper-plane-outline" size={22} color={C.green} />
+                </View>
+                <View>
+                  <Text style={[s.mainCtaTitle, { fontFamily: C.font.sans }]}>Envoyer de l'argent</Text>
+                  <Text style={[s.mainCtaSub,   { fontFamily: C.font.sans }]}>Wallet · Cash · Virement · 0 frais wallet</Text>
+                </View>
               </View>
-              <View>
-                <Text style={[s.mainCtaTitle, { fontFamily: C.font.sans }]}>Envoyer de l'argent</Text>
-                <Text style={[s.mainCtaSub,   { fontFamily: C.font.sans }]}>Wallet · Cash · Virement · 0 frais wallet</Text>
+              <View style={s.mainCtaArrow}>
+                <Ionicons name="arrow-forward" size={16} color={C.white} />
               </View>
-            </View>
-            <View style={s.mainCtaArrow}>
-              <Ionicons name="arrow-forward" size={16} color={C.white} />
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
 
-          {/* ── Actions rapides (style BNP) ── */}
-          <View style={s.card}>
-            <SectionHeader title="Actions rapides" />
-            <View style={s.actionsRow}>
-              <ActionItem icon="people-outline"  label="Contacts"   onPress={() => router.push("/(tabs)/beneficiaries")} />
-              <ActionItem icon="repeat-outline"  label="Taux"       onPress={() => router.push("/(tabs)/rates")} />
-              <ActionItem icon="qr-code-outline" label="QR Code"    onPress={() => router.push("/(tabs)/qr")} />
-              <ActionItem icon="time-outline"    label="Historique" onPress={() => router.push("/(tabs)/transactions")} />
-            </View>
-          </View>
-
-          {/* ── Envoi rapide (contacts récents) ── */}
-          {recentContacts.length > 0 && (
+            {/* ── Actions rapides (style BNP) ── */}
             <View style={s.card}>
-              <SectionHeader title="Envoi rapide" />
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 12 }}
-              >
-                {recentContacts.map((c, i) => (
-                  <ContactChip
-                    key={i}
-                    name={c.name}
-                    phone={c.phone}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/(tabs)/send",
-                        params: c.beneficiaryId
-                          ? { beneficiaryId: c.beneficiaryId }
-                          : { phone: c.phone, name: c.name },
-                      })
-                    }
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
-          {/* ── Stats du mois ── */}
-          <View style={s.statsRow}>
-            <View style={[s.statCard, { borderLeftColor: C.red }]}>
-              <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↑ ENVOYÉ CE MOIS</Text>
-              <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthSent, primaryCurrency)}</Text>
-              <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
-            </View>
-            <View style={[s.statCard, { borderLeftColor: C.green }]}>
-              <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↓ REÇU CE MOIS</Text>
-              <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthRecv, primaryCurrency)}</Text>
-              <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
-            </View>
-          </View>
-
-          {/* ── Transactions récentes ── */}
-          <View style={s.card}>
-            <SectionHeader
-              title="Transactions récentes"
-              action="Voir tout"
-              onAction={() => router.push("/(tabs)/transactions")}
-            />
-            {loadingTxs ? (
-              <View style={s.emptyBox}>
-                <ActivityIndicator color={C.green} />
+              <SectionHeader title="Actions rapides" />
+              <View style={s.actionsRow}>
+                <ActionItem icon="people-outline"  label="Contacts"   onPress={() => router.push("/(tabs)/beneficiaries")} />
+                <ActionItem icon="repeat-outline"  label="Taux"       onPress={() => router.push("/(tabs)/rates")} />
+                <ActionItem icon="qr-code-outline" label="QR Code"    onPress={() => router.push("/(tabs)/qr")} />
+                <ActionItem icon="time-outline"    label="Historique" onPress={() => router.push("/(tabs)/transactions")} />
               </View>
-            ) : recentTxs.length === 0 ? (
-              <View style={s.emptyBox}>
-                <Ionicons name="receipt-outline" size={36} color={C.inkSoft} />
-                <Text style={[s.emptyTxt, { fontFamily: C.font.sans }]}>Aucune transaction récente</Text>
+            </View>
+
+            {/* ── Envoi rapide (contacts récents) ── */}
+            {recentContacts.length > 0 && (
+              <View style={s.card}>
+                <SectionHeader title="Envoi rapide" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 12 }}
+                >
+                  {recentContacts.map((c, i) => (
+                    <ContactChip
+                      key={i}
+                      name={c.name}
+                      phone={c.phone}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/(tabs)/send",
+                          params: c.beneficiaryId
+                            ? { beneficiaryId: c.beneficiaryId }
+                            : { phone: c.phone, name: c.name },
+                        })
+                      }
+                    />
+                  ))}
+                </ScrollView>
               </View>
-            ) : (
-              recentTxs.map((tx) => <TxRow key={tx.id} tx={tx} userId={user?.id} />)
             )}
-          </View>
 
-          <View style={{ height: 8 }} />
-        </Animated.View>
-      </ScrollView>
+            {/* ── Stats du mois ── */}
+            <View style={s.statsRow}>
+              <View style={[s.statCard, { borderLeftColor: C.red }]}>
+                <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↑ ENVOYÉ CE MOIS</Text>
+                <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthSent, primaryCurrency)}</Text>
+                <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
+              </View>
+              <View style={[s.statCard, { borderLeftColor: C.green }]}>
+                <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↓ REÇU CE MOIS</Text>
+                <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthRecv, primaryCurrency)}</Text>
+                <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
+              </View>
+            </View>
+
+            {/* ── Transactions récentes ── */}
+            <View style={s.card}>
+              <SectionHeader
+                title="Transactions récentes"
+                action="Voir tout"
+                onAction={() => router.push("/(tabs)/transactions")}
+              />
+              {loadingTxs ? (
+                <View style={s.emptyBox}>
+                  <ActivityIndicator color={C.green} />
+                </View>
+              ) : recentTxs.length === 0 ? (
+                <View style={s.emptyBox}>
+                  <Ionicons name="receipt-outline" size={36} color={C.inkSoft} />
+                  <Text style={[s.emptyTxt, { fontFamily: C.font.sans }]}>Aucune transaction récente</Text>
+                </View>
+              ) : (
+                recentTxs.map((tx) => <TxRow key={tx.id} tx={tx} userId={user?.id} />)
+              )}
+            </View>
+
+            <View style={{ height: 8 }} />
+          </Animated.View>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -656,25 +696,32 @@ export default function ClientDashboard() {
 const s = StyleSheet.create({
 
   // ── Structure ──
-  // ✅ v9.4 — fond gris (au lieu de blanc) pour fondre le Hero dans le body
-  safe:   { flex: 1, backgroundColor: C.pageBg },
+  // ✅ v9.8 — fond aligné sur le 1er ton du dégradé (zone réservée par
+  // SafeAreaView sous l'encoche iOS, doit rester sombre en continuité du hero)
+  safe:   { flex: 1, backgroundColor: C.heroFrom },
   scroll: { flex: 1, backgroundColor: C.pageBg },
   body:   { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
   bodyInner: { gap: 12 },
 
-  // ── Hero — ✅ v9.4 : fond gris (était blanc en v9.3, vert en v9.0-9.2) ──
-  // ✅ v9.5 : paddingTop n'est plus fixe — voir insets.top + 8 appliqué
-  // inline sur la balise (FIX recouvrement par la barre de statut système,
-  // surtout visible sur Android où SafeAreaView de "react-native" ne
-  // réserve pas d'espace pour la status bar, contrairement à iOS).
-  // ✅ v9.5 fix : paddingHorizontal 20 → 10 pour agrandir la carte solde
-  // ✅ v9.6 fix : paddingHorizontal 10 → 6
-  // ✅ v9.7 fix : paddingHorizontal 6 → 2, pour coller au rectangle
-  // quasi bord-à-bord tracé sur le mockup
+  // ── Hero — ✅ v9.8 : plus de backgroundColor ici, géré par
+  // LinearGradient (colors=[heroFrom, heroTo]) sur le composant parent.
+  // paddingHorizontal 2 → 24 (plus de carte flottante à coller au bord,
+  // le texte a besoin de sa propre marge). paddingBottom augmenté pour
+  // laisser la sheet chevaucher proprement le bas du hero.
   hero: {
-    backgroundColor: C.pageBg,
-    paddingHorizontal: 2,
-    paddingBottom: 6,
+    paddingHorizontal: 24,
+    paddingBottom: 44,
+    overflow: "hidden",
+  },
+  // ✅ v9.8 — halo décoratif discret, coin haut-droit
+  heroGlow: {
+    position: "absolute",
+    top: -60,
+    right: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(23,164,95,0.16)",
   },
 
   // Top bar
@@ -682,27 +729,26 @@ const s = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    marginBottom: 14,
+    marginBottom: 20,
   },
+  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
   greeting: {
     fontSize: 11, fontWeight: "500",
-    color: C.inkSoft,
+    color: C.heroMuted,
     marginBottom: 1,
   },
+  // ✅ v9.8 — blanc, fontSize 19→21 (le hero a plus de présence désormais)
   heroName: {
-    fontSize: 19, fontWeight: "800",
-    color: C.ink, letterSpacing: -0.3,
+    fontSize: 21, fontWeight: "800",
+    color: C.white, letterSpacing: -0.3,
   },
+  // ✅ v9.8 — style "verre" (fond blanc translucide) au lieu du blanc plein,
+  // conçu pour un fond clair
   iconBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.white,
-    borderWidth: 1, borderColor: C.border,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
     justifyContent: "center", alignItems: "center",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
-      android: { elevation: 1 },
-      default: {},
-    }),
   },
   notifDot: {
     position: "absolute", top: 7, right: 7,
@@ -710,10 +756,10 @@ const s = StyleSheet.create({
     backgroundColor: "#F59E0B",
     borderWidth: 1.5, borderColor: C.white,
   },
-  // ✅ v9.4 — encre anthracite au lieu du vert (plus aucune couleur de marque dans le Hero)
+  // ✅ v9.8 — vert plein (le hero a de nouveau sa propre identité de marque)
   avatarBtn: {
     width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.ink,
+    backgroundColor: C.green,
     justifyContent: "center", alignItems: "center",
     ...Platform.select({
       ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 5 },
@@ -723,56 +769,52 @@ const s = StyleSheet.create({
   },
   avatarTxt: { fontSize: 14, fontWeight: "800", color: C.white },
 
-  // ✅ v9.5 : blanc pur sans border (ombre seule définit les bords)
-  balanceCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: C.r.xl,
-    padding: 18,
-    marginBottom: 4,
-    position: "relative",
-    ...heroCardShadow,
-  },
-  // ✅ v9.7 — icône seule, sans conteneur/fond derrière (cf. note plus haut).
-  // Juste un positionnement absolu dans le coin de la carte, comme avant.
+  // ✅ v9.8 — repositionné à même le hero (plus de carte séparée derrière)
   balanceWatermark: {
     position: "absolute",
-    bottom: 12,
+    bottom: 16,
     right: 12,
   },
 
   // Balance
   balHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
   balLabel: {
     fontSize: 10, fontWeight: "700",
-    color: C.inkSoft,
+    color: C.heroMuted,
     letterSpacing: 0.5,
   },
-  // ✅ v9.4 — bleu (token déjà existant pour le statut "Traitement") au lieu du vert
+  // ✅ v9.8 — vert translucide (était bleu, choisi en v9.4 pour bannir le
+  // vert d'un hero clair — plus nécessaire, le hero est vert-sombre désormais)
   onlinePill: {
     flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: C.blueBg,
+    backgroundColor: "rgba(23,164,95,0.15)",
+    borderWidth: 1, borderColor: "rgba(23,164,95,0.35)",
     paddingHorizontal: 8, paddingVertical: 3,
     borderRadius: C.r.pill,
     marginLeft: "auto",
   },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.blue },
-  onlineTxt: { fontSize: 10, color: C.blue, fontWeight: "700" },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  onlineTxt: { fontSize: 10, color: C.green, fontWeight: "700" },
   balAmountRow: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 3 },
-  // ✅ v9.4 — encre sourdine au lieu du vert
-  balCurPrefix: { fontSize: 16, fontWeight: "700", color: C.inkSoft, letterSpacing: 0.5 },
+  // ✅ v9.8 — vert (accent de marque), fontSize 16→17
+  balCurPrefix: { fontSize: 17, fontWeight: "700", color: C.green, letterSpacing: 0.5 },
+  // ✅ v9.8 — blanc (était C.ink), fontSize 32→40 : le solde est
+  // maintenant l'élément central du hero, plus d'impact visuel
   balAmount: {
-    fontSize: 32, fontWeight: "800",
-    color: C.ink, letterSpacing: -0.8,
+    fontSize: 40, fontWeight: "800",
+    color: C.white, letterSpacing: -0.8,
   },
   // Bandeau taux sous le solde
   rateRow: {
     flexDirection: "row", alignItems: "center", gap: 6,
     marginTop: 8,
   },
-  rateTxt: { fontSize: 12, color: C.inkSoft, fontWeight: "600", flexShrink: 1 },
-  balReserved: { fontSize: 10, color: C.inkSoft, marginTop: 4 },
+  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
+  rateTxt: { fontSize: 12, color: C.heroMuted, fontWeight: "600", flexShrink: 1 },
+  balReserved: { fontSize: 10, color: C.heroMuted, marginTop: 4 },
 
-  // ── CTA principal — blanc ombré ──
+  // ── CTA principal — inchangé (blanc ombré) ──
   mainCta: {
     backgroundColor: C.white,
     borderRadius: C.r.lg,
@@ -800,7 +842,7 @@ const s = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
 
-  // ── Card générique ──
+  // ── Card générique — inchangé ──
   card: {
     backgroundColor: C.white,
     borderRadius: C.r.lg,
@@ -809,7 +851,7 @@ const s = StyleSheet.create({
   },
   actionsRow: { flexDirection: "row", justifyContent: "space-around", paddingTop: 2 },
 
-  // ── Stats ──
+  // ── Stats — inchangé ──
   statsRow: { flexDirection: "row", gap: 8 },
   statCard: {
     flex: 1, backgroundColor: C.white,
@@ -822,7 +864,17 @@ const s = StyleSheet.create({
   statVal:   { fontSize: 17, fontWeight: "800", color: C.ink,     letterSpacing: -0.5 },
   statCur:   { fontSize: 9,  fontWeight: "600", color: C.inkSoft, marginTop: 2 },
 
-  // ── États vide / chargement ──
+  // ── ✅ v9.8 — sheet arrondie qui enveloppe le body et chevauche le hero
+  sheet: {
+    flex: 1,
+    backgroundColor: C.pageBg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -28,
+    overflow: "hidden",
+  },
+
+  // ── États vide / chargement — inchangé ──
   emptyBox: { paddingVertical: 28, alignItems: "center", gap: 10 },
   emptyTxt: { fontSize: 13, color: C.inkSoft, fontWeight: "500" },
 });

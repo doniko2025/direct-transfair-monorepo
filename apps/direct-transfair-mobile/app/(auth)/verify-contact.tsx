@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
-// VERIFY CONTACT v1.3 — Direct Transf'air
+// VERIFY CONTACT v1.4 — Direct Transf'air
 // ✅ v1.0, v1.1, v1.2 conservés intégralement
 // ✅ v1.3 : FIX RÉEL de l'écran figé sur "Connexion en cours..."
 //
@@ -20,6 +20,35 @@
 //   erreurs sauf 401/403 → logout(), qui redirige lui-même vers
 //   /login-v2 ; si ça arrive, le garde global renverra de toute
 //   façon vers /login-v2 au prochain rendu puisque user sera null).
+//
+// ✅ v1.4 : 🚨 FIX — filet de sécurité navigation, chemin "done" alternatif
+//
+//   CAUSE RÉELLE RESTANTE (confirmée via v2-auth.service.ts) :
+//   Le fix v1.3 ne naviguait que depuis le bloc allVerified===true de
+//   handleVerify(). Mais un mismatch côté backend (corrigé en v2.3 de
+//   v2-auth.service.ts) entre buildVerificationNeeded() — qui bypass
+//   déjà le téléphone en DEV — et l'ancien calcul d'allVerified dans
+//   verifyContact() — qui ne bypassait rien — faisait que tout compte
+//   possédant un téléphone (donc quasiment tous, l'inscription en
+//   exige un) recevait allVerified=false après vérification email.
+//   Le frontend appelait alors moveToNextStep(), qui faisait avancer
+//   currentStepIndex AU-DELÀ de stepsRequired.length (une seule étape
+//   active en DEV) → currentStep devenait 'done' SANS jamais passer
+//   par le bloc allVerified===true, donc sans jamais naviguer. L'écran
+//   restait bloqué indéfiniment sur "Connexion en cours…".
+//
+//   CORRECTIF (défense en profondeur, les deux couches comptent) :
+//   1. v2-auth.service.ts v2.3 corrige la vraie cause (le mismatch).
+//   2. Ici : navigation consolidée dans un SEUL useEffect qui réagit à
+//      currentStep === 'done', quel que soit le chemin qui y mène.
+//      handleVerify() ne navigue plus lui-même — en cas d'allVerified
+//      vrai, il se contente de faire avancer currentStepIndex jusqu'à
+//      la fin de stepsRequired, ce qui fait passer currentStep à
+//      'done' et déclenche ce même useEffect. L'ancien effet "Cas :
+//      rien à vérifier" (qui ne couvrait que l'arrivée directe sur cet
+//      écran avec stepsRequired déjà vide) est absorbé par ce même
+//      effet unique — un seul endroit décide de la navigation, plus
+//      possible d'avoir un chemin qui atteint 'done' sans être couvert.
 // =========================================================
 
 import React, {
@@ -312,9 +341,11 @@ export default function VerifyContactScreen() {
   };
 
   // ── Vérification ─────────────────────────────────────────
-  // ✅ v1.3 — navigation EXPLICITE après refreshUser() : le garde
-  // global de navigation exclut délibérément cet écran de ses
-  // redirections auto, donc rien d'autre ne nous en fera sortir.
+  // ✅ v1.4 — handleVerify() ne navigue plus lui-même. Quand tout est
+  // vérifié, il se contente de pousser currentStepIndex jusqu'à la fin
+  // de stepsRequired (→ currentStep devient 'done'). La navigation
+  // réelle est centralisée dans l'effet ci-dessous, qui couvre TOUS
+  // les chemins menant à 'done', pas seulement celui-ci.
   const handleVerify = async (codeOverride?: string) => {
     const code = codeOverride ?? otpValues.join('');
     if (code.length < OTP_LENGTH) return;
@@ -327,31 +358,12 @@ export default function VerifyContactScreen() {
 
       if (res.allVerified) {
         animateSuccess();
-        setTimeout(async () => {
-          if (token) {
-            await refreshUser().catch((refreshErr) => {
-              // refreshUser() avale déjà ses propres erreurs (sauf 401/403,
-              // qui déclenchent logout() en interne) — ce catch est juste
-              // une trace de diagnostic, pas un vrai filet de sécurité.
-              console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
-            });
-            // ✅ v1.3 — FIX : sans cet appel, l'écran restait figé pour
-            // toujours sur "Connexion en cours...".
-            router.replace('/(tabs)/home' as any);
-          } else {
-            router.replace({
-              pathname: '/(auth)/login-v2',
-              params: { verified: '1' },
-            } as any);
-          }
-        }, 700);
+        setTimeout(() => setCurrentStepIndex(stepsRequired.length), 700);
         return;
       }
 
-      if (!res.allVerified) {
-        animateSuccess();
-        setTimeout(() => moveToNextStep(), 700);
-      }
+      moveToNextStep();
+      animateSuccess();
     } catch (e: any) {
       const msg = v2Auth.extractMessage(e);
       if (Platform.OS === 'web') {
@@ -376,16 +388,39 @@ export default function VerifyContactScreen() {
     await sendCode(currentStep as Step);
   };
 
-  // ── Cas : rien à vérifier ────────────────────────────────
+  // ── Navigation — SEUL endroit qui quitte cet écran ───────
+  // ✅ v1.4 — Filet de sécurité unique : réagit à currentStep === 'done'
+  // quel que soit le chemin qui y a mené (allVerified===true dans
+  // handleVerify(), OU stepsRequired déjà vide dès le montage, OU tout
+  // futur chemin qui ferait avancer currentStepIndex jusqu'au bout).
+  // hasNavigatedRef évite un double déclenchement (React StrictMode
+  // invoque les effets deux fois en dev — même pattern que hasSentRef
+  // plus haut).
+  const hasNavigatedRef = useRef(false);
   useEffect(() => {
-    if (stepsRequired.length === 0) {
+    if (currentStep !== 'done' || hasNavigatedRef.current) return;
+    hasNavigatedRef.current = true;
+
+    const t = setTimeout(async () => {
       if (token) {
-        void refreshUser();
+        await refreshUser().catch((refreshErr) => {
+          // refreshUser() avale déjà ses propres erreurs (sauf 401/403,
+          // qui déclenchent logout() en interne) — ce catch est juste
+          // une trace de diagnostic, pas un vrai filet de sécurité.
+          console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
+        });
+        router.replace('/(tabs)/home' as any);
       } else {
-        router.replace('/(auth)/login-v2' as any);
+        router.replace({
+          pathname: '/(auth)/login-v2',
+          params: { verified: '1' },
+        } as any);
       }
-    }
-  }, []);
+    }, 400);
+
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
 
   const canVerify   = otpValues.every((d) => d !== '') && !isVerifying;
   const totalSteps  = stepsRequired.length;

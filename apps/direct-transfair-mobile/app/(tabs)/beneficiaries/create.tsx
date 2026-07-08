@@ -1,8 +1,24 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
-// BENEFICIARY CREATE v6.1 — Direct Transf'air
+// BENEFICIARY CREATE v6.2 — Direct Transf'air
 // ✅ v6.0 : Anti-doublon, UI compacte, contacts natifs
 // ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
+// ✅ v6.2 : Correction du cadre bleu parasite autour des champs en édition
+//   - Même cause que sur les écrans précédents (rates.tsx, personal-info-wallet.tsx) :
+//     le <TextInput> du composant `Field` n'avait aucun reset du contour de focus
+//     natif du navigateur sur web. Au focus, Chrome superposait son propre
+//     rectangle bleu par-dessus la bordure verte voulue de `f.box` (visible sur
+//     le champ "Nom" de la capture).
+//   - Fix appliqué avec cast `as any` d'emblée (leçon tirée de l'erreur TS du
+//     fichier précédent) pour éviter le conflit avec le style natif RN
+//     `outlineStyle` (typé "solid" | "dotted" | "dashed" | undefined).
+//   ⚠️ HORS PÉRIMÈTRE (appliqué quand même, à valider) : le même fix a été
+//     appliqué au <TextInput> du numéro de téléphone Mobile Money, qui a la
+//     même structure (TextInput dans un View bordée `f.box`) et pouvait donc
+//     afficher le même bug au focus. Je n'ai PAS touché aux champs de
+//     recherche des modals (`pm.searchInput`), qui ont une structure
+//     différente et n'ont pas été signalés — dis-moi si tu veux que je les
+//     corrige aussi par cohérence.
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -59,6 +75,7 @@ function normalizePhone(phone: string): string {
 }
 
 // ─── Field ──────────────────────────────────────────────
+// ✅ v6.2 : reset du contour de focus web ajouté sur le <TextInput>
 function Field({ label, value, onChangeText, placeholder, keyboardType, required, editable = true }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; required?: boolean; editable?: boolean;
@@ -71,7 +88,21 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, required
       </Text>
       <View style={[f.box, focused && { borderColor: C.green }, !editable && { opacity: 0.5 }]}>
         <TextInput
-          style={[f.input, { fontFamily: C.font.sans }]}
+          style={[
+            f.input,
+            { fontFamily: C.font.sans },
+            // ✅ v6.2 : reset du contour de focus natif du navigateur — sans ça,
+            // Chrome superpose son propre rectangle bleu par-dessus la bordure
+            // verte de `f.box` au focus (visible sur le champ "Nom" de la capture).
+            // Cast `as any` nécessaire : `outlineStyle` est déjà un style natif RN
+            // typé "solid" | "dotted" | "dashed" | undefined, incompatible avec "none".
+            Platform.OS === "web" && ({
+              outlineStyle: "none",
+              outlineWidth: 0,
+              borderWidth: 0,
+              boxShadow: "none",
+            } as any),
+          ]}
           value={value} onChangeText={onChangeText}
           placeholder={placeholder} placeholderTextColor={C.inkSoft}
           keyboardType={keyboardType} editable={editable}
@@ -86,7 +117,8 @@ const f = StyleSheet.create({
   wrap:  { marginBottom: 12 },
   lbl:   { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 0.8, marginBottom: 5, textTransform: "uppercase" },
   box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
-  input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600" },
+  // ✅ v6.2 : borderWidth:0 en dur — le contour visible vient uniquement de `box` (View parente)
+  input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600", borderWidth: 0 },
 });
 
 // ─── Select Button ───────────────────────────────────────
@@ -376,7 +408,19 @@ export default function BeneficiaryCreateScreen() {
               </TouchableOpacity>
               <View style={[f.box, { flex: 1 }]}>
                 <TextInput
-                  style={[f.input, { fontFamily: C.font.sans }]}
+                  style={[
+                    f.input,
+                    { fontFamily: C.font.sans },
+                    // ✅ v6.2 : même reset de contour de focus web que dans `Field`
+                    // (ce champ n'utilise pas le composant Field car il partage sa
+                    // ligne avec le sélecteur d'indicatif — même structure, même bug)
+                    Platform.OS === "web" && ({
+                      outlineStyle: "none",
+                      outlineWidth: 0,
+                      borderWidth: 0,
+                      boxShadow: "none",
+                    } as any),
+                  ]}
                   value={phoneNumber} onChangeText={setPhoneNumber}
                   placeholder="620 000 000" placeholderTextColor={C.inkSoft}
                   keyboardType="phone-pad" editable={!submitting}

@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.2 — Direct Transf'air
+// AUTH SERVICE v5.3 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -52,6 +52,26 @@
 //     en base sans problème (rien ne les bloquait dans updateProfile()),
 //     mais n'étaient jamais renvoyés au frontend — donnant l'impression
 //     que "Fonction" et "Pays de naissance" ne se sauvegardaient jamais.
+//
+// ✅ v5.3 : 🚨 FIX CRITIQUE — register() non-atomique
+//     PROBLÈME RÉSOLU (juillet 2026) :
+//     user.create() et wallet.create() étaient deux appels Prisma
+//     séparés, PAS dans une transaction. Si wallet.create() échouait
+//     pour n'importe quelle raison (contrainte DB, coupure réseau,
+//     erreur transitoire Railway/Neon...), le User restait créé EN
+//     BASE sans wallet. Cas vécu : une tentative d'inscription
+//     partiellement avortée laisse un compte "fantôme" qui bloque
+//     ensuite TOUTES les tentatives suivantes avec le même email ou
+//     téléphone via ConflictException("déjà utilisé") — un message
+//     qui n'a plus rien à voir avec l'échec initial, et qui peut
+//     facilement se faire passer pour un bug de validation (ex.
+//     format du téléphone) alors qu'il s'agit d'un enregistrement
+//     résiduel d'un essai précédent.
+//     CORRECTIF : user.create() + wallet.create() sont maintenant
+//     dans un seul this.prisma.$transaction() — soit les deux
+//     réussissent ensemble, soit rien n'est persisté. Un échec
+//     redevient un vrai 500 explicite au lieu d'un faux 409 "déjà
+//     utilisé" au prochain essai.
 // =========================================================
 
 import {
@@ -605,7 +625,7 @@ export class AuthService {
   }
 
   // ========================================================
-  // REGISTER
+  // REGISTER ✅ v5.3 : user.create() + wallet.create() atomiques
   // ========================================================
 
   async register(dto: RegisterDto, tenantFromHeader?: string | null) {
@@ -635,31 +655,44 @@ export class AuthService {
 
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
-    const user = await this.prisma.user.create({
-      data: {
-        email, phone, password: hashedPassword,
-        role:            dto.role === 'AGENT' ? Role.AGENT : Role.USER,
-        clientId:        client.id,
-        firstName:       dto.firstName,
-        lastName:        dto.lastName,
-        country:         dto.country,
-        city:            dto.city,
-        primaryCurrency,
-        addressStreet:   dto.addressStreet,
-        postalCode:      dto.postalCode,
-        nationality:     dto.nationality,
-        birthDate:       dto.birthDate,
-        birthCountry:    dto.birthCountry,
-        birthCity:       dto.birthCity,
-        birthPlace:      dto.birthPlace,
-        kycLevel:        KycLevel.LEVEL_0,
-        referralCode:    generateReferralCode(dto.firstName, dto.lastName),
-      },
+    // ✅ v5.3 : user.create() + wallet.create() dans une SEULE
+    // transaction Prisma. Avant, c'étaient deux appels séparés : si
+    // wallet.create() échouait (contrainte DB, coupure réseau...), le
+    // User restait créé sans wallet — un compte fantôme qui bloque
+    // ensuite toute nouvelle tentative avec le même email/téléphone
+    // via un ConflictException trompeur ("déjà utilisé"), sans lien
+    // apparent avec l'échec réel. Avec $transaction, soit les deux
+    // écritures réussissent ensemble, soit aucune n'est persistée.
+    const user = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.user.create({
+        data: {
+          email, phone, password: hashedPassword,
+          role:            dto.role === 'AGENT' ? Role.AGENT : Role.USER,
+          clientId:        client.id,
+          firstName:       dto.firstName,
+          lastName:        dto.lastName,
+          country:         dto.country,
+          city:            dto.city,
+          primaryCurrency,
+          addressStreet:   dto.addressStreet,
+          postalCode:      dto.postalCode,
+          nationality:     dto.nationality,
+          birthDate:       dto.birthDate,
+          birthCountry:    dto.birthCountry,
+          birthCity:       dto.birthCity,
+          birthPlace:      dto.birthPlace,
+          kycLevel:        KycLevel.LEVEL_0,
+          referralCode:    generateReferralCode(dto.firstName, dto.lastName),
+        },
+      });
+
+      await tx.wallet.create({
+        data: { userId: created.id, currency: primaryCurrency, balance: 0, isDefault: true, isActive: true },
+      });
+
+      return created;
     });
 
-    await this.prisma.wallet.create({
-      data: { userId: user.id, currency: primaryCurrency, balance: 0, isDefault: true, isActive: true },
-    });
     await this.audit(user.id, client.id, AuditAction.USER_CREATE, { country: dto.country, currency: primaryCurrency });
 
     this.mail.sendEmail(

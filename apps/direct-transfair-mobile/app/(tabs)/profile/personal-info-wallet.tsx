@@ -1,15 +1,18 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.3
-// ✅ v5.2 conservé intégralement
-// ✅ v5.3 : Fond blanc neutre — plus de vert sur les fonds
-//   - T.bg      : "#ECFDF5" → "#FAFAFA" (blanc cassé neutre)
-//   - T.surfaceAlt : "#F0FDF4" → "#F5F5F5" (gris clair neutre)
-//   - T.border  : "#A7F3D0" → "#E5E5EA" (bordure neutre)
-//   - accentSoft : "#D1FAE5" → conservé uniquement sur éléments actifs
-//   - StatusBar → backgroundColor blanc
-//   - Header    → fond blanc, bordure neutre
-//   - SectionCard → bordure neutre
+// PERSONAL INFO — CLIENT (WALLET) v5.5
+// ✅ v5.4 conservé intégralement (reset du cadre de focus web)
+// ✅ v5.5 : Correction des erreurs TypeScript signalées (ts(2769))
+//   - Cause : `outlineStyle: "none"` était passé sans cast, alors que React
+//     Native déclare déjà `outlineStyle` comme un style natif typé
+//     "solid" | "dotted" | "dashed" | undefined (propriété d'accessibilité
+//     native, sans rapport avec le CSS web `outline`). "none" n'appartenant
+//     pas à cette union, TS rejetait l'assignation ("Aucune surcharge ne
+//     correspond à cet appel").
+//   - Fix : ajout du cast `as any` sur l'objet de reset web dans le
+//     <TextInput> du composant `Field`. Comportement runtime inchangé
+//     (le cadre bleu parasite reste corrigé) — seule la compilation est
+//     réparée.
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -65,7 +68,22 @@ function Field({ label, value, onChange, editable = true, style, placeholder, ke
           placeholderTextColor={T.textDim}
           keyboardType={keyboardType}
           maxLength={maxLength}
-          style={[fS.input, { fontFamily: T.font.sans }, !editable && fS.inputDisabled]}
+          style={[
+            fS.input,
+            { fontFamily: T.font.sans },
+            !editable && fS.inputDisabled,
+            // ✅ v5.5 : cast `as any` ajouté — sans lui, TS rejette cet objet car
+            // React Native déclare déjà `outlineStyle` comme un style natif typé
+            // "solid" | "dotted" | "dashed" | undefined (propriété d'accessibilité,
+            // sans rapport avec le CSS web outline). "none" n'appartient pas à cette
+            // union, d'où l'erreur TS2769 "Aucune surcharge ne correspond à cet appel".
+            Platform.OS === "web" && ({
+              outlineStyle: "none",
+              outlineWidth: 0,
+              borderWidth: 0,
+              boxShadow: "none",
+            } as any),
+          ]}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
@@ -79,7 +97,7 @@ const fS = StyleSheet.create({
   box:           { backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, flexDirection: "row", alignItems: "center" },
   boxFocused:    { borderColor: T.borderFocus, shadowColor: T.accent, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
   boxDisabled:   { backgroundColor: T.surfaceAlt },
-  input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600" },
+  input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600", borderWidth: 0 },
   inputDisabled: { color: T.textSub },
 });
 

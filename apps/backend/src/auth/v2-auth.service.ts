@@ -1,6 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
-// AUTH SERVICE v2.2 — Sécurité production
+// AUTH SERVICE v2.3 — Sécurité production
 //
 // ✅ v2.0 : Toutes les corrections de sécurité originales conservées
 // ✅ v2.1 : CORRECTIFS RATE LIMIT
@@ -32,6 +32,25 @@
 //     dans common/utils/phone.util.ts et transactions.service.ts
 //     (v4.18). Remplacée ici par normalizePhoneE164() dans
 //     requestOtpPhone().
+//
+// ✅ v2.3 : 🚨 FIX — allVerified incohérent avec le bypass DEV téléphone
+//     PROBLÈME RÉSOLU (juillet 2026) :
+//     buildVerificationNeeded() (plus bas dans ce même fichier) bypass
+//     déjà la vérification téléphone en DEV — hasPhone forcé à false,
+//     phoneOk forcé à true. Mais verifyContact() calculait allVerified
+//     séparément, avec la vraie règle non bypassée :
+//       isEmailVerified && (!phone || isPhoneVerified)
+//     Comme l'inscription (register()) exige un téléphone, la quasi-
+//     totalité des comptes en ont un. Résultat : après vérification de
+//     l'email, allVerified revenait systématiquement false — alors que
+//     verify-contact.tsx (mobile) ne propose JAMAIS l'étape téléphone
+//     en DEV. Le frontend passait alors à l'étape suivante inexistante,
+//     atterrissait sur un état local "done" sans jamais recevoir
+//     allVerified=true, et restait bloqué indéfiniment sur l'écran
+//     "Connexion en cours…" (voir verify-contact.tsx v1.4).
+//     CORRECTIF : même bascule DEV/PROD que buildVerificationNeeded(),
+//     pour que les deux logiques de vérification restent synchronisées
+//     et basculent ensemble vers la prod le jour venu.
 // =========================================================
 
 import {
@@ -531,8 +550,18 @@ export class V2AuthService {
       channel: dto.channel,
     });
 
-    const allVerified =
-      updated.isEmailVerified && (!updated.phone || updated.isPhoneVerified);
+    // ✅ v2.3 — FIX : même bascule DEV/PROD que buildVerificationNeeded()
+    // (plus bas dans ce fichier). Avant, allVerified exigeait TOUJOURS
+    // isPhoneVerified dès que le compte avait un téléphone, alors que
+    // verify-contact.tsx (mobile) ne propose jamais cette étape en DEV.
+    // Tout compte avec téléphone (quasi tous, l'inscription en exige un)
+    // recevait donc allVerified=false en boucle après avoir vérifié son
+    // email, sans qu'aucune étape supplémentaire ne soit jamais proposée
+    // côté UI → écran bloqué indéfiniment. Voir verify-contact.tsx v1.4.
+    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
+    // const hasPhone    = !!updated.phone;
+    // const allVerified = updated.isEmailVerified && (!hasPhone || updated.isPhoneVerified);
+    const allVerified = updated.isEmailVerified; // DEV bypass — synchronisé avec buildVerificationNeeded()
 
     return {
       success:       true,
@@ -558,13 +587,20 @@ export class V2AuthService {
 
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
+    // ✅ v2.3 — même bascule DEV/PROD que buildVerificationNeeded() et
+    // verifyContact() ci-dessus, pour rester cohérent partout où
+    // allVerified est calculé dans ce fichier.
+    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
+    // const allVerified = user.isEmailVerified && (!user.phone || user.isPhoneVerified);
+    const allVerified = user.isEmailVerified; // DEV bypass
+
     return {
       emailVerified: user.isEmailVerified,
       phoneVerified: user.isPhoneVerified,
       hasPhone:      !!user.phone,
       maskedEmail:   maskEmail(user.email),
       maskedPhone:   user.phone ? maskPhone(user.phone) : null,
-      allVerified:   user.isEmailVerified && (!user.phone || user.isPhoneVerified),
+      allVerified,
     };
   }
 

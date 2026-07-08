@@ -1,14 +1,22 @@
 // apps/direct-transfair-mobile/app/(tabs)/rates.tsx
 // =========================================================
-// TAUX DU JOUR v8.0 — Direct Transf'air
-// ✅ v7.0 conservé : hero chips, rate cards, animations
-// ✅ v8.0 : Convertisseur entièrement redesigné — style Wise
-//   • Modal plein écran avec barre de recherche
-//   • 2 lignes FROM / TO empilées verticalement
-//   • Sélecteur devise : drapeau rond + code + chevron
-//   • Taux affiché sous la ligne TO ("1 GNF = 0,0001 GBP")
-//   • Disclaimer "Taux de change moyen du marché ⓘ"
-//   • 5 devises uniquement : EUR, USD, GBP, XOF, GNF
+// TAUX DU JOUR v8.1 — Direct Transf'air
+// ✅ v7.0 conservé : hero chips, rate cards (composants gardés en dur, non supprimés — voir note ci-dessous), animations
+// ✅ v8.0 conservé : Convertisseur redesigné style Wise (modal recherche, 2 lignes FROM/TO, disclaimer marché)
+// ✅ v8.1 (cette version) :
+//   • Suppression de l'affichage de la section "TOUTES LES PAIRES" dans l'écran :
+//     seul le convertisseur reste visible sous le hero (demande explicite).
+//   • Correction du cadre parasite autour du champ de saisie du montant (FROM) :
+//     `outlineStyle` était passé en prop directe du <TextInput>, ignoré par
+//     react-native-web -> le navigateur affichait son contour de focus bleu +
+//     sa bordure grise par défaut par-dessus la bordure bleue voulue (cf. capture 3).
+//     Le reset est maintenant appliqué dans le tableau `style`, avec borderWidth:0
+//     en dur sur amountInput pour éviter toute bordure résiduelle.
+//   ⚠️ HORS PÉRIMÈTRE (non touché, à valider avec toi) : le composant RateCard,
+//     ses styles `rc`, les constantes PRIORITY / PAIR_COLORS / CURRENCIES / META
+//     et la variable `sorted` ne sont plus utilisés par l'écran (ils ne servaient
+//     qu'à la section supprimée). Je les ai laissés intacts au cas où tu veuilles
+//     les réutiliser ailleurs (ex. écran "Graphiques") — dis-moi si je les supprime.
 // =========================================================
 
 import React, { useState, useCallback, useRef, useEffect } from "react";
@@ -80,6 +88,7 @@ function getCurrencyMeta(code: string) {
 }
 
 // ─── Meta pour hero chips et rate cards ──────────────────
+// ⚠️ HORS PÉRIMÈTRE : META n'est plus utilisé que par RateCard (désormais orphelin, voir note d'en-tête)
 const META: Record<string, { flag: string; name: string }> = {
   EUR: { flag: "🇪🇺", name: "Euro" },
   XOF: { flag: "🌍",  name: "Franc CFA" },
@@ -367,6 +376,7 @@ const pm = StyleSheet.create({
 // =========================================================
 // ✅ v8.0 — CONVERTISSEUR REDESIGNÉ — style Wise
 // 2 lignes FROM/TO empilées, sélecteur devise avec modal
+// ✅ v8.1 — champ de saisie du montant : reset du contour web déplacé dans `style`
 // =========================================================
 function Converter({ rates }: { rates: any[] }) {
   const [fromCur, setFromCur] = useState("EUR");
@@ -428,8 +438,18 @@ function Converter({ rates }: { rates: any[] }) {
         <View style={cv.vSep} />
 
         {/* Montant (saisie) */}
+        {/* ✅ v8.1 : le reset "outline" doit être passé dans le tableau `style`, pas en tant que
+            prop du composant — react-native-web ignorait `outlineStyle` passé en prop, d'où le
+            contour bleu de focus + la bordure grise par défaut du <input> qui polluaient la
+            saisie (visibles sur la capture 3). borderWidth:0 est aussi mis en dur sur amountInput. */}
         <TextInput
-          style={[cv.amountInput, { fontFamily: T.font.serif }]}
+          style={[
+            cv.amountInput,
+            { fontFamily: T.font.serif },
+            ...(Platform.OS === "web"
+              ? [{ outlineStyle: "none", outlineWidth: 0, borderWidth: 0, boxShadow: "none" } as any]
+              : []),
+          ]}
           value={amount}
           onChangeText={setAmount}
           keyboardType="numeric"
@@ -437,7 +457,6 @@ function Converter({ rates }: { rates: any[] }) {
           underlineColorAndroid="transparent"
           placeholder="0"
           placeholderTextColor={T.inkMuted}
-          {...(Platform.OS === "web" ? ({ outlineStyle: "none" } as any) : {})}
         />
 
         {/* Icône calculatrice */}
@@ -580,10 +599,13 @@ const cv = StyleSheet.create({
   },
 
   // TextInput montant (FROM)
+  // ✅ v8.1 : borderWidth:0 + fond transparent en dur pour éviter tout cadre résiduel
   amountInput: {
     flex: 1, paddingHorizontal: 14,
     fontSize: 22, fontWeight: "700", color: T.ink,
     textAlign: "right",
+    borderWidth: 0,
+    backgroundColor: "transparent",
   },
 
   // Zone résultat (TO)
@@ -628,6 +650,9 @@ const cv = StyleSheet.create({
 });
 
 // ─── Rate Card (inchangé) ─────────────────────────────────
+// ⚠️ HORS PÉRIMÈTRE : ce composant n'est plus appelé nulle part dans l'écran
+// depuis la suppression de la section "TOUTES LES PAIRES" (v8.1). Conservé
+// intact, non supprimé, dans l'attente de ta confirmation.
 function RateCard({ item, index }: { item: any; index: number }) {
   const anim  = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
@@ -723,7 +748,7 @@ const rc = StyleSheet.create({
   changeTxt: { fontSize: 9, fontWeight: "900" },
 });
 
-// ─── Écran principal (structure inchangée) ────────────────
+// ─── Écran principal ──────────────────────────────────────
 export default function RatesScreen() {
   const router = useRouter();
 
@@ -793,6 +818,8 @@ export default function RatesScreen() {
     }, [load])
   );
 
+  // ⚠️ HORS PÉRIMÈTRE : `sorted` n'est plus consommé dans le JSX depuis la
+  // suppression de la section "TOUTES LES PAIRES" (v8.1). Conservé intact.
   const sorted = [
     ...PRIORITY.map(p => rates.find(r => r.pair === p)).filter(Boolean),
     ...rates.filter(r => !PRIORITY.includes(r.pair)),
@@ -863,21 +890,9 @@ export default function RatesScreen() {
             />
           }
         >
-          {/* ✅ v8.0 : Convertisseur redesigné */}
+          {/* ✅ v8.1 : Convertisseur — seule section conservée dans le scroll,
+              la liste "TOUTES LES PAIRES" a été retirée à la demande */}
           <Converter rates={rates} />
-
-          {/* En-tête section paires */}
-          <View style={s.secRow}>
-            <View style={s.secDot} />
-            <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>TOUTES LES PAIRES</Text>
-            <View style={s.secBadge}>
-              <Text style={[s.secCount, { fontFamily: T.font.mono }]}>{sorted.length}</Text>
-            </View>
-          </View>
-
-          {sorted.map((item: any, i: number) => (
-            <RateCard key={item.pair} item={item} index={i} />
-          ))}
 
           <View style={s.legal}>
             <Ionicons name="information-circle-outline" size={12} color={T.inkMuted} />

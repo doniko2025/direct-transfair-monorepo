@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.10 — Direct Transf'air
+// SEND MONEY v2.11 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -65,6 +65,45 @@
 //      mais pas encore enregistré), avec lien "+ Enregistrer comme
 //      contact" sous la carte dans ce second cas.
 //    - Aucune autre logique métier touchée (calculs, envoi, devises).
+// ✅ v2.11 : REFONTE HEADER — dégradé sombre + solde intégré + sheet
+//    arrondie (même traitement que le Client Dashboard v9.8) —
+//    PUREMENT PRÉSENTATIONNEL, aucune ligne de logique métier touchée
+//    (mêmes states, mêmes calculs, mêmes appels API, mêmes routes, la
+//    détection bénéficiaire v2.10 intacte, les 4 modales — Motif, pays,
+//    Fallback, Reçu — intactes au caractère près).
+//    - Header : fond C.bg plat → dégradé sombre (expo-linear-gradient,
+//      C.g1 → C.g3, déjà présents dans la palette de ce fichier, aucune
+//      couleur inventée).
+//    - La carte solde flottante (balanceCard) est supprimée : le solde
+//      vit maintenant à même le header, comme le Client Dashboard.
+//      fontSize du montant INCHANGÉ (30) — contrairement au Dashboard,
+//      cet écran reste volontairement compact (cf. v2.7).
+//    - Filigrane wallet : couleur adaptée (vert translucide au lieu du
+//      brun, illisible sur fond sombre).
+//    - Bouton retour / bouton œil : cercles blancs pleins → style
+//      "verre" (fond blanc à 10 % d'opacité), icônes en blanc. Forme
+//      inchangée (carré arrondi 12, pas de cercle — c'était déjà la
+//      convention de cet écran, différente du Dashboard).
+//    - Titre du header : encre foncée → blanc.
+//    - paddingBottom du header : 14 → 32 (place pour le chevauchement
+//      de la sheet). paddingTop du header INCHANGÉ — le
+//      `Platform.OS === "android" ? 44 : 10` existant n'est pas touché,
+//      ce n'est pas lié au visuel et je préfère ne pas toucher un
+//      réglage qui n'a pas été demandé.
+//    - NOUVEAU : KeyboardAvoidingView + ScrollView enveloppés dans une
+//      sheet à coins arrondis (24) qui chevauche le header (marginTop
+//      -20). Fond de la sheet : C.bg (inchangé) → AUCUN changement sur
+//      les blocks existants (Bénéficiaire, Montant, Motif,
+//      Récapitulatif, CTA, les 4 modales). scroll.paddingTop 10 → 16
+//      pour respirer sous l'arrondi.
+//      ⚠️ Si jamais tu observes un souci d'affichage à l'ouverture du
+//      clavier (peu probable), le premier réflexe est de retirer
+//      `overflow:"hidden"` de `s.sheet` — c'est le seul point de
+//      contact entre ce changement et le clavier.
+//    - StatusBar : dark-content → light-content, backgroundColor aligné
+//      sur C.g1.
+//    - Réutilise expo-linear-gradient (déjà installé pour le Client
+//      Dashboard v9.8) — aucune nouvelle dépendance ici.
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -77,6 +116,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import type { Beneficiary, ExchangeRate } from "../../services/types";
@@ -102,6 +142,8 @@ const C = {
   amber: "#D97706", amberSoft: "#FFFBEB",
   blue: "#2563EB", blueSoft: "#EFF6FF",
   orange: "#EA580C", orangeSoft: "#FFF7ED",
+  // ✅ v2.11 — texte secondaire sur fond sombre (header en dégradé)
+  heroMuted: "rgba(255,255,255,0.55)",
 };
 
 // ─── Motifs du transfert ──────────────────────────────────
@@ -860,35 +902,45 @@ useEffect(() => {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle="light-content" backgroundColor={C.g1} />
 
-      {/* ══ HEADER ══ */}
-      <Animated.View style={[s.header, {
+      {/* ══ HEADER — ✅ v2.11 : dégradé sombre, solde intégré (plus de
+          carte flottante séparée) ══ */}
+      <Animated.View style={{
         opacity: headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0,1], outputRange: [-20,0] }) }],
-      }]}>
-        <View style={s.headerTop}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color={C.text} />
-          </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: F.display }]}>
-            {mode === "WALLET" ? "Transfert Wallet" : "Envoi d'Argent"}
-          </Text>
-          <TouchableOpacity style={s.eyeBtn} onPress={() => setShowBalance(!showBalance)}>
-            <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.textMuted} />
-          </TouchableOpacity>
-        </View>
+      }}>
+        <LinearGradient
+          colors={[C.g1, C.g3]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={s.header}
+        >
+          {/* Halo décoratif — élément signature, discret */}
+          <View style={s.heroGlow} pointerEvents="none" />
 
-        <View style={s.balanceCard}>
+          <View style={s.headerTop}>
+            <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={20} color={C.white} />
+            </TouchableOpacity>
+            <Text style={[s.headerTitle, { fontFamily: F.display }]}>
+              {mode === "WALLET" ? "Transfert Wallet" : "Envoi d'Argent"}
+            </Text>
+            <TouchableOpacity style={s.eyeBtn} onPress={() => setShowBalance(!showBalance)}>
+              <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.white} />
+            </TouchableOpacity>
+          </View>
+
           <Ionicons
-          name="wallet"
-          size={48}
-          color="#8E562E"
-         style={s.balanceWatermark}
-        />
+            name="wallet"
+            size={72}
+            color="rgba(5,150,105,0.14)"
+            style={s.balanceWatermark}
+            pointerEvents="none"
+          />
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
           {loadingWallet
-            ? <ActivityIndicator color={C.textMuted} size="small" />
+            ? <ActivityIndicator color={C.heroMuted} size="small" />
             : <Text style={[s.balanceVal, { fontFamily: F.display }]}>
                 {showBalance ? `${fmt(walletBalance, userCurrency)} ${userCurrency}` : "• • • • •"}
               </Text>
@@ -899,286 +951,224 @@ useEffect(() => {
               <Text style={[s.insufficientTxt, { fontFamily: F.body }]}>Solde insuffisant</Text>
             </View>
           )}
-        </View>
+        </LinearGradient>
       </Animated.View>
 
-      {/* ══ CONTENU ══ */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Animated.View style={{
-            opacity: cardAnim,
-            transform: [{ translateY: cardAnim.interpolate({ inputRange: [0,1], outputRange: [30,0] }) }],
-          }}>
+      {/* ══ SHEET — ✅ v2.11 : enveloppe arrondie qui chevauche le header.
+          Fond C.bg inchangé → blocks du body strictement identiques à
+          la v2.10 (Bénéficiaire, Montant, Motif, Récapitulatif, CTA) ══ */}
+      <View style={s.sheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+          <ScrollView
+            contentContainerStyle={s.scroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Animated.View style={{
+              opacity: cardAnim,
+              transform: [{ translateY: cardAnim.interpolate({ inputRange: [0,1], outputRange: [30,0] }) }],
+            }}>
 
-            {/* ── Onglets mode ── */}
-            {!isModeLocked && (
-              <View style={s.tabsWrap}>
-                <ModeTab label="Wallet"      icon="phone-portrait-outline" active={mode === "WALLET"} onPress={() => setMode("WALLET")} />
-                <ModeTab label="Cash Pickup" icon="cash-outline"           active={mode === "CASH"}   onPress={() => setMode("CASH")}   />
-              </View>
-            )}
-
-            {/* ── Bénéficiaire ── */}
-            <View style={s.block}>
-              <View style={s.blockHeader}>
-                <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
-                  <Ionicons name="person-outline" size={14} color={C.g4} />
-                </View>
-                <Text style={[s.blockTitle, { fontFamily: F.body }]}>Bénéficiaire</Text>
-              </View>
-
-              {mode === "WALLET" ? (
-                <>
-                  <View style={s.phoneWrap}>
-                    <TouchableOpacity style={s.dialBtn} onPress={() => setShowCountryModal(true)}>
-                      <Text style={s.dialFlag}>{targetCountryData.flag}</Text>
-                      <Text style={[s.dialCode, { fontFamily: F.body }]}>+{targetCountryData.dialCode}</Text>
-                      <Ionicons name="chevron-down" size={12} color={C.textMuted} />
-                    </TouchableOpacity>
-                    <TextInput
-                      style={[s.phoneInput, { fontFamily: F.body }]}
-                      value={walletInput}
-                      onChangeText={setWalletInput}
-                      placeholder="Téléphone, email ou nom…"
-                      placeholderTextColor={C.textFaint}
-                      keyboardType={isNumericInput ? "phone-pad" : "default"}
-                      autoCapitalize="none"
-                    />
-                    {walletInput.length > 0 && (
-                      <TouchableOpacity style={s.clearInputBtn} onPress={() => setWalletInput("")}>
-                        <Ionicons name="close-circle" size={18} color={C.textFaint} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {detectedBeneficiary ? (
-                    <>
-                      <View style={[s.detectedCard, isPlatformOnly && s.detectedCardPlatform]}>
-                        <View style={[s.detectedAvatar, isPlatformOnly && s.detectedAvatarPlatform]}>
-                          <Text style={[
-                            s.detectedAvatarTxt, { fontFamily: F.display },
-                            isPlatformOnly && { color: C.blue },
-                          ]}>
-                            {detectedBeneficiary.fullName[0]}
-                          </Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[
-                            s.detectedLabel, { fontFamily: F.body },
-                            isPlatformOnly && { color: C.blue },
-                          ]}>
-                            {isPlatformOnly ? "UTILISATEUR DIRECT TRANSF'AIR" : "TROUVÉ"}
-                          </Text>
-                          <Text style={[s.detectedName,  { fontFamily: F.body }]}>{detectedBeneficiary.fullName}</Text>
-                          {detectedBeneficiary.phone && (
-                            <Text style={[s.detectedPhone, { fontFamily: F.body }]}>{detectedBeneficiary.phone}</Text>
-                          )}
-                        </View>
-                        <View style={[s.detectedCheck, isPlatformOnly && s.detectedCheckPlatform]}>
-                          <Ionicons
-                            name={isPlatformOnly ? "person-outline" : "checkmark"}
-                            size={14} color={C.white}
-                          />
-                        </View>
-                        <Text style={s.detectedFlag}>{getCountryData(detectedBeneficiary.country).flag}</Text>
-                      </View>
-
-                      {/* ✅ v2.10 — Utilisateur plateforme détecté, pas encore sauvegardé */}
-                      {isPlatformOnly && (
-                        <TouchableOpacity
-                          style={s.platformAddRow}
-                          onPress={() => router.push({
-                            pathname: "/(tabs)/beneficiaries/create",
-                            params: {
-                              phone: detectedBeneficiary.phone ?? walletInput,
-                              name:  detectedBeneficiary.fullName,
-                            },
-                          } as any)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons name="person-add-outline" size={14} color={C.blue} />
-                          <Text style={[s.platformAddTxt, { fontFamily: F.body }]}>
-                            + Enregistrer comme contact
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </>
-                  ) : walletInput.length >= 3 ? (
-                    <View style={s.addHint}>
-                      <View style={s.addHintIcon}>
-                        <Ionicons name="person-add-outline" size={16} color={C.g4} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[s.addHintTxt, { fontFamily: F.body }]}>
-                          Aucun contact trouvé pour "{walletInput}"
-                        </Text>
-                        <Text
-                          style={[s.addHintLink, { fontFamily: F.body }]}
-                          onPress={() => router.push("/(tabs)/beneficiaries")}
-                        >
-                          + Ajouter comme bénéficiaire
-                        </Text>
-                      </View>
-                    </View>
-                  ) : null}
-                </>
-              ) : (
-                <>
-                  {/* ✅ v2.6 — Liste horizontale + bouton "+" à la fin */}
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 4 }}
-                  >
-                    {beneficiaries.map((item) => (
-                      <BeneficiaryCard
-                        key={String(item.id)}
-                        item={item}
-                        selected={selectedCashId === String(item.id)}
-                        onPress={() => setSelectedCashId(String(item.id))}
-                      />
-                    ))}
-                    <AddBeneficiaryCard
-                      onPress={() => router.push("/(tabs)/beneficiaries")}
-                    />
-                  </ScrollView>
-
-                  {(() => {
-                    const sel = beneficiaries.find((b) => String(b.id) === selectedCashId);
-                    const cd  = sel ? getCountryData(sel.country) : null;
-                    return sel ? (
-                      <View style={s.detectedCard}>
-                        <View style={s.detectedAvatar}>
-                          <Text style={[s.detectedAvatarTxt, { fontFamily: F.display }]}>{sel.fullName[0]}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.detectedLabel, { fontFamily: F.body }]}>SÉLECTIONNÉ</Text>
-                          <Text style={[s.detectedName,  { fontFamily: F.body }]}>{sel.fullName}</Text>
-                        </View>
-                        {cd && <Text style={s.detectedFlag}>{cd.flag}</Text>}
-                      </View>
-                    ) : null;
-                  })()}
-                </>
-              )}
-            </View>
-
-            {/* ── Montant ── */}
-            <View style={s.block}>
-              <View style={s.blockHeader}>
-                <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
-                  <Ionicons name="cash-outline" size={14} color={C.g4} />
-                </View>
-                <Text style={[s.blockTitle, { fontFamily: F.body }]}>
-                  Montant{feesRate > 0 && (
-                    <Text style={{ color: C.amber }}> (Frais {cashFeeLabel} %)</Text>
-                  )}
-                </Text>
-              </View>
-              <View style={s.amountCard}>
-                <View style={s.amountSide}>
-                  <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>VOUS ENVOYEZ</Text>
-                  <View style={s.amountInputRow}>
-                    <TextInput
-                      style={[s.amountInput, { fontFamily: F.display }]}
-                      value={rawAmount} onChangeText={setRawAmount}
-                      keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint}
-                    />
-                    <View style={[s.currBadge, { backgroundColor: C.gSoft }]}>
-                      <Text style={[s.currTxt, { color: C.g4, fontFamily: F.body }]}>{userCurrency}</Text>
-                    </View>
-                  </View>
-                </View>
-                <View style={s.amountArrow}>
-                  <Ionicons name="swap-horizontal-outline" size={18} color={C.g4} />
-                </View>
-                <View style={s.amountSide}>
-                  <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>
-                    {detectedBeneficiary?.fullName?.split(" ")[0] ??
-                      (selectedCashId
-                        ? (beneficiaries.find((b) => String(b.id) === selectedCashId)?.fullName?.split(" ")[0] ?? "")
-                        : "REÇOIT")}
-                  </Text>
-                  <View style={s.amountInputRow}>
-                    <Text style={[s.amountReceived, { fontFamily: F.display }]}>
-                      {sendAmount > 0 ? fmt(Math.round(receivedAmt), targetCurrency) : "0"}
-                    </Text>
-                    <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}>
-                      <Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-              {sendAmount > 0 && rate !== 1 && (
-                <View style={s.rateChip}>
-                  <Ionicons name="trending-up-outline" size={13} color={C.g4} />
-                  <Text style={[s.rateTxt, { fontFamily: F.body }]}>
-                    1 {userCurrency} = {rate.toFixed(4)} {targetCurrency}
-                  </Text>
+              {/* ── Onglets mode ── */}
+              {!isModeLocked && (
+                <View style={s.tabsWrap}>
+                  <ModeTab label="Wallet"      icon="phone-portrait-outline" active={mode === "WALLET"} onPress={() => setMode("WALLET")} />
+                  <ModeTab label="Cash Pickup" icon="cash-outline"           active={mode === "CASH"}   onPress={() => setMode("CASH")}   />
                 </View>
               )}
-            </View>
 
-            {/* ── Motif du transfert ── */}
-            <TouchableOpacity
-              style={s.motifRow}
-              onPress={() => setShowMotifModal(true)}
-              activeOpacity={0.85}
-            >
-              <View style={s.motifLeft}>
-                {selectedMotif ? (
-                  <Text style={s.motifEmoji}>{selectedMotif.icon}</Text>
-                ) : (
-                  <View style={s.motifIconBox}>
-                    <Ionicons name="document-text-outline" size={17} color={C.textMuted} />
-                  </View>
-                )}
-                <Text style={[
-                  s.motifTxt, { fontFamily: F.body },
-                  motif ? { color: C.text, fontWeight: "700" } : { color: C.textFaint },
-                ]}>
-                  {motif ?? "Motif du transfert"}
-                </Text>
-                {motif && (
-                  <TouchableOpacity
-                    onPress={(e) => { e.stopPropagation(); setMotif(null); }}
-                    hitSlop={8}
-                    style={s.motifClear}
-                  >
-                    <Ionicons name="close-circle" size={16} color={C.textFaint} />
-                  </TouchableOpacity>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
-            </TouchableOpacity>
-
-            {/* ── Récapitulatif ── */}
-            {sendAmount > 0 && (
+              {/* ── Bénéficiaire ── */}
               <View style={s.block}>
                 <View style={s.blockHeader}>
                   <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
-                    <Ionicons name="receipt-outline" size={14} color={C.g4} />
+                    <Ionicons name="person-outline" size={14} color={C.g4} />
                   </View>
-                  <Text style={[s.blockTitle, { fontFamily: F.body }]}>Récapitulatif</Text>
+                  <Text style={[s.blockTitle, { fontFamily: F.body }]}>Bénéficiaire</Text>
                 </View>
-                <SummaryRow label="Montant envoyé" value={`${fmt(sendAmount, userCurrency)} ${userCurrency}`} />
-                <View style={s.summaryDivider} />
-                <SummaryRow
-                  label="Frais de transfert"
-                  value={feesAmt === 0 ? "Offerts ✓" : `${fmt(feesAmt, userCurrency)} ${userCurrency}`}
-                  valueColor={feesAmt === 0 ? C.g4 : undefined}
-                />
-                <View style={s.summaryDivider} />
-                <SummaryRow
-                  label={`${beneficiaryLabel} reçoit`}
-                  value={`${fmt(Math.round(receivedAmt > 0 ? receivedAmt : sendAmount), targetCurrency)} ${targetCurrency}`}
-                  valueColor={C.blue}
-                />
-                {targetCurrency !== userCurrency && rate !== 1 && (
+
+                {mode === "WALLET" ? (
+                  <>
+                    <View style={s.phoneWrap}>
+                      <TouchableOpacity style={s.dialBtn} onPress={() => setShowCountryModal(true)}>
+                        <Text style={s.dialFlag}>{targetCountryData.flag}</Text>
+                        <Text style={[s.dialCode, { fontFamily: F.body }]}>+{targetCountryData.dialCode}</Text>
+                        <Ionicons name="chevron-down" size={12} color={C.textMuted} />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={[s.phoneInput, { fontFamily: F.body }]}
+                        value={walletInput}
+                        onChangeText={setWalletInput}
+                        placeholder="Téléphone, email ou nom…"
+                        placeholderTextColor={C.textFaint}
+                        keyboardType={isNumericInput ? "phone-pad" : "default"}
+                        autoCapitalize="none"
+                      />
+                      {walletInput.length > 0 && (
+                        <TouchableOpacity style={s.clearInputBtn} onPress={() => setWalletInput("")}>
+                          <Ionicons name="close-circle" size={18} color={C.textFaint} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {detectedBeneficiary ? (
+                      <>
+                        <View style={[s.detectedCard, isPlatformOnly && s.detectedCardPlatform]}>
+                          <View style={[s.detectedAvatar, isPlatformOnly && s.detectedAvatarPlatform]}>
+                            <Text style={[
+                              s.detectedAvatarTxt, { fontFamily: F.display },
+                              isPlatformOnly && { color: C.blue },
+                            ]}>
+                              {detectedBeneficiary.fullName[0]}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[
+                              s.detectedLabel, { fontFamily: F.body },
+                              isPlatformOnly && { color: C.blue },
+                            ]}>
+                              {isPlatformOnly ? "UTILISATEUR DIRECT TRANSF'AIR" : "TROUVÉ"}
+                            </Text>
+                            <Text style={[s.detectedName,  { fontFamily: F.body }]}>{detectedBeneficiary.fullName}</Text>
+                            {detectedBeneficiary.phone && (
+                              <Text style={[s.detectedPhone, { fontFamily: F.body }]}>{detectedBeneficiary.phone}</Text>
+                            )}
+                          </View>
+                          <View style={[s.detectedCheck, isPlatformOnly && s.detectedCheckPlatform]}>
+                            <Ionicons
+                              name={isPlatformOnly ? "person-outline" : "checkmark"}
+                              size={14} color={C.white}
+                            />
+                          </View>
+                          <Text style={s.detectedFlag}>{getCountryData(detectedBeneficiary.country).flag}</Text>
+                        </View>
+
+                        {/* ✅ v2.10 — Utilisateur plateforme détecté, pas encore sauvegardé */}
+                        {isPlatformOnly && (
+                          <TouchableOpacity
+                            style={s.platformAddRow}
+                            onPress={() => router.push({
+                              pathname: "/(tabs)/beneficiaries/create",
+                              params: {
+                                phone: detectedBeneficiary.phone ?? walletInput,
+                                name:  detectedBeneficiary.fullName,
+                              },
+                            } as any)}
+                            activeOpacity={0.8}
+                          >
+                            <Ionicons name="person-add-outline" size={14} color={C.blue} />
+                            <Text style={[s.platformAddTxt, { fontFamily: F.body }]}>
+                              + Enregistrer comme contact
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </>
+                    ) : walletInput.length >= 3 ? (
+                      <View style={s.addHint}>
+                        <View style={s.addHintIcon}>
+                          <Ionicons name="person-add-outline" size={16} color={C.g4} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[s.addHintTxt, { fontFamily: F.body }]}>
+                            Aucun contact trouvé pour "{walletInput}"
+                          </Text>
+                          <Text
+                            style={[s.addHintLink, { fontFamily: F.body }]}
+                            onPress={() => router.push("/(tabs)/beneficiaries")}
+                          >
+                            + Ajouter comme bénéficiaire
+                          </Text>
+                        </View>
+                      </View>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    {/* ✅ v2.6 — Liste horizontale + bouton "+" à la fin */}
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingBottom: 4 }}
+                    >
+                      {beneficiaries.map((item) => (
+                        <BeneficiaryCard
+                          key={String(item.id)}
+                          item={item}
+                          selected={selectedCashId === String(item.id)}
+                          onPress={() => setSelectedCashId(String(item.id))}
+                        />
+                      ))}
+                      <AddBeneficiaryCard
+                        onPress={() => router.push("/(tabs)/beneficiaries")}
+                      />
+                    </ScrollView>
+
+                    {(() => {
+                      const sel = beneficiaries.find((b) => String(b.id) === selectedCashId);
+                      const cd  = sel ? getCountryData(sel.country) : null;
+                      return sel ? (
+                        <View style={s.detectedCard}>
+                          <View style={s.detectedAvatar}>
+                            <Text style={[s.detectedAvatarTxt, { fontFamily: F.display }]}>{sel.fullName[0]}</Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.detectedLabel, { fontFamily: F.body }]}>SÉLECTIONNÉ</Text>
+                            <Text style={[s.detectedName,  { fontFamily: F.body }]}>{sel.fullName}</Text>
+                          </View>
+                          {cd && <Text style={s.detectedFlag}>{cd.flag}</Text>}
+                        </View>
+                      ) : null;
+                    })()}
+                  </>
+                )}
+              </View>
+
+              {/* ── Montant ── */}
+              <View style={s.block}>
+                <View style={s.blockHeader}>
+                  <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
+                    <Ionicons name="cash-outline" size={14} color={C.g4} />
+                  </View>
+                  <Text style={[s.blockTitle, { fontFamily: F.body }]}>
+                    Montant{feesRate > 0 && (
+                      <Text style={{ color: C.amber }}> (Frais {cashFeeLabel} %)</Text>
+                    )}
+                  </Text>
+                </View>
+                <View style={s.amountCard}>
+                  <View style={s.amountSide}>
+                    <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>VOUS ENVOYEZ</Text>
+                    <View style={s.amountInputRow}>
+                      <TextInput
+                        style={[s.amountInput, { fontFamily: F.display }]}
+                        value={rawAmount} onChangeText={setRawAmount}
+                        keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint}
+                      />
+                      <View style={[s.currBadge, { backgroundColor: C.gSoft }]}>
+                        <Text style={[s.currTxt, { color: C.g4, fontFamily: F.body }]}>{userCurrency}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  <View style={s.amountArrow}>
+                    <Ionicons name="swap-horizontal-outline" size={18} color={C.g4} />
+                  </View>
+                  <View style={s.amountSide}>
+                    <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>
+                      {detectedBeneficiary?.fullName?.split(" ")[0] ??
+                        (selectedCashId
+                          ? (beneficiaries.find((b) => String(b.id) === selectedCashId)?.fullName?.split(" ")[0] ?? "")
+                          : "REÇOIT")}
+                    </Text>
+                    <View style={s.amountInputRow}>
+                      <Text style={[s.amountReceived, { fontFamily: F.display }]}>
+                        {sendAmount > 0 ? fmt(Math.round(receivedAmt), targetCurrency) : "0"}
+                      </Text>
+                      <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}>
+                        <Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+                {sendAmount > 0 && rate !== 1 && (
                   <View style={s.rateChip}>
                     <Ionicons name="trending-up-outline" size={13} color={C.g4} />
                     <Text style={[s.rateTxt, { fontFamily: F.body }]}>
@@ -1186,71 +1176,137 @@ useEffect(() => {
                     </Text>
                   </View>
                 )}
-                {motif && (
+              </View>
+
+              {/* ── Motif du transfert ── */}
+              <TouchableOpacity
+                style={s.motifRow}
+                onPress={() => setShowMotifModal(true)}
+                activeOpacity={0.85}
+              >
+                <View style={s.motifLeft}>
+                  {selectedMotif ? (
+                    <Text style={s.motifEmoji}>{selectedMotif.icon}</Text>
+                  ) : (
+                    <View style={s.motifIconBox}>
+                      <Ionicons name="document-text-outline" size={17} color={C.textMuted} />
+                    </View>
+                  )}
+                  <Text style={[
+                    s.motifTxt, { fontFamily: F.body },
+                    motif ? { color: C.text, fontWeight: "700" } : { color: C.textFaint },
+                  ]}>
+                    {motif ?? "Motif du transfert"}
+                  </Text>
+                  {motif && (
+                    <TouchableOpacity
+                      onPress={(e) => { e.stopPropagation(); setMotif(null); }}
+                      hitSlop={8}
+                      style={s.motifClear}
+                    >
+                      <Ionicons name="close-circle" size={16} color={C.textFaint} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+              </TouchableOpacity>
+
+              {/* ── Récapitulatif ── */}
+              {sendAmount > 0 && (
+                <View style={s.block}>
+                  <View style={s.blockHeader}>
+                    <View style={[s.blockNum, { backgroundColor: C.gSoft }]}>
+                      <Ionicons name="receipt-outline" size={14} color={C.g4} />
+                    </View>
+                    <Text style={[s.blockTitle, { fontFamily: F.body }]}>Récapitulatif</Text>
+                  </View>
+                  <SummaryRow label="Montant envoyé" value={`${fmt(sendAmount, userCurrency)} ${userCurrency}`} />
+                  <View style={s.summaryDivider} />
+                  <SummaryRow
+                    label="Frais de transfert"
+                    value={feesAmt === 0 ? "Offerts ✓" : `${fmt(feesAmt, userCurrency)} ${userCurrency}`}
+                    valueColor={feesAmt === 0 ? C.g4 : undefined}
+                  />
+                  <View style={s.summaryDivider} />
+                  <SummaryRow
+                    label={`${beneficiaryLabel} reçoit`}
+                    value={`${fmt(Math.round(receivedAmt > 0 ? receivedAmt : sendAmount), targetCurrency)} ${targetCurrency}`}
+                    valueColor={C.blue}
+                  />
+                  {targetCurrency !== userCurrency && rate !== 1 && (
+                    <View style={s.rateChip}>
+                      <Ionicons name="trending-up-outline" size={13} color={C.g4} />
+                      <Text style={[s.rateTxt, { fontFamily: F.body }]}>
+                        1 {userCurrency} = {rate.toFixed(4)} {targetCurrency}
+                      </Text>
+                    </View>
+                  )}
+                  {motif && (
+                    <>
+                      <View style={s.summaryDivider} />
+                      <SummaryRow label="Motif" value={`${selectedMotif?.icon ?? ""} ${motif}`} />
+                    </>
+                  )}
+                  <View style={[s.summaryDivider, { backgroundColor: C.gBorder, height: 1.5 }]} />
+                  <SummaryRow
+                    label="TOTAL À PAYER"
+                    value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`}
+                    valueColor={insufficient ? C.danger : C.g4}
+                    large
+                  />
+                  {insufficient && (
+                    <View style={s.insufficientBar}>
+                      <Ionicons name="wallet-outline" size={16} color={C.amber} />
+                      <Text style={[s.insufficientBarTxt, { fontFamily: F.body }]}>
+                        Il vous manque <Text style={{ fontWeight: "800" }}>{fmt(missingAmount, userCurrency)} {userCurrency}</Text>
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* ── CTA ── */}
+              <Pressable
+                style={({ pressed }) => [
+                  s.cta,
+                  insufficient && s.ctaAlt,
+                  !canSend && !insufficient && s.ctaDisabled,
+                  pressed && { opacity: 0.92 },
+                ]}
+                onPress={handleAction}
+                disabled={sending || (!canSend && !insufficient)}
+              >
+                {sending ? (
+                  <ActivityIndicator color={C.white} />
+                ) : (
                   <>
-                    <View style={s.summaryDivider} />
-                    <SummaryRow label="Motif" value={`${selectedMotif?.icon ?? ""} ${motif}`} />
+                    <View style={s.ctaIcon}>
+                      <Ionicons
+                        name={insufficient ? "options-outline" : mode === "WALLET" ? "phone-portrait-outline" : "cash-outline"}
+                        size={20} color={C.white}
+                      />
+                    </View>
+                    <Text style={[s.ctaTxt, { fontFamily: F.body }]}>
+                      {insufficient
+                        ? "AUTRE MOYEN DE PAIEMENT"
+                        : mode === "WALLET"
+                          ? "CONFIRMER LE TRANSFERT"
+                          : "GÉNÉRER LE CODE DE RETRAIT"}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={18} color={C.white} style={{ opacity: 0.7 }} />
                   </>
                 )}
-                <View style={[s.summaryDivider, { backgroundColor: C.gBorder, height: 1.5 }]} />
-                <SummaryRow
-                  label="TOTAL À PAYER"
-                  value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`}
-                  valueColor={insufficient ? C.danger : C.g4}
-                  large
-                />
-                {insufficient && (
-                  <View style={s.insufficientBar}>
-                    <Ionicons name="wallet-outline" size={16} color={C.amber} />
-                    <Text style={[s.insufficientBarTxt, { fontFamily: F.body }]}>
-                      Il vous manque <Text style={{ fontWeight: "800" }}>{fmt(missingAmount, userCurrency)} {userCurrency}</Text>
-                    </Text>
-                  </View>
-                )}
+              </Pressable>
+
+              <View style={s.secNote}>
+                <Ionicons name="shield-checkmark-outline" size={13} color={C.g5} />
+                <Text style={[s.secTxt, { fontFamily: F.body }]}>Transfert sécurisé · Crypté de bout en bout</Text>
               </View>
-            )}
-
-            {/* ── CTA ── */}
-            <Pressable
-              style={({ pressed }) => [
-                s.cta,
-                insufficient && s.ctaAlt,
-                !canSend && !insufficient && s.ctaDisabled,
-                pressed && { opacity: 0.92 },
-              ]}
-              onPress={handleAction}
-              disabled={sending || (!canSend && !insufficient)}
-            >
-              {sending ? (
-                <ActivityIndicator color={C.white} />
-              ) : (
-                <>
-                  <View style={s.ctaIcon}>
-                    <Ionicons
-                      name={insufficient ? "options-outline" : mode === "WALLET" ? "phone-portrait-outline" : "cash-outline"}
-                      size={20} color={C.white}
-                    />
-                  </View>
-                  <Text style={[s.ctaTxt, { fontFamily: F.body }]}>
-                    {insufficient
-                      ? "AUTRE MOYEN DE PAIEMENT"
-                      : mode === "WALLET"
-                        ? "CONFIRMER LE TRANSFERT"
-                        : "GÉNÉRER LE CODE DE RETRAIT"}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={18} color={C.white} style={{ opacity: 0.7 }} />
-                </>
-              )}
-            </Pressable>
-
-            <View style={s.secNote}>
-              <Ionicons name="shield-checkmark-outline" size={13} color={C.g5} />
-              <Text style={[s.secTxt, { fontFamily: F.body }]}>Transfert sécurisé · Crypté de bout en bout</Text>
-            </View>
-            <View style={{ height: 120 }} />
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              <View style={{ height: 120 }} />
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
 
       {/* ── Motif Modal ── */}
       <MotifModal
@@ -1325,55 +1381,69 @@ useEffect(() => {
 
 // ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe:      { flex: 1, backgroundColor: C.bg },
+  // ✅ v2.11 — fond aligné sur le 1er ton du dégradé (zone réservée par
+  // SafeAreaView sous l'encoche iOS, doit rester sombre en continuité du header)
+  safe:      { flex: 1, backgroundColor: C.g1 },
   loader:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.bg, gap: 12 },
   loaderTxt: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
 
+  // ── Header — ✅ v2.11 : plus de backgroundColor ici, géré par
+  // LinearGradient (colors=[C.g1, C.g3]) sur le composant parent.
+  // paddingTop INCHANGÉ. paddingBottom augmenté pour laisser la sheet
+  // chevaucher proprement le bas du header.
   header: {
-    backgroundColor: C.bg,
     paddingTop: Platform.OS === "android" ? 44 : 10,
-    paddingBottom: 14, paddingHorizontal: 20,
+    paddingBottom: 32, paddingHorizontal: 20,
+    overflow: "hidden",
+  },
+  // ✅ v2.11 — halo décoratif discret, coin haut-droit
+  heroGlow: {
+    position: "absolute",
+    top: -50,
+    right: -50,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: "rgba(5,150,105,0.18)",
   },
   headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  // ✅ v2.11 — style "verre" (fond blanc translucide), forme inchangée
   backBtn:     {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.16)",
     justifyContent: "center", alignItems: "center",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
-      android: { elevation: 1 },
-    }),
   },
-  headerTitle: { fontSize: 20, color: C.text, letterSpacing: -0.2 },
+  // ✅ v2.11 — blanc (était C.text)
+  headerTitle: { fontSize: 20, color: C.white, letterSpacing: -0.2 },
+  // ✅ v2.11 — style "verre", identique à backBtn
   eyeBtn:      {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: C.white, borderWidth: 1, borderColor: C.border,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.16)",
     justifyContent: "center", alignItems: "center",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
-      android: { elevation: 1 },
-    }),
   },
-  balanceCard: {
-    backgroundColor: C.white,
-    borderRadius: 20,
-    paddingVertical: 18, paddingHorizontal: 16,
-    marginTop: 6,
-    alignItems: "center", gap: 2,
-    position: "relative",
-    borderWidth: 1, borderColor: C.border,
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.10, shadowRadius: 20 },
-      android: { elevation: 6 },
-    }),
-  },
+  // ✅ v2.11 — repositionné à même le header (plus de carte séparée derrière)
   balanceWatermark:  { position: "absolute", bottom: 10, right: 12 },
-  balanceLbl:  { color: C.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  balanceVal:  { color: C.text, fontSize: 30, letterSpacing: -0.8 },
+  // ✅ v2.11 — clair sur fond sombre (était C.textMuted)
+  balanceLbl:  { color: C.heroMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
+  // ✅ v2.11 — blanc (était C.text), fontSize INCHANGÉ (30, cf. v2.7 compact)
+  balanceVal:  { color: C.white, fontSize: 30, letterSpacing: -0.8 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
 
-  scroll:   { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 16 },
+  // ✅ v2.11 — sheet arrondie qui enveloppe le body et chevauche le header
+  sheet: {
+    flex: 1,
+    backgroundColor: C.bg,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
+    overflow: "hidden",
+  },
+
+  // scroll.paddingTop 10 → 16 (✅ v2.11, pour respirer sous l'arrondi de la sheet)
+  scroll:   { paddingHorizontal: 14, paddingTop: 16, paddingBottom: 16 },
   tabsWrap: { flexDirection: "row", backgroundColor: "#F0F0F0", borderRadius: 16, padding: 4, marginBottom: 10 },
 
   block: {
