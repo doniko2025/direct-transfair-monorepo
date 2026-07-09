@@ -1,24 +1,20 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
-// BENEFICIARY CREATE v6.2 — Direct Transf'air
-// ✅ v6.0 : Anti-doublon, UI compacte, contacts natifs
-// ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
-// ✅ v6.2 : Correction du cadre bleu parasite autour des champs en édition
-//   - Même cause que sur les écrans précédents (rates.tsx, personal-info-wallet.tsx) :
-//     le <TextInput> du composant `Field` n'avait aucun reset du contour de focus
-//     natif du navigateur sur web. Au focus, Chrome superposait son propre
-//     rectangle bleu par-dessus la bordure verte voulue de `f.box` (visible sur
-//     le champ "Nom" de la capture).
-//   - Fix appliqué avec cast `as any` d'emblée (leçon tirée de l'erreur TS du
-//     fichier précédent) pour éviter le conflit avec le style natif RN
-//     `outlineStyle` (typé "solid" | "dotted" | "dashed" | undefined).
-//   ⚠️ HORS PÉRIMÈTRE (appliqué quand même, à valider) : le même fix a été
-//     appliqué au <TextInput> du numéro de téléphone Mobile Money, qui a la
-//     même structure (TextInput dans un View bordée `f.box`) et pouvait donc
-//     afficher le même bug au focus. Je n'ai PAS touché aux champs de
-//     recherche des modals (`pm.searchInput`), qui ont une structure
-//     différente et n'ont pas été signalés — dis-moi si tu veux que je les
-//     corrige aussi par cohérence.
+// BENEFICIARY CREATE v6.3 — Direct Transf'air
+// ✅ v6.2 conservé intégralement (anti-doublon, fix cadre bleu focus web)
+// ✅ v6.3 : Diagnostic de l'erreur "Impossible d'accéder aux contacts"
+//   - Le `catch` de openPhoneContacts avalait silencieusement TOUTE exception
+//     (permission manquante déclarée dans app.json, module natif non lié,
+//     build EAS pas reconstruit après ajout du plugin expo-contacts, etc.)
+//     et affichait toujours le même message générique, rendant le diagnostic
+//     impossible depuis l'app.
+//   - Fix : le message d'erreur réel (e?.message) est maintenant affiché dans
+//     l'Alert + loggé en console, pour identifier la cause exacte au prochain
+//     test. Aucun autre comportement n'est modifié.
+//   ⚠️ Cause la plus probable à vérifier dans app.json : présence du plugin
+//     "expo-contacts" dans le tableau `plugins`, et reconstruction du build
+//     natif (eas build / expo prebuild --clean) après son ajout — un simple
+//     reload Metro ne suffit pas pour ce type de changement.
 // =========================================================
 
 import React, { useState, useRef } from "react";
@@ -75,7 +71,6 @@ function normalizePhone(phone: string): string {
 }
 
 // ─── Field ──────────────────────────────────────────────
-// ✅ v6.2 : reset du contour de focus web ajouté sur le <TextInput>
 function Field({ label, value, onChangeText, placeholder, keyboardType, required, editable = true }: {
   label: string; value: string; onChangeText: (v: string) => void;
   placeholder?: string; keyboardType?: any; required?: boolean; editable?: boolean;
@@ -91,11 +86,6 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, required
           style={[
             f.input,
             { fontFamily: C.font.sans },
-            // ✅ v6.2 : reset du contour de focus natif du navigateur — sans ça,
-            // Chrome superpose son propre rectangle bleu par-dessus la bordure
-            // verte de `f.box` au focus (visible sur le champ "Nom" de la capture).
-            // Cast `as any` nécessaire : `outlineStyle` est déjà un style natif RN
-            // typé "solid" | "dotted" | "dashed" | undefined, incompatible avec "none".
             Platform.OS === "web" && ({
               outlineStyle: "none",
               outlineWidth: 0,
@@ -117,7 +107,6 @@ const f = StyleSheet.create({
   wrap:  { marginBottom: 12 },
   lbl:   { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 0.8, marginBottom: 5, textTransform: "uppercase" },
   box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
-  // ✅ v6.2 : borderWidth:0 en dur — le contour visible vient uniquement de `box` (View parente)
   input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600", borderWidth: 0 },
 });
 
@@ -252,6 +241,8 @@ export default function BeneficiaryCreateScreen() {
     phoneNumber.trim().length > 0,
   ];
 
+  // ✅ v6.3 : le message d'erreur réel est maintenant exposé (console + Alert)
+  // au lieu d'être avalé silencieusement, pour permettre le diagnostic.
   const openPhoneContacts = async () => {
     setLoadingContacts(true);
     try {
@@ -266,7 +257,11 @@ export default function BeneficiaryCreateScreen() {
       });
       setPhoneContacts(data.filter((c) => c.phoneNumbers && c.phoneNumbers.length > 0));
       setShowContactsModal(true);
-    } catch { Alert.alert("Erreur", "Impossible d'accéder aux contacts."); }
+    } catch (e: any) {
+      console.error("[openPhoneContacts] erreur détaillée :", e);
+      const detail = e?.message ? `\n\nDétail technique : ${e.message}` : "";
+      Alert.alert("Erreur", `Impossible d'accéder aux contacts.${detail}`);
+    }
     finally { setLoadingContacts(false); }
   };
 
@@ -411,9 +406,6 @@ export default function BeneficiaryCreateScreen() {
                   style={[
                     f.input,
                     { fontFamily: C.font.sans },
-                    // ✅ v6.2 : même reset de contour de focus web que dans `Field`
-                    // (ce champ n'utilise pas le composant Field car il partage sa
-                    // ligne avec le sélecteur d'indicatif — même structure, même bug)
                     Platform.OS === "web" && ({
                       outlineStyle: "none",
                       outlineWidth: 0,
@@ -542,7 +534,6 @@ const s = StyleSheet.create({
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  // ← ombre neutre (était shadowColor: C.green)
   importBtn: {
     flexDirection: "row", alignItems: "center", gap: 12,
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
@@ -564,7 +555,6 @@ const s = StyleSheet.create({
   secDot: { width: 4, height: 4, borderRadius: C.r.pill },
   secLbl: { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 1.2 },
 
-  // ← ombre neutre (était shadowColor: C.green)
   card: {
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
     borderWidth: 1, borderColor: C.cardBorder,

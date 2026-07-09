@@ -1,11 +1,13 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v6.1 — Direct Transf'air
-// ✅ v6.0 conservé intégralement (wizard carousel 10 étapes)
-// ✅ v6.1 : FIX outline bleu navigateur sur web
-//   AVANT : outlineStyle passé en prop spread → ignoré par RN Web
-//   APRÈS : NO_OUTLINE dans style[] → CSS inline prioritaire
-//   Supprime l'outline natif sur TOUS les TextInput du fichier
+// REGISTER v6.2 — Direct Transf'air
+// ✅ v6.1 conservé intégralement (fix outline bleu navigateur)
+// ✅ v6.2 :
+//   - Mot de passe limité à 10-35 caractères (maxLength sur les 2 champs +
+//     validation isStepValid mise à jour + jauge de force recalibrée +
+//     texte d'aide de l'étape mis à jour en conséquence).
+//   - Nettoyage : suppression du <View style={ph.sep}/> et du style `sep`
+//     dans PhoneStep, qui ne produisaient aucun effet visuel (width: 0).
 // =========================================================
 
 import React, { useState, useRef, useEffect } from "react";
@@ -105,7 +107,8 @@ const STEPS = [
   { icon: "person-outline",           question: "Comment vous\nappellez-vous ?",  hint: "Votre prénom, tel que vous souhaitez être appelé(e)"        },
   { icon: "person-circle-outline",    question: "Et votre nom\nde famille ?",      hint: "Tel qu'il apparaît sur vos documents officiels"              },
   { icon: "mail-outline",             question: "Votre adresse\nemail ?",          hint: "Pour vous connecter et recevoir vos confirmations"           },
-  { icon: "lock-closed-outline",      question: "Créez votre\nmot de passe",       hint: "Minimum 6 caractères — plus c'est long, plus c'est sûr"     },
+  // ✅ v6.2 : texte d'aide mis à jour pour refléter la règle 10-35 caractères
+  { icon: "lock-closed-outline",      question: "Créez votre\nmot de passe",       hint: "Entre 10 et 35 caractères — plus c'est long, plus c'est sûr" },
   { icon: "phone-portrait-outline",   question: "Votre numéro\nde téléphone ?",    hint: "Pour sécuriser votre compte avec la vérification en 2 étapes"},
   { icon: "location-outline",         question: "Où habitez-vous ?",               hint: "Votre pays de résidence actuel"                              },
   { icon: "business-outline",         question: "Dans quelle\nville ?",            hint: "Votre ville de résidence principale"                         },
@@ -121,15 +124,16 @@ const REAL_ERROR_STATUSES = new Set([400, 401, 403, 404, 409, 422, 500]);
 // =========================================================
 
 // ─── StepInput ────────────────────────────────────────────
+// ✅ v6.2 : ajout du prop `maxLength`, transmis au TextInput
 function StepInput({
   value, onChangeText, placeholder, label, icon,
   secureTextEntry, keyboardType, autoCapitalize, autoFocus,
-  onSubmitEditing, returnKeyType, inputRef,
+  onSubmitEditing, returnKeyType, inputRef, maxLength,
 }: {
   value: string; onChangeText: (v: string) => void; placeholder?: string;
   label?: string; icon?: string; secureTextEntry?: boolean; keyboardType?: any;
   autoCapitalize?: any; autoFocus?: boolean; onSubmitEditing?: () => void;
-  returnKeyType?: any; inputRef?: React.RefObject<TextInput>;
+  returnKeyType?: any; inputRef?: React.RefObject<TextInput>; maxLength?: number;
 }) {
   const [focused, setFocused] = useState(false);
   const [show,    setShow]    = useState(false);
@@ -159,6 +163,7 @@ function StepInput({
           keyboardType={keyboardType ?? "default"}
           autoCapitalize={autoCapitalize ?? "words"}
           autoFocus={autoFocus}
+          maxLength={maxLength}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           onSubmitEditing={onSubmitEditing}
@@ -187,16 +192,18 @@ const si = StyleSheet.create({
 });
 
 // ─── PasswordStep ─────────────────────────────────────────
+// ✅ v6.2 : maxLength={35} sur les 2 champs + jauge de force recalibrée
+// sur la nouvelle plage 10-35 (au lieu de l'ancienne 6-10+)
 function PasswordStep({ password, confirmPassword, onChangePassword, onChangeConfirm }: {
   password: string; confirmPassword: string;
   onChangePassword: (v: string) => void; onChangeConfirm: (v: string) => void;
 }) {
   const strength = password.length === 0 ? null
-    : password.length < 6  ? "weak"
-    : password.length < 10 ? "medium"
+    : password.length < 10 ? "weak"
+    : password.length < 20 ? "medium"
     : "strong";
   const strColor = strength === "weak" ? T.red : strength === "medium" ? "#F59E0B" : T.green;
-  const strLabel = strength === "weak" ? "Trop court" : strength === "medium" ? "Acceptable" : "Fort ✓";
+  const strLabel = strength === "weak" ? "Trop court (min. 10)" : strength === "medium" ? "Acceptable" : "Fort ✓";
   const match    = confirmPassword.length > 0 && password === confirmPassword;
   const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
@@ -211,6 +218,7 @@ function PasswordStep({ password, confirmPassword, onChangePassword, onChangeCon
         secureTextEntry
         autoFocus
         returnKeyType="next"
+        maxLength={35}
       />
       {strength && (
         <View style={pw.strengthRow}>
@@ -233,6 +241,7 @@ function PasswordStep({ password, confirmPassword, onChangePassword, onChangeCon
         icon={match ? "checkmark-circle-outline" : "lock-closed-outline"}
         secureTextEntry
         returnKeyType="done"
+        maxLength={35}
       />
       {mismatch && (
         <View style={pw.errorRow}>
@@ -255,6 +264,9 @@ const pw = StyleSheet.create({
 });
 
 // ─── PhoneStep ────────────────────────────────────────────
+// ✅ v6.2 : suppression de <View style={ph.sep}/> et du style `sep`
+// (width: 0 → aucun effet visuel, séparation déjà assurée par
+// borderRightWidth sur codeBtn)
 function PhoneStep({
   phone, phoneCode, onChangePhone, onPressCode,
 }: {
@@ -271,7 +283,6 @@ function PhoneStep({
           <Text style={[ph.codeFlag, { fontFamily: T.font.mono }]}>{phoneCode}</Text>
           <Ionicons name="chevron-down" size={14} color={T.inkMuted} />
         </TouchableOpacity>
-        <View style={ph.sep} />
         <TextInput
           style={[ph.input, { fontFamily: T.font.sans }, NO_OUTLINE]}
           value={phone}
@@ -293,7 +304,6 @@ const ph = StyleSheet.create({
   cardFocused:{ borderColor: T.borderFocus, shadowColor: T.blue, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3 },
   codeBtn:    { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: T.pageBg, paddingHorizontal: 14, paddingVertical: 17, borderRightWidth: 1.5, borderRightColor: T.border },
   codeFlag:   { fontSize: 15, fontWeight: "700", color: T.ink },
-  sep:        { width: 0 },
   input:      { flex: 1, fontSize: 17, color: T.ink, fontWeight: "600", paddingHorizontal: 14, paddingVertical: 16 },
 });
 
@@ -670,12 +680,13 @@ export default function RegisterScreen() {
   const progressAnim = useRef(new Animated.Value(1 / TOTAL_STEPS)).current;
 
   // ── Validation par étape ────────────────────────────────
+  // ✅ v6.2 : case 3 impose désormais 10-35 caractères (au lieu de >= 6)
   const isStepValid = (): boolean => {
     switch (currentStep) {
       case 0:  return firstName.trim().length > 0;
       case 1:  return lastName.trim().length > 0;
       case 2:  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-      case 3:  return password.length >= 6 && password === confirmPassword;
+      case 3:  return password.length >= 10 && password.length <= 35 && password === confirmPassword;
       case 4:  return phone.trim().length >= 6;
       case 5:  return country.length > 0;
       case 6:  return city.trim().length > 0;

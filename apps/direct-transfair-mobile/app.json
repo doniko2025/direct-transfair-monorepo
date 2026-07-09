@@ -57,6 +57,12 @@
         {
           "cameraPermission": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement."
         }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Autoriser l'accès à vos contacts pour ajouter des bénéficiaires."
+        }
       ]
     ],
     "experiments": {

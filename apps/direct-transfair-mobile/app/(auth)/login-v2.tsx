@@ -1,15 +1,17 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.5 — Direct Transf'air
-// ✅ v2.4 conservé intégralement (biométrie)
-// ✅ v2.5 : FIX fond jaune autofill navigateur web
-//   CAUSE : Chrome injecte :-webkit-autofill → fond jaune
-//   sur les <input> HTML. Impossible à surcharger avec
-//   backgroundColor normal.
-//   FIX : WebkitBoxShadow inset de la même couleur que le
-//   fond du champ → écrase visuellement le jaune Chrome.
-//   WebkitTextFillColor → garde la couleur du texte correcte.
-//   outlineStyle + outlineWidth → supprime le cadre bleu web.
+// LOGIN v2.6 — Direct Transf'air
+// ✅ v2.5 conservé intégralement (fix fond jaune autofill navigateur web)
+// ✅ v2.6 : Limite de longueur sur le mot de passe (cohérence avec register.tsx)
+//   - FloatingInput accepte désormais un prop `maxLength` optionnel,
+//     transmis directement au TextInput.
+//   - Le champ "Mot de passe" de la carte PASSWORD a maxLength={35}.
+//   - Pas de minimum imposé ici (contrairement à l'inscription) : cet écran
+//     sert à se CONNECTER avec un mot de passe déjà existant, donc bloquer
+//     la saisie en dessous de 10 caractères empêcherait un utilisateur
+//     ayant un mot de passe légitime plus court (créé avant cette règle,
+//     par exemple) de se connecter.
+//   - Le champ "Email" (ici et dans OTP_EMAIL) n'est pas concerné.
 // =========================================================
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -112,14 +114,15 @@ const F = {
 };
 
 // ─── FloatingInput ────────────────────────────────────────
+// ✅ v2.6 : ajout du prop `maxLength` (optionnel), transmis au TextInput
 function FloatingInput({
   label, value, onChangeText, icon, secureTextEntry, keyboardType,
-  returnKeyType, onSubmitEditing, inputRef, accentColor,
+  returnKeyType, onSubmitEditing, inputRef, accentColor, maxLength,
 }: {
   label: string; value: string; onChangeText: (t: string) => void;
   icon: any; secureTextEntry?: boolean; keyboardType?: any;
   returnKeyType?: any; onSubmitEditing?: () => void;
-  inputRef?: React.Ref<TextInput>; accentColor: string;
+  inputRef?: React.Ref<TextInput>; accentColor: string; maxLength?: number;
 }) {
   const [focused, setFocused] = useState(false);
   const [show,    setShow]    = useState(false);
@@ -147,6 +150,7 @@ function FloatingInput({
           keyboardType={keyboardType ?? 'default'}
           returnKeyType={returnKeyType}
           onSubmitEditing={onSubmitEditing}
+          maxLength={maxLength}
           autoCapitalize="none"
           autoCorrect={false}
           underlineColorAndroid="transparent"
@@ -569,6 +573,7 @@ export default function LoginV2Screen() {
                 onSubmitEditing={canSubmitPassword ? () => handlePasswordLogin() : undefined}
                 inputRef={passRef}
                 accentColor={C.g4}
+                maxLength={35}
               />
             </View>
 
