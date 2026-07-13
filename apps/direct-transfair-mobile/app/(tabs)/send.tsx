@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.11 — Direct Transf'air
+// SEND MONEY v2.12 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -104,6 +104,44 @@
 //      sur C.g1.
 //    - Réutilise expo-linear-gradient (déjà installé pour le Client
 //      Dashboard v9.8) — aucune nouvelle dépendance ici.
+// ✅ v2.12 : 🚨 FIX — getCountryData() retournait le mauvais pays sur
+//    collision de préfixe textuel, + devise cible mal déduite pour la
+//    plupart des pays
+//
+//   PROBLÈME 1 RÉSOLU — getCountryData("Guinée") → Guinée-Bissau (+245)
+//     "Guinée" est un préfixe textuel de "Guinée-Bissau", qui apparaît
+//     AVANT "Guinée" dans countriesList. L'ancien getCountryData()
+//     faisait un simple .includes() sur toute la liste dans l'ordre —
+//     donc chercher "Guinée" tombait systématiquement sur l'entrée
+//     "Guinée-Bissau" (+245 🇬🇼) avant d'atteindre la vraie entrée
+//     "Guinée" (+224 🇬🇳) plus bas dans le tableau. Repro exacte
+//     observée : taper sur "Guinée" dans le picker Indicatif pays fixe
+//     d'abord targetCountryData correctement (l'item tapé, exact), mais
+//     l'appel juste après à updateCurrencyContext(item.name) rappelle
+//     getCountryData("Guinée") en interne, qui écrasait aussitôt ce
+//     choix correct avec Guinée-Bissau. D'où le +245 affiché malgré la
+//     sélection explicite de la Guinée.
+//     CORRECTIF : getCountryData() cherche maintenant une correspondance
+//     EXACTE (nom normalisé, casse + espaces ignorés) en priorité ; le
+//     .includes() d'origine devient un simple repli, conservé pour
+//     tolérer des données bénéficiaire imparfaites.
+//
+//   PROBLÈME 2 RÉSOLU — devise cible mal déduite pour la plupart des pays
+//     updateCurrencyContext() déduisait la devise via une chaîne de
+//     .includes() codée en dur qui ne couvrait que Guinée/Maroc/France/
+//     Belgique/Allemagne/Espagne/Italie/Portugal — et ratait même le
+//     Luxembourg dans son propre groupe EUR. Tout le reste (Gambie,
+//     Liberia, Sierra Leone, Cameroun, Algérie, Tunisie, Angola,
+//     Mauritanie, Suisse, Royaume-Uni, États-Unis, Canada, Émirats
+//     Arabes Unis, Chine) retombait silencieusement sur XOF — alors que
+//     countriesList contient déjà le bon code ISO pour chacun
+//     (cd.currency). CORRECTIF : réutilisation directe de cd.currency au
+//     lieu de la liste .includes() partielle.
+//     ⚠️ NON touché : le calcul de taux (toEurTarget) n'a de vraies
+//     valeurs de repli codées que pour XOF et GNF — les autres devises
+//     sans paire dans allRates retombent toujours sur un taux 1
+//     arbitraire. C'est un manque de données de taux de change, pas un
+//     bug de code — je ne invente pas de taux.
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -160,8 +198,18 @@ const MOTIFS = [
 ] as const;
 
 // ─── Helpers ──────────────────────────────────────────────
+// ✅ v2.12 — FIX : match EXACT en priorité (voir changelog en tête de
+// fichier, PROBLÈME 1). L'ancien comportement (.includes() seul)
+// faisait retomber "Guinée" sur "Guinée-Bissau".
 const getCountryData = (countryName: string): CountryData => {
-  const normalized = (countryName || "").toLowerCase();
+  const normalized = (countryName || "").toLowerCase().trim();
+  if (!normalized) return countriesList.find((c) => c.code === "SN")!;
+
+  const exact = countriesList.find((c) => c.name.toLowerCase() === normalized);
+  if (exact) return exact;
+
+  // Repli tolérant (sous-chaîne) — conservé pour les données
+  // bénéficiaire imparfaites (variantes de saisie, espace en trop…).
   return (
     countriesList.find((c) => c.name.toLowerCase().includes(normalized)) ||
     countriesList.find((c) => c.code === "SN")!
@@ -679,17 +727,15 @@ useEffect(() => {
     void fetchWalletBalance();
   }, [fetchWalletBalance]));
 
+  // ✅ v2.12 — FIX (PROBLÈME 2, voir changelog en tête de fichier) :
+  // cd.currency porte déjà le bon code ISO pour CHAQUE pays de
+  // countriesList. L'ancienne déduction manuelle (.includes() sur
+  // quelques pays seulement) faisait retomber tout pays non listé sur
+  // XOF par défaut, y compris des pays qui ne l'utilisent pas du tout.
   const updateCurrencyContext = useCallback((countryName: string) => {
     const cd = getCountryData(countryName);
     setTargetCountryData(cd);
-    let tCurr = "XOF";
-    const cn = cd.name.toLowerCase();
-    if (cn.includes("guinée") && !cn.includes("bissau") && !cn.includes("équat")) tCurr = "GNF";
-    else if (cn.includes("maroc")) tCurr = "MAD";
-    else if (
-      cn.includes("france") || cn.includes("belgi") || cn.includes("allem") ||
-      cn.includes("espagne") || cn.includes("itali") || cn.includes("portug")
-    ) tCurr = "EUR";
+    const tCurr = cd.currency || "XOF";
     setTargetCurrency(tCurr);
     const getR = (pair: string, fb: number) => allRates.find((r) => r.pair === pair)?.rate ?? fb;
     const toEurUser   = userCurrency === "EUR" ? 1 : getR(`EUR_${userCurrency}`, userCurrency === "XOF" ? 655.95 : 1);
