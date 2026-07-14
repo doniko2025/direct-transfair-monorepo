@@ -22,7 +22,7 @@
 //  ✅ Withdrawal complet
 //  ✅ ScheduledTransfer (récurrence, failureCount)
 //  ✅ Précision financière @db.Decimal(18, 4)
-//  ✅ soft-delete (deletedAt) sur User, Client, Agency
+//  ✅ soft-delete (deletedAt) sur User, Client, Agency, Transaction
 //  ✅ Notification enrichie (priority, groupKey, expiresAt)
 //  ✅ CommunicationLog enrichi (metadata, externalId)
 //  ✅ TreasurySnapshot enrichi (métriques avancées)
@@ -1234,6 +1234,24 @@ model Transaction {
   cancelledAt DateTime?
   failedAt    DateTime?
   expiresAt   DateTime?
+
+  // ✅ v5.1 — Soft delete (cohérent avec User/Client/Agency)
+  //
+  //   Ajouté initialement pour qu'AgenciesService.remove() puisse
+  //   suppression-douce les transactions d'une agence supprimée au
+  //   lieu de les effacer définitivement. Le design a depuis été
+  //   révisé (agencies.service.ts v4.5) : supprimer une agence
+  //   désactive désormais l'agence et ses agents (soft-delete sur
+  //   User/Agency, déjà présents dans le schéma) SANS jamais toucher
+  //   Transaction — donc ce champ n'est plus utilisé par ce flux
+  //   précis. Conservé comme infrastructure générale disponible pour
+  //   un futur besoin de suppression douce ciblée (ex. annulation
+  //   d'une transaction frauduleuse à masquer de l'historique client
+  //   sans perdre la trace comptable) ; les lectures de
+  //   TransactionsService le filtrent déjà par précaution (voir
+  //   transactions.service.ts v4.20).
+  //   ⚠️ Migration requise : npx prisma migrate dev --name add_transaction_soft_delete
+  deletedAt DateTime?
 
   // Relations
   withdrawal          Withdrawal?

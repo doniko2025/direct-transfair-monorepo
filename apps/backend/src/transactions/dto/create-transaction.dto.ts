@@ -1,4 +1,16 @@
 // apps/backend/src/transactions/dto/create-transaction.dto.ts
+// ✅ v1.1 : FIX — note (motif du transfert) manquant
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   send.tsx envoie note: motif depuis la v2.4, et Transaction.note
+//   existe dans schema.prisma depuis le début — mais ce DTO ne
+//   déclarait pas ce champ. Le ValidationPipe global (whitelist:true,
+//   main.ts) supprime silencieusement toute propriété non déclarée
+//   AVANT que le controller/service ne la voie : dto.note valait donc
+//   toujours undefined dans TransactionsService.create(), quelle que
+//   soit la correction apportée côté service (v4.19). Les deux bouts
+//   (service + DTO) devaient être corrigés ensemble.
+//
 import {
   IsEnum,
   IsNotEmpty,
@@ -41,6 +53,11 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   senderPhone?: string;
+
+  // ✅ v1.1 — FIX : motif du transfert (voir changelog en tête de fichier)
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 export class CreateDepositDto {

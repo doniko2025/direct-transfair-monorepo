@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.12 — Direct Transf'air
+// SEND MONEY v2.13 — Direct Transf'air
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -137,11 +137,27 @@
 //     countriesList contient déjà le bon code ISO pour chacun
 //     (cd.currency). CORRECTIF : réutilisation directe de cd.currency au
 //     lieu de la liste .includes() partielle.
-//     ⚠️ NON touché : le calcul de taux (toEurTarget) n'a de vraies
-//     valeurs de repli codées que pour XOF et GNF — les autres devises
-//     sans paire dans allRates retombent toujours sur un taux 1
-//     arbitraire. C'est un manque de données de taux de change, pas un
-//     bug de code — je ne invente pas de taux.
+// ✅ v2.13 : 🚨 FIX — code de retrait jamais affiché en mode Wallet pour
+//    un transfert non réclamé immédiatement
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   En mode Wallet, si aucun destinataire n'est résolu immédiatement
+//   (numéro non reconnu par la plateforme, mais ≥7 chiffres donc envoi
+//   autorisé), le backend (transactions.service.ts create()) traite ce
+//   cas exactement comme un Cash Pickup non réclamé : transaction
+//   PENDING/VALIDATED avec un code de retrait généré (transactionRef,
+//   dans providerRef/reference). Mais ReceiptData.code n'était rempli
+//   QUE dans la branche Cash — jamais en mode Wallet. Résultat concret :
+//   l'argent est bien débité, la transaction existe bien côté serveur
+//   avec un vrai code de retrait, mais le reçu affiché à l'expéditeur
+//   ne montre ce code nulle part — aucun moyen pour lui de savoir
+//   comment le destinataire pourra réclamer les fonds.
+//   CORRECTIF : après la création, on vérifie tx.recipientId. S'il est
+//   absent (transfert non réclamé), le code est extrait exactement
+//   comme en mode Cash (providerRef ?? reference, découpe défensive du
+//   format "code|prénom") et injecté dans ReceiptData.code. Si
+//   recipientId est présent (destinataire résolu, crédité
+//   immédiatement), code reste undefined — comportement inchangé.
 // =========================================================
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
@@ -199,8 +215,8 @@ const MOTIFS = [
 
 // ─── Helpers ──────────────────────────────────────────────
 // ✅ v2.12 — FIX : match EXACT en priorité (voir changelog en tête de
-// fichier, PROBLÈME 1). L'ancien comportement (.includes() seul)
-// faisait retomber "Guinée" sur "Guinée-Bissau".
+// fichier). L'ancien comportement (.includes() seul) faisait retomber
+// "Guinée" sur "Guinée-Bissau".
 const getCountryData = (countryName: string): CountryData => {
   const normalized = (countryName || "").toLowerCase().trim();
   if (!normalized) return countriesList.find((c) => c.code === "SN")!;
@@ -499,7 +515,7 @@ type ReceiptData = {
   receivedCurrency: string;
   beneficiaryName: string;
   reference: string;
-  code?: string;       // code de retrait (Cash Pickup uniquement)
+  code?: string;       // code de retrait (Cash Pickup ET Wallet non réclamé — ✅ v2.13)
   motif?: string | null;
   date: Date;
 };
@@ -727,11 +743,8 @@ useEffect(() => {
     void fetchWalletBalance();
   }, [fetchWalletBalance]));
 
-  // ✅ v2.12 — FIX (PROBLÈME 2, voir changelog en tête de fichier) :
-  // cd.currency porte déjà le bon code ISO pour CHAQUE pays de
-  // countriesList. L'ancienne déduction manuelle (.includes() sur
-  // quelques pays seulement) faisait retomber tout pays non listé sur
-  // XOF par défaut, y compris des pays qui ne l'utilisent pas du tout.
+  // ✅ v2.12 — FIX (voir changelog en tête de fichier) : cd.currency
+  // porte déjà le bon code ISO pour CHAQUE pays de countriesList.
   const updateCurrencyContext = useCallback((countryName: string) => {
     const cd = getCountryData(countryName);
     setTargetCountryData(cd);
@@ -871,6 +884,19 @@ useEffect(() => {
         });
         // ✅ "id" confirmé comme champ de référence (utilisé par cancelTransaction/getTransaction dans api.ts)
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
+        // ✅ v2.13 — FIX (voir changelog en tête de fichier) : si le
+        // backend n'a pas pu créditer immédiatement un wallet (aucun
+        // recipientId résolu — numéro non reconnu par la plateforme),
+        // la transaction reste "en attente" avec un code de retrait
+        // généré côté backend (même mécanisme que Cash Pickup). Avant
+        // ce fix, ce code n'était jamais extrait ni affiché en mode
+        // Wallet.
+        const walletClaimed = !!tx?.recipientId;
+        let walletCode: string | undefined;
+        if (!walletClaimed) {
+          walletCode = String(tx?.providerRef ?? tx?.reference ?? "—");
+          if (walletCode.includes("|")) walletCode = walletCode.split("|")[0];
+        }
         setReceiptData({
           mode: "WALLET",
           sentAmount: sendAmount,
@@ -881,6 +907,7 @@ useEffect(() => {
           receivedCurrency: targetCurrency,
           beneficiaryName: detectedBeneficiary?.fullName ?? walletInput,
           reference: String(reference),
+          code: walletCode, // ✅ v2.13 — undefined si déjà crédité (comportement inchangé)
           motif,
           date: new Date(),
         });

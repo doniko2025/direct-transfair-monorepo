@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.3
+// TRANSACTION DETAIL v6.4
 // ✅ v6.1 : logique isIncoming correcte par rôle
 // ✅ v6.2 : montant hero + "Montant crédité" pour les entrants avec conversion
 // ✅ FIX v6.3 : handleShare navigue désormais vers l'écran client-receipt.tsx
@@ -12,6 +12,18 @@
 //             ailleurs dans ce fichier) pour éviter un import mort / warning lint.
 //    Bouton : libellé "Partager le reçu" → "Voir le reçu" (cohérent avec la
 //             nouvelle navigation qui affiche un écran avant tout partage réel).
+// ✅ v6.4 : Affichage du motif du transfert (transaction.note)
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   transactions.service.ts v4.19 (backend) persiste enfin dto.note dans
+//   Transaction.note (jusque-là silencieusement ignoré). Mais aucun écran
+//   ne l'affichait nulle part — le motif choisi par l'utilisateur dans
+//   send.tsx disparaissait de la vue une fois le reçu immédiat fermé,
+//   même une fois correctement sauvegardé en base.
+//   CORRECTIF : nouvelle ligne "Motif" dans le détail, juste après la
+//   Référence, affichée uniquement si transaction.note est renseigné —
+//   aucun changement visuel pour les transactions sans motif (B2B,
+//   recharges agence, dépôts…).
 // =========================================================
 
 import React, { useState, useEffect } from "react";
@@ -329,6 +341,13 @@ export default function TransactionDetailScreen() {
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
             <View style={s.divider} />
             <DetailRow label="Référence" value={transaction.reference ?? "—"} mono />
+            {/* ✅ v6.4 — Motif du transfert (transaction.note), si renseigné */}
+            {!!transaction.note && (
+              <>
+                <View style={s.divider} />
+                <DetailRow label="Motif" value={transaction.note} />
+              </>
+            )}
             <View style={s.divider} />
             {isB2B && isSA ? (
               <>

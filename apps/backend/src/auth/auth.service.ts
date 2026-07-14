@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.3 — Direct Transf'air
+// AUTH SERVICE v5.4 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -72,6 +72,33 @@
 //     réussissent ensemble, soit rien n'est persisté. Un échec
 //     redevient un vrai 500 explicite au lieu d'un faux 409 "déjà
 //     utilisé" au prochain essai.
+//
+// ✅ v5.4 : 🚨 FIX SÉCURITÉ — contournement de la gate de vérification
+//     via la connexion par téléphone (OTP)
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Le FIX 1 (v5.0) ferme le contournement de la gate de vérification
+//   sur login() (mot de passe) — mais loginByPhone() + verifyLoginOtp()
+//   (connexion sans mot de passe, otp-phone.tsx côté mobile) n'ont
+//   jamais reçu le même traitement. loginByPhone() ne vérifie ni
+//   isEmailVerified ni isPhoneVerified avant d'envoyer l'OTP, et
+//   verifyLoginOtp() délivrait un JWT complet dès l'OTP validé, sans
+//   jamais vérifier isEmailVerified. Concrètement : un compte dont
+//   l'email n'a JAMAIS été vérifié pouvait quand même obtenir une
+//   session complète en passant par "Connexion par téléphone" —
+//   contournement total de la vérification email, quel que soit le
+//   chemin de connexion utilisé pour l'inscription initiale.
+//   (Le canal SMS de l'OTP prouve intrinsèquement la possession du
+//   téléphone — isPhoneVerified est donc légitimement marqué true par
+//   ce même flux, comme avant. Seul l'email restait un trou.)
+//
+//   CORRECTIF : verifyLoginOtp() applique maintenant la même gate que
+//   login() v1 (FIX 1, v5.0) sur isEmailVerified, APRÈS avoir marqué
+//   isPhoneVerified=true (si canal SMS) — donc sans jamais bloquer la
+//   preuve de possession du téléphone elle-même, seulement l'émission
+//   du JWT final si l'email reste non vérifié. N'affecte pas le
+//   chemin OTP par EMAIL (2FA du login v1 avec LOGIN_OTP_REQUIRED),
+//   qui passe déjà par la gate de login() AVANT même d'envoyer l'OTP.
 // =========================================================
 
 import {
@@ -403,6 +430,7 @@ export class AuthService {
 
   // ========================================================
   // LOGIN — Étape 2 ✅ v5.0 (marque email vérifié si canal EMAIL)
+  // ✅ v5.4 : gate isEmailVerified — voir changelog en tête de fichier
   // ========================================================
 
   async verifyLoginOtp(dto: VerifyLoginOtpDto): Promise<LoginStep2Result> {
@@ -452,6 +480,31 @@ export class AuthService {
       include: { client: true, agency: true, wallets: { where: { isActive: true } } },
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    // ── ✅ v5.4 : Gate vérification email — ferme le contournement par
+    // connexion téléphone (otp-phone.tsx → loginByPhone → ce endpoint).
+    // Ce point est atteint APRÈS le marquage isPhoneVerified=true
+    // ci-dessus si le canal était SMS : la preuve de possession du
+    // téléphone n'est jamais bloquée, seule l'émission du JWT final
+    // l'est si l'email reste non vérifié. Pour le chemin OTP par EMAIL
+    // (2FA du login v1), user.isEmailVerified est déjà garanti true à
+    // ce stade — login() a déjà appliqué cette même gate AVANT
+    // d'envoyer l'OTP — donc ce check est un no-op pour ce chemin-là.
+    if (!user.isEmailVerified) {
+      throw new HttpException(
+        {
+          statusCode:           403,
+          code:                 'VERIFICATION_REQUIRED',
+          requiresVerification: true,
+          userId:               user.id,
+          emailVerified:        false,
+          phoneVerified:        user.isPhoneVerified ?? false,
+          hasPhone:             !!user.phone,
+          message:              'Email non vérifié. Vérifiez votre adresse avant de vous connecter.',
+        },
+        403,
+      );
+    }
 
     if (dto.trustDevice && dto.deviceId) {
       await this.prisma.userDevice.updateMany({
@@ -563,6 +616,12 @@ export class AuthService {
 
   // ========================================================
   // LOGIN BY PHONE — v4.7 + v5.0 (SMS réel)
+  //
+  // ⚠️ v5.4 : cette méthode elle-même n'a volontairement PAS reçu de
+  // gate isEmailVerified/isPhoneVerified — elle ne fait qu'ENVOYER un
+  // OTP à un numéro, ce qui ne prouve encore rien. La gate vit dans
+  // verifyLoginOtp() (v5.4), APRÈS la preuve de possession du
+  // téléphone, seul endroit où bloquer a du sens.
   // ========================================================
 
   async loginByPhone(

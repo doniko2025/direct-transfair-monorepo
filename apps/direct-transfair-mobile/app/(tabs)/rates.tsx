@@ -1,25 +1,37 @@
 // apps/direct-transfair-mobile/app/(tabs)/rates.tsx
 // =========================================================
-// TAUX DU JOUR v8.1 — Direct Transf'air
-// ✅ v7.0 conservé : hero chips, rate cards (composants gardés en dur, non supprimés — voir note ci-dessous), animations
+// TAUX DU JOUR v8.3 — Direct Transf'air
+// ✅ v7.0 conservé : hero chips, animations
 // ✅ v8.0 conservé : Convertisseur redesigné style Wise (modal recherche, 2 lignes FROM/TO, disclaimer marché)
-// ✅ v8.1 (cette version) :
-//   • Suppression de l'affichage de la section "TOUTES LES PAIRES" dans l'écran :
-//     seul le convertisseur reste visible sous le hero (demande explicite).
-//   • Correction du cadre parasite autour du champ de saisie du montant (FROM) :
-//     `outlineStyle` était passé en prop directe du <TextInput>, ignoré par
-//     react-native-web -> le navigateur affichait son contour de focus bleu +
-//     sa bordure grise par défaut par-dessus la bordure bleue voulue (cf. capture 3).
-//     Le reset est maintenant appliqué dans le tableau `style`, avec borderWidth:0
-//     en dur sur amountInput pour éviter toute bordure résiduelle.
-//   ⚠️ HORS PÉRIMÈTRE (non touché, à valider avec toi) : le composant RateCard,
-//     ses styles `rc`, les constantes PRIORITY / PAIR_COLORS / CURRENCIES / META
-//     et la variable `sorted` ne sont plus utilisés par l'écran (ils ne servaient
-//     qu'à la section supprimée). Je les ai laissés intacts au cas où tu veuilles
-//     les réutiliser ailleurs (ex. écran "Graphiques") — dis-moi si je les supprime.
+// ✅ v8.1 conservé : suppression de la section "TOUTES LES PAIRES", correction du cadre parasite du champ FROM (outlineStyle en `style`)
+// ✅ v8.2 conservé :
+//   • Correction du sélecteur de devise FROM qui disparaissait dès qu'un montant
+//     était saisi : sur react-native-web, un enfant flexible (`flex:1`) sans
+//     `minWidth:0` refuse de rétrécir sous la largeur de son contenu — dès que
+//     le texte tapé grandissait, le champ montant "poussait" le sélecteur de
+//     devise hors de la zone visible (le conteneur a `overflow:"hidden"`).
+//     Fix : `minWidth: 0` ajouté sur `amountInput` et `resultWrap`, et
+//     `flexShrink: 0 / flexGrow: 0` verrouillés en dur sur les éléments à
+//     largeur fixe (`currencyBtn`, `flagCircle`, `vSep`, `actionBtn`) pour
+//     qu'ils ne puissent plus jamais être écrasés par le voisin flexible.
+//   • Correction du montant converti tronqué ("FCFA 2…", "GNF 3 3…") côté TO :
+//     `adjustsFontSizeToFit` n'a aucun effet sur react-native-web (prop iOS
+//     uniquement), donc le texte restait coupé à taille fixe. Remplacé par une
+//     fonction `dynamicFontSize()` qui recalcule la taille de police selon la
+//     longueur du texte affiché — appliquée au montant saisi (FROM) et au
+//     montant converti (TO), de façon identique sur toutes les plateformes.
+//   • Tailles et espacements resserrés (padding des sélecteurs de devise,
+//     icônes, police de base) pour que tout tienne sur une seule ligne, comme
+//     demandé.
+// ✅ v8.3 (cette version) :
+//   • Suppression du code mort confirmé par toi : le composant RateCard, ses
+//     styles `rc`, les constantes PRIORITY / PAIR_COLORS / CURRENCIES / META
+//     et la variable `sorted` (tous orphelins depuis la suppression de la
+//     section "TOUTES LES PAIRES" en v8.1). `normPair` et `fmt` sont conservés
+//     car toujours utilisés (hero chips notamment).
 // =========================================================
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -87,29 +99,6 @@ function getCurrencyMeta(code: string) {
   return APP_CURRENCIES.find(c => c.code === code) ?? APP_CURRENCIES[0];
 }
 
-// ─── Meta pour hero chips et rate cards ──────────────────
-// ⚠️ HORS PÉRIMÈTRE : META n'est plus utilisé que par RateCard (désormais orphelin, voir note d'en-tête)
-const META: Record<string, { flag: string; name: string }> = {
-  EUR: { flag: "🇪🇺", name: "Euro" },
-  XOF: { flag: "🌍",  name: "Franc CFA" },
-  GNF: { flag: "🇬🇳", name: "Franc Guinéen" },
-  USD: { flag: "🇺🇸", name: "Dollar" },
-  GBP: { flag: "🇬🇧", name: "Livre Sterling" },
-};
-const CURRENCIES = ["EUR", "XOF", "GNF", "USD", "GBP"];
-
-const PRIORITY: string[] = [
-  "EUR/XOF", "EUR/GNF", "USD/XOF", "USD/GNF",
-  "GBP/XOF", "GBP/GNF", "EUR/USD", "EUR/GBP", "GBP/USD", "XOF/GNF",
-];
-
-const PAIR_COLORS: Record<string, string> = {
-  "EUR/XOF": "#4361EE", "EUR/GNF": "#4361EE", "EUR/USD": "#0F766E", "EUR/GBP": "#7C3AED",
-  "USD/XOF": "#16A34A", "USD/GNF": "#16A34A",
-  "GBP/XOF": "#7C3AED", "GBP/GNF": "#7C3AED", "GBP/USD": "#DC2626",
-  "XOF/GNF": "#D97706",
-};
-
 // ─── Helpers ─────────────────────────────────────────────
 function normPair(p: string): string {
   return p.replace("_", "/");
@@ -160,6 +149,18 @@ function fmtRate(rate: number, toCur: string): string {
       maximumFractionDigits: d,
     }).format(rate);
   } catch { return rate.toFixed(d); }
+}
+
+// ✅ v8.2 : `adjustsFontSizeToFit` n'a aucun effet sur react-native-web -> le texte
+// (montant saisi ou converti) était tronqué avec "…" au lieu de rétrécir (cf.
+// captures). On calcule nous-mêmes une taille de police dégressive selon la
+// longueur du texte affiché, valable de façon identique sur toutes les plateformes.
+function dynamicFontSize(length: number): number {
+  if (length <= 8)  return 20;
+  if (length <= 11) return 18;
+  if (length <= 14) return 15;
+  if (length <= 18) return 13;
+  return 11;
 }
 
 function findRate(rates: any[], from: string, to: string): number | null {
@@ -377,6 +378,8 @@ const pm = StyleSheet.create({
 // ✅ v8.0 — CONVERTISSEUR REDESIGNÉ — style Wise
 // 2 lignes FROM/TO empilées, sélecteur devise avec modal
 // ✅ v8.1 — champ de saisie du montant : reset du contour web déplacé dans `style`
+// ✅ v8.2 — sélecteur de devise verrouillé (flexShrink:0) + minWidth:0 sur les
+//   zones flexibles + taille de police dynamique pour FROM et TO (voir en-tête)
 // =========================================================
 function Converter({ rates }: { rates: any[] }) {
   const [fromCur, setFromCur] = useState("EUR");
@@ -391,6 +394,12 @@ function Converter({ rates }: { rates: any[] }) {
 
   const fromMeta = getCurrencyMeta(fromCur);
   const toMeta   = getCurrencyMeta(toCur);
+
+  // ✅ v8.2 : taille de police dégressive selon la longueur du texte affiché,
+  // recalculée à chaque frappe / conversion (voir `dynamicFontSize` en en-tête)
+  const amountFontSize = dynamicFontSize((amount || "0").length);
+  const resultText     = converted !== null ? `${toMeta.symbol} ${fmtAmount(converted, toCur)}` : "—";
+  const resultFontSize = dynamicFontSize(resultText.length);
 
   // Sélection FROM : si l'utilisateur choisit la devise TO → on swap
   const handleSelectFrom = (code: string) => {
@@ -426,12 +435,12 @@ function Converter({ rates }: { rates: any[] }) {
           activeOpacity={0.7}
         >
           <View style={cv.flagCircle}>
-            <Text style={{ fontSize: 20 }}>{fromMeta.flag}</Text>
+            <Text style={{ fontSize: 18 }}>{fromMeta.flag}</Text>
           </View>
           <Text style={[cv.currencyCode, { fontFamily: T.font.sans }]}>
             {fromCur}
           </Text>
-          <Ionicons name="chevron-down" size={15} color={T.inkSub} />
+          <Ionicons name="chevron-down" size={14} color={T.inkSub} />
         </TouchableOpacity>
 
         {/* Séparateur vertical */}
@@ -441,11 +450,14 @@ function Converter({ rates }: { rates: any[] }) {
         {/* ✅ v8.1 : le reset "outline" doit être passé dans le tableau `style`, pas en tant que
             prop du composant — react-native-web ignorait `outlineStyle` passé en prop, d'où le
             contour bleu de focus + la bordure grise par défaut du <input> qui polluaient la
-            saisie (visibles sur la capture 3). borderWidth:0 est aussi mis en dur sur amountInput. */}
+            saisie. borderWidth:0 est aussi mis en dur sur amountInput.
+            ✅ v8.2 : `minWidth: 0` (dans le style `cv.amountInput`) empêche ce champ de forcer
+            la ligne à dépasser sa largeur et de pousser le sélecteur de devise hors champ ; la
+            taille de police est désormais dynamique (`amountFontSize`) au lieu d'être fixe. */}
         <TextInput
           style={[
             cv.amountInput,
-            { fontFamily: T.font.serif },
+            { fontFamily: T.font.serif, fontSize: amountFontSize },
             ...(Platform.OS === "web"
               ? [{ outlineStyle: "none", outlineWidth: 0, borderWidth: 0, boxShadow: "none" } as any]
               : []),
@@ -461,7 +473,7 @@ function Converter({ rates }: { rates: any[] }) {
 
         {/* Icône calculatrice */}
         <View style={cv.actionBtn}>
-          <Ionicons name="calculator-outline" size={20} color={T.inkSub} />
+          <Ionicons name="calculator-outline" size={18} color={T.inkSub} />
         </View>
       </View>
 
@@ -475,28 +487,27 @@ function Converter({ rates }: { rates: any[] }) {
           activeOpacity={0.7}
         >
           <View style={cv.flagCircle}>
-            <Text style={{ fontSize: 20 }}>{toMeta.flag}</Text>
+            <Text style={{ fontSize: 18 }}>{toMeta.flag}</Text>
           </View>
           <Text style={[cv.currencyCode, { fontFamily: T.font.sans }]}>
             {toCur}
           </Text>
-          <Ionicons name="chevron-down" size={15} color={T.inkSub} />
+          <Ionicons name="chevron-down" size={14} color={T.inkSub} />
         </TouchableOpacity>
 
         {/* Séparateur vertical */}
         <View style={cv.vSep} />
 
         {/* Résultat + taux */}
+        {/* ✅ v8.2 : `adjustsFontSizeToFit` retiré (sans effet sur web, cf. en-tête) et
+            remplacé par `resultFontSize`, recalculé selon la longueur du texte affiché,
+            pour que le montant complet reste toujours visible sans être coupé. */}
         <View style={cv.resultWrap}>
           <Text
-            style={[cv.resultAmount, { fontFamily: T.font.serif }]}
+            style={[cv.resultAmount, { fontFamily: T.font.serif, fontSize: resultFontSize }]}
             numberOfLines={1}
-            adjustsFontSizeToFit
           >
-            {converted !== null
-              ? `${toMeta.symbol} ${fmtAmount(converted, toCur)}`
-              : "—"
-            }
+            {resultText}
           </Text>
           {rate !== null && (
             <Text style={[cv.rateSmall, { fontFamily: T.font.sans }]}>
@@ -507,7 +518,7 @@ function Converter({ rates }: { rates: any[] }) {
 
         {/* Bouton swap (⋮ dans Wise → ici swap vertical) */}
         <TouchableOpacity style={cv.actionBtn} onPress={handleSwap}>
-          <Ionicons name="swap-vertical-outline" size={20} color={T.inkSub} />
+          <Ionicons name="swap-vertical-outline" size={18} color={T.inkSub} />
         </TouchableOpacity>
       </View>
 
@@ -578,52 +589,63 @@ const cv = StyleSheet.create({
   },
 
   // Sélecteur devise (flag + code + chevron)
+  // ✅ v8.2 : flexShrink/flexGrow verrouillés à 0 — cet élément a une largeur fixe
+  // et ne doit jamais pouvoir être écrasé par le champ montant voisin (flex:1)
   currencyBtn: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    paddingHorizontal: 14, paddingVertical: 16,
+    flexDirection: "row", alignItems: "center", gap: 5,
+    paddingHorizontal: 12, paddingVertical: 14,
+    flexShrink: 0, flexGrow: 0,
   },
   flagCircle: {
-    width: 34, height: 34, borderRadius: 17,
+    width: 30, height: 30, borderRadius: 15,
     backgroundColor: "#F8FAFF",
     borderWidth: 1, borderColor: T.border,
     justifyContent: "center", alignItems: "center",
     overflow: "hidden",
+    flexShrink: 0, flexGrow: 0,
   },
   currencyCode: {
-    fontSize: 16, fontWeight: "700", color: T.ink,
+    fontSize: 15, fontWeight: "700", color: T.ink,
   },
 
   // Séparateur vertical
   vSep: {
-    width: 1, height: 38, backgroundColor: T.border,
+    width: 1, height: 34, backgroundColor: T.border,
+    flexShrink: 0, flexGrow: 0,
   },
 
   // TextInput montant (FROM)
-  // ✅ v8.1 : borderWidth:0 + fond transparent en dur pour éviter tout cadre résiduel
+  // ✅ v8.2 : `minWidth: 0` est la correction clé — sans elle, un enfant `flex:1`
+  // refuse de rétrécir sous la largeur de son propre contenu et peut pousser les
+  // éléments voisins (le sélecteur de devise) hors de la zone visible dès que du
+  // texte est saisi. borderWidth:0 (v8.1) conservé.
   amountInput: {
-    flex: 1, paddingHorizontal: 14,
-    fontSize: 22, fontWeight: "700", color: T.ink,
+    flex: 1, minWidth: 0, paddingHorizontal: 12,
+    fontWeight: "700", color: T.ink,
     textAlign: "right",
     borderWidth: 0,
     backgroundColor: "transparent",
   },
 
   // Zone résultat (TO)
+  // ✅ v8.2 : minWidth:0 pour la même raison que amountInput ci-dessus
   resultWrap: {
-    flex: 1, paddingHorizontal: 14,
+    flex: 1, minWidth: 0, paddingHorizontal: 12,
     alignItems: "flex-end", justifyContent: "center",
-    gap: 4, paddingVertical: 12,
+    gap: 3, paddingVertical: 12,
   },
   resultAmount: {
-    fontSize: 22, fontWeight: "700", color: T.ink, textAlign: "right",
+    fontWeight: "700", color: T.ink, textAlign: "right",
   },
   rateSmall: {
-    fontSize: 11, color: T.inkSub, fontWeight: "500", textAlign: "right",
+    fontSize: 10, color: T.inkSub, fontWeight: "500", textAlign: "right",
   },
 
   // Icône droite (calculatrice ou swap)
+  // ✅ v8.2 : flexShrink/flexGrow verrouillés à 0, padding resserré
   actionBtn: {
-    paddingHorizontal: 14, paddingVertical: 16,
+    paddingHorizontal: 10, paddingVertical: 14,
+    flexShrink: 0, flexGrow: 0,
   },
 
   // Barre inférieure
@@ -647,105 +669,6 @@ const cv = StyleSheet.create({
     fontSize: 11, color: T.inkMuted, fontWeight: "500", textAlign: "right",
     flexShrink: 1,
   },
-});
-
-// ─── Rate Card (inchangé) ─────────────────────────────────
-// ⚠️ HORS PÉRIMÈTRE : ce composant n'est plus appelé nulle part dans l'écran
-// depuis la suppression de la section "TOUTES LES PAIRES" (v8.1). Conservé
-// intact, non supprimé, dans l'attente de ta confirmation.
-function RateCard({ item, index }: { item: any; index: number }) {
-  const anim  = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(1)).current;
-
-  const pair      = normPair(item.pair);
-  const [from, to] = pair.split("/");
-  const fromM     = META[from] ?? { flag: "💱", name: from };
-  const toM       = META[to]   ?? { flag: "💱", name: to };
-  const pairColor = PAIR_COLORS[pair] ?? T.accent;
-
-  const change  = Number(item.changePercent ?? 0);
-  const isUp    = change > 0;
-  const isDown  = change < 0;
-  const chColor = isUp ? T.greenDark : isDown ? T.redDark : T.inkMuted;
-  const chBg    = isUp ? T.greenBg   : isDown ? T.redBg   : T.accentLt;
-  const chBdr   = isUp ? T.greenBdr  : isDown ? T.redBdr  : T.borderLt;
-  const chIcon  = isUp ? "trending-up" : isDown ? "trending-down" : "remove";
-
-  useEffect(() => {
-    Animated.spring(anim, {
-      toValue: 1, useNativeDriver: true, speed: 14, bounciness: 4, delay: index * 35,
-    }).start();
-  }, []);
-
-  const rate = Number(item.rate ?? 0);
-
-  return (
-    <Animated.View style={{
-      opacity: anim,
-      transform: [
-        { scale },
-        { translateX: anim.interpolate({ inputRange: [0,1], outputRange: [16,0] }) },
-      ],
-      marginBottom: 8,
-    }}>
-      <TouchableOpacity
-        style={[rc.card, { borderLeftColor: pairColor }]}
-        activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.975, useNativeDriver: true, speed: 60 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
-      >
-        <View style={rc.iconStack}>
-          <View style={rc.iconWrap}><Text style={{ fontSize: 18 }}>{fromM.flag}</Text></View>
-          <View style={[rc.iconWrap, rc.iconOverlap]}><Text style={{ fontSize: 18 }}>{toM.flag}</Text></View>
-        </View>
-
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={[rc.pair, { fontFamily: T.font.sans }]}>{pair}</Text>
-          <Text style={[rc.pairSub, { fontFamily: T.font.sans }]} numberOfLines={1}>
-            {fromM.name} → {toM.name}
-          </Text>
-        </View>
-
-        <View style={{ alignItems: "flex-end", gap: 5 }}>
-          <Text style={[rc.rate, { fontFamily: T.font.serif }]}>
-            {rate > 0 ? fmt(rate, to) : "—"}
-          </Text>
-          <View style={[rc.changePill, { backgroundColor: chBg, borderColor: chBdr }]}>
-            <Ionicons name={chIcon as any} size={10} color={chColor} />
-            <Text style={[rc.changeTxt, { color: chColor, fontFamily: T.font.mono }]}>
-              {change !== 0 ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "0.00%"}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-
-const rc = StyleSheet.create({
-  card: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: T.surface, borderRadius: T.r.lg, padding: 14,
-    borderWidth: 1, borderColor: T.borderLt, borderLeftWidth: 4,
-    shadowColor: "#4361EE", shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2, overflow: "hidden",
-  },
-  iconStack: { width: 50, flexDirection: "row", alignItems: "center" },
-  iconWrap: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: T.surface,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1.5, borderColor: T.borderLt,
-  },
-  iconOverlap:  { marginLeft: -10 },
-  pair:         { fontSize: 13, fontWeight: "800", color: T.ink, marginBottom: 2 },
-  pairSub:      { fontSize: 10, fontWeight: "600", color: T.inkSub, maxWidth: 140 },
-  rate:         { fontSize: 18, fontWeight: "900", color: T.ink },
-  changePill: {
-    flexDirection: "row", alignItems: "center", gap: 3,
-    paddingHorizontal: 6, paddingVertical: 3,
-    borderRadius: T.r.pill, borderWidth: 1,
-  },
-  changeTxt: { fontSize: 9, fontWeight: "900" },
 });
 
 // ─── Écran principal ──────────────────────────────────────
@@ -817,13 +740,6 @@ export default function RatesScreen() {
       }).start();
     }, [load])
   );
-
-  // ⚠️ HORS PÉRIMÈTRE : `sorted` n'est plus consommé dans le JSX depuis la
-  // suppression de la section "TOUTES LES PAIRES" (v8.1). Conservé intact.
-  const sorted = [
-    ...PRIORITY.map(p => rates.find(r => r.pair === p)).filter(Boolean),
-    ...rates.filter(r => !PRIORITY.includes(r.pair)),
-  ];
 
   const eurXof = findRate(rates, "EUR", "XOF");
   const eurGnf = findRate(rates, "EUR", "GNF");

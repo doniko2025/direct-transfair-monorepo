@@ -1,6 +1,6 @@
 // apps/backend/src/beneficiaries/beneficiaries.service.ts
 // =========================================================
-// BENEFICIARIES SERVICE v4.1
+// BENEFICIARIES SERVICE v4.2
 // ✅ v4.0 : create() accepte clientId en argument
 // ✅ v4.1 : lookupByPhone() — recherche d'un destinataire par téléphone
 //    Priorité :
@@ -9,6 +9,42 @@
 //    Retourne les données nécessaires pour :
 //      - Afficher l'auto-suggestion dans le frontend (wallet transfer)
 //      - Créer un bénéficiaire valide (avec country + city) si inexistant
+//
+// ✅ v4.2 : 🚨 FIX SÉCURITÉ CRITIQUE — collision de téléphone (même bug
+//    que transactions.service.ts v4.18 et users.service.ts v4.5,
+//    repéré ici en relisant ce fichier)
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   lookupByPhone() faisait phone: { contains: cleanPhone }, où
+//   cleanPhone est une simple chaîne de chiffres nettoyée (pas de
+//   normalisation E.164). Cette stratégie est symétrique : si le
+//   numéro d'un compte A est un suffixe strict du numéro d'un compte B
+//   ("0033766736226" vs "+33766736226"/"33766736226" — confusion entre
+//   préfixe international "+" et "00"), LES DEUX comptes matchent la
+//   même recherche. C'est exactement le même mécanisme que l'incident
+//   réel documenté dans transactions.service.ts (dépôt agent de
+//   50 000 € crédité sur le mauvais compte) — ici, le risque est côté
+//   auto-suggestion à la création d'un bénéficiaire : le frontend
+//   wallet-transfer peut proposer/pré-remplir le mauvais utilisateur
+//   plateforme comme destinataire pour un numéro donné.
+//
+//   CORRECTIF :
+//   Normalisation via normalizePhoneE164() (source unique — voir
+//   common/utils/phone.util.ts, déjà utilisée dans transactions.
+//   service.ts, users.service.ts, auth.service.ts) puis correspondance
+//   EXACTE sur le champ `phone`, pour existingBenef ET platformUser.
+//   platformUser filtre maintenant aussi deletedAt: null, cohérent
+//   avec le reste de l'app (un agent désactivé — voir
+//   agencies.service.ts v4.5 — ne doit pas être proposé comme
+//   destinataire).
+//   create()/updateForUser() normalisent également le téléphone AVANT
+//   stockage — Beneficiary.phone était jusqu'ici enregistré tel quel,
+//   sans normalisation, contrairement à User.phone partout ailleurs
+//   dans l'app. Ne causait pas de faux-match en pratique (les lookups
+//   normalisent déjà à la comparaison), mais laissait une donnée non
+//   normalisée en base, à contre-courant de la convention établie —
+//   corrigé pour cohérence et pour éviter qu'un futur lookup naïf
+//   (sans normalisation à la lecture) ne se fasse piéger.
 // =========================================================
 
 import {
@@ -18,6 +54,7 @@ import {
 } from '@nestjs/common';
 import type { Beneficiary } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { normalizePhoneE164 } from '../common/utils/phone.util';
 import type { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import type { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 
@@ -53,12 +90,24 @@ export class BeneficiariesService {
 
     const { fullName, country, city, phone } = dto;
 
+    // ✅ v4.2 — FIX : normalisation à l'écriture, cohérent avec
+    // User.phone partout ailleurs dans l'app (voir changelog en tête
+    // de fichier). Un numéro fourni mais invalide est rejeté plutôt
+    // que silencieusement stocké tel quel.
+    let normalizedPhone: string | null = null;
+    if (phone) {
+      normalizedPhone = normalizePhoneE164(phone);
+      if (!normalizedPhone) {
+        throw new BadRequestException('Numéro de téléphone invalide.');
+      }
+    }
+
     return this.prisma.beneficiary.create({
       data: {
         fullName,
         country,
         city,
-        phone: phone ?? null,
+        phone: normalizedPhone,
         user:   { connect: { id: userId } },
         client: { connect: { id: clientId } },
       },
@@ -94,13 +143,27 @@ export class BeneficiariesService {
       dto.phone     !== undefined;
     if (!hasAny) throw new BadRequestException('No fields provided');
 
+    // ✅ v4.2 — FIX : même normalisation qu'en création (voir
+    // changelog en tête de fichier).
+    let normalizedPhone: string | null | undefined = undefined;
+    if (dto.phone !== undefined) {
+      if (!dto.phone) {
+        normalizedPhone = null; // effacement explicite autorisé
+      } else {
+        normalizedPhone = normalizePhoneE164(dto.phone);
+        if (!normalizedPhone) {
+          throw new BadRequestException('Numéro de téléphone invalide.');
+        }
+      }
+    }
+
     return this.prisma.beneficiary.update({
       where: { id: existing.id },
       data: {
         fullName: dto.fullName ?? undefined,
         country:  dto.country  ?? undefined,
         city:     dto.city     ?? undefined,
-        phone:    dto.phone === undefined ? undefined : dto.phone,
+        phone:    normalizedPhone,
       },
     });
   }
@@ -124,7 +187,7 @@ export class BeneficiariesService {
   }
 
   // ========================================================
-  // LOOKUP PAR TÉLÉPHONE — v4.1
+  // LOOKUP PAR TÉLÉPHONE — ✅ v4.2 SÉCURITÉ CRITIQUE
   //
   // Utilisé par le frontend wallet-transfer pour auto-suggérer
   // le destinataire quand l'utilisateur saisit un numéro.
@@ -135,10 +198,10 @@ export class BeneficiariesService {
   //      → renvoie firstName/lastName/country/city pour création bénéf.
   //   3. Non trouvé → found: false
   //
-  // Le résultat contient tout le nécessaire pour :
-  //   - Afficher le nom dans l'UI (auto-suggestion)
-  //   - Créer un bénéficiaire valide (country + city non vides)
-  //   - Déterminer la devise cible (primaryCurrency)
+  // 🚨 v4.2 : normalizePhoneE164() + correspondance EXACTE partout
+  // (voir changelog en tête de fichier) — remplace l'ancien
+  // phone: { contains: cleanPhone } vulnérable aux collisions de
+  // format (+33... vs 0033...).
   // ========================================================
 
   async lookupByPhone(
@@ -147,8 +210,8 @@ export class BeneficiariesService {
   ): Promise<PhoneLookupResult> {
     if (!phone) return { found: false, isPlatformUser: false };
 
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length < 6) return { found: false, isPlatformUser: false };
+    const normalized = normalizePhoneE164(phone);
+    if (!normalized) return { found: false, isPlatformUser: false };
 
     // Récupère le clientId de l'utilisateur qui fait la recherche
     const requestingUser = await this.prisma.user.findUnique({
@@ -157,21 +220,22 @@ export class BeneficiariesService {
     });
     if (!requestingUser?.clientId) return { found: false, isPlatformUser: false };
 
-    // ── 1. Bénéficiaire existant ──────────────────────────
+    // ── 1. Bénéficiaire existant — correspondance EXACTE ─
     const existingBenef = await this.prisma.beneficiary.findFirst({
       where: {
         userId: requestingUserId,
-        phone:  { contains: cleanPhone },
+        phone:  normalized,
       },
     });
 
-    // ── 2. Utilisateur de la même plateforme ─────────────
+    // ── 2. Utilisateur de la même plateforme — correspondance EXACTE
     const platformUser = await this.prisma.user.findFirst({
       where: {
-        phone:    { contains: cleanPhone },
-        clientId: requestingUser.clientId,
-        isActive: true,
-        id:       { not: requestingUserId }, // Ne pas trouver soi-même
+        phone:     normalized,
+        clientId:  requestingUser.clientId,
+        isActive:  true,
+        deletedAt: null, // ✅ v4.2 — exclut les agents désactivés (agencies.service.ts v4.5)
+        id:        { not: requestingUserId }, // Ne pas trouver soi-même
       },
       select: {
         firstName:       true,

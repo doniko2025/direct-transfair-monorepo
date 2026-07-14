@@ -1,6 +1,6 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.18 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.20 — Direct Transf'air
 // =========================================================
 // ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
 // ✅ v4.13-A : FIX acquireAdvisoryLock int32 signé (| 0)
@@ -51,6 +51,89 @@
 //   voir UsersService.create/update et AuthService.register). Un
 //   numéro normalisé ne peut plus correspondre qu'à un seul compte,
 //   ou à aucun.
+//
+// ✅ v4.19 : 🚨 4 correctifs regroupés dans create(), tous découverts en
+//     confrontant ce fichier au schema.prisma complet et à send.tsx v2.10+
+//
+//   PROBLÈME 1 — beneficiaryId d'un User plateforme non enregistré rejeté
+//     send.tsx v2.10 (mobile) détecte un utilisateur Direct Transf'air
+//     déjà inscrit mais PAS encore enregistré comme contact (via
+//     GET /users/by-phone). Son User.id est injecté tel quel dans
+//     detectedBeneficiary.id, et envoyé comme dto.beneficiaryId. Ce
+//     create() cherchait STRICTEMENT dans la table Beneficiary → un
+//     User.id ne matche (quasiment) jamais un Beneficiary.id →
+//     NotFoundException systématique. Impossible d'envoyer de l'argent
+//     à un utilisateur détecté-mais-pas-enregistré, alors que c'est
+//     précisément le cas d'usage que la fonctionnalité v2.10 devait
+//     couvrir.
+//     CORRECTIF : si aucun Beneficiary ne matche, on tente un User
+//     direct (même clientId, actif, non supprimé) avant de rejeter.
+//
+//   PROBLÈME 2 — 🚨 Beneficiary non cloisonné (userId/clientId)
+//     const beneficiary = await this.prisma.beneficiary.findFirst({
+//       where: { id: dto.beneficiaryId },
+//     });
+//     Aucune vérification que ce Beneficiary appartient bien à
+//     l'expéditeur, ni même à son tenant. N'importe quel beneficiaryId
+//     valide — y compris celui d'un AUTRE utilisateur, potentiellement
+//     d'une AUTRE société cliente — était accepté tel quel, exposant
+//     nom/téléphone/pays d'un tiers et pouvant fausser la devise cible
+//     ou l'association de la transaction.
+//     CORRECTIF : la recherche est maintenant scopée à
+//     { id, userId: senderId, clientId } — un beneficiaryId ne peut
+//     plus matcher que les contacts appartenant à l'expéditeur, dans
+//     son propre tenant.
+//
+//   PROBLÈME 3 — Beneficiary.expectedCurrency jamais utilisé
+//     Le schéma a un champ dédié Beneficiary.expectedCurrency
+//     (CurrencyCode explicite), jamais lu ici — la devise cible était
+//     TOUJOURS redérivée depuis .country via un texte-matching moins
+//     fiable (getCurrencyFromCountryOrText), même quand une valeur
+//     explicite et fiable existait déjà en base.
+//     CORRECTIF : priorité à expectedCurrency s'il est renseigné ;
+//     .country reste le repli si absent, puis la devise du destinataire
+//     direct (User.primaryCurrency, cf. PROBLÈME 1), puis en tout
+//     dernier recours celle de l'expéditeur.
+//
+//   PROBLÈME 4 — Motif du transfert jamais persisté
+//     send.tsx envoie note: motif dans le payload, et Transaction.note
+//     existe bien dans le schéma — mais create() ne l'a jamais lu ni
+//     écrit. Le motif choisi par l'utilisateur disparaissait purement
+//     et simplement après l'envoi (le reçu immédiat l'affiche encore,
+//     mais depuis l'état local du frontend, pas depuis la DB — donc
+//     invisible dans l'historique/le détail de transaction ensuite).
+//     CORRECTIF : note: dto.note ?? null ajouté à la création.
+//     ✅ RÉSOLU en v4.20 : create-transaction.dto.ts confirmait
+//     l'absence du champ note — DTO corrigé en v1.1 (voir ce fichier).
+//     Les deux bouts (service + DTO) sont maintenant alignés.
+//
+// ✅ v4.20 : 🚨 FIX (préventif) — transactions "soft-deleted" auraient
+//     été invisibles nulle part sauf dans la liste elle-même
+//
+//   CONTEXTE :
+//   Transaction.deletedAt a été ajouté au schéma (v5.1), à l'origine
+//   pour qu'AgenciesService.remove() puisse suppression-douce les
+//   transactions d'une agence supprimée. Le design d'agencies.service.ts
+//   a depuis été révisé (v4.5) : supprimer une agence désactive
+//   désormais l'agence et ses agents SANS jamais toucher Transaction —
+//   ce champ n'est donc plus renseigné par ce flux précis. Il reste
+//   dans le schéma comme infrastructure générale pour un futur besoin.
+//   Le filtrage ci-dessous reste en place par précaution — inoffensif
+//   tant que le champ vaut toujours null, et évite le piège suivant
+//   pour quiconque l'utiliserait un jour : ajouter un champ deletedAt
+//   sans filtrer sa lecture ferait qu'une ligne "supprimée" continue
+//   d'apparaître partout, ce qui est pire qu'une absence de soft-delete
+//   (l'utilisateur croit la donnée fiable alors qu'elle est censée
+//   être masquée).
+//   CORRECTIF : buildUserTransactionFilter() (utilisé par
+//   findForUser()/findOneForUser(), tous rôles) et
+//   adminFindAllForAdmin() filtrent deletedAt: null.
+//   ⚠️ Périmètre volontairement limité aux vues LISTE/DÉTAIL — les
+//   méthodes qui font un findUnique() par id précis pour une MUTATION
+//   ciblée (cancel, adminUpdateStatusForAdmin, declareBankTransfer,
+//   validateBankTransfer, rejectBankTransfer) n'ont pas reçu de garde
+//   deletedAt supplémentaire, jugé superflu tant que rien n'écrit ce
+//   champ dans le code actuel.
 // =========================================================
 
 import {
@@ -585,11 +668,32 @@ export class TransactionsService {
 
     const clientId = user.clientId;
 
+    // ✅ v4.19 — FIX (PROBLÈME 2, sécurité) : le Beneficiary est
+    // maintenant cherché scopé au sender ET à son tenant, plus par id
+    // brut seul. Voir changelog en tête de fichier.
     const beneficiary = dto.beneficiaryId
-      ? await this.prisma.beneficiary.findFirst({ where: { id: dto.beneficiaryId } })
+      ? await this.prisma.beneficiary.findFirst({
+          where: { id: dto.beneficiaryId, userId: senderId, clientId },
+        })
       : null;
 
-    if (dto.beneficiaryId && !beneficiary) throw new NotFoundException('Beneficiary not found');
+    // ✅ v4.19 — FIX (PROBLÈME 1) : dto.beneficiaryId peut être un
+    // User.id direct (détection "utilisateur plateforme non enregistré"
+    // de send.tsx v2.10). Si aucun Beneficiary scopé ne matche, on
+    // tente un User (même client, actif, non supprimé) avant de rejeter.
+    let directRecipientUser: any = null;
+    if (dto.beneficiaryId && !beneficiary) {
+      directRecipientUser = await this.prisma.user.findFirst({
+        where: {
+          id: dto.beneficiaryId,
+          clientId,
+          isActive: true,
+          deletedAt: null,
+        },
+        include: { wallets: { where: { isActive: true } } },
+      });
+      if (!directRecipientUser) throw new NotFoundException('Beneficiary not found');
+    }
 
     const currency = dto.currency.toUpperCase() as CurrencyCode;
 
@@ -668,15 +772,24 @@ export class TransactionsService {
       );
     }
 
-    let recipientUser: any = null;
-    if (isWalletTransfer && beneficiary?.phone) {
+    // ✅ v4.19 — priorité au destinataire déjà résolu directement
+    // (User.id connu avec certitude) ; sinon, stratégie phone existante.
+    let recipientUser: any = directRecipientUser ?? null;
+    if (!recipientUser && isWalletTransfer && beneficiary?.phone) {
       // ✅ v4.17 — même stratégie tolérante que findByPhoneInTenant()
       recipientUser = await this.findClientByPhoneTolerant(beneficiary.phone, clientId);
     }
 
-    const targetCurrency: CurrencyCode = beneficiary?.country
-      ? getCurrencyFromCountryOrText(beneficiary.country)
-      : currency;
+    // ✅ v4.19 — FIX (PROBLÈME 3) : priorité à Beneficiary.expectedCurrency
+    // (champ dédié du schéma, jamais lu jusqu'ici) sur la déduction
+    // texte-vers-devise depuis .country, qui reste le repli si absent.
+    // Puis la devise du destinataire direct (User.primaryCurrency, cf.
+    // PROBLÈME 1), puis en tout dernier recours celle de l'expéditeur.
+    const targetCurrency: CurrencyCode =
+      beneficiary?.expectedCurrency
+      ?? (beneficiary?.country ? getCurrencyFromCountryOrText(beneficiary.country) : null)
+      ?? (directRecipientUser?.primaryCurrency as CurrencyCode | undefined)
+      ?? currency;
 
     const convertedAmount = await this.ratesService.convert(Number(amount), currency, targetCurrency);
     const receivedAmount  = new Prisma.Decimal(convertedAmount);
@@ -730,10 +843,18 @@ export class TransactionsService {
         providerRef:    storedRef,
         providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
         paidAt,
+        // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
+        // Transaction.note existe dans le schéma ; dto.note n'était
+        // jamais lu ni écrit ici auparavant.
+        note:           (dto as any).note ?? null,
       },
     });
 
-    await this.push.notifyTransferSent(senderId, beneficiary?.fullName ?? 'Bénéficiaire', `${amount}`, currency);
+    // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
+    const earlyRecipientLabel = beneficiary?.fullName
+      ?? (recipientUser ? `${recipientUser.firstName ?? ''} ${recipientUser.lastName ?? ''}`.trim() : 'Bénéficiaire');
+
+    await this.push.notifyTransferSent(senderId, earlyRecipientLabel, `${amount}`, currency);
     if (recipientUser?.id) {
       await this.push.notifyTransferReceived(
         recipientUser.id,
@@ -1038,10 +1159,15 @@ export class TransactionsService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.role === 'SUPER_ADMIN') return { where: {}, user };
+    // ✅ v4.20 — FIX : exclut les transactions soft-supprimées
+    // (Transaction.deletedAt, voir changelog en tête de fichier) de
+    // TOUTES les vues liste/détail, quel que soit le rôle.
+    const notDeleted: Prisma.TransactionWhereInput = { deletedAt: null };
+
+    if (user.role === 'SUPER_ADMIN') return { where: notDeleted, user };
 
     if (user.role === 'COMPANY_ADMIN') {
-      return { where: { clientId: user.clientId ?? -1 }, user };
+      return { where: { ...notDeleted, clientId: user.clientId ?? -1 }, user };
     }
 
     if (user.role === 'AGENT') {
@@ -1069,11 +1195,12 @@ export class TransactionsService {
         orClauses.push({ id: { in: processedTxIds } });
       }
 
-      return { where: { clientId: user.clientId ?? -1, OR: orClauses }, user };
+      return { where: { ...notDeleted, clientId: user.clientId ?? -1, OR: orClauses }, user };
     }
 
     return {
       where: {
+        ...notDeleted,
         clientId: user.clientId ?? -1,
         OR: [{ senderId: userId }, { recipientId: userId }],
       },
@@ -1115,12 +1242,13 @@ export class TransactionsService {
 
     if (admin?.role === 'SUPER_ADMIN') {
       transactions = await this.prisma.transaction.findMany({
+        where:   { deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
         include: { sender: true, beneficiary: true, client: true, withdrawal: true },
       });
     } else if (admin?.clientId) {
       transactions = await this.prisma.transaction.findMany({
-        where:   { clientId: admin.clientId },
+        where:   { clientId: admin.clientId, deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
         include: { sender: true, beneficiary: true, client: true, withdrawal: true },
       });

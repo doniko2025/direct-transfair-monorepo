@@ -1,6 +1,6 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.3
+// AGENCIES SERVICE v4.5
 // ✅ v4.2 : FIX CurrencyCode enum cast (migration v4.1)
 //
 // ✅ v4.3 : 🐛 FIX — modification du responsable sans effet
@@ -35,12 +35,102 @@
 //     `email` est @unique sur User (impossible d'assigner la même
 //     valeur à 2 lignes). Ciblé maintenant sur le seul responsable
 //     résolu ci-dessus.
+//
+// ✅ v4.4 : 🚨 2 correctifs — mot de passe en dur + suppression définitive
+//
+//   PROBLÈME 1 RÉSOLU — mot de passe en dur '123456'
+//     create() faisait : bcrypt.hash(dto.adminPassword || '123456', 10).
+//     Toute agence créée sans mot de passe explicite recevait EXACTEMENT
+//     le même mot de passe, connu de quiconque lit ce fichier — un
+//     compte AGENT avec accès à un wallet et à des opérations
+//     financières protégé par un secret partagé public.
+//     CORRECTIF : generateSecurePassword() génère 24 caractères
+//     hexadécimaux aléatoires (crypto.randomBytes, jamais prévisible,
+//     jamais répété) quand dto.adminPassword est vide. Le mot de passe
+//     généré est (a) envoyé par email au nouvel agent — même mécanisme
+//     que le mail de bienvenue de AuthService.register() — et (b)
+//     renvoyé UNE FOIS dans la réponse de create() (champ
+//     generatedPassword, absent si l'admin avait fourni le sien), pour
+//     que l'admin qui vient de créer l'agence puisse le communiquer
+//     même si l'email n'arrive pas immédiatement.
+//     ⚠️ Nécessite MailService disponible pour injection dans
+//     AgenciesModule. Si Nest lève "Can't resolve dependencies of
+//     AgenciesService (?, UsersService, MailService)" au démarrage,
+//     importer MailModule (ou équivalent) dans agencies.module.ts —
+//     très probablement déjà global vu son usage dans auth.service.ts
+//     et transactions.service.ts, mais non vérifiable sans ce fichier.
+//
+//   PROBLÈME 2 RÉSOLU EN v4.4, COMPLÉTÉ EN v4.5 — suppression définitive
+//
+//     v4.4 avait ajouté Transaction.deletedAt et fait passer remove()
+//     d'un tx.transaction.deleteMany() à un updateMany({ deletedAt }).
+//     Mais cette version avait un bug non détecté sur le moment :
+//     remove() continuait ensuite à faire tx.user.deleteMany() sur les
+//     AGENTS eux-mêmes. Or Transaction.senderId/recipientId sont des
+//     clés étrangères NON NULLABLES vers User, sans onDelete: Cascade
+//     dans le schéma. Résultat concret si v4.4 avait été déployé tel
+//     quel : dès qu'un agent avait ne serait-ce qu'UNE transaction
+//     (le cas normal pour un agent qui a servi), la transaction
+//     survivait (deletedAt) mais le DELETE de son compte User aurait
+//     été rejeté par la contrainte de clé étrangère — remove() aurait
+//     échoué (500) pour toute agence ayant un minimum d'historique.
+//     v4.4 réglait un problème (perte de données) en introduisant une
+//     régression fonctionnelle (suppression cassée).
+//
+//     v4.5 reprend le sujet dans son ensemble avec un principe simple,
+//     standard pour une fintech réelle : SUPPRIMER UNE AGENCE NE DOIT
+//     JAMAIS DÉTRUIRE DE DONNÉE FINANCIÈRE OU DE CONFORMITÉ — ça doit
+//     être une DÉSACTIVATION. Concrètement :
+//       • Transaction, Wallet, LedgerEntry, KycDocument, AmlFlag,
+//         LoginHistory : plus touchés DU TOUT (ni supprimés, ni même
+//         soft-deleted) — ils restent pleinement intacts et
+//         interrogeables (audit, réconciliation, demande régulateur).
+//         Transaction.deletedAt (v5.1) reste dans le schéma comme
+//         infrastructure générale disponible pour un futur besoin,
+//         mais n'est plus utilisé par CE flux — il n'y en a plus
+//         besoin puisque les Users ne sont plus supprimés non plus.
+//       • Wallet (agence + agents) : désactivé (isActive:false),
+//         jamais supprimé — solde et historique de ledger conservés
+//         tels quels.
+//       • Sessions/appareils/OTP (otpLog, userDevice, userSession) :
+//         seuls éléments encore supprimés DÉFINITIVEMENT — non
+//         financiers, aucune valeur d'audit à long terme, et il faut
+//         au contraire couper l'accès immédiatement (hygiène de
+//         sécurité — un agent désactivé ne doit garder aucune session
+//         active).
+//       • User (agents) : suppression douce (deletedAt + isActive:
+//         false) au lieu d'un DELETE — email (NOT NULL, @unique) est
+//         préfixé "deleted_<timestamp>_<email original>" pour libérer
+//         la valeur exacte en vue d'une réutilisation future tout en
+//         conservant la traçabilité forensique ; phone (@unique,
+//         nullable) est vidé.
+//       • Agency elle-même : a un deletedAt depuis v5.1, jamais
+//         utilisé jusqu'ici — remove() faisait un DELETE définitif
+//         malgré ça. Corrigé : désormais désactivée en douceur
+//         (deletedAt + isActive:false), code (nullable, @unique)
+//         libéré pour réutilisation. managerId n'est plus détaché :
+//         plus de risque de clé étrangère à éviter (le manager n'est
+//         plus supprimé définitivement), et garder ce pointeur
+//         historique est même utile pour l'audit ("cette agence
+//         désactivée était gérée par cet agent désactivé").
+//       • Soldes restants (agence ou agents) au moment de la
+//         désactivation : signalés en avertissements NON BLOQUANTS
+//         dans la réponse (jamais une exception) — un compte
+//         compromis/frauduleux doit pouvoir être coupé immédiatement
+//         même avec un solde non nul ; la réconciliation se fait
+//         séparément, après coup.
+//     ⚠️ findAllByClient/findAll/findOne/findOneAsSuperAdmin filtrent
+//     désormais deletedAt: null pour ne plus lister les agences
+//     désactivées. Un filtrage équivalent est probablement nécessaire
+//     côté UsersService pour les listes d'agents/utilisateurs — non
+//     vérifiable ni corrigé ici, ce fichier n'étant pas fourni.
 // =========================================================
 
 import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CurrencyCode, KycLevel, Role } from '@prisma/client';
@@ -49,6 +139,7 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
+import { MailService } from '../mail/mail.service';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
 
@@ -84,6 +175,13 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
   return `${prefix}${suffix}`;
 }
 
+// ✅ v4.4 — remplace le fallback en dur '123456'. 12 octets aléatoires
+// (crypto, pas Math.random) → 24 caractères hexadécimaux, jamais
+// prévisible, jamais répété d'un compte à l'autre.
+function generateSecurePassword(): string {
+  return crypto.randomBytes(12).toString('hex');
+}
+
 // ✅ v4.3 — même règle de résolution "responsable" que le frontend
 // (edit.tsx / details.tsx) : premier agent AGENT/COMPANY_ADMIN par
 // ordre de création, à défaut le tout premier agent restant. Utilisée
@@ -103,9 +201,12 @@ function resolveManagerFallback<T extends { role: Role }>(agents: T[]): T | null
 
 @Injectable()
 export class AgenciesService {
+  private readonly logger = new Logger(AgenciesService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
+    private readonly mail: MailService, // ✅ v4.4
   ) {}
 
   // ========================================================
@@ -130,12 +231,16 @@ export class AgenciesService {
         throw new ConflictException(`Le code "${dto.code}" est déjà utilisé.`);
     }
 
-    const hashedPassword = await bcrypt.hash(safeTrim(dto.adminPassword) || '123456', 10);
+    // ✅ v4.4 — FIX : plus de mot de passe en dur '123456'. Voir
+    // changelog en tête de fichier, PROBLÈME 1.
+    const providedPassword  = safeTrim(dto.adminPassword);
+    const generatedPassword = providedPassword ? null : generateSecurePassword();
+    const hashedPassword    = await bcrypt.hash(providedPassword || (generatedPassword as string), 10);
 
     // ✅ FIX: CurrencyCode
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
-    return this.prisma.$transaction(async (tx) => {
+    const { agency: createdAgency, agent } = await this.prisma.$transaction(async (tx) => {
       const agency = await tx.agency.create({
         data: {
           name: safeTrim(dto.name),
@@ -163,7 +268,7 @@ export class AgenciesService {
         },
       });
 
-      const agent = await tx.user.create({
+      const agentUser = await tx.user.create({
         data: {
           email,
           password: hashedPassword,
@@ -185,7 +290,7 @@ export class AgenciesService {
 
       await tx.wallet.create({
         data: {
-          userId: agent.id,
+          userId: agentUser.id,
           currency: primaryCurrency,
           balance: 0,
           isDefault: true,
@@ -200,14 +305,42 @@ export class AgenciesService {
       // à jour en 3ᵉ étape plutôt qu'un champ direct à la création.
       const updatedAgency = await tx.agency.update({
         where: { id: agency.id },
-        data: { managerId: agent.id },
+        data: { managerId: agentUser.id },
       });
 
       return {
         agency: this.serializeAgency(updatedAgency),
-        agent: this.serializeUser(agent),
+        agent: this.serializeUser(agentUser),
       };
     });
+
+    // ✅ v4.4 — email du mot de passe temporaire, UNIQUEMENT s'il a été
+    // généré automatiquement. Jamais envoyé si l'admin avait fourni le
+    // sien (il le connaît déjà). Non-bloquant, même pattern que le
+    // reste du service (auth.service.ts, transactions.service.ts).
+    if (generatedPassword && agent.email) {
+      this.mail.sendEmail(
+        agent.email,
+        "Votre compte agence Direct Transf'air",
+        `<p>Bonjour ${agent.firstName ?? ''},</p>
+         <p>Votre compte responsable d'agence a été créé sur Direct Transf'air.</p>
+         <p>Mot de passe temporaire :</p>
+         <p style="font-size:22px;font-weight:700;letter-spacing:3px;font-family:monospace;background:#F0FDF4;color:#059669;padding:14px;border-radius:8px;text-align:center;">${generatedPassword}</p>
+         <p>Nous vous recommandons de le changer dès votre première connexion.</p>`,
+      ).catch((err) => {
+        this.logger.warn(`Email mot de passe temporaire non envoyé : ${err?.message}`);
+      });
+    }
+
+    return {
+      agency: createdAgency,
+      agent,
+      // ✅ v4.4 — présent uniquement si généré automatiquement (undefined
+      // sinon, donc absent du JSON de réponse). Permet à l'admin qui
+      // vient de créer l'agence de le communiquer même si l'email
+      // n'arrive pas tout de suite.
+      generatedPassword: generatedPassword ?? undefined,
+    };
   }
 
   // ========================================================
@@ -216,7 +349,7 @@ export class AgenciesService {
 
   async update(id: string, clientId: number, dto: UpdateAgencyDto) {
     const agency = await this.prisma.agency.findFirst({
-      where: { id, clientId },
+      where: { id, clientId, deletedAt: null },
       include: {
         manager: true,
         agents: {
@@ -320,44 +453,119 @@ export class AgenciesService {
   }
 
   // ========================================================
-  // SUPPRESSION
+  // SUPPRESSION (désactivation douce — voir changelog v4.5)
   // ========================================================
 
   async remove(id: string, clientId: number) {
-    const agency = await this.prisma.agency.findFirst({ where: { id, clientId } });
+    const agency = await this.prisma.agency.findFirst({
+      where: { id, clientId, deletedAt: null },
+      include: {
+        agents:  { where: { deletedAt: null }, select: { id: true } },
+        wallets: { where: { isActive: true } },
+      },
+    });
     if (!agency) throw new NotFoundException('Agence introuvable');
 
-    return this.prisma.$transaction(async (tx) => {
-      const agents = await tx.user.findMany({
-        where: { agencyId: id },
-        select: { id: true },
+    const agentIds = agency.agents.map((a) => a.id);
+
+    // ✅ v4.5 — Avertissements NON BLOQUANTS sur les soldes restants.
+    // Ne bloquent jamais la désactivation : un agent/une agence
+    // compromis(e) doit pouvoir être coupé(e) immédiatement même avec
+    // un solde non nul ; la réconciliation se fait séparément.
+    const warnings: string[] = [];
+
+    const agencyBalance = agency.wallets.reduce((sum, w) => sum + Number(w.balance), 0);
+    if (agencyBalance !== 0) {
+      warnings.push(
+        `Le wallet de l'agence conservait un solde de ${agencyBalance} au moment de la désactivation — à réconcilier séparément.`,
+      );
+    }
+
+    if (agentIds.length > 0) {
+      const agentWallets = await this.prisma.wallet.findMany({
+        where: { userId: { in: agentIds }, isActive: true },
+        select: { balance: true },
       });
-      const agentIds = agents.map((a) => a.id);
-
-      // ✅ v4.3 — Détache managerId AVANT de supprimer les agents,
-      // sinon la contrainte de clé étrangère Agency.managerId → User.id
-      // empêcherait la suppression du user désigné comme responsable.
-      if (agency.managerId) {
-        await tx.agency.update({ where: { id }, data: { managerId: null } });
+      const agentsBalance = agentWallets.reduce((sum, w) => sum + Number(w.balance), 0);
+      if (agentsBalance !== 0) {
+        warnings.push(
+          `Les wallets personnels des agents conservaient un solde total de ${agentsBalance} — à réconcilier séparément.`,
+        );
       }
+    }
 
+    const updatedAgency = await this.prisma.$transaction(async (tx) => {
       if (agentIds.length > 0) {
+        // Sessions/appareils/OTP : seuls éléments encore supprimés
+        // DÉFINITIVEMENT — non financiers, aucune valeur d'audit à
+        // long terme, et il faut au contraire couper l'accès
+        // immédiatement (un agent désactivé ne doit garder aucune
+        // session active).
         try { await tx.otpLog.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
         try { await tx.userDevice.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
         try { await tx.userSession.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
-        try {
-          await tx.withdrawal.deleteMany({
-            where: { transaction: { senderId: { in: agentIds } } },
+
+        // Wallets personnels : désactivés, JAMAIS supprimés — solde
+        // et historique de ledger conservés intacts.
+        await tx.wallet.updateMany({
+          where: { userId: { in: agentIds }, isActive: true },
+          data:  { isActive: false },
+        });
+
+        // ✅ v4.5 — FIX (voir changelog en tête de fichier) : agents
+        // désactivés en douceur (deletedAt + isActive:false) au lieu
+        // d'un DELETE définitif. Transactions, KYC, AML, historique
+        // de connexion : tout reste intact, rien n'est touché — plus
+        // aucun risque de violation de clé étrangère (Transaction.
+        // senderId/recipientId restent valides puisque le User existe
+        // toujours).
+        await tx.user.updateMany({
+          where: { id: { in: agentIds }, deletedAt: null },
+          data:  { deletedAt: new Date(), isActive: false },
+        });
+
+        // email (NOT NULL, @unique) et phone (@unique, nullable)
+        // doivent être libérés individuellement pour permettre leur
+        // réutilisation future par un nouveau compte — impossible via
+        // un seul updateMany() avec la même valeur pour toutes les
+        // lignes. email est préfixé (pas vidé) pour conserver la
+        // traçabilité forensique de qui était ce compte.
+        const agentsToFree = await tx.user.findMany({
+          where: { id: { in: agentIds } },
+          select: { id: true, email: true },
+        });
+        for (const a of agentsToFree) {
+          await tx.user.update({
+            where: { id: a.id },
+            data: {
+              email: `deleted_${Date.now()}_${a.email}`,
+              phone: null,
+            },
           });
-        } catch (_) {}
-        await tx.transaction.deleteMany({ where: { senderId: { in: agentIds } } });
-        await tx.wallet.deleteMany({ where: { userId: { in: agentIds } } });
+        }
       }
 
-      await tx.wallet.deleteMany({ where: { agencyId: id } });
-      await tx.user.deleteMany({ where: { agencyId: id } });
-      return tx.agency.delete({ where: { id } });
+      // Wallet de l'agence elle-même : désactivé, jamais supprimé.
+      await tx.wallet.updateMany({
+        where: { agencyId: id, isActive: true },
+        data:  { isActive: false },
+      });
+
+      // ✅ v4.5 — FIX : Agency a un deletedAt depuis v5.1, jamais
+      // utilisé jusqu'ici — remove() faisait un DELETE définitif
+      // malgré ça. Désormais désactivée en douceur ; code (nullable,
+      // @unique) libéré pour réutilisation par une future agence.
+      // managerId n'est plus détaché : le manager n'étant plus
+      // supprimé définitivement, il n'y a plus de risque de clé
+      // étrangère à éviter, et garder ce pointeur historique est même
+      // utile pour l'audit.
+      return tx.agency.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false, code: null },
+      });
     });
+
+    return { ...this.serializeAgency(updatedAgency), warnings };
   }
 
   // ========================================================
@@ -366,9 +574,10 @@ export class AgenciesService {
 
   async findAllByClient(clientId: number) {
     const agencies = await this.prisma.agency.findMany({
-      where: { clientId },
+      where: { clientId, deletedAt: null },
       include: {
         agents: {
+          where: { deletedAt: null },
           select: {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, role: true,
@@ -387,8 +596,10 @@ export class AgenciesService {
 
   async findAll() {
     const agencies = await this.prisma.agency.findMany({
+      where: { deletedAt: null },
       include: {
         agents: {
+          where: { deletedAt: null },
           select: {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, role: true,
@@ -404,9 +615,10 @@ export class AgenciesService {
 
   async findOne(id: string, clientId: number) {
     const agency = await this.prisma.agency.findFirst({
-      where: { id, clientId },
+      where: { id, clientId, deletedAt: null },
       include: {
         agents: {
+          where: { deletedAt: null },
           select: {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, role: true,
@@ -420,10 +632,11 @@ export class AgenciesService {
   }
 
   async findOneAsSuperAdmin(id: string) {
-    const agency = await this.prisma.agency.findUnique({
-      where: { id },
+    const agency = await this.prisma.agency.findFirst({
+      where: { id, deletedAt: null },
       include: {
         agents: {
+          where: { deletedAt: null },
           select: {
             id: true, firstName: true, lastName: true,
             email: true, phone: true, role: true,

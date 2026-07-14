@@ -1,6 +1,6 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.5
+// USERS SERVICE v4.7
 // ✅ v4.0-4.3 : findAll, findByEmail, findById, create, update,
 //               suspend, reactivate, softDelete, serializeForAdmin
 // ✅ v4.4 : Ajout findByPhoneInTenant()
@@ -49,6 +49,26 @@
 //   users.service ne serait PAS annulée avec le reste.
 //   Comportement inchangé pour tous les appels existants (le
 //   paramètre est optionnel, retombe sur `this.prisma` par défaut).
+//
+// ✅ v4.7 : 🐛 FIX — softDelete() n'affranchissait pas email/phone
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   En révisant AgenciesService.remove() (v4.5) pour désactiver les
+//   agents en douceur au lieu de les supprimer définitivement, j'ai dû
+//   prefixer l'email (NOT NULL, @unique) et vider le phone (@unique)
+//   au moment de la désactivation, pour libérer ces valeurs en vue
+//   d'une réutilisation future. Cette même UsersService.softDelete()
+//   — utilisée ailleurs (ex: panneau d'administration des
+//   utilisateurs) pour désactiver un compte — ne faisait PAS ça :
+//   deletedAt + isActive:false étaient posés, mais email/phone
+//   restaient inchangés. Résultat : un compte supprimé via CET écran
+//   bloque à vie la réutilisation de son email/téléphone par un
+//   nouveau compte, alors qu'un agent désactivé via la suppression
+//   d'une agence, lui, libère bien ces valeurs — deux chemins de
+//   "suppression" avec des garanties différentes pour la même action.
+//   CORRECTIF : même mécanisme que agencies.service.ts v4.5 — email
+//   préfixé "deleted_<timestamp>_<email original>" (traçabilité
+//   forensique conservée, valeur exacte libérée), phone vidé (null).
 // =========================================================
 
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
@@ -150,6 +170,12 @@ export class UsersService {
 
   // ──────────────────────────────────────────────────────
   // findAll (inchangé v4.2)
+  // ⚠️ whereClause est fourni par l'appelant (controller) — ce
+  // service ne filtre pas deletedAt par défaut. Depuis
+  // agencies.service.ts v4.5, des agents peuvent être soft-supprimés ;
+  // si les écrans qui listent les utilisateurs doivent les exclure,
+  // le filtre { deletedAt: null } doit être ajouté côté appelant (non
+  // vérifiable ici, users.controller.ts non fourni).
   // ──────────────────────────────────────────────────────
   async findAll(whereClause: any) {
     return this.prisma.user.findMany({
@@ -476,12 +502,14 @@ export class UsersService {
   }
 
   // ──────────────────────────────────────────────────────
-  // ✅ v4.3 — softDelete (inchangé)
+  // ✅ v4.7 — softDelete : même mécanisme de libération
+  // email/phone qu'agencies.service.ts v4.5 (voir changelog en tête
+  // de fichier).
   // ──────────────────────────────────────────────────────
   async softDelete(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, deletedAt: true },
+      select: { id: true, deletedAt: true, email: true },
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
@@ -494,12 +522,18 @@ export class UsersService {
       };
     }
 
+    // ✅ v4.7 — email (NOT NULL, @unique) préfixé plutôt que vidé :
+    // libère la valeur exacte pour réutilisation future tout en
+    // conservant la traçabilité forensique. phone (@unique, nullable)
+    // vidé directement.
     const deleted = await this.prisma.user.update({
       where: { id },
       data: {
         deletedAt:   new Date(),
         isActive:    false,
         isSuspended: true,
+        email:       `deleted_${Date.now()}_${user.email}`,
+        phone:       null,
       },
       select: {
         id: true,
@@ -513,6 +547,7 @@ export class UsersService {
 
     return {
       ...deleted,
+      email: user.email, // ✅ v4.7 — email original affiché à l'admin, pas la version préfixée en base
       deleted: true,
       message: 'Compte supprimé avec succès (données conservées pour audit)',
     };
