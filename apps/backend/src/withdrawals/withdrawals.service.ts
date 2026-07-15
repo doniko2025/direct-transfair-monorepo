@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.9 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.10 — Direct Transf'air
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails
 // ✅ v4.5 : listByAgent()
@@ -44,6 +44,36 @@
 //   `senderFullName`, puis utilisé comme fallback via un seul
 //   opérateur `??`. Logique identique, juste rendue explicite
 //   pour satisfaire TypeScript.
+//
+// ✅ v4.10 : 🚨 FIX CRITIQUE — mauvaise règle de répartition utilisée
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   agentProcessPayment() cherchait la split rule avec :
+//     commissionConfig.findFirst({ where: { clientId, payoutMethod: null } })
+//   sans filtrer par sourceType/destType. Or CommissionConfig a une
+//   contrainte @@unique([clientId, sourceType, destType, currency]) —
+//   un même client peut tout à fait avoir PLUSIEURS règles de
+//   répartition différentes selon la combinaison agence d'origine /
+//   agence payeuse (SUBSIDIARY→PARTNER ≠ SUBSIDIARY→SUBSIDIARY, etc.).
+//   findFirst() sans ces filtres renvoie la première ligne que Prisma
+//   trouve, sans ordre garanti — potentiellement la MAUVAISE règle,
+//   appliquée silencieusement à CHAQUE retrait, quels que soient les
+//   types d'agences réellement impliqués. commissions.service.ts
+//   (getHistory()) fait ce matching correctement depuis le début ;
+//   withdrawals.service.ts calcule les MÊMES montants réellement
+//   VERSÉS aux agences sans le faire — désaccord entre l'affichage
+//   (correct) et l'argent effectivement transféré (potentiellement
+//   incorrect), sans erreur ni log visible.
+//
+//   CORRECTIF :
+//   sourceType/destType calculés exactement comme dans
+//   commissions.service.ts::getHistory() (type d'agence de
+//   l'expéditeur → sourceType, type d'agence de l'agent payeur →
+//   destType, WALLET/SUBSIDIARY par défaut si pas d'agence), puis
+//   utilisés pour filtrer la recherche de la split rule. Si aucune
+//   règle exacte n'est trouvée, repli explicite sur les mêmes
+//   DEFAULT_* déjà utilisés plus bas dans ce fichier — jamais une
+//   règle non vérifiée prise au hasard.
 // =========================================================
 
 import {
@@ -61,6 +91,9 @@ import {
   PayoutMethod,
   PaymentMethod,
   ProviderStatus,
+  AgencyType,
+  CommissionSourceType,
+  CommissionDestType,
 } from '@prisma/client';
 
 import { PrismaService }  from '../prisma/prisma.service';
@@ -355,19 +388,44 @@ export class WithdrawalsService {
       }
     }
 
+    // ✅ v4.10 — FIX (voir changelog en tête de fichier) : sourceType/
+    // destType calculés exactement comme commissions.service.ts::
+    // getHistory(), pour matcher la BONNE split rule au lieu de la
+    // première trouvée par Prisma.
+    let sourceT: CommissionSourceType = CommissionSourceType.WALLET;
+    const senderAgencyForSplit = (tx.sender as any)?.agency;
+    if (senderAgencyForSplit) {
+      sourceT = senderAgencyForSplit.type === AgencyType.PARTNER
+        ? CommissionSourceType.PARTNER
+        : CommissionSourceType.SUBSIDIARY;
+    }
+    let destT: CommissionDestType = CommissionDestType.SUBSIDIARY;
+    if (agent.agency) {
+      destT = agent.agency.type === AgencyType.PARTNER
+        ? CommissionDestType.PARTNER
+        : CommissionDestType.SUBSIDIARY;
+    }
+
     // ── Calcul split rule ─────────────────────────────────
     let payerSharePct    = DEFAULT_PAYER_SHARE;
     let senderSharePct   = DEFAULT_SENDER_SHARE;
     let platformSharePct = DEFAULT_PLATFORM_SHARE;
 
     try {
+      // ✅ v4.10 — filtre désormais sur sourceType/destType, plus de
+      // findFirst() "à l'aveugle" sur juste { clientId, payoutMethod: null }.
       const splitRule = await this.prisma.commissionConfig.findFirst({
-        where: { clientId, payoutMethod: null },
+        where: { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
       });
       if (splitRule) {
         payerSharePct    = splitRule.payerShare;
         senderSharePct   = splitRule.senderShare;
         platformSharePct = splitRule.platformShare;
+      } else {
+        this.logger.warn(
+          `Aucune split rule pour clientId=${clientId} sourceType=${sourceT} destType=${destT} ` +
+          `— repli sur les valeurs par défaut (${DEFAULT_PAYER_SHARE}/${DEFAULT_SENDER_SHARE}/${DEFAULT_PLATFORM_SHARE}).`,
+        );
       }
     } catch (e) {
       this.logger.warn(`Split rule indisponible — defaults : ${(e as any)?.message}`);
@@ -435,6 +493,7 @@ export class WithdrawalsService {
 
     this.logger.log(
       `\n┌─── DISTRIBUTION COMMISSIONS — retrait ${cleanCode} ───────────────\n` +
+      `│  sourceType/destType : ${sourceT} → ${destT}\n` +
       `│  Frais bruts : ${rawFees} ${tx.currency}\n` +
       `│  Frais convertis : ${feesInPayoutCurrency.toFixed(2)} ${payoutCurrency}\n` +
       `│  Agence payeuse : ${finalPayerCommission.toFixed(2)} ${payoutCurrency}\n` +

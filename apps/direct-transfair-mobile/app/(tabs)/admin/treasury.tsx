@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/treasury.tsx
 // =========================================================
-// TRÉSORERIE — ROUTEUR PAR RÔLE v3.3
+// TRÉSORERIE — ROUTEUR PAR RÔLE v3.4
 // ✅ v3.1 : Suppression de la carte "Solde total agences"
 //           (somme multi-devises incohérente sans conversion)
 //           Les 3 KPI restants sont affichés sur une seule ligne.
@@ -20,6 +20,34 @@
 //           TreasurySuperAdmin ne s'affiche que pour role===SUPER_ADMIN,
 //           et agencies/index.tsx bascule sociétés/agences selon ce
 //           même rôle — le Company Admin garde sa vue agences inchangée.
+//
+// ✅ v3.4 : 🚨 2 correctifs
+//
+//   PROBLÈME 1 — agency.agentCount référencé mais jamais envoyé
+//     TreasuryCompanyAdmin affichait `{agency.agentCount} agent(s)`
+//     conditionné par `agency.agentCount > 0`. Mais
+//     AgenciesService.serializeAgency() (backend) ne renvoie jamais de
+//     champ agentCount — seulement `agents` (le tableau complet).
+//     `undefined > 0` vaut toujours false en JS : le badge ne s'est
+//     donc jamais affiché, silencieusement, sans erreur visible.
+//     CORRECTIF : dérivé de `agency.agents?.length`, le tableau
+//     réellement renvoyé par le backend, au lieu d'un champ qui
+//     n'existe pas.
+//
+//   PROBLÈME 2 — somme multi-devises incohérente réintroduite
+//     TreasurySuperAdmin calculait `totalReserved` en additionnant
+//     reservedBalance de TOUS les wallets, toutes devises confondues
+//     (XOF + EUR + USD + GNF + GBP additionnés comme des nombres
+//     bruts, sans conversion) — exactement le même anti-pattern que
+//     celui explicitement supprimé en v3.1 dans CE MÊME FICHIER
+//     ("Solde total agences" retiré pour cette raison précise), mais
+//     réintroduit ici dans le KPI "Fonds réservés" de la vue Super
+//     Admin. Un mélange XOF+EUR+USD+GNF+GBP n'a aucun sens
+//     économique.
+//     CORRECTIF : remplacé par un compte de wallets ayant un solde
+//     réservé non nul (un nombre, pas un montant dans une devise
+//     arbitraire) — même nature que les autres KPI de comptage déjà
+//     présents ("Wallets actifs", "Sociétés actives").
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -431,6 +459,10 @@ function TreasuryCompanyAdmin() {
                 const cfg = T.currencies[cur] ?? T.currencies.XOF;
                 const flagCode = (agency.country ?? "").toUpperCase().substring(0, 2);
                 const flag = flagMap[flagCode] ?? "🌍";
+                // ✅ v3.4 — FIX (PROBLÈME 1, voir changelog en tête de
+                // fichier) : dérivé du tableau agents réellement
+                // renvoyé par le backend, agency.agentCount n'existe pas.
+                const agentCount = Array.isArray(agency.agents) ? agency.agents.length : 0;
                 return (
                   <View key={agency.id} style={agS.card}>
                     <View style={[agS.bar, { backgroundColor: isActive ? T.green : T.red }]} />
@@ -467,9 +499,9 @@ function TreasuryCompanyAdmin() {
                             {isActive ? "Opérationnelle" : "Suspendue"}
                           </Text>
                         </View>
-                        {agency.agentCount > 0 && (
+                        {agentCount > 0 && (
                           <Text style={[agS.agents, { fontFamily: T.font.sub }]}>
-                            {agency.agentCount} agent{agency.agentCount > 1 ? "s" : ""}
+                            {agentCount} agent{agentCount > 1 ? "s" : ""}
                           </Text>
                         )}
                       </View>
@@ -547,12 +579,18 @@ function TreasurySuperAdmin() {
   const filteredClients = clients.filter((c) => (c.code ?? "").toUpperCase() !== "DONIKO");
   const activeClients   = filteredClients.filter((c) => c.subscriptionStatus === "ACTIVE").length;
   const walletsWithBalance = wallets.filter((w) => toNum(w.balance) > 0).length;
-  const totalReserved      = wallets.reduce((s, w) => s + toNum(w.reservedBalance ?? 0), 0);
+  // ✅ v3.4 — FIX (PROBLÈME 2, voir changelog en tête de fichier) :
+  // totalReserved (somme brute multi-devises XOF+EUR+USD+GNF+GBP) a
+  // été retiré — même anti-pattern que "Solde total agences", déjà
+  // supprimé en v3.1 dans ce même fichier pour la même raison. Remplacé
+  // par un COMPTE (pas un montant dans une devise arbitraire).
+  const walletsWithReserved = wallets.filter((w) => toNum(w.reservedBalance ?? 0) > 0).length;
 
   const kpis = [
     { label: "Wallets actifs",    value: `${walletsWithBalance}/${wallets.length}`, sub: "avec solde",    icon: "wallet-outline",        color: T.saAccent, bg: T.saAccentLt },
     { label: "Sociétés actives",  value: `${activeClients}/${filteredClients.length}`, sub: "abonnements", icon: "business-outline",      color: T.green,    bg: T.greenLt   },
-    { label: "Fonds réservés",    value: fmt(totalReserved),                        sub: "toutes devises", icon: "lock-closed-outline",  color: T.amber,    bg: T.amberLt   },
+    // ✅ v3.4 — FIX : "Fonds réservés" (somme multi-devises) → "Wallets réservés" (compte)
+    { label: "Wallets réservés",  value: String(walletsWithReserved),               sub: "toutes devises", icon: "lock-closed-outline",  color: T.amber,    bg: T.amberLt   },
     { label: "Devises ouvertes",  value: String(wallets.length),                    sub: "comptes actifs", icon: "cash-outline",         color: T.purple,   bg: T.purpleLt  },
   ];
 

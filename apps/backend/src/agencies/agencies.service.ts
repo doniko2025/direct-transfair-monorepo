@@ -1,6 +1,6 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.5
+// AGENCIES SERVICE v4.7
 // ✅ v4.2 : FIX CurrencyCode enum cast (migration v4.1)
 //
 // ✅ v4.3 : 🐛 FIX — modification du responsable sans effet
@@ -119,11 +119,47 @@
 //         compromis/frauduleux doit pouvoir être coupé immédiatement
 //         même avec un solde non nul ; la réconciliation se fait
 //         séparément, après coup.
-//     ⚠️ findAllByClient/findAll/findOne/findOneAsSuperAdmin filtrent
-//     désormais deletedAt: null pour ne plus lister les agences
-//     désactivées. Un filtrage équivalent est probablement nécessaire
-//     côté UsersService pour les listes d'agents/utilisateurs — non
-//     vérifiable ni corrigé ici, ce fichier n'étant pas fourni.
+//     ⚠️ findAllByClient/findAll filtrent désormais deletedAt: null
+//     pour ne plus lister les agences désactivées. Un filtrage
+//     équivalent était nécessaire côté UsersController (voir v4.6
+//     ci-dessous — confirmé et corrigé depuis, users.controller.ts
+//     ayant finalement été fourni).
+//
+// ✅ v4.6 : 🐛 FIX — findOne()/findOneAsSuperAdmin() trop stricts
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Le filtre deletedAt: null ajouté en v4.5 avait été appliqué à
+//   TOUTES les méthodes de lecture, y compris findOne()/
+//   findOneAsSuperAdmin() — la consultation d'UNE agence précise par
+//   son id. Or users.controller.ts (fourni depuis) illustre le bon
+//   principe déjà appliqué là-bas : findAll() (liste) filtre
+//   deletedAt, mais findOne() (fiche détail d'un id précis) ne le
+//   fait délibérément pas, pour qu'un admin puisse toujours consulter
+//   un compte désactivé lors d'un audit (ex. en cliquant depuis
+//   l'historique d'une transaction). Appliquer le même filtre à
+//   findOne()/findOneAsSuperAdmin() ici rendait une agence désactivée
+//   introuvable même par consultation directe et délibérée de son id
+//   — un accès plus restrictif que nécessaire, et incohérent avec le
+//   reste de l'app.
+//   CORRECTIF : deletedAt retiré du where de l'agence elle-même dans
+//   findOne()/findOneAsSuperAdmin() (les LISTES — findAllByClient(),
+//   findAll() — gardent le filtre, elles). Les agents INCLUS dans la
+//   réponse restent filtrés deletedAt: null : la fiche affiche
+//   l'agence même désactivée, mais pas une liste d'agents eux-mêmes
+//   désactivés individuellement.
+//
+// ✅ v4.7 : 🐛 FIX — isSuspended jamais posé lors de la désactivation
+//     d'un agent
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   remove() posait deletedAt + isActive:false sur les agents désactivés,
+//   mais jamais isSuspended:true — contrairement à UsersService.
+//   softDelete() qui le fait depuis le début. auth.service.ts (login/
+//   loginByPhone) vérifie deletedAt (depuis sa v5.5) ET isSuspended ;
+//   les deux mécanismes se recoupent en défense en profondeur, mais
+//   laisser isSuspended à false ici cassait la cohérence entre les
+//   deux voies de désactivation existantes dans l'app.
+//   CORRECTIF : isSuspended:true ajouté à la même écriture.
 // =========================================================
 
 import {
@@ -519,9 +555,13 @@ export class AgenciesService {
         // aucun risque de violation de clé étrangère (Transaction.
         // senderId/recipientId restent valides puisque le User existe
         // toujours).
+        // ✅ v4.7 — FIX : isSuspended:true ajouté, cohérent avec
+        // UsersService.softDelete() qui le fait déjà. auth.service.ts
+        // (login/loginByPhone) bloque sur isSuspended ET deletedAt —
+        // les deux doivent être posés pour une double protection.
         await tx.user.updateMany({
           where: { id: { in: agentIds }, deletedAt: null },
-          data:  { deletedAt: new Date(), isActive: false },
+          data:  { deletedAt: new Date(), isActive: false, isSuspended: true },
         });
 
         // email (NOT NULL, @unique) et phone (@unique, nullable)
@@ -613,9 +653,17 @@ export class AgenciesService {
     return agencies.map(this.serializeAgency.bind(this));
   }
 
+  // ✅ v4.6 — FIX : plus de filtre deletedAt sur l'agence elle-même
+  // ici (contrairement à findAllByClient/findAll). Une consultation
+  // PONCTUELLE et DÉLIBÉRÉE (clic depuis l'historique d'une
+  // transaction, par exemple) doit pouvoir afficher une agence
+  // désactivée pour l'audit — seules les LISTES doivent la masquer.
+  // Les agents inclus restent filtrés deletedAt: null : la fiche
+  // affiche l'agence même désactivée, mais pas une liste d'agents
+  // eux-mêmes désactivés individuellement.
   async findOne(id: string, clientId: number) {
     const agency = await this.prisma.agency.findFirst({
-      where: { id, clientId, deletedAt: null },
+      where: { id, clientId },
       include: {
         agents: {
           where: { deletedAt: null },
@@ -631,9 +679,10 @@ export class AgenciesService {
     return this.serializeAgency(agency);
   }
 
+  // ✅ v4.6 — même correctif que findOne() ci-dessus.
   async findOneAsSuperAdmin(id: string) {
     const agency = await this.prisma.agency.findFirst({
-      where: { id, deletedAt: null },
+      where: { id },
       include: {
         agents: {
           where: { deletedAt: null },

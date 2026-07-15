@@ -1,6 +1,6 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.3
+// WALLETS SERVICE v5.4
 // ✅ FIX v5.2 : getOrCreateWallet — agencyId est un CUID string,
 //    ne jamais faire parseInt() dessus
 // ✅ FIX v5.2 : getOrCreateWallet — support agencyId comme clé propre
@@ -10,6 +10,34 @@
 //    pas sur son wallet userId → solde était toujours 0 sur le dashboard)
 // ✅ FIX v5.3 : getWalletById — ownership étendu aux wallets clientId
 //    (SUPER_ADMIN et COMPANY_ADMIN peuvent consulter leur ledger)
+//
+// ✅ FIX v5.4 : 🐛 getOrCreateWallet() pouvait violer la contrainte
+//    unique sur un wallet désactivé
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   La recherche d'un wallet existant filtrait isActive: true. Si un
+//   wallet existait déjà pour cette clé (userId+currency, agencyId+
+//   currency ou clientId+currency) mais était désactivé — ce que fait
+//   désormais AgenciesService.remove() sur les wallets d'un agent/
+//   d'une agence désactivé(e), voir agencies.service.ts v4.5 — cette
+//   recherche ne le trouvait pas, et le code tombait dans la branche
+//   "création" : un tx.wallet.create() avec exactement la même clé
+//   (userId+currency / agencyId+currency / clientId+currency), qui
+//   viole Wallet.@@unique([...]) et échoue avec une erreur Prisma
+//   P2002 — potentiellement en pleine transaction de transfert, donc
+//   avec un rollback de toute l'opération. Ce risque existait déjà
+//   avant ce fix pour toute autre cause de wallet inactif (gel manuel
+//   par un futur outil admin, par exemple) ; il devient réel maintenant
+//   qu'un chemin du code désactive effectivement des wallets.
+//
+//   CORRECTIF :
+//   La recherche du wallet existant ne filtre plus isActive — elle
+//   trouve le wallet quel que soit son état. S'il est trouvé mais
+//   désactivé, il est automatiquement réactivé (isActive: true) avant
+//   d'être retourné : demander un wallet pour un compte donné signale
+//   un besoin actuel d'un wallet utilisable, la réactivation est donc
+//   le comportement le plus cohérent (et la seule alternative valide,
+//   la création d'un doublon étant de toute façon impossible).
 // =========================================================
 
 import {
@@ -49,6 +77,8 @@ export class WalletsService {
   // ========================================================
   // GET OR CREATE WALLET
   // ✅ v5.2 : agencyId est un CUID string — ne jamais parseInt()
+  // ✅ v5.4 : voir changelog en tête de fichier — ne filtre plus
+  //    isActive à la recherche, réactive un wallet trouvé inactif.
   // ========================================================
 
   async getOrCreateWallet(params: {
@@ -69,21 +99,34 @@ export class WalletsService {
 
     let existing: any = null;
 
+    // ✅ v5.4 — FIX : plus de filtre isActive ici (voir changelog).
+    // Une contrainte @@unique existe sur chacune de ces clés ; la
+    // création ci-dessous échouerait avec P2002 si un wallet
+    // (actif ou non) existe déjà pour la même clé.
     if (agencyId) {
       existing = await this.prisma.wallet.findFirst({
-        where: { agencyId, currency, isActive: true },
+        where: { agencyId, currency },
       });
     } else if (clientId !== undefined) {
       existing = await this.prisma.wallet.findFirst({
-        where: { clientId, currency, isActive: true },
+        where: { clientId, currency },
       });
     } else if (userId) {
       existing = await this.prisma.wallet.findFirst({
-        where: { userId, currency, isActive: true },
+        where: { userId, currency },
       });
     }
 
-    if (existing) return existing;
+    if (existing) {
+      // ✅ v5.4 — réactivation automatique si trouvé mais désactivé.
+      if (!existing.isActive) {
+        existing = await this.prisma.wallet.update({
+          where: { id: existing.id },
+          data:  { isActive: true },
+        });
+      }
+      return existing;
+    }
 
     const createData: any = {
       currency,

@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.4 — Direct Transf'air
+// AUTH SERVICE v5.6 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -99,6 +99,72 @@
 //   du JWT final si l'email reste non vérifié. N'affecte pas le
 //   chemin OTP par EMAIL (2FA du login v1 avec LOGIN_OTP_REQUIRED),
 //   qui passe déjà par la gate de login() AVANT même d'envoyer l'OTP.
+//
+// ✅ v5.5 : 🚨 FIX SÉCURITÉ — un compte soft-supprimé pouvait se
+//     reconnecter
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Découvert en auditant agencies.service.ts v4.5 : la désactivation
+//   d'un agent (suite à suppression d'agence) pose deletedAt +
+//   isActive:false, mais login()/validateUser()/loginByPhone() ne
+//   vérifiaient jusqu'ici QUE isSuspended — jamais deletedAt. Un
+//   compte "désactivé" pouvait donc se reconnecter normalement avec
+//   son mot de passe ou son OTP existant, ce qui annulait entièrement
+//   l'effet de la désactivation.
+//   CORRECTIF : validateUser() et loginByPhone() rejettent désormais
+//   explicitement tout compte avec deletedAt renseigné, au point
+//   d'entrée le plus tôt possible.
+//   ⚠️ Ce correctif à lui seul ne couvrait qu'UNE partie du problème —
+//   voir v5.6 ci-dessous pour la couverture complète.
+//
+// ✅ v5.6 : 🚨 FIX SÉCURITÉ — couverture incomplète du v5.5
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Le correctif v5.5 ne traitait que le cas d'un compte User
+//   individuellement désactivé (deletedAt posé sur LUI). Il ne
+//   couvrait pas le cas où c'est la SOCIÉTÉ (Client) elle-même qui est
+//   désactivée (isActive:false, posé par ClientsService.remove()
+//   v4.8, OU directement via PATCH /clients/:id — SUPER_ADMIN, sans
+//   restriction de champs — sans que les User qui en dépendent soient
+//   individuellement touchés). Dans ce cas :
+//     - login()/loginByPhone() : tenantClientId reste null (le lookup
+//       du tenant filtre déjà isActive:true), donc la vérification
+//       cross-tenant dans validateUser() est simplement SAUTÉE plutôt
+//       que bloquante — l'utilisateur continue normalement le flux de
+//       connexion (mot de passe/OTP) sans qu'aucune vérification ne
+//       tienne compte du fait que sa société est désactivée.
+//     - register() : aucune vérification d'isActive sur le client
+//       ciblé — un tenantCode de société désactivée acceptait
+//       toujours de nouvelles inscriptions.
+//     - refreshTokens() : aucune vérification ni de deletedAt ni de
+//       client.isActive — un token déjà émis avant la désactivation
+//       (ou un utilisateur individuellement soft-supprimé par une
+//       AUTRE voie que la session en cours) pouvait continuer à
+//       renouveler indéfiniment son accès.
+//   Par ailleurs, agencies.service.ts et clients.service.ts ne
+//   posaient pas isSuspended:true lors de la désactivation d'un
+//   agent/user (seulement deletedAt + isActive:false) — écart avec
+//   UsersService.softDelete(), qui le fait depuis le début. Corrigé en
+//   parallèle dans ces deux fichiers (voir leurs changelogs propres).
+//
+//   CORRECTIF :
+//   - login() : après validateUser(), rejet explicite si
+//     user.role !== SUPER_ADMIN && user.client?.isActive === false.
+//   - loginByPhone() : client.isActive ajouté au select, même rejet
+//     explicite avant l'envoi de l'OTP (inutile de consommer un SMS
+//     pour un compte qu'on va bloquer de toute façon).
+//   - register() : rejet explicite si le client résolu par
+//     tenantCode a isActive === false, avant toute création de compte.
+//   - refreshTokens() : rejet explicite si session.user.deletedAt OU
+//     (session.user.role !== SUPER_ADMIN && session.user.client
+//     ?.isActive === false).
+//   ⚠️ Il reste UN point que je ne peux pas fermer depuis ce fichier
+//   seul : un access token déjà émis (courte durée de vie, 1h) reste
+//   valide jusqu'à expiration même après une désactivation — seul un
+//   contrôle dans JwtAuthGuard (fichier non fourni) pourrait invalider
+//   immédiatement une session en cours. Recommandé si une réactivité
+//   immédiate est nécessaire ; sinon, la fenêtre résiduelle est bornée
+//   à 1h par le TTL déjà en place (v5.0).
 // =========================================================
 
 import {
@@ -158,6 +224,11 @@ const OTP_EXPIRY_MINUTES  = 10;
 const REFRESH_TOKEN_DAYS  = 30;
 const MAX_FAILED_LOGINS   = 5;    // ✅ v5.0 : lock après 5 échecs
 const LOCK_DURATION_MIN   = 30;   // ✅ v5.0 : verrouillage 30 min
+
+// ✅ v5.5 — Throttling OTP (voir changelog sendOtpInternal())
+const OTP_MIN_INTERVAL_SEC   = 45;  // délai minimum entre deux envois
+const OTP_MAX_PER_WINDOW     = 5;   // nombre max sur la fenêtre glissante
+const OTP_WINDOW_MINUTES     = 15;  // durée de la fenêtre glissante
 
 // =========================================================
 // TYPES
@@ -338,6 +409,15 @@ export class AuthService {
     const user = await this.validateUser(identifier, dto.password, tenantClientId);
     if (!user) throw new UnauthorizedException('Identifiants incorrects');
     if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
+
+    // ✅ v5.6 — FIX (voir changelog en tête de fichier) : rejet si la
+    // société de l'utilisateur a été désactivée (Client.isActive
+    // false), même si l'User individuel n'a pas lui-même été touché.
+    if (user.role !== Role.SUPER_ADMIN && user.client && user.client.isActive === false) {
+      throw new UnauthorizedException(
+        'Cette société a été désactivée. Contactez votre administrateur.',
+      );
+    }
 
     // ── v4.7 : Isolation portail ─────────────────────────
     const isDefaultPortal = !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
@@ -560,6 +640,31 @@ export class AuthService {
 
     if (!user) return null;
 
+    // ✅ v5.5 — FIX SÉCURITÉ : un compte soft-supprimé ne doit JAMAIS
+    // pouvoir se reconnecter, indépendamment de isSuspended.
+    //
+    //   PROBLÈME RÉSOLU (juillet 2026) :
+    //   Découvert en auditant agencies.service.ts v4.5 : la
+    //   désactivation d'un agent (suite à suppression d'agence) pose
+    //   deletedAt + isActive:false, mais login()/validateUser() ne
+    //   vérifiaient jusqu'ici QUE isSuspended — jamais deletedAt ni
+    //   isActive. Un agent "désactivé" pouvait donc se reconnecter
+    //   normalement avec son mot de passe existant, ce qui annule
+    //   entièrement l'effet de la désactivation.
+    //   CORRECTIF : rejet explicite ici, au point d'entrée le plus tôt
+    //   possible — avant même la vérification cross-tenant. Complété en
+    //   v5.6 (voir changelog en tête de fichier) : la couverture
+    //   isSuspended:true en parallèle dans agencies.service.ts et
+    //   clients.service.ts a été ajoutée dans le même lot que v5.6,
+    //   pas avant — et ce présent contrôle deletedAt ne couvrait pas
+    //   encore le cas où c'est la SOCIÉTÉ (Client.isActive) qui est
+    //   désactivée sans que l'User individuel ne soit touché — voir
+    //   v5.6 pour la couverture complète (login/loginByPhone/register/
+    //   refreshTokens).
+    if (user.deletedAt) {
+      throw new UnauthorizedException('Ce compte a été désactivé.');
+    }
+
     // ── v4.5 : isolation cross-tenant ─────────────────────
     if (typeof tenantClientId === 'number' && tenantClientId > 0 && user.role !== Role.SUPER_ADMIN) {
       if (user.clientId !== tenantClientId) {
@@ -647,14 +752,28 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({
       where: userWhere,
       select: {
-        id: true, phone: true, isSuspended: true,
+        id: true, phone: true, isSuspended: true, deletedAt: true,
         clientId: true, role: true,
-        client: { select: { code: true, subdomain: true, customDomain: true } },
+        client: { select: { code: true, subdomain: true, customDomain: true, isActive: true } },
       },
     });
 
     if (!user)       throw new NotFoundException('Numéro de téléphone non reconnu.');
+    // ✅ v5.5 — même correctif que validateUser() (voir changelog en
+    // tête de fichier) : un compte désactivé ne doit pas pouvoir
+    // recevoir/utiliser un OTP de connexion.
+    if (user.deletedAt)   throw new UnauthorizedException('Ce compte a été désactivé.');
     if (user.isSuspended) throw new UnauthorizedException('Compte suspendu');
+
+    // ✅ v5.6 — FIX (voir changelog en tête de fichier) : rejet si la
+    // société de l'utilisateur a été désactivée, avant même l'envoi
+    // de l'OTP (inutile de consommer un SMS pour un compte qu'on va
+    // bloquer de toute façon).
+    if (user.role !== Role.SUPER_ADMIN && user.client && user.client.isActive === false) {
+      throw new UnauthorizedException(
+        'Cette société a été désactivée. Contactez votre administrateur.',
+      );
+    }
 
     const isDefaultPortal = !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
     if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
@@ -711,6 +830,13 @@ export class AuthService {
 
     const client = await this.prisma.client.findUnique({ where: { code: resolvedTenantCode } });
     if (!client) throw new BadRequestException(`Société introuvable (${resolvedTenantCode}).`);
+    // ✅ v5.6 — FIX (voir changelog en tête de fichier) : une société
+    // désactivée ne doit plus accepter de nouvelles inscriptions.
+    if (client.isActive === false) {
+      throw new BadRequestException(
+        `Cette société n'accepte plus de nouvelles inscriptions.`,
+      );
+    }
 
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
@@ -822,6 +948,30 @@ export class AuthService {
 
   // ========================================================
   // OTP — Interne ✅ v5.0 : SMS via SmsService (Twilio/stub)
+  //
+  // ✅ v5.5 : 🚨 FIX SÉCURITÉ — throttling ajouté
+  //
+  //   PROBLÈME RÉSOLU (juillet 2026) :
+  //   send-otp (POST /auth/send-otp) et find-account (POST
+  //   /auth/find-account) sont tous deux @Public() — sans
+  //   authentification. find-account renvoie 200+userId si
+  //   l'identifiant existe, 404 sinon (énumération de comptes), et le
+  //   userId ainsi obtenu peut ensuite être passé tel quel à send-otp,
+  //   qui déclenchait un envoi SMS/email SANS AUCUNE limite de
+  //   fréquence. Un attaquant connaissant (ou ayant énuméré via
+  //   find-account) un userId pouvait déclencher un nombre illimité
+  //   d'OTP vers la victime — coût SMS pour la plateforme et
+  //   harcèlement pour l'utilisateur ciblé.
+  //   CORRECTIF : sendOtpInternal() — point de passage UNIQUE pour
+  //   tout envoi d'OTP (login, reset password, vérification email/
+  //   téléphone) — vérifie désormais OtpLog avant d'envoyer quoi que
+  //   ce soit : délai minimum de 45s entre deux envois pour le même
+  //   (userId, purpose), et maximum 5 envois sur une fenêtre glissante
+  //   de 15 minutes. Rejette avec un message explicite sinon.
+  //   ⚠️ Ne corrige pas l'énumération de comptes elle-même
+  //   (find-account révèle toujours si un identifiant existe) — c'est
+  //   un compromis UX/sécurité fréquent, à trancher séparément si
+  //   souhaité (ex. réponse générique côté find-account).
   // ========================================================
 
   private async sendOtpInternal(
@@ -831,6 +981,33 @@ export class AuthService {
     recipient:  string,
     codeLength: 4 | 6 = 6,
   ): Promise<void> {
+    // ✅ v5.5 — Throttling (voir changelog ci-dessus)
+    const now = new Date();
+
+    const lastSent = await this.prisma.otpLog.findFirst({
+      where:   { userId, purpose },
+      orderBy: { createdAt: 'desc' },
+      select:  { createdAt: true },
+    });
+    if (lastSent) {
+      const secondsSince = (now.getTime() - lastSent.createdAt.getTime()) / 1000;
+      if (secondsSince < OTP_MIN_INTERVAL_SEC) {
+        throw new BadRequestException(
+          `Veuillez patienter ${Math.ceil(OTP_MIN_INTERVAL_SEC - secondsSince)} seconde(s) avant de redemander un code.`,
+        );
+      }
+    }
+
+    const windowStart = new Date(now.getTime() - OTP_WINDOW_MINUTES * 60 * 1000);
+    const recentCount = await this.prisma.otpLog.count({
+      where: { userId, purpose, createdAt: { gte: windowStart } },
+    });
+    if (recentCount >= OTP_MAX_PER_WINDOW) {
+      throw new BadRequestException(
+        `Trop de demandes de code récentes. Réessayez dans ${OTP_WINDOW_MINUTES} minutes.`,
+      );
+    }
+
     const code      = codeLength === 4 ? generateOtpCode4() : generateOtpCode();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
@@ -952,6 +1129,23 @@ export class AuthService {
     if (session.refreshTokenExpiresAt && session.refreshTokenExpiresAt < new Date()) {
       await this.prisma.userSession.update({ where: { id: session.id }, data: { status: 'EXPIRED' } });
       throw new UnauthorizedException('Refresh token expiré');
+    }
+
+    // ✅ v5.6 — FIX (voir changelog en tête de fichier) : un token déjà
+    // émis avant une désactivation (User ou Client) ne doit pas
+    // pouvoir se renouveler indéfiniment.
+    const sessionUser: any = session.user;
+    if (sessionUser.deletedAt) {
+      throw new UnauthorizedException('Ce compte a été désactivé.');
+    }
+    if (
+      sessionUser.role !== Role.SUPER_ADMIN &&
+      sessionUser.client &&
+      sessionUser.client.isActive === false
+    ) {
+      throw new UnauthorizedException(
+        'Cette société a été désactivée. Contactez votre administrateur.',
+      );
     }
 
     const tokens = await this.generateTokens(session.user as any);

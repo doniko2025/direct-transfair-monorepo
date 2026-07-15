@@ -1,6 +1,6 @@
 // apps/backend/src/users/users.controller.ts
 // =========================================================
-// USERS CONTROLLER v4.3
+// USERS CONTROLLER v4.4
 // ✅ v4.0-4.2 : toutes les routes admin (findAll, create, findById,
 //   update, softDelete, suspend, reactivate, findPublic)
 // ✅ v4.3 : Ajout GET /users/by-phone?q=775099993
@@ -21,6 +21,25 @@
 //   ORDRE des routes :
 //   'by-phone' est déclaré AVANT ':id' et 'public/:id' pour éviter
 //   tout risque de capture par la route paramétrique générique.
+//
+// ✅ v4.4 : 🐛 FIX — findAll() ne filtrait pas deletedAt
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Depuis qu'AgenciesService.remove() désactive ses agents en douceur
+//   (deletedAt + isActive:false, voir agencies.service.ts v4.5) plutôt
+//   que de les supprimer définitivement, ces comptes désactivés
+//   continuent d'apparaître indéfiniment dans GET /users, aussi bien
+//   pour un SUPER_ADMIN (whereClause: {}) qu'un COMPANY_ADMIN
+//   (whereClause: { clientId }) — aucun des deux ne filtrait deletedAt.
+//   Un agent désactivé depuis des mois resterait donc listé comme
+//   n'importe quel compte actif dans l'écran de gestion des
+//   utilisateurs.
+//   CORRECTIF : deletedAt: null ajouté aux deux branches. N'affecte
+//   QUE cette liste — findOne() (fiche détail d'un utilisateur
+//   précis) reste volontairement inchangé : un admin qui clique
+//   explicitement sur un compte désactivé (ex. depuis l'historique
+//   d'une transaction) doit pouvoir consulter sa fiche pour l'audit,
+//   même s'il n'apparaît plus dans la liste générale.
 // =========================================================
 
 import {
@@ -129,6 +148,7 @@ export class UsersController {
 
   // ──────────────────────────────────────────────────────
   // GET /users — Liste
+  // ✅ v4.4 — FIX : deletedAt: null ajouté (voir changelog en tête de fichier)
   // ──────────────────────────────────────────────────────
   @Get()
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)
@@ -136,7 +156,9 @@ export class UsersController {
   async findAll(@Req() req: { user?: AuthUserPayload }) {
     const user = req.user;
     const whereClause =
-      user?.role === 'SUPER_ADMIN' ? {} : { clientId: user?.clientId };
+      user?.role === 'SUPER_ADMIN'
+        ? { deletedAt: null }
+        : { clientId: user?.clientId, deletedAt: null };
     return this.usersService.findAll(whereClause);
   }
 
@@ -271,6 +293,9 @@ export class UsersController {
 
   // ──────────────────────────────────────────────────────
   // GET /users/:id
+  // ⚠️ Volontairement SANS filtre deletedAt — voir changelog v4.4 en
+  // tête de fichier (consultation ponctuelle d'un compte désactivé
+  // toujours possible pour l'audit, contrairement à findAll()).
   // ──────────────────────────────────────────────────────
   @Get(':id')
   @Roles(Role.SUPER_ADMIN, Role.COMPANY_ADMIN)

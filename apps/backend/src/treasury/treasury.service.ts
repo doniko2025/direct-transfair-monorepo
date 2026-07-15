@@ -1,9 +1,26 @@
 // apps/backend/src/treasury/treasury.service.ts
 // =========================================================
-// TREASURY SERVICE v5.3 — Direct Transf'air
+// TREASURY SERVICE v5.4 — Direct Transf'air
 // ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // ✅ FIX: groupBy currency → as any (Prisma enum filter)
 // ✅ FIX: txStat optional chaining sécurisé
+//
+// ✅ v5.4 : 🧹 nettoyage — ternaire mort dans getSnapshots()
+//   Le controller calculait `user.role === 'SUPER_ADMIN' ? (user.clientId
+//   ?? undefined) : (user.clientId ?? undefined)` — les deux branches
+//   faisaient exactement la même chose, le rôle n'avait donc plus
+//   aucun effet sur la valeur retenue. Ce n'est pas un bug fonctionnel
+//   (le résultat était déjà correct, juste écrit de façon confuse) —
+//   simplifié en une seule expression côté treasury.controller.ts.
+//   Ce fichier lui-même n'a aucune ligne de logique changée, seul le
+//   numéro de version est mis à jour pour rester synchronisé.
+//
+//   ⚠️ Toujours ouvert, nécessite une décision produit avant correctif :
+//   totalReceivedToday est câblé en dur à 0 dans getGlobalOverview()
+//   et getClientOverview() — jamais calculé. Le dashboard trésorerie
+//   ne peut donc jamais montrer ce qui est entré aujourd'hui. Pas
+//   corrigé faute de définition confirmée de "reçu" (conversions
+//   entrantes ? dépôts uniquement ? les deux ?).
 // =========================================================
 
 import {

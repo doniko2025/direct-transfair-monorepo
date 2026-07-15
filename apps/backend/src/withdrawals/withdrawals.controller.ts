@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.controller.ts
 // =========================================================
-// WITHDRAWALS CONTROLLER v4.5 — Direct Transf'air
+// WITHDRAWALS CONTROLLER v4.6 — Direct Transf'air
 // ✅ v4.4 : routes agent/check + agent/pay
 // ✅ v4.5 :
 //    - GET /withdrawals       → route manquante ajoutée (causait le 404)
@@ -9,6 +9,19 @@
 //                               AGENT               → listByAgent()
 //                               CLIENT              → listMine()
 //    - GET /withdrawals/me    → conservé (rétrocompat frontend)
+//
+// ✅ v4.6 : 🐛 FIX — list() comparait role === 'ADMIN', un rôle qui
+//   n'existe pas dans l'enum Prisma (SUPER_ADMIN | COMPANY_ADMIN |
+//   AGENT | USER). Un SUPER_ADMIN qui appelait GET /withdrawals ne
+//   matchait donc ni 'ADMIN' ni 'COMPANY_ADMIN' ni 'AGENT', et tombait
+//   dans le repli listMine() — la vue "tous les retraits" du Super
+//   Admin était silencieusement remplacée par la liste (vide ou non
+//   pertinente) de ses propres transactions envoyées. Pas de fuite de
+//   données d'autrui (listMine() reste scopé à req.user.id), juste un
+//   écran cassé pour ce rôle. Corrigé en 'SUPER_ADMIN', qui est la
+//   chaîne réellement utilisée partout ailleurs dans l'app (voir
+//   agentCheckCode/agentProcessPayment plus bas dans ce même fichier,
+//   qui utilisaient déjà les bonnes chaînes).
 // =========================================================
 
 import {
@@ -56,9 +69,10 @@ export class WithdrawalsController {
 
   // ✅ v4.5 — GET /withdrawals — ROUTE MANQUANTE (causait le 404)
   // Dispatch selon le rôle de l'utilisateur connecté :
-  //   ADMIN / COMPANY_ADMIN → tous les retraits du tenant
-  //   AGENT                → retraits qu'il a lui-même traités
-  //   CLIENT               → ses propres demandes
+  //   SUPER_ADMIN / COMPANY_ADMIN → tous les retraits du tenant
+  //   AGENT                       → retraits qu'il a lui-même traités
+  //   USER                        → ses propres demandes
+  // ✅ v4.6 — FIX : 'ADMIN' → 'SUPER_ADMIN' (voir changelog en tête de fichier)
   @Get('withdrawals')
   async list(@Req() req: ReqWithAuth) {
     const clientId = req.tenantContext?.clientId;
@@ -67,7 +81,7 @@ export class WithdrawalsController {
 
     const role = req.user.role;
 
-    if (role === 'ADMIN' || role === 'COMPANY_ADMIN') {
+    if (role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN') {
       return this.withdrawals.adminListAll(clientId);
     }
 
@@ -75,7 +89,7 @@ export class WithdrawalsController {
       return this.withdrawals.listByAgent(clientId, req.user.id);
     }
 
-    // CLIENT (fallback)
+    // USER (fallback)
     return this.withdrawals.listMine(clientId, req.user.id);
   }
 

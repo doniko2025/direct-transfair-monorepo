@@ -1,6 +1,6 @@
 // apps/backend/src/treasury/treasury.controller.ts
 // =========================================================
-// TREASURY CONTROLLER v5.3
+// TREASURY CONTROLLER v5.4
 // ✅ FIX v5.2 : POST admin/inject   → @Body() au lieu de @Query()
 // ✅ FIX v5.2 : POST admin/withdraw → @Body() au lieu de @Query()
 // ✅ FIX v5.3 : getOverview SUPER_ADMIN → getClientOverview(user.clientId)
@@ -12,6 +12,14 @@
 //            comme un Company Admin voit ses wallets.
 //    Note : getGlobalOverview() est conservé comme méthode de service
 //           pour d'éventuels besoins futurs (ex: route d'audit interne).
+//
+// ✅ v5.4 : 🧹 nettoyage — ternaire mort dans getSnapshots()
+//   `user.role === 'SUPER_ADMIN' ? (user.clientId ?? undefined) :
+//   (user.clientId ?? undefined)` — les deux branches faisaient
+//   exactement la même chose ; le rôle n'avait donc aucun effet réel
+//   sur la valeur retenue. Pas un bug fonctionnel (résultat déjà
+//   correct), juste du code mort/trompeur à la lecture. Simplifié en
+//   une seule expression.
 // =========================================================
 
 import {
@@ -106,11 +114,10 @@ export class TreasuryController {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
 
-    // ✅ v5.3 : le SA voit ses propres snapshots, pas le global
-    const clientId =
-      user.role === 'SUPER_ADMIN'
-        ? (user.clientId ?? undefined)
-        : (user.clientId ?? undefined);
+    // ✅ v5.4 — FIX (voir changelog en tête de fichier) : ternaire mort
+    // simplifié. Le SA voit ses propres snapshots (son clientId), pas
+    // le global — comportement inchangé, juste écrit clairement.
+    const clientId = user.clientId ?? undefined;
 
     return this.treasuryService.getSnapshots({
       clientId,

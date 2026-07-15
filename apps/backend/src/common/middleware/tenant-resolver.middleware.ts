@@ -1,4 +1,25 @@
 // apps/backend/src/common/middleware/tenant-resolver.middleware.ts
+// =========================================================
+// ✅ FIX (juillet 2026) : resolveClientIdSingleDb() sans garde isActive
+//
+//   PROBLÈME RÉSOLU :
+//   Cette fonction résout le clientId du tenant depuis le header
+//   x-tenant-id, aussi bien en mode single-db pur (Phase 1) qu'en
+//   repli depuis le mode multi-db quand le tenant n'est pas connu au
+//   niveau plateforme (Phase 2, bloc `if (!tenant || !tenant.isActive)`).
+//   Dans les deux cas, elle faisait prisma.client.findUnique({ where:
+//   { code: tenantCode } }) SANS filtrer isActive — même défaut que
+//   celui déjà corrigé dans ClientsService.findByCode() v4.8 (utilisée
+//   par TenantService.getCurrentClient(), un chemin différent de
+//   résolution du tenant). Une société désactivée via
+//   ClientsService.remove() restait donc résolvable ICI comme tenant
+//   valide pour toute requête passant par ce middleware, indépendamment
+//   du correctif déjà fait côté TenantService.
+//   CORRECTIF : isActive sélectionné et vérifié ; un tenant désactivé
+//   est traité exactement comme un tenant inconnu (même message
+//   d'erreur, pour ne pas révéler la distinction "inconnu" vs
+//   "désactivé" à l'appelant).
+// =========================================================
 import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import type { Response, NextFunction } from 'express';
 import { ConfigService } from '@nestjs/config';
@@ -46,6 +67,7 @@ export class TenantResolverMiddleware implements NestMiddleware {
     };
 
     // Helper: resolve clientId in single-db mode (Client table exists in DATABASE_URL)
+    // ✅ FIX (voir changelog en tête de fichier) : isActive vérifié.
     const resolveClientIdSingleDb = async (): Promise<number> => {
       if (!defaultDbUrl) throw new UnauthorizedException('Missing DATABASE_URL');
       const prisma = this.prismaManager.getClient({
@@ -55,10 +77,12 @@ export class TenantResolverMiddleware implements NestMiddleware {
 
       const client = await prisma.client.findUnique({
         where: { code: tenantCode },
-        select: { id: true },
+        select: { id: true, isActive: true },
       });
 
-      if (!client) throw new UnauthorizedException(`Unknown tenant: ${tenantCode}`);
+      if (!client || !client.isActive) {
+        throw new UnauthorizedException(`Unknown or inactive tenant: ${tenantCode}`);
+      }
       return client.id;
     };
 
