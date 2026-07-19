@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.7
+// DIRECT TRANSF'AIR — API Service v5.8
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -32,6 +32,13 @@
 // v5.7 — Ajout updateMyCompanyName() : self-service COMPANY_ADMIN pour
 //   corriger le nom de sa propre société depuis l'écran de profil
 //   (voir PATCH /clients/me/company-name côté backend).
+//
+// v5.8 — Ajout de 2 méthodes pour la trésorerie agence ⇄ société,
+//   section "AGENCY TREASURY" nouvelle, juste après TREASURY (ADMIN) :
+//   - agentRemitToAdmin(amount, note?)     → POST /transactions/agency/remit
+//   - adminCollectFromAgency(agencyId, amount, note) → POST /transactions/agency/collect
+//   Aucune méthode existante modifiée. Backend : voir
+//   agency-treasury.controller.ts (fichier indépendant).
 // =========================================================
 
 import axios, {
@@ -1077,6 +1084,37 @@ class API {
       { timeout: 15_000 },
     );
     return res.data;
+  }
+
+  // ============================================================
+  // AGENCY TREASURY — ✅ v5.8 (nouveau)
+  // Voir agency-treasury.controller.ts (backend, fichier indépendant).
+  // ============================================================
+
+  // Agent → Société : remontée de fonds depuis SA propre agence.
+  // Pas de agencyId ni currency à fournir : dérivés côté backend
+  // depuis l'agent authentifié.
+  async agentRemitToAdmin(amount: number, note?: string): Promise<Transaction> {
+    const res = await this.http.post<Transaction>("/transactions/agency/remit", {
+      amount,
+      note,
+    });
+    return normalizeTransaction(res.data);
+  }
+
+  // Admin → Agence : retrait forcé depuis l'agence choisie vers le
+  // compte de la société. note est obligatoire côté backend.
+  async adminCollectFromAgency(
+    agencyId: string,
+    amount: number,
+    note: string,
+  ): Promise<Transaction> {
+    const res = await this.http.post<Transaction>("/transactions/agency/collect", {
+      agencyId,
+      amount,
+      note,
+    });
+    return normalizeTransaction(res.data);
   }
 
   // ============================================================

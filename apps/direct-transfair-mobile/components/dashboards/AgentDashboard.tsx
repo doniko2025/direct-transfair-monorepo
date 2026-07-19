@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/components/dashboards/AgentDashboard.tsx
 // =========================================================
-// AGENT DASHBOARD v9.0 — Direct Transf'air
+// AGENT DASHBOARD v9.1 — Direct Transf'air
 // ✅ v9.0 :
 //    - Héro LinearGradient bleu SUPPRIMÉ → header blanc pur
 //    - StatusBar : dark-content (texte sombre, fond blanc)
@@ -18,6 +18,13 @@
 // ✅ v8.0 : Héro rectangulaire LinearGradient #2563EB→#1D4ED8
 //    borderBottomRadius 28 + ombre bleue + glows décoratifs
 // ✅ v7.0 : Héro réduit ~50%, arc concave, bleu professionnel
+// ✅ v9.1 : NOUVELLE OpCard "Envoyer vers Admin" dans "Opérations
+//    rapides" — lien vers /agent/remit-to-admin (écran indépendant,
+//    voir remit-to-admin.tsx). PUREMENT ADDITIF : aucune carte
+//    existante déplacée/modifiée, aucun état/logique touché. La
+//    rangée d'opérations passe de 2 à 3 cartes (Dépôt Client, Retrait
+//    Client déjà là + la nouvelle) ; "Envoi Cash" et "Clôture Jour"
+//    restent sur leur propre rangée, inchangée.
 // =========================================================
 
 import React, { useState, useRef, useCallback } from "react";
@@ -402,6 +409,21 @@ export default function AgentDashboard() {
         <View style={s.opsRow}>
           <OpCard title="Dépôt Client"   subtitle="Recharger un compte" icon="arrow-down-circle-outline" accent={C.green}  bg={C.greenBg}  onPress={() => router.push("/agent/deposit")} />
           <OpCard title="Retrait Client" subtitle="Payer un code"       icon="arrow-up-circle-outline"   accent={C.red}    bg={C.redBg}    onPress={() => router.push("/agent/withdraw")} />
+        </View>
+
+        {/* ✅ v9.1 — NOUVEAU : "Envoyer vers Admin" (remontée de fonds),
+            seule sur sa rangée pour ne pas resserrer les cartes
+            existantes ci-dessus/ci-dessous. */}
+        <View style={[s.opsRow, { marginBottom: 12 }]}>
+          <OpCard
+            title="Envoyer vers Admin"
+            subtitle="Remontée de fonds"
+            icon="paper-plane-outline"
+            accent={C.violet}
+            bg={C.violetLight}
+            onPress={() => router.push("/agent/remit-to-admin" as any)}
+          />
+          <View style={{ flex: 1 }} />
         </View>
 
         <View style={[s.opsRow, { marginBottom: 28 }]}>

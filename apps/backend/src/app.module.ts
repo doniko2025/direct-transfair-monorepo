@@ -1,6 +1,6 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v4.5
+// APP MODULE v4.6
 // ✅ v4.4 : exclusion auth/v2/(.*) du TenantMiddleware
 // ✅ v4.5 : ThrottlerModule global — rate limiting par IP
 //   Prérequis : npm install @nestjs/throttler
@@ -12,6 +12,15 @@
 //
 //   APP_GUARD ThrottlerGuard appliqué globalement.
 //   Exempter une route : @SkipThrottle() sur le handler.
+//
+// ✅ v4.6 : Ajout AgencyTreasuryModule — trésorerie agence ⇄ société
+//   (fichiers indépendants, voir transactions/agency-treasury.*).
+//   Expose POST /transactions/agency/remit (agent → société) et
+//   POST /transactions/agency/collect (société → agence). Seule
+//   ligne touchée dans ce fichier en dehors de l'import : l'ajout de
+//   AgencyTreasuryModule dans le tableau imports ci-dessous —
+//   TransactionsModule et tout le reste restent strictement
+//   inchangés.
 // =========================================================
 
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
@@ -33,6 +42,7 @@ import { TenantsModule }            from './tenants/tenants.module';
 import { AuthModule }               from './auth/auth.module';
 import { BeneficiariesModule }      from './beneficiaries/beneficiaries.module';
 import { TransactionsModule }       from './transactions/transactions.module';
+import { AgencyTreasuryModule }     from './transactions/agency-treasury.module'; // ✅ v4.6
 import { PaymentsModule }           from './payments/payments.module';
 import { WithdrawalsModule }        from './withdrawals/withdrawals.module';
 import { RatesModule }              from './rates/rates.module';
@@ -85,6 +95,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     AuthModule,
     BeneficiariesModule,
     TransactionsModule,
+    AgencyTreasuryModule, // ✅ v4.6 — remontée agent → société + retrait admin → agence
     PaymentsModule,
     WithdrawalsModule,
     RatesModule,

@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v9.0 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v9.1 — Direct Transf'air
 // ✅ v8.1 : Carte "Clients Wallet" dans la grille
 // ✅ v9.0 :
 //    - Héro rectangulaire bleu (LinearGradient #2563EB → #1D4ED8)
@@ -13,6 +13,13 @@
 //      fond blanc, ombre colorée accentuée (effet "flottant")
 //      → Alimenter : ombre verte (#059669)
 //      → Déclarer B2B : ombre indigo (#4F46E5)
+// ✅ v9.1 : NOUVELLE ActionCard "Retrait Agence" dans "PILOTAGE
+//    SOCIÉTÉ" — lien vers /(tabs)/admin/agency-withdrawal (écran
+//    indépendant, voir agency-withdrawal.tsx). PUREMENT ADDITIF :
+//    les 6 ActionCard existantes (Transactions, Agences, Trésorerie,
+//    Frais & Commissions, Paramètres, Clients Wallet) ne sont ni
+//    déplacées ni modifiées — la nouvelle carte s'ajoute en 7ème
+//    position dans la même grille flex-wrap.
 // =========================================================
 
 import React, { useMemo, useState, useCallback, useRef } from "react";
@@ -394,7 +401,7 @@ function QuickAmounts({ amounts, selected, onSelect, color }: {
 }
 const qa = StyleSheet.create({
   btn: { paddingHorizontal: 11, paddingVertical: 7, borderRadius: 9, borderWidth: 1 },
-  txt: { fontSize: 11, fontWeight: "700" },
+  txt: { fontSize: 12, fontWeight: "700" },
 });
 
 // ─── Confirm Button ───────────────────────────────────────
@@ -758,6 +765,8 @@ export default function CompanyDashboard() {
           <ActionCard title="Paramètres"          subtitle="Compte & société"     icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"          onPress={() => router.push("/(tabs)/admin/settings")} />
           {/* ✅ v8.1 : Clients Wallet */}
           <ActionCard title="Clients Wallet"      subtitle="Gestion des comptes"  icon="people-outline"     color="#F97316"    bg="#FFF7ED"          onPress={() => router.push("/(tabs)/admin/wallet-clients" as any)} />
+          {/* ✅ v9.1 — NOUVEAU : Retrait Agence (fonds agence → société) */}
+          <ActionCard title="Retrait Agence"      subtitle="Fonds agence → société" icon="arrow-down-circle-outline" color="#DC2626" bg="#FEF2F2" onPress={() => router.push("/(tabs)/admin/agency-withdrawal" as any)} />
         </View>
 
         {/* Agences */}

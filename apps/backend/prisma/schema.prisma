@@ -106,6 +106,12 @@ enum TransactionType {
   FEE_COLLECTION
   EXCHANGE        // Conversion multi-devises
   AGENCY_REFILL
+  // ✅ v5.1 — Ajoutés pour la trésorerie agence ⇄ société (voir
+  // agency-treasury.service.ts, fichier indépendant, aucune logique
+  // existante touchée). Même sens de mouvement (agence → société),
+  // seul le côté qui initie diffère :
+  AGENCY_REMITTANCE  // Agent → Société : remontée de fonds initiée par l'agent
+  AGENCY_COLLECTION  // Société → Agence (sens du solde) : retrait forcé initié par l'admin
   REFUND
   LOYALTY_CREDIT  // Crédit points fidélité
   SCHEDULED       // Virement programmé
