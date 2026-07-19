@@ -1,5 +1,29 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/agency-withdrawal.tsx
 // =========================================================
+// AGENCY WITHDRAWAL (ADMIN) v1.2 — Direct Transf'air
+// ✅ v1.2 : 🚨 FIX — showAlert() bascule sur window.alert() côté web,
+//   qui est une popup navigateur BLOQUANTE (thread JS gelé tant que
+//   l'utilisateur n'a pas cliqué "OK") — pas un vrai toast, et hors
+//   charte graphique de l'app (cf. capture : boîte "localhost:8081
+//   indique…").
+//   CORRECTIF : remplacement de showAlert() par un toast interne,
+//   animé (Animated.Value, fade + slide depuis le haut), non
+//   bloquant, auto-dismiss après ~2.4s, dans les couleurs de l'app
+//   (vert succès / rouge erreur). Le retour arrière (router.back())
+//   déclenché après confirmation de retrait est conservé, mais
+//   appelé à la fin de l'animation de sortie du toast au lieu du
+//   clic sur "OK". Aucune autre logique métier touchée.
+// =========================================================
+// AGENCY WITHDRAWAL (ADMIN) v1.1 — Direct Transf'air
+// ✅ v1.1 : 🚨 FIX préventif — même défaut identifié sur
+//   remit-to-admin.tsx v1.1 : Alert.alert() de React Native ne rend
+//   aucune UI sur la plateforme web (Expo/react-native-web), même si
+//   la requête backend a réussi. Corrigé avant même d'être signalé
+//   ici, par cohérence.
+//   CORRECTIF : Alert.alert() → showAlert() (utils/alert.ts), déjà
+//   utilisé ailleurs dans l'app. Mêmes messages, même comportement ;
+//   aucune autre logique touchée.
+// =========================================================
 // AGENCY WITHDRAWAL (ADMIN) v1.0 — Direct Transf'air
 // Fichier indépendant — nouvel écran, ne modifie aucun écran admin
 // existant (agencies, treasury, fees, settings, wallet-clients
@@ -15,11 +39,11 @@
 // Client Dashboard / beneficiaries/create.tsx v6.5 / send.tsx v2.14.
 // =========================================================
 
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, ActivityIndicator,
   ScrollView, SafeAreaView, KeyboardAvoidingView, Platform, StatusBar,
-  Modal, FlatList, Alert,
+  Modal, FlatList, Animated,
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -44,6 +68,7 @@ const C = {
   inkMid: "#1F5C3A",
   inkSoft: "#6B9E85",
   red: "#EF4444",
+  green: "#17A45F",
   r: { sm: 12, md: 14, lg: 18, xl: 24, pill: 99 },
   font: {
     serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
@@ -70,6 +95,10 @@ function agencyBalance(agency: any): number {
   return Number(primary?.balance ?? agency?.balance ?? 0);
 }
 
+// ✅ v1.2 — Toast interne (remplace showAlert / window.alert)
+type ToastType = "success" | "error";
+interface ToastState { type: ToastType; title: string; message: string }
+
 export default function AgencyWithdrawalScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -83,6 +112,28 @@ export default function AgencyWithdrawalScreen() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // ✅ v1.2 — état + animation du toast
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const toastAnim = useRef(new Animated.Value(0)).current; // 0 = caché, 1 = visible
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => { if (toastTimer.current) clearTimeout(toastTimer.current); };
+  }, []);
+
+  const showToast = useCallback((type: ToastType, title: string, message: string, onHide?: () => void) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ type, title, message });
+    toastAnim.setValue(0);
+    Animated.spring(toastAnim, { toValue: 1, useNativeDriver: true, friction: 8, tension: 65 }).start();
+    toastTimer.current = setTimeout(() => {
+      Animated.timing(toastAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => {
+        setToast(null);
+        onHide?.();
+      });
+    }, 2400);
+  }, [toastAnim]);
 
   const load = useCallback(async () => {
     try {
@@ -107,22 +158,48 @@ export default function AgencyWithdrawalScreen() {
     setSubmitting(true);
     try {
       await api.adminCollectFromAgency(selectedAgency.id, numericAmount, note.trim());
-      Alert.alert(
-        "✅ Retrait effectué",
+      showToast(
+        "success",
+        "Retrait effectué",
         `${fmt(numericAmount, currency ?? "XOF")} ${currency} retirés depuis ${selectedAgency.name}.`,
-        [{ text: "OK", onPress: () => router.back() }],
+        () => router.back(),
       );
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Une erreur est survenue.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      showToast("error", "Erreur", Array.isArray(msg) ? msg[0] : msg);
     } finally {
       setSubmitting(false);
     }
   };
 
+  const toastTranslateY = toastAnim.interpolate({ inputRange: [0, 1], outputRange: [-40, 0] });
+
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
+
+      {/* ✅ v1.2 — Toast de confirmation / erreur, non bloquant */}
+      {toast && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            t.toast,
+            toast.type === "success" ? t.toastSuccess : t.toastError,
+            { top: insets.top + 10, opacity: toastAnim, transform: [{ translateY: toastTranslateY }] },
+          ]}
+        >
+          <Ionicons
+            name={toast.type === "success" ? "checkmark-circle" : "alert-circle"}
+            size={20}
+            color={C.white}
+            style={{ marginTop: 1 }}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[t.toastTitle, { fontFamily: C.font.sans }]}>{toast.title}</Text>
+            <Text style={[t.toastMsg, { fontFamily: C.font.sans }]}>{toast.message}</Text>
+          </View>
+        </Animated.View>
+      )}
 
       <LinearGradient
         colors={[C.heroFrom, C.heroTo]}
@@ -364,4 +441,28 @@ const m = StyleSheet.create({
   itemName: { fontSize: 13, fontWeight: "700", color: C.ink },
   itemMeta: { fontSize: 11, color: C.inkSoft, fontWeight: "600", marginTop: 2 },
   empty: { color: C.inkSoft, textAlign: "center", padding: 24, fontWeight: "600" },
+});
+
+// ✅ v1.2 — styles du toast
+const t = StyleSheet.create({
+  toast: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    zIndex: 999,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 14 },
+      android: { elevation: 8 },
+    }),
+  },
+  toastSuccess: { backgroundColor: C.green },
+  toastError: { backgroundColor: C.red },
+  toastTitle: { color: C.white, fontSize: 13, fontWeight: "800" },
+  toastMsg: { color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: "600", marginTop: 2, lineHeight: 16 },
 });

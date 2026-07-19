@@ -1,30 +1,64 @@
 // apps/direct-transfair-mobile/components/dashboards/AgentDashboard.tsx
 // =========================================================
-// AGENT DASHBOARD v9.1 — Direct Transf'air
-// ✅ v9.0 :
-//    - Héro LinearGradient bleu SUPPRIMÉ → header blanc pur
-//    - StatusBar : dark-content (texte sombre, fond blanc)
-//    - Pill "ESPACE GUICHET" : fond bleu pâle + texte bleu accent (inversé)
-//    - Greeting + agence : couleurs sombres (#0F172A / #6B7280)
-//    - Boutons top-bar : fond gris clair (#F1F5F9) + icônes sombres
-//    - Balance card : bande accent bleue 4px en haut (élément signature),
-//      ombre grise neutre, fond blanc, balance amount agrandi (28→32px)
-//    - Glows décoratifs supprimés (inutiles sur fond blanc)
-//    - Body : fond #F7F8FA (légèrement off-white) → cartes blanches flottent
-//    - StatChip : valeur agrandie (18→22px) + fond #F7F8FA
-//    - Section labels : dot remplacé par ligne courte + police légèrement agrandie
-//    - import LinearGradient retiré (n'est plus utilisé)
+// AGENT DASHBOARD v10.1 — Direct Transf'air
+// ✅ v10.1 (cette version) :
+//    - SECTION "SUIVI & RAPPORTS" convertie en grille de cartes (2 par
+//      ligne), à la demande explicite : les 3 lignes cliquables
+//      horizontales (ReportRow — icône + texte + chevron sur toute la
+//      largeur) sont remplacées par des cartes verticales ombrées,
+//      dans le MÊME langage visuel que OpCard utilisé juste au-dessus
+//      (coin décoratif translucide, icône dans un cercle coloré, ombre
+//      portée, flèche en bas à droite dans un cercle).
+//    - NOUVEAU composant ReportCard (remplace ReportRow, qui est
+//      retiré du fichier car plus utilisé nulle part) : mêmes props
+//      (title, sub, icon, accent, bg, onPress, value optionnel). Le
+//      "value" (ex. "1 EUR" pour Taux du Jour) devient un badge coloré
+//      en haut à droite de la carte (même emplacement que le badge
+//      "Nouveau" d'OpCard), au lieu d'un texte aligné à droite sur la
+//      ligne.
+//    - Disposition : 3 cartes → 2 sur la première ligne (Journal de
+//      Caisse, Mes Commissions), 1 sur la seconde (Taux du Jour) +
+//      un espaceur flex:1 pour garder la carte à mi-largeur (même
+//      motif déjà utilisé pour la carte solo "Envoyer vers Admin").
+//    - AUCUNE navigation/route touchée : les 3 onPress pointent
+//      exactement vers les mêmes écrans qu'avant (/agent/transactions,
+//      /agent/commissions, /(tabs)/rates).
+// ✅ v10.0 :
+//    - HÉRO REFONDU en une seule carte flottante sombre (LinearGradient),
+//      inspirée de la capture de référence : salutation + solde regroupés
+//      dans le même bloc (au lieu de 2 cartes empilées : topBar blanc +
+//      balCard blanche séparée en v9.x).
+//    - Carte héro : coins arrondis sur les 4 côtés (28px), marge autour
+//      (flotte sur le fond clair du body), ombre portée profonde, dégradé
+//      bleu-nuit (#0B1220 → #141F38), glows décoratifs (cercles translucides)
+//      + fines lignes topographiques en SVG (purement décoratif, `Path`
+//      désormais utilisé — `Rect` reste importé sans usage, comme avant).
+//    - Montant du solde en accent bleu clair lumineux (#60A5FA) pour un
+//      bon contraste sur fond sombre ; label, agence, footer en blanc/gris
+//      translucide ; pill "ESPACE GUICHET", boutons (refresh/notif) et
+//      avatar passés en style "glass" (fond blanc translucide) au lieu du
+//      gris clair du v9.
+//    - Le héro est désormais un premier enfant du ScrollView (au lieu d'un
+//      bloc fixe au-dessus) : défilement plus naturel, cohérent avec la
+//      référence. Le fond de page (SafeAreaView + ScrollView) passe en
+//      off-white (`C.bodyBg`) sur toute la hauteur.
+//    - ➕ AJOUT COSMÉTIQUE UNIQUEMENT : icône œil à côté du libellé "solde
+//      agence" pour masquer/afficher le montant (state local `hideBalance`,
+//      aucun appel API, aucune donnée modifiée — purement un affichage
+//      masqué avec des "•"). Dis-moi si tu préfères que je la retire.
+//    - StatChip : fine bordure gauche colorée (3px, couleur = accent de la
+//      stat) ajoutée pour mieux relier visuellement les 3 chiffres aux
+//      cartes/lignes en dessous (même langage visuel que OpCard/ReportRow).
 //    - AUCUNE modification logique métier / API / navigation / états
-// ✅ v8.0 : Héro rectangulaire LinearGradient #2563EB→#1D4ED8
-//    borderBottomRadius 28 + ombre bleue + glows décoratifs
-// ✅ v7.0 : Héro réduit ~50%, arc concave, bleu professionnel
-// ✅ v9.1 : NOUVELLE OpCard "Envoyer vers Admin" dans "Opérations
-//    rapides" — lien vers /agent/remit-to-admin (écran indépendant,
-//    voir remit-to-admin.tsx). PUREMENT ADDITIF : aucune carte
-//    existante déplacée/modifiée, aucun état/logique touché. La
-//    rangée d'opérations passe de 2 à 3 cartes (Dépôt Client, Retrait
-//    Client déjà là + la nouvelle) ; "Envoi Cash" et "Clôture Jour"
-//    restent sur leur propre rangée, inchangée.
+//      existants (loadData, dérivations de balance/currency, stats, etc.
+//      strictement identiques à la v9.1).
+// ✅ v9.1 conservé : OpCard "Envoyer vers Admin" (additive, /agent/remit-to-admin)
+// ✅ v9.0 conservé : design system clair (bodyBg off-white, cartes blanches
+//    flottantes, StatChip agrandi, etc.) — toujours utilisé dans le corps
+//    de l'écran (stats, opérations, rapports), uniquement le héro change.
+// ✅ v8.0 / v7.0 : historique héro (LinearGradient bleu plein cadre, puis
+//    arc concave) — remplacés depuis par le header blanc v9, puis par la
+//    carte héro sombre flottante v10 ci-dessus.
 // =========================================================
 
 import React, { useState, useRef, useCallback } from "react";
@@ -35,35 +69,34 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import Svg, { Path, Rect } from "react-native-svg"; // conservé (import inutilisé OK)
+import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Path, Rect } from "react-native-svg"; // Path utilisé (lignes déco héro) — Rect conservé, toujours inutilisé, OK
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
 const { width: SW } = Dimensions.get("window");
 
-// ─── Bleu accent (micro-détails uniquement en v9) ─────────
+// ─── Bleu accent (marque agent) ────────────────────────────
 const AGENT_BLUE      = "#2563EB";
 const AGENT_BLUE_DARK = "#1D4ED8";
 
-// ─── Design System v9 ─────────────────────────────────────
+// ─── Design System v10 ─────────────────────────────────────
 const C = {
-  // ✅ v9.0 : accent bleu réduit aux micro-détails (band, progress, icons actifs)
   accent:       AGENT_BLUE,
   accentDark:   AGENT_BLUE_DARK,
   accentPale:   "#EFF6FF",
   accentBorder: "#DBEAFE",
 
-  // Alias compat sous-composants (OpCard / ReportRow / StatChip non modifiés)
+  // Alias compat sous-composants (OpCard / ReportRow / StatChip non modifiés en logique)
   violet:       AGENT_BLUE,
   violetDark:   AGENT_BLUE_DARK,
   violetLight:  "#EFF6FF",
   violetBorder: "#DBEAFE",
 
-  // ✅ v9.0 : fond global blanc pur + off-white pour body scrollable
   pageBg:       "#FFFFFF",
-  bodyBg:       "#F7F8FA",   // légèrement off-white → cartes blanches ressortent
+  bodyBg:       "#F7F8FA",   // fond off-white utilisé sur toute la hauteur en v10
   surface:      "#FFFFFF",
-  white:        "#FFFFFF",   // alias compat
+  white:        "#FFFFFF",
   cardBorder:   "#E8EDF5",
 
   ink:          "#0F172A",
@@ -75,6 +108,17 @@ const C = {
   blue:         "#3B82F6", blueBg:  "#EFF6FF", blueBorder:  "#BFDBFE",
   amber:        "#F59E0B", amberBg: "#FFFBEB", amberBorder: "#FDE68A",
   purple:       "#8B5CF6", purpleBg:"#F5F3FF", purpleBorder:"#DDD6FE",
+
+  // ✅ v10.0 : tokens dédiés à la carte héro sombre (référence capture 2)
+  heroBgFrom:        "#0B1220",
+  heroBgMid:         "#141F38",
+  heroBgTo:          "#0B1220",
+  heroGlass:         "rgba(255,255,255,0.08)",
+  heroGlassBorder:   "rgba(255,255,255,0.14)",
+  heroTextPrimary:   "#FFFFFF",
+  heroTextSecondary: "rgba(255,255,255,0.55)",
+  heroTextFaint:     "rgba(255,255,255,0.35)",
+  heroAccent:        "#60A5FA", // bleu clair lumineux, lisible sur fond sombre
 
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
@@ -98,7 +142,7 @@ function fmt(n: number, currency: string): string {
   catch { return n.toFixed(d); }
 }
 
-// ─── Op Card (inchangé visuellement) ──────────────────────
+// ─── Op Card (inchangé en logique / props) ─────────────────
 function OpCard({ title, subtitle, icon, accent, bg, onPress, badge }: {
   title: string; subtitle: string; icon: string;
   accent: string; bg: string; onPress: () => void; badge?: string;
@@ -147,70 +191,78 @@ const op = StyleSheet.create({
   arrow:    { position: "absolute", bottom: 10, right: 10, width: 22, height: 22, borderRadius: 7, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Report Row (inchangé visuellement) ───────────────────
-function ReportRow({ title, sub, icon, accent, bg, onPress, value }: {
+// ─── Report Card — ✅ v10.1 (remplace ReportRow) ────────────
+// Même langage visuel qu'OpCard (coin décoratif, icône en cercle,
+// ombre portée, flèche en bas à droite) — pensée pour une grille de
+// 2 cartes par ligne. Le "value" optionnel (ex. "1 EUR") devient un
+// badge coloré en haut à droite, au même emplacement que le badge
+// "Nouveau" d'OpCard.
+function ReportCard({ title, sub, icon, accent, bg, onPress, value }: {
   title: string; sub: string; icon: string;
   accent: string; bg: string; onPress: () => void; value?: string;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   return (
-    <Animated.View style={{ transform: [{ scale }], marginBottom: 10 }}>
+    <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
       <TouchableOpacity
-        style={rr.row} onPress={onPress}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
+        style={rc.card} onPress={onPress}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1,   useNativeDriver: true, speed: 30 }).start()}
         activeOpacity={1}
       >
-        <View style={[rr.accentBar, { backgroundColor: accent }]} />
-        <View style={[rr.iconBox, { backgroundColor: bg }]}>
-          <Ionicons name={icon as any} size={18} color={accent} />
+        <View style={[rc.corner, { backgroundColor: bg }]} />
+        <View style={[rc.iconWrap, { backgroundColor: bg }]}>
+          <Ionicons name={icon as any} size={20} color={accent} />
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[rr.title, { fontFamily: C.font.medium }]}>{title}</Text>
-          <Text style={[rr.sub,   { fontFamily: C.font.sans   }]}>{sub}</Text>
-        </View>
-        {value && <Text style={[rr.value, { color: accent, fontFamily: C.font.mono }]}>{value}</Text>}
-        <View style={[rr.chevron, { backgroundColor: bg }]}>
+        {value && (
+          <View style={[rc.valueBadge, { backgroundColor: bg, borderColor: `${accent}33` }]}>
+            <Text style={[rc.valueTxt, { color: accent, fontFamily: C.font.mono }]}>{value}</Text>
+          </View>
+        )}
+        <Text style={[rc.title, { fontFamily: C.font.medium }]}>{title}</Text>
+        <Text style={[rc.sub, { fontFamily: C.font.sans }]} numberOfLines={2}>{sub}</Text>
+        <View style={[rc.arrow, { backgroundColor: bg }]}>
           <Ionicons name="chevron-forward" size={13} color={accent} />
         </View>
       </TouchableOpacity>
     </Animated.View>
   );
 }
-const rr = StyleSheet.create({
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: C.white, borderRadius: C.r.md,
-    borderWidth: 1, borderColor: C.cardBorder, overflow: "hidden",
-    shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.09, shadowRadius: 12, elevation: 5,
+const rc = StyleSheet.create({
+  card: {
+    backgroundColor: C.white, borderRadius: C.r.lg, padding: 14,
+    borderWidth: 1, borderColor: C.cardBorder,
+    shadowColor: "#64748B", shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.12, shadowRadius: 14, elevation: 7,
+    overflow: "hidden", minHeight: 130,
   },
-  accentBar:{ width: 4, alignSelf: "stretch" },
-  iconBox:  { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center", margin: 13, marginRight: 0 },
-  title:    { fontSize: 13, fontWeight: "600", color: C.ink, marginBottom: 2 },
-  sub:      { fontSize: 10, fontWeight: "400", color: C.inkSoft },
-  value:    { fontSize: 12, fontWeight: "600" },
-  chevron:  { width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center", margin: 13 },
+  corner:     { position: "absolute", top: -16, right: -16, width: 56, height: 56, borderRadius: 28, opacity: 0.45 },
+  iconWrap:   { width: 40, height: 40, borderRadius: 12, justifyContent: "center", alignItems: "center", marginBottom: 10 },
+  valueBadge: { position: "absolute", top: 9, right: 9, paddingHorizontal: 7, paddingVertical: 3, borderRadius: C.r.xs, borderWidth: 1 },
+  valueTxt:   { fontSize: 10, fontWeight: "700", letterSpacing: 0.3 },
+  title:      { fontSize: 13, fontWeight: "600", color: C.ink, marginBottom: 3, lineHeight: 18 },
+  sub:        { fontSize: 10, fontWeight: "400", color: C.inkSoft, marginBottom: 10, lineHeight: 14 },
+  arrow:      { position: "absolute", bottom: 10, right: 10, width: 22, height: 22, borderRadius: 7, justifyContent: "center", alignItems: "center" },
 });
 
-// ─── Stat Chip v9 — valeur agrandie, fond bodyBg ──────────
+// ─── Stat Chip v10 — bordure gauche colorée ajoutée ────────
 function StatChip({ label, value, accent }: { label: string; value: string; accent: string }) {
   return (
-    <View style={sc.chip}>
+    <View style={[sc.chip, { borderLeftColor: accent }]}>
       <Text style={[sc.val, { color: accent, fontFamily: C.font.medium }]}>{value}</Text>
       <Text style={[sc.lbl, { fontFamily: C.font.sans }]}>{label}</Text>
     </View>
   );
 }
 const sc = StyleSheet.create({
-  // ✅ v9.0 : fond bodyBg (off-white) au lieu de blanc pour contraste sur fond blanc
   chip: {
     flex: 1, backgroundColor: C.white, borderRadius: C.r.md, padding: 14,
     alignItems: "center", borderWidth: 1, borderColor: C.cardBorder,
+    borderLeftWidth: 3, // ✅ v10.0 : couleur définie dynamiquement via `accent`
     shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08, shadowRadius: 10, elevation: 4,
   },
-  val: { fontSize: 22, fontWeight: "700", marginBottom: 3 },  // ✅ v9.0 : 18→22px
+  val: { fontSize: 22, fontWeight: "700", marginBottom: 3 },
   lbl: { fontSize: 9, fontWeight: "500", color: C.inkSoft, letterSpacing: 0.5, textTransform: "uppercase" },
 });
 
@@ -225,6 +277,9 @@ export default function AgentDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [agencyData, setAgencyData] = useState<any>(null);
   const [stats,      setStats]      = useState({ total: 0, validated: 0, pending: 0 });
+
+  // ✅ v10.0 — état purement cosmétique (masquage visuel du solde, aucune donnée touchée)
+  const [hideBalance, setHideBalance] = useState(false);
 
   // ── Dérivations (inchangées) ─────────────────────────────
   const COUNTRY_CURRENCY_MAP: Record<string, string> = {
@@ -295,104 +350,122 @@ export default function AgentDashboard() {
     .substring(0, 2) || "AG";
 
   return (
-    // ✅ v9.0 : fond blanc pur — StatusBar dark-content
+    // ✅ v10.0 : fond off-white sur toute la hauteur (le héro sombre flotte dessus)
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.pageBg} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bodyBg} />
 
-      {/* ══════════ HEADER BLANC v9.0 ══════════
-          Remplace le LinearGradient bleu de v8.
-          Structure : topBar (greeting + actions) + balCard (accent band + solde)
-      */}
-      <Animated.View style={{
-        opacity:   headerAnim,
-        transform: [{ scale: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
-      }}>
-        <View style={s.hero}>
-
-          {/* ── Ligne du haut : greeting + boutons ── */}
-          <View style={s.topBar}>
-            <View style={{ flex: 1 }}>
-              {/* ✅ v9.0 : pill bleu pâle → texte bleu accent (inversé vs v8 blanc sur bleu) */}
-              <View style={s.pill}>
-                <View style={s.pillDot} />
-                <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>ESPACE GUICHET</Text>
-              </View>
-              {/* ✅ v9.0 : texte sombre (plus de blanc sur bleu) */}
-              <Text style={[s.heroName, { fontFamily: C.font.serif }]}>
-                Bonjour, {user?.firstName || "Agent"} 👋
-              </Text>
-              <View style={s.agencyRow}>
-                <Ionicons name="storefront-outline" size={11} color={C.inkSoft} />
-                <Text style={[s.agencyTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
-                  {agencyName}
-                </Text>
-              </View>
-            </View>
-
-            {/* ✅ v9.0 : avatar initiales + boutons fond gris clair */}
-            <View style={s.topActions}>
-              <View style={s.avatar}>
-                <Text style={[s.avatarTxt, { fontFamily: C.font.medium }]}>{initials}</Text>
-              </View>
-              <TouchableOpacity style={s.iconBtn} onPress={loadData}>
-                <Ionicons name="refresh" size={15} color={C.inkMid} />
-              </TouchableOpacity>
-              <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-                <Ionicons name="notifications-outline" size={15} color={C.inkMid} />
-                {stats.pending > 0 && <View style={s.notifBadge} />}
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* ── Carte solde (v9.0 : bande accent 4px en haut) ── */}
-          <View style={s.balCard}>
-            {/* ✅ v9.0 : élément signature — bande accent bleue 4px */}
-            <View style={s.accentBand} />
-
-            <View style={s.balInner}>
-              <View style={s.balTop}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.balLbl, { fontFamily: C.font.sans }]}>
-                    solde agence · {currency.toLowerCase()}
-                  </Text>
-                  {/* ✅ v9.0 : balance amount 26→32px */}
-                  <Text style={[s.balAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
-                    {fmt(balance, currency)}
-                  </Text>
-                  <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{currency}</Text>
-                </View>
-                <View style={s.onlinePill}>
-                  <View style={s.onlineDot} />
-                  <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
-                </View>
-              </View>
-
-              <View style={s.progBg}>
-                <View style={[s.progFill, { width: `${availPct}%` as any }]} />
-              </View>
-
-              <View style={s.balFooter}>
-                <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
-                  Disponible{" "}
-                  <Text style={s.balFootVal}>{fmt(available, currency)} {currency}</Text>
-                </Text>
-                <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
-                  Réservé{" "}
-                  <Text style={[s.balFootVal, { color: C.inkSoft }]}>{fmt(reserved, currency)} {currency}</Text>
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Animated.View>
-
-      {/* ══════════ BODY ══════════ */}
       <ScrollView
         style={s.scroll}
         contentContainerStyle={[s.body, isDesktop && { maxWidth: 960, alignSelf: "center", width: "100%" }]}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={AGENT_BLUE} />}
       >
+        {/* ══════════ HÉRO — carte flottante sombre v10.0 ══════════
+            Regroupe salutation + actions + solde dans une seule carte
+            (référence capture 2), au lieu de 2 blocs blancs séparés (v9.x).
+        */}
+        <Animated.View style={{
+          opacity:   headerAnim,
+          transform: [{ scale: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [0.97, 1] }) }],
+        }}>
+          <View style={s.heroWrap}>
+            <LinearGradient
+              colors={[C.heroBgFrom, C.heroBgMid, C.heroBgTo]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={s.hero}
+            >
+              {/* Décor : glows translucides + fines lignes topographiques (purement cosmétique) */}
+              <View style={s.heroGlowTop} pointerEvents="none" />
+              <View style={s.heroGlowBottom} pointerEvents="none" />
+              <Svg
+                width="100%" height="100%" viewBox="0 0 400 220"
+                style={StyleSheet.absoluteFill}
+                pointerEvents="none"
+              >
+                <Path d="M-20,50 C60,20 140,80 220,45 C300,10 360,60 420,35"   stroke="rgba(255,255,255,0.07)"  strokeWidth={1} fill="none" />
+                <Path d="M-20,95 C70,70 150,125 230,90 C310,55 370,105 420,80" stroke="rgba(255,255,255,0.05)"  strokeWidth={1} fill="none" />
+                <Path d="M-20,140 C80,115 160,170 240,135 C320,100 380,150 420,125" stroke="rgba(255,255,255,0.035)" strokeWidth={1} fill="none" />
+              </Svg>
+
+              {/* ── Ligne du haut : salutation + actions ── */}
+              <View style={s.topBar}>
+                <View style={{ flex: 1 }}>
+                  <View style={s.pill}>
+                    <View style={s.pillDot} />
+                    <Text style={[s.pillTxt, { fontFamily: C.font.sans }]}>ESPACE GUICHET</Text>
+                  </View>
+                  <Text style={[s.heroName, { fontFamily: C.font.serif }]}>
+                    Bonjour, {user?.firstName || "Agent"} 👋
+                  </Text>
+                  <View style={s.agencyRow}>
+                    <Ionicons name="storefront-outline" size={11} color={C.heroTextSecondary} />
+                    <Text style={[s.agencyTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
+                      {agencyName}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={s.topActions}>
+                  <TouchableOpacity style={s.iconBtnDark} onPress={loadData}>
+                    <Ionicons name="refresh" size={15} color={C.heroTextPrimary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.iconBtnDark} onPress={() => router.push("/(tabs)/notifications")}>
+                    <Ionicons name="notifications-outline" size={15} color={C.heroTextPrimary} />
+                    {stats.pending > 0 && <View style={s.notifBadge} />}
+                  </TouchableOpacity>
+                  <View style={s.avatarDark}>
+                    <Text style={[s.avatarTxt, { fontFamily: C.font.medium }]}>{initials}</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* ── Solde ── */}
+              <View style={s.balBlock}>
+                <View style={s.balTop}>
+                  <View style={{ flex: 1 }}>
+                    <View style={s.balLblRow}>
+                      <Text style={[s.balLbl, { fontFamily: C.font.sans }]}>
+                        solde agence · {currency.toLowerCase()}
+                      </Text>
+                      {/* ✅ v10.0 : bascule d'affichage purement visuelle (masque avec des •) */}
+                      <TouchableOpacity onPress={() => setHideBalance(v => !v)} hitSlop={8}>
+                        <Ionicons name={hideBalance ? "eye-off-outline" : "eye-outline"} size={12} color={C.heroTextFaint} />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[s.balAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {hideBalance ? "•• ••• ••" : fmt(balance, currency)}
+                    </Text>
+                    <Text style={[s.balCur, { fontFamily: C.font.sans }]}>{currency}</Text>
+                  </View>
+                  <View style={s.onlinePill}>
+                    <View style={s.onlineDot} />
+                    <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
+                  </View>
+                </View>
+
+                <View style={s.progBg}>
+                  <View style={[s.progFill, { width: `${availPct}%` as any }]} />
+                </View>
+
+                <View style={s.balFooter}>
+                  <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
+                    Disponible{" "}
+                    <Text style={s.balFootVal}>
+                      {hideBalance ? "••••" : `${fmt(available, currency)} ${currency}`}
+                    </Text>
+                  </Text>
+                  <Text style={[s.balFootLbl, { fontFamily: C.font.sans }]}>
+                    Réservé{" "}
+                    <Text style={[s.balFootVal, { color: C.heroTextSecondary }]}>
+                      {hideBalance ? "••••" : `${fmt(reserved, currency)} ${currency}`}
+                    </Text>
+                  </Text>
+                </View>
+              </View>
+            </LinearGradient>
+          </View>
+        </Animated.View>
+
         {/* Stats réelles */}
         <View style={s.statsRow}>
           <StatChip label="Opérations" value={String(stats.total)}     accent={AGENT_BLUE} />
@@ -400,7 +473,7 @@ export default function AgentDashboard() {
           <StatChip label="En attente" value={String(stats.pending)}   accent={C.amber}    />
         </View>
 
-        {/* Opérations rapides — section label v9.0 */}
+        {/* Opérations rapides */}
         <View style={s.secRow}>
           <View style={s.secLine} />
           <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>OPÉRATIONS RAPIDES</Text>
@@ -411,9 +484,7 @@ export default function AgentDashboard() {
           <OpCard title="Retrait Client" subtitle="Payer un code"       icon="arrow-up-circle-outline"   accent={C.red}    bg={C.redBg}    onPress={() => router.push("/agent/withdraw")} />
         </View>
 
-        {/* ✅ v9.1 — NOUVEAU : "Envoyer vers Admin" (remontée de fonds),
-            seule sur sa rangée pour ne pas resserrer les cartes
-            existantes ci-dessus/ci-dessous. */}
+        {/* "Envoyer vers Admin" (v9.1, additif, inchangé) */}
         <View style={[s.opsRow, { marginBottom: 12 }]}>
           <OpCard
             title="Envoyer vers Admin"
@@ -437,9 +508,14 @@ export default function AgentDashboard() {
           <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>SUIVI & RAPPORTS</Text>
         </View>
 
-        <ReportRow title="Journal de Caisse"  sub="Toutes les opérations du jour" icon="list-outline"        accent={C.amber}  bg={C.amberBg}  onPress={() => router.push("/agent/transactions")} />
-        <ReportRow title="Mes Commissions"    sub="Gains, paliers et historique"  icon="bar-chart-outline"   accent={C.purple} bg={C.purpleBg} onPress={() => router.push("/agent/commissions")} />
-        <ReportRow title="Taux du Jour"       sub="Devises & taux de change"      icon="trending-up-outline" accent={C.green}  bg={C.greenBg}  onPress={() => router.push("/(tabs)/rates")} value="1 EUR" />
+        <View style={s.opsRow}>
+          <ReportCard title="Journal de Caisse" sub="Toutes les opérations du jour" icon="list-outline"      accent={C.amber}  bg={C.amberBg}  onPress={() => router.push("/agent/transactions")} />
+          <ReportCard title="Mes Commissions"   sub="Gains, paliers et historique"  icon="bar-chart-outline" accent={C.purple} bg={C.purpleBg} onPress={() => router.push("/agent/commissions")} />
+        </View>
+        <View style={[s.opsRow, { marginBottom: 12 }]}>
+          <ReportCard title="Taux du Jour" sub="Devises & taux de change" icon="trending-up-outline" accent={C.green} bg={C.greenBg} onPress={() => router.push("/(tabs)/rates")} value="1 EUR" />
+          <View style={{ flex: 1 }} />
+        </View>
 
         <View style={{ height: 110 }} />
       </ScrollView>
@@ -447,109 +523,112 @@ export default function AgentDashboard() {
   );
 }
 
-// ─── Styles v9.0 ──────────────────────────────────────────
+// ─── Styles v10.0 ─────────────────────────────────────────
 const s = StyleSheet.create({
 
-  // ✅ v9.0 : fond blanc pur
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  // ✅ v10.0 : fond off-white sur toute la hauteur (le héro flotte dessus)
+  safe: { flex: 1, backgroundColor: C.bodyBg },
 
-  // ✅ v9.0 : header blanc pur — borderRadius + ombre douce (plus de bleu)
+  // ── Body / ScrollView ──
+  scroll: { flex: 1, backgroundColor: C.bodyBg },
+  body: {
+    paddingHorizontal: 16,
+    paddingTop:    Platform.OS === "android" ? 36 : 14,
+    paddingBottom: 4,
+  },
+
+  // ── Héro : wrapper (ombre, non clippée) + carte (gradient, clippée) ──
+  // ✅ v10.0 : l'ombre est posée sur le wrapper (sans overflow:hidden) pour
+  // ne pas être coupée par le borderRadius + overflow:hidden de la carte
+  // elle-même (nécessaire pour clipper le SVG déco et les glows).
+  heroWrap: {
+    marginBottom: 22,
+    borderRadius: 28,
+    backgroundColor: C.heroBgMid, // requis sur Android pour que l'ombre (elevation) s'affiche
+    shadowColor: "#0B1220",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 12,
+  },
   hero: {
-    backgroundColor: C.surface,
+    borderRadius: 28,
     paddingHorizontal: 18,
-    paddingTop:    Platform.OS === "android" ? 36 : 10,
-    paddingBottom: 22,
-    borderBottomLeftRadius:  24,
-    borderBottomRightRadius: 24,
-    // ombre neutre grise (remplace l'ombre bleue profonde de v8)
-    shadowColor:   "#94A3B8",
-    shadowOffset:  { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius:  20,
-    elevation:     10,
+    paddingTop: 20,
+    paddingBottom: 18,
+    overflow: "hidden",
+  },
+  heroGlowTop: {
+    position: "absolute", top: -70, right: -50,
+    width: 200, height: 200, borderRadius: 100,
+    backgroundColor: "rgba(96,165,250,0.20)",
+  },
+  heroGlowBottom: {
+    position: "absolute", bottom: -60, left: -50,
+    width: 170, height: 170, borderRadius: 85,
+    backgroundColor: "rgba(16,185,129,0.10)",
   },
 
-  // ── Top bar ──
-  topBar:    { flexDirection: "row", alignItems: "center", marginBottom: 16 },
+  // ── Top bar (dans le héro) ──
+  topBar: { flexDirection: "row", alignItems: "center", marginBottom: 18 },
 
-  // ✅ v9.0 : pill bleu pâle + texte accent (inversé vs blanc sur bleu)
-  pill:    {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: C.accentPale, borderWidth: 1, borderColor: C.accentBorder,
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20,
-    alignSelf: "flex-start", marginBottom: 6,
+  // ✅ v10.0 : pill "glass" (fond blanc translucide) sur fond sombre
+  pill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBorder,
+    paddingHorizontal: 9, paddingVertical: 4, borderRadius: 20,
+    alignSelf: "flex-start", marginBottom: 8,
   },
-  pillDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.accent },
-  pillTxt: { fontSize: 8, fontWeight: "700", color: C.accent, letterSpacing: 1 },
+  pillDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.heroAccent },
+  pillTxt: { fontSize: 8, fontWeight: "700", color: "rgba(255,255,255,0.85)", letterSpacing: 1 },
 
-  // ✅ v9.0 : texte sombre sur fond blanc
-  heroName:  { fontSize: 22, fontWeight: "700", color: C.ink, marginBottom: 3 },
+  heroName:  { fontSize: 23, fontWeight: "700", color: C.heroTextPrimary, marginBottom: 4 },
   agencyRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  agencyTxt: { fontSize: 10, color: C.inkSoft, fontWeight: "500" },
+  agencyTxt: { fontSize: 10, color: C.heroTextSecondary, fontWeight: "500" },
 
-  // ✅ v9.0 : avatar + boutons gris clair (remplace glassmorphism bleu)
+  // ✅ v10.0 : boutons + avatar "glass" (fond blanc translucide sur fond sombre)
   topActions: { flexDirection: "row", gap: 8, alignItems: "center" },
-  avatar: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: C.accentPale, borderWidth: 1, borderColor: C.accentBorder,
-    justifyContent: "center", alignItems: "center",
-  },
-  avatarTxt: { fontSize: 11, fontWeight: "700", color: C.accent },
-  iconBtn: {
-    width: 34, height: 34, borderRadius: 10,
-    backgroundColor: "#F1F5F9",
-    borderWidth: 1, borderColor: C.cardBorder,
+  iconBtnDark: {
+    width: 34, height: 34, borderRadius: 11,
+    backgroundColor: C.heroGlass,
+    borderWidth: 1, borderColor: C.heroGlassBorder,
     justifyContent: "center", alignItems: "center",
   },
   notifBadge: {
     position: "absolute", top: 6, right: 6,
     width: 7, height: 7, borderRadius: 3.5,
-    backgroundColor: C.red, borderWidth: 1.5, borderColor: C.surface,
+    backgroundColor: C.red, borderWidth: 1.5, borderColor: C.heroBgMid,
   },
-
-  // ── Balance card v9.0 ──
-  balCard: {
-    backgroundColor: C.surface,
-    borderRadius: C.r.md,
-    overflow: "hidden",
-    borderWidth: 1, borderColor: C.cardBorder,
-    // ombre neutre portée
-    shadowColor: "#94A3B8",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 5,
+  avatarDark: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: "rgba(96,165,250,0.22)",
+    borderWidth: 1, borderColor: "rgba(96,165,250,0.4)",
+    justifyContent: "center", alignItems: "center",
   },
+  avatarTxt: { fontSize: 11, fontWeight: "700", color: "#DBEAFE" },
 
-  // ✅ v9.0 : ÉLÉMENT SIGNATURE — bande accent bleue 4px en haut de la balance card
-  accentBand: {
-    height: 4,
-    backgroundColor: C.accent,
-    // pas de borderRadius — accentue l'effet "trait" net
+  // ── Solde (dans le héro) ──
+  balBlock:   { marginTop: 2 },
+  balTop:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 12 },
+  balLblRow:  { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 5 },
+  balLbl:     { fontSize: 9, color: C.heroTextSecondary, fontWeight: "500", letterSpacing: 0.5, textTransform: "uppercase" },
+  balAmt:     { fontSize: 34, fontWeight: "800", color: C.heroAccent, letterSpacing: -0.5 },
+  balCur:     { fontSize: 11, fontWeight: "700", color: C.heroTextSecondary, marginTop: 2 },
+  onlinePill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(16,185,129,0.14)", borderWidth: 1, borderColor: "rgba(16,185,129,0.35)",
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20,
   },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
+  onlineTxt: { fontSize: 9, fontWeight: "600", color: "#A7F3D0" },
+  progBg:    { height: 5, backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 3, marginBottom: 12, overflow: "hidden" },
+  progFill:  { height: 5, backgroundColor: C.heroAccent, borderRadius: 3 },
+  balFooter: { flexDirection: "row", justifyContent: "space-between" },
+  balFootLbl:{ fontSize: 9, color: C.heroTextSecondary, fontWeight: "500" },
+  balFootVal:{ fontWeight: "700", color: C.heroAccent },
 
-  balInner:   { padding: 16 },
-  balTop:     { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
-  balLbl:     { fontSize: 9, color: C.inkSoft, marginBottom: 4, fontWeight: "500", letterSpacing: 0.5, textTransform: "uppercase" },
-  // ✅ v9.0 : balance amount 26→32px pour plus d'impact
-  balAmt:     { fontSize: 32, fontWeight: "700", color: C.ink, letterSpacing: -0.5 },
-  balCur:     { fontSize: 11, fontWeight: "700", color: C.accent, marginTop: 2 },
-  onlinePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: C.greenBg, borderWidth: 1, borderColor: C.greenBorder, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
-  onlineDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
-  onlineTxt:  { fontSize: 9, fontWeight: "600", color: C.greenDark },
-  progBg:     { height: 5, backgroundColor: C.accentPale, borderRadius: 3, marginBottom: 10, overflow: "hidden" },
-  progFill:   { height: 5, backgroundColor: C.accent, borderRadius: 3 },
-  balFooter:  { flexDirection: "row", justifyContent: "space-between" },
-  balFootLbl: { fontSize: 9, color: C.inkSoft, fontWeight: "500" },
-  balFootVal: { fontWeight: "700", color: C.accent },
-
-  // ── Body ──
-  // ✅ v9.0 : ScrollView fond off-white pour que les cartes blanches ressortent
-  scroll: { flex: 1, backgroundColor: C.bodyBg },
-  body:   { paddingHorizontal: 16, paddingTop: 20 },
+  // ── Sections / grilles (inchangé, hors héro) ──
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 24 },
-
-  // ✅ v9.0 : section label — ligne courte + texte (remplace dot + texte)
   secRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
   secLine: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.accent },
   secLbl:  { fontSize: 10, fontWeight: "700", color: C.inkSoft, letterSpacing: 1.2 },

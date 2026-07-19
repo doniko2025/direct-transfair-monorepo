@@ -1,6 +1,36 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v9.1 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v9.2 — Direct Transf'air
+// ✅ v9.2 : 🚨 FIX — avertissement "ScrollView doesn't take rejection
+//    well - scrolls anyway" sur web (voir échange du 19/07/2026).
+//
+//   CAUSE : deux ScrollView horizontaux (WalletCarousel + le
+//   sélecteur de devise juste en dessous) étaient imbriqués
+//   directement dans le ScrollView vertical principal de l'écran. Sur
+//   react-native-web, les deux ScrollView se disputent le geste de
+//   défilement au niveau du système de responder tactile de React
+//   Native — d'où l'avertissement (bénin, "scrolls anyway", mais
+//   intrusif dans l'overlay LogBox en dev sur web).
+//
+//   CORRECTIF — nouveau composant HScroller (défini juste avant
+//   WalletCarousel) :
+//     - Sur NATIF (iOS/Android) : rend un vrai <ScrollView horizontal>,
+//       AUCUN changement de comportement (mêmes props snapToInterval /
+//       decelerationRate / onScroll / ref.scrollTo qu'avant).
+//     - Sur WEB uniquement : rend un simple <View> avec overflow-x en
+//       CSS. Le navigateur route alors nativement le scroll horizontal
+//       vs vertical sans jamais passer par le système de responder de
+//       RN — plus aucun conflit possible, donc plus d'avertissement.
+//   Compromis assumé sur web : l'effet magnétique "snap" du carrousel
+//   de wallets (qui s'arrête pile sur une carte) devient un défilement
+//   libre. Le reste du comportement (points qui suivent la position de
+//   scroll, tap sur un point pour sauter à ce wallet) est identique.
+//
+//   WalletCarousel et le sélecteur de devise inline utilisent
+//   désormais HScroller à la place de ScrollView — c'est le SEUL
+//   changement fonctionnel de cette version. CurrencyChipSelector
+//   (utilisé uniquement dans les modales, donc jamais imbriqué dans le
+//   ScrollView principal) n'a pas été touché, il n'était pas concerné.
 // ✅ v8.1 : Carte "Clients Wallet" dans la grille
 // ✅ v9.0 :
 //    - Héro rectangulaire bleu (LinearGradient #2563EB → #1D4ED8)
@@ -146,11 +176,71 @@ const wc = StyleSheet.create({
   sym:    { fontSize: 9, fontWeight: "700", paddingHorizontal: 10, marginTop: 2 },
 });
 
+// ─── Horizontal Scroller — ✅ v9.2 (voir changelog en tête de fichier) ──
+// Cross-platform : natif → vrai ScrollView (inchangé) ; web → View avec
+// overflow-x CSS (le navigateur gère alors le scroll horizontal/vertical
+// nativement, sans passer par le système de responder tactile de RN).
+type HScrollerHandle = { scrollTo: (opts: { x: number; animated?: boolean }) => void };
+
+const HScroller = React.forwardRef<HScrollerHandle, {
+  children: React.ReactNode;
+  contentContainerStyle?: any;
+  onScrollX?: (x: number) => void;
+  snapInterval?: number;
+  style?: any;
+}>(function HScroller({ children, contentContainerStyle, onScrollX, snapInterval, style }, ref) {
+  const webRef    = useRef<any>(null);
+  const nativeRef = useRef<ScrollView>(null);
+
+  React.useImperativeHandle(ref, () => ({
+    scrollTo: ({ x, animated = true }) => {
+      if (Platform.OS === "web") {
+        webRef.current?.scrollTo?.({ left: x, behavior: animated ? "smooth" : "auto" });
+      } else {
+        nativeRef.current?.scrollTo({ x, animated });
+      }
+    },
+  }));
+
+  if (Platform.OS === "web") {
+    return (
+      <View
+        ref={webRef}
+        style={[style, hs.webTrack]}
+        {...({ onScroll: (e: any) => onScrollX?.(e.target?.scrollLeft ?? 0) } as any)}
+      >
+        <View style={[hs.webContent, contentContainerStyle]}>{children}</View>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      ref={nativeRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={style}
+      contentContainerStyle={contentContainerStyle}
+      scrollEventThrottle={16}
+      onScroll={(e) => onScrollX?.(e.nativeEvent.contentOffset.x)}
+      {...(snapInterval
+        ? { snapToInterval: snapInterval, snapToAlignment: "start" as const, decelerationRate: "fast" as const }
+        : {})}
+    >
+      {children}
+    </ScrollView>
+  );
+});
+const hs = {
+  webTrack:   { flexDirection: "row", overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch" } as any,
+  webContent: { flexDirection: "row" } as any,
+};
+
 // ─── Wallet Carousel ──────────────────────────────────────
 function WalletCarousel({ wallets, activeCur, setActiveCur }: {
   wallets: any[]; activeCur: number; setActiveCur: (i: number) => void;
 }) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<HScrollerHandle>(null);
   const [dotIdx, setDotIdx] = useState(0);
 
   const getBalance = useCallback((c: string) => {
@@ -158,25 +248,30 @@ function WalletCarousel({ wallets, activeCur, setActiveCur }: {
     return toNum(w?.balance ?? w?.availableBalance ?? 0);
   }, [wallets]);
 
+  // ✅ v9.2 — logique de calcul de l'index strictement identique à avant
+  // (Math.round(x / (CARD_W + 8))), seule la source de x change selon la
+  // plateforme (gérée en interne par HScroller).
+  const handleScrollX = (x: number) => {
+    const idx     = Math.round(x / (CARD_W + 8));
+    const clamped = Math.max(0, Math.min(idx, CURRENCIES_ORDER.length - 1));
+    setDotIdx(clamped);
+    if (clamped !== activeCur) setActiveCur(clamped);
+  };
+
   return (
     <View style={{ marginBottom: 10 }}>
-      <ScrollView
-        ref={scrollRef} horizontal showsHorizontalScrollIndicator={false}
-        snapToInterval={CARD_W + 8} decelerationRate="fast" snapToAlignment="start"
-        contentContainerStyle={{ paddingRight: 16 }} scrollEventThrottle={16}
-        onScroll={(e) => {
-          const idx     = Math.round(e.nativeEvent.contentOffset.x / (CARD_W + 8));
-          const clamped = Math.max(0, Math.min(idx, CURRENCIES_ORDER.length - 1));
-          setDotIdx(clamped);
-          if (clamped !== activeCur) setActiveCur(clamped);
-        }}
+      <HScroller
+        ref={scrollRef}
+        snapInterval={CARD_W + 8}
+        contentContainerStyle={{ paddingRight: 16 }}
+        onScrollX={handleScrollX}
       >
         {CURRENCIES_ORDER.map((c) => (
           <View key={c} style={{ marginRight: 8 }}>
             <WalletCard currency={c} balance={getBalance(c)} />
           </View>
         ))}
-      </ScrollView>
+      </HScroller>
       <View style={car.dots}>
         {CURRENCIES_ORDER.map((c, i) => {
           const cfg      = CURRENCIES[c];
@@ -423,6 +518,11 @@ const cb = StyleSheet.create({
 });
 
 // ─── Currency Chip Selector ───────────────────────────────
+// ⚠️ Non touché par le fix v9.2 : ce composant n'est utilisé QUE dans
+// ModalSheet (une <Modal> RN — rendu dans une couche/portail séparée
+// du ScrollView vertical principal), il ne peut donc pas entrer en
+// conflit de responder avec lui. Le conserver en ScrollView natif ici
+// ne pose aucun problème.
 function CurrencyChipSelector({ selected, onSelect }: {
   selected: CurrencyCode; onSelect: (c: CurrencyCode) => void;
 }) {
@@ -692,8 +792,10 @@ export default function CompanyDashboard() {
 
         <WalletCarousel wallets={wallets} activeCur={activeCur} setActiveCur={setActiveCur} />
 
-        {/* Sélecteur devise */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 12 }}>
+        {/* Sélecteur devise — ✅ v9.2 : HScroller (voir changelog) au lieu
+            d'un ScrollView imbriqué directement dans le ScrollView vertical
+            principal ci-dessus. */}
+        <HScroller contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 12 }}>
           {CURRENCIES_ORDER.map((cur) => {
             const cfg = CURRENCIES[cur];
             const sel = fillCur === cur;
@@ -706,7 +808,7 @@ export default function CompanyDashboard() {
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
+        </HScroller>
 
         {/* ✅ v9.0 — BOUTON ALIMENTER : blanc + ombre verte accentuée */}
         <TouchableOpacity
