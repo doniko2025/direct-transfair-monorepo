@@ -1,49 +1,123 @@
 // apps/backend/src/commissions/commissions.service.ts
 // =========================================================
-// COMMISSIONS SERVICE v4.4
-// ✅ v4.2 : withdrawal include processedBy + agency
-// ✅ v4.3 :
-//    - getFeeRate()      : lit le taux dynamique par méthode de paiement
-//    - upsertFeeConfig() : sauvegarde le taux configuré par l'admin
-// ✅ v4.4 : FIX commission affichée = 0 malgré versement réel
+// COMMISSIONS SERVICE v5.0
+// ✅ v4.4 conservé : getFeeRate/upsertFeeConfig (frais par méthode,
+//    utilisé par fees.tsx), getClientRules/upsertRule (répartition
+//    inter-agences, utilisé par settings.tsx) — AUCUN changement
 //
-//   PROBLÈME :
-//     getHistory() calculait la commission sur tx.fees EN DEVISE SOURCE
-//     (ex: 1 XOF). Pour une transaction XOF→GNF :
-//       senderCom = (1 XOF * 20%) = 0.20 XOF → arrondi à 0
-//       payerCom  = (1 XOF * 40%) = 0.40 XOF → arrondi à 0
-//     Affiché : +0 XOF ❌
-//     Alors que le vrai versement (withdrawals.service.ts) était en GNF :
-//       feesConverted ≈ 14.4 GNF → payerCom = 5.76 GNF ≈ 6 GNF ✅
+// ✅ v5.0 : 🚨 REFONTE — source de vérité = LedgerEntry
 //
-//   CORRECTIF :
-//     Conversion des frais en devise payout via tx.exchangeRate (déjà
-//     stocké sur la transaction) avant tout calcul de commission.
-//     Si pas de conversion nécessaire (même devise), inchangé.
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   getHistory()/getMyStats() (supprimées dans cette version)
+//   recalculaient la commission à la volée depuis
+//   tx.fees × CommissionConfig ACTUELLE, sans jamais lire les
+//   LedgerEntry que withdrawals.service.ts::agentProcessPayment()
+//   crédite réellement sur les wallets au moment du paiement. Deux
+//   conséquences observées :
+//     1. Si l'admin changeait un taux de répartition APRÈS qu'un
+//        retrait ait été payé, l'historique affiché changeait
+//        rétroactivement — sans rapport avec ce qui avait été
+//        réellement crédité ce jour-là.
+//     2. La conversion de devise divergeait aussi : getHistory()
+//        utilisait tx.exchangeRate (figé à la création),
+//        agentProcessPayment() utilise le taux du jour du paiement
+//        (RatesService.convert()) — deux montants possibles pour la
+//        même transaction si le taux a bougé entre-temps.
+//   Par ailleurs, ces deux méthodes filtraient seulement sur
+//   `sender: { agencyId }`, ce qui faisait remonter les Dépôts Client
+//   (deposit(), fees:0 en dur, senderId = l'agent) et les mouvements
+//   de trésorerie interne (AgencyTreasuryService, fees:0 en dur
+//   également) au milieu de la liste "commissions", avec des lignes
+//   "+0" qui n'ont jamais eu vocation à en générer.
+//
+//   ✅ DÉCISION PRODUIT CONFIRMÉE (juillet 2026) : Dépôt Client
+//   (Wallet → Wallet) reste gratuit, par design. Rien à changer côté
+//   deposit()/transactions.service.ts — ce fichier n'y touche pas.
+//
+//   CORRECTIF : getMyLedgerCommissions() et
+//   getCompanyLedgerCommissions() lisent directement les LedgerEntry
+//   déjà écrites par agentProcessPayment() — filtrées sur type=CREDIT
+//   et description commençant par "Commission" (seul marqueur
+//   existant aujourd'hui pour distinguer un crédit de commission d'un
+//   crédit de remboursement cash ou d'une recharge). Les montants
+//   affichés sont donc EXACTEMENT ceux crédités — plus de divergence
+//   possible avec le solde réel du wallet, et plus aucun dépôt /
+//   mouvement interne dans la liste puisqu'ils ne créent jamais ce
+//   type d'écriture.
+//
+//   ⚠️ Fragilité assumée : la distinction repose sur le préfixe de
+//   description "Commission" — pas de LedgerEntryType dédié dans le
+//   schéma actuel (CREDIT/DEBIT/HOLD/UNHOLD/ADJUSTMENT seulement). Si
+//   withdrawals.service.ts change un jour la formulation de ces
+//   description, cette méthode doit être mise à jour en miroir. Une
+//   évolution plus robuste serait un LedgerEntryType.COMMISSION dédié
+//   (migration Prisma) — volontairement hors scope ici : ce fichier
+//   ne touche AUCUNE ligne de withdrawals.service.ts.
+//
+//   getHistory()/getMyStats() SUPPRIMÉES : plus aucun fichier ne les
+//   appelle après la refonte de agent/commissions.tsx et
+//   admin/commissions/config.tsx.
 // =========================================================
 
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
-  AgencyType,
   CommissionDestType,
   CommissionSourceType,
   CurrencyCode,
-  TransactionStatus,
+  LedgerEntryType,
 } from '@prisma/client';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateCommissionDto } from './dto/update-commission.dto';
 
-const DEFAULT_PAYER_SHARE    = 40;
-const DEFAULT_SENDER_SHARE   = 20;
-const DEFAULT_PLATFORM_SHARE = 40;
-
-// ── Mapping payoutMethod → slot de devise ─────────────────
 const PAYOUT_CURRENCY_SLOT: Record<string, CurrencyCode> = {
   CASH_PICKUP:   CurrencyCode.XOF,
   BANK_DEPOSIT:  CurrencyCode.EUR,
   MOBILE_MONEY:  CurrencyCode.GNF,
   IBAN_TRANSFER: CurrencyCode.USD,
+};
+
+// Marqueur utilisé par withdrawals.service.ts::agentProcessPayment()
+// pour toutes ses écritures de commission (voir "Commission
+// paiement…", "Commission envoi…", "Commission plateforme…" là-bas).
+const COMMISSION_DESC_PREFIX = 'Commission';
+
+type CurrencyTotal = { currency: string; total: number };
+
+type LedgerCommissionEntry = {
+  id: string;
+  createdAt: Date;
+  amount: number;
+  currency: string;
+  description: string | null;
+  balanceAfter: number;
+  transactionId: string | null;
+  transactionRef: string | null;
+  origin: string;
+  grossAmount: number | null;
+  grossFees: number | null;
+};
+
+type RawLedgerEntry = {
+  id: string;
+  createdAt: Date;
+  amount: any;
+  currency: string;
+  description: string | null;
+  balanceAfter: any;
+  transactionId: string | null;
+  walletId: string;
+  transaction: {
+    reference: string;
+    amount: any;
+    fees: any;
+    sender: {
+      firstName: string | null;
+      lastName: string | null;
+      agency: { name: string } | null;
+    } | null;
+    beneficiary: { fullName: string } | null;
+  } | null;
 };
 
 @Injectable()
@@ -52,6 +126,7 @@ export class CommissionsService {
 
   // ========================================================
   // FEE CONFIG — lire / écrire un taux de frais par méthode
+  // (✅ v4.3, inchangé — utilisé par fees.tsx)
   // ========================================================
 
   async getFeeRate(
@@ -61,7 +136,6 @@ export class CommissionsService {
     if (!payoutMethod || payoutMethod === 'WALLET' || payoutMethod === 'MOBILE_MONEY') {
       return { rate: 0, fixedFee: 0 };
     }
-
     try {
       const config = await this.prisma.commissionConfig.findFirst({
         where: { clientId, payoutMethod, isActive: true },
@@ -75,7 +149,6 @@ export class CommissionsService {
     } catch {
       // Colonne pas encore migrée → fallback
     }
-
     return { rate: 1.5, fixedFee: 0 };
   }
 
@@ -86,7 +159,6 @@ export class CommissionsService {
     fixedFee: number,
   ) {
     const currency = PAYOUT_CURRENCY_SLOT[payoutMethod] ?? null;
-
     const existing = await this.prisma.commissionConfig.findFirst({
       where: { clientId, payoutMethod },
     });
@@ -130,6 +202,7 @@ export class CommissionsService {
 
   // ========================================================
   // RÈGLES de répartition (split rules)
+  // (✅ inchangé — utilisé par settings.tsx)
   // ========================================================
 
   async getClientRules(clientId: number) {
@@ -160,166 +233,215 @@ export class CommissionsService {
   }
 
   // ========================================================
-  // HISTORIQUE PAR AGENCE
+  // ✅ v5.0 — AGENT : commissions réellement créditées à son agence
   // ========================================================
 
-  async getHistory(clientId: number, agencyId: string, period: string) {
+  async getMyLedgerCommissions(clientId: number, agencyId: string, period: string) {
     const startDate = this.getPeriodStart(period);
 
-    const transactions = await this.prisma.transaction.findMany({
+    const agencyWallets = await this.prisma.wallet.findMany({
+      where: { agencyId, isActive: true },
+      select: { id: true },
+    });
+    const walletIds = agencyWallets.map((w) => w.id);
+
+    if (walletIds.length === 0) {
+      return { totalsByCurrency: [] as CurrencyTotal[], count: 0, entries: [] as LedgerCommissionEntry[] };
+    }
+
+    const entries = await this.prisma.ledgerEntry.findMany({
       where: {
-        clientId,
-        status:    { in: [TransactionStatus.VALIDATED, TransactionStatus.PAID] },
+        walletId: { in: walletIds },
+        type: LedgerEntryType.CREDIT,
+        description: { startsWith: COMMISSION_DESC_PREFIX },
         createdAt: { gte: startDate },
-        OR: [
-          { sender:     { agencyId } },
-          { withdrawal: { processedBy: { agencyId } } },
-        ],
       },
       orderBy: { createdAt: 'desc' },
       include: {
-        sender: { include: { agency: true } },
-        withdrawal: {
-          include: { processedBy: { include: { agency: true } } },
+        transaction: {
+          select: {
+            reference: true,
+            amount: true,
+            fees: true,
+            sender: {
+              select: {
+                firstName: true, lastName: true,
+                agency: { select: { name: true } },
+              },
+            },
+            beneficiary: { select: { fullName: true } },
+          },
         },
       },
     });
 
-    const rules = await this.prisma.commissionConfig.findMany({
-      where: { clientId },
-    });
-
-    const agencyAgents = await this.prisma.user.findMany({
-      where:  { agencyId },
-      select: { id: true },
-    });
-    const agencyAgentIds = new Set(agencyAgents.map((u) => u.id));
-
-    return transactions.map((tx) => {
-      let sourceT: CommissionSourceType = CommissionSourceType.WALLET;
-      if (tx.sender?.agency) {
-        sourceT = tx.sender.agency.type === AgencyType.PARTNER
-          ? CommissionSourceType.PARTNER
-          : CommissionSourceType.SUBSIDIARY;
-      }
-
-      let destT: CommissionDestType = CommissionDestType.SUBSIDIARY;
-      const processedByAgency = (tx.withdrawal as any)?.processedBy?.agency;
-      if (processedByAgency) {
-        destT = processedByAgency.type === AgencyType.PARTNER
-          ? CommissionDestType.PARTNER
-          : CommissionDestType.SUBSIDIARY;
-      }
-
-      // Exclure les fee configs — on veut la split rule uniquement
-      const rule = rules.find((r) =>
-        r.sourceType === sourceT &&
-        r.destType   === destT &&
-        !(r as any).payoutMethod,
-      );
-
-      // ── Frais en devise source ────────────────────────
-      const fees = Number(tx.fees);
-
-      // ✅ FIX v4.4 : conversion des frais en devise payout (targetCurrency)
-      //
-      // AVANT : commission = fees (XOF) * share% → 1 XOF * 40% = 0.4 → affiché 0
-      // APRÈS : feesConverted = fees * exchangeRate → 1 XOF * 14.4 = 14.4 GNF
-      //         commission = 14.4 GNF * 40% = 5.76 GNF ✅
-      //
-      // tx.exchangeRate est le taux source→payout stocké à la création
-      // de la transaction (ex: XOF→GNF = 14.4000).
-      // Si la devise source = devise payout → pas de conversion.
-      const payoutCurrency: string = (tx as any).targetCurrency ?? tx.currency;
-      let feesConverted = fees;
-
-      if (fees > 0 && tx.currency !== payoutCurrency && (tx as any).exchangeRate) {
-        feesConverted = fees * Number((tx as any).exchangeRate);
-      }
-
-      // ── Calcul des parts sur les frais convertis ──────
-      const senderShare = rule ? rule.senderShare : DEFAULT_SENDER_SHARE;
-      const senderCom   = (feesConverted * senderShare) / 100;
-
-      const payerShare = rule ? rule.payerShare : DEFAULT_PAYER_SHARE;
-      const txStatus   = tx.status as string;
-      const payerCom   =
-        txStatus === TransactionStatus.PAID || txStatus === TransactionStatus.VALIDATED
-          ? (feesConverted * payerShare) / 100
-          : 0;
-
-      // ── Attribution à l'agence ────────────────────────
-      let myCommission = 0;
-
-      if (tx.sender?.agencyId === agencyId) {
-        myCommission += senderCom;
-      }
-
-      const processedById       = (tx.withdrawal as any)?.processedById;
-      const processedByAgencyId = (tx.withdrawal as any)?.processedBy?.agencyId;
-      const isProcessedByThisAgency =
-        processedByAgencyId === agencyId ||
-        (processedById && agencyAgentIds.has(processedById));
-
-      if (isProcessedByThisAgency) {
-        myCommission += payerCom;
-      }
-
-      // Fallback si aucune règle trouvée mais frais présents
-      if (myCommission === 0 && feesConverted > 0) {
-        if (isProcessedByThisAgency) {
-          myCommission = (feesConverted * DEFAULT_PAYER_SHARE) / 100;
-        } else if (tx.sender?.agencyId === agencyId) {
-          myCommission = (feesConverted * DEFAULT_SENDER_SHARE) / 100;
-        }
-      }
-
-      const origin = tx.sender?.agency?.name ?? processedByAgency?.name ?? 'Client Wallet';
-
-      return {
-        id:                 tx.id,
-        createdAt:          tx.createdAt,
-        origin,
-        amount:             Number(tx.amount),
-        currency:           tx.currency,           // devise source (pour le volume)
-        fees,                                       // frais en devise source
-        feesConverted,                              // frais en devise payout (pour info)
-        commissionCurrency: payoutCurrency,         // devise de la commission
-        myCommission,
-        agencyCommission:   myCommission,
-      };
-    });
+    return this.summarize(entries as unknown as RawLedgerEntry[]);
   }
 
   // ========================================================
-  // STATS AGENT
+  // ✅ v5.0 — ADMIN : vue société complète
+  //   - platform  : commissions réellement créditées au(x) wallet(s)
+  //                 société (clientId) — la vraie marge plateforme
+  //   - agencies  : commissions réellement créditées à chaque agence
+  //                 du réseau, groupées par agence
   // ========================================================
 
-  async getMyStats(clientId: number, agencyId: string, period: string) {
-    const history = await this.getHistory(clientId, agencyId, period);
+  async getCompanyLedgerCommissions(clientId: number, period: string) {
+    const startDate = this.getPeriodStart(period);
 
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const [companyWallets, agencies] = await Promise.all([
+      this.prisma.wallet.findMany({ where: { clientId, isActive: true }, select: { id: true } }),
+      this.prisma.agency.findMany({ where: { clientId }, select: { id: true, name: true } }),
+    ]);
 
-    const todayCommissions = history
-      .filter((h) => new Date(h.createdAt) >= todayStart)
-      .reduce((sum, h) => sum + h.agencyCommission, 0);
+    const agencyIds = agencies.map((a) => a.id);
+    const agencyWallets = agencyIds.length > 0
+      ? await this.prisma.wallet.findMany({
+          where: { agencyId: { in: agencyIds }, isActive: true },
+          select: { id: true, agencyId: true },
+        })
+      : [];
+    const agencyNameById = new Map(agencies.map((a) => [a.id, a.name]));
+    const agencyNameByWallet = new Map<string, string>();
+    for (const w of agencyWallets) {
+      if (w.agencyId) agencyNameByWallet.set(w.id, agencyNameById.get(w.agencyId) ?? '—');
+    }
 
-    const totalCommissions = history.reduce((sum, h) => sum + h.agencyCommission, 0);
-    const totalVolume      = history.reduce((sum, h) => sum + h.amount, 0);
+    const companyWalletIds = companyWallets.map((w) => w.id);
+    const agencyWalletIds  = agencyWallets.map((w) => w.id);
+
+    const include = {
+      transaction: {
+        select: {
+          reference: true,
+          amount: true,
+          fees: true,
+          sender: {
+            select: {
+              firstName: true, lastName: true,
+              agency: { select: { name: true } },
+            },
+          },
+          beneficiary: { select: { fullName: true } },
+        },
+      },
+    } as const;
+
+    const [platformEntries, agencyEntries] = await Promise.all([
+      companyWalletIds.length > 0
+        ? this.prisma.ledgerEntry.findMany({
+            where: {
+              walletId: { in: companyWalletIds },
+              type: LedgerEntryType.CREDIT,
+              description: { startsWith: COMMISSION_DESC_PREFIX },
+              createdAt: { gte: startDate },
+            },
+            orderBy: { createdAt: 'desc' },
+            include,
+          })
+        : Promise.resolve([]),
+      agencyWalletIds.length > 0
+        ? this.prisma.ledgerEntry.findMany({
+            where: {
+              walletId: { in: agencyWalletIds },
+              type: LedgerEntryType.CREDIT,
+              description: { startsWith: COMMISSION_DESC_PREFIX },
+              createdAt: { gte: startDate },
+            },
+            orderBy: { createdAt: 'desc' },
+            include,
+          })
+        : Promise.resolve([]),
+    ]);
+
+    // ── Totaux par agence (utilisés pour le tableau récap) ────
+    const perAgency = new Map<string, { agencyId: string; name: string; totals: Map<string, number>; count: number }>();
+    for (const e of agencyEntries) {
+      const agencyId = agencyWallets.find((w) => w.id === e.walletId)?.agencyId ?? null;
+      if (!agencyId) continue;
+      if (!perAgency.has(agencyId)) {
+        perAgency.set(agencyId, {
+          agencyId,
+          name: agencyNameById.get(agencyId) ?? '—',
+          totals: new Map(),
+          count: 0,
+        });
+      }
+      const bucket = perAgency.get(agencyId)!;
+      bucket.totals.set(e.currency, (bucket.totals.get(e.currency) ?? 0) + Number(e.amount));
+      bucket.count += 1;
+    }
+
+    const platformSummary = this.summarize(platformEntries as unknown as RawLedgerEntry[]);
+    const agencySummary   = this.summarize(agencyEntries as unknown as RawLedgerEntry[], agencyNameByWallet);
 
     return {
-      todayCommissions,
-      totalCommissions,
-      totalVolume,
-      count:   history.length,
-      history,
+      platform: {
+        totalsByCurrency: platformSummary.totalsByCurrency,
+        count: platformSummary.count,
+      },
+      agencies: Array.from(perAgency.values())
+        .map((a) => ({
+          agencyId: a.agencyId,
+          name: a.name,
+          count: a.count,
+          totalsByCurrency: Array.from(a.totals.entries()).map(([currency, total]) => ({ currency, total })),
+        }))
+        .sort((a, b) =>
+          b.totalsByCurrency.reduce((s, t) => s + t.total, 0) -
+          a.totalsByCurrency.reduce((s, t) => s + t.total, 0),
+        ),
+      entries: [
+        ...platformSummary.entries.map((e) => ({ ...e, scope: 'platform' as const })),
+        ...agencySummary.entries.map((e) => ({ ...e, scope: 'agency' as const })),
+      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     };
   }
 
   // ========================================================
-  // HELPER
+  // HELPERS
   // ========================================================
+
+  private summarize(
+    entries: RawLedgerEntry[],
+    agencyNameByWallet?: Map<string, string>,
+  ): { totalsByCurrency: CurrencyTotal[]; count: number; entries: LedgerCommissionEntry[] } {
+    const totalsMap = new Map<string, number>();
+    const mapped: LedgerCommissionEntry[] = entries.map((e) => {
+      totalsMap.set(e.currency, (totalsMap.get(e.currency) ?? 0) + Number(e.amount));
+
+      const senderName = e.transaction?.sender
+        ? `${e.transaction.sender.firstName ?? ''} ${e.transaction.sender.lastName ?? ''}`.trim()
+        : null;
+
+      const origin =
+        agencyNameByWallet?.get(e.walletId) ??
+        e.transaction?.sender?.agency?.name ??
+        senderName ??
+        e.transaction?.beneficiary?.fullName ??
+        '—';
+
+      return {
+        id: e.id,
+        createdAt: e.createdAt,
+        amount: Number(e.amount),
+        currency: e.currency,
+        description: e.description,
+        balanceAfter: Number(e.balanceAfter),
+        transactionId: e.transactionId,
+        transactionRef: e.transaction?.reference ?? null,
+        origin,
+        grossAmount: e.transaction ? Number(e.transaction.amount) : null,
+        grossFees: e.transaction ? Number(e.transaction.fees) : null,
+      };
+    });
+
+    return {
+      totalsByCurrency: Array.from(totalsMap.entries()).map(([currency, total]) => ({ currency, total })),
+      count: entries.length,
+      entries: mapped,
+    };
+  }
 
   private getPeriodStart(period: string): Date {
     const now = new Date();

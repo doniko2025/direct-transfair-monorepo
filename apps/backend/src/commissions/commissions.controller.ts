@@ -1,15 +1,29 @@
 // apps/backend/src/commissions/commissions.controller.ts
 // =========================================================
-// COMMISSIONS CONTROLLER v4.2
-// ✅ v4.0 : Import JwtAuthGuard depuis '../auth/jwt-auth.guard'
-// ✅ v4.1 :
-//    - POST /commissions : route vers upsertFeeConfig() si dto.payoutMethod présent
-//      → permet à fees.tsx de sauvegarder les taux par méthode de paiement
-// ✅ v4.2 :
-//    - GET /commissions/fees : nouveau endpoint public (tous rôles authentifiés)
-//      → retourne uniquement les configs de frais (payoutMethod-based)
-//      → utilisé par send.tsx et send-cash.tsx pour afficher le bon taux
-//      → ne requiert pas COMPANY_ADMIN (accessible AGENT, CLIENT, etc.)
+// COMMISSIONS CONTROLLER v5.0
+// ✅ v4.2 conservé : GET /fees, GET / (règles), POST / (upsert
+//    règle/frais) — AUCUN changement, toujours utilisés par fees.tsx
+//    et settings.tsx
+//
+// ✅ v5.0 : 🚨 REMPLACE /my-stats et /history
+//
+//   PROBLÈME RÉSOLU (juillet 2026), en plus de la refonte de la
+//   source de données (voir commissions.service.ts v5.0) :
+//   GET /commissions/history exigeait user.agencyId — or un
+//   COMPANY_ADMIN n'a JAMAIS d'agencyId (agency est réservé aux
+//   AGENT, voir personal-info-admin.tsx FIX 1). Résultat : cette
+//   route renvoyait systématiquement 403 Forbidden pour un admin
+//   société — admin/commissions/config.tsx, admin/commissions/
+//   history.tsx et l'ancien admin/commissions.tsx n'ont donc jamais
+//   pu charger la moindre donnée pour ce rôle, indépendamment de tout
+//   le reste.
+//
+//   CORRECTIF : deux routes distinctes pour deux rôles aux besoins
+//   différents, au lieu d'une route unique mal gatée pour les deux.
+//   - GET /commissions/ledger/mine    → agent (exige agencyId, ce
+//     qui est légitime pour ce rôle)
+//   - GET /commissions/ledger/company → COMPANY_ADMIN (exige
+//     clientId, PAS agencyId)
 // =========================================================
 
 import {
@@ -41,63 +55,49 @@ export class CommissionsController {
   ) {}
 
   // =========================================================
-  // Stats de l'agence (agent)
+  // ✅ v5.0 — Commissions réellement créditées à MON agence (agent)
+  // Source : LedgerEntry (argent réel), pas un recalcul.
   // =========================================================
-  @Get('my-stats')
-  async myStats(
+  @Get('ledger/mine')
+  async getMyLedgerCommissions(
     @Req() req: { user?: AuthUserPayload },
     @Query('period') period: string = 'day',
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user || !user.clientId || !user.agencyId) {
-      throw new ForbiddenException('Utilisateur non autorisé.');
+      throw new ForbiddenException('Utilisateur non rattaché à une agence.');
     }
-    return this.commissionsService.getMyStats(user.clientId, user.agencyId, period);
+    return this.commissionsService.getMyLedgerCommissions(user.clientId, user.agencyId, period);
   }
 
   // =========================================================
-  // Historique des commissions (agence)
+  // ✅ v5.0 — Commissions réellement créditées à la société + à
+  // chacune de ses agences (Admin Société uniquement).
   // =========================================================
-  @Get('history')
-  async getHistory(
+  @Get('ledger/company')
+  async getCompanyLedgerCommissions(
     @Req() req: { user?: AuthUserPayload },
     @Query('period') period: string = 'day',
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
-    if (!user || !user.clientId || !user.agencyId) {
-      throw new ForbiddenException('Utilisateur non autorisé.');
+    if (!user || !user.clientId || user.role !== 'COMPANY_ADMIN') {
+      throw new ForbiddenException("Accès réservé à l'Admin Société.");
     }
-    return this.commissionsService.getHistory(user.clientId, user.agencyId, period);
+    return this.commissionsService.getCompanyLedgerCommissions(user.clientId, period);
   }
 
   // =========================================================
-  // ✅ v4.2 — GET /commissions/fees
-  // Retourne les taux de frais par méthode de paiement.
-  // Accessible par tous les rôles authentifiés ayant un clientId
-  // (COMPANY_ADMIN, AGENT, CLIENT, etc.).
-  //
-  // Utilisé par :
-  //   - send.tsx       → Frais (X %) sur mode CASH
-  //   - send-cash.tsx  → Frais (X %) guichet agent
-  //
-  // Format de réponse :
-  //   [{ payoutMethod: "CASH_PICKUP", feeRate: 2, fixedFee: 0 }, ...]
+  // ✅ v4.2 — GET /commissions/fees (inchangé)
   // =========================================================
   @Get('fees')
   async getFeeRates(@Req() req: { user?: AuthUserPayload }) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
-
-    // SUPER_ADMIN n'a pas de clientId standard → retourne tableau vide
-    if (!user?.clientId) {
-      return [];
-    }
+    if (!user?.clientId) return [];
 
     const configs = await this.prisma.commissionConfig.findMany({
       where: { clientId: user.clientId },
     });
 
-    // Filtre uniquement les fee configs (payoutMethod présent)
-    // et retourne un format simplifié sans les données internes de répartition
     return configs
       .filter((c: any) => !!c.payoutMethod)
       .map((c: any) => ({
@@ -108,8 +108,7 @@ export class CommissionsController {
   }
 
   // =========================================================
-  // Règles de commission (admin société)
-  // Inclut les fee configs ET les règles de répartition inter-agences
+  // Règles de commission (admin société) — inchangé
   // =========================================================
   @Get()
   async getMyRules(@Req() req: { user?: AuthUserPayload }) {
@@ -121,14 +120,7 @@ export class CommissionsController {
   }
 
   // =========================================================
-  // POST /commissions
-  //
-  // Deux cas d'usage :
-  //  1. dto.payoutMethod présent → fee config (taux prélevé sur l'expéditeur)
-  //     Appelé par fees.tsx pour chaque méthode (CASH_PICKUP, BANK_DEPOSIT, etc.)
-  //
-  //  2. dto.payoutMethod absent → commission split (répartition entre agences)
-  //     Appelé par settings.tsx pour SUBSIDIARY/PARTNER send/withdrawal
+  // POST /commissions — inchangé
   // =========================================================
   @Post()
   async updateRule(
@@ -140,7 +132,6 @@ export class CommissionsController {
       throw new ForbiddenException("Accès réservé à l'Admin Société.");
     }
 
-    // ✅ Route vers upsertFeeConfig si payoutMethod présent
     if (dto.payoutMethod) {
       const feeRate  = dto.feeRate  ?? dto.senderShare ?? 0;
       const fixedFee = dto.fixedFee ?? 0;
@@ -152,7 +143,6 @@ export class CommissionsController {
       );
     }
 
-    // Route classique : répartition commission entre agences
     return this.commissionsService.upsertRule(user.clientId, dto);
   }
 }

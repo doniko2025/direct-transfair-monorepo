@@ -1,6 +1,14 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v9.2 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v9.3 — Direct Transf'air
+// ✅ v9.3 : Ajout de l'ActionCard "Commissions" dans la grille
+//    PILOTAGE SOCIÉTÉ — pointe vers /(tabs)/admin/commissions/config
+//    (page reconstruite en v6.0, source LedgerEntry — argent
+//    réellement crédité, distincte de "Frais & Commissions" qui
+//    reste l'écran de configuration des taux). Manquait jusqu'ici :
+//    aucune carte du dashboard n'y menait, la page n'était accessible
+//    que par URL directe. Purement additif — les 7 autres ActionCard
+//    existantes ne sont ni déplacées ni modifiées.
 // ✅ v9.2 : 🚨 FIX — avertissement "ScrollView doesn't take rejection
 //    well - scrolls anyway" sur web (voir échange du 19/07/2026).
 //
@@ -864,6 +872,12 @@ export default function CompanyDashboard() {
           <ActionCard title="Agences"             subtitle="Réseau & gestion"     icon="storefront-outline" color={T.success}  bg={T.successSoft}   onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
           <ActionCard title="Trésorerie"          subtitle="Vue détaillée"        icon="wallet-outline"     color={T.warning}  bg={T.warningSoft}   onPress={() => router.push("/(tabs)/admin/treasury")} />
           <ActionCard title="Frais & Commissions" subtitle="Taux par méthode"     icon="pricetag-outline"   color="#D97706"    bg="#FEF3C7"          onPress={() => router.push("/(tabs)/admin/fees")} />
+          {/* ✅ v9.3 — NOUVEAU : Commissions (répartition réellement
+              créditée, source LedgerEntry — voir commissions.service.ts
+              v5.0 et admin/commissions/config.tsx v6.0). Distincte de
+              "Frais & Commissions" ci-dessus, qui reste l'écran de
+              CONFIGURATION des taux, pas leur distribution réelle. */}
+          <ActionCard title="Commissions"         subtitle="Répartition réelle"   icon="trending-up-outline" color="#0F766E"  bg="#CCFBF1"          onPress={() => router.push("/(tabs)/admin/commissions/config" as any)} />
           <ActionCard title="Paramètres"          subtitle="Compte & société"     icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"          onPress={() => router.push("/(tabs)/admin/settings")} />
           {/* ✅ v8.1 : Clients Wallet */}
           <ActionCard title="Clients Wallet"      subtitle="Gestion des comptes"  icon="people-outline"     color="#F97316"    bg="#FFF7ED"          onPress={() => router.push("/(tabs)/admin/wallet-clients" as any)} />

@@ -1,25 +1,33 @@
 // apps/direct-transfair-mobile/app/agent/commissions.tsx
 // =========================================================
-// AGENT COMMISSIONS v6.2 — Direct Transf'air
-// ✅ v6.0 : bleu agent, hero compact, filtres ScrollView
-// ✅ v6.1 :
-//   FIX espaces vides (flex:1 sur FlatList)
-//   Filtre période redesigné : bottom sheet vertical
-// ✅ v6.2 : FIX "Commissions du jour = 0 même après une opération"
-//   PROBLÈME : la carte principale affichait `todayCommissions`
-//   (toujours filtré sur AUJOURD'HUI côté backend), alors que
-//   `totalCommissions` contient déjà le total de la PÉRIODE choisie.
-//   Résultat : sélectionner "7 Jours" affichait 0 si aucune opération
-//   n'avait eu lieu AUJOURD'HUI, même avec 386 XOF sur la semaine.
+// AGENT COMMISSIONS v7.0 — Direct Transf'air
+// ✅ v6.2 conservé : design (hero bleu, sélecteur période bottom-sheet,
+//    StatBox, timeline de transactions)
 //
-//   CORRECTION (purement frontend — logique métier backend inchangée) :
-//   - Carte principale → affiche `totalCommissions` (total de la période)
-//   - Titre de la carte → dynamique selon la période sélectionnée
-//     ("Commissions du Jour", "Commissions de la Semaine", etc.)
-//   - Badge "Temps réel" → remplacé par le sous-libellé de période
-//   - Barre de progression "X% du total" → supprimée (n'avait plus
-//     de sens quand le numérateur = dénominateur)
-//   - Ajout d'un libellé Volume moyen sous le montant principal
+// ✅ v7.0 : 🚨 REFONTE — source de données = LedgerEntry (argent réel)
+//
+//   PROBLÈME RÉSOLU (juillet 2026) :
+//   Cet écran appelait GET /commissions/my-stats, qui RECALCULAIT la
+//   commission à la volée depuis tx.fees × CommissionConfig actuelle —
+//   sans jamais lire ce qui avait été réellement crédité au wallet de
+//   l'agence par withdrawals.service.ts::agentProcessPayment(). Deux
+//   opérations sans frais par construction (Dépôt Client, Envoyer vers
+//   Admin — toutes deux avec fees:0 en dur et senderId = l'agent)
+//   remontaient dans la liste avec des lignes "+0", donnant
+//   l'impression trompeuse qu'aucune commission n'était jamais
+//   distribuée, y compris quand de vrais retraits cash AVAIENT
+//   réellement crédité le wallet agence.
+//
+//   ✅ DÉCISION PRODUIT CONFIRMÉE : Dépôt Client reste gratuit, par
+//   design — aucune commission dessus.
+//
+//   CORRECTIF : appelle désormais GET /commissions/ledger/mine, qui
+//   lit directement les LedgerEntry de type CREDIT taguées
+//   "Commission…" sur le(s) wallet(s) de l'agence — les montants
+//   affichés sont donc EXACTEMENT ceux déjà crédités, plus aucun
+//   dépôt/mouvement interne dans la liste, et un état vide explicite
+//   qui explique la distinction au lieu de laisser deviner un "0"
+//   ambigu.
 // =========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -39,10 +47,6 @@ const C = {
   violet:       AGENT_BLUE,
   violetLight:  "#EFF6FF",
   violetBorder: "#DBEAFE",
-  heroGlass:    "rgba(255,255,255,0.14)",
-  heroGlassBdr: "rgba(255,255,255,0.22)",
-  heroDim:      "rgba(255,255,255,0.65)",
-  heroGlow:     "rgba(255,255,255,0.08)",
   pageBg:       "#FFFFFF",
   white:        "#FFFFFF",
   cardBorder:   "#E8EDF5",
@@ -50,7 +54,6 @@ const C = {
   inkMid:       "#374151",
   inkSoft:      "#6B7280",
   green:        "#10B981", greenBg:  "#ECFDF5", greenBorder: "#A7F3D0", greenDark: "#065F46",
-  blue:         "#3B82F6", blueBg:   "#EFF6FF", blueBorder:  "#BFDBFE",
   amber:        "#F59E0B", amberBg:  "#FFFBEB", amberBorder: "#FDE68A",
   purple:       "#8B5CF6", purpleBg: "#F5F3FF", purpleBorder:"#DDD6FE",
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
@@ -61,7 +64,6 @@ const C = {
   },
 };
 
-// ─── Périodes ─────────────────────────────────────────────
 const PERIODS = [
   { key: "day",     label: "Aujourd'hui", desc: "Transactions du jour",     icon: "sunny-outline"           },
   { key: "week",    label: "7 Jours",     desc: "7 derniers jours",         icon: "calendar-outline"        },
@@ -71,8 +73,7 @@ const PERIODS = [
 ] as const;
 type PeriodKey = (typeof PERIODS)[number]["key"];
 
-// ✅ v6.2 — Labels dynamiques pour la carte principale selon la période
-const PERIOD_CARD_LABELS: Record<PeriodKey, { title: string; sub: string }> = {
+const PERIOD_CARDS: Record<PeriodKey, { title: string; sub: string }> = {
   day:     { title: "Commissions du Jour",       sub: "Aujourd'hui" },
   week:    { title: "Commissions de la Semaine", sub: "7 derniers jours" },
   month:   { title: "Commissions du Mois",       sub: "Mois en cours" },
@@ -80,7 +81,22 @@ const PERIOD_CARD_LABELS: Record<PeriodKey, { title: string; sub: string }> = {
   year:    { title: "Commissions de l'Année",    sub: "12 derniers mois" },
 };
 
-// ─── Helpers ──────────────────────────────────────────────
+type LedgerEntryDto = {
+  id: string;
+  createdAt: string;
+  amount: number;
+  currency: string;
+  description: string | null;
+  transactionRef: string | null;
+  origin: string;
+};
+
+type LedgerResponse = {
+  totalsByCurrency: { currency: string; total: number }[];
+  count: number;
+  entries: LedgerEntryDto[];
+};
+
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
@@ -97,6 +113,16 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 
+// ✅ v7.0 — libellé lisible depuis la description brute de la
+// LedgerEntry ("Commission paiement WD-123 (40%)" → "Part retrait client")
+function readableLabel(description: string | null): string {
+  if (!description) return "Commission";
+  if (description.startsWith("Commission paiement"))   return "Part retrait client (agence payeuse)";
+  if (description.startsWith("Commission envoi"))       return "Part envoi (agence d'origine)";
+  if (description.startsWith("Commission plateforme"))  return "Part plateforme";
+  return description;
+}
+
 // ─── Period Dropdown Modal ────────────────────────────────
 function PeriodDropdown({ visible, current, onSelect, onClose }: {
   visible: boolean;
@@ -110,7 +136,6 @@ function PeriodDropdown({ visible, current, onSelect, onClose }: {
         <View style={pd.sheet}>
           <View style={pd.handle} />
           <Text style={[pd.title, { fontFamily: C.font.serif }]}>Sélectionner une période</Text>
-
           {PERIODS.map((p) => {
             const isActive = current === p.key;
             return (
@@ -135,7 +160,6 @@ function PeriodDropdown({ visible, current, onSelect, onClose }: {
               </TouchableOpacity>
             );
           })}
-
           <View style={{ height: 24 }} />
         </View>
       </TouchableOpacity>
@@ -180,11 +204,8 @@ const st = StyleSheet.create({
   label:   { fontSize: 8, fontWeight: "800", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", textAlign: "center" },
 });
 
-// ─── Commission Row ───────────────────────────────────────
-function CommRow({ item }: { item: any }) {
-  const commission = toNum(item.agencyCommission ?? item.myCommission ?? 0);
-  const amount     = toNum(item.amount);
-  const fees       = toNum(item.fees);
+// ─── Commission Row — ✅ v7.0 : source LedgerEntry ─────────
+function CommRow({ item }: { item: LedgerEntryDto }) {
   return (
     <View style={cr.row}>
       <View style={cr.timeline}>
@@ -195,23 +216,29 @@ function CommRow({ item }: { item: any }) {
         <View style={cr.top}>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={[cr.origin, { fontFamily: C.font.sans }]} numberOfLines={1}>
-              {item.origin || "Transaction"}
+              {item.origin}
             </Text>
             <View style={cr.dateRow}>
               <Ionicons name="time-outline" size={10} color={C.inkSoft} />
               <Text style={[cr.date, { fontFamily: C.font.sans }]}>{fmtDate(item.createdAt)}</Text>
+              {item.transactionRef && (
+                <Text style={[cr.ref, { fontFamily: C.font.mono }]} numberOfLines={1}>
+                  · {item.transactionRef}
+                </Text>
+              )}
             </View>
           </View>
-          <View style={cr.right}>
-            <Text style={[cr.amount, { fontFamily: C.font.mono }]}>{fmt(amount)} {item.currency ?? "XOF"}</Text>
-            <Text style={[cr.fees,   { fontFamily: C.font.sans  }]}>Frais : {fmt(fees)}</Text>
-          </View>
         </View>
-        <View style={cr.commPill}>
-          <Ionicons name="trending-up" size={11} color={C.green} />
-          <Text style={[cr.commTxt, { fontFamily: C.font.mono }]}>
-            + {fmt(commission)} {item.commissionCurrency ?? "XOF"}
+        <View style={cr.bottomRow}>
+          <Text style={[cr.label, { fontFamily: C.font.sans }]} numberOfLines={1}>
+            {readableLabel(item.description)}
           </Text>
+          <View style={cr.commPill}>
+            <Ionicons name="trending-up" size={11} color={C.green} />
+            <Text style={[cr.commTxt, { fontFamily: C.font.mono }]}>
+              + {fmt(item.amount)} {item.currency}
+            </Text>
+          </View>
         </View>
       </View>
     </View>
@@ -227,9 +254,9 @@ const cr = StyleSheet.create({
   origin:       { color: C.ink, fontSize: 13, fontWeight: "700", marginBottom: 3 },
   dateRow:      { flexDirection: "row", alignItems: "center", gap: 4 },
   date:         { color: C.inkSoft, fontSize: 10, fontWeight: "600" },
-  right:        { alignItems: "flex-end" },
-  amount:       { color: C.ink, fontSize: 12, fontWeight: "700" },
-  fees:         { color: C.inkSoft, fontSize: 10, fontWeight: "600", marginTop: 2 },
+  ref:          { color: C.inkSoft, fontSize: 9, fontWeight: "600" },
+  bottomRow:    { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  label:        { flex: 1, color: C.inkMid, fontSize: 11, fontWeight: "600" },
   commPill:     { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.greenBg, borderRadius: C.r.sm, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: C.greenBorder, alignSelf: "flex-start" },
   commTxt:      { color: C.greenDark, fontSize: 12, fontWeight: "900" },
 });
@@ -238,7 +265,7 @@ const cr = StyleSheet.create({
 export default function AgentCommissionsScreen() {
   const router  = useRouter();
   const [period,         setPeriod]         = useState<PeriodKey>("day");
-  const [data,           setData]           = useState<any>(null);
+  const [data,           setData]           = useState<LedgerResponse | null>(null);
   const [loading,        setLoading]        = useState(true);
   const [showPeriodDrop, setShowPeriodDrop] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -246,7 +273,7 @@ export default function AgentCommissionsScreen() {
   const loadStats = async () => {
     setLoading(true); fadeAnim.setValue(0);
     try {
-      const res = await api.http.get(`/commissions/my-stats?period=${period}`);
+      const res = await api.http.get(`/commissions/ledger/mine?period=${period}`);
       setData(res.data);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e) { console.log("Commissions error:", e); }
@@ -255,93 +282,85 @@ export default function AgentCommissionsScreen() {
 
   useEffect(() => { void loadStats(); }, [period]);
 
-  // ✅ v6.2 : utilise totalCommissions (total de la période) comme valeur principale
-  // Avant : todayCommissions → toujours filtré sur AUJOURD'HUI côté backend
-  // Après : totalCommissions → reflète exactement la période sélectionnée
-  const totalComm = toNum(data?.totalCommissions);
-  const totalVol  = toNum(data?.totalVolume);
-  const count     = toNum(data?.count);
-
-  const history: any[] = Array.isArray(data?.history) ? data.history : [];
+  const totals   = data?.totalsByCurrency ?? [];
+  const primary  = totals.slice().sort((a, b) => b.total - a.total)[0] ?? null;
+  const extras   = totals.filter((t) => t !== primary);
+  const count    = toNum(data?.count);
+  const entries  = data?.entries ?? [];
+  const avgComm  = primary && count > 0 ? primary.total / count : 0;
 
   const currentPeriod      = PERIODS.find(p => p.key === period)!;
   const currentPeriodLabel = PERIOD_CARDS[period];
 
-  // ── Avg commission per operation ──
-  const avgComm = count > 0 ? totalComm / count : 0;
-
   const renderHeader = () => (
     <View>
-      {/* ✅ v6.2 — Carte principale : totalComm + titre dynamique */}
       <View style={h.heroCard}>
         <View style={h.heroTop}>
           <View style={[h.heroIconBox, { backgroundColor: C.violetLight }]}>
             <Ionicons name="trending-up" size={15} color={AGENT_BLUE} />
           </View>
           <View style={{ flex: 1 }}>
-            {/* ✅ Titre dynamique selon la période */}
             <Text style={[h.heroLbl, { fontFamily: C.font.sans }]}>
               {currentPeriodLabel.title.toUpperCase()}
             </Text>
             <View style={h.heroBadge}>
               <View style={h.heroBadgeDot} />
-              {/* ✅ Sous-label période au lieu de "Temps réel" fixe */}
               <Text style={[h.heroBadgeTxt, { fontFamily: C.font.sans }]}>
-                {currentPeriodLabel.sub}
+                {currentPeriodLabel.sub} · argent réellement crédité
               </Text>
             </View>
           </View>
-          {/* Badge opérations */}
           <View style={h.periodTotal}>
             <Text style={[h.periodTotalLbl, { fontFamily: C.font.sans }]}>OPÉ.</Text>
             <Text style={[h.periodTotalVal, { fontFamily: C.font.mono, color: AGENT_BLUE }]}>
-              {Math.round(count)}
+              {count}
             </Text>
           </View>
         </View>
 
-        {/* ✅ v6.2 : montant principal = totalComm (période sélectionnée) */}
         <View style={h.amtRow}>
           <Text style={[h.heroAmt, { fontFamily: C.font.serif }]} numberOfLines={1} adjustsFontSizeToFit>
-            {fmt(totalComm)}
+            {primary ? fmt(primary.total) : "0"}
           </Text>
           <View style={h.heroCurBadge}>
-            <Text style={[h.heroCur, { fontFamily: C.font.mono }]}>XOF</Text>
+            <Text style={[h.heroCur, { fontFamily: C.font.mono }]}>{primary?.currency ?? "XOF"}</Text>
           </View>
         </View>
 
-        {/* ✅ v6.2 : Indicateurs secondaires (volume + moy. par opération) */}
+        {extras.length > 0 && (
+          <View style={h.extraRow}>
+            {extras.map((t) => (
+              <View key={t.currency} style={h.extraChip}>
+                <Text style={[h.extraTxt, { fontFamily: C.font.mono }]}>
+                  + {fmt(t.total)} {t.currency}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {count > 0 && (
           <View style={h.metaRow}>
             <View style={h.metaItem}>
-              <Ionicons name="analytics-outline" size={11} color={C.inkSoft} />
-              <Text style={[h.metaTxt, { fontFamily: C.font.sans }]}>
-                Vol. {fmt(totalVol)} XOF
-              </Text>
-            </View>
-            <View style={h.metaDot} />
-            <View style={h.metaItem}>
               <Ionicons name="star-outline" size={11} color={C.inkSoft} />
               <Text style={[h.metaTxt, { fontFamily: C.font.sans }]}>
-                Moy. {fmt(avgComm)} XOF / op.
+                Moy. {fmt(avgComm)} {primary?.currency ?? ""} / crédit
               </Text>
             </View>
           </View>
         )}
       </View>
 
-      {/* Stats row */}
       <View style={h.statsRow}>
-        <StatBox icon="analytics-outline" label="Volume"     value={fmt(totalVol)}             accent={C.blue}   bg={C.blueBg}   />
-        <StatBox icon="list-outline"      label="Opérations" value={String(Math.round(count))} accent={C.green}  bg={C.greenBg}  />
-        <StatBox icon="star-outline"      label="Moy./op."   value={count > 0 ? fmt(avgComm) : "0"} accent={C.purple} bg={C.purpleBg} />
+        <StatBox icon="list-outline"      label="Crédits"        value={String(count)}                         accent={C.green}  bg={C.greenBg}  />
+        <StatBox icon="star-outline"      label="Moy./crédit"    value={count > 0 ? fmt(avgComm) : "0"}         accent={C.purple} bg={C.purpleBg} />
       </View>
 
-      {history.length > 0 && (
+      {entries.length > 0 && (
         <View style={h.secRow}>
           <View style={h.secDot} />
           <Text style={[h.secLbl, { fontFamily: C.font.sans }]}>
-            DÉTAIL · {history.length} TRANSACTION{history.length > 1 ? "S" : ""}
+            DÉTAIL · {entries.length} CRÉDIT{entries.length > 1 ? "S" : ""}
           </Text>
         </View>
       )}
@@ -352,7 +371,6 @@ export default function AgentCommissionsScreen() {
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={AGENT_BLUE} />
 
-      {/* ── Hero bleu ── */}
       <View style={s.hero}>
         <View style={s.glow} />
         <View style={s.heroRow}>
@@ -372,7 +390,6 @@ export default function AgentCommissionsScreen() {
         </View>
       </View>
 
-      {/* ── Bouton sélecteur de période ── */}
       <View style={s.periodBar}>
         <TouchableOpacity
           style={s.periodBtn}
@@ -402,8 +419,8 @@ export default function AgentCommissionsScreen() {
       ) : (
         <Animated.FlatList
           style={{ flex: 1, opacity: fadeAnim }}
-          data={history}
-          keyExtractor={(item) => item.id ?? Math.random().toString()}
+          data={entries}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={renderHeader}
@@ -413,15 +430,21 @@ export default function AgentCommissionsScreen() {
               <View style={s.emptyIconBox}>
                 <Ionicons name="bar-chart-outline" size={32} color={C.inkSoft} />
               </View>
-              <Text style={[s.emptyTitle, { fontFamily: C.font.serif }]}>Aucune commission</Text>
-              <Text style={[s.emptySub,   { fontFamily: C.font.sans  }]}>Pas de transactions sur cette période</Text>
+              <Text style={[s.emptyTitle, { fontFamily: C.font.serif }]}>Aucune commission créditée</Text>
+              <Text style={[s.emptySub, { fontFamily: C.font.sans }]}>
+                Pas de crédit de commission sur cette période.
+              </Text>
+              <Text style={[s.emptyHint, { fontFamily: C.font.sans }]}>
+                Un Dépôt Client ou une remontée de fonds vers l'admin ne génèrent
+                jamais de commission — seul le paiement d'un retrait cash avec des
+                frais configurés en distribue une.
+              </Text>
             </View>
           }
           ListFooterComponent={<View style={{ height: 80 }} />}
         />
       )}
 
-      {/* Modal sélecteur période */}
       <PeriodDropdown
         visible={showPeriodDrop}
         current={period}
@@ -432,17 +455,6 @@ export default function AgentCommissionsScreen() {
   );
 }
 
-// ✅ v6.2 — Labels de la carte principale par période
-// Séparé de PERIODS pour ne pas alourdir la liste de filtres
-const PERIOD_CARDS: Record<PeriodKey, { title: string; sub: string }> = {
-  day:     { title: "Commissions du Jour",       sub: "Aujourd'hui" },
-  week:    { title: "Commissions de la Semaine", sub: "7 derniers jours" },
-  month:   { title: "Commissions du Mois",       sub: "Mois en cours" },
-  quarter: { title: "Commissions du Trimestre",  sub: "90 derniers jours" },
-  year:    { title: "Commissions de l'Année",    sub: "12 derniers mois" },
-};
-
-// ─── Styles hero card ────────────────────────────────────
 const h = StyleSheet.create({
   heroCard: {
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
@@ -458,27 +470,24 @@ const h = StyleSheet.create({
   periodTotal: { alignItems: "flex-end", paddingLeft: 8 },
   periodTotalLbl: { fontSize: 8, fontWeight: "700", color: C.inkSoft, letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 2 },
   periodTotalVal: { fontSize: 13, fontWeight: "900" },
-  amtRow:      { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 10 },
+  amtRow:      { flexDirection: "row", alignItems: "baseline", gap: 8, marginBottom: 6 },
   heroAmt:     { color: C.ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.3, flex: 1 },
   heroCurBadge:{ backgroundColor: C.violetLight, borderRadius: C.r.xs, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: C.violetBorder },
   heroCur:     { color: AGENT_BLUE, fontSize: 10, fontWeight: "900", letterSpacing: 1 },
-
-  // ✅ v6.2 — Remplace la barre de progression "X% du total"
+  extraRow:    { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 8 },
+  extraChip:   { backgroundColor: "#F4F7FB", borderRadius: C.r.xs, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: C.cardBorder },
+  extraTxt:    { fontSize: 10, fontWeight: "800", color: C.inkMid },
   metaRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
   metaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
-  metaDot:  { width: 3, height: 3, borderRadius: 2, backgroundColor: C.cardBorder },
   metaTxt:  { fontSize: 10, color: C.inkSoft, fontWeight: "600" },
-
   statsRow: { flexDirection: "row", gap: 8, marginBottom: 18 },
   secRow:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
   secDot:   { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: AGENT_BLUE },
   secLbl:   { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1.5 },
 });
 
-// ─── Styles page ──────────────────────────────────────────
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
-
   hero: {
     backgroundColor: AGENT_BLUE,
     borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
@@ -514,7 +523,7 @@ const s = StyleSheet.create({
   periodBtnBadgeTxt:{ fontSize: 10, fontWeight: "800", color: AGENT_BLUE },
 
   list:  { paddingHorizontal: 16, paddingTop: 14 },
-  empty: { alignItems: "center", paddingVertical: 40, gap: 8 },
+  empty: { alignItems: "center", paddingVertical: 40, gap: 8, paddingHorizontal: 24 },
   emptyIconBox: {
     width: 60, height: 60, borderRadius: 17,
     backgroundColor: C.white, borderWidth: 1, borderColor: C.cardBorder,
@@ -523,4 +532,5 @@ const s = StyleSheet.create({
   },
   emptyTitle: { color: C.ink, fontSize: 17, fontWeight: "700" },
   emptySub:   { color: C.inkSoft, fontSize: 12, fontWeight: "600" },
+  emptyHint:  { color: C.inkSoft, fontSize: 11, fontWeight: "500", textAlign: "center", marginTop: 6, lineHeight: 16 },
 });
