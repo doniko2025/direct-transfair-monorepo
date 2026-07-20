@@ -1,7 +1,54 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.20 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.21 — Direct Transf'air
 // =========================================================
+// ✅ v4.21 : 🔎 2 points mineurs vérifiés suite à l'audit du système
+//    de commissions (voir commissions.service.ts v5.0) — 1 confirmé
+//    et corrigé, 1 confirmé SANS IMPACT sur le flux réellement
+//    utilisé, corrigé quand même par prudence.
+//
+//   POINT 1 — CONFIRMÉ : deposit() ne renseignait jamais `type`
+//     Transaction.type retombait donc sur le défaut Prisma (TRANSFER)
+//     pour tous les Dépôts Client, alors que TransactionType.DEPOSIT
+//     existe dans l'enum depuis le début. Aucune requête actuelle ne
+//     filtre encore sur ce champ (la page Commissions v6.0 utilise
+//     LedgerEntry, pas Transaction.type), donc pas de bug visible
+//     aujourd'hui — mais un futur filtre "vraie transaction vs dépôt"
+//     par type serait resté impossible à écrire correctement.
+//     CORRECTIF : type: TransactionType.DEPOSIT ajouté dans deposit().
+//
+//   POINT 2 — VÉRIFIÉ, PAS D'IMPACT SUR send-cash.tsx : hypothèse
+//     initiale — une transaction CASH_PICKUP dont le beneficiaryId
+//     résout directement un User (cas "utilisateur plateforme non
+//     enregistré", PROBLÈME 1 du fix v4.19) passerait en PAID
+//     immédiatement, avec des frais débités du sender mais jamais
+//     crédités nulle part (aucun code à retirer ⇒ agentProcessPayment()
+//     ne s'exécute jamais pour cette transaction).
+//     Vérification faite sur send-cash.tsx (guichet agent — seul flux
+//     CASH_PICKUP fourni à ce jour) : ce fichier appelle TOUJOURS
+//     api.createBeneficiary() avant createTransaction(), donc
+//     dto.beneficiaryId y est TOUJOURS un vrai Beneficiary.id, jamais
+//     un User.id brut. directRecipientUser ne peut donc jamais se
+//     déclencher depuis cet écran, et recipientUser reste toujours
+//     null pour CASH_PICKUP via ce flux (la condition qui résout
+//     recipientUser par téléphone n'est atteinte que si
+//     isWalletTransfer === true, faux ici) ⇒ status ne peut être que
+//     VALIDATED/PENDING, jamais PAID à la création. Le risque décrit
+//     dans le fix v4.19 (send.tsx, non fourni) reste théoriquement
+//     ouvert pour CE fichier-là si jamais il permet la combinaison
+//     "bénéficiaire détecté sur la plateforme" + payoutMethod non-WALLET
+//     — à vérifier séparément si besoin.
+//     CORRECTIF DÉFENSIF ajouté quand même dans create() : si jamais
+//     une transaction se retrouve PAID dès la création (recipientUser
+//     résolu, par N'IMPORTE QUELLE voie actuelle ou future) ET que des
+//     frais ont été calculés, ces frais sont crédités en commission
+//     plateforme (wallet clientId) au lieu de rester débités du sender
+//     sans jamais être crédités nulle part. Aucun impact sur le
+//     comportement existant pour les flux qui produisent déjà fees:0
+//     dans ce cas (WALLET/MOBILE_MONEY) — le if ne se déclenche que si
+//     fees > 0. Traçable dans la nouvelle page Commissions (v6.0) car
+//     tagué "Commission…" comme les crédits de agentProcessPayment().
+//
 // ✅ v4.12 : FIX ForbiddenException dans $transaction → 500
 // ✅ v4.13-A : FIX acquireAdvisoryLock int32 signé (| 0)
 // ✅ v4.13-B : FIX P2002 référence en doublon → 409
@@ -97,7 +144,7 @@
 //
 //   PROBLÈME 4 — Motif du transfert jamais persisté
 //     send.tsx envoie note: motif dans le payload, et Transaction.note
-//     existe bien dans le schéma — mais create() ne l'a jamais lu ni
+//     existe dans le schéma — mais create() ne l'a jamais lu ni
 //     écrit. Le motif choisi par l'utilisateur disparaissait purement
 //     et simplement après l'envoi (le reçu immédiat l'affiche encore,
 //     mais depuis l'état local du frontend, pas depuis la DB — donc
@@ -850,6 +897,40 @@ export class TransactionsService {
       },
     });
 
+    // ✅ v4.21 — FIX (POINT 2, voir changelog en tête de fichier) :
+    // filet de sécurité commission plateforme.
+    //
+    // Si cette transaction est PAID dès sa création (recipientUser
+    // résolu — actuellement jamais le cas depuis send-cash.tsx, voir
+    // changelog), ET que des frais ont été calculés (fees > 0, donc
+    // payoutMethod non-WALLET/MOBILE_MONEY — combinaison inhabituelle
+    // mais pas interdite par le DTO), alors il n'existe AUCUN moment
+    // ultérieur où ces frais seraient distribués : agentProcessPayment()
+    // (withdrawals.service.ts) ne s'exécute que pour un code retiré en
+    // agence, qui n'existe pas ici. Sans ce correctif, les frais
+    // resteraient débités du sender (inclus dans `total`) sans jamais
+    // être crédités nulle part — perte de traçabilité comptable.
+    // Non-bloquant : un échec ici ne doit pas faire échouer l'envoi
+    // d'argent lui-même, qui a déjà réussi à ce stade.
+    if (recipientUser && Number(fees) > 0) {
+      try {
+        const companyWalletRef = await this.walletsService.getOrCreateWallet({
+          clientId,
+          currency,
+        });
+        await this.walletsService.credit(
+          companyWalletRef.id,
+          Number(fees),
+          `Commission plateforme (envoi direct ${transactionRef})`,
+          transaction.id,
+        );
+      } catch (e) {
+        this.logger.warn(
+          `Commission plateforme non créditée pour l'envoi direct ${transactionRef} : ${(e as any)?.message}`,
+        );
+      }
+    }
+
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName
       ?? (recipientUser ? `${recipientUser.firstName ?? ''} ${recipientUser.lastName ?? ''}`.trim() : 'Bénéficiaire');
@@ -957,6 +1038,11 @@ export class TransactionsService {
     const result = await this.prisma.transaction.create({
       data: {
         reference:      this.generateReference(),
+        // ✅ v4.21 — FIX (POINT 1, voir changelog en tête de fichier) :
+        // sans ce champ, la transaction retombait sur le défaut Prisma
+        // TransactionType.TRANSFER, indiscernable d'un vrai transfert
+        // client dans toute future requête filtrant par type.
+        type:           TransactionType.DEPOSIT,
         amount:         amountDec,
         fees:           new Prisma.Decimal(0),
         total:          amountDec,

@@ -1,6 +1,61 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.13 — Direct Transf'air
+// SEND MONEY v2.14 — Direct Transf'air
+// ✅ v2.14 : 🚨 3 correctifs + 1 nouvelle fonctionnalité
+//
+//   NOUVEAU — Autocomplétion téléphone (mode Wallet)
+//     Dès que l'utilisateur tape ≥2 chiffres dans le champ téléphone,
+//     une liste déroulante propose les bénéficiaires SAUVEGARDÉS dont
+//     le numéro contient ces chiffres (numéros qui COMMENCENT par la
+//     saisie affichés en premier), avec nom + numéro complet + drapeau
+//     pays. Un tap remplit walletInput avec le numéro complet et
+//     confirme detectedBeneficiary immédiatement (sans attendre le
+//     debounce de 450ms de la détection existante). Composant
+//     PhoneSuggestionsList, purement additif — la détection par
+//     suffixe existante (v2.10) et le fallback plateforme ne sont pas
+//     touchés, ils continuent de tourner en parallèle et prennent le
+//     relais si aucune suggestion n'est sélectionnée.
+//
+//   FIX 1 — canSend / handleAction incohérents
+//     canSend autorisait l'envoi dès walletInput.length >= 3, mais
+//     handleAction() rejetait tout ce qui était < 7 caractères sans
+//     detectedBeneficiary. Entre 3 et 6, le bouton "CONFIRMER LE
+//     TRANSFERT" était cliquable et retournait systématiquement une
+//     Alert.alert("Erreur", "Numéro trop court..."). Les deux
+//     utilisent maintenant EXACTEMENT la même condition
+//     (detectedBeneficiary || walletInputDigits.length >= 7).
+//
+//   FIX 2 — walletInput.length comptait les caractères bruts, pas les
+//     chiffres. Un numéro saisi avec espaces/tirets faussait le seuil
+//     de 7 dans un sens comme dans l'autre. walletInputDigits
+//     (walletInput.replace(/\D/g, "")) est maintenant calculé une
+//     seule fois et réutilisé partout (canSend, handleAction, la
+//     détection existante, phoneSuggestions) au lieu d'être recalculé
+//     différemment à 3 endroits.
+//
+//   FIX 3 — 🚨 updateCurrencyContext() : taux de change quasiment
+//     toujours le fallback codé en dur, jamais le taux réel configuré
+//     par l'admin
+//     PROBLÈME RÉSOLU (juillet 2026) : getR() cherchait des paires au
+//     format underscore ("EUR_XOF") dans allRates — mais
+//     RatesService.getAll() (backend, rates.service.ts v3.1) renvoie
+//     explicitement ses paires au format SLASH ("EUR/XOF"), précisément
+//     pour la rétrocompatibilité avec le frontend mobile (voir son
+//     propre changelog v3.1). Résultat : la recherche par égalité
+//     stricte ne matchait JAMAIS une paire réelle, et getR() retombait
+//     SYSTÉMATIQUEMENT sur le fallback fb — peu importe les taux
+//     configurés dans Paramètres > Taux de Change côté admin.
+//     Par ailleurs, le fallback de toEurUser ne gérait que le cas XOF
+//     ("EUR_XOF" 655.95) — un expéditeur en GNF (Guinée) tombait sur
+//     fb=1, alors que toEurTarget gérait déjà GNF (8600) côté
+//     destinataire. Cette asymétrie donnait des montants reçus faux
+//     dès qu'un des deux côtés (source ou cible) était GNF/USD/GBP.
+//     CORRECTIF : getR() vérifie maintenant les deux formats
+//     (underscore ET slash, même principe défensif que
+//     RatesService.convert() côté backend) ; le fallback de toEurUser
+//     couvre désormais XOF et GNF, symétriquement à toEurTarget.
+//     ⚠️ Le même bug de format existe dans send-cash.tsx (getR
+//     identique) — non corrigé ici, hors périmètre de cette demande.
 // ✅ v2.1 : fmt() max 2 décimales
 // ✅ v2.2 : fond blanc neutre #FAFAFA
 // ✅ v2.3 : FIX taux hardcodé 1,5% → cashFeeRate dynamique
@@ -350,6 +405,55 @@ const abS = StyleSheet.create({
     justifyContent: "center", alignItems: "center", marginBottom: 4,
   },
   label:   { fontSize: 11, fontWeight: "700", color: C.g4, textAlign: "center" },
+});
+
+// ─── ✅ v2.14 — Phone Suggestions List (autocomplétion) ────
+// Liste déroulante affichée sous le champ téléphone dès que la saisie
+// matche le numéro d'un ou plusieurs bénéficiaires sauvegardés. Un tap
+// complète walletInput avec le numéro entier et confirme
+// detectedBeneficiary immédiatement (pas d'attente du debounce de la
+// détection existante v2.10, qui continue de tourner en parallèle).
+function PhoneSuggestionsList({ suggestions, onSelect }: {
+  suggestions: Beneficiary[]; onSelect: (b: Beneficiary) => void;
+}) {
+  return (
+    <View style={psS.wrap}>
+      {suggestions.map((b, i) => {
+        const cd       = getCountryData(b.country);
+        const initials = b.fullName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+        const isLast   = i === suggestions.length - 1;
+        return (
+          <TouchableOpacity
+            key={String(b.id)}
+            style={[psS.row, isLast && { borderBottomWidth: 0 }]}
+            onPress={() => onSelect(b)}
+            activeOpacity={0.75}
+          >
+            <View style={psS.avatar}>
+              <Text style={[psS.avatarTxt, { fontFamily: F.display }]}>{initials}</Text>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[psS.name, { fontFamily: F.body }]} numberOfLines={1}>{b.fullName}</Text>
+              {!!b.phone && (
+                <Text style={[psS.phone, { fontFamily: F.body }]} numberOfLines={1}>{b.phone}</Text>
+              )}
+            </View>
+            <Text style={psS.flag}>{cd.flag}</Text>
+            <Ionicons name="arrow-forward-circle-outline" size={16} color={C.g4} />
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+const psS = StyleSheet.create({
+  wrap:      { marginTop: 10, backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
+  row:       { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: C.borderLight },
+  avatar:    { width: 32, height: 32, borderRadius: 10, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
+  avatarTxt: { fontSize: 13, fontWeight: "900", color: C.g4 },
+  name:      { fontSize: 13, fontWeight: "700", color: C.text },
+  phone:     { fontSize: 11, color: C.textMuted, fontWeight: "600", marginTop: 1 },
+  flag:      { fontSize: 16 },
 });
 
 // ─── Summary Row ──────────────────────────────────────────
@@ -743,18 +847,36 @@ useEffect(() => {
     void fetchWalletBalance();
   }, [fetchWalletBalance]));
 
-  // ✅ v2.12 — FIX (voir changelog en tête de fichier) : cd.currency
-  // porte déjà le bon code ISO pour CHAQUE pays de countriesList.
+  // ✅ v2.14 — FIX 3 (voir changelog en tête de fichier) : getR()
+  // vérifie maintenant le format underscore ET le format slash — voir
+  // RatesService.getAll() (backend), qui renvoie explicitement ses
+  // paires au format slash ("EUR/XOF"). Avant ce fix, la recherche par
+  // égalité stricte sur le format underscore ne matchait JAMAIS une
+  // paire réelle, et retombait systématiquement sur le fallback fb.
+  // Fallback de toEurUser étendu à GNF (symétrique à toEurTarget,
+  // qui gérait déjà ce cas) — un expéditeur en GNF tombait sur fb=1
+  // (faux) au lieu de ≈8600.
   const updateCurrencyContext = useCallback((countryName: string) => {
     const cd = getCountryData(countryName);
     setTargetCountryData(cd);
     const tCurr = cd.currency || "XOF";
     setTargetCurrency(tCurr);
-    const getR = (pair: string, fb: number) => allRates.find((r) => r.pair === pair)?.rate ?? fb;
-    const toEurUser   = userCurrency === "EUR" ? 1 : getR(`EUR_${userCurrency}`, userCurrency === "XOF" ? 655.95 : 1);
+    const getR = (pair: string, fb: number) => {
+      const [a, b] = pair.split("_");
+      const slashPair = `${a}/${b}`;
+      const found = allRates.find((r) => r.pair === pair || r.pair === slashPair);
+      return found?.rate ?? fb;
+    };
+    const toEurUser   = userCurrency === "EUR" ? 1 : getR(`EUR_${userCurrency}`, userCurrency === "XOF" ? 655.95 : userCurrency === "GNF" ? 8600 : 1);
     const toEurTarget = tCurr === "EUR" ? 1 : getR(`EUR_${tCurr}`, tCurr === "XOF" ? 655.95 : tCurr === "GNF" ? 8600 : 1);
     setRate(toEurTarget / toEurUser);
   }, [allRates, userCurrency]);
+
+  // ✅ v2.14 — FIX 2 : source unique de vérité pour "combien de
+  // chiffres l'utilisateur a saisis", réutilisée par canSend,
+  // handleAction, la détection ci-dessous et phoneSuggestions plus bas
+  // (auparavant recalculée différemment à plusieurs endroits).
+  const walletInputDigits = walletInput.replace(/\D/g, "");
 
   // ✅ v2.10 — Détection bénéficiaire par téléphone/email/nom
   //   1) Recherche dans les bénéficiaires SAUVEGARDÉS, comparaison
@@ -764,6 +886,9 @@ useEffect(() => {
   //      Direct Transf'air inscrit mais non sauvegardé comme contact.
   //      Son nom/prénom est injecté dans detectedBeneficiary avec
   //      isFavorite: false (sert de marqueur pour le badge dans le JSX).
+  // ✅ v2.14 — FIX 2 (voir changelog en tête de fichier) : réutilise
+  // walletInputDigits (calculé une seule fois au niveau du composant)
+  // au lieu de recalculer sa propre version locale de inputDigits.
   useEffect(() => {
     // Pas en mode WALLET ou input trop court → reset et sortie
     if (mode !== "WALLET" || walletInput.length < 3) {
@@ -771,17 +896,16 @@ useEffect(() => {
       return;
     }
 
-    const q           = walletInput.toLowerCase().trim();
-    const inputDigits = walletInput.replace(/\D/g, "");
+    const q = walletInput.toLowerCase().trim();
 
     // ── Étape 1 : Recherche dans les bénéficiaires sauvegardés ──
     const found = beneficiaries.find((b) => {
       const storedDigits = (b.phone ?? "").replace(/\D/g, "");
       const phoneMatch   =
         storedDigits.length > 0 &&
-        inputDigits.length  > 0 &&
-        (storedDigits.endsWith(inputDigits) ||
-         inputDigits.endsWith(storedDigits.slice(-inputDigits.length)));
+        walletInputDigits.length  > 0 &&
+        (storedDigits.endsWith(walletInputDigits) ||
+         walletInputDigits.endsWith(storedDigits.slice(-walletInputDigits.length)));
 
       const emailMatch = b.email ? b.email.toLowerCase().includes(q) : false;
       const nameMatch  = b.fullName ? b.fullName.toLowerCase().includes(q) : false;
@@ -800,14 +924,14 @@ useEffect(() => {
 
     // ── Étape 2 : Fallback plateforme (debounce 450ms) ──────────
     // Seulement si l'input ressemble à un numéro (≥ 7 chiffres)
-    if (inputDigits.length < 7) {
+    if (walletInputDigits.length < 7) {
       return;
     }
 
     const timer = setTimeout(async () => {
       try {
         const res = await (api.http as any).get(
-          `/users/by-phone?q=${encodeURIComponent(inputDigits)}`,
+          `/users/by-phone?q=${encodeURIComponent(walletInputDigits)}`,
         );
         const platformUser = res.data;
         if (platformUser?.id) {
@@ -846,6 +970,33 @@ useEffect(() => {
     }
   }, [selectedCashId, mode, beneficiaries, updateCurrencyContext]);
 
+  // ✅ v2.14 — NOUVEAU : autocomplétion. Bénéficiaires sauvegardés dont
+  // le numéro contient les chiffres tapés — ceux dont le numéro
+  // COMMENCE par ces chiffres remontent en premier. Masqué dès qu'un
+  // bénéficiaire est déjà confirmé (detectedBeneficiary).
+  const phoneSuggestions = React.useMemo(() => {
+    if (mode !== "WALLET" || detectedBeneficiary || walletInputDigits.length < 2) return [];
+    return beneficiaries
+      .filter((b) => {
+        const storedDigits = (b.phone ?? "").replace(/\D/g, "");
+        return storedDigits.length > 0 && storedDigits.includes(walletInputDigits);
+      })
+      .sort((a, b) => {
+        const aStarts = (a.phone ?? "").replace(/\D/g, "").startsWith(walletInputDigits) ? 0 : 1;
+        const bStarts = (b.phone ?? "").replace(/\D/g, "").startsWith(walletInputDigits) ? 0 : 1;
+        return aStarts - bStarts;
+      })
+      .slice(0, 5);
+  }, [beneficiaries, walletInputDigits, mode, detectedBeneficiary]);
+
+  // ✅ v2.14 — Sélection d'une suggestion : complète le numéro et
+  // confirme immédiatement le bénéficiaire, sans attendre le debounce.
+  const handleSelectSuggestion = useCallback((b: Beneficiary) => {
+    setWalletInput(b.phone ?? b.fullName);
+    setDetectedBeneficiary(b);
+    updateCurrencyContext(b.country);
+  }, [updateCurrencyContext]);
+
   const sendAmount = parseFloat(rawAmount.replace(/\s/g, "").replace(",", ".")) || 0;
 
   const beneficiaryLabel = React.useMemo(() => {
@@ -863,7 +1014,12 @@ useEffect(() => {
   const insufficient   = totalAmt > walletBalance && sendAmount > 0;
   const missingAmount  = Math.max(0, totalAmt - walletBalance);
   const isNumericInput = walletInput.trim() === "" || /^[0-9+\s]+$/.test(walletInput);
-  const canSend = sendAmount > 0 && !insufficient && (mode === "WALLET" ? walletInput.length >= 3 : !!selectedCashId);
+  // ✅ v2.14 — FIX 1 (voir changelog en tête de fichier) : même
+  // condition EXACTE que le contrôle équivalent dans handleAction
+  // (detectedBeneficiary || walletInputDigits.length >= 7), pour que
+  // le bouton ne soit jamais actif sur une saisie que handleAction
+  // rejetterait ensuite.
+  const canSend = sendAmount > 0 && !insufficient && (mode === "WALLET" ? (!!detectedBeneficiary || walletInputDigits.length >= 7) : !!selectedCashId);
 
   const handleAction = async () => {
     if (insufficient) { setShowFallback(true); return; }
@@ -871,7 +1027,10 @@ useEffect(() => {
     setSending(true);
     try {
       if (mode === "WALLET") {
-        if (!detectedBeneficiary && walletInput.length < 7) {
+        // ✅ v2.14 — FIX 1/2 : walletInputDigits (chiffres uniquement)
+        // au lieu de walletInput.length (caractères bruts, faussé par
+        // espaces/tirets) — même condition que canSend ci-dessus.
+        if (!detectedBeneficiary && walletInputDigits.length < 7) {
           setSending(false);
           return Alert.alert("Erreur", "Numéro trop court ou contact introuvable.");
         }
@@ -1135,24 +1294,36 @@ useEffect(() => {
                           </TouchableOpacity>
                         )}
                       </>
-                    ) : walletInput.length >= 3 ? (
-                      <View style={s.addHint}>
-                        <View style={s.addHintIcon}>
-                          <Ionicons name="person-add-outline" size={16} color={C.g4} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.addHintTxt, { fontFamily: F.body }]}>
-                            Aucun contact trouvé pour "{walletInput}"
-                          </Text>
-                          <Text
-                            style={[s.addHintLink, { fontFamily: F.body }]}
-                            onPress={() => router.push("/(tabs)/beneficiaries")}
-                          >
-                            + Ajouter comme bénéficiaire
-                          </Text>
-                        </View>
-                      </View>
-                    ) : null}
+                    ) : (
+                      <>
+                        {/* ✅ v2.14 — NOUVEAU : suggestions d'autocomplétion,
+                            affichées tant qu'aucun bénéficiaire n'est confirmé */}
+                        {phoneSuggestions.length > 0 && (
+                          <PhoneSuggestionsList
+                            suggestions={phoneSuggestions}
+                            onSelect={handleSelectSuggestion}
+                          />
+                        )}
+                        {phoneSuggestions.length === 0 && walletInput.length >= 3 && (
+                          <View style={s.addHint}>
+                            <View style={s.addHintIcon}>
+                              <Ionicons name="person-add-outline" size={16} color={C.g4} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[s.addHintTxt, { fontFamily: F.body }]}>
+                                Aucun contact trouvé pour "{walletInput}"
+                              </Text>
+                              <Text
+                                style={[s.addHintLink, { fontFamily: F.body }]}
+                                onPress={() => router.push("/(tabs)/beneficiaries")}
+                              >
+                                + Ajouter comme bénéficiaire
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
