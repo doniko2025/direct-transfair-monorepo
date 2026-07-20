@@ -40,6 +40,45 @@
 //     Même correctif que sur les autres écrans (agencies/edit.tsx,
 //     agents.tsx…) : outlineStyle: 'none' sur les <TextInput>, web
 //     uniquement, sans impact iOS/Android.
+//
+// ✅ v5.7 : 🚨 FIX — formulaire qui "danse" et données qui semblent ne
+//    jamais se sauvegarder pendant la saisie (rapporté le 19/07/2026,
+//    captures à l'appui : le clavier + la page tremblent au clic dans
+//    un champ).
+//
+//   CAUSE LA PLUS PROBABLE : useEffect(() => {...}, [user]) rappelait
+//   loadFromUser() (qui réinitialise TOUS les champs locaux depuis
+//   `user`) ET rejouait l'animation d'entrée (fondu + glissement)
+//   CHAQUE FOIS que la référence de `user` changeait — pas seulement
+//   au premier chargement. Si `user` est réassigné pendant que
+//   l'admin est en train de taper (ex. un refreshUser() déclenché
+//   ailleurs dans l'app pendant ce temps), ce useEffect écrasait
+//   silencieusement la saisie en cours avec les anciennes valeurs de
+//   `user`, tout en rejouant l'animation — ce qui correspond très
+//   exactement aux deux symptômes rapportés : la "danse" visuelle
+//   ET la sensation que rien ne se sauvegarde (le formulaire revenait
+//   en arrière avant même que l'utilisateur atteigne le bouton
+//   "Enregistrer").
+//
+//   CORRECTIF : hasHydratedRef garantit que loadFromUser() + l'anim.
+//   d'entrée ne s'exécutent plus qu'UNE SEULE FOIS, au tout premier
+//   chargement de `user` (jamais ensuite, même si `user` est
+//   réassigné pendant que l'écran reste monté). cancelEdit() continue
+//   d'appeler loadFromUser() directement (comportement inchangé et
+//   volontaire : "Annuler" doit bien recharger les dernières valeurs
+//   connues). save() n'appelle toujours pas loadFromUser() après
+//   sauvegarde (comportement inchangé) : les champs affichés
+//   continuent de montrer ce qui vient d'être saisi/sauvegardé, ce
+//   qui est le comportement correct.
+//
+//   AJUSTEMENT COMPLÉMENTAIRE (Android) : KeyboardAvoidingView
+//   utilisait behavior={undefined} sur Android (aucune gestion JS,
+//   tout repose sur le comportement natif adjustResize/adjustPan).
+//   Passé à behavior="height", réglage standard et couramment
+//   recommandé pour ce type de saccades clavier sous Expo/Android.
+//   ⚠️ Contrairement au correctif ci-dessus, je ne peux pas garantir
+//   à 100% que ceci était LA cause — c'est un ajustement additionnel
+//   à faible risque, à tester en complément.
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -410,6 +449,13 @@ export default function PersonalInfoAdmin() {
   // QUE s'il a réellement changé (évite un appel réseau inutile).
   const initialAgencyNameRef = useRef("");
 
+  // ✅ v5.7 — voir changelog en tête de fichier. Empêche loadFromUser()
+  // et l'animation d'entrée de se relancer après la toute première
+  // hydratation du formulaire, même si `user` venait à être réassigné
+  // pendant que l'écran reste monté (ex. un refreshUser() ailleurs
+  // dans l'app pendant que l'admin est en train de taper).
+  const hasHydratedRef = useRef(false);
+
   const loadFromUser = () => {
     if (!user) return;
     setFirstName(user.firstName                                         || "");
@@ -432,8 +478,15 @@ export default function PersonalInfoAdmin() {
     setCountry(user.country                                             || "");
   };
 
+  // ✅ v5.7 FIX — voir changelog en tête de fichier. AVANT : dépendait
+  // de [user] entier, donc se relançait (et écrasait la saisie en
+  // cours) à chaque réassignation de `user`, pas seulement au premier
+  // chargement. APRÈS : hasHydratedRef garantit une hydratation +
+  // animation d'entrée UNIQUE, quoi qu'il arrive à `user` ensuite.
   useEffect(() => {
     if (!user) return;
+    if (hasHydratedRef.current) return;
+    hasHydratedRef.current = true;
     loadFromUser();
     Animated.parallel([
       Animated.spring(fadeAnim,  { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 2 }),
@@ -514,7 +567,9 @@ export default function PersonalInfoAdmin() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      {/* ✅ v5.7 — Android : behavior "height" au lieu de undefined
+          (ajustement complémentaire, voir changelog en tête de fichier) */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}

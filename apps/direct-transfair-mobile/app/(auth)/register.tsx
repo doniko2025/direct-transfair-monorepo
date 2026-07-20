@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v6.2 — Direct Transf'air
+// REGISTER v6.3 — Direct Transf'air
 // ✅ v6.1 conservé intégralement (fix outline bleu navigateur)
 // ✅ v6.2 :
 //   - Mot de passe limité à 10-35 caractères (maxLength sur les 2 champs +
@@ -8,12 +8,60 @@
 //     texte d'aide de l'étape mis à jour en conséquence).
 //   - Nettoyage : suppression du <View style={ph.sep}/> et du style `sep`
 //     dans PhoneStep, qui ne produisaient aucun effet visuel (width: 0).
+//
+// ✅ v6.3 : 🚨 FIX — pas de message de succès après inscription, écran
+//    qui semble "ne rien faire" alors que le compte EST bien créé
+//    (rapporté le 20/07/2026).
+//
+//   CAUSE RÉELLE — course de navigation avec AuthProvider :
+//   handleRegister() appelait useAuth().register(), dont
+//   l'implémentation (AuthProvider.tsx) appelle setUser(enrichedUser)
+//   DÈS que l'inscription réussit — donc pendant que cet écran est
+//   ENCORE affiché (toujours sur /(auth)/register). Or AuthProvider a
+//   un garde de navigation global qui réagit à `user` :
+//     if (user && inAuthGroup && !isLegalScreen && !isVerifyScreen) {
+//       router.replace("/(tabs)/home");
+//     }
+//   Ce garde se déclenche AUSSITÔT setUser() appelé — avant même que
+//   ce fichier ait pu exécuter setShowSuccess(true). Puisque le
+//   compte fraîchement créé n'a pas encore l'email vérifié, un
+//   DEUXIÈME garde redirige quasi instantanément de /(tabs)/home vers
+//   /(auth)/verify-contact. Deux redirections en cascade se
+//   produisent donc en coulisses, la SuccessModal n'a jamais la
+//   moindre chance de s'afficher, et l'écran donne l'impression de
+//   "ne pas réagir" — alors que le compte est bien créé côté serveur.
+//
+//   CORRECTIF : handleRegister() appelle désormais api.register()
+//   DIRECTEMENT (appel HTTP pur, ne touche à AUCUN état global — donc
+//   AuthProvider ne peut plus rediriger tant qu'on ne le lui a pas
+//   explicitement demandé). Le résultat brut (access_token,
+//   refresh_token, user) est gardé en state local (pendingAuth) SANS
+//   être appliqué. La SuccessModal s'affiche donc normalement, sans
+//   concurrence. Ce n'est QUE lorsque l'utilisateur clique sur
+//   "Vérifier mon email" (handleSuccessContinue) que la session est
+//   committée dans l'état global via applyLoginResult() — fonction
+//   déjà exposée par AuthProvider précisément pour ce genre de cas —
+//   immédiatement suivie de notre propre router.replace() vers
+//   verify-contact. Même si le garde global d'AuthProvider redéclenche
+//   à son tour une redirection vers la même destination à ce moment-là,
+//   c'est sans effet (on y est déjà).
+//   Repli conservé (cas rare où l'API ne renvoie pas de session
+//   directement) : appel à useAuth().login(), lui aussi désormais
+//   différé à handleSuccessContinue pour la même raison.
+//   AUCUN changement dans AuthProvider.tsx ni api.ts — tout est
+//   contenu dans ce fichier.
+//
+//   FIX SECONDAIRE : les Alert.alert() du bloc catch (erreurs
+//   d'inscription) sont remplacées par showAlert() (utils/alert.ts,
+//   déjà utilisé ailleurs dans l'app) — Alert.alert ne s'affiche pas
+//   sur web, donc une erreur d'inscription y passait inaperçue elle
+//   aussi.
 // =========================================================
 
 import React, { useState, useRef, useEffect } from "react";
 import {
   View, Text, TextInput, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
+  ActivityIndicator, KeyboardAvoidingView, Platform,
   ScrollView, Animated, StatusBar, Modal, Dimensions,
   FlatList, Keyboard, SafeAreaView,
 } from "react-native";
@@ -21,6 +69,8 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { useTenant } from "../../providers/TenantProvider";
+import { api } from "../../services/api";
+import { showAlert } from "../../utils/alert"; // ✅ v6.3 — fonctionne sur web ET natif (Alert.alert seul ne marche pas sur web)
 
 const { width: SW } = Dimensions.get("window");
 const TOTAL_STEPS   = 10;
@@ -647,9 +697,14 @@ const sm = StyleSheet.create({
 // ── ÉCRAN PRINCIPAL ───────────────────────────────────────
 // =========================================================
 export default function RegisterScreen() {
-  const { register: registerUser } = useAuth();
-  const { branding }              = useTenant();
-  const router                    = useRouter();
+  // ✅ v6.3 — `register` (useAuth) n'est plus utilisé directement (voir
+  // changelog en tête de fichier) : on appelle api.register() à la
+  // place, pour ne committer la session qu'au moment choisi par
+  // l'écran. `login` reste utilisé comme repli différé, `applyLoginResult`
+  // est la fonction qui committe effectivement la session.
+  const { login, applyLoginResult } = useAuth();
+  const { branding }                = useTenant();
+  const router                      = useRouter();
 
   // ── Step state ──────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
@@ -657,6 +712,13 @@ export default function RegisterScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [picker, setPicker] = useState<null | "country" | "nationality">(null);
   const [registeredUser, setRegisteredUser] = useState<{ id: string; phone: string | null } | null>(null);
+
+  // ✅ v6.3 — résultat brut de l'inscription, gardé de côté SANS être
+  // appliqué à l'état global tant que l'utilisateur n'a pas fermé la
+  // SuccessModal lui-même (voir changelog en tête de fichier).
+  const [pendingAuth, setPendingAuth] = useState<{
+    accessToken: string; refreshToken: string | null; user: any;
+  } | null>(null);
 
   // ── Champs formulaire ───────────────────────────────────
   const [firstName,       setFirstName]       = useState("");
@@ -754,6 +816,12 @@ export default function RegisterScreen() {
   };
 
   // ── Inscription ─────────────────────────────────────────
+  // ✅ v6.3 FIX — appel DIRECT à api.register() (voir changelog en tête
+  // de fichier). AUCUN état global (AuthProvider) n'est touché ici :
+  // c'est précisément ce qui empêche le garde de navigation
+  // d'AuthProvider de rediriger cet écran avant que la SuccessModal
+  // ait pu s'afficher. Le résultat brut est gardé dans pendingAuth,
+  // appliqué uniquement dans handleSuccessContinue.
   const handleRegister = async () => {
     setSubmitting(true);
     try {
@@ -776,10 +844,17 @@ export default function RegisterScreen() {
         addressCity:  city.trim(),
       };
 
-      const result = await registerUser(payload as any);
-      if (result) {
-        const u = result as any;
-        setRegisteredUser({ id: u.id, phone: u.phone ?? null });
+      const res: any = await api.register(payload as any);
+
+      if (res?.user) {
+        setRegisteredUser({ id: res.user.id, phone: res.user.phone ?? null });
+      }
+      if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
+        setPendingAuth({
+          accessToken:  res.access_token,
+          refreshToken: res.refresh_token ?? null,
+          user:         res.user,
+        });
       }
       setShowSuccess(true);
 
@@ -787,11 +862,11 @@ export default function RegisterScreen() {
       const status = e?.response?.status;
       if (status && REAL_ERROR_STATUSES.has(status)) {
         const raw = e?.response?.data?.message || e?.message || "Erreur inconnue.";
-        Alert.alert("Inscription échouée", Array.isArray(raw) ? raw[0] : String(raw));
+        showAlert("Inscription échouée", Array.isArray(raw) ? raw[0] : String(raw));
         return;
       }
       const isNetwork = !status || e?.message?.toLowerCase().includes("network");
-      Alert.alert(
+      showAlert(
         isNetwork ? "Erreur de connexion" : "Erreur inattendue",
         isNetwork
           ? "Impossible de créer le compte. Vérifiez votre connexion internet."
@@ -802,8 +877,29 @@ export default function RegisterScreen() {
     }
   };
 
-  const handleSuccessContinue = () => {
+  // ✅ v6.3 FIX — c'est ICI, et seulement ici (au clic de l'utilisateur
+  // sur "Vérifier mon email"), que la session est committée dans
+  // l'état global via applyLoginResult() — voir changelog en tête de
+  // fichier. Repli (cas rare où l'API n'a pas renvoyé de session
+  // directement) : login() avec les identifiants tout juste saisis,
+  // lui aussi différé jusqu'ici pour la même raison. Si ce repli
+  // échoue, on laisse quand même l'utilisateur continuer : son compte
+  // a bien été créé (confirmé par handleRegister), il pourra toujours
+  // se connecter manuellement ensuite.
+  const handleSuccessContinue = async () => {
     setShowSuccess(false);
+
+    try {
+      if (pendingAuth) {
+        await applyLoginResult(pendingAuth.accessToken, pendingAuth.refreshToken, pendingAuth.user);
+      } else {
+        await login({ identifier: email.trim().toLowerCase(), password });
+      }
+    } catch {
+      // Le compte est créé quoi qu'il arrive — on n'empêche pas la
+      // suite du parcours pour un échec de connexion automatique.
+    }
+
     if (registeredUser) {
       router.replace({
         pathname: "/(auth)/verify-contact",
