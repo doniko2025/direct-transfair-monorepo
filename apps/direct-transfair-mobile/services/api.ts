@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.8
+// DIRECT TRANSF'AIR — API Service v5.9
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -39,6 +39,11 @@
 //   - adminCollectFromAgency(agencyId, amount, note) → POST /transactions/agency/collect
 //   Aucune méthode existante modifiée. Backend : voir
 //   agency-treasury.controller.ts (fichier indépendant).
+//
+// v5.9 — Ajout de 4 méthodes pour la recharge wallet (carte / Orange
+//   Money / Sendwave), section "RECHARGE WALLET" nouvelle, juste après
+//   WALLETS. Backend : voir recharge.service.ts + payments.controller.ts.
+//   Aucune méthode existante modifiée.
 // =========================================================
 
 import axios, {
@@ -980,6 +985,55 @@ class API {
   ): Promise<LedgerEntry[]> {
     const res = await this.http.get<unknown>(`/wallets/${walletId}/ledger`, { params });
     return unwrapArray<LedgerEntry>(res.data);
+  }
+
+  // ============================================================
+  // RECHARGE WALLET — ✅ v5.9 (nouveau)
+  // Carte : mock backend (succès immédiat). Orange Money : polling
+  // via getRechargeStatus le temps de la simulation (~2s). Sendwave :
+  // pas de résolution auto — appeler getRechargeStatus après
+  // confirmation admin. Voir recharge.service.ts (backend).
+  // ============================================================
+
+  async rechargeByCard(payload: {
+    amount: number;
+    currency: Currency | string;
+    cardholderName: string;
+    cardNumber: string;
+    expiry: string;
+  }): Promise<Transaction> {
+    const res = await this.http.post<Transaction>("/payments/recharge/card", payload);
+    return normalizeTransaction(res.data);
+  }
+
+  async rechargeByOrangeMoney(
+    amount: number,
+    currency: Currency | string,
+    momoPhone: string,
+    simulateSuccess?: boolean,
+  ): Promise<{ transactionId: string; status?: string; providerRef?: string; message?: string }> {
+    const res = await this.http.post("/payments/recharge/orange-money", {
+      amount,
+      currency,
+      momoPhone,
+      simulateSuccess,
+    });
+    return res.data;
+  }
+
+  async rechargeBySendwave(
+    amount: number,
+    currency: Currency | string,
+  ): Promise<{ transactionId: string; status?: string; providerRef?: string; message?: string }> {
+    const res = await this.http.post("/payments/recharge/sendwave", { amount, currency });
+    return res.data;
+  }
+
+  async getRechargeStatus(transactionId: string): Promise<Transaction> {
+    const res = await this.http.get<Transaction>(
+      `/payments/recharge/${transactionId}/status`,
+    );
+    return normalizeTransaction(res.data);
   }
 
   // ============================================================

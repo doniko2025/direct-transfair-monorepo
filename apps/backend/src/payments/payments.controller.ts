@@ -1,3 +1,4 @@
+//apps/backend/src/payments/payments.controller.ts
 import {
   BadRequestException,
   Body,
@@ -14,9 +15,15 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 
 import { PaymentsService } from './payments.service';
 import { PaymentMethodsService } from './payment-methods.service';
+import { RechargeService } from './recharge.service'; // ✅ v6.3 (nouveau)
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { AddCardDto } from './dto/add-card.dto';
 import { LinkMobileWalletDto } from './dto/link-mobile-wallet.dto';
+import {
+  InitiateRechargeDto,
+  RechargeByCardDto,
+  RechargeByMobileMoneyDto, // ✅ v6.4 (nouveau)
+} from './dto/initiate-recharge.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { TenantGuard } from '../tenants/tenant.guard';
 import type { AuthTenantRequest } from '../common/types/auth-request';
@@ -29,9 +36,10 @@ export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly methods: PaymentMethodsService,
+    private readonly recharge: RechargeService, // ✅ v6.3
   ) {}
 
-  // ─── Initiation & statut ──────────────────────────────────────
+  // ─── Initiation & statut (transferts) ──────────────────────────
 
   @Post('initiate')
   async initiate(@Req() req: AuthTenantRequest, @Body() dto: InitiatePaymentDto) {
@@ -84,5 +92,49 @@ export class PaymentsController {
   ) {
     if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
     return this.methods.linkMobileWallet(req.user.id, dto);
+  }
+
+  // ─── Recharge wallet — ✅ v6.3 (nouveau) ───────────────────────
+  // Carte : mock synchrone (succès immédiat) en attendant un vrai PSP
+  // (Stripe/Flutterwave — voir UserCard.providerToken/providerName,
+  // déjà prévus dans le schéma). Orange Money / Sendwave : plomberie
+  // prête, réutilise OrangeMoneyService/SendwaveService tels quels ;
+  // en attente des accords opérateurs pour un vrai callback/webhook.
+
+  @Post('recharge/card')
+  async rechargeByCard(
+    @Req() req: AuthTenantRequest,
+    @Body() dto: RechargeByCardDto,
+  ) {
+    if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
+    return this.recharge.rechargeByCard(req.user.id, dto);
+  }
+
+  // ✅ v6.4 — momoPhone désormais obligatoire (RechargeByMobileMoneyDto)
+  @Post('recharge/orange-money')
+  async rechargeByOrangeMoney(
+    @Req() req: AuthTenantRequest,
+    @Body() dto: RechargeByMobileMoneyDto,
+  ) {
+    if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
+    return this.recharge.rechargeByOrangeMoney(req.user.id, dto);
+  }
+
+  @Post('recharge/sendwave')
+  async rechargeBySendwave(
+    @Req() req: AuthTenantRequest,
+    @Body() dto: InitiateRechargeDto,
+  ) {
+    if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
+    return this.recharge.rechargeBySendwave(req.user.id, dto);
+  }
+
+  @Get('recharge/:transactionId/status')
+  async rechargeStatus(
+    @Req() req: AuthTenantRequest,
+    @Param('transactionId') transactionId: string,
+  ) {
+    if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
+    return this.recharge.checkAndSettle(req.user.id, transactionId);
   }
 }

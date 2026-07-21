@@ -1,5 +1,13 @@
+// apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v9.8 — Direct Transf'air
+// CLIENT DASHBOARD v9.9 — Direct Transf'air
+// ✅ v9.9 : REMPLACEMENT bouton "Historique" → "Recharger"
+//    PUREMENT NAVIGATION — aucune ligne de logique métier touchée.
+//    "Historique" faisait doublon avec l'onglet "Activité" (barre de
+//    nav, voir (tabs)/_layout.tsx) et pointait vers la même route
+//    (/(tabs)/transactions). Remplacé par "Recharger", qui ouvre le
+//    nouvel écran de recharge wallet (carte bancaire / Orange Money /
+//    Sendwave — voir app/(tabs)/recharge.tsx).
 // ✅ v9.1 sur base v9.0 :
 //    - Vert émeraude #17A45F (plus vif, moins corporate)
 //    - Hero réduit : paddingBottom 28→16, nom 22→19
@@ -617,7 +625,7 @@ export default function ClientDashboard() {
                 <ActionItem icon="people-outline"  label="Contacts"   onPress={() => router.push("/(tabs)/beneficiaries")} />
                 <ActionItem icon="repeat-outline"  label="Taux"       onPress={() => router.push("/(tabs)/rates")} />
                 <ActionItem icon="qr-code-outline" label="QR Code"    onPress={() => router.push("/(tabs)/qr")} />
-                <ActionItem icon="time-outline"    label="Historique" onPress={() => router.push("/(tabs)/transactions")} />
+                <ActionItem icon="wallet-outline"  label="Recharger"  onPress={() => router.push("/(tabs)/recharge")} />
               </View>
             </View>
 

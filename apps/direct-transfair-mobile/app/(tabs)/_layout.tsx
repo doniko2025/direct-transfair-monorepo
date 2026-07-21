@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v9.1 — TabBar 100% custom (React Native pur)
+// TAB LAYOUT v9.2 — TabBar 100% custom (React Native pur)
+//
+// FIX v9.2 : ajout de <Tabs.Screen name="recharge" /> — nouvel écran
+//   de recharge wallet (voir home.tsx v9.9, bouton "Recharger"),
+//   poussé depuis le dashboard, pas un onglet visible de la tab bar
+//   (même traitement que "qr" et "notifications" ci-dessous).
 //
 // FIX v9.1 : suppression de <Tabs.Screen name="agencies" />
 //   → ce screen n'existe pas à la racine de (tabs)/
@@ -200,6 +205,7 @@ function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
       <Tabs.Screen name="index" />
       <Tabs.Screen name="qr" />
       <Tabs.Screen name="notifications" />
+      <Tabs.Screen name="recharge" />
     </Tabs>
   );
 }
