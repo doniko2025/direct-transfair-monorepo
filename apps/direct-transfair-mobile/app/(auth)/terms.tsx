@@ -1,10 +1,27 @@
 // apps/direct-transfair-mobile/app/(auth)/terms.tsx
 // =========================================================
-// CONDITIONS GÉNÉRALES D'UTILISATION v1.0
-// + MENTIONS LÉGALES — Direct Transf'air
-// ✅ Conforme directive DSP2 (Services de paiement)
-// ✅ Droit applicable : France
-// ✅ Présentation modale depuis index.tsx
+// CONDITIONS GÉNÉRALES D'UTILISATION — Direct Transf'air
+// ✅ v1.1 (code) : Branding dynamique — plus de code en dur
+//   PROBLÈME RÉSOLU : "Direct Transf'air SAS", l'agrément ACPR, le
+//   capital social, le siège social, le contact, le médiateur et la
+//   version/date des CGU étaient écrits en dur — un tenant société
+//   (ex: FLASH26) affichait quand même l'identité légale de Direct
+//   Transf'air à ses propres utilisateurs.
+//   CORRECTIF : useTenant() → toutes les mentions d'identité/contact
+//   viennent de `branding.*` (TenantProvider v1.3), avec repli sur le
+//   nom de marque (`branding.name`) plutôt que sur les valeurs Direct
+//   Transf'air quand un champ légal n'est pas configuré pour un
+//   tenant société. Les lignes de la carte "Mentions légales" et le
+//   badge de cadre réglementaire (DSP2) se masquent si la donnée
+//   correspondante n'est pas configurée, plutôt que d'afficher une
+//   valeur vide ou trompeuse.
+//   ⚠️ NE COUVRE QUE L'IDENTITÉ/CONTACT — la substance des clauses
+//   (juridiction, annulation, KYC, plafonds) reste un texte fixe,
+//   volontairement non templatée : personnaliser ces clauses par
+//   société demande une vraie relecture juridique par société.
+//   ✅ Fix annexe : le bouton "×" appelait router.back() sans vérifier
+//   qu'il y avait un historique — crash "GO_BACK not handled" en accès
+//   direct à /terms (hors modal). router.canGoBack() vérifié désormais.
 // =========================================================
 
 import React from "react";
@@ -14,6 +31,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useTenant } from "../../providers/TenantProvider";
 
 const T = {
   bg:         "#F8FAFF",
@@ -38,6 +56,23 @@ const T = {
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
+
+// ─── Helpers de date ✅ v1.1 (nouveau) ─────────────────────
+function formatTermsDateLong(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const day = d.getDate();
+  const dayLabel = day === 1 ? "1er" : String(day);
+  const monthYear = d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  return `${dayLabel} ${monthYear}`;
+}
+function formatTermsDateShort(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+}
 
 // ─── Section ──────────────────────────────────────────────
 function Section({ icon, title, color, bgColor, children }: {
@@ -104,6 +139,17 @@ const ibS = StyleSheet.create({
 // ─── Main ─────────────────────────────────────────────────
 export default function TermsScreen() {
   const router = useRouter();
+  const { branding } = useTenant(); // ✅ v1.1 (nouveau)
+
+  // ✅ v1.1 — repli sur le nom de marque, jamais sur les valeurs
+  // Direct Transf'air, quand un tenant société n'a pas configuré son
+  // nom légal complet.
+  const legalName = branding.legalCompanyName || branding.name;
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(auth)/login-v2");
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
@@ -112,7 +158,7 @@ export default function TermsScreen() {
 
         {/* Header */}
         <View style={s.header}>
-          <TouchableOpacity style={s.closeBtn} onPress={() => router.back()} hitSlop={12}>
+          <TouchableOpacity style={s.closeBtn} onPress={goBack} hitSlop={12}>
             <Ionicons name="close" size={20} color={T.text} />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
@@ -120,12 +166,17 @@ export default function TermsScreen() {
               Conditions générales
             </Text>
             <Text style={[s.headerSub, { fontFamily: T.font.sans }]}>
-              Mise à jour : Juin 2025
+              Mise à jour : {formatTermsDateShort(branding.termsEffectiveDate) || "—"}
             </Text>
           </View>
-          <View style={s.dsp2Badge}>
-            <Text style={[s.dsp2Txt, { fontFamily: T.font.sans }]}>DSP2</Text>
-          </View>
+          {/* ✅ v1.1 — badge masqué si aucun cadre réglementaire configuré */}
+          {!!branding.regulatoryFrameworkLabel && (
+            <View style={s.dsp2Badge}>
+              <Text style={[s.dsp2Txt, { fontFamily: T.font.sans }]}>
+                {branding.regulatoryFrameworkLabel}
+              </Text>
+            </View>
+          )}
         </View>
 
         <ScrollView
@@ -136,23 +187,27 @@ export default function TermsScreen() {
           <View style={s.introBanner}>
             <Ionicons name="document-text" size={20} color={T.accent} />
             <Text style={[s.introTxt, { fontFamily: T.font.sans }]}>
-              Les présentes Conditions Générales d'Utilisation régissent l'accès et l'utilisation de l'application Direct Transf'air. En utilisant notre service, vous acceptez sans réserve ces conditions.
+              Les présentes Conditions Générales d'Utilisation régissent l'accès et l'utilisation de l'application {branding.name}. En utilisant notre service, vous acceptez sans réserve ces conditions.
             </Text>
           </View>
 
           {/* 1. Objet */}
           <Section icon="information-circle-outline" title="1. Objet et acceptation" color={T.accent} bgColor={T.accentSoft}>
             <Para>
-              Direct Transf'air est une plateforme de transfert d'argent international opérée par <Text style={{ fontWeight: "700", color: T.text }}>Direct Transf'air SAS</Text>, établissement de paiement agréé par l'Autorité de Contrôle Prudentiel et de Résolution (ACPR).
+              {branding.name} est une plateforme de transfert d'argent international opérée par{" "}
+              <Text style={{ fontWeight: "700", color: T.text }}>{legalName}</Text>
+              {branding.regulatorName
+                ? `, établissement de paiement agréé par ${branding.regulatorName}.`
+                : "."}
             </Para>
             <Para>
-              L'utilisation du service vaut acceptation des présentes CGU. Direct Transf'air se réserve le droit de les modifier à tout moment, avec notification préalable de 30 jours pour les modifications substantielles.
+              L'utilisation du service vaut acceptation des présentes CGU. {branding.name} se réserve le droit de les modifier à tout moment, avec notification préalable de 30 jours pour les modifications substantielles.
             </Para>
           </Section>
 
           {/* 2. Services */}
           <Section icon="swap-horizontal-outline" title="2. Services proposés" color={T.green} bgColor={T.greenSoft}>
-            <Para>Direct Transf'air propose les services suivants :</Para>
+            <Para>{branding.name} propose les services suivants :</Para>
             <Bullet>Transferts d'argent internationaux vers l'Afrique de l'Ouest et le monde</Bullet>
             <Bullet>Paiements en espèces via les agences partenaires (cash pickup)</Bullet>
             <Bullet>Virements bancaires et dépôts sur comptes mobile money</Bullet>
@@ -167,7 +222,7 @@ export default function TermsScreen() {
 
           {/* 3. Conditions d'accès */}
           <Section icon="person-outline" title="3. Conditions d'accès" color="#7C3AED" bgColor="#F5F3FF">
-            <Para>Pour utiliser Direct Transf'air, vous devez :</Para>
+            <Para>Pour utiliser {branding.name}, vous devez :</Para>
             <Bullet>Être âgé d'au moins 18 ans</Bullet>
             <Bullet>Résider dans un pays éligible au service</Bullet>
             <Bullet>Fournir des informations d'identité exactes et à jour</Bullet>
@@ -215,14 +270,14 @@ export default function TermsScreen() {
             <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 2 :</Text> 2 000 € / jour — 10 000 € / mois</Bullet>
             <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 3 :</Text> Plafonds personnalisés sur demande</Bullet>
             <Para>
-              Ces plafonds peuvent être ajustés par Direct Transf'air en fonction des exigences réglementaires LCB-FT.
+              Ces plafonds peuvent être ajustés par {branding.name} en fonction des exigences réglementaires LCB-FT.
             </Para>
           </Section>
 
           {/* 7. Responsabilité */}
           <Section icon="shield-outline" title="7. Responsabilité" color={T.red} bgColor={T.redSoft}>
             <Para>
-              Direct Transf'air s'engage à exécuter les transferts dans les meilleurs délais, généralement entre quelques minutes et 3 jours ouvrés selon la destination et le mode de paiement.
+              {branding.name} s'engage à exécuter les transferts dans les meilleurs délais, généralement entre quelques minutes et 3 jours ouvrés selon la destination et le mode de paiement.
             </Para>
             <Para>
               Notre responsabilité est limitée aux dommages directs résultant d'une faute avérée de notre part. Elle est exclue en cas de :
@@ -235,7 +290,7 @@ export default function TermsScreen() {
 
           {/* 8. Suspension */}
           <Section icon="ban-outline" title="8. Suspension et clôture" color={T.red} bgColor={T.redSoft}>
-            <Para>Direct Transf'air se réserve le droit de suspendre ou clôturer un compte dans les cas suivants :</Para>
+            <Para>{branding.name} se réserve le droit de suspendre ou clôturer un compte dans les cas suivants :</Para>
             <Bullet>Non-respect des présentes CGU</Bullet>
             <Bullet>Suspicion de fraude, blanchiment ou financement du terrorisme</Bullet>
             <Bullet>Fausse déclaration lors de la vérification d'identité</Bullet>
@@ -251,53 +306,68 @@ export default function TermsScreen() {
             <Para>
               Les présentes CGU sont soumises au <Text style={{ fontWeight: "700" }}>droit français</Text>. En cas de litige, une solution amiable sera recherchée en priorité.
             </Para>
-            <Para>
-              Conformément aux articles L.616-1 et R.616-1 du Code de la consommation, vous pouvez recourir gratuitement au service de médiation :{"\n"}
-              <Text style={{ fontWeight: "700", color: T.text }}>Médiateur de l'ACPR</Text>{"\n"}
-              <Text
-                style={{ color: T.accent, textDecorationLine: "underline" }}
-                onPress={() => Linking.openURL("https://www.acpr.banque-france.fr")}
-              >
-                www.acpr.banque-france.fr
-              </Text>
-            </Para>
+            {!!(branding.mediatorName && branding.mediatorUrl) && (
+              <Para>
+                Conformément aux articles L.616-1 et R.616-1 du Code de la consommation, vous pouvez recourir gratuitement au service de médiation :{"\n"}
+                <Text style={{ fontWeight: "700", color: T.text }}>{branding.mediatorName}</Text>{"\n"}
+                <Text
+                  style={{ color: T.accent, textDecorationLine: "underline" }}
+                  onPress={() => Linking.openURL(branding.mediatorUrl as string)}
+                >
+                  {branding.mediatorUrl.replace(/^https?:\/\//, "")}
+                </Text>
+              </Para>
+            )}
             <Para>
               À défaut de résolution amiable, les tribunaux compétents sont ceux du ressort de la Cour d'Appel de Paris.
             </Para>
           </Section>
 
-          {/* Mentions légales */}
+          {/* Mentions légales — ✅ v1.1 : chaque ligne se masque si la
+              donnée correspondante n'est pas configurée pour ce tenant */}
           <View style={s.legalCard}>
             <Text style={[s.legalTitle, { fontFamily: T.font.display }]}>Mentions légales</Text>
             <View style={s.legalRow}>
               <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Société</Text>
-              <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>Direct Transf'air SAS</Text>
+              <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{legalName}</Text>
             </View>
-            <View style={s.legalRow}>
-              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Agrément ACPR</Text>
-              <Text style={[s.legalValue, { fontFamily: T.font.mono }]}>N° 12345 — Établissement de paiement</Text>
-            </View>
-            <View style={s.legalRow}>
-              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Capital social</Text>
-              <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>100 000 € entièrement libéré</Text>
-            </View>
-            <View style={s.legalRow}>
-              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Siège social</Text>
-              <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>Paris, France</Text>
-            </View>
-            <View style={s.legalRow}>
-              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Contact</Text>
-              <Text
-                style={[s.legalValue, s.legalLink, { fontFamily: T.font.mono }]}
-                onPress={() => Linking.openURL("mailto:contact@directtransfair.com")}
-              >
-                contact@directtransfair.com
-              </Text>
-            </View>
+            {!!(branding.regulatorAcronym || branding.regulatorLicenseNumber) && (
+              <View style={s.legalRow}>
+                <Text style={[s.legalKey, { fontFamily: T.font.sans }]}>
+                  Agrément {branding.regulatorAcronym ?? ""}
+                </Text>
+                <Text style={[s.legalValue, { fontFamily: T.font.mono }]}>
+                  {[branding.regulatorLicenseNumber, branding.regulatorLicenseType].filter(Boolean).join(" — ")}
+                </Text>
+              </View>
+            )}
+            {!!branding.capitalSocial && (
+              <View style={s.legalRow}>
+                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Capital social</Text>
+                <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{branding.capitalSocial}</Text>
+              </View>
+            )}
+            {!!branding.address && (
+              <View style={s.legalRow}>
+                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Siège social</Text>
+                <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{branding.address}</Text>
+              </View>
+            )}
+            {!!branding.contactEmail && (
+              <View style={s.legalRow}>
+                <Text style={[s.legalKey, { fontFamily: T.font.sans }]}>Contact</Text>
+                <Text
+                  style={[s.legalValue, s.legalLink, { fontFamily: T.font.mono }]}
+                  onPress={() => Linking.openURL(`mailto:${branding.contactEmail}`)}
+                >
+                  {branding.contactEmail}
+                </Text>
+              </View>
+            )}
           </View>
 
           <Text style={[s.version, { fontFamily: T.font.mono }]}>
-            Version 1.0 — En vigueur depuis le 1er Juin 2025
+            Version {branding.termsVersion ?? "1.0"} — En vigueur depuis le {formatTermsDateLong(branding.termsEffectiveDate) || "—"}
           </Text>
 
           <View style={{ height: 40 }} />

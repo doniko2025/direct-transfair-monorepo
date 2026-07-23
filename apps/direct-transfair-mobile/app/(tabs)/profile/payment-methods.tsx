@@ -1,6 +1,23 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/payment-methods.tsx
 // =========================================================
-// PAYMENT METHODS v6.2 — Direct Transf'air
+// PAYMENT METHODS v6.3 — Direct Transf'air
+// ✅ v6.3 : Affichage du titulaire dans la liste des cartes
+//    PROBLÈME : cardholderName était collecté dans le formulaire
+//    depuis la v6.2 mais jamais affiché dans la liste — seul
+//    "{brand} ···· {last4}" apparaissait. Backend corrigé en
+//    parallèle (add-card.dto.ts v1.1 + payment-methods.service.ts
+//    v1.1) pour que ce champ soit enfin écrit et retourné.
+//    - Type Card : ajout de cardholderName (optionnel/nullable — les
+//      cartes ajoutées avant ce correctif ont ce champ vide en base).
+//    - Ligne principale de la carte : titulaire en majuscules si
+//      présent, sinon repli sur "{brand} ···· {last4}" (comportement
+//      identique à avant pour les cartes existantes).
+//    - Ligne secondaire : "{brand} ···· {last4} · Expire {expiry}"
+//      (fusionne les deux infos qui étaient avant sur 2 lignes
+//      séparées, puisque la marque/le numéro masqué remontent
+//      maintenant en ligne 2 pour laisser la place au titulaire).
+//    Aucune autre logique touchée (ajout/suppression carte, liaison
+//    mobile wallet : tout identique).
 // ✅ v6.1 : Remplacement du fetch brut par api.http
 //           Le fetch brut n'envoyait pas x-tenant-id
 //           → TenantGuard rejetait avant d'atteindre la route
@@ -82,6 +99,9 @@ const WALLET_CONFIG: Record<string, { label: string; color: string; icon: string
 // ─── Types ─────────────────────────────────────────────
 type Card = {
   id: string;
+  // ✅ v6.3 — nullable : vide pour les cartes ajoutées avant le fix
+  // backend (add-card.dto.ts v1.1 / payment-methods.service.ts v1.1)
+  cardholderName?: string | null;
   last4: string;
   expiry: string;
   brand: string;
@@ -395,10 +415,14 @@ export default function PaymentMethodsScreen() {
                   <Ionicons name="card" size={20} color={T.blue} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.cardName, { fontFamily: T.font.sans }]}>
-                    {card.brand} ···· {card.last4}
+                  {/* ✅ v6.3 — titulaire en ligne principale, repli sur
+                      "{brand} ···· {last4}" si absent (cartes pré-fix) */}
+                  <Text style={[s.cardName, { fontFamily: T.font.sans }]} numberOfLines={1}>
+                    {card.cardholderName ? card.cardholderName.toUpperCase() : `${card.brand} ···· ${card.last4}`}
                   </Text>
-                  <Text style={[s.cardExp, { fontFamily: T.font.mono }]}>Expire {card.expiry}</Text>
+                  <Text style={[s.cardExp, { fontFamily: T.font.mono }]}>
+                    {card.brand} ···· {card.last4} · Expire {card.expiry}
+                  </Text>
                 </View>
                 <TouchableOpacity
                   style={s.deleteCardBtn}

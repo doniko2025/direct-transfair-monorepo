@@ -1,19 +1,22 @@
 // apps/direct-transfair-mobile/providers/TenantProvider.tsx
 // =========================================================
-// TENANT PROVIDER v1.2 — Direct Transf'air
-// ✅ v1.1 conservé intégralement
-// ✅ v1.2 — Portail web dédié par société :
-//   1. TenantBranding enrichi : subdomain + customDomain
-//      → frontend peut construire l'URL de redirection
-//   2. isDefaultHost() : helper pour détecter si l'app tourne
-//      sur le domaine principal (SA) ou sur un sous-domaine société
-//   3. restore() mis à jour :
-//      — Sur web : détecte le hostname au démarrage
-//      — Si hostname = sous-domaine ou domaine custom d'une société
-//        → appelle /branding/by-host pour charger le bon thème
-//        → locke le tenant AVANT que l'utilisateur ne saisisse quoi que ce soit
-//      — Si hostname = domaine par défaut → comportement v1.1 inchangé
-//   4. getBrandingByHost() ajouté dans api (appelé ici)
+// TENANT PROVIDER v1.3 — Direct Transf'air
+// ✅ v1.3 : Mentions légales publiques dans TenantBranding
+//   PROBLÈME RÉSOLU : terms.tsx / assistance.tsx avaient "Direct
+//   Transf'air SAS", l'agrément ACPR, le capital social, le contact
+//   support écrits en dur — identiques pour tous les tenants.
+//   CORRECTIF : TenantBranding enrichi avec les nouveaux champs
+//   exposés par clients.service.ts v4.11 (legalCompanyName,
+//   regulatorName/Acronym, regulatoryFrameworkLabel,
+//   regulatorLicenseNumber/Type, capitalSocial, contactEmail,
+//   contactPhone, address, supportEmail, whatsappNumber, mediatorName/
+//   Url, termsVersion, termsEffectiveDate). DEFAULT_BRANDING reprend
+//   EXACTEMENT les valeurs jusqu'ici en dur dans terms.tsx/assistance.tsx
+//   comme valeurs par défaut du tenant plateforme (DONIKO) —
+//   comportement inchangé pour ce tenant précis. Les deux sites de
+//   construction de branding (restore() et loadBranding()) sont mis à
+//   jour pour mapper ces nouveaux champs depuis l'API.
+// ✅ v1.2 conservé intégralement
 // =========================================================
 
 import React, {
@@ -34,9 +37,25 @@ export type TenantBranding = {
   fontFamily:     string | null;
   splashBgColor:  string | null;
   welcomeMessage: string | null;
-  // ✅ v1.2 : portail web dédié
   subdomain:      string | null;  // "flash" → flash.direct-transfer.com
   customDomain:   string | null;  // "www.flash-transfer.com"
+  // ✅ v1.3 — Mentions légales publiques (écrans CGU / Assistance)
+  contactEmail:             string | null;
+  contactPhone:             string | null;
+  address:                  string | null;
+  legalCompanyName:         string | null;
+  regulatorName:            string | null;
+  regulatorAcronym:         string | null;
+  regulatoryFrameworkLabel: string | null;
+  regulatorLicenseNumber:   string | null;
+  regulatorLicenseType:     string | null;
+  capitalSocial:            string | null;
+  supportEmail:             string | null;
+  whatsappNumber:           string | null;
+  mediatorName:             string | null;
+  mediatorUrl:              string | null;
+  termsVersion:             string | null;
+  termsEffectiveDate:       string | null; // ISO — formaté à l'affichage
 };
 
 export const DEFAULT_BRANDING: TenantBranding = {
@@ -49,8 +68,26 @@ export const DEFAULT_BRANDING: TenantBranding = {
   fontFamily:     null,
   splashBgColor:  "#064E3B",
   welcomeMessage: null,
-  subdomain:      null,  // ✅ v1.2
-  customDomain:   null,  // ✅ v1.2
+  subdomain:      null,
+  customDomain:   null,
+  // ✅ v1.3 (nouveau) — reprend exactement les valeurs jusqu'ici en dur
+  // dans terms.tsx / assistance.tsx : comportement inchangé pour DONIKO.
+  contactEmail:             "contact@directtransfair.com",
+  contactPhone:             "+33123456789",
+  address:                  "Paris, France",
+  legalCompanyName:         "Direct Transf'air SAS",
+  regulatorName:            "Autorité de Contrôle Prudentiel et de Résolution (ACPR)",
+  regulatorAcronym:         "ACPR",
+  regulatoryFrameworkLabel: "DSP2",
+  regulatorLicenseNumber:   "N° 12345",
+  regulatorLicenseType:     "Établissement de paiement",
+  capitalSocial:            "100 000 € entièrement libéré",
+  supportEmail:             "support@directtransfair.com",
+  whatsappNumber:           "+33123456789",
+  mediatorName:             "Médiateur de l'ACPR",
+  mediatorUrl:              "https://www.acpr.banque-france.fr",
+  termsVersion:             "1.0",
+  termsEffectiveDate:       "2025-06-01",
 };
 
 const STORAGE_KEY = "dt_tenant_branding_v1";
@@ -66,48 +103,28 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | undefined>(undefined);
 
 // =========================================================
-// HELPERS ✅ v1.2
+// HELPERS
 // =========================================================
 
-/**
- * Retourne true si l'app tourne sur le domaine principal (SA)
- * ou sur un environnement de dev/déploiement technique.
- * Retourne false pour les sous-domaines société et les domaines custom.
- *
- * Exemples :
- *   "localhost"                    → true  (dev local)
- *   "direct-tr.vercel.app"        → true  (déploiement Vercel SA)
- *   "direct-transfer.com"         → true  (domaine principal SA)
- *   "flash.direct-transfer.com"   → false (portail Flash)
- *   "www.flash-transfer.com"      → false (domaine custom Flash)
- */
 function isDefaultHost(host: string): boolean {
   if (!host) return true;
   const lower = host.toLowerCase();
 
-  // Dev / IP
   if (lower === "localhost") return true;
   if (/^\d+\.\d+\.\d+\.\d+$/.test(lower)) return true;
 
-  // Plateformes cloud techniques (toujours domaine SA)
   if (lower.includes("vercel.app"))   return true;
   if (lower.includes("railway.app"))  return true;
   if (lower.includes("netlify.app"))  return true;
   if (lower.includes("onrender.com")) return true;
   if (lower.includes("fly.dev"))      return true;
 
-  // Domaine principal Direct Transf'air (avec ou sans www)
   if (lower === "direct-transfer.com")     return true;
   if (lower === "www.direct-transfer.com") return true;
 
-  // Tout le reste = sous-domaine société ou domaine custom → NON par défaut
   return false;
 }
 
-/**
- * Construit l'URL du portail d'une société depuis son branding.
- * Retourne null si aucune URL dédiée n'est disponible.
- */
 export function buildCompanyPortalUrl(branding: TenantBranding | {
   customDomain?: string | null;
   subdomain?: string | null;
@@ -132,21 +149,14 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingBranding, setIsLoadingBranding] = useState(true);
   const [isCustomBranding,  setIsCustomBranding]  = useState(false);
 
-  // ── Restaurer branding au démarrage ──────────────────────
-  // ✅ v1.2 : Détection hostname prioritaire sur web
   useEffect(() => {
     const restore = async () => {
       try {
-        // ─── ÉTAPE 1 : Détection hostname (web uniquement) ✅ v1.2 ───
-        // Si l'app tourne sur un sous-domaine ou domaine custom,
-        // charger le branding depuis le backend SANS que l'utilisateur
-        // n'ait rien à faire. Le tenant est locké dès le démarrage.
         if (Platform.OS === "web" && typeof window !== "undefined") {
           const host = window.location.hostname;
 
           if (!isDefaultHost(host)) {
             try {
-              // Appel /branding/by-host?host=flash.direct-transfer.com
               const data = await (api as any).getBrandingByHost(host);
 
               if (data?.code && data.code !== "DONIKO") {
@@ -160,35 +170,47 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
                   fontFamily:     data.fontFamily     ?? null,
                   splashBgColor:  data.splashBgColor  ?? null,
                   welcomeMessage: data.welcomeMessage ?? null,
-                  subdomain:      data.subdomain      ?? null,   // ✅ v1.2
-                  customDomain:   data.customDomain   ?? null,   // ✅ v1.2
+                  subdomain:      data.subdomain      ?? null,
+                  customDomain:   data.customDomain   ?? null,
+                  // ✅ v1.3 (nouveau)
+                  contactEmail:             data.contactEmail             ?? null,
+                  contactPhone:             data.contactPhone             ?? null,
+                  address:                  data.address                  ?? null,
+                  legalCompanyName:         data.legalCompanyName         ?? null,
+                  regulatorName:            data.regulatorName            ?? null,
+                  regulatorAcronym:         data.regulatorAcronym         ?? null,
+                  regulatoryFrameworkLabel: data.regulatoryFrameworkLabel ?? null,
+                  regulatorLicenseNumber:   data.regulatorLicenseNumber   ?? null,
+                  regulatorLicenseType:     data.regulatorLicenseType     ?? null,
+                  capitalSocial:            data.capitalSocial            ?? null,
+                  supportEmail:             data.supportEmail             ?? null,
+                  whatsappNumber:           data.whatsappNumber           ?? null,
+                  mediatorName:             data.mediatorName             ?? null,
+                  mediatorUrl:              data.mediatorUrl              ?? null,
+                  termsVersion:             data.termsVersion             ?? null,
+                  termsEffectiveDate:       data.termsEffectiveDate       ?? null,
                 };
 
                 setBranding(next);
                 setIsCustomBranding(true);
                 await api.setTenant(next.code);
-                // Persiste pour les rechargements (cache)
                 await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
 
-                // Tenant locké depuis l'hostname → on ne lit pas AsyncStorage
                 return;
               }
             } catch {
-              // Hostname non reconnu → fall-through vers AsyncStorage
-              // (société peut-être suspendue ou DNS mal configuré)
               console.warn(`[TenantProvider] hostname "${host}" non reconnu → fallback`);
             }
           }
         }
 
-        // ─── ÉTAPE 2 : Restauration depuis AsyncStorage ──────────────
-        // (comportement v1.1 inchangé pour mobile et web SA)
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (!raw) return;
 
         const parsed = JSON.parse(raw) as TenantBranding;
         if (parsed?.code && parsed.code !== "DONIKO") {
-          // Enrichir avec subdomain/customDomain si absent (migration v1.1 → v1.2)
+          // ✅ v1.3 — enrichit avec les nouveaux champs si absents
+          // (migration v1.2 → v1.3, cache persistant plus ancien)
           const enriched: TenantBranding = {
             ...DEFAULT_BRANDING,
             ...parsed,
@@ -197,7 +219,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
           };
           setBranding(enriched);
           setIsCustomBranding(true);
-          await api.setTenant(enriched.code);  // ✅ v1.1 : était void, maintenant await
+          await api.setTenant(enriched.code);
         }
       } catch {
         // Silencieux — reste sur DEFAULT_BRANDING
@@ -209,7 +231,6 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     void restore();
   }, []);
 
-  // ── Charger branding depuis l'API par code ───────────────
   const loadBranding = useCallback(async (code: string) => {
     const upper = code.trim().toUpperCase();
     if (!upper || upper === "DONIKO") {
@@ -231,8 +252,25 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         fontFamily:     data.fontFamily     ?? null,
         splashBgColor:  data.splashBgColor  ?? null,
         welcomeMessage: data.welcomeMessage ?? null,
-        subdomain:      data.subdomain      ?? null,   // ✅ v1.2
-        customDomain:   data.customDomain   ?? null,   // ✅ v1.2
+        subdomain:      data.subdomain      ?? null,
+        customDomain:   data.customDomain   ?? null,
+        // ✅ v1.3 (nouveau)
+        contactEmail:             data.contactEmail             ?? null,
+        contactPhone:             data.contactPhone             ?? null,
+        address:                  data.address                  ?? null,
+        legalCompanyName:         data.legalCompanyName         ?? null,
+        regulatorName:            data.regulatorName            ?? null,
+        regulatorAcronym:         data.regulatorAcronym         ?? null,
+        regulatoryFrameworkLabel: data.regulatoryFrameworkLabel ?? null,
+        regulatorLicenseNumber:   data.regulatorLicenseNumber   ?? null,
+        regulatorLicenseType:     data.regulatorLicenseType     ?? null,
+        capitalSocial:            data.capitalSocial            ?? null,
+        supportEmail:             data.supportEmail             ?? null,
+        whatsappNumber:           data.whatsappNumber           ?? null,
+        mediatorName:             data.mediatorName             ?? null,
+        mediatorUrl:              data.mediatorUrl              ?? null,
+        termsVersion:             data.termsVersion             ?? null,
+        termsEffectiveDate:       data.termsEffectiveDate       ?? null,
       };
 
       setBranding(next);

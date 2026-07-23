@@ -1,6 +1,34 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v9.3 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v9.4 — Direct Transf'air
+// ✅ v9.4 : HERO — dégradé bleu marine sombre façon ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL (+1 ajout mineur : toggle showBalance)
+//    — aucune logique métier touchée (loadData, handleFill, handleB2B,
+//    handleAgencyRefill, tous les calculs de stats/agences : identiques).
+//    - Hero rectangulaire bleu vif (#2563EB→#1D4ED8) → dégradé bleu
+//      marine sombre (HERO_FROM/HERO_TO assombris, même famille de
+//      bleu conservée), avec halo décoratif + filigrane wallet
+//      translucide, sur le modèle de ClientDashboard v9.8 — mais en
+//      bleu, pas en vert, comme demandé.
+//    - Le solde affiché dans le hero suit la devise actuellement
+//      visible dans le WalletCarousel (`activeCur`, déjà existant) —
+//      recalculé depuis `wallets`, déjà chargé par loadData(), aucun
+//      nouvel appel API. Nouveau : toggle masquer/afficher (state
+//      showBalance), comme sur la référence.
+//    - Pastille "{n} AGENCES ACTIVES" réutilise `activeAgencies`
+//      (calcul déjà existant plus haut, inchangé).
+//    - Bouton rafraîchir (déjà existant) + notifications + avatar
+//      (nouveau : tape désormais vers Paramètres) regroupés en haut
+//      du hero, style "verre" translucide identique à ClientDashboard.
+//    - Le reste de l'écran (carte stats, carrousel wallets, sélecteur
+//      devise, boutons Alimenter/B2B, grille pilotage, liste agences,
+//      les 3 modales) est maintenant enveloppé dans une "sheet" à
+//      coins arrondis qui chevauche le bas du hero (marginTop:-28) —
+//      même principe que ClientDashboard, contenu et fond strictement
+//      inchangés (toujours blanc).
+//    - insets.top (useSafeAreaInsets, nouvel import) remplace le
+//      paddingTop conditionnel Platform.OS — même fix de fiabilité
+//      Android/iOS que ClientDashboard v9.5.
 // ✅ v9.3 : Ajout de l'ActionCard "Commissions" dans la grille
 //    PILOTAGE SOCIÉTÉ — pointe vers /(tabs)/admin/commissions/config
 //    (page reconstruite en v6.0, source LedgerEntry — argent
@@ -70,17 +98,20 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v9.4 (nouveau)
 import Svg, { Path, Rect } from "react-native-svg";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
 const { width: SW } = Dimensions.get("window");
-const CARD_W = (SW - 48 - 8) / 2;
+const CARD_W = (SW - 32) / 2.3;
 
-// ─── Héro ─────────────────────────────────────────────────
-// v9.0 : gradient bleu rectangulaire (plus de HERO_BG gris-indigo)
-const HERO_FROM   = "#2563EB";
-const HERO_TO     = "#1D4ED8";
+// ─── Héro — ✅ v9.4 : bleu marine sombre (même famille de bleu que
+// l'ancien héro vif, juste assombrie) au lieu du bleu vif rectangulaire ──
+const HERO_FROM   = "#070B16";
+const HERO_TO     = "#123566";
+const HERO_ACCENT = "#2563EB"; // accent bleu vif — pop sur le fond sombre
+const HERO_MUTED  = "rgba(255,255,255,0.55)";
 const CONCAVE_H   = 70; // conservé pour HeroConcave (non rendu)
 
 const CURRENCIES_ORDER = ["XOF", "EUR", "USD", "GNF", "GBP"] as const;
@@ -562,7 +593,7 @@ const ccs = StyleSheet.create({
   dot:  { width: 5, height: 5, borderRadius: 99 },
 });
 
-// ─── HeroConcave (conservé mais non rendu en v9.0) ────────
+// ─── HeroConcave (conservé mais non rendu depuis v9.0) ────
 function HeroConcave() {
   const d  = `M 0 0 L 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H} L ${SW} 0 Z`;
   const bd = `M 0 ${CONCAVE_H} Q ${SW / 2} 0 ${SW} ${CONCAVE_H}`;
@@ -581,11 +612,13 @@ function HeroConcave() {
 export default function CompanyDashboard() {
   const router   = useRouter();
   const { user } = useAuth();
+  const insets   = useSafeAreaInsets(); // ✅ v9.4 (nouveau)
 
   const [wallets,    setWallets]    = useState<any[]>([]);
   const [agencies,   setAgencies]   = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeCur,  setActiveCur]  = useState(0);
+  const [showBalance, setShowBalance] = useState(true); // ✅ v9.4 (nouveau)
 
   const [modalFill,   setModalFill]   = useState(false);
   const [modalB2B,    setModalB2B]    = useState(false);
@@ -610,6 +643,12 @@ export default function CompanyDashboard() {
   const clientName     = user?.client?.name ?? user?.firstName ?? "Ma Société";
   const totalAgencies  = agencies.length;
   const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
+
+  // ✅ v9.4 — solde du hero : suit la devise actuellement visible dans
+  // le WalletCarousel (activeCur, déjà existant plus bas)
+  const heroCurrency = CURRENCIES_ORDER[activeCur] ?? "XOF";
+  const heroWallet   = wallets.find((w) => w.currency === heroCurrency);
+  const heroBalance  = toNum(heroWallet?.balance ?? heroWallet?.availableBalance ?? 0);
 
   const today = useMemo(() => new Date().toLocaleDateString("fr-FR", {
     weekday: "short", day: "numeric", month: "long",
@@ -700,217 +739,222 @@ export default function CompanyDashboard() {
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* ✅ v9.0 : StatusBar blanc sur fond héro bleu */}
+      {/* ✅ v9.4 : StatusBar clair sur hero bleu marine sombre */}
       <StatusBar barStyle="light-content" backgroundColor={HERO_FROM} />
 
-      {/* ══════════ HÉRO BLEU RECTANGULAIRE ══════════ */}
+      {/* ══════════ HÉRO — ✅ v9.4 : dégradé bleu marine sombre, solde
+          intégré, façon ClientDashboard ══════════ */}
       <Animated.View style={{
         opacity:   headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
       }}>
-        {/* ✅ v9.0 : LinearGradient bleu + borderRadius bas + ombre portée */}
         <LinearGradient
           colors={[HERO_FROM, HERO_TO]}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          style={s.hero}
+          style={[s.hero, { paddingTop: insets.top + 8 }]}
         >
-          {/* Glows décoratifs semi-transparents */}
-          <View style={s.heroGlow1} />
-          <View style={s.heroGlow2} />
+          {/* Halo décoratif */}
+          <View style={s.heroGlow} pointerEvents="none" />
 
-          {/* ── Ligne société ── */}
-          <View style={s.heroRow}>
-            <View style={s.avatar}>
-              <Text style={[s.avatarTxt, { fontFamily: T.font.serif }]}>
-                {(clientName[0] ?? "E").toUpperCase()}
-              </Text>
-              <View style={s.avatarOnline} />
+          {/* Filigrane portefeuille — bleu translucide */}
+          <Ionicons
+            name="wallet"
+            size={80}
+            color="rgba(37,99,235,0.14)"
+            style={s.balanceWatermark}
+            pointerEvents="none"
+          />
+
+          {/* Barre du haut */}
+          <View style={s.topBar}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.greeting, { fontFamily: T.font.sans }]}>ADMIN SOCIÉTÉ</Text>
+              <Text style={[s.heroName, { fontFamily: T.font.serif }]} numberOfLines={1}>{clientName}</Text>
             </View>
+            <TouchableOpacity style={s.iconBtn} onPress={() => void loadData("refresh")}>
+              <Ionicons name="refresh-outline" size={17} color={HERO_MUTED} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
+              <Ionicons name="notifications-outline" size={17} color={HERO_MUTED} />
+              <View style={s.notifDot} />
+            </TouchableOpacity>
+            <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/admin/settings")}>
+              <Text style={[s.avatarTxt, { fontFamily: T.font.sans }]}>{(clientName[0] ?? "E").toUpperCase()}</Text>
+            </TouchableOpacity>
+          </View>
 
-            <View style={{ flex: 1, paddingLeft: 10 }}>
-              <View style={s.heroBadge}>
-                <View style={s.heroBadgeDot} />
-                <Text style={[s.heroBadgeTxt, { fontFamily: T.font.sans }]}>ADMIN SOCIÉTÉ</Text>
-              </View>
-              <Text style={[s.heroTitle, { fontFamily: T.font.serif }]} numberOfLines={1}>
-                {clientName}
-              </Text>
-            </View>
-
-            <View style={s.heroActions}>
-              <TouchableOpacity style={s.heroBtn} onPress={() => void loadData("refresh")}>
-                <Ionicons name="refresh" size={15} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={s.heroBtn} onPress={() => router.push("/(tabs)/notifications")}>
-                <Ionicons name="notifications-outline" size={15} color="#fff" />
-                <View style={s.notifDot} />
-              </TouchableOpacity>
+          {/* Solde — directement dans le hero */}
+          <View style={s.balHeaderRow}>
+            <Text style={[s.balLabel, { fontFamily: T.font.sans }]}>SOLDE DISPONIBLE</Text>
+            <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
+              <Ionicons
+                name={showBalance ? "eye-outline" : "eye-off-outline"}
+                size={13}
+                color={HERO_MUTED}
+              />
+            </TouchableOpacity>
+            <View style={s.onlinePill}>
+              <View style={s.onlineDot} />
+              <Text style={[s.onlineTxt, { fontFamily: T.font.sans }]}>{activeAgencies} AGENCES ACTIVES</Text>
             </View>
           </View>
 
-          {/* ── Welcome + date ── */}
-          <View style={s.heroWelcome}>
-            <Text style={[s.heroWelcomeTxt, { fontFamily: T.font.sans }]}>
-              Bonjour,{" "}
-              <Text style={{ fontWeight: "700", color: "#fff" }}>
-                {user?.firstName || "Admin"} 👋
-              </Text>
+          <View style={s.balAmountRow}>
+            {showBalance && (
+              <Text style={[s.balCurPrefix, { fontFamily: T.font.sans }]}>{heroCurrency}</Text>
+            )}
+            <Text
+              style={[s.balAmount, { fontFamily: T.font.serif }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.55}
+            >
+              {showBalance ? fmt(heroBalance, heroCurrency) : "••••••"}
             </Text>
-            <View style={s.datePill}>
-              <Ionicons name="calendar-outline" size={10} color="rgba(255,255,255,0.8)" />
-              <Text style={[s.dateTxt, { fontFamily: T.font.sans }]}>{today}</Text>
-            </View>
           </View>
         </LinearGradient>
-        {/* ✅ v9.0 : HeroConcave supprimé → forme rectangulaire */}
       </Animated.View>
 
-      {/* ══════════ SCROLL CONTENT ══════════ */}
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} tintColor={T.primary} />
-        }
-      >
-        {/* ── Carte stats ── */}
-        <View style={s.statsCard}>
-          <View style={s.statsItem}>
-            <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{totalAgencies}</Text>
-            <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>AGENCES</Text>
-          </View>
-          <View style={s.statsSep} />
-          <View style={s.statsItem}>
-            <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{activeAgencies}</Text>
-            <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>ACTIVES</Text>
-          </View>
-          <View style={s.statsSep} />
-          <View style={s.statsItem}>
-            <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{CURRENCIES_ORDER.length}</Text>
-            <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>DEVISES</Text>
-          </View>
-        </View>
-
-        {/* Trésorerie */}
-        <View style={s.secRow}>
-          <View style={[s.secDot, { backgroundColor: T.warning }]} />
-          <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>TRÉSORERIE · 5 DEVISES</Text>
-        </View>
-
-        <WalletCarousel wallets={wallets} activeCur={activeCur} setActiveCur={setActiveCur} />
-
-        {/* Sélecteur devise — ✅ v9.2 : HScroller (voir changelog) au lieu
-            d'un ScrollView imbriqué directement dans le ScrollView vertical
-            principal ci-dessus. */}
-        <HScroller contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 12 }}>
-          {CURRENCIES_ORDER.map((cur) => {
-            const cfg = CURRENCIES[cur];
-            const sel = fillCur === cur;
-            return (
-              <TouchableOpacity key={cur} onPress={() => setFillCur(cur)} activeOpacity={0.8}
-                style={[s.chip, { backgroundColor: sel ? cfg.bg : T.surface, borderColor: sel ? cfg.color : T.border }]}>
-                <Text style={{ fontSize: 12 }}>{cfg.flag}</Text>
-                <Text style={[s.chipTxt, { color: sel ? T.text : T.textSoft, fontFamily: T.font.sans }]}>{cfg.code}</Text>
-                {sel && <View style={[s.chipDot, { backgroundColor: cfg.color }]} />}
-              </TouchableOpacity>
-            );
-          })}
-        </HScroller>
-
-        {/* ✅ v9.0 — BOUTON ALIMENTER : blanc + ombre verte accentuée */}
-        <TouchableOpacity
-          style={[s.actionStrip, s.actionStripGreen]}
-          onPress={() => setModalFill(true)}
-          activeOpacity={0.92}
+      {/* ══════════ SHEET — ✅ v9.4 : enveloppe arrondie qui chevauche
+          le bas du hero. Contenu et fond strictement inchangés ══════════ */}
+      <View style={s.sheet}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} tintColor={T.primary} />
+          }
         >
-          <View style={[s.actionStripIcon, { backgroundColor: T.successSoft }]}>
-            <Ionicons name="add-circle-outline" size={22} color={T.success} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.actionStripTitle, { color: T.successDark, fontFamily: T.font.sans }]}>
-              Alimenter en {fillCur}
-            </Text>
-            <Text style={[s.actionStripSub, { color: T.textSoft, fontFamily: T.font.sans }]}>
-              Injection directe · {fillCfg.name}
-            </Text>
-          </View>
-          <View style={[s.actionStripArrow, { backgroundColor: T.successSoft }]}>
-            <Ionicons name="arrow-forward" size={14} color={T.success} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ✅ v9.0 — BOUTON B2B : blanc + ombre indigo accentuée */}
-        <TouchableOpacity
-          style={[s.actionStrip, s.actionStripBlue]}
-          onPress={() => setModalB2B(true)}
-          activeOpacity={0.92}
-        >
-          <View style={[s.actionStripIcon, { backgroundColor: T.primaryPale }]}>
-            <Ionicons name="swap-horizontal-outline" size={22} color={T.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.actionStripTitle, { color: T.primaryDark, fontFamily: T.font.sans }]}>
-              Déclarer un Virement B2B
-            </Text>
-            <Text style={[s.actionStripSub, { color: T.textSoft, fontFamily: T.font.sans }]}>
-              En attente de validation Super Admin
-            </Text>
-          </View>
-          <View style={[s.actionStripArrow, { backgroundColor: T.primaryPale }]}>
-            <Ionicons name="arrow-forward" size={14} color={T.primary} />
-          </View>
-        </TouchableOpacity>
-
-        {/* ── Pilotage société ── */}
-        <View style={[s.secRow, { marginTop: 8 }]}>
-          <View style={[s.secDot, { backgroundColor: T.primary }]} />
-          <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
-        </View>
-        <View style={s.grid}>
-          <ActionCard title="Transactions"        subtitle="Historique & suivi"   icon="list-outline"       color={T.primary}  bg={T.primaryPale}   onPress={() => router.push("/(tabs)/admin/transactions")} />
-          <ActionCard title="Agences"             subtitle="Réseau & gestion"     icon="storefront-outline" color={T.success}  bg={T.successSoft}   onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
-          <ActionCard title="Trésorerie"          subtitle="Vue détaillée"        icon="wallet-outline"     color={T.warning}  bg={T.warningSoft}   onPress={() => router.push("/(tabs)/admin/treasury")} />
-          <ActionCard title="Frais & Commissions" subtitle="Taux par méthode"     icon="pricetag-outline"   color="#D97706"    bg="#FEF3C7"          onPress={() => router.push("/(tabs)/admin/fees")} />
-          {/* ✅ v9.3 — NOUVEAU : Commissions (répartition réellement
-              créditée, source LedgerEntry — voir commissions.service.ts
-              v5.0 et admin/commissions/config.tsx v6.0). Distincte de
-              "Frais & Commissions" ci-dessus, qui reste l'écran de
-              CONFIGURATION des taux, pas leur distribution réelle. */}
-          <ActionCard title="Commissions"         subtitle="Répartition réelle"   icon="trending-up-outline" color="#0F766E"  bg="#CCFBF1"          onPress={() => router.push("/(tabs)/admin/commissions/config" as any)} />
-          <ActionCard title="Paramètres"          subtitle="Compte & société"     icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"          onPress={() => router.push("/(tabs)/admin/settings")} />
-          {/* ✅ v8.1 : Clients Wallet */}
-          <ActionCard title="Clients Wallet"      subtitle="Gestion des comptes"  icon="people-outline"     color="#F97316"    bg="#FFF7ED"          onPress={() => router.push("/(tabs)/admin/wallet-clients" as any)} />
-          {/* ✅ v9.1 — NOUVEAU : Retrait Agence (fonds agence → société) */}
-          <ActionCard title="Retrait Agence"      subtitle="Fonds agence → société" icon="arrow-down-circle-outline" color="#DC2626" bg="#FEF2F2" onPress={() => router.push("/(tabs)/admin/agency-withdrawal" as any)} />
-        </View>
-
-        {/* Agences */}
-        {agencies.length > 0 && (
-          <>
-            <View style={s.secRow}>
-              <View style={[s.secDot, { backgroundColor: T.success }]} />
-              <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>AGENCES DU RÉSEAU · {totalAgencies}</Text>
-              <TouchableOpacity onPress={() => router.push("/(tabs)/admin/agencies")} style={{ marginLeft: "auto" }}>
-                <Text style={[s.seeAll, { fontFamily: T.font.sans }]}>Voir tout</Text>
-              </TouchableOpacity>
+          {/* ── Carte stats ── */}
+          <View style={s.statsCard}>
+            <View style={s.statsItem}>
+              <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{totalAgencies}</Text>
+              <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>AGENCES</Text>
             </View>
-            {agencies.slice(0, 5).map((a) => (
-              <AgencyCard key={a.id} agency={a} onRefill={() => openAgencyModal(a)} />
-            ))}
-            {agencies.length > 5 && (
-              <TouchableOpacity style={s.moreBtn} onPress={() => router.push("/(tabs)/admin/agencies")} activeOpacity={0.8}>
-                <Text style={[s.moreTxt, { fontFamily: T.font.sans }]}>
-                  Voir les {agencies.length - 5} autres agences
-                </Text>
-                <Ionicons name="chevron-forward" size={13} color={T.primary} />
-              </TouchableOpacity>
-            )}
-          </>
-        )}
+            <View style={s.statsSep} />
+            <View style={s.statsItem}>
+              <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{activeAgencies}</Text>
+              <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>ACTIVES</Text>
+            </View>
+            <View style={s.statsSep} />
+            <View style={s.statsItem}>
+              <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{CURRENCIES_ORDER.length}</Text>
+              <Text style={[s.statsLbl, { fontFamily: T.font.sans }]}>DEVISES</Text>
+            </View>
+          </View>
 
-        <View style={{ height: 90 }} />
-      </ScrollView>
+          {/* Trésorerie */}
+          <View style={s.secRow}>
+            <View style={[s.secDot, { backgroundColor: T.warning }]} />
+            <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>TRÉSORERIE · 5 DEVISES</Text>
+          </View>
+
+          <WalletCarousel wallets={wallets} activeCur={activeCur} setActiveCur={setActiveCur} />
+
+          {/* Sélecteur devise — HScroller (voir changelog v9.2) */}
+          <HScroller contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 12 }}>
+            {CURRENCIES_ORDER.map((cur) => {
+              const cfg = CURRENCIES[cur];
+              const sel = fillCur === cur;
+              return (
+                <TouchableOpacity key={cur} onPress={() => setFillCur(cur)} activeOpacity={0.8}
+                  style={[s.chip, { backgroundColor: sel ? cfg.bg : T.surface, borderColor: sel ? cfg.color : T.border }]}>
+                  <Text style={{ fontSize: 12 }}>{cfg.flag}</Text>
+                  <Text style={[s.chipTxt, { color: sel ? T.text : T.textSoft, fontFamily: T.font.sans }]}>{cfg.code}</Text>
+                  {sel && <View style={[s.chipDot, { backgroundColor: cfg.color }]} />}
+                </TouchableOpacity>
+              );
+            })}
+          </HScroller>
+
+          {/* BOUTON ALIMENTER : blanc + ombre verte accentuée */}
+          <TouchableOpacity
+            style={[s.actionStrip, s.actionStripGreen]}
+            onPress={() => setModalFill(true)}
+            activeOpacity={0.92}
+          >
+            <View style={[s.actionStripIcon, { backgroundColor: T.successSoft }]}>
+              <Ionicons name="add-circle-outline" size={22} color={T.success} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.actionStripTitle, { color: T.successDark, fontFamily: T.font.sans }]}>
+                Alimenter en {fillCur}
+              </Text>
+              <Text style={[s.actionStripSub, { color: T.textSoft, fontFamily: T.font.sans }]}>
+                Injection directe · {fillCfg.name}
+              </Text>
+            </View>
+            <View style={[s.actionStripArrow, { backgroundColor: T.successSoft }]}>
+              <Ionicons name="arrow-forward" size={14} color={T.success} />
+            </View>
+          </TouchableOpacity>
+
+          {/* BOUTON B2B : blanc + ombre indigo accentuée */}
+          <TouchableOpacity
+            style={[s.actionStrip, s.actionStripBlue]}
+            onPress={() => setModalB2B(true)}
+            activeOpacity={0.92}
+          >
+            <View style={[s.actionStripIcon, { backgroundColor: T.primaryPale }]}>
+              <Ionicons name="swap-horizontal-outline" size={22} color={T.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.actionStripTitle, { color: T.primaryDark, fontFamily: T.font.sans }]}>
+                Déclarer un Virement B2B
+              </Text>
+              <Text style={[s.actionStripSub, { color: T.textSoft, fontFamily: T.font.sans }]}>
+                En attente de validation Super Admin
+              </Text>
+            </View>
+            <View style={[s.actionStripArrow, { backgroundColor: T.primaryPale }]}>
+              <Ionicons name="arrow-forward" size={14} color={T.primary} />
+            </View>
+          </TouchableOpacity>
+
+          {/* ── Pilotage société ── */}
+          <View style={[s.secRow, { marginTop: 8 }]}>
+            <View style={[s.secDot, { backgroundColor: T.primary }]} />
+            <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
+          </View>
+          <View style={s.grid}>
+            <ActionCard title="Transactions"        subtitle="Historique & suivi"   icon="list-outline"       color={T.primary}  bg={T.primaryPale}   onPress={() => router.push("/(tabs)/admin/transactions")} />
+            <ActionCard title="Agences"             subtitle="Réseau & gestion"     icon="storefront-outline" color={T.success}  bg={T.successSoft}   onPress={() => router.push("/(tabs)/admin/agencies")} badge="Réseau" />
+            <ActionCard title="Trésorerie"          subtitle="Vue détaillée"        icon="wallet-outline"     color={T.warning}  bg={T.warningSoft}   onPress={() => router.push("/(tabs)/admin/treasury")} />
+            <ActionCard title="Frais & Commissions" subtitle="Taux par méthode"     icon="pricetag-outline"   color="#D97706"    bg="#FEF3C7"          onPress={() => router.push("/(tabs)/admin/fees")} />
+            <ActionCard title="Commissions"         subtitle="Répartition réelle"   icon="trending-up-outline" color="#0F766E"  bg="#CCFBF1"          onPress={() => router.push("/(tabs)/admin/commissions/config" as any)} />
+            <ActionCard title="Paramètres"          subtitle="Compte & société"     icon="settings-outline"   color="#7C3AED"    bg="#F5F3FF"          onPress={() => router.push("/(tabs)/admin/settings")} />
+            <ActionCard title="Clients Wallet"      subtitle="Gestion des comptes"  icon="people-outline"     color="#F97316"    bg="#FFF7ED"          onPress={() => router.push("/(tabs)/admin/wallet-clients" as any)} />
+            <ActionCard title="Retrait Agence"      subtitle="Fonds agence → société" icon="arrow-down-circle-outline" color="#DC2626" bg="#FEF2F2" onPress={() => router.push("/(tabs)/admin/agency-withdrawal" as any)} />
+          </View>
+
+          {/* Agences */}
+          {agencies.length > 0 && (
+            <>
+              <View style={s.secRow}>
+                <View style={[s.secDot, { backgroundColor: T.success }]} />
+                <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>AGENCES DU RÉSEAU · {totalAgencies}</Text>
+                <TouchableOpacity onPress={() => router.push("/(tabs)/admin/agencies")} style={{ marginLeft: "auto" }}>
+                  <Text style={[s.seeAll, { fontFamily: T.font.sans }]}>Voir tout</Text>
+                </TouchableOpacity>
+              </View>
+              {agencies.slice(0, 5).map((a) => (
+                <AgencyCard key={a.id} agency={a} onRefill={() => openAgencyModal(a)} />
+              ))}
+              {agencies.length > 5 && (
+                <TouchableOpacity style={s.moreBtn} onPress={() => router.push("/(tabs)/admin/agencies")} activeOpacity={0.8}>
+                  <Text style={[s.moreTxt, { fontFamily: T.font.sans }]}>
+                    Voir les {agencies.length - 5} autres agences
+                  </Text>
+                  <Ionicons name="chevron-forward" size={13} color={T.primary} />
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+
+          <View style={{ height: 90 }} />
+        </ScrollView>
+      </View>
 
       {/* ── Modal Alimenter ── */}
       <ModalSheet visible={modalFill} onClose={() => { setModalFill(false); setFillAmount(""); }} title="Alimenter ma Caisse" subtitle={`Injection directe · ${fillCur}`} gradColors={[T.success, T.successDark]}>
@@ -952,51 +996,95 @@ export default function CompanyDashboard() {
 
 // ─── Styles ──────────────────────────────────────────────
 const s = StyleSheet.create({
-  // ✅ v9.0 : fond global blanc pur
-  safe: { flex: 1, backgroundColor: "#FFFFFF" },
+  // ✅ v9.4 : fond aligné sur le 1er ton du dégradé (zone réservée par
+  // SafeAreaView sous l'encoche, doit rester sombre en continuité du hero)
+  safe: { flex: 1, backgroundColor: HERO_FROM },
 
-  // ✅ v9.0 : Héro bleu rectangulaire — plus de concave
+  // ✅ v9.4 : hero simplifié — plus de bordure basse arrondie ni
+  // d'ombre propre (la sheet, avec sa propre bordure haute arrondie
+  // et marginTop négatif, chevauche et couvre le bas du hero)
   hero: {
-    paddingTop:    Platform.OS === "android" ? 44 : 14,
-    paddingBottom: 32,
-    paddingHorizontal: 18,
-    borderBottomLeftRadius:  28,
-    borderBottomRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingBottom: 40,
     overflow: "hidden",
-    // Ombre portée bleue profonde
-    shadowColor:   "#1D4ED8",
-    shadowOffset:  { width: 0, height: 12 },
-    shadowOpacity: 0.35,
-    shadowRadius:  24,
-    elevation:     14,
+  },
+  heroGlow: {
+    position: "absolute",
+    top: -60,
+    right: -60,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(37,99,235,0.18)",
+  },
+  balanceWatermark: {
+    position: "absolute",
+    bottom: 16,
+    right: 12,
   },
 
-  // Glows décoratifs dans le héro
-  heroGlow1: {
-    position: "absolute", width: 300, height: 300, borderRadius: 150,
-    backgroundColor: "rgba(255,255,255,0.07)", top: -120, right: -80,
+  topBar: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 20 },
+  greeting: {
+    fontSize: 11, fontWeight: "700",
+    color: HERO_MUTED,
+    marginBottom: 1, letterSpacing: 0.8,
   },
-  heroGlow2: {
-    position: "absolute", width: 180, height: 180, borderRadius: 90,
-    backgroundColor: "rgba(255,255,255,0.05)", bottom: -60, left: -40,
+  heroName: {
+    fontSize: 19, fontWeight: "800",
+    color: "#FFFFFF", letterSpacing: -0.3,
+  },
+  iconBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
+    justifyContent: "center", alignItems: "center",
+  },
+  notifDot: {
+    position: "absolute", top: 7, right: 7,
+    width: 7, height: 7, borderRadius: 4,
+    backgroundColor: "#F59E0B",
+    borderWidth: 1.5, borderColor: HERO_FROM,
+  },
+  avatarBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: HERO_ACCENT,
+    justifyContent: "center", alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 5, elevation: 2,
+  },
+  avatarTxt: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
+
+  balHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  balLabel: {
+    fontSize: 10, fontWeight: "700",
+    color: HERO_MUTED,
+    letterSpacing: 0.5,
+  },
+  onlinePill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: "rgba(37,99,235,0.18)",
+    borderWidth: 1, borderColor: "rgba(37,99,235,0.4)",
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 99,
+    marginLeft: "auto",
+  },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: HERO_ACCENT },
+  onlineTxt: { fontSize: 9, color: "#93C5FD", fontWeight: "700" },
+  balAmountRow: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 3 },
+  balCurPrefix: { fontSize: 17, fontWeight: "700", color: "#60A5FA", letterSpacing: 0.5 },
+  balAmount: {
+    fontSize: 40, fontWeight: "800",
+    color: "#FFFFFF", letterSpacing: -0.8,
   },
 
-  heroRow:     { flexDirection: "row", alignItems: "center", marginBottom: 14 },
-  avatar:      { width: 44, height: 44, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.22)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.35)", justifyContent: "center", alignItems: "center", position: "relative" },
-  avatarTxt:   { color: "#fff", fontSize: 18, fontWeight: "900" },
-  avatarOnline:{ position: "absolute", bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, backgroundColor: "#34D399", borderWidth: 2, borderColor: HERO_FROM },
-  heroBadge:   { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.30)", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2, alignSelf: "flex-start", marginBottom: 4 },
-  heroBadgeDot:{ width: 5, height: 5, borderRadius: 99, backgroundColor: "#34D399" },
-  heroBadgeTxt:{ color: "#fff", fontSize: 8, fontWeight: "700", letterSpacing: 1.2 },
-  heroTitle:   { color: "#fff", fontSize: 17, fontWeight: "700" },
-  heroActions: { flexDirection: "row", gap: 8, marginLeft: 10 },
-  heroBtn:     { width: 36, height: 36, borderRadius: 11, backgroundColor: "rgba(255,255,255,0.18)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)", justifyContent: "center", alignItems: "center", position: "relative" },
-  notifDot:    { position: "absolute", top: 6, right: 6, width: 6, height: 6, borderRadius: 99, backgroundColor: "#EF4444", borderWidth: 1.5, borderColor: HERO_FROM },
-
-  heroWelcome:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  heroWelcomeTxt:{ color: "rgba(255,255,255,0.85)", fontSize: 13 },
-  datePill:      { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: "rgba(255,255,255,0.25)" },
-  dateTxt:       { color: "rgba(255,255,255,0.85)", fontSize: 10, fontWeight: "600" },
+  // ✅ v9.4 — sheet arrondie qui enveloppe tout le contenu et chevauche le hero
+  sheet: {                 // ← ligne 1025, à modifier
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -28,
+    overflow: "hidden",    // ← cette ligne à retirer
+  },
 
   // Carte stats
   statsCard: {
@@ -1022,7 +1110,7 @@ const s = StyleSheet.create({
   chipTxt: { fontSize: 10, fontWeight: "700" },
   chipDot: { width: 4, height: 4, borderRadius: 99 },
 
-  // ✅ v9.0 : boutons blancs avec ombres accentuées colorées (effet flottant)
+  // Boutons blancs avec ombres accentuées colorées (effet flottant)
   actionStrip: {
     flexDirection: "row", alignItems: "center", gap: 14,
     backgroundColor: "#FFFFFF",
@@ -1030,7 +1118,6 @@ const s = StyleSheet.create({
     padding: 18,
     marginBottom: 12,
   },
-  // Ombre verte pour "Alimenter"
   actionStripGreen: {
     shadowColor:   "#059669",
     shadowOffset:  { width: 0, height: 8 },
@@ -1038,7 +1125,6 @@ const s = StyleSheet.create({
     shadowRadius:  20,
     elevation:     8,
   },
-  // Ombre indigo pour "Déclarer B2B"
   actionStripBlue: {
     shadowColor:   "#4F46E5",
     shadowOffset:  { width: 0, height: 8 },

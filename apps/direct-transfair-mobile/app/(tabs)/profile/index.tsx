@@ -1,15 +1,30 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.3 — Direct Transf'air
+// PROFILE INDEX v5.4 — Direct Transf'air
+// ✅ v5.4 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (biométrie, déconnexion, tous les onPress des MenuRow : identiques).
+//    - L'ancienne "hero card" blanche (barre colorée du haut + avatar +
+//      nom + rôle), qui vivait DANS le scroll, est remplacée par un vrai
+//      hero plein écran en LinearGradient sombre (#0A0F0D → #123324,
+//      mêmes teintes que ClientDashboard), positionné AU-DESSUS du
+//      scroll — évite la duplication d'un bloc identité en double.
+//      LinearGradient était déjà importé mais inutilisé depuis le
+//      passage au fond blanc en v5.3 — reprend son usage ici.
+//    - Avatar / nom / ID / pastille de rôle : recolorés en blanc et
+//      "verre" translucide pour rester lisibles sur fond sombre. Le
+//      reste de l'écran (jauge sécurité, sections MON COMPTE /
+//      SÉCURITÉ / ADMIN, déconnexion) reste blanc/neutre inchangé,
+//      toujours coloré par thème.accent selon le rôle comme avant.
+//    - SafeAreaView passe en fond sombre ; le ScrollView (déjà en
+//      backgroundColor: T.bg explicite) continue de peindre le blanc
+//      par-dessus pour tout ce qui suit le hero — aucun changement
+//      nécessaire de ce côté.
+//    - useSafeAreaInsets (nouveau) pour un alignement fiable sous
+//      l'encoche.
 // ✅ v5.1 conservé intégralement
 // ✅ v5.2 : "Préférences de notifications" branché
 // ✅ v5.3 : Fond blanc pur — plus de dégradé vert/teal
-//    - LinearGradient de fond → View blanc #FFFFFF
-//    - Hero card : blanc + bande accent haut (4px) + ombre
-//    - Section cards : bande accent gauche (4px, couleur du rôle)
-//      + ombre portée accentuée → clairement distincts du fond blanc
-//    - MenuRow : fond icône + flèche accentués pour lisibilité
-//    - StatusBar : dark-content sur fond blanc
 // =========================================================
 
 import React, { useRef, useEffect, useState } from "react";
@@ -20,6 +35,7 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v5.4 (nouveau)
 import { useAuth } from "../../../providers/AuthProvider";
 import {
   isBiometricsAvailable,
@@ -29,8 +45,6 @@ import {
 } from "../../../hooks/useBiometrics";
 
 // ─── Thèmes par rôle ────────────────────────────────────
-// ✅ v5.3 : bg1/bg2 supprimés (plus utilisés — fond blanc)
-// On conserve accent, accentSoft, label, icon
 const ROLE_THEMES = {
   SUPER_ADMIN: {
     accent: "#1D4ED8", accentSoft: "#EFF6FF",
@@ -55,15 +69,20 @@ const ROLE_THEMES = {
 } as const;
 
 const T = {
-  bg:      "#FFFFFF",   // ✅ v5.3 : fond blanc pur
+  bg:      "#FFFFFF",   // fond blanc pur (corps de l'écran, sous le hero)
   pageBg:  "#F8FAFF",   // très légère teinte pour le scroll
   white:   "#FFFFFF",
   text:    "#0F172A",
   textSub: "#475569",
   textDim: "#94A3B8",
-  border:  "#E8EDF5",   // ✅ v5.3 : gris neutre (était #E2E8F0)
+  border:  "#E8EDF5",
   red:     "#DC2626",
   redSoft: "#FEE2E2",
+  // ✅ v5.4 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom: "#0A0F0D",
+  heroTo:   "#123324",
+  heroGlow: "rgba(5,150,105,0.18)",
+  heroMuted:"rgba(255,255,255,0.6)",
   radius: { sm: 10, md: 14, lg: 20, xl: 28 },
   font: {
     display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
@@ -123,7 +142,6 @@ const mrS = StyleSheet.create({
 });
 
 // ─── Section ─────────────────────────────────────────────
-// ✅ v5.3 : bande accent gauche + ombre portée pour se distinguer du fond blanc
 function Section({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
   return (
     <View style={{ marginBottom: 20 }}>
@@ -135,9 +153,7 @@ function Section({ title, accent, children }: { title: string; accent: string; c
 
       {/* Carte blanche avec bande colorée gauche + ombre */}
       <View style={sS.card}>
-        {/* Bande verticale accent (4px, couleur du rôle) */}
         <View style={[sS.accentBar, { backgroundColor: accent }]} />
-        {/* Contenu */}
         <View style={sS.inner}>{children}</View>
       </View>
     </View>
@@ -154,7 +170,6 @@ const sS = StyleSheet.create({
     borderColor:     T.border,
     flexDirection:   "row",
     overflow:        "hidden",
-    // ✅ v5.3 : ombre accentuée pour faire ressortir les cartes sur fond blanc
     shadowColor:     "#64748B",
     shadowOffset:    { width: 0, height: 5 },
     shadowOpacity:   0.10,
@@ -189,6 +204,7 @@ const btS = StyleSheet.create({
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const insets = useSafeAreaInsets(); // ✅ v5.4 (nouveau)
 
   const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
   const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
@@ -264,41 +280,43 @@ export default function ProfileScreen() {
   };
 
   return (
-    // ✅ v5.3 : fond blanc pur — plus de LinearGradient coloré
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+    // ✅ v5.4 : fond sombre (zone sous l'encoche) — le ScrollView plus
+    // bas repeint T.bg (blanc) par-dessus dès le début de son contenu.
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.heroFrom }}>
+      <StatusBar barStyle="light-content" backgroundColor={T.heroFrom} />
+
+      {/* ✅ v5.4 : hero plein écran, remplace l'ancienne "hero card"
+          blanche qui vivait dans le scroll (avatar/nom/rôle déplacés ici) */}
+      <LinearGradient
+        colors={[T.heroFrom, T.heroTo]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={[s.hero, { paddingTop: insets.top + 20 }]}
+      >
+        <View style={s.heroGlow} pointerEvents="none" />
+        <View style={s.heroBody}>
+          <View style={s.avatarBox}>
+            <Text style={[s.initials, { fontFamily: T.font.display }]}>{initials}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.name, { fontFamily: T.font.display }]}>{displayName}</Text>
+            <Text style={[s.userId, { fontFamily: T.font.mono }]}>
+              {user?.id?.slice(0, 12).toUpperCase() ?? "—"}
+            </Text>
+            <View style={s.rolePill}>
+              <Ionicons name={theme.icon as any} size={11} color="#FFFFFF" />
+              <Text style={[s.roleLabel, { fontFamily: T.font.sans }]}>
+                {theme.label}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </LinearGradient>
 
       <ScrollView
         contentContainerStyle={s.scroll}
         showsVerticalScrollIndicator={false}
         style={{ backgroundColor: T.bg }}
       >
-        {/* ── Hero card ───────────────────────────────── */}
-        {/* ✅ v5.3 : blanc + barre top colorée + ombre → plus de gradient */}
-        <View style={s.hero}>
-          {/* Bande colorée en haut du hero */}
-          <View style={[s.heroTopBar, { backgroundColor: theme.accent }]} />
-          <View style={s.heroBody}>
-            <View style={[s.avatarBox, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}40` }]}>
-              <Text style={[s.initials, { color: theme.accent, fontFamily: T.font.display }]}>
-                {initials}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.name, { fontFamily: T.font.display }]}>{displayName}</Text>
-              <Text style={[s.userId, { fontFamily: T.font.mono }]}>
-                {user?.id?.slice(0, 12).toUpperCase() ?? "—"}
-              </Text>
-              <View style={[s.rolePill, { backgroundColor: theme.accentSoft, borderColor: `${theme.accent}40` }]}>
-                <Ionicons name={theme.icon as any} size={11} color={theme.accent} />
-                <Text style={[s.roleLabel, { color: theme.accent, fontFamily: T.font.sans }]}>
-                  {theme.label}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
         {/* ── Security gauge (Users only) ── */}
         {isUser && (
           <View style={[s.secCard, { borderColor: `${theme.accent}30` }]}>
@@ -385,35 +403,43 @@ export default function ProfileScreen() {
 
 // ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
+  // ✅ v5.4 (nouveau) — hero plein écran, remplace l'ancienne hero card
+  hero: {
+    paddingHorizontal: 20,
+    paddingBottom: 26,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden",
+  },
+  heroGlow: {
+    position: "absolute", top: -60, right: -60,
+    width: 200, height: 200, borderRadius: 100,
+    backgroundColor: T.heroGlow,
+  },
+  heroBody: { flexDirection: "row", alignItems: "center", gap: 16 },
+
+  avatarBox: {
+    width: 60, height: 60, borderRadius: T.radius.lg,
+    justifyContent: "center", alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.25)",
+  },
+  initials: { fontSize: 24, fontWeight: "900", color: "#FFFFFF" },
+  name:     { color: "#FFFFFF", fontSize: 20, fontWeight: "700", marginBottom: 3 },
+  userId:   { color: T.heroMuted, fontSize: 10, fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
+  rolePill: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: T.radius.sm, borderWidth: 1,
+    backgroundColor: "rgba(255,255,255,0.14)", borderColor: "rgba(255,255,255,0.25)",
+  },
+  roleLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5, color: "#FFFFFF" },
+
   scroll: {
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 54 : 20,
+    paddingTop: 20,
     paddingBottom: 20,
   },
-
-  // ✅ v5.3 : hero blanc + barre top colorée + ombre portée
-  hero: {
-    backgroundColor: T.white,
-    borderRadius:    T.radius.xl,
-    marginBottom:    24,
-    borderWidth:     1,
-    borderColor:     T.border,
-    overflow:        "hidden",
-    shadowColor:     "#64748B",
-    shadowOffset:    { width: 0, height: 6 },
-    shadowOpacity:   0.10,
-    shadowRadius:    18,
-    elevation:       7,
-  },
-  heroTopBar: { height: 4, width: "100%" },
-  heroBody:   { flexDirection: "row", alignItems: "center", gap: 16, padding: 20 },
-
-  avatarBox:  { width: 60, height: 60, borderRadius: T.radius.lg, justifyContent: "center", alignItems: "center", borderWidth: 2 },
-  initials:   { fontSize: 24, fontWeight: "900" },
-  name:       { color: T.text, fontSize: 20, fontWeight: "700", marginBottom: 3 },
-  userId:     { color: T.textDim, fontSize: 10, fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
-  rolePill:   { flexDirection: "row", alignItems: "center", gap: 5, alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5, borderRadius: T.radius.sm, borderWidth: 1.5 },
-  roleLabel:  { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
 
   secCard: {
     backgroundColor: T.white, borderRadius: T.radius.lg,

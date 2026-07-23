@@ -1,29 +1,28 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.4
+// TRANSACTION DETAIL v6.5
+// ✅ v6.5 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (loadTransaction, handleShare, performAction, tous les calculs
+//    isIncoming/heroDisplayAmount/getTxLabel/getStatusInfo : identiques).
+//    - L'ancienne barre de navigation (bouton "×" seul sur fond clair)
+//      devient un vrai hero sombre (#0A0F0D → #123324, mêmes teintes
+//      que ClientDashboard) avec titre "Détail de la transaction" et
+//      la référence en sous-titre.
+//    - Le "ticket" (carte blanche avec badge de statut flottant, montant
+//      héro, détails) reste strictement inchangé — seul l'espace
+//      au-dessus (avant, navBar nue) est maintenant un hero de marque.
+//    - SafeAreaView passe en fond sombre ; le ScrollView qui contient
+//      le ticket reçoit un fond clair explicite (theme.bg, déjà
+//      calculé par rôle) pour ne pas hériter du sombre du parent.
+//    - useSafeAreaInsets (nouveau) pour un alignement fiable sous
+//      l'encoche, au lieu du marginTop conditionnel Platform.OS.
 // ✅ v6.1 : logique isIncoming correcte par rôle
 // ✅ v6.2 : montant hero + "Montant crédité" pour les entrants avec conversion
 // ✅ FIX v6.3 : handleShare navigue désormais vers l'écran client-receipt.tsx
 //    avec toutes les données de la transaction, au lieu d'ouvrir le partage
 //    natif avec un texte brut à 3 lignes.
-//    AVANT : Share.share({ message: "Reçu...\nRéf:...\nMontant:..." })
-//    APRÈS  : router.push("/(tabs)/transactions/client-receipt", { data })
-//    Note   : import `Share` de react-native retiré (plus utilisé nulle part
-//             ailleurs dans ce fichier) pour éviter un import mort / warning lint.
-//    Bouton : libellé "Partager le reçu" → "Voir le reçu" (cohérent avec la
-//             nouvelle navigation qui affiche un écran avant tout partage réel).
 // ✅ v6.4 : Affichage du motif du transfert (transaction.note)
-//
-//   PROBLÈME RÉSOLU (juillet 2026) :
-//   transactions.service.ts v4.19 (backend) persiste enfin dto.note dans
-//   Transaction.note (jusque-là silencieusement ignoré). Mais aucun écran
-//   ne l'affichait nulle part — le motif choisi par l'utilisateur dans
-//   send.tsx disparaissait de la vue une fois le reçu immédiat fermé,
-//   même une fois correctement sauvegardé en base.
-//   CORRECTIF : nouvelle ligne "Motif" dans le détail, juste après la
-//   Référence, affichée uniquement si transaction.note est renseigné —
-//   aucun changement visuel pour les transactions sans motif (B2B,
-//   recharges agence, dépôts…).
 // =========================================================
 
 import React, { useState, useEffect } from "react";
@@ -33,6 +32,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v6.5 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v6.5 (nouveau)
 import * as Clipboard from "expo-clipboard";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
@@ -43,6 +44,12 @@ const FONTS = {
   body:    Platform.OS === "ios" ? "Avenir"      : "sans-serif",
   mono:    Platform.OS === "ios" ? "Courier New" : "monospace",
 };
+
+// ✅ v6.5 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+const HERO_FROM  = "#0A0F0D";
+const HERO_TO    = "#123324";
+const HERO_GLOW  = "rgba(5,150,105,0.18)";
+const HERO_MUTED = "rgba(255,255,255,0.6)";
 
 const THEMES: Record<string, { primary: string; light: string; bg: string }> = {
   SUPER_ADMIN:   { primary: "#5B5BD6", light: "#EDE9FE", bg: "#F8FAFF" },
@@ -68,6 +75,7 @@ export default function TransactionDetailScreen() {
 
   const router   = useRouter();
   const { user } = useAuth();
+  const insets   = useSafeAreaInsets(); // ✅ v6.5 (nouveau)
   const role     = user?.role || "USER";
   const theme    = THEMES[role] ?? THEMES.USER;
 
@@ -199,11 +207,6 @@ export default function TransactionDetailScreen() {
   // ✅ FIX v6.2 — Montant héro : pour les entrants avec conversion de devise,
   // afficher ce que l'utilisateur a réellement reçu (receivedAmount/targetCurrency)
   // plutôt que ce que l'expéditeur a envoyé (amount/currency).
-  //
-  // Exemple : Fatim envoie 26 EUR → Mouctar reçoit 17 055 XOF
-  //   Côté Mouctar (isIncoming=true) :
-  //     AVANT : "+26,00 EUR"  ← faux, montant de l'expéditeur
-  //     APRÈS  : "+17 055 XOF" ← correct, montant crédité sur son wallet
   const isConversionIncoming =
     isIncoming &&
     transaction.targetCurrency &&
@@ -274,16 +277,35 @@ export default function TransactionDetailScreen() {
   const showCopyCode     = !isB2B && !isRefill && !isDeposit && (isPending || isValidated);
 
   return (
-    <SafeAreaView style={[s.safeArea, { backgroundColor: theme.bg }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
-      <ScrollView contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={[s.safeArea, { backgroundColor: HERO_FROM }]}>
+      <StatusBar barStyle="light-content" backgroundColor={HERO_FROM} />
 
-        <View style={s.navBar}>
-          <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-            <Ionicons name="close" size={26} color="#0F172A" />
+      {/* ✅ v6.5 : hero sombre remplace l'ancienne navBar nue */}
+      <LinearGradient
+        colors={[HERO_FROM, HERO_TO]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={[s.hero, { paddingTop: insets.top + 8 }]}
+      >
+        <View style={s.heroGlow} pointerEvents="none" />
+        <View style={s.heroRow}>
+          <TouchableOpacity onPress={() => router.back()} style={s.heroBackBtn}>
+            <Ionicons name="close" size={20} color="#FFFFFF" />
           </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.heroTitle, { fontFamily: FONTS.heading }]}>Détail de la transaction</Text>
+            <Text style={[s.heroSub, { fontFamily: FONTS.mono }]} numberOfLines={1}>
+              {transaction.reference ?? "—"}
+            </Text>
+          </View>
         </View>
+      </LinearGradient>
 
+      {/* ✅ v6.5 : fond clair explicite (theme.bg) — le SafeAreaView est désormais sombre */}
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.bg }}
+        contentContainerStyle={s.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[s.ticket, { borderTopColor: theme.primary }]}>
           <View style={[s.statusBadge, { backgroundColor: status.bg }]}>
             <Ionicons name={status.icon as any} size={14} color={status.color} />
@@ -321,12 +343,10 @@ export default function TransactionDetailScreen() {
             <View style={[s.convSection, { backgroundColor: "#EFF6FF" }]}>
               <Ionicons name="swap-horizontal-outline" size={14} color="#2563EB" />
               {isConversionIncoming ? (
-                // Destinataire : montre ce que l'expéditeur avait envoyé
                 <Text style={[s.convTxt, { fontFamily: FONTS.mono }]}>
                   Envoyé : {fmt(toNum(transaction.amount), transaction.currency)} {transaction.currency}
                 </Text>
               ) : (
-                // Expéditeur : montre ce que le destinataire reçoit
                 <Text style={[s.convTxt, { fontFamily: FONTS.mono }]}>
                   Reçoit : {fmt(toNum(transaction.receivedAmount), transaction.targetCurrency)} {transaction.targetCurrency}
                 </Text>
@@ -341,7 +361,6 @@ export default function TransactionDetailScreen() {
             <DetailRow label="Date" value={new Date(transaction.createdAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })} />
             <View style={s.divider} />
             <DetailRow label="Référence" value={transaction.reference ?? "—"} mono />
-            {/* ✅ v6.4 — Motif du transfert (transaction.note), si renseigné */}
             {!!transaction.note && (
               <>
                 <View style={s.divider} />
@@ -398,8 +417,6 @@ export default function TransactionDetailScreen() {
               />
             )}
             <View style={[s.divider, { backgroundColor: "#E2E8F0" }]} />
-            {/* ✅ FIX v6.2 — "Montant crédité" affiche heroDisplayAmount/heroDisplayCurrency
-                pour le destinataire d'une conversion (17 055 XOF et non 26 EUR) */}
             <DetailRow
               label={isIncoming ? "Montant crédité" : "Total débité"}
               value={`${fmt(
@@ -466,10 +483,32 @@ function DetailRow({ label, value, bold, sub, color, mono }: {
 const s = StyleSheet.create({
   safeArea:      { flex: 1 },
   center:        { flex: 1, justifyContent: "center", alignItems: "center" },
-  scrollContent: { flexGrow: 1, padding: 20, paddingBottom: 80 },
+  scrollContent: { flexGrow: 1, padding: 20, paddingTop: 28, paddingBottom: 80 },
   notFoundText:  { fontSize: 16, color: "#64748B" },
-  navBar:        { flexDirection: "row", justifyContent: "flex-end", marginBottom: 16, marginTop: Platform.OS === "android" ? 20 : 0 },
-  backBtn:       { width: 44, height: 44, borderRadius: 22, backgroundColor: "#E2E8F0", justifyContent: "center", alignItems: "center" },
+
+  // ✅ v6.5 (nouveau) — hero sombre, remplace navBar/backBtn (retirés)
+  hero: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    overflow: "hidden",
+  },
+  heroGlow: {
+    position: "absolute", top: -50, right: -50,
+    width: 170, height: 170, borderRadius: 85,
+    backgroundColor: HERO_GLOW,
+  },
+  heroRow:     { flexDirection: "row", alignItems: "center", gap: 12 },
+  heroBackBtn: {
+    width: 38, height: 38, borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center", alignItems: "center",
+  },
+  heroTitle: { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
+  heroSub:   { color: HERO_MUTED, fontSize: 11, fontWeight: "600", marginTop: 2 },
+
   ticket:        { backgroundColor: "#FFF", borderRadius: 24, padding: 24, paddingTop: 48, borderTopWidth: 4, shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 15, elevation: 4, position: "relative" },
   statusBadge:   { position: "absolute", top: -16, alignSelf: "center", flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 6, borderWidth: 2, borderColor: "#FFF" },
   statusText:    { fontWeight: "900", fontSize: 12, letterSpacing: 0.5 },

@@ -1,10 +1,21 @@
 // apps/direct-transfair-mobile/app/(auth)/assistance.tsx
 // =========================================================
-// ASSISTANCE & COOKIES v1.0 — Direct Transf'air
-// ✅ FAQ transferts d'argent
-// ✅ Politique de cookies (conforme RGPD)
-// ✅ Canaux de contact
-// ✅ Présentation modale depuis login.tsx
+// ASSISTANCE & COOKIES v1.1 — Direct Transf'air
+// ✅ v1.1 : Branding dynamique pour les canaux de contact
+//   PROBLÈME RÉSOLU : email/téléphone/WhatsApp/médiateur de support
+//   étaient écrits en dur, ainsi qu'une mention "Direct Transf'air"
+//   dans une réponse FAQ. Un tenant société voyait les coordonnées de
+//   Direct Transf'air plutôt que les siennes.
+//   CORRECTIF : useTenant() → email (branding.supportEmail), téléphone
+//   (branding.contactPhone), WhatsApp (branding.whatsappNumber, replie
+//   sur contactPhone), médiateur (branding.mediatorName/Url — carte
+//   masquée si non configuré). FALLBACK_EMAIL/FALLBACK_PHONE ne sont
+//   qu'un filet de sécurité pour ne jamais ouvrir un lien "mailto:null"
+//   si un tenant société n'a rien configuré — DEFAULT_BRANDING fournit
+//   déjà de vraies valeurs pour le tenant plateforme (DONIKO).
+//   ✅ Fix annexe : même crash "GO_BACK not handled" que terms.tsx,
+//   même correctif (router.canGoBack()).
+// ✅ v1.0 : FAQ transferts d'argent, cookies (RGPD), canaux de contact
 // =========================================================
 
 import React, { useState } from "react";
@@ -14,6 +25,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useTenant } from "../../providers/TenantProvider";
 
 const T = {
   bg:         "#FFFBF0",
@@ -40,6 +52,11 @@ const T = {
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
+
+// ✅ v1.1 (nouveau) — filet de sécurité uniquement, jamais utilisé pour
+// DONIKO (DEFAULT_BRANDING fournit déjà de vraies valeurs).
+const FALLBACK_EMAIL = "support@directtransfair.com";
+const FALLBACK_PHONE = "+33123456789";
 
 // ─── Tab bar ──────────────────────────────────────────────
 const TABS = [
@@ -168,12 +185,21 @@ const slS = StyleSheet.create({
 // ─── Main ─────────────────────────────────────────────────
 export default function AssistanceScreen() {
   const router = useRouter();
+  const { branding } = useTenant(); // ✅ v1.1 (nouveau)
   const [activeTab, setActiveTab] = useState<TabKey>("faq");
 
-  // Préférences cookies (local state — à persister en AsyncStorage si besoin)
   const [analyticsEnabled,   setAnalyticsEnabled]   = useState(true);
   const [marketingEnabled,   setMarketingEnabled]   = useState(false);
   const [personalisationEnabled, setPersonalisationEnabled] = useState(false);
+
+  const goBack = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(auth)/login-v2");
+  };
+
+  const supportEmail = branding.supportEmail || FALLBACK_EMAIL;
+  const supportPhone = branding.contactPhone || FALLBACK_PHONE;
+  const whatsappRaw   = (branding.whatsappNumber || branding.contactPhone || FALLBACK_PHONE).replace(/\D/g, "");
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
@@ -182,7 +208,7 @@ export default function AssistanceScreen() {
 
         {/* Header */}
         <View style={s.header}>
-          <TouchableOpacity style={s.closeBtn} onPress={() => router.back()} hitSlop={12}>
+          <TouchableOpacity style={s.closeBtn} onPress={goBack} hitSlop={12}>
             <Ionicons name="close" size={20} color={T.text} />
           </TouchableOpacity>
           <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>
@@ -238,7 +264,7 @@ export default function AssistanceScreen() {
               />
               <FaqItem
                 q="Quels pays peut-on atteindre ?"
-                a="Direct Transf'air couvre principalement l'Afrique de l'Ouest (Guinée, Sénégal, Mali, Côte d'Ivoire, Burkina Faso, etc.) et l'Europe. La liste complète des destinations est disponible lors de la saisie de votre transfert."
+                a={`${branding.name} couvre principalement l'Afrique de l'Ouest (Guinée, Sénégal, Mali, Côte d'Ivoire, Burkina Faso, etc.) et l'Europe. La liste complète des destinations est disponible lors de la saisie de votre transfert.`}
               />
               <FaqItem
                 q="Comment le bénéficiaire reçoit l'argent ?"
@@ -294,7 +320,7 @@ export default function AssistanceScreen() {
                 icon="mail-outline"
                 title="Email"
                 subtitle="Réponse sous 24h ouvrées"
-                action={() => Linking.openURL("mailto:support@directtransfair.com")}
+                action={() => Linking.openURL(`mailto:${supportEmail}`)}
                 actionLabel="Écrire"
                 color={T.blue}
                 bgColor={T.blueSoft}
@@ -303,7 +329,7 @@ export default function AssistanceScreen() {
                 icon="call-outline"
                 title="Téléphone"
                 subtitle="Lun–Ven 9h–18h · Sam 9h–13h"
-                action={() => Linking.openURL("tel:+33123456789")}
+                action={() => Linking.openURL(`tel:${supportPhone}`)}
                 actionLabel="Appeler"
                 color={T.green}
                 bgColor={T.greenSoft}
@@ -312,7 +338,7 @@ export default function AssistanceScreen() {
                 icon="logo-whatsapp"
                 title="WhatsApp"
                 subtitle="Réponse rapide, 7j/7 de 8h à 20h"
-                action={() => Linking.openURL("https://wa.me/33123456789")}
+                action={() => Linking.openURL(`https://wa.me/${whatsappRaw}`)}
                 actionLabel="Ouvrir"
                 color="#25D366"
                 bgColor="#F0FDF4"
@@ -327,27 +353,32 @@ export default function AssistanceScreen() {
                 bgColor={T.purpleSoft}
               />
 
-              <SectionLabel label="Médiation" />
-              <View style={s.mediationCard}>
-                <View style={s.mediationIconBox}>
-                  <Ionicons name="scale-outline" size={18} color={T.accent} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.mediationTitle, { fontFamily: T.font.sans }]}>
-                    Médiateur bancaire
-                  </Text>
-                  <Text style={[s.mediationDesc, { fontFamily: T.font.sans }]}>
-                    Si votre réclamation n'est pas résolue sous 60 jours, vous pouvez saisir gratuitement le Médiateur de l'ACPR.
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => Linking.openURL("https://www.acpr.banque-france.fr")}
-                  >
-                    <Text style={[s.mediationLink, { fontFamily: T.font.mono }]}>
-                      acpr.banque-france.fr →
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
+              {/* ✅ v1.1 — carte masquée si aucun médiateur configuré */}
+              {!!(branding.mediatorName && branding.mediatorUrl) && (
+                <>
+                  <SectionLabel label="Médiation" />
+                  <View style={s.mediationCard}>
+                    <View style={s.mediationIconBox}>
+                      <Ionicons name="scale-outline" size={18} color={T.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.mediationTitle, { fontFamily: T.font.sans }]}>
+                        {branding.mediatorName}
+                      </Text>
+                      <Text style={[s.mediationDesc, { fontFamily: T.font.sans }]}>
+                        Si votre réclamation n'est pas résolue sous 60 jours, vous pouvez saisir gratuitement le {branding.mediatorName}.
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(branding.mediatorUrl as string)}
+                      >
+                        <Text style={[s.mediationLink, { fontFamily: T.font.mono }]}>
+                          {(branding.mediatorUrl as string).replace(/^https?:\/\//, "")} →
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           )}
 
@@ -418,7 +449,7 @@ export default function AssistanceScreen() {
               <TouchableOpacity
                 style={s.saveBtn}
                 activeOpacity={0.85}
-                onPress={() => router.back()}
+                onPress={goBack}
               >
                 <Ionicons name="checkmark-circle-outline" size={16} color={T.surface} />
                 <Text style={[s.saveTxt, { fontFamily: T.font.sans }]}>

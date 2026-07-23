@@ -1,18 +1,25 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.5
+// PERSONAL INFO — CLIENT (WALLET) v5.6
+// ✅ v5.6 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (save, cancelEdit, formatDate, handleDateChange : tout identique).
+//    - En-tête (bouton retour, titre "Mes Informations", sous-titre
+//      "Profil & KYC", bouton crayon/annuler) : fond blanc plat →
+//      LinearGradient sombre (#0A0F0D → #123324), mêmes teintes que
+//      ClientDashboard.
+//    - SafeAreaView passe en fond sombre ; le KeyboardAvoidingView
+//      (juste en dessous) reçoit un fond clair explicite (T.bg) pour
+//      ne pas hériter du sombre du parent.
+//    - useSafeAreaInsets (nouveau) remplace le paddingTop conditionnel
+//      Platform.OS.
+//    - Boutons retour/crayon : recolorés en style "verre" (fond blanc
+//      translucide) ; le bouton "annuler" (mode édition) garde une
+//      teinte rouge, adaptée en glass rouge pour rester lisible sur
+//      fond sombre. Le reste de l'écran (cartes Identité/État civil/
+//      Adresse, bouton Enregistrer) reste inchangé.
 // ✅ v5.4 conservé intégralement (reset du cadre de focus web)
 // ✅ v5.5 : Correction des erreurs TypeScript signalées (ts(2769))
-//   - Cause : `outlineStyle: "none"` était passé sans cast, alors que React
-//     Native déclare déjà `outlineStyle` comme un style natif typé
-//     "solid" | "dotted" | "dashed" | undefined (propriété d'accessibilité
-//     native, sans rapport avec le CSS web `outline`). "none" n'appartenant
-//     pas à cette union, TS rejetait l'assignation ("Aucune surcharge ne
-//     correspond à cet appel").
-//   - Fix : ajout du cast `as any` sur l'objet de reset web dans le
-//     <TextInput> du composant `Field`. Comportement runtime inchangé
-//     (le cadre bleu parasite reste corrigé) — seule la compilation est
-//     réparée.
 // =========================================================
 
 import React, { useEffect, useState, useRef } from "react";
@@ -23,20 +30,22 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v5.6 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v5.6 (nouveau)
 import { useAuth } from "../../../providers/AuthProvider";
 import { api }    from "../../../services/api";
 import { COUNTRIES }        from "../../../utils/countries";
 import { citiesByCountry }  from "../../../data/cities";
 
-// ─── Design tokens — ✅ v5.3 : fonds neutres ──────────────
+// ─── Design tokens ──────────────────────────────────
 const T = {
-  bg:          "#FAFAFA",    // ✅ était "#ECFDF5" (vert pâle)
+  bg:          "#FAFAFA",
   surface:     "#FFFFFF",
-  surfaceAlt:  "#F5F5F5",   // ✅ était "#F0FDF4" (vert pâle)
-  border:      "#E5E5EA",   // ✅ était "#A7F3D0" (vert)
-  borderFocus: "#059669",   // conservé — accent interactif
+  surfaceAlt:  "#F5F5F5",
+  border:      "#E5E5EA",
+  borderFocus: "#059669",
   accent:      "#059669",
-  accentSoft:  "#D1FAE5",   // conservé — uniquement sur badges/avatars actifs
+  accentSoft:  "#D1FAE5",
   accentText:  "#065F46",
   text:        "#0F172A",
   textSub:     "#374151",
@@ -46,6 +55,11 @@ const T = {
   redBorder:   "#FECACA",
   info:        "#0284C7",
   infoSoft:    "#E0F2FE",
+  // ✅ v5.6 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom:    "#0A0F0D",
+  heroTo:      "#123324",
+  heroGlow:    "rgba(5,150,105,0.2)",
+  heroMuted:   "rgba(255,255,255,0.6)",
   radius: { sm: 10, md: 14, lg: 20, xl: 24 },
   font: {
     display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
@@ -72,11 +86,6 @@ function Field({ label, value, onChange, editable = true, style, placeholder, ke
             fS.input,
             { fontFamily: T.font.sans },
             !editable && fS.inputDisabled,
-            // ✅ v5.5 : cast `as any` ajouté — sans lui, TS rejette cet objet car
-            // React Native déclare déjà `outlineStyle` comme un style natif typé
-            // "solid" | "dotted" | "dashed" | undefined (propriété d'accessibilité,
-            // sans rapport avec le CSS web outline). "none" n'appartient pas à cette
-            // union, d'où l'erreur TS2769 "Aucune surcharge ne correspond à cet appel".
             Platform.OS === "web" && ({
               outlineStyle: "none",
               outlineWidth: 0,
@@ -279,14 +288,12 @@ function SectionCard({ icon, title, children }: { icon: string; title: string; c
 const sC = StyleSheet.create({
   card:    {
     backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14,
-    // ✅ v5.3 : bordure neutre (était verte)
     borderWidth: 1.5, borderColor: T.border,
     shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
   },
   header:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
   iconBox: {
     width: 28, height: 28, borderRadius: 8,
-    // ✅ v5.3 : icône sur fond vert pâle conservé car élément de couleur intentionnelle
     backgroundColor: T.accentSoft,
     justifyContent: "center", alignItems: "center",
   },
@@ -297,6 +304,7 @@ const sC = StyleSheet.create({
 export default function PersonalInfoWallet() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
+  const insets = useSafeAreaInsets(); // ✅ v5.6 (nouveau)
 
   const [loading,     setLoading]     = useState(false);
   const [isEditing,   setIsEditing]   = useState(false);
@@ -408,15 +416,20 @@ export default function PersonalInfoWallet() {
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
 
   return (
-    // ✅ v5.3 : fond blanc neutre (était vert pâle)
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.bg }}>
-      {/* ✅ v5.3 : StatusBar sombre sur fond blanc */}
-      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+    // ✅ v5.6 : fond sombre (zone sous l'encoche) — le
+    // KeyboardAvoidingView ci-dessous repeint T.bg par-dessus.
+    <SafeAreaView style={{ flex: 1, backgroundColor: T.heroFrom }}>
+      <StatusBar barStyle="light-content" backgroundColor={T.heroFrom} />
 
-      {/* Header */}
-      <View style={s.header}>
+      {/* ✅ v5.6 : LinearGradient sombre au lieu du fond blanc plat */}
+      <LinearGradient
+        colors={[T.heroFrom, T.heroTo]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={[s.header, { paddingTop: insets.top + 8 }]}
+      >
+        <View style={s.heroGlow} pointerEvents="none" />
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color={T.text} />
+          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Mes Informations</Text>
@@ -426,12 +439,12 @@ export default function PersonalInfoWallet() {
           style={[s.editBtn, isEditing && s.editBtnCancel]}
           onPress={() => isEditing ? cancelEdit() : setIsEditing(true)}
         >
-          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
+          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? "#FCA5A5" : "#FFFFFF"} />
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
-      {/* ✅ v5.2 Fix danse clavier : ScrollView normal + Animated.View intérieur */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      {/* ✅ v5.6 — fond clair explicite (le SafeAreaView est désormais sombre) */}
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: T.bg }}>
         <ScrollView
           contentContainerStyle={{
             paddingHorizontal: 20,
@@ -500,7 +513,6 @@ export default function PersonalInfoWallet() {
               <Field label="Adresse complète *" value={address} onChange={setAddress} editable={isEditing} placeholder="12 Rue des Lilas…" />
               <View style={{ flexDirection: "row", gap: 12 }}>
                 <Field label="Code postal" value={postalCode} onChange={setPostalCode} editable={isEditing} keyboardType="numeric" style={{ flex: 0.45 }} placeholder="75001" />
-                {/* ✅ v5.2 : CityPicker si villes disponibles, sinon Field texte */}
                 {showCityPicker ? (
                   <View style={{ flex: 1 }}>
                     <CityPicker
@@ -515,7 +527,6 @@ export default function PersonalInfoWallet() {
                   <Field label="Ville *" value={city} onChange={setCity} editable={isEditing} style={{ flex: 1 }} placeholder="Paris" />
                 )}
               </View>
-              {/* ✅ v5.2 : CountryPicker avec reset ville si nécessaire */}
               <CountryPicker
                 label="Pays de résidence *"
                 value={country}
@@ -554,36 +565,38 @@ export default function PersonalInfoWallet() {
 }
 
 const s = StyleSheet.create({
-  // ✅ v5.3 : header blanc neutre (était bg vert pâle)
+  // ✅ v5.6 — backgroundColor géré par LinearGradient désormais ;
+  // coins bas arrondis + overflow hidden pour le halo décoratif.
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 16,
+    paddingBottom: 18,
     gap: 12,
-    backgroundColor: "#FFFFFF",
-    // ✅ v5.3 : bordure neutre (était verte)
-    borderBottomWidth: 1, borderBottomColor: "#E5E5EA",
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    overflow: "hidden",
   },
-  backBtn:       {
+  heroGlow: {
+    position: "absolute", top: -50, right: -50,
+    width: 160, height: 160, borderRadius: 80,
+    backgroundColor: T.heroGlow,
+  },
+  backBtn: {
     width: 38, height: 38, borderRadius: T.radius.sm,
-    // ✅ v5.3 : fond neutre (était vert pâle)
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "rgba(255,255,255,0.1)",
     justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: "#E5E5EA",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
   },
-  headerTitle:   { color: T.text, fontSize: 17, fontWeight: "700" },
-  headerSub:     { color: T.textDim, fontSize: 12, marginTop: 1 },
+  headerTitle:   { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
+  headerSub:     { color: T.heroMuted, fontSize: 12, marginTop: 1 },
   editBtn:       {
     width: 38, height: 38, borderRadius: T.radius.sm,
-    backgroundColor: T.accentSoft,
+    backgroundColor: "rgba(255,255,255,0.1)",
     justifyContent: "center", alignItems: "center",
-    // ✅ v5.3 : bordure neutre
-    borderWidth: 1, borderColor: "#E5E5EA",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
   },
-  editBtnCancel: { backgroundColor: T.redSoft, borderColor: T.redBorder },
+  editBtnCancel: { backgroundColor: "rgba(220,38,38,0.25)", borderColor: "rgba(252,165,165,0.45)" },
 
-  // ✅ v5.3 : carte avatar — bordure neutre
   avatarCard:   {
     flexDirection: "row", alignItems: "center", gap: 14,
     backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14,

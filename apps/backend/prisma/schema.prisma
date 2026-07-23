@@ -521,6 +521,31 @@ model Client {
   representativeName String?
   representativeDocs String?
 
+  // ── Mentions légales publiques (écrans CGU / Assistance mobile) ✅ v5.2
+  // Distinctes de ownerFirstName/ownerLastName (propriétaire interne,
+  // jamais affiché publiquement) — ce sont ici les infos affichées à
+  // TOUS les utilisateurs. Réutilise contactEmail/contactPhone/address
+  // déjà existants ci-dessus pour les coordonnées de contact.
+  // ⚠️ Couvre l'IDENTITÉ/CONTACT uniquement — la substance des clauses
+  // juridiques (juridiction, annulation, KYC, plafonds) reste du texte
+  // fixe dans terms.tsx : la personnaliser par société demanderait une
+  // vraie relecture juridique par société, pas un template.
+  legalCompanyName         String?    // Nom légal complet, ex: "Direct Transf'air SAS"
+                                       // (distinct de `name` = nom de marque, ex: "Flash Transfer")
+  regulatorName            String?    // "Autorité de Contrôle Prudentiel et de Résolution (ACPR)"
+  regulatorAcronym         String?    // "ACPR"
+  regulatoryFrameworkLabel String?    // Badge écran CGU, ex: "DSP2" — absent = badge masqué
+  regulatorLicenseNumber   String?    // "N° 12345"
+  regulatorLicenseType     String?    // "Établissement de paiement"
+  capitalSocial            String?    // "100 000 € entièrement libéré"
+  supportEmail             String?    // Email affiché sur l'écran Assistance (distinct de contactEmail, utilisé sur CGU)
+  whatsappNumber           String?    // Peut différer de contactPhone
+  mediatorName             String?    // "Médiateur de l'ACPR"
+  mediatorUrl              String?    // "https://www.acpr.banque-france.fr"
+  termsVersion             String?    @default("1.0")
+  termsEffectiveDate       DateTime?
+
+
   // ── Abonnement ────────────────────────────────────────
   subscriptionType   SubscriptionType   @default(RENTAL)
   subscriptionStatus SubscriptionStatus @default(ACTIVE)

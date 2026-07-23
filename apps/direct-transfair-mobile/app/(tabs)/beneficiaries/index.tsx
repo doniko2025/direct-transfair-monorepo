@@ -1,15 +1,24 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/index.tsx
 // =========================================================
-// BENEFICIARIES v6.2 — Direct Transf'air
+// BENEFICIARIES v6.3 — Direct Transf'air
+// ✅ v6.3 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (load, filtrage, groupage alphabétique : tout identique).
+//    - Hero blanc neutre → LinearGradient sombre (#0A0F0D → #123324),
+//      mêmes teintes que ClientDashboard.
+//    - Titre, compteur, sous-titre, barre de recherche, bouton "+" du
+//      hero : recolorés en blanc/"verre" pour rester lisibles sur fond
+//      sombre. Le bouton "+" devient glass (comme les boutons d'icône
+//      des autres heroes) — le FAB flottant en bas à droite (inchangé)
+//      reste l'action principale "ajouter un contact".
+//    - SafeAreaView passe en fond sombre ; le loader et la liste (sous
+//      le hero) reçoivent un fond clair explicite (C.pageBg) pour ne
+//      pas hériter du sombre du parent.
+//    - useSafeAreaInsets (nouveau) remplace le paddingTop conditionnel
+//      Platform.OS.
 // ✅ v6.0 : UI compacte, groupage alphabétique, badge compteur
 // ✅ v6.1 : fond blanc neutre #FAFAFA, ombres neutres
 // ✅ v6.2 : Héro blanc neutre — plus de fond vert
-//   - StatusBar → dark-content / blanc
-//   - Titre + sous-titre → encre foncée
-//   - Barre de recherche → fond gris clair, texte sombre
-//   - Bouton "+" → vert plein sur fond blanc
-//   - Cercle décoratif (glow) → supprimé
-//   - Bordure basse héro → séparateur neutre
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -20,6 +29,8 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v6.3 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v6.3 (nouveau)
 import { api } from "../../../services/api";
 
 const C = {
@@ -37,6 +48,13 @@ const C = {
   inkSoft:     "#6B9E85",
   inkMuted:    "#94A3B8",
   borderLight: "#F0F0F0",
+  // ✅ v6.3 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom:    "#0A0F0D",
+  heroTo:      "#123324",
+  heroGlow:    "rgba(5,150,105,0.18)",
+  heroMuted:   "rgba(255,255,255,0.6)",
+  heroGlass:   "rgba(255,255,255,0.14)",
+  heroGlassBdr:"rgba(255,255,255,0.22)",
   r: { xs: 6, sm: 10, md: 14, lg: 18, xl: 24, pill: 99 },
   font: {
     serif: Platform.select({ ios: "Georgia",      android: "serif",              default: "serif"      }),
@@ -130,6 +148,7 @@ const bc = StyleSheet.create({
 // ─── Main ───────────────────────────────────────────────
 export default function BeneficiariesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // ✅ v6.3 (nouveau)
   const [beneficiaries, setBeneficiaries] = useState<any[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [refreshing,    setRefreshing]    = useState(false);
@@ -169,55 +188,60 @@ export default function BeneficiariesScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* ✅ v6.2 : StatusBar sombre sur fond blanc */}
-      <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
 
-      {/* ✅ v6.2 : Héro blanc neutre */}
-      <Animated.View style={[s.hero, {
+      {/* ── Héro sombre ── */}
+      <Animated.View style={{
         opacity: headerAnim,
         transform: [{ scale: headerAnim.interpolate({ inputRange: [0,1], outputRange: [0.97,1] }) }],
-      }]}>
-        <View style={s.heroRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Mes Contacts</Text>
-            <View style={s.heroSubRow}>
-              <View style={s.countBadge}>
-                <Text style={[s.countTxt, { fontFamily: C.font.sans }]}>{beneficiaries.length}</Text>
+      }}>
+        <LinearGradient
+          colors={[C.heroFrom, C.heroTo]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={[s.hero, { paddingTop: insets.top + 10 }]}
+        >
+          <View style={s.heroGlowDeco} pointerEvents="none" />
+          <View style={s.heroRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.heroTitle, { fontFamily: C.font.serif }]}>Mes Contacts</Text>
+              <View style={s.heroSubRow}>
+                <View style={s.countBadge}>
+                  <Text style={[s.countTxt, { fontFamily: C.font.sans }]}>{beneficiaries.length}</Text>
+                </View>
+                <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>
+                  destinataire{beneficiaries.length > 1 ? "s" : ""}
+                </Text>
               </View>
-              <Text style={[s.heroSub, { fontFamily: C.font.sans }]}>
-                destinataire{beneficiaries.length > 1 ? "s" : ""}
-              </Text>
             </View>
-          </View>
-          <TouchableOpacity style={s.addBtn} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
-            <Ionicons name="person-add-outline" size={16} color={C.white} />
-          </TouchableOpacity>
-        </View>
-        {/* ✅ v6.2 : Barre recherche neutre sur fond blanc */}
-        <View style={s.searchBox}>
-          <Ionicons name="search" size={13} color={C.inkMuted} />
-          <TextInput
-            style={[s.searchInput, { fontFamily: C.font.sans }]}
-            value={q} onChangeText={setQ}
-            placeholder="Rechercher un contact…"
-            placeholderTextColor={C.inkMuted}
-            underlineColorAndroid="transparent"
-          />
-          {!!q && (
-            <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={14} color={C.inkMuted} />
+            <TouchableOpacity style={s.addBtn} onPress={() => router.push("/(tabs)/beneficiaries/create")}>
+              <Ionicons name="person-add-outline" size={16} color="#FFFFFF" />
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+          <View style={s.searchBox}>
+            <Ionicons name="search" size={13} color={C.heroMuted} />
+            <TextInput
+              style={[s.searchInput, { fontFamily: C.font.sans }]}
+              value={q} onChangeText={setQ}
+              placeholder="Rechercher un contact…"
+              placeholderTextColor={C.heroMuted}
+              underlineColorAndroid="transparent"
+            />
+            {!!q && (
+              <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={14} color={C.heroMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </LinearGradient>
       </Animated.View>
 
       {loading ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.pageBg }}>
           <ActivityIndicator color={C.green} size="large" />
         </View>
       ) : (
         <Animated.ScrollView
-          style={{ opacity: fadeAnim, flex: 1 }}
+          style={{ opacity: fadeAnim, flex: 1, backgroundColor: C.pageBg }}
           contentContainerStyle={s.list}
           showsVerticalScrollIndicator={false}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={C.green} />}
@@ -265,54 +289,58 @@ export default function BeneficiariesScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  // ✅ v6.3 — fond sombre (zone sous l'encoche) ; loader et liste
+  // repeignent C.pageBg par-dessus explicitement plus bas.
+  safe: { flex: 1, backgroundColor: C.heroFrom },
 
-  // ✅ v6.2 : Héro blanc avec bordure basse neutre
+  // ✅ v6.3 — backgroundColor géré par LinearGradient désormais ;
+  // paddingTop retiré (géré par insets.top inline) ; bordure basse
+  // retirée (plus nécessaire, contraste hero/sheet suffit).
   hero: {
-    backgroundColor: C.white,
     borderBottomLeftRadius: 24,
     borderBottomRightRadius: 24,
     paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 14,
     paddingBottom: 18,
-    borderBottomWidth: 1,
-    borderBottomColor: C.cardBorder,
+    overflow: "hidden",
     ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 12 },
-      android: { elevation: 3 },
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+      android: { elevation: 6 },
     }),
+  },
+  heroGlowDeco: {
+    position: "absolute", top: -60, right: -60,
+    width: 190, height: 190, borderRadius: 95,
+    backgroundColor: C.heroGlow,
   },
 
   heroRow:   { flexDirection: "row", alignItems: "flex-start", marginBottom: 14 },
-  // ✅ v6.2 : titre foncé (était blanc)
-  heroTitle: { color: "#0F172A", fontSize: 22, fontWeight: "700", marginBottom: 4 },
+  // ✅ v6.3 — titre blanc (était foncé)
+  heroTitle: { color: "#FFFFFF", fontSize: 22, fontWeight: "700", marginBottom: 4 },
   heroSubRow:{ flexDirection: "row", alignItems: "center", gap: 6 },
-  // ✅ v6.2 : badge neutre gris (était blanc transparent)
-  countBadge:{ backgroundColor: "#F0F0F0", borderRadius: C.r.pill, paddingHorizontal: 7, paddingVertical: 2 },
-  countTxt:  { color: C.ink, fontSize: 11, fontWeight: "900" },
-  // ✅ v6.2 : sous-titre foncé (était blanc semi-transparent)
-  heroSub:   { color: C.inkSoft, fontSize: 11, fontWeight: "600" },
+  // ✅ v6.3 — badge "verre" (était gris neutre)
+  countBadge:{ backgroundColor: C.heroGlass, borderRadius: C.r.pill, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: C.heroGlassBdr },
+  countTxt:  { color: "#FFFFFF", fontSize: 11, fontWeight: "900" },
+  // ✅ v6.3 — sous-titre atténué blanc (était foncé)
+  heroSub:   { color: C.heroMuted, fontSize: 11, fontWeight: "600" },
 
-  // ✅ v6.2 : bouton "+" vert plein (était glass sur fond vert)
+  // ✅ v6.3 — style "verre" (était vert plein) — le FAB reste l'action
+  // principale "ajouter", ce bouton devient un accès rapide secondaire
   addBtn: {
     width: 36, height: 36, borderRadius: C.r.sm,
-    backgroundColor: C.green,
+    backgroundColor: C.heroGlass,
+    borderWidth: 1, borderColor: C.heroGlassBdr,
     justifyContent: "center", alignItems: "center",
     marginTop: 2,
-    ...Platform.select({
-      ios:     { shadowColor: C.green, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
-      android: { elevation: 4 },
-    }),
   },
 
-  // ✅ v6.2 : barre de recherche neutre (était glass blanc sur fond vert)
+  // ✅ v6.3 — style "verre" (était fond gris clair)
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 8,
-    backgroundColor: C.inputBg,
-    borderWidth: 1, borderColor: C.cardBorder,
+    backgroundColor: C.heroGlass,
+    borderWidth: 1, borderColor: C.heroGlassBdr,
     borderRadius: C.r.md, paddingHorizontal: 12, height: 40,
   },
-  searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
+  searchInput: { flex: 1, fontSize: 13, color: "#FFFFFF", fontWeight: "600" },
 
   list: { paddingHorizontal: 14, paddingTop: 14 },
 

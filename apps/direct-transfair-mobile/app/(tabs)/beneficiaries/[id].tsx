@@ -1,6 +1,27 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // =========================================================
-// BENEFICIARY DETAIL v5.1 — Direct Transf'air
+// BENEFICIARY DETAIL v5.2 — Direct Transf'air
+// ✅ v5.2 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (load, hydrateForm, onSave, onDelete, goSendWallet/Cash : tout
+//    identique).
+//    - En-tête (retour, titre "Bénéficiaire", crayon/annuler) : fond
+//      blanc plat → LinearGradient sombre (#0A0F0D → #123324), mêmes
+//      teintes que ClientDashboard. Les tokens heroGlass/heroGlassBdr/
+//      heroDim/heroGlow existaient déjà dans la palette C (hérités
+//      d'un hero vert antérieur à la v5.1, jamais retirés) mais
+//      n'étaient plus utilisés nulle part — repris ici tels quels
+//      pour le style "verre", plus heroFrom/heroTo (nouveaux) pour le
+//      dégradé et heroGlow retiné en vert (était blanc).
+//    - Les deux écrans de secours (chargement, "introuvable") gardent
+//      explicitement un fond clair (C.pageBg) — ce sont des écrans
+//      autonomes sans hero, pas concernés par ce changement.
+//    - SafeAreaView principal passe en fond sombre ; le contenu sous
+//      le hero (heroCard avatar, actions, formulaire d'édition, zone
+//      dangereuse) reçoit un fond clair explicite pour ne pas hériter
+//      du sombre du parent.
+//    - useSafeAreaInsets (nouveau) remplace le paddingTop conditionnel
+//      Platform.OS.
 // ✅ v5.0 : Thème clair, voir/modifier/supprimer, actions rapides
 // ✅ v5.1 : fond blanc neutre #FAFAFA, ombres neutres
 // =========================================================
@@ -13,6 +34,8 @@ import {
 } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v5.2 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v5.2 (nouveau)
 import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";
@@ -28,7 +51,11 @@ const C = {
   heroGlass:   "rgba(255,255,255,0.14)",
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.70)",
-  heroGlow:    "rgba(255,255,255,0.08)",
+  // ✅ v5.2 — retinté en vert (était blanc, token hérité inutilisé)
+  heroGlow:    "rgba(5,150,105,0.18)",
+  // ✅ v5.2 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom:    "#0A0F0D",
+  heroTo:      "#123324",
   pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
   cardBorder:  "#E5E5EA",   // ← était #D1FAE5
@@ -221,6 +248,7 @@ export default function BeneficiaireDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const id = useMemo(() => getIdParam(params as any), [params]);
+  const insets = useSafeAreaInsets(); // ✅ v5.2 (nouveau)
 
   const [loading,  setLoading]  = useState(true);
   const [saving,   setSaving]   = useState(false);
@@ -316,9 +344,11 @@ export default function BeneficiaireDetailScreen() {
   const colors   = item ? avatarColor(item.fullName) : AVATAR_COLORS[0];
   const initials = item ? item.fullName.split(" ").map((s) => s[0] ?? "").join("").slice(0, 2).toUpperCase() : "–";
 
+  // ✅ v5.2 — écrans de secours : fond clair explicite (C.pageBg), pas
+  // de hero ici, pas concernés par le passage de s.safe en sombre.
   if (loading) {
     return (
-      <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center" }]}>
+      <SafeAreaView style={[s.safe, { backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator color={C.green} size="large" />
       </SafeAreaView>
     );
@@ -326,7 +356,7 @@ export default function BeneficiaireDetailScreen() {
 
   if (!item) {
     return (
-      <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center", padding: 24 }]}>
+      <SafeAreaView style={[s.safe, { backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center", padding: 24 }]}>
         <Ionicons name="person-outline" size={40} color={C.inkSoft} />
         <Text style={[{ color: C.ink, marginTop: 12, fontFamily: C.font.sans, fontWeight: "700", fontSize: 15 }]}>
           Bénéficiaire introuvable.
@@ -345,28 +375,33 @@ export default function BeneficiaireDetailScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.pageBg} />
+      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
 
-      {/* ── Header ── */}
-      <View style={s.header}>
+      {/* ── Header — hero sombre ── */}
+      <LinearGradient
+        colors={[C.heroFrom, C.heroTo]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={[s.header, { paddingTop: insets.top + 10 }]}
+      >
+        <View style={s.glow} pointerEvents="none" />
         <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color={C.ink} />
+          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
         <Text style={[s.headerTitle, { fontFamily: C.font.serif }]}>Bénéficiaire</Text>
         {!editing ? (
           <TouchableOpacity style={s.editBtn} onPress={() => setEditing(true)}>
-            <Ionicons name="pencil" size={16} color={C.green} />
+            <Ionicons name="pencil" size={16} color="#FFFFFF" />
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={s.cancelBtnHeader} onPress={onCancelEdit}>
-            <Ionicons name="close" size={16} color={C.inkSoft} />
+            <Ionicons name="close" size={16} color="#FCA5A5" />
           </TouchableOpacity>
         )}
-      </View>
+      </LinearGradient>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: C.pageBg }}>
         <Animated.ScrollView
-          style={{ opacity: fadeAnim }}
+          style={{ opacity: fadeAnim, backgroundColor: C.pageBg }}
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -496,28 +531,35 @@ export default function BeneficiaireDetailScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },
+  // ✅ v5.2 — fond sombre (zone sous l'encoche) ; les deux écrans de
+  // secours ci-dessus (loading/introuvable) l'écrasent explicitement.
+  safe: { flex: 1, backgroundColor: C.heroFrom },
 
-  // ← header avec ombre subtile
+  // ✅ v5.2 — backgroundColor géré par LinearGradient désormais ;
+  // paddingTop retiré (géré par insets.top inline) ; coins bas
+  // arrondis + overflow hidden pour le halo décoratif.
   header: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: C.white, paddingHorizontal: 18,
-    paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 14,
-    gap: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder,
+    paddingHorizontal: 18, paddingBottom: 16,
+    gap: 12,
+    borderBottomLeftRadius: 24, borderBottomRightRadius: 24,
+    overflow: "hidden",
     ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
-      android: { elevation: 2 },
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+      android: { elevation: 6 },
     }),
   },
-  // ← fond neutre (était C.pageBg vert pâle)
-  backBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
-  headerTitle:    { flex: 1, color: C.ink, fontSize: 18, fontWeight: "700" },
-  editBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.greenPale, borderWidth: 1, borderColor: C.greenBorder, justifyContent: "center", alignItems: "center" },
-  cancelBtnHeader:{ width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
+  glow: { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: C.heroGlow, top: -50, right: -30 },
+
+  // ✅ v5.2 — style "verre" (était fond neutre clair)
+  backTn:         {}, // (placeholder retiré — voir backBtn ci-dessous)
+  backBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
+  headerTitle:    { flex: 1, color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
+  editBtn:        { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },
+  cancelBtnHeader:{ width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: "rgba(220,38,38,0.22)", borderWidth: 1, borderColor: "rgba(252,165,165,0.4)", justifyContent: "center", alignItems: "center" },
 
   scroll: { paddingHorizontal: 16, paddingTop: 16 },
 
-  // ← ombre neutre (était shadowColor: C.green)
   heroCard: {
     flexDirection: "row", alignItems: "center", gap: 14,
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 16, marginBottom: 18,
@@ -538,7 +580,6 @@ const s = StyleSheet.create({
   sectionDot:   { width: 5, height: 5, borderRadius: C.r.pill },
   sectionLabel: { fontSize: 9, fontWeight: "900", color: C.inkSoft, letterSpacing: 1.5, textTransform: "uppercase" },
 
-  // ← ombre neutre
   card: {
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 14, marginBottom: 14,
     borderWidth: 1, borderColor: C.cardBorder,

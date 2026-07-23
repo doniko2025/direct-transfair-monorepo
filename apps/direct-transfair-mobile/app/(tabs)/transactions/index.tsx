@@ -1,6 +1,21 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.6 — Direct Transf'air
+// TRANSACTIONS HISTORY v6.7 — Direct Transf'air
+// ✅ v6.7 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (load, resolveDirection, filtrage, tri : tout identique).
+//    - En-tête (rôle, titre "Historique", compteur, refresh, recherche) :
+//      fond blanc plat → LinearGradient sombre (#0A0F0D → #123324),
+//      mêmes teintes exactes que le hero du dashboard client.
+//    - SafeAreaView passe en fond sombre (zone sous l'encoche) ; le
+//      contenu sous le hero (filtres + liste) reçoit un fond clair
+//      explicite (C.pageBg) pour ne pas hériter du sombre du parent.
+//    - useSafeAreaInsets (nouveau) remplace le paddingTop conditionnel
+//      Platform.OS pour un alignement fiable sous l'encoche.
+//    - rolePill / refreshBtn / barre de recherche : recolorés en style
+//      "verre" (fond blanc translucide) pour rester lisibles sur fond
+//      sombre. Filtres et cartes de transactions : strictement
+//      inchangés (déjà blancs/neutres, pas concernés).
 // ✅ v6.6 : Fond blanc neutre (#FAFAFA), cartes ombrées
 //    - pageBg #F0FDF8 → #FAFAFA (suppression fond vert pâle)
 //    - cardBorder #D1FAE5 → #E5E5EA (bordures neutres)
@@ -18,6 +33,8 @@ import {
 } from "react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v6.7 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v6.7 (nouveau)
 import { api }     from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
 
@@ -35,6 +52,11 @@ const C = {
   purple:      "#8B5CF6", purpleBg: "#F5F3FF", purpleBorder: "#DDD6FE",
   slate:       "#64748B", slateBg: "#F8FAFC",  slateBorder: "#E2E8F0",
   violet:      "#7C3AED", violetBg: "#EDE9FE",  violetBorder: "#C4B5FD",
+  // ✅ v6.7 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom:    "#0A0F0D",
+  heroTo:      "#123324",
+  heroGlow:    "rgba(5,150,105,0.18)",
+  heroMuted:   "rgba(255,255,255,0.6)",
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 26, pill: 99 },
   font: {
     serif: Platform.select({ ios: "Georgia",      android: "serif",             default: "serif"      }),
@@ -228,7 +250,6 @@ function TxCard({ item, userId, userRole }: {
 }
 
 const tc = StyleSheet.create({
-  // ← shadowColor "#000" + shadowOpacity 0.08 (était C.green / 0.05)
   card:      { flexDirection: "row", backgroundColor: C.white, borderRadius: C.r.lg, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
   sideBar:   { width: 4 },
   content:   { flex: 1, padding: 14 },
@@ -251,6 +272,7 @@ const tc = StyleSheet.create({
 export default function TransactionsScreen() {
   const router   = useRouter();
   const { user } = useAuth();
+  const insets   = useSafeAreaInsets(); // ✅ v6.7 (nouveau)
   const isAdmin  = user?.role === "SUPER_ADMIN" || user?.role === "COMPANY_ADMIN";
   const isAgent  = user?.role === "AGENT";
 
@@ -381,13 +403,20 @@ export default function TransactionsScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.white} />
+      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
 
       <Animated.View style={{
         opacity:   headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-8, 0] }) }],
       }}>
-        <View style={s.header}>
+        {/* ✅ v6.7 : LinearGradient sombre au lieu du fond blanc plat */}
+        <LinearGradient
+          colors={[C.heroFrom, C.heroTo]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+          style={[s.header, { paddingTop: insets.top + 8 }]}
+        >
+          <View style={s.heroGlow} pointerEvents="none" />
+
           <View style={s.headerRow}>
             <View style={{ flex: 1 }}>
               <View style={s.rolePill}>
@@ -406,28 +435,28 @@ export default function TransactionsScreen() {
               style={s.refreshBtn}
               onPress={() => { setRefreshing(true); void load(); }}
             >
-              <Ionicons name="refresh" size={18} color={C.green} />
+              <Ionicons name="refresh" size={18} color={C.heroMuted} />
             </TouchableOpacity>
           </View>
 
-          {/* Barre de recherche — fond blanc, bordure neutre */}
+          {/* Barre de recherche — style "verre" sur fond sombre */}
           <View style={s.searchBox}>
-            <Ionicons name="search" size={15} color={C.inkSoft} />
+            <Ionicons name="search" size={15} color={C.heroMuted} />
             <TextInput
               style={[s.searchInput, { fontFamily: C.font.sans }]}
               value={q}
               onChangeText={setQ}
               placeholder="Référence, nom, téléphone…"
-              placeholderTextColor={C.inkSoft}
+              placeholderTextColor={C.heroMuted}
               underlineColorAndroid="transparent"
             />
             {!!q && (
               <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-                <Ionicons name="close-circle" size={15} color={C.inkSoft} />
+                <Ionicons name="close-circle" size={15} color={C.heroMuted} />
               </TouchableOpacity>
             )}
           </View>
-        </View>
+        </LinearGradient>
       </Animated.View>
 
       {/* Filtres */}
@@ -489,12 +518,13 @@ export default function TransactionsScreen() {
       </ScrollView>
 
       {loading && !refreshing ? (
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        // ✅ v6.7 — fond clair explicite (le SafeAreaView est désormais sombre)
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.pageBg }}>
           <ActivityIndicator color={C.green} size="large" />
         </View>
       ) : (
         <Animated.FlatList
-          style={{ opacity: fadeAnim, flex: 1 }}
+          style={{ opacity: fadeAnim, flex: 1, backgroundColor: C.pageBg }}
           data={filtered}
           keyExtractor={(item) => item.id ?? String(Math.random())}
           contentContainerStyle={s.list}
@@ -529,53 +559,62 @@ export default function TransactionsScreen() {
   );
 }
 
-// ─── Styles v6.6 ──────────────────────────────────────────
+// ─── Styles v6.7 ──────────────────────────────────────────
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
+  // ✅ v6.7 — fond sombre (zone sous l'encoche), le contenu sous le hero
+  // (filtres + liste) reçoit son propre fond clair explicite plus bas.
+  safe: { flex: 1, backgroundColor: C.heroFrom },
 
+  // ✅ v6.7 — backgroundColor géré par LinearGradient désormais ;
+  // coins bas arrondis + overflow hidden pour le halo décoratif.
   header: {
-    backgroundColor: C.white,
     paddingHorizontal: 18,
-    paddingTop:    Platform.OS === "android" ? 44 : 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: "#E4E9F0",
-    // ombre légère pour séparer header du contenu
+    paddingBottom: 16,
+    borderBottomLeftRadius: 26,
+    borderBottomRightRadius: 26,
+    overflow: "hidden",
     ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4 },
-      android: { elevation: 3 },
+      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12 },
+      android: { elevation: 6 },
     }),
+  },
+  heroGlow: {
+    position: "absolute", top: -50, right: -50,
+    width: 180, height: 180, borderRadius: 90,
+    backgroundColor: C.heroGlow,
   },
   headerRow: {
     flexDirection: "row", alignItems: "flex-start", marginBottom: 12,
   },
+  // ✅ v6.7 — style "verre" (était fond vert pâle + bordure verte)
   rolePill: {
     flexDirection: "row", alignItems: "center", gap: 5,
-    backgroundColor: C.greenPale, borderRadius: C.r.pill,
-    borderWidth: 1, borderColor: C.greenBorder,
+    backgroundColor: "rgba(255,255,255,0.14)", borderRadius: C.r.pill,
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.22)",
     paddingHorizontal: 8, paddingVertical: 3,
     alignSelf: "flex-start", marginBottom: 5,
   },
   roleDot:    { width: 5, height: 5, borderRadius: C.r.pill, backgroundColor: C.green },
-  rolePillTxt:{ fontSize: 8, fontWeight: "900", color: C.greenDark, letterSpacing: 1 },
-  headerTitle:{ fontSize: 22, fontWeight: "700", color: "#0F172A", lineHeight: 26 },
-  headerSub:  { fontSize: 11, fontWeight: "700", color: C.green, marginTop: 2 },
+  rolePillTxt:{ fontSize: 8, fontWeight: "900", color: C.heroMuted, letterSpacing: 1 },
+  headerTitle:{ fontSize: 22, fontWeight: "700", color: "#FFFFFF", lineHeight: 26 },
+  headerSub:  { fontSize: 11, fontWeight: "700", color: C.heroMuted, marginTop: 2 },
 
-  // ← fond neutre + bordure neutre (était greenPale + greenBorder)
+  // ✅ v6.7 — style "verre" (était fond neutre clair)
   refreshBtn: {
     width: 38, height: 38, borderRadius: 11,
-    backgroundColor: "#F5F5F5",
-    borderWidth: 1, borderColor: "#E5E5EA",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
     justifyContent: "center", alignItems: "center",
     marginTop: 4,
   },
 
-  // ← fond blanc + bordure neutre (était greenLight + greenBorder)
+  // ✅ v6.7 — style "verre" (était fond blanc + bordure neutre)
   searchBox: {
     flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: C.white, borderWidth: 1.5, borderColor: "#E5E5EA",
+    backgroundColor: "rgba(255,255,255,0.1)", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.18)",
     borderRadius: C.r.md, paddingHorizontal: 14, height: 44,
   },
-  searchInput: { flex: 1, fontSize: 13, color: "#0F172A", fontWeight: "600" },
+  searchInput: { flex: 1, fontSize: 13, color: "#FFFFFF", fontWeight: "600" },
 
   filtersWrap: {
     backgroundColor: C.white,
@@ -599,7 +638,7 @@ const s = StyleSheet.create({
   emptyIconBox: {
     width: 70, height: 70, borderRadius: 22,
     backgroundColor: C.white,
-    borderWidth: 1, borderColor: "#E5E5EA",  // ← était C.cardBorder vert
+    borderWidth: 1, borderColor: "#E5E5EA",
     justifyContent: "center", alignItems: "center", marginBottom: 4,
     ...Platform.select({
       ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 5 },

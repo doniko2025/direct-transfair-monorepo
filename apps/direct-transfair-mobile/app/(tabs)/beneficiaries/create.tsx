@@ -1,6 +1,24 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
-// BENEFICIARY CREATE v6.3 — Direct Transf'air
+// BENEFICIARY CREATE v6.4 — Direct Transf'air
+// ✅ v6.4 : HERO — dégradé sombre identique à ClientDashboard
+//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
+//    (openPhoneContacts, handleSelectContact, handleCreate, la
+//    validation anti-doublon : tout identique).
+//    - Fond du hero : vert plein (C.green) → LinearGradient sombre
+//      (HERO_FROM #0A0F0D → HERO_TO #123324), exactement les mêmes
+//      teintes que le hero du dashboard client, pour une identité
+//      visuelle cohérente entre les écrans.
+//    - StatusBar : backgroundColor aligné sur HERO_FROM.
+//    - Tous les éléments du hero (bouton retour "verre" translucide,
+//      titre blanc, sous-titre "X/3 étapes", segments de progression)
+//      étaient déjà conçus en blanc sur fond saturé — ils restent
+//      lisibles tels quels sur le nouveau fond sombre, aucun changement
+//      de couleur de texte nécessaire.
+//    - Le reste de l'écran (cartes Identité/Localisation/Téléphone,
+//      import contacts, CTA, modales) reste inchangé — vert d'accent
+//      (C.green) conservé partout ailleurs, comme sur le dashboard où
+//      seul le hero est sombre et le corps reste clair.
 // ✅ v6.2 conservé intégralement (anti-doublon, fix cadre bleu focus web)
 // ✅ v6.3 : Diagnostic de l'erreur "Impossible d'accéder aux contacts"
 //   - Le `catch` de openPhoneContacts avalait silencieusement TOUTE exception
@@ -25,6 +43,7 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // ✅ v6.4 (nouveau)
 import * as Contacts from "expo-contacts";
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
@@ -41,6 +60,9 @@ const C = {
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)",
   heroGlow:    "rgba(255,255,255,0.08)",
+  // ✅ v6.4 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
+  heroFrom:    "#0A0F0D",
+  heroTo:      "#123324",
   pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
   cardBorder:  "#E5E5EA",   // ← était #D1FAE5
@@ -314,9 +336,17 @@ export default function BeneficiaryCreateScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.green} />
+      {/* ✅ v6.4 : backgroundColor aligné sur HERO_FROM (hero désormais sombre) */}
+      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
 
-      <View style={s.hero}>
+      {/* ✅ v6.4 : LinearGradient sombre (mêmes teintes que ClientDashboard)
+          au lieu du fond vert plein. Contenu du hero strictement inchangé. */}
+      <LinearGradient
+        colors={[C.heroFrom, C.heroTo]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.hero}
+      >
         <View style={s.glow} />
         <View style={s.heroRow}>
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
@@ -332,7 +362,7 @@ export default function BeneficiaryCreateScreen() {
             <View key={i} style={[s.progressSeg, { backgroundColor: done ? C.white : "rgba(255,255,255,0.3)" }]} />
           ))}
         </View>
-      </View>
+      </LinearGradient>
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -523,7 +553,9 @@ export default function BeneficiaryCreateScreen() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
-  hero: { backgroundColor: C.green, borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 20, overflow: "hidden" },
+  // ✅ v6.4 — backgroundColor retiré (géré par LinearGradient sur le
+  // composant parent maintenant) ; bordures/padding/overflow inchangés
+  hero: { borderBottomLeftRadius: 24, borderBottomRightRadius: 24, paddingHorizontal: 18, paddingTop: Platform.OS === "android" ? 44 : 14, paddingBottom: 20, overflow: "hidden" },
   glow:       { position: "absolute", width: 140, height: 140, borderRadius: 70, backgroundColor: C.heroGlow, top: -50, right: -30 },
   heroRow:    { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
   backBtn:    { width: 34, height: 34, borderRadius: C.r.sm, backgroundColor: C.heroGlass, borderWidth: 1, borderColor: C.heroGlassBdr, justifyContent: "center", alignItems: "center" },

@@ -1,17 +1,30 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.6 — Direct Transf'air
-// ✅ v2.5 conservé intégralement (fix fond jaune autofill navigateur web)
+// LOGIN v2.7 — Direct Transf'air
+// ✅ v2.7 : REFONTE VISUELLE — vide en bas comblé + modernisation
+//    PROBLÈME : s.scroll utilisait flexGrow:1 sans justifyContent →
+//    sur un écran plus haut que le contenu, tout l'espace en trop
+//    s'accumulait après "Devenir client"/"Assistance", laissant un
+//    grand vide plat en bas (fond des cercles décoratifs limité au
+//    haut de l'écran, donc rien pour le combler visuellement).
+//    CORRECTIFS :
+//    - Contenu regroupé en 2 blocs directs du ScrollView (topGroup /
+//      bottom) + justifyContent:'space-between' sur s.scroll → l'espace
+//      en trop se répartit entre les deux au lieu de s'accumuler en bas.
+//    - Fond : View plat → LinearGradient (dérivé de la couleur de
+//      marque du tenant, comme avant — aucune régression sur le
+//      white-label). Ajout d'un 3ᵉ cercle décoratif en bas d'écran
+//      pour donner du relief à toute la hauteur, pas seulement le haut.
+//    - btnScale (déclaré mais jamais utilisé) : câblé en retour tactile
+//      (press-in/press-out) sur le CTA "Se connecter".
+//    - Écran CHOOSE : ajout du bouton "Code par email" — l'écran
+//      OTP_EMAIL était entièrement codé plus bas dans ce fichier mais
+//      strictement inaccessible, aucun bouton ne menait vers
+//      setMethod('OTP_EMAIL') nulle part.
+//    Aucune logique métier touchée : mêmes handlers (login, OTP,
+//    biométrie, gestion des portails), mêmes appels API, mêmes routes.
 // ✅ v2.6 : Limite de longueur sur le mot de passe (cohérence avec register.tsx)
-//   - FloatingInput accepte désormais un prop `maxLength` optionnel,
-//     transmis directement au TextInput.
-//   - Le champ "Mot de passe" de la carte PASSWORD a maxLength={35}.
-//   - Pas de minimum imposé ici (contrairement à l'inscription) : cet écran
-//     sert à se CONNECTER avec un mot de passe déjà existant, donc bloquer
-//     la saisie en dessous de 10 caractères empêcherait un utilisateur
-//     ayant un mot de passe légitime plus court (créé avant cette règle,
-//     par exemple) de se connecter.
-//   - Le champ "Email" (ici et dans OTP_EMAIL) n'est pas concerné.
+// ✅ v2.5 : fix fond jaune autofill navigateur web
 // =========================================================
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -31,6 +44,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient'; // ✅ v2.7 (nouveau)
 
 import { useAuth }   from '../../providers/AuthProvider';
 import { useTenant } from '../../providers/TenantProvider';
@@ -47,9 +61,6 @@ import {
 type Method = 'CHOOSE' | 'PASSWORD' | 'OTP_EMAIL' | 'OTP_PHONE';
 
 // ─── Fix web global ───────────────────────────────────────
-// ✅ v2.5 : Surcharge le fond jaune autofill Chrome/Edge/Safari
-// WebkitBoxShadow inset remplace visuellement la couleur autofill
-// WebkitTextFillColor garantit que le texte reste lisible
 const WEB_INPUT_FIX: any = Platform.OS === 'web'
   ? {
       WebkitBoxShadow:    '0 0 0px 1000px #F8FAFC inset',
@@ -59,7 +70,6 @@ const WEB_INPUT_FIX: any = Platform.OS === 'web'
     }
   : {};
 
-// Même fix mais pour le fond blanc (cas champ focus)
 const WEB_INPUT_FIX_WHITE: any = Platform.OS === 'web'
   ? {
       WebkitBoxShadow:    '0 0 0px 1000px #FFFFFF inset',
@@ -114,7 +124,6 @@ const F = {
 };
 
 // ─── FloatingInput ────────────────────────────────────────
-// ✅ v2.6 : ajout du prop `maxLength` (optionnel), transmis au TextInput
 function FloatingInput({
   label, value, onChangeText, icon, secureTextEntry, keyboardType,
   returnKeyType, onSubmitEditing, inputRef, accentColor, maxLength,
@@ -136,12 +145,7 @@ function FloatingInput({
         </Text>
         <TextInput
           ref={inputRef}
-          style={[
-            fi.input,
-            // ✅ v2.5 : Fix autofill jaune navigateur web
-            // Le fond du wrap étant #F8FAFC, on surcharge avec la même couleur
-            WEB_INPUT_FIX,
-          ]}
+          style={[fi.input, WEB_INPUT_FIX]}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
@@ -443,9 +447,18 @@ export default function LoginV2Screen() {
       style={{ flex: 1, backgroundColor: C.g3 }}
     >
       <StatusBar barStyle="light-content" backgroundColor={C.g2} />
-      <View style={[s.bgBase, { backgroundColor: C.g3 }]} />
+
+      {/* ✅ v2.7 — dégradé (dérivé de la couleur de marque du tenant)
+          au lieu d'un fond plat, + 3ᵉ cercle décoratif en bas d'écran */}
+      <LinearGradient
+        colors={[C.g1, C.g2, C.g3]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={s.bgBase}
+      />
       <View style={s.bgCircle1} />
       <View style={s.bgCircle2} />
+      <View style={s.bgCircle3} />
 
       <ScrollView
         contentContainerStyle={s.scroll}
@@ -453,316 +466,343 @@ export default function LoginV2Screen() {
         keyboardShouldPersistTaps="handled"
         style={{ flex: 1, backgroundColor: 'transparent' }}
       >
-        {/* ── Bouton retour ── */}
-        {method !== 'CHOOSE' && (
-          <TouchableOpacity
-            style={s.backBtn}
-            onPress={() => {
-              setMethod('CHOOSE');
-              setOtpEmailStep('input');
-              setOtpValues(['', '', '', '', '', '']);
-              setPortalMsg(null);
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons name="arrow-back" size={20} color="rgba(255,255,255,0.9)" />
-          </TouchableOpacity>
-        )}
+        {/* ✅ v2.7 — tout le contenu du haut regroupé dans un seul bloc,
+            pour que justifyContent:'space-between' (voir s.scroll) ne
+            répartisse l'espace qu'entre CE bloc et s.bottom, au lieu de
+            l'éparpiller entre chaque élément individuellement. */}
+        <View>
+          {/* ── Bouton retour ── */}
+          {method !== 'CHOOSE' && (
+            <TouchableOpacity
+              style={s.backBtn}
+              onPress={() => {
+                setMethod('CHOOSE');
+                setOtpEmailStep('input');
+                setOtpValues(['', '', '', '', '', '']);
+                setPortalMsg(null);
+              }}
+              activeOpacity={0.75}
+            >
+              <Ionicons name="arrow-back" size={20} color="rgba(255,255,255,0.9)" />
+            </TouchableOpacity>
+          )}
 
-        {/* ── Hero ── */}
-        <View style={s.hero}>
-          <View style={s.logoOuter}>
-            <View style={s.logoInner}>
-              <Ionicons name="swap-horizontal" size={28} color={C.g4} />
+          {/* ── Hero ── */}
+          <View style={s.hero}>
+            <View style={s.logoOuter}>
+              <View style={s.logoInner}>
+                <Ionicons name="swap-horizontal" size={28} color={C.g4} />
+              </View>
             </View>
+            <Text style={[s.appName, { fontFamily: branding.fontFamily ?? F.display }]}>
+              {branding.name}
+            </Text>
+            <Text style={[s.tagline, { fontFamily: F.body }]}>
+              {branding.tagline ?? 'Transferts internationaux sécurisés'}
+            </Text>
           </View>
-          <Text style={[s.appName, { fontFamily: branding.fontFamily ?? F.display }]}>
-            {branding.name}
-          </Text>
-          <Text style={[s.tagline, { fontFamily: F.body }]}>
-            {branding.tagline ?? 'Transferts internationaux sécurisés'}
-          </Text>
-        </View>
 
-        {/* ══════════════════════════════════════════════ */}
-        {/* CARD — CHOOSE                                 */}
-        {/* ══════════════════════════════════════════════ */}
-        {method === 'CHOOSE' && (
-          <View style={[s.card, { shadowColor: C.g1 }]}>
-            <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
-            <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
-              Connexion
-            </Text>
-            <Text style={[s.cardSub, { fontFamily: F.body }]}>
-              Choisissez votre méthode de connexion.
-            </Text>
+          {/* ══════════════════════════════════════════════ */}
+          {/* CARD — CHOOSE                                 */}
+          {/* ══════════════════════════════════════════════ */}
+          {method === 'CHOOSE' && (
+            <View style={[s.card, { shadowColor: C.g1 }]}>
+              <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
+              <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                Connexion
+              </Text>
+              <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                Choisissez votre méthode de connexion.
+              </Text>
 
-            <View style={{ marginTop: 20, gap: 12 }}>
-              <TouchableOpacity
-                style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
-                onPress={() => setMethod('PASSWORD')}
-                activeOpacity={0.85}
-              >
-                <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                  <Ionicons name="lock-closed-outline" size={22} color={C.g4} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.methodTitle, { fontFamily: F.body }]}>Mot de passe</Text>
-                  <Text style={[s.methodDesc, { fontFamily: F.body }]}>Email + mot de passe</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={C.g5} />
-              </TouchableOpacity>
-
-              {bioReady && (
+              <View style={{ marginTop: 20, gap: 12 }}>
                 <TouchableOpacity
                   style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
-                  onPress={handleBiometricLogin}
-                  disabled={loading}
+                  onPress={() => setMethod('PASSWORD')}
                   activeOpacity={0.85}
                 >
                   <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
-                    <Ionicons name="finger-print-outline" size={22} color={C.g4} />
+                    <Ionicons name="lock-closed-outline" size={22} color={C.g4} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[s.methodTitle, { fontFamily: F.body }]}>Face ID / Touch ID</Text>
-                    <Text style={[s.methodDesc, { fontFamily: F.body }]}>Connexion biométrique rapide</Text>
+                    <Text style={[s.methodTitle, { fontFamily: F.body }]}>Mot de passe</Text>
+                    <Text style={[s.methodDesc, { fontFamily: F.body }]}>Email + mot de passe</Text>
                   </View>
-                  {loading
-                    ? <ActivityIndicator size="small" color={C.g4} />
-                    : <Ionicons name="chevron-forward" size={18} color={C.g5} />
-                  }
+                  <Ionicons name="chevron-forward" size={18} color={C.g5} />
                 </TouchableOpacity>
-              )}
-            </View>
-          </View>
-        )}
 
-        {/* ══════════════════════════════════════════════ */}
-        {/* CARD — MOT DE PASSE                           */}
-        {/* ══════════════════════════════════════════════ */}
-        {method === 'PASSWORD' && (
-          <View style={[s.card, { shadowColor: C.g1 }]}>
-            <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
-            <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
-              Mot de passe
-            </Text>
-            <Text style={[s.cardSub, { fontFamily: F.body }]}>
-              Connectez-vous avec votre email et mot de passe.
-            </Text>
-
-            {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
-
-            <View style={{ marginTop: portalMsg ? 4 : 20 }}>
-              <FloatingInput
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                icon="mail-outline"
-                keyboardType="email-address"
-                returnKeyType="next"
-                onSubmitEditing={() => passRef.current?.focus()}
-                accentColor={C.g4}
-              />
-              <FloatingInput
-                label="Mot de passe"
-                value={password}
-                onChangeText={setPassword}
-                icon="lock-closed-outline"
-                secureTextEntry
-                returnKeyType="done"
-                onSubmitEditing={canSubmitPassword ? () => handlePasswordLogin() : undefined}
-                inputRef={passRef}
-                accentColor={C.g4}
-                maxLength={35}
-              />
-            </View>
-
-            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-              <TouchableOpacity
-                style={[
-                  s.btn,
-                  { backgroundColor: C.g3, shadowColor: C.g3 },
-                  (!canSubmitPassword || loading) && s.btnDisabled,
-                ]}
-                onPress={() => handlePasswordLogin()}
-                disabled={loading || !canSubmitPassword}
-                activeOpacity={0.9}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Text style={[s.btnTxt, { fontFamily: F.body }]}>Se connecter</Text>
-                    <View style={s.btnArrow}>
-                      <Ionicons name="arrow-forward" size={16} color={C.g4} />
-                    </View>
-                  </>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
-
-            <TouchableOpacity
-              style={s.linkBtn}
-              onPress={() => router.push('/(auth)/forgot-password')}
-            >
-              <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
-                Mot de passe oublié ?
-              </Text>
-            </TouchableOpacity>
-
-            {bioReady && (
-              <>
-                <View style={s.dividerRow}>
-                  <View style={s.dividerLine} />
-                  <Text style={[s.dividerTxt, { fontFamily: F.body }]}>ou</Text>
-                  <View style={s.dividerLine} />
-                </View>
+                {/* ✅ v2.7 — FIX : bouton manquant vers OTP_EMAIL, qui
+                    était entièrement codé plus bas mais inaccessible. */}
                 <TouchableOpacity
-                  style={[s.bioBtn, { borderColor: C.g4 + '40', backgroundColor: C.g4 + '08' }]}
-                  onPress={handleBiometricLogin}
-                  disabled={loading}
+                  style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                  onPress={() => setMethod('OTP_EMAIL')}
                   activeOpacity={0.85}
                 >
-                  {loading ? (
-                    <ActivityIndicator size="small" color={C.g4} />
-                  ) : (
-                    <>
-                      <Ionicons name="finger-print-outline" size={22} color={C.g4} />
-                      <Text style={[s.bioBtnTxt, { color: C.g4, fontFamily: F.body }]}>
-                        Face ID / Touch ID
-                      </Text>
-                    </>
-                  )}
+                  <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
+                    <Ionicons name="mail-open-outline" size={22} color={C.g4} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.methodTitle, { fontFamily: F.body }]}>Code par email</Text>
+                    <Text style={[s.methodDesc, { fontFamily: F.body }]}>Recevez un code à 6 chiffres</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={C.g5} />
                 </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
 
-        {/* ══════════════════════════════════════════════ */}
-        {/* CARD — OTP EMAIL                              */}
-        {/* ══════════════════════════════════════════════ */}
-        {method === 'OTP_EMAIL' && (
-          <View style={[s.card, { shadowColor: C.g1 }]}>
-            <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
+                {bioReady && (
+                  <TouchableOpacity
+                    style={[s.methodBtn, { borderColor: C.g4 + '40' }]}
+                    onPress={handleBiometricLogin}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[s.methodIcon, { backgroundColor: C.g4 + '15' }]}>
+                      <Ionicons name="finger-print-outline" size={22} color={C.g4} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.methodTitle, { fontFamily: F.body }]}>Face ID / Touch ID</Text>
+                      <Text style={[s.methodDesc, { fontFamily: F.body }]}>Connexion biométrique rapide</Text>
+                    </View>
+                    {loading
+                      ? <ActivityIndicator size="small" color={C.g4} />
+                      : <Ionicons name="chevron-forward" size={18} color={C.g5} />
+                    }
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
 
-            {otpEmailStep === 'input' && (
-              <>
-                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
-                  Code par email
-                </Text>
-                <Text style={[s.cardSub, { fontFamily: F.body }]}>
-                  Saisissez votre email pour recevoir un code à 6 chiffres.
-                </Text>
-                {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
-                <View style={{ marginTop: portalMsg ? 4 : 20 }}>
-                  <FloatingInput
-                    label="Email"
-                    value={emailForOtp}
-                    onChangeText={setEmailForOtp}
-                    icon="mail-outline"
-                    keyboardType="email-address"
-                    returnKeyType="done"
-                    onSubmitEditing={() => handleRequestOtpEmail()}
-                    accentColor={C.g4}
-                  />
-                </View>
+          {/* ══════════════════════════════════════════════ */}
+          {/* CARD — MOT DE PASSE                           */}
+          {/* ══════════════════════════════════════════════ */}
+          {method === 'PASSWORD' && (
+            <View style={[s.card, { shadowColor: C.g1 }]}>
+              <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
+              <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                Mot de passe
+              </Text>
+              <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                Connectez-vous avec votre email et mot de passe.
+              </Text>
+
+              {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
+
+              <View style={{ marginTop: portalMsg ? 4 : 20 }}>
+                <FloatingInput
+                  label="Email"
+                  value={email}
+                  onChangeText={setEmail}
+                  icon="mail-outline"
+                  keyboardType="email-address"
+                  returnKeyType="next"
+                  onSubmitEditing={() => passRef.current?.focus()}
+                  accentColor={C.g4}
+                />
+                <FloatingInput
+                  label="Mot de passe"
+                  value={password}
+                  onChangeText={setPassword}
+                  icon="lock-closed-outline"
+                  secureTextEntry
+                  returnKeyType="done"
+                  onSubmitEditing={canSubmitPassword ? () => handlePasswordLogin() : undefined}
+                  inputRef={passRef}
+                  accentColor={C.g4}
+                  maxLength={35}
+                />
+              </View>
+
+              {/* ✅ v2.7 — btnScale enfin animé (press-in/press-out) */}
+              <Animated.View style={{ transform: [{ scale: btnScale }] }}>
                 <TouchableOpacity
                   style={[
                     s.btn,
                     { backgroundColor: C.g3, shadowColor: C.g3 },
-                    (!emailForOtp.trim() || loading) && s.btnDisabled,
+                    (!canSubmitPassword || loading) && s.btnDisabled,
                   ]}
-                  onPress={() => handleRequestOtpEmail()}
-                  disabled={!emailForOtp.trim() || loading}
+                  onPress={() => handlePasswordLogin()}
+                  onPressIn={() => Animated.spring(btnScale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
+                  onPressOut={() => Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, speed: 40 }).start()}
+                  disabled={loading || !canSubmitPassword}
                   activeOpacity={0.9}
                 >
                   {loading ? (
                     <ActivityIndicator color="#FFFFFF" />
                   ) : (
                     <>
-                      <Text style={[s.btnTxt, { fontFamily: F.body }]}>Envoyer le code</Text>
+                      <Text style={[s.btnTxt, { fontFamily: F.body }]}>Se connecter</Text>
                       <View style={s.btnArrow}>
                         <Ionicons name="arrow-forward" size={16} color={C.g4} />
                       </View>
                     </>
                   )}
                 </TouchableOpacity>
-              </>
-            )}
+              </Animated.View>
 
-            {otpEmailStep === 'verify' && (
-              <>
-                <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
-                  Code reçu
+              <TouchableOpacity
+                style={s.linkBtn}
+                onPress={() => router.push('/(auth)/forgot-password')}
+              >
+                <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
+                  Mot de passe oublié ?
                 </Text>
-                <Text style={[s.cardSub, { fontFamily: F.body }]}>
-                  Code envoyé à {maskedRec}. Saisissez les 6 chiffres.
-                </Text>
+              </TouchableOpacity>
 
-                <View style={s.otpRow}>
-                  {([0, 1, 2, 3, 4, 5] as const).map((i) => (
-                    <TextInput
-                      key={i}
-                      ref={otpRefs[i] as any}
-                      style={[
-                        s.otpBox,
-                        otpValues[i] ? { borderColor: C.g4 } : {},
-                        // ✅ v2.5 : fix autofill sur cases OTP aussi
-                        WEB_INPUT_FIX_WHITE,
-                      ]}
-                      value={otpValues[i]}
-                      onChangeText={(t) => handleOtpChange(t, i)}
-                      onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, i)}
-                      keyboardType="number-pad"
-                      maxLength={1}
-                      textAlign="center"
-                      caretHidden
-                      selectTextOnFocus
-                      underlineColorAndroid="transparent"
-                    />
-                  ))}
-                </View>
+              {bioReady && (
+                <>
+                  <View style={s.dividerRow}>
+                    <View style={s.dividerLine} />
+                    <Text style={[s.dividerTxt, { fontFamily: F.body }]}>ou</Text>
+                    <View style={s.dividerLine} />
+                  </View>
+                  <TouchableOpacity
+                    style={[s.bioBtn, { borderColor: C.g4 + '40', backgroundColor: C.g4 + '08' }]}
+                    onPress={handleBiometricLogin}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color={C.g4} />
+                    ) : (
+                      <>
+                        <Ionicons name="finger-print-outline" size={22} color={C.g4} />
+                        <Text style={[s.bioBtnTxt, { color: C.g4, fontFamily: F.body }]}>
+                          Face ID / Touch ID
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
 
-                <TouchableOpacity
-                  style={[
-                    s.btn,
-                    { backgroundColor: C.g3, shadowColor: C.g3 },
-                    (otpValues.some((d) => !d) || loading) && s.btnDisabled,
-                  ]}
-                  onPress={() => handleVerifyOtp()}
-                  disabled={otpValues.some((d) => !d) || loading}
-                  activeOpacity={0.9}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Text style={[s.btnTxt, { fontFamily: F.body }]}>Confirmer</Text>
-                      <View style={s.btnArrow}>
-                        <Ionicons name="checkmark" size={16} color={C.g4} />
-                      </View>
-                    </>
-                  )}
-                </TouchableOpacity>
+          {/* ══════════════════════════════════════════════ */}
+          {/* CARD — OTP EMAIL                              */}
+          {/* ══════════════════════════════════════════════ */}
+          {method === 'OTP_EMAIL' && (
+            <View style={[s.card, { shadowColor: C.g1 }]}>
+              <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
 
-                <TouchableOpacity
-                  style={s.linkBtn}
-                  onPress={() => {
-                    setOtpEmailStep('input');
-                    setOtpValues(['', '', '', '', '', '']);
-                  }}
-                >
-                  <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
-                    Renvoyer le code
+              {otpEmailStep === 'input' && (
+                <>
+                  <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                    Code par email
                   </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
-        )}
+                  <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                    Saisissez votre email pour recevoir un code à 6 chiffres.
+                  </Text>
+                  {portalMsg && <PortalBadge label={portalMsg} color={C.g4} />}
+                  <View style={{ marginTop: portalMsg ? 4 : 20 }}>
+                    <FloatingInput
+                      label="Email"
+                      value={emailForOtp}
+                      onChangeText={setEmailForOtp}
+                      icon="mail-outline"
+                      keyboardType="email-address"
+                      returnKeyType="done"
+                      onSubmitEditing={() => handleRequestOtpEmail()}
+                      accentColor={C.g4}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    style={[
+                      s.btn,
+                      { backgroundColor: C.g3, shadowColor: C.g3 },
+                      (!emailForOtp.trim() || loading) && s.btnDisabled,
+                    ]}
+                    onPress={() => handleRequestOtpEmail()}
+                    disabled={!emailForOtp.trim() || loading}
+                    activeOpacity={0.9}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={[s.btnTxt, { fontFamily: F.body }]}>Envoyer le code</Text>
+                        <View style={s.btnArrow}>
+                          <Ionicons name="arrow-forward" size={16} color={C.g4} />
+                        </View>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              )}
 
-        {/* ── Bas de page ── */}
+              {otpEmailStep === 'verify' && (
+                <>
+                  <Text style={[s.cardTitle, { fontFamily: branding.fontFamily ?? F.display }]}>
+                    Code reçu
+                  </Text>
+                  <Text style={[s.cardSub, { fontFamily: F.body }]}>
+                    Code envoyé à {maskedRec}. Saisissez les 6 chiffres.
+                  </Text>
+
+                  <View style={s.otpRow}>
+                    {([0, 1, 2, 3, 4, 5] as const).map((i) => (
+                      <TextInput
+                        key={i}
+                        ref={otpRefs[i] as any}
+                        style={[
+                          s.otpBox,
+                          otpValues[i] ? { borderColor: C.g4 } : {},
+                          WEB_INPUT_FIX_WHITE,
+                        ]}
+                        value={otpValues[i]}
+                        onChangeText={(t) => handleOtpChange(t, i)}
+                        onKeyPress={({ nativeEvent }) => handleOtpKeyPress(nativeEvent.key, i)}
+                        keyboardType="number-pad"
+                        maxLength={1}
+                        textAlign="center"
+                        caretHidden
+                        selectTextOnFocus
+                        underlineColorAndroid="transparent"
+                      />
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      s.btn,
+                      { backgroundColor: C.g3, shadowColor: C.g3 },
+                      (otpValues.some((d) => !d) || loading) && s.btnDisabled,
+                    ]}
+                    onPress={() => handleVerifyOtp()}
+                    disabled={otpValues.some((d) => !d) || loading}
+                    activeOpacity={0.9}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={[s.btnTxt, { fontFamily: F.body }]}>Confirmer</Text>
+                        <View style={s.btnArrow}>
+                          <Ionicons name="checkmark" size={16} color={C.g4} />
+                        </View>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={s.linkBtn}
+                    onPress={() => {
+                      setOtpEmailStep('input');
+                      setOtpValues(['', '', '', '', '', '']);
+                    }}
+                  >
+                    <Text style={[s.linkTxt, { color: C.g4, fontFamily: F.body }]}>
+                      Renvoyer le code
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* ── Bas de page — ✅ v2.7 : 2ᵉ bloc direct du ScrollView,
+            désormais poussé vers le bas via justifyContent:'space-between'
+            au lieu de laisser un vide juste au-dessus ── */}
         <View style={s.bottom}>
           {isCustomBranding && (
             <TouchableOpacity
@@ -806,8 +846,6 @@ export default function LoginV2Screen() {
             <Text style={[s.helpTxt, { fontFamily: F.body }]}>Assistance</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={{ height: 32 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -818,7 +856,18 @@ const s = StyleSheet.create({
   bgBase:    { position: 'absolute' as const, top: 0, left: 0, right: 0, bottom: 0 },
   bgCircle1: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: 'rgba(255,255,255,0.05)', top: -80, right: -80 },
   bgCircle2: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.04)', top: 120, left: -60 },
-  scroll:    { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 56 : 64 },
+  // ✅ v2.7 (nouveau) — donne du relief à la moitié basse de l'écran
+  bgCircle3: { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(255,255,255,0.035)', bottom: -100, right: -60 },
+
+  // ✅ v2.7 — flexGrow:1 + justifyContent:'space-between' (était sans
+  // justifyContent, d'où le vide) + paddingBottom au lieu du spacer fixe
+  scroll: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 56 : 64,
+    paddingBottom: 24,
+  },
 
   backBtn: {
     width: 40, height: 40, borderRadius: 12,
