@@ -1,91 +1,51 @@
 // apps/direct-transfair-mobile/components/dashboards/CompanyDashboard.tsx
 // =========================================================
-// COMPANY ADMIN DASHBOARD v9.4 — Direct Transf'air
+// COMPANY ADMIN DASHBOARD v9.6 — Direct Transf'air
+// ✅ v9.6 : Modal "Recharger l'Agence" → composant partagé RefillAgencyModal
+//    PROBLÈME RÉSOLU : ce modal était dupliqué en deux endroits — inline
+//    ici (ModalSheet + accent violet #7C3AED, jamais mis à jour vers le
+//    bleu marine) et un composant standalone
+//    components/agencies/RefillAgencyModal.tsx utilisé ailleurs (thème
+//    "teal" clair, lui non plus pas aligné). Les deux avaient divergé.
+//    CORRECTIF : CompanyDashboard utilise désormais directement
+//    RefillAgencyModal (v2.0, refondu en bleu marine — voir son propre
+//    changelog), qui devient la source unique pour ce flux. Les
+//    états/fonctions propres à l'ancienne modale inline (agencyAmount,
+//    loadingAgency, handleAgencyRefill, agencyCurrency) sont supprimés —
+//    RefillAgencyModal gère tout ça en interne. Il ne reste que
+//    targetAgency/targetAgencyRef/modalAgency pour piloter QUAND et POUR
+//    QUELLE agence l'ouvrir. onSuccess déclenche loadData() (même effet
+//    qu'avant : rafraîchit les soldes après une recharge réussie).
+//    AmountInput/QuickAmounts/ConfirmBtn restent utilisés tels quels par
+//    les modales Alimenter et Déclarer B2B, non concernées.
+// ✅ v9.5 (appliqué manuellement par Doniko, reporté ici pour que ce
+//    fichier reste la version de référence) :
+//    - CARD_W : (SW - 48 - 8) / 2 → (SW - 32) / 2.3 — fait tenir ~2,3
+//      cartes de wallet visibles au lieu de 2 pile.
+//    - s.sheet : overflow:"hidden" retiré (empêchait le carrousel de
+//      wallets de s'afficher correctement).
 // ✅ v9.4 : HERO — dégradé bleu marine sombre façon ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL (+1 ajout mineur : toggle showBalance)
 //    — aucune logique métier touchée (loadData, handleFill, handleB2B,
-//    handleAgencyRefill, tous les calculs de stats/agences : identiques).
+//    tous les calculs de stats/agences : identiques).
 //    - Hero rectangulaire bleu vif (#2563EB→#1D4ED8) → dégradé bleu
 //      marine sombre (HERO_FROM/HERO_TO assombris, même famille de
 //      bleu conservée), avec halo décoratif + filigrane wallet
-//      translucide, sur le modèle de ClientDashboard v9.8 — mais en
-//      bleu, pas en vert, comme demandé.
+//      translucide, sur le modèle de ClientDashboard v9.8.
 //    - Le solde affiché dans le hero suit la devise actuellement
 //      visible dans le WalletCarousel (`activeCur`, déjà existant) —
 //      recalculé depuis `wallets`, déjà chargé par loadData(), aucun
-//      nouvel appel API. Nouveau : toggle masquer/afficher (state
-//      showBalance), comme sur la référence.
-//    - Pastille "{n} AGENCES ACTIVES" réutilise `activeAgencies`
-//      (calcul déjà existant plus haut, inchangé).
-//    - Bouton rafraîchir (déjà existant) + notifications + avatar
-//      (nouveau : tape désormais vers Paramètres) regroupés en haut
-//      du hero, style "verre" translucide identique à ClientDashboard.
+//      nouvel appel API. Toggle masquer/afficher (state showBalance).
 //    - Le reste de l'écran (carte stats, carrousel wallets, sélecteur
 //      devise, boutons Alimenter/B2B, grille pilotage, liste agences,
-//      les 3 modales) est maintenant enveloppé dans une "sheet" à
-//      coins arrondis qui chevauche le bas du hero (marginTop:-28) —
-//      même principe que ClientDashboard, contenu et fond strictement
-//      inchangés (toujours blanc).
-//    - insets.top (useSafeAreaInsets, nouvel import) remplace le
-//      paddingTop conditionnel Platform.OS — même fix de fiabilité
-//      Android/iOS que ClientDashboard v9.5.
+//      les 3 modales) enveloppé dans une "sheet" à coins arrondis qui
+//      chevauche le bas du hero — même principe que ClientDashboard.
 // ✅ v9.3 : Ajout de l'ActionCard "Commissions" dans la grille
-//    PILOTAGE SOCIÉTÉ — pointe vers /(tabs)/admin/commissions/config
-//    (page reconstruite en v6.0, source LedgerEntry — argent
-//    réellement crédité, distincte de "Frais & Commissions" qui
-//    reste l'écran de configuration des taux). Manquait jusqu'ici :
-//    aucune carte du dashboard n'y menait, la page n'était accessible
-//    que par URL directe. Purement additif — les 7 autres ActionCard
-//    existantes ne sont ni déplacées ni modifiées.
 // ✅ v9.2 : 🚨 FIX — avertissement "ScrollView doesn't take rejection
-//    well - scrolls anyway" sur web (voir échange du 19/07/2026).
-//
-//   CAUSE : deux ScrollView horizontaux (WalletCarousel + le
-//   sélecteur de devise juste en dessous) étaient imbriqués
-//   directement dans le ScrollView vertical principal de l'écran. Sur
-//   react-native-web, les deux ScrollView se disputent le geste de
-//   défilement au niveau du système de responder tactile de React
-//   Native — d'où l'avertissement (bénin, "scrolls anyway", mais
-//   intrusif dans l'overlay LogBox en dev sur web).
-//
-//   CORRECTIF — nouveau composant HScroller (défini juste avant
-//   WalletCarousel) :
-//     - Sur NATIF (iOS/Android) : rend un vrai <ScrollView horizontal>,
-//       AUCUN changement de comportement (mêmes props snapToInterval /
-//       decelerationRate / onScroll / ref.scrollTo qu'avant).
-//     - Sur WEB uniquement : rend un simple <View> avec overflow-x en
-//       CSS. Le navigateur route alors nativement le scroll horizontal
-//       vs vertical sans jamais passer par le système de responder de
-//       RN — plus aucun conflit possible, donc plus d'avertissement.
-//   Compromis assumé sur web : l'effet magnétique "snap" du carrousel
-//   de wallets (qui s'arrête pile sur une carte) devient un défilement
-//   libre. Le reste du comportement (points qui suivent la position de
-//   scroll, tap sur un point pour sauter à ce wallet) est identique.
-//
-//   WalletCarousel et le sélecteur de devise inline utilisent
-//   désormais HScroller à la place de ScrollView — c'est le SEUL
-//   changement fonctionnel de cette version. CurrencyChipSelector
-//   (utilisé uniquement dans les modales, donc jamais imbriqué dans le
-//   ScrollView principal) n'a pas été touché, il n'était pas concerné.
+//    well - scrolls anyway" sur web (HScroller cross-platform)
 // ✅ v8.1 : Carte "Clients Wallet" dans la grille
-// ✅ v9.0 :
-//    - Héro rectangulaire bleu (LinearGradient #2563EB → #1D4ED8)
-//      + bordure basse arrondie (borderBottomRadius 28)
-//      + ombre portée bleue profonde
-//      + glows décoratifs semi-transparents
-//      + tout le texte du héro en blanc
-//    - Fond global : blanc pur (#FFFFFF)
-//    - Boutons "Alimenter" & "Déclarer B2B" :
-//      fond blanc, ombre colorée accentuée (effet "flottant")
-//      → Alimenter : ombre verte (#059669)
-//      → Déclarer B2B : ombre indigo (#4F46E5)
-// ✅ v9.1 : NOUVELLE ActionCard "Retrait Agence" dans "PILOTAGE
-//    SOCIÉTÉ" — lien vers /(tabs)/admin/agency-withdrawal (écran
-//    indépendant, voir agency-withdrawal.tsx). PUREMENT ADDITIF :
-//    les 6 ActionCard existantes (Transactions, Agences, Trésorerie,
-//    Frais & Commissions, Paramètres, Clients Wallet) ne sont ni
-//    déplacées ni modifiées — la nouvelle carte s'ajoute en 7ème
-//    position dans la même grille flex-wrap.
+// ✅ v9.0 : Héro rectangulaire bleu, fond global blanc pur
+// ✅ v9.1 : NOUVELLE ActionCard "Retrait Agence"
 // =========================================================
 
 import React, { useMemo, useState, useCallback, useRef } from "react";
@@ -98,16 +58,18 @@ import {
 import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v9.4 (nouveau)
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path, Rect } from "react-native-svg";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+import RefillAgencyModal from "../agencies/RefillAgencyModal"; // ✅ v9.6 (nouveau)
 
 const { width: SW } = Dimensions.get("window");
+// ✅ v9.5 — fait tenir ~2,3 cartes visibles au lieu de 2 pile
 const CARD_W = (SW - 32) / 2.3;
 
-// ─── Héro — ✅ v9.4 : bleu marine sombre (même famille de bleu que
-// l'ancien héro vif, juste assombrie) au lieu du bleu vif rectangulaire ──
+// ─── Héro — bleu marine sombre (même famille de bleu que l'ancien héro
+// vif, juste assombrie) au lieu du bleu vif rectangulaire ──
 const HERO_FROM   = "#070B16";
 const HERO_TO     = "#123566";
 const HERO_ACCENT = "#2563EB"; // accent bleu vif — pop sur le fond sombre
@@ -130,7 +92,6 @@ const CURRENCIES: Record<CurrencyCode, {
 
 // ─── Design tokens v9 ────────────────────────────────────
 const T = {
-  // v9.0 : fond blanc pur
   pageBg:        "#FFFFFF",
   surface:       "#FFFFFF",
   border:        "#E8EDF5",
@@ -215,10 +176,7 @@ const wc = StyleSheet.create({
   sym:    { fontSize: 9, fontWeight: "700", paddingHorizontal: 10, marginTop: 2 },
 });
 
-// ─── Horizontal Scroller — ✅ v9.2 (voir changelog en tête de fichier) ──
-// Cross-platform : natif → vrai ScrollView (inchangé) ; web → View avec
-// overflow-x CSS (le navigateur gère alors le scroll horizontal/vertical
-// nativement, sans passer par le système de responder tactile de RN).
+// ─── Horizontal Scroller ──────────────────────────────────
 type HScrollerHandle = { scrollTo: (opts: { x: number; animated?: boolean }) => void };
 
 const HScroller = React.forwardRef<HScrollerHandle, {
@@ -287,9 +245,6 @@ function WalletCarousel({ wallets, activeCur, setActiveCur }: {
     return toNum(w?.balance ?? w?.availableBalance ?? 0);
   }, [wallets]);
 
-  // ✅ v9.2 — logique de calcul de l'index strictement identique à avant
-  // (Math.round(x / (CARD_W + 8))), seule la source de x change selon la
-  // plateforme (gérée en interne par HScroller).
   const handleScrollX = (x: number) => {
     const idx     = Math.round(x / (CARD_W + 8));
     const clamped = Math.max(0, Math.min(idx, CURRENCIES_ORDER.length - 1));
@@ -557,11 +512,6 @@ const cb = StyleSheet.create({
 });
 
 // ─── Currency Chip Selector ───────────────────────────────
-// ⚠️ Non touché par le fix v9.2 : ce composant n'est utilisé QUE dans
-// ModalSheet (une <Modal> RN — rendu dans une couche/portail séparée
-// du ScrollView vertical principal), il ne peut donc pas entrer en
-// conflit de responder avec lui. Le conserver en ScrollView natif ici
-// ne pose aucun problème.
 function CurrencyChipSelector({ selected, onSelect }: {
   selected: CurrencyCode; onSelect: (c: CurrencyCode) => void;
 }) {
@@ -612,13 +562,13 @@ function HeroConcave() {
 export default function CompanyDashboard() {
   const router   = useRouter();
   const { user } = useAuth();
-  const insets   = useSafeAreaInsets(); // ✅ v9.4 (nouveau)
+  const insets   = useSafeAreaInsets();
 
   const [wallets,    setWallets]    = useState<any[]>([]);
   const [agencies,   setAgencies]   = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeCur,  setActiveCur]  = useState(0);
-  const [showBalance, setShowBalance] = useState(true); // ✅ v9.4 (nouveau)
+  const [showBalance, setShowBalance] = useState(true);
 
   const [modalFill,   setModalFill]   = useState(false);
   const [modalB2B,    setModalB2B]    = useState(false);
@@ -633,8 +583,9 @@ export default function CompanyDashboard() {
   const [loadingB2B, setLoadingB2B] = useState(false);
   const [b2bCur,     setB2bCur]     = useState<CurrencyCode>("XOF");
 
-  const [agencyAmount,  setAgencyAmount]  = useState("");
-  const [loadingAgency, setLoadingAgency] = useState(false);
+  // ✅ v9.6 — agencyAmount/loadingAgency retirés : gérés en interne par
+  // RefillAgencyModal désormais. targetAgencyRef/targetAgency restent
+  // (pilotent QUAND et POUR QUELLE agence ouvrir le modal).
   const targetAgencyRef = useRef<any>(null);
   const [targetAgency,  setTargetAgency]  = useState<any>(null);
 
@@ -644,8 +595,6 @@ export default function CompanyDashboard() {
   const totalAgencies  = agencies.length;
   const activeAgencies = agencies.filter((a) => a.isActive !== false).length;
 
-  // ✅ v9.4 — solde du hero : suit la devise actuellement visible dans
-  // le WalletCarousel (activeCur, déjà existant plus bas)
   const heroCurrency = CURRENCIES_ORDER[activeCur] ?? "XOF";
   const heroWallet   = wallets.find((w) => w.currency === heroCurrency);
   const heroBalance  = toNum(heroWallet?.balance ?? heroWallet?.availableBalance ?? 0);
@@ -669,10 +618,10 @@ export default function CompanyDashboard() {
     Animated.spring(headerAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }).start();
   }, [loadData]));
 
+  // ✅ v9.6 — setAgencyAmount("") retiré (état supprimé)
   const openAgencyModal = useCallback((agency: any) => {
     targetAgencyRef.current = agency;
     setTargetAgency(agency);
-    setAgencyAmount("");
     setModalAgency(true);
   }, []);
 
@@ -708,42 +657,16 @@ export default function CompanyDashboard() {
     } finally { setLoadingB2B(false); }
   };
 
-  const handleAgencyRefill = async () => {
-    const agency = targetAgencyRef.current;
-    if (!agency) return;
-    const n = Number(agencyAmount.replace(/\s/g, "").replace(",", "."));
-    if (!n || n <= 0) { Alert.alert("Montant invalide", "Saisissez un montant supérieur à 0."); return; }
-    const agencyWallets = Array.isArray(agency.wallets) ? agency.wallets : [];
-    const primaryWallet = agencyWallets.find((w: any) => w.isDefault) ?? agencyWallets[0];
-    const currency: string = primaryWallet?.currency ?? agency.primaryCurrency ?? "XOF";
-    setLoadingAgency(true);
-    try {
-      await api.adminRefillAgency(agency.id, n, currency);
-      setModalAgency(false); setAgencyAmount(""); targetAgencyRef.current = null;
-      Alert.alert("✅ Rechargé", `${agency.name} crédité de ${fmt(n, currency)} ${(CURRENCIES[currency as CurrencyCode] ?? CURRENCIES.XOF).symbol}.`);
-      await loadData();
-    } catch (e: any) {
-      Alert.alert("Erreur", e?.response?.data?.message || "Erreur technique");
-    } finally { setLoadingAgency(false); }
-  };
-
-  const agencyCurrency = (() => {
-    const a = targetAgencyRef.current;
-    if (!a) return "XOF";
-    const ws = Array.isArray(a.wallets) ? a.wallets : [];
-    const pw = ws.find((w: any) => w.isDefault) ?? ws[0];
-    return pw?.currency ?? a.primaryCurrency ?? "XOF";
-  })();
+  // ✅ v9.6 — handleAgencyRefill / agencyCurrency supprimés : la logique
+  // de recharge d'agence (appel api.adminRefillAgency, résolution de
+  // devise) vit désormais entièrement dans RefillAgencyModal.
 
   const fillCfg = CURRENCIES[fillCur];
 
   return (
     <SafeAreaView style={s.safe}>
-      {/* ✅ v9.4 : StatusBar clair sur hero bleu marine sombre */}
       <StatusBar barStyle="light-content" backgroundColor={HERO_FROM} />
 
-      {/* ══════════ HÉRO — ✅ v9.4 : dégradé bleu marine sombre, solde
-          intégré, façon ClientDashboard ══════════ */}
       <Animated.View style={{
         opacity:   headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
@@ -753,10 +676,8 @@ export default function CompanyDashboard() {
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
           style={[s.hero, { paddingTop: insets.top + 8 }]}
         >
-          {/* Halo décoratif */}
           <View style={s.heroGlow} pointerEvents="none" />
 
-          {/* Filigrane portefeuille — bleu translucide */}
           <Ionicons
             name="wallet"
             size={80}
@@ -765,7 +686,6 @@ export default function CompanyDashboard() {
             pointerEvents="none"
           />
 
-          {/* Barre du haut */}
           <View style={s.topBar}>
             <View style={{ flex: 1 }}>
               <Text style={[s.greeting, { fontFamily: T.font.sans }]}>ADMIN SOCIÉTÉ</Text>
@@ -783,7 +703,6 @@ export default function CompanyDashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Solde — directement dans le hero */}
           <View style={s.balHeaderRow}>
             <Text style={[s.balLabel, { fontFamily: T.font.sans }]}>SOLDE DISPONIBLE</Text>
             <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
@@ -815,8 +734,6 @@ export default function CompanyDashboard() {
         </LinearGradient>
       </Animated.View>
 
-      {/* ══════════ SHEET — ✅ v9.4 : enveloppe arrondie qui chevauche
-          le bas du hero. Contenu et fond strictement inchangés ══════════ */}
       <View style={s.sheet}>
         <ScrollView
           style={{ flex: 1 }}
@@ -826,7 +743,6 @@ export default function CompanyDashboard() {
             <RefreshControl refreshing={refreshing} onRefresh={() => void loadData("refresh")} tintColor={T.primary} />
           }
         >
-          {/* ── Carte stats ── */}
           <View style={s.statsCard}>
             <View style={s.statsItem}>
               <Text style={[s.statsVal, { fontFamily: T.font.serif }]}>{totalAgencies}</Text>
@@ -844,7 +760,6 @@ export default function CompanyDashboard() {
             </View>
           </View>
 
-          {/* Trésorerie */}
           <View style={s.secRow}>
             <View style={[s.secDot, { backgroundColor: T.warning }]} />
             <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>TRÉSORERIE · 5 DEVISES</Text>
@@ -852,7 +767,6 @@ export default function CompanyDashboard() {
 
           <WalletCarousel wallets={wallets} activeCur={activeCur} setActiveCur={setActiveCur} />
 
-          {/* Sélecteur devise — HScroller (voir changelog v9.2) */}
           <HScroller contentContainerStyle={{ gap: 6, paddingRight: 4, marginBottom: 12 }}>
             {CURRENCIES_ORDER.map((cur) => {
               const cfg = CURRENCIES[cur];
@@ -868,7 +782,6 @@ export default function CompanyDashboard() {
             })}
           </HScroller>
 
-          {/* BOUTON ALIMENTER : blanc + ombre verte accentuée */}
           <TouchableOpacity
             style={[s.actionStrip, s.actionStripGreen]}
             onPress={() => setModalFill(true)}
@@ -890,7 +803,6 @@ export default function CompanyDashboard() {
             </View>
           </TouchableOpacity>
 
-          {/* BOUTON B2B : blanc + ombre indigo accentuée */}
           <TouchableOpacity
             style={[s.actionStrip, s.actionStripBlue]}
             onPress={() => setModalB2B(true)}
@@ -912,7 +824,6 @@ export default function CompanyDashboard() {
             </View>
           </TouchableOpacity>
 
-          {/* ── Pilotage société ── */}
           <View style={[s.secRow, { marginTop: 8 }]}>
             <View style={[s.secDot, { backgroundColor: T.primary }]} />
             <Text style={[s.secLbl, { fontFamily: T.font.sans }]}>PILOTAGE SOCIÉTÉ</Text>
@@ -928,7 +839,6 @@ export default function CompanyDashboard() {
             <ActionCard title="Retrait Agence"      subtitle="Fonds agence → société" icon="arrow-down-circle-outline" color="#DC2626" bg="#FEF2F2" onPress={() => router.push("/(tabs)/admin/agency-withdrawal" as any)} />
           </View>
 
-          {/* Agences */}
           {agencies.length > 0 && (
             <>
               <View style={s.secRow}>
@@ -956,7 +866,6 @@ export default function CompanyDashboard() {
         </ScrollView>
       </View>
 
-      {/* ── Modal Alimenter ── */}
       <ModalSheet visible={modalFill} onClose={() => { setModalFill(false); setFillAmount(""); }} title="Alimenter ma Caisse" subtitle={`Injection directe · ${fillCur}`} gradColors={[T.success, T.successDark]}>
         <AmountInput value={fillAmount} onChange={setFillAmount} currency={fillCur} accentColor={T.success} accentBg={T.successSoft} />
         <QuickAmounts amounts={[100000, 500000, 1000000, 5000000]} selected={fillAmount} onSelect={setFillAmount} color={T.success} />
@@ -966,7 +875,6 @@ export default function CompanyDashboard() {
         </TouchableOpacity>
       </ModalSheet>
 
-      {/* ── Modal B2B ── */}
       <ModalSheet visible={modalB2B} onClose={() => { setModalB2B(false); setAmountB2B(""); setRefB2B(""); setB2bCur("XOF"); }} title="Déclarer un Virement" subtitle="Alimentation B2B · en attente validation" gradColors={[T.primary, T.primaryDark]}>
         <CurrencyChipSelector selected={b2bCur} onSelect={setB2bCur} />
         <AmountInput value={amountB2B} onChange={setAmountB2B} currency={b2bCur} accentColor={CURRENCIES[b2bCur].color} accentBg={CURRENCIES[b2bCur].bg} />
@@ -981,28 +889,23 @@ export default function CompanyDashboard() {
         </TouchableOpacity>
       </ModalSheet>
 
-      {/* ── Modal Recharge Agence ── */}
-      <ModalSheet visible={modalAgency} onClose={() => { setModalAgency(false); setAgencyAmount(""); targetAgencyRef.current = null; }} title="Recharger l'Agence" subtitle={targetAgency?.name || "—"} gradColors={["#7C3AED", "#6D28D9"]}>
-        <AmountInput value={agencyAmount} onChange={setAgencyAmount} currency={agencyCurrency} accentColor="#7C3AED" accentBg="#F5F3FF" />
-        <QuickAmounts amounts={[50000, 100000, 500000, 1000000]} selected={agencyAmount} onSelect={setAgencyAmount} color="#7C3AED" />
-        <ConfirmBtn label={`TRANSFÉRER ${agencyAmount ? fmt(Number(agencyAmount), agencyCurrency) : "—"} ${agencyCurrency}`} color="#7C3AED" loading={loadingAgency} onPress={handleAgencyRefill} />
-        <TouchableOpacity onPress={() => { setModalAgency(false); setAgencyAmount(""); targetAgencyRef.current = null; }} style={{ alignItems: "center", paddingVertical: 14 }}>
-          <Text style={[{ color: T.textSoft, fontWeight: "600", fontSize: 13 }, { fontFamily: T.font.sans }]}>Annuler</Text>
-        </TouchableOpacity>
-      </ModalSheet>
+      {/* ✅ v9.6 — RefillAgencyModal remplace l'ancien ModalSheet inline
+          (violet #7C3AED). Composant partagé, bleu marine, avec aperçu
+          solde actuel/nouveau solde. */}
+      <RefillAgencyModal
+        visible={modalAgency}
+        onClose={() => { setModalAgency(false); targetAgencyRef.current = null; }}
+        onSuccess={() => { void loadData(); }}
+        agency={targetAgency}
+      />
     </SafeAreaView>
   );
 }
 
 // ─── Styles ──────────────────────────────────────────────
 const s = StyleSheet.create({
-  // ✅ v9.4 : fond aligné sur le 1er ton du dégradé (zone réservée par
-  // SafeAreaView sous l'encoche, doit rester sombre en continuité du hero)
   safe: { flex: 1, backgroundColor: HERO_FROM },
 
-  // ✅ v9.4 : hero simplifié — plus de bordure basse arrondie ni
-  // d'ombre propre (la sheet, avec sa propre bordure haute arrondie
-  // et marginTop négatif, chevauche et couvre le bas du hero)
   hero: {
     paddingHorizontal: 24,
     paddingBottom: 40,
@@ -1051,7 +954,7 @@ const s = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 5, elevation: 2,
   },
-  avatarTxt: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
+    avatarTxt: { fontSize: 14, fontWeight: "800", color: "#FFFFFF" },
 
   balHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   balLabel: {
@@ -1076,17 +979,14 @@ const s = StyleSheet.create({
     color: "#FFFFFF", letterSpacing: -0.8,
   },
 
-  // ✅ v9.4 — sheet arrondie qui enveloppe tout le contenu et chevauche le hero
-  sheet: {                 // ← ligne 1025, à modifier
+  sheet: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     marginTop: -28,
-    overflow: "hidden",    // ← cette ligne à retirer
   },
 
-  // Carte stats
   statsCard: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "#FFFFFF",
@@ -1110,7 +1010,6 @@ const s = StyleSheet.create({
   chipTxt: { fontSize: 10, fontWeight: "700" },
   chipDot: { width: 4, height: 4, borderRadius: 99 },
 
-  // Boutons blancs avec ombres accentuées colorées (effet flottant)
   actionStrip: {
     flexDirection: "row", alignItems: "center", gap: 14,
     backgroundColor: "#FFFFFF",
