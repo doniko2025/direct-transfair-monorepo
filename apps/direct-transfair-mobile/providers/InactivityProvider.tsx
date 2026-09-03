@@ -1,12 +1,14 @@
 // apps/direct-transfair-mobile/providers/InactivityProvider.tsx
 // =========================================================
-// INACTIVITY PROVIDER v1.0 — Direct Transf'air
+// INACTIVITY PROVIDER v1.1 — Direct Transf'air
+// ✅ v1.0 conservé intégralement
+// ✅ v1.1 : TIMEOUT_MS passé de 60s à 30 minutes
 //
-// Déconnexion automatique après 60 secondes d'inactivité.
+// Déconnexion automatique après 30 minutes d'inactivité.
 // Doit être placé DANS AuthProvider (utilise useAuth).
 //
 // Comportement :
-//   — Démarre un timer de 60s à chaque connexion (user !== null)
+//   — Démarre un timer de 30 min à chaque connexion (user !== null)
 //   — Tout toucher (onTouchStart / onTouchMove) réinitialise le timer
 //   — Expiration → logout() automatique
 //   — App en arrière-plan (AppState) → timer suspendu
@@ -30,7 +32,8 @@ import { AppState, AppStateStatus, View } from 'react-native';
 import { useAuth } from './AuthProvider';
 
 // ─── Constante ───────────────────────────────────────────
-const TIMEOUT_MS = 60_000; // 60 secondes
+// ✅ v1.1 — 30 minutes (auparavant 60 secondes)
+const TIMEOUT_MS = 30 * 60_000; // 30 minutes
 
 // ─── Contexte (pour usage optionnel depuis n'importe où) ─
 type InactivityContextValue = {

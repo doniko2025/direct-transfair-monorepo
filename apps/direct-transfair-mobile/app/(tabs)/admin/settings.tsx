@@ -1,32 +1,60 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/settings.tsx
 // =========================================================
-// PARAMÈTRES SOCIÉTÉ v2.1 — Direct Transf'air
-// ✅ Commissions : 4 règles distinctes
-//    → Filiale  : part plateforme à l'ENVOI + au RETRAIT
-//    → Partenaire : part plateforme à l'ENVOI + au RETRAIT
-// ✅ Taux de change : toutes combinaisons GNF/EUR/XOF/USD/GBP
-// ✅ FIX v2.1 — handleSaveComm() avait 2 bugs :
-//    1. senderShare: 0 toujours hardcodé → l'agent ENVOYEUR ne
-//       percevait jamais de commission.
-//    2. 4 règles sauvegardées pour (SUBSIDIARY/SEND, SUBSIDIARY/
-//       WITHDRAWAL, PARTNER/SEND, PARTNER/WITHDRAWAL) → toutes
-//       avaient le même (sourceType, destType) en DB → chaque appel
-//       successif ÉCRASAIT le précédent → seule la dernière règle
-//       (WITHDRAWAL PARTNER) restait en base.
-//    Architecture correcte (CommissionConfig déjà en place côté
-//    backend) : UNE seule règle par paire (sourceType, destType),
-//    avec senderShare (agent qui envoie) + payerShare (agent qui
-//    encaisse au retrait) + platformShare, le tout sommant à 100.
-//    → 2 règles désormais sauvegardées (Filiale, Partenaire), calculées
-//      depuis les sliders :
-//        senderShare   = 100 - subsidSend / partnerSend
-//        payerShare    = 100 - subsidWithdraw / partnerWithdraw
-//        platformShare = subsidSend + subsidWithdraw - 100 (idem partenaire)
-//      Validation ajoutée : platformShare doit être ≥ 0, donc
-//      (part plateforme Envoi + part plateforme Retrait) doit être ≥ 100%.
-//    loadSettings() mis à jour en miroir : on relit désormais
-//    senderShare/payerShare (1 règle par type d'agence) au lieu de
-//    platformShare sur 4 règles distinctes.
+// PARAMÈTRES SOCIÉTÉ v3.0 — Direct Transf'air
+// ✅ Taux de change : toutes combinaisons GNF/EUR/XOF/USD/GBP (inchangé)
+//
+// ✅ v3.0 : 🚨 REFONTE — 2 configurations → 6 configurations de
+//    commission
+//
+//   PROBLÈME RÉSOLU :
+//   L'écran n'exposait que 2 blocs ("Agences Filiales", "Agences
+//   Partenaires"), chacun supposant implicitement que l'agence
+//   d'origine et l'agence de destination sont du MÊME type. Or le
+//   modèle de données (CommissionConfig, clé unique sur
+//   [clientId, sourceType, destType, currency]) prévoit depuis le
+//   début sourceType ∈ {SUBSIDIARY, PARTNER, WALLET} croisé avec
+//   destType ∈ {SUBSIDIARY, PARTNER} — soit 6 combinaisons possibles,
+//   et withdrawals.service.ts::agentProcessPayment() calcule déjà
+//   correctement le vrai sourceType/destType de chaque retrait pour
+//   aller chercher LA bonne règle. Résultat concret avant ce fix :
+//   un retrait Filiale→Partenaire, Partenaire→Filiale, ou une
+//   émission de code par un client Wallet, ne trouvait JAMAIS de
+//   règle configurée par l'admin (aucun des 2 blocs ne pouvait
+//   l'écrire) et retombait silencieusement sur les valeurs par
+//   défaut codées en dur du backend (40/20/40) — sans erreur, sans
+//   log visible côté admin, juste une répartition différente de ce
+//   qui avait été réellement paramétré.
+//
+//   CORRECTIF — aucune ligne backend requise (DTO, controller et
+//   service acceptent déjà sourceType:"WALLET" et n'importe quelle
+//   combinaison) :
+//   - 4 configurations agence↔agence (Filiale→Filiale,
+//     Filiale→Partenaire, Partenaire→Filiale, Partenaire→Partenaire),
+//     chacune avec 3 parts : agence de départ (senderShare), agence
+//     de destination/payeuse (payerShare), plateforme (platformShare,
+//     calculée = 100 - les deux autres, jamais négative — les deux
+//     sélecteurs se plafonnent mutuellement à la saisie).
+//   - 2 configurations d'émission wallet (Client Wallet→Filiale,
+//     Client Wallet→Partenaire) : SEULEMENT 2 parts (agence
+//     destination / plateforme) — pas d'agence de départ puisqu'il
+//     n'y en a pas dans ce cas ; senderShare est toujours envoyé à 0
+//     pour ces deux lignes.
+//   - loadSettings() cherche pour chacune des 6 combinaisons la ligne
+//     CommissionConfig correspondante SANS payoutMethod (ce champ
+//     distingue une config de frais par méthode — fees.tsx — d'une
+//     règle de répartition agence↔agence — cet écran). Note : pour
+//     WALLET→SUBSIDIARY, les configs de frais de fees.tsx utilisent
+//     aussi sourceType:WALLET/destType:SUBSIDIARY mais avec une
+//     currency précise (XOF/EUR/GNF/USD) — la clé unique
+//     [clientId, sourceType, destType, currency] les garde
+//     distinctes de la règle de répartition (currency: null), donc
+//     aucune collision possible entre les deux écrans.
+//   - handleSaveComm() envoie 6 appels api.saveCommissionRule() (au
+//     lieu de 2), un par combinaison.
+//   - Anciens CommissionSlider/CommissionSection (modèle "part
+//     plateforme unique" à 2 combinaisons implicites) supprimés,
+//     remplacés par SplitBar/ShareStepRow/ComboCard (modèle
+//     3 parts explicites, générique sur les 6 combinaisons).
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -191,51 +219,100 @@ const rrS = StyleSheet.create({
   suffix:     { fontSize: 10, fontWeight: "900", marginLeft: 4 },
 });
 
-// ─── Commission Slider ────────────────────────────────────
-const COMM_STEPS = [0, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100];
+// =========================================================
+// ✅ v3.0 — COMMISSIONS : 6 combinaisons (voir changelog en tête
+// de fichier)
+// =========================================================
 
-function CommissionSlider({
-  label, icon, color, bg,
-  platform, onPlatformChange,
-}: {
-  label: string; icon: string; color: string; bg: string;
-  platform: number;
-  onPlatformChange: (v: number) => void;
-}) {
-  const agency = 100 - platform;
+type SourceType = "SUBSIDIARY" | "PARTNER" | "WALLET";
+type DestType   = "SUBSIDIARY" | "PARTNER";
+
+type ComboKey =
+  | "SUBSIDIARY_SUBSIDIARY" | "SUBSIDIARY_PARTNER"
+  | "PARTNER_SUBSIDIARY"    | "PARTNER_PARTNER"
+  | "WALLET_SUBSIDIARY"     | "WALLET_PARTNER";
+
+type ComboDef = {
+  key: ComboKey; source: SourceType; dest: DestType;
+  label: string; sub: string; icon: string; color: string; bg: string;
+  hasSender: boolean; // false pour les combinaisons WALLET (pas d'agence de départ)
+};
+
+const AGENCY_COMBOS: ComboDef[] = [
+  { key: "SUBSIDIARY_SUBSIDIARY", source: "SUBSIDIARY", dest: "SUBSIDIARY", label: "Filiale → Filiale",      sub: "Envoi et retrait entre deux filiales",         icon: "business-outline",        color: T.teal,   bg: T.tealLt,   hasSender: true },
+  { key: "SUBSIDIARY_PARTNER",    source: "SUBSIDIARY", dest: "PARTNER",    label: "Filiale → Partenaire",    sub: "Origine filiale, retrait chez un partenaire",   icon: "swap-horizontal-outline", color: T.sky,    bg: T.skyLt,    hasSender: true },
+  { key: "PARTNER_SUBSIDIARY",    source: "PARTNER",    dest: "SUBSIDIARY", label: "Partenaire → Filiale",    sub: "Origine partenaire, retrait chez une filiale",  icon: "swap-horizontal-outline", color: T.violet, bg: T.violetLt, hasSender: true },
+  { key: "PARTNER_PARTNER",       source: "PARTNER",    dest: "PARTNER",    label: "Partenaire → Partenaire", sub: "Envoi et retrait entre deux partenaires",       icon: "storefront-outline",      color: T.amber,  bg: T.amberLt,  hasSender: true },
+];
+
+const WALLET_COMBOS: ComboDef[] = [
+  { key: "WALLET_SUBSIDIARY", source: "WALLET", dest: "SUBSIDIARY", label: "Client Wallet → Filiale",    sub: "Émission de code, retrait chez une filiale",   icon: "phone-portrait-outline", color: T.green, bg: T.greenLt, hasSender: false },
+  { key: "WALLET_PARTNER",    source: "WALLET", dest: "PARTNER",    label: "Client Wallet → Partenaire", sub: "Émission de code, retrait chez un partenaire", icon: "phone-portrait-outline", color: T.red,   bg: T.redLt,   hasSender: false },
+];
+
+const ALL_COMBOS: ComboDef[] = [...AGENCY_COMBOS, ...WALLET_COMBOS];
+
+// Alignés sur DEFAULT_PAYER_SHARE/DEFAULT_SENDER_SHARE/DEFAULT_PLATFORM_SHARE
+// de withdrawals.service.ts (40/20/40) — les valeurs de repli du backend
+// quand aucune règle n'est configurée. Défaut wallet arbitraire (0/60/40).
+const DEFAULT_SHARES: Record<ComboKey, { senderShare: number; payerShare: number }> = {
+  SUBSIDIARY_SUBSIDIARY: { senderShare: 20, payerShare: 40 },
+  SUBSIDIARY_PARTNER:    { senderShare: 20, payerShare: 40 },
+  PARTNER_SUBSIDIARY:    { senderShare: 20, payerShare: 40 },
+  PARTNER_PARTNER:       { senderShare: 20, payerShare: 40 },
+  WALLET_SUBSIDIARY:     { senderShare: 0,  payerShare: 60 },
+  WALLET_PARTNER:        { senderShare: 0,  payerShare: 60 },
+};
+
+const SHARE_STEPS = [0, 10, 20, 25, 30, 40, 50, 60, 70, 75, 80, 90, 100];
+
+// ─── Split Bar — barre proportionnelle 2 ou 3 segments ────
+function SplitBar({ segments }: { segments: { label: string; value: number; color: string }[] }) {
   return (
-    <View style={csS.wrap}>
-      <View style={csS.header}>
-        <View style={[csS.iconBox, { backgroundColor: bg }]}>
-          <Ionicons name={icon as any} size={14} color={color} />
-        </View>
-        <Text style={[csS.label, { fontFamily: T.font.sans, color }]}>{label}</Text>
+    <View style={sbS.wrap}>
+      <View style={sbS.barBg}>
+        {segments.map((seg, i) => (
+          <View key={i} style={[sbS.seg, { width: `${seg.value}%` as any, backgroundColor: seg.color }]} />
+        ))}
       </View>
-      <View style={csS.barWrap}>
-        <View style={[csS.barFill, { width: `${platform}%` as any, backgroundColor: color }]} />
-        <View style={[csS.barRemainder, { width: `${agency}%` as any }]} />
+      <View style={sbS.legend}>
+        {segments.map((seg, i) => (
+          <View key={i} style={sbS.legendItem}>
+            <View style={[sbS.legendDot, { backgroundColor: seg.color }]} />
+            <Text style={[sbS.legendTxt, { fontFamily: T.font.sans }]}>{seg.label}</Text>
+            <Text style={[sbS.legendVal, { color: seg.color, fontFamily: T.font.mono }]}>{seg.value}%</Text>
+          </View>
+        ))}
       </View>
-      <View style={csS.legend}>
-        <View style={csS.legendItem}>
-          <View style={[csS.legendDot, { backgroundColor: color }]} />
-          <Text style={[csS.legendTxt, { fontFamily: T.font.sans }]}>Plateforme</Text>
-          <Text style={[csS.legendVal, { color, fontFamily: T.font.mono }]}>{platform}%</Text>
-        </View>
-        <View style={csS.legendItem}>
-          <View style={[csS.legendDot, { backgroundColor: T.borderMd }]} />
-          <Text style={[csS.legendTxt, { fontFamily: T.font.sans }]}>Agence</Text>
-          <Text style={[csS.legendVal, { color: T.inkSub, fontFamily: T.font.mono }]}>{agency}%</Text>
-        </View>
-      </View>
-      <Text style={[csS.stepsLabel, { fontFamily: T.font.sans }]}>PART PLATEFORME</Text>
+    </View>
+  );
+}
+const sbS = StyleSheet.create({
+  wrap:       { marginBottom: 4 },
+  barBg:      { flexDirection: "row", height: 8, borderRadius: 99, overflow: "hidden", backgroundColor: T.borderLt, marginBottom: 10 },
+  seg:        { height: 8 },
+  legend:     { flexDirection: "row", flexWrap: "wrap", gap: 14 },
+  legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot:  { width: 8, height: 8, borderRadius: 99 },
+  legendTxt:  { fontSize: 10, color: T.inkSub, fontWeight: "600" },
+  legendVal:  { fontSize: 11, fontWeight: "900" },
+});
+
+// ─── Share Step Row — sélecteur de pourcentage plafonné ───
+function ShareStepRow({ label, value, max, color, onChange }: {
+  label: string; value: number; max: number; color: string; onChange: (v: number) => void;
+}) {
+  return (
+    <View style={{ marginBottom: 12 }}>
+      <Text style={[csS.stepsLabel, { fontFamily: T.font.sans }]}>{label.toUpperCase()}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={csS.steps}>
-        {COMM_STEPS.map((step) => {
-          const active = platform === step;
+        {SHARE_STEPS.filter((step) => step <= max).map((step) => {
+          const active = value === step;
           return (
             <TouchableOpacity
               key={step}
               style={[csS.step, active && { backgroundColor: color, borderColor: color }]}
-              onPress={() => onPlatformChange(step)}
+              onPress={() => onChange(step)}
             >
               <Text style={[csS.stepTxt, { color: active ? T.white : T.inkSub, fontFamily: T.font.mono }]}>
                 {step}%
@@ -248,112 +325,97 @@ function CommissionSlider({
   );
 }
 const csS = StyleSheet.create({
-  wrap:     { marginBottom: 8 },
-  header:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
-  iconBox:  { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-  label:    { fontSize: 13, fontWeight: "800" },
-  barWrap:  { flexDirection: "row", height: 8, borderRadius: 99, overflow: "hidden", marginBottom: 10, backgroundColor: T.borderLt },
-  barFill:  { height: 8 },
-  barRemainder: { height: 8, backgroundColor: T.borderMd },
-  legend:   { flexDirection: "row", gap: 20, marginBottom: 12 },
-  legendItem:  { flexDirection: "row", alignItems: "center", gap: 6 },
-  legendDot:   { width: 8, height: 8, borderRadius: 99 },
-  legendTxt:   { fontSize: 11, color: T.inkSub, fontWeight: "600" },
-  legendVal:   { fontSize: 12, fontWeight: "900" },
-  stepsLabel:  { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 8 },
-  steps:    { gap: 6, paddingBottom: 4 },
-  step:     { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5, borderColor: T.border, backgroundColor: T.surface },
-  stepTxt:  { fontSize: 11, fontWeight: "800" },
+  stepsLabel: { fontSize: 9, fontWeight: "900", color: T.inkMuted, letterSpacing: 1, marginBottom: 8 },
+  steps:      { gap: 6, paddingBottom: 4 },
+  step:       { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1.5, borderColor: T.border, backgroundColor: T.surface },
+  stepTxt:    { fontSize: 11, fontWeight: "800" },
 });
 
-// ─── Commission Section ───────────────────────────────────
-// ✅ Nouveau : 2 sliders par type (Envoi + Retrait)
-function CommissionSection({
-  agencyIcon, agencyLabel, agencyColor, agencyBg,
-  sendPlatform,     onSendChange,
-  withdrawPlatform, onWithdrawChange,
-}: {
-  agencyIcon: string; agencyLabel: string; agencyColor: string; agencyBg: string;
-  sendPlatform: number;     onSendChange: (v: number) => void;
-  withdrawPlatform: number; onWithdrawChange: (v: number) => void;
+// ─── Combo Card — une des 6 configurations ────────────────
+function ComboCard({ combo, shares, onChange }: {
+  combo: ComboDef;
+  shares: { senderShare: number; payerShare: number };
+  onChange: (key: ComboKey, next: { senderShare: number; payerShare: number }) => void;
 }) {
+  const platformShare = Math.max(0, 100 - shares.senderShare - shares.payerShare);
+
+  const setSender = (v: number) => {
+    const maxAllowed = 100 - shares.payerShare;
+    onChange(combo.key, { ...shares, senderShare: Math.min(v, maxAllowed) });
+  };
+  const setPayer = (v: number) => {
+    const maxAllowed = 100 - shares.senderShare;
+    onChange(combo.key, { ...shares, payerShare: Math.min(v, maxAllowed) });
+  };
+
+  const segments = combo.hasSender
+    ? [
+        { label: "Agence départ",      value: shares.senderShare, color: combo.color },
+        { label: "Agence destination", value: shares.payerShare,  color: T.sky },
+        { label: "Plateforme",         value: platformShare,      color: T.inkMuted },
+      ]
+    : [
+        { label: "Agence destination", value: shares.payerShare, color: combo.color },
+        { label: "Plateforme",         value: platformShare,     color: T.inkMuted },
+      ];
+
   return (
-    <View style={[cscS.wrap, { borderLeftColor: agencyColor }]}>
-      {/* En-tête type agence */}
+    <View style={[cscS.wrap, { borderLeftColor: combo.color }]}>
       <View style={cscS.agencyHeader}>
-        <View style={[cscS.agencyIcon, { backgroundColor: agencyBg }]}>
-          <Ionicons name={agencyIcon as any} size={16} color={agencyColor} />
+        <View style={[cscS.agencyIcon, { backgroundColor: combo.bg }]}>
+          <Ionicons name={combo.icon as any} size={16} color={combo.color} />
         </View>
-        <Text style={[cscS.agencyLabel, { color: agencyColor, fontFamily: T.font.sans }]}>
-          {agencyLabel}
+        <View style={{ flex: 1 }}>
+          <Text style={[cscS.agencyLabel, { color: combo.color, fontFamily: T.font.sans }]}>{combo.label}</Text>
+          <Text style={[cscS.agencySub, { fontFamily: T.font.sans }]}>{combo.sub}</Text>
+        </View>
+      </View>
+
+      <SplitBar segments={segments} />
+
+      <View style={cscS.divider} />
+
+      {combo.hasSender && (
+        <ShareStepRow
+          label="Part agence de départ"
+          value={shares.senderShare}
+          max={100 - shares.payerShare}
+          color={combo.color}
+          onChange={setSender}
+        />
+      )}
+      <ShareStepRow
+        label="Part agence de destination (retrait)"
+        value={shares.payerShare}
+        max={100 - shares.senderShare}
+        color={T.sky}
+        onChange={setPayer}
+      />
+
+      <View style={[cscS.platformNote, { backgroundColor: combo.bg }]}>
+        <Ionicons name="business-outline" size={13} color={combo.color} />
+        <Text style={[cscS.platformNoteTxt, { color: combo.color, fontFamily: T.font.sans }]}>
+          Part plateforme : {platformShare}% (calculée automatiquement)
         </Text>
       </View>
-
-      {/* Résumé visuel 2 colonnes */}
-      <View style={cscS.summaryRow}>
-        <View style={[cscS.summaryBox, { backgroundColor: agencyBg, borderColor: agencyColor + "30" }]}>
-          <Text style={[cscS.summaryType, { fontFamily: T.font.sans, color: agencyColor }]}>ENVOI</Text>
-          <Text style={[cscS.summaryPct, { color: agencyColor, fontFamily: T.font.mono }]}>
-            {sendPlatform}%
-          </Text>
-          <Text style={[cscS.summaryAgency, { fontFamily: T.font.sans }]}>plate-forme</Text>
-          <Text style={[cscS.summaryAgency, { color: T.inkMuted, fontFamily: T.font.sans }]}>
-            {100 - sendPlatform}% agence
-          </Text>
-        </View>
-        <View style={cscS.summaryArrow}>
-          <Ionicons name="swap-horizontal-outline" size={16} color={T.inkMuted} />
-        </View>
-        <View style={[cscS.summaryBox, { backgroundColor: agencyBg, borderColor: agencyColor + "30" }]}>
-          <Text style={[cscS.summaryType, { fontFamily: T.font.sans, color: agencyColor }]}>RETRAIT</Text>
-          <Text style={[cscS.summaryPct, { color: agencyColor, fontFamily: T.font.mono }]}>
-            {withdrawPlatform}%
-          </Text>
-          <Text style={[cscS.summaryAgency, { fontFamily: T.font.sans }]}>plate-forme</Text>
-          <Text style={[cscS.summaryAgency, { color: T.inkMuted, fontFamily: T.font.sans }]}>
-            {100 - withdrawPlatform}% agence
-          </Text>
-        </View>
-      </View>
-
-      <View style={cscS.divider} />
-
-      {/* Slider Envoi */}
-      <CommissionSlider
-        label="Commission à l'Envoi"
-        icon="paper-plane-outline"
-        color={agencyColor}
-        bg={agencyBg}
-        platform={sendPlatform}
-        onPlatformChange={onSendChange}
-      />
-
-      <View style={cscS.divider} />
-
-      {/* Slider Retrait */}
-      <CommissionSlider
-        label="Commission au Retrait"
-        icon="cash-outline"
-        color={agencyColor}
-        bg={agencyBg}
-        platform={withdrawPlatform}
-        onPlatformChange={onWithdrawChange}
-      />
     </View>
   );
 }
 const cscS = StyleSheet.create({
-  wrap:         { borderLeftWidth: 3, paddingLeft: 14, marginBottom: 8 },
-  agencyHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  agencyIcon:   { width: 32, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  agencyLabel:  { fontSize: 14, fontWeight: "900", letterSpacing: 0.3 },
-  summaryRow:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  summaryBox:   { flex: 1, borderRadius: T.radius.md, borderWidth: 1, padding: 12, alignItems: "center", gap: 2 },
-  summaryArrow: { width: 28, alignItems: "center" },
-  summaryType:  { fontSize: 8, fontWeight: "900", letterSpacing: 1.2 },
-  summaryPct:   { fontSize: 26, fontWeight: "900", letterSpacing: -0.5 },
-  summaryAgency:{ fontSize: 9, fontWeight: "700", color: T.inkSub },
-  divider:      { height: 1, backgroundColor: T.borderLt, marginVertical: 14 },
+  wrap:            { borderLeftWidth: 3, paddingLeft: 14, marginBottom: 20 },
+  agencyHeader:    { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  agencyIcon:      { width: 32, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+  agencyLabel:     { fontSize: 13, fontWeight: "900", letterSpacing: 0.3 },
+  agencySub:       { fontSize: 10, color: T.inkMuted, fontWeight: "600", marginTop: 2 },
+  divider:         { height: 1, backgroundColor: T.borderLt, marginVertical: 12 },
+  platformNote:    { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: T.radius.sm, paddingHorizontal: 10, paddingVertical: 8, marginTop: 2 },
+  platformNoteTxt: { fontSize: 11, fontWeight: "700" },
+});
+
+const csecS = StyleSheet.create({
+  groupLabel:    { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4, marginTop: 4 },
+  groupLabelTxt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.2 },
+  groupHint:     { fontSize: 10, color: T.inkMuted, fontWeight: "600", marginBottom: 12, lineHeight: 14 },
 });
 
 // ─── Main Screen ──────────────────────────────────────────
@@ -367,14 +429,9 @@ export default function SettingsScreen() {
   const [savingRates, setSavingRates] = useState(false);
   const [ratesLoaded, setRatesLoaded] = useState(false);
 
-  // ── Commissions — 4 règles ──────────────────────────────
-  // Filiale : envoi + retrait
-  const [subsidSend,     setSubsidSend]     = useState(30);
-  const [subsidWithdraw, setSubsidWithdraw] = useState(30);
-  // Partenaire : envoi + retrait
-  const [partnerSend,     setPartnerSend]     = useState(50);
-  const [partnerWithdraw, setPartnerWithdraw] = useState(50);
-  const [savingComm,      setSavingComm]      = useState(false);
+  // ── Commissions — ✅ v3.0 : 6 configurations ────────────
+  const [shares,     setShares]     = useState<Record<ComboKey, { senderShare: number; payerShare: number }>>(DEFAULT_SHARES);
+  const [savingComm, setSavingComm] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -396,23 +453,27 @@ export default function SettingsScreen() {
       setRates(rateMap);
       setRatesLoaded(true);
 
-      // Commissions
+      // ✅ v3.0 — Commissions : reconstruit les 6 configurations depuis
+      // les CommissionConfig existants. !r.payoutMethod exclut les
+      // configs de frais par méthode (fees.tsx) — voir changelog en
+      // tête de fichier pour la coexistence WALLET/SUBSIDIARY entre
+      // les deux écrans (currency les distingue).
       try {
         const commRules = await api.getCommissionRules() as any[];
-        if (Array.isArray(commRules) && commRules.length > 0) {
-          // ✅ FIX v2.1 : 1 règle par type d'agence, lire senderShare + payerShare
-          const subsidRule  = commRules.find((r: any) => r.sourceType === "SUBSIDIARY" && !r.payoutMethod);
-          const partnerRule = commRules.find((r: any) => r.sourceType === "PARTNER"    && !r.payoutMethod);
-
-          if (subsidRule) {
-            // Reconvertit en "part plateforme" pour les sliders
-            setSubsidSend(    Math.max(0, Math.min(100, 100 - Math.round(subsidRule.senderShare  ?? 0))));
-            setSubsidWithdraw(Math.max(0, Math.min(100, 100 - Math.round(subsidRule.payerShare   ?? 0))));
+        if (Array.isArray(commRules)) {
+          const next = { ...DEFAULT_SHARES };
+          for (const combo of ALL_COMBOS) {
+            const rule = commRules.find((r: any) =>
+              r.sourceType === combo.source && r.destType === combo.dest && !r.payoutMethod
+            );
+            if (rule) {
+              next[combo.key] = {
+                senderShare: Math.max(0, Math.min(100, Math.round(rule.senderShare ?? 0))),
+                payerShare:  Math.max(0, Math.min(100, Math.round(rule.payerShare  ?? 0))),
+              };
+            }
           }
-          if (partnerRule) {
-            setPartnerSend(    Math.max(0, Math.min(100, 100 - Math.round(partnerRule.senderShare ?? 0))));
-            setPartnerWithdraw(Math.max(0, Math.min(100, 100 - Math.round(partnerRule.payerShare  ?? 0))));
-          }
+          setShares(next);
         }
       } catch { /* commissions optionnelles */ }
 
@@ -448,64 +509,26 @@ export default function SettingsScreen() {
     } finally { setSavingRates(false); }
   };
 
-  // ── Sauvegarder commissions ─────────────────────────────
-  // ✅ FIX v2.1 — 2 règles (une par type d'agence) avec senderShare + payerShare corrects.
-  //
-  // Architecture CommissionConfig :
-  //   senderShare   = % pour l'agence qui ENVOIE l'argent
-  //   payerShare    = % pour l'agence qui ENCAISSE (retrait espèces)
-  //   platformShare = ce qui reste à la plateforme
-  //   senderShare + payerShare + platformShare = 100 ✓
-  //
-  // Formules depuis les sliders "part plateforme" :
-  //   senderShare   = 100 - subsidSend
-  //   payerShare    = 100 - subsidWithdraw
-  //   platformShare = subsidSend + subsidWithdraw - 100
-  //
-  // Validation : platformShare ≥ 0 → subsidSend + subsidWithdraw ≥ 100
-  //   (ex : plateforme garde 70% envoi + 60% retrait → surplus agent = 30%)
+  // ── Sauvegarder commissions — ✅ v3.0 : 6 appels ─────────
+  // Chaque combinaison envoie sourceType/destType/senderShare/
+  // payerShare — le DTO backend n'a pas de champ platformShare, le
+  // service le calcule (100 - senderShare - payerShare). Les sliders
+  // se plafonnant mutuellement à la saisie (voir ComboCard), la somme
+  // ne peut jamais dépasser 100 — pas de validation d'erreur possible
+  // ici, contrairement à l'ancien modèle à 2 blocs.
   const handleSaveComm = async () => {
     setSavingComm(true);
     try {
-      const subsidPlatform = subsidSend + subsidWithdraw - 100;
-      const partnerPlatform = partnerSend + partnerWithdraw - 100;
-
-      if (subsidPlatform < 0) {
-        Alert.alert(
-          "Configuration invalide",
-          `Agences Filiales : la somme des parts plateforme (${subsidSend}% + ${subsidWithdraw}%) doit être ≥ 100%.`,
-        );
-        setSavingComm(false);
-        return;
-      }
-      if (partnerPlatform < 0) {
-        Alert.alert(
-          "Configuration invalide",
-          `Agences Partenaires : la somme des parts plateforme (${partnerSend}% + ${partnerWithdraw}%) doit être ≥ 100%.`,
-        );
-        setSavingComm(false);
-        return;
-      }
-
-      const rules = [
-        {
-          sourceType:    "SUBSIDIARY" as any,
-          destType:      "SUBSIDIARY" as any,
-          senderShare:   100 - subsidSend,      // % agent ENVOYEUR (filiale)
-          payerShare:    100 - subsidWithdraw,  // % agent PAYEUR / retrait (filiale)
-          platformShare: subsidPlatform,         // % plateforme
-        },
-        {
-          sourceType:    "PARTNER" as any,
-          destType:      "PARTNER" as any,
-          senderShare:   100 - partnerSend,
-          payerShare:    100 - partnerWithdraw,
-          platformShare: partnerPlatform,
-        },
-      ];
-
       const results = await Promise.allSettled(
-        rules.map((rule) => api.saveCommissionRule(rule as any))
+        ALL_COMBOS.map((combo) => {
+          const s = shares[combo.key];
+          return api.saveCommissionRule({
+            sourceType:  combo.source as any,
+            destType:    combo.dest as any,
+            senderShare: combo.hasSender ? s.senderShare : 0,
+            payerShare:  s.payerShare,
+          } as any);
+        })
       );
 
       const failed = results.filter((r) => r.status === "rejected").length;
@@ -513,13 +536,8 @@ export default function SettingsScreen() {
       Alert.alert(
         failed === 0 ? "✅ Commissions sauvegardées" : "⚠️ Partiellement sauvegardé",
         failed === 0
-          ? [
-              `Filiale  — Envoi : ${100 - subsidSend}% agent · ${subsidSend - (100 - subsidWithdraw)}% plateforme`,
-              `Filiale  — Retrait : ${100 - subsidWithdraw}% agent`,
-              `Partenaire — Envoi : ${100 - partnerSend}% agent · ${partnerSend - (100 - partnerWithdraw)}% plateforme`,
-              `Partenaire — Retrait : ${100 - partnerWithdraw}% agent`,
-            ].join("\n")
-          : `${failed}/2 règle(s) en erreur. Vérifiez la connexion.`,
+          ? "Les 6 configurations (4 agence↔agence + 2 émission wallet) ont été mises à jour."
+          : `${ALL_COMBOS.length - failed}/${ALL_COMBOS.length} configuration(s) sauvegardée(s). Vérifiez la connexion.`,
       );
     } catch (e: any) {
       Alert.alert("Erreur", e?.response?.data?.message ?? "Sauvegarde impossible.");
@@ -575,37 +593,44 @@ export default function SettingsScreen() {
       >
 
         {/* ══════════════════════════════════════════
-            SECTION 1 — COMMISSIONS
+            SECTION 1 — COMMISSIONS — ✅ v3.0 : 6 configurations
         ══════════════════════════════════════════ */}
         <View style={s.card}>
           <SectionHeader
             icon="pie-chart-outline"
             title="Répartition des Commissions"
             color={T.teal}
-            desc="Configurez la part plateforme selon le type d'agence"
+            desc="6 configurations : 4 combinaisons agence↔agence + 2 émissions wallet client"
           />
 
-          {/* Agences Filiales */}
-          <CommissionSection
-            agencyIcon="business-outline"
-            agencyLabel="Agences Filiales"
-            agencyColor={T.teal}
-            agencyBg={T.tealLt}
-            sendPlatform={subsidSend}         onSendChange={setSubsidSend}
-            withdrawPlatform={subsidWithdraw} onWithdrawChange={setSubsidWithdraw}
-          />
+          <View style={csecS.groupLabel}>
+            <Ionicons name="git-network-outline" size={13} color={T.inkMuted} />
+            <Text style={[csecS.groupLabelTxt, { fontFamily: T.font.sans }]}>RETRAIT ENTRE AGENCES</Text>
+          </View>
+          {AGENCY_COMBOS.map((combo) => (
+            <ComboCard
+              key={combo.key}
+              combo={combo}
+              shares={shares[combo.key]}
+              onChange={(key, next) => setShares((prev) => ({ ...prev, [key]: next }))}
+            />
+          ))}
 
-          <View style={{ height: 1, backgroundColor: T.border, marginVertical: 16 }} />
-
-          {/* Agences Partenaires */}
-          <CommissionSection
-            agencyIcon="storefront-outline"
-            agencyLabel="Agences Partenaires"
-            agencyColor={T.amber}
-            agencyBg={T.amberLt}
-            sendPlatform={partnerSend}         onSendChange={setPartnerSend}
-            withdrawPlatform={partnerWithdraw} onWithdrawChange={setPartnerWithdraw}
-          />
+          <View style={csecS.groupLabel}>
+            <Ionicons name="phone-portrait-outline" size={13} color={T.inkMuted} />
+            <Text style={[csecS.groupLabelTxt, { fontFamily: T.font.sans }]}>ÉMISSION DE CODE PAR UN CLIENT WALLET</Text>
+          </View>
+          <Text style={[csecS.groupHint, { fontFamily: T.font.sans }]}>
+            Pas d'agence d'origine ici — seules l'agence de retrait et la plateforme se partagent la commission.
+          </Text>
+          {WALLET_COMBOS.map((combo) => (
+            <ComboCard
+              key={combo.key}
+              combo={combo}
+              shares={shares[combo.key]}
+              onChange={(key, next) => setShares((prev) => ({ ...prev, [key]: next }))}
+            />
+          ))}
 
           {/* Bouton sauvegarder commissions */}
           <TouchableOpacity
@@ -619,7 +644,7 @@ export default function SettingsScreen() {
               : <>
                   <Ionicons name="cloud-upload-outline" size={18} color={T.white} />
                   <Text style={[s.saveBtnTxt, { fontFamily: T.font.sans }]}>
-                    SAUVEGARDER LES COMMISSIONS
+                    SAUVEGARDER LES 6 CONFIGURATIONS
                   </Text>
                 </>
             }
@@ -627,7 +652,7 @@ export default function SettingsScreen() {
         </View>
 
         {/* ══════════════════════════════════════════
-            SECTION 2 — TAUX DE CHANGE
+            SECTION 2 — TAUX DE CHANGE (inchangé)
         ══════════════════════════════════════════ */}
         <View style={s.card}>
           <SectionHeader
@@ -718,7 +743,7 @@ const s = StyleSheet.create({
 
   saveBtn: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 20,
+    borderRadius: T.radius.lg, paddingVertical: 16, marginTop: 4,
     shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
   },
   saveBtnTxt: { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },

@@ -1,6 +1,28 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.7 — Direct Transf'air
+// LOGIN v2.8 — Direct Transf'air
+// ✅ v2.8 : FIX — après connexion réussie (mot de passe ou OTP),
+//    la page ne s'ouvrait pas immédiatement : il fallait rafraîchir
+//    manuellement pour arriver sur /(tabs)/home.
+//    CAUSE : la seule navigation post-login reposait sur le useEffect
+//    de garde dans AuthProvider (basé sur segments/user/isLoading).
+//    Ce pattern garde-réactif + router.replace() imperatif dans un
+//    useEffect ne se déclenche pas de façon fiable juste après un
+//    changement d'état groupé (setToken + setUser quasi simultanés,
+//    parfois précédés d'un await applyTenant(...) dans
+//    applyLoginResult) — alors qu'un remontage complet (refresh) relit
+//    l'état déjà persisté en storage et navigue correctement dès le
+//    premier rendu. Confirmé : le refresh fonctionnait toujours, donc
+//    token/user étaient bien stockés — ce n'était pas un problème de
+//    données, juste de déclenchement de la navigation.
+//    CORRECTIF : navigation explicite dans handleLoginSuccess, une
+//    fois applyLoginResult() totalement résolu (donc sans course
+//    possible). Le garde dans AuthProvider reste en place comme filet
+//    de sécurité pour les autres cas (deep link, retour d'arrière-plan,
+//    biométrie). handleLoginSuccess est partagé par le login mot de
+//    passe ET la vérification OTP (handleVerifyOtp) → un seul endroit
+//    corrige les deux flux.
+//    Aucun autre comportement touché.
 // ✅ v2.7 : REFONTE VISUELLE — vide en bas comblé + modernisation
 //    PROBLÈME : s.scroll utilisait flexGrow:1 sans justifyContent →
 //    sur un écran plus haut que le contenu, tout l'espace en trop
@@ -287,8 +309,15 @@ export default function LoginV2Screen() {
     });
   };
 
+  // ✅ v2.8 — navigation explicite après connexion réussie.
+  // applyLoginResult() est totalement résolu à ce stade (token + user
+  // déjà appliqués et persistés) : aucune course possible avec le
+  // useEffect de garde d'AuthProvider, qui reste actif en parallèle
+  // comme filet de sécurité mais ne déclenche plus seul cette
+  // redirection.
   const handleLoginSuccess = async (result: any) => {
     await applyLoginResult(result.access_token, result.refresh_token, result.user);
+    router.replace('/(tabs)/home');
   };
 
   // ── Biométrie ─────────────────────────────────────────

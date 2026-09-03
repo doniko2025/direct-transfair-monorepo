@@ -1,6 +1,27 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v2.14 — Direct Transf'air
+// SEND MONEY v2.15 — Direct Transf'air
+// ✅ v2.15 : NOUVEAU — Saisie bidirectionnelle du montant
+//
+//   Avant : seul le champ "VOUS ENVOYEZ" (rawAmount) était éditable ;
+//   le champ "REÇOIT" n'était qu'un <Text> en lecture seule, calculé
+//   comme sendAmount * rate.
+//
+//   Maintenant : le champ "REÇOIT" est lui aussi un <TextInput>
+//   (rawReceivedAmount), et un état amountSource ("SEND" | "RECEIVED")
+//   retient lequel des deux champs l'utilisateur est en train de
+//   saisir. sendAmount est dérivé dans le sens correspondant :
+//     - amountSource === "SEND"     → sendAmount = rawAmount (inchangé)
+//     - amountSource === "RECEIVED" → sendAmount = rawReceivedAmount / rate
+//   Deux useEffect synchronisent le champ INACTIF à chaque frappe dans
+//   le champ ACTIF (jamais l'inverse) — c'est ce garde qui empêche une
+//   boucle infinie entre les deux champs et évite que le curseur saute
+//   pendant la saisie.
+//   Aucun autre calcul touché : frais (feesAmt), total (totalAmt),
+//   solde insuffisant (insufficient), création de transaction
+//   (handleAction) — tous continuent de lire sendAmount, qui reste le
+//   seul point d'entrée unique vers le reste de l'écran, quel que soit
+//   le champ utilisé pour la saisie.
 // ✅ v2.14 : 🚨 3 correctifs + 1 nouvelle fonctionnalité
 //
 //   NOUVEAU — Autocomplétion téléphone (mode Wallet)
@@ -302,6 +323,12 @@ function toNum(v: unknown): number {
   if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
   if (v && typeof (v as any).toNumber === "function") return (v as any).toNumber();
   return 0;
+}
+
+// ✅ v2.15 — texte saisi → nombre, réutilisée par les deux champs de
+// montant (envoie / reçoit) pour la saisie bidirectionnelle.
+function parseAmount(str: string): number {
+  return parseFloat(str.replace(/\s/g, "").replace(",", ".")) || 0;
 }
 
 // ─── Mode Tab ─────────────────────────────────────────────
@@ -781,6 +808,12 @@ export default function SendMoneyScreen() {
   const [targetCountryData, setTargetCountryData]= useState<CountryData>(getCountryData("Sénégal"));
   const [rate,              setRate]             = useState<number>(1);
   const [rawAmount,         setRawAmount]        = useState("");
+  // ✅ v2.15 — saisie bidirectionnelle du montant (voir changelog en
+  // tête de fichier) : rawReceivedAmount est le pendant, éditable, du
+  // champ "REÇOIT" ; amountSource retient lequel des deux champs
+  // l'utilisateur est en train de saisir.
+  const [rawReceivedAmount, setRawReceivedAmount] = useState("");
+  const [amountSource,      setAmountSource]      = useState<"SEND" | "RECEIVED">("SEND");
   const [countrySearch,     setCountrySearch]    = useState("");
 
   const [cashFeeRate,  setCashFeeRate]  = useState(0.015);
@@ -997,7 +1030,35 @@ useEffect(() => {
     updateCurrencyContext(b.country);
   }, [updateCurrencyContext]);
 
-  const sendAmount = parseFloat(rawAmount.replace(/\s/g, "").replace(",", ".")) || 0;
+  // ✅ v2.15 — sendAmount dérivé dans le sens correspondant au champ
+  // que l'utilisateur est en train de saisir (voir changelog en tête
+  // de fichier). Reste le SEUL point d'entrée vers le reste de l'écran
+  // (frais, total, solde insuffisant, création de transaction) — rien
+  // d'autre n'a besoin de connaître amountSource.
+  const parsedSendRaw     = parseAmount(rawAmount);
+  const parsedReceivedRaw = parseAmount(rawReceivedAmount);
+
+  const sendAmount = amountSource === "RECEIVED"
+    ? (rate > 0 ? parsedReceivedRaw / rate : 0)
+    : parsedSendRaw;
+
+  // Synchronise le champ "REÇOIT" quand l'utilisateur tape dans
+  // "VOUS ENVOYEZ" — ne fait rien si c'est l'inverse qui est en cours
+  // de saisie (sinon les deux champs s'écraseraient en boucle).
+  useEffect(() => {
+    if (amountSource !== "SEND") return;
+    if (!(rate > 0)) return;
+    const amt = parseAmount(rawAmount);
+    setRawReceivedAmount(amt > 0 ? String(Math.round(amt * rate)) : "");
+  }, [rawAmount, rate, amountSource]);
+
+  // Synchronise le champ "VOUS ENVOYEZ" quand l'utilisateur tape dans
+  // "REÇOIT" — même garde, dans l'autre sens.
+  useEffect(() => {
+    if (amountSource !== "RECEIVED") return;
+    const amt = parseAmount(rawReceivedAmount);
+    setRawAmount(amt > 0 ? String(Math.round(rate > 0 ? amt / rate : 0)) : "");
+  }, [rawReceivedAmount, rate, amountSource]);
 
   const beneficiaryLabel = React.useMemo(() => {
     if (mode === "WALLET") {
@@ -1010,7 +1071,10 @@ useEffect(() => {
   const feesRate    = mode === "WALLET" ? 0 : cashFeeRate;
   const feesAmt     = sendAmount * feesRate;
   const totalAmt    = sendAmount + feesAmt;
-  const receivedAmt = sendAmount * rate;
+  // ✅ v2.15 — en saisie "RECEIVED", on garde la valeur tapée telle
+  // quelle (pas sendAmount * rate, qui réintroduirait un arrondi en
+  // aller-retour inutile) ; en saisie "SEND", comportement inchangé.
+  const receivedAmt = amountSource === "RECEIVED" ? parsedReceivedRaw : sendAmount * rate;
   const insufficient   = totalAmt > walletBalance && sendAmount > 0;
   const missingAmount  = Math.max(0, totalAmt - walletBalance);
   const isNumericInput = walletInput.trim() === "" || /^[0-9+\s]+$/.test(walletInput);
@@ -1384,7 +1448,8 @@ useEffect(() => {
                     <View style={s.amountInputRow}>
                       <TextInput
                         style={[s.amountInput, { fontFamily: F.display }]}
-                        value={rawAmount} onChangeText={setRawAmount}
+                        value={rawAmount}
+                        onChangeText={(t) => { setAmountSource("SEND"); setRawAmount(t); }}
                         keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint}
                       />
                       <View style={[s.currBadge, { backgroundColor: C.gSoft }]}>
@@ -1402,10 +1467,16 @@ useEffect(() => {
                           ? (beneficiaries.find((b) => String(b.id) === selectedCashId)?.fullName?.split(" ")[0] ?? "")
                           : "REÇOIT")}
                     </Text>
+                    {/* ✅ v2.15 — champ éditable (auparavant un simple <Text>
+                        en lecture seule) : tape un montant à recevoir, le
+                        champ "VOUS ENVOYEZ" se recalcule automatiquement. */}
                     <View style={s.amountInputRow}>
-                      <Text style={[s.amountReceived, { fontFamily: F.display }]}>
-                        {sendAmount > 0 ? fmt(Math.round(receivedAmt), targetCurrency) : "0"}
-                      </Text>
+                      <TextInput
+                        style={[s.amountReceived, { fontFamily: F.display }]}
+                        value={rawReceivedAmount}
+                        onChangeText={(t) => { setAmountSource("RECEIVED"); setRawReceivedAmount(t); }}
+                        keyboardType="numeric" placeholder="0" placeholderTextColor={C.textFaint}
+                      />
                       <View style={[s.currBadge, { backgroundColor: C.blueSoft }]}>
                         <Text style={[s.currTxt, { color: C.blue, fontFamily: F.body }]}>{targetCurrency}</Text>
                       </View>
@@ -1734,7 +1805,10 @@ const s = StyleSheet.create({
   amountSideLabel: { fontSize: 9, fontWeight: "900", color: C.textFaint, letterSpacing: 0.8, marginBottom: 3 },
   amountInputRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
   amountInput:     { fontSize: 22, color: C.text, letterSpacing: -0.5, minWidth: 60 },
-  amountReceived:  { fontSize: 20, color: C.text, letterSpacing: -0.5 },
+  // ✅ v2.15 — minWidth ajouté (60, comme amountInput) : c'est
+  // désormais un <TextInput>, pas un <Text>, et sans largeur minimale
+  // un champ vide se réduit à ~0px et devient impossible à toucher.
+  amountReceived:  { fontSize: 20, color: C.text, letterSpacing: -0.5, minWidth: 60 },
   amountArrow:     { width: 32, height: 32, borderRadius: 9, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
   currBadge:       { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   currTxt:         { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
