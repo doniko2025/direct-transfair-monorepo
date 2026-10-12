@@ -50,9 +50,9 @@ export const NAV: readonly NavItem[] = [
   { id: 'treasury', label: 'Trésorerie', icon: 'vault', path: '/treasury', roles: ADMINS, ready: true },
   { id: 'commissions', label: 'Commissions', icon: 'percent', path: '/commissions', roles: ['COMPANY_ADMIN', 'AGENT'], ready: false },
   { id: 'rates', label: 'Taux de change', icon: 'swap', path: '/rates', roles: ADMINS, ready: true },
-  { id: 'fees', label: 'Frais', icon: 'percent', path: '/fees', roles: ADMINS, ready: false },
+  { id: 'fees', label: 'Frais', icon: 'percent', path: '/fees', roles: ADMINS, ready: true },
   { id: 'agency-withdrawals', label: "Retraits d'agence", icon: 'withdraw', path: '/agency-withdrawals', roles: COMPANY, ready: false },
-  { id: 'notifications', label: 'Notifications', icon: 'bell', path: '/notifications', roles: ALL, ready: false },
+  { id: 'notifications', label: 'Notifications', icon: 'bell', path: '/notifications', roles: ALL, ready: true },
   { id: 'settings', label: 'Réglages', icon: 'cog', path: '/settings', roles: ADMINS, ready: false },
 
   { id: 'account', label: 'Mon compte', icon: 'user', path: '/account', roles: ALL, ready: true },

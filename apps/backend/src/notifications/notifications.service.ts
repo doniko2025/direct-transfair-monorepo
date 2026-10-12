@@ -1,4 +1,7 @@
 //apps/backend/src/notifications/notifications.service.ts
+// ✅ v1.1 : les notifications expirées (expiresAt) ne sont plus renvoyées, la date de lecture (readAt)
+//   est enregistrée, la liste accepte limit / unreadOnly et le nombre de non lues est disponible.
+//   Sans paramètre, GET /notifications renvoie toujours les 50 dernières (application mobile inchangée).
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
@@ -20,20 +23,32 @@ export class NotificationsService {
     });
   }
 
+  /** Une notification dont la date d'expiration est passée n'a plus lieu d'être affichée. */
+  private alive() {
+    return { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] };
+  }
+
   // Récupérer les notifs d'un user
-  async findAll(userId: string) {
+  async findAll(userId: string, opts: { limit?: number; unreadOnly?: boolean } = {}) {
     return this.prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      take: 50, // On limite aux 50 dernières pour la perf
+      where: { userId, ...(opts.unreadOnly ? { isRead: false } : {}), ...this.alive() },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: opts.limit ?? 50, // 50 par défaut pour la perf
     });
+  }
+
+  async unreadCount(userId: string) {
+    const count = await this.prisma.notification.count({
+      where: { userId, isRead: false, ...this.alive() },
+    });
+    return { count };
   }
 
   // Marquer comme lue
   async markAsRead(id: string, userId: string) {
     return this.prisma.notification.updateMany({
-      where: { id, userId },
-      data: { isRead: true },
+      where: { id, userId, isRead: false },
+      data: { isRead: true, readAt: new Date() },
     });
   }
 
@@ -41,7 +56,7 @@ export class NotificationsService {
   async markAllAsRead(userId: string) {
     return this.prisma.notification.updateMany({
       where: { userId, isRead: false },
-      data: { isRead: true },
+      data: { isRead: true, readAt: new Date() },
     });
   }
 }

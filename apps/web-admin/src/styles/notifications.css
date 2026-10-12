@@ -1,0 +1,111 @@
+/* =========================================================
+   NOTIFICATIONS — boîte de réception de cartes
+   ========================================================= */
+
+.notif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.notif-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+}
+
+.notif {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.notif--unread {
+  box-shadow: inset 4px 0 0 var(--brand), var(--sh-1);
+}
+
+.notif__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--paper);
+  color: var(--ink-2);
+}
+
+.notif__icon--brand {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.notif__icon--ok {
+  background: color-mix(in oklab, var(--ok) 10%, white);
+  color: var(--ok);
+}
+
+.notif__icon--warn {
+  background: color-mix(in oklab, var(--warn) 11%, white);
+  color: var(--warn);
+}
+
+.notif__icon--danger {
+  background: color-mix(in oklab, var(--danger) 9%, white);
+  color: var(--danger);
+}
+
+.notif__body {
+  display: grid;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
+.notif__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif__title {
+  overflow-wrap: anywhere;
+}
+
+.notif--unread .notif__title {
+  font-weight: 750;
+}
+
+.notif__dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+}
+
+.notif__message {
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.notif__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: var(--t-sm);
+}
+
+.notif__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+  margin-top: 2px;
+}

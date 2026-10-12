@@ -9,3 +9,5 @@ export * from './transactions';
 export * from './treasury';
 export * from './supervision';
 export * from './rates';
+export * from './fees';
+export * from './notifications';

@@ -6,6 +6,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { WebRole } from '@direct-transfair/shared';
 import { ROLE_LABEL, navFor } from '../navigation';
 import { useCurrentUser, useAuth } from '../providers/AuthProvider';
+import { UnreadProvider, useUnread } from '../providers/UnreadProvider';
 import { useTenant } from '../providers/TenantProvider';
 import { BrandMark } from './BrandMark';
 import { Icon } from './Icon';
@@ -22,8 +23,9 @@ function initials(name: string): string {
   return (a + b).toUpperCase();
 }
 
-export function AppShell() {
+function ShellFrame() {
   const user = useCurrentUser();
+  const { unread } = useUnread();
   const { logout } = useAuth();
   const { branding } = useTenant();
   const location = useLocation();
@@ -94,6 +96,11 @@ export function AppShell() {
                   >
                     <Icon name={item.icon} size={19} />
                     <span>{item.label}</span>
+                    {item.id === 'notifications' && unread > 0 ? (
+                      <b className="nav-badge" title={`${unread} non lue${unread > 1 ? 's' : ''}`}>
+                        {unread > 99 ? '99+' : unread}
+                      </b>
+                    ) : null}
                   </NavLink>
                 ) : (
                   <span className="nav-item is-soon" aria-disabled="true">
@@ -125,5 +132,13 @@ export function AppShell() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+export function AppShell() {
+  return (
+    <UnreadProvider>
+      <ShellFrame />
+    </UnreadProvider>
   );
 }

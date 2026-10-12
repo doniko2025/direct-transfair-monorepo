@@ -1,0 +1,220 @@
+/* =========================================================
+   FRAIS D'ENVOI — cartes par mode de retrait, cartes par société, journal
+   ========================================================= */
+
+.fee-sim {
+  max-width: 360px;
+}
+
+.fee-grid,
+.fee-company-grid,
+.fee-log-list,
+.fee-lines {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+}
+
+.fee-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+}
+
+.fee-company-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
+}
+
+.fee-card,
+.fee-company {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.fee-card--free {
+  background: color-mix(in oklab, var(--brand) 4%, white);
+}
+
+.fee-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.fee-card__head h3 {
+  flex: 1 1 140px;
+  font-size: var(--t-lg);
+}
+
+.fee-card__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.fee-card__value {
+  margin-top: 4px;
+  font-size: clamp(1.3rem, 1.15rem + 0.6vw, 1.65rem);
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.fee-card__example {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.fee-card__example strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-card__hint {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.fee-card__warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--warn) 9%, white);
+  color: var(--warn);
+  font-size: var(--t-sm);
+}
+
+.fee-card__warn svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.fee-card__actions {
+  margin-top: 8px;
+}
+
+/* ─── Société (vue super admin) ────────────────────────── */
+.fee-company__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.fee-company__head h3 {
+  font-size: var(--t-lg);
+  overflow-wrap: anywhere;
+}
+
+.fee-lines {
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fee-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.fee-line__label {
+  display: inline-flex;
+  flex: 1 1 150px;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.fee-line strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-line__default {
+  color: var(--warn);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+/* ─── Boîte d'édition ──────────────────────────────────── */
+.fee-now {
+  color: var(--ink-2);
+}
+
+.fee-now strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.fee-preview p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+
+.fee-preview strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Journal ──────────────────────────────────────────── */
+.fee-log-list {
+  gap: 12px;
+}
+
+.fee-log {
+  padding: 16px 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.fee-log__main {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fee-log__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.fee-log__change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fee-log__by {
+  font-size: var(--t-sm);
+}

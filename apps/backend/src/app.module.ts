@@ -1,6 +1,8 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v4.9
+// APP MODULE v5.0
+// ✅ v5.0 : FeesAdminModule — /fees-admin (frais d'envoi par société : lecture super admin,
+//   modification admin de société, journal des modifications).
 // ✅ v4.9 : RatesAdminModule — /rates-admin (taux de change : liste, historique,
 //   enregistrement réservé au super admin avec sens inverse, historique et audit).
 //   Les anciennes routes d'écriture POST /rates et PATCH /exchange-rates/:pair
@@ -65,6 +67,7 @@ import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
 import { SupervisionModule }        from './supervision/supervision.module'; // ✅ v4.8
 import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // ✅ v4.9
+import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // ✅ v5.0
 
 import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
@@ -108,6 +111,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     LocationsModule,
     SupervisionModule, // ✅ v4.8 — /supervision/* (audit, alertes, santé)
     RatesAdminModule,  // ✅ v4.9 — /rates-admin/* (administration des taux)
+    FeesAdminModule,   // ✅ v5.0 — /fees-admin/* (frais d'envoi par société)
   ],
 
   controllers: [ExchangeRatesController],

@@ -16,6 +16,8 @@ import CompaniesPage from './pages/companies/CompaniesPage';
 import CompanyCreatePage from './pages/companies/CompanyCreatePage';
 import CompanyDetailPage from './pages/companies/CompanyDetailPage';
 import DashboardPage from './pages/DashboardPage';
+import FeesPage from './pages/fees/FeesPage';
+import NotificationsPage from './pages/notifications/NotificationsPage';
 import RateHistoryPage from './pages/rates/RateHistoryPage';
 import RatesPage from './pages/rates/RatesPage';
 import SupervisionPage from './pages/supervision/SupervisionPage';
@@ -64,4 +66,10 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   // Phase 2f — Taux de change (super admin : fixe les taux ; admin de société : lecture seule)
   { path: '/rates', roles: ADMINS, element: <RatesPage /> },
   { path: '/rates/:pair/history', roles: ADMINS, element: <RateHistoryPage /> },
+
+  // Phase 2g — Frais d'envoi (admin de société : modifie le tarif de sa société ; super admin : consulte celui de chacune)
+  { path: '/fees', roles: ADMINS, element: <FeesPage /> },
+
+  // Phase 2h — Notifications (chaque rôle : ses propres notifications)
+  { path: '/notifications', roles: WEB_ROLES, element: <NotificationsPage /> },
 ];
