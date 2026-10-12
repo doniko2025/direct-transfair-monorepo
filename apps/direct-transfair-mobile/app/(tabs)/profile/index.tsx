@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.4 — Direct Transf'air
+// PROFILE INDEX v5.5 — Direct Transf'air
+// ✅ v5.5 : (phase 5) clients wallet uniquement — thèmes et sections des
+//    rôles AGENT / COMPANY_ADMIN / SUPER_ADMIN (dont « ADMINISTRATION »)
+//    supprimés ; ces rôles utilisent le portail web.
 // ✅ v5.4 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (biométrie, déconnexion, tous les onPress des MenuRow : identiques).
@@ -44,28 +47,11 @@ import {
   promptBiometrics,
 } from "../../../hooks/useBiometrics";
 
-// ─── Thèmes par rôle ────────────────────────────────────
-const ROLE_THEMES = {
-  SUPER_ADMIN: {
-    accent: "#1D4ED8", accentSoft: "#EFF6FF",
-    accentMid: "#DBEAFE",
-    label: "Super Admin", icon: "shield-checkmark",
-  },
-  COMPANY_ADMIN: {
-    accent: "#0D9488", accentSoft: "#E8F9F6",
-    accentMid: "#CCFBF1",
-    label: "Admin Société", icon: "business",
-  },
-  AGENT: {
-    accent: "#D97706", accentSoft: "#FFFBEB",
-    accentMid: "#FEF3C7",
-    label: "Agent", icon: "briefcase",
-  },
-  USER: {
-    accent: "#059669", accentSoft: "#ECFDF5",
-    accentMid: "#A7F3D0",
-    label: "Client", icon: "wallet",
-  },
+// ─── Thème du client ────────────────────────────────────
+const CLIENT_THEME = {
+  accent: "#059669", accentSoft: "#ECFDF5",
+  accentMid: "#A7F3D0",
+  label: "Client", icon: "wallet",
 } as const;
 
 const T = {
@@ -206,12 +192,7 @@ export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const insets = useSafeAreaInsets(); // ✅ v5.4 (nouveau)
 
-  const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
-  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
-
-  const isAdmin = role === "SUPER_ADMIN" || role === "COMPANY_ADMIN";
-  const isAgent = role === "AGENT";
-  const isUser  = role === "USER";
+  const theme = CLIENT_THEME;
 
   // ─── Biométrie ───────────────────────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
@@ -317,37 +298,29 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         style={{ backgroundColor: T.bg }}
       >
-        {/* ── Security gauge (Users only) ── */}
-        {isUser && (
-          <View style={[s.secCard, { borderColor: `${theme.accent}30` }]}>
-            <View style={s.secTop}>
-              <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
-              <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
-              <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
-                {bioEnabled ? "100%" : "85%"}
-              </Text>
-            </View>
-            <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
-              <View style={[s.secBarFill, { width: bioEnabled ? "100%" : "85%", backgroundColor: theme.accent }]} />
-            </View>
-            <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
-              {bioEnabled ? "🔒 Compte entièrement sécurisé" : "Activez la biométrie pour atteindre 100%"}
+        {/* ── Security gauge ── */}
+        <View style={[s.secCard, { borderColor: `${theme.accent}30` }]}>
+          <View style={s.secTop}>
+            <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
+            <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
+            <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
+              {bioEnabled ? "100%" : "85%"}
             </Text>
           </View>
-        )}
+          <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
+            <View style={[s.secBarFill, { width: bioEnabled ? "100%" : "85%", backgroundColor: theme.accent }]} />
+          </View>
+          <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
+            {bioEnabled ? "🔒 Compte entièrement sécurisé" : "Activez la biométrie pour atteindre 100%"}
+          </Text>
+        </View>
 
         {/* ── MON COMPTE ── */}
         <Section title="MON COMPTE" accent={theme.accent}>
           <MenuRow icon="person-outline" label="Informations personnelles" accent={theme.accent} onPress={() => router.push("/(tabs)/profile/personal-info")} />
-          {isUser && (
-            <>
-              <MenuRow icon="card-outline"        label="Moyens de paiement"         accent={theme.accent} onPress={() => router.push("/(tabs)/profile/payment-methods")} />
-              <MenuRow icon="speedometer-outline" label="Mes plafonds de transfert"  accent={theme.accent} onPress={() => router.push("/(tabs)/profile/limits")} />
-            </>
-          )}
-          {(isUser || isAgent) && (
-            <MenuRow icon="location-outline" label="Points Direct Transf'air" accent={theme.accent} onPress={() => router.push("/(tabs)/profile/locations")} />
-          )}
+          <MenuRow icon="card-outline"        label="Moyens de paiement"         accent={theme.accent} onPress={() => router.push("/(tabs)/profile/payment-methods")} />
+          <MenuRow icon="speedometer-outline" label="Mes plafonds de transfert"  accent={theme.accent} onPress={() => router.push("/(tabs)/profile/limits")} />
+          <MenuRow icon="location-outline"    label="Points Direct Transf'air"   accent={theme.accent} onPress={() => router.push("/(tabs)/profile/locations")} />
         </Section>
 
         {/* ── SÉCURITÉ & APPAREILS ── */}
@@ -371,26 +344,16 @@ export default function ProfileScreen() {
           />
         </Section>
 
-        {/* ── ADMIN ONLY ── */}
-        {isAdmin && (
-          <Section title="ADMINISTRATION" accent={theme.accent}>
-            <MenuRow icon="analytics-outline"      label="Tableau de bord admin"            accent={theme.accent} onPress={() => router.back()} />
-            <MenuRow icon="notifications-outline"  label="Préférences de notifications"     accent={theme.accent} onPress={() => router.push("/(tabs)/profile/notifications")} />
-          </Section>
-        )}
-
         {/* ── Déconnexion ── */}
         <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
           <Ionicons name="power-outline" size={18} color={T.red} />
           <Text style={[s.logoutTxt, { fontFamily: T.font.sans }]}>Fermer la session</Text>
         </TouchableOpacity>
 
-        {isUser && (
-          <TouchableOpacity style={s.deleteBtn} activeOpacity={0.7}>
-            <Ionicons name="warning-outline" size={14} color={T.textDim} />
-            <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer mon compte</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={s.deleteBtn} activeOpacity={0.7}>
+          <Ionicons name="warning-outline" size={14} color={T.textDim} />
+          <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer mon compte</Text>
+        </TouchableOpacity>
 
         <Text style={[s.version, { fontFamily: T.font.mono }]}>
           Direct Transf'air v5.0 · Build 501

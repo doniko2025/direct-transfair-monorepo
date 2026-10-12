@@ -26,6 +26,9 @@ export const http = createHttpClient({
   baseUrl: API_URL,
   storage,
   getTenant: () => currentTenant,
+  // Le backend n'accepte les rôles SUPER_ADMIN / COMPANY_ADMIN / AGENT
+  // (login, OTP, refresh) que si la requête s'annonce comme venant du web.
+  appClient: 'web',
   onSessionExpired: () => expiredHandler?.(),
 });
 

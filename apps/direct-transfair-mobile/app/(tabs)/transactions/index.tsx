@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // =========================================================
-// TRANSACTIONS HISTORY v6.7 — Direct Transf'air
+// TRANSACTIONS HISTORY v6.8 — Direct Transf'air
+// ✅ v6.8 : (phase 5) clients wallet uniquement — branches SUPER_ADMIN /
+//    COMPANY_ADMIN / AGENT supprimées (historique admin et journal de
+//    caisse : voir le portail web). Seul api.getTransactions() est appelé.
 // ✅ v6.7 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (load, resolveDirection, filtrage, tri : tout identique).
@@ -100,63 +103,29 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
 }
 
-// ─── Logique direction — tous rôles ───────────────────────
-function resolveDirection(tx: any, userId?: string, role?: string): {
+// ─── Logique direction — client ───────────────────────────
+function resolveDirection(tx: any, userId?: string): {
   isIncoming: boolean;
   label: string; icon: string; iconBg: string; iconColor: string;
 } {
   const type      = String(tx.type ?? "").toUpperCase();
-  const isB2B     = type === "SERVICE_PAYMENT";
-  const isRefill  = type === "AGENCY_REFILL" || type === "REFILL";
   const isDeposit = type === "DEPOSIT" || type === "TOP_UP";
-  const isRefund  = type === "REFUND" || tx.status === "REFUNDED";
 
-  switch (role) {
-    case "SUPER_ADMIN": {
-      const incoming = isB2B || (isRefund && tx.recipientId === userId);
-      return incoming
-        ? { isIncoming: true,  label: "Encaissement société",   icon: "arrow-down-circle-outline",   iconBg: C.greenPale, iconColor: C.green  }
-        : { isIncoming: false, label: "Remboursement admin",     icon: "return-down-forward-outline", iconBg: C.violetBg,  iconColor: C.violet };
-    }
-    case "COMPANY_ADMIN": {
-      const incoming = isDeposit || isRefund || tx.recipientId === userId;
-      if (isRefill)
-        return { isIncoming: false, label: "Recharge agence",         icon: "arrow-up-circle-outline",     iconBg: C.amberBg,   iconColor: C.amber  };
-      return incoming
-        ? { isIncoming: true,  label: isDeposit ? "Dépôt reçu" : isRefund ? "Remboursement reçu" : "Transfert reçu",
-            icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green }
-        : { isIncoming: false, label: "Envoi d'argent",
-            icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red   };
-    }
-    case "AGENT": {
-      if (tx._agentPayout)
-        return { isIncoming: false, label: "Retrait client payé",   icon: "cash-outline",              iconBg: C.greenPale, iconColor: C.green };
-      if (isRefill)
-        return { isIncoming: true,  label: "Recharge caisse reçue", icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green };
-      if (isDeposit)
-        return { isIncoming: false, label: "Dépôt vers client",     icon: "arrow-up-circle-outline",   iconBg: C.amberBg,   iconColor: C.amber };
-      return tx.senderId === userId
-        ? { isIncoming: false, label: "Envoi d'argent",   icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red   }
-        : { isIncoming: true,  label: "Transfert reçu",   icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green };
-    }
-    default: {
-      const incoming = isDeposit || tx.recipientId === userId || (tx.senderId !== userId && !tx.beneficiaryId);
-      return incoming
-        ? { isIncoming: true,  label: isDeposit ? "Dépôt en agence" : "Transfert reçu",
-            icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green }
-        : { isIncoming: false, label: "Envoi d'argent",
-            icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red   };
-    }
-  }
+  const incoming = isDeposit || tx.recipientId === userId || (tx.senderId !== userId && !tx.beneficiaryId);
+  return incoming
+    ? { isIncoming: true,  label: isDeposit ? "Dépôt en agence" : "Transfert reçu",
+        icon: "arrow-down-circle-outline", iconBg: C.greenPale, iconColor: C.green }
+    : { isIncoming: false, label: "Envoi d'argent",
+        icon: "paper-plane-outline",       iconBg: C.redBg,     iconColor: C.red   };
 }
 
 // ─── Composant TxCard ─────────────────────────────────────
-function TxCard({ item, userId, userRole }: {
-  item: any; userId?: string; userRole?: string;
+function TxCard({ item, userId }: {
+  item: any; userId?: string;
 }) {
   const router = useRouter();
   const scale  = useRef(new Animated.Value(1)).current;
-  const dir    = resolveDirection(item, userId, userRole);
+  const dir    = resolveDirection(item, userId);
 
   const rawSt = STATUS_MAP[item.status] ?? {
     label: item.status, labelIncoming: item.status,
@@ -273,8 +242,6 @@ export default function TransactionsScreen() {
   const router   = useRouter();
   const { user } = useAuth();
   const insets   = useSafeAreaInsets(); // ✅ v6.7 (nouveau)
-  const isAdmin  = user?.role === "SUPER_ADMIN" || user?.role === "COMPANY_ADMIN";
-  const isAgent  = user?.role === "AGENT";
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -287,71 +254,8 @@ export default function TransactionsScreen() {
 
   const load = useCallback(async () => {
     try {
-      let list: any[] = [];
-
-      if (isAdmin) {
-        const res = await api.adminGetTransactions();
-        list = Array.isArray(res) ? res : [];
-
-      } else if (isAgent) {
-        const myId = String(user?.id ?? "");
-        const [txRes, wdRes] = await Promise.allSettled([
-          api.getTransactions(),
-          api.getWithdrawals(),
-        ]);
-
-        const allTx: any[] = txRes.status === "fulfilled" ? txRes.value : [];
-        const allWd: any[] = wdRes.status === "fulfilled" ? wdRes.value : [];
-
-        const processedWithdrawals = allWd.filter(
-          (w) => String(w.processedById ?? "") === myId && w.transactionId
-        );
-        const payoutTxIds = new Set(processedWithdrawals.map((w) => String(w.transactionId)));
-        const seenIds     = new Set<string>();
-
-        for (const tx of allTx) {
-          const type = String(tx.type ?? "").toUpperCase();
-          const txId = String(tx.id);
-          if (type === "AGENCY_REFILL" || type === "REFILL") {
-            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
-            continue;
-          }
-          if (type === "DEPOSIT" && String(tx.senderId ?? "") === myId) {
-            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
-            continue;
-          }
-          if (payoutTxIds.has(txId)) {
-            if (!seenIds.has(txId)) { seenIds.add(txId); list.push({ ...tx, _agentPayout: true }); }
-            continue;
-          }
-          if (String(tx.senderId ?? "") === myId) {
-            if (!seenIds.has(txId)) { seenIds.add(txId); list.push(tx); }
-          }
-        }
-
-        for (const w of processedWithdrawals) {
-          const txId = String(w.transactionId);
-          if (!seenIds.has(txId)) {
-            seenIds.add(txId);
-            list.push({
-              id:           txId,
-              reference:    w.code ?? txId.slice(0, 8),
-              amount:       toNum(w.amount),
-              fees:         0,
-              total:        toNum(w.amount),
-              currency:     w.currency ?? "XOF",
-              status:       w.status ?? "PAID",
-              type:         "WITHDRAWAL",
-              createdAt:    w.paidAt ?? w.createdAt,
-              _agentPayout: true,
-            });
-          }
-        }
-
-      } else {
-        const res = await api.getTransactions();
-        list = Array.isArray(res) ? res : [];
-      }
+      const res = await api.getTransactions();
+      const list: any[] = Array.isArray(res) ? res : [];
 
       setTransactions(
         list.sort((a: any, b: any) =>
@@ -365,7 +269,7 @@ export default function TransactionsScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [isAdmin, isAgent, user?.id]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -394,13 +298,6 @@ export default function TransactionsScreen() {
 
   const pendingCount = transactions.filter((t) => t.status === "PENDING").length;
 
-  const roleLabel: Record<string, string> = {
-    SUPER_ADMIN:   "SUPER ADMIN",
-    COMPANY_ADMIN: "ADMIN",
-    AGENT:         "AGENT",
-    USER:          "CLIENT",
-  };
-
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
@@ -422,7 +319,7 @@ export default function TransactionsScreen() {
               <View style={s.rolePill}>
                 <View style={s.roleDot} />
                 <Text style={[s.rolePillTxt, { fontFamily: C.font.sans }]}>
-                  {roleLabel[user?.role ?? "USER"] ?? "CLIENT"}
+                  CLIENT
                 </Text>
               </View>
               <Text style={[s.headerTitle, { fontFamily: C.font.serif }]}>Historique</Text>
@@ -537,7 +434,7 @@ export default function TransactionsScreen() {
             />
           }
           renderItem={({ item }) => (
-            <TxCard item={item} userId={user?.id} userRole={user?.role} />
+            <TxCard item={item} userId={user?.id} />
           )}
           ListEmptyComponent={
             <View style={s.empty}>

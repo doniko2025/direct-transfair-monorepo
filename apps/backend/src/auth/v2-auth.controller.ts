@@ -1,6 +1,10 @@
 // apps/backend/src/auth/v2-auth.controller.ts
 // =========================================================
-// V2 AUTH CONTROLLER v1.3
+// V2 AUTH CONTROLLER v1.4
+// ✅ v1.4 : en-tête x-app-client transmis au service sur les 4
+//   endpoints qui ouvrent une session ou envoient un OTP de
+//   connexion — les rôles « web » sont refusés hors portail web
+//   (voir app-client.policy.ts).
 // ✅ v1.2 : DTOs complets passés au service
 // ✅ v1.3 : FIX CRITIQUE — x-tenant-id transmis au service
 //   PROBLÈME : le header x-tenant-id n'était pas lu par le
@@ -19,6 +23,7 @@ import { Throttle } from '@nestjs/throttler';
 
 import { V2AuthService } from './v2-auth.service';
 import { Public }        from '../common/decorators/public.decorator';
+import { APP_CLIENT_HEADER } from './app-client.policy';
 import {
   LoginPasswordV2Dto,
   RequestOtpEmailDto,
@@ -41,8 +46,9 @@ export class V2AuthController {
   loginPassword(
     @Body() dto: LoginPasswordV2Dto,
     @Headers('x-tenant-id') tenantId?: string,
+    @Headers(APP_CLIENT_HEADER) appClient?: string,
   ) {
-    return this.v2Auth.loginWithPassword(dto, tenantId ?? null);
+    return this.v2Auth.loginWithPassword(dto, tenantId ?? null, appClient ?? null);
   }
 
   // ✅ v1.3 : tenantId transmis
@@ -52,8 +58,9 @@ export class V2AuthController {
   requestOtpEmail(
     @Body() dto: RequestOtpEmailDto,
     @Headers('x-tenant-id') tenantId?: string,
+    @Headers(APP_CLIENT_HEADER) appClient?: string,
   ) {
-    return this.v2Auth.requestOtpEmail(dto, tenantId ?? null);
+    return this.v2Auth.requestOtpEmail(dto, tenantId ?? null, appClient ?? null);
   }
 
   // ✅ v1.3 : tenantId transmis
@@ -63,16 +70,21 @@ export class V2AuthController {
   requestOtpPhone(
     @Body() dto: RequestOtpPhoneDto,
     @Headers('x-tenant-id') tenantId?: string,
+    @Headers(APP_CLIENT_HEADER) appClient?: string,
   ) {
-    return this.v2Auth.requestOtpPhone(dto, tenantId ?? null);
+    return this.v2Auth.requestOtpPhone(dto, tenantId ?? null, appClient ?? null);
   }
 
   // verify-otp-login — pas de tenant nécessaire (userId suffit)
+  // ✅ v1.4 : x-app-client transmis (refus des rôles « web » hors portail web)
   @Post('verify-otp-login')
   @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Vérification OTP + émission JWT' })
-  verifyOtpLogin(@Body() dto: VerifyOtpLoginV2Dto) {
-    return this.v2Auth.verifyOtpLogin(dto);
+  verifyOtpLogin(
+    @Body() dto: VerifyOtpLoginV2Dto,
+    @Headers(APP_CLIENT_HEADER) appClient?: string,
+  ) {
+    return this.v2Auth.verifyOtpLogin(dto, appClient ?? null);
   }
 
   // send-verification — pas de tenant (userId connu)

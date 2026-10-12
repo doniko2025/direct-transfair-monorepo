@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
-// LOGIN v2.8 — Direct Transf'air
+// LOGIN v2.9 — Direct Transf'air
+// ✅ v2.9 : (phase 5) message clair « Compte réservé au portail web »
+//   quand un compte agent / admin tente de se connecter sur l'app
+//   mobile (403 USE_WEB_PORTAL du backend, ou refus côté AuthProvider).
 // ✅ v2.8 : FIX — après connexion réussie (mot de passe ou OTP),
 //    la page ne s'ouvrait pas immédiatement : il fallait rafraîchir
 //    manuellement pour arriver sur /(tabs)/home.
@@ -297,6 +300,17 @@ export default function LoginV2Screen() {
     portalMsgTimer.current = setTimeout(() => setPortalMsg(null), 3000);
   };
 
+  // ✅ phase 5 — l'app mobile est réservée aux clients (rôle USER).
+  // Un compte agent / admin reçoit le 403 USE_WEB_PORTAL du backend, ou
+  // l'erreur équivalente levée par AuthProvider (réponse d'un ancien backend).
+  const isWebPortalRequired = (e: any): boolean =>
+    e?.response?.data?.code === 'USE_WEB_PORTAL' || e?.code === 'USE_WEB_PORTAL';
+
+  const showWebPortalRequired = (e: any) => {
+    const msg = v2Auth.extractMessage(e);
+    Platform.OS === 'web' ? alert(msg) : Alert.alert('Compte réservé au portail web', msg);
+  };
+
   const goToVerification = (res: any) => {
     router.push({
       pathname: '/(auth)/verify-contact',
@@ -373,6 +387,12 @@ export default function LoginV2Screen() {
       return;
     }
 
+    // ✅ phase 5 : compte agent / admin — l'app mobile est réservée aux clients
+    if (isWebPortalRequired(e)) {
+      showWebPortalRequired(e);
+      return;
+    }
+
     const msg = v2Auth.extractMessage(e);
     Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
   };
@@ -391,6 +411,8 @@ export default function LoginV2Screen() {
     } catch (e: any) {
       if (!isRetry) {
         await handlePortalError(e, () => handlePasswordLogin(true));
+      } else if (isWebPortalRequired(e)) {
+        showWebPortalRequired(e);
       } else {
         const msg = v2Auth.extractMessage(e);
         Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
@@ -417,6 +439,8 @@ export default function LoginV2Screen() {
       if (data?.code === 'VERIFICATION_REQUIRED') { goToVerification(data); return; }
       if (!isRetry) {
         await handlePortalError(e, () => handleRequestOtpEmail(true));
+      } else if (isWebPortalRequired(e)) {
+        showWebPortalRequired(e);
       } else {
         const msg = v2Auth.extractMessage(e);
         Platform.OS === 'web' ? alert(msg) : Alert.alert('Connexion échouée', msg);
@@ -456,6 +480,7 @@ export default function LoginV2Screen() {
     } catch (e: any) {
       const data = e?.response?.data;
       if (data?.code === 'VERIFICATION_REQUIRED') { goToVerification(data); return; }
+      if (isWebPortalRequired(e)) { showWebPortalRequired(e); return; }
       const msg = v2Auth.extractMessage(e);
       Alert.alert('Code invalide', msg);
       setOtpValues(['', '', '', '', '', '']);

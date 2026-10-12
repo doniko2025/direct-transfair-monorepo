@@ -1,5 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info.tsx
-// Router qui redirige selon le rôle — Thème Clair
+// Redirection vers « Informations personnelles » du client — Thème Clair
+// ✅ v2.0 (phase 5) : l'app mobile ne sert que les clients wallet ; les
+//   écrans « informations personnelles » des rôles agent / admin société /
+//   super admin ont été retirés (ils sont dans le portail web).
 
 import { useEffect } from "react";
 import { useRouter } from "expo-router";
@@ -12,11 +15,8 @@ export default function PersonalInfoRouter() {
 
   useEffect(() => {
     if (!user) return;
-    if (user.role === "SUPER_ADMIN")        router.replace("/(tabs)/profile/personal-info-super-admin");
-    else if (user.role === "COMPANY_ADMIN") router.replace("/(tabs)/profile/personal-info-admin");
-    else if (user.role === "AGENT")         router.replace("/(tabs)/profile/personal-info-agent");
-    else                                    router.replace("/(tabs)/profile/personal-info-wallet");
-  }, [user]);
+    router.replace("/(tabs)/profile/personal-info-wallet");
+  }, [user, router]);
 
   return (
     <View style={s.center}>

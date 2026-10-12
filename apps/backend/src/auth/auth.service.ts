@@ -165,6 +165,20 @@
 //   immédiatement une session en cours. Recommandé si une réactivité
 //   immédiate est nécessaire ; sinon, la fenêtre résiduelle est bornée
 //   à 1h par le TTL déjà en place (v5.0).
+//
+// ✅ v5.7 : séparation web / mobile (phase 5)
+//   Les rôles SUPER_ADMIN, COMPANY_ADMIN et AGENT ne peuvent plus
+//   ouvrir ni renouveler de session sans l'en-tête `x-app-client: web`
+//   (voir app-client.policy.ts) :
+//   - login()          : après la vérification du mot de passe et
+//                        l'isolation portail ;
+//   - loginByPhone()   : avant l'envoi de l'OTP ;
+//   - verifyLoginOtp() : avant l'émission du JWT ;
+//   - refreshTokens()  : un jeton de renouvellement d'un compte « web »
+//                        ne sert plus hors portail web (couvre aussi les
+//                        anciennes versions du mobile encore connectées) ;
+//   - register()       : une inscription publique qui créerait un AGENT
+//                        est refusée hors portail web.
 // =========================================================
 
 import {
@@ -194,6 +208,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService }   from '../mail/mail.service';
 import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v5.1
+import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
@@ -390,6 +405,7 @@ export class AuthService {
   async login(
     dto: LoginDto,
     tenantCode?: string | null,
+    appClient?: string | null,
   ): Promise<LoginStep2Result | LoginStep1Result> {
     const otpRequired = process.env.LOGIN_OTP_REQUIRED === 'true';
 
@@ -445,6 +461,9 @@ export class AuthService {
         403,
       );
     }
+
+    // ✅ v5.7 : comptes « web » refusés hors portail web (mot de passe déjà validé)
+    assertAppClientAllowed(user.role, appClient);
 
     // ── ✅ v5.0 : Gate vérification — ferme le contournement v1 ──
     if (!user.isEmailVerified) {
@@ -513,7 +532,10 @@ export class AuthService {
   // ✅ v5.4 : gate isEmailVerified — voir changelog en tête de fichier
   // ========================================================
 
-  async verifyLoginOtp(dto: VerifyLoginOtpDto): Promise<LoginStep2Result> {
+  async verifyLoginOtp(
+    dto: VerifyLoginOtpDto,
+    appClient?: string | null,
+  ): Promise<LoginStep2Result> {
     const otpLog = await this.prisma.otpLog.findFirst({
       where: {
         userId:    dto.userId,
@@ -560,6 +582,9 @@ export class AuthService {
       include: { client: true, agency: true, wallets: { where: { isActive: true } } },
     });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    // ✅ v5.7 : comptes « web » refusés hors portail web
+    assertAppClientAllowed(user.role, appClient);
 
     // ── ✅ v5.4 : Gate vérification email — ferme le contournement par
     // connexion téléphone (otp-phone.tsx → loginByPhone → ce endpoint).
@@ -732,6 +757,7 @@ export class AuthService {
   async loginByPhone(
     phone:      string,
     tenantCode?: string | null,
+    appClient?: string | null,
   ): Promise<{ userId: string; maskedPhone: string }> {
     const normalized = normalizePhoneE164(phone); // ✅ v5.1
     if (!normalized) throw new BadRequestException('Numéro de téléphone invalide');
@@ -794,6 +820,9 @@ export class AuthService {
       );
     }
 
+    // ✅ v5.7 : inutile d'envoyer un SMS à un compte « web » qui ne pourra pas se connecter ici
+    assertAppClientAllowed(user.role, appClient);
+
     await this.sendOtpInternal(user.id, CommsType.SMS, OtpPurpose.LOGIN, normalized, 4);
     await this.audit(user.id, user.clientId, AuditAction.OTP_REQUEST, {
       purpose: OtpPurpose.LOGIN, channel: CommsType.SMS, source: 'loginByPhone',
@@ -806,7 +835,15 @@ export class AuthService {
   // REGISTER ✅ v5.3 : user.create() + wallet.create() atomiques
   // ========================================================
 
-  async register(dto: RegisterDto, tenantFromHeader?: string | null) {
+  async register(
+    dto: RegisterDto,
+    tenantFromHeader?: string | null,
+    appClient?: string | null,
+  ) {
+    // ✅ v5.7 : une inscription qui créerait un compte « web » (AGENT)
+    // n'est acceptée que depuis le portail web.
+    assertAppClientAllowed(dto.role === 'AGENT' ? Role.AGENT : Role.USER, appClient);
+
     const email = normalizeEmail(dto.email);
     // ✅ v5.1 : normalizePhoneE164() centralisée — voir
     // common/utils/phone.util.ts pour le détail du bug de collision
@@ -1110,7 +1147,7 @@ export class AuthService {
   // REFRESH TOKEN ✅ v5.0 : lookup et stockage par hash SHA-256
   // ========================================================
 
-  async refreshTokens(refreshToken: string) {
+  async refreshTokens(refreshToken: string, appClient?: string | null) {
     if (!refreshToken) throw new UnauthorizedException('Refresh token manquant');
 
     // ✅ v5.0 : Le token en DB est hashé → on hash l'input pour le lookup
@@ -1147,6 +1184,10 @@ export class AuthService {
         'Cette société a été désactivée. Contactez votre administrateur.',
       );
     }
+
+    // ✅ v5.7 : un compte « web » ne renouvelle pas sa session hors portail
+    // web (couvre les anciennes versions du mobile encore connectées).
+    assertAppClientAllowed(sessionUser.role, appClient);
 
     const tokens = await this.generateTokens(session.user as any);
 

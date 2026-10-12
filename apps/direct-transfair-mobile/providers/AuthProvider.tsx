@@ -1,7 +1,15 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v6.3 — Direct Transf'air
-// ✅ v6.1, v6.2 conservés intégralement
+// AUTH PROVIDER v7.0 — Direct Transf'air
+// ✅ v6.1, v6.2, v6.3 conservés intégralement
+// ✅ v7.0 : (phase 5) l'app mobile est réservée aux clients wallet
+//   (rôle USER). Toute session d'un autre rôle (SUPER_ADMIN,
+//   COMPANY_ADMIN, AGENT) est refusée et fermée, quel que soit le chemin
+//   de connexion (mot de passe, OTP, biométrie, inscription) et aussi à
+//   la restauration d'une session enregistrée par une ancienne version
+//   de l'app. Le backend refuse déjà ces rôles sans l'en-tête
+//   `x-app-client: web` ; ce contrôle côté app est une seconde barrière
+//   (déploiement progressif, session déjà stockée).
 // ✅ v6.3 : FIX synchronisation refresh token en mémoire
 //
 //   PROBLÈME RÉSOLU (v6.3) :
@@ -115,6 +123,25 @@ function extractTenantFromUrl(url: string): string | null {
   return null;
 }
 
+// ─── v7.0 : app réservée aux clients (rôle USER) ──────────
+const CLIENT_ROLE = "USER";
+
+const WEB_PORTAL_REQUIRED_MESSAGE =
+  "Ce compte est réservé au portail web. L'application mobile est réservée " +
+  "aux clients : connectez-vous depuis le portail web de votre société.";
+
+function isClientRole(u: unknown): boolean {
+  return (u as { role?: string } | null | undefined)?.role === CLIENT_ROLE;
+}
+
+class WebPortalRequiredError extends Error {
+  readonly code = "USE_WEB_PORTAL";
+  constructor() {
+    super(WEB_PORTAL_REQUIRED_MESSAGE);
+    this.name = "WebPortalRequiredError";
+  }
+}
+
 const injectCurrencyToUser = (u: AuthUser): AuthUser => {
   if (!u) return u;
   const uAny = u as any;
@@ -129,7 +156,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   const router   = useRouter();
-  const segments = useSegments();
+  // Cast : le type « tuple » inféré par expo-router refuse segments[1] (TS2493)
+  const segments = useSegments() as string[];
 
   const tokenRef       = useRef<string | null>(null);
   const tenantReadyRef = useRef(false);
@@ -198,6 +226,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
+  // ─── v7.0 : fermeture d'une session qui n'est pas celle d'un client ───
+  // Révoque la session côté serveur (si un jeton est connu), efface les
+  // jetons et la session locale — y compris le refresh token (contrairement
+  // à logout(), qui le garde pour la reconnexion biométrique d'un client).
+  const closeForeignSession = useCallback(async (accessToken?: string | null) => {
+    try {
+      if (accessToken) api.setToken(accessToken);
+      await api.logout(); // POST /auth/logout puis effacement des jetons de l'instance api
+    } catch { /* la session expirera côté serveur */ }
+    api.clearToken();
+    setToken(null);
+    setUser(null);
+    tokenRef.current = null;
+    await removeStorage(TOKEN_KEY);
+    await removeStorage(USER_KEY);
+    await removeStorage("refreshToken");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── Init ─────────────────────────────────────────────────
   useEffect(() => {
     const initAuth = async () => {
@@ -208,6 +255,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (storedToken && storedUserRaw) {
           const storedUser = JSON.parse(storedUserRaw) as AuthUser;
+
+          // ✅ v7.0 : session enregistrée par une ancienne version de l'app
+          // pour un agent / admin → fermée, retour à l'écran de connexion.
+          if (!isClientRole(storedUser)) {
+            await closeForeignSession(storedToken);
+            return;
+          }
+
           const clientCode = (storedUser as any)?.client?.code;
           if (clientCode) await applyTenant(clientCode);
 
@@ -218,6 +273,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           try {
             const me = await api.getMe();
+            if (!isClientRole(me)) {
+              await closeForeignSession(storedToken);
+              return;
+            }
             const enrichedMe = injectCurrencyToUser(me);
             const meCode = (me as any)?.client?.code;
             if (meCode) await applyTenant(meCode);
@@ -282,6 +341,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshToken: string | null | undefined,
     rawUser:      any,
   ) => {
+    // ✅ v7.0 : l'app ne sert que les clients wallet
+    if (!isClientRole(rawUser)) {
+      await closeForeignSession(accessToken);
+      throw new WebPortalRequiredError();
+    }
+
     const clientCode = rawUser?.client?.code;
     if (clientCode) await applyTenant(clientCode);
 
@@ -309,6 +374,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await ensureTenantReady();
       const res: LoginResponse = await api.login(data);
+      if (!isClientRole(res.user)) { // ✅ v7.0
+        await closeForeignSession(res.access_token);
+        throw new WebPortalRequiredError();
+      }
       const clientCode = (res.user as any)?.client?.code;
       if (clientCode) await applyTenant(clientCode);
       api.setToken(res.access_token);
@@ -343,6 +412,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       };
       const res = await api.register(payload);
       if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
+        if (!isClientRole(res.user)) { // ✅ v7.0
+          await closeForeignSession(res.access_token);
+          throw new WebPortalRequiredError();
+        }
         api.setToken(res.access_token);
         setToken(res.access_token);
         tokenRef.current = res.access_token;
@@ -374,6 +447,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!currentToken) return;
       api.setToken(currentToken);
       const updatedUser  = await api.getMe();
+      if (!isClientRole(updatedUser)) { // ✅ v7.0
+        await closeForeignSession(currentToken);
+        await logout();
+        return;
+      }
       const enrichedUser = injectCurrencyToUser(updatedUser);
       setUser(enrichedUser);
       await setStorage(USER_KEY, JSON.stringify(enrichedUser));
@@ -409,6 +487,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tokenRef.current = newToken;
 
       const me = await api.getMe();
+      if (!isClientRole(me)) { // ✅ v7.0
+        await closeForeignSession(newToken);
+        throw new WebPortalRequiredError();
+      }
       const enrichedUser = injectCurrencyToUser(me);
 
       const clientCode = (me as any)?.client?.code;
@@ -433,6 +515,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await ensureTenantReady();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res: LoginResponse = await (api as any).loginStep2({ userId, code });
+
+      if (!isClientRole(res.user)) { // ✅ v7.0
+        await closeForeignSession(res.access_token);
+        throw new WebPortalRequiredError();
+      }
 
       const clientCode = (res.user as any)?.client?.code;
       if (clientCode) await applyTenant(clientCode);

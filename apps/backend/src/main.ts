@@ -200,6 +200,7 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: [
       'Origin', 'X-Requested-With', 'Content-Type',
       'Accept', 'Authorization', 'x-tenant-id',
+      'x-app-client', // ✅ phase 5 : le portail web s'identifie (voir auth/app-client.policy.ts)
     ],
   });
 

@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.5
+// TRANSACTION DETAIL v6.6
+// ✅ v6.6 : (phase 5) clients wallet uniquement — branches SUPER_ADMIN /
+//    COMPANY_ADMIN / AGENT supprimées (validation, remboursement,
+//    recharge agence, retrait client payé : voir le portail web). Les
+//    actions restantes : copier la référence, annuler (PENDING), voir
+//    le reçu (PAID).
 // ✅ v6.5 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (loadTransaction, handleShare, performAction, tous les calculs
@@ -51,12 +56,7 @@ const HERO_TO    = "#123324";
 const HERO_GLOW  = "rgba(5,150,105,0.18)";
 const HERO_MUTED = "rgba(255,255,255,0.6)";
 
-const THEMES: Record<string, { primary: string; light: string; bg: string }> = {
-  SUPER_ADMIN:   { primary: "#5B5BD6", light: "#EDE9FE", bg: "#F8FAFF" },
-  COMPANY_ADMIN: { primary: "#0284C7", light: "#E0F2FE", bg: "#F8FAFC" },
-  AGENT:         { primary: "#D97706", light: "#FEF3C7", bg: "#FFFBF0" },
-  USER:          { primary: "#059669", light: "#ECFDF5", bg: "#F8FAFC" },
-};
+const THEME = { primary: "#059669", light: "#ECFDF5", bg: "#F8FAFC" };
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -76,13 +76,7 @@ export default function TransactionDetailScreen() {
   const router   = useRouter();
   const { user } = useAuth();
   const insets   = useSafeAreaInsets(); // ✅ v6.5 (nouveau)
-  const role     = user?.role || "USER";
-  const theme    = THEMES[role] ?? THEMES.USER;
-
-  const isSA    = role === "SUPER_ADMIN";
-  const isCA    = role === "COMPANY_ADMIN";
-  const isAgent = role === "AGENT";
-  const isUser  = role === "USER";
+  const theme    = THEME;
 
   const [transaction, setTransaction] = useState<any>(null);
   const [loading,     setLoading]     = useState(true);
@@ -95,13 +89,7 @@ export default function TransactionDetailScreen() {
       setLoading(true);
       if (!idParam) return setTransaction(null);
 
-      let list: any[] = [];
-      if (isSA || isCA) {
-        try { list = await api.adminGetTransactions(); }
-        catch { list = await api.getTransactions(); }
-      } else {
-        list = await api.getTransactions();
-      }
+      const list: any[] = await api.getTransactions();
 
       const found = list.find((t: any) => String(t.id) === String(idParam));
       setTransaction(found || null);
@@ -154,23 +142,12 @@ export default function TransactionDetailScreen() {
     }
   };
 
-  const performAction = async (action: "VALIDATE" | "CANCEL" | "REFUND") => {
+  const handleCancel = async () => {
     if (!transaction) return;
     setProcessing(true);
     try {
-      const isB2B = String(transaction.type ?? "").toUpperCase() === "SERVICE_PAYMENT";
-      if (action === "VALIDATE") {
-        if (isB2B) await api.validateBankTransfer(transaction.id);
-        else await api.adminUpdateTransactionStatus(transaction.id, "VALIDATED");
-        Alert.alert("✅ Validé", "Transaction validée.");
-      } else if (action === "REFUND") {
-        if (isB2B) await api.rejectBankTransfer(transaction.id);
-        else await api.adminUpdateTransactionStatus(transaction.id, "CANCELLED");
-        Alert.alert("↩️ Remboursé", "Remboursement effectué.");
-      } else {
-        await api.cancelTransaction(transaction.id);
-        Alert.alert("🚫 Annulé", "Transaction annulée.");
-      }
+      await api.cancelTransaction(transaction.id);
+      Alert.alert("🚫 Annulé", "Transaction annulée.");
       void loadTransaction();
     } catch (e: any) {
       Alert.alert("Erreur", e?.response?.data?.message || "Action impossible.");
@@ -189,20 +166,13 @@ export default function TransactionDetailScreen() {
   );
 
   const type      = String(transaction.type ?? "").toUpperCase();
-  const isB2B     = type === "SERVICE_PAYMENT";
-  const isRefill  = type === "AGENCY_REFILL" || type === "REFILL";
   const isDeposit = type === "DEPOSIT" || type === "TOP_UP";
-  const isRefund  = type === "REFUND" || transaction.status === "REFUNDED";
   const isPending   = transaction.status === "PENDING";
   const isValidated = transaction.status === "VALIDATED";
   const isPaid      = transaction.status === "PAID";
 
-  // ── Direction selon rôle ──────────────────────────────
-  let isIncoming = false;
-  if (isSA)      isIncoming = isB2B;
-  else if (isCA) isIncoming = isDeposit || isRefund || transaction.recipientId === user?.id;
-  else if (isAgent) isIncoming = isRefill;
-  else isIncoming = isDeposit || transaction.recipientId === user?.id;
+  // ── Direction (point de vue du client) ────────────────
+  const isIncoming = isDeposit || transaction.recipientId === user?.id;
 
   // ✅ FIX v6.2 — Montant héro : pour les entrants avec conversion de devise,
   // afficher ce que l'utilisateur a réellement reçu (receivedAmount/targetCurrency)
@@ -224,23 +194,6 @@ export default function TransactionDetailScreen() {
   const amountSign  = isIncoming ? "+" : "−";
 
   const getTxLabel = (): string => {
-    if (isSA) {
-      if (isB2B)    return "Encaissement société";
-      if (isRefund) return "Remboursement admin";
-      return "Transaction";
-    }
-    if (isCA) {
-      if (isRefill)  return "Recharge agence";
-      if (isDeposit) return isIncoming ? "Dépôt reçu" : "Dépôt initié";
-      if (isRefund)  return "Remboursement reçu";
-      return isIncoming ? "Transfert reçu" : "Envoi d'argent";
-    }
-    if (isAgent) {
-      if (isRefill)  return "Recharge caisse reçue";
-      if (isDeposit) return "Dépôt vers client";
-      if (transaction.withdrawal) return "Retrait client payé";
-      return "Transaction";
-    }
     if (isDeposit) return "Dépôt en agence";
     return isIncoming ? "Transfert reçu" : "Envoi d'argent";
   };
@@ -264,17 +217,13 @@ export default function TransactionDetailScreen() {
       ? `${transaction.senderFirstName} ${transaction.senderLastName ?? ""}`.trim()
       : "—";
 
-  const recipientName = isSA && isB2B
-    ? "Plateforme (moi)"
-    : transaction.beneficiary?.fullName
-      ?? transaction.beneficiary?.phone
-      ?? (transaction.recipientId ? "Wallet interne" : "—");
+  const recipientName = transaction.beneficiary?.fullName
+    ?? transaction.beneficiary?.phone
+    ?? (transaction.recipientId ? "Wallet interne" : "—");
 
-  const showSAActions    = isSA && isPending;
-  const showCACancel     = isCA && (isPending || isValidated);
-  const showUserCancel   = isUser && isPending;
-  const showShareReceipt = (isUser || isCA) && isPaid;
-  const showCopyCode     = !isB2B && !isRefill && !isDeposit && (isPending || isValidated);
+  const showUserCancel   = isPending;
+  const showShareReceipt = isPaid;
+  const showCopyCode     = !isDeposit && (isPending || isValidated);
 
   return (
     <SafeAreaView style={[s.safeArea, { backgroundColor: HERO_FROM }]}>
@@ -368,29 +317,10 @@ export default function TransactionDetailScreen() {
               </>
             )}
             <View style={s.divider} />
-            {isB2B && isSA ? (
+            {isDeposit ? (
               <>
-                <DetailRow label="Société émettrice" value={transaction.client?.name ?? senderName} />
-                <DetailRow label="Bénéficiaire" value="Plateforme Transf'air (moi)" color={theme.primary} />
-              </>
-            ) : isRefill ? (
-              <>
-                <DetailRow label="Initiateur" value={isCA ? "Vous (Admin)" : senderName} />
-                <DetailRow label="Agence créditée" value={transaction.agency?.name ?? "—"} />
-              </>
-            ) : isDeposit ? (
-              <>
-                <DetailRow label="Agent" value={isAgent ? "Vous" : senderName} />
-                <DetailRow label="Bénéficiaire" value={isAgent ? "Client" : "Votre wallet"} />
-              </>
-            ) : isAgent && transaction.withdrawal ? (
-              <>
-                <DetailRow label="Expéditeur"   value={senderName} />
-                <DetailRow label="Bénéficiaire" value={transaction.beneficiary?.fullName ?? recipientName} />
-                {transaction.beneficiary?.phone && (
-                  <DetailRow label="Téléphone" value={transaction.beneficiary.phone} sub />
-                )}
-                <DetailRow label="Traité par" value="Vous (Agent)" color={theme.primary} />
+                <DetailRow label="Agent" value={senderName} />
+                <DetailRow label="Bénéficiaire" value="Votre wallet" />
               </>
             ) : (
               <>
@@ -431,22 +361,8 @@ export default function TransactionDetailScreen() {
           </View>
         </View>
 
-        {showSAActions && (
-          <View style={s.actionsBlock}>
-            <Text style={[s.actionsTitle, { fontFamily: FONTS.body }]}>ACTION REQUISE · SUPER ADMIN</Text>
-            <View style={s.actionsRow}>
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: "#FEE2E2", borderColor: "#FECACA", borderWidth: 1 }]} onPress={() => performAction("REFUND")} disabled={processing}>
-                {processing ? <ActivityIndicator color="#DC2626" /> : <Text style={[s.actionBtnTxt, { color: "#DC2626", fontFamily: FONTS.body }]}>↩ Rembourser</Text>}
-              </TouchableOpacity>
-              <TouchableOpacity style={[s.actionBtn, { backgroundColor: "#059669" }]} onPress={() => performAction("VALIDATE")} disabled={processing}>
-                {processing ? <ActivityIndicator color="#FFF" /> : <Text style={[s.actionBtnTxt, { color: "#FFF", fontFamily: FONTS.body }]}>✓ Valider</Text>}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {(showCACancel || showUserCancel) && (
-          <TouchableOpacity style={[s.cancelBtn, processing && { opacity: 0.6 }]} onPress={() => performAction("CANCEL")} disabled={processing}>
+        {showUserCancel && (
+          <TouchableOpacity style={[s.cancelBtn, processing && { opacity: 0.6 }]} onPress={handleCancel} disabled={processing}>
             {processing ? <ActivityIndicator color="#EF4444" /> : <Text style={[s.cancelBtnTxt, { fontFamily: FONTS.body }]}>Annuler la transaction</Text>}
           </TouchableOpacity>
         )}

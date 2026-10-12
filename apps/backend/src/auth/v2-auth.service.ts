@@ -1,6 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
-// AUTH SERVICE v2.3 — Sécurité production
+// AUTH SERVICE v2.4 — Sécurité production
 //
 // ✅ v2.0 : Toutes les corrections de sécurité originales conservées
 // ✅ v2.1 : CORRECTIFS RATE LIMIT
@@ -51,6 +51,14 @@
 //     CORRECTIF : même bascule DEV/PROD que buildVerificationNeeded(),
 //     pour que les deux logiques de vérification restent synchronisées
 //     et basculent ensemble vers la prod le jour venu.
+//
+// ✅ v2.4 : séparation web / mobile (phase 5)
+//     Les rôles SUPER_ADMIN, COMPANY_ADMIN et AGENT ne peuvent plus
+//     ouvrir de session (mot de passe, OTP) ni recevoir d'OTP de
+//     connexion sans l'en-tête `x-app-client: web`. Le contrôle se fait
+//     APRÈS la vérification du mot de passe (loginWithPassword) pour ne
+//     pas révéler le rôle d'un compte à un appelant non authentifié.
+//     Voir app-client.policy.ts.
 // =========================================================
 
 import {
@@ -76,6 +84,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
+import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
 
 import type {
   LoginPasswordV2Dto,
@@ -206,6 +215,7 @@ export class V2AuthService {
   async loginWithPassword(
     dto: LoginPasswordV2Dto,
     tenantCode?: string | null,
+    appClient?: string | null,
   ): Promise<LoginResult | VerificationNeededResult> {
     const email      = normalizeEmail(dto.email);
     const normalized = normalizeTenantCode(tenantCode);
@@ -233,6 +243,10 @@ export class V2AuthService {
       data:  { failedLoginAttempts: 0, lastFailedLoginAt: null, lockedUntil: null },
     });
 
+    // ✅ v2.4 : mot de passe correct → on peut dire que ce compte est
+    // réservé au web sans rien révéler à un appelant non authentifié.
+    assertAppClientAllowed(user!.role, appClient);
+
     const pending = this.buildVerificationNeeded(user!);
     if (pending) {
       await this.dispatchVerificationOtps(user!);
@@ -251,6 +265,7 @@ export class V2AuthService {
   async requestOtpEmail(
     dto: RequestOtpEmailDto,
     tenantCode?: string | null,
+    appClient?: string | null,
   ): Promise<OtpRequestResult> {
     const email      = normalizeEmail(dto.email);
     const normalized = normalizeTenantCode(tenantCode);
@@ -266,6 +281,7 @@ export class V2AuthService {
     this.assertClientActive(user!);
     this.assertNotLocked(user!);
     this.assertPortalIsolation(user!, normalized);
+    assertAppClientAllowed(user!.role, appClient); // ✅ v2.4
 
     const pending = this.buildVerificationNeeded(user!);
     if (pending) {
@@ -289,6 +305,7 @@ export class V2AuthService {
   async requestOtpPhone(
     dto: RequestOtpPhoneDto,
     tenantCode?: string | null,
+    appClient?: string | null,
   ): Promise<OtpRequestResult> {
     const phone      = normalizePhoneE164(dto.phone); // ✅ v2.2
     const normalized = normalizeTenantCode(tenantCode);
@@ -306,6 +323,7 @@ export class V2AuthService {
     this.assertClientActive(user!);
     this.assertNotLocked(user!);
     this.assertPortalIsolation(user!, normalized);
+    assertAppClientAllowed(user!.role, appClient); // ✅ v2.4
 
     const pending = this.buildVerificationNeeded(user!);
     if (pending) {
@@ -326,7 +344,10 @@ export class V2AuthService {
   // 4. VÉRIFICATION OTP (connexion)
   // ═══════════════════════════════════════════════════════
 
-  async verifyOtpLogin(dto: VerifyOtpLoginV2Dto): Promise<LoginResult> {
+  async verifyOtpLogin(
+    dto: VerifyOtpLoginV2Dto,
+    appClient?: string | null,
+  ): Promise<LoginResult> {
     const channel = dto.channel === 'EMAIL' ? CommsType.EMAIL : CommsType.SMS;
 
     const otpLog = await this.prisma.otpLog.findFirst({
@@ -382,6 +403,8 @@ export class V2AuthService {
     });
 
     if (!user) throw new NotFoundException('Utilisateur introuvable');
+
+    assertAppClientAllowed(user.role, appClient); // ✅ v2.4
 
     const pending = this.buildVerificationNeeded(user);
     if (pending) {

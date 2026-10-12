@@ -1,22 +1,17 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v9.2 — TabBar 100% custom (React Native pur)
+// TAB LAYOUT v10.0 — Clients wallet uniquement (rôle USER)
 //
-// FIX v9.2 : ajout de <Tabs.Screen name="recharge" /> — nouvel écran
-//   de recharge wallet (voir home.tsx v9.9, bouton "Recharger"),
-//   poussé depuis le dashboard, pas un onglet visible de la tab bar
-//   (même traitement que "qr" et "notifications" ci-dessous).
+// ✅ v10.0 (phase 5) : l'app mobile est réservée aux clients.
+//   Les onglets et thèmes des rôles AGENT / COMPANY_ADMIN /
+//   SUPER_ADMIN, ainsi que les écrans « admin » et « withdraw »
+//   (guichet agent), ont été supprimés : ces rôles utilisent le
+//   portail web (apps/web-admin). Une session d'un autre rôle est
+//   fermée par AuthProvider avant d'arriver ici.
 //
-// FIX v9.1 : suppression de <Tabs.Screen name="agencies" />
-//   → ce screen n'existe pas à la racine de (tabs)/
-//   → il est accessible via routeOverride "/(tabs)/admin/agencies"
-//   → sa présence ici causait l'erreur :
-//     "No route named agencies exists in nested children"
-//
-// SOLUTION DÉFINITIVE : on remplace complètement la tabBar
-// native par notre propre composant via la prop `tabBar`.
-// Résultat : zéro flèche, espacement pixel-perfect garanti,
-// bouton central flottant, design pill Option A.
+// ✅ v9.x conservés : TabBar 100% custom (React Native pur),
+//   bouton central flottant, pas de flèche, écrans « poussés »
+//   (qr, notifications, recharge, rates) hors de la barre.
 // =========================================================
 
 import React from "react";
@@ -29,6 +24,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../providers/AuthProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 // Type local — évite l'incompatibilité de version avec expo-router
 type BottomTabBarProps = {
   state: {
@@ -41,20 +37,14 @@ type BottomTabBarProps = {
   descriptors: Record<string, unknown>;
 };
 
-const ROLE_THEMES = {
-  SUPER_ADMIN:   { primary: "#D4A853", inactive: "#94A3B8" },
-  COMPANY_ADMIN: { primary: "#10B981", inactive: "#94A3B8" },
-  AGENT:         { primary: "#F59E0B", inactive: "#94A3B8" },
-  USER:          { primary: "#4F46E5", inactive: "#94A3B8" },
-} as const;
+const ACCENT = "#4F46E5";
 
-// ─── Définition des tabs par rôle ────────────────────────────
+// ─── Onglets du client ───────────────────────────────────────
 type TabDef = {
   name: string;
   label: string;
   icon: string;
   isCenter?: boolean;
-  routeOverride?: string;
 };
 
 const USER_TABS: TabDef[] = [
@@ -63,22 +53,6 @@ const USER_TABS: TabDef[] = [
   { name: "send",          label: "",         icon: "paper-plane", isCenter: true },
   { name: "beneficiaries", label: "Contacts", icon: "people" },
   { name: "profile",       label: "Compte",   icon: "person" },
-];
-
-const AGENT_TABS: TabDef[] = [
-  { name: "home",         label: "Accueil",  icon: "home" },
-  { name: "transactions", label: "Activité", icon: "time" },
-  { name: "withdraw",     label: "",         icon: "storefront", isCenter: true, routeOverride: "/agent/withdraw" },
-  { name: "rates",        label: "Taux",     icon: "swap-horizontal" },
-  { name: "profile",      label: "Compte",   icon: "person" },
-];
-
-const ADMIN_TABS: TabDef[] = [
-  { name: "home",         label: "Accueil",  icon: "home" },
-  { name: "transactions", label: "Activité", icon: "time" },
-  { name: "admin",        label: "",         icon: "stats-chart", isCenter: true, routeOverride: "/(tabs)/admin/agencies" },
-  { name: "rates",        label: "Taux",     icon: "swap-horizontal" },
-  { name: "profile",      label: "Compte",   icon: "person" },
 ];
 
 // ─── Composant TabBar 100% custom ────────────────────────────
@@ -112,12 +86,9 @@ function CustomTabBar({
               style={s.centerWrap}
               activeOpacity={0.9}
               onPress={() => {
-                if (tab.routeOverride) {
-                  router.push(tab.routeOverride as any);
-                } else {
-                  const idx = state.routes.findIndex((r) => r.name === tab.name);
-                  if (idx >= 0) navigation.navigate(state.routes[idx].name);
-                }
+                const idx = state.routes.findIndex((r) => r.name === tab.name);
+                if (idx >= 0) navigation.navigate(state.routes[idx].name);
+                else router.push(`/(tabs)/${tab.name}` as any);
               }}
             >
               <LinearGradient
@@ -180,15 +151,25 @@ function CustomTabBar({
   );
 }
 
-// ─── Layout par rôle ─────────────────────────────────────────
-function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
+// ─── Point d'entrée ──────────────────────────────────────────
+export default function TabLayout() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading || !user) {
+    return (
+      <View style={s.loader}>
+        <ActivityIndicator size="large" color={ACCENT} />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
       tabBar={(props) => (
         <CustomTabBar
-          tabs={tabs}
-          accent={accent}
+          tabs={USER_TABS}
+          accent={ACCENT}
           state={props.state}
           navigation={props.navigation}
         />
@@ -197,40 +178,15 @@ function RoleLayout({ tabs, accent }: { tabs: TabDef[]; accent: string }) {
       <Tabs.Screen name="home" />
       <Tabs.Screen name="transactions" />
       <Tabs.Screen name="send" />
-      <Tabs.Screen name="withdraw" />
-      <Tabs.Screen name="admin" />
       <Tabs.Screen name="beneficiaries" />
-      <Tabs.Screen name="rates" />
       <Tabs.Screen name="profile" />
       <Tabs.Screen name="index" />
       <Tabs.Screen name="qr" />
       <Tabs.Screen name="notifications" />
       <Tabs.Screen name="recharge" />
+      <Tabs.Screen name="rates" />
     </Tabs>
   );
-}
-
-// ─── Point d'entrée ──────────────────────────────────────────
-export default function TabLayout() {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading || !user) {
-    return (
-      <View style={s.loader}>
-        <ActivityIndicator size="large" color="#4F46E5" />
-      </View>
-    );
-  }
-
-  const role  = user.role || "USER";
-  const theme = ROLE_THEMES[role as keyof typeof ROLE_THEMES] ?? ROLE_THEMES.USER;
-
-  const isAdmin = role === "SUPER_ADMIN" || role === "COMPANY_ADMIN";
-  const isAgent = role === "AGENT";
-
-  const tabs = isAdmin ? ADMIN_TABS : isAgent ? AGENT_TABS : USER_TABS;
-
-  return <RoleLayout tabs={tabs} accent={theme.primary} />;
 }
 
 const s = StyleSheet.create({

@@ -32,6 +32,7 @@ import { LoginDto, VerifyLoginOtpDto } from './dto/login.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import type { AuthUserPayload } from './types/auth-user-payload.type';
 import { Public } from '../common/decorators/public.decorator';
+import { APP_CLIENT_HEADER } from './app-client.policy';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Controller('auth')
@@ -54,8 +55,9 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
     @Headers('x-tenant-id') tenantId: string | undefined,
+    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
   ) {
-    return this.authService.register(dto, tenantId ?? null);
+    return this.authService.register(dto, tenantId ?? null, appClient ?? null);
   }
 
   // ========================================================
@@ -73,8 +75,9 @@ export class AuthController {
   async login(
     @Body() dto: LoginDto,
     @Headers('x-tenant-id') tenantId: string | undefined,
+    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
   ) {
-    return this.authService.login(dto, tenantId ?? null);
+    return this.authService.login(dto, tenantId ?? null, appClient ?? null);
   }
 
   // ========================================================
@@ -94,11 +97,16 @@ export class AuthController {
   async loginByPhone(
     @Body() body: { phone: string },
     @Headers('x-tenant-id') tenantId: string | undefined,
+    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
   ) {
     if (!body.phone?.trim()) {
       throw new BadRequestException('Numéro de téléphone requis');
     }
-    return this.authService.loginByPhone(body.phone.trim(), tenantId ?? null);
+    return this.authService.loginByPhone(
+      body.phone.trim(),
+      tenantId ?? null,
+      appClient ?? null,
+    );
   }
 
   // ========================================================
@@ -109,8 +117,11 @@ export class AuthController {
   @Public()
   @Post('login/verify-otp')
   @ApiOperation({ summary: "Étape 2 du login : vérifie l'OTP et retourne le JWT" })
-  async verifyLoginOtp(@Body() dto: VerifyLoginOtpDto) {
-    return this.authService.verifyLoginOtp(dto);
+  async verifyLoginOtp(
+    @Body() dto: VerifyLoginOtpDto,
+    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
+  ) {
+    return this.authService.verifyLoginOtp(dto, appClient ?? null);
   }
 
   // ========================================================
@@ -120,10 +131,13 @@ export class AuthController {
   @Public()
   @Post('refresh')
   @ApiOperation({ summary: "Renouveler le JWT à partir d'un refresh token" })
-  async refresh(@Body() body: { refresh_token: string }) {
+  async refresh(
+    @Body() body: { refresh_token: string },
+    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
+  ) {
     if (!body.refresh_token)
       throw new BadRequestException('refresh_token requis');
-    return this.authService.refreshTokens(body.refresh_token);
+    return this.authService.refreshTokens(body.refresh_token, appClient ?? null);
   }
 
   // ========================================================

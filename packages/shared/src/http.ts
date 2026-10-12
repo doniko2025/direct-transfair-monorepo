@@ -1,10 +1,14 @@
 // packages/shared/src/http.ts
 // =========================================================
-// CLIENT HTTP v1.0 — fetch natif, sans dépendance
+// CLIENT HTTP v1.1 — fetch natif, sans dépendance
 //
 // Reproduit le comportement utile de services/api.ts (mobile) :
 //   - préfixe /api
 //   - en-tête x-tenant-id sur chaque requête
+//   - en-tête x-app-client (optionnel) : le portail web envoie « web » ;
+//     le backend refuse les rôles SUPER_ADMIN / COMPANY_ADMIN / AGENT
+//     (login, OTP, refresh) sans cet en-tête — voir
+//     apps/backend/src/auth/app-client.policy.ts
 //   - Authorization: Bearer <access_token>
 //   - sur 401 : UN refresh (POST /auth/refresh), partagé entre les
 //     requêtes concurrentes, puis rejeu de la requête
@@ -44,6 +48,8 @@ export interface HttpClientOptions {
   storage: TokenStorage;
   /** Code du tenant courant (en-tête x-tenant-id). null = ne pas l'envoyer. */
   getTenant: () => string | null;
+  /** Valeur de l'en-tête x-app-client (« web » pour le web-admin). Absent = non envoyé. */
+  appClient?: string;
   onSessionExpired?: () => void;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -109,6 +115,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
 
     const tenant = options.getTenant();
     if (tenant) headers['x-tenant-id'] = tenant;
+    if (options.appClient) headers['x-app-client'] = options.appClient;
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
     Object.assign(headers, opts.headers);
