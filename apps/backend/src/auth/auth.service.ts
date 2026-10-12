@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.6 — Direct Transf'air
+// AUTH SERVICE v5.9 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -177,8 +177,22 @@
 //   - refreshTokens()  : un jeton de renouvellement d'un compte « web »
 //                        ne sert plus hors portail web (couvre aussi les
 //                        anciennes versions du mobile encore connectées) ;
-//   - register()       : une inscription publique qui créerait un AGENT
-//                        est refusée hors portail web.
+//   - register()       : (retiré en phase 6, voir v5.8)
+//
+// ✅ v5.8 : 🚨 FIX SÉCURITÉ (phase 6) — auto-inscription en AGENT
+//   POST /auth/register est public et acceptait `role: "AGENT"` : n'importe
+//   qui pouvait se créer un compte agent. L'inscription publique crée
+//   désormais TOUJOURS un client (Role.USER) ; le champ `role` a disparu de
+//   RegisterDto (ignoré par le ValidationPipe). Les agents et admins sont
+//   créés par un administrateur (agences, utilisateurs).
+//
+// ✅ v5.9 : sécurité (phase 6)
+//   - Les codes OTP (6 et 4 chiffres) sont tirés avec crypto.randomInt
+//     au lieu de Math.random() (générateur non cryptographique, prévisible).
+//   - generateRefreshToken / hashRefreshToken viennent de
+//     refresh-token.util.ts, partagé avec v2-auth.service.ts : une session
+//     ouverte par /auth/v2/login-password stocke désormais l'empreinte du
+//     refresh token (comme ici), ce qui permet enfin son renouvellement.
 // =========================================================
 
 import {
@@ -209,6 +223,7 @@ import { MailService }   from '../mail/mail.service';
 import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v5.1
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
+import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
@@ -357,16 +372,13 @@ function maskPhone(phone: string): string {
   return `${phone.substring(0, 4)}${'*'.repeat(Math.max(2, phone.length - 6))}${last2}`;
 }
 
+// ✅ v5.9 : crypto.randomInt (CSPRNG) — Math.random() est prévisible.
 function generateOtpCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 function generateOtpCode4(): string {
-  return Math.floor(1000 + Math.random() * 9000).toString();
-}
-
-function generateRefreshToken(): string {
-  return crypto.randomBytes(48).toString('hex');
+  return crypto.randomInt(1000, 10000).toString();
 }
 
 function generateReferralCode(firstName?: string, lastName?: string): string {
@@ -378,9 +390,7 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
 // ✅ v5.0 : Hash SHA-256 déterministe pour les refresh tokens
 // SHA-256 d'un token 48 octets = 2^384 combinaisons → brute-force impossible
 // Avantage vs bcrypt : déterministe → lookup direct en DB
-function hashRefreshToken(token: string): string {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+// ✅ v5.9 : generateRefreshToken() et hashRefreshToken() sont dans refresh-token.util.ts
 
 // =========================================================
 // SERVICE
@@ -835,15 +845,7 @@ export class AuthService {
   // REGISTER ✅ v5.3 : user.create() + wallet.create() atomiques
   // ========================================================
 
-  async register(
-    dto: RegisterDto,
-    tenantFromHeader?: string | null,
-    appClient?: string | null,
-  ) {
-    // ✅ v5.7 : une inscription qui créerait un compte « web » (AGENT)
-    // n'est acceptée que depuis le portail web.
-    assertAppClientAllowed(dto.role === 'AGENT' ? Role.AGENT : Role.USER, appClient);
-
+  async register(dto: RegisterDto, tenantFromHeader?: string | null) {
     const email = normalizeEmail(dto.email);
     // ✅ v5.1 : normalizePhoneE164() centralisée — voir
     // common/utils/phone.util.ts pour le détail du bug de collision
@@ -889,7 +891,7 @@ export class AuthService {
       const created = await tx.user.create({
         data: {
           email, phone, password: hashedPassword,
-          role:            dto.role === 'AGENT' ? Role.AGENT : Role.USER,
+          role:            Role.USER, // ✅ v5.8 : jamais de rôle choisi par l'appelant
           clientId:        client.id,
           firstName:       dto.firstName,
           lastName:        dto.lastName,

@@ -224,7 +224,6 @@ export interface RegisterPayload {
   firstName: string;
   lastName: string;
   country?: string;
-  role?: Role;
   referralCode?: string;
   [key: string]: unknown;
 }

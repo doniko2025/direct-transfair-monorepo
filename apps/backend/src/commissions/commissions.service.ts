@@ -1,6 +1,9 @@
 // apps/backend/src/commissions/commissions.service.ts
 // =========================================================
-// COMMISSIONS SERVICE v5.0
+// COMMISSIONS SERVICE v5.1
+// ✅ v5.1 (phase 6) : upsertRule() ne cible plus que les règles de RÉPARTITION (payoutMethod: null) ;
+//    sans ce filtre, une ligne de tarif par mode (payoutMethod renseigné, devise vide) pouvait être
+//    écrasée par une règle de répartition.
 // ✅ v4.4 conservé : getFeeRate/upsertFeeConfig (frais par méthode,
 //    utilisé par fees.tsx), getClientRules/upsertRule (répartition
 //    inter-agences, utilisé par settings.tsx) — AUCUN changement
@@ -219,7 +222,7 @@ export class CommissionsService {
       throw new BadRequestException('La somme des parts ne peut pas dépasser 100%');
     }
     const existing = await this.prisma.commissionConfig.findFirst({
-      where: { clientId, sourceType: dto.sourceType, destType: dto.destType, currency: null },
+      where: { clientId, sourceType: dto.sourceType, destType: dto.destType, currency: null, payoutMethod: null }, // ✅ phase 6 : jamais un tarif par mode
     });
     if (existing) {
       return this.prisma.commissionConfig.update({

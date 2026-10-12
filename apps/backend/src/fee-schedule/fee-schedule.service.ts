@@ -1,6 +1,9 @@
 // apps/backend/src/fee-schedule/fee-schedule.service.ts
 // =========================================================
-// FEE SCHEDULE SERVICE v1.0 — barème de frais d'envoi par société
+// FEE SCHEDULE SERVICE v1.1 — barème de frais d'envoi par société
+//   ✅ v1.1 (phase 6) : le tarif plat du mode (étape 3) et le taux par défaut (étape 4) sont arrondis à l'unité
+//   de la devise comme les règles du barème (0 décimale XOF/GNF, 2 sinon) : 12 345 XOF × 1,5 % donnait
+//   185,175 XOF de frais, c'est-à-dire des fractions de franc débitées au client et jamais payables en cash.
 //
 //   quote()    : frais d'un envoi. Appelé par TransactionsService.create() ET par GET /fees-admin/quote
 //                (même code : ce que le client voit est ce qu'on lui prélève).
@@ -23,7 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { toIso2 } from './countries';
 import type { FeeRuleBodyDto } from './dto/fee-rule.dto';
-import { feeFromRule, pickRule, rangesOverlap, type FeeRuleLike } from './fee-engine';
+import { feeFromRule, pickRule, rangesOverlap, roundToCurrency, type FeeRuleLike } from './fee-engine';
 
 export const MAX_RULES_PER_COMPANY = 100;
 
@@ -214,7 +217,7 @@ export class FeeScheduleService {
       // Colonne pas encore migrée : taux par défaut.
     }
     const fees = new Prisma.Decimal(p.amount).mul(new Prisma.Decimal(ratePct / 100)).plus(new Prisma.Decimal(fixed));
-    return done(fees.toNumber(), {
+    return done(roundToCurrency(fees.toNumber(), currency), {
       feeRatePct: ratePct,
       fixedFee: fixed,
       fixedFeeOriginal: null,
@@ -271,7 +274,7 @@ export class FeeScheduleService {
         clientId,
         isActive: true,
         currency: dto.currency,
-        payoutMethod: dto.payoutMethod ?? null,
+        payoutMethod: (dto.payoutMethod ?? null) as never, // ✅ phase 6 : erreur de compilation TS2322 (string vs enum PayoutMethod), même cast que dataOf()
         sendCountry: dto.sendCountry ?? null,
         receiveCountry: dto.receiveCountry ?? null,
         ...(selfId ? { id: { not: selfId } } : {}),

@@ -5,9 +5,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
-  IsEnum,
 } from 'class-validator';
-import { Role } from '@prisma/client';
 
 export class RegisterDto {
   /**
@@ -35,9 +33,9 @@ export class RegisterDto {
   @MinLength(6)
   password!: string;
 
-  @IsOptional()
-  @IsEnum(Role)
-  role?: Role;
+  // ✅ phase 6 : le champ `role` n'existe plus. L'inscription publique crée
+  // TOUJOURS un client (USER) ; ValidationPipe (whitelist) ignore un `role`
+  // envoyé par le client. Agents et admins sont créés par un administrateur.
 
   @IsString()
   @IsOptional()

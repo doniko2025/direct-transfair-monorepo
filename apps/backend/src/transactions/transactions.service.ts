@@ -1,7 +1,31 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.23 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.24 — Direct Transf'air
 // =========================================================
+// ✅ v4.24 (phase 6) : INTÉGRITÉ FINANCIÈRE — annulations, B2B, références
+//    (1) 🚨 cancel() : l'annulation créditait le wallet AVANT de changer le statut, sans verrou :
+//        deux clics (ou un clic + l'agent qui paie le code au même moment) remboursaient deux fois.
+//        Désormais le statut est « réservé » (updateMany avec condition sur le statut) et le
+//        remboursement est écrit dans la MÊME transaction SQL (WalletsService.creditInTx).
+//    (2) 🚨 cancel() acceptait n'importe quel type d'opération de l'expéditeur : une recharge
+//        Orange Money en attente (créditée nulle part) ou une déclaration B2B pouvaient être
+//        « annulées » et rembourser un montant jamais débité. Seuls TRANSFER et SCHEDULED
+//        (expéditeur débité à la création) sont remboursables.
+//    (3) Remboursement au bon wallet : la caisse de l'agence si l'envoi a été fait par un agent
+//        (Transaction.agencyId + wallet de la devise), sinon le wallet du client. Avant, la caisse
+//        de l'agence était remboursée sur le wallet personnel de l'agent.
+//    (4) adminUpdateStatusForAdmin() : même correctif (statut réservé + remboursement atomique, type
+//        contrôlé) ; un changement de statut simple est lui aussi conditionné à l'ancien statut.
+//    (5) validateBankTransfer() : le crédit et le passage à PAID sont atomiques (double clic = un
+//        seul crédit) ; refus si le Super Admin n'a pas de société (le wallet aurait été cherché
+//        avec clientId = null, c'est-à-dire n'importe quel wallet sans société).
+//    (6) rejectBankTransfer() : contrôle du type SERVICE_PAYMENT (comme validate) ; le remboursement
+//        va au wallet de la SOCIÉTÉ (celui qui a été débité à la déclaration) et non au wallet
+//        personnel de l'admin, que l'écran ne montre plus depuis wallets v5.3 ; atomique.
+//    (7) Références : codes de retrait tirés avec crypto.randomInt (et non Math.random), vérifiés
+//        uniques AVANT le débit ; suffixe aléatoire sur les références horodatées (BILL-, DEP-,
+//        REFILL-) pour que deux opérations dans la même milliseconde ne se heurtent plus à la
+//        contrainte d'unicité après le mouvement d'argent.
 // ✅ v4.23 : (1) deposit() refuse un destinataire qui n'est pas un client wallet (rôle USER) ou qui est suspendu.
 //    (2) La devise de réception d'un pays vient de fee-schedule/country-currency.ts (même table que le barème) :
 //    « Guinée-Bissau », « Allemagne », « Italie », « Pays-Bas »… n'étaient pas reconnus par leur nom.
@@ -202,7 +226,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   CurrencyCode,
   Prisma,
@@ -252,6 +278,16 @@ const TERMINAL_TX: TransactionStatus[] = [
   TransactionStatus.FAILED,
   TransactionStatus.REFUNDED,
 ];
+
+/** Statuts depuis lesquels une opération peut encore être annulée (aucun argent n'a quitté le circuit). */
+const CANCELLABLE_TX: TransactionStatus[] = [
+  TransactionStatus.PENDING,
+  TransactionStatus.VALIDATED,
+  TransactionStatus.PROCESSING,
+];
+
+/** Types dont l'expéditeur a été débité de `total` à la création : seuls ceux-là se remboursent. */
+const REFUNDABLE_TYPES: TransactionType[] = [TransactionType.TRANSFER, TransactionType.SCHEDULED];
 
 const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   GN: CurrencyCode.GNF,
@@ -470,7 +506,7 @@ export class TransactionsService {
           );
         }
 
-        const reference = `BILL-${Date.now()}`;
+        const reference = this.stampedReference('BILL');
 
         const created = await prismaTx.transaction.create({
           data: {
@@ -579,24 +615,39 @@ export class TransactionsService {
     if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT) throw new NotFoundException('Facture introuvable');
     if (tx.status !== TransactionStatus.PENDING) throw new ConflictException('Transaction déjà traitée');
 
+    // ✅ v4.24 — sans société, getOrCreateWallet({ clientId: null }) trouverait n'importe quel wallet sans société.
+    if (!superAdmin.clientId) {
+      throw new ConflictException(
+        "Le Super Admin n'est rattaché à aucune société : impossible de créditer le wallet de réception.",
+      );
+    }
+
     const walletRef = await this.walletsService.getOrCreateWallet({
-      clientId: superAdmin.clientId!,
+      clientId: superAdmin.clientId,
       currency: tx.currency,
     });
-    await this.walletsService.credit(
-      walletRef.id,
-      Number(tx.amount),
-      `Validation B2B ${transactionId}`,
-      transactionId,
-    );
 
-    const result = await this.prisma.transaction.update({
-      where: { id: transactionId },
-      data: {
-        status:         TransactionStatus.PAID,
-        paidAt:         new Date(),
-        providerStatus: ProviderStatus.SUCCESS,
-      },
+    // ✅ v4.24 — statut réservé + crédit dans la MÊME transaction SQL : un double clic ne crédite qu'une fois.
+    const result = await this.prisma.$transaction(async (prismaTx) => {
+      const claimed = await prismaTx.transaction.updateMany({
+        where: { id: transactionId, type: TransactionType.SERVICE_PAYMENT, status: TransactionStatus.PENDING },
+        data: {
+          status:         TransactionStatus.PAID,
+          paidAt:         new Date(),
+          providerStatus: ProviderStatus.SUCCESS,
+        },
+      });
+      if (claimed.count !== 1) throw new ConflictException('Transaction déjà traitée');
+
+      await this.walletsService.creditInTx(
+        prismaTx,
+        walletRef.id,
+        Number(tx.amount),
+        `Validation B2B ${transactionId}`,
+        transactionId,
+      );
+
+      return prismaTx.transaction.findUniqueOrThrow({ where: { id: transactionId } });
     });
 
     this.prisma.user.findUnique({ where: { id: tx.senderId } })
@@ -636,26 +687,36 @@ export class TransactionsService {
     if (superAdmin?.role !== 'SUPER_ADMIN') throw new ForbiddenException('Accès refusé');
 
     const tx = await this.prisma.transaction.findUnique({ where: { id: transactionId } });
-    if (!tx || tx.status !== TransactionStatus.PENDING) throw new ConflictException('Impossible à rejeter');
+    if (!tx || tx.type !== TransactionType.SERVICE_PAYMENT || tx.status !== TransactionStatus.PENDING) {
+      throw new ConflictException('Impossible à rejeter');
+    }
 
+    // ✅ v4.24 — la déclaration B2B a débité le wallet de la SOCIÉTÉ (clientId) : c'est lui qu'on rembourse.
     const walletRef = await this.walletsService.getOrCreateWallet({
-      userId:   tx.senderId,
+      clientId: tx.clientId,
       currency: tx.currency,
     });
-    await this.walletsService.credit(
-      walletRef.id,
-      Number(tx.amount),
-      `Remboursement B2B rejeté`,
-      transactionId,
-    );
 
-    const result = await this.prisma.transaction.update({
-      where: { id: transactionId },
-      data: {
-        status:         TransactionStatus.CANCELLED,
-        cancelledAt:    new Date(),
-        providerStatus: ProviderStatus.FAILED,
-      },
+    const result = await this.prisma.$transaction(async (prismaTx) => {
+      const claimed = await prismaTx.transaction.updateMany({
+        where: { id: transactionId, type: TransactionType.SERVICE_PAYMENT, status: TransactionStatus.PENDING },
+        data: {
+          status:         TransactionStatus.CANCELLED,
+          cancelledAt:    new Date(),
+          providerStatus: ProviderStatus.FAILED,
+        },
+      });
+      if (claimed.count !== 1) throw new ConflictException('Impossible à rejeter');
+
+      await this.walletsService.creditInTx(
+        prismaTx,
+        walletRef.id,
+        Number(tx.amount),
+        `Remboursement B2B rejeté`,
+        transactionId,
+      );
+
+      return prismaTx.transaction.findUniqueOrThrow({ where: { id: transactionId } });
     });
 
     this.push.notifyTransferReceived(
@@ -700,25 +761,86 @@ export class TransactionsService {
     if (tx.senderId !== userId) throw new ForbiddenException('Vous ne pouvez annuler que vos propres transactions');
     if (tx.status === TransactionStatus.PAID) throw new ConflictException("Impossible : le client a déjà retiré l'argent");
     if (tx.status === TransactionStatus.CANCELLED) throw new ConflictException('Déjà annulée');
+    // ✅ v4.24 — seuls les envois (TRANSFER / SCHEDULED) ont débité l'expéditeur : le reste n'est pas remboursable.
+    if (!REFUNDABLE_TYPES.includes(tx.type) || !CANCELLABLE_TX.includes(tx.status)) {
+      throw new ConflictException('Cette opération ne peut pas être annulée.');
+    }
 
-    const walletRef = await this.walletsService.getOrCreateWallet({ userId, currency: tx.currency });
-    await this.walletsService.credit(walletRef.id, Number(tx.total), `Remboursement annulation ${tx.reference}`, transactionId);
+    return this.cancelWithRefund(tx);
+  }
+
+  // ========================================================
+  // Annulation + remboursement ATOMIQUES (v4.24)
+  //   1. le statut est « réservé » par un updateMany conditionné à l'ancien statut :
+  //      si un autre appel (double clic, agent qui paie le code) est passé avant, count = 0 ;
+  //   2. le remboursement est écrit dans la même transaction SQL.
+  // ========================================================
+
+  private async cancelWithRefund(tx: Transaction): Promise<Transaction> {
+    const refund = await this.refundTargetFor(tx);
 
     return this.prisma.$transaction(async (prismaTx) => {
-      const updated = await prismaTx.transaction.update({
-        where: { id: transactionId },
-        data:  {
+      const claimed = await prismaTx.transaction.updateMany({
+        where: { id: tx.id, status: { in: CANCELLABLE_TX } },
+        data: {
           status:         TransactionStatus.CANCELLED,
           cancelledAt:    new Date(),
           providerStatus: ProviderStatus.CANCELLED,
         },
       });
+      if (claimed.count !== 1) {
+        throw new ConflictException('Transaction déjà traitée ou annulée.');
+      }
+
+      if (refund) {
+        await this.walletsService.creditInTx(
+          prismaTx,
+          refund.walletId,
+          refund.amount,
+          `${refund.label} ${tx.reference}`,
+          tx.id,
+        );
+      }
+
       await prismaTx.withdrawal.updateMany({
-        where: { transactionId },
+        where: { transactionId: tx.id },
         data:  { status: WithdrawalStatus.CANCELLED },
       });
-      return updated;
+
+      return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
     });
+  }
+
+  /**
+   * Où et combien rembourser pour annuler `tx`, ou null s'il n'y a rien à rembourser.
+   *   - TRANSFER / SCHEDULED : `total` sur le wallet qui a été débité à la création (caisse de l'agence
+   *     si l'envoi vient d'un agent, sinon wallet du client) ;
+   *   - SERVICE_PAYMENT (B2B) : `amount` sur le wallet de la société (celui de la déclaration) ;
+   *   - tout le reste (recharge en attente, mouvements de caisse…) : rien n'a été débité.
+   */
+  private async refundTargetFor(
+    tx: Pick<Transaction, 'type' | 'senderId' | 'agencyId' | 'clientId' | 'currency' | 'total' | 'amount'>,
+  ): Promise<{ walletId: string; amount: number; label: string } | null> {
+    if (REFUNDABLE_TYPES.includes(tx.type)) {
+      if (tx.agencyId) {
+        const agencyWallet = await this.prisma.wallet.findFirst({
+          where: { agencyId: tx.agencyId, currency: tx.currency, isActive: true },
+          select: { id: true },
+        });
+        if (agencyWallet) {
+          return { walletId: agencyWallet.id, amount: Number(tx.total), label: 'Remboursement annulation' };
+        }
+      }
+      const userWallet = await this.walletsService.getOrCreateWallet({ userId: tx.senderId, currency: tx.currency });
+      return { walletId: userWallet.id, amount: Number(tx.total), label: 'Remboursement annulation' };
+    }
+
+    if (tx.type === TransactionType.SERVICE_PAYMENT) {
+      const companyWallet = await this.walletsService.getOrCreateWallet({ clientId: tx.clientId, currency: tx.currency });
+      return { walletId: companyWallet.id, amount: Number(tx.amount), label: 'Remboursement annulation B2B' };
+    }
+
+    return null;
   }
 
   // ========================================================
@@ -845,7 +967,7 @@ export class TransactionsService {
     const receivedAmount  = new Prisma.Decimal(convertedAmount);
     const exchangeRate    = Number(amount) > 0 ? convertedAmount / Number(amount) : 1;
 
-    const transactionRef = this.generateReference();
+    const transactionRef = await this.uniqueReference();
     let status: TransactionStatus = TransactionStatus.PENDING;
     let paidAt: Date | null = null;
     let storedRef: string | null = transactionRef;
@@ -1040,13 +1162,14 @@ export class TransactionsService {
 
     const currency        = agencyWallet.currency as CurrencyCode;
     const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
+    const depositRef      = await this.uniqueReference(); // ✅ v4.24 : choisie AVANT de bouger l'argent
 
     await this.walletsService.debit(agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`);
     await this.walletsService.credit(clientWalletRef.id, Number(amountDec), `Dépôt agent`);
 
     const result = await this.prisma.transaction.create({
       data: {
-        reference:      this.generateReference(),
+        reference:      depositRef,
         // ✅ v4.21 — FIX (POINT 1, voir changelog en tête de fichier) :
         // sans ce champ, la transaction retombait sur le défaut Prisma
         // TransactionType.TRANSFER, indiscernable d'un vrai transfert
@@ -1065,7 +1188,7 @@ export class TransactionsService {
         agencyId:       agent.agencyId, // ✅ v4.22 — caisse mouvementée
         paidAt:         new Date(),
         providerStatus: ProviderStatus.SUCCESS,
-        providerRef:    `DEP-${Date.now()}`,
+        providerRef:    this.stampedReference('DEP'),
       },
     });
 
@@ -1182,7 +1305,7 @@ export class TransactionsService {
     await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name} (${agencyId})`);
     await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge admin → ${agency.name}`);
 
-    const txRef = `REFILL-${Date.now()}`;
+    const txRef = this.stampedReference('REFILL');
 
     await this.prisma.transaction.create({
       data: {
@@ -1375,43 +1498,51 @@ export class TransactionsService {
     assertTxTransition(tx.status, dto.status);
 
     if (dto.status === TransactionStatus.CANCELLED) {
-      const walletRef = await this.walletsService.getOrCreateWallet({
-        userId:   tx.senderId,
-        currency: tx.currency,
-      });
-      await this.walletsService.credit(
-        walletRef.id,
-        Number(tx.total),
-        `Remboursement annulation admin ${tx.reference}`,
-        id,
-      );
-
-      return this.prisma.$transaction(async (prismaTx) => {
-        const updated = await prismaTx.transaction.update({
-          where: { id },
-          data: {
-            status:         TransactionStatus.CANCELLED,
-            cancelledAt:    new Date(),
-            providerStatus: ProviderStatus.CANCELLED,
-          },
-        });
-        await prismaTx.withdrawal.updateMany({
-          where: { transactionId: id },
-          data:  { status: WithdrawalStatus.CANCELLED },
-        }); 
-        return updated;
-      });
+      // ✅ v4.24 — statut réservé + remboursement atomique, type contrôlé (voir cancelWithRefund).
+      return this.cancelWithRefund(tx);
     }
 
-    const data: Prisma.TransactionUpdateInput =
+    const data: Prisma.TransactionUpdateManyMutationInput =
       dto.status === TransactionStatus.PAID
         ? { status: TransactionStatus.PAID, paidAt: new Date(), providerStatus: ProviderStatus.SUCCESS }
         : { status: dto.status };
 
-    return this.prisma.transaction.update({ where: { id }, data });
+    // ✅ v4.24 — conditionné à l'ancien statut : deux admins (ou un admin et un agent) ne s'écrasent plus.
+    const updated = await this.prisma.transaction.updateMany({
+      where: { id, status: tx.status },
+      data,
+    });
+    if (updated.count !== 1) {
+      throw new ConflictException('Cette transaction vient d\'être modifiée : rechargez la page.');
+    }
+    return this.prisma.transaction.findUniqueOrThrow({ where: { id } });
   }
 
+  /** Code à 9 chiffres (aussi code de retrait en agence) — CSPRNG, pas Math.random(). */
   private generateReference(): string {
-    return Math.floor(100000000 + Math.random() * 900000000).toString();
+    return crypto.randomInt(100_000_000, 1_000_000_000).toString();
+  }
+
+  /**
+   * Référence libre : vérifiée AVANT tout mouvement d'argent. Reference et providerRef sont uniques :
+   * une collision après le débit ferait perdre l'argent (débit sans Transaction).
+   */
+  private async uniqueReference(): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const ref = this.generateReference();
+      const clash = await this.prisma.transaction.findFirst({
+        where: {
+          OR: [{ reference: ref }, { providerRef: ref }, { providerRef: { startsWith: `${ref}|` } }],
+        },
+        select: { id: true },
+      });
+      if (!clash) return ref;
+    }
+    throw new ServiceUnavailableException('Impossible de générer une référence unique, réessayez.');
+  }
+
+  /** `PREFIX-<horodatage>-<6 hex>` : deux opérations dans la même milliseconde ne se heurtent plus. */
+  private stampedReference(prefix: string): string {
+    return `${prefix}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   }
 }

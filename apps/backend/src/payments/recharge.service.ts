@@ -1,6 +1,11 @@
 // apps/backend/src/payments/recharge.service.ts
 // =========================================================
-// RECHARGE SERVICE v1.1 — Direct Transf'air
+// RECHARGE SERVICE v1.2 — Direct Transf'air
+// ✅ v1.2 (phase 6) : (1) creditIfNotAlready() passe par WalletsService.creditOnce() : le contrôle « déjà
+//   crédité ? » et le crédit se font sous le verrou du wallet. Avant, deux sondages simultanés de
+//   /payments/recharge/:id/status créditaient deux fois. (2) Références tirées avec crypto, suffixe
+//   aléatoire sur CARDMOCK-. ⚠️ Les recharges carte / Orange Money / Sendwave restent des simulations
+//   (voir rapport de phase 6).
 // ✅ v1.1 : rechargeByOrangeMoney prend maintenant RechargeByMobileMoneyDto
 //   (momoPhone obligatoire) — stocké dans Transaction.note, comme le
 //   fait déjà rechargeByCard avec les 4 derniers chiffres de carte.
@@ -29,6 +34,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   Prisma,
   PaymentMethod,
@@ -79,7 +85,7 @@ export class RechargeService {
         payoutMethod: PayoutMethod.WALLET,
         paymentMethod: PaymentMethod.CARD,
         providerStatus: ProviderStatus.PENDING,
-        providerRef: `CARDMOCK-${Date.now()}`,
+        providerRef: `CARDMOCK-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
         senderId: userId,
         recipientId: userId,
         clientId: user.clientId!,
@@ -183,16 +189,11 @@ export class RechargeService {
   // Idempotent : ne crédite jamais deux fois la même transaction
   // (vérifie l'absence d'une LedgerEntry déjà liée à transactionId).
   private async creditIfNotAlready(tx: Transaction): Promise<void> {
-    const alreadyCredited = await this.prisma.ledgerEntry.findFirst({
-      where: { transactionId: tx.id },
-    });
-    if (alreadyCredited) return;
-
     const walletRef = await this.walletsService.getOrCreateWallet({
       userId: tx.senderId,
       currency: tx.currency,
     });
-    await this.walletsService.credit(
+    await this.walletsService.creditOnce(
       walletRef.id,
       Number(tx.amount),
       `Recharge wallet (${tx.paymentMethod ?? 'WALLET'})`,
@@ -208,6 +209,6 @@ export class RechargeService {
   }
 
   private generateReference(): string {
-    return Math.floor(100000000 + Math.random() * 900000000).toString();
+    return crypto.randomInt(100_000_000, 1_000_000_000).toString();
   }
 }

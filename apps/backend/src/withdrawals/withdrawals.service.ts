@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.10 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.11 — Direct Transf'air
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails
 // ✅ v4.5 : listByAgent()
@@ -74,6 +74,22 @@
 //   règle exacte n'est trouvée, repli explicite sur les mêmes
 //   DEFAULT_* déjà utilisés plus bas dans ce fichier — jamais une
 //   règle non vérifiée prise au hasard.
+//
+// ✅ v4.11 (phase 6) : sécurité et cohérence du paiement en agence
+//   (1) 🚨 adminUpdateStatus() : la mise à jour se faisait par `id` seul — l'admin d'une société
+//       pouvait changer le statut d'un retrait d'une AUTRE société. Elle est maintenant limitée
+//       à la société de l'appelant (404 sinon).
+//   (2) 🚨 agentCheckCode() / agentProcessPayment() : le code était cherché parmi TOUTES les
+//       transactions de la société (dépôt, recharge, facture B2B, remise de caisse…). Un agent qui
+//       connaissait une référence quelconque (elles s'affichent dans l'historique) pouvait la
+//       « payer » et faire créditer sa caisse sans avoir remis de cash. Seuls les envois à retirer
+//       en espèces (type TRANSFER ou SCHEDULED, mode CASH_PICKUP) sont payables.
+//   (3) agentProcessPayment() : plus de repli sur une caisse d'une AUTRE devise (la caisse par défaut
+//       ou la première trouvée) — créditer des GNF avec un montant en XOF fausse la caisse. Même règle
+//       pour la caisse de l'agence d'envoi : sans caisse dans la devise, la part revient à la société.
+//   (4) create() : le code de retrait vient de crypto.randomInt (et non Math.random) et est vérifié
+//       unique avant le débit ; la demande par transactionId ne vaut que pour une transaction de
+//       l'appelant (un admin de la société reste autorisé) et ne crée plus de doublon.
 // =========================================================
 
 import {
@@ -83,7 +99,9 @@ import {
   Injectable,
   NotFoundException,
   Logger,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   Prisma,
   TransactionStatus,
@@ -94,6 +112,7 @@ import {
   AgencyType,
   CommissionSourceType,
   CommissionDestType,
+  TransactionType,
 } from '@prisma/client';
 
 import { PrismaService }  from '../prisma/prisma.service';
@@ -114,6 +133,23 @@ const DEFAULT_PLATFORM_SHARE = 40;
 
 // Seuil d'alerte solde faible agence (en devise payout)
 const LOW_BALANCE_THRESHOLD = 50_000;
+
+/** Envois payables en espèces à un guichet : TRANSFER (client / agent) et SCHEDULED (virement programmé). */
+const PAYABLE_TYPES: TransactionType[] = [TransactionType.TRANSFER, TransactionType.SCHEDULED];
+
+/** Filtre commun à agentCheckCode() et agentProcessPayment() : un code ne désigne qu'un envoi à retirer en cash. */
+function payableCodeWhere(clientId: number, cleanCode: string): Prisma.TransactionWhereInput {
+  return {
+    clientId,
+    type:         { in: PAYABLE_TYPES },
+    payoutMethod: PayoutMethod.CASH_PICKUP,
+    OR: [
+      { reference: cleanCode },
+      { providerRef: cleanCode },
+      { providerRef: { startsWith: `${cleanCode}|` } },
+    ],
+  };
+}
 
 @Injectable()
 export class WithdrawalsService {
@@ -146,6 +182,19 @@ export class WithdrawalsService {
     return tx;
   }
 
+  /** Code de retrait à 9 chiffres (CSPRNG), libre dans reference et providerRef. */
+  private async uniqueWithdrawalCode(): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const code = crypto.randomInt(100_000_000, 1_000_000_000).toString();
+      const clash = await this.prisma.transaction.findFirst({
+        where: { OR: [{ reference: code }, { providerRef: code }, { providerRef: { startsWith: `${code}|` } }] },
+        select: { id: true },
+      });
+      if (!clash) return code;
+    }
+    throw new ServiceUnavailableException('Impossible de générer un code de retrait unique, réessayez.');
+  }
+
   // =========================================================
   // CRÉATION — Demande de retrait (CLIENT)
   // =========================================================
@@ -172,9 +221,7 @@ export class WithdrawalsService {
         );
       }
 
-      const withdrawalCode = Math.floor(
-        100000000 + Math.random() * 900000000,
-      ).toString();
+      const withdrawalCode = await this.uniqueWithdrawalCode();
 
       await this.walletsService.debit(
         walletRef.id,
@@ -184,7 +231,7 @@ export class WithdrawalsService {
 
       const withdrawal = await this.prisma.$transaction(async (tx) => {
         const txData: Prisma.TransactionUncheckedCreateInput = {
-          reference:      `WD-${Date.now()}`,
+          reference:      `WD-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, // ✅ v4.11 : suffixe aléatoire (unicité)
           amount,
           fees,
           total,
@@ -240,10 +287,15 @@ export class WithdrawalsService {
       throw new BadRequestException('Montant ou TransactionId requis');
     }
 
+    const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'COMPANY_ADMIN';
     const tx = await this.prisma.transaction.findFirst({
-      where: { id: transactionId, clientId },
+      where: { id: transactionId, clientId, ...(isAdmin ? {} : { senderId: userId }) },
     });
     if (!tx) throw new NotFoundException('Transaction introuvable');
+
+    // Withdrawal.transactionId est unique : une seconde demande renvoie la première au lieu d'une erreur 500.
+    const already = await this.prisma.withdrawal.findUnique({ where: { transactionId: tx.id } });
+    if (already) return already;
 
     return this.prisma.withdrawal.create({
       data: {
@@ -264,14 +316,7 @@ export class WithdrawalsService {
     if (!cleanCode) throw new BadRequestException('Code requis');
 
     const tx = await this.prisma.transaction.findFirst({
-      where: {
-        clientId,
-        OR: [
-          { reference: cleanCode },
-          { providerRef: cleanCode },
-          { providerRef: { startsWith: `${cleanCode}|` } },
-        ],
-      },
+      where: payableCodeWhere(clientId, cleanCode), // ✅ v4.11 : envois cash uniquement
       include: { sender: true, beneficiary: true },
     });
 
@@ -313,14 +358,7 @@ export class WithdrawalsService {
 
     // ── Récupération transaction ──────────────────────────
     const tx = await this.prisma.transaction.findFirst({
-      where: {
-        clientId,
-        OR: [
-          { reference: cleanCode },
-          { providerRef: cleanCode },
-          { providerRef: { startsWith: `${cleanCode}|` } },
-        ],
-      },
+      where: payableCodeWhere(clientId, cleanCode), // ✅ v4.11 : envois cash uniquement
       include: {
         withdrawal:  true,
         sender:      { include: { agency: true } },
@@ -353,10 +391,8 @@ export class WithdrawalsService {
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId: agent.agencyId, isActive: true },
     });
-    const agencyWallet =
-      agencyWallets.find((w) => w.currency === payoutCurrency) ??
-      agencyWallets.find((w) => w.isDefault) ??
-      agencyWallets[0];
+    // ✅ v4.11 : uniquement la caisse de la devise payée (plus de repli sur une autre devise).
+    const agencyWallet = agencyWallets.find((w) => w.currency === payoutCurrency);
 
     if (!agencyWallet) {
       throw new ForbiddenException(`Wallet agence ${payoutCurrency} introuvable.`);
@@ -473,11 +509,9 @@ export class WithdrawalsService {
         const senderWallets = await this.prisma.wallet.findMany({
           where: { agencyId: senderAgencyId, isActive: true },
         });
+        // ✅ v4.11 : uniquement la caisse de la devise payée (sinon la part revient à la société, ci-dessous).
         senderAgencyWallet = (
-          senderWallets.find((w) => w.currency === payoutCurrency) ??
-          senderWallets.find((w) => (w as any).isDefault) ??
-          senderWallets[0] ??
-          null
+          senderWallets.find((w) => w.currency === payoutCurrency) ?? null
         ) as any;
 
         if (!senderAgencyWallet) {
@@ -750,9 +784,12 @@ export class WithdrawalsService {
     id:       string,
     dto:      UpdateWithdrawalStatusDto,
   ) {
-    return this.prisma.withdrawal.update({
-      where: { id },
+    // ✅ v4.11 : limité à la société de l'appelant (l'id seul ne suffit pas).
+    const updated = await this.prisma.withdrawal.updateMany({
+      where: { id, clientId },
       data:  { status: dto.status },
     });
+    if (updated.count !== 1) throw new NotFoundException('Retrait introuvable');
+    return this.prisma.withdrawal.findUniqueOrThrow({ where: { id } });
   }
 }

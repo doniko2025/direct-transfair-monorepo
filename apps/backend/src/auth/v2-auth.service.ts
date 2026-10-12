@@ -1,6 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
-// AUTH SERVICE v2.4 — Sécurité production
+// AUTH SERVICE v2.5 — Sécurité production
 //
 // ✅ v2.0 : Toutes les corrections de sécurité originales conservées
 // ✅ v2.1 : CORRECTIFS RATE LIMIT
@@ -59,6 +59,16 @@
 //     APRÈS la vérification du mot de passe (loginWithPassword) pour ne
 //     pas révéler le rôle d'un compte à un appelant non authentifié.
 //     Voir app-client.policy.ts.
+//
+// ✅ v2.5 : 🚨 FIX (phase 6) — refresh token stocké en clair
+//   buildLoginResponse() enregistrait le refresh token tel quel dans
+//   UserSession.refreshToken, alors que AuthService.refreshTokens() cherche
+//   la session par EMPREINTE SHA-256. Résultat : une session ouverte via
+//   /auth/v2/login-password (web-admin et mobile) ne pouvait jamais être
+//   renouvelée (401 « Session invalide » au bout d'une heure), et la base
+//   contenait des jetons valides en clair. On stocke maintenant l'empreinte
+//   (refresh-token.util.ts). Les sessions déjà en base (jeton en clair)
+//   restent non renouvelables : leurs utilisateurs se reconnectent une fois.
 // =========================================================
 
 import {
@@ -85,6 +95,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
+import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v2.5
 
 import type {
   LoginPasswordV2Dto,
@@ -163,9 +174,7 @@ function generateOtp(length: number = OTP_LENGTH): string {
   return String(crypto.randomInt(min, max));
 }
 
-function generateRefreshToken(): string {
-  return crypto.randomBytes(48).toString('hex');
-}
+// ✅ v2.5 : generateRefreshToken() / hashRefreshToken() viennent de refresh-token.util.ts
 
 function normalizeEmail(email: string): string {
   return (email ?? '').trim().toLowerCase();
@@ -914,7 +923,7 @@ export class V2AuthService {
         data: {
           userId:                user.id,
           token:                 accessToken,
-          refreshToken,
+          refreshToken:          hashRefreshToken(refreshToken), // ✅ v2.5 : empreinte, jamais le jeton en clair
           refreshTokenExpiresAt: expiresAt,
           expiresAt,
           status:                'ACTIVE',

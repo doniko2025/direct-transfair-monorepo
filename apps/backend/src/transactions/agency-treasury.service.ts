@@ -1,6 +1,6 @@
 // apps/backend/src/transactions/agency-treasury.service.ts
 // =========================================================
-// AGENCY TREASURY SERVICE v1.0 — Direct Transf'air
+// AGENCY TREASURY SERVICE v1.2 — Direct Transf'air
 // Fichier indépendant — AUCUNE ligne de transactions.service.ts,
 // wallets.service.ts ou ailleurs n'est modifiée par ce fichier.
 //
@@ -44,6 +44,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
   CurrencyCode,
   Prisma,
@@ -138,8 +139,11 @@ export class AgencyTreasuryService {
       );
     }
 
+    // ✅ v1.2 (phase 6) : suffixe aléatoire — deux opérations dans la même milliseconde
+    // (même agence ou non) se heurtaient à la contrainte d'unicité APRÈS le transfert d'argent.
+    const stamp = `${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
     const reference =
-      type === TransactionType.AGENCY_REMITTANCE ? `REMIT-${Date.now()}` : `COLL-${Date.now()}`;
+      type === TransactionType.AGENCY_REMITTANCE ? `REMIT-${stamp}` : `COLL-${stamp}`;
 
     const description =
       note?.trim() ||

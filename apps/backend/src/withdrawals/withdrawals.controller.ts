@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.controller.ts
 // =========================================================
-// WITHDRAWALS CONTROLLER v4.6 — Direct Transf'air
+// WITHDRAWALS CONTROLLER v4.7 — Direct Transf'air
 // ✅ v4.4 : routes agent/check + agent/pay
 // ✅ v4.5 :
 //    - GET /withdrawals       → route manquante ajoutée (causait le 404)
@@ -22,6 +22,10 @@
 //   chaîne réellement utilisée partout ailleurs dans l'app (voir
 //   agentCheckCode/agentProcessPayment plus bas dans ce même fichier,
 //   qui utilisaient déjà les bonnes chaînes).
+//
+// ✅ v4.7 (phase 6) : agent/check et agent/pay limités à 20 requêtes / minute / IP
+//   (avant : 100/min comme toutes les routes). Le code de retrait a 9 chiffres :
+//   un guichet honnête n'en vérifie pas plus de quelques-uns par minute.
 // =========================================================
 
 import {
@@ -35,6 +39,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { WithdrawalsService }        from './withdrawals.service';
@@ -104,6 +109,7 @@ export class WithdrawalsController {
   }
 
   // ── AGENT : Vérifier un code de retrait ──────────────────
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('withdrawals/agent/check')
   async agentCheckCode(@Req() req: ReqWithAuth, @Body('code') code: string) {
     const clientId = req.tenantContext?.clientId;
@@ -117,6 +123,7 @@ export class WithdrawalsController {
   }
 
   // ── AGENT : Valider le paiement (Cash-Out) ───────────────
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('withdrawals/agent/pay')
   async agentProcessPayment(@Req() req: ReqWithAuth, @Body('code') code: string) {
     const clientId = req.tenantContext?.clientId;

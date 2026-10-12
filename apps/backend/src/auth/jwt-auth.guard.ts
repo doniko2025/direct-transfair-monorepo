@@ -1,6 +1,6 @@
 // apps/backend/src/auth/jwt-auth.guard.ts
 // =========================================================
-// JWT AUTH GUARD v4.2
+// JWT AUTH GUARD v4.3
 // ✅ v4.1 : Fix "Tenant mismatch" sur Railway :
 //    - tenantClientId=0 (multi-db mode) → bypass le check
 //    - tenantClientId=-1 (non résolu) → bypass le check
@@ -48,6 +48,16 @@
 //   Redis ou équivalent) sur ce lookup plutôt qu'un retour en arrière
 //   complet — non implémenté ici faute de infrastructure de cache
 //   confirmée disponible dans ce projet.
+//
+// ✅ v4.3 : 🚨 FIX SÉCURITÉ (phase 6) — rôle et société lus en base
+//   req.user.role et req.user.clientId venaient du JWT. Un compte rétrogradé
+//   (ex. COMPANY_ADMIN → USER) ou déplacé vers une autre société gardait donc
+//   ses anciens droits jusqu'à l'expiration du token (1 h). Le lookup v4.2
+//   lisait déjà le rôle en base mais ne s'en servait que pour l'exemption
+//   « société désactivée ». Maintenant role et clientId de req.user sont ceux
+//   de la base, et le contournement du matching tenant (SUPER_ADMIN) se
+//   décide sur le rôle réel. Les tokens ne changent pas (aucune
+//   reconnexion nécessaire) ; agencyId reste celui du JWT (inchangé).
 // =========================================================
 
 import {
@@ -152,6 +162,7 @@ export class JwtAuthGuard implements CanActivate {
           deletedAt:   true,
           isSuspended: true,
           role:        true,
+          clientId:    true, // ✅ v4.3
           client:      { select: { isActive: true } },
         },
       });
@@ -176,10 +187,15 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
 
+      // ✅ v4.3 — rôle et société réels (base), plus ceux du token.
+      req.user.role = dbUser.role;
+      req.user.clientId =
+        typeof dbUser.clientId === 'number' ? dbUser.clientId : undefined;
+
       // ✅ SUPER_ADMIN — bypass total du matching tenant (inchangé).
       // Passe désormais par les vérifications deletedAt/isSuspended
       // ci-dessus comme tout le monde, avant ce bypass.
-      if (payload.role === 'SUPER_ADMIN') return true;
+      if (dbUser.role === 'SUPER_ADMIN') return true;
 
       // ✅ Tenant matching
       const tenantClientId = req.tenantContext?.clientId;
@@ -193,17 +209,17 @@ export class JwtAuthGuard implements CanActivate {
         typeof tenantClientId === 'number' &&
         tenantClientId > 0
       ) {
-        if (typeof clientId !== 'number') {
+        if (typeof req.user.clientId !== 'number') {
           throw new UnauthorizedException('Invalid token: missing clientId');
         }
 
-        if (clientId !== tenantClientId) {
+        if (req.user.clientId !== tenantClientId) {
           // ✅ Log détaillé pour debug Railway (ne pas laisser en prod silencieux)
           console.error(
-            `[JwtAuthGuard] Tenant mismatch — JWT clientId=${clientId} vs tenant clientId=${tenantClientId} | role=${payload.role} | userId=${id}`,
+            `[JwtAuthGuard] Tenant mismatch — clientId=${req.user.clientId} vs tenant clientId=${tenantClientId} | role=${dbUser.role} | userId=${id}`,
           );
           throw new UnauthorizedException(
-            `Tenant mismatch (token clientId=${clientId}, tenant clientId=${tenantClientId}). ` +
+            `Tenant mismatch (token clientId=${req.user.clientId}, tenant clientId=${tenantClientId}). ` +
             `Reconnectez-vous pour obtenir un nouveau token.`,
           );
         }

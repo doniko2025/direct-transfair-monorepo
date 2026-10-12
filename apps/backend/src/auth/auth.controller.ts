@@ -55,9 +55,8 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
     @Headers('x-tenant-id') tenantId: string | undefined,
-    @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
   ) {
-    return this.authService.register(dto, tenantId ?? null, appClient ?? null);
+    return this.authService.register(dto, tenantId ?? null);
   }
 
   // ========================================================

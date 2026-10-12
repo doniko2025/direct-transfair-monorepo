@@ -1,6 +1,6 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.4
+// WALLETS SERVICE v5.5
 // ✅ FIX v5.2 : getOrCreateWallet — agencyId est un CUID string,
 //    ne jamais faire parseInt() dessus
 // ✅ FIX v5.2 : getOrCreateWallet — support agencyId comme clé propre
@@ -38,6 +38,14 @@
 //   un besoin actuel d'un wallet utilisable, la réactivation est donc
 //   le comportement le plus cohérent (et la seule alternative valide,
 //   la création d'un doublon étant de toute façon impossible).
+//
+// ✅ v5.5 (phase 6) : creditInTx() / debitInTx() / creditOnce()
+//   debit() et credit() ouvrent leur propre $transaction : impossible de les
+//   rendre atomiques avec un changement de statut de Transaction (annulation,
+//   validation B2B…). creditInTx/debitInTx font exactement le même travail
+//   (verrou, contrôle, mise à jour, ligne de ledger) sur un client Prisma
+//   DÉJÀ ouvert par l'appelant ; debit() et credit() les appellent, leur
+//   comportement ne change pas. creditOnce() = crédit idempotent par (wallet, transaction), sous verrou.
 // =========================================================
 
 import {
@@ -281,42 +289,53 @@ export class WalletsService {
     description: string,
     transactionId?: string,
   ) {
+    return this.prisma.$transaction((tx) =>
+      this.debitInTx(tx, walletId, amount, description, transactionId),
+    );
+  }
+
+  /** Débit sur un client Prisma déjà ouvert (atomique avec le reste de l'appelant). */
+  async debitInTx(
+    tx: Prisma.TransactionClient,
+    walletId: string,
+    amount: number,
+    description: string,
+    transactionId?: string,
+  ) {
     if (amount <= 0) throw new BadRequestException('Montant invalide');
 
-    return this.prisma.$transaction(async (tx) => {
-      await this.lockWallet(tx, walletId);
+    await this.lockWallet(tx, walletId);
 
-      const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
-      if (!wallet) throw new NotFoundException('Wallet introuvable');
+    const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
+    if (!wallet) throw new NotFoundException('Wallet introuvable');
 
-      const amt       = new Prisma.Decimal(amount);
-      const available = wallet.balance.minus(wallet.reservedBalance);
+    const amt       = new Prisma.Decimal(amount);
+    const available = wallet.balance.minus(wallet.reservedBalance);
 
-      if (available.lessThan(amt)) {
-        throw new BadRequestException(
-          `Solde insuffisant: ${available} ${wallet.currency}`,
-        );
-      }
+    if (available.lessThan(amt)) {
+      throw new BadRequestException(
+        `Solde insuffisant: ${available} ${wallet.currency}`,
+      );
+    }
 
-      const updated = await tx.wallet.update({
-        where: { id: walletId },
-        data:  { balance: { decrement: amt } },
-      });
-
-      await tx.ledgerEntry.create({
-        data: {
-          walletId,
-          type: 'DEBIT',
-          amount: amt,
-          currency: wallet.currency,
-          description,
-          transactionId,
-          balanceAfter: updated.balance,
-        },
-      });
-
-      return this.serialize(updated);
+    const updated = await tx.wallet.update({
+      where: { id: walletId },
+      data:  { balance: { decrement: amt } },
     });
+
+    await tx.ledgerEntry.create({
+      data: {
+        walletId,
+        type: 'DEBIT',
+        amount: amt,
+        currency: wallet.currency,
+        description,
+        transactionId,
+        balanceAfter: updated.balance,
+      },
+    });
+
+    return this.serialize(updated);
   }
 
   // ========================================================
@@ -329,34 +348,71 @@ export class WalletsService {
     description: string,
     transactionId?: string,
   ) {
+    return this.prisma.$transaction((tx) =>
+      this.creditInTx(tx, walletId, amount, description, transactionId),
+    );
+  }
+
+  /** Crédit sur un client Prisma déjà ouvert (atomique avec le reste de l'appelant). */
+  async creditInTx(
+    tx: Prisma.TransactionClient,
+    walletId: string,
+    amount: number,
+    description: string,
+    transactionId?: string,
+  ) {
     if (amount <= 0) throw new BadRequestException('Montant invalide');
 
+    await this.lockWallet(tx, walletId);
+
+    const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
+    if (!wallet) throw new NotFoundException('Wallet introuvable');
+
+    const amt = new Prisma.Decimal(amount);
+
+    const updated = await tx.wallet.update({
+      where: { id: walletId },
+      data:  { balance: { increment: amt } },
+    });
+
+    await tx.ledgerEntry.create({
+      data: {
+        walletId,
+        type: 'CREDIT',
+        amount: amt,
+        currency: wallet.currency,
+        description,
+        transactionId,
+        balanceAfter: updated.balance,
+      },
+    });
+
+    return this.serialize(updated);
+  }
+
+  /**
+   * Crédit idempotent : ne crédite JAMAIS deux fois la même transaction sur ce wallet.
+   * Le contrôle « déjà crédité ? » et le crédit sont faits sous le verrou du wallet, dans la même
+   * transaction SQL : deux appels simultanés (double sondage du mobile) ne créditent qu'une fois.
+   * Renvoie false si le crédit existait déjà.
+   */
+  async creditOnce(
+    walletId: string,
+    amount: number,
+    description: string,
+    transactionId: string,
+  ): Promise<boolean> {
     return this.prisma.$transaction(async (tx) => {
       await this.lockWallet(tx, walletId);
 
-      const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
-      if (!wallet) throw new NotFoundException('Wallet introuvable');
-
-      const amt = new Prisma.Decimal(amount);
-
-      const updated = await tx.wallet.update({
-        where: { id: walletId },
-        data:  { balance: { increment: amt } },
+      const already = await tx.ledgerEntry.findFirst({
+        where:  { walletId, transactionId, type: 'CREDIT' },
+        select: { id: true },
       });
+      if (already) return false;
 
-      await tx.ledgerEntry.create({
-        data: {
-          walletId,
-          type: 'CREDIT',
-          amount: amt,
-          currency: wallet.currency,
-          description,
-          transactionId,
-          balanceAfter: updated.balance,
-        },
-      });
-
-      return this.serialize(updated);
+      await this.creditInTx(tx, walletId, amount, description, transactionId);
+      return true;
     });
   }
 
