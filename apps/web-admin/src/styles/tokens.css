@@ -1,0 +1,54 @@
+/* =========================================================
+   TOKENS
+   Surfaces neutres, légèrement verdies : l'identité visuelle d'un portail
+   vient de la couleur de la société (--brand / --accent), injectée au
+   démarrage par lib/branding.ts. Rien d'autre ne porte de couleur de marque.
+   ========================================================= */
+
+:root {
+  /* Marque — remplacées par le branding de la société */
+  --brand: #0b7a5b;
+  --brand-ink: #ffffff;
+  --accent: #f7931e;
+  --accent-ink: #14221e;
+
+  /* Dérivées */
+  --brand-deep: color-mix(in oklab, var(--brand) 74%, black);
+  --brand-soft: color-mix(in oklab, var(--brand) 9%, white);
+  --brand-mid: color-mix(in oklab, var(--brand) 24%, white);
+
+  /* Encre et surfaces */
+  --ink: #14221e;
+  --ink-2: #4b5b55;
+  --ink-3: #7b8a84;
+  --paper: #f2f5f3;
+  --card: #ffffff;
+  --line: #d9e1dc;
+  --line-soft: #e8eeea;
+
+  /* États */
+  --ok: #12683f;
+  --warn: #7a4b00;
+  --danger: #8f1f19;
+
+  /* Typographie : une seule famille, la largeur (wdth) fait la hiérarchie */
+  --font: 'Bricolage Grotesque', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    sans-serif;
+  --t-sm: 0.875rem;
+  --t-md: 0.9375rem;
+  --t-lg: 1.125rem;
+  --t-xl: 1.5rem;
+  --t-2xl: clamp(1.65rem, 3vw, 2.1rem);
+  --t-3xl: clamp(2rem, 4vw, 2.9rem);
+
+  /* Rayons : trois niveaux, du plus grand (cartes) au plus fin (champs) */
+  --r-lg: 22px;
+  --r-md: 14px;
+  --r-sm: 11px;
+
+  /* Ombres teintées vert-encre, trois altitudes */
+  --sh-1: 0 1px 2px rgba(20, 42, 34, 0.06), 0 6px 18px -8px rgba(20, 42, 34, 0.12);
+  --sh-2: 0 2px 4px rgba(20, 42, 34, 0.05), 0 22px 44px -20px rgba(20, 42, 34, 0.26);
+
+  --sidebar-w: 276px;
+}

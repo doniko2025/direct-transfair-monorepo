@@ -1,0 +1,163 @@
+/* =========================================================
+   TAUX DE CHANGE — cartes par couple, édition, historique
+   ========================================================= */
+
+.rate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+  list-style: none;
+}
+
+.rate-card {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.rate-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.rate-card__title {
+  font-size: var(--t-lg);
+  letter-spacing: 0.02em;
+}
+
+.rate-card .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.rate-card__names {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.rate-card__rate {
+  margin-top: 6px;
+  font-size: clamp(1.3rem, 1.15rem + 0.6vw, 1.65rem);
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.rate-card__inverse {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-card__hint {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.rate-card__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--warn) 9%, white);
+  color: var(--warn);
+  font-size: var(--t-sm);
+}
+
+.rate-card__alert svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.rate-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 4px;
+  font-size: var(--t-sm);
+}
+
+.rate-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-top: 10px;
+}
+
+/* ─── Boîte d'édition ──────────────────────────────────── */
+.rate-now {
+  color: var(--ink-2);
+}
+
+.rate-now strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-preview {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.rate-preview p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+
+.rate-preview strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-preview__warn {
+  color: var(--warn);
+}
+
+.rate-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--warn);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--warn) 7%, white);
+  color: var(--warn);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rate-confirm input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  accent-color: var(--warn);
+}
+
+/* ─── Historique ───────────────────────────────────────── */
+.rate-history-item {
+  justify-content: flex-start;
+}
+
+.rate-history-item .ledger-item__main {
+  flex: 1 1 240px;
+}

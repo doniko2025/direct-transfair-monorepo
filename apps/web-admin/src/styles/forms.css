@@ -1,0 +1,214 @@
+/* =========================================================
+   FORMULAIRES — compléments de components.css (liste, zone de texte,
+   couleur, erreurs, boîte de confirmation, section éditable)
+   ========================================================= */
+
+.field select,
+.field textarea {
+  width: 100%;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field select {
+  height: 50px;
+  padding: 0 42px 0 15px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.field textarea {
+  min-height: 92px;
+  padding: 12px 15px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.field select:hover,
+.field textarea:hover {
+  border-color: color-mix(in oklab, var(--brand) 35%, var(--line));
+}
+
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-mid);
+}
+
+.field__control--select::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 17px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--ink-2);
+  border-bottom: 2px solid var(--ink-2);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
+/* Erreur de validation : bordure + message, jamais la couleur seule */
+.field [aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field [aria-invalid='true']:focus {
+  box-shadow: 0 0 0 4px #f6d4d1;
+}
+
+.field__error {
+  color: var(--danger);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+/* Couleur : code hexadécimal + pastille native */
+.color-field {
+  display: flex;
+  gap: 10px;
+}
+
+.color-field input:not([type='color']) {
+  flex: 1;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+.color-field__picker {
+  flex: none;
+  width: 50px;
+  height: 50px;
+  padding: 4px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  cursor: pointer;
+}
+
+/* Bouton « copier » */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.copy-btn:hover {
+  border-color: var(--brand);
+  color: var(--brand-deep);
+}
+
+/* Danger */
+.btn--danger {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 10px 20px -12px var(--danger);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 88%, black);
+}
+
+.btn--danger-outline {
+  color: var(--danger);
+  border-color: color-mix(in oklab, var(--danger) 35%, white);
+}
+
+.btn--danger-outline:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Boîte de confirmation */
+.dialog {
+  width: min(92vw, 480px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 30px 80px -20px rgba(20, 42, 34, 0.5);
+}
+
+.dialog::backdrop {
+  background: rgba(20, 34, 30, 0.45);
+}
+
+.dialog__body {
+  display: grid;
+  gap: 16px;
+  padding: 28px;
+}
+
+.dialog__body h2 {
+  font-size: var(--t-xl);
+}
+
+.dialog__content {
+  display: grid;
+  gap: 14px;
+  color: var(--ink-2);
+}
+
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Grille de formulaire : 2 colonnes, 1 sur mobile */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+  margin-top: 6px;
+}
+
+.form-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.form-actions--start {
+  justify-content: flex-start;
+}
+
+@media (max-width: 640px) {
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dialog__body {
+    padding: 22px 20px;
+  }
+
+  .dialog__actions .btn {
+    flex: 1;
+  }
+}
+
+/* Un lien stylé en bouton ne se souligne pas */
+a.btn {
+  text-decoration: none;
+}

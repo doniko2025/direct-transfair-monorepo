@@ -1,0 +1,147 @@
+/* ─── Connexion ────────────────────────────────────────────
+   Un panneau à la couleur de la société, orné d'une rosace de guilloché
+   (le motif de sécurité des billets) qui se trace une fois à l'ouverture. */
+.login {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  min-height: 100dvh;
+}
+
+.login__brand {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 56px;
+  overflow: hidden;
+  background: var(--brand-deep);
+  color: #fff;
+}
+
+.login__brand .brand-mark--monogram {
+  background: #fff;
+  color: var(--brand-deep);
+}
+
+.login__rosette {
+  position: absolute;
+  top: -20%;
+  right: -26%;
+  width: min(125%, 880px);
+  aspect-ratio: 1;
+}
+
+.rosette path {
+  stroke: rgba(255, 255, 255, 0.24);
+  stroke-width: 0.7;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: rosette-draw 2.4s cubic-bezier(0.22, 0.7, 0.2, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 34ms);
+}
+
+.rosette path:nth-child(9n) {
+  stroke: color-mix(in oklab, var(--accent) 78%, transparent);
+  stroke-width: 0.9;
+}
+
+@keyframes rosette-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.login__brand-inner {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  max-width: 32rem;
+}
+
+.login__brand h1 {
+  font-size: clamp(2.2rem, 4.6vw, 3.6rem);
+  font-weight: 750;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+}
+
+.login__brand p {
+  max-width: 30ch;
+  font-size: var(--t-lg);
+  line-height: 1.5;
+  opacity: 0.86;
+}
+
+.login__panel {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.login__card {
+  width: min(100%, 430px);
+  padding: 34px 32px;
+  border-radius: 26px;
+  box-shadow: var(--sh-2);
+}
+
+.login__form {
+  display: grid;
+  gap: 18px;
+}
+
+.login__heading h2 {
+  font-size: 1.75rem;
+}
+
+.login__heading p {
+  margin-top: 6px;
+  color: var(--ink-2);
+}
+
+.login__links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.login__footnote {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .login {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+  }
+
+  .login__brand {
+    padding: 30px 24px 56px;
+  }
+
+  .login__rosette {
+    top: -60%;
+    right: -40%;
+    width: 560px;
+  }
+
+  .login__brand h1 {
+    font-size: 2rem;
+  }
+
+  .login__brand p {
+    font-size: var(--t-md);
+  }
+
+  .login__panel {
+    align-items: start;
+    margin-top: -28px;
+    padding: 0 16px 32px;
+  }
+
+  .login__card {
+    padding: 28px 22px;
+  }
+}

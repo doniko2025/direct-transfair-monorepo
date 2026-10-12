@@ -19,6 +19,8 @@
 
     "dev:mobile": "pnpm --filter direct-transfair-mobile start",
 
+    "dev:web-admin": "pnpm --filter direct-transfair-web-admin dev",
+
     "db:up": "docker compose up -d",
 
     "db:down": "docker compose down -v",
@@ -30,6 +32,10 @@
     "db:reset": "pnpm prisma:migrate && pnpm prisma:seed",
 
     "build:backend": "pnpm --filter direct-transfair-backend build",
+
+    "build:web-admin": "pnpm --filter direct-transfair-web-admin build",
+
+    "typecheck:web-admin": "pnpm --filter direct-transfair-web-admin typecheck && pnpm --filter @direct-transfair/shared typecheck",
 
     "start:backend:prod": "pnpm --filter direct-transfair-backend start:prod"
   },

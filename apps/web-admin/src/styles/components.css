@@ -1,0 +1,405 @@
+/* ─── Cartes ─────────────────────────────────────────────
+   "raised" : grande carte blanche portée par une ombre.
+   "flat"   : carte secondaire, teintée, sans ombre, rayon plus fin. */
+.card {
+  background: var(--card);
+  border-radius: var(--r-lg);
+  padding: 26px 28px;
+}
+
+.card--raised {
+  box-shadow: var(--sh-1);
+}
+
+.card--flat {
+  background: color-mix(in oklab, var(--brand) 6%, white);
+  border-radius: var(--r-md);
+  padding: 20px 22px;
+}
+
+.card-title {
+  font-size: var(--t-lg);
+  margin-bottom: 8px;
+}
+
+.card-actions {
+  margin-top: 16px;
+}
+
+/* ─── Boutons ──────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 0 20px;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--block {
+  width: 100%;
+}
+
+.btn--primary {
+  background: var(--brand);
+  color: var(--brand-ink);
+  box-shadow: 0 10px 20px -12px var(--brand);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--brand) 90%, black);
+}
+
+.btn--secondary {
+  background: #fff;
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.btn--secondary:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand-deep);
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--brand-deep);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  background: var(--brand-soft);
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.icon-btn--quiet {
+  width: 36px;
+  height: 36px;
+}
+
+.link-btn {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--brand-deep);
+  font-weight: 600;
+  cursor: pointer;
+  text-underline-offset: 3px;
+}
+
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+
+/* ─── Champs ───────────────────────────────────────────── */
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+.field label {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
+.field__control {
+  position: relative;
+}
+
+.field input {
+  width: 100%;
+  height: 50px;
+  padding: 0 15px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  background: #fff;
+  color: var(--ink);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.field input::placeholder {
+  color: var(--ink-3);
+}
+
+.field input:hover {
+  border-color: color-mix(in oklab, var(--brand) 35%, var(--line));
+}
+
+.field input:focus {
+  outline: none;
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px var(--brand-mid);
+}
+
+.field__control:has(.field__trailing) input {
+  padding-right: 54px;
+}
+
+.field__trailing {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  transform: translateY(-50%);
+}
+
+.field__hint {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+/* ─── Pastilles ────────────────────────────────────────── */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: #e9efec;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill--brand {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.pill--ok {
+  background: #e1f3e9;
+  color: var(--ok);
+}
+
+.pill--warn {
+  background: #fdefd2;
+  color: var(--warn);
+}
+
+/* ─── Messages ─────────────────────────────────────────── */
+.notice {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 11px;
+  align-items: start;
+  padding: 13px 15px;
+  border-radius: var(--r-sm);
+  font-size: var(--t-sm);
+}
+
+.notice svg {
+  margin-top: 2px;
+}
+
+.notice__body {
+  display: grid;
+  gap: 3px;
+}
+
+.notice__action {
+  margin-top: 4px;
+}
+
+.notice--info {
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.notice--ok {
+  background: #e1f3e9;
+  color: var(--ok);
+}
+
+.notice--error {
+  background: #fcebe9;
+  color: var(--danger);
+}
+
+/* ─── Chargement ───────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border: 3px solid var(--brand-mid);
+  border-top-color: var(--brand);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner--inline {
+  width: 17px;
+  height: 17px;
+  border-width: 2.5px;
+  border-color: color-mix(in oklab, currentColor 30%, transparent);
+  border-top-color: currentColor;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ─── En-tête de page ──────────────────────────────────── */
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.page-header h1 {
+  font-size: var(--t-2xl);
+}
+
+.page-header p {
+  max-width: 62ch;
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+
+/* ─── Écrans d'état plein cadre ────────────────────────── */
+.screen-state {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px;
+}
+
+.screen-state__card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 460px);
+  box-shadow: var(--sh-2);
+}
+
+.screen-state__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.screen-state__card h1 {
+  font-size: var(--t-xl);
+}
+
+.screen-state__body {
+  display: grid;
+  gap: 8px;
+  color: var(--ink-2);
+}
+
+.screen-state__actions {
+  margin-top: 6px;
+}
+
+.loading-screen {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  color: var(--ink-2);
+}
+
+/* ─── Liste clé / valeur (jamais de tableau) ───────────── */
+.kv__row {
+  display: grid;
+  grid-template-columns: minmax(110px, 36%) 1fr;
+  gap: 12px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.kv__row:first-child {
+  border-top: 0;
+}
+
+.kv dt {
+  color: var(--ink-2);
+}
+
+.kv dd {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.kv__pills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kv--compact .kv__row {
+  padding: 8px 0;
+  border-color: color-mix(in oklab, var(--brand) 12%, white);
+}
+
+@media (max-width: 520px) {
+  .kv__row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* ─── Marque ───────────────────────────────────────────── */
+.brand-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 28%;
+}
+
+.brand-mark--logo {
+  object-fit: contain;
+  background: #fff;
+}
+
+.brand-mark--monogram {
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-weight: 800;
+  font-stretch: 90%;
+  font-size: 1.15rem;
+}

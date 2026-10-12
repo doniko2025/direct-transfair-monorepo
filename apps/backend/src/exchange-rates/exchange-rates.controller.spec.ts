@@ -3,6 +3,7 @@
 import { Test, TestingModule }     from '@nestjs/testing';
 import { ExchangeRatesController } from './exchange-rates.controller';
 import { ExchangeRatesService }    from './exchange-rates.service';
+import { JwtAuthGuard }            from '../auth/jwt-auth.guard';
 
 describe('ExchangeRatesController', () => {
   let controller: ExchangeRatesController;
@@ -19,7 +20,12 @@ describe('ExchangeRatesController', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ExchangeRatesController],
       providers:   [{ provide: ExchangeRatesService, useValue: mockService }],
-    }).compile();
+    })
+      // La garde JWT a ses propres dépendances (JwtService, Prisma) : on la neutralise ici,
+      // son comportement est couvert par les tests d'intégration de l'authentification.
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     controller = module.get<ExchangeRatesController>(ExchangeRatesController);
     jest.clearAllMocks();
@@ -48,5 +54,20 @@ describe('ExchangeRatesController', () => {
   it('update() appelle upsert avec la paire et le taux', async () => {
     await controller.update('EUR_XOF', { rate: 660 });
     expect(mockService.upsert).toHaveBeenCalledWith('EUR_XOF', 660);
+  });
+
+  it('update() normalise la paire (EUR/XOF → EUR_XOF)', async () => {
+    await controller.update('eur/xof', { rate: 660 });
+    expect(mockService.upsert).toHaveBeenCalledWith('EUR_XOF', 660);
+  });
+
+  it.each([0, -5, NaN, Infinity, 'abc', null, undefined, 1e12])('update() refuse le taux %p', (rate) => {
+    expect(() => controller.update('EUR_XOF', { rate: rate as number })).toThrow();
+    expect(mockService.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each(['EUR_EUR', 'EUR_JPY', 'foo', ''])('update() refuse la paire %p', (pair) => {
+    expect(() => controller.update(pair, { rate: 1 })).toThrow();
+    expect(mockService.upsert).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,15 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v4.6
+// APP MODULE v4.9
+// ✅ v4.9 : RatesAdminModule — /rates-admin (taux de change : liste, historique,
+//   enregistrement réservé au super admin avec sens inverse, historique et audit).
+//   Les anciennes routes d'écriture POST /rates et PATCH /exchange-rates/:pair
+//   sont désormais protégées (voir leurs contrôleurs).
+// ✅ v4.8 : SupervisionModule — /supervision/overview|audit-logs|alerts.
+//   Le mobile appelait /audit-logs et /alerts qui n'existaient pas.
+// ✅ v4.7 : correctif rate limiting — les throttlers nommés `auth` (5/min) et
+//   `otp` (10/h) s'appliquaient à toutes les routes (429 « Trop de tentatives »
+//   après quelques requêtes). Config déplacée dans common/throttle.config.ts.
 // ✅ v4.4 : exclusion auth/v2/(.*) du TenantMiddleware
 // ✅ v4.5 : ThrottlerModule global — rate limiting par IP
 //   Prérequis : npm install @nestjs/throttler
@@ -54,7 +63,10 @@ import { ScheduledTransfersModule } from './scheduled-transfers/scheduled-transf
 import { RateAlertsModule }         from './rate-alerts/rate-alerts.module';
 import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
+import { SupervisionModule }        from './supervision/supervision.module'; // ✅ v4.8
+import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // ✅ v4.9
 
+import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
 import { ExchangeRatesController } from './exchange-rates/exchange-rates.controller';
 import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service';
@@ -65,23 +77,10 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     ScheduleModule.forRoot(),
 
     // ✅ v4.5 : Rate limiting global par IP
-    ThrottlerModule.forRoot([
-      {
-        name:  'default',
-        ttl:   60_000,   // 1 minute
-        limit: 100,      // 100 req/min → APIs standard
-      },
-      {
-        name:  'auth',
-        ttl:   60_000,   // 1 minute
-        limit: 5,        // 5 req/min → login, register (voir v2-auth.controller.ts)
-      },
-      {
-        name:  'otp',
-        ttl:   3_600_000, // 1 heure
-        limit: 10,        // 10/h → envoi OTP (couche IP en plus du rate limit service)
-      },
-    ]),
+    // ✅ v4.7 : `auth` et `otp` ne s'appliquent plus qu'aux routes qui les demandent
+    //   (@Throttle) — avant, ils limitaient TOUTES les routes à 5/min et 10/h.
+    //   Voir common/throttle.config.ts.
+    ThrottlerModule.forRoot(THROTTLERS),
 
     PrismaModule,
     PlatformModule,
@@ -107,6 +106,8 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     RateAlertsModule,
     LimitsModule,
     LocationsModule,
+    SupervisionModule, // ✅ v4.8 — /supervision/* (audit, alertes, santé)
+    RatesAdminModule,  // ✅ v4.9 — /rates-admin/* (administration des taux)
   ],
 
   controllers: [ExchangeRatesController],

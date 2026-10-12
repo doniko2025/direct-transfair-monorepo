@@ -1,0 +1,82 @@
+/* ─── Tableau de bord ──────────────────────────────────── */
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.dashboard__side {
+  display: grid;
+  gap: 18px;
+}
+
+.hero {
+  position: relative;
+  padding: 38px 36px 34px;
+  overflow: hidden;
+  box-shadow: var(--sh-2);
+}
+
+.hero > *:not(.hero__rosette) {
+  position: relative;
+}
+
+.hero h1 {
+  font-size: var(--t-3xl);
+}
+
+.hero__role {
+  max-width: 44ch;
+  margin-top: 14px;
+  font-size: var(--t-lg);
+}
+
+.hero__note {
+  max-width: 50ch;
+  margin-top: 16px;
+  color: var(--ink-2);
+}
+
+.hero__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 26px;
+}
+
+/* La même rosace que sur la page de connexion, mais immobile et très discrète. */
+.hero__rosette {
+  position: absolute;
+  right: -90px;
+  bottom: -150px;
+  width: 380px;
+  aspect-ratio: 1;
+  pointer-events: none;
+}
+
+.hero__rosette path {
+  animation: none;
+  stroke: color-mix(in oklab, var(--brand) 16%, transparent);
+  stroke-dashoffset: 0;
+}
+
+.hero__rosette path:nth-child(9n) {
+  stroke: color-mix(in oklab, var(--accent) 34%, transparent);
+}
+
+@media (max-width: 1060px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .hero {
+    padding: 28px 22px 26px;
+  }
+
+  .card {
+    padding: 22px 20px;
+  }
+}

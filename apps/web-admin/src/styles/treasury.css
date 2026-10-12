@@ -1,0 +1,342 @@
+/* =========================================================
+   TRÉSORERIE — soldes, opérations, caisses d'agence, virements, mouvements
+   ========================================================= */
+
+.tr-stack {
+  display: grid;
+  gap: 34px;
+  margin-top: 14px;
+}
+
+.tr-section {
+  display: grid;
+  gap: 16px;
+}
+
+.tr-section__head h2 {
+  font-size: var(--t-xl);
+}
+
+.tr-section__head p {
+  margin-top: 2px;
+  color: var(--ink-2);
+}
+
+.empty--compact {
+  padding: 36px 24px;
+}
+
+.empty h3 {
+  font-size: var(--t-lg);
+}
+
+/* ─── Soldes ───────────────────────────────────────────── */
+.balance-grid,
+.op-grid,
+.agency-grid,
+.pay-grid {
+  display: grid;
+  gap: 14px;
+  list-style: none;
+}
+
+.balance-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+}
+
+.balance-card {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.balance-card__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.balance-card__cur {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.balance-card__amount {
+  font-size: clamp(1.35rem, 1.2rem + 0.6vw, 1.75rem);
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.balance-card__sub,
+.balance-card__today {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.balance-card__today {
+  color: var(--ink-3);
+}
+
+.balance-card__link {
+  margin-top: 8px;
+  width: fit-content;
+}
+
+/* ─── Opérations ───────────────────────────────────────── */
+.op-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+}
+
+.op-tile {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  padding: 18px 20px;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.op-tile:hover:not(:disabled) {
+  box-shadow: var(--sh-2);
+  transform: translateY(-2px);
+}
+
+.op-tile:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.op-tile__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.op-tile__text {
+  display: grid;
+  gap: 2px;
+}
+
+.op-tile__text span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+/* ─── Caisses d'agence ─────────────────────────────────── */
+.agency-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+}
+
+.agency-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.agency-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agency-card__head > div {
+  display: grid;
+  min-width: 0;
+}
+
+.agency-card__head strong {
+  font-size: var(--t-md);
+  overflow-wrap: anywhere;
+}
+
+.agency-card__wallets {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.agency-card__wallets li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--brand) 5%, white);
+}
+
+.agency-card__wallets li span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.agency-card__wallets li strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.agency-card__wallets li.is-main {
+  background: var(--brand-soft);
+}
+
+.agency-card__actions,
+.pay-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ─── Virements à valider ──────────────────────────────── */
+.pay-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+}
+
+.pay-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.pay-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.pay-card__top > div {
+  display: grid;
+  min-width: 0;
+}
+
+.pay-card__top strong {
+  overflow-wrap: anywhere;
+}
+
+.pay-card__amount {
+  font-size: var(--t-lg);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pay-card__meta {
+  display: grid;
+  gap: 8px;
+}
+
+.pay-card__meta div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  justify-content: space-between;
+}
+
+.pay-card__meta dt {
+  color: var(--ink-2);
+}
+
+.pay-card__meta dd {
+  font-weight: 600;
+}
+
+.pay-card__meta code,
+.kv code {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Formulaires en boîte de dialogue ─────────────────── */
+.dialog-form {
+  display: grid;
+  gap: 14px;
+}
+
+/* ─── Mouvements d'un portefeuille ─────────────────────── */
+.ledger-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+}
+
+.ledger-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  padding: 16px 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.ledger-item__main {
+  display: grid;
+  flex: 1 1 260px;
+  justify-items: start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ledger-item__desc {
+  overflow-wrap: anywhere;
+}
+
+.ledger-item__amount {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  text-align: right;
+}
+
+.ledger-item__amount .muted {
+  font-size: var(--t-sm);
+}
+
+@media (max-width: 520px) {
+  .ledger-item__amount {
+    justify-items: start;
+    text-align: left;
+  }
+
+  .agency-card__actions .btn,
+  .pay-card__actions .btn {
+    flex: 1 1 100%;
+  }
+}
