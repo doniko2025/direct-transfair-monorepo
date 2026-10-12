@@ -78,6 +78,7 @@
 }
 
 .tx-card__sub,
+.tx-card__agency,
 .tx-card__company {
   overflow: hidden;
   color: var(--ink-2);
@@ -88,6 +89,18 @@
 
 .tx-card__company {
   color: var(--ink-3);
+}
+
+.tx-card__agency {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--brand-deep);
+  font-weight: 600;
+}
+
+.tx-card__agency svg {
+  flex: none;
 }
 
 .tx-card__amount {

@@ -1,6 +1,11 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v5.0
+// APP MODULE v5.3
+// ✅ v5.3 : AgentDeskModule — /agent-desk (caisse de l'agence, opérations du jour, recherche client, aperçu d'un envoi cash).
+// ✅ v5.2 : CommissionRulesModule — /commission-rules (répartition des frais d'un retrait payé : agence d'envoi,
+//   agence payeuse, société ; lecture super admin, modification admin de société).
+// ✅ v5.2 : FeeScheduleModule — /fees-admin/rules et /fees-admin/quote (barème de frais par société).
+// ✅ v5.1 : AgentsAdminModule — /agents-admin (agents d'une société rattachés à une agence).
 // ✅ v5.0 : FeesAdminModule — /fees-admin (frais d'envoi par société : lecture super admin,
 //   modification admin de société, journal des modifications).
 // ✅ v4.9 : RatesAdminModule — /rates-admin (taux de change : liste, historique,
@@ -68,6 +73,10 @@ import { LocationsModule }          from './locations/locations.module';
 import { SupervisionModule }        from './supervision/supervision.module'; // ✅ v4.8
 import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // ✅ v4.9
 import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // ✅ v5.0
+import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
+import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
+import { CommissionRulesModule }    from './commission-rules/commission-rules.module'; // ✅ v5.2
+import { AgentDeskModule }          from './agent-desk/agent-desk.module'; // ✅ v5.3
 
 import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
@@ -112,6 +121,10 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     SupervisionModule, // ✅ v4.8 — /supervision/* (audit, alertes, santé)
     RatesAdminModule,  // ✅ v4.9 — /rates-admin/* (administration des taux)
     FeesAdminModule,   // ✅ v5.0 — /fees-admin/* (frais d'envoi par société)
+    AgentsAdminModule, // ✅ v5.1 — /agents-admin/* (agents rattachés à une agence)
+    FeeScheduleModule, // ✅ v5.2 — /fees-admin/rules, /fees-admin/quote (barème de frais)
+    CommissionRulesModule, // ✅ v5.2 — /commission-rules (répartition des frais)
+    AgentDeskModule,   // ✅ v5.3 — /agent-desk/* (guichet de l'agent)
   ],
 
   controllers: [ExchangeRatesController],

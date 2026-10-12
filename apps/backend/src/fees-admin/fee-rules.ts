@@ -29,6 +29,9 @@ export const FEE_METHODS: readonly FeeMethodDef[] = [
 
 export const FEE_METHOD_KEYS: readonly string[] = FEE_METHODS.map((m) => m.key);
 
+/** Modes sur lesquels le serveur prélève des frais : les seuls qu'un barème peut viser. */
+export const CHARGED_METHOD_KEYS: readonly string[] = FEE_METHODS.filter((m) => m.charged).map((m) => m.key);
+
 /** Taux appliqué par transactions.service.ts tant que la société n'a rien configuré. */
 export const DEFAULT_FEE_RATE = 1.5;
 

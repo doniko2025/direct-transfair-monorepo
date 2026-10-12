@@ -13,6 +13,7 @@ import { TransactionsController } from './transactions.controller';
 import { PrismaModule }           from '../prisma/prisma.module';
 import { AuthModule }             from '../auth/auth.module';
 import { RatesModule }            from '../rates/rates.module';
+import { FeeScheduleModule }      from '../fee-schedule/fee-schedule.module'; // ✅ v4.2
 import { WalletsModule }          from '../wallets/wallets.module';
 import { PushModule }             from '../push/push.module';
 import { SmsModule }              from '../sms/sms.module';
@@ -24,6 +25,7 @@ import { NotificationsModule }    from '../notifications/notifications.module'; 
     PrismaModule,
     AuthModule,
     RatesModule,
+    FeeScheduleModule,   // ✅ v4.2 — barème de frais (FeeScheduleService)
     WalletsModule,       // Pour WalletsService (débit/crédit wallets)
     PushModule,          // Pour notifications push
     SmsModule,           // Pour SMS

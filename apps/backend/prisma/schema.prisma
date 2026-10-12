@@ -586,6 +586,7 @@ model Client {
   transactions       Transaction[]
   withdrawals        Withdrawal[]
   commissionConfigs  CommissionConfig[]
+  feeRules           FeeRule[]
   promotions         Promotion[]
   alerts             Alert[]
   auditLogs          AuditLog[]          @relation("ClientAuditLogs")
@@ -715,6 +716,9 @@ model Agency {
 
   agents  User[]   @relation("AgencyAgents")
   wallets Wallet[] // Un wallet par devise supportée
+
+  // ✅ v5.3 — opérations qui ont mouvementé la caisse de l'agence
+  transactions Transaction[] @relation("AgencyTransactions")
 
   // ✅ v5.1 : Responsable désigné de l'agence.
   // AVANT : aucune façon fiable de savoir "qui gère cette agence" —
@@ -1252,6 +1256,15 @@ model Transaction {
   clientId Int
   client   Client @relation(fields: [clientId], references: [id])
 
+  // ✅ v5.3 — Agence dont la caisse est mouvementée par l'opération (null = aucune agence).
+  //   Renseigné à la création pour : recharge de caisse (AGENCY_REFILL), remontée de fonds de
+  //   l'agent (AGENCY_REMITTANCE), retrait forcé par l'admin (AGENCY_COLLECTION), dépôt client
+  //   et envoi d'argent faits par un agent (agence de l'agent).
+  //   Ce n'est PAS l'agence qui paie un retrait : celle-là reste Withdrawal.processedBy.agencyId.
+  //   ⚠️ Migration requise : 20261012120000_add_transaction_agency_and_fee_rules
+  agencyId String?
+  agency   Agency? @relation("AgencyTransactions", fields: [agencyId], references: [id], onDelete: SetNull)
+
   // Promotion appliquée
   promotionId String?
   promotion   Promotion? @relation(fields: [promotionId], references: [id])
@@ -1295,6 +1308,7 @@ model Transaction {
   updatedAt DateTime @updatedAt
 
   @@index([clientId, status])
+  @@index([agencyId, createdAt])
   @@index([senderId])
   @@index([createdAt])
   @@index([reference])
@@ -1721,6 +1735,50 @@ model CommissionTier {
   fixedFee      Decimal? @db.Decimal(18, 4) // Frais fixe additionnel
 
   @@map("commission_tiers")
+}
+
+// =========================================================
+// FEE RULES — barème de frais d'envoi d'une société (v5.3)
+//
+//   Une ligne = une tranche de montant, éventuellement limitée à un mode de retrait, à un pays
+//   d'envoi et/ou à un pays de réception (un « corridor »). Les critères à null valent « tous ».
+//
+//   Frais = montant × feeRate % + fixedFee, où fixedFee est exprimé dans `currency` et converti
+//   dans la devise de l'envoi au taux du jour. La tranche [minAmount ; maxAmount[ est exprimée
+//   dans `currency` aussi : le montant envoyé y est converti pour être comparé.
+//
+//   Sans ligne applicable, transactions.service.ts retombe sur le tarif plat du mode de retrait
+//   (CommissionConfig.feeRate / fixedFee), puis sur 1,5 %.
+//   Seul l'admin de société modifie son barème ; le super admin le consulte.
+//   ⚠️ Migration requise : 20261012120000_add_transaction_agency_and_fee_rules
+// =========================================================
+
+model FeeRule {
+  id String @id @default(cuid())
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  label String?
+
+  payoutMethod   PayoutMethod?
+  sendCountry    String?
+  receiveCountry String?
+
+  currency  CurrencyCode
+  minAmount Decimal      @default(0) @db.Decimal(18, 4)
+  maxAmount Decimal?     @db.Decimal(18, 4)
+
+  feeRate  Float   @default(0)
+  fixedFee Decimal @default(0) @db.Decimal(18, 4)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId, isActive])
+  @@map("fee_rules")
 }
 
 // =========================================================

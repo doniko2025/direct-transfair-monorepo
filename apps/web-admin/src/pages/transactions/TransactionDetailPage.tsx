@@ -358,6 +358,17 @@ export default function TransactionDetailPage() {
         <div className="detail-grid">
           <SectionCard id="tx-payout" icon="send" title="Règlement" subtitle="Comment l’argent entre et sort.">
             <dl className="kv">
+              {tx.agency?.name ? (
+                <Row label="Caisse d’agence">
+                  {me.role === 'COMPANY_ADMIN' ? (
+                    <Link className="link" to={`/agencies/${encodeURIComponent(tx.agency.id)}`}>
+                      {tx.agency.name}
+                    </Link>
+                  ) : (
+                    tx.agency.name
+                  )}
+                </Row>
+              ) : null}
               {tx.paymentMethod ? <Row label="Paiement">{PAYMENT_LABEL[tx.paymentMethod] ?? tx.paymentMethod}</Row> : null}
               {tx.payoutMethod ? <Row label="Versement">{PAYOUT_LABEL[tx.payoutMethod] ?? tx.payoutMethod}</Row> : null}
               {tx.withdrawal ? (

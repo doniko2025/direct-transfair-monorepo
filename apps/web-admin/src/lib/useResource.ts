@@ -49,3 +49,14 @@ export function useResource<T>(loader: () => Promise<T>, deps: readonly unknown[
   }, []);
   return { data, error, loading, reload };
 }
+
+/**
+ * Comme useResource, pour une ressource qui dépend d'une clé (société choisie, période…) :
+ * les données d'une autre clé ne sont jamais présentées comme celles de la clé actuelle,
+ * ni pendant le chargement ni quand le nouveau chargement échoue.
+ */
+export function useKeyedResource<T>(key: string, loader: () => Promise<T>, deps: readonly unknown[] = []): Resource<T> {
+  const r = useResource(async () => ({ key, value: await loader() }), [key, ...deps]);
+  const current = r.data !== null && r.data.key === key ? r.data.value : null;
+  return { data: current, error: r.error, loading: r.loading, reload: r.reload };
+}

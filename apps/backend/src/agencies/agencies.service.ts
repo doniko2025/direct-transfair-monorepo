@@ -1,6 +1,17 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.7
+// AGENCIES SERVICE v4.8
+// ✅ v4.8 : 🐛 FIX — create() ne normalisait ni ne vérifiait le téléphone
+//
+//   PROBLÈME RÉSOLU :
+//   Le téléphone du responsable était écrit tel que saisi (sans
+//   normalizePhoneE164) et sans contrôle d'unicité : un numéro déjà
+//   associé à un autre compte levait une erreur Prisma P2002 non
+//   gérée (réponse 500), et un même numéro pouvait être stocké sous
+//   deux formats (cf. phone.util.ts).
+//   CORRECTIF : normalisation + vérification d'unicité AVANT la
+//   transaction, mêmes règles que UsersService.create().
+//
 // ✅ v4.2 : FIX CurrencyCode enum cast (migration v4.1)
 //
 // ✅ v4.3 : 🐛 FIX — modification du responsable sans effet
@@ -176,6 +187,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
+import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
 
@@ -261,6 +273,17 @@ export class AgenciesService {
     if (existingUser)
       throw new ConflictException(`L'email "${email}" est déjà utilisé.`);
 
+    // ✅ v4.8 — téléphone normalisé et unique (voir changelog en tête de fichier).
+    const rawPhone = safeTrim(dto.phone);
+    const phone = rawPhone ? normalizePhoneE164(rawPhone) : null;
+    if (rawPhone && !phone) throw new BadRequestException('Numéro de téléphone invalide.');
+    if (phone) {
+      const existingPhone = await this.prisma.user.findFirst({ where: { phone }, select: { id: true } });
+      if (existingPhone) {
+        throw new ConflictException('Ce numéro de téléphone est déjà associé à un autre compte.');
+      }
+    }
+
     if (dto.code) {
       const existingCode = await this.prisma.agency.findUnique({ where: { code: dto.code } });
       if (existingCode)
@@ -282,7 +305,7 @@ export class AgenciesService {
           name: safeTrim(dto.name),
           city: safeTrim(dto.city),
           address: safeTrim(dto.address),
-          phone: safeTrim(dto.phone) || null,
+          phone,
           code: dto.code || null,
           email,
           country: dto.country || null,
@@ -313,7 +336,7 @@ export class AgenciesService {
           role: Role.AGENT,
           clientId,
           agencyId: agency.id,
-          phone: safeTrim(dto.phone) || null,
+          phone,
           city: safeTrim(dto.city) || null,
           country: dto.country || null,
           primaryCurrency,

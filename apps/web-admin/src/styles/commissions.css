@@ -1,0 +1,259 @@
+/* =========================================================
+   COMMISSIONS ET RÉGLAGES — totaux, détail, répartition des frais
+   ========================================================= */
+
+/* ─── Totaux ───────────────────────────────────────────── */
+.com-total-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
+  list-style: none;
+}
+
+.com-total {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.com-total--company {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+
+.com-total h3 {
+  font-size: var(--t-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.com-total__list {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+}
+
+.com-total__list strong {
+  font-size: clamp(1.4rem, 1.2rem + 0.8vw, 1.85rem);
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.com-total__none {
+  color: var(--ink-3);
+}
+
+.com-total--company .com-total__none {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.com-total__count {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.com-total--company .com-total__count {
+  color: inherit;
+  opacity: 0.85;
+}
+
+/* ─── Détail ───────────────────────────────────────────── */
+.com-list {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+}
+
+.com-entry {
+  display: grid;
+  grid-template-columns: minmax(150px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 16px 20px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.com-entry__amount {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+
+.com-entry__amount strong {
+  color: var(--ok);
+  font-size: var(--t-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.com-entry__main {
+  min-width: 0;
+}
+
+.com-entry__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.com-entry__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+
+.com-entry__side {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.com-entry__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--brand-deep);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.com-entry__link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 700px) {
+  .com-entry {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .com-entry__side {
+    justify-items: start;
+  }
+}
+
+/* ─── Répartition des frais (Réglages) ─────────────────── */
+.split-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 14px;
+  list-style: none;
+}
+
+.split-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.split-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.split-card__head h3 {
+  flex: 1 1 180px;
+  font-size: var(--t-lg);
+}
+
+.split-card__dest {
+  color: var(--ink-2);
+}
+
+.split-bar {
+  display: flex;
+  gap: 3px;
+  height: 14px;
+}
+
+.split-bar__seg {
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: 999px;
+}
+
+.split-bar__seg--sender,
+.split-dot--sender {
+  background: var(--accent);
+}
+
+.split-bar__seg--payer,
+.split-dot--payer {
+  background: var(--brand);
+}
+
+.split-bar__seg--platform,
+.split-dot--platform {
+  background: var(--ink-2);
+}
+
+.split-card__shares {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+
+.split-card__shares dt {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.split-card__shares dd {
+  font-size: var(--t-xl);
+  font-stretch: 90%;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.split-card__hint {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.split-card__actions {
+  margin-top: 6px;
+}
+
+.split-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  list-style: none;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.split-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.split-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.split-dialog__case {
+  color: var(--ink-2);
+}

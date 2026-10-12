@@ -133,6 +133,13 @@ export interface Transaction {
   withdrawal?: TransactionWithdrawal | null;
   /** Société (renvoyée par la liste administrateur uniquement). */
   client?: { id?: number; name: string; code: string } | null;
+
+  /**
+   * Agence dont la caisse est mouvementée par l'opération : recharge, remontée de fonds, retrait forcé,
+   * dépôt client ou envoi fait par un agent. Absent pour un envoi de client. Ce n'est pas l'agence qui paie un retrait.
+   */
+  agencyId?: string | null;
+  agency?: { id: string; name: string; city?: string | null } | null;
 }
 
 /** Statuts qu'un administrateur peut demander (le serveur valide la transition). */

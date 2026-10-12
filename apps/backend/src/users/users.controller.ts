@@ -1,6 +1,25 @@
 // apps/backend/src/users/users.controller.ts
 // =========================================================
-// USERS CONTROLLER v4.4
+// USERS CONTROLLER v4.5
+// ✅ v4.5 : 🔒 FIX — élévation de privilèges d'un COMPANY_ADMIN
+//
+//   PROBLÈME RÉSOLU :
+//   - POST /users laissait un COMPANY_ADMIN créer n'importe quel rôle,
+//     SUPER_ADMIN compris (body.role n'était pas contrôlé).
+//   - Un COMPANY_ADMIN pouvait modifier, suspendre, supprimer ses
+//     collègues administrateurs de société... et lui-même.
+//   - GET /users et GET /users/:id exposaient à un COMPANY_ADMIN les
+//     comptes SUPER_ADMIN rattachés à sa société.
+//   CORRECTIF :
+//   - COMPANY_ADMIN : ne crée que des AGENT et des USER ; ne gère
+//     (modifier / suspendre / réactiver / supprimer) que les AGENT et
+//     USER de sa société ; peut seulement modifier SON propre profil.
+//   - Personne ne peut se suspendre ni se supprimer soi-même.
+//   - Un compte supprimé ne peut plus être modifié.
+//   - Le corps de POST /users est validé (CreateUserDto) : l'interface
+//     TypeScript d'avant ne valide rien à l'exécution.
+//   Le rattachement d'un agent à une agence se fait via /agents-admin.
+//
 // ✅ v4.0-4.2 : toutes les routes admin (findAll, create, findById,
 //   update, softDelete, suspend, reactivate, findPublic)
 // ✅ v4.3 : Ajout GET /users/by-phone?q=775099993
@@ -65,6 +84,8 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+import { CreateUserDto } from './dto/create-user.dto';
+
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
@@ -93,17 +114,6 @@ class RolesGuard implements CanActivate {
 }
 
 // ─── DTOs ─────────────────────────────────────────────────
-interface CreateUserBody {
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  role?: Role;
-  clientId?: number;
-  phone?: string;
-  country?: string;
-}
-
 interface UpdateUserBody {
   firstName?: string;
   lastName?: string;
@@ -120,21 +130,58 @@ interface UpdateUserBody {
   mobileMoneyNumber?: string;
 }
 
-// ─── Helper ───────────────────────────────────────────────
-async function assertClientAccess(
+// ─── Règles de gestion des comptes ────────────────────────
+type ManageAction = 'update' | 'suspend' | 'reactivate' | 'delete';
+
+/** Rôles qu'un administrateur de société peut créer et gérer. */
+const COMPANY_MANAGED_ROLES: readonly string[] = [Role.AGENT, Role.USER];
+
+/**
+ * Vérifie que `admin` peut effectuer `action` sur `target`, ou lève l'exception adaptée.
+ * Un COMPANY_ADMIN ne voit jamais un SUPER_ADMIN (404) ; il ne touche qu'aux comptes
+ * AGENT / USER de sa société, plus la modification de son propre profil.
+ */
+function assertCanManage(
   admin: AuthUserPayload,
-  userId: string,
-  usersService: UsersService,
-): Promise<void> {
+  target: { id: string; role: string; clientId: number | null; deletedAt?: Date | null },
+  action: ManageAction,
+): void {
+  const isSelf = target.id === admin.id;
+
+  if ((action === 'suspend' || action === 'delete') && isSelf) {
+    throw new ForbiddenException('Vous ne pouvez pas suspendre ni supprimer votre propre compte.');
+  }
+
   if (admin.role === 'SUPER_ADMIN') return;
 
-  const target = await usersService.findById(userId);
-  if (!target) throw new NotFoundException('Utilisateur introuvable');
+  if (target.role === Role.SUPER_ADMIN) throw new NotFoundException('Utilisateur introuvable');
 
   if (target.clientId !== admin.clientId) {
     throw new ForbiddenException(
       'Accès refusé : cet utilisateur n\'appartient pas à votre société.',
     );
+  }
+
+  if (action === 'update' && isSelf) return;
+
+  if (!COMPANY_MANAGED_ROLES.includes(target.role)) {
+    throw new ForbiddenException(
+      'Seul le super administrateur peut gérer un administrateur de société.',
+    );
+  }
+}
+
+async function loadAndAssert(
+  admin: AuthUserPayload,
+  userId: string,
+  action: ManageAction,
+  usersService: UsersService,
+): Promise<void> {
+  const target = await usersService.findById(userId);
+  if (!target) throw new NotFoundException('Utilisateur introuvable');
+  assertCanManage(admin, target, action);
+  if (action === 'update' && target.deletedAt) {
+    throw new NotFoundException('Ce compte a été supprimé');
   }
 }
 
@@ -158,7 +205,7 @@ export class UsersController {
     const whereClause =
       user?.role === 'SUPER_ADMIN'
         ? { deletedAt: null }
-        : { clientId: user?.clientId, deletedAt: null };
+        : { clientId: user?.clientId, deletedAt: null, role: { not: Role.SUPER_ADMIN } };
     return this.usersService.findAll(whereClause);
   }
 
@@ -170,14 +217,21 @@ export class UsersController {
   @ApiOperation({ summary: 'Créer un utilisateur' })
   async create(
     @Req() req: { user?: AuthUserPayload },
-    @Body() body: CreateUserBody,
+    @Body() body: CreateUserDto,
   ) {
     const currentUser = req.user;
+    const isSuper = currentUser?.role === 'SUPER_ADMIN';
 
-    const targetClientId =
-      currentUser?.role === 'SUPER_ADMIN'
-        ? body.clientId ?? currentUser.clientId
-        : currentUser?.clientId;
+    const role = body.role ?? Role.AGENT;
+    if (!isSuper && !COMPANY_MANAGED_ROLES.includes(role)) {
+      throw new ForbiddenException(
+        'Un administrateur de société ne peut créer que des agents et des clients.',
+      );
+    }
+
+    const targetClientId = isSuper
+      ? body.clientId ?? currentUser?.clientId
+      : currentUser?.clientId;
 
     if (!targetClientId) {
       throw new ConflictException('Impossible de déterminer la société cible.');
@@ -191,7 +245,7 @@ export class UsersController {
     return this.usersService.create(
       body.email,
       hashedPassword,
-      body.role ?? Role.AGENT,
+      role,
       targetClientId,
       {
         firstName: body.firstName,
@@ -246,7 +300,7 @@ export class UsersController {
     @Param('id') id: string,
     @Body('reason') reason?: string,
   ) {
-    await assertClientAccess(req.user!, id, this.usersService);
+    await loadAndAssert(req.user!, id, 'suspend', this.usersService);
     return this.usersService.suspend(id, reason);
   }
 
@@ -260,7 +314,7 @@ export class UsersController {
     @Req() req: { user?: AuthUserPayload },
     @Param('id') id: string,
   ) {
-    await assertClientAccess(req.user!, id, this.usersService);
+    await loadAndAssert(req.user!, id, 'reactivate', this.usersService);
     return this.usersService.reactivate(id);
   }
 
@@ -307,11 +361,9 @@ export class UsersController {
     const user = await this.usersService.findById(id);
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    if (
-      req.user?.role !== 'SUPER_ADMIN' &&
-      user.clientId !== req.user?.clientId
-    ) {
-      throw new ForbiddenException('Accès refusé');
+    if (req.user?.role !== 'SUPER_ADMIN') {
+      if (user.role === Role.SUPER_ADMIN) throw new NotFoundException('Utilisateur introuvable');
+      if (user.clientId !== req.user?.clientId) throw new ForbiddenException('Accès refusé');
     }
 
     return this.usersService.serializeForAdmin(user);
@@ -328,7 +380,7 @@ export class UsersController {
     @Param('id') id: string,
     @Body() body: UpdateUserBody,
   ) {
-    await assertClientAccess(req.user!, id, this.usersService);
+    await loadAndAssert(req.user!, id, 'update', this.usersService);
 
     const allowed: UpdateUserBody = {
       firstName:           body.firstName,
@@ -363,7 +415,7 @@ export class UsersController {
     @Req() req: { user?: AuthUserPayload },
     @Param('id') id: string,
   ) {
-    await assertClientAccess(req.user!, id, this.usersService);
+    await loadAndAssert(req.user!, id, 'delete', this.usersService);
     return this.usersService.softDelete(id);
   }
 }

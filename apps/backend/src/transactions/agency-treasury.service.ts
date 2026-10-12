@@ -173,6 +173,7 @@ export class AgencyTreasuryService {
         paymentMethod: PaymentMethod.WALLET,
         senderId,
         clientId,
+        agencyId, // ✅ v1.1 — d'où vient le mouvement de caisse (plus seulement dans la note)
         paidAt: new Date(),
         providerStatus: ProviderStatus.SUCCESS,
         providerRef: reference, // jamais de "|" ici, voir note en tête de fichier

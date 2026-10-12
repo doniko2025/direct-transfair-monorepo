@@ -10,6 +10,7 @@ import { Card, Pill } from '../components/ui';
 import { useCurrentUser } from '../providers/AuthProvider';
 import { useTenant } from '../providers/TenantProvider';
 import { ROLE_LABEL } from '../navigation';
+import { AgentDesk } from './dashboard/AgentDesk';
 import { CompaniesOverview } from './dashboard/CompaniesOverview';
 
 function apiHost(): string {
@@ -68,6 +69,7 @@ export default function DashboardPage() {
 
       <div className="dashboard__side">
         {role === 'SUPER_ADMIN' ? <CompaniesOverview /> : null}
+        {role === 'AGENT' ? <AgentDesk /> : null}
 
         <Card>
           <h2 className="card-title">Votre session</h2>

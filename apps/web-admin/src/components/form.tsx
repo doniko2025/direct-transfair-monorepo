@@ -175,6 +175,8 @@ interface ConfirmDialogProps {
   /** « danger » colore le bouton de confirmation en rouge. */
   tone?: 'default' | 'danger';
   busy?: boolean;
+  /** Masque le bouton d'annulation (boîte d'information : un seul bouton pour fermer). */
+  hideCancel?: boolean;
   confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -188,6 +190,7 @@ export function ConfirmDialog({
   cancelLabel = 'Annuler',
   tone = 'default',
   busy = false,
+  hideCancel = false,
   confirmDisabled = false,
   onConfirm,
   onCancel,
@@ -219,9 +222,11 @@ export function ConfirmDialog({
         <h2 id="dialog-title">{title}</h2>
         {children ? <div className="dialog__content">{children}</div> : null}
         <div className="dialog__actions">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </Button>
+          {hideCancel ? null : (
+            <Button variant="secondary" onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </Button>
+          )}
           <Button
             variant="primary"
             className={tone === 'danger' ? 'btn--danger' : undefined}

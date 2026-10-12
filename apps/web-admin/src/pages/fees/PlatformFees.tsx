@@ -2,6 +2,7 @@
 // Frais de chaque société (super admin) : lecture seule. Le tarif appartient à la société.
 
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { CompanyFees } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -66,16 +67,21 @@ export default function PlatformFees() {
         title="Frais d’envoi"
         description="Le tarif de chaque société. Chaque administrateur de société fixe le sien : vous les consultez ici."
         actions={
-          <Button
-            variant="secondary"
-            onClick={() => {
-              list.reload();
-              history.reload();
-            }}
-            busy={list.loading && list.data !== null}
-          >
-            Actualiser
-          </Button>
+          <>
+            <Link to="/fees/schedule" className="btn btn--secondary">
+              Barèmes par montant et pays
+            </Link>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                list.reload();
+                history.reload();
+              }}
+              busy={list.loading && list.data !== null}
+            >
+              Actualiser
+            </Button>
+          </>
         }
       />
 

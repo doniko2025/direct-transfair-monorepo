@@ -1,12 +1,18 @@
 // packages/shared/src/api.ts
 // =========================================================
-// ENDPOINTS v1.5 — auth + branding (phase 1), sociétés, utilisateurs, transactions, trésorerie, supervision, taux de change, frais et notifications (phase 2).
+// ENDPOINTS v1.8 — auth + branding (phase 1), sociétés, utilisateurs, transactions, trésorerie, supervision, taux de change, frais et notifications (phase 2), agences, agents, barème de frais, répartition et commissions (phase 3), guichet de l'agent (phase 4).
 // Chaque phase ajoute ses groupes d'endpoints ici (agencies,
 // treasury, transactions…) en lisant le contrôleur backend
 // correspondant, pas en recopiant services/api.ts du mobile.
 // =========================================================
 
+import { createAgenciesApi } from './agencies';
+import { createAgentDeskApi } from './agentDesk';
+import { createAgentsApi } from './agents';
+import { createCommissionRulesApi } from './commissionRules';
+import { createCommissionsApi } from './commissions';
 import { createCompaniesApi } from './companies';
+import { createFeeScheduleApi } from './feeSchedule';
 import { createFeesApi } from './fees';
 import type { HttpClient } from './http';
 import { createNotificationsApi } from './notifications';
@@ -41,6 +47,12 @@ export function createApi(http: HttpClient) {
     rates: createRatesApi(http),
     fees: createFeesApi(http),
     notifications: createNotificationsApi(http),
+    agencies: createAgenciesApi(http),
+    agents: createAgentsApi(http),
+    feeSchedule: createFeeScheduleApi(http),
+    commissionRules: createCommissionRulesApi(http),
+    commissions: createCommissionsApi(http),
+    agentDesk: createAgentDeskApi(http),
 
     branding: {
       byHost: (host: string) =>

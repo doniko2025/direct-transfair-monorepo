@@ -1,0 +1,139 @@
+/* =========================================================
+   CLIENTS WALLET + RETRAITS D'AGENCE
+   ========================================================= */
+
+.wc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
+  gap: 14px;
+  list-style: none;
+}
+
+.wc-grid > li {
+  display: flex;
+}
+
+.wc-card {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  width: 100%;
+  padding: 20px 22px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.wc-card:hover {
+  box-shadow: var(--sh-2);
+  transform: translateY(-2px);
+}
+
+.wc-card__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wc-card__avatar {
+  flex: none;
+  width: 46px;
+  height: 46px;
+}
+
+.wc-card__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.wc-card__text strong {
+  overflow: hidden;
+  font-size: var(--t-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc-card__text span {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wc-card__text .wc-card__place {
+  color: var(--ink-3);
+}
+
+.wc-card__funds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  list-style: none;
+  font-size: var(--t-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.wc-card__funds .is-frozen {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.wc-card__funds small {
+  margin-left: 6px;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.wc-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.wc-card__since {
+  flex-basis: 100%;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+/* ── Retraits d'agence ────────────────────────────────── */
+.wd-cash {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+}
+
+.wd-cash span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.wd-cash strong {
+  font-size: var(--t-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.wd-cash--empty {
+  background: color-mix(in oklab, var(--ink) 4%, white);
+}
+
+.wd-cash--empty strong {
+  color: var(--ink-3);
+}
+
+.wd-section + .wd-section {
+  margin-top: 34px;
+}

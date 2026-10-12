@@ -2,6 +2,7 @@
 // Frais de ma société (admin de société) : une carte par mode de retrait, modifiable.
 
 import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { FeeMethod } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Field, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -94,9 +95,14 @@ export default function CompanyFees() {
             : 'Ce que votre société facture à ses clients sur chaque envoi.'
         }
         actions={
-          <Button variant="secondary" onClick={mine.reload} busy={mine.loading && mine.data !== null}>
-            Actualiser
-          </Button>
+          <>
+            <Link to="/fees/schedule" className="btn btn--secondary">
+              Barème par montant et pays
+            </Link>
+            <Button variant="secondary" onClick={mine.reload} busy={mine.loading && mine.data !== null}>
+              Actualiser
+            </Button>
+          </>
         }
       />
 

@@ -1,7 +1,19 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.21 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.23 — Direct Transf'air
 // =========================================================
+// ✅ v4.23 : (1) deposit() refuse un destinataire qui n'est pas un client wallet (rôle USER) ou qui est suspendu.
+//    (2) La devise de réception d'un pays vient de fee-schedule/country-currency.ts (même table que le barème) :
+//    « Guinée-Bissau », « Allemagne », « Italie », « Pays-Bas »… n'étaient pas reconnus par leur nom.
+//    (3) deposit() crédite depuis la caisse par défaut de l'agence (et non la première trouvée, sans ordre).
+// ✅ v4.22 : (1) Transaction.agencyId renseigné à la création des mouvements qui touchent la caisse
+//    d'une agence (recharge, dépôt client par un agent, envoi par un agent) et inclus dans les listes
+//    (relation `agency`) ; la vue agent des recharges filtre sur agencyId (providerRef en repli).
+//    (2) Les frais d'un envoi viennent de FeeScheduleService.quote() : barème de la société par
+//    montant / pays / mode, frais fixe converti dans la devise de l'envoi, puis tarif plat du mode
+//    (comportement antérieur), puis 1,5 %.
+//    ⚠️ Migration requise : 20261012120000_add_transaction_agency_and_fee_rules
+//
 // ✅ v4.21 : 🔎 2 points mineurs vérifiés suite à l'audit du système
 //    de commissions (voir commissions.service.ts v5.0) — 1 confirmé
 //    et corrigé, 1 confirmé SANS IMPACT sur le flux réellement
@@ -204,6 +216,9 @@ import {
 } from '@prisma/client';
 
 import { PrismaService }  from '../prisma/prisma.service';
+import { FeeScheduleService } from '../fee-schedule/fee-schedule.service';
+import { toIso2 }         from '../fee-schedule/countries';
+import { currencyOfCountry } from '../fee-schedule/country-currency';
 import { RatesService }   from '../rates/rates.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
@@ -251,6 +266,10 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
 
 function getCurrencyFromCountryOrText(raw?: string | null): CurrencyCode {
   if (!raw) return CurrencyCode.XOF;
+  // ✅ v4.23 — pays reconnu (code ou nom) : table unique du barème. Corrige « Guinée-Bissau » (lu comme Guinée → GNF),
+  // « Allemagne », « Italie », « Pays-Bas »… (retombaient sur XOF). Le reste garde l'ancien repli ci-dessous.
+  const known = currencyOfCountry(raw);
+  if (known) return CurrencyCode[known];
   const upper = raw.toUpperCase().trim();
   if (COUNTRY_TO_CURRENCY[upper]) return COUNTRY_TO_CURRENCY[upper];
   if (upper.includes('GUIN')) return CurrencyCode.GNF;
@@ -290,6 +309,7 @@ export class TransactionsService {
   constructor(
     private readonly prisma:               PrismaService,
     private readonly ratesService:         RatesService,
+    private readonly feeSchedule:          FeeScheduleService,
     private readonly walletsService:       WalletsService,
     private readonly push:                 PushService,
     private readonly sms:                  SmsService,
@@ -775,38 +795,21 @@ export class TransactionsService {
       dto.payoutMethod === PayoutMethod.MOBILE_MONEY ||
       dto.payoutMethod === PayoutMethod.WALLET;
 
-    // ✅ FIX v4.16-B : taux dynamique — isActive retiré du filtre
-    //
-    // AVANT : findFirst({ isActive: true }) → jamais trouvé car
-    // upsertFeeConfig() ne persistait pas isActive=true → fallback 1,5%.
-    // APRÈS : filtre sans isActive → trouve la config admin correctement.
-    let feeRatePct  = 0;
-    let fixedFeeAmt = 0;
-
-    if (!isWalletTransfer) {
-      try {
-        const feeConfig = await this.prisma.commissionConfig.findFirst({
-          where: {
-            clientId,
-            payoutMethod: dto.payoutMethod ?? 'CASH_PICKUP',
-            // ✅ isActive retiré — robuste même si isActive=false en DB
-          },
-        });
-        if (feeConfig) {
-          feeRatePct  = (feeConfig as any).feeRate  ?? 1.5;
-          fixedFeeAmt = (feeConfig as any).fixedFee ?? 0;
-        } else {
-          feeRatePct = 1.5; // fallback si l'admin n'a pas encore configuré
-        }
-      } catch {
-        feeRatePct = 1.5; // fallback si la migration n'est pas encore appliquée
-      }
-    }
-
+    // ✅ v4.22 — les frais viennent maintenant du barème de la société (FeeScheduleService) :
+    //   mode gratuit → 0 ; sinon règle de barème la plus spécifique (montant, pays d'envoi et de
+    //   réception, mode) ; sinon tarif plat du mode de retrait (ancien comportement v4.16-B, isActive
+    //   volontairement ignoré) ; sinon 1,5 %. Le frais fixe d'une règle est converti dans la devise
+    //   de l'envoi. Voir fee-schedule/fee-schedule.service.ts.
     const amount = new Prisma.Decimal(dto.amount);
-    const fees   = amount
-      .mul(new Prisma.Decimal(feeRatePct / 100))
-      .plus(new Prisma.Decimal(fixedFeeAmt));
+    const feeQuote = await this.feeSchedule.quote({
+      clientId,
+      senderId,
+      payoutMethod:   isWalletTransfer ? 'WALLET' : (dto.payoutMethod ?? PayoutMethod.CASH_PICKUP),
+      amount:         Number(amount),
+      currency,
+      receiveCountry: toIso2(beneficiary?.country ?? directRecipientUser?.country ?? null),
+    });
+    const fees   = new Prisma.Decimal(feeQuote.fees);
     const total  = amount.plus(fees);
 
     // ✅ FIX v4.16-A : vérification solde sur walletToDebit (agence ou personnel)
@@ -887,6 +890,7 @@ export class TransactionsService {
         beneficiaryId:  beneficiary?.id ?? null,
         recipientId:    recipientUser?.id ?? null,
         clientId,
+        agencyId:       user.agencyId ?? null, // ✅ v4.22 — agence de l'agent qui encaisse
         providerRef:    storedRef,
         providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
         paidAt,
@@ -1015,7 +1019,9 @@ export class TransactionsService {
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId: agent.agencyId, isActive: true },
     });
-    const agencyWallet = agencyWallets[0];
+    // v4.23 — la caisse par défaut (comme la remise et l'aperçu d'envoi), plus « la première trouvée » :
+    // sans orderBy, une agence à deux devises créditait le client dans une devise au hasard.
+    const agencyWallet = agencyWallets.find((w) => w.isDefault) ?? agencyWallets[0];
     if (!agencyWallet) throw new ForbiddenException('Wallet agence introuvable');
 
     const amountDec = new Prisma.Decimal(dto.amount);
@@ -1027,7 +1033,10 @@ export class TransactionsService {
     // Avant : phone: { contains: cleanPhone } sur la chaîne complète,
     // qui échouait si le format stocké différait du format envoyé.
     const clientUser = await this.findClientByPhoneTolerant(dto.userPhone ?? '', agent.clientId);
-    if (!clientUser) throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
+    // ✅ v4.23 — un dépôt ne crédite qu'un client wallet (rôle USER) : jamais un administrateur ou un agent
+    // dont le numéro serait saisi, ni un compte suspendu.
+    if (!clientUser || clientUser.role !== 'USER') throw new NotFoundException(`Client introuvable : ${dto.userPhone}`);
+    if (clientUser.isSuspended) throw new ForbiddenException('Ce compte client est suspendu : dépôt impossible.');
 
     const currency        = agencyWallet.currency as CurrencyCode;
     const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
@@ -1053,6 +1062,7 @@ export class TransactionsService {
         senderId:       agent.id,
         recipientId:    clientUser.id,
         clientId:       agent.clientId,
+        agencyId:       agent.agencyId, // ✅ v4.22 — caisse mouvementée
         paidAt:         new Date(),
         providerStatus: ProviderStatus.SUCCESS,
         providerRef:    `DEP-${Date.now()}`,
@@ -1187,6 +1197,7 @@ export class TransactionsService {
         paymentMethod:  PaymentMethod.WALLET,
         senderId:       adminId,
         clientId:       admin.clientId!,
+        agencyId,                        // ✅ v4.22 — plus besoin de relire providerRef
         paidAt:         new Date(),
         providerStatus: ProviderStatus.SUCCESS,
         providerRef:    `${txRef}|AGENCY:${agencyId}`,
@@ -1271,9 +1282,10 @@ export class TransactionsService {
       ];
 
       if (user.agencyId) {
+        // ✅ v4.22 — agencyId d'abord ; providerRef conservé pour d'éventuelles lignes non rattrapées.
         orClauses.push({
-          type:        TransactionType.AGENCY_REFILL,
-          providerRef: { contains: user.agencyId },
+          type: TransactionType.AGENCY_REFILL,
+          OR:   [{ agencyId: user.agencyId }, { providerRef: { contains: user.agencyId } }],
         });
       }
 
@@ -1303,6 +1315,7 @@ export class TransactionsService {
         withdrawal:  true,
         sender:      { select: { id: true, firstName: true, lastName: true, phone: true } },
         beneficiary: true,
+        agency:      { select: { id: true, name: true, city: true } }, // ✅ v4.22
       },
     });
     return transactions.map((t) => this.enrichTransaction(t));
@@ -1316,6 +1329,7 @@ export class TransactionsService {
         withdrawal:  true,
         sender:      { select: { id: true, firstName: true, lastName: true, phone: true } },
         beneficiary: true,
+        agency:      { select: { id: true, name: true, city: true } }, // ✅ v4.22
       },
     });
     if (!tx) throw new NotFoundException('Transaction not found');
@@ -1330,13 +1344,13 @@ export class TransactionsService {
       transactions = await this.prisma.transaction.findMany({
         where:   { deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
-        include: { sender: true, beneficiary: true, client: true, withdrawal: true },
+        include: { sender: true, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22
       });
     } else if (admin?.clientId) {
       transactions = await this.prisma.transaction.findMany({
         where:   { clientId: admin.clientId, deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
-        include: { sender: true, beneficiary: true, client: true, withdrawal: true },
+        include: { sender: true, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22
       });
     }
 

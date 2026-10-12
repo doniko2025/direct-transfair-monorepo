@@ -1,0 +1,523 @@
+/* =========================================================
+   GUICHET DE L'AGENT — caisse, dépôt, retrait, envoi cash, remise, reçu
+   ========================================================= */
+
+.desk-page {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  align-content: start;
+}
+
+/* ─── Caisse de l'agence ───────────────────────────────── */
+.cashbox {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 6px 16px;
+  align-items: center;
+  padding: 20px 24px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  color: var(--brand-ink);
+  box-shadow: var(--sh-2);
+}
+
+.cashbox--loading {
+  display: grid;
+  place-items: center;
+  min-height: 108px;
+}
+
+.cashbox__icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--brand-ink) 16%, transparent);
+}
+
+.cashbox__main {
+  display: grid;
+  min-width: 0;
+}
+
+.cashbox__agency {
+  font-weight: 600;
+  opacity: 0.92;
+}
+
+.cashbox__agency small {
+  margin-left: 8px;
+  font-weight: 400;
+  opacity: 0.78;
+}
+
+.cashbox__amount {
+  font-size: var(--t-2xl);
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.cashbox__label,
+.cashbox__reserved {
+  font-size: var(--t-sm);
+  opacity: 0.8;
+}
+
+.cashbox__side {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  text-align: right;
+}
+
+.cashbox__after {
+  display: grid;
+  font-size: var(--t-sm);
+  opacity: 0.92;
+}
+
+.cashbox__after strong {
+  font-size: var(--t-lg);
+}
+
+.cashbox__after--short strong {
+  color: #ffd2cc;
+}
+
+/* ─── Étapes ───────────────────────────────────────────── */
+.desk-step {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.desk-step .card-title {
+  margin-bottom: 0;
+}
+
+.desk-step--off {
+  opacity: 0.55;
+}
+
+.desk-form {
+  display: grid;
+  gap: 16px;
+}
+
+.desk-form > .btn {
+  justify-self: start;
+}
+
+.desk-form__pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.desk-form__help {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.desk-link {
+  justify-self: start;
+  margin-top: -6px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--brand-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* ─── Téléphone ────────────────────────────────────────── */
+.phone-field {
+  display: grid;
+  grid-template-columns: minmax(150px, 15rem) minmax(0, 1fr);
+  gap: 8px;
+}
+
+/* ─── Client trouvé ────────────────────────────────────── */
+.desk-client {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.desk-client--blocked {
+  background: color-mix(in oklab, var(--danger) 8%, white);
+}
+
+.desk-client > div {
+  display: grid;
+  min-width: 0;
+}
+
+.desk-client span:not(.desk-client__avatar) {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.desk-client__avatar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--brand-deep);
+}
+
+/* ─── Code de retrait vérifié ──────────────────────────── */
+.desk-verdict__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.desk-verdict__label {
+  display: block;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.desk-verdict__amount {
+  font-size: var(--t-2xl);
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+/* ─── Aperçu des frais ─────────────────────────────────── */
+.desk-quote {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.desk-quote--loading {
+  grid-auto-flow: column;
+  justify-content: start;
+  align-items: center;
+  color: var(--ink-2);
+}
+
+.desk-quote dl {
+  display: grid;
+  gap: 8px;
+}
+
+.desk-quote dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.desk-quote dt {
+  color: var(--ink-2);
+}
+
+.desk-quote dd {
+  font-weight: 600;
+  text-align: right;
+}
+
+.desk-quote__total {
+  padding-top: 8px;
+  border-top: 1px solid var(--brand-mid);
+}
+
+.desk-quote__total dt,
+.desk-quote__total dd {
+  color: var(--ink);
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+
+.desk-quote__recv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--brand-deep);
+}
+
+.desk-quote__recv > div {
+  display: grid;
+  color: var(--ink);
+}
+
+.desk-quote__recv span,
+.desk-quote__recv small {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.desk-quote__recv strong {
+  font-size: var(--t-xl);
+  overflow-wrap: anywhere;
+}
+
+/* ─── Reçu ─────────────────────────────────────────────── */
+.receipt {
+  display: grid;
+  gap: 18px;
+  padding: 26px 28px;
+  border-radius: var(--r-lg);
+  background: var(--card);
+  box-shadow: var(--sh-1);
+}
+
+.receipt__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.receipt__head h2 {
+  font-size: var(--t-xl);
+}
+
+.receipt__head p {
+  color: var(--ink-2);
+}
+
+.receipt__badge {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--ok) 12%, white);
+  color: var(--ok);
+}
+
+.receipt__code {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  padding: 16px 18px;
+  border: 1.5px dashed var(--brand-mid);
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.receipt__code span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.receipt__code strong {
+  font-size: var(--t-2xl);
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.receipt__lines {
+  display: grid;
+}
+
+.receipt__line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.receipt__line dt {
+  color: var(--ink-2);
+}
+
+.receipt__line dd {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.receipt__line--strong dd {
+  font-size: var(--t-lg);
+  font-weight: 700;
+}
+
+.receipt__foot {
+  display: grid;
+  gap: 2px;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+}
+
+.receipt__note {
+  margin-top: 6px;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.receipt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* ─── Tableau de bord : Mon guichet ────────────────────── */
+.agent-desk {
+  display: grid;
+  gap: 16px;
+}
+
+.agent-desk .card-title {
+  margin-bottom: 0;
+}
+
+.agent-desk__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.agent-desk__action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+}
+
+.agent-desk__action:hover {
+  background: var(--brand-mid);
+}
+
+.agent-desk__sub {
+  font-size: var(--t-md);
+  color: var(--ink-2);
+}
+
+.desk-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.desk-stat {
+  display: grid;
+  gap: 1px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--brand) 4%, white);
+}
+
+.desk-stat span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.desk-stat strong {
+  font-size: var(--t-xl);
+}
+
+.desk-stat small {
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+
+/* ─── Petits écrans ────────────────────────────────────── */
+@media (max-width: 640px) {
+  .cashbox {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 18px;
+  }
+
+  .cashbox__side {
+    grid-column: 1 / -1;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .desk-form__pair,
+  .phone-field {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .desk-form > .btn {
+    justify-self: stretch;
+  }
+
+  .desk-client {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .desk-client .pill {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .receipt {
+    padding: 20px 18px;
+  }
+}
+
+/* ─── Impression : seul le reçu sort sur la feuille ───── */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  .receipt,
+  .receipt * {
+    visibility: visible !important;
+  }
+
+  .receipt {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  .receipt__actions,
+  .receipt .copy-btn {
+    display: none !important;
+  }
+}
+
+/* Dans la colonne latérale du tableau de bord, le bandeau de caisse est plus compact. */
+.agent-desk .cashbox {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 16px 18px;
+}
+
+.agent-desk .cashbox__icon {
+  display: none;
+}
+
+.agent-desk .cashbox__amount {
+  font-size: var(--t-xl);
+}
+
+.agent-desk .cashbox__side {
+  justify-items: start;
+  text-align: left;
+}
