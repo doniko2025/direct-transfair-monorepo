@@ -6,7 +6,12 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://direct-transfair-backend.onrender.com",
+        "EXPO_PUBLIC_API_PREFIX": "/api",
+        "EXPO_PUBLIC_TENANT_ID": "DONIKO"
+      }
     },
     "preview": {
       "distribution": "internal",
@@ -14,7 +19,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://direct-transfair-backend-production.up.railway.app",
+        "EXPO_PUBLIC_API_URL": "https://direct-transfair-backend.onrender.com",
         "EXPO_PUBLIC_API_PREFIX": "/api",
         "EXPO_PUBLIC_TENANT_ID": "DONIKO"
       }
@@ -23,6 +28,11 @@
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://direct-transfair-backend.onrender.com",
+        "EXPO_PUBLIC_API_PREFIX": "/api",
+        "EXPO_PUBLIC_TENANT_ID": "DONIKO"
       }
     }
   },
