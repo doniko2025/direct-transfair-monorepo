@@ -1,6 +1,6 @@
 // apps/backend/src/commissions/commissions.controller.ts
 // =========================================================
-// COMMISSIONS CONTROLLER v5.0
+// COMMISSIONS CONTROLLER v5.1 — ✅ phase 6 : ?page=&limit= sur les deux routes ledger (voir service v5.2)
 // ✅ v4.2 conservé : GET /fees, GET / (règles), POST / (upsert
 //    règle/frais) — AUCUN changement, toujours utilisés par fees.tsx
 //    et settings.tsx
@@ -62,12 +62,14 @@ export class CommissionsController {
   async getMyLedgerCommissions(
     @Req() req: { user?: AuthUserPayload },
     @Query('period') period: string = 'day',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user || !user.clientId || !user.agencyId) {
       throw new ForbiddenException('Utilisateur non rattaché à une agence.');
     }
-    return this.commissionsService.getMyLedgerCommissions(user.clientId, user.agencyId, period);
+    return this.commissionsService.getMyLedgerCommissions(user.clientId, user.agencyId, period, page, limit);
   }
 
   // =========================================================
@@ -78,12 +80,14 @@ export class CommissionsController {
   async getCompanyLedgerCommissions(
     @Req() req: { user?: AuthUserPayload },
     @Query('period') period: string = 'day',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user || !user.clientId || user.role !== 'COMPANY_ADMIN') {
       throw new ForbiddenException("Accès réservé à l'Admin Société.");
     }
-    return this.commissionsService.getCompanyLedgerCommissions(user.clientId, period);
+    return this.commissionsService.getCompanyLedgerCommissions(user.clientId, period, page, limit);
   }
 
   // =========================================================

@@ -10,6 +10,8 @@
 //   sendPreview()   frais, taux et montant reçu d'un envoi cash, calculés par les mêmes services que
 //                   POST /transactions : l'écran affiche exactement ce que le serveur appliquera.
 //
+// v1.1 (phase 6) : le seuil de validation n'est plus codé en dur ; il est réglé par l'admin de la société.
+//
 // Les écritures (dépôt, paiement d'un code, envoi, remise) restent sur leurs routes existantes.
 // =========================================================
 
@@ -20,9 +22,8 @@ import { FeeScheduleService } from '../fee-schedule/fee-schedule.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
+import { needsValidation, ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
 
-/** Au-dessus, un envoi cash attend la validation d'un administrateur (même seuil que transactions.service.ts). */
-export const VALIDATION_THRESHOLD = 500_000;
 const MAX_LOOKBACK_MS = 36 * 3600_000;
 const MAX_ROWS = 5000;
 
@@ -59,6 +60,7 @@ export class AgentDeskService {
     private readonly prisma: PrismaService,
     private readonly feeSchedule: FeeScheduleService,
     private readonly rates: RatesService,
+    private readonly thresholds: ValidationThresholdsService,
   ) {}
 
   private async agentOf(agentId: string) {
@@ -202,6 +204,9 @@ export class AgentDeskService {
       throw new BadRequestException(`Aucun taux de change disponible pour ${currency} → ${target}.`);
     }
 
+    // Même seuil (réglé par l'admin de la société, par devise) que celui appliqué par POST /transactions.
+    const threshold = await this.thresholds.thresholdFor(agent.clientId, currency);
+
     return {
       amount,
       currency,
@@ -215,8 +220,8 @@ export class AgentDeskService {
       receivedAmount: received,
       available: wallet.availableBalance,
       enough: wallet.availableBalance >= quote.total,
-      needsValidation: amount > VALIDATION_THRESHOLD,
-      validationThreshold: VALIDATION_THRESHOLD,
+      needsValidation: needsValidation(amount, threshold),
+      validationThreshold: threshold,
     };
   }
 }

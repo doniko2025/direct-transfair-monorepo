@@ -1,6 +1,6 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.5
+// WALLETS SERVICE v5.6
 // ✅ FIX v5.2 : getOrCreateWallet — agencyId est un CUID string,
 //    ne jamais faire parseInt() dessus
 // ✅ FIX v5.2 : getOrCreateWallet — support agencyId comme clé propre
@@ -46,6 +46,11 @@
 //   (verrou, contrôle, mise à jour, ligne de ledger) sur un client Prisma
 //   DÉJÀ ouvert par l'appelant ; debit() et credit() les appellent, leur
 //   comportement ne change pas. creditOnce() = crédit idempotent par (wallet, transaction), sous verrou.
+//
+// ✅ v5.6 (phase 6) : transferInTx() — le transfert entre deux wallets sur un client Prisma DÉJÀ ouvert, pour
+//   l'écrire dans la même transaction SQL que la ligne Transaction (remontée de fonds, retrait forcé) ;
+//   transfer() l'appelle, son comportement ne change pas. transactionId (optionnel) relie les lignes de ledger
+//   à la Transaction.
 // =========================================================
 
 import {
@@ -504,71 +509,82 @@ export class WalletsService {
     toWalletId:   string;
     amount:       number;
     description:  string;
+    transactionId?: string;
   }) {
-    const { fromWalletId, toWalletId, amount, description } = params;
+    if (params.amount <= 0) throw new BadRequestException('Montant invalide');
+
+    return this.prisma.$transaction((tx) => this.transferInTx(tx, params));
+  }
+
+  /** Transfert entre deux wallets sur un client Prisma déjà ouvert (atomique avec le reste de l'appelant). */
+  async transferInTx(
+    tx: Prisma.TransactionClient,
+    params: { fromWalletId: string; toWalletId: string; amount: number; description: string; transactionId?: string },
+  ) {
+    const { fromWalletId, toWalletId, amount, description, transactionId } = params;
     if (amount <= 0) throw new BadRequestException('Montant invalide');
 
-    return this.prisma.$transaction(async (tx) => {
-      const ids = [fromWalletId, toWalletId].sort();
-      await this.lockWallet(tx, ids[0]);
-      await this.lockWallet(tx, ids[1]);
+    const ids = [fromWalletId, toWalletId].sort();
+    await this.lockWallet(tx, ids[0]);
+    await this.lockWallet(tx, ids[1]);
 
-      const fromWallet = await tx.wallet.findUnique({ where: { id: fromWalletId } });
-      const toWallet   = await tx.wallet.findUnique({ where: { id: toWalletId } });
+    const fromWallet = await tx.wallet.findUnique({ where: { id: fromWalletId } });
+    const toWallet   = await tx.wallet.findUnique({ where: { id: toWalletId } });
 
-      if (!fromWallet || !toWallet) throw new NotFoundException('Wallet introuvable');
+    if (!fromWallet || !toWallet) throw new NotFoundException('Wallet introuvable');
 
-      const fromAmt   = new Prisma.Decimal(amount);
-      const available = fromWallet.balance.minus(fromWallet.reservedBalance);
+    const fromAmt   = new Prisma.Decimal(amount);
+    const available = fromWallet.balance.minus(fromWallet.reservedBalance);
 
-      if (available.lessThan(fromAmt)) {
-        throw new BadRequestException('Solde insuffisant');
-      }
+    if (available.lessThan(fromAmt)) {
+      throw new BadRequestException('Solde insuffisant');
+    }
 
-      const rate =
-        fromWallet.currency === toWallet.currency
-          ? 1
-          : await this.rates.getRate(fromWallet.currency, toWallet.currency);
+    const rate =
+      fromWallet.currency === toWallet.currency
+        ? 1
+        : await this.rates.getRate(fromWallet.currency, toWallet.currency);
 
-      const toAmount = new Prisma.Decimal(amount * rate);
+    const toAmount = new Prisma.Decimal(amount * rate);
 
-      const updatedFrom = await tx.wallet.update({
-        where: { id: fromWalletId },
-        data:  { balance: { decrement: fromAmt } },
-      });
-
-      const updatedTo = await tx.wallet.update({
-        where: { id: toWalletId },
-        data:  { balance: { increment: toAmount } },
-      });
-
-      await tx.ledgerEntry.createMany({
-        data: [
-          {
-            walletId: fromWalletId,
-            type: 'DEBIT',
-            amount: fromAmt,
-            currency: fromWallet.currency,
-            description,
-            balanceAfter: updatedFrom.balance,
-          },
-          {
-            walletId: toWalletId,
-            type: 'CREDIT',
-            amount: toAmount,
-            currency: toWallet.currency,
-            description,
-            balanceAfter: updatedTo.balance,
-          },
-        ],
-      });
-
-      return {
-        from: this.serialize(updatedFrom),
-        to:   this.serialize(updatedTo),
-        rate,
-      };
+    const updatedFrom = await tx.wallet.update({
+      where: { id: fromWalletId },
+      data:  { balance: { decrement: fromAmt } },
     });
+
+    const updatedTo = await tx.wallet.update({
+      where: { id: toWalletId },
+      data:  { balance: { increment: toAmount } },
+    });
+
+    await tx.ledgerEntry.createMany({
+      data: [
+        {
+          walletId: fromWalletId,
+          type: 'DEBIT',
+          amount: fromAmt,
+          currency: fromWallet.currency,
+          description,
+          transactionId,
+          balanceAfter: updatedFrom.balance,
+        },
+        {
+          walletId: toWalletId,
+          type: 'CREDIT',
+          amount: toAmount,
+          currency: toWallet.currency,
+          description,
+          transactionId,
+          balanceAfter: updatedTo.balance,
+        },
+      ],
+    });
+
+    return {
+      from: this.serialize(updatedFrom),
+      to:   this.serialize(updatedTo),
+      rate,
+    };
   }
 
   // ========================================================

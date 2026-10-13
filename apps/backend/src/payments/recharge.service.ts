@@ -1,6 +1,8 @@
 // apps/backend/src/payments/recharge.service.ts
 // =========================================================
-// RECHARGE SERVICE v1.2 — Direct Transf'air
+// RECHARGE SERVICE v1.3 — Direct Transf'air
+// ✅ v1.3 (phase 6, passe 3) : interrupteur BLOCK_SIMULATED_RECHARGES (voir simulation.flags.ts) pour fermer les
+//   recharges simulées au lancement (le suivi /recharge/:id/status reste ouvert pour solder celles en cours).
 // ✅ v1.2 (phase 6) : (1) creditIfNotAlready() passe par WalletsService.creditOnce() : le contrôle « déjà
 //   crédité ? » et le crédit se font sous le verrou du wallet. Avant, deux sondages simultanés de
 //   /payments/recharge/:id/status créditaient deux fois. (2) Références tirées avec crypto, suffixe
@@ -33,6 +35,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
@@ -50,6 +53,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { OrangeMoneyService } from './orange-money.service';
 import { SendwaveService } from './sendwave.service';
+import { simulatedRechargesBlocked } from './simulation.flags';
 import {
   InitiateRechargeDto,
   RechargeByCardDto,
@@ -69,7 +73,15 @@ export class RechargeService {
   // Carte bancaire — mock synchrone (pas de vrai PSP branché)
   // ========================================================
 
+  /** Recharges simulées fermées (BLOCK_SIMULATED_RECHARGES=true) : aucun vrai PSP / opérateur n'est branché. */
+  private assertRechargesOpen(): void {
+    if (simulatedRechargesBlocked()) {
+      throw new ServiceUnavailableException("La recharge du wallet n'est pas encore disponible.");
+    }
+  }
+
   async rechargeByCard(userId: string, dto: RechargeByCardDto): Promise<Transaction> {
+    this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
 
     const created = await this.prisma.transaction.create({
@@ -113,6 +125,7 @@ export class RechargeService {
   // ========================================================
 
   async rechargeByOrangeMoney(userId: string, dto: RechargeByMobileMoneyDto) {
+    this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
     const created = await this.createPendingDeposit(userId, user.clientId!, dto, {
       note: `Recharge Orange Money depuis ${dto.momoPhone}`,
@@ -130,6 +143,7 @@ export class RechargeService {
   // ========================================================
 
   async rechargeBySendwave(userId: string, dto: InitiateRechargeDto) {
+    this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
     const created = await this.createPendingDeposit(userId, user.clientId!, dto);
 

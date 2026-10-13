@@ -1,6 +1,7 @@
 // apps/backend/src/agents-admin/agents-admin.service.ts
 // =========================================================
-// AGENTS ADMIN v1.0 — les agents d'une société, rattachés à une agence
+// AGENTS ADMIN v1.1 — les agents d'une société, rattachés à une agence
+// ✅ v1.1 (phase 6, passe 2) : resetPassword() ferme aussi les sessions ouvertes de l'agent.
 //
 //   list           : agents de ma société (admin de société) ou de toutes (super admin, lecture seule)
 //   create         : crée un agent dans une agence de MA société, avec un mot de passe temporaire
@@ -296,7 +297,12 @@ export class AgentsAdminService {
 
     const password = generateTempPassword();
     const hash = await bcrypt.hash(password, 10);
-    await this.prisma.user.update({ where: { id }, data: { password: hash } });
+    // Passe 2 (phase 6) : les sessions ouvertes avec l'ancien mot de passe sont fermées (sinon elles se renouvellent
+    // tant que le refresh token n'expire pas) ; l'agent se reconnecte avec le mot de passe temporaire.
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id }, data: { password: hash } }),
+      this.prisma.userSession.deleteMany({ where: { userId: id } }),
+    ]);
 
     await this.audit(user, clientId, 'PASSWORD_CHANGE', id, { kind: 'AGENT_RESET_BY_ADMIN' });
     this.sendPassword(

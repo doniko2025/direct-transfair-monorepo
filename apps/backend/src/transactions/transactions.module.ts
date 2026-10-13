@@ -19,6 +19,8 @@ import { PushModule }             from '../push/push.module';
 import { SmsModule }              from '../sms/sms.module';
 import { MailModule }             from '../mail/mail.module';
 import { NotificationsModule }    from '../notifications/notifications.module'; // ✅ v4.1
+import { ValidationThresholdsModule } from '../validation-thresholds/validation-thresholds.module'; // ✅ v4.2 (phase 6)
+import { TransferLimitsModule } from '../transfer-limits/transfer-limits.module'; // phase 6 — plafonds d'envoi
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { NotificationsModule }    from '../notifications/notifications.module'; 
     SmsModule,           // Pour SMS
     MailModule,          // Pour emails
     NotificationsModule, // ✅ v4.1 — WalletNotifier / AgentNotifier / etc.
+    ValidationThresholdsModule, // seuil de validation réglé par l'admin société
+    TransferLimitsModule, // plafonds d'envoi par niveau KYC
   ],
   controllers: [TransactionsController],
   providers:   [TransactionsService],

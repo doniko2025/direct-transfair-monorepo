@@ -1,6 +1,13 @@
 // apps/backend/src/treasury/treasury.service.ts
 // =========================================================
-// TREASURY SERVICE v5.4 — Direct Transf'air
+// TREASURY SERVICE v5.5 — Direct Transf'air
+// ✅ v5.5 (phase 6, passe 3) :
+//   (1) audit() : trace dans le journal d'audit (action BALANCE_ADJUSTMENT) de chaque injection, auto-alimentation,
+//       retrait et transfert interne — ces opérations créent ou déplacent de l'argent sans contrepartie réelle.
+//   (2) selfFundAll() : montants convertis en nombres, bornés (MAX_TREASURY_AMOUNT) ; avant, une chaîne ou un
+//       montant énorme partait tel quel vers la base (erreur 500).
+//   (3) Snapshot GLOBAL : la ligne était recherchée avec clientId 0 mais créée avec clientId null (donc jamais
+//       retrouvée) : chaque déclenchement manuel ajoutait un doublon. Recherche explicite sur clientId null.
 // ✅ FIX: CurrencyCode enum cast (migration v4.1)
 // ✅ FIX: groupBy currency → as any (Prisma enum filter)
 // ✅ FIX: txStat optional chaining sécurisé
@@ -32,9 +39,13 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CurrencyCode, Prisma, SubscriptionStatus } from '@prisma/client';
 
+import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { WalletsService } from '../wallets/wallets.service';
+
+/** Plafond d'un montant saisi à la trésorerie (au-delà, la colonne Decimal déborde). */
+export const MAX_TREASURY_AMOUNT = 1_000_000_000_000;
 
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
   CurrencyCode.XOF,
@@ -200,6 +211,34 @@ export class TreasuryService {
   }
 
   // ========================================================
+  // JOURNAL D'AUDIT — mouvements de trésorerie
+  // ========================================================
+
+  /** L'opération est faite : un échec d'écriture du journal ne doit pas la faire passer pour un échec. */
+  async audit(
+    user: Pick<AuthUserPayload, 'id' | 'clientId'> | undefined,
+    kind: 'TREASURY_INJECT' | 'TREASURY_SELF_FUND' | 'TREASURY_WITHDRAW' | 'TREASURY_TRANSFER',
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    if (!user) return;
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          clientId: user.clientId ?? null,
+          action: 'BALANCE_ADJUSTMENT',
+          entity: 'Treasury',
+          entityId: kind,
+          details: { kind, ...details } as Prisma.InputJsonValue,
+          successful: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Journal d'audit non écrit (${kind}) : ${(err as Error).message}`);
+    }
+  }
+
+  // ========================================================
   // INJECTION DE FONDS
   // ========================================================
 
@@ -214,7 +253,7 @@ export class TreasuryService {
     const { clientId, currency, performedBy, description, reason } = params;
     const amount = Number(params.amount);
 
-    if (!amount || amount <= 0) throw new BadRequestException('Montant invalide');
+    if (!amount || amount <= 0 || amount > MAX_TREASURY_AMOUNT) throw new BadRequestException('Montant invalide');
 
     const normalizedCurrency = currency.toUpperCase().trim() as CurrencyCode;
     if (!SUPPORTED_CURRENCIES.includes(normalizedCurrency)) {
@@ -251,7 +290,7 @@ export class TreasuryService {
   }) {
     const { amount, currency, reason } = params;
 
-    if (!amount || amount <= 0) throw new BadRequestException('Montant invalide');
+    if (!amount || amount <= 0 || amount > MAX_TREASURY_AMOUNT) throw new BadRequestException('Montant invalide');
 
     const wallet = await this.walletsService.getOrCreateWallet({
       userId:   params.userId,
@@ -297,7 +336,7 @@ export class TreasuryService {
   }): Promise<{ walletId: string; currency: string; credited: number }> {
     const { clientId, currency, amount, reason } = params;
 
-    if (!amount || amount <= 0) {
+    if (!amount || amount <= 0 || amount > MAX_TREASURY_AMOUNT) {
       throw new BadRequestException('Le montant doit être supérieur à 0.');
     }
 
@@ -351,10 +390,17 @@ export class TreasuryService {
   }): Promise<{ results: { currency: string; credited: number; walletId: string }[] }> {
     const { clientId, amounts, reason } = params;
 
-    const entries = Object.entries(amounts).filter(
-      ([cur, amt]) =>
-        SUPPORTED_CURRENCIES.includes(cur.toUpperCase() as CurrencyCode) && amt && amt > 0,
-    );
+    const entries: [string, number][] = [];
+    for (const [cur, raw] of Object.entries(amounts ?? {})) {
+      if (!SUPPORTED_CURRENCIES.includes(cur.toUpperCase() as CurrencyCode)) continue;
+      // Une devise laissée vide ou à zéro est simplement ignorée ; une valeur absurde est refusée.
+      if (raw === null || raw === undefined || (raw as unknown) === '') continue;
+      const amt = Number(raw);
+      if (!Number.isFinite(amt)) throw new BadRequestException(`Montant invalide pour ${cur}.`);
+      if (amt <= 0) continue;
+      if (amt > MAX_TREASURY_AMOUNT) throw new BadRequestException(`Montant trop élevé pour ${cur}.`);
+      entries.push([cur, amt]);
+    }
 
     if (entries.length === 0) {
       throw new BadRequestException(
@@ -364,7 +410,7 @@ export class TreasuryService {
 
     const results = await Promise.all(
       entries.map(([currency, amount]) =>
-        this.selfFund({ clientId, currency, amount: amount!, reason }),
+        this.selfFund({ clientId, currency, amount, reason }),
       ),
     );
 
@@ -441,37 +487,37 @@ export class TreasuryService {
       ]);
 
       const closingBalance = new Prisma.Decimal(walletAgg._sum.balance ?? 0);
-      const snapshotClientId = clientId ?? 0;
+
+      const figures = {
+        totalSent:        txAgg._sum.amount ?? 0,
+        totalFees:        txAgg._sum.fees ?? 0,
+        totalCommission:  txAgg._sum.platformCommission ?? 0,
+        closingBalance,
+        transactionCount: txAgg._count.id,
+        uniqueSenders:    txCount.length,
+      };
+
+      if (clientId === null) {
+        // Snapshot global : clientId est NULL en base. L'unicité (clientId, devise, date) ne s'applique pas aux
+        // NULL (PostgreSQL) : on cherche la ligne du jour explicitement, sinon chaque exécution ajoutait un doublon.
+        const existing = await this.prisma.treasurySnapshot.findFirst({
+          where: { clientId: null, currency, date: dateStart },
+          select: { id: true },
+        });
+        if (existing) {
+          await this.prisma.treasurySnapshot.update({ where: { id: existing.id }, data: figures });
+        } else {
+          await this.prisma.treasurySnapshot.create({
+            data: { clientId: null, currency, date: dateStart, totalReceived: 0, openingBalance: 0, ...figures },
+          });
+        }
+        continue;
+      }
 
       await this.prisma.treasurySnapshot.upsert({
-        where: {
-          clientId_currency_date: {
-            clientId: snapshotClientId,
-            currency,
-            date: dateStart,
-          },
-        },
-        update: {
-          totalSent:        txAgg._sum.amount ?? 0,
-          totalFees:        txAgg._sum.fees ?? 0,
-          totalCommission:  txAgg._sum.platformCommission ?? 0,
-          closingBalance,
-          transactionCount: txAgg._count.id,
-          uniqueSenders:    txCount.length,
-        },
-        create: {
-          clientId:         snapshotClientId === 0 ? null : snapshotClientId,
-          currency,
-          date:             dateStart,
-          totalSent:        txAgg._sum.amount ?? 0,
-          totalReceived:    0,
-          totalFees:        txAgg._sum.fees ?? 0,
-          totalCommission:  txAgg._sum.platformCommission ?? 0,
-          openingBalance:   0,
-          closingBalance,
-          transactionCount: txAgg._count.id,
-          uniqueSenders:    txCount.length,
-        },
+        where: { clientId_currency_date: { clientId, currency, date: dateStart } },
+        update: figures,
+        create: { clientId, currency, date: dateStart, totalReceived: 0, openingBalance: 0, ...figures },
       });
     }
   }

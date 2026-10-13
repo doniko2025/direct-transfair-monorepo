@@ -1,4 +1,5 @@
 // apps/backend/src/payments/payments.service.ts
+// v1.1 (phase 6, passe 3) : initiate() fermé par défaut (voir simulation.flags.ts).
 import {
   BadRequestException,
   ForbiddenException,
@@ -10,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { OrangeMoneyService } from './orange-money.service';
 import { SendwaveService } from './sendwave.service';
+import { simulatedPaymentsAllowed } from './simulation.flags';
 import {
   PaymentMethod,
   PaymentProvider,
@@ -26,6 +28,16 @@ export class PaymentsService {
   ) {}
 
   async initiate(clientId: number, userId: string, dto: InitiatePaymentDto) {
+    // ✅ phase 6 (passe 3) : l'envoi est déjà débité à sa création. Ici, WALLET ou le « paiement » Orange Money /
+    // Sendwave simulé faisaient passer l'envoi à PAID sans que l'agence ait versé le cash : l'expéditeur
+    // pouvait ainsi verrouiller son propre envoi (plus d'annulation ni de remboursement possibles, retrait impossible
+    // pour le bénéficiaire). Aucun écran ne l'appelle : fermé par défaut, rouvert seulement en dev (ALLOW_SIMULATED_PAYMENTS).
+    if (!simulatedPaymentsAllowed()) {
+      throw new ForbiddenException(
+        "Le paiement d'un envoi se fait en agence : cette opération n'est pas disponible.",
+      );
+    }
+
     const transactionId = String(dto.transactionId ?? '').trim();
     if (!transactionId) throw new BadRequestException('transactionId manquant');
 

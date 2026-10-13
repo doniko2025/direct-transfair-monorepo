@@ -1,6 +1,7 @@
 // src/pages/settings/SettingsPage.tsx
-// Réglages de la société : répartition des frais d'un retrait payé en agence.
-// Admin de société : modifie les 6 combinaisons. Super admin : consulte celles de la société de son choix.
+// Réglages de la société : répartition des frais d'un retrait payé en agence (v1) et seuil de validation
+// d'un envoi cash, par devise (v2, phase 6) et plafonds d'envoi par niveau KYC et par devise (v3, phase 6).
+// Admin de société : modifie. Super admin : consulte ceux de la société de son choix.
 
 import { useCallback, useState } from 'react';
 import type { SplitRule } from '@direct-transfair/shared';
@@ -13,7 +14,9 @@ import { DEST_LABEL, pct, SOURCE_LABEL, sortSplitRules } from '../../lib/splitRu
 import { useKeyedResource, useResource } from '../../lib/useResource';
 import { useCurrentUser } from '../../providers/AuthProvider';
 import SplitDialog from './SplitDialog';
+import LimitsSection from './LimitsSection';
 import SplitHistory from './SplitHistory';
+import ThresholdSection from './ThresholdSection';
 
 function Bar({ sender, payer, platform }: { sender: number; payer: number; platform: number }) {
   return (
@@ -78,6 +81,12 @@ export default function SettingsPage() {
   const rules = useKeyedResource(scope, async () => (skip ? null : api.commissionRules.get(clientId)), [skip]);
   const history = useKeyedResource(scope, async () => (skip ? { data: [] } : api.commissionRules.history(clientId, 10)), [skip]);
 
+  const thresholds = useKeyedResource(scope, async () => (skip ? null : api.validationThresholds.get(clientId)), [skip]);
+  const thresholdLog = useKeyedResource(scope, async () => (skip ? { data: [] } : api.validationThresholds.history(clientId, 10)), [skip]);
+
+  const limits = useKeyedResource(scope, async () => (skip ? null : api.transferLimits.get(clientId)), [skip]);
+  const limitsLog = useKeyedResource(scope, async () => (skip ? { data: [] } : api.transferLimits.history(clientId, 10)), [skip]);
+
   const [editing, setEditing] = useState<SplitRule | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -93,6 +102,28 @@ export default function SettingsPage() {
     [reloadRules, reloadHistory],
   );
 
+  const reloadThresholds = thresholds.reload;
+  const reloadThresholdLog = thresholdLog.reload;
+  const thresholdDone = useCallback(
+    (message: string) => {
+      setFlash(message);
+      reloadThresholds();
+      reloadThresholdLog();
+    },
+    [reloadThresholds, reloadThresholdLog],
+  );
+
+  const reloadLimits = limits.reload;
+  const reloadLimitsLog = limitsLog.reload;
+  const limitsDone = useCallback(
+    (message: string) => {
+      setFlash(message);
+      reloadLimits();
+      reloadLimitsLog();
+    },
+    [reloadLimits, reloadLimitsLog],
+  );
+
   const data = rules.data;
   const list = sortSplitRules(data?.rules ?? []);
   const editable = data?.editable ?? false;
@@ -104,11 +135,11 @@ export default function SettingsPage() {
         title="Réglages"
         description={
           data
-            ? `Comment ${data.company.name} partage les frais d’un retrait payé en agence.`
-            : 'Comment les frais d’un retrait payé en agence sont partagés.'
+            ? `Frais, seuil de validation et plafonds d’envoi de ${data.company.name}.`
+            : 'Frais, seuil de validation et plafonds d’envoi.'
         }
         actions={
-          <Button variant="secondary" onClick={() => { rules.reload(); history.reload(); }} busy={rules.loading && data !== null}>
+          <Button variant="secondary" onClick={() => { rules.reload(); history.reload(); thresholds.reload(); thresholdLog.reload(); limits.reload(); limitsLog.reload(); }} busy={rules.loading && data !== null}>
             Actualiser
           </Button>
         }
@@ -138,7 +169,7 @@ export default function SettingsPage() {
             onChange={(e) => setPicked(e.target.value)}
             options={companyOptions}
           />
-          <Notice tone="info">Chaque société fixe sa répartition : vous la consultez ici sans pouvoir la modifier.</Notice>
+          <Notice tone="info">Chaque société fixe ses réglages : vous les consultez ici sans pouvoir les modifier.</Notice>
         </div>
       ) : null}
 
@@ -195,6 +226,10 @@ export default function SettingsPage() {
           </section>
 
           <SplitHistory resource={history} />
+
+          <ThresholdSection thresholds={thresholds} log={thresholdLog} onChanged={thresholdDone} />
+
+          <LimitsSection limits={limits} log={limitsLog} onChanged={limitsDone} />
         </div>
       )}
 

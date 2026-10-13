@@ -1129,19 +1129,6 @@ class API {
   }
 
   // ============================================================
-  // WITHDRAWALS
-  // ============================================================
-
-  async requestWithdrawal(data: {
-    amount?: number;
-    transactionId?: string;
-    currency?: Currency | string;
-  }): Promise<unknown> {
-    const res = await this.http.post("/withdrawals", data);
-    return res.data;
-  }
-
-  // ============================================================
   // TAUX DE CHANGE
   // ============================================================
 

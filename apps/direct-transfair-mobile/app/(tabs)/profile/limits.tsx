@@ -1,5 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/limits.tsx
 // =========================================================
+// LIMITS SCREEN v6.4 — Direct Transf'air
+// ✅ v6.4 (phase 6) : plafonds réglés par la société selon le niveau KYC ; un plafond peut être « sans limite »
+//    (max = null) ; affiche le montant maximal par envoi (perTransaction).
 // LIMITS SCREEN v6.3 — Direct Transf'air
 // ✅ v6.3 : fond blanc neutre #FAFAFA
 //    - T.bg #F0FDF4 → #FAFAFA
@@ -41,9 +44,11 @@ const T = {
   },
 };
 
-type LimitEntry = { used: number; max: number };
+type LimitEntry = { used: number; max: number | null };
 type LimitsData = {
   currency: string; kycLevel: string; kycLabel: string;
+  /** Montant maximal d'un seul envoi (null = sans limite). */
+  perTransaction?: number | null;
   limits: { daily: LimitEntry; monthly: LimitEntry; yearly: LimitEntry };
 };
 
@@ -54,11 +59,12 @@ function fmt(n: number, currency = "EUR"): string {
 }
 
 function LimitCard({ title, period, used, max, currency, color, colorBg }: {
-  title: string; period: string; used: number; max: number;
+  title: string; period: string; used: number; max: number | null;
   currency: string; color: string; colorBg: string;
 }) {
-  const pct       = max > 0 ? Math.min((used / max) * 100, 100) : 0;
-  const remaining = max - used;
+  const unlimited = max === null;
+  const pct       = !unlimited && max > 0 ? Math.min((used / max) * 100, 100) : 0;
+  const remaining = unlimited ? 0 : Math.max(0, max - used);
   const isDanger  = pct > 90;
   const isWarning = pct > 70;
   const barColor  = isDanger ? T.red : isWarning ? T.amber : color;
@@ -71,7 +77,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
           <Text style={[lcS.title,  { fontFamily: T.font.display }]}>{title}</Text>
         </View>
         <View style={[lcS.badge, { backgroundColor: colorBg }]}>
-          <Text style={[lcS.badgeTxt, { color, fontFamily: T.font.mono }]}>{pct.toFixed(0)}%</Text>
+          <Text style={[lcS.badgeTxt, { color, fontFamily: T.font.mono }]}>{unlimited ? "∞" : `${pct.toFixed(0)}%`}</Text>
         </View>
       </View>
       <View style={lcS.amountRow}>
@@ -79,7 +85,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
           {fmt(used, currency)}
         </Text>
         <Text style={[lcS.slash, { fontFamily: T.font.sans }]}>/</Text>
-        <Text style={[lcS.max, { fontFamily: T.font.mono }]}>{fmt(max, currency)}</Text>
+        <Text style={[lcS.max, { fontFamily: T.font.mono }]}>{unlimited ? "Sans limite" : fmt(max, currency)}</Text>
       </View>
       <View style={lcS.progBg}>
         <View style={[lcS.progFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
@@ -87,7 +93,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
       <View style={lcS.footRow}>
         <Ionicons name={isDanger ? "alert-circle-outline" : "checkmark-circle-outline"} size={13} color={isDanger ? T.red : T.textMuted} />
         <Text style={[lcS.remaining, { color: isDanger ? T.red : T.textSub, fontFamily: T.font.sans }]}>
-          {fmt(remaining, currency)} restant{isDanger ? " · Limite presque atteinte" : ""}
+          {unlimited ? "Aucun plafond sur cette période" : `${fmt(remaining, currency)} restant${isDanger ? " · Limite presque atteinte" : ""}`}
         </Text>
       </View>
     </View>
@@ -316,6 +322,12 @@ export default function LimitsScreen() {
             <LimitCard title="Plafond Journalier" period="AUJOURD'HUI"  {...data.limits.daily}   currency={data.currency} color={T.accent} colorBg={T.accentLight} />
             <LimitCard title="Plafond Mensuel"    period="CE MOIS"      {...data.limits.monthly} currency={data.currency} color={T.blue}   colorBg={T.blueBg} />
             <LimitCard title="Plafond Annuel"     period="CETTE ANNÉE"  {...data.limits.yearly}  currency={data.currency} color={T.purple} colorBg={T.purpleBg} />
+
+            <Text style={[s.infoTxt, { fontFamily: T.font.sans, marginBottom: 12 }]}>
+              {data.perTransaction === null || data.perTransaction === undefined
+                ? "Montant maximal par envoi : sans limite"
+                : `Montant maximal par envoi : ${fmt(data.perTransaction, data.currency)}`}
+            </Text>
 
             <TouchableOpacity style={[s.requestBtn, { backgroundColor: T.accent }]} activeOpacity={0.85} onPress={() => setShowModal(true)}>
               <Ionicons name="trending-up-outline" size={17} color={T.white} />

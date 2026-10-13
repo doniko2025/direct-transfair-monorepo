@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.controller.ts
 // =========================================================
-// WITHDRAWALS CONTROLLER v4.7 — Direct Transf'air
+// WITHDRAWALS CONTROLLER v4.8 — Direct Transf'air
 // ✅ v4.4 : routes agent/check + agent/pay
 // ✅ v4.5 :
 //    - GET /withdrawals       → route manquante ajoutée (causait le 404)
@@ -26,6 +26,8 @@
 // ✅ v4.7 (phase 6) : agent/check et agent/pay limités à 20 requêtes / minute / IP
 //   (avant : 100/min comme toutes les routes). Le code de retrait a 9 chiffres :
 //   un guichet honnête n'en vérifie pas plus de quelques-uns par minute.
+//
+// ✅ v4.8 (phase 6) : POST /withdrawals supprimé (voir withdrawals.service.ts v4.12).
 // =========================================================
 
 import {
@@ -43,7 +45,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 
 import { WithdrawalsService }        from './withdrawals.service';
-import { CreateWithdrawalDto }        from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto }  from './dto/update-withdrawal-status.dto';
 
 import { JwtAuthGuard }  from '../auth/jwt-auth.guard';
@@ -61,16 +62,6 @@ type ReqWithAuth = Request & {
 @Controller()
 export class WithdrawalsController {
   constructor(private readonly withdrawals: WithdrawalsService) {}
-
-  // ── CLIENT : Demander un retrait ─────────────────────────
-  @Post('withdrawals')
-  async create(@Req() req: ReqWithAuth, @Body() dto: CreateWithdrawalDto) {
-    const clientId = req.tenantContext?.clientId;
-    if (!clientId)     throw new ForbiddenException('Tenant not resolved');
-    if (!req.user?.id) throw new ForbiddenException('Not authenticated');
-
-    return this.withdrawals.create(clientId, req.user.id, dto);
-  }
 
   // ✅ v4.5 — GET /withdrawals — ROUTE MANQUANTE (causait le 404)
   // Dispatch selon le rôle de l'utilisateur connecté :

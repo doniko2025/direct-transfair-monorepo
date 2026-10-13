@@ -1,6 +1,11 @@
 // apps/backend/src/commissions/commissions.service.ts
 // =========================================================
-// COMMISSIONS SERVICE v5.1
+// COMMISSIONS SERVICE v5.2
+// ✅ v5.2 (phase 6, lot 2c) : journal des commissions paginé (page, limit — 100 par défaut, 500 max).
+//    Avant, TOUTES les écritures de la période étaient chargées en mémoire (avec expéditeur, bénéficiaire…) :
+//    réponse de plus en plus lourde, jusqu'au dépassement mémoire. Les totaux et compteurs sont calculés par la
+//    base sur toute la période (groupBy) : ils ne dépendent pas de la page affichée. Format de réponse inchangé
+//    (+ page, limit, hasMore) ; `count` = nombre total d'écritures de la période.
 // ✅ v5.1 (phase 6) : upsertRule() ne cible plus que les règles de RÉPARTITION (payoutMethod: null) ;
 //    sans ce filtre, une ligne de tarif par mode (payoutMethod renseigné, devise vide) pouvait être
 //    écrasée par une règle de répartition.
@@ -123,6 +128,44 @@ type RawLedgerEntry = {
   } | null;
 };
 
+type LedgerGroup = { walletId: string; currency: string; total: number; count: number };
+
+const LEDGER_INCLUDE = {
+  transaction: {
+    select: {
+      reference: true,
+      amount: true,
+      fees: true,
+      sender: {
+        select: {
+          firstName: true, lastName: true,
+          agency: { select: { name: true } },
+        },
+      },
+      beneficiary: { select: { fullName: true } },
+    },
+  },
+} as const;
+
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 500;
+
+/** page ≥ 1 ; limit entre 1 et 500 (100 par défaut). Valeurs invalides → valeurs par défaut. */
+export function normalizePaging(pageRaw: unknown, limitRaw: unknown): { page: number; limit: number } {
+  const page = Math.floor(Number(pageRaw));
+  const limit = Math.floor(Number(limitRaw));
+  return {
+    page: Number.isFinite(page) && page >= 1 ? page : 1,
+    limit: Number.isFinite(limit) && limit >= 1 ? Math.min(limit, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE,
+  };
+}
+
+function sumByCurrency(groups: readonly LedgerGroup[]): CurrencyTotal[] {
+  const by = new Map<string, number>();
+  for (const g of groups) by.set(g.currency, (by.get(g.currency) ?? 0) + g.total);
+  return Array.from(by.entries()).map(([currency, total]) => ({ currency, total }));
+}
+
 @Injectable()
 export class CommissionsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -237,10 +280,12 @@ export class CommissionsService {
 
   // ========================================================
   // ✅ v5.0 — AGENT : commissions réellement créditées à son agence
+  // ✅ v5.2 : totaux calculés par la base sur TOUTE la période (groupBy), écritures paginées (page / limit)
   // ========================================================
 
-  async getMyLedgerCommissions(clientId: number, agencyId: string, period: string) {
+  async getMyLedgerCommissions(clientId: number, agencyId: string, period: string, pageRaw?: unknown, limitRaw?: unknown) {
     const startDate = this.getPeriodStart(period);
+    const { page, limit } = normalizePaging(pageRaw, limitRaw);
 
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId, isActive: true },
@@ -249,36 +294,30 @@ export class CommissionsService {
     const walletIds = agencyWallets.map((w) => w.id);
 
     if (walletIds.length === 0) {
-      return { totalsByCurrency: [] as CurrencyTotal[], count: 0, entries: [] as LedgerCommissionEntry[] };
+      return { totalsByCurrency: [] as CurrencyTotal[], count: 0, page, limit, hasMore: false, entries: [] as LedgerCommissionEntry[] };
     }
 
-    const entries = await this.prisma.ledgerEntry.findMany({
-      where: {
-        walletId: { in: walletIds },
-        type: LedgerEntryType.CREDIT,
-        description: { startsWith: COMMISSION_DESC_PREFIX },
-        createdAt: { gte: startDate },
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        transaction: {
-          select: {
-            reference: true,
-            amount: true,
-            fees: true,
-            sender: {
-              select: {
-                firstName: true, lastName: true,
-                agency: { select: { name: true } },
-              },
-            },
-            beneficiary: { select: { fullName: true } },
-          },
-        },
-      },
-    });
+    const where = this.commissionWhere(walletIds, startDate);
+    const [groups, entries] = await Promise.all([
+      this.totalsOf(where),
+      this.prisma.ledgerEntry.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit + 1,
+        include: LEDGER_INCLUDE,
+      }),
+    ]);
 
-    return this.summarize(entries as unknown as RawLedgerEntry[]);
+    const count = groups.reduce((n, g) => n + g.count, 0);
+    return {
+      totalsByCurrency: sumByCurrency(groups),
+      count,
+      page,
+      limit,
+      hasMore: entries.length > limit,
+      entries: this.mapEntries(entries.slice(0, limit) as unknown as RawLedgerEntry[]),
+    };
   }
 
   // ========================================================
@@ -287,10 +326,13 @@ export class CommissionsService {
   //                 société (clientId) — la vraie marge plateforme
   //   - agencies  : commissions réellement créditées à chaque agence
   //                 du réseau, groupées par agence
+  // ✅ v5.2 : totaux (société et par agence) calculés par la base sur toute la période ; une seule liste
+  //    d'écritures, triée et paginée (champ `scope` = platform | agency).
   // ========================================================
 
-  async getCompanyLedgerCommissions(clientId: number, period: string) {
+  async getCompanyLedgerCommissions(clientId: number, period: string, pageRaw?: unknown, limitRaw?: unknown) {
     const startDate = this.getPeriodStart(period);
+    const { page, limit } = normalizePaging(pageRaw, limitRaw);
 
     const [companyWallets, agencies] = await Promise.all([
       this.prisma.wallet.findMany({ where: { clientId, isActive: true }, select: { id: true } }),
@@ -305,99 +347,63 @@ export class CommissionsService {
         })
       : [];
     const agencyNameById = new Map(agencies.map((a) => [a.id, a.name]));
+    const agencyIdByWallet = new Map<string, string>();
     const agencyNameByWallet = new Map<string, string>();
     for (const w of agencyWallets) {
-      if (w.agencyId) agencyNameByWallet.set(w.id, agencyNameById.get(w.agencyId) ?? '—');
+      if (!w.agencyId) continue;
+      agencyIdByWallet.set(w.id, w.agencyId);
+      agencyNameByWallet.set(w.id, agencyNameById.get(w.agencyId) ?? '—');
+    }
+    const companyWalletIds = new Set(companyWallets.map((w) => w.id));
+    const allWalletIds = [...companyWalletIds, ...agencyWallets.map((w) => w.id)];
+
+    if (allWalletIds.length === 0) {
+      return { platform: { totalsByCurrency: [] as CurrencyTotal[], count: 0 }, agencies: [], page, limit, hasMore: false, entries: [] };
     }
 
-    const companyWalletIds = companyWallets.map((w) => w.id);
-    const agencyWalletIds  = agencyWallets.map((w) => w.id);
-
-    const include = {
-      transaction: {
-        select: {
-          reference: true,
-          amount: true,
-          fees: true,
-          sender: {
-            select: {
-              firstName: true, lastName: true,
-              agency: { select: { name: true } },
-            },
-          },
-          beneficiary: { select: { fullName: true } },
-        },
-      },
-    } as const;
-
-    const [platformEntries, agencyEntries] = await Promise.all([
-      companyWalletIds.length > 0
-        ? this.prisma.ledgerEntry.findMany({
-            where: {
-              walletId: { in: companyWalletIds },
-              type: LedgerEntryType.CREDIT,
-              description: { startsWith: COMMISSION_DESC_PREFIX },
-              createdAt: { gte: startDate },
-            },
-            orderBy: { createdAt: 'desc' },
-            include,
-          })
-        : Promise.resolve([]),
-      agencyWalletIds.length > 0
-        ? this.prisma.ledgerEntry.findMany({
-            where: {
-              walletId: { in: agencyWalletIds },
-              type: LedgerEntryType.CREDIT,
-              description: { startsWith: COMMISSION_DESC_PREFIX },
-              createdAt: { gte: startDate },
-            },
-            orderBy: { createdAt: 'desc' },
-            include,
-          })
-        : Promise.resolve([]),
+    const where = this.commissionWhere(allWalletIds, startDate);
+    const [groups, entries] = await Promise.all([
+      this.totalsOf(where),
+      this.prisma.ledgerEntry.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit + 1,
+        include: LEDGER_INCLUDE,
+      }),
     ]);
 
-    // ── Totaux par agence (utilisés pour le tableau récap) ────
-    const perAgency = new Map<string, { agencyId: string; name: string; totals: Map<string, number>; count: number }>();
-    for (const e of agencyEntries) {
-      const agencyId = agencyWallets.find((w) => w.id === e.walletId)?.agencyId ?? null;
-      if (!agencyId) continue;
-      if (!perAgency.has(agencyId)) {
-        perAgency.set(agencyId, {
-          agencyId,
-          name: agencyNameById.get(agencyId) ?? '—',
-          totals: new Map(),
-          count: 0,
-        });
-      }
-      const bucket = perAgency.get(agencyId)!;
-      bucket.totals.set(e.currency, (bucket.totals.get(e.currency) ?? 0) + Number(e.amount));
-      bucket.count += 1;
+    // Totaux : société (wallets de la société) et par agence, sur toute la période.
+    const platformGroups = groups.filter((g) => companyWalletIds.has(g.walletId));
+    const perAgency = new Map<string, { agencyId: string; name: string; groups: LedgerGroup[] }>();
+    for (const g of groups) {
+      const agencyId = agencyIdByWallet.get(g.walletId);
+      if (!agencyId || companyWalletIds.has(g.walletId)) continue;
+      if (!perAgency.has(agencyId)) perAgency.set(agencyId, { agencyId, name: agencyNameById.get(agencyId) ?? '—', groups: [] });
+      perAgency.get(agencyId)!.groups.push(g);
     }
 
-    const platformSummary = this.summarize(platformEntries as unknown as RawLedgerEntry[]);
-    const agencySummary   = this.summarize(agencyEntries as unknown as RawLedgerEntry[], agencyNameByWallet);
-
+    const shown = entries.slice(0, limit) as unknown as RawLedgerEntry[];
     return {
       platform: {
-        totalsByCurrency: platformSummary.totalsByCurrency,
-        count: platformSummary.count,
+        totalsByCurrency: sumByCurrency(platformGroups),
+        count: platformGroups.reduce((n, g) => n + g.count, 0),
       },
       agencies: Array.from(perAgency.values())
         .map((a) => ({
           agencyId: a.agencyId,
           name: a.name,
-          count: a.count,
-          totalsByCurrency: Array.from(a.totals.entries()).map(([currency, total]) => ({ currency, total })),
+          count: a.groups.reduce((n, g) => n + g.count, 0),
+          totalsByCurrency: sumByCurrency(a.groups),
         }))
-        .sort((a, b) =>
-          b.totalsByCurrency.reduce((s, t) => s + t.total, 0) -
-          a.totalsByCurrency.reduce((s, t) => s + t.total, 0),
-        ),
-      entries: [
-        ...platformSummary.entries.map((e) => ({ ...e, scope: 'platform' as const })),
-        ...agencySummary.entries.map((e) => ({ ...e, scope: 'agency' as const })),
-      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+        .sort((x, y) => y.totalsByCurrency.reduce((s, t) => s + t.total, 0) - x.totalsByCurrency.reduce((s, t) => s + t.total, 0)),
+      page,
+      limit,
+      hasMore: entries.length > limit,
+      entries: this.mapEntries(shown, agencyNameByWallet).map((e, i) => ({
+        ...e,
+        scope: (companyWalletIds.has(shown[i].walletId) ? 'platform' : 'agency') as 'platform' | 'agency',
+      })),
     };
   }
 
@@ -405,14 +411,33 @@ export class CommissionsService {
   // HELPERS
   // ========================================================
 
-  private summarize(
-    entries: RawLedgerEntry[],
-    agencyNameByWallet?: Map<string, string>,
-  ): { totalsByCurrency: CurrencyTotal[]; count: number; entries: LedgerCommissionEntry[] } {
-    const totalsMap = new Map<string, number>();
-    const mapped: LedgerCommissionEntry[] = entries.map((e) => {
-      totalsMap.set(e.currency, (totalsMap.get(e.currency) ?? 0) + Number(e.amount));
+  private commissionWhere(walletIds: string[], startDate: Date) {
+    return {
+      walletId: { in: walletIds },
+      type: LedgerEntryType.CREDIT,
+      description: { startsWith: COMMISSION_DESC_PREFIX },
+      createdAt: { gte: startDate },
+    };
+  }
 
+  /** Totaux par wallet et devise sur toute la période, calculés par la base (pas sur la page affichée). */
+  private async totalsOf(where: ReturnType<CommissionsService['commissionWhere']>): Promise<LedgerGroup[]> {
+    const rows = await this.prisma.ledgerEntry.groupBy({
+      by: ['walletId', 'currency'],
+      where,
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+    return rows.map((r) => ({
+      walletId: r.walletId,
+      currency: String(r.currency),
+      total: Number(r._sum.amount ?? 0),
+      count: r._count._all,
+    }));
+  }
+
+  private mapEntries(entries: RawLedgerEntry[], agencyNameByWallet?: Map<string, string>): LedgerCommissionEntry[] {
+    return entries.map((e) => {
       const senderName = e.transaction?.sender
         ? `${e.transaction.sender.firstName ?? ''} ${e.transaction.sender.lastName ?? ''}`.trim()
         : null;
@@ -438,12 +463,6 @@ export class CommissionsService {
         grossFees: e.transaction ? Number(e.transaction.fees) : null,
       };
     });
-
-    return {
-      totalsByCurrency: Array.from(totalsMap.entries()).map(([currency, total]) => ({ currency, total })),
-      count: entries.length,
-      entries: mapped,
-    };
   }
 
   private getPeriodStart(period: string): Date {

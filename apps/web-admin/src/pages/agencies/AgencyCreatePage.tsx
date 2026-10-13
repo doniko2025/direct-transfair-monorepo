@@ -168,7 +168,7 @@ export default function AgencyCreatePage() {
               onChange={(e) => set('country', e.target.value)}
               options={COUNTRIES.map((c) => ({ value: c.code, label: c.name }))}
               placeholder="Choisir un pays"
-              hint={currency ? `La caisse de l'agence sera en ${currency}. Ce choix ne pourra plus changer.` : undefined}
+              hint={currency ? `La caisse de l'agence sera en ${currency}. Si le pays change plus tard, la caisse principale passera dans la devise du nouveau pays.` : undefined}
               error={errors.country}
             />
             <div className="form-grid__wide">

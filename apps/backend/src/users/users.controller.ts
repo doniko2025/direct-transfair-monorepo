@@ -1,6 +1,9 @@
 // apps/backend/src/users/users.controller.ts
 // =========================================================
-// USERS CONTROLLER v4.5
+// USERS CONTROLLER v4.6
+// ✅ v4.6 (phase 6, passe 2) : PATCH /users/:id validé par UpdateUserDto (types et longueurs) et email normalisé en
+//   minuscules. Avant : interface TypeScript sans contrôle à l'exécution — valeur non textuelle = erreur 500, email en
+//   majuscules = compte qui ne pouvait plus se connecter.
 // ✅ v4.5 : 🔒 FIX — élévation de privilèges d'un COMPANY_ADMIN
 //
 //   PROBLÈME RÉSOLU :
@@ -85,6 +88,7 @@ import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -111,23 +115,6 @@ class RolesGuard implements CanActivate {
     if (!user?.role) return false;
     return required.includes(user.role as Role);
   }
-}
-
-// ─── DTOs ─────────────────────────────────────────────────
-interface UpdateUserBody {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  phone?: string;
-  city?: string;
-  country?: string;
-  gender?: string;
-  birthDate?: string;
-  nationality?: string;
-  addressStreet?: string;
-  postalCode?: string;
-  mobileMoneyOperator?: string;
-  mobileMoneyNumber?: string;
 }
 
 // ─── Règles de gestion des comptes ────────────────────────
@@ -378,14 +365,14 @@ export class UsersController {
   async update(
     @Req() req: { user?: AuthUserPayload },
     @Param('id') id: string,
-    @Body() body: UpdateUserBody,
+    @Body() body: UpdateUserDto,
   ) {
     await loadAndAssert(req.user!, id, 'update', this.usersService);
 
-    const allowed: UpdateUserBody = {
+    const allowed: UpdateUserDto = {
       firstName:           body.firstName,
       lastName:            body.lastName,
-      email:               body.email,
+      email:               body.email?.trim().toLowerCase(), // v4.6 : la connexion cherche l'email en minuscules
       phone:               body.phone,
       city:                body.city,
       country:             body.country,

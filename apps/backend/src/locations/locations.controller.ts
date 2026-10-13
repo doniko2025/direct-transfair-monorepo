@@ -1,12 +1,14 @@
 // apps/backend/src/locations/locations.controller.ts
 // =========================================================
-// LOCATIONS CONTROLLER v1.0 — Direct Transf'air
+// LOCATIONS CONTROLLER v1.1 — Direct Transf'air
 // ✅ GET /locations → PUBLIC, aucun JWT requis
 // ✅ Utilisé par les clients wallet pour voir les agences
-// ✅ Aucun guard appliqué sur ce contrôleur
+// ✅ v1.1 (phase 6, passe 2) : limité à la société désignée par l'en-tête `x-tenant-id`.
+//    Avant, la route renvoyait les agences de TOUTES les sociétés (noms, adresses, téléphones) à n'importe qui,
+//    sans authentification. Sans en-tête (ou société inconnue) : liste vide.
 // =========================================================
 
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Headers } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { LocationsService } from './locations.service';
@@ -18,13 +20,11 @@ export class LocationsController {
 
   /**
    * GET /locations
-   * Endpoint 100% public — aucune authentification requise.
-   * Retourne les agences actives avec leurs informations publiques.
-   * Accessible à tous les rôles (y compris clients wallet non connectés).
+   * Public (pas de JWT) mais propre à UNE société : celle de l'en-tête `x-tenant-id`.
    */
   @Get()
-  @ApiOperation({ summary: 'Liste publique des agences (sans authentification)' })
-  findAll() {
-    return this.locationsService.findPublic();
+  @ApiOperation({ summary: "Agences actives de la société (en-tête x-tenant-id), sans authentification" })
+  findAll(@Headers('x-tenant-id') tenant?: string | string[]) {
+    return this.locationsService.findPublic(Array.isArray(tenant) ? tenant[0] : tenant);
   }
 }

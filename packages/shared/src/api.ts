@@ -1,6 +1,6 @@
 // packages/shared/src/api.ts
 // =========================================================
-// ENDPOINTS v1.8 — auth + branding (phase 1), sociétés, utilisateurs, transactions, trésorerie, supervision, taux de change, frais et notifications (phase 2), agences, agents, barème de frais, répartition et commissions (phase 3), guichet de l'agent (phase 4).
+// ENDPOINTS v1.8 — auth + branding (phase 1), sociétés, utilisateurs, transactions, trésorerie, supervision, taux de change, frais et notifications (phase 2), agences, agents, barème de frais, répartition et commissions (phase 3), guichet de l'agent (phase 4), seuil de validation et plafonds d'envoi (phase 6).
 // Chaque phase ajoute ses groupes d'endpoints ici (agencies,
 // treasury, transactions…) en lisant le contrôleur backend
 // correspondant, pas en recopiant services/api.ts du mobile.
@@ -19,8 +19,10 @@ import { createNotificationsApi } from './notifications';
 import { createRatesApi } from './rates';
 import { createSupervisionApi } from './supervision';
 import { createTransactionsApi } from './transactions';
+import { createTransferLimitsApi } from './transferLimits';
 import { createTreasuryApi } from './treasury';
 import { createUsersApi } from './users';
+import { createValidationThresholdsApi } from './validationThresholds';
 import { PLATFORM_TENANT } from './tenant';
 import type {
   AuthUser,
@@ -53,6 +55,8 @@ export function createApi(http: HttpClient) {
     commissionRules: createCommissionRulesApi(http),
     commissions: createCommissionsApi(http),
     agentDesk: createAgentDeskApi(http),
+    validationThresholds: createValidationThresholdsApi(http),
+    transferLimits: createTransferLimitsApi(http),
 
     branding: {
       byHost: (host: string) =>

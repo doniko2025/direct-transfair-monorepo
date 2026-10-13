@@ -1,6 +1,10 @@
 // apps/backend/src/treasury/treasury.controller.ts
 // =========================================================
-// TREASURY CONTROLLER v5.4
+// TREASURY CONTROLLER v5.5
+// ✅ v5.5 (phase 6, passe 3) : GET /treasury/snapshots n'avait AUCUN contrôle de rôle : tout compte rattaché à une
+//   société (client, agent) lisait les volumes, frais, commissions et soldes de clôture quotidiens de sa société.
+//   Réservé au super admin et à l'admin de société, comme /treasury/overview. Les mouvements d'argent
+//   (inject, inject-all, withdraw, transfer) laissent maintenant une trace dans le journal d'audit.
 // ✅ FIX v5.2 : POST admin/inject   → @Body() au lieu de @Query()
 // ✅ FIX v5.2 : POST admin/withdraw → @Body() au lieu de @Query()
 // ✅ FIX v5.3 : getOverview SUPER_ADMIN → getClientOverview(user.clientId)
@@ -113,6 +117,9 @@ export class TreasuryController {
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
+    if (user.role !== 'SUPER_ADMIN' && user.role !== 'COMPANY_ADMIN') {
+      throw new ForbiddenException('Accès réservé aux Super Admin et Company Admin');
+    }
 
     // ✅ v5.4 — FIX (voir changelog en tête de fichier) : ternaire mort
     // simplifié. Le SA voit ses propres snapshots (son clientId), pas
@@ -183,13 +190,18 @@ export class TreasuryController {
       throw new BadRequestException('Le montant doit être un nombre supérieur à 0.');
     }
 
-    return this.treasuryService.injectFunds({
+    const result = await this.treasuryService.injectFunds({
       clientId:    user.clientId,
       currency:    body.currency,
       amount:      parsedAmount,
       performedBy: user.id,
       description: body.description || 'Auto-injection admin',
     });
+    await this.treasuryService.audit(user, 'TREASURY_INJECT', {
+      currency: body.currency.toUpperCase(),
+      amount: parsedAmount,
+    });
+    return result;
   }
 
   // ========================================================
@@ -222,11 +234,15 @@ export class TreasuryController {
       );
     }
 
-    return this.treasuryService.selfFundAll({
+    const result = await this.treasuryService.selfFundAll({
       clientId: user.clientId,
       amounts:  body.amounts,
       reason:   body.reason || 'Auto-alimentation admin multi-devises',
     });
+    await this.treasuryService.audit(user, 'TREASURY_SELF_FUND', {
+      credited: result.results.map((r) => ({ currency: r.currency, amount: r.credited })),
+    });
+    return result;
   }
 
   // ========================================================
@@ -259,12 +275,17 @@ export class TreasuryController {
       throw new BadRequestException('Le montant doit être > 0.');
     }
 
-    return this.treasuryService.withdrawFunds({
+    const result = await this.treasuryService.withdrawFunds({
       clientId: user.clientId,
       currency: body.currency,
       amount:   parsedAmount,
       reason:   body.reason || 'Retrait admin',
     });
+    await this.treasuryService.audit(user, 'TREASURY_WITHDRAW', {
+      currency: body.currency.toUpperCase(),
+      amount: parsedAmount,
+    });
+    return result;
   }
 
   // ========================================================
@@ -286,11 +307,17 @@ export class TreasuryController {
       throw new ForbiddenException('Réservé au Super Admin');
     }
 
-    return this.treasuryService.transferBetweenWallets({
+    const result = await this.treasuryService.transferBetweenWallets({
       fromWalletId: body.fromWalletId,
       toWalletId:   body.toWalletId,
       amount:       body.amount,
       description:  body.description || 'Transfert interne Super Admin',
     });
+    await this.treasuryService.audit(req.user, 'TREASURY_TRANSFER', {
+      fromWalletId: body.fromWalletId,
+      toWalletId: body.toWalletId,
+      amount: body.amount,
+    });
+    return result;
   }
 }

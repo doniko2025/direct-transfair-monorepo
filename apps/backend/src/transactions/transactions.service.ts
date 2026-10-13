@@ -1,7 +1,17 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.24 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.27 — Direct Transf'air
 // =========================================================
+// ✅ v4.27 (phase 6) : ATOMICITÉ des mouvements d'argent. create(), deposit() et refillAgency() faisaient « débit »,
+//    « crédit » puis « écriture de la transaction » en étapes séparées : une panne, une référence en doublon ou un
+//    solde insuffisant au 2ᵉ pas laissait de l'argent débité sans trace ou crédité sans contrepartie. Chacune écrit
+//    maintenant tout dans UNE transaction SQL (WalletsService.debitInTx / creditInTx) ; les lignes de ledger portent
+//    le transactionId. create() re-contrôle en plus les plafonds sous le verrou du wallet (deux envois simultanés).
+//    La commission plateforme d'un envoi direct fait partie de la transaction (avant : non bloquante, donc perdable).
+// ✅ v4.26 (phase 6) : create() contrôle les plafonds d'envoi du client (par envoi / jour / mois / an selon son niveau
+//    KYC et la devise, réglés par l'admin société — TransferLimitsService) AVANT tout débit. Refus : 403 LIMIT_EXCEEDED.
+// ✅ v4.25 (phase 6) : le seuil de validation d'un envoi cash (500 000 codé en dur) est maintenant réglé
+//    par l'admin de la société, par devise (ValidationThresholdsService). Sans réglage : 500 000, comme avant.
 // ✅ v4.24 (phase 6) : INTÉGRITÉ FINANCIÈRE — annulations, B2B, références
 //    (1) 🚨 cancel() : l'annulation créditait le wallet AVANT de changer le statut, sans verrou :
 //        deux clics (ou un clic + l'agent qui paie le code au même moment) remboursaient deux fois.
@@ -269,6 +279,8 @@ import { WalletNotifierService }  from '../notifications/channels/wallet-notifie
 import { AgentNotifierService }   from '../notifications/channels/agent-notifier.service';
 import { CompanyNotifierService } from '../notifications/channels/company-notifier.service';
 import { AdminNotifierService }   from '../notifications/channels/admin-notifier.service';
+import { ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
+import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -358,6 +370,8 @@ export class TransactionsService {
     private readonly agentNotifier:        AgentNotifierService,
     private readonly companyNotifier:      CompanyNotifierService,
     private readonly adminNotifier:        AdminNotifierService,
+    private readonly thresholds:           ValidationThresholdsService,
+    private readonly transferLimits:       TransferLimitsService,
   ) {}
 
   // ── Enrichissement ────────────────────────────────────
@@ -923,6 +937,10 @@ export class TransactionsService {
     //   volontairement ignoré) ; sinon 1,5 %. Le frais fixe d'une règle est converti dans la devise
     //   de l'envoi. Voir fee-schedule/fee-schedule.service.ts.
     const amount = new Prisma.Decimal(dto.amount);
+
+    // v4.26 — plafonds du client (sans effet pour un agent : l'expéditeur de passage n'a pas de niveau KYC).
+    await this.transferLimits.assertWithinLimits(this.prisma, { clientId, userId: senderId, currency, amount: Number(amount) });
+
     const feeQuote = await this.feeSchedule.quote({
       clientId,
       senderId,
@@ -976,86 +994,86 @@ export class TransactionsService {
       status = TransactionStatus.PAID;
       paidAt = new Date();
     } else {
-      const threshold = new Prisma.Decimal(500000);
+      // Seuil réglé par l'admin de la société pour cette devise (500 000 tant qu'il n'a rien réglé).
+      const threshold = new Prisma.Decimal(await this.thresholds.thresholdFor(clientId, currency));
       status = amount.lte(threshold) ? TransactionStatus.VALIDATED : TransactionStatus.PENDING;
       if (dto.senderFirstName) {
         storedRef = `${transactionRef}|${dto.senderFirstName} ${dto.senderLastName ?? ''}`;
       }
     }
 
-    // ✅ FIX v4.16-A : débit sur walletToDebit (wallet agence si agent)
-    await this.walletsService.debit(walletToDebit.id, Number(total), `Envoi ${transactionRef}`);
+    // ✅ v4.27 (phase 6) — ATOMICITÉ. Les wallets annexes sont retrouvés/créés AVANT la transaction SQL
+    // (création idempotente) ; ensuite la ligne Transaction, le débit de l'expéditeur, le crédit du
+    // destinataire, la commission plateforme et le contrôle des plafonds sont écrits dans UNE SEULE
+    // transaction SQL : si une étape échoue (solde, plafond, référence en doublon, coupure), rien n'a bougé.
+    const recipientWalletRef = recipientUser
+      ? await this.walletsService.getOrCreateWallet({ userId: recipientUser.id, currency: targetCurrency })
+      : null;
 
-    if (recipientUser) {
-      const recipientWalletRef = await this.walletsService.getOrCreateWallet({
-        userId:   recipientUser.id,
-        currency: targetCurrency,
-      });
-      await this.walletsService.credit(
-        recipientWalletRef.id,
-        convertedAmount,
-        `Réception de ${user.firstName} ${user.lastName}`,
-      );
-    }
+    // ✅ v4.21 — filet de sécurité commission plateforme : un envoi PAID dès sa création (destinataire wallet
+    // résolu) avec des frais > 0 n'aura jamais de paiement en agence pour distribuer ces frais ; ils sont
+    // donc crédités à la société ici. (Avant v4.27 : hors transaction et non bloquant, d'où des frais
+    // débités de l'expéditeur mais crédités nulle part si ce crédit échouait.)
+    const feeWalletRef = recipientUser && Number(fees) > 0
+      ? await this.walletsService.getOrCreateWallet({ clientId, currency })
+      : null;
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        reference:      transactionRef,
-        amount, fees, total,
-        currency,
-        targetCurrency,
-        receivedAmount,
-        exchangeRate,
-        payoutMethod:   dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
-        status,
-        senderId,
-        beneficiaryId:  beneficiary?.id ?? null,
-        recipientId:    recipientUser?.id ?? null,
-        clientId,
-        agencyId:       user.agencyId ?? null, // ✅ v4.22 — agence de l'agent qui encaisse
-        providerRef:    storedRef,
-        providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
-        paidAt,
-        // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
-        // Transaction.note existe dans le schéma ; dto.note n'était
-        // jamais lu ni écrit ici auparavant.
-        note:           (dto as any).note ?? null,
-      },
-    });
-
-    // ✅ v4.21 — FIX (POINT 2, voir changelog en tête de fichier) :
-    // filet de sécurité commission plateforme.
-    //
-    // Si cette transaction est PAID dès sa création (recipientUser
-    // résolu — actuellement jamais le cas depuis send-cash.tsx, voir
-    // changelog), ET que des frais ont été calculés (fees > 0, donc
-    // payoutMethod non-WALLET/MOBILE_MONEY — combinaison inhabituelle
-    // mais pas interdite par le DTO), alors il n'existe AUCUN moment
-    // ultérieur où ces frais seraient distribués : agentProcessPayment()
-    // (withdrawals.service.ts) ne s'exécute que pour un code retiré en
-    // agence, qui n'existe pas ici. Sans ce correctif, les frais
-    // resteraient débités du sender (inclus dans `total`) sans jamais
-    // être crédités nulle part — perte de traçabilité comptable.
-    // Non-bloquant : un échec ici ne doit pas faire échouer l'envoi
-    // d'argent lui-même, qui a déjà réussi à ce stade.
-    if (recipientUser && Number(fees) > 0) {
-      try {
-        const companyWalletRef = await this.walletsService.getOrCreateWallet({
-          clientId,
+    const transaction = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          reference:      transactionRef,
+          amount, fees, total,
           currency,
-        });
-        await this.walletsService.credit(
-          companyWalletRef.id,
-          Number(fees),
-          `Commission plateforme (envoi direct ${transactionRef})`,
-          transaction.id,
-        );
-      } catch (e) {
-        this.logger.warn(
-          `Commission plateforme non créditée pour l'envoi direct ${transactionRef} : ${(e as any)?.message}`,
+          targetCurrency,
+          receivedAmount,
+          exchangeRate,
+          payoutMethod:   dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
+          status,
+          senderId,
+          beneficiaryId:  beneficiary?.id ?? null,
+          recipientId:    recipientUser?.id ?? null,
+          clientId,
+          agencyId:       user.agencyId ?? null, // ✅ v4.22 — agence de l'agent qui encaisse
+          providerRef:    storedRef,
+          providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
+          paidAt,
+          // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
+          note:           (dto as any).note ?? null,
+        },
+      });
+
+      // ✅ FIX v4.16-A : débit sur walletToDebit (wallet agence si agent). Le débit prend le verrou du wallet :
+      // deux envois simultanés du même client sont donc traités l'un après l'autre.
+      await this.walletsService.debitInTx(tx, walletToDebit.id, Number(total), `Envoi ${transactionRef}`, created.id);
+
+      // v4.27 — plafonds re-contrôlés SOUS le verrou du wallet (le contrôle d'avant le calcul des frais ne
+      // protège pas de deux envois simultanés). Cet envoi lui-même est exclu du cumul.
+      await this.transferLimits.assertWithinLimits(tx, {
+        clientId, userId: senderId, currency, amount: Number(amount), excludeTransactionId: created.id,
+      });
+
+      if (recipientUser && recipientWalletRef) {
+        await this.walletsService.creditInTx(
+          tx,
+          recipientWalletRef.id,
+          convertedAmount,
+          `Réception de ${user.firstName} ${user.lastName}`,
+          created.id,
         );
       }
-    }
+
+      if (feeWalletRef) {
+        await this.walletsService.creditInTx(
+          tx,
+          feeWalletRef.id,
+          Number(fees),
+          `Commission plateforme (envoi direct ${transactionRef})`,
+          created.id,
+        );
+      }
+
+      return created;
+    });
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName
@@ -1164,32 +1182,37 @@ export class TransactionsService {
     const clientWalletRef = await this.walletsService.getOrCreateWallet({ userId: clientUser.id, currency });
     const depositRef      = await this.uniqueReference(); // ✅ v4.24 : choisie AVANT de bouger l'argent
 
-    await this.walletsService.debit(agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`);
-    await this.walletsService.credit(clientWalletRef.id, Number(amountDec), `Dépôt agent`);
+    // ✅ v4.27 — transaction + débit de la caisse + crédit du client : une seule transaction SQL.
+    const depositClientId = agent.clientId;
+    const result = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          reference:      depositRef,
+          // ✅ v4.21 — FIX (POINT 1, voir changelog en tête de fichier) :
+          // sans ce champ, la transaction retombait sur le défaut Prisma
+          // TransactionType.TRANSFER, indiscernable d'un vrai transfert
+          // client dans toute future requête filtrant par type.
+          type:           TransactionType.DEPOSIT,
+          amount:         amountDec,
+          fees:           new Prisma.Decimal(0),
+          total:          amountDec,
+          currency,
+          status:         TransactionStatus.PAID,
+          payoutMethod:   PayoutMethod.WALLET,
+          paymentMethod:  PaymentMethod.CASH,
+          senderId:       agent.id,
+          recipientId:    clientUser.id,
+          clientId:       depositClientId,
+          agencyId:       agent.agencyId, // ✅ v4.22 — caisse mouvementée
+          paidAt:         new Date(),
+          providerStatus: ProviderStatus.SUCCESS,
+          providerRef:    this.stampedReference('DEP'),
+        },
+      });
 
-    const result = await this.prisma.transaction.create({
-      data: {
-        reference:      depositRef,
-        // ✅ v4.21 — FIX (POINT 1, voir changelog en tête de fichier) :
-        // sans ce champ, la transaction retombait sur le défaut Prisma
-        // TransactionType.TRANSFER, indiscernable d'un vrai transfert
-        // client dans toute future requête filtrant par type.
-        type:           TransactionType.DEPOSIT,
-        amount:         amountDec,
-        fees:           new Prisma.Decimal(0),
-        total:          amountDec,
-        currency,
-        status:         TransactionStatus.PAID,
-        payoutMethod:   PayoutMethod.WALLET,
-        paymentMethod:  PaymentMethod.CASH,
-        senderId:       agent.id,
-        recipientId:    clientUser.id,
-        clientId:       agent.clientId,
-        agencyId:       agent.agencyId, // ✅ v4.22 — caisse mouvementée
-        paidAt:         new Date(),
-        providerStatus: ProviderStatus.SUCCESS,
-        providerRef:    this.stampedReference('DEP'),
-      },
+      await this.walletsService.debitInTx(tx, agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`, created.id);
+      await this.walletsService.creditInTx(tx, clientWalletRef.id, Number(amountDec), `Dépôt agent`, created.id);
+      return created;
     });
 
     await this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency);
@@ -1302,29 +1325,32 @@ export class TransactionsService {
 
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency: currencyCode });
 
-    await this.walletsService.debit(adminWallet.id, amount, `Recharge agence ${agency.name} (${agencyId})`);
-    await this.walletsService.credit(agencyWalletRef.id, amount, `Recharge admin → ${agency.name}`);
-
     const txRef = this.stampedReference('REFILL');
 
-    await this.prisma.transaction.create({
-      data: {
-        reference:      txRef,
-        type:           TransactionType.AGENCY_REFILL,
-        amount:         new Prisma.Decimal(amount),
-        fees:           new Prisma.Decimal(0),
-        total:          new Prisma.Decimal(amount),
-        currency:       currencyCode,
-        status:         TransactionStatus.PAID,
-        payoutMethod:   PayoutMethod.BANK_DEPOSIT,
-        paymentMethod:  PaymentMethod.WALLET,
-        senderId:       adminId,
-        clientId:       admin.clientId!,
-        agencyId,                        // ✅ v4.22 — plus besoin de relire providerRef
-        paidAt:         new Date(),
-        providerStatus: ProviderStatus.SUCCESS,
-        providerRef:    `${txRef}|AGENCY:${agencyId}`,
-      },
+    // ✅ v4.27 — transaction + débit de la société + crédit de la caisse : une seule transaction SQL.
+    await this.prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          reference:      txRef,
+          type:           TransactionType.AGENCY_REFILL,
+          amount:         new Prisma.Decimal(amount),
+          fees:           new Prisma.Decimal(0),
+          total:          new Prisma.Decimal(amount),
+          currency:       currencyCode,
+          status:         TransactionStatus.PAID,
+          payoutMethod:   PayoutMethod.BANK_DEPOSIT,
+          paymentMethod:  PaymentMethod.WALLET,
+          senderId:       adminId,
+          clientId:       admin.clientId!,
+          agencyId,                        // ✅ v4.22 — plus besoin de relire providerRef
+          paidAt:         new Date(),
+          providerStatus: ProviderStatus.SUCCESS,
+          providerRef:    `${txRef}|AGENCY:${agencyId}`,
+        },
+      });
+
+      await this.walletsService.debitInTx(tx, adminWallet.id, amount, `Recharge agence ${agency.name} (${agencyId})`, created.id);
+      await this.walletsService.creditInTx(tx, agencyWalletRef.id, amount, `Recharge admin → ${agency.name}`, created.id);
     });
 
     const successResult = {

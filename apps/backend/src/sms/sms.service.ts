@@ -1,6 +1,8 @@
 // apps/backend/src/sms/sms.service.ts
 // =========================================================
-// SMS SERVICE v4.0 — Direct Transf'air
+// SMS SERVICE v4.1 — Direct Transf'air
+// ✅ v4.1 (phase 6) : le journal des communications ne garde plus le texte des SMS (OTP, codes de retrait).
+//   Le mode « stub » (sans Twilio) n'écrit plus le message dans les logs en production.
 // ✅ Provider : Twilio (principal) + Orange API (fallback)
 // ✅ CommunicationLog tracé en base
 // ✅ Templates OTP, transfert, alerte solde
@@ -70,7 +72,7 @@ export class SmsService {
           transactionId: transactionId ?? null,
           type: 'SMS',
           recipient: to,
-          smsContent: message,
+          // Pas de smsContent : le texte contient des OTP et des codes de retrait.
           status: 'PENDING',
           providerName: this.twilioClient ? 'twilio' : 'stub',
         },
@@ -82,7 +84,12 @@ export class SmsService {
 
     // ✅ STUB : Pas de Twilio configuré → log console
     if (!this.twilioClient) {
-      this.logger.log(`[SMS STUB] → ${to} : ${message}`);
+      // Le texte (donc l'OTP) n'est affiché qu'en développement.
+      this.logger.log(
+        process.env.NODE_ENV === 'production'
+          ? `[SMS STUB] → ${to} (${message.length} caractères)`
+          : `[SMS STUB] → ${to} : ${message}`,
+      );
 
       if (logId) {
         await this.prisma.communicationLog

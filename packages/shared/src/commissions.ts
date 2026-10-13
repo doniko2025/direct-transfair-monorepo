@@ -3,9 +3,12 @@
 // COMMISSIONS GAGNÉES — ce qui a réellement été crédité (écritures du grand livre), pas un recalcul.
 //
 // Contrat : apps/backend/src/commissions/commissions.controller.ts
-//   GET /commissions/ledger/company?period   COMPANY_ADMIN : { platform, agencies, entries }
-//   GET /commissions/ledger/mine?period      AGENT         : { totalsByCurrency, count, entries }
+//   GET /commissions/ledger/company?period   COMPANY_ADMIN : { platform, agencies, entries, page, limit, hasMore }
+//   GET /commissions/ledger/mine?period      AGENT         : { totalsByCurrency, count, entries, page, limit, hasMore }
 //
+// Pagination (phase 6) : ?page=1&limit=100 (500 max). Les totaux et `count` portent sur TOUTE la période,
+// `entries` sur la page demandée ; `hasMore` indique qu'une page suivante existe.
+
 // period : day | week | month | quarter | year ; toute autre valeur = depuis le début.
 // =========================================================
 
@@ -42,17 +45,38 @@ export interface CompanyCommissions {
   platform: { totalsByCurrency: CurrencyTotal[]; count: number };
   agencies: { agencyId: string; name: string; count: number; totalsByCurrency: CurrencyTotal[] }[];
   entries: CompanyCommissionEntry[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
 }
 
 export interface MyCommissions {
   totalsByCurrency: CurrencyTotal[];
   count: number;
   entries: CommissionEntry[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface CommissionPageOptions {
+  page?: number;
+  limit?: number;
+}
+
+function pagingQuery(opts?: CommissionPageOptions): string {
+  if (!opts) return '';
+  const parts: string[] = [];
+  if (opts.page) parts.push(`page=${Math.floor(opts.page)}`);
+  if (opts.limit) parts.push(`limit=${Math.floor(opts.limit)}`);
+  return parts.length ? `&${parts.join('&')}` : '';
 }
 
 export function createCommissionsApi(http: HttpClient) {
   return {
-    company: (period: CommissionPeriod) => http.get<CompanyCommissions>(`/commissions/ledger/company?period=${period}`),
-    mine: (period: CommissionPeriod) => http.get<MyCommissions>(`/commissions/ledger/mine?period=${period}`),
+    company: (period: CommissionPeriod, opts?: CommissionPageOptions) =>
+      http.get<CompanyCommissions>(`/commissions/ledger/company?period=${period}${pagingQuery(opts)}`),
+    mine: (period: CommissionPeriod, opts?: CommissionPageOptions) =>
+      http.get<MyCommissions>(`/commissions/ledger/mine?period=${period}${pagingQuery(opts)}`),
   };
 }

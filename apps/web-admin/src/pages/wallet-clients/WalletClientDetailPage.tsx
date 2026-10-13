@@ -1,6 +1,7 @@
 // src/pages/wallet-clients/WalletClientDetailPage.tsx
 // Fiche d'un client wallet : portefeuilles, vérification d'identité et dernières opérations
 // (envois et réceptions). Le profil, la suspension et la suppression restent sur la fiche du compte.
+// v2 (phase 6) : l'admin de société change le niveau KYC du client (qui décide de ses plafonds d'envoi).
 
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -26,6 +27,7 @@ import {
 import { clientOperations } from '../../lib/walletClientRules';
 import { useCurrentUser } from '../../providers/AuthProvider';
 import { TxCard } from '../transactions/TxCard';
+import KycLevelDialog from './KycLevelDialog';
 
 const PAGE = 10;
 
@@ -35,6 +37,8 @@ export default function WalletClientDetailPage() {
   const client = useResource(() => api.users.get(id), [id]);
   const ops = useResource(async () => clientOperations(await api.transactions.listAdmin(), id), [id]);
   const [limit, setLimit] = useState(PAGE);
+  const [editingKyc, setEditingKyc] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
 
   const backLink = (
     <Link to="/wallet-clients" className="btn btn--secondary">
@@ -185,10 +189,31 @@ export default function WalletClientDetailPage() {
               <p>Où en est ce client et depuis quand il utilise l'application.</p>
             </div>
           </header>
+          {flash ? (
+            <Notice
+              tone="ok"
+              title={flash}
+              action={
+                <button type="button" className="link-btn" onClick={() => setFlash(null)}>
+                  Fermer
+                </button>
+              }
+            />
+          ) : null}
           <dl className="kv">
             <div className="kv__row">
               <dt>Vérification d'identité</dt>
-              <dd>{user.kycLevel ? KYC_LABEL[user.kycLevel] : <span className="muted">Inconnue</span>}</dd>
+              <dd>
+                {user.kycLevel ? KYC_LABEL[user.kycLevel] : <span className="muted">Inconnue</span>}
+                {me.role === 'COMPANY_ADMIN' ? (
+                  <>
+                    {' '}
+                    <button type="button" className="link-btn" onClick={() => setEditingKyc(true)}>
+                      Changer le niveau
+                    </button>
+                  </>
+                ) : null}
+              </dd>
             </div>
             <div className="kv__row">
               <dt>Statut de conformité</dt>
@@ -267,6 +292,19 @@ export default function WalletClientDetailPage() {
           )}
         </section>
       </div>
+
+      {editingKyc ? (
+        <KycLevelDialog
+          userId={user.id}
+          current={user.kycLevel}
+          onClose={() => setEditingKyc(false)}
+          onDone={(message) => {
+            setEditingKyc(false);
+            setFlash(message);
+            client.reload();
+          }}
+        />
+      ) : null}
     </>
   );
 }

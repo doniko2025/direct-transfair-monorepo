@@ -1,6 +1,10 @@
 // apps/backend/src/auth/auth.controller.ts
 // =========================================================
-// AUTH CONTROLLER v4.2
+// AUTH CONTROLLER v4.3
+// ✅ v4.3 (phase 6, passe 2) : POST /auth/devices — un jeton push appartient à UN seul compte. Avant, si deux comptes
+//   se connectaient sur le même téléphone, l'ancien gardait le jeton : ses notifications (montants, codes de retrait)
+//   continuaient d'arriver sur un appareil utilisé par quelqu'un d'autre. Le jeton est maintenant retiré aux autres
+//   comptes à l'enregistrement. Plateforme et longueurs des champs contrôlées (avant : erreur 500 sur une valeur inconnue).
 // ✅ v4.1 conservé intégralement
 // ✅ v4.2 : POST /auth/login-by-phone
 //   → connexion sans mot de passe par numéro de téléphone
@@ -262,6 +266,26 @@ export class AuthController {
     if (!req.user) throw new BadRequestException('User not found');
     if (!body.deviceId || !body.platform)
       throw new BadRequestException('deviceId et platform requis');
+    if (!['IOS', 'ANDROID', 'WEB', 'DESKTOP'].includes(String(body.platform))) {
+      throw new BadRequestException('platform inconnue (IOS, ANDROID, WEB ou DESKTOP)');
+    }
+    const tooLong = (v: unknown, max: number) => typeof v === 'string' && v.length > max;
+    if (
+      typeof body.deviceId !== 'string' || tooLong(body.deviceId, 200) ||
+      (body.pushToken !== undefined && (typeof body.pushToken !== 'string' || tooLong(body.pushToken, 500))) ||
+      tooLong(body.deviceName, 200) || tooLong(body.deviceModel, 200) ||
+      tooLong(body.osVersion, 100) || tooLong(body.appVersion, 100)
+    ) {
+      throw new BadRequestException('Champ appareil invalide ou trop long.');
+    }
+
+    // Un jeton push = un seul compte : on le retire aux autres comptes qui l'auraient encore.
+    if (body.pushToken) {
+      await this.prisma.userDevice.updateMany({
+        where: { pushToken: body.pushToken, userId: { not: req.user.id } },
+        data:  { pushToken: null, pushEnabled: false },
+      });
+    }
 
     const device = await this.prisma.userDevice.upsert({
       where: {

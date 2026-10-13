@@ -15,10 +15,14 @@ import {
   Min,
   Max,
   IsIn,
+  IsDateString,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 
 const SUPPORTED_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'];
+
+/** Plafond d'un montant saisi (au-delà, la colonne Decimal déborde et la base répond par une erreur 500). */
+const MAX_AMOUNT = 1_000_000_000_000;
 
 // =========================================================
 // INJECT FUNDS — Auto-alimentation simple devise
@@ -34,8 +38,9 @@ export class InjectFundsDto {
 
   @Transform(({ value }) => Number(value))
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(MAX_AMOUNT)
   amount: number;
 
   @IsOptional()
@@ -72,8 +77,9 @@ export class WithdrawFundsDto {
 
   @Transform(({ value }) => Number(value))
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(MAX_AMOUNT)
   amount: number;
 
   @IsOptional()
@@ -93,8 +99,9 @@ export class SelfFundDto {
 
   @Transform(({ value }) => Number(value))
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(MAX_AMOUNT)
   amount: number;
 
   @IsOptional()
@@ -116,8 +123,9 @@ export class TransferBetweenWalletsDto {
 
   @Transform(({ value }) => Number(value))
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false })
   @IsPositive()
+  @Max(MAX_AMOUNT)
   amount: number;
 
   @IsOptional()
@@ -159,11 +167,11 @@ export class GetSnapshotsQueryDto {
   currency?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   from?: string;
 
   @IsOptional()
-  @IsString()
+  @IsDateString()
   to?: string;
 
   @IsOptional()

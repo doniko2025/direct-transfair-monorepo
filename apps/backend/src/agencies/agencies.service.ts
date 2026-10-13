@@ -1,6 +1,11 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.8
+// AGENCIES SERVICE v4.9
+// ✅ v4.9 (phase 6) : changer le pays d'une agence lui donne la devise locale ET sa caisse.
+//   Avant, update() recalculait primaryCurrency (à partir des 2 premières lettres du pays, donc « Guinée » → XOF)
+//   mais ne créait aucun wallet : l'agence n'avait plus de caisse dans sa propre devise. Maintenant : pays reconnu
+//   (code ou nom) ou erreur 400, devise locale, wallet de cette devise créé / réactivé et passé en caisse principale,
+//   anciennes caisses conservées avec leur solde. Même contrôle du pays à la création.
 // ✅ v4.8 : 🐛 FIX — create() ne normalisait ni ne vérifiait le téléphone
 //
 //   PROBLÈME RÉSOLU :
@@ -188,6 +193,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { MailService } from '../mail/mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
+import { toIso2 } from '../fee-schedule/countries';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
 
@@ -207,10 +213,17 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
   BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
 };
 
-function getCurrencyFromCountry(country?: string | null): CurrencyCode {
-  if (!country) return CurrencyCode.XOF;
-  const code = country.toUpperCase().trim().substring(0, 2);
-  return COUNTRY_TO_CURRENCY[code] ?? CurrencyCode.XOF;
+/**
+ * Pays saisi (code « GN », « gn » ou nom « Guinée ») → code ISO + devise locale, ou null si on ne le connaît pas.
+ * ✅ v4.9 : avant, seules les 2 premières lettres comptaient (« Guinée » donnait « GU », inconnu, donc XOF) et un pays
+ * inconnu retombait sur XOF en silence.
+ */
+function resolveCountry(raw: unknown): { country: string; currency: CurrencyCode } | null {
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  if (!trimmed) return null;
+  const iso = toIso2(trimmed) ?? (/^[A-Za-z]{2}$/.test(trimmed) ? trimmed.toUpperCase() : null);
+  const currency = iso ? COUNTRY_TO_CURRENCY[iso] : undefined;
+  return iso && currency ? { country: iso, currency } : null;
 }
 
 function safeTrim(v: unknown): string {
@@ -296,8 +309,13 @@ export class AgenciesService {
     const generatedPassword = providedPassword ? null : generateSecurePassword();
     const hashedPassword    = await bcrypt.hash(providedPassword || (generatedPassword as string), 10);
 
-    // ✅ FIX: CurrencyCode
-    const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
+    // ✅ v4.9 : devise locale du pays ; pays inconnu = erreur claire (avant : XOF en silence).
+    // Sans pays, la caisse reste en XOF comme avant.
+    const resolved = safeTrim(dto.country) ? resolveCountry(dto.country) : null;
+    if (safeTrim(dto.country) && !resolved) {
+      throw new BadRequestException(`Pays non pris en charge : « ${safeTrim(dto.country)} ».`);
+    }
+    const primaryCurrency: CurrencyCode = resolved?.currency ?? CurrencyCode.XOF;
 
     const { agency: createdAgency, agent } = await this.prisma.$transaction(async (tx) => {
       const agency = await tx.agency.create({
@@ -308,7 +326,7 @@ export class AgenciesService {
           phone,
           code: dto.code || null,
           email,
-          country: dto.country || null,
+          country: resolved?.country ?? null,
           primaryCurrency,
           isActive: true,
           clientId,
@@ -338,7 +356,7 @@ export class AgenciesService {
           agencyId: agency.id,
           phone,
           city: safeTrim(dto.city) || null,
-          country: dto.country || null,
+          country: resolved?.country ?? null,
           primaryCurrency,
           jobTitle: 'Responsable Agence',
           kycLevel: KycLevel.LEVEL_1,
@@ -419,6 +437,12 @@ export class AgenciesService {
     });
     if (!agency) throw new NotFoundException('Agence introuvable');
 
+    // Pays vérifié avant toute écriture.
+    const newCountry = safeTrim(dto.country) ? resolveCountry(dto.country) : null;
+    if (safeTrim(dto.country) && !newCountry) {
+      throw new BadRequestException(`Pays non pris en charge : « ${safeTrim(dto.country)} ».`);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const updateData: any = {
         name: dto.name,
@@ -432,10 +456,11 @@ export class AgenciesService {
         }),
       };
 
-      if (dto.country) {
-        updateData.country = dto.country;
-        // ✅ FIX: CurrencyCode
-        updateData.primaryCurrency = getCurrencyFromCountry(dto.country);
+      // ✅ v4.9 : changer de pays = prendre la devise locale ET la caisse qui va avec (voir plus bas).
+      const localCurrency: CurrencyCode | null = newCountry?.currency ?? null;
+      if (newCountry) {
+        updateData.country = newCountry.country;
+        updateData.primaryCurrency = newCountry.currency;
       }
 
       if ('isActive' in dto) {
@@ -461,6 +486,26 @@ export class AgenciesService {
       });
 
       const updatedAgency = await tx.agency.update({ where: { id }, data: updateData });
+
+      // ✅ v4.9 — La caisse suit le pays : le wallet de la devise locale devient la caisse principale (créé s'il
+      // n'existe pas, réactivé s'il était désactivé). Les anciennes caisses restent actives avec leur solde : des
+      // retraits en cours dans l'ancienne devise restent payables et aucun fonds n'est déplacé ni perdu.
+      if (localCurrency) {
+        await tx.wallet.updateMany({
+          where: { agencyId: id, currency: { not: localCurrency }, isDefault: true },
+          data:  { isDefault: false },
+        });
+        const cash = await tx.wallet.findUnique({
+          where: { agencyId_currency: { agencyId: id, currency: localCurrency } },
+        });
+        if (!cash) {
+          await tx.wallet.create({
+            data: { agencyId: id, currency: localCurrency, balance: 0, isDefault: true, isActive: true },
+          });
+        } else if (!cash.isDefault || !cash.isActive) {
+          await tx.wallet.update({ where: { id: cash.id }, data: { isDefault: true, isActive: true } });
+        }
+      }
 
       // ✅ v4.3 — Synchronisation téléphone + nom du responsable vers
       // son compte User. Réutilise UsersService.update() — même

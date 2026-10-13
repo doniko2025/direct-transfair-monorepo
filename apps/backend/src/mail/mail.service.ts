@@ -1,6 +1,9 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.5 — Direct Transf'air
+// MAIL SERVICE v4.6 — Direct Transf'air
+// ✅ v4.6 (phase 6) : le journal des communications (communication_logs) ne garde plus le CORPS des emails.
+//   Il contenait en clair mots de passe temporaires, codes OTP et codes de retrait cash. Restent : destinataire,
+//   objet, statut, identifiant du fournisseur, erreur éventuelle.
 // ✅ v4.4 conservé (provider HTTPS Resend disponible)
 // ✅ v4.5 : le provider HTTP (Resend) devient PRINCIPAL
 //
@@ -357,7 +360,7 @@ export class MailService {
           type:          'EMAIL',
           recipient:     opts.to,
           subject:       opts.subject,
-          htmlBody:      opts.htmlContent,
+          // Pas de htmlBody : le corps peut contenir un mot de passe, un OTP ou un code de retrait.
           status:        'PENDING',
           providerName:  'nodemailer',
         },

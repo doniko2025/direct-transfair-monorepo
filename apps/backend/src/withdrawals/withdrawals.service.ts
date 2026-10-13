@@ -1,6 +1,6 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.11 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.13 — Direct Transf'air
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails
 // ✅ v4.5 : listByAgent()
@@ -87,9 +87,24 @@
 //   (3) agentProcessPayment() : plus de repli sur une caisse d'une AUTRE devise (la caisse par défaut
 //       ou la première trouvée) — créditer des GNF avec un montant en XOF fausse la caisse. Même règle
 //       pour la caisse de l'agence d'envoi : sans caisse dans la devise, la part revient à la société.
-//   (4) create() : le code de retrait vient de crypto.randomInt (et non Math.random) et est vérifié
-//       unique avant le débit ; la demande par transactionId ne vaut que pour une transaction de
-//       l'appelant (un admin de la société reste autorisé) et ne crée plus de doublon.
+//
+// ✅ v4.12 (phase 6) : create() supprimé avec POST /withdrawals (retrait cash demandé par un client
+//   depuis son wallet). Aucun écran ne l'appelait, il ignorait le barème de frais (1,5 % codé en dur) et
+//   débitait le wallet hors transaction. Les retraits en agence passent par un envoi cash (TRANSFER) et
+//   les routes agent/check et agent/pay. La table Withdrawal et les routes de lecture ne changent pas.
+//
+// ✅ v4.13 (phase 6, lot 2c) : commissions exactes et statut manuel encadré
+//   (1) Répartition calculée par splitFees() : chaque part arrondie à la devise, la part de la société est le
+//       reste — payeur + envoi + société = frais, sans centime créé ou perdu (avant : flottants non arrondis).
+//   (2) Taux de change indisponible pour convertir les frais → erreur 503 explicite. Avant : toutes les
+//       commissions étaient mises à 0 sans prévenir, définitivement (le retrait passait à PAID).
+//   (3) Crédits (cash avancé, commission payeuse, envoi, société) via WalletsService.creditInTx : wallet verrouillé,
+//       solde relu sous verrou, balanceAfter exact. Avant : balanceAfter calculé à partir d'un solde lu hors transaction.
+//   (4) Agence d'envoi = agence enregistrée sur l'envoi (Transaction.agencyId), repli sur l'agence de l'expéditeur ;
+//       son type est lu en base (avant : relation chargée de l'expéditeur, périmée si l'agent a changé d'agence).
+//   (5) Wallet société introuvable → erreur (avant : part de la société mise à 0 en silence).
+//   (6) adminUpdateStatus() : PAID interdit à la main (le cash et les commissions ne bougent que via agent/pay),
+//       statuts finaux figés, transition conditionnelle, journal d'audit.
 // =========================================================
 
 import {
@@ -101,13 +116,11 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import * as crypto from 'crypto';
 import {
   Prisma,
   TransactionStatus,
   WithdrawalStatus,
   PayoutMethod,
-  PaymentMethod,
   ProviderStatus,
   AgencyType,
   CommissionSourceType,
@@ -118,21 +131,27 @@ import {
 import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RatesService }   from '../rates/rates.service';
-import { CreateWithdrawalDto }       from './dto/create-withdrawal.dto';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
+import { defaultShares, type Shares } from '../commission-rules/commission-rule-defaults';
+import { splitFees } from '../commission-rules/commission-split';
+import { roundToCurrency } from '../fee-schedule/fee-engine';
 
 import { WalletNotifierService } from '../notifications/channels/wallet-notifier.service';
 import { AgentNotifierService }  from '../notifications/channels/agent-notifier.service';
 import { WalletMailService }     from '../mail/channels/wallet-mail.service';
 import { AgentMailService }      from '../mail/channels/agent-mail.service';
 
-// ── Defaults si aucune split rule configurée ──────────────
-const DEFAULT_PAYER_SHARE    = 40;
-const DEFAULT_SENDER_SHARE   = 20;
-const DEFAULT_PLATFORM_SHARE = 40;
-
 // Seuil d'alerte solde faible agence (en devise payout)
 const LOW_BALANCE_THRESHOLD = 50_000;
+
+/** Statuts qu'un admin peut poser à la main (jamais PAID : voir adminUpdateStatus). */
+const MANUAL_TARGETS: WithdrawalStatus[] = [
+  WithdrawalStatus.APPROVED,
+  WithdrawalStatus.REJECTED,
+  WithdrawalStatus.FAILED,
+  WithdrawalStatus.CANCELLED,
+  WithdrawalStatus.EXPIRED,
+];
 
 /** Envois payables en espèces à un guichet : TRANSFER (client / agent) et SCHEDULED (virement programmé). */
 const PAYABLE_TYPES: TransactionType[] = [TransactionType.TRANSFER, TransactionType.SCHEDULED];
@@ -180,131 +199,6 @@ export class WithdrawalsService {
       }
     }
     return tx;
-  }
-
-  /** Code de retrait à 9 chiffres (CSPRNG), libre dans reference et providerRef. */
-  private async uniqueWithdrawalCode(): Promise<string> {
-    for (let attempt = 0; attempt < 8; attempt++) {
-      const code = crypto.randomInt(100_000_000, 1_000_000_000).toString();
-      const clash = await this.prisma.transaction.findFirst({
-        where: { OR: [{ reference: code }, { providerRef: code }, { providerRef: { startsWith: `${code}|` } }] },
-        select: { id: true },
-      });
-      if (!clash) return code;
-    }
-    throw new ServiceUnavailableException('Impossible de générer un code de retrait unique, réessayez.');
-  }
-
-  // =========================================================
-  // CRÉATION — Demande de retrait (CLIENT)
-  // =========================================================
-
-  async create(clientId: number, userId: string, dto: CreateWithdrawalDto) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
-
-    // ── Chemin 1 : montant fourni → débit wallet + création transaction ──
-    if (dto.amount) {
-      const amount   = new Prisma.Decimal(dto.amount);
-      const fees     = amount.mul(new Prisma.Decimal(0.015));
-      const total    = amount.plus(fees);
-      const currency = user.primaryCurrency ?? 'XOF';
-
-      const walletRef = await this.walletsService.getOrCreateWallet({ userId, currency });
-      const walletRaw = await this.prisma.wallet.findUnique({ where: { id: walletRef.id } });
-      if (!walletRaw) throw new NotFoundException('Wallet introuvable');
-
-      const available = Number(walletRaw.balance) - Number(walletRaw.reservedBalance);
-      if (available < Number(total)) {
-        throw new BadRequestException(
-          `Solde ${currency} insuffisant. Disponible : ${available}`,
-        );
-      }
-
-      const withdrawalCode = await this.uniqueWithdrawalCode();
-
-      await this.walletsService.debit(
-        walletRef.id,
-        Number(total),
-        `Demande retrait ${withdrawalCode}`,
-      );
-
-      const withdrawal = await this.prisma.$transaction(async (tx) => {
-        const txData: Prisma.TransactionUncheckedCreateInput = {
-          reference:      `WD-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, // ✅ v4.11 : suffixe aléatoire (unicité)
-          amount,
-          fees,
-          total,
-          currency,
-          status:         TransactionStatus.PENDING,
-          payoutMethod:   PayoutMethod.CASH_PICKUP,
-          paymentMethod:  PaymentMethod.WALLET,
-          senderId:       userId,
-          clientId,
-          providerRef:    withdrawalCode,
-          providerStatus: ProviderStatus.PENDING,
-        };
-        const transaction = await tx.transaction.create({ data: txData });
-        return tx.withdrawal.create({
-          data: {
-            clientId,
-            transactionId: transaction.id,
-            method:        PayoutMethod.CASH_PICKUP,
-            status:        WithdrawalStatus.PENDING,
-          },
-        });
-      });
-
-      // ── Notification in-app ──────────────────────────────
-      // ✅ v4.8 ① : notifyCodeReady dès la création du code
-      this.walletNotifier.notifyCodeReady(
-        userId,
-        'votre bénéficiaire',
-        `${Number(amount).toLocaleString('fr-FR')} ${currency}`,
-        withdrawalCode,
-      ).catch(() => {});
-
-      // ── Email ────────────────────────────────────────────
-      if (user.email) {
-        this.walletMail.sendWithdrawalRequested({
-          email:     user.email,
-          firstName: user.firstName ?? '',
-          amount:    Number(amount),
-          currency,
-          code:      withdrawalCode,
-          userId,
-        }).catch((err) => {
-          this.logger.warn(`Email retrait non envoyé : ${err?.message}`);
-        });
-      }
-
-      return withdrawal;
-    }
-
-    // ── Chemin 2 : transactionId fourni ──────────────────────
-    const transactionId = String(dto.transactionId ?? '').trim();
-    if (!transactionId) {
-      throw new BadRequestException('Montant ou TransactionId requis');
-    }
-
-    const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'COMPANY_ADMIN';
-    const tx = await this.prisma.transaction.findFirst({
-      where: { id: transactionId, clientId, ...(isAdmin ? {} : { senderId: userId }) },
-    });
-    if (!tx) throw new NotFoundException('Transaction introuvable');
-
-    // Withdrawal.transactionId est unique : une seconde demande renvoie la première au lieu d'une erreur 500.
-    const already = await this.prisma.withdrawal.findUnique({ where: { transactionId: tx.id } });
-    if (already) return already;
-
-    return this.prisma.withdrawal.create({
-      data: {
-        clientId,
-        transactionId: tx.id,
-        method:        dto.method ?? tx.payoutMethod,
-        status:        WithdrawalStatus.PENDING,
-      },
-    });
   }
 
   // =========================================================
@@ -403,138 +297,102 @@ export class WithdrawalsService {
         ? Number(tx.receivedAmount)
         : Number(tx.amount);
 
-    // ── Conversion des frais en devise payout (v4.3) ─────
+    // ── Conversion des frais en devise payout ────────────
+    // ✅ v4.13 : un taux indisponible bloque le paiement (503) au lieu de mettre toutes les commissions à 0
+    // en silence : le retrait est payé plus tard, avec ses commissions, plutôt que sans.
     const rawFees = Number(tx.fees ?? 0);
     let feesInPayoutCurrency = rawFees;
 
     if (rawFees > 0 && tx.currency !== payoutCurrency) {
       try {
-        feesInPayoutCurrency = await this.ratesService.convert(
-          rawFees, tx.currency, payoutCurrency,
+        feesInPayoutCurrency = await this.ratesService.convert(rawFees, tx.currency, payoutCurrency);
+      } catch (e) {
+        this.logger.error(
+          `Conversion des frais impossible (${tx.currency}→${payoutCurrency}) pour le code ${cleanCode} : ${(e as Error)?.message}`,
         );
-        this.logger.log(
-          `Conversion frais: ${rawFees} ${tx.currency} → ` +
-          `${feesInPayoutCurrency.toFixed(4)} ${payoutCurrency}`,
-        );
-      } catch {
-        feesInPayoutCurrency = 0;
-        this.logger.warn(
-          `Conversion frais impossible (${tx.currency}→${payoutCurrency}) — commissions = 0`,
+        throw new ServiceUnavailableException(
+          `Taux de change ${tx.currency} → ${payoutCurrency} indisponible : le retrait ne peut pas être payé pour le moment. Réessayez dans quelques instants.`,
         );
       }
     }
 
-    // ✅ v4.10 — FIX (voir changelog en tête de fichier) : sourceType/
-    // destType calculés exactement comme commissions.service.ts::
-    // getHistory(), pour matcher la BONNE split rule au lieu de la
-    // première trouvée par Prisma.
+    // ── Agence d'envoi ───────────────────────────────────
+    // ✅ v4.13 (M13) : l'agence enregistrée sur l'envoi (celle de l'agent AU MOMENT de l'envoi) prime sur
+    // l'agence actuelle de l'expéditeur, qui a pu changer depuis. Son type (filiale / partenaire) donne la
+    // règle de répartition ; sans agence, l'expéditeur est un client wallet.
+    const senderAgencyId: string | null = tx.agencyId ?? (tx.sender as any)?.agencyId ?? null;
     let sourceT: CommissionSourceType = CommissionSourceType.WALLET;
-    const senderAgencyForSplit = (tx.sender as any)?.agency;
-    if (senderAgencyForSplit) {
-      sourceT = senderAgencyForSplit.type === AgencyType.PARTNER
+    if (senderAgencyId) {
+      const senderAgency = await this.prisma.agency.findFirst({
+        where:  { id: senderAgencyId, clientId },
+        select: { type: true },
+      });
+      sourceT = senderAgency?.type === AgencyType.PARTNER
         ? CommissionSourceType.PARTNER
         : CommissionSourceType.SUBSIDIARY;
     }
-    let destT: CommissionDestType = CommissionDestType.SUBSIDIARY;
-    if (agent.agency) {
-      destT = agent.agency.type === AgencyType.PARTNER
-        ? CommissionDestType.PARTNER
-        : CommissionDestType.SUBSIDIARY;
+    const destT: CommissionDestType = agent.agency.type === AgencyType.PARTNER
+      ? CommissionDestType.PARTNER
+      : CommissionDestType.SUBSIDIARY;
+
+    // ── Règle de répartition (v4.10 : filtrée sur sourceType / destType) ─
+    let shares: Shares = defaultShares();
+    const splitRule = await this.prisma.commissionConfig.findFirst({
+      where:   { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (splitRule) {
+      shares = {
+        payerShare:    splitRule.payerShare,
+        senderShare:   splitRule.senderShare,
+        platformShare: splitRule.platformShare,
+      };
+    } else {
+      this.logger.warn(
+        `Aucune règle de répartition pour clientId=${clientId} ${sourceT} → ${destT} ` +
+        `— valeurs par défaut (${shares.payerShare}/${shares.senderShare}/${shares.platformShare}).`,
+      );
     }
+    const payerSharePct    = shares.payerShare;
+    const senderSharePct   = shares.senderShare;
+    const platformSharePct = shares.platformShare;
 
-    // ── Calcul split rule ─────────────────────────────────
-    let payerSharePct    = DEFAULT_PAYER_SHARE;
-    let senderSharePct   = DEFAULT_SENDER_SHARE;
-    let platformSharePct = DEFAULT_PLATFORM_SHARE;
-
-    try {
-      // ✅ v4.10 — filtre désormais sur sourceType/destType, plus de
-      // findFirst() "à l'aveugle" sur juste { clientId, payoutMethod: null }.
-      const splitRule = await this.prisma.commissionConfig.findFirst({
-        where: { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
-      });
-      if (splitRule) {
-        payerSharePct    = splitRule.payerShare;
-        senderSharePct   = splitRule.senderShare;
-        platformSharePct = splitRule.platformShare;
-      } else {
-        this.logger.warn(
-          `Aucune split rule pour clientId=${clientId} sourceType=${sourceT} destType=${destT} ` +
-          `— repli sur les valeurs par défaut (${DEFAULT_PAYER_SHARE}/${DEFAULT_SENDER_SHARE}/${DEFAULT_PLATFORM_SHARE}).`,
-        );
-      }
-    } catch (e) {
-      this.logger.warn(`Split rule indisponible — defaults : ${(e as any)?.message}`);
-    }
-
-    // ── Montants bruts ────────────────────────────────────
-    const payerCommission    = feesInPayoutCurrency * payerSharePct    / 100;
-    const senderCommission   = feesInPayoutCurrency * senderSharePct   / 100;
-    const platformCommission = feesInPayoutCurrency * platformSharePct / 100;
-
-    // ── Résolution destinataires ──────────────────────────
-    const senderAgencyId = (tx.sender as any)?.agencyId ?? null;
-    const isSameAgency   = senderAgencyId && senderAgencyId === agent.agencyId;
+    // ── Montants (arrondis à la devise, la société prend le reste) ──
     const senderIsClient = !senderAgencyId;
+    const isSameAgency   = !!senderAgencyId && senderAgencyId === agent.agencyId;
 
-    let finalPayerCommission    = payerCommission;
-    let finalSenderCommission   = senderCommission;
-    let finalPlatformCommission = platformCommission;
+    const split = splitFees({
+      fees: feesInPayoutCurrency, currency: payoutCurrency, shares, senderIsClient, sameAgency: isSameAgency,
+    });
+    let finalPayerCommission    = split.payer;
+    let finalSenderCommission   = split.sender;
+    let finalPlatformCommission = split.platform;
 
-    if (senderIsClient) {
-      finalPlatformCommission += senderCommission;
-      finalSenderCommission    = 0;
-    } else if (isSameAgency) {
-      finalPayerCommission  += senderCommission;
-      finalSenderCommission  = 0;
-    }
-
-    // ── Wallet company admin ──────────────────────────────
-    let companyWallet: { id: string; balance: Prisma.Decimal } | null = null;
-    if (finalPlatformCommission > 0) {
-      try {
-        companyWallet = await this.walletsService.getOrCreateWallet({
-          clientId, currency: payoutCurrency,
-        }) as any;
-      } catch (e) {
-        this.logger.warn(`Wallet company introuvable : ${(e as any)?.message}`);
-        finalPlatformCommission = 0;
-      }
-    }
-
-    // ── Wallet agence d'envoi ─────────────────────────────
-    let senderAgencyWallet: { id: string; balance: Prisma.Decimal } | null = null;
+    // ── Wallet agence d'envoi (si une part lui revient) ──
+    let senderAgencyWallet: { id: string } | null = null;
     if (finalSenderCommission > 0 && senderAgencyId) {
-      try {
-        const senderWallets = await this.prisma.wallet.findMany({
-          where: { agencyId: senderAgencyId, isActive: true },
-        });
-        // ✅ v4.11 : uniquement la caisse de la devise payée (sinon la part revient à la société, ci-dessous).
-        senderAgencyWallet = (
-          senderWallets.find((w) => w.currency === payoutCurrency) ?? null
-        ) as any;
-
-        if (!senderAgencyWallet) {
-          this.logger.warn(`Wallet agence envoi ${senderAgencyId} introuvable → revient company`);
-          if (companyWallet) finalPlatformCommission += finalSenderCommission;
-          finalSenderCommission = 0;
-        }
-      } catch (e) {
-        this.logger.warn(`Erreur wallet agence envoi : ${(e as any)?.message}`);
+      const senderWallets = await this.prisma.wallet.findMany({
+        where: { agencyId: senderAgencyId, isActive: true },
+      });
+      // ✅ v4.11 : uniquement la caisse de la devise payée ; sinon la part revient à la société.
+      senderAgencyWallet = senderWallets.find((w) => w.currency === payoutCurrency) ?? null;
+      if (!senderAgencyWallet) {
+        this.logger.warn(`Caisse ${payoutCurrency} de l'agence d'envoi ${senderAgencyId} introuvable → part versée à la société`);
+        finalPlatformCommission = roundToCurrency(finalPlatformCommission + finalSenderCommission, payoutCurrency);
         finalSenderCommission = 0;
       }
     }
 
+    // ── Wallet société (une erreur bloque le paiement : plus de part de la société perdue en silence) ──
+    let companyWallet: { id: string } | null = null;
+    if (finalPlatformCommission > 0) {
+      companyWallet = await this.walletsService.getOrCreateWallet({ clientId, currency: payoutCurrency });
+    }
+
     this.logger.log(
-      `\n┌─── DISTRIBUTION COMMISSIONS — retrait ${cleanCode} ───────────────\n` +
-      `│  sourceType/destType : ${sourceT} → ${destT}\n` +
-      `│  Frais bruts : ${rawFees} ${tx.currency}\n` +
-      `│  Frais convertis : ${feesInPayoutCurrency.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Agence payeuse : ${finalPayerCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Agence d'envoi : ${finalSenderCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Company admin  : ${finalPlatformCommission.toFixed(2)} ${payoutCurrency}\n` +
-      `│  Cash remis     : ${amountPaid} ${payoutCurrency}\n` +
-      `└──────────────────────────────────────────────────────────────`,
+      `Distribution retrait ${cleanCode} : ${sourceT}→${destT} | frais ${rawFees} ${tx.currency} = ` +
+      `${feesInPayoutCurrency} ${payoutCurrency} | payeuse ${finalPayerCommission} | envoi ${finalSenderCommission} | ` +
+      `société ${finalPlatformCommission} | cash ${amountPaid}`,
     );
 
     // ── Transaction atomique ──────────────────────────────
@@ -549,61 +407,36 @@ export class WithdrawalsService {
         throw new ConflictException('Transaction déjà traitée par un autre agent.');
       }
 
-      // ── CRÉDIT 1 : Agence payeuse (cash + commission) ──
-      const totalPayerCredit = amountPaid + finalPayerCommission;
-      await prismaTx.wallet.update({
-        where: { id: agencyWallet.id },
-        data:  { balance: { increment: new Prisma.Decimal(totalPayerCredit) } },
-      });
-      await prismaTx.ledgerEntry.create({
-        data: {
-          walletId: agencyWallet.id, transactionId: tx.id, type: 'CREDIT',
-          amount: new Prisma.Decimal(amountPaid), currency: agencyWallet.currency,
-          description: `Remboursement cash retrait ${cleanCode}`,
-          balanceAfter: new Prisma.Decimal(Number(agencyWallet.balance) + amountPaid),
-        },
-      });
+      // ✅ v4.13 : crédits via WalletsService.creditInTx — verrou du wallet, solde relu sous verrou et
+      // balanceAfter exact dans le journal (avant : calculé depuis un solde lu hors transaction).
+
+      // ── CRÉDIT 1 : Agence payeuse (cash avancé + commission) ──
+      if (amountPaid > 0) {
+        await this.walletsService.creditInTx(
+          prismaTx, agencyWallet.id, amountPaid, `Remboursement cash retrait ${cleanCode}`, tx.id,
+        );
+      }
       if (finalPayerCommission > 0) {
-        await prismaTx.ledgerEntry.create({
-          data: {
-            walletId: agencyWallet.id, transactionId: tx.id, type: 'CREDIT',
-            amount: new Prisma.Decimal(finalPayerCommission), currency: agencyWallet.currency,
-            description: `Commission paiement ${cleanCode} (${payerSharePct}${isSameAgency ? `+${senderSharePct}` : ''}%)`,
-            balanceAfter: new Prisma.Decimal(Number(agencyWallet.balance) + totalPayerCredit),
-          },
-        });
+        await this.walletsService.creditInTx(
+          prismaTx, agencyWallet.id, finalPayerCommission,
+          `Commission paiement ${cleanCode} (${payerSharePct}${isSameAgency ? `+${senderSharePct}` : ''}%)`, tx.id,
+        );
       }
 
       // ── CRÉDIT 2 : Agence d'envoi (si différente) ──────
       if (finalSenderCommission > 0 && senderAgencyWallet) {
-        await prismaTx.wallet.update({
-          where: { id: senderAgencyWallet.id },
-          data:  { balance: { increment: new Prisma.Decimal(finalSenderCommission) } },
-        });
-        await prismaTx.ledgerEntry.create({
-          data: {
-            walletId: senderAgencyWallet.id, transactionId: tx.id, type: 'CREDIT',
-            amount: new Prisma.Decimal(finalSenderCommission), currency: payoutCurrency,
-            description: `Commission envoi ${cleanCode} (${senderSharePct}%)`,
-            balanceAfter: new Prisma.Decimal(Number(senderAgencyWallet.balance) + finalSenderCommission),
-          },
-        });
+        await this.walletsService.creditInTx(
+          prismaTx, senderAgencyWallet.id, finalSenderCommission,
+          `Commission envoi ${cleanCode} (${senderSharePct}%)`, tx.id,
+        );
       }
 
-      // ── CRÉDIT 3 : Company admin (plateforme) ───────────
+      // ── CRÉDIT 3 : Société (plateforme) ─────────────────
       if (finalPlatformCommission > 0 && companyWallet) {
-        await prismaTx.wallet.update({
-          where: { id: companyWallet.id },
-          data:  { balance: { increment: new Prisma.Decimal(finalPlatformCommission) } },
-        });
-        await prismaTx.ledgerEntry.create({
-          data: {
-            walletId: companyWallet.id, transactionId: tx.id, type: 'CREDIT',
-            amount: new Prisma.Decimal(finalPlatformCommission), currency: payoutCurrency,
-            description: `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`,
-            balanceAfter: new Prisma.Decimal(Number(companyWallet.balance) + finalPlatformCommission),
-          },
-        });
+        await this.walletsService.creditInTx(
+          prismaTx, companyWallet.id, finalPlatformCommission,
+          `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`, tx.id,
+        );
       }
 
       // ── Withdrawal ──────────────────────────────────────
@@ -628,8 +461,8 @@ export class WithdrawalsService {
         amountPaid,
         feesConverted: feesInPayoutCurrency,
         commissions: {
-          payerAgency:  { amount: finalPayerCommission,   share: payerSharePct },
-          senderAgency: { amount: finalSenderCommission,  share: senderIsClient ? 0 : senderSharePct },
+          payerAgency:  { amount: finalPayerCommission,   share: payerSharePct + (isSameAgency ? senderSharePct : 0) },
+          senderAgency: { amount: finalSenderCommission,  share: finalSenderCommission > 0 ? senderSharePct : 0 },
           companyAdmin: { amount: finalPlatformCommission, share: platformSharePct + (senderIsClient ? senderSharePct : 0) },
         },
       };
@@ -778,18 +611,53 @@ export class WithdrawalsService {
     });
   }
 
+  /**
+   * ✅ v4.13 : statut manuel encadré.
+   *   - « PAID » ne se pose jamais à la main : un retrait n'est payé que par l'agent qui remet le cash
+   *     (agentProcessPayment), seul chemin qui déplace l'argent et distribue les commissions ;
+   *   - un retrait déjà payé ou clos (rejeté, échoué, annulé, expiré) n'est plus modifiable ;
+   *   - la transition est conditionnelle (updateMany sur le statut courant) : deux admins simultanés
+   *     ou un paiement concurrent ne s'écrasent pas ;
+   *   - chaque changement est journalisé.
+   */
   async adminUpdateStatus(
     clientId: number,
     adminId:  string,
     id:       string,
     dto:      UpdateWithdrawalStatusDto,
   ) {
-    // ✅ v4.11 : limité à la société de l'appelant (l'id seul ne suffit pas).
+    if (!MANUAL_TARGETS.includes(dto.status)) {
+      throw new BadRequestException(
+        dto.status === WithdrawalStatus.PAID
+          ? 'Un retrait ne passe à « payé » que lorsqu\'un agent remet le cash avec le code. Il ne peut pas être marqué payé à la main.'
+          : `Statut « ${dto.status} » non applicable manuellement.`,
+      );
+    }
+
+    const before = await this.prisma.withdrawal.findFirst({ where: { id, clientId }, select: { status: true } });
+    if (!before) throw new NotFoundException('Retrait introuvable');
+
+    if (before.status !== WithdrawalStatus.PENDING && before.status !== WithdrawalStatus.APPROVED) {
+      throw new ConflictException(`Ce retrait est déjà « ${before.status} » : son statut n'est plus modifiable.`);
+    }
+
+    // ✅ v4.11 : limité à la société de l'appelant ; v4.13 : et au statut lu ci-dessus.
     const updated = await this.prisma.withdrawal.updateMany({
-      where: { id, clientId },
+      where: { id, clientId, status: before.status },
       data:  { status: dto.status },
     });
-    if (updated.count !== 1) throw new NotFoundException('Retrait introuvable');
+    if (updated.count !== 1) throw new ConflictException('Ce retrait vient d\'être modifié par un autre utilisateur. Rechargez la page.');
+
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: adminId, clientId, action: 'WITHDRAWAL_PROCESS', entity: 'Withdrawal', entityId: id,
+          details: { from: before.status, to: dto.status } as Prisma.InputJsonValue, successful: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Journal d'audit non écrit (retrait ${id}) : ${(err as Error).message}`);
+    }
     return this.prisma.withdrawal.findUniqueOrThrow({ where: { id } });
   }
 }

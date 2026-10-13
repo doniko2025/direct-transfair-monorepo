@@ -1,6 +1,6 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.9 — Direct Transf'air
+// AUTH SERVICE v5.10 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -193,6 +193,11 @@
 //     refresh-token.util.ts, partagé avec v2-auth.service.ts : une session
 //     ouverte par /auth/v2/login-password stocke désormais l'empreinte du
 //     refresh token (comme ici), ce qui permet enfin son renouvellement.
+//
+// ✅ v5.10 : sessions illimitées (décision produit, phase 6)
+//   createSession() ne supprime plus les sessions existantes de l'utilisateur : se connecter sur le
+//   mobile ne déconnecte plus le web (et inversement), comme déjà le cas avec /auth/v2/login-password.
+//   Chaque connexion crée sa session ; logout() révoque celle de l'access token fourni.
 // =========================================================
 
 import {
@@ -1313,7 +1318,6 @@ export class AuthService {
   ): Promise<void> {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
     try {
-      await this.prisma.userSession.deleteMany({ where: { userId } });
       await this.prisma.userSession.create({
         data: {
           userId,

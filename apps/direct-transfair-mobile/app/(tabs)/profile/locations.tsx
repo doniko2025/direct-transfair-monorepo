@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
 // =========================================================
-// LOCATIONS v6.3 — Direct Transf'air
+// LOCATIONS v6.4 — Direct Transf'air
+// ✅ v6.4 (phase 6) : la liste vient uniquement de GET /locations (agences de la société, champs publics). /agencies est
+//    réservé aux administrateurs (le client recevait 403 puis une erreur sur /agencies/public, qui n'existe pas).
+//    L'email d'une agence n'est plus servi : c'est l'identifiant de connexion de son responsable.
 // ✅ v6.2 : fetchAgencies multi-endpoints, 403 silencieux
 // ✅ v6.3 :
 //    - Téléphone affiché sur chaque carte (si disponible)
@@ -50,7 +53,9 @@ const T = {
   },
 };
 
-const AGENCY_ENDPOINTS = ["/agencies", "/agencies/public", "/locations"] as const;
+// Phase 6 : /agencies est réservé aux administrateurs et /agencies/public n'existe pas — la liste des agences de la
+// société (champs publics) est servie par /locations, avec l'en-tête x-tenant-id que l'application envoie déjà.
+const AGENCY_ENDPOINTS = ["/locations"] as const;
 
 function unwrapAgencies(raw: unknown): Agency[] {
   if (Array.isArray(raw)) return raw as Agency[];

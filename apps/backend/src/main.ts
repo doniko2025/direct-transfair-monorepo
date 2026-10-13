@@ -1,6 +1,10 @@
 // apps/backend/src/main.ts
 // =========================================================
-// MAIN v2.1
+// MAIN v2.2
+// ✅ v2.2 (phase 6, passe 3) : « trust proxy ». Derrière Railway, sans cette option Express voit l'adresse du
+//   proxy comme adresse du client : le rate limiting (100 req/min, 5 connexions/min) était partagé par TOUS les
+//   utilisateurs de la plateforme, et les journaux de connexion enregistraient l'IP du proxy. En production on
+//   fait confiance à 1 proxy (Railway) ; TRUST_PROXY_HOPS=<n> ajuste (0 = désactivé, ex. derrière Cloudflare : 2).
 // ✅ v1.0 : ValidationPipe, CORS, Swagger, TenantGuard
 // ✅ v2.0 : Helmet (en-têtes HTTP sécurité)
 //   Prérequis : npm install helmet
@@ -115,6 +119,18 @@ async function refreshCustomDomains(prisma: PrismaService): Promise<void> {
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+
+  // ✅ v2.2 : adresse IP réelle du client (rate limiting, journaux de connexion)
+  const configuredHops = process.env.TRUST_PROXY_HOPS;
+  const proxyHops =
+    configuredHops !== undefined && configuredHops.trim() !== ''
+      ? Number(configuredHops)
+      : process.env.NODE_ENV === 'production'
+        ? 1
+        : 0;
+  if (Number.isInteger(proxyHops) && proxyHops > 0) {
+    app.getHttpAdapter().getInstance().set('trust proxy', proxyHops);
+  }
 
   // =========================================================
   // ✅ v2.0 : HELMET — En-têtes HTTP sécurité

@@ -1,6 +1,8 @@
 // apps/backend/src/app.module.ts
 // =========================================================
 // APP MODULE v5.3
+// ✅ v5.5 : TransferLimitsModule — /transfer-limits (plafonds d'envoi par niveau KYC et devise, réglés par l'admin société).
+// ✅ v5.4 : ValidationThresholdsModule — /validation-thresholds (seuil de validation d'un envoi cash, réglé par l'admin société).
 // ✅ v5.3 : AgentDeskModule — /agent-desk (caisse de l'agence, opérations du jour, recherche client, aperçu d'un envoi cash).
 // ✅ v5.2 : CommissionRulesModule — /commission-rules (répartition des frais d'un retrait payé : agence d'envoi,
 //   agence payeuse, société ; lecture super admin, modification admin de société).
@@ -77,6 +79,8 @@ import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; /
 import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
 import { CommissionRulesModule }    from './commission-rules/commission-rules.module'; // ✅ v5.2
 import { AgentDeskModule }          from './agent-desk/agent-desk.module'; // ✅ v5.3
+import { ValidationThresholdsModule } from './validation-thresholds/validation-thresholds.module'; // ✅ v5.4
+import { TransferLimitsModule } from './transfer-limits/transfer-limits.module'; // ✅ v5.5
 
 import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
@@ -125,6 +129,8 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     FeeScheduleModule, // ✅ v5.2 — /fees-admin/rules, /fees-admin/quote (barème de frais)
     CommissionRulesModule, // ✅ v5.2 — /commission-rules (répartition des frais)
     AgentDeskModule,   // ✅ v5.3 — /agent-desk/* (guichet de l'agent)
+    ValidationThresholdsModule, // ✅ v5.4 — /validation-thresholds (seuil de validation par devise)
+    TransferLimitsModule, // ✅ v5.5 — /transfer-limits (plafonds d'envoi par niveau KYC et devise)
   ],
 
   controllers: [ExchangeRatesController],

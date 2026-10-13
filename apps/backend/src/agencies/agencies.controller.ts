@@ -1,8 +1,11 @@
 // apps/backend/src/agencies/agencies.controller.ts
 // =========================================================
-// AGENCIES CONTROLLER v4.2
+// AGENCIES CONTROLLER v4.3
+// ✅ v4.3 (phase 6, passe 2) : GET /agencies et GET /agencies/:id réservés aux administrateurs. Un agent y voyait les
+//    caisses (soldes) de toutes les autres agences de sa société, ainsi que l'email et le téléphone de leurs agents ;
+//    aucun écran agent ne les appelait. La liste publique des agences pour les clients est GET /locations.
 // ✅ SUPER_ADMIN global sur toutes les sociétés
-// ✅ COMPANY_ADMIN / AGENT limités à leur client
+// ✅ COMPANY_ADMIN limité à son client
 // ✅ CRUD global pour SUPER_ADMIN
 // =========================================================
 
@@ -162,7 +165,7 @@ export class AgenciesController {
   // =======================================================
 
   @Get()
-  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.AGENT)
+  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
   async findAll(
     @Req() req: { user?: AuthUserPayload },
   ) {
@@ -187,7 +190,7 @@ export class AgenciesController {
   // =======================================================
 
   @Get(':id')
-  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN, Role.AGENT)
+  @Roles(Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
   async findOne(
     @Req() req: { user?: AuthUserPayload },
     @Param('id') id: string,

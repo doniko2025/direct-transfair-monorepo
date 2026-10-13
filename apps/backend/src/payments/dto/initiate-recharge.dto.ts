@@ -10,12 +10,18 @@ import {
   IsPositive,
   IsString,
   Matches,
+  Max,
+  MaxLength,
 } from 'class-validator';
 import { CurrencyCode } from '@prisma/client';
 
+/** Plafond d'une recharge : au-delà, le montant ne tient pas dans la colonne et la base répond par une erreur 500. */
+export const MAX_RECHARGE_AMOUNT = 1_000_000_000_000;
+
 export class InitiateRechargeDto {
-  @IsNumber()
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 2 })
   @IsPositive()
+  @Max(MAX_RECHARGE_AMOUNT)
   amount: number;
 
   @IsEnum(CurrencyCode)
@@ -30,6 +36,7 @@ export class InitiateRechargeDto {
 export class RechargeByCardDto extends InitiateRechargeDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(80)
   cardholderName: string;
 
   @IsString()
@@ -51,5 +58,6 @@ export class RechargeByCardDto extends InitiateRechargeDto {
 export class RechargeByMobileMoneyDto extends InitiateRechargeDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(30)
   momoPhone: string;
 }

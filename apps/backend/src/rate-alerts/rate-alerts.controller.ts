@@ -14,6 +14,7 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import type { Request } from 'express';
 
+import { CreateRateAlertDto } from './dto/create-rate-alert.dto';
 import { RateAlertsService } from './rate-alerts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
@@ -28,7 +29,7 @@ export class RateAlertsController {
   @Post()
   create(
     @Req() req: Request & { user?: AuthUserPayload },
-    @Body() body: any,
+    @Body() body: CreateRateAlertDto,
   ) {
     if (!req.user) throw new ForbiddenException('Non authentifié');
     return this.service.create(req.user.id, body);

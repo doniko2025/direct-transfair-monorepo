@@ -1,6 +1,10 @@
 // apps/backend/src/transactions/agency-treasury.service.ts
 // =========================================================
-// AGENCY TREASURY SERVICE v1.2 — Direct Transf'air
+// AGENCY TREASURY SERVICE v1.3 — Direct Transf'air
+// ✅ v1.3 (phase 6) : le mouvement de caisse (WalletsService.transferInTx) et la ligne Transaction sont écrits dans
+//    UNE SEULE transaction SQL. Avant, si l'écriture de la Transaction échouait après le transfert (référence en
+//    doublon, coupure), l'argent avait bougé sans aucune trace dans l'historique. Les lignes de ledger portent
+//    maintenant le transactionId.
 // Fichier indépendant — AUCUNE ligne de transactions.service.ts,
 // wallets.service.ts ou ailleurs n'est modifiée par ce fichier.
 //
@@ -151,38 +155,42 @@ export class AgencyTreasuryService {
         ? `Remontée de fonds — ${agencyName}`
         : `Retrait forcé — ${agencyName}`);
 
-    // ✅ Débit agence + crédit société en une seule transaction DB
-    // verrouillée (voir WalletsService.transfer) — pas d'état
-    // intermédiaire incohérent possible.
-    await this.walletsService.transfer({
-      fromWalletId: agencyWalletRef.id,
-      toWalletId: companyWalletRef.id,
-      amount,
-      description,
-    });
-
     const noteWithAgency = [note?.trim(), `Agence : ${agencyName}`].filter(Boolean).join(' — ');
 
-    const transaction = await this.prisma.transaction.create({
-      data: {
-        reference,
-        type,
-        direction: TransactionDirection.INTERNAL,
-        amount: new Prisma.Decimal(amount),
-        fees: new Prisma.Decimal(0),
-        total: new Prisma.Decimal(amount),
-        currency,
-        status: TransactionStatus.PAID,
-        payoutMethod: PayoutMethod.WALLET,
-        paymentMethod: PaymentMethod.WALLET,
-        senderId,
-        clientId,
-        agencyId, // ✅ v1.1 — d'où vient le mouvement de caisse (plus seulement dans la note)
-        paidAt: new Date(),
-        providerStatus: ProviderStatus.SUCCESS,
-        providerRef: reference, // jamais de "|" ici, voir note en tête de fichier
-        note: noteWithAgency,
-      },
+    // ✅ v1.3 — Transaction + débit agence + crédit société dans la MÊME transaction SQL (verrous des deux
+    // wallets, voir WalletsService.transferInTx) : tout passe ou rien ne passe.
+    const transaction = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.transaction.create({
+        data: {
+          reference,
+          type,
+          direction: TransactionDirection.INTERNAL,
+          amount: new Prisma.Decimal(amount),
+          fees: new Prisma.Decimal(0),
+          total: new Prisma.Decimal(amount),
+          currency,
+          status: TransactionStatus.PAID,
+          payoutMethod: PayoutMethod.WALLET,
+          paymentMethod: PaymentMethod.WALLET,
+          senderId,
+          clientId,
+          agencyId, // ✅ v1.1 — d'où vient le mouvement de caisse (plus seulement dans la note)
+          paidAt: new Date(),
+          providerStatus: ProviderStatus.SUCCESS,
+          providerRef: reference, // jamais de "|" ici, voir note en tête de fichier
+          note: noteWithAgency,
+        },
+      });
+
+      await this.walletsService.transferInTx(tx, {
+        fromWalletId: agencyWalletRef.id,
+        toWalletId: companyWalletRef.id,
+        amount,
+        description,
+        transactionId: created.id,
+      });
+
+      return created;
     });
 
     return transaction;

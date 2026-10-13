@@ -1,5 +1,5 @@
 //apps/backend/src/payments/dto/add-card.dto.ts
-import { IsBoolean, IsOptional, IsString, Matches } from 'class-validator';
+import { IsBoolean, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class AddCardDto {
   @IsString()
@@ -12,6 +12,7 @@ export class AddCardDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(20)
   brand?: string;
 
   @IsOptional()

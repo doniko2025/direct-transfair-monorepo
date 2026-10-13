@@ -1,6 +1,8 @@
 // apps/backend/src/users/users.service.ts
 // =========================================================
-// USERS SERVICE v4.7
+// USERS SERVICE v4.8
+// ✅ v4.8 (phase 6) : softDelete() refuse (409, code BALANCE_NOT_EMPTY) tant qu'un wallet du compte a un solde ou
+//   des fonds réservés non nuls.
 // ✅ v4.0-4.3 : findAll, findByEmail, findById, create, update,
 //               suspend, reactivate, softDelete, serializeForAdmin
 // ✅ v4.4 : Ajout findByPhoneInTenant()
@@ -522,27 +524,55 @@ export class UsersService {
       };
     }
 
+    // ✅ v4.8 — un compte qui a encore de l'argent ne se supprime pas : ses wallets seraient figés, personne ne
+    // pourrait plus les utiliser. Contrôle et suppression dans la même transaction. Comptent le solde et les
+    // fonds réservés de TOUS ses wallets (actifs ou non, gelés ou non).
     // ✅ v4.7 — email (NOT NULL, @unique) préfixé plutôt que vidé :
     // libère la valeur exacte pour réutilisation future tout en
     // conservant la traçabilité forensique. phone (@unique, nullable)
     // vidé directement.
-    const deleted = await this.prisma.user.update({
-      where: { id },
-      data: {
-        deletedAt:   new Date(),
-        isActive:    false,
-        isSuspended: true,
-        email:       `deleted_${Date.now()}_${user.email}`,
-        phone:       null,
-      },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        deletedAt: true,
-        isActive: true,
-      },
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const wallets = await tx.wallet.findMany({
+        where:  { userId: id },
+        select: { currency: true, balance: true, reservedBalance: true },
+      });
+      const funded = wallets
+        .map((w) => ({
+          currency: String(w.currency),
+          balance: Number(w.balance ?? 0),
+          reserved: Number(w.reservedBalance ?? 0),
+        }))
+        .filter((w) => w.balance !== 0 || w.reserved !== 0);
+      if (funded.length > 0) {
+        const detail = funded
+          .map((w) => `${w.balance} ${w.currency}${w.reserved ? ` (dont ${w.reserved} réservés)` : ''}`)
+          .join(', ');
+        throw new ConflictException({
+          statusCode: 409,
+          code: 'BALANCE_NOT_EMPTY',
+          message: `Ce compte a encore un solde (${detail}). Videz-le (retrait ou transfert) avant de le supprimer.`,
+          balances: funded,
+        });
+      }
+
+      return tx.user.update({
+        where: { id },
+        data: {
+          deletedAt:   new Date(),
+          isActive:    false,
+          isSuspended: true,
+          email:       `deleted_${Date.now()}_${user.email}`,
+          phone:       null,
+        },
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          deletedAt: true,
+          isActive: true,
+        },
+      });
     });
 
     return {

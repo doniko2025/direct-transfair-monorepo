@@ -83,6 +83,8 @@ export interface CreateAgencyResult {
 export interface UpdateAgencyInput {
   name?: string;
   city?: string;
+  /** Code pays (ex. « GN ») : la caisse principale prend la devise de ce pays. */
+  country?: string;
   address?: string;
   phone?: string | null;
   code?: string | null;

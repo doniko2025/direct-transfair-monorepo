@@ -1,9 +1,10 @@
 // apps/backend/src/locations/locations.service.ts
 // =========================================================
-// LOCATIONS SERVICE v1.0 — Direct Transf'air
+// LOCATIONS SERVICE v1.1 — Direct Transf'air
 // ✅ Endpoint PUBLIC — aucune donnée sensible exposée
 //    (pas de solde, pas de clientId, pas d'infos admin)
 // ✅ Retourne uniquement les agences actives
+// ✅ v1.1 (phase 6, passe 2) : une seule société (code reçu dans x-tenant-id) ; agences supprimées exclues.
 // =========================================================
 
 import { Injectable } from '@nestjs/common';
@@ -25,12 +26,21 @@ export class LocationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retourne toutes les agences actives avec uniquement les champs publics.
+   * Agences actives d'UNE société, avec uniquement les champs publics.
    * Aucun solde, aucune donnée financière ou administrative n'est exposé.
    */
-  async findPublic(): Promise<PublicLocationDto[]> {
-    const agencies = await this.prisma.agency.findMany({
-      where: { isActive: true },
+  async findPublic(tenantRaw?: string): Promise<PublicLocationDto[]> {
+    const code = String(tenantRaw ?? '').trim().toUpperCase();
+    if (!code) return [];
+
+    const client = await this.prisma.client.findFirst({
+      where: { code: code === '10' ? 'DONIKO' : code, isActive: true, deletedAt: null },
+      select: { id: true },
+    });
+    if (!client) return [];
+
+    return this.prisma.agency.findMany({
+      where: { clientId: client.id, isActive: true, deletedAt: null },
       select: {
         id:              true,
         name:            true,
@@ -47,7 +57,5 @@ export class LocationsService {
         { name:    'asc' },
       ],
     });
-
-    return agencies;
   }
 }

@@ -1,5 +1,6 @@
 // src/pages/agencies/AgencyDetailPage.tsx
-// Fiche d'une agence : informations modifiables, caisse, équipe et désactivation.
+// Fiche d'une agence : informations modifiables (dont le pays : la caisse principale suit sa devise), caisse,
+// équipe et désactivation.
 
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -10,7 +11,7 @@ import { Button, Card, Field, Notice, PageHeader, Pill, Spinner } from '../../co
 import { api } from '../../lib/api';
 import { AGENCY_CODE, AGENCY_TYPE_OPTIONS, PHONE, agentName, managerOf, typeLabel } from '../../lib/agencyRules';
 import { EMAIL, formatAmount, formatDate } from '../../lib/companyRules';
-import { countryName } from '../../lib/countries';
+import { COUNTRIES, countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
 import { useResource } from '../../lib/useResource';
 import { initialsOf } from '../../lib/userRules';
@@ -19,6 +20,14 @@ import { EditableSection, type FieldDef } from '../companies/EditableSection';
 const FIELDS: readonly FieldDef[] = [
   { key: 'name', label: "Nom de l'agence", required: true, maxLength: 120, wide: true },
   { key: 'city', label: 'Ville', required: true, maxLength: 80 },
+  {
+    key: 'country',
+    label: 'Pays',
+    kind: 'select',
+    required: true,
+    options: COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
+    hint: 'En changeant de pays, la caisse principale passe dans la devise du nouveau pays. L’ancienne caisse reste visible avec son solde.',
+  },
   { key: 'address', label: 'Adresse', required: true, maxLength: 200 },
   {
     key: 'phone',
@@ -124,6 +133,7 @@ export default function AgencyDetailPage() {
   const values: Record<string, string | null | undefined> = {
     name: agency.name,
     city: agency.city,
+    country: agency.country ? agency.country.toUpperCase() : '',
     address: agency.address,
     phone: agency.phone,
     code: agency.code,
@@ -198,7 +208,7 @@ export default function AgencyDetailPage() {
             id="agency-info"
             title="Informations"
             icon="building"
-            description={`Pays : ${countryName(agency.country) ?? 'non renseigné'}. La devise de la caisse (${agency.primaryCurrency}) ne change pas.`}
+            description={`Caisse principale en ${agency.primaryCurrency}, la devise de ${countryName(agency.country) ?? 'son pays'}.`}
             fields={FIELDS}
             values={values}
             onSave={save}

@@ -587,6 +587,8 @@ model Client {
   withdrawals        Withdrawal[]
   commissionConfigs  CommissionConfig[]
   feeRules           FeeRule[]
+  validationThresholds ValidationThreshold[]
+  transferLimits       TransferLimit[]
   promotions         Promotion[]
   alerts             Alert[]
   auditLogs          AuditLog[]          @relation("ClientAuditLogs")
@@ -1779,6 +1781,53 @@ model FeeRule {
 
   @@index([clientId, isActive])
   @@map("fee_rules")
+}
+
+// ✅ v5.4 — Seuil de validation d'un envoi cash, fixé par l'admin de la société (une valeur par devise).
+// Un envoi > seuil attend la validation d'un administrateur ; sinon il est validé d'office.
+// Aucune ligne = seuil par défaut du serveur (500 000), identique au comportement historique.
+model ValidationThreshold {
+  id String @id @default(cuid())
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  currency CurrencyCode
+  amount   Decimal      @db.Decimal(18, 4)
+
+  updatedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, currency])
+  @@map("validation_thresholds")
+}
+
+// ✅ v5.5 — Plafonds d'envoi par niveau KYC et par devise, réglés par l'admin de la société.
+// Une valeur nulle = pas de plafond sur cette période. Aucune ligne = plafonds par défaut du serveur
+// (voir src/transfer-limits/transfer-limit-defaults.ts).
+model TransferLimit {
+  id String @id @default(cuid())
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  kycLevel KycLevel
+  currency CurrencyCode
+
+  perTransaction Decimal? @db.Decimal(18, 4)
+  daily          Decimal? @db.Decimal(18, 4)
+  monthly        Decimal? @db.Decimal(18, 4)
+  yearly         Decimal? @db.Decimal(18, 4)
+
+  updatedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, kycLevel, currency])
+  @@map("transfer_limits")
 }
 
 // =========================================================

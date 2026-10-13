@@ -257,3 +257,36 @@
 .split-dialog__case {
   color: var(--ink-2);
 }
+
+/* ─── Plafonds d'envoi (Réglages) ──────────────────────── */
+.limit-card__rows {
+  display: grid;
+  gap: 8px;
+}
+
+.limit-card__rows > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.limit-card__rows dt {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.limit-card__rows dd {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.limit-field {
+  display: grid;
+  gap: 4px;
+}
+
+.check-row--inline {
+  margin-top: 0;
+}

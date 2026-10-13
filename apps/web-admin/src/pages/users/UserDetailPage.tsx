@@ -137,6 +137,8 @@ export default function UserDetailPage() {
   const wallets = user.wallets ?? [];
   const location = [user.city, countryName(user.country)].filter(Boolean).join(', ');
   const company = user.client?.name ?? null;
+  // Un compte qui a encore de l'argent ne peut pas être supprimé (le serveur refuse aussi).
+  const funded = wallets.filter((w) => Number(w.balance) !== 0 || Number(w.reservedBalance) > 0);
 
   async function save(patch: Record<string, string | null>) {
     await api.users.update(user.id, patch);
@@ -308,7 +310,9 @@ export default function UserDetailPage() {
             <h2>Supprimer ce compte</h2>
             <p>
               {manageable
-                ? 'Le compte ne peut plus se connecter. Ses données sont conservées pour l’audit et son email est libéré.'
+                ? funded.length > 0
+                  ? `Ce compte a encore un solde (${funded.map((w) => formatAmount(w.balance, w.currency)).join(', ')}). Videz-le, par un retrait ou un transfert, avant de le supprimer.`
+                  : 'Le compte ne peut plus se connecter. Ses données sont conservées pour l’audit et son email est libéré.'
                 : isSelf
                   ? 'C’est votre propre compte : vous ne pouvez ni le suspendre ni le supprimer ici.'
                   : 'Ce type de compte est géré par la plateforme : vous ne pouvez pas le modifier.'}
@@ -319,6 +323,7 @@ export default function UserDetailPage() {
               variant="secondary"
               icon="trash"
               className="btn--danger-outline"
+              disabled={funded.length > 0}
               onClick={() => {
                 setConfirmEmail('');
                 setActionError(null);
