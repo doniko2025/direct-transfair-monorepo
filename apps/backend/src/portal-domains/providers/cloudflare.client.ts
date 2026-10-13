@@ -1,8 +1,12 @@
 // apps/backend/src/portal-domains/providers/cloudflare.client.ts
 // =========================================================
-// CLIENT CLOUDFLARE v1.0 — zones et enregistrements DNS des domaines de portail.
+// CLIENT CLOUDFLARE v1.1 — zones et enregistrements DNS des domaines de portail.
 // Identifiants lus dans l'environnement à chaque appel : CLOUDFLARE_API_TOKEN (recommandé, droits limités)
 // ou CLOUDFLARE_EMAIL + CLOUDFLARE_GLOBAL_KEY. Aucune valeur secrète n'entre jamais dans un message d'erreur.
+//
+// v1.1 — AJOUT : ensureTxtRecord(), pour poser le TXT de preuve de propriété demandé par Vercel (_vercel.<zone>)
+//        sans intervention manuelle. Contrairement à upsertRecord, il n'écrase ni ne supprime JAMAIS un autre TXT du
+//        même nom : plusieurs sous-domaines peuvent attendre leur validation en même temps sur « _vercel ».
 // =========================================================
 
 import { Injectable } from '@nestjs/common';
@@ -84,6 +88,19 @@ export class CloudflareClient {
       return;
     }
     await this.call(`/zones/${zoneId}/dns_records`, 'POST', body);
+  }
+
+  /**
+   * Pose un TXT s'il n'existe pas déjà AVEC CETTE VALEUR (comparaison sans les guillemets que Cloudflare ajoute à
+   * l'affichage). Ajoute à côté des TXT existants du même nom, sans jamais en modifier ni en supprimer un.
+   */
+  async ensureTxtRecord(zoneId: string, name: string, content: string): Promise<void> {
+    const unquote = (s: string) => s.trim().replace(/^"([\s\S]*)"$/, '$1');
+    const existing = await this.call<Array<{ id: string; content: string }>>(
+      `/zones/${zoneId}/dns_records?type=TXT&name=${encodeURIComponent(name)}`,
+    );
+    if (existing.some((r) => unquote(r.content) === unquote(content))) return;
+    await this.call(`/zones/${zoneId}/dns_records`, 'POST', { type: 'TXT', name, content: unquote(content), ttl: 1 });
   }
 
   /** Supprime un enregistrement par type et nom (aucune erreur s'il n'existe pas). */

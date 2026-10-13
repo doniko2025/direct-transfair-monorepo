@@ -1,6 +1,13 @@
 // apps/backend/src/portal-domains/portal-domains.service.ts
 // =========================================================
-// DOMAINES DES PORTAILS DE SOCIÉTÉS v1.0 (lot C — console unique)
+// DOMAINES DES PORTAILS DE SOCIÉTÉS v1.1 (lot C — console unique)
+//
+// v1.1 — 🔥 CORRIGÉ : un domaine restait en « Validation en cours » alors que le TXT de preuve était en place — le moteur
+//        lisait l'état chez Vercel mais ne lui demandait jamais de relire le TXT. Désormais, tant que Vercel ne confirme
+//        pas le domaine : (1) zone gérée par la plateforme ⇒ le TXT « _vercel » demandé est posé automatiquement dans
+//        Cloudflare (jamais d'écrasement d'un autre TXT ; seuls les noms _vercel.* de la zone et les valeurs
+//        vc-domain-verify=… sont acceptés) ; (2) relecture forcée chez Vercel (verifyDomain), puis nouvelle lecture.
+//        Si la pose du TXT échoue, on retombe sur l'instruction manuelle au lieu de passer le domaine en erreur.
 //
 // Une société = un domaine pour son portail web (web-admin servi à la racine) :
 //   • SUBDOMAIN : <libellé>.<PORTAL_BASE_DOMAIN>  → enregistrement CNAME dans la zone Cloudflare de la plateforme
@@ -88,6 +95,21 @@ type ClientRow = Prisma.ClientGetPayload<{ select: typeof CLIENT_SELECT }>;
 export function safeMessage(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err ?? 'Erreur inconnue');
   return raw.replace(/\s+/g, ' ').trim().slice(0, 400) || 'Erreur inconnue';
+}
+
+/**
+ * Preuve de propriété que la plateforme accepte de poser d'elle-même : un TXT « _vercel.<zone ou sous-zone> » portant une
+ * valeur « vc-domain-verify=… ». La réponse de Vercel est une donnée externe : rien d'autre n'est écrit dans notre zone DNS.
+ */
+export function isVercelTxtProof(v: { type: string; domain: string; value: string }, zoneName: string): boolean {
+  const name = v.domain.trim().toLowerCase();
+  const zone = zoneName.trim().toLowerCase();
+  return (
+    v.type === 'TXT' &&
+    /^_vercel\./.test(name) &&
+    (name === `_vercel.${zone}` || name.endsWith(`.${zone}`)) &&
+    v.value.trim().startsWith('vc-domain-verify=')
+  );
 }
 
 /** Attente avant une nouvelle tentative automatique après `attempts` échecs : 5 min, 10, 20… plafonnée à 6 h. */
@@ -383,7 +405,25 @@ export class PortalDomainsService {
       for (const h of attachHosts) await this.vercel.addDomain(h);
     }
 
-    const domain = await this.vercel.getDomain(rec.host);
+    let domain = await this.vercel.getDomain(rec.host);
+    let txtPosted = false;
+
+    if (!domain.verified) {
+      // Preuve de propriété demandée par Vercel (TXT _vercel.<zone>) : on la pose si la zone est la nôtre.
+      const proof = domain.verification?.find((v) => isVercelTxtProof(v, rec.zoneName));
+      if (proof && !verifyOnly && zoneId && rec.dnsMode === 'CLOUDFLARE') {
+        try {
+          await this.cloudflare.ensureTxtRecord(zoneId, proof.domain, proof.value);
+          txtPosted = true;
+        } catch (err) {
+          // Pas bloquant : le message affiché indiquera l'enregistrement à poser à la main.
+          this.logger.warn(`Domaine ${rec.host} : TXT de vérification non posé (${safeMessage(err)})`);
+        }
+      }
+      // Vercel ne relit le TXT que de lui-même (parfois tardivement) : on lui demande de le relire maintenant.
+      await this.vercel.verifyDomain(rec.host);
+      domain = await this.vercel.getDomain(rec.host);
+    }
     const misconfigured = await this.vercel.isMisconfigured(rec.host);
 
     if (domain.verified && !misconfigured) {
@@ -400,7 +440,9 @@ export class PortalDomainsService {
     let info: string | null = null;
     if (!domain.verified && domain.verification?.length) {
       const v = domain.verification[0];
-      info = `Vercel demande un enregistrement ${v.type} : ${v.domain} = ${v.value}`.slice(0, 400);
+      info = txtPosted
+        ? "Vérification en cours chez Vercel : l'enregistrement TXT de contrôle est posé automatiquement."
+        : `Vercel demande un enregistrement ${v.type} : ${v.domain} = ${v.value}`.slice(0, 400);
     } else if (misconfigured) {
       info = rec.status === 'ACTIVE' ? 'Le DNS du domaine ne pointe plus vers le portail.' : null;
     }

@@ -1,7 +1,12 @@
 // apps/backend/src/portal-domains/providers/vercel.client.ts
 // =========================================================
-// CLIENT VERCEL v1.0 — rattachement des domaines au projet qui sert les portails des sociétés.
+// CLIENT VERCEL v1.1 — rattachement des domaines au projet qui sert les portails des sociétés.
 // Paramétré par PORTAL_VERCEL_PROJECT_ID (distinct du projet de la console /transfert), VERCEL_API_TOKEN, VERCEL_TEAM_ID.
+//
+// v1.1 — 🔥 CORRIGÉ : « Vérifier » ne faisait que LIRE l'état du domaine (GET) ; Vercel ne relit le TXT de preuve
+//        _vercel.<domaine> que de son propre chef, parfois après de longues minutes, d'où des domaines bloqués en
+//        « Validation en cours » alors que le TXT était déjà en place. Ajout de verifyDomain() : demande explicite de
+//        relecture (POST …/verify), appelée par le moteur dès qu'un domaine n'est pas encore vérifié.
 // =========================================================
 
 import { Injectable } from '@nestjs/common';
@@ -68,6 +73,20 @@ export class VercelClient {
 
   async getDomain(host: string): Promise<VercelDomain> {
     return this.call<VercelDomain>(`/v9/projects/${this.projectId()}/domains/${encodeURIComponent(host)}`);
+  }
+
+  /**
+   * Demande à Vercel de relire MAINTENANT le TXT de vérification du domaine (sans cet appel il ne le fait que de lui-même,
+   * parfois tardivement). Jamais bloquant : « pas encore vérifié » (400), domaine inconnu (404) ou conflit (409) ne sont pas
+   * des pannes — l'appelant relit l'état juste après. Les autres erreurs (jeton refusé, Vercel en panne) remontent.
+   */
+  async verifyDomain(host: string): Promise<void> {
+    try {
+      await this.call(`/v9/projects/${this.projectId()}/domains/${encodeURIComponent(host)}/verify`, 'POST');
+    } catch (err) {
+      if (err instanceof ProviderError && (err.status === 400 || err.status === 404 || err.status === 409)) return;
+      throw err;
+    }
   }
 
   /** Le DNS du domaine pointe-t-il bien vers Vercel ? */

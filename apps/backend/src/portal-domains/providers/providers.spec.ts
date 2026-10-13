@@ -77,6 +77,29 @@ describe('CloudflareClient', () => {
     expect(fetchMock.mock.calls[1][1].method).toBe('PUT');
   });
 
+  it('ensureTxtRecord : crée si absent, ne fait rien si la valeur existe (avec ou sans guillemets), ajoute à côté d\'un autre TXT sans jamais le toucher', async () => {
+    process.env.CLOUDFLARE_API_TOKEN = 'tok';
+    const cf = new CloudflareClient();
+
+    fetchMock.mockResolvedValueOnce(reply(200, { success: true, result: [] })).mockResolvedValueOnce(reply(200, { success: true, result: {} }));
+    await cf.ensureTxtRecord('z', '_vercel.x.com', 'vc-domain-verify=a,1');
+    expect(fetchMock.mock.calls[0][0]).toContain('/zones/z/dns_records?type=TXT&name=_vercel.x.com');
+    expect(fetchMock.mock.calls[1][1].method).toBe('POST');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ type: 'TXT', name: '_vercel.x.com', content: 'vc-domain-verify=a,1', ttl: 1 });
+
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(reply(200, { success: true, result: [{ id: 'r1', content: '"vc-domain-verify=a,1"' }] }));
+    await cf.ensureTxtRecord('z', '_vercel.x.com', 'vc-domain-verify=a,1');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Un TXT d'un AUTRE sous-domaine porte le même nom : on ajoute le nôtre, on ne modifie / ne supprime rien.
+    fetchMock.mockClear();
+    fetchMock.mockResolvedValueOnce(reply(200, { success: true, result: [{ id: 'r1', content: '"vc-domain-verify=b,2"' }] })).mockResolvedValueOnce(reply(200, { success: true, result: {} }));
+    await cf.ensureTxtRecord('z', '_vercel.x.com', 'vc-domain-verify=a,1');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map((c) => c[1].method)).toEqual(['GET', 'POST']);
+  });
+
   it('erreur API : message utile, sans jamais citer le jeton', async () => {
     process.env.CLOUDFLARE_API_TOKEN = 'super-secret-token';
     fetchMock.mockResolvedValue(reply(403, { success: false, errors: [{ code: 9109, message: 'Invalid access token' }] }));
@@ -111,6 +134,23 @@ describe('VercelClient', () => {
     fetchMock.mockClear();
     fetchMock.mockResolvedValueOnce(reply(409, { error: { message: 'in use' } })).mockResolvedValueOnce(reply(404, { error: { message: 'nf' } }));
     await expect(new VercelClient().addDomain('x.com')).rejects.toThrow(/autre projet/);
+  });
+
+  it('verifyDomain : POST …/verify sur le projet des portails ; « pas encore vérifié » (400/404/409) n\'est pas une panne ; 5xx et jeton refusé remontent', async () => {
+    process.env.VERCEL_TEAM_ID = 'team_1';
+    fetchMock.mockResolvedValueOnce(reply(200, { verified: true }));
+    await expect(new VercelClient().verifyDomain('x.com')).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.vercel.com/v9/projects/prj_portal/domains/x.com/verify?teamId=team_1');
+    expect(fetchMock.mock.calls[0][1].method).toBe('POST');
+
+    for (const status of [400, 404, 409]) {
+      fetchMock.mockResolvedValueOnce(reply(status, { error: { message: 'not verified yet' } }));
+      await expect(new VercelClient().verifyDomain('x.com')).resolves.toBeUndefined();
+    }
+    fetchMock.mockResolvedValueOnce(reply(500, { error: { message: 'down' } }));
+    await expect(new VercelClient().verifyDomain('x.com')).rejects.toThrow(/down/);
+    fetchMock.mockResolvedValueOnce(reply(403, { error: { message: 'forbidden' } }));
+    await expect(new VercelClient().verifyDomain('x.com')).rejects.toThrow(/forbidden/);
   });
 
   it('isMisconfigured : lit la configuration ; indisponible ⇒ ne bloque pas', async () => {

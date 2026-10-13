@@ -203,12 +203,14 @@ function makeWorld() {
     findZone: jest.fn(async (n: string) => zones[n] ?? null),
     ensureZone: jest.fn(async (n: string) => (zones[n] ??= { id: `z_${n}`, name: n, status: 'pending', name_servers: ['a.ns.cloudflare.com', 'b.ns.cloudflare.com'] })),
     upsertRecord: jest.fn(async () => undefined),
+    ensureTxtRecord: jest.fn(async () => undefined),
     deleteRecord: jest.fn(async () => undefined),
   };
   const vercelState = { verified: true, misconfigured: false, verification: undefined as any };
   const vercel: any = {
     addDomain: jest.fn(async (h: string) => ({ name: h, verified: vercelState.verified })),
     getDomain: jest.fn(async (h: string) => ({ name: h, verified: vercelState.verified, verification: vercelState.verification })),
+    verifyDomain: jest.fn(async () => undefined),
     isMisconfigured: jest.fn(async () => vercelState.misconfigured),
     removeDomain: jest.fn(async () => undefined),
   };
@@ -254,6 +256,67 @@ describe('PortalDomainsService — sous-domaine de la plateforme', () => {
     w.vercelState.verified = true;
     const next = await w.service.advance(1);
     expect(next!.status).toBe('ACTIVE');
+  });
+
+  const PROOF = { type: 'TXT', domain: '_vercel.dkmoney.store', value: 'vc-domain-verify=flash.dkmoney.store,9129b06e' };
+
+  it('TXT de preuve demandé par Vercel : posé dans la zone de la plateforme, relecture forcée, ACTIVE dans le même passage', async () => {
+    const w = makeWorld();
+    w.vercelState.verified = false;
+    w.vercelState.verification = [PROOF];
+    // Vercel valide dès qu'on lui demande de relire le TXT.
+    w.vercel.verifyDomain.mockImplementation(async () => { w.vercelState.verified = true; });
+    const res = await w.service.setDomain('u', 1, { kind: 'SUBDOMAIN', subdomain: 'flash' });
+    expect(w.cf.ensureTxtRecord).toHaveBeenCalledWith('z_base', '_vercel.dkmoney.store', 'vc-domain-verify=flash.dkmoney.store,9129b06e');
+    expect(w.vercel.verifyDomain).toHaveBeenCalledWith('flash.dkmoney.store');
+    expect(res.domain!.status).toBe('ACTIVE');
+  });
+
+  it('TXT posé mais Vercel pas encore convaincu : PENDING_VERIFICATION, message « posé automatiquement » (pas d\'instruction manuelle)', async () => {
+    const w = makeWorld();
+    w.vercelState.verified = false;
+    w.vercelState.verification = [PROOF];
+    const res = await w.service.setDomain('u', 1, { kind: 'SUBDOMAIN', subdomain: 'flash' });
+    expect(res.domain!.status).toBe('PENDING_VERIFICATION');
+    expect(res.domain!.lastError).toMatch(/automatiquement/);
+    expect(res.domain!.lastError).not.toContain('vc-domain-verify');
+    expect(w.vercel.verifyDomain).toHaveBeenCalledTimes(1);
+  });
+
+  it('une preuve qui sort du cadre (autre type, autre zone, autre préfixe de valeur) n\'est JAMAIS écrite dans la zone', async () => {
+    for (const bad of [
+      { type: 'CNAME', domain: '_vercel.dkmoney.store', value: 'vc-domain-verify=x' },
+      { type: 'TXT', domain: '_vercel.evil.com', value: 'vc-domain-verify=x' },
+      { type: 'TXT', domain: 'www.dkmoney.store', value: 'vc-domain-verify=x' },
+      { type: 'TXT', domain: '_vercel.dkmoney.store', value: 'v=spf1 include:evil.com ~all' },
+    ]) {
+      const w = makeWorld();
+      w.vercelState.verified = false;
+      w.vercelState.verification = [bad];
+      await w.service.setDomain('u', 1, { kind: 'SUBDOMAIN', subdomain: 'flash' });
+      expect(w.cf.ensureTxtRecord).not.toHaveBeenCalled();
+    }
+  });
+
+  it('Cloudflare refuse le TXT : pas d\'échec, retour à l\'instruction manuelle', async () => {
+    const w = makeWorld();
+    w.vercelState.verified = false;
+    w.vercelState.verification = [PROOF];
+    w.cf.ensureTxtRecord.mockRejectedValue(new ProviderError('Cloudflare a refusé la demande : droits insuffisants', 403));
+    const res = await w.service.setDomain('u', 1, { kind: 'SUBDOMAIN', subdomain: 'flash' });
+    expect(res.domain!.status).toBe('PENDING_VERIFICATION');
+    expect(res.domain!.lastError).toContain('_vercel.dkmoney.store');
+    expect(w.vercel.verifyDomain).toHaveBeenCalled();
+  });
+
+  it('contrôle d\'un domaine déjà actif (verifyOnly) : aucune écriture DNS', async () => {
+    const w = makeWorld();
+    await w.service.setDomain('u', 1, { kind: 'SUBDOMAIN', subdomain: 'flash' });
+    w.cf.ensureTxtRecord.mockClear();
+    w.vercelState.verified = false;
+    w.vercelState.verification = [PROOF];
+    await w.service.advance(1, { verifyOnly: true });
+    expect(w.cf.ensureTxtRecord).not.toHaveBeenCalled();
   });
 });
 
@@ -307,6 +370,8 @@ describe('PortalDomainsService — domaine propre', () => {
     const res = await w.service.setDomain('u', 1, { kind: 'CUSTOM', domain: 'flash-transfer.com', dnsMode: 'EXTERNAL' });
     expect(res.domain!.status).toBe('PENDING_VERIFICATION');
     expect(res.domain!.lastError).toContain('_vercel.flash-transfer.com');
+    expect(w.cf.ensureTxtRecord).not.toHaveBeenCalled(); // DNS de la société : on ne l'écrit jamais
+    expect(w.vercel.verifyDomain).toHaveBeenCalled(); // mais la relecture forcée reste demandée
   });
 
   it('refuse un domaine déjà utilisé par une autre société (domaine propre, avec ou sans www)', async () => {
