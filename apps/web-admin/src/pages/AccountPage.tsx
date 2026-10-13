@@ -1,5 +1,11 @@
 // src/pages/AccountPage.tsx
+// v1.1 — 🔥 AJOUT : carte « Mot de passe » (ChangePasswordCard). Avant, la page affichait
+//        « la modification du mot de passe arrive avec les prochains modules » : un
+//        utilisateur ne pouvait pas changer son mot de passe depuis le back-office
+//        (ex. le super administrateur arrivé par la console Grand Chef). La route backend
+//        PATCH /auth/change-password existait déjà ; seul l'écran manquait.
 import type { WebRole } from '@direct-transfair/shared';
+import { ChangePasswordCard } from '../components/ChangePasswordCard';
 import { Button, Card, PageHeader } from '../components/ui';
 import { ROLE_LABEL } from '../navigation';
 import { useAuth, useCurrentUser } from '../providers/AuthProvider';
@@ -15,7 +21,7 @@ export default function AccountPage() {
     <>
       <PageHeader
         title="Mon compte"
-        description="Les informations de votre profil. La modification du profil et du mot de passe arrive avec les prochains modules."
+        description="Les informations de votre profil et la sécurité de votre accès."
       />
 
       <div className="stack">
@@ -40,6 +46,8 @@ export default function AccountPage() {
             </div>
           </dl>
         </Card>
+
+        <ChangePasswordCard email={user.email} />
 
         <Card tone="flat">
           <h2 className="card-title">Fin de session</h2>

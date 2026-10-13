@@ -1,0 +1,126 @@
+/* =========================================================
+   MON COMPTE — carte « Mot de passe » (cartes ombrées, aucune table)
+   ========================================================= */
+
+.pw-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pw-head .card-title {
+  margin-bottom: 4px;
+}
+
+.pw-head .btn {
+  flex-shrink: 0;
+}
+
+.pw-feedback {
+  margin-top: 14px;
+}
+
+.pw-card form {
+  margin-top: 20px;
+}
+
+/* Chaque champ garde sa hauteur : sans cela, la grille étire « Confirmer » à la hauteur
+   de la colonne « Nouveau » (aide + indicateur) et décale son champ vers le bas. */
+.pw-card .form-grid {
+  align-items: start;
+  margin-top: 0;
+}
+
+/* Identifiant lu par le gestionnaire de mots de passe : présent dans le DOM, invisible. */
+.pw-username {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pw-field {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.pw-actions {
+  margin-top: 22px;
+}
+
+/* ─── Indicateur de robustesse : 4 segments ─────────────── */
+.pw-meter {
+  --pw-color: var(--line);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pw-meter__bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 5px;
+  flex: 1;
+  max-width: 180px;
+}
+
+.pw-meter__bars > span {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  transition: background-color 0.18s ease;
+}
+
+.pw-meter__label {
+  font-size: var(--t-sm);
+  color: var(--ink-2);
+}
+
+.pw-meter[data-level='1'] {
+  --pw-color: var(--danger);
+}
+.pw-meter[data-level='2'] {
+  --pw-color: var(--warn);
+}
+.pw-meter[data-level='3'] {
+  --pw-color: var(--brand);
+}
+.pw-meter[data-level='4'] {
+  --pw-color: var(--ok);
+}
+
+.pw-meter[data-level='1'] .pw-meter__bars > span:nth-child(-n + 1),
+.pw-meter[data-level='2'] .pw-meter__bars > span:nth-child(-n + 2),
+.pw-meter[data-level='3'] .pw-meter__bars > span:nth-child(-n + 3),
+.pw-meter[data-level='4'] .pw-meter__bars > span:nth-child(-n + 4) {
+  background: var(--pw-color);
+}
+
+@media (max-width: 640px) {
+  .pw-head {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pw-head .btn {
+    margin-left: -12px;
+  }
+
+  .pw-actions .btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-meter__bars > span {
+    transition: none;
+  }
+}
