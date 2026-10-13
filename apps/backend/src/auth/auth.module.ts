@@ -1,6 +1,7 @@
 // apps/backend/src/auth/auth.module.ts
 // =========================================================
-// AUTH MODULE v5.1
+// AUTH MODULE v5.2
+// ✅ v5.2 : PlatformSsoController/Service — connexion unique depuis la console dkmoney.store
 // ✅ v5.0 : V2AuthService + V2AuthController
 // ✅ v5.1 : SmsModule importé → SmsService dispo dans V2AuthService
 //           et AuthService (SMS OTP réel via Twilio)
@@ -15,6 +16,8 @@ import { AuthController }   from './auth.controller';
 import { JwtAuthGuard }     from './jwt-auth.guard';
 import { V2AuthService }    from './v2-auth.service';
 import { V2AuthController } from './v2-auth.controller';
+import { PlatformSsoController } from './platform-sso.controller';   // ✅ v5.2
+import { PlatformSsoService }    from './platform-sso.service';
 
 import { UsersModule }  from '../users/users.module';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -66,12 +69,14 @@ function parseExpiresToSeconds(raw: unknown): number {
   controllers: [
     AuthController,
     V2AuthController,
+    PlatformSsoController, // ✅ v5.2 : POST /auth/platform-sso
   ],
 
   providers: [
     AuthService,
     JwtAuthGuard,
     V2AuthService,
+    PlatformSsoService,
   ],
 
   exports: [

@@ -1,4 +1,5 @@
 // src/pages/companies/CompanyDetailPage.tsx
+// Lot C : la section « Portail web » renvoie vers /portal-domains pour la mise en ligne réelle du domaine.
 // Fiche d'une société : identité, portail, apparence, mentions légales (édition par section),
 // équipe, portefeuilles, statut d'abonnement et suppression.
 
@@ -228,10 +229,17 @@ export default function CompanyDetailPage() {
             values={company as unknown as Record<string, string | null | undefined>}
             onSave={save}
             extra={(_draft, editing) => (
-              <Notice tone="info">
+              <Notice
+                tone="info"
+                action={
+                  <Link className="link-btn" to={`/portal-domains?company=${company.id}`}>
+                    Gérer le domaine du portail
+                  </Link>
+                }
+              >
                 {editing
-                  ? "Le domaine doit aussi être rattaché au projet web-admin chez l'hébergeur et pointer vers lui (DNS)."
-                  : "Un domaine enregistré ici n'est actif qu'une fois rattaché au projet web-admin chez l'hébergeur et pointé vers lui (DNS)."}
+                  ? "Modifier ces champs ne configure ni le DNS ni l'hébergeur."
+                  : "Pour qu'un domaine soit réellement mis en ligne (DNS, hébergeur, certificat), attribuez-le depuis « Domaines »."}
               </Notice>
             )}
           />

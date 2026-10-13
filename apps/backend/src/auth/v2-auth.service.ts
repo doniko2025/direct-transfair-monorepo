@@ -2,6 +2,9 @@
 // =========================================================
 // AUTH SERVICE v2.5 — Sécurité production
 //
+// ✅ v2.6 : completeSsoLogin() — ouvre la session après une connexion unique validée par
+//   PlatformSsoService (console dkmoney.store). Aucun autre comportement modifié.
+//
 // ✅ v2.0 : Toutes les corrections de sécurité originales conservées
 // ✅ v2.1 : CORRECTIFS RATE LIMIT
 //
@@ -265,6 +268,18 @@ export class V2AuthService {
     await this.markLastLogin(user!.id);
     await this.audit(user!.id, user!.clientId, AuditAction.LOGIN);
     return this.buildLoginResponse(user!);
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 1 bis. OUVERTURE DE SESSION APRÈS CONNEXION UNIQUE (console dkmoney.store)
+  // L'assertion est vérifiée par PlatformSsoService ; ici on ne fait qu'ouvrir la
+  // session avec les mêmes jetons que le login par mot de passe.
+  // ═══════════════════════════════════════════════════════
+
+  async completeSsoLogin(user: any, source: string): Promise<LoginResult> {
+    await this.markLastLogin(user.id);
+    await this.audit(user.id, user.clientId, AuditAction.LOGIN, { sso: source });
+    return this.buildLoginResponse(user);
   }
 
   // ═══════════════════════════════════════════════════════

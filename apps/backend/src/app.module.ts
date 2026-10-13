@@ -1,6 +1,7 @@
 // apps/backend/src/app.module.ts
 // =========================================================
 // APP MODULE v5.3
+// ✅ v5.6 : PortalDomainsModule — /portal-domains (domaine du portail de chaque société : Cloudflare + Vercel, suivi de statut).
 // ✅ v5.5 : TransferLimitsModule — /transfer-limits (plafonds d'envoi par niveau KYC et devise, réglés par l'admin société).
 // ✅ v5.4 : ValidationThresholdsModule — /validation-thresholds (seuil de validation d'un envoi cash, réglé par l'admin société).
 // ✅ v5.3 : AgentDeskModule — /agent-desk (caisse de l'agence, opérations du jour, recherche client, aperçu d'un envoi cash).
@@ -77,6 +78,7 @@ import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // 
 import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // ✅ v5.0
 import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
 import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
+import { PortalDomainsModule }      from './portal-domains/portal-domains.module'; // ✅ v5.6
 import { CommissionRulesModule }    from './commission-rules/commission-rules.module'; // ✅ v5.2
 import { AgentDeskModule }          from './agent-desk/agent-desk.module'; // ✅ v5.3
 import { ValidationThresholdsModule } from './validation-thresholds/validation-thresholds.module'; // ✅ v5.4
@@ -131,6 +133,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     AgentDeskModule,   // ✅ v5.3 — /agent-desk/* (guichet de l'agent)
     ValidationThresholdsModule, // ✅ v5.4 — /validation-thresholds (seuil de validation par devise)
     TransferLimitsModule, // ✅ v5.5 — /transfer-limits (plafonds d'envoi par niveau KYC et devise)
+    PortalDomainsModule, // ✅ v5.6 — /portal-domains (domaine du portail de chaque société)
   ],
 
   controllers: [ExchangeRatesController],

@@ -1,4 +1,5 @@
 // src/modules.tsx
+// Lot C : + /portal-domains (domaine du portail de chaque société, super admin).
 // =========================================================
 // REGISTRE DES PAGES
 //
@@ -30,6 +31,7 @@ import WithdrawPage from './pages/desk/WithdrawPage';
 import FeeSchedulePage from './pages/fees/FeeSchedulePage';
 import FeesPage from './pages/fees/FeesPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
+import PortalDomainsPage from './pages/portal-domains/PortalDomainsPage';
 import RateHistoryPage from './pages/rates/RateHistoryPage';
 import RatesPage from './pages/rates/RatesPage';
 import SettingsPage from './pages/settings/SettingsPage';
@@ -64,6 +66,9 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/companies', roles: SUPER, element: <CompaniesPage /> },
   { path: '/companies/new', roles: SUPER, element: <CompanyCreatePage /> },
   { path: '/companies/:id', roles: SUPER, element: <CompanyDetailPage /> },
+
+  // Lot C — domaine du portail de chaque société (super admin)
+  { path: '/portal-domains', roles: SUPER, element: <PortalDomainsPage /> },
 
   // Phase 2b — Utilisateurs (super admin : tous ; admin de société : sa société, filtrée par le serveur)
   { path: '/users', roles: ADMINS, element: <UsersPage /> },

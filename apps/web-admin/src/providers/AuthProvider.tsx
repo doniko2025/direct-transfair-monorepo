@@ -1,6 +1,9 @@
 // src/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v1.0
+// AUTH PROVIDER v1.1
+// ✅ v1.1 : loginWithAssertion() — connexion unique depuis la console dkmoney.store (POST /auth/platform-sso).
+//   Passe par acceptSession() comme le login : mêmes contrôles (rôle web, profil complet).
+//
 //
 // - Restaure la session au chargement (GET /auth/me ; le refresh
 //   automatique sur 401 est géré par le client HTTP partagé).
@@ -50,6 +53,8 @@ interface AuthContextValue {
   state: AuthState;
   user: AuthUser | null;
   login(email: string, password: string): Promise<LoginOutcome>;
+  /** Connexion unique : échange l'assertion signée de la console contre une session (lève ApiError si refusée). */
+  loginWithAssertion(assertion: string): Promise<LoginOutcome>;
   logout(): Promise<void>;
   dismissNotice(): void;
 }
@@ -168,6 +173,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [acceptSession],
   );
 
+  const loginWithAssertion = useCallback(
+    async (assertion: string): Promise<LoginOutcome> => {
+      const result = await api.auth.platformSso(assertion);
+      return acceptSession(result);
+    },
+    [acceptSession],
+  );
+
   const logout = useCallback(async () => {
     try {
       await api.auth.logout();
@@ -188,10 +201,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       state,
       user: state.status === 'authenticated' ? state.user : null,
       login,
+      loginWithAssertion,
       logout,
       dismissNotice,
     }),
-    [state, login, logout, dismissNotice],
+    [state, login, loginWithAssertion, logout, dismissNotice],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

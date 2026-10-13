@@ -19,3 +19,4 @@ export * from './commissions';
 export * from './agentDesk';
 export * from './validationThresholds';
 export * from './transferLimits';
+export * from './portalDomains';

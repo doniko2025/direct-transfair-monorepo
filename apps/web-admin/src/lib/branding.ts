@@ -3,6 +3,7 @@
 // variables CSS : les composants ne connaissent jamais une couleur en dur.
 
 import { PLATFORM_TENANT, type TenantBranding } from '@direct-transfair/shared';
+import { BASE_PATH, CONSOLE_EMBEDDED } from '../config';
 import { parseHex, readableOn } from './colors';
 
 export const DEFAULT_BRANDING: TenantBranding = {
@@ -17,6 +18,22 @@ export const DEFAULT_BRANDING: TenantBranding = {
   subdomain: null,
   customDomain: null,
 };
+
+/**
+ * Identité du portail plateforme quand il est servi dans la console du Grand Chef : nom, logo et
+ * couleurs propres, distincts de ceux du côté associations (violet). Les portails de société gardent
+ * le branding de leur société.
+ */
+export function consoleBranding(): TenantBranding {
+  return {
+    ...DEFAULT_BRANDING,
+    name: 'Sociétés de transfert',
+    tagline: 'Pilotage des sociétés de transfert d’argent',
+    logoUrl: `${BASE_PATH}/favicon.svg`,
+  };
+}
+
+export const platformBranding = (): TenantBranding => (CONSOLE_EMBEDDED ? consoleBranding() : DEFAULT_BRANDING);
 
 const BASE_FONT = 'Bricolage Grotesque';
 const FONT_LINK_ID = 'dt-font-tenant';

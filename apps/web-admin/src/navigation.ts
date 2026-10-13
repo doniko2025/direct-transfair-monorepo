@@ -1,4 +1,5 @@
 // src/navigation.ts
+// Lot C : + « Domaines » (super admin) → /portal-domains.
 // =========================================================
 // MENU PAR RÔLE — source unique de vérité
 //
@@ -31,6 +32,7 @@ export const NAV: readonly NavItem[] = [
 
   // Super admin
   { id: 'companies', label: 'Sociétés', icon: 'building', path: '/companies', roles: SUPER, ready: true },
+  { id: 'portal-domains', label: 'Domaines', icon: 'globe', path: '/portal-domains', roles: SUPER, ready: true },
   { id: 'supervision', label: 'Supervision', icon: 'eye', path: '/supervision', roles: SUPER, ready: true },
 
   // Admin société

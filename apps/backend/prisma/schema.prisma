@@ -284,6 +284,8 @@ enum AuditAction {
   SUPPORT_TICKET_CREATE
   COMPLIANCE_CASE_CREATE
   COMPLIANCE_CASE_RESOLVE
+  PORTAL_DOMAIN_SET     // Domaine de portail d'une société défini / modifié (console)
+  PORTAL_DOMAIN_REMOVE  // Domaine de portail d'une société retiré
 }
 
 enum AlertType {
@@ -2071,6 +2073,67 @@ model SupportTicketReply {
 
   @@index([ticketId])
   @@map("support_ticket_replies")
+}
+
+// =========================================================
+// ✅ v5.6 — Connexion unique depuis la console dkmoney.store (SSO)
+// Identifiants d'assertion déjà consommés : chaque assertion ne sert qu'une fois.
+// Les lignes expirées sont purgées au fil de l'eau.
+// =========================================================
+model PlatformSsoAssertion {
+  jti       String   @id
+  subject   String
+  usedAt    DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("platform_sso_assertions")
+}
+
+// =========================================================
+// DOMAINES DES PORTAILS DE SOCIÉTÉS (lot C — console unique)
+// Un domaine (sous-domaine de la plateforme ou domaine propre) par société, avec son état d'avancement :
+// zone Cloudflare → enregistrements DNS → rattachement au projet Vercel du portail → certificat.
+// Table isolée, sans clé étrangère : Client.customDomain / Client.subdomain restent la source de la résolution
+// par hôte (GET /branding/by-host) ; cette table ne porte que le suivi du déploiement.
+// =========================================================
+enum PortalDomainKind {
+  SUBDOMAIN  // <libellé>.<PORTAL_BASE_DOMAIN>
+  CUSTOM     // domaine propre de la société
+}
+
+enum PortalDomainDnsMode {
+  CLOUDFLARE  // la zone est gérée chez Cloudflare (nameservers à pointer chez le registrar pour un domaine propre)
+  EXTERNAL    // la société garde son DNS : elle ajoute elle-même les enregistrements indiqués
+}
+
+enum PortalDomainStatus {
+  PENDING_NAMESERVERS   // zone Cloudflare créée, nameservers pas encore propagés chez le registrar
+  PENDING_VERIFICATION  // DNS posés / à poser, Vercel n'a pas encore validé le domaine
+  ACTIVE                // domaine validé, portail servi en HTTPS
+  FAILED                // dernière tentative en erreur (voir lastError) — nouvelle tentative automatique
+}
+
+model ClientPortalDomain {
+  id            Int                 @id @default(autoincrement())
+  clientId      Int                 @unique
+  kind          PortalDomainKind
+  dnsMode       PortalDomainDnsMode @default(CLOUDFLARE)
+  host          String              @unique   // hôte principal (ex. flash.dkmoney.store, flash-transfer.com)
+  zoneName      String                        // zone DNS qui porte l'hôte
+  zoneId        String?
+  nameServers   String[]            @default([])
+  status        PortalDomainStatus  @default(PENDING_NAMESERVERS)
+  lastError     String?
+  attempts      Int                 @default(0)
+  lastCheckedAt DateTime?
+  activatedAt   DateTime?
+  leaseUntil    DateTime?                     // verrou court : un seul traitement à la fois par domaine
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([status, lastCheckedAt])
+  @@map("client_portal_domains")
 }
 
 // =========================================================

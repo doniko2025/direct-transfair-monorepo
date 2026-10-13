@@ -1,6 +1,10 @@
 // apps/backend/src/main.ts
 // =========================================================
-// MAIN v2.2
+// MAIN v2.4
+// ✅ v2.4 : CORS — les sous-domaines de portail (<sous-domaine>.PORTAL_BASE_DOMAIN) des sociétés sont autorisés en plus de
+//   leurs domaines propres (lot C : sans cela le portail d'une société servi sur son sous-domaine était bloqué par CORS).
+// ✅ v2.3 : CORS — PLATFORM_CONSOLE_HOSTS (ex. dkmoney.store,www.dkmoney.store) : domaines de la console du
+//   Grand Chef, qui sert ce back-office sous /transfert. Liste vide par défaut : comportement inchangé.
 // ✅ v2.2 (phase 6, passe 3) : « trust proxy ». Derrière Railway, sans cette option Express voit l'adresse du
 //   proxy comme adresse du client : le rate limiting (100 req/min, 5 connexions/min) était partagé par TOUS les
 //   utilisateurs de la plateforme, et les journaux de connexion enregistraient l'IP du proxy. En production on
@@ -70,6 +74,12 @@ const STATIC_KNOWN_HOSTNAMES = new Set<string>([
   'www.direct-transfair.eu',
 ]);
 
+// ✅ v2.3 : domaines de la console du Grand Chef (variable d'environnement, jamais en dur)
+for (const h of (process.env.PLATFORM_CONSOLE_HOSTS ?? '').split(',')) {
+  const host = h.trim().toLowerCase();
+  if (host) STATIC_KNOWN_HOSTNAMES.add(host);
+}
+
 const CUSTOM_DOMAIN_REFRESH_MS = 5 * 60 * 1000; // 5 min
 let knownCustomDomains = new Set<string>();
 
@@ -91,13 +101,18 @@ function withWwwVariants(hostname: string): string[] {
 
 async function refreshCustomDomains(prisma: PrismaService): Promise<void> {
   try {
+    const portalBase = (process.env.PORTAL_BASE_DOMAIN ?? '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
     const clients = await prisma.client.findMany({
-      where:  { customDomain: { not: null }, isActive: true },
-      select: { customDomain: true },
+      where:  {
+        isActive: true,
+        OR: [{ customDomain: { not: null } }, ...(portalBase ? [{ subdomain: { not: null } }] : [])],
+      },
+      select: { customDomain: true, subdomain: true },
     });
 
     const next = new Set<string>();
     for (const c of clients) {
+      if (portalBase && c.subdomain) next.add(`${c.subdomain.toLowerCase()}.${portalBase}`);
       if (!c.customDomain) continue;
       const hostname =
         extractHostname(`https://${c.customDomain}`) ??

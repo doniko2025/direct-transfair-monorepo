@@ -34,7 +34,7 @@ import {
 } from '@direct-transfair/shared';
 import { ALLOW_TENANT_QUERY, API_CONFIGURED, API_URL, FIXED_TENANT, PLATFORM_HOSTS } from '../config';
 import { api, setCurrentTenant } from '../lib/api';
-import { DEFAULT_BRANDING, applyBranding } from '../lib/branding';
+import { applyBranding, platformBranding } from '../lib/branding';
 import { Button, LoadingScreen, ScreenState } from '../components/ui';
 
 export interface TenantValue {
@@ -58,7 +58,7 @@ type State =
 const TenantContext = createContext<TenantValue | null>(null);
 
 function platformValue(): TenantValue {
-  return { code: PLATFORM_TENANT, branding: DEFAULT_BRANDING, isPlatform: true };
+  return { code: PLATFORM_TENANT, branding: platformBranding(), isPlatform: true };
 }
 
 function companyValue(branding: TenantBranding): TenantValue {

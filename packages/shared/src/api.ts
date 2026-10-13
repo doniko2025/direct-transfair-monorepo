@@ -1,5 +1,7 @@
 // packages/shared/src/api.ts
 // =========================================================
+// ENDPOINTS v2.0 — + portalDomains (domaine du portail de chaque société : Cloudflare + Vercel, suivi de statut).
+// ENDPOINTS v1.9 — + auth.platformSso (connexion unique depuis la console dkmoney.store).
 // ENDPOINTS v1.8 — auth + branding (phase 1), sociétés, utilisateurs, transactions, trésorerie, supervision, taux de change, frais et notifications (phase 2), agences, agents, barème de frais, répartition et commissions (phase 3), guichet de l'agent (phase 4), seuil de validation et plafonds d'envoi (phase 6).
 // Chaque phase ajoute ses groupes d'endpoints ici (agencies,
 // treasury, transactions…) en lisant le contrôleur backend
@@ -16,6 +18,7 @@ import { createFeeScheduleApi } from './feeSchedule';
 import { createFeesApi } from './fees';
 import type { HttpClient } from './http';
 import { createNotificationsApi } from './notifications';
+import { createPortalDomainsApi } from './portalDomains';
 import { createRatesApi } from './rates';
 import { createSupervisionApi } from './supervision';
 import { createTransactionsApi } from './transactions';
@@ -27,6 +30,7 @@ import { PLATFORM_TENANT } from './tenant';
 import type {
   AuthUser,
   LoginPasswordResult,
+  LoginResult,
   TenantBranding,
   VerificationChannel,
   VerifyContactResult,
@@ -57,6 +61,7 @@ export function createApi(http: HttpClient) {
     agentDesk: createAgentDeskApi(http),
     validationThresholds: createValidationThresholdsApi(http),
     transferLimits: createTransferLimitsApi(http),
+    portalDomains: createPortalDomainsApi(http),
 
     branding: {
       byHost: (host: string) =>
@@ -78,6 +83,10 @@ export function createApi(http: HttpClient) {
           { email, password },
           { auth: false },
         ),
+
+      /** Connexion unique depuis la console dkmoney.store (assertion signée de 60 s, usage unique). */
+      platformSso: (assertion: string) =>
+        http.post<LoginResult>('/auth/platform-sso', { assertion }, { auth: false }),
 
       sendVerification: (userId: string, channel: VerificationChannel) =>
         http.post<unknown>('/auth/v2/send-verification', { userId, channel }, { auth: false }),

@@ -7,3 +7,5 @@ build/
 
 .vercel
 .pnpm-store
+.vercel
+.env*

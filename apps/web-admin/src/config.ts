@@ -20,3 +20,16 @@ export const FIXED_TENANT: string | null = normalizeTenantCode(import.meta.env.V
 /** ?tenant=CODE accepté dans l'URL (toujours en dev, en prod seulement si activé). */
 export const ALLOW_TENANT_QUERY: boolean =
   import.meta.env.DEV || import.meta.env.VITE_ALLOW_TENANT_QUERY === 'true';
+
+// ─── Mode « console » : ce portail est servi sous /transfert derrière la console dkmoney.store ───
+
+/** Préfixe d'URL du portail ('' à la racine, '/transfert' derrière la console). Vient de `base` de Vite. */
+export const BASE_PATH: string = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
+
+/**
+ * URL de la console du Grand Chef (ex. « / » : même domaine). Renseignée ⇒ le portail est « embarqué » :
+ * bouton « Retour à la console », identité visuelle propre, connexion unique acceptée sur /sso.
+ */
+export const CONSOLE_URL: string = (import.meta.env.VITE_CONSOLE_URL ?? '').trim();
+export const CONSOLE_EMBEDDED: boolean = CONSOLE_URL !== '';
+export const CONSOLE_NAME: string = (import.meta.env.VITE_CONSOLE_NAME ?? '').trim() || 'Console Grand Chef';

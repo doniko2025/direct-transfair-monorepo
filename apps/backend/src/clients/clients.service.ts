@@ -1,6 +1,8 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.11
+// CLIENTS SERVICE v4.12
+// ✅ v4.12 : findPublicByHost — un domaine propre est reconnu avec ou sans « www. » (lot C : le portail est servi sur
+//   le domaine nu ET sur www, mais customDomain n'en stocke qu'un). Comportement précédent conservé (correspondance exacte).
 // ✅ v4.10 conservé intégralement
 // ✅ v4.11 : Mentions légales publiques exposées dans le branding
 //   PROBLÈME RÉSOLU : terms.tsx et assistance.tsx (mobile) avaient
@@ -424,8 +426,9 @@ export class ClientsService {
     const extractedSub =
       parts.length >= 3 && parts[0] !== 'www' ? parts[0] : null;
 
+    const bareHost = normalizedHost.replace(/^www\./, '');
     const orConditions: any[] = [
-      { customDomain: normalizedHost },
+      { customDomain: { in: Array.from(new Set([normalizedHost, bareHost, `www.${bareHost}`])) } },
     ];
 
     if (extractedSub) {

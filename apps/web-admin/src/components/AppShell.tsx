@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import type { WebRole } from '@direct-transfair/shared';
+import { CONSOLE_EMBEDDED, CONSOLE_NAME, CONSOLE_URL } from '../config';
 import { ROLE_LABEL, navFor } from '../navigation';
 import { useCurrentUser, useAuth } from '../providers/AuthProvider';
 import { UnreadProvider, useUnread } from '../providers/UnreadProvider';
@@ -83,6 +84,13 @@ function ShellFrame() {
             <Icon name="close" />
           </button>
         </div>
+
+        {CONSOLE_EMBEDDED ? (
+          <a className="console-link" href={CONSOLE_URL}>
+            <Icon name="arrowLeft" size={16} />
+            <span>Retour — {CONSOLE_NAME}</span>
+          </a>
+        ) : null}
 
         <nav className="sidebar__nav">
           <ul>
