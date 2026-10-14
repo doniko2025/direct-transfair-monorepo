@@ -1,93 +1,95 @@
-//apps/direct-transfair-mobile/app/referral.tsx
 // apps/direct-transfair-mobile/app/referral.tsx
 // =========================================================
-// REFERRAL SCREEN v4.0 — Direct Transf'air
-// Design: Émeraude Profond (USER)
-// ✅ Code parrainage · WhatsApp · SMS · Email · Partage
+// REFERRAL SCREEN v5.0 — Direct Transf'air
+// ✅ v5.0 : REFONTE — même style que tout le wallet (kit components/wallet) :
+//    en-tête de marque, cartes blanches ombrées, couleurs du tenant.
+//    Et surtout, plus RIEN de codé en dur propre à une société :
+//    • nom de la société : branding.name (était « Direct Transf'air » partout) ;
+//    • lien d'inscription : domaine/sous-domaine du tenant (buildCompanyPortalUrl),
+//      sinon EXPO_PUBLIC_PORTAL_URL ; sans lien, le message part sans lien
+//      (était https://direct-transfair.com/register?ref=… pour TOUTES les sociétés) ;
+//    • récompense : branding.referralBonusLabel si le tenant la définit, sinon
+//      libellé générique (était « 5€ » écrit en dur) ;
+//    • carte « Gains cumulés 0,00 € / 0 filleul » SUPPRIMÉE : c'était un faux
+//      compteur figé à zéro (aucune donnée derrière) qui trompait l'utilisateur.
+//    Logique de partage (copier, WhatsApp, SMS, email, partage système) inchangée.
+// Historique : v4.1 white-label brand.ts · v4.0 thème « Émeraude Profond » sombre.
+// Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
 import React, { useRef } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-  Platform, ScrollView, Linking, Alert, StatusBar, Animated,
+  View, Text, StyleSheet, TouchableOpacity, Platform, ScrollView,
+  Linking, Share, Animated,
 } from "react-native";
-import { Share } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons, FontAwesome } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../providers/AuthProvider";
+import { useTenant, buildCompanyPortalUrl } from "../providers/TenantProvider";
 import { showAlert } from "../utils/alert";
+import ScreenHeader from "../components/wallet/ScreenHeader";
+import { Card, SectionTitle } from "../components/wallet/WalletParts";
+import { useWalletTheme, N, FONT, RADIUS, alpha } from "../components/wallet/walletTheme";
 
-const T = {
-  g1: "#0B1F14", g2: "#0F2A1C",
-  accent: "#10B981", accentSoft: "#34D399", accentGlow: "rgba(16,185,129,0.15)",
-  ghost: "rgba(255,255,255,0.06)", inkBorder: "rgba(255,255,255,0.08)", inkLight: "#1C2820",
-  white: "#FFFFFF", dim: "#8A9BB5", dimSoft: "#7B9E8A",
-  whatsapp: "#25D366", sms: "#3B82F6", email: "#64748B",
-  radius: { md: 14, lg: 20, xl: 26 },
-  font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
-  },
-};
+// Couleurs de marque des canaux de partage (identité de WhatsApp, etc. — pas du tenant)
+const CHANNELS = { whatsapp: "#25D366", sms: "#2563EB", email: "#64748B" } as const;
 
 // ─── Étape ────────────────────────────────────────────────
-function StepItem({ number, title, desc, accent }: { number: string; title: string; desc: string; accent: string }) {
+function StepItem({ number, title, desc }: { number: string; title: string; desc: string }) {
+  const { P } = useWalletTheme();
   return (
-    <View style={stS.row}>
-      <View style={[stS.numBox, { backgroundColor: `${accent}15`, borderColor: `${accent}25` }]}>
-        <Text style={[stS.num, { color: accent, fontFamily: T.font.display }]}>{number}</Text>
+    <View style={st.row}>
+      <View style={[st.numBox, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
+        <Text style={[st.num, { color: P.action }]}>{number}</Text>
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={[stS.title, { fontFamily: T.font.sans }]}>{title}</Text>
-        <Text style={[stS.desc, { fontFamily: T.font.sans }]}>{desc}</Text>
+        <Text style={st.title}>{title}</Text>
+        <Text style={st.desc}>{desc}</Text>
       </View>
     </View>
   );
 }
-const stS = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 14, marginBottom: 16 },
-  numBox: { width: 32, height: 32, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  num: { fontSize: 15, fontWeight: "900" },
-  title: { color: T.white, fontSize: 14, fontWeight: "800", marginBottom: 2 },
-  desc: { color: T.dim, fontSize: 12, fontWeight: "600", lineHeight: 17 },
-});
 
-// ─── Social Button ────────────────────────────────────────
+// ─── Bouton de partage ────────────────────────────────────
 function SocialBtn({ icon, label, color, onPress }: { icon: React.ReactNode; label: string; color: string; onPress: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
       <TouchableOpacity
-        style={[sbS.btn, { backgroundColor: `${color}18`, borderColor: `${color}30` }]}
+        style={[sb.btn, { backgroundColor: alpha(color, 0.08), borderColor: alpha(color, 0.25) }]}
         onPress={onPress}
         activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 50 }).start()}
+        onPressIn={() => Animated.spring(scale, { toValue: 0.95, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
+        accessibilityLabel={label}
       >
         {icon}
-        <Text style={[sbS.label, { color, fontFamily: T.font.sans }]}>{label}</Text>
+        <Text style={[sb.label, { color }]}>{label}</Text>
       </TouchableOpacity>
     </Animated.View>
   );
 }
-const sbS = StyleSheet.create({
-  btn: { alignItems: "center", paddingVertical: 14, borderRadius: T.radius.lg, gap: 8, borderWidth: 1 },
-  label: { fontSize: 11, fontWeight: "800" },
-});
 
-// ─── Main Screen ──────────────────────────────────────────
+// ─── Écran ────────────────────────────────────────────────
 export default function ReferralScreen() {
   const router = useRouter();
   const { user } = useAuth();
+  const { branding } = useTenant();
+  const { P } = useWalletTheme();
+
+  const brandName = branding?.name || "notre application";
+  const bonus = ((branding as any)?.referralBonusLabel as string | undefined)?.trim() || "une récompense";
 
   const referralCode = user
     ? `${user.firstName?.toUpperCase().substring(0, 3)}${user.id.substring(0, 4)}`
     : "CODE123";
-  const referralLink = `https://direct-transfair.com/register?ref=${referralCode}`;
-  const message = `Salut ! 👋\n\nUtilise mon code parrainage *${referralCode}* sur Direct Transf'air.\n\nInscris-toi ici pour envoyer de l'argent sans frais : ${referralLink}`;
+
+  const portal = buildCompanyPortalUrl(branding as any) || process.env.EXPO_PUBLIC_PORTAL_URL || "";
+  const referralLink = portal ? `${portal.replace(/\/$/, "")}/register?ref=${referralCode}` : "";
+  const message =
+    `Salut ! 👋\n\nUtilise mon code parrainage *${referralCode}* sur ${brandName}.` +
+    (referralLink ? `\n\nInscris-toi ici pour envoyer de l'argent sans frais : ${referralLink}` : "");
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(referralCode);
@@ -96,7 +98,7 @@ export default function ReferralScreen() {
 
   const handleSystemShare = async () => {
     try {
-      await Share.share({ message, url: referralLink, title: "Invitation Direct Transf'air" });
+      await Share.share({ message, url: referralLink || undefined, title: `Invitation ${brandName}` });
     } catch { /* noop */ }
   };
 
@@ -114,167 +116,105 @@ export default function ReferralScreen() {
 
   const handleEmail = async () => {
     await Linking.openURL(
-      `mailto:?subject=Invitation Direct Transf'air&body=${encodeURIComponent(message)}`
+      `mailto:?subject=${encodeURIComponent(`Invitation ${brandName}`)}&body=${encodeURIComponent(message)}`
     );
   };
 
   return (
-    <LinearGradient colors={[T.g1, T.g2]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <View style={{ flex: 1, backgroundColor: N.page }}>
+      <ScreenHeader
+        compact
+        title="Parrainage"
+        subtitle={`Invite tes proches sur ${brandName}`}
+        onBack={() => router.back()}
+      />
 
-        {/* ── Header ── */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={24} color={T.white} />
-          </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Parrainage</Text>
-          <View style={{ width: 40 }} />
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── Hero ── */}
+        <View style={s.hero}>
+          <View style={[s.heroIcon, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
+            <Ionicons name="gift" size={34} color={P.action} />
+          </View>
+          <Text style={s.heroTitle}>Invite tes amis, gagnez ensemble</Text>
+          <Text style={s.heroText}>
+            Partage ton code : tes proches s'inscrivent avec, et vous gagnez{" "}
+            <Text style={{ fontWeight: "800", color: P.action }}>{bonus}</Text>{" "}
+            dès leur premier transfert réussi.
+          </Text>
         </View>
 
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-          {/* ── Hero ── */}
-          <View style={s.hero}>
-            <LinearGradient
-              colors={[`${T.accent}25`, `${T.accent}08`]}
-              style={s.heroIconBox}
-            >
-              <Ionicons name="gift" size={40} color={T.accent} />
-            </LinearGradient>
-            <Text style={[s.heroTitle, { fontFamily: T.font.display }]}>Gagnez de l'argent !</Text>
-            <Text style={[s.heroText, { fontFamily: T.font.sans }]}>
-              Invitez vos amis et gagnez{" "}
-              <Text style={{ fontWeight: "900", color: T.accent }}>5€</Text>{" "}
-              pour chaque ami qui effectue son premier transfert.
-            </Text>
-          </View>
-
-          {/* ── Code parrainage ── */}
-          <View style={s.codeCard}>
-            <Text style={[s.codeLabel, { fontFamily: T.font.sans }]}>VOTRE CODE DE PARRAINAGE</Text>
-            <TouchableOpacity style={s.codeBox} onPress={handleCopy} activeOpacity={0.8}>
-              <LinearGradient
-                colors={[T.accentGlow, "transparent"]}
-                style={s.codeBoxGrad}
-              >
-                <Text style={[s.codeValue, { fontFamily: T.font.mono }]}>{referralCode}</Text>
-                <View style={[s.copyBtn, { backgroundColor: T.accentGlow, borderColor: `${T.accent}30` }]}>
-                  <Ionicons name="copy-outline" size={16} color={T.accent} />
-                  <Text style={[s.copyTxt, { fontFamily: T.font.sans }]}>Copier</Text>
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-            <Text style={[s.codeHint, { fontFamily: T.font.sans }]}>
-              Appuyez pour copier dans le presse-papier
-            </Text>
-          </View>
-
-          {/* ── Partage ── */}
-          <View style={s.card}>
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>PARTAGER VIA</Text>
+        {/* ── Code ── */}
+        <Card style={{ alignItems: "center", marginBottom: 14 }}>
+          <Text style={s.codeLabel}>TON CODE DE PARRAINAGE</Text>
+          <TouchableOpacity
+            style={[s.codeBox, { backgroundColor: P.tint, borderColor: P.tintBorder }]}
+            onPress={handleCopy}
+            activeOpacity={0.8}
+            accessibilityLabel="Copier le code de parrainage"
+          >
+            <Text style={[s.codeValue, { color: P.bg2 }]}>{referralCode}</Text>
+            <View style={[s.copyBtn, { backgroundColor: P.action }]}>
+              <Ionicons name="copy-outline" size={15} color="#fff" />
+              <Text style={s.copyTxt}>Copier</Text>
             </View>
+          </TouchableOpacity>
+          <Text style={s.codeHint}>Appuie pour copier dans le presse-papier</Text>
+        </Card>
 
-            <View style={s.socialRow}>
-              <SocialBtn
-                icon={<FontAwesome name="whatsapp" size={24} color={T.whatsapp} />}
-                label="WhatsApp"
-                color={T.whatsapp}
-                onPress={handleWhatsApp}
-              />
-              <SocialBtn
-                icon={<Ionicons name="chatbubble-ellipses" size={24} color={T.sms} />}
-                label="SMS"
-                color={T.sms}
-                onPress={handleSMS}
-              />
-              <SocialBtn
-                icon={<Ionicons name="mail" size={24} color={T.email} />}
-                label="Email"
-                color={T.email}
-                onPress={handleEmail}
-              />
-            </View>
-
-            <TouchableOpacity style={s.moreBtn} onPress={handleSystemShare} activeOpacity={0.8}>
-              <Ionicons name="share-social-outline" size={16} color={T.accent} />
-              <Text style={[s.moreTxt, { fontFamily: T.font.sans }]}>Autres options de partage…</Text>
-            </TouchableOpacity>
+        {/* ── Partage ── */}
+        <Card style={{ marginBottom: 14 }}>
+          <SectionTitle title="Partager via" />
+          <View style={s.socialRow}>
+            <SocialBtn icon={<FontAwesome name="whatsapp" size={24} color={CHANNELS.whatsapp} />} label="WhatsApp" color={CHANNELS.whatsapp} onPress={handleWhatsApp} />
+            <SocialBtn icon={<Ionicons name="chatbubble-ellipses" size={24} color={CHANNELS.sms} />} label="SMS" color={CHANNELS.sms} onPress={handleSMS} />
+            <SocialBtn icon={<Ionicons name="mail" size={24} color={CHANNELS.email} />} label="Email" color={CHANNELS.email} onPress={handleEmail} />
           </View>
+          <TouchableOpacity style={[s.moreBtn, { backgroundColor: P.tint, borderColor: P.tintBorder }]} onPress={handleSystemShare} activeOpacity={0.8}>
+            <Ionicons name="share-social-outline" size={16} color={P.action} />
+            <Text style={[s.moreTxt, { color: P.action }]}>Autres options de partage…</Text>
+          </TouchableOpacity>
+        </Card>
 
-          {/* ── Comment ça marche ── */}
-          <View style={s.card}>
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: T.accent }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>COMMENT ÇA MARCHE ?</Text>
-            </View>
-            <StepItem number="1" title="Envoyez une invitation" desc="Partagez votre code avec vos proches via WhatsApp, SMS ou email." accent={T.accent} />
-            <StepItem number="2" title="Ils s'inscrivent" desc="Ils utilisent votre code lors de leur inscription sur Direct Transf'air." accent={T.accent} />
-            <StepItem number="3" title="Vous gagnez tous les deux" desc="Recevez 5€ chacun après leur premier transfert réussi." accent={T.accent} />
-          </View>
+        {/* ── Comment ça marche ── */}
+        <Card style={{ marginBottom: 14 }}>
+          <SectionTitle title="Comment ça marche ?" />
+          <StepItem number="1" title="Envoie une invitation" desc="Partage ton code avec tes proches via WhatsApp, SMS ou email." />
+          <StepItem number="2" title="Ils s'inscrivent" desc={`Ils saisissent ton code lors de leur inscription sur ${brandName}.`} />
+          <StepItem number="3" title="Vous gagnez tous les deux" desc={`Vous recevez ${bonus} après leur premier transfert réussi.`} />
+        </Card>
 
-          {/* ── Solde gains ── */}
-          <View style={[s.card, { borderColor: `${T.accent}20` }]}>
-            <View style={s.earningsRow}>
-              <View>
-                <Text style={[s.earningsLabel, { fontFamily: T.font.sans }]}>GAINS CUMULÉS</Text>
-                <Text style={[s.earningsValue, { color: T.accent, fontFamily: T.font.display }]}>0,00 €</Text>
-              </View>
-              <View style={[s.earningsBadge, { backgroundColor: T.accentGlow, borderColor: `${T.accent}25` }]}>
-                <Ionicons name="people-outline" size={14} color={T.accent} />
-                <Text style={[s.earningsBadgeTxt, { color: T.accent, fontFamily: T.font.sans }]}>
-                  0 filleul{false ? "s" : ""}
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={{ height: 80 }} />
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </View>
   );
 }
 
+const st = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start", gap: 14, marginBottom: 14 },
+  numBox: { width: 34, height: 34, borderRadius: 11, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  num: { fontFamily: FONT.display, fontSize: 15, fontWeight: "800" },
+  title: { fontFamily: FONT.body, color: N.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
+  desc: { fontFamily: FONT.body, color: N.inkSub, fontSize: 12.5, lineHeight: 18 },
+});
+
+const sb = StyleSheet.create({
+  btn: { alignItems: "center", paddingVertical: 14, borderRadius: RADIUS.lg, gap: 8, borderWidth: 1 },
+  label: { fontFamily: FONT.body, fontSize: 11.5, fontWeight: "800" },
+});
+
 const s = StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16,
-  },
-  backBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: T.ghost, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.inkBorder },
-  headerTitle: { color: T.white, fontSize: 20, fontWeight: "700" },
-
-  scroll: { paddingHorizontal: 20, paddingTop: 4 },
-
-  hero: { alignItems: "center", marginBottom: 20, paddingTop: 8 },
-  heroIconBox: { width: 80, height: 80, borderRadius: 24, justifyContent: "center", alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: `${T.accent}20` },
-  heroTitle: { color: T.white, fontSize: 26, fontWeight: "700", marginBottom: 8 },
-  heroText: { color: T.dim, fontSize: 14, fontWeight: "600", textAlign: "center", lineHeight: 20, paddingHorizontal: 20 },
-
-  codeCard: { backgroundColor: T.ghost, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: T.inkBorder, alignItems: "center" },
-  codeLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 12 },
-  codeBox: { width: "100%", borderRadius: T.radius.md, overflow: "hidden", marginBottom: 8 },
-  codeBoxGrad: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 14, borderRadius: T.radius.md, borderWidth: 1, borderColor: `${T.accent}20` },
-  codeValue: { color: T.white, fontSize: 28, fontWeight: "900", letterSpacing: 3 },
-  copyBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 9, borderWidth: 1 },
-  copyTxt: { color: T.accent, fontSize: 12, fontWeight: "800" },
-  codeHint: { color: T.dim, fontSize: 10, fontWeight: "600" },
-
-  card: { backgroundColor: T.ghost, borderRadius: T.radius.lg, padding: 18, marginBottom: 14, borderWidth: 1, borderColor: T.inkBorder },
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  sectionDot: { width: 5, height: 5, borderRadius: 99 },
-  sectionLabel: { fontSize: 11, fontWeight: "900", color: T.dim, letterSpacing: 1.5 },
-
+  scroll: { paddingHorizontal: 20, paddingTop: 20 },
+  hero: { alignItems: "center", marginBottom: 18 },
+  heroIcon: { width: 72, height: 72, borderRadius: 22, justifyContent: "center", alignItems: "center", marginBottom: 14, borderWidth: 1 },
+  heroTitle: { fontFamily: FONT.display, color: N.ink, fontSize: 22, fontWeight: "700", marginBottom: 8, textAlign: "center" },
+  heroText: { fontFamily: FONT.body, color: N.inkSub, fontSize: 14, textAlign: "center", lineHeight: 21, paddingHorizontal: 10 },
+  codeLabel: { fontFamily: FONT.body, fontSize: 10.5, fontWeight: "800", color: N.muted, letterSpacing: 1.4, marginBottom: 12 },
+  codeBox: { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1, marginBottom: 8 },
+  codeValue: { fontFamily: FONT.display, fontSize: 26, fontWeight: "800", letterSpacing: 3 },
+  copyBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10 },
+  copyTxt: { fontFamily: FONT.body, color: "#fff", fontSize: 12.5, fontWeight: "800" },
+  codeHint: { fontFamily: FONT.body, color: N.muted, fontSize: 11 },
   socialRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-
-  moreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: T.radius.md, backgroundColor: T.accentGlow, borderWidth: 1, borderColor: `${T.accent}20` },
-  moreTxt: { color: T.accent, fontSize: 13, fontWeight: "800" },
-
-  earningsRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  earningsLabel: { fontSize: 9, fontWeight: "900", color: T.dim, letterSpacing: 1.5, marginBottom: 4 },
-  earningsValue: { fontSize: 24, fontWeight: "800" },
-  earningsBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1 },
-  earningsBadgeTxt: { fontSize: 12, fontWeight: "800" },
+  moreBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 12, borderRadius: RADIUS.md, borderWidth: 1 },
+  moreTxt: { fontFamily: FONT.body, fontSize: 13, fontWeight: "800" },
 });

@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/recharge.tsx
 // =========================================================
-// RECHARGE WALLET v1.1 — Direct Transf'air
+// RECHARGE WALLET v1.2 — Direct Transf'air
+// ✅ v1.2 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v1.1 :
 //    - Orange Money : ajout d'un champ "Numéro Orange Money" (compte
 //      débité), désormais obligatoire pour soumettre — voir
@@ -38,14 +42,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 
+import { themed, brand } from "../../components/wallet/brand";
+import { useWalletTheme } from "../../components/wallet/walletTheme";
 const SENDWAVE_URL = "https://www.sendwave.com";
 
 // ─── Design tokens (propres à cet écran, cf. convention par écran) ──
-const C = {
-  green: "#17A45F",
-  greenPale: "#E8FAF2",
-  heroFrom: "#0A0F0D",
-  heroTo: "#123324",
+const C = themed(() => ({
+  green: brand("#17A45F"),
+  greenPale: brand("#E8FAF2"),
+  heroFrom: brand("#0A0F0D"),
+  heroTo: brand("#123324"),
   heroMuted: "rgba(255,255,255,0.55)",
   pageBg: "#F5F5F5",
   white: "#FFFFFF",
@@ -61,7 +67,7 @@ const C = {
     sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
-};
+}));
 
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
@@ -99,6 +105,7 @@ const METHODS: Array<{ key: Method; label: string; icon: string }> = [
 ];
 
 export default function RechargeScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const { user, refreshUser } = useAuth();
 
@@ -431,8 +438,8 @@ export default function RechargeScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#0A0F0D" },
+const s = themed(() => StyleSheet.create({
+  safe: { flex: 1, backgroundColor: brand("#0A0F0D") },
   hero: { paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 24 },
   heroRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
   iconBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.08)", borderWidth: 1, borderColor: "rgba(255,255,255,0.14)", justifyContent: "center", alignItems: "center" },
@@ -474,4 +481,4 @@ const s = StyleSheet.create({
 
   cta: { marginTop: 22, backgroundColor: C.green, borderRadius: C.r.md, paddingVertical: 16, alignItems: "center", justifyContent: "center" },
   ctaTxt: { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
-});
+}));

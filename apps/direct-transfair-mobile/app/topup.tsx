@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/topup.tsx
 // =========================================================
-// TOP-UP SCREEN v5.0 — Direct Transf'air
+// TOP-UP SCREEN v5.1 — Direct Transf'air
+// ✅ v5.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // Design: Thème clair · Vert #059669 · Style YMO/Wise
 // ✅ Carte bancaire + Orange Money · Quick amounts
 // =========================================================
@@ -16,27 +20,29 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 
+import { themed, brand } from "../components/wallet/brand";
+import { useWalletTheme } from "../components/wallet/walletTheme";
 // ─── Design System ──────────────────────────────────────
-const C = {
-  green:        "#059669",
-  greenDark:    "#047857",
-  greenLight:   "#F0FDF4",
-  greenBorder:  "#A7F3D0",
-  greenPale:    "#ECFDF5",
+const C = themed(() => ({
+  green:        brand("#059669"),
+  greenDark:    brand("#047857"),
+  greenLight:   brand("#F0FDF4"),
+  greenBorder:  brand("#A7F3D0"),
+  greenPale:    brand("#ECFDF5"),
 
   heroGlass:    "rgba(255,255,255,0.14)",
   heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:      "rgba(255,255,255,0.65)",
   heroGlow:     "rgba(255,255,255,0.08)",
 
-  pageBg:       "#F0FDF8",
+  pageBg:       brand("#F0FDF8"),
   white:        "#FFFFFF",
-  cardBorder:   "#D1FAE5",
-  inputBg:      "#F8FFFC",
+  cardBorder:   brand("#D1FAE5"),
+  inputBg:      brand("#F8FFFC"),
 
-  ink:          "#0D2B1F",
-  inkMid:       "#1F5C3A",
-  inkSoft:      "#6B9E85",
+  ink:          brand("#0D2B1F"),
+  inkMid:       brand("#1F5C3A"),
+  inkSoft:      brand("#6B9E85"),
 
   blue:         "#3B82F6",
   blueBg:       "#EFF6FF",
@@ -56,7 +62,7 @@ const C = {
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:  Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
-};
+}));
 
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
@@ -92,11 +98,11 @@ function Field({ label, value, onChange, placeholder, keyboardType, secureTextEn
     </View>
   );
 }
-const f = StyleSheet.create({
+const f = themed(() => StyleSheet.create({
   lbl:   { fontSize: 10, fontWeight: "900", color: C.inkMid, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
   box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
   input: { paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: C.ink, fontWeight: "600" },
-});
+}));
 
 // ─── Method Tab ─────────────────────────────────────────
 function MethodTab({ icon, label, active, accent, bg, border, onPress }: {
@@ -120,13 +126,14 @@ function MethodTab({ icon, label, active, accent, bg, border, onPress }: {
     </Animated.View>
   );
 }
-const mt = StyleSheet.create({
+const mt = themed(() => StyleSheet.create({
   tab: { alignItems: "center", paddingVertical: 16, borderRadius: C.r.lg, gap: 8, backgroundColor: C.white, borderWidth: 1.5, borderColor: C.cardBorder, position: "relative", shadowColor: C.green, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   lbl: { fontSize: 12, fontWeight: "800" },
   dot: { position: "absolute", top: 10, right: 10, width: 6, height: 6, borderRadius: C.r.pill },
-});
+}));
 
 export default function TopUpScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router  = useRouter();
   const { user, refreshUser } = useAuth();
 
@@ -372,7 +379,7 @@ export default function TopUpScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
   hero: {
@@ -432,4 +439,4 @@ const s = StyleSheet.create({
   cta:      { borderRadius: C.r.md, overflow: "hidden", marginBottom: 10 },
   ctaInner: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
   ctaTxt:   { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.5 },
-});
+}));

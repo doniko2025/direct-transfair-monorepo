@@ -1,6 +1,19 @@
 // apps/direct-transfair-mobile/app/(tabs)/notifications.tsx
 // =========================================================
-// NOTIFICATIONS v5.1 — Direct Transf'air
+// NOTIFICATIONS v5.3 — Direct Transf'air
+// ✅ v5.3 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que les autres écrans.
+// ✅ v5.2 : FIX — chargement borné et erreur visible.
+//    AVANT : en cas d'échec de GET /notifications, l'erreur était avalée
+//    (console.error) et l'écran affichait « Aucune notification » — faux
+//    message ; sans réponse, le spinner tournait sans limite claire.
+//    MAINTENANT : appel borné (withTimeout 20 s), message rassurant après
+//    4 s, état d'erreur avec « Réessayer » (les notifications déjà
+//    chargées restent affichées). Logique métier inchangée.
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // ✅ v5.1 : fond blanc neutre #FAFAFA unifié sur tous les rôles
 //    - pageBg unifié #FAFAFA (suppression des teintes rôle-dépendantes)
 //    - Cartes notifications : ombre renforcée, bord neutre
@@ -18,28 +31,33 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
+import { ErrorState, SlowHint } from "../../components/wallet/StateViews";
 
+import { themed, brand, brandRgba } from "../../components/wallet/brand";
+import { useWalletTheme } from "../../components/wallet/walletTheme";
+import ScreenHeader, { HeaderIconButton } from "../../components/wallet/ScreenHeader";
 // ─── Thèmes par rôle — pageBg unifié blanc neutre ────────
-const ROLE_THEMES = {
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#D97706", border: "#FDE68A", soft: "#FFFBEB" },
   COMPANY_ADMIN: { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#4F46E5", border: "#C7D2FE", soft: "#EEF2FF" },
   AGENT:         { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#2563EB", border: "#DBEAFE", soft: "#EFF6FF" },
-  USER:          { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: "#059669", border: "#A7F3D0", soft: "#ECFDF5" },
-} as const;
+  USER:          { pageBg: "#FAFAFA", headerBg: "#FFFFFF", accent: brand("#059669"), border: brand("#A7F3D0"), soft: brand("#ECFDF5") },
+} as const));
 
 // ─── Types de notification ────────────────────────────────
-const NOTIF_TYPES = {
+const NOTIF_TYPES = themed(() => ({
   SUCCESS:     { icon: "checkmark-circle",   color: "#16A34A", bg: "rgba(22,163,74,0.10)"  },
   WARNING:     { icon: "alert-circle",       color: "#D97706", bg: "rgba(217,119,6,0.10)"  },
   ERROR:       { icon: "close-circle",       color: "#DC2626", bg: "rgba(220,38,38,0.10)"  },
   INFO:        { icon: "information-circle", color: "#2563EB", bg: "rgba(37,99,235,0.10)"  },
   TRANSACTION: { icon: "swap-horizontal",    color: "#7C3AED", bg: "rgba(124,58,237,0.10)" },
   SECURITY:    { icon: "shield-checkmark",   color: "#0891B2", bg: "rgba(8,145,178,0.10)"  },
-  MARKETING:   { icon: "megaphone",          color: "#059669", bg: "rgba(5,150,105,0.10)"  },
+  MARKETING:   { icon: "megaphone",          color: brand("#059669"), bg: brandRgba("rgba(5,150,105,0.10)")  },
   SYSTEM:      { icon: "settings",           color: "#64748B", bg: "rgba(100,116,139,0.09)"},
-} as const;
+} as const));
 
-const T = {
+const T = themed(() => ({
   surface:    "#FFFFFF",
   border:     "#E5E5EA",  // ← neutre (était #E4E9F5)
   text:       "#0F172A",
@@ -51,7 +69,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace" }),
   },
-};
+}));
 
 interface NotificationItem {
   id: string; title: string; message: string;
@@ -107,7 +125,7 @@ function NotifCard({ item, accent, onPress }: {
     </Animated.View>
   );
 }
-const ncS = StyleSheet.create({
+const ncS = themed(() => StyleSheet.create({
   card: {
     flexDirection: "row", alignItems: "flex-start",
     backgroundColor: T.surface,
@@ -127,10 +145,11 @@ const ncS = StyleSheet.create({
   typeBadge: { alignSelf: "flex-start", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5, marginTop: 6 },
   typeTxt:   { fontSize: 9, fontWeight: "800", letterSpacing: 0.5 },
   unreadDot: { width: 8, height: 8, borderRadius: 99, marginTop: 4, flexShrink: 0 },
-});
+}));
 
 // ─── Main ─────────────────────────────────────────────────
 export default function NotificationsScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router   = useRouter();
   const { user } = useAuth();
 
@@ -141,11 +160,14 @@ export default function NotificationsScreen() {
   const [filter,     setFilter]     = useState<"ALL" | "UNREAD">("ALL");
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError,  setLoadError]  = useState<LoadError | null>(null);
+  const [slow,       setSlow]       = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fetchNotifs = useCallback(async () => {
     try {
-      const res = await api.http.get("/notifications");
+      setLoadError(null);
+      const res = await withTimeout(api.http.get("/notifications"), defaultTimeoutMs());
       let list: NotificationItem[] = [];
       if (Array.isArray(res.data))                    list = res.data;
       else if (Array.isArray(res.data?.data))         list = res.data.data;
@@ -153,11 +175,17 @@ export default function NotificationsScreen() {
       else if (Array.isArray(res.data?.items))        list = res.data.items;
       setNotifs(list);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch (e) { console.error("Erreur notifs:", e); }
+    } catch (e) { setLoadError(explainLoadError(e)); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { void fetchNotifs(); }, [fetchNotifs]);
+
+  useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const timer = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleMarkAsRead = async (id: string, isRead: boolean) => {
     if (isRead) return;
@@ -177,30 +205,16 @@ export default function NotificationsScreen() {
   const unreadCount = notifs.filter((n) => !n.isRead).length;
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: theme.pageBg }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={theme.headerBg} />
+    <View style={[s.safe, { backgroundColor: theme.pageBg }]}>
 
-      {/* ── Header ── */}
-      <View style={[s.header, { backgroundColor: theme.headerBg, borderBottomColor: T.border }]}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color={T.text} />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Notifications</Text>
-          {unreadCount > 0 && (
-            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
-              {unreadCount} non lue{unreadCount > 1 ? "s" : ""}
-            </Text>
-          )}
-        </View>
-        <TouchableOpacity
-          style={[s.readAllBtn, { borderColor: `${theme.accent}35`, backgroundColor: theme.soft }]}
-          onPress={handleMarkAllAsRead}
-          hitSlop={8}
-        >
-          <Ionicons name="checkmark-done" size={17} color={theme.accent} />
-        </TouchableOpacity>
-      </View>
+      {/* ── Header (en-tête commun du wallet) ── */}
+      <ScreenHeader
+        compact
+        title="Notifications"
+        subtitle={unreadCount > 0 ? `${unreadCount} non lue${unreadCount > 1 ? "s" : ""}` : undefined}
+        onBack={() => router.back()}
+        right={<HeaderIconButton icon="checkmark-done" label="Tout marquer comme lu" onPress={handleMarkAllAsRead} />}
+      />
 
       {/* ── Tabs filtres ── */}
       <View style={[s.tabs, { backgroundColor: theme.headerBg, borderBottomColor: T.border }]}>
@@ -239,6 +253,11 @@ export default function NotificationsScreen() {
       {loading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator color={theme.accent} size="large" />
+          <View style={{ marginTop: 16, paddingHorizontal: 24 }}><SlowHint visible={slow} /></View>
+        </View>
+      ) : loadError && notifs.length === 0 ? (
+        <View style={{ flex: 1, justifyContent: "center" }}>
+          <ErrorState title={loadError.title} message={loadError.message} onRetry={() => { setLoading(true); void fetchNotifs(); }} />
         </View>
       ) : (
         <Animated.FlatList
@@ -267,11 +286,11 @@ export default function NotificationsScreen() {
           ListFooterComponent={<View style={{ height: 100 }} />}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1 },
 
   header: {
@@ -314,4 +333,4 @@ const s = StyleSheet.create({
   emptyIconBox: { width: 72, height: 72, borderRadius: 22, justifyContent: "center", alignItems: "center", borderWidth: 1.5, marginBottom: 4 },
   emptyTitle:   { color: T.text, fontSize: 18, fontWeight: "700" },
   emptySub:     { color: T.textSoft, fontSize: 13, fontWeight: "600", textAlign: "center" },
-});
+}));

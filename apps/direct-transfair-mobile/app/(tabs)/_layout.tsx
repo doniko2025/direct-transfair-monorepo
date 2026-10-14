@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v10.0 — Clients wallet uniquement (rôle USER)
+// TAB LAYOUT v10.1 — Clients wallet uniquement (rôle USER)
+//
+// ✅ v10.1 : la couleur des onglets suit la marque du tenant (white-label) au lieu de l'indigo codé en
+//   dur, pour rester cohérente avec les écrans wallet refaits (components/wallet). Aucun changement de
+//   navigation.
 //
 // ✅ v10.0 (phase 5) : l'app mobile est réservée aux clients.
 //   Les onglets et thèmes des rôles AGENT / COMPANY_ADMIN /
@@ -24,6 +28,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../providers/AuthProvider";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useWalletTheme } from "../../components/wallet/walletTheme";
 
 // Type local — évite l'incompatibilité de version avec expo-router
 type BottomTabBarProps = {
@@ -37,7 +42,7 @@ type BottomTabBarProps = {
   descriptors: Record<string, unknown>;
 };
 
-const ACCENT = "#4F46E5";
+const FALLBACK_ACCENT = "#059669";
 
 // ─── Onglets du client ───────────────────────────────────────
 type TabDef = {
@@ -154,6 +159,8 @@ function CustomTabBar({
 // ─── Point d'entrée ──────────────────────────────────────────
 export default function TabLayout() {
   const { user, isLoading } = useAuth();
+  const { P } = useWalletTheme();
+  const ACCENT = P.action || FALLBACK_ACCENT;
 
   if (isLoading || !user) {
     return (

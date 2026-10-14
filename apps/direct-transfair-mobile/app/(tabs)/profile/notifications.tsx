@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/notifications.tsx
 // =========================================================
-// NOTIFICATIONS v1.0 — Direct Transf'air
+// NOTIFICATIONS v1.1 — Direct Transf'air
+// ✅ v1.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
 // ✅ Préférences de notifications par catégorie et canal
 // ✅ Persistance locale AsyncStorage (dt_notif_prefs_v1)
 // ✅ Canaux : Push (mobile) + Email
@@ -18,15 +23,18 @@ import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../../providers/AuthProvider";
 
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
 // ─── Thèmes par rôle ─────────────────────────────────────
-const ROLE_THEMES = {
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { bg: "#FFFBF2", accent: "#B8860B", accentLight: "#FEF3C7" },
-  COMPANY_ADMIN: { bg: "#F0FDF8", accent: "#059669", accentLight: "#D1FAE5" },
+  COMPANY_ADMIN: { bg: brand("#F0FDF8"), accent: brand("#059669"), accentLight: brand("#D1FAE5") },
   AGENT:         { bg: "#FFFBF0", accent: "#D97706", accentLight: "#FEF3C7" },
-  USER:          { bg: "#F0FDF4", accent: "#16A34A", accentLight: "#DCFCE7" },
-} as const;
+  USER:          { bg: brand("#F0FDF4"), accent: brand("#16A34A"), accentLight: brand("#DCFCE7") },
+} as const));
 
-const T = {
+const T = themed(() => ({
   white:      "#FFFFFF",
   cardBg:     "#FFFFFF",
   border:     "#E5E8EF",
@@ -43,7 +51,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace" }),
   },
-};
+}));
 
 const STORAGE_KEY = "dt_notif_prefs_v1";
 
@@ -136,7 +144,7 @@ function Toggle({ enabled, onToggle, accent }: {
     </TouchableOpacity>
   );
 }
-const tgS = StyleSheet.create({
+const tgS = themed(() => StyleSheet.create({
   track: {
     width: 46, height: 26, borderRadius: 99,
     justifyContent: "center",
@@ -147,7 +155,7 @@ const tgS = StyleSheet.create({
     backgroundColor: T.white,
     shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2,
   },
-});
+}));
 
 // ─── Ligne catégorie ─────────────────────────────────────
 function CategoryRow({
@@ -194,7 +202,7 @@ function CategoryRow({
     </View>
   );
 }
-const crS = StyleSheet.create({
+const crS = themed(() => StyleSheet.create({
   row: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingVertical: 14,
@@ -204,10 +212,11 @@ const crS = StyleSheet.create({
   desc:       { fontSize: 10, fontWeight: "500", color: T.textMuted, lineHeight: 14 },
   togglesCol: { gap: 6 },
   toggleRow:  { flexDirection: "row", alignItems: "center", gap: 6 },
-});
+}));
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function NotificationsScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router  = useRouter();
   const { user } = useAuth();
 
@@ -318,7 +327,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: theme.bg }]}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
         {/* ── Toast ── */}
@@ -336,13 +345,7 @@ export default function NotificationsScreen() {
         </Animated.View>
 
         {/* ── Header ── */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={22} color={T.text} />
-          </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Notifications</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ScreenHeader compact title="Notifications" onBack={() => router.back()} />
 
         <ScrollView
           contentContainerStyle={s.scroll}
@@ -442,21 +445,21 @@ export default function NotificationsScreen() {
 
           <View style={{ height: 110 }} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
 // ─── Styles légende ──────────────────────────────────────
-const lgS = StyleSheet.create({
+const lgS = themed(() => StyleSheet.create({
   row:    { flexDirection: "row", alignItems: "center", paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", marginBottom: 4 },
   header: { fontSize: 9, fontWeight: "900", color: "#94A3B8", letterSpacing: 1, textTransform: "uppercase" },
   col:    { width: 58, alignItems: "center", gap: 2 },
   txt:    { fontSize: 9, fontWeight: "700", color: "#94A3B8", letterSpacing: 0.5 },
-});
+}));
 
 // ─── Styles globaux ──────────────────────────────────────
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root: { flex: 1 },
 
   toastWrap: {
@@ -532,4 +535,4 @@ const s = StyleSheet.create({
     width: "100%", maxWidth: 480,
   },
   saveTxt: { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
-});
+}));

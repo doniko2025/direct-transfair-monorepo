@@ -19,7 +19,7 @@ const METHOD_LABEL: Record<string, string> = {
   CASH_PICKUP: "Retrait cash",
   BANK_DEPOSIT: "Dépôt bancaire",
   MOBILE_MONEY: "Mobile money",
-  WALLET: "Wallet Direct Transf'air",
+  WALLET: "Wallet",
 };
 
 /* =========================

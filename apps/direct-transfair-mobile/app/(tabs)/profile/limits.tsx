@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/limits.tsx
 // =========================================================
-// LIMITS SCREEN v6.4 — Direct Transf'air
+// LIMITS SCREEN v6.5 — Direct Transf'air
+// ✅ v6.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
+//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
 // ✅ v6.4 (phase 6) : plafonds réglés par la société selon le niveau KYC ; un plafond peut être « sans limite »
 //    (max = null) ; affiche le montant maximal par envoi (perTransaction).
 // LIMITS SCREEN v6.3 — Direct Transf'air
@@ -22,7 +28,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "../../../services/api";
 
-const T = {
+import { themed } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
+const T = themed(() => ({
   bg: "#FAFAFA",          // ← était #F0FDF4
   accent: "#16A34A", accentLight: "#DCFCE7",
   white: "#FFFFFF", cardBg: "#FFFFFF",
@@ -42,7 +52,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
-};
+}));
 
 type LimitEntry = { used: number; max: number | null };
 type LimitsData = {
@@ -100,7 +110,7 @@ function LimitCard({ title, period, used, max, currency, color, colorBg }: {
   );
 }
 
-const lcS = StyleSheet.create({
+const lcS = themed(() => StyleSheet.create({
   card:      { backgroundColor: T.cardBg, borderRadius: T.radius.lg, padding: 18, marginBottom: 12, borderWidth: 1, borderColor: T.border, ...T.shadow },
   topRow:    { flexDirection: "row", alignItems: "flex-start", marginBottom: 10 },
   period:    { fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 3, color: T.textMuted },
@@ -115,7 +125,7 @@ const lcS = StyleSheet.create({
   progFill:  { height: 5, borderRadius: 99 },
   footRow:   { flexDirection: "row", alignItems: "center", gap: 5 },
   remaining: { fontSize: 11, fontWeight: "600" },
-});
+}));
 
 const KYC_COLOR: Record<string, string> = {
   LEVEL_0: T.amber, LEVEL_1: T.accent, LEVEL_2: T.blue, LEVEL_3: T.purple,
@@ -214,7 +224,7 @@ function RequestLimitModal({ visible, onClose, currency }: {
   );
 }
 
-const mS = StyleSheet.create({
+const mS = themed(() => StyleSheet.create({
   overlay:      { flex: 1, justifyContent: "flex-end" },
   // ✅ backdrop as a named style (not absoluteFillObject)
   sheet:        { backgroundColor: T.cardBg, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 12 },
@@ -233,9 +243,10 @@ const mS = StyleSheet.create({
   successBox:   { alignItems: "center", paddingVertical: 24, gap: 12 },
   successTitle: { color: T.text, fontSize: 20, fontWeight: "700" },
   successSub:   { color: T.textSub, fontSize: 13, textAlign: "center", lineHeight: 20, paddingHorizontal: 10 },
-});
+}));
 
 export default function LimitsScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router     = useRouter();
   const { bottom } = useSafeAreaInsets();
   const [data,      setData]      = useState<LimitsData | null>(null);
@@ -246,10 +257,10 @@ export default function LimitsScreen() {
   const fetchLimits = useCallback(async () => {
     try {
       setLoading(true); setError(null);
-      const res = await api.http.get<LimitsData>("/limits");
+      const res = await withTimeout(api.http.get<LimitsData>("/limits"), defaultTimeoutMs());
       setData(res.data);
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Impossible de charger les plafonds";
+      const raw = e?.response?.data?.message ?? explainLoadError(e).message;
       setError(Array.isArray(raw) ? raw[0] : String(raw));
     } finally { setLoading(false); }
   }, []);
@@ -261,18 +272,10 @@ export default function LimitsScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: T.bg }]}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={22} color={T.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Mes Plafonds</Text>
-            <Text style={[s.headerSub,   { color: T.accent, fontFamily: T.font.sans }]}>Transferts & virements</Text>
-          </View>
-        </View>
+        <ScreenHeader compact title="Mes Plafonds" subtitle="Transferts & virements" onBack={() => router.back()} />
 
         {loading ? (
           <View style={s.loader}><ActivityIndicator size="large" color={T.accent} /></View>
@@ -284,7 +287,7 @@ export default function LimitsScreen() {
               <Text style={[s.retryTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
             </TouchableOpacity>
           </View>
-        ) : data ? (
+        ) : data?.limits ? (
           <ScrollView
             contentContainerStyle={[s.scroll, { paddingBottom: (bottom || 0) + 90 }]}
             showsVerticalScrollIndicator={false}
@@ -335,14 +338,14 @@ export default function LimitsScreen() {
             </TouchableOpacity>
           </ScrollView>
         ) : null}
-      </SafeAreaView>
+      </View>
 
       <RequestLimitModal visible={showModal} onClose={() => setShowModal(false)} currency={data?.currency ?? "EUR"} />
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root:        { flex: 1 },
   header:      {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 20,
@@ -376,4 +379,4 @@ const s = StyleSheet.create({
   sectionLabel:{ fontSize: 11, fontWeight: "800", color: T.textMuted, letterSpacing: 1.5 },
   requestBtn:  { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, borderRadius: T.radius.md, marginTop: 8, ...T.shadow },
   requestTxt:  { color: T.white, fontWeight: "800", fontSize: 13, letterSpacing: 0.4 },
-});
+}));

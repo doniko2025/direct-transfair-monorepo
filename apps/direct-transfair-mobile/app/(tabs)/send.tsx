@@ -1,5 +1,29 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
+// SEND MONEY v3.0 — Direct Transf'air
+// ✅ v3.0 : REFONTE — écran qui ne reste plus bloqué sur « Chargement… »
+//
+//   CAUSE RACINE : l'écran entier était masqué par un `if (loading)`
+//   tant que GET /exchange-rates ET GET /beneficiaries n'avaient pas
+//   répondu (Promise.all, sans limite de temps). Sur un hébergeur qui
+//   se réveille (Render Free : 30 à 60 s) ou un appel qui échoue, le
+//   spinner tournait indéfiniment et l'utilisateur ne pouvait rien faire.
+//   CORRECTIF :
+//   - l'écran s'affiche tout de suite ; contacts et taux se chargent en
+//     arrière-plan (Promise.allSettled + withTimeout, 20 s par défaut,
+//     EXPO_PUBLIC_LOAD_TIMEOUT_MS) ; un bandeau « Réessayer » apparaît en
+//     cas d'échec, un message rassurant si le serveur est lent ;
+//   - le solde est lui aussi borné (repli sur le solde du profil) ;
+//   - toute la logique d'envoi (modes Wallet/Cash, saisie bidirectionnelle,
+//     détection du bénéficiaire, frais, reçu) est STRICTEMENT inchangée.
+//   DESIGN (white-label) : toutes les couleurs vertes codées en dur sont
+//   remplacées par la palette dérivée de la couleur de marque du tenant
+//   (useWalletTheme) ; chiffres en police système (lisibles, alignés).
+//   Nom de la société = branding.name du tenant (reçu, badge « utilisateur ») —
+//   était « Direct Transf'air » écrit en dur.
+//   Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// =========================================================
+// ── Historique ──
 // SEND MONEY v2.15 — Direct Transf'air
 // ✅ v2.15 : NOUVEAU — Saisie bidirectionnelle du montant
 //
@@ -236,7 +260,7 @@
 //   immédiatement), code reste undefined — comportement inchangé.
 // =========================================================
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity, Pressable,
   ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform,
@@ -251,30 +275,40 @@ import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import type { Beneficiary, ExchangeRate } from "../../services/types";
 import { countriesList, CountryData } from "../../data/countries";
+import { useTenant } from "../../providers/TenantProvider";
+import { useWalletTheme, N as WN, lighten as wLighten } from "../../components/wallet/walletTheme";
+import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
+import type { WalletPalette } from "../../components/wallet/walletTheme";
 
 const { width: W } = Dimensions.get("window");
 
+// ✅ v3.0 — police des chiffres : système (lisible, chiffres alignés) ;
+// plus de Georgia/serif pour les montants.
 const F = {
-  display: Platform.select({ ios: "Georgia",    android: "serif",         default: "serif"      }),
-  body:    Platform.select({ ios: "System",      android: "sans-serif",    default: "sans-serif" }),
+  display: Platform.select({ ios: "System", android: "sans-serif-medium", default: "system-ui, sans-serif" }),
+  body:    Platform.select({ ios: "System", android: "sans-serif",        default: "system-ui, sans-serif" }),
 };
 
-const C = {
-  g1: "#022C22", g2: "#064E3B", g3: "#065F46", g4: "#059669",
-  g5: "#10B981", g6: "#34D399", gSoft: "#ECFDF5", gBorder: "#A7F3D0",
-  white: "#FFFFFF",
-  bg: "#FAFAFA",
-  surface: "#FFFFFF",
-  border: "#E5E5EA",
-  borderLight: "#F0F0F0",
-  text: "#0F172A", textSub: "#374151", textMuted: "#64748B", textFaint: "#9CA3AF",
-  danger: "#EF4444", dangerSoft: "#FEF2F2",
-  amber: "#D97706", amberSoft: "#FFFBEB",
-  blue: "#2563EB", blueSoft: "#EFF6FF",
-  orange: "#EA580C", orangeSoft: "#FFF7ED",
-  // ✅ v2.11 — texte secondaire sur fond sombre (header en dégradé)
-  heroMuted: "rgba(255,255,255,0.55)",
-};
+// ✅ v3.0 — palette dynamique : les tons « g* » dérivent de la couleur de
+// marque du tenant (white-label), plus aucun vert codé en dur.
+function makeColors(P: WalletPalette) {
+  return {
+    g1: P.bg1, g2: P.bg2, g3: P.bg3, g4: P.action,
+    g5: P.accent, g6: wLighten(P.accent, 0.4), gSoft: P.tint, gBorder: P.tintBorder,
+    white: "#FFFFFF",
+    bg: WN.page,
+    surface: "#FFFFFF",
+    border: WN.border,
+    borderLight: "#EEF2F1",
+    text: WN.ink, textSub: WN.inkSub, textMuted: WN.muted, textFaint: "#9AA9A4",
+    danger: WN.danger, dangerSoft: WN.dangerBg,
+    amber: WN.warn, amberSoft: WN.warnBg,
+    blue: "#2563EB", blueSoft: "#EFF6FF",
+    orange: "#EA580C", orangeSoft: "#FFF7ED",
+    heroMuted: "rgba(255,255,255,0.6)",
+  };
+}
+type Colors = ReturnType<typeof makeColors>;
 
 // ─── Motifs du transfert ──────────────────────────────────
 const MOTIFS = [
@@ -335,6 +369,7 @@ function parseAmount(str: string): number {
 function ModeTab({ label, icon, active, onPress }: {
   label: string; icon: string; active: boolean; onPress: () => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   return (
     <TouchableOpacity
       style={[tS.tab, active && tS.tabActive]}
@@ -345,7 +380,7 @@ function ModeTab({ label, icon, active, onPress }: {
     </TouchableOpacity>
   );
 }
-const tS = StyleSheet.create({
+const make_tS = (C: Colors) => StyleSheet.create({
   tab:       { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 13, gap: 2 },
   tabActive: {
     backgroundColor: C.white,
@@ -362,6 +397,7 @@ const tS = StyleSheet.create({
 function BeneficiaryCard({ item, selected, onPress }: {
   item: Beneficiary; selected: boolean; onPress: () => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   const scale    = useRef(new Animated.Value(1)).current;
   const cd       = getCountryData(item.country);
   const initials = item.fullName.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -388,7 +424,7 @@ function BeneficiaryCard({ item, selected, onPress }: {
     </Animated.View>
   );
 }
-const bS = StyleSheet.create({
+const make_bS = (C: Colors) => StyleSheet.create({
   card:           { width: 72, alignItems: "center", marginRight: 10, padding: 9, backgroundColor: C.surface, borderRadius: 18, borderWidth: 1.5, borderColor: C.border },
   cardSelected:   { borderColor: C.g4, backgroundColor: C.gSoft },
   avatar:         { width: 40, height: 40, borderRadius: 12, backgroundColor: "#E0F2FE", justifyContent: "center", alignItems: "center", marginBottom: 4 },
@@ -401,6 +437,7 @@ const bS = StyleSheet.create({
 
 // ─── ✅ v2.6 — Add Beneficiary Card (bouton "+") ──────────
 function AddBeneficiaryCard({ onPress }: { onPress: () => void }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   const scale = useRef(new Animated.Value(1)).current;
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
@@ -419,7 +456,7 @@ function AddBeneficiaryCard({ onPress }: { onPress: () => void }) {
     </Animated.View>
   );
 }
-const abS = StyleSheet.create({
+const make_abS = (C: Colors) => StyleSheet.create({
   card:    {
     width: 72, alignItems: "center", marginRight: 10, padding: 9,
     backgroundColor: C.gSoft, borderRadius: 18,
@@ -443,6 +480,7 @@ const abS = StyleSheet.create({
 function PhoneSuggestionsList({ suggestions, onSelect }: {
   suggestions: Beneficiary[]; onSelect: (b: Beneficiary) => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   return (
     <View style={psS.wrap}>
       {suggestions.map((b, i) => {
@@ -473,7 +511,7 @@ function PhoneSuggestionsList({ suggestions, onSelect }: {
     </View>
   );
 }
-const psS = StyleSheet.create({
+const make_psS = (C: Colors) => StyleSheet.create({
   wrap:      { marginTop: 10, backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border, overflow: "hidden" },
   row:       { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: C.borderLight },
   avatar:    { width: 32, height: 32, borderRadius: 10, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
@@ -487,6 +525,7 @@ const psS = StyleSheet.create({
 function SummaryRow({ label, value, valueColor, large }: {
   label: string; value: string; valueColor?: string; large?: boolean;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   return (
     <View style={srS.row}>
       <Text style={[srS.label, { fontFamily: F.body }, large && srS.labelLarge]}>{label}</Text>
@@ -496,7 +535,7 @@ function SummaryRow({ label, value, valueColor, large }: {
     </View>
   );
 }
-const srS = StyleSheet.create({
+const make_srS = (C: Colors) => StyleSheet.create({
   row:        { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10 },
   label:      { fontSize: 13, color: C.textMuted, fontWeight: "600" },
   value:      { fontSize: 14, color: C.text, fontWeight: "700" },
@@ -509,6 +548,7 @@ function FallbackModal({ visible, missing, currency, onClose, onOrangeMoney, onC
   visible: boolean; missing: number; currency: string;
   onClose: () => void; onOrangeMoney: () => void; onCard: () => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={fbS.overlay}>
@@ -549,7 +589,7 @@ function FallbackModal({ visible, missing, currency, onClose, onOrangeMoney, onC
     </Modal>
   );
 }
-const fbS = StyleSheet.create({
+const make_fbS = (C: Colors) => StyleSheet.create({
   overlay:    { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet:      { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },
   handle:     { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 20 },
@@ -573,6 +613,7 @@ function MotifModal({ visible, selected, onSelect, onClose }: {
   onSelect: (m: string) => void;
   onClose: () => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={mmS.overlay}>
@@ -618,7 +659,7 @@ function MotifModal({ visible, selected, onSelect, onClose }: {
     </Modal>
   );
 }
-const mmS = StyleSheet.create({
+const make_mmS = (C: Colors) => StyleSheet.create({
   overlay:      { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet:        { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "85%", paddingHorizontal: 20, paddingTop: 0, paddingBottom: 0 },
   handle:       { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginTop: 14, marginBottom: 8 },
@@ -651,9 +692,9 @@ type ReceiptData = {
   date: Date;
 };
 
-function buildReceiptText(r: ReceiptData): string {
+function buildReceiptText(r: ReceiptData, brandName: string): string {
   const lines = [
-    "🧾 Reçu Direct Transf'air",
+    `🧾 Reçu ${brandName}`,
     "",
     `Type : ${r.mode === "WALLET" ? "Transfert Wallet" : "Cash Pickup"}`,
     `Bénéficiaire : ${r.beneficiaryName}`,
@@ -671,12 +712,14 @@ function buildReceiptText(r: ReceiptData): string {
 function ReceiptModal({ visible, data, onClose }: {
   visible: boolean; data: ReceiptData | null; onClose: () => void;
 }) {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
+  const { branding } = useTenant();
   const [copied, setCopied] = useState(false);
   if (!data) return null;
 
   const handleShare = async () => {
     try {
-      await Share.share({ message: buildReceiptText(data) });
+      await Share.share({ message: buildReceiptText(data, branding.name) });
     } catch {}
   };
 
@@ -755,7 +798,7 @@ function ReceiptModal({ visible, data, onClose }: {
     </Modal>
   );
 }
-const rcS = StyleSheet.create({
+const make_rcS = (C: Colors) => StyleSheet.create({
   overlay:          { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet:            { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: "88%" },
   handle:           { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
@@ -776,11 +819,16 @@ const rcS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function SendMoneyScreen() {
+  const { C, tS, bS, abS, psS, srS, fbS, mmS, rcS, s } = useSendTheme();
+  const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
   const params = useLocalSearchParams();
 
-  const [loading,          setLoading]         = useState(true);
+  // ✅ v3.0 — chargement non bloquant : l'écran est utilisable tout de suite
+  const [loadState,  setLoadState]  = useState<"loading" | "ready" | "error">("loading");
+  const [loadError,  setLoadError]  = useState<LoadError | null>(null);
+  const [slowLoad,   setSlowLoad]   = useState(false);
   const [beneficiaries,    setBeneficiaries]    = useState<Beneficiary[]>([]);
   const [allRates,         setAllRates]         = useState<ExchangeRate[]>([]);
   const [sending,          setSending]          = useState(false);
@@ -854,31 +902,56 @@ useEffect(() => {
 
   const fetchWalletBalance = useCallback(async () => {
     setLoadingWallet(true);
-    try {
-      const wallets = await api.getMyWallets();
-      const w = wallets.find((w) => w.currency === userCurrency) ?? wallets.find((w) => (w as any).isDefault) ?? wallets[0];
-      if (w) setWalletBalance(toNum(w.balance) - toNum((w as any).reservedBalance ?? 0));
-      else {
-        const uw = ((user as any)?.wallets ?? []).find((w: any) => w.currency === userCurrency) ?? (user as any)?.wallets?.[0];
-        setWalletBalance(uw ? toNum(uw.balance) - toNum(uw.reservedBalance ?? 0) : 0);
-      }
-    } catch {
+    const fromProfile = () => {
       const uw = ((user as any)?.wallets ?? []).find((w: any) => w.currency === userCurrency) ?? (user as any)?.wallets?.[0];
       setWalletBalance(uw ? toNum(uw.balance) - toNum(uw.reservedBalance ?? 0) : 0);
+    };
+    try {
+      // ✅ v3.0 — borné : si le serveur ne répond pas, on retombe sur le
+      // solde du profil au lieu d'attendre indéfiniment.
+      const wallets = await withTimeout(api.getMyWallets(), defaultTimeoutMs());
+      const w = wallets.find((w) => w.currency === userCurrency) ?? wallets.find((w) => (w as any).isDefault) ?? wallets[0];
+      if (w) setWalletBalance(toNum(w.balance) - toNum((w as any).reservedBalance ?? 0));
+      else fromProfile();
+    } catch {
+      fromProfile();
     } finally { setLoadingWallet(false); }
   }, [userCurrency, user]);
 
+  // ✅ v3.0 — taux + contacts : en parallèle, chacun borné, sans jamais
+  // masquer l'écran. Un échec partiel garde ce qui a répondu.
+  const initSeq = useRef(0);
+  const loadData = useCallback(async () => {
+    const id = ++initSeq.current;
+    setLoadState((prev) => (prev === "ready" ? prev : "loading"));
+    const ms = defaultTimeoutMs();
+    const [r, b] = await Promise.allSettled([
+      withTimeout(api.getExchangeRates(), ms),
+      withTimeout(api.getBeneficiaries(), ms),
+    ]);
+    if (id !== initSeq.current) return;
+    if (r.status === "fulfilled") setAllRates(r.value);
+    if (b.status === "fulfilled") setBeneficiaries(b.value);
+    if (r.status === "rejected" || b.status === "rejected") {
+      setLoadError(explainLoadError(b.status === "rejected" ? b.reason : (r as PromiseRejectedResult).reason));
+      setLoadState("error");
+    } else {
+      setLoadError(null);
+      setLoadState("ready");
+    }
+  }, []);
+
+  // Message rassurant si le chargement dépasse 4 s
+  useEffect(() => {
+    if (loadState !== "loading") { setSlowLoad(false); return; }
+    const timer = setTimeout(() => setSlowLoad(true), 4000);
+    return () => clearTimeout(timer);
+  }, [loadState]);
+
   useFocusEffect(useCallback(() => {
-    const init = async () => {
-      try {
-        const [rates, list] = await Promise.all([api.getExchangeRates(), api.getBeneficiaries()]);
-        setAllRates(rates); setBeneficiaries(list);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    };
-    void init();
+    void loadData();
     void fetchWalletBalance();
-  }, [fetchWalletBalance]));
+  }, [loadData, fetchWalletBalance]));
 
   // ✅ v2.14 — FIX 3 (voir changelog en tête de fichier) : getR()
   // vérifie maintenant le format underscore ET le format slash — voir
@@ -1182,15 +1255,6 @@ useEffect(() => {
     c.name.toLowerCase().includes(countrySearch.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <View style={s.loader}>
-        <ActivityIndicator size="large" color={C.g4} />
-        <Text style={[s.loaderTxt, { fontFamily: F.body }]}>Chargement…</Text>
-      </View>
-    );
-  }
-
   const selectedMotif = MOTIFS.find((m) => m.label === motif);
   // ✅ v2.10 — true si le bénéficiaire détecté est un utilisateur
   // plateforme (non sauvegardé), false/undefined sinon
@@ -1230,7 +1294,7 @@ useEffect(() => {
           <Ionicons
             name="wallet"
             size={72}
-            color="rgba(5,150,105,0.14)"
+            color="rgba(255,255,255,0.10)"
             style={s.balanceWatermark}
             pointerEvents="none"
           />
@@ -1270,6 +1334,30 @@ useEffect(() => {
                 <View style={s.tabsWrap}>
                   <ModeTab label="Wallet"      icon="phone-portrait-outline" active={mode === "WALLET"} onPress={() => setMode("WALLET")} />
                   <ModeTab label="Cash Pickup" icon="cash-outline"           active={mode === "CASH"}   onPress={() => setMode("CASH")}   />
+                </View>
+              )}
+
+              {/* ✅ v3.0 — état du chargement en arrière-plan (jamais bloquant) */}
+              {loadState === "loading" && (
+                <View style={s.loadNote}>
+                  <ActivityIndicator size="small" color={C.g4} />
+                  <Text style={[s.loadNoteTxt, { fontFamily: F.body }]}>
+                    {slowLoad
+                      ? "Le serveur se réveille, quelques secondes de plus…"
+                      : "Chargement de vos contacts et des taux…"}
+                  </Text>
+                </View>
+              )}
+              {loadState === "error" && loadError && (
+                <View style={s.loadErr}>
+                  <Ionicons name="cloud-offline-outline" size={20} color={C.amber} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.loadErrTitle, { fontFamily: F.body }]}>{loadError.title}</Text>
+                    <Text style={[s.loadErrMsg, { fontFamily: F.body }]}>{loadError.message}</Text>
+                  </View>
+                  <TouchableOpacity style={s.loadErrBtn} onPress={() => void loadData()} activeOpacity={0.85}>
+                    <Text style={[s.loadErrBtnTxt, { fontFamily: F.body }]}>Réessayer</Text>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -1322,7 +1410,7 @@ useEffect(() => {
                               s.detectedLabel, { fontFamily: F.body },
                               isPlatformOnly && { color: C.blue },
                             ]}>
-                              {isPlatformOnly ? "UTILISATEUR DIRECT TRANSF'AIR" : "TROUVÉ"}
+                              {isPlatformOnly ? `UTILISATEUR ${branding.name.toUpperCase()}` : "TROUVÉ"}
                             </Text>
                             <Text style={[s.detectedName,  { fontFamily: F.body }]}>{detectedBeneficiary.fullName}</Text>
                             {detectedBeneficiary.phone && (
@@ -1695,12 +1783,18 @@ useEffect(() => {
 }
 
 // ─── Styles ───────────────────────────────────────────────
-const s = StyleSheet.create({
+const make_s = (C: Colors) => StyleSheet.create({
   // ✅ v2.11 — fond aligné sur le 1er ton du dégradé (zone réservée par
   // SafeAreaView sous l'encoche iOS, doit rester sombre en continuité du header)
   safe:      { flex: 1, backgroundColor: C.g1 },
-  loader:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.bg, gap: 12 },
-  loaderTxt: { fontSize: 14, color: C.textMuted, fontWeight: "600" },
+  // ✅ v3.0 — bandeaux de chargement / d'erreur non bloquants
+  loadNote:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.gSoft, borderWidth: 1, borderColor: C.gBorder, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 14 },
+  loadNoteTxt: { flex: 1, fontSize: 12.5, color: C.textSub, fontWeight: "600" },
+  loadErr:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.amberSoft, borderWidth: 1, borderColor: "#FEDF89", borderRadius: 14, padding: 12, marginBottom: 14 },
+  loadErrTitle: { fontSize: 13, color: C.text, fontWeight: "800" },
+  loadErrMsg:   { fontSize: 12, color: C.textSub, marginTop: 2, lineHeight: 16 },
+  loadErrBtn:   { backgroundColor: C.g4, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14 },
+  loadErrBtnTxt:{ color: "#fff", fontSize: 12.5, fontWeight: "800" },
 
   // ── Header — ✅ v2.11 : plus de backgroundColor ici, géré par
   // LinearGradient (colors=[C.g1, C.g3]) sur le composant parent.
@@ -1864,3 +1958,18 @@ const s = StyleSheet.create({
   modalItemName:    { flex: 1, fontSize: 14, color: C.text, fontWeight: "600" },
   modalItemCode:    { fontSize: 13, color: C.textMuted, fontWeight: "700" },
 });
+
+
+// ─── Thème (couleurs du tenant + styles) ──────────────────
+function useSendTheme() {
+  const { P } = useWalletTheme();
+  return useMemo(() => {
+    const C = makeColors(P);
+    return {
+      C,
+      tS: make_tS(C), bS: make_bS(C), abS: make_abS(C), psS: make_psS(C),
+      srS: make_srS(C), fbS: make_fbS(C), mmS: make_mmS(C), rcS: make_rcS(C),
+      s: make_s(C),
+    };
+  }, [P]);
+}

@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.6
+// PERSONAL INFO — CLIENT (WALLET) v5.7
+// ✅ v5.7 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v5.6 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (save, cancelEdit, formatDate, handleDateChange : tout identique).
@@ -37,16 +41,18 @@ import { api }    from "../../../services/api";
 import { COUNTRIES }        from "../../../utils/countries";
 import { citiesByCountry }  from "../../../data/cities";
 
+import { themed, brand, brandRgba } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
 // ─── Design tokens ──────────────────────────────────
-const T = {
+const T = themed(() => ({
   bg:          "#FAFAFA",
   surface:     "#FFFFFF",
   surfaceAlt:  "#F5F5F5",
   border:      "#E5E5EA",
-  borderFocus: "#059669",
-  accent:      "#059669",
-  accentSoft:  "#D1FAE5",
-  accentText:  "#065F46",
+  borderFocus: brand("#059669"),
+  accent:      brand("#059669"),
+  accentSoft:  brand("#D1FAE5"),
+  accentText:  brand("#065F46"),
   text:        "#0F172A",
   textSub:     "#374151",
   textDim:     "#9CA3AF",
@@ -56,16 +62,16 @@ const T = {
   info:        "#0284C7",
   infoSoft:    "#E0F2FE",
   // ✅ v5.6 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-  heroFrom:    "#0A0F0D",
-  heroTo:      "#123324",
-  heroGlow:    "rgba(5,150,105,0.2)",
+  heroFrom:    brand("#0A0F0D"),
+  heroTo:      brand("#123324"),
+  heroGlow:    brandRgba("rgba(5,150,105,0.2)"),
   heroMuted:   "rgba(255,255,255,0.6)",
   radius: { sm: 10, md: 14, lg: 20, xl: 24 },
   font: {
     display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
   },
-};
+}));
 
 // ─── Field ────────────────────────────────────────────────
 function Field({ label, value, onChange, editable = true, style, placeholder, keyboardType, maxLength }: any) {
@@ -101,14 +107,14 @@ function Field({ label, value, onChange, editable = true, style, placeholder, ke
     </View>
   );
 }
-const fS = StyleSheet.create({
+const fS = themed(() => StyleSheet.create({
   label:         { fontSize: 10, fontWeight: "800", color: T.textSub, letterSpacing: 1.2, marginBottom: 6, textTransform: "uppercase" },
   box:           { backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, flexDirection: "row", alignItems: "center" },
   boxFocused:    { borderColor: T.borderFocus, shadowColor: T.accent, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
   boxDisabled:   { backgroundColor: T.surfaceAlt },
   input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600", borderWidth: 0 },
   inputDisabled: { color: T.textSub },
-});
+}));
 
 // ─── CountryPicker ────────────────────────────────────────
 function CountryPicker({ label, value, onChange, editable }: any) {
@@ -285,7 +291,7 @@ function SectionCard({ icon, title, children }: { icon: string; title: string; c
     </View>
   );
 }
-const sC = StyleSheet.create({
+const sC = themed(() => StyleSheet.create({
   card:    {
     backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14,
     borderWidth: 1.5, borderColor: T.border,
@@ -298,10 +304,11 @@ const sC = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
   title:   { fontSize: 11, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-});
+}));
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function PersonalInfoWallet() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const { user, refreshUser } = useAuth();
   const insets = useSafeAreaInsets(); // ✅ v5.6 (nouveau)
@@ -564,7 +571,7 @@ export default function PersonalInfoWallet() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   // ✅ v5.6 — backgroundColor géré par LinearGradient désormais ;
   // coins bas arrondis + overflow hidden pour le halo décoratif.
   header: {
@@ -633,4 +640,4 @@ const s = StyleSheet.create({
     shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4,
   },
   saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
-});
+}));

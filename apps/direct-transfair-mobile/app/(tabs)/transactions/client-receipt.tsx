@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/client-receipt.tsx
 // =========================================================
-// REÇU CLIENT v1.0 — Direct Transf'air
+// REÇU CLIENT v1.1 — Direct Transf'air
+// ✅ v1.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v1.0 : Reçu propre pour le client (rôle USER / COMPANY_ADMIN)
 //   - Déclenché par transactions/[id].tsx > handleShare (bouton
 //     "Partager le reçu" / "Voir le reçu")
@@ -15,6 +19,7 @@
 //     · Sortant  → montant en rouge, "Montant envoyé + frais + total"
 //   - Logique 100 % présentationnelle : les données arrivent déjà
 //     calculées par [id].tsx (heroDisplayAmount, isIncoming, etc.)
+//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
 // =========================================================
 
 import React, { useCallback } from "react";
@@ -27,6 +32,9 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Print   from "expo-print";
 import * as Sharing from "expo-sharing";
 
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import { useTenant } from "../../../providers/TenantProvider";
 // ─── Type du reçu client ─────────────────────────────────
 // (construit dans [id].tsx > handleShare, passé en param URL)
 export interface ClientReceiptData {
@@ -55,16 +63,16 @@ export interface ClientReceiptData {
 }
 
 // ─── Design tokens ───────────────────────────────────────
-const T = {
+const T = themed(() => ({
   bg:         "#FFFFFF",
   ink:        "#0F172A",
   inkSub:     "#475569",
   inkMuted:   "#94A3B8",
   divider:    "#F1F5F9",
   dividerMd:  "#E2E8F0",
-  green:      "#059669",
+  green:      brand("#059669"),
   greenBg:    "#DCFCE7",
-  greenText:  "#065F46",
+  greenText:  brand("#065F46"),
   red:        "#DC2626",
   redBg:      "#FEE2E2",
   blue:       "#2563EB",
@@ -76,7 +84,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ─── Helpers ─────────────────────────────────────────────
 function fmt(n: number, currency = "XOF"): string {
@@ -121,22 +129,26 @@ function Row({ label, value, mono, bold }: {
     </View>
   );
 }
-const ro = StyleSheet.create({
+const ro = themed(() => StyleSheet.create({
   row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.divider },
   label: { fontSize: 13, color: T.inkSub, fontWeight: "500", flex: 1 },
   value: { fontSize: 13, color: T.ink,    fontWeight: "600", textAlign: "right", flex: 2 },
   bold:  { fontWeight: "800", color: T.ink, fontSize: 14 },
-});
+}));
 
 function SectionTitle({ children }: { children: string }) {
   return <Text style={[st.txt, { fontFamily: T.font.sans }]}>{children}</Text>;
 }
-const st = StyleSheet.create({
+const st = themed(() => StyleSheet.create({
   txt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingTop: 10, paddingBottom: 2 },
-});
+}));
 
 // ─── PDF builder ─────────────────────────────────────────
-function buildHtml(d: ClientReceiptData): string {
+const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+
+function buildHtml(d: ClientReceiptData, brandName: string, tagline: string): string {
+  const brandHtml = escHtml(brandName.toUpperCase());
+  const taglineHtml = escHtml(tagline);
   const dt   = fmtDate(d.date);
   const st   = statusInfo(d.status, d.isIncoming);
   const hasConv = !!(d.receivedCurrency && d.receivedCurrency !== d.sentCurrency && (d.receivedAmount ?? 0) > 0);
@@ -226,14 +238,14 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 .amt-lbl{font-size:10px;color:#6B7280;font-weight:600}
 .amt-lbl.bold{font-weight:900;color:#0F172A}
 .amt-val{font-size:11px;color:#0F172A;font-weight:800;font-family:monospace}
-.amt-val.highlight{color:#059669;font-size:14px;font-weight:900}
+.amt-val.highlight{color:${brand("#059669")};font-size:14px;font-weight:900}
 .amt-val.mono{font-family:monospace;font-size:10px}
 
 /* ── Conversion ── */
-.conv-row{background:#ECFDF5;border:1px solid #A7F3D0;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-top:10px}
+.conv-row{background:${brand("#ECFDF5")};border:1px solid ${brand("#A7F3D0")};border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;margin-top:10px}
 .conv-icon{font-size:16px}
 .conv-lbl{font-size:8px;color:#6B7280;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px}
-.conv-amt{font-size:14px;font-weight:900;color:#065F46;font-family:monospace}
+.conv-amt{font-size:14px;font-weight:900;color:${brand("#065F46")};font-family:monospace}
 
 /* ── Footer ── */
 .footer{background:#F8FAFF;border-top:2px solid #E2E8F0;padding:16px 20px}
@@ -243,11 +255,11 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 </style></head><body>
 
 <div class="header">
-  <div class="logo">DIRECT TRANSF'AIR</div>
-  <div class="logo-sub">Transfert d'argent international</div>
+  <div class="logo">${brandHtml}</div>
+  <div class="logo-sub">${taglineHtml}</div>
   <div class="type-badge">${d.txLabel.toUpperCase()}</div>
   <div class="amt-label">${d.isIncoming ? "MONTANT REÇU" : "MONTANT ENVOYÉ"}</div>
-  <div style="color:${d.isIncoming ? "#059669" : "#DC2626"}">
+  <div style="color:${d.isIncoming ? brand("#059669") : "#DC2626"}">
     <span class="amt-sign">${d.isIncoming ? "+" : "−"}</span>
     <span class="amt-big">${fmt(d.heroDisplayAmount, d.heroDisplayCurrency)}</span>
   </div>
@@ -290,7 +302,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 </div>
 
 <div class="footer">
-  <div class="f-logo">DIRECT TRANSF'AIR</div>
+  <div class="f-logo">${brandHtml}</div>
   <div class="f-legal">Ce reçu constitue une preuve officielle de votre transaction. Pour toute réclamation, contactez le service client dans les 48 heures suivant la transaction.</div>
   <div class="f-ref">Réf. ${d.reference} · ${dt.short}</div>
 </div>
@@ -299,6 +311,9 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 
 // ─── Écran principal ─────────────────────────────────────
 export default function ClientReceiptScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { branding } = useTenant();
+  const tagline = branding.tagline || "";
   const router = useRouter();
   const { data: raw } = useLocalSearchParams<{ data: string }>();
 
@@ -310,20 +325,20 @@ export default function ClientReceiptScreen() {
   const handleShare = useCallback(async () => {
     if (!data) return;
     try {
-      const { uri } = await Print.printToFileAsync({ html: buildHtml(data) });
+      const { uri } = await Print.printToFileAsync({ html: buildHtml(data, branding.name, tagline) });
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
       } else {
         Alert.alert("Non disponible", "Le partage n'est pas disponible sur cet appareil.");
       }
     } catch { Alert.alert("Erreur", "Impossible de générer le PDF."); }
-  }, [data]);
+  }, [data, branding.name, tagline]);
 
   const handlePrint = useCallback(async () => {
     if (!data) return;
-    try { await Print.printAsync({ html: buildHtml(data) }); }
+    try { await Print.printAsync({ html: buildHtml(data, branding.name, tagline) }); }
     catch { Alert.alert("Erreur", "Impression impossible."); }
-  }, [data]);
+  }, [data, branding.name, tagline]);
 
   if (!data) {
     return (
@@ -466,8 +481,8 @@ export default function ClientReceiptScreen() {
         {/* ── Footer ── */}
         <View style={s.hairline} />
         <View style={s.footer}>
-          <Text style={[s.footLogo,  { fontFamily: T.font.sans }]}>DIRECT TRANSF'AIR</Text>
-          <Text style={[s.footSub,   { fontFamily: T.font.sans }]}>Transfert d'argent international</Text>
+          <Text style={[s.footLogo,  { fontFamily: T.font.sans }]}>{branding.name.toUpperCase()}</Text>
+          {!!tagline && <Text style={[s.footSub,   { fontFamily: T.font.sans }]}>{tagline}</Text>}
           <Text style={[s.footLegal, { fontFamily: T.font.sans }]}>
             Ce reçu constitue une preuve officielle de votre transaction.
             Pour toute réclamation, contactez le service client dans les 48 heures.
@@ -496,7 +511,7 @@ export default function ClientReceiptScreen() {
 }
 
 // ─── Styles ──────────────────────────────────────────────
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.bg },
 
   errTxt:    { fontSize: 14, color: T.inkMuted, marginTop: 14, fontWeight: "600", textAlign: "center" },
@@ -576,4 +591,4 @@ const s = StyleSheet.create({
   },
   shareTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
   printTxt: { color: "#fff", fontWeight: "700", fontSize: 13 },
-});
+}));

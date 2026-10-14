@@ -1,6 +1,13 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
 // =========================================================
-// LOCATIONS v6.4 — Direct Transf'air
+// LOCATIONS v6.5 — Direct Transf'air
+// ✅ v6.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
+//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
 // ✅ v6.4 (phase 6) : la liste vient uniquement de GET /locations (agences de la société, champs publics). /agencies est
 //    réservé aux administrateurs (le client recevait 403 puis une erreur sur /agencies/public, qui n'existe pas).
 //    L'email d'une agence n'est plus servi : c'est l'identifiant de connexion de son responsable.
@@ -26,15 +33,20 @@ import type { Agency } from "../../../services/types";
 import { useAuth } from "../../../providers/AuthProvider";
 import { api } from "../../../services/api";
 
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
+import { useTenant } from "../../../providers/TenantProvider";
 // ─── Thème par rôle ──────────────────────────────────────
-const ROLE_THEMES = {
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { bg: "#F8FAFF", accent: "#1D4ED8", accentSoft: "#EFF6FF" },
-  COMPANY_ADMIN: { bg: "#F0FDFA", accent: "#0D9488", accentSoft: "#CCFBF1" },
+  COMPANY_ADMIN: { bg: brand("#F0FDFA"), accent: brand("#0D9488"), accentSoft: brand("#CCFBF1") },
   AGENT:         { bg: "#FFFBEB", accent: "#D97706", accentSoft: "#FEF3C7" },
-  USER:          { bg: "#F0FDF4", accent: "#059669", accentSoft: "#DCFCE7" },
-} as const;
+  USER:          { bg: brand("#F0FDF4"), accent: brand("#059669"), accentSoft: brand("#DCFCE7") },
+} as const));
 
-const T = {
+const T = themed(() => ({
   surface: "#FFFFFF",
   text:    "#0F172A",
   textSub: "#475569",
@@ -51,7 +63,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // Phase 6 : /agencies est réservé aux administrateurs et /agencies/public n'existe pas — la liste des agences de la
 // société (champs publics) est servie par /locations, avec l'en-tête x-tenant-id que l'application envoie déjà.
@@ -76,6 +88,8 @@ async function openLink(url: string) {
 }
 
 export default function LocationsScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { branding } = useTenant();
   const router   = useRouter();
   const { user } = useAuth();
 
@@ -95,7 +109,7 @@ export default function LocationsScreen() {
 
       for (const endpoint of AGENCY_ENDPOINTS) {
         try {
-          const res = await api.http.get<unknown>(endpoint);
+          const res = await withTimeout(api.http.get<unknown>(endpoint), defaultTimeoutMs());
           found        = unwrapAgencies(res.data);
           allForbidden = false;
           break;
@@ -109,7 +123,7 @@ export default function LocationsScreen() {
       setAgencies(allForbidden ? [] : found);
     } catch (e: any) {
       const raw = e?.response?.data?.message;
-      setError(Array.isArray(raw) ? raw[0] : (raw || "Impossible de charger les agences."));
+      setError(Array.isArray(raw) ? raw[0] : (raw || explainLoadError(e).message));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -236,25 +250,15 @@ export default function LocationsScreen() {
       ? "Erreur de chargement"
       : agencies.length === 0
         ? "Aucun point disponible pour le moment"
-        : `${agencies.length} point${agencies.length > 1 ? "s" : ""} Direct Transf'air`;
+        : `${agencies.length} point${agencies.length > 1 ? "s" : ""} ${branding.name}`;
 
   return (
     <LinearGradient colors={[theme.bg, "rgba(255,255,255,0.3)"]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
         {/* ── Header ── */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={20} color={T.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Nos Agences</Text>
-            <Text style={[s.headerSub, { color: error ? T.red : theme.accent, fontFamily: T.font.sans }]}>
-              {headerSub}
-            </Text>
-          </View>
-        </View>
+        <ScreenHeader compact title="Nos Agences" subtitle={headerSub} onBack={() => router.back()} />
 
         {/* ── Chargement ── */}
         {loading && (
@@ -315,19 +319,19 @@ export default function LocationsScreen() {
                   Aucune agence disponible
                 </Text>
                 <Text style={[s.emptySubtxt, { fontFamily: T.font.sans }]}>
-                  Les points Direct Transf'air{"\n"}apparaîtront ici dès leur ouverture.
+                  Les points {branding.name}{"\n"}apparaîtront ici dès leur ouverture.
                 </Text>
               </View>
             }
             ListFooterComponent={<View style={{ height: 80 }} />}
           />
         )}
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center",
     paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16,
@@ -381,4 +385,4 @@ const s = StyleSheet.create({
   emptyIcon:    { width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 4 },
   emptyTitle:   { color: T.text, fontSize: 16, fontWeight: "700", textAlign: "center" },
   emptySubtxt:  { color: T.textDim, fontSize: 12, textAlign: "center", lineHeight: 18 },
-});
+}));

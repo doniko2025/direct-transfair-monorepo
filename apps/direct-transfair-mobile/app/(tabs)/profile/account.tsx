@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/account.tsx
 // =========================================================
-// ACCOUNT MENU v5.0 — Direct Transf'air
+// ACCOUNT MENU v5.1 — Direct Transf'air
+// ✅ v5.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
 // Design: Thème CLAIR par rôle, clean & aéré
 // ✅ Menu condensé compte + déconnexion
 // =========================================================
@@ -14,14 +19,17 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../../providers/AuthProvider";
 
-const ROLE_THEMES = {
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { bg: "#FFFBF2", accent: "#B8860B", accentLight: "#FEF3C7", avatarBg: "#FFF8E1" },
-  COMPANY_ADMIN: { bg: "#F0FDF8", accent: "#059669", accentLight: "#D1FAE5", avatarBg: "#E6FDF4" },
+  COMPANY_ADMIN: { bg: brand("#F0FDF8"), accent: brand("#059669"), accentLight: brand("#D1FAE5"), avatarBg: brand("#E6FDF4") },
   AGENT:         { bg: "#FFFBF0", accent: "#D97706", accentLight: "#FEF3C7", avatarBg: "#FFF3DC" },
-  USER:          { bg: "#F0FDF4", accent: "#16A34A", accentLight: "#DCFCE7", avatarBg: "#E8FDF0" },
-} as const;
+  USER:          { bg: brand("#F0FDF4"), accent: brand("#16A34A"), accentLight: brand("#DCFCE7"), avatarBg: brand("#E8FDF0") },
+} as const));
 
-const T = {
+const T = themed(() => ({
   white: "#FFFFFF",
   cardBg: "#FFFFFF",
   border: "#E5E8EF",
@@ -45,7 +53,7 @@ const T = {
     sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
-};
+}));
 
 function MenuItem({ icon, label, accent, onPress }: any) {
   return (
@@ -58,13 +66,14 @@ function MenuItem({ icon, label, accent, onPress }: any) {
     </TouchableOpacity>
   );
 }
-const miS = StyleSheet.create({
+const miS = themed(() => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.borderLight },
   iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   label: { flex: 1, fontSize: 14, fontWeight: "600", color: T.text },
-});
+}));
 
 export default function AccountMenuScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const { user, logout } = useAuth();
 
@@ -96,17 +105,11 @@ export default function AccountMenuScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: theme.bg }]}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
         {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={22} color={T.text} />
-          </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Mon compte</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ScreenHeader compact title="Mon compte" onBack={() => router.back()} />
 
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
@@ -163,12 +166,12 @@ export default function AccountMenuScreen() {
 
           <View style={{ height: 60 }} />
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root: { flex: 1 },
   header: {
     flexDirection: "row", alignItems: "center",
@@ -211,4 +214,4 @@ const s = StyleSheet.create({
 
   deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 8 },
   deleteTxt: { color: T.textMuted, fontSize: 12, fontWeight: "500" },
-});
+}));

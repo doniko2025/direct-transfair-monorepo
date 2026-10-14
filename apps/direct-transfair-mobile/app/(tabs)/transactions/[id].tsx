@@ -1,6 +1,20 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // =========================================================
-// TRANSACTION DETAIL v6.6
+// TRANSACTION DETAIL v7.0
+// ✅ v7.0 : FIX chargement + white-label.
+//    • AVANT : loadTransaction() téléchargeait TOUTE la liste des
+//      transactions pour en retrouver une, sans limite de temps (spinner
+//      sans fin si le serveur tarde ou échoue, « Transaction introuvable »
+//      affiché à tort sur une simple erreur réseau).
+//    • MAINTENANT : GET /transactions/:id d'abord (une seule ligne), repli
+//      sur la liste si la route n'est pas disponible ; chaque appel est
+//      borné (withTimeout, 20 s) ; message rassurant après 4 s ; une
+//      vraie erreur réseau affiche « Réessayer » (et non « introuvable »).
+//    • Couleurs du hero / accents dérivées de la couleur de marque du
+//      tenant (useWalletTheme) au lieu du vert codé en dur.
+//    • Le « Taux : 0.0000 » n'est plus affiché quand le taux est absent.
+//    Logique métier (handleShare, handleCancel, calculs) inchangée.
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // ✅ v6.6 : (phase 5) clients wallet uniquement — branches SUPER_ADMIN /
 //    COMPANY_ADMIN / AGENT supprimées (validation, remboursement,
 //    recharge agence, retrait client payé : voir le portail web). Les
@@ -43,6 +57,9 @@ import * as Clipboard from "expo-clipboard";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
 import type { ClientReceiptData } from "./client-receipt";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../../components/wallet/useLoader";
+import { ErrorState, SlowHint } from "../../../components/wallet/StateViews";
 
 const FONTS = {
   heading: Platform.OS === "ios" ? "Cochin"      : "serif",
@@ -51,12 +68,8 @@ const FONTS = {
 };
 
 // ✅ v6.5 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-const HERO_FROM  = "#0A0F0D";
-const HERO_TO    = "#123324";
-const HERO_GLOW  = "rgba(5,150,105,0.18)";
 const HERO_MUTED = "rgba(255,255,255,0.6)";
 
-const THEME = { primary: "#059669", light: "#ECFDF5", bg: "#F8FAFC" };
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -76,26 +89,53 @@ export default function TransactionDetailScreen() {
   const router   = useRouter();
   const { user } = useAuth();
   const insets   = useSafeAreaInsets(); // ✅ v6.5 (nouveau)
-  const theme    = THEME;
+  const { P } = useWalletTheme();
+  // ✅ v7.0 — couleurs dérivées de la marque du tenant
+  const theme    = { primary: P.action, light: P.tint, bg: "#F8FAFC" };
+  const HERO_FROM = P.bg1;
+  const HERO_TO   = P.bg3;
 
   const [transaction, setTransaction] = useState<any>(null);
   const [loading,     setLoading]     = useState(true);
   const [processing,  setProcessing]  = useState(false);
+  const [loadError,   setLoadError]   = useState<LoadError | null>(null);
+  const [slow,        setSlow]        = useState(false);
 
   useEffect(() => { void loadTransaction(); }, [idParam]);
 
   const loadTransaction = async () => {
+    setLoadError(null);
     try {
       setLoading(true);
       if (!idParam) return setTransaction(null);
-
-      const list: any[] = await api.getTransactions();
-
-      const found = list.find((t: any) => String(t.id) === String(idParam));
+      const ms = defaultTimeoutMs();
+      let found: any = null;
+      try {
+        found = await withTimeout(api.getTransaction(String(idParam)), ms);
+      } catch (e: any) {
+        const status = e?.response?.status;
+        // Route indisponible / introuvable : repli sur la liste (ancien comportement)
+        if (status === 404 || status === 405 || status === 501) {
+          const list: any[] = await withTimeout(api.getTransactions(), ms);
+          found = list.find((t: any) => String(t.id) === String(idParam)) ?? null;
+        } else {
+          throw e;
+        }
+      }
       setTransaction(found || null);
-    } catch { setTransaction(null); }
+    } catch (e) {
+      setTransaction(null);
+      setLoadError(explainLoadError(e));
+    }
     finally { setLoading(false); }
   };
+
+  // Message rassurant si le serveur met plus de 4 s à répondre
+  useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const timer = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // ✅ FIX v6.3 — handleShare construit désormais un objet ClientReceiptData
   // complet et navigue vers l'écran client-receipt.tsx au lieu d'ouvrir
@@ -157,11 +197,19 @@ export default function TransactionDetailScreen() {
   if (loading) return (
     <SafeAreaView style={s.center}>
       <ActivityIndicator size="large" color={theme.primary} />
+      <View style={{ marginTop: 16, paddingHorizontal: 24 }}><SlowHint visible={slow} /></View>
     </SafeAreaView>
   );
   if (!transaction) return (
     <SafeAreaView style={s.center}>
-      <Text style={[s.notFoundText, { fontFamily: FONTS.body }]}>Transaction introuvable.</Text>
+      {loadError ? (
+        <ErrorState title={loadError.title} message={loadError.message} onRetry={() => void loadTransaction()} />
+      ) : (
+        <Text style={[s.notFoundText, { fontFamily: FONTS.body }]}>Transaction introuvable.</Text>
+      )}
+      <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14, padding: 10 }}>
+        <Text style={[s.notFoundText, { fontFamily: FONTS.body, color: theme.primary, fontWeight: "700" }]}>Retour</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   );
 
@@ -300,9 +348,11 @@ export default function TransactionDetailScreen() {
                   Reçoit : {fmt(toNum(transaction.receivedAmount), transaction.targetCurrency)} {transaction.targetCurrency}
                 </Text>
               )}
-              <Text style={[s.convRate, { fontFamily: FONTS.body }]}>
-                Taux : {toNum(transaction.exchangeRate).toFixed(4)}
-              </Text>
+              {toNum(transaction.exchangeRate) > 0 && (
+                <Text style={[s.convRate, { fontFamily: FONTS.body }]}>
+                  Taux : {toNum(transaction.exchangeRate).toFixed(4)}
+                </Text>
+              )}
             </View>
           )}
 
@@ -413,7 +463,7 @@ const s = StyleSheet.create({
   heroGlow: {
     position: "absolute", top: -50, right: -50,
     width: 170, height: 170, borderRadius: 85,
-    backgroundColor: HERO_GLOW,
+    backgroundColor: "rgba(255,255,255,0.08)",
   },
   heroRow:     { flexDirection: "row", alignItems: "center", gap: 12 },
   heroBackBtn: {

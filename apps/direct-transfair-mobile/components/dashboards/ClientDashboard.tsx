@@ -1,6 +1,15 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v9.9 — Direct Transf'air
+// CLIENT DASHBOARD v10.0 — Direct Transf'air
+// ✅ v10.0 : 🔥 REFONTE TOTALE de l'accueil wallet, et correction des chargements infinis.
+//    • Design : en-tête de marque (couleur du tenant), carte de solde « bancaire » qui chevauche l'en-tête,
+//      actions Envoyer / Recharger / Taux / QR, envoi rapide, bilan du mois, activité récente. Tout vient du
+//      kit components/wallet (thème white-label, plus de couleurs codées en dur par écran).
+//    • Chargement : useLoader() borne l'attente (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS). Plus de spinner qui
+//      tourne dans le vide : squelettes, message « le serveur démarre », puis erreur claire + « Réessayer ».
+//    • Données : mêmes appels qu'avant (refreshUser, getTransactions, getExchangeRates) ; getTransactions
+//      demande { limit: 30 } (ignoré par un ancien backend, pris en compte par le nouveau).
+//    • Logique métier inchangée : solde disponible, réservé, stats du mois, contacts récents, navigation.
 // ✅ v9.9 : REMPLACEMENT bouton "Historique" → "Recharger"
 //    PUREMENT NAVIGATION — aucune ligne de logique métier touchée.
 //    "Historique" faisait doublon avec l'onglet "Activité" (barre de
@@ -117,105 +126,25 @@
 //      → npx expo install expo-linear-gradient
 // =========================================================
 
-import React, { useState, useCallback, useRef } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  RefreshControl,
-  ScrollView,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  Animated,
-  ActivityIndicator,
-} from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, RefreshControl, ScrollView, Platform } from "react-native";
+import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+import BalanceCard from "../wallet/BalanceCard";
+import { HeaderIconButton } from "../wallet/ScreenHeader";
+import { Avatar, Card, QuickAction, SectionTitle, TransactionRow } from "../wallet/WalletParts";
+import { SkeletonCard, SkeletonList } from "../wallet/Skeleton";
+import { EmptyState, ErrorState, SlowHint } from "../wallet/StateViews";
+import { useLoader } from "../wallet/useLoader";
+import {
+  FONT, N, RADIUS, TAB_BAR_SPACE, formatMoney, initialsOf, toNum, useWalletTheme,
+} from "../wallet/walletTheme";
 
-// Hauteur approximative de la tab bar native (cohérente avec les autres dashboards)
-const TAB_BAR_HEIGHT = Platform.OS === "ios" ? 84 : 70;
-
-// ─── Design System ──────────────────────────────────────
-const C = {
-  // Brand — vert émeraude (plus vif, plus «gemme»)
-  green:     "#17A45F",   // émeraude principal (icônes, accents, hero bg)
-  greenDark: "#0E8A4E",   // émeraude foncé (pressed, ombre CTA)
-
-  // Backgrounds — uniquement neutre, plus de vert en fond
-  pageBg: "#F5F5F5",
-  white:  "#FFFFFF",
-
-  // ✅ v9.8 — dégradé du hero (quasi-noir → vert forêt), dérivé de `green`
-  heroFrom: "#0A0F0D",
-  heroTo:   "#123324",
-  // ✅ v9.8 — texte secondaire sur fond sombre (labels, icônes muettes du hero)
-  heroMuted: "rgba(255,255,255,0.55)",
-
-  // Badges statut (pale, usage uniquement dans les pills)
-  greenPale:  "#E8FAF2",  // ajusté pour émeraude #17A45F
-  amberBg:    "#FFFBEB",
-  blueBg:     "#EFF6FF",
-  redBg:      "#FEF2F2",
-  slateLight: "#F8FAFC",
-
-  // Textes
-  ink:     "#1C1C1E",
-  inkMid:  "#3C3C43",
-  inkSoft: "#8E8E93",
-
-  // Couleurs accent (statuts uniquement)
-  red:    "#EF4444",
-  blue:   "#3B82F6",
-  amber:  "#F59E0B",
-  purple: "#8B5CF6",
-  slate:  "#64748B",
-
-  // Séparateurs
-  border: "#E5E5EA",
-
-  // Rayons
-  r: { xs: 6, sm: 10, md: 14, lg: 16, xl: 22, pill: 99 },
-
-  // Polices
-  font: {
-    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
-  },
-};
-
-// Ombre standardisée (cards)
-const cardShadow = Platform.select({
-  ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4 },
-  android: { elevation: 2 },
-  default: {},
-});
-
-// ─── Helpers — 100 % inchangés ────────────────────────────
-function toNum(v: unknown): number {
-  if (typeof v === "number" && isFinite(v)) return v;
-  if (typeof v === "string") { const n = Number(v); return isFinite(n) ? n : 0; }
-  if (v && typeof (v as any).toNumber === "function") return (v as any).toNumber();
-  return 0;
-}
-function fmt(n: number, currency = "XOF"): string {
-  const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
-  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
-  catch { return n.toFixed(d); }
-}
-function fmtDate(d: string): string {
-  const date = new Date(d), today = new Date();
-  const yest = new Date(today); yest.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return "Aujourd'hui";
-  if (date.toDateString() === yest.toDateString()) return "Hier";
-  return date.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
-}
+// ─── Helpers métier — logique inchangée ───────────────────
 function isThisMonth(isoDate: string): boolean {
   const d = new Date(isoDate), now = new Date();
   return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -227,188 +156,25 @@ const COUNTRY_CURRENCY: Record<string, string> = {
   GB: "GBP", US: "USD",
 };
 
-const TX_STATUS: Record<string, { color: string; bg: string; label: string }> = {
-  PAID:       { color: C.green,  bg: C.greenPale,  label: "Payé" },
-  VALIDATED:  { color: C.green,  bg: C.greenPale,  label: "Validé" },
-  PENDING:    { color: C.amber,  bg: C.amberBg,    label: "En cours" },
-  PROCESSING: { color: C.blue,   bg: C.blueBg,     label: "Traitement" },
-  CANCELLED:  { color: C.slate,  bg: C.slateLight, label: "Annulé" },
-  FAILED:     { color: C.red,    bg: C.redBg,      label: "Échoué" },
-};
-
-const AVATAR_PALETTES = [
-  { bg: "#DCFCE7", text: "#15803D" }, { bg: "#DBEAFE", text: "#1D4ED8" },
-  { bg: "#FEF3C7", text: "#B45309" }, { bg: "#F3E8FF", text: "#7E22CE" },
-  { bg: "#FFE4E6", text: "#BE123C" }, { bg: "#CCFBF1", text: "#0F766E" },
-];
-function avatarColors(name: string) {
-  return AVATAR_PALETTES[(name?.charCodeAt(0) ?? 0) % AVATAR_PALETTES.length];
+function greeting(): string {
+  const h = new Date().getHours();
+  return h < 5 || h >= 18 ? "Bonsoir" : "Bonjour";
 }
 
-// ─── Section Header ────────────────────────────────────────
-function SectionHeader({
-  title, action, onAction,
-}: { title: string; action?: string; onAction?: () => void }) {
-  return (
-    <View style={sh.row}>
-      <Text style={[sh.title, { fontFamily: C.font.sans }]}>{title}</Text>
-      {action && (
-        <TouchableOpacity onPress={onAction} hitSlop={10}>
-          <Text style={[sh.link, { fontFamily: C.font.sans }]}>{action} →</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-const sh = StyleSheet.create({
-  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
-  title: { fontSize: 16, fontWeight: "700", color: C.ink },
-  link:  { fontSize: 13, fontWeight: "600", color: C.green },
-});
+type DashData = { txs: any[]; eurXofRate: number | null };
 
-// ─── Quick Contact Chip ────────────────────────────────────
-function ContactChip({
-  name, phone, onPress,
-}: { name: string; phone?: string; onPress: () => void }) {
-  const initials = (name || "?").split(" ").map((s) => s[0] ?? "").join("").slice(0, 2).toUpperCase();
-  const pal = avatarColors(name || "?");
-  const scale = useRef(new Animated.Value(1)).current;
-  return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        style={qc.chip} onPress={onPress} activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.93, useNativeDriver: true, speed: 60 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 40 }).start()}
-      >
-        <View style={[qc.avatar, { backgroundColor: pal.bg }]}>
-          <Text style={[qc.initials, { color: pal.text, fontFamily: C.font.serif }]}>{initials}</Text>
-        </View>
-        <Text style={[qc.name, { fontFamily: C.font.sans }]} numberOfLines={1}>{name.split(" ")[0]}</Text>
-        {/* badge envoi */}
-        <View style={qc.badge}>
-          <Ionicons name="paper-plane" size={9} color={C.green} />
-        </View>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-}
-const qc = StyleSheet.create({
-  chip:    { alignItems: "center", gap: 5, width: 66 },
-  avatar:  { width: 50, height: 50, borderRadius: 14, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: C.border },
-  initials:{ fontSize: 17, fontWeight: "800" },
-  name:    { fontSize: 11, fontWeight: "600", color: C.ink, textAlign: "center" },
-  badge:   {
-    position: "absolute", bottom: 24, right: 3,
-    width: 17, height: 17, borderRadius: 9,
-    backgroundColor: C.white,
-    borderWidth: 1.5, borderColor: C.border,
-    justifyContent: "center", alignItems: "center",
-  },
-});
-
-// ─── Action Item (BNP — carré arrondi vert) ────────────────
-function ActionItem({
-  icon, label, onPress,
-}: { icon: string; label: string; onPress: () => void }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  return (
-    <Animated.View style={{ transform: [{ scale }], flex: 1, alignItems: "center", gap: 8 }}>
-      <TouchableOpacity
-        style={ai.box} onPress={onPress} activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.88, useNativeDriver: true, speed: 60 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, speed: 40 }).start()}
-      >
-        <Ionicons name={icon as any} size={22} color={C.green} />
-      </TouchableOpacity>
-      <Text style={[ai.label, { fontFamily: C.font.sans }]}>{label}</Text>
-    </Animated.View>
-  );
-}
-const ai = StyleSheet.create({
-  box: {
-    width: 58, height: 58, borderRadius: 15,
-    backgroundColor: C.white,
-    borderWidth: 1, borderColor: C.greenPale,
-    justifyContent: "center", alignItems: "center",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.06, shadowRadius: 6 },
-      android: { elevation: 2 },
-      default: {},
-    }),
-  },
-  label: { fontSize: 11, fontWeight: "600", color: C.inkMid, textAlign: "center" },
-});
-
-// ─── Transaction Row ───────────────────────────────────────
-function TxRow({ tx, userId }: { tx: any; userId?: string }) {
-  const isOut = tx.senderId === userId;
-  const accent = isOut ? C.red : C.green;
-  const hasConversion = !isOut && tx.targetCurrency && tx.targetCurrency !== tx.currency && toNum(tx.receivedAmount) > 0;
-  const displayAmount:   number = hasConversion ? toNum(tx.receivedAmount) : toNum(tx.amount);
-  const displayCurrency: string = hasConversion ? (tx.targetCurrency as string) : (tx.currency as string);
-  const name = isOut
-    ? (tx.beneficiary?.fullName ?? tx.recipient?.firstName ?? "Bénéficiaire")
-    : (tx.sender?.firstName ? `${tx.sender.firstName} ${tx.sender.lastName ?? ""}`.trim() : "Expéditeur");
-  const st  = TX_STATUS[tx.status] ?? { color: C.slate, bg: C.slateLight, label: tx.status };
-  const pal = avatarColors(name);
-  return (
-    <View style={tr.row}>
-      <View style={[tr.avatar, { backgroundColor: pal.bg }]}>
-        <Text style={[tr.avatarTxt, { color: pal.text, fontFamily: C.font.serif }]}>
-          {(name[0] ?? "?").toUpperCase()}
-        </Text>
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[tr.name, { fontFamily: C.font.sans }]} numberOfLines={1}>{name}</Text>
-        <View style={tr.meta}>
-          <Text style={[tr.date, { fontFamily: C.font.sans }]}>{fmtDate(tx.createdAt)}</Text>
-          <View style={[tr.pill, { backgroundColor: st.bg }]}>
-            <View style={[tr.dot, { backgroundColor: st.color }]} />
-            <Text style={[tr.pillTxt, { color: st.color, fontFamily: C.font.sans }]}>{st.label}</Text>
-          </View>
-        </View>
-      </View>
-      <View style={{ alignItems: "flex-end" }}>
-        <Text style={[tr.amount, { color: accent, fontFamily: C.font.serif }]}>
-          {isOut ? "−" : "+"}{fmt(displayAmount, displayCurrency)}
-        </Text>
-        <Text style={[tr.currency, { fontFamily: C.font.mono }]}>{displayCurrency}</Text>
-      </View>
-    </View>
-  );
-}
-const tr = StyleSheet.create({
-  row:       { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: "#F0F0F0" },
-  avatar:    { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  avatarTxt: { fontSize: 17, fontWeight: "800" },
-  name:      { fontSize: 14, fontWeight: "600", color: C.ink, marginBottom: 3 },
-  meta:      { flexDirection: "row", alignItems: "center", gap: 7 },
-  date:      { fontSize: 11, color: C.inkSoft, fontWeight: "500" },
-  pill:      { flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: C.r.pill },
-  dot:       { width: 4, height: 4, borderRadius: C.r.pill },
-  pillTxt:   { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-  amount:    { fontSize: 15, fontWeight: "700", letterSpacing: -0.3 },
-  currency:  { fontSize: 9, color: C.inkSoft, fontWeight: "600", marginTop: 2 },
-});
-
-// ─── Main ──────────────────────────────────────────────────
+// ─── Écran ────────────────────────────────────────────────
 export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [txs,         setTxs]         = useState<any[]>([]);
-  const [loadingTxs,  setLoadingTxs]  = useState(true);
-  const [showBalance, setShowBalance] = useState(true);
-  const [eurXofRate,  setEurXofRate]  = useState<number | null>(null);
-
-  const heroAnim    = useRef(new Animated.Value(0)).current;
-  const contentAnim = useRef(new Animated.Value(0)).current;
+  const { P } = useWalletTheme();
+  const [hidden, setHidden] = useState(false);
 
   const firstName = user?.firstName ?? "Client";
+  const fullName  = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
 
-  // ── Données wallet ──
+  // ── Données wallet (identiques à la v9.x) ──
   const rawCountry      = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
   const primaryCurrency = (user as any)?.primaryCurrency || COUNTRY_CURRENCY[rawCountry] || "XOF";
   const wallets         = (user as any)?.wallets ?? [];
@@ -418,7 +184,30 @@ export default function ClientDashboard() {
   const reservedBalance  = toNum(mainWallet?.reservedBalance ?? 0);
   const availableBalance = balance - reservedBalance;
 
-  // ── Stats mensuelles ──
+  // ── Chargement borné : transactions + taux (le solde vient de refreshUser) ──
+  const { data, status, error, refreshing, slow, reload, refresh } = useLoader<DashData>(async () => {
+    const [, rawTxs, rates] = await Promise.allSettled([
+      refreshUser(),
+      api.getTransactions({ limit: 30 }),
+      api.getExchangeRates(),
+    ]);
+    if (rawTxs.status === "rejected") throw rawTxs.reason;
+    const safe = Array.isArray(rawTxs.value) ? rawTxs.value : [];
+    const txs = [...safe]
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10);
+    let eurXofRate: number | null = null;
+    if (rates.status === "fulfilled" && Array.isArray(rates.value)) {
+      const pair = rates.value.find((r: any) => r.pair === "EUR/XOF" || r.pair === "EUR_XOF");
+      if (pair?.rate) eurXofRate = Number(pair.rate);
+    }
+    return { txs, eurXofRate };
+  });
+
+  const txs = data?.txs ?? [];
+  const eurXofRate = data?.eurXofRate ?? null;
+
+  // ── Stats mensuelles (logique inchangée) ──
   const monthTxs  = txs.filter((t) => isThisMonth(t.createdAt));
   const monthSent = monthTxs
     .filter((t) => t.senderId === user?.id && t.status === "PAID")
@@ -430,7 +219,7 @@ export default function ClientDashboard() {
       return acc + (hasConv ? toNum(t.receivedAmount) : toNum(t.amount));
     }, 0);
 
-  // ── Contacts récents ──
+  // ── Contacts récents (logique inchangée) ──
   const recentContacts = (() => {
     const seen = new Set<string>();
     const result: Array<{ name: string; phone?: string; beneficiaryId?: string }> = [];
@@ -441,448 +230,172 @@ export default function ClientDashboard() {
       if (!name || seen.has(name)) continue;
       seen.add(name);
       result.push({ name, phone, beneficiaryId: tx.beneficiaryId });
-      if (result.length >= 4) break;
+      if (result.length >= 6) break;
     }
     return result;
   })();
 
-  // ── loadData ──
-  const loadData = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const [, rawTxs, rates] = await Promise.allSettled([
-        refreshUser(),
-        api.getTransactions(),
-        api.getExchangeRates(),
-      ]);
-      if (rawTxs.status === "fulfilled") {
-        const safe = Array.isArray(rawTxs.value) ? rawTxs.value : [];
-        setTxs(safe.sort((a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        ).slice(0, 10));
-      }
-      if (rates.status === "fulfilled" && Array.isArray(rates.value)) {
-        const pair = rates.value.find((r: any) => r.pair === "EUR/XOF" || r.pair === "EUR_XOF");
-        if (pair?.rate) setEurXofRate(Number(pair.rate));
-      }
-    } catch {}
-    finally { setRefreshing(false); setLoadingTxs(false); }
-  }, [refreshUser]);
-
-  useFocusEffect(useCallback(() => {
-    void loadData();
-    Animated.stagger(60, [
-      Animated.spring(heroAnim,    { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4 }),
-      Animated.spring(contentAnim, { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 3 }),
-    ]).start();
-  }, [loadData]));
-
   const recentTxs = txs.slice(0, 5);
+  const rateLabel = eurXofRate != null
+    ? `1 EUR = ${formatMoney(eurXofRate, "XOF")} XOF · envoi wallet sans frais`
+    : null;
+
+  const topPad = Math.max(insets.top, Platform.OS === "android" ? 28 : 20) + 10;
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.heroFrom} />
-
-      {/* ══════════════════════════════════════════════════
-          HERO — ✅ v9.8 : dégradé sombre, solde intégré (plus de
-          carte flottante séparée)
-      ══════════════════════════════════════════════════ */}
-      <Animated.View style={{
-        opacity: heroAnim,
-        transform: [{ translateY: heroAnim.interpolate({ inputRange: [0, 1], outputRange: [-10, 0] }) }],
-      }}>
+    <View style={{ flex: 1, backgroundColor: N.page }}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: TAB_BAR_SPACE + insets.bottom }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={P.accent} />}
+      >
+        {/* ── En-tête : salutation + notifications ── */}
         <LinearGradient
-          colors={[C.heroFrom, C.heroTo]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[s.hero, { paddingTop: insets.top + 8 }]}
+          colors={[P.bg1, P.bg2, P.bg3]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={[s.hero, { paddingTop: topPad }]}
         >
-          {/* Halo décoratif — élément signature, discret */}
-          <View style={s.heroGlow} pointerEvents="none" />
-
-          {/* Filigrane portefeuille — vert translucide (au lieu du brun,
-              illisible sur fond sombre), à même le hero désormais */}
-          <Ionicons
-            name="wallet"
-            size={80}
-            color="rgba(23,164,95,0.12)"
-            style={s.balanceWatermark}
-            pointerEvents="none"
-          />
-
-          {/* Barre du haut */}
-          <View style={s.topBar}>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.greeting, { fontFamily: C.font.sans }]}>Bon retour 👋</Text>
-              <Text style={[s.heroName, { fontFamily: C.font.sans }]} numberOfLines={1}>{firstName}</Text>
-            </View>
-            <TouchableOpacity style={s.iconBtn} onPress={() => router.push("/(tabs)/notifications")}>
-              <Ionicons name="notifications-outline" size={19} color={C.heroMuted} />
-              <View style={s.notifDot} />
-            </TouchableOpacity>
-            <TouchableOpacity style={s.avatarBtn} onPress={() => router.push("/(tabs)/profile")}>
-              <Text style={[s.avatarTxt, { fontFamily: C.font.sans }]}>{(firstName[0] ?? "C").toUpperCase()}</Text>
-            </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/profile")} activeOpacity={0.85} accessibilityLabel="Mon compte">
+            <Avatar name={fullName || firstName} size={44} />
+          </TouchableOpacity>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={s.hello}>{greeting()}</Text>
+            <Text style={s.name} numberOfLines={1}>{firstName}</Text>
           </View>
-
-          {/* Solde — directement dans le hero */}
-          <View style={s.balHeaderRow}>
-            <Text style={[s.balLabel, { fontFamily: C.font.sans }]}>SOLDE DISPONIBLE</Text>
-            <TouchableOpacity onPress={() => setShowBalance(!showBalance)} hitSlop={8}>
-              <Ionicons
-                name={showBalance ? "eye-outline" : "eye-off-outline"}
-                size={13}
-                color={C.heroMuted}
-              />
-            </TouchableOpacity>
-            <View style={s.onlinePill}>
-              <View style={s.onlineDot} />
-              <Text style={[s.onlineTxt, { fontFamily: C.font.sans }]}>En ligne</Text>
-            </View>
-          </View>
-
-          {/* Devise · Montant sur la même ligne */}
-          <View style={s.balAmountRow}>
-            {showBalance && (
-              <Text style={[s.balCurPrefix, { fontFamily: C.font.sans }]}>{primaryCurrency}</Text>
-            )}
-            <Text
-              style={[s.balAmount, { fontFamily: C.font.serif }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-              minimumFontScale={0.55}
-            >
-              {showBalance ? fmt(availableBalance, primaryCurrency) : "••••••"}
-            </Text>
-          </View>
-
-          {/* Bandeau taux, réutilise eurXofRate déjà fetché par loadData() */}
-          {eurXofRate != null && (
-            <TouchableOpacity
-              style={s.rateRow}
-              onPress={() => router.push("/(tabs)/rates")}
-              activeOpacity={0.7}
-            >
-              <Text style={[s.rateTxt, { fontFamily: C.font.sans }]} numberOfLines={1}>
-                {primaryCurrency} → XOF · {fmt(eurXofRate, "XOF")} · Envoi wallet 0 frais
-              </Text>
-              <Ionicons name="create-outline" size={12} color={C.heroMuted} />
-            </TouchableOpacity>
-          )}
-
-          {reservedBalance > 0 && (
-            <Text style={[s.balReserved, { fontFamily: C.font.sans }]}>
-              Réservé {fmt(reservedBalance, primaryCurrency)} {primaryCurrency}
-            </Text>
-          )}
+          <HeaderIconButton icon="notifications-outline" label="Notifications" onPress={() => router.push("/(tabs)/notifications")} />
         </LinearGradient>
-      </Animated.View>
 
-      {/* ══════════════════════════════════════════════════
-          SHEET — ✅ v9.8 : enveloppe arrondie qui chevauche le hero.
-          Fond C.pageBg inchangé → cartes du body strictement identiques
-          à la v9.7 (mainCta, Actions rapides, Envoi rapide, stats,
-          Transactions récentes).
-      ══════════════════════════════════════════════════ */}
-      <View style={s.sheet}>
-        <ScrollView
-          style={s.scroll}
-          contentContainerStyle={[s.body, { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + 16 }]}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor={C.green} />
-          }
-        >
-          <Animated.View style={[s.bodyInner, {
-            opacity: contentAnim,
-            transform: [{ translateY: contentAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-          }]}>
+        <View style={s.body}>
+          {/* ── Carte de solde, chevauche l'en-tête ── */}
+          <View style={s.balanceWrap}>
+            <BalanceCard
+              currency={primaryCurrency}
+              available={availableBalance}
+              reserved={reservedBalance}
+              hidden={hidden}
+              onToggleHidden={() => setHidden((h) => !h)}
+              holder={fullName}
+              rateLabel={rateLabel}
+              onPressRate={() => router.push("/(tabs)/rates")}
+            />
+          </View>
 
-            {/* ── CTA principal ── */}
-            <TouchableOpacity
-              style={s.mainCta}
-              onPress={() => router.push("/(tabs)/send")}
-              activeOpacity={0.88}
-            >
-              <View style={s.mainCtaLeft}>
-                <View style={s.mainCtaIcon}>
-                  <Ionicons name="paper-plane-outline" size={22} color={C.green} />
-                </View>
-                <View>
-                  <Text style={[s.mainCtaTitle, { fontFamily: C.font.sans }]}>Envoyer de l'argent</Text>
-                  <Text style={[s.mainCtaSub,   { fontFamily: C.font.sans }]}>Wallet · Cash · Virement · 0 frais wallet</Text>
-                </View>
-              </View>
-              <View style={s.mainCtaArrow}>
-                <Ionicons name="arrow-forward" size={16} color={C.white} />
-              </View>
-            </TouchableOpacity>
+          <SlowHint visible={slow} />
 
-            {/* ── Actions rapides (style BNP) ── */}
-            <View style={s.card}>
-              <SectionHeader title="Actions rapides" />
-              <View style={s.actionsRow}>
-                <ActionItem icon="people-outline"  label="Contacts"   onPress={() => router.push("/(tabs)/beneficiaries")} />
-                <ActionItem icon="repeat-outline"  label="Taux"       onPress={() => router.push("/(tabs)/rates")} />
-                <ActionItem icon="qr-code-outline" label="QR Code"    onPress={() => router.push("/(tabs)/qr")} />
-                <ActionItem icon="wallet-outline"  label="Recharger"  onPress={() => router.push("/(tabs)/recharge")} />
-              </View>
+          {/* ── Actions ── */}
+          <Card>
+            <View style={s.actions}>
+              <QuickAction primary icon="paper-plane" label="Envoyer" onPress={() => router.push("/(tabs)/send")} />
+              <QuickAction icon="add-circle-outline" label="Recharger" onPress={() => router.push("/(tabs)/recharge")} />
+              <QuickAction icon="swap-horizontal" label="Taux" onPress={() => router.push("/(tabs)/rates")} />
+              <QuickAction icon="qr-code-outline" label="QR Code" onPress={() => router.push("/(tabs)/qr")} />
             </View>
+          </Card>
 
-            {/* ── Envoi rapide (contacts récents) ── */}
-            {recentContacts.length > 0 && (
-              <View style={s.card}>
-                <SectionHeader title="Envoi rapide" />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 12 }}
-                >
-                  {recentContacts.map((c, i) => (
-                    <ContactChip
-                      key={i}
-                      name={c.name}
-                      phone={c.phone}
-                      onPress={() =>
-                        router.push({
-                          pathname: "/(tabs)/send",
-                          params: c.beneficiaryId
-                            ? { beneficiaryId: c.beneficiaryId }
-                            : { phone: c.phone, name: c.name },
-                        })
-                      }
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-
-            {/* ── Stats du mois ── */}
-            <View style={s.statsRow}>
-              <View style={[s.statCard, { borderLeftColor: C.red }]}>
-                <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↑ ENVOYÉ CE MOIS</Text>
-                <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthSent, primaryCurrency)}</Text>
-                <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
-              </View>
-              <View style={[s.statCard, { borderLeftColor: C.green }]}>
-                <Text style={[s.statLabel, { fontFamily: C.font.sans }]}>↓ REÇU CE MOIS</Text>
-                <Text style={[s.statVal,   { fontFamily: C.font.sans }]}>{fmt(monthRecv, primaryCurrency)}</Text>
-                <Text style={[s.statCur,   { fontFamily: C.font.mono }]}>{primaryCurrency}</Text>
-              </View>
+          {/* ── Envoi rapide ── */}
+          {recentContacts.length > 0 && (
+            <View>
+              <SectionTitle title="Envoi rapide" action="Tous les contacts" onAction={() => router.push("/(tabs)/beneficiaries")} />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 14, paddingVertical: 2 }}>
+                {recentContacts.map((c, i) => (
+                  <TouchableOpacity
+                    key={`${c.name}-${i}`}
+                    style={s.contact}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/(tabs)/send",
+                        params: c.beneficiaryId ? { beneficiaryId: c.beneficiaryId } : { phone: c.phone, name: c.name },
+                      })
+                    }
+                  >
+                    <Avatar name={c.name} size={54} />
+                    <Text style={s.contactName} numberOfLines={1}>{c.name.split(" ")[0]}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
+          )}
 
-            {/* ── Transactions récentes ── */}
-            <View style={s.card}>
-              <SectionHeader
-                title="Transactions récentes"
-                action="Voir tout"
-                onAction={() => router.push("/(tabs)/transactions")}
-              />
-              {loadingTxs ? (
-                <View style={s.emptyBox}>
-                  <ActivityIndicator color={C.green} />
-                </View>
+          {/* ── Ce mois-ci ── */}
+          <View style={s.statsRow}>
+            <View style={[s.stat, { borderColor: "#EEF2F0" }]}>
+              <View style={[s.statIcon, { backgroundColor: "#F2F4F7" }]}><Ionicons name="arrow-up" size={16} color={N.inkSub} /></View>
+              <Text style={s.statLabel}>Envoyé ce mois</Text>
+              <Text style={s.statVal} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {hidden ? "••••" : formatMoney(monthSent, primaryCurrency)}
+              </Text>
+              <Text style={s.statCur}>{primaryCurrency}</Text>
+            </View>
+            <View style={[s.stat, { borderColor: "#EEF2F0" }]}>
+              <View style={[s.statIcon, { backgroundColor: N.okBg }]}><Ionicons name="arrow-down" size={16} color={N.ok} /></View>
+              <Text style={s.statLabel}>Reçu ce mois</Text>
+              <Text style={[s.statVal, { color: N.ok }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
+                {hidden ? "••••" : formatMoney(monthRecv, primaryCurrency)}
+              </Text>
+              <Text style={s.statCur}>{primaryCurrency}</Text>
+            </View>
+          </View>
+
+          {/* ── Activité récente ── */}
+          <View>
+            <SectionTitle title="Activité récente" action="Voir tout" onAction={() => router.push("/(tabs)/transactions")} />
+            <Card style={{ paddingHorizontal: 16, paddingVertical: 4 }} padded={false}>
+              {status === "loading" ? (
+                <SkeletonList rows={3} />
+              ) : status === "error" ? (
+                <ErrorState compact title={error?.title ?? "Chargement impossible"} message={error?.message ?? ""} onRetry={reload} />
               ) : recentTxs.length === 0 ? (
-                <View style={s.emptyBox}>
-                  <Ionicons name="receipt-outline" size={36} color={C.inkSoft} />
-                  <Text style={[s.emptyTxt, { fontFamily: C.font.sans }]}>Aucune transaction récente</Text>
-                </View>
+                <EmptyState
+                  icon="receipt-outline"
+                  title="Aucune transaction"
+                  message="Tes envois et réceptions apparaîtront ici."
+                  actionLabel="Envoyer de l'argent"
+                  onAction={() => router.push("/(tabs)/send")}
+                />
               ) : (
-                recentTxs.map((tx) => <TxRow key={tx.id} tx={tx} userId={user?.id} />)
+                recentTxs.map((tx, i) => (
+                  <TransactionRow
+                    key={tx.id}
+                    tx={tx}
+                    userId={user?.id}
+                    last={i === recentTxs.length - 1}
+                    onPress={() => router.push(`/(tabs)/transactions/${tx.id}`)}
+                  />
+                ))
               )}
-            </View>
-
-            <View style={{ height: 8 }} />
-          </Animated.View>
-        </ScrollView>
-      </View>
-    </SafeAreaView>
+            </Card>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────
 const s = StyleSheet.create({
-
-  // ── Structure ──
-  // ✅ v9.8 — fond aligné sur le 1er ton du dégradé (zone réservée par
-  // SafeAreaView sous l'encoche iOS, doit rester sombre en continuité du hero)
-  safe:   { flex: 1, backgroundColor: C.heroFrom },
-  scroll: { flex: 1, backgroundColor: C.pageBg },
-  body:   { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 16 },
-  bodyInner: { gap: 12 },
-
-  // ── Hero — ✅ v9.8 : plus de backgroundColor ici, géré par
-  // LinearGradient (colors=[heroFrom, heroTo]) sur le composant parent.
-  // paddingHorizontal 2 → 24 (plus de carte flottante à coller au bord,
-  // le texte a besoin de sa propre marge). paddingBottom augmenté pour
-  // laisser la sheet chevaucher proprement le bas du hero.
   hero: {
-    paddingHorizontal: 24,
-    paddingBottom: 44,
-    overflow: "hidden",
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingHorizontal: 20, paddingBottom: 64,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
   },
-  // ✅ v9.8 — halo décoratif discret, coin haut-droit
-  heroGlow: {
-    position: "absolute",
-    top: -60,
-    right: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(23,164,95,0.16)",
-  },
+  hello: { fontFamily: FONT.body, fontSize: 13, color: "rgba(255,255,255,0.75)" },
+  name:  { fontFamily: FONT.display, fontSize: 22, fontWeight: "700", color: "#fff", letterSpacing: -0.3 },
 
-  // Top bar
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 20,
-  },
-  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
-  greeting: {
-    fontSize: 11, fontWeight: "500",
-    color: C.heroMuted,
-    marginBottom: 1,
-  },
-  // ✅ v9.8 — blanc, fontSize 19→21 (le hero a plus de présence désormais)
-  heroName: {
-    fontSize: 21, fontWeight: "800",
-    color: C.white, letterSpacing: -0.3,
-  },
-  // ✅ v9.8 — style "verre" (fond blanc translucide) au lieu du blanc plein,
-  // conçu pour un fond clair
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
-    justifyContent: "center", alignItems: "center",
-  },
-  notifDot: {
-    position: "absolute", top: 7, right: 7,
-    width: 7, height: 7, borderRadius: 4,
-    backgroundColor: "#F59E0B",
-    borderWidth: 1.5, borderColor: C.white,
-  },
-  // ✅ v9.8 — vert plein (le hero a de nouveau sa propre identité de marque)
-  avatarBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.green,
-    justifyContent: "center", alignItems: "center",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 5 },
-      android: { elevation: 2 },
-      default: {},
-    }),
-  },
-  avatarTxt: { fontSize: 14, fontWeight: "800", color: C.white },
+  body: { paddingHorizontal: 16, gap: 18, marginTop: -48 },
+  balanceWrap: {},
 
-  // ✅ v9.8 — repositionné à même le hero (plus de carte séparée derrière)
-  balanceWatermark: {
-    position: "absolute",
-    bottom: 16,
-    right: 12,
-  },
+  actions: { flexDirection: "row", gap: 6 },
 
-  // Balance
-  balHeaderRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
-  balLabel: {
-    fontSize: 10, fontWeight: "700",
-    color: C.heroMuted,
-    letterSpacing: 0.5,
-  },
-  // ✅ v9.8 — vert translucide (était bleu, choisi en v9.4 pour bannir le
-  // vert d'un hero clair — plus nécessaire, le hero est vert-sombre désormais)
-  onlinePill: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    backgroundColor: "rgba(23,164,95,0.15)",
-    borderWidth: 1, borderColor: "rgba(23,164,95,0.35)",
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: C.r.pill,
-    marginLeft: "auto",
-  },
-  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.green },
-  onlineTxt: { fontSize: 10, color: C.green, fontWeight: "700" },
-  balAmountRow: { flexDirection: "row", alignItems: "baseline", gap: 5, marginTop: 3 },
-  // ✅ v9.8 — vert (accent de marque), fontSize 16→17
-  balCurPrefix: { fontSize: 17, fontWeight: "700", color: C.green, letterSpacing: 0.5 },
-  // ✅ v9.8 — blanc (était C.ink), fontSize 32→40 : le solde est
-  // maintenant l'élément central du hero, plus d'impact visuel
-  balAmount: {
-    fontSize: 40, fontWeight: "800",
-    color: C.white, letterSpacing: -0.8,
-  },
-  // Bandeau taux sous le solde
-  rateRow: {
-    flexDirection: "row", alignItems: "center", gap: 6,
-    marginTop: 8,
-  },
-  // ✅ v9.8 — clair sur fond sombre (était C.inkSoft)
-  rateTxt: { fontSize: 12, color: C.heroMuted, fontWeight: "600", flexShrink: 1 },
-  balReserved: { fontSize: 10, color: C.heroMuted, marginTop: 4 },
+  contact: { alignItems: "center", gap: 7, width: 64 },
+  contactName: { fontFamily: FONT.medium, fontSize: 12, fontWeight: "600", color: N.inkSub },
 
-  // ── CTA principal — inchangé (blanc ombré) ──
-  mainCta: {
-    backgroundColor: C.white,
-    borderRadius: C.r.lg,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.10, shadowRadius: 8 },
-      android: { elevation: 4 },
-      default: {},
-    }),
+  statsRow: { flexDirection: "row", gap: 12 },
+  stat: {
+    flex: 1, backgroundColor: "#fff", borderRadius: RADIUS.lg + 2, borderWidth: 1, padding: 14, gap: 3,
+    shadowColor: "#06231C", shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
-  mainCtaLeft:  { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
-  mainCtaIcon: {
-    width: 44, height: 44, borderRadius: 12,
-    backgroundColor: C.greenPale,
-    justifyContent: "center", alignItems: "center",
-  },
-  mainCtaTitle: { fontSize: 15, fontWeight: "800", color: C.ink, marginBottom: 2 },
-  mainCtaSub:   { fontSize: 11, color: C.inkSoft },
-  mainCtaArrow: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: C.green,
-    justifyContent: "center", alignItems: "center",
-  },
-
-  // ── Card générique — inchangé ──
-  card: {
-    backgroundColor: C.white,
-    borderRadius: C.r.lg,
-    padding: 16,
-    ...cardShadow,
-  },
-  actionsRow: { flexDirection: "row", justifyContent: "space-around", paddingTop: 2 },
-
-  // ── Stats — inchangé ──
-  statsRow: { flexDirection: "row", gap: 8 },
-  statCard: {
-    flex: 1, backgroundColor: C.white,
-    borderRadius: C.r.md,
-    padding: 12,
-    borderLeftWidth: 3,
-    ...cardShadow,
-  },
-  statLabel: { fontSize: 8,  fontWeight: "700", color: C.inkSoft, letterSpacing: 0.4, marginBottom: 5 },
-  statVal:   { fontSize: 17, fontWeight: "800", color: C.ink,     letterSpacing: -0.5 },
-  statCur:   { fontSize: 9,  fontWeight: "600", color: C.inkSoft, marginTop: 2 },
-
-  // ── ✅ v9.8 — sheet arrondie qui enveloppe le body et chevauche le hero
-  sheet: {
-    flex: 1,
-    backgroundColor: C.pageBg,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -28,
-    overflow: "hidden",
-  },
-
-  // ── États vide / chargement — inchangé ──
-  emptyBox: { paddingVertical: 28, alignItems: "center", gap: 10 },
-  emptyTxt: { fontSize: 13, color: C.inkSoft, fontWeight: "500" },
+  statIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center", marginBottom: 6 },
+  statLabel: { fontFamily: FONT.body, fontSize: 12, color: N.muted },
+  statVal: { fontFamily: FONT.display, fontSize: 21, fontWeight: "700", color: N.ink, letterSpacing: -0.4 },
+  statCur: { fontFamily: FONT.medium, fontSize: 11, fontWeight: "700", color: N.muted },
 });

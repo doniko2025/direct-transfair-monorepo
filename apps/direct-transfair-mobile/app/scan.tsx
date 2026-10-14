@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/scan.tsx
 // =========================================================
-// QR SCANNER SCREEN v1.0 — Direct Transf'air
+// QR SCANNER SCREEN v1.1 — Direct Transf'air
+// ✅ v1.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
 // ✅ Scanne le QR généré par qr.tsx (directtransfair://pay/{userId})
 // ✅ Résout l'identité via api.getPublicUser(id) — route backend
 //    GET /users/public/:id (accessible à tout utilisateur authentifié,
@@ -28,16 +33,19 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 
+import { themed, brand } from "../components/wallet/brand";
+import { useWalletTheme } from "../components/wallet/walletTheme";
+import { useTenant } from "../providers/TenantProvider";
 const { width: SW } = Dimensions.get("window");
 const DEEP_LINK_SCHEME = "directtransfair";
 
-const T = {
+const T = themed(() => ({
   black:   "#000000",
   white:   "#FFFFFF",
-  ink:     "#0D1F14",
-  inkSub:  "#6B9E85",
-  green:   "#059669",
-  greenLt: "#ECFDF5",
+  ink:     brand("#0D1F14"),
+  inkSub:  brand("#6B9E85"),
+  green:   brand("#059669"),
+  greenLt: brand("#ECFDF5"),
   red:     "#DC2626",
   redLt:   "#FEF2F2",
   amber:   "#D97706",
@@ -48,7 +56,7 @@ const T = {
     serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
   },
-};
+}));
 
 type ResolvedUser = {
   id: string;
@@ -78,6 +86,8 @@ function extractUserId(raw: string): string | null {
 }
 
 export default function ScanScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
@@ -158,7 +168,7 @@ export default function ScanScreen() {
             Accès à la caméra requis
           </Text>
           <Text style={[s.permissionTxt, { fontFamily: T.font.sans }]}>
-            Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement.
+            {branding.name} a besoin de la caméra pour scanner les QR codes de paiement.
           </Text>
           <TouchableOpacity style={s.permissionBtn} onPress={requestPermission}>
             <Text style={[s.permissionBtnTxt, { fontFamily: T.font.sans }]}>Autoriser la caméra</Text>
@@ -268,7 +278,7 @@ export default function ScanScreen() {
               <Text style={[s.sheetMsg, { fontFamily: T.font.sans }]}>
                 {state.kind === "not-found"
                   ? "Ce destinataire n'existe pas ou son compte est inactif."
-                  : "Ce QR code ne provient pas de Direct Transf'air."}
+                  : `Ce QR code ne provient pas de ${branding.name}.`}
               </Text>
               <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
                 <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
@@ -298,7 +308,7 @@ export default function ScanScreen() {
 
 const FRAME_SIZE = Math.min(SW * 0.7, 260);
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.white },
   root: { flex: 1, backgroundColor: T.black },
   overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)" },
@@ -333,7 +343,7 @@ const s = StyleSheet.create({
   foundRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 18 },
   avatarBox: {
     width: 52, height: 52, borderRadius: 16, backgroundColor: T.greenLt,
-    justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: "#A7F3D0",
+    justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: brand("#A7F3D0"),
   },
   avatarTxt: { fontSize: 20, fontWeight: "900", color: T.green },
   foundName: { fontSize: 17, fontWeight: "700", color: T.ink, marginBottom: 2 },
@@ -354,7 +364,7 @@ const s = StyleSheet.create({
   permissionWrap: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, gap: 8 },
   permissionIcon: {
     width: 64, height: 64, borderRadius: 20, backgroundColor: T.greenLt,
-    justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 1.5, borderColor: "#A7F3D0",
+    justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 1.5, borderColor: brand("#A7F3D0"),
   },
   permissionTitle: { fontSize: 19, fontWeight: "700", color: T.ink, textAlign: "center" },
   permissionTxt: { fontSize: 13, color: T.inkSub, fontWeight: "600", textAlign: "center", lineHeight: 19, marginBottom: 12 },
@@ -362,4 +372,4 @@ const s = StyleSheet.create({
   permissionBtnTxt: { color: T.white, fontSize: 14, fontWeight: "800" },
   backLink: { paddingVertical: 14 },
   backLinkTxt: { color: T.inkSub, fontSize: 13, fontWeight: "700" },
-});
+}));

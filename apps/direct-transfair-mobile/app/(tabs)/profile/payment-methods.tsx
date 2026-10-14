@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/payment-methods.tsx
 // =========================================================
-// PAYMENT METHODS v6.3 — Direct Transf'air
+// PAYMENT METHODS v6.4 — Direct Transf'air
+// ✅ v6.4 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
+//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
 // ✅ v6.3 : Affichage du titulaire dans la liste des cartes
 //    PROBLÈME : cardholderName était collecté dans le formulaire
 //    depuis la v6.2 mais jamais affiché dans la liste — seul
@@ -63,17 +69,21 @@ import {
 import { useRouter } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
 import { api } from "../../../services/api"; // ✅ v6.1 — import api.http
 
 // ─── Thème ─────────────────────────────────────────────
-const T = {
-  bg:         "#F0FDF4",
+const T = themed(() => ({
+  bg:         brand("#F0FDF4"),
   surface:    "#FFFFFF",
-  border:     "#D1FAE5",
+  border:     brand("#D1FAE5"),
   text:       "#0F172A",
   textSub:    "#475569",
   textDim:    "#94A3B8",
-  accent:     "#059669",
+  accent:     brand("#059669"),
   accentSoft: "#DCFCE7",
   blue:       "#0284C7",
   blueSoft:   "#E0F2FE",
@@ -88,7 +98,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ─── Config UI des providers (aucune valeur métier en dur) ─
 const WALLET_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
@@ -170,7 +180,7 @@ function CardPreview({
     </LinearGradient>
   );
 }
-const cp = StyleSheet.create({
+const cp = themed(() => StyleSheet.create({
   card: {
     borderRadius: 18, padding: 18, marginBottom: 18,
     height: 160, justifyContent: "space-between",
@@ -186,7 +196,7 @@ const cp = StyleSheet.create({
   bottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
   label:  { color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 3 },
   value:  { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-});
+}));
 
 // ─── Light Modal ───────────────────────────────────────
 function LightModal({ visible, onClose, title, children }: {
@@ -209,17 +219,18 @@ function LightModal({ visible, onClose, title, children }: {
     </Modal>
   );
 }
-const dmS = StyleSheet.create({
+const dmS = themed(() => StyleSheet.create({
   overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.15)", justifyContent: "flex-end" },
   sheet:     { backgroundColor: T.surface, borderTopLeftRadius: T.radius.xl, borderTopRightRadius: T.radius.xl, maxHeight: "88%", borderWidth: 1, borderColor: T.border, paddingBottom: 30 },
   handle:    { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border },
   title:     { color: T.text, fontSize: 18, fontWeight: "700" },
   closeBtn:  { width: 32, height: 32, borderRadius: T.radius.sm, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
-});
+}));
 
 // ─── Main Screen ───────────────────────────────────────
 export default function PaymentMethodsScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
 
   const [cards,         setCards]         = useState<Card[]>([]);
@@ -249,13 +260,13 @@ export default function PaymentMethodsScreen() {
   const fetchMethods = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await api.http.get<{ cards: Card[]; mobileWallets: MobileWallet[] }>(
+      const res = await withTimeout(api.http.get<{ cards: Card[]; mobileWallets: MobileWallet[] }>(
         "/payments/methods"
-      );
+      ), defaultTimeoutMs());
       setCards(res.data.cards ?? []);
       setMobileWallets(res.data.mobileWallets ?? []);
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? "Impossible de charger les moyens de paiement";
+      const msg = e?.response?.data?.message ?? explainLoadError(e).message;
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
     } finally {
       setLoading(false);
@@ -381,20 +392,10 @@ export default function PaymentMethodsScreen() {
 
   return (
     <LinearGradient colors={[T.bg, "rgba(220,252,231,0.5)"]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
 
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={20} color={T.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Moyens de Paiement</Text>
-            <Text style={[s.headerSub, { color: T.accent, fontFamily: T.font.sans }]}>
-              Cartes & Mobile Money
-            </Text>
-          </View>
-        </View>
+        <ScreenHeader compact title="Moyens de Paiement" subtitle="Cartes & Mobile Money" onBack={() => router.back()} />
 
         {loading ? (
           <View style={s.loader}>
@@ -579,7 +580,7 @@ export default function PaymentMethodsScreen() {
               keyboardType="phone-pad" autoFocus
             />
             <TouchableOpacity style={s.confirmBtn} onPress={handleLinkWallet} activeOpacity={0.85} disabled={saving}>
-              <LinearGradient colors={[T.accent, "#10B981"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.confirmGrad}>
+              <LinearGradient colors={[T.accent, brand("#10B981")]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.confirmGrad}>
                 {saving
                   ? <ActivityIndicator color={T.surface} />
                   : <Text style={[s.confirmTxt, { fontFamily: T.font.sans }]}>LIER CE NUMÉRO</Text>
@@ -588,12 +589,12 @@ export default function PaymentMethodsScreen() {
             </TouchableOpacity>
           </View>
         </LightModal>
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 12,
@@ -642,4 +643,4 @@ const s = StyleSheet.create({
   confirmBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 20 },
   confirmGrad:{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 8 },
   confirmTxt: { color: T.surface, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
-});
+}));

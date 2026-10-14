@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
-// PROFILE INDEX v5.5 — Direct Transf'air
+// PROFILE INDEX v6.0 — Direct Transf'air
+// ✅ v6.0 : 🔥 REFONTE TOTALE de l'écran « Compte » : identité en en-tête de marque, jauge de sécurité,
+//    menus groupés en cartes avec icône, intitulé et sous-titre, interrupteur biométrique, déconnexion.
+//    Couleurs issues du thème du tenant (kit components/wallet). Logique INCHANGÉE : biométrie
+//    (disponibilité, activation, désactivation), déconnexion (web + mobile), toutes les routes.
 // ✅ v5.5 : (phase 5) clients wallet uniquement — thèmes et sections des
 //    rôles AGENT / COMPANY_ADMIN / SUPER_ADMIN (dont « ADMINISTRATION »)
 //    supprimés ; ces rôles utilisent le portail web.
@@ -28,17 +32,15 @@
 // ✅ v5.1 conservé intégralement
 // ✅ v5.2 : "Préférences de notifications" branché
 // ✅ v5.3 : Fond blanc pur — plus de dégradé vert/teal
+//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
 // =========================================================
 
-import React, { useRef, useEffect, useState } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, StatusBar, Platform, Alert, Animated,
-} from "react-native";
+import React, { useEffect, useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v5.4 (nouveau)
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../../providers/AuthProvider";
 import {
   isBiometricsAvailable,
@@ -46,155 +48,61 @@ import {
   setBiometricsEnabled,
   promptBiometrics,
 } from "../../../hooks/useBiometrics";
+import { Avatar, Card } from "../../../components/wallet/WalletParts";
+import { FONT, N, RADIUS, TAB_BAR_SPACE, useWalletTheme } from "../../../components/wallet/walletTheme";
 
-// ─── Thème du client ────────────────────────────────────
-const CLIENT_THEME = {
-  accent: "#059669", accentSoft: "#ECFDF5",
-  accentMid: "#A7F3D0",
-  label: "Client", icon: "wallet",
-} as const;
-
-const T = {
-  bg:      "#FFFFFF",   // fond blanc pur (corps de l'écran, sous le hero)
-  pageBg:  "#F8FAFF",   // très légère teinte pour le scroll
-  white:   "#FFFFFF",
-  text:    "#0F172A",
-  textSub: "#475569",
-  textDim: "#94A3B8",
-  border:  "#E8EDF5",
-  red:     "#DC2626",
-  redSoft: "#FEE2E2",
-  // ✅ v5.4 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-  heroFrom: "#0A0F0D",
-  heroTo:   "#123324",
-  heroGlow: "rgba(5,150,105,0.18)",
-  heroMuted:"rgba(255,255,255,0.6)",
-  radius: { sm: 10, md: 14, lg: 20, xl: 28 },
-  font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
-  },
-};
-
-// ─── Menu Row ────────────────────────────────────────────
+import { useTenant } from "../../../providers/TenantProvider";
+import Constants from "expo-constants";
+// ─── Ligne de menu ───────────────────────────────────────
 function MenuRow({
-  icon, label, accent, onPress, rightElement, danger = false, disabled = false,
+  icon, label, hint, onPress, right, last, disabled,
 }: {
-  icon: string; label: string; accent: string; onPress?: () => void;
-  rightElement?: React.ReactNode; danger?: boolean; disabled?: boolean;
+  icon: string; label: string; hint?: string; onPress?: () => void;
+  right?: React.ReactNode; last?: boolean; disabled?: boolean;
 }) {
-  const scale = useRef(new Animated.Value(1)).current;
-  const color = danger ? T.red : accent;
+  const { P } = useWalletTheme();
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        style={[mrS.row, { borderBottomColor: T.border }]}
-        onPress={onPress}
-        disabled={disabled || !onPress}
-        activeOpacity={1}
-        onPressIn={() => Animated.spring(scale, { toValue: 0.985, useNativeDriver: true, speed: 50 }).start()}
-        onPressOut={() => Animated.spring(scale, { toValue: 1,     useNativeDriver: true, speed: 30 }).start()}
-      >
-        {/* Icône */}
-        <View style={[mrS.iconBox, { backgroundColor: danger ? "#FEE2E2" : `${color}12` }]}>
-          <Ionicons name={icon as any} size={18} color={color} />
-        </View>
-
-        {/* Label */}
-        <Text style={[mrS.label, { fontFamily: T.font.sans, color: danger ? T.red : T.text }]}>
-          {label}
-        </Text>
-
-        {/* Right element ou chevron */}
-        {rightElement ?? (
-          <View style={[mrS.chevronBox, { backgroundColor: `${color}10` }]}>
-            <Ionicons name="chevron-forward" size={13} color={color} />
-          </View>
-        )}
-      </TouchableOpacity>
-    </Animated.View>
+    <TouchableOpacity
+      style={[s.row, !last && s.divider, disabled && { opacity: 0.55 }]}
+      onPress={onPress}
+      disabled={disabled || !onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[s.rowIcon, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
+        <Ionicons name={icon as any} size={19} color={P.accent} />
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={s.rowLabel} numberOfLines={1}>{label}</Text>
+        {!!hint && <Text style={s.rowHint} numberOfLines={1}>{hint}</Text>}
+      </View>
+      {right ?? <Ionicons name="chevron-forward" size={18} color={N.muted} />}
+    </TouchableOpacity>
   );
 }
 
-const mrS = StyleSheet.create({
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    paddingVertical: 15, borderBottomWidth: 1,
-  },
-  iconBox:    { width: 38, height: 38, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  label:      { flex: 1, fontSize: 14, fontWeight: "600" },
-  chevronBox: { width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-});
-
-// ─── Section ─────────────────────────────────────────────
-function Section({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
+function Switch({ on, onToggle, color }: { on: boolean; onToggle: () => void; color: string }) {
   return (
-    <View style={{ marginBottom: 20 }}>
-      {/* Titre de section */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <View style={[sS.dot, { backgroundColor: accent }]} />
-        <Text style={[sS.title, { fontFamily: T.font.sans }]}>{title}</Text>
-      </View>
-
-      {/* Carte blanche avec bande colorée gauche + ombre */}
-      <View style={sS.card}>
-        <View style={[sS.accentBar, { backgroundColor: accent }]} />
-        <View style={sS.inner}>{children}</View>
-      </View>
-    </View>
-  );
-}
-
-const sS = StyleSheet.create({
-  dot:   { width: 6, height: 6, borderRadius: 99 },
-  title: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-  card: {
-    backgroundColor: T.white,
-    borderRadius:    T.radius.lg,
-    borderWidth:     1,
-    borderColor:     T.border,
-    flexDirection:   "row",
-    overflow:        "hidden",
-    shadowColor:     "#64748B",
-    shadowOffset:    { width: 0, height: 5 },
-    shadowOpacity:   0.10,
-    shadowRadius:    16,
-    elevation:       6,
-  },
-  accentBar: { width: 4 },
-  inner:     { flex: 1, paddingHorizontal: 14 },
-});
-
-// ─── BiometricToggle ─────────────────────────────────────
-function BiometricToggle({ enabled, onToggle, accent }: {
-  enabled: boolean; onToggle: () => void; accent: string;
-}) {
-  return (
-    <TouchableOpacity onPress={onToggle} activeOpacity={0.85} style={btS.row}>
-      <View style={[btS.track, enabled && { backgroundColor: accent }]}>
-        <View style={[btS.knob, enabled && btS.knobOn]} />
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.85} accessibilityRole="switch" accessibilityState={{ checked: on }}>
+      <View style={[s.track, on && { backgroundColor: color }]}>
+        <View style={[s.knob, on && { alignSelf: "flex-end" }]} />
       </View>
     </TouchableOpacity>
   );
 }
 
-const btS = StyleSheet.create({
-  row:   { justifyContent: "center", alignItems: "center" },
-  track: { width: 46, height: 26, borderRadius: 99, backgroundColor: "#CBD5E1", justifyContent: "center", padding: 3 },
-  knob:  { width: 20, height: 20, borderRadius: 99, backgroundColor: T.white, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 3, elevation: 2 },
-  knobOn:{ alignSelf: "flex-end" },
-});
+function GroupTitle({ children }: { children: string }) {
+  return <Text style={s.group}>{children}</Text>;
+}
 
-// ─── Main Screen ─────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
-  const insets = useSafeAreaInsets(); // ✅ v5.4 (nouveau)
+  const insets = useSafeAreaInsets();
+  const { P } = useWalletTheme();
+  const { branding } = useTenant();
+  const appVersion = Constants.expoConfig?.version ?? "";
 
-  const theme = CLIENT_THEME;
-
-  // ─── Biométrie ───────────────────────────────────────
+  // ─── Biométrie (logique inchangée) ─────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
   const [bioAvailable, setBioAvailableState] = useState(false);
 
@@ -230,17 +138,11 @@ export default function ProfileScreen() {
     }
   };
 
-  const displayName = user?.firstName
-    ? `${user.firstName} ${user.lastName ?? ""}`.trim()
-    : "Utilisateur";
-
-  const initials = user?.firstName
-    ? `${user.firstName[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase()
-    : "DT";
+  const displayName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Utilisateur";
 
   const handleLogout = () => {
     if (Platform.OS === "web") {
-      if (window.confirm("Fermer votre session Direct Transf'air ?")) void logout();
+      if (window.confirm(`Fermer votre session ${branding.name} ?`)) void logout();
       return;
     }
     Alert.alert(
@@ -256,177 +158,136 @@ export default function ProfileScreen() {
             router.replace("/(auth)/login");
           },
         },
-      ]
+      ],
     );
   };
 
+  const topPad = Math.max(insets.top, Platform.OS === "android" ? 28 : 20) + 14;
+  const score = bioEnabled ? 100 : 85;
+
   return (
-    // ✅ v5.4 : fond sombre (zone sous l'encoche) — le ScrollView plus
-    // bas repeint T.bg (blanc) par-dessus dès le début de son contenu.
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.heroFrom }}>
-      <StatusBar barStyle="light-content" backgroundColor={T.heroFrom} />
-
-      {/* ✅ v5.4 : hero plein écran, remplace l'ancienne "hero card"
-          blanche qui vivait dans le scroll (avatar/nom/rôle déplacés ici) */}
-      <LinearGradient
-        colors={[T.heroFrom, T.heroTo]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={[s.hero, { paddingTop: insets.top + 20 }]}
-      >
-        <View style={s.heroGlow} pointerEvents="none" />
-        <View style={s.heroBody}>
-          <View style={s.avatarBox}>
-            <Text style={[s.initials, { fontFamily: T.font.display }]}>{initials}</Text>
+    <View style={{ flex: 1, backgroundColor: N.page }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: TAB_BAR_SPACE + insets.bottom }}>
+        {/* ── Identité ── */}
+        <LinearGradient
+          colors={[P.bg1, P.bg2, P.bg3]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={[s.hero, { paddingTop: topPad }]}
+        >
+          <Avatar name={displayName} size={76} />
+          <Text style={s.heroName} numberOfLines={1}>{displayName}</Text>
+          {!!user?.email && <Text style={s.heroMail} numberOfLines={1}>{user.email}</Text>}
+          <View style={s.idPill}>
+            <Ionicons name="finger-print-outline" size={13} color="#fff" />
+            <Text style={s.idTxt}>ID {user?.id?.slice(0, 8).toUpperCase() ?? "—"}</Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.name, { fontFamily: T.font.display }]}>{displayName}</Text>
-            <Text style={[s.userId, { fontFamily: T.font.mono }]}>
-              {user?.id?.slice(0, 12).toUpperCase() ?? "—"}
-            </Text>
-            <View style={s.rolePill}>
-              <Ionicons name={theme.icon as any} size={11} color="#FFFFFF" />
-              <Text style={[s.roleLabel, { fontFamily: T.font.sans }]}>
-                {theme.label}
-              </Text>
+        </LinearGradient>
+
+        <View style={s.body}>
+          {/* ── Sécurité du compte ── */}
+          <Card>
+            <View style={s.secTop}>
+              <View style={[s.secIcon, { backgroundColor: P.tint }]}>
+                <Ionicons name="shield-checkmark" size={20} color={P.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.secTitle}>Sécurité du compte</Text>
+                <Text style={s.secHint}>
+                  {bioEnabled ? "Compte entièrement sécurisé" : "Active la biométrie pour atteindre 100 %"}
+                </Text>
+              </View>
+              <Text style={[s.secScore, { color: P.accent }]}>{score}%</Text>
             </View>
+            <View style={[s.bar, { backgroundColor: P.tint }]}>
+              <View style={[s.barFill, { width: `${score}%`, backgroundColor: P.action }]} />
+            </View>
+          </Card>
+
+          {/* ── Mon compte ── */}
+          <View>
+            <GroupTitle>Mon compte</GroupTitle>
+            <Card padded={false} style={{ paddingHorizontal: 16 }}>
+              <MenuRow icon="person-outline" label="Informations personnelles" hint="Identité, coordonnées" onPress={() => router.push("/(tabs)/profile/personal-info")} />
+              <MenuRow icon="card-outline" label="Moyens de paiement" hint="Cartes et comptes enregistrés" onPress={() => router.push("/(tabs)/profile/payment-methods")} />
+              <MenuRow icon="speedometer-outline" label="Mes plafonds de transfert" hint="Limites d'envoi" onPress={() => router.push("/(tabs)/profile/limits")} />
+              <MenuRow icon="location-outline" label={`Points ${branding.name}`} hint="Où déposer et retirer" onPress={() => router.push("/(tabs)/profile/locations")} last />
+            </Card>
           </View>
+
+          {/* ── Sécurité & appareils ── */}
+          <View>
+            <GroupTitle>Sécurité et appareils</GroupTitle>
+            <Card padded={false} style={{ paddingHorizontal: 16 }}>
+              <MenuRow icon="phone-portrait-outline" label="Appareils connectés" hint="Gérer les appareils de confiance" onPress={() => router.push("/(tabs)/profile/devices")} />
+              <MenuRow icon="keypad-outline" label="Modifier mon code secret" onPress={() => router.push("/(tabs)/profile/security")} />
+              <MenuRow
+                icon="finger-print-outline"
+                label={bioAvailable ? "Connexion biométrique" : "Biométrie non disponible"}
+                hint={bioAvailable ? "Face ID / empreinte" : "Aucune empreinte enregistrée sur cet appareil"}
+                disabled={!bioAvailable}
+                onPress={handleToggleBio}
+                right={<Switch on={bioEnabled} onToggle={handleToggleBio} color={P.action} />}
+                last
+              />
+            </Card>
+          </View>
+
+          {/* ── Session ── */}
+          <TouchableOpacity style={s.logout} onPress={handleLogout} activeOpacity={0.85}>
+            <Ionicons name="log-out-outline" size={19} color={N.danger} />
+            <Text style={s.logoutTxt}>Fermer la session</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.delete} activeOpacity={0.7}>
+            <Text style={s.deleteTxt}>Supprimer mon compte</Text>
+          </TouchableOpacity>
+
+          <Text style={s.version}>{branding.name}{appVersion ? ` · v${appVersion}` : ""}</Text>
         </View>
-      </LinearGradient>
-
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        style={{ backgroundColor: T.bg }}
-      >
-        {/* ── Security gauge ── */}
-        <View style={[s.secCard, { borderColor: `${theme.accent}30` }]}>
-          <View style={s.secTop}>
-            <Ionicons name="shield-checkmark" size={16} color={theme.accent} />
-            <Text style={[s.secTitle, { fontFamily: T.font.sans }]}>Sécurité du compte</Text>
-            <Text style={[s.secScore, { color: theme.accent, fontFamily: T.font.display }]}>
-              {bioEnabled ? "100%" : "85%"}
-            </Text>
-          </View>
-          <View style={[s.secBarBg, { backgroundColor: `${theme.accent}12` }]}>
-            <View style={[s.secBarFill, { width: bioEnabled ? "100%" : "85%", backgroundColor: theme.accent }]} />
-          </View>
-          <Text style={[s.secHint, { fontFamily: T.font.sans }]}>
-            {bioEnabled ? "🔒 Compte entièrement sécurisé" : "Activez la biométrie pour atteindre 100%"}
-          </Text>
-        </View>
-
-        {/* ── MON COMPTE ── */}
-        <Section title="MON COMPTE" accent={theme.accent}>
-          <MenuRow icon="person-outline" label="Informations personnelles" accent={theme.accent} onPress={() => router.push("/(tabs)/profile/personal-info")} />
-          <MenuRow icon="card-outline"        label="Moyens de paiement"         accent={theme.accent} onPress={() => router.push("/(tabs)/profile/payment-methods")} />
-          <MenuRow icon="speedometer-outline" label="Mes plafonds de transfert"  accent={theme.accent} onPress={() => router.push("/(tabs)/profile/limits")} />
-          <MenuRow icon="location-outline"    label="Points Direct Transf'air"   accent={theme.accent} onPress={() => router.push("/(tabs)/profile/locations")} />
-        </Section>
-
-        {/* ── SÉCURITÉ & APPAREILS ── */}
-        <Section title="SÉCURITÉ & APPAREILS" accent={theme.accent}>
-          <MenuRow icon="phone-portrait-outline" label="Appareils connectés"        accent={theme.accent} onPress={() => router.push("/(tabs)/profile/devices")} />
-          <MenuRow icon="keypad-outline"         label="Modifier mon code secret"   accent={theme.accent} onPress={() => router.push("/(tabs)/profile/security")} />
-          <MenuRow
-            icon={bioAvailable ? "finger-print-outline" : "finger-print-outline"}
-            label={bioAvailable ? "Biométrie (Face ID / Touch ID)" : "Biométrie (non disponible)"}
-            accent={bioAvailable ? theme.accent : T.textDim}
-            disabled={!bioAvailable}
-            rightElement={
-              bioAvailable ? (
-                <BiometricToggle enabled={bioEnabled} onToggle={handleToggleBio} accent={theme.accent} />
-              ) : (
-                <View style={{ width: 46, height: 26, borderRadius: 99, backgroundColor: "#E2E8F0", justifyContent: "center", padding: 3 }}>
-                  <View style={{ width: 20, height: 20, borderRadius: 99, backgroundColor: T.white }} />
-                </View>
-              )
-            }
-          />
-        </Section>
-
-        {/* ── Déconnexion ── */}
-        <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.85}>
-          <Ionicons name="power-outline" size={18} color={T.red} />
-          <Text style={[s.logoutTxt, { fontFamily: T.font.sans }]}>Fermer la session</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={s.deleteBtn} activeOpacity={0.7}>
-          <Ionicons name="warning-outline" size={14} color={T.textDim} />
-          <Text style={[s.deleteTxt, { fontFamily: T.font.sans }]}>Supprimer mon compte</Text>
-        </TouchableOpacity>
-
-        <Text style={[s.version, { fontFamily: T.font.mono }]}>
-          Direct Transf'air v5.0 · Build 501
-        </Text>
-        <View style={{ height: 110 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────
 const s = StyleSheet.create({
-  // ✅ v5.4 (nouveau) — hero plein écran, remplace l'ancienne hero card
   hero: {
-    paddingHorizontal: 20,
-    paddingBottom: 26,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    overflow: "hidden",
+    alignItems: "center", paddingHorizontal: 20, paddingBottom: 56, gap: 6,
+    borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
   },
-  heroGlow: {
-    position: "absolute", top: -60, right: -60,
-    width: 200, height: 200, borderRadius: 100,
-    backgroundColor: T.heroGlow,
+  heroName: { fontFamily: FONT.display, fontSize: 24, fontWeight: "700", color: "#fff", marginTop: 10 },
+  heroMail: { fontFamily: FONT.body, fontSize: 13.5, color: "rgba(255,255,255,0.75)" },
+  idPill: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8,
+    backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6,
   },
-  heroBody: { flexDirection: "row", alignItems: "center", gap: 16 },
+  idTxt: { fontFamily: FONT.medium, fontSize: 12, fontWeight: "700", color: "#fff", letterSpacing: 0.8 },
 
-  avatarBox: {
-    width: 60, height: 60, borderRadius: T.radius.lg,
-    justifyContent: "center", alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.14)",
-    borderWidth: 1.5, borderColor: "rgba(255,255,255,0.25)",
-  },
-  initials: { fontSize: 24, fontWeight: "900", color: "#FFFFFF" },
-  name:     { color: "#FFFFFF", fontSize: 20, fontWeight: "700", marginBottom: 3 },
-  userId:   { color: T.heroMuted, fontSize: 10, fontWeight: "700", marginBottom: 8, letterSpacing: 1 },
-  rolePill: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: T.radius.sm, borderWidth: 1,
-    backgroundColor: "rgba(255,255,255,0.14)", borderColor: "rgba(255,255,255,0.25)",
-  },
-  roleLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5, color: "#FFFFFF" },
+  body: { paddingHorizontal: 16, gap: 18, marginTop: -30 },
 
-  scroll: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 20,
-  },
+  secTop: { flexDirection: "row", alignItems: "center", gap: 12 },
+  secIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  secTitle: { fontFamily: FONT.medium, fontSize: 15, fontWeight: "700", color: N.ink },
+  secHint: { fontFamily: FONT.body, fontSize: 12.5, color: N.muted, marginTop: 2 },
+  secScore: { fontFamily: FONT.display, fontSize: 22, fontWeight: "700" },
+  bar: { height: 8, borderRadius: 99, marginTop: 14, overflow: "hidden" },
+  barFill: { height: 8, borderRadius: 99 },
 
-  secCard: {
-    backgroundColor: T.white, borderRadius: T.radius.lg,
-    padding: 16, marginBottom: 20, borderWidth: 1.5,
-    shadowColor: "#64748B", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 3,
-  },
-  secTop:     { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  secTitle:   { flex: 1, fontSize: 13, fontWeight: "700", color: T.text },
-  secScore:   { fontSize: 18, fontWeight: "900" },
-  secBarBg:   { height: 5, borderRadius: 99, marginBottom: 10, overflow: "hidden" },
-  secBarFill: { height: 5, borderRadius: 99 },
-  secHint:    { color: T.textDim, fontSize: 11, fontWeight: "600" },
+  group: { fontFamily: FONT.medium, fontSize: 13, fontWeight: "700", color: N.muted, marginBottom: 8, marginLeft: 4, textTransform: "uppercase", letterSpacing: 0.8 },
+  row: { flexDirection: "row", alignItems: "center", gap: 13, paddingVertical: 13 },
+  divider: { borderBottomWidth: 1, borderBottomColor: "#EEF2F0" },
+  rowIcon: { width: 40, height: 40, borderRadius: 13, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  rowLabel: { fontFamily: FONT.medium, fontSize: 14.5, fontWeight: "700", color: N.ink },
+  rowHint: { fontFamily: FONT.body, fontSize: 12, color: N.muted, marginTop: 2 },
 
-  logoutBtn: {
+  track: { width: 48, height: 28, borderRadius: 99, backgroundColor: "#D0D5DD", justifyContent: "center", padding: 3 },
+  knob: { width: 22, height: 22, borderRadius: 99, backgroundColor: "#fff", shadowColor: "#000", shadowOpacity: 0.18, shadowRadius: 3, elevation: 2 },
+
+  logout: {
+    height: 52, borderRadius: RADIUS.md, backgroundColor: N.dangerBg, borderWidth: 1, borderColor: N.dangerBd,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: T.redSoft, borderRadius: T.radius.md,
-    paddingVertical: 16, marginTop: 8, marginBottom: 12,
-    borderWidth: 1.5, borderColor: "#FECACA",
-    shadowColor: "#DC2626", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3,
   },
-  logoutTxt: { color: T.red, fontWeight: "800", fontSize: 14, letterSpacing: 0.5 },
-
-  deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, marginBottom: 20 },
-  deleteTxt: { color: T.textDim, fontSize: 12, fontWeight: "600" },
-
-  version: { textAlign: "center", color: T.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 0.8 },
+  logoutTxt: { fontFamily: FONT.medium, fontSize: 15, fontWeight: "700", color: N.danger },
+  delete: { alignItems: "center", paddingVertical: 4 },
+  deleteTxt: { fontFamily: FONT.body, fontSize: 13, color: N.muted, textDecorationLine: "underline" },
+  version: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted, textAlign: "center" },
 });

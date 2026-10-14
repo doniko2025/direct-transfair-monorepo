@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/devices.tsx
 // =========================================================
-// DEVICES v6.0 — Direct Transf'air
+// DEVICES v6.1 — Direct Transf'air
+// ✅ v6.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
+//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
 // ✅ v6.0 : Zéro donnée en dur — tout vient de GET /auth/devices
 //           api.getDevices()  → liste les vrais appareils
 //           api.revokeDevice() → révoque un appareil
@@ -20,15 +26,19 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../../../providers/AuthProvider";
 import { api } from "../../../services/api";
 
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
 // ─── Thème par rôle ──────────────────────────────────────
-const ROLE_THEMES = {
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { bg: "#F8FAFF", accent: "#1D4ED8", accentSoft: "#EFF6FF" },
-  COMPANY_ADMIN: { bg: "#F0FDFA", accent: "#0D9488", accentSoft: "#CCFBF1" },
+  COMPANY_ADMIN: { bg: brand("#F0FDFA"), accent: brand("#0D9488"), accentSoft: brand("#CCFBF1") },
   AGENT:         { bg: "#FFFBEB", accent: "#D97706", accentSoft: "#FEF3C7" },
-  USER:          { bg: "#F0FDF4", accent: "#059669", accentSoft: "#DCFCE7" },
-} as const;
+  USER:          { bg: brand("#F0FDF4"), accent: brand("#059669"), accentSoft: brand("#DCFCE7") },
+} as const));
 
-const T = {
+const T = themed(() => ({
   surface:   "#FFFFFF",
   text:      "#0F172A",
   textSub:   "#475569",
@@ -46,7 +56,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ─── Icône selon plateforme ───────────────────────────────
 function platformIcon(platform?: string): string {
@@ -127,7 +137,7 @@ function DeviceCard({ device, isCurrent, onRevoke, revoking }: {
     </View>
   );
 }
-const dcS = StyleSheet.create({
+const dcS = themed(() => StyleSheet.create({
   card:       { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: T.surface, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
   iconBox:    { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center" },
   name:       { color: T.text, fontSize: 14, fontWeight: "700", marginBottom: 2 },
@@ -138,10 +148,11 @@ const dcS = StyleSheet.create({
   activeTxt:  { color: T.green, fontSize: 10, fontWeight: "900" },
   revokeBtn:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, backgroundColor: "#FEE2E2", borderWidth: 1, borderColor: "#FECACA", minWidth: 96, alignItems: "center" },
   revokeTxt:  { color: T.red, fontSize: 11, fontWeight: "800" },
-});
+}));
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function DevicesScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const { user } = useAuth();
 
@@ -168,11 +179,11 @@ export default function DevicesScreen() {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      const data = await api.getDevices();
+      const data = await withTimeout(api.getDevices(), defaultTimeoutMs());
       setDevices(data);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Impossible de charger les appareils";
+      const raw = e?.response?.data?.message ?? explainLoadError(e).message;
       setError(Array.isArray(raw) ? raw[0] : String(raw));
     } finally {
       if (mode === "refresh") setRefreshing(false); else setLoading(false);
@@ -226,24 +237,14 @@ export default function DevicesScreen() {
 
   return (
     <LinearGradient colors={[theme.bg, "rgba(255,255,255,0.3)"]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
         {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-            <Ionicons name="arrow-back" size={20} color={T.text} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Appareils Connectés</Text>
-            <Text style={[s.headerSub, { color: theme.accent, fontFamily: T.font.sans }]}>
-              {loading
+        <ScreenHeader compact title="Appareils Connectés" subtitle={loading
                 ? "Chargement…"
                 : `${devices.length} appareil${devices.length > 1 ? "s" : ""}${otherDevices.length > 0 ? ` · ${otherDevices.length} autre${otherDevices.length > 1 ? "s" : ""}` : ""}`
-              }
-            </Text>
-          </View>
-        </View>
+              } onBack={() => router.back()} />
 
         {/* Chargement */}
         {loading ? (
@@ -328,12 +329,12 @@ export default function DevicesScreen() {
             <View style={{ height: 80 }} />
           </Animated.ScrollView>
         )}
-      </SafeAreaView>
+      </View>
     </LinearGradient>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 12,
@@ -355,4 +356,4 @@ const s = StyleSheet.create({
   sectionRow:   { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
   sectionDot:   { width: 6, height: 6, borderRadius: 99 },
   sectionLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-});
+}));

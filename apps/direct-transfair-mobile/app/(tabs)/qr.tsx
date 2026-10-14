@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/qr.tsx
 // =========================================================
-// QR CODE SCREEN v5.2 — Direct Transf'air
+// QR CODE SCREEN v5.3 — Direct Transf'air
+// ✅ v5.3 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
 // ✅ v5.1 : fond blanc neutre #FAFAFA sur tous les rôles
 //    - pageBg unifié (plus de teinte verte/ambrée par rôle)
 //    - Héro rôle coloré conservé (identité visuelle forte)
@@ -37,18 +42,21 @@ import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../../providers/AuthProvider";
 
+import { themed, brand } from "../../components/wallet/brand";
+import { useWalletTheme } from "../../components/wallet/walletTheme";
+import { useTenant } from "../../providers/TenantProvider";
 // ✅ v5.2 — Scheme déclaré dans app.json ("scheme": "directtransfair")
 const DEEP_LINK_SCHEME = "directtransfair";
 
 // ─── Thèmes par rôle — pageBg unifié blanc neutre ────────
-const ROLE_THEMES = {
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   {
     primary: "#B45309", light: "#FFFBEB", pale: "#FEF3C7", border: "#FDE68A",
     pageBg: "#FAFAFA",  // ← unifié (était #FFFDF5)
     heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
   COMPANY_ADMIN: {
-    primary: "#059669", light: "#F0FDF4", pale: "#ECFDF5", border: "#A7F3D0",
+    primary: brand("#059669"), light: brand("#F0FDF4"), pale: brand("#ECFDF5"), border: brand("#A7F3D0"),
     pageBg: "#FAFAFA",  // ← unifié (était #F0FDF8)
     heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
@@ -58,17 +66,17 @@ const ROLE_THEMES = {
     heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
   USER: {
-    primary: "#059669", light: "#F0FDF4", pale: "#ECFDF5", border: "#A7F3D0",
+    primary: brand("#059669"), light: brand("#F0FDF4"), pale: brand("#ECFDF5"), border: brand("#A7F3D0"),
     pageBg: "#FAFAFA",  // ← unifié (était #F0FDF8)
     heroGlass: "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   },
-} as const;
+} as const));
 
-const BASE = {
+const BASE = themed(() => ({
   white:      "#FFFFFF",
-  ink:        "#0D1F14",
-  inkMid:     "#1F5C3A",
-  inkSoft:    "#6B9E85",
+  ink:        brand("#0D1F14"),
+  inkMid:     brand("#1F5C3A"),
+  inkSoft:    brand("#6B9E85"),
   cardBorder: "#E5E5EA",  // ← neutre (était #E2F0E8)
   slateBg:    "#F5F5F5",  // ← neutre (était #F8FAF9)
 
@@ -78,7 +86,7 @@ const BASE = {
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:  Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
   },
-};
+}));
 
 // ─── QR Frame — ✅ v5.2 : vrai QR scannable ───────────────
 function QRFrame({ accent, value }: { accent: string; value: string | null }) {
@@ -131,13 +139,15 @@ function ActionBtn({ icon, label, accent, bg, onPress, filled = false }: {
     </Animated.View>
   );
 }
-const ab = StyleSheet.create({
+const ab = themed(() => StyleSheet.create({
   btn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 16, borderRadius: BASE.r.md },
   lbl: { fontSize: 13, fontWeight: "800" },
-});
+}));
 
 // ─── Main ────────────────────────────────────────────────
 export default function QRCodeScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { branding } = useTenant();
   const router  = useRouter();
   const { user } = useAuth();
 
@@ -171,7 +181,7 @@ export default function QRCodeScreen() {
     if (!qrValue) return;
     try {
       await Share.share({
-        message: `Envoyez-moi de l'argent sur Direct Transf'air 💸\n\n${displayName}\n${qrValue}`,
+        message: `Envoyez-moi de l'argent sur ${branding.name} 💸\n\n${displayName}\n${qrValue}`,
       });
     } catch { /* noop */ }
   };
@@ -214,7 +224,7 @@ export default function QRCodeScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[s.userName, { fontFamily: BASE.font.serif }]}>{displayName}</Text>
               <Text style={[s.userContact, { fontFamily: BASE.font.sans }]}>
-                {user?.phone ?? user?.email ?? "Direct Transf'air"}
+                {user?.phone ?? user?.email ?? branding.name}
               </Text>
               <View style={[s.idPill, { backgroundColor: theme.pale, borderColor: theme.border }]}>
                 <Text style={[s.idTxt, { color: theme.primary, fontFamily: BASE.font.mono }]}>#{userId}</Text>
@@ -231,7 +241,7 @@ export default function QRCodeScreen() {
             <View style={[s.qrActiveBadge, { backgroundColor: theme.pale, borderColor: theme.border }]}>
               <View style={[s.qrActiveDot, { backgroundColor: theme.primary }]} />
               <Text style={[s.qrActiveTxt, { color: theme.primary, fontFamily: BASE.font.sans }]}>
-                QR ACTIF · DIRECT TRANSF'AIR
+                QR ACTIF · {branding.name.toUpperCase()}
               </Text>
             </View>
           </View>
@@ -281,7 +291,7 @@ export default function QRCodeScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1 },
 
   hero: {
@@ -334,4 +344,4 @@ const s = StyleSheet.create({
   actionsRow: { flexDirection: "row", gap: 12, width: "100%", maxWidth: 400, marginBottom: 14 },
   secNote:    { flexDirection: "row", alignItems: "center", gap: 6 },
   secTxt:     { fontSize: 11, fontWeight: "600" },
-});
+}));

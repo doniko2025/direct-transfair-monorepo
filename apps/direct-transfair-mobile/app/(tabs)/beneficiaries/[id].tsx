@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // =========================================================
-// BENEFICIARY DETAIL v5.2 — Direct Transf'air
+// BENEFICIARY DETAIL v5.3 — Direct Transf'air
+// ✅ v5.3 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    Chargement BORNÉ (20 s) : état d'erreur + « Réessayer » (plus de « introuvable » sur une simple erreur réseau).
 // ✅ v5.2 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (load, hydrateForm, onSave, onDelete, goSendWallet/Cash : tout
@@ -42,27 +47,31 @@ import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
 import { citiesByCountry } from "../../../data/cities";
 
-const C = {
-  green:       "#059669",
-  greenDark:   "#047857",
-  greenLight:  "#F0FDF4",
-  greenBorder: "#A7F3D0",
-  greenPale:   "#ECFDF5",
+import { themed, brand, brandRgba } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../../components/wallet/useLoader";
+import { ErrorState } from "../../../components/wallet/StateViews";
+const C = themed(() => ({
+  green:       brand("#059669"),
+  greenDark:   brand("#047857"),
+  greenLight:  brand("#F0FDF4"),
+  greenBorder: brand("#A7F3D0"),
+  greenPale:   brand("#ECFDF5"),
   heroGlass:   "rgba(255,255,255,0.14)",
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.70)",
   // ✅ v5.2 — retinté en vert (était blanc, token hérité inutilisé)
-  heroGlow:    "rgba(5,150,105,0.18)",
+  heroGlow:    brandRgba("rgba(5,150,105,0.18)"),
   // ✅ v5.2 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-  heroFrom:    "#0A0F0D",
-  heroTo:      "#123324",
+  heroFrom:    brand("#0A0F0D"),
+  heroTo:      brand("#123324"),
   pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
   cardBorder:  "#E5E5EA",   // ← était #D1FAE5
   inputBg:     "#F8F8F8",   // ← était #F8FFFC
-  ink:         "#0D2B1F",
-  inkMid:      "#1F5C3A",
-  inkSoft:     "#6B9E85",
+  ink:         brand("#0D2B1F"),
+  inkMid:      brand("#1F5C3A"),
+  inkSoft:     brand("#6B9E85"),
   red:         "#EF4444",
   redBg:       "#FEF2F2",
   redBorder:   "#FECACA",
@@ -76,7 +85,7 @@ const C = {
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 function getIdParam(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.id;
@@ -114,12 +123,12 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, editable
     </View>
   );
 }
-const fS = StyleSheet.create({
+const fS = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 12 },
   label: { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 0.8, marginBottom: 5, textTransform: "uppercase" },
   box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
   input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600" },
-});
+}));
 
 // ─── Select Button ────────────────────────────────────────
 function SelectBtn({ label, value, onPress, icon }: {
@@ -140,12 +149,12 @@ function SelectBtn({ label, value, onPress, icon }: {
     </View>
   );
 }
-const sbS = StyleSheet.create({
+const sbS = themed(() => StyleSheet.create({
   btn:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 12, paddingVertical: 11 },
   left:   { flexDirection: "row", alignItems: "center", flex: 1 },
   value:  { fontSize: 13, color: C.ink, fontWeight: "600" },
   chevron:{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
-});
+}));
 
 // ─── Picker Modal ─────────────────────────────────────────
 function PickerModal({ visible, onClose, title, data, renderItem }: {
@@ -183,7 +192,7 @@ function PickerModal({ visible, onClose, title, data, renderItem }: {
     </Modal>
   );
 }
-const pmS = StyleSheet.create({
+const pmS = themed(() => StyleSheet.create({
   overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:     { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
   handle:    { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: "#DDDDDD", alignSelf: "center", marginTop: 12, marginBottom: 4 },
@@ -193,13 +202,13 @@ const pmS = StyleSheet.create({
   search:    { flexDirection: "row", alignItems: "center", gap: 8, margin: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, height: 38 },
   searchInput: { flex: 1, fontSize: 13, color: C.ink, fontWeight: "600" },
   empty:     { color: C.inkSoft, textAlign: "center", padding: 20, fontWeight: "600" },
-});
+}));
 
-const pmItem = StyleSheet.create({
+const pmItem = themed(() => StyleSheet.create({
   row:  { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
   txt:  { color: C.ink, fontSize: 13, fontWeight: "600", flex: 1 },
   dial: { color: C.green, fontSize: 11, fontWeight: "900", marginRight: 8 },
-});
+}));
 
 // ─── Action Card ──────────────────────────────────────────
 function ActionCard({ icon, iconBg, iconColor, title, subtitle, onPress }: {
@@ -227,7 +236,7 @@ function ActionCard({ icon, iconBg, iconColor, title, subtitle, onPress }: {
     </Animated.View>
   );
 }
-const aS = StyleSheet.create({
+const aS = themed(() => StyleSheet.create({
   card: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: C.white, borderRadius: C.r.lg, padding: 15, marginBottom: 10, gap: 14,
@@ -241,16 +250,18 @@ const aS = StyleSheet.create({
   title:     { color: C.ink, fontSize: 14, fontWeight: "700", marginBottom: 2 },
   sub:       { color: C.inkSoft, fontSize: 11, fontWeight: "600" },
   chevronBox:{ width: 28, height: 28, borderRadius: 8, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
-});
+}));
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function BeneficiaireDetailScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const params = useLocalSearchParams();
   const id = useMemo(() => getIdParam(params as any), [params]);
   const insets = useSafeAreaInsets(); // ✅ v5.2 (nouveau)
 
   const [loading,  setLoading]  = useState(true);
+  const [loadError, setLoadError] = useState<LoadError | null>(null);
   const [saving,   setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [item,     setItem]     = useState<Beneficiary | null>(null);
@@ -287,10 +298,11 @@ export default function BeneficiaireDetailScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      const b = await api.getBeneficiary(id);
+      setLoadError(null);
+      const b = await withTimeout(api.getBeneficiary(id), defaultTimeoutMs());
       setItem(b); hydrateForm(b);
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
-    } catch { showAlert("Erreur", "Impossible de charger le bénéficiaire."); }
+    } catch (e) { setLoadError(explainLoadError(e)); }
     finally { setLoading(false); }
   }, [id]);
 
@@ -350,6 +362,17 @@ export default function BeneficiaireDetailScreen() {
     return (
       <SafeAreaView style={[s.safe, { backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center" }]}>
         <ActivityIndicator color={C.green} size="large" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!item && loadError) {
+    return (
+      <SafeAreaView style={[s.safe, { backgroundColor: C.pageBg, justifyContent: "center", alignItems: "center", padding: 24 }]}>
+        <ErrorState title={loadError.title} message={loadError.message} onRetry={() => { setLoading(true); void load(); }} />
+        <TouchableOpacity onPress={() => router.back()} style={{ marginTop: 14, padding: 10 }}>
+          <Text style={{ color: C.green, fontWeight: "700" }}>Retour</Text>
+        </TouchableOpacity>
       </SafeAreaView>
     );
   }
@@ -530,7 +553,7 @@ export default function BeneficiaireDetailScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   // ✅ v5.2 — fond sombre (zone sous l'encoche) ; les deux écrans de
   // secours ci-dessus (loading/introuvable) l'écrasent explicitement.
   safe: { flex: 1, backgroundColor: C.heroFrom },
@@ -606,4 +629,4 @@ const s = StyleSheet.create({
 
   deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: C.redBg, borderRadius: C.r.md, paddingVertical: 14, gap: 8, borderWidth: 1, borderColor: C.redBorder, marginBottom: 10 },
   deleteTxt: { color: C.red, fontWeight: "800", fontSize: 13 },
-});
+}));

@@ -1,6 +1,23 @@
 // apps/direct-transfair-mobile/app/(tabs)/rates.tsx
 // =========================================================
-// TAUX DU JOUR v8.3 — Direct Transf'air
+// TAUX DU JOUR v8.5 — Direct Transf'air
+// ✅ v8.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) ; l'accent bleu #4361EE (codé en dur)
+//    devient la couleur de marque du tenant.
+// ✅ v8.4 : FIX — plus de faux taux ni de spinner sans fin.
+//   • AVANT : si GET /exchange-rates échouait, l'écran affichait en silence
+//     9 taux écrits en dur (EUR/XOF 655.957, EUR/GNF 9500…) sous l'étiquette
+//     « EN TEMPS RÉEL » — des chiffres inventés, hors multi-tenant, qui
+//     pouvaient tromper l'utilisateur. Et sans réponse, le spinner tournait
+//     jusqu'au délai réseau (30 s).
+//   • MAINTENANT : appel borné (withTimeout, 20 s — EXPO_PUBLIC_LOAD_TIMEOUT_MS),
+//     message d'attente rassurant après 4 s, et en cas d'échec un état
+//     d'erreur clair avec « Réessayer ». Si des taux ont déjà été chargés,
+//     ils restent affichés (données précédentes conservées).
+//   Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // ✅ v7.0 conservé : hero chips, animations
 // ✅ v8.0 conservé : Convertisseur redesigné style Wise (modal recherche, 2 lignes FROM/TO, disclaimer marché)
 // ✅ v8.1 conservé : suppression de la section "TOUTES LES PAIRES", correction du cadre parasite du champ FROM (outlineStyle en `style`)
@@ -31,7 +48,7 @@
 //     car toujours utilisés (hero chips notamment).
 // =========================================================
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -52,19 +69,27 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
+import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
+import { ErrorState, SlowHint } from "../../components/wallet/StateViews";
 
+import { themed, getBrandPrimary } from "../../components/wallet/brand";
+import { buildPalette, N as WN } from "../../components/auth/authTheme";
+import { useWalletTheme } from "../../components/wallet/walletTheme";
+import ScreenHeader, { HeaderIconButton } from "../../components/wallet/ScreenHeader";
 // ─── Palette ─────────────────────────────────────────────
-const T = {
-  pageBg:   "#F8FAFF",
+// v8.5 — l'accent bleu #4361EE était écrit en dur : il suit maintenant la couleur de marque.
+const BP = () => buildPalette(getBrandPrimary());
+const T = themed(() => ({
+  pageBg:   WN.page,
   surface:  "#FFFFFF",
-  border:   "#DDE4FF",
-  borderLt: "#E4EDFF",
+  border:   WN.border,
+  borderLt: "#E8EFED",
   ink:      "#0F172A",
   inkSub:   "#64748B",
   inkMuted: "#94A3B8",
-  accent:   "#4361EE",
-  accentLt: "#EEF2FF",
-  accentMd: "#DDE4FF",
+  accent:   BP().action,
+  accentLt: BP().tint,
+  accentMd: BP().tintBorder,
   green:    "#22C55E",
   greenBg:  "#DCFCE7",
   greenBdr: "#86EFAC",
@@ -83,7 +108,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",          default: "monospace"  }),
   },
-} as const;
+} as const));
 
 // ─── 5 devises de l'application ──────────────────────────
 // ✅ v8.0 : seules ces devises apparaissent dans le picker
@@ -188,15 +213,15 @@ function HeroChip({ label, value, anim }: { label: string; value: string; anim: 
     </Animated.View>
   );
 }
-const hc = StyleSheet.create({
+const hc = themed(() => StyleSheet.create({
   chip: {
     flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
     borderRadius: T.r.md, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", gap: 3,
-    shadowColor: "#4361EE", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
+    shadowColor: T.accent, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
   label: { fontSize: 8, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.5 },
   value: { fontSize: 17, fontWeight: "900", color: T.accent, lineHeight: 20 },
-});
+}));
 
 // =========================================================
 // ✅ v8.0 — MODAL SÉLECTEUR DE DEVISE
@@ -325,7 +350,7 @@ function CurrencyPickerModal({
   );
 }
 
-const pm = StyleSheet.create({
+const pm = themed(() => StyleSheet.create({
   safe:      { flex: 1, backgroundColor: "#FFFFFF" },
   headerRow: {
     paddingHorizontal: 20,
@@ -359,7 +384,7 @@ const pm = StyleSheet.create({
   itemActive: { backgroundColor: "#EFF6FF" },
   flagCircle: {
     width: 48, height: 48, borderRadius: 24,
-    backgroundColor: "#F8FAFF",
+    backgroundColor: T.accentLt,
     borderWidth: 1, borderColor: "#E2E8F0",
     justifyContent: "center", alignItems: "center",
     marginRight: 16, overflow: "hidden",
@@ -372,7 +397,7 @@ const pm = StyleSheet.create({
     alignItems: "center", paddingTop: 48, gap: 12,
   },
   emptyTxt:  { fontSize: 14, color: T.inkMuted, fontWeight: "600" },
-});
+}));
 
 // =========================================================
 // ✅ v8.0 — CONVERTISSEUR REDESIGNÉ — style Wise
@@ -562,11 +587,11 @@ function Converter({ rates }: { rates: any[] }) {
   );
 }
 
-const cv = StyleSheet.create({
+const cv = themed(() => StyleSheet.create({
   card: {
     backgroundColor: T.surface, borderRadius: T.r.xl,
     marginBottom: 16, overflow: "hidden",
-    shadowColor: "#4361EE",
+    shadowColor: T.accent,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.10, shadowRadius: 16, elevation: 5,
     borderWidth: 1, borderColor: T.borderLt,
@@ -598,7 +623,7 @@ const cv = StyleSheet.create({
   },
   flagCircle: {
     width: 30, height: 30, borderRadius: 15,
-    backgroundColor: "#F8FAFF",
+    backgroundColor: T.accentLt,
     borderWidth: 1, borderColor: T.border,
     justifyContent: "center", alignItems: "center",
     overflow: "hidden",
@@ -669,16 +694,19 @@ const cv = StyleSheet.create({
     fontSize: 11, color: T.inkMuted, fontWeight: "500", textAlign: "right",
     flexShrink: 1,
   },
-});
+}));
 
 // ─── Écran principal ──────────────────────────────────────
 export default function RatesScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
 
   const [rates,      setRates]      = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState("");
+  const [loadError,  setLoadError]  = useState<LoadError | null>(null);
+  const [slow,       setSlow]       = useState(false);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const chip1Anim  = useRef(new Animated.Value(0)).current;
@@ -697,10 +725,17 @@ export default function RatesScreen() {
     ]).start();
   };
 
+  const ratesRef = useRef<any[]>([]);
+  ratesRef.current = rates;
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
+    const id = ++loadSeq.current;
     setRefreshing(true);
+    setLoadError(null);
     try {
-      const res  = await api.getExchangeRates();
+      const res  = await withTimeout(api.getExchangeRates(), defaultTimeoutMs());
+      if (id !== loadSeq.current) return;
       const list = Array.isArray(res) ? res : [];
       const normalized = list.map((r: any) => ({ ...r, pair: normPair(r.pair) }));
       setRates(normalized);
@@ -708,28 +743,21 @@ export default function RatesScreen() {
         new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
       );
       animateIn();
-    } catch {
-      const fallback = [
-        { pair: "EUR/XOF", rate: 655.957, changePercent:  0.02 },
-        { pair: "EUR/GNF", rate: 9500,    changePercent: -0.15 },
-        { pair: "USD/XOF", rate: 600.0,   changePercent:  0.08 },
-        { pair: "USD/GNF", rate: 8700,    changePercent:  0.12 },
-        { pair: "GBP/XOF", rate: 760.0,   changePercent: -0.05 },
-        { pair: "GBP/GNF", rate: 11000,   changePercent:  0.03 },
-        { pair: "EUR/USD", rate: 1.085,   changePercent: -0.02 },
-        { pair: "EUR/GBP", rate: 0.862,   changePercent:  0.01 },
-        { pair: "XOF/GNF", rate: 14.5,    changePercent:  0.00 },
-      ];
-      setRates(fallback);
-      setLastUpdate(
-        new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-      );
-      animateIn();
+    } catch (e) {
+      if (id !== loadSeq.current) return;
+      // Données déjà chargées : on les garde. Sinon : état d'erreur.
+      if (ratesRef.current.length === 0) setLoadError(explainLoadError(e));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (id === loadSeq.current) { setLoading(false); setRefreshing(false); }
     }
   }, []);
+
+  // Message rassurant si le serveur met plus de 4 s (hébergeur en réveil)
+  useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const timer = setTimeout(() => setSlow(true), 4000);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   useFocusEffect(
     useCallback(() => {
@@ -746,50 +774,33 @@ export default function RatesScreen() {
   const usdXof = findRate(rates, "USD", "XOF");
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.pageBg} />
+    <View style={s.safe}>
 
-      {/* ── Héro compact ── */}
-      <Animated.View style={{
-        opacity: headerAnim,
-        transform: [{ scale: headerAnim.interpolate({ inputRange: [0,1], outputRange: [0.97,1] }) }],
-      }}>
-        <LinearGradient
-          colors={["#E8EEFF", "#F0F4FF", "#F8FAFF"]}
-          start={{ x: 0.2, y: 0 }} end={{ x: 0, y: 1 }}
-          style={s.hero}
-        >
-          <View style={s.heroNav}>
-            <TouchableOpacity style={s.navBtn} onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="arrow-back" size={20} color={T.ink} />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.heroTitle, { fontFamily: T.font.serif }]}>Taux du Jour</Text>
-              <View style={s.liveBadge}>
-                <View style={s.liveDot} />
-                <Text style={[s.liveTxt, { fontFamily: T.font.sans }]}>
-                  {lastUpdate ? `MIS À JOUR À ${lastUpdate}` : "EN TEMPS RÉEL"}
-                </Text>
-              </View>
-            </View>
-            <TouchableOpacity style={[s.navBtn, { borderColor: T.accentMd }]} onPress={() => void load()} hitSlop={12}>
-              <Ionicons name="refresh" size={19} color={T.accent} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={s.chipsRow}>
-            <HeroChip label="€ → CFA" value={eurXof ? fmt(eurXof, "XOF") : "—"} anim={chip1Anim} />
-            <HeroChip label="€ → GNF" value={eurGnf ? fmt(eurGnf, "GNF") : "—"} anim={chip2Anim} />
-            <HeroChip label="$ → CFA" value={usdXof ? fmt(usdXof, "XOF") : "—"} anim={chip3Anim} />
-          </View>
-        </LinearGradient>
-      </Animated.View>
+      {/* ── En-tête commun du wallet + 3 taux clés ── */}
+      <ScreenHeader
+        compact
+        title="Taux du jour"
+        subtitle={lastUpdate ? `Mis à jour à ${lastUpdate}` : "Taux indicatifs du marché"}
+        onBack={() => router.back()}
+        right={<HeaderIconButton icon="refresh" label="Actualiser les taux" onPress={() => void load()} />}
+      >
+        <View style={s.chipsRow}>
+          <HeroChip label="€ → CFA" value={eurXof ? fmt(eurXof, "XOF") : "—"} anim={chip1Anim} />
+          <HeroChip label="€ → GNF" value={eurGnf ? fmt(eurGnf, "GNF") : "—"} anim={chip2Anim} />
+          <HeroChip label="$ → CFA" value={usdXof ? fmt(usdXof, "XOF") : "—"} anim={chip3Anim} />
+        </View>
+      </ScreenHeader>
 
       {/* ── Contenu ── */}
       {loading ? (
         <View style={s.loadBox}>
           <ActivityIndicator color={T.accent} size="large" />
           <Text style={[s.loadTxt, { fontFamily: T.font.sans }]}>Chargement des taux…</Text>
+          <SlowHint visible={slow} />
+        </View>
+      ) : loadError && rates.length === 0 ? (
+        <View style={s.loadBox}>
+          <ErrorState title={loadError.title} message={loadError.message} onRetry={() => { setLoading(true); void load(); }} />
         </View>
       ) : (
         <Animated.ScrollView
@@ -821,12 +832,12 @@ export default function RatesScreen() {
           <View style={{ height: 100 }} />
         </Animated.ScrollView>
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
 // ─── Styles principaux ────────────────────────────────────
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.pageBg },
 
   hero: {
@@ -838,7 +849,7 @@ const s = StyleSheet.create({
   navBtn: {
     width: 36, height: 36, borderRadius: 11, backgroundColor: T.surface,
     borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center",
-    shadowColor: "#4361EE", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
+    shadowColor: T.accent, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
   heroTitle: { fontSize: 22, fontWeight: "800", color: T.ink, lineHeight: 26 },
   liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
@@ -867,4 +878,4 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: T.borderLt, marginTop: 6,
   },
   legalTxt: { flex: 1, fontSize: 10, fontWeight: "600", color: T.inkMuted, lineHeight: 16 },
-});
+}));

@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/wallet-transfer.tsx
 // =========================================================
-// WALLET TRANSFER v6.1 — Direct Transf'air
+// WALLET TRANSFER v6.2 — Direct Transf'air
+// ✅ v6.2 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v6.1 sur base v6.0 :
 //    - pageBg #F0FDF8 → #FAFAFA (fond neutre quasi-blanc)
 //    - inputBg #F8FFFC → #F8F8F8 (inputsBG neutre)
@@ -27,20 +31,22 @@ import Svg, { Path, Rect } from "react-native-svg";
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 
+import { themed, brand, brandRgba } from "../components/wallet/brand";
+import { useWalletTheme } from "../components/wallet/walletTheme";
 const { width: SW } = Dimensions.get("window");
 const CONCAVE_H = 60;
 
 // ─── Design System v6.1 ──────────────────────────────────
-const C = {
-  green:       "#059669", greenDark:   "#047857",
-  greenLight:  "#F0FDF4", greenBorder: "#A7F3D0", greenPale: "#ECFDF5",
+const C = themed(() => ({
+  green:       brand("#059669"), greenDark:   brand("#047857"),
+  greenLight:  brand("#F0FDF4"), greenBorder: brand("#A7F3D0"), greenPale: brand("#ECFDF5"),
   heroGlass:   "rgba(255,255,255,0.14)", heroGlassBdr: "rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)", heroGlow: "rgba(255,255,255,0.08)",
   pageBg:      "#FAFAFA",            // ← était #F0FDF8 (vert pâle supprimé)
   white:       "#FFFFFF",
   cardBorder:  "#E5E5EA",            // ← était #D1FAE5 (bordure neutre)
   inputBg:     "#F8F8F8",            // ← était #F8FFFC (input neutre)
-  ink:         "#0D2B1F", inkMid: "#1F5C3A", inkSoft: "#6B9E85",
+  ink:         brand("#0D2B1F"), inkMid: brand("#1F5C3A"), inkSoft: brand("#6B9E85"),
   red:         "#EF4444", redBg:  "#FEF2F2",
   amber:       "#F59E0B", amberBg: "#FFFBEB", amberBorder: "#FDE68A",
   r: { xs: 8, sm: 12, md: 16, lg: 20, xl: 24, pill: 99 },
@@ -49,7 +55,7 @@ const C = {
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:  Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ─── Indicatifs pays ────────────────────────────────────
 const COUNTRY_CODES = [
@@ -105,7 +111,7 @@ function HeroConcave() {
     <Svg width={SW} height={CONCAVE_H} style={{ marginTop: -1 }}>
       <Rect x={0} y={0} width={SW} height={CONCAVE_H} fill={C.pageBg} />
       <Path d={d} fill={C.green} />
-      <Path d={bd} fill="none" stroke="rgba(5,150,105,0.18)" strokeWidth={1.5} />
+      <Path d={bd} fill="none" stroke={brandRgba("rgba(5,150,105,0.18)")} strokeWidth={1.5} />
     </Svg>
   );
 }
@@ -150,7 +156,7 @@ function RecipientCard({ result }: { result: LookupResult }) {
     </View>
   );
 }
-const rc = StyleSheet.create({
+const rc = themed(() => StyleSheet.create({
   card:     { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.greenPale, borderRadius: C.r.md, padding: 12, borderWidth: 1, borderColor: C.greenBorder, marginTop: 8 },
   avatar:   { width: 38, height: 38, borderRadius: 11, justifyContent: "center", alignItems: "center" },
   initials: { fontSize: 15, fontWeight: "900" },
@@ -158,7 +164,7 @@ const rc = StyleSheet.create({
   sub:      { fontSize: 10, color: C.inkSoft, fontWeight: "600" },
   badge:    { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: C.r.pill, borderWidth: 1 },
   badgeTxt: { fontSize: 9, fontWeight: "900" },
-});
+}));
 
 // ─── Not Found Card ──────────────────────────────────────
 function NotFoundCard({ onAdd }: { onAdd: () => void }) {
@@ -174,15 +180,16 @@ function NotFoundCard({ onAdd }: { onAdd: () => void }) {
     </TouchableOpacity>
   );
 }
-const nfc = StyleSheet.create({
+const nfc = themed(() => StyleSheet.create({
   card:    { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: C.white, borderRadius: C.r.md, padding: 12, borderWidth: 1, borderColor: C.cardBorder, marginTop: 8 },
   iconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F5F5F5", borderWidth: 1, borderColor: C.cardBorder, justifyContent: "center", alignItems: "center" },
   label:   { fontSize: 12, fontWeight: "700", color: C.inkSoft, marginBottom: 2 },
   action:  { fontSize: 12, fontWeight: "800" },
-});
+}));
 
 // ─── Main Screen ─────────────────────────────────────────
 export default function WalletTransferScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
   const { user, refreshUser } = useAuth();
 
@@ -629,7 +636,7 @@ export default function WalletTransferScreen() {
   );
 }
 
-const pk = StyleSheet.create({
+const pk = themed(() => StyleSheet.create({
   overlay:  { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:    { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, maxHeight: "70%", paddingBottom: Platform.OS === "ios" ? 36 : 18 },
   handle:   { width: 40, height: 4, borderRadius: 99, backgroundColor: "#E5E5EA", alignSelf: "center", marginBottom: 14 },
@@ -638,10 +645,10 @@ const pk = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: "700", color: C.ink },
   itemCur:  { fontSize: 10, color: C.inkSoft, marginTop: 1 },
   itemCode: { fontSize: 13, fontWeight: "800" },
-});
+}));
 
 // ─── Styles v6.1 ──────────────────────────────────────────
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },  // ← #FAFAFA
 
   // Héro (reste vert)
@@ -755,4 +762,4 @@ const s = StyleSheet.create({
 
   secNote: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5 },
   secTxt:  { color: C.inkSoft, fontSize: 10, fontWeight: "600" },
-});
+}));

@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/security.tsx
 // =========================================================
-// SECURITY v5.1 — Direct Transf'air
+// SECURITY v5.2 — Direct Transf'air
+// ✅ v5.2 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
+//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
 // ✅ Fix web : outlineStyle inline + underlineColorAndroid prop
 // ✅ Fix validation : trim() sur valeurs state, pas sur event
 // ✅ Toast animé success/error, show/hide password
@@ -17,14 +22,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../../providers/AuthProvider";
 import { api } from "../../../services/api";
 
-const ROLE_THEMES = {
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import ScreenHeader from "../../../components/wallet/ScreenHeader";
+const ROLE_THEMES = themed(() => ({
   SUPER_ADMIN:   { bg: "#FFFBF2", accent: "#B8860B", accentLight: "#FEF3C7" },
-  COMPANY_ADMIN: { bg: "#F0FDF8", accent: "#059669", accentLight: "#D1FAE5" },
+  COMPANY_ADMIN: { bg: brand("#F0FDF8"), accent: brand("#059669"), accentLight: brand("#D1FAE5") },
   AGENT:         { bg: "#FFFBF0", accent: "#D97706", accentLight: "#FEF3C7" },
-  USER:          { bg: "#F0FDF4", accent: "#16A34A", accentLight: "#DCFCE7" },
-} as const;
+  USER:          { bg: brand("#F0FDF4"), accent: brand("#16A34A"), accentLight: brand("#DCFCE7") },
+} as const));
 
-const T = {
+const T = themed(() => ({
   white:          "#FFFFFF",
   cardBg:         "#FFFFFF",
   border:         "#E5E8EF",
@@ -45,7 +53,7 @@ const T = {
     sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace" }),
   },
-};
+}));
 
 // ─── Password Input ───────────────────────────────────────
 function PasswordInput({ label, value, onChange, placeholder, accent }: {
@@ -89,7 +97,7 @@ function PasswordInput({ label, value, onChange, placeholder, accent }: {
     </View>
   );
 }
-const piS = StyleSheet.create({
+const piS = themed(() => StyleSheet.create({
   wrap:    { marginBottom: 16 },
   label:   { fontSize: 11, fontWeight: "700", color: T.textSub, letterSpacing: 0.5, marginBottom: 6 },
   box: {
@@ -101,10 +109,11 @@ const piS = StyleSheet.create({
   // ✅ PAS de underlineColorAndroid ni outlineStyle ici
   input:   { flex: 1, paddingVertical: 14, fontSize: 15, color: T.text, fontWeight: "600" },
   eyeBtn:  { padding: 14 },
-});
+}));
 
 // ─── Main Screen ──────────────────────────────────────────
 export default function SecurityScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router  = useRouter();
   const { user } = useAuth();
 
@@ -205,7 +214,7 @@ export default function SecurityScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: theme.bg }]}>
-      <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
         <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
 
         {/* ── Toast ── */}
@@ -229,13 +238,7 @@ export default function SecurityScreen() {
         </Animated.View>
 
         {/* ── Header ── */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12} disabled={loading}>
-            <Ionicons name="arrow-back" size={22} color={T.text} />
-          </TouchableOpacity>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Sécurité</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ScreenHeader compact title="Sécurité" onBack={() => router.back()} />
 
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -337,12 +340,12 @@ export default function SecurityScreen() {
             <View style={{ height: 110 }} />
           </ScrollView>
         </KeyboardAvoidingView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root: { flex: 1 },
 
   toastWrap: {
@@ -406,4 +409,4 @@ const s = StyleSheet.create({
 
   saveBtn:  { borderRadius: T.radius.md, paddingVertical: 16, alignItems: "center", marginTop: 4 },
   saveTxt:  { color: T.white, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
-});
+}));

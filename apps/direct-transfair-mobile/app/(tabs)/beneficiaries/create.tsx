@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // =========================================================
-// BENEFICIARY CREATE v6.4 — Direct Transf'air
+// BENEFICIARY CREATE v6.5 — Direct Transf'air
+// ✅ v6.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
+//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
+//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
+//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v6.4 : HERO — dégradé sombre identique à ClientDashboard
 //    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
 //    (openPhoneContacts, handleSelectContact, handleCreate, la
@@ -50,26 +54,28 @@ import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
 import { citiesByCountry } from "../../../data/cities";
 
-const C = {
-  green:       "#059669",
-  greenDark:   "#047857",
-  greenLight:  "#F0FDF4",
-  greenBorder: "#A7F3D0",
-  greenPale:   "#ECFDF5",
+import { themed, brand } from "../../../components/wallet/brand";
+import { useWalletTheme } from "../../../components/wallet/walletTheme";
+const C = themed(() => ({
+  green:       brand("#059669"),
+  greenDark:   brand("#047857"),
+  greenLight:  brand("#F0FDF4"),
+  greenBorder: brand("#A7F3D0"),
+  greenPale:   brand("#ECFDF5"),
   heroGlass:   "rgba(255,255,255,0.14)",
   heroGlassBdr:"rgba(255,255,255,0.22)",
   heroDim:     "rgba(255,255,255,0.65)",
   heroGlow:    "rgba(255,255,255,0.08)",
   // ✅ v6.4 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-  heroFrom:    "#0A0F0D",
-  heroTo:      "#123324",
+  heroFrom:    brand("#0A0F0D"),
+  heroTo:      brand("#123324"),
   pageBg:      "#FAFAFA",   // ← était #F0FDF8
   white:       "#FFFFFF",
   cardBorder:  "#E5E5EA",   // ← était #D1FAE5
   inputBg:     "#F8F8F8",   // ← était #F8FFFC
-  ink:         "#0D2B1F",
-  inkMid:      "#1F5C3A",
-  inkSoft:     "#6B9E85",
+  ink:         brand("#0D2B1F"),
+  inkMid:      brand("#1F5C3A"),
+  inkSoft:     brand("#6B9E85"),
   red:         "#EF4444",
   redBg:       "#FEF2F2",
   blue:        "#3B82F6",
@@ -79,7 +85,7 @@ const C = {
     sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
     mono:  Platform.select({ ios: "Courier New", android: "monospace",  default: "monospace"  }),
   },
-};
+}));
 
 const AVATAR_COLORS = [
   { bg: "#DCFCE7", text: "#15803D" }, { bg: "#DBEAFE", text: "#1D4ED8" },
@@ -125,12 +131,12 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, required
     </View>
   );
 }
-const f = StyleSheet.create({
+const f = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 12 },
   lbl:   { fontSize: 9, fontWeight: "900", color: C.inkMid, letterSpacing: 0.8, marginBottom: 5, textTransform: "uppercase" },
   box:   { backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md },
   input: { paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, color: C.ink, fontWeight: "600", borderWidth: 0 },
-});
+}));
 
 // ─── Select Button ───────────────────────────────────────
 function SelectBtn({ label, value, onPress, icon, required }: {
@@ -151,12 +157,12 @@ function SelectBtn({ label, value, onPress, icon, required }: {
     </View>
   );
 }
-const sb = StyleSheet.create({
+const sb = themed(() => StyleSheet.create({
   btn:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 12, paddingVertical: 11 },
   left:   { flexDirection: "row", alignItems: "center", flex: 1 },
   val:    { fontSize: 13, color: C.ink, fontWeight: "600" },
   chevron:{ width: 24, height: 24, borderRadius: 7, backgroundColor: C.greenPale, justifyContent: "center", alignItems: "center" },
-});
+}));
 
 // ─── Picker Modal ────────────────────────────────────────
 function PickerModal({ visible, onClose, title, data, renderItem }: any) {
@@ -192,7 +198,7 @@ function PickerModal({ visible, onClose, title, data, renderItem }: any) {
     </Modal>
   );
 }
-const pm = StyleSheet.create({
+const pm = themed(() => StyleSheet.create({
   overlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
   sheet:       { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "78%", borderWidth: 1, borderColor: C.cardBorder },
   handle:      { width: 32, height: 3, borderRadius: C.r.pill, backgroundColor: "#DDDDDD", alignSelf: "center", marginTop: 12, marginBottom: 4 },
@@ -202,13 +208,13 @@ const pm = StyleSheet.create({
   search:      { flexDirection: "row", alignItems: "center", gap: 8, margin: 12, backgroundColor: C.inputBg, borderWidth: 1.5, borderColor: C.cardBorder, borderRadius: C.r.md, paddingHorizontal: 10, height: 38 },
   searchInput: { flex: 1, fontSize: 13, color: C.ink, fontWeight: "600" },
   empty:       { color: C.inkSoft, textAlign: "center", padding: 20, fontWeight: "600" },
-});
+}));
 
-const pmItem = StyleSheet.create({
+const pmItem = themed(() => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
   txt: { color: C.ink, fontSize: 13, fontWeight: "600", flex: 1 },
   dial:{ color: C.green, fontSize: 11, fontWeight: "900", marginRight: 8 },
-});
+}));
 
 // ─── Phone Contact Card ──────────────────────────────────
 function PhoneContactCard({ contact, onSelect }: { contact: any; onSelect: () => void }) {
@@ -227,16 +233,17 @@ function PhoneContactCard({ contact, onSelect }: { contact: any; onSelect: () =>
     </TouchableOpacity>
   );
 }
-const pc = StyleSheet.create({
+const pc = themed(() => StyleSheet.create({
   row:     { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.cardBorder },
   avatar:  { width: 36, height: 36, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   initials:{ fontSize: 14, fontWeight: "900" },
   name:    { fontSize: 13, fontWeight: "700", color: C.ink, marginBottom: 2 },
   phone:   { fontSize: 11, color: C.inkSoft, fontWeight: "600" },
-});
+}));
 
 // ─── Main Screen ─────────────────────────────────────────
 export default function BeneficiaryCreateScreen() {
+  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
 
   const [firstName,      setFirstName]      = useState("");
@@ -550,7 +557,7 @@ export default function BeneficiaryCreateScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.pageBg },
 
   // ✅ v6.4 — backgroundColor retiré (géré par LinearGradient sur le
@@ -619,4 +626,4 @@ const s = StyleSheet.create({
 
   cancelBtn: { alignItems: "center", paddingVertical: 12 },
   cancelTxt: { color: C.inkSoft, fontWeight: "800", fontSize: 13 },
-});
+}));
