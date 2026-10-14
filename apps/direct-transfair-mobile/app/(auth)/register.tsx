@@ -1,6 +1,28 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
-// REGISTER v6.3 — Direct Transf'air
+// REGISTER v7.0 — Direct Transf'air
+// ✅ v7.0 : REFONTE COMPLÈTE de l'inscription — Thierno Doniko (Grand Chef).
+//   PROBLÈMES CONSTATÉS :
+//   1. L'écran était INATTEIGNABLE depuis l'écran de connexion (voir login-v2 v3.0).
+//   2. 10 étapes d'une question chacune : parcours long et décourageant. Regroupé en
+//      4 étapes logiques : Identité → Résidence → Contact → Sécurité, avec barre de
+//      progression et retour possible à tout moment sans perdre la saisie.
+//   3. Le « 0 » de tête du numéro (« 06… » en France) était envoyé tel quel :
+//      « +33 06… » est un numéro faux, le SMS ne partait jamais. Il est maintenant
+//      retiré (components/auth/PhoneField.tsx). L'indicatif suit par défaut le pays
+//      de résidence et la liste couvre désormais TOUS les pays (30 avant).
+//   4. Aucune vérification de l'âge ni de la date : « 31/02/2001 » passait. Date réelle
+//      et âge minimal contrôlés (18 ans par défaut, réglable : EXPO_PUBLIC_MIN_AGE).
+//   5. Pays de résidence et nationalité étaient pré-remplis sur « Guinée » : un client
+//      pressé validait une donnée d'identité fausse. Choix obligatoire désormais.
+//   6. Erreurs par pop-up : remplacées par des messages sous chaque champ ; un email ou
+//      un téléphone déjà utilisé ramène directement à l'étape concernée.
+//   7. Serveur en veille : l'inscription n'est jamais rejouée automatiquement (risque de
+//      doublon) ; l'app attend donc que le serveur soit réveillé AVANT d'envoyer.
+//   CONSERVÉ À L'IDENTIQUE : l'appel api.register() direct et la session gardée de côté
+//   jusqu'au clic « Vérifier mon email » (correctif v6.3 : sans cela, le garde de navigation
+//   d'AuthProvider redirigeait avant l'affichage du succès), la règle de mot de passe 10–35,
+//   le format de date JJ/MM/AAAA, la redirection vers verify-contact.
 // ✅ v6.1 conservé intégralement (fix outline bleu navigateur)
 // ✅ v6.2 :
 //   - Mot de passe limité à 10-35 caractères (maxLength sur les 2 champs +
@@ -58,1232 +80,426 @@
 //   aussi.
 // =========================================================
 
-import React, { useState, useRef, useEffect } from "react";
-import {
-  View, Text, TextInput, StyleSheet, TouchableOpacity,
-  ActivityIndicator, KeyboardAvoidingView, Platform,
-  ScrollView, Animated, StatusBar, Modal, Dimensions,
-  FlatList, Keyboard, SafeAreaView,
-} from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { useAuth } from "../../providers/AuthProvider";
-import { useTenant } from "../../providers/TenantProvider";
-import { api } from "../../services/api";
-import { showAlert } from "../../utils/alert"; // ✅ v6.3 — fonctionne sur web ET natif (Alert.alert seul ne marche pas sur web)
+import React, { useMemo, useRef, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
-const { width: SW } = Dimensions.get("window");
-const TOTAL_STEPS   = 10;
+import { useAuth }   from '../../providers/AuthProvider';
+import { api }       from '../../services/api';
+import { getMinimumAge } from '../../services/serverConfig';
+import { warmUpServer } from '../../services/serverWarmup';
 
-// ─── Fix outline bleu navigateur (web uniquement) ────────
-// ✅ v6.1 : doit être dans style[], pas en prop spread
-const NO_OUTLINE: any = Platform.OS === "web"
-  ? { outlineStyle: "none", outlineWidth: 0 }
-  : {};
+import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
+import AuthField   from '../../components/auth/AuthField';
+import AuthButton  from '../../components/auth/AuthButton';
+import AuthNotice  from '../../components/auth/AuthNotice';
+import SelectField from '../../components/auth/SelectField';
+import PhoneField, { normalizeNationalNumber, validatePhone } from '../../components/auth/PhoneField';
+import DateOfBirthField, { formatBirthDate, validateBirthDate, type Dob } from '../../components/auth/DateOfBirthField';
+import PasswordGuide from '../../components/auth/PasswordGuide';
+import CountryPickerSheet from '../../components/auth/CountryPickerSheet';
+import { AUTH_COUNTRIES, findCountry, type AuthCountry } from '../../components/auth/authCountries';
+import { describeAuthError } from '../../components/auth/authErrors';
+import { isPasswordAcceptable, PASSWORD_MAX, PASSWORD_MIN } from '../../components/auth/passwordRules';
+import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
-// ─── Design tokens ────────────────────────────────────────
-const T = {
-  bg:         "#FFFFFF",
-  pageBg:     "#F8FAFF",
-  ink:        "#0F172A",
-  inkSub:     "#475569",
-  inkMuted:   "#94A3B8",
-  border:     "#E2E8F0",
-  borderFocus:"#2563EB",
-  blue:       "#2563EB",
-  blueDeep:   "#1D4ED8",
-  blueLt:     "#EFF6FF",
-  blueMd:     "#BFDBFE",
-  green:      "#059669",
-  greenLt:    "#ECFDF5",
-  red:        "#EF4444",
-  redLt:      "#FEE2E2",
-  white:      "#FFFFFF",
-  r: { sm: 10, md: 14, lg: 18, xl: 24 },
-  font: {
-    serif: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"     }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:  Platform.select({ ios: "Courier New", android: "monospace",          default: "monospace"  }),
-  },
-};
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// ─── Drapeaux ─────────────────────────────────────────────
-const FLAG_MAP: Record<string, string> = {
-  "Afghanistan":"🇦🇫","Algérie":"🇩🇿","Allemagne":"🇩🇪","Angola":"🇦🇴",
-  "Arabie Saoudite":"🇸🇦","Argentine":"🇦🇷","Belgique":"🇧🇪","Bénin":"🇧🇯",
-  "Brésil":"🇧🇷","Burkina Faso":"🇧🇫","Cameroun":"🇨🇲","Canada":"🇨🇦",
-  "Cap-Vert":"🇨🇻","Centrafrique":"🇨🇫","Chine":"🇨🇳","Comores":"🇰🇲",
-  "Congo":"🇨🇬","Côte d'Ivoire":"🇨🇮","Djibouti":"🇩🇯","Égypte":"🇪🇬",
-  "Espagne":"🇪🇸","États-Unis":"🇺🇸","Éthiopie":"🇪🇹","France":"🇫🇷",
-  "Gabon":"🇬🇦","Gambie":"🇬🇲","Ghana":"🇬🇭","Guinée":"🇬🇳",
-  "Guinée Bissau":"🇬🇼","Guinée Équatoriale":"🇬🇶","Italie":"🇮🇹",
-  "Japon":"🇯🇵","Kenya":"🇰🇪","Liberia":"🇱🇷","Libye":"🇱🇾",
-  "Madagascar":"🇲🇬","Mali":"🇲🇱","Maroc":"🇲🇦","Mauritanie":"🇲🇷",
-  "Mozambique":"🇲🇿","Namibie":"🇳🇦","Niger":"🇳🇪","Nigéria":"🇳🇬",
-  "Oman":"🇴🇲","Pays-Bas":"🇳🇱","Portugal":"🇵🇹","Qatar":"🇶🇦",
-  "République Démocratique du Congo":"🇨🇩","Royaume-Uni":"🇬🇧",
-  "Rwanda":"🇷🇼","Sénégal":"🇸🇳","Sierra Leone":"🇸🇱","Somalie":"🇸🇴",
-  "Soudan":"🇸🇩","Suisse":"🇨🇭","Tanzanie":"🇹🇿","Tchad":"🇹🇩",
-  "Togo":"🇹🇬","Tunisie":"🇹🇳","Turquie":"🇹🇷","Uganda":"🇺🇬",
-  "Zimbabwe":"🇿🇼",
-};
-
-// ─── Pays ─────────────────────────────────────────────────
-const COUNTRIES = [
-  "Afghanistan","Algérie","Allemagne","Angola","Arabie Saoudite","Argentine",
-  "Belgique","Bénin","Brésil","Burkina Faso","Cameroun","Canada","Cap-Vert",
-  "Centrafrique","Chine","Comores","Congo","Côte d'Ivoire","Djibouti","Égypte",
-  "Espagne","États-Unis","Éthiopie","France","Gabon","Gambie","Ghana","Guinée",
-  "Guinée Bissau","Guinée Équatoriale","Italie","Japon","Kenya","Liberia","Libye",
-  "Madagascar","Mali","Maroc","Mauritanie","Mozambique","Namibie","Niger","Nigéria",
-  "Oman","Pays-Bas","Portugal","Qatar","République Démocratique du Congo",
-  "Royaume-Uni","Rwanda","Sénégal","Sierra Leone","Somalie","Soudan","Suisse",
-  "Tanzanie","Tchad","Togo","Tunisie","Turquie","Uganda","Zimbabwe",
-].sort();
-
-const COUNTRY_CODES: Record<string, string> = {
-  "Guinée":"+224","France":"+33","Sénégal":"+221","Mali":"+223",
-  "Côte d'Ivoire":"+225","Cameroun":"+237","Bénin":"+229",
-  "Burkina Faso":"+226","Togo":"+228","Niger":"+227","Nigéria":"+234",
-  "Ghana":"+233","Sierra Leone":"+232","Liberia":"+231","Gambie":"+220",
-  "Guinée Bissau":"+245","Cap-Vert":"+238","États-Unis":"+1","Canada":"+1",
-  "Belgique":"+32","Royaume-Uni":"+44","Espagne":"+34","Italie":"+39",
-  "Portugal":"+351","Allemagne":"+49","Maroc":"+212","Algérie":"+213",
-  "Tunisie":"+216","Pays-Bas":"+31","Suisse":"+41","Brésil":"+55",
-};
-
-// ─── Config étapes ────────────────────────────────────────
 const STEPS = [
-  { icon: "person-outline",           question: "Comment vous\nappellez-vous ?",  hint: "Votre prénom, tel que vous souhaitez être appelé(e)"        },
-  { icon: "person-circle-outline",    question: "Et votre nom\nde famille ?",      hint: "Tel qu'il apparaît sur vos documents officiels"              },
-  { icon: "mail-outline",             question: "Votre adresse\nemail ?",          hint: "Pour vous connecter et recevoir vos confirmations"           },
-  // ✅ v6.2 : texte d'aide mis à jour pour refléter la règle 10-35 caractères
-  { icon: "lock-closed-outline",      question: "Créez votre\nmot de passe",       hint: "Entre 10 et 35 caractères — plus c'est long, plus c'est sûr" },
-  { icon: "phone-portrait-outline",   question: "Votre numéro\nde téléphone ?",    hint: "Pour sécuriser votre compte avec la vérification en 2 étapes"},
-  { icon: "location-outline",         question: "Où habitez-vous ?",               hint: "Votre pays de résidence actuel"                              },
-  { icon: "business-outline",         question: "Dans quelle\nville ?",            hint: "Votre ville de résidence principale"                         },
-  { icon: "calendar-outline",         question: "Votre date de\nnaissance ?",      hint: "Utilisée pour vérifier votre identité selon la réglementation"},
-  { icon: "flag-outline",             question: "Votre\nnationalité ?",            hint: "Telle qu'indiquée sur votre passeport ou carte d'identité"   },
-  { icon: "checkmark-circle-outline", question: "Presque prêt !",                  hint: "Acceptez nos conditions pour finaliser votre inscription"    },
+  { title: 'Faisons connaissance',   subtitle: 'Vos informations d’identité, telles qu’elles figurent sur votre pièce d’identité.' },
+  { title: 'Où résidez-vous ?',      subtitle: 'Votre pays de résidence détermine la devise de votre portefeuille.' },
+  { title: 'Comment vous joindre ?', subtitle: 'Nous vous envoyons un code pour confirmer votre adresse email.' },
+  { title: 'Sécurisez votre compte', subtitle: 'Choisissez un mot de passe solide, que vous seul connaissez.' },
 ] as const;
 
-const REAL_ERROR_STATUSES = new Set([400, 401, 403, 404, 409, 422, 500]);
+type Errors = Partial<Record<
+  'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms',
+  string
+>>;
 
-// =========================================================
-// ── COMPOSANTS ────────────────────────────────────────────
-// =========================================================
+type Session = { accessToken: string; refreshToken: string | null; user: any };
 
-// ─── StepInput ────────────────────────────────────────────
-// ✅ v6.2 : ajout du prop `maxLength`, transmis au TextInput
-function StepInput({
-  value, onChangeText, placeholder, label, icon,
-  secureTextEntry, keyboardType, autoCapitalize, autoFocus,
-  onSubmitEditing, returnKeyType, inputRef, maxLength,
-}: {
-  value: string; onChangeText: (v: string) => void; placeholder?: string;
-  label?: string; icon?: string; secureTextEntry?: boolean; keyboardType?: any;
-  autoCapitalize?: any; autoFocus?: boolean; onSubmitEditing?: () => void;
-  returnKeyType?: any; inputRef?: React.RefObject<TextInput>; maxLength?: number;
-}) {
-  const [focused, setFocused] = useState(false);
-  const [show,    setShow]    = useState(false);
-
-  return (
-    <View style={si.wrap}>
-      {label && (
-        <Text style={[si.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      )}
-      <View style={[si.card, focused && si.cardFocused]}>
-        {icon && (
-          <Ionicons
-            name={icon as any}
-            size={20}
-            color={focused ? T.blue : T.inkMuted}
-            style={{ marginRight: 12 }}
-          />
-        )}
-        <TextInput
-          ref={inputRef}
-          style={[si.input, { fontFamily: T.font.sans }, NO_OUTLINE]}
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={T.inkMuted}
-          secureTextEntry={secureTextEntry && !show}
-          keyboardType={keyboardType ?? "default"}
-          autoCapitalize={autoCapitalize ?? "words"}
-          autoFocus={autoFocus}
-          maxLength={maxLength}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          onSubmitEditing={onSubmitEditing}
-          returnKeyType={returnKeyType ?? "done"}
-          underlineColorAndroid="transparent"
-        />
-        {secureTextEntry && (
-          <TouchableOpacity onPress={() => setShow(!show)} hitSlop={8}>
-            <Ionicons
-              name={show ? "eye-outline" : "eye-off-outline"}
-              size={18}
-              color={T.inkMuted}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
-}
-const si = StyleSheet.create({
-  wrap:        { marginBottom: 8 },
-  label:       { fontSize: 11, fontWeight: "700", color: T.inkSub, marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase" },
-  card:        { flexDirection: "row", alignItems: "center", backgroundColor: T.white, borderRadius: T.r.md, borderWidth: 1.5, borderColor: T.border, paddingHorizontal: 16, paddingVertical: 16, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-  cardFocused: { borderColor: T.borderFocus, shadowColor: T.blue, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3 },
-  input:       { flex: 1, fontSize: 17, color: T.ink, fontWeight: "600" },
-});
-
-// ─── PasswordStep ─────────────────────────────────────────
-// ✅ v6.2 : maxLength={35} sur les 2 champs + jauge de force recalibrée
-// sur la nouvelle plage 10-35 (au lieu de l'ancienne 6-10+)
-function PasswordStep({ password, confirmPassword, onChangePassword, onChangeConfirm }: {
-  password: string; confirmPassword: string;
-  onChangePassword: (v: string) => void; onChangeConfirm: (v: string) => void;
-}) {
-  const strength = password.length === 0 ? null
-    : password.length < 10 ? "weak"
-    : password.length < 20 ? "medium"
-    : "strong";
-  const strColor = strength === "weak" ? T.red : strength === "medium" ? "#F59E0B" : T.green;
-  const strLabel = strength === "weak" ? "Trop court (min. 10)" : strength === "medium" ? "Acceptable" : "Fort ✓";
-  const match    = confirmPassword.length > 0 && password === confirmPassword;
-  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
-
-  return (
-    <View>
-      <StepInput
-        value={password}
-        onChangeText={onChangePassword}
-        placeholder="••••••••"
-        label="MOT DE PASSE"
-        icon="lock-closed-outline"
-        secureTextEntry
-        autoFocus
-        returnKeyType="next"
-        maxLength={35}
-      />
-      {strength && (
-        <View style={pw.strengthRow}>
-          <View style={pw.track}>
-            <View style={[pw.fill, {
-              width: strength === "weak" ? "30%" : strength === "medium" ? "65%" : "100%",
-              backgroundColor: strColor,
-            }]} />
-          </View>
-          <Text style={[pw.label, { color: strColor, fontFamily: T.font.sans }]}>
-            {strLabel}
-          </Text>
-        </View>
-      )}
-      <StepInput
-        value={confirmPassword}
-        onChangeText={onChangeConfirm}
-        placeholder="Répétez votre mot de passe"
-        label="CONFIRMER LE MOT DE PASSE"
-        icon={match ? "checkmark-circle-outline" : "lock-closed-outline"}
-        secureTextEntry
-        returnKeyType="done"
-        maxLength={35}
-      />
-      {mismatch && (
-        <View style={pw.errorRow}>
-          <Ionicons name="alert-circle" size={14} color={T.red} />
-          <Text style={[pw.errorTxt, { fontFamily: T.font.sans }]}>
-            Les mots de passe ne correspondent pas
-          </Text>
-        </View>
-      )}
-    </View>
-  );
-}
-const pw = StyleSheet.create({
-  strengthRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16, marginTop: 6 },
-  track:       { flex: 1, height: 4, backgroundColor: T.border, borderRadius: 99, overflow: "hidden" },
-  fill:        { height: 4, borderRadius: 99 },
-  label:       { fontSize: 10, fontWeight: "800", letterSpacing: 0.3, minWidth: 60 },
-  errorRow:    { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: T.redLt, borderRadius: 10, padding: 10, marginTop: 6 },
-  errorTxt:    { fontSize: 12, color: T.red, fontWeight: "600" },
-});
-
-// ─── PhoneStep ────────────────────────────────────────────
-// ✅ v6.2 : suppression de <View style={ph.sep}/> et du style `sep`
-// (width: 0 → aucun effet visuel, séparation déjà assurée par
-// borderRightWidth sur codeBtn)
-function PhoneStep({
-  phone, phoneCode, onChangePhone, onPressCode,
-}: {
-  phone: string; phoneCode: string; onChangePhone: (v: string) => void; onPressCode: () => void;
-}) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <View>
-      <Text style={[{ fontSize: 11, fontWeight: "700", color: T.inkSub, marginBottom: 8, letterSpacing: 0.5, textTransform: "uppercase" as const, fontFamily: T.font.sans }]}>
-        NUMÉRO DE TÉLÉPHONE
-      </Text>
-      <View style={[ph.card, focused && ph.cardFocused]}>
-        <TouchableOpacity style={ph.codeBtn} onPress={onPressCode}>
-          <Text style={[ph.codeFlag, { fontFamily: T.font.mono }]}>{phoneCode}</Text>
-          <Ionicons name="chevron-down" size={14} color={T.inkMuted} />
-        </TouchableOpacity>
-        <TextInput
-          style={[ph.input, { fontFamily: T.font.sans }, NO_OUTLINE]}
-          value={phone}
-          onChangeText={onChangePhone}
-          placeholder="6 12 34 56 78"
-          placeholderTextColor={T.inkMuted}
-          keyboardType="phone-pad"
-          autoFocus
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          underlineColorAndroid="transparent"
-        />
-      </View>
-    </View>
-  );
-}
-const ph = StyleSheet.create({
-  card:       { flexDirection: "row", alignItems: "center", backgroundColor: T.white, borderRadius: T.r.md, borderWidth: 1.5, borderColor: T.border, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1 },
-  cardFocused:{ borderColor: T.borderFocus, shadowColor: T.blue, shadowOpacity: 0.12, shadowRadius: 10, elevation: 3 },
-  codeBtn:    { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: T.pageBg, paddingHorizontal: 14, paddingVertical: 17, borderRightWidth: 1.5, borderRightColor: T.border },
-  codeFlag:   { fontSize: 15, fontWeight: "700", color: T.ink },
-  input:      { flex: 1, fontSize: 17, color: T.ink, fontWeight: "600", paddingHorizontal: 14, paddingVertical: 16 },
-});
-
-// ─── CountryCard (style Image 2) ─────────────────────────
-function CountryCard({ label, country, onPress }: {
-  label: string; country: string; onPress: () => void;
-}) {
-  const flag = FLAG_MAP[country] ?? "🌍";
-  return (
-    <TouchableOpacity style={cc.card} onPress={onPress} activeOpacity={0.7}>
-      <View style={cc.flagCircle}>
-        <Text style={{ fontSize: 26 }}>{flag}</Text>
-      </View>
-      <View style={cc.info}>
-        <Text style={[cc.cardLabel, { fontFamily: T.font.sans }]}>{label}</Text>
-        <Text style={[cc.cardValue, { fontFamily: T.font.sans }]}>
-          {country || "Sélectionner…"}
-        </Text>
-      </View>
-      <Ionicons name="chevron-down" size={20} color={T.inkMuted} />
-    </TouchableOpacity>
-  );
-}
-const cc = StyleSheet.create({
-  card:       { flexDirection: "row", alignItems: "center", backgroundColor: "#F1F5F9", borderRadius: T.r.md, padding: 16, gap: 14 },
-  flagCircle: { width: 48, height: 48, borderRadius: 24, backgroundColor: T.white, borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center", overflow: "hidden" },
-  info:       { flex: 1 },
-  cardLabel:  { fontSize: 11, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.5, marginBottom: 4, textTransform: "uppercase" },
-  cardValue:  { fontSize: 17, fontWeight: "700", color: T.ink },
-});
-
-// ─── DateStep ─────────────────────────────────────────────
-function DateStep({ birthDay, birthMonth, birthYear, onDay, onMonth, onYear }: {
-  birthDay: string; birthMonth: string; birthYear: string;
-  onDay: (v: string) => void; onMonth: (v: string) => void; onYear: (v: string) => void;
-}) {
-  const monthRef = useRef<TextInput>(null);
-  const yearRef  = useRef<TextInput>(null);
-
-  const handleDay = (v: string) => {
-    const clean = v.replace(/\D/g, "").slice(0, 2);
-    onDay(clean);
-    if (clean.length === 2) monthRef.current?.focus();
-  };
-  const handleMonth = (v: string) => {
-    const clean = v.replace(/\D/g, "").slice(0, 2);
-    onMonth(clean);
-    if (clean.length === 2) yearRef.current?.focus();
-  };
-  const handleYear = (v: string) => {
-    onYear(v.replace(/\D/g, "").slice(0, 4));
-  };
-
-  return (
-    <View>
-      <Text style={[{
-        fontSize: 11, fontWeight: "700", color: T.inkSub, marginBottom: 12,
-        letterSpacing: 0.5, textTransform: "uppercase" as const, fontFamily: T.font.sans,
-      }]}>
-        DATE DE NAISSANCE
-      </Text>
-      <View style={dt.row}>
-        <View style={dt.boxWrap}>
-          <Text style={[dt.boxLabel, { fontFamily: T.font.sans }]}>Jour</Text>
-          <TextInput
-            style={[dt.box, { fontFamily: T.font.mono }, birthDay.length > 0 && dt.boxFilled, NO_OUTLINE]}
-            value={birthDay}
-            onChangeText={handleDay}
-            placeholder="JJ"
-            placeholderTextColor={T.inkMuted}
-            keyboardType="numeric"
-            maxLength={2}
-            textAlign="center"
-            autoFocus
-            underlineColorAndroid="transparent"
-          />
-        </View>
-        <Text style={dt.sep}>/</Text>
-        <View style={dt.boxWrap}>
-          <Text style={[dt.boxLabel, { fontFamily: T.font.sans }]}>Mois</Text>
-          <TextInput
-            ref={monthRef}
-            style={[dt.box, { fontFamily: T.font.mono }, birthMonth.length > 0 && dt.boxFilled, NO_OUTLINE]}
-            value={birthMonth}
-            onChangeText={handleMonth}
-            placeholder="MM"
-            placeholderTextColor={T.inkMuted}
-            keyboardType="numeric"
-            maxLength={2}
-            textAlign="center"
-            underlineColorAndroid="transparent"
-          />
-        </View>
-        <Text style={dt.sep}>/</Text>
-        <View style={[dt.boxWrap, { flex: 1.6 }]}>
-          <Text style={[dt.boxLabel, { fontFamily: T.font.sans }]}>Année</Text>
-          <TextInput
-            ref={yearRef}
-            style={[dt.box, { fontFamily: T.font.mono }, birthYear.length > 0 && dt.boxFilled, NO_OUTLINE]}
-            value={birthYear}
-            onChangeText={handleYear}
-            placeholder="AAAA"
-            placeholderTextColor={T.inkMuted}
-            keyboardType="numeric"
-            maxLength={4}
-            textAlign="center"
-            underlineColorAndroid="transparent"
-          />
-        </View>
-      </View>
-    </View>
-  );
-}
-const dt = StyleSheet.create({
-  row:      { flexDirection: "row", alignItems: "flex-end", gap: 6 },
-  boxWrap:  { flex: 1, alignItems: "center" },
-  boxLabel: { fontSize: 9, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 6 },
-  box:      { width: "100%", backgroundColor: T.white, borderRadius: T.r.md, borderWidth: 1.5, borderColor: T.border, paddingVertical: 16, fontSize: 20, fontWeight: "700", color: T.ink },
-  boxFilled:{ borderColor: T.blue, backgroundColor: T.blueLt },
-  sep:      { fontSize: 22, color: T.inkMuted, fontWeight: "600", paddingBottom: 14 },
-});
-
-// ─── TermsStep ────────────────────────────────────────────
-function TermsStep({
-  accepted, onToggle, onTerms, onPrivacy,
-}: {
-  accepted: boolean; onToggle: () => void; onTerms: () => void; onPrivacy: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={[ts.card, accepted && ts.cardActive]}
-      onPress={onToggle}
-      activeOpacity={0.85}
-    >
-      <View style={[ts.checkbox, accepted && ts.checkboxActive]}>
-        {accepted && <Ionicons name="checkmark" size={14} color={T.white} />}
-      </View>
-      <Text style={[ts.txt, { fontFamily: T.font.sans }]}>
-        {"J'ai lu et j'accepte les "}
-        <Text style={ts.link} onPress={onTerms}>
-          Conditions générales d'utilisation
-        </Text>
-        {" et la "}
-        <Text style={ts.link} onPress={onPrivacy}>
-          Politique de confidentialité
-        </Text>
-        {" de Direct Transf'air."}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-const ts = StyleSheet.create({
-  card:          { flexDirection: "row", alignItems: "flex-start", gap: 14, backgroundColor: T.white, borderRadius: T.r.md, borderWidth: 1.5, borderColor: T.border, padding: 16 },
-  cardActive:    { borderColor: T.blue, backgroundColor: T.blueLt },
-  checkbox:      { width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: T.border, backgroundColor: T.white, justifyContent: "center", alignItems: "center", flexShrink: 0, marginTop: 1 },
-  checkboxActive:{ backgroundColor: T.blue, borderColor: T.blue },
-  txt:           { flex: 1, fontSize: 14, color: T.inkSub, lineHeight: 22, fontWeight: "500" },
-  link:          { color: T.blue, fontWeight: "700", textDecorationLine: "underline" },
-});
-
-// ─── CountryPickerModal ───────────────────────────────────
-function CountryPickerModal({
-  visible, onClose, onSelect, title,
-}: {
-  visible: boolean; onClose: () => void; onSelect: (c: string) => void; title: string;
-}) {
-  const [search, setSearch] = useState("");
-  const filtered = search.trim()
-    ? COUNTRIES.filter(c => c.toLowerCase().includes(search.toLowerCase()))
-    : COUNTRIES;
-
-  const handleSelect = (c: string) => {
-    onSelect(c);
-    setSearch("");
-    onClose();
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      onRequestClose={onClose}
-      statusBarTranslucent={Platform.OS === "android"}
-    >
-      <SafeAreaView style={cpm.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor={T.white} />
-
-        <View style={cpm.headerRow}>
-          <TouchableOpacity
-            style={cpm.closeBtn}
-            onPress={() => { setSearch(""); onClose(); }}
-            hitSlop={12}
-          >
-            <Ionicons name="close" size={22} color={T.ink} />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={[cpm.title, { fontFamily: T.font.serif }]}>{title}</Text>
-
-        <View style={cpm.searchBar}>
-          <Ionicons name="search" size={18} color={T.inkMuted} />
-          <TextInput
-            style={[cpm.searchInput, { fontFamily: T.font.sans }, NO_OUTLINE]}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Rechercher un pays…"
-            placeholderTextColor={T.inkMuted}
-            autoCorrect={false}
-            autoCapitalize="none"
-            underlineColorAndroid="transparent"
-          />
-          {!!search && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color={T.inkMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={cpm.item}
-              onPress={() => handleSelect(item)}
-              activeOpacity={0.65}
-            >
-              <View style={cpm.flagCircle}>
-                <Text style={{ fontSize: 24 }}>{FLAG_MAP[item] ?? "🌍"}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[cpm.itemName, { fontFamily: T.font.sans }]}>{item}</Text>
-                {COUNTRY_CODES[item] && (
-                  <Text style={[cpm.itemCode, { fontFamily: T.font.mono }]}>
-                    {COUNTRY_CODES[item]}
-                  </Text>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={T.inkMuted} />
-            </TouchableOpacity>
-          )}
-          ListEmptyComponent={
-            <View style={cpm.empty}>
-              <Ionicons name="search-outline" size={32} color={T.inkMuted} />
-              <Text style={[cpm.emptyTxt, { fontFamily: T.font.sans }]}>
-                Aucun pays trouvé
-              </Text>
-            </View>
-          }
-          contentContainerStyle={{ paddingBottom: 40 }}
-        />
-      </SafeAreaView>
-    </Modal>
-  );
-}
-const cpm = StyleSheet.create({
-  safe:       { flex: 1, backgroundColor: T.white },
-  headerRow:  { paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 16 : 12 },
-  closeBtn:   { width: 38, height: 38, borderRadius: 19, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
-  title:      { fontSize: 26, fontWeight: "700", color: T.ink, paddingHorizontal: 20, marginTop: 16, marginBottom: 20 },
-  searchBar:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F1F5F9", borderRadius: T.r.md, paddingHorizontal: 16, height: 52, marginHorizontal: 20, marginBottom: 8 },
-  searchInput:{ flex: 1, fontSize: 16, color: T.ink, fontWeight: "500" },
-  item:       { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#F1F5F9", gap: 14 },
-  flagCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: "#F8FAFF", borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center", overflow: "hidden" },
-  itemName:   { fontSize: 15, fontWeight: "600", color: T.ink },
-  itemCode:   { fontSize: 12, color: T.inkMuted, marginTop: 2 },
-  empty:      { alignItems: "center", paddingTop: 48, gap: 12 },
-  emptyTxt:   { fontSize: 14, color: T.inkMuted, fontWeight: "600" },
-});
-
-// ─── SuccessModal ─────────────────────────────────────────
-function SuccessModal({
-  visible, onContinue, hasPhone,
-}: {
-  visible: boolean; onContinue: () => void; hasPhone: boolean;
-}) {
-  const scale   = useRef(new Animated.Value(0.8)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.spring(scale,   { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }),
-        Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      ]).start();
-    } else {
-      scale.setValue(0.8);
-      opacity.setValue(0);
-    }
-  }, [visible]);
-
-  return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <View style={sm.overlay}>
-        <Animated.View style={[sm.card, { opacity, transform: [{ scale }] }]}>
-          <View style={sm.iconOuter}>
-            <View style={sm.iconInner}>
-              <Ionicons name="checkmark" size={36} color={T.white} />
-            </View>
-          </View>
-          <Text style={[sm.title, { fontFamily: T.font.serif }]}>Compte créé !</Text>
-          <Text style={[sm.sub, { fontFamily: T.font.sans }]}>
-            Bienvenue sur Direct Transf'air.{"\n"}
-            Un code de vérification a été envoyé à votre adresse email.
-            {hasPhone ? "\nVérifiez aussi votre téléphone." : ""}
-          </Text>
-          <View style={sm.badge}>
-            <Ionicons name="mail-outline" size={14} color={T.green} />
-            <Text style={[sm.badgeTxt, { fontFamily: T.font.sans }]}>
-              Vérification requise avant de vous connecter
-            </Text>
-          </View>
-          <View style={sm.divider} />
-          <TouchableOpacity style={sm.btn} onPress={onContinue} activeOpacity={0.88}>
-            <Ionicons name="mail-outline" size={16} color={T.white} />
-            <Text style={[sm.btnTxt, { fontFamily: T.font.sans }]}>Vérifier mon email</Text>
-            <Ionicons name="arrow-forward" size={16} color={T.white} />
-          </TouchableOpacity>
-        </Animated.View>
-      </View>
-    </Modal>
-  );
-}
-const sm = StyleSheet.create({
-  overlay:   { flex: 1, backgroundColor: "rgba(15,23,42,0.7)", justifyContent: "center", alignItems: "center", paddingHorizontal: 28 },
-  card:      { backgroundColor: T.white, borderRadius: 28, padding: 32, width: "100%", maxWidth: 380, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 24, elevation: 16 },
-  iconOuter: { width: 88, height: 88, borderRadius: 44, backgroundColor: T.greenLt, justifyContent: "center", alignItems: "center", marginBottom: 20 },
-  iconInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: T.green, justifyContent: "center", alignItems: "center" },
-  title:     { fontSize: 26, color: T.ink, marginBottom: 10, textAlign: "center" },
-  sub:       { fontSize: 14, color: T.inkMuted, textAlign: "center", lineHeight: 22, fontWeight: "500", marginBottom: 16 },
-  badge:     { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: T.greenLt, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: "#A7F3D0", marginBottom: 20 },
-  badgeTxt:  { fontSize: 12, color: T.green, fontWeight: "600" },
-  divider:   { width: "100%", height: 1, backgroundColor: "#F1F5F9", marginBottom: 20 },
-  btn:       { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: T.blue, borderRadius: 16, paddingVertical: 16, width: "100%" },
-  btnTxt:    { color: T.white, fontSize: 15, fontWeight: "700" },
-});
-
-// =========================================================
-// ── ÉCRAN PRINCIPAL ───────────────────────────────────────
-// =========================================================
 export default function RegisterScreen() {
-  // ✅ v6.3 — `register` (useAuth) n'est plus utilisé directement (voir
-  // changelog en tête de fichier) : on appelle api.register() à la
-  // place, pour ne committer la session qu'au moment choisi par
-  // l'écran. `login` reste utilisé comme repli différé, `applyLoginResult`
-  // est la fonction qui committe effectivement la session.
   const { login, applyLoginResult } = useAuth();
-  const { branding }                = useTenant();
-  const router                      = useRouter();
+  const router = useRouter();
+  const P = useAuthPalette();
+  const minAge = useMemo(() => getMinimumAge(), []);
 
-  // ── Step state ──────────────────────────────────────────
-  const [currentStep, setCurrentStep] = useState(0);
-  const [submitting,  setSubmitting]  = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [picker, setPicker] = useState<null | "country" | "nationality">(null);
+  const [step, setStep] = useState(0);
+  const [showErrors, setShowErrors] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [waking, setWaking] = useState(false);
+  const [formError, setFormError] = useState<{ title?: string; message: string; action?: 'login' } | null>(null);
+  const [serverErrors, setServerErrors] = useState<Errors>({});
+
+  // ── Champs ────────────────────────────────────────────
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [dob, setDob] = useState<Dob>({ day: '', month: '', year: '' });
+  const [nationality, setNationality] = useState<string | null>(null);
+  const [country, setCountry] = useState<string | null>(null);
+  const [city, setCity] = useState('');
+  const [email, setEmail] = useState('');
+  const [dialCountry, setDialCountry] = useState<AuthCountry>(findCountry('France') ?? AUTH_COUNTRIES[0]!);
+  const [dialTouched, setDialTouched] = useState(false);
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [terms, setTerms] = useState(false);
+  const [picker, setPicker] = useState<null | 'country' | 'nationality'>(null);
+
+  // ── Succès ────────────────────────────────────────────
+  const [done, setDone] = useState(false);
+  const [pending, setPending] = useState<Session | null>(null);
   const [registeredUser, setRegisteredUser] = useState<{ id: string; phone: string | null } | null>(null);
 
-  // ✅ v6.3 — résultat brut de l'inscription, gardé de côté SANS être
-  // appliqué à l'état global tant que l'utilisateur n'a pas fermé la
-  // SuccessModal lui-même (voir changelog en tête de fichier).
-  const [pendingAuth, setPendingAuth] = useState<{
-    accessToken: string; refreshToken: string | null; user: any;
-  } | null>(null);
+  const lastNameRef = useRef<TextInput>(null);
+  const cityRef = useRef<TextInput>(null);
+  const phoneRef = useRef<TextInput>(null);
+  const confirmRef = useRef<TextInput>(null);
+  const passRef = useRef<TextInput>(null);
 
-  // ── Champs formulaire ───────────────────────────────────
-  const [firstName,       setFirstName]       = useState("");
-  const [lastName,        setLastName]        = useState("");
-  const [email,           setEmail]           = useState("");
-  const [password,        setPassword]        = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [phone,           setPhone]           = useState("");
-  const [phoneCode,       setPhoneCode]       = useState("+224");
-  const [country,         setCountry]         = useState("Guinée");
-  const [city,            setCity]            = useState("");
-  const [birthDay,        setBirthDay]        = useState("");
-  const [birthMonth,      setBirthMonth]      = useState("");
-  const [birthYear,       setBirthYear]       = useState("");
-  const [nationality,     setNationality]     = useState("Guinée");
-  const [termsAccepted,   setTermsAccepted]   = useState(false);
-
-  // ── Animations ──────────────────────────────────────────
-  const slideAnim    = useRef(new Animated.Value(0)).current;
-  const opacityAnim  = useRef(new Animated.Value(1)).current;
-  const progressAnim = useRef(new Animated.Value(1 / TOTAL_STEPS)).current;
-
-  // ── Validation par étape ────────────────────────────────
-  // ✅ v6.2 : case 3 impose désormais 10-35 caractères (au lieu de >= 6)
-  const isStepValid = (): boolean => {
-    switch (currentStep) {
-      case 0:  return firstName.trim().length > 0;
-      case 1:  return lastName.trim().length > 0;
-      case 2:  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-      case 3:  return password.length >= 10 && password.length <= 35 && password === confirmPassword;
-      case 4:  return phone.trim().length >= 6;
-      case 5:  return country.length > 0;
-      case 6:  return city.trim().length > 0;
-      case 7:  return birthDay.length === 2 && birthMonth.length === 2 && birthYear.length === 4;
-      case 8:  return nationality.length > 0;
-      case 9:  return termsAccepted;
-      default: return false;
+  // ── Validation par étape ──────────────────────────────
+  const validate = (s: number): Errors => {
+    const e: Errors = {};
+    if (s === 0) {
+      if (!firstName.trim()) e.firstName = 'Saisissez votre prénom.';
+      if (!lastName.trim()) e.lastName = 'Saisissez votre nom de famille.';
+      const d = validateBirthDate(dob, minAge);
+      if (d) e.dob = d;
+      if (!nationality) e.nationality = 'Choisissez votre nationalité.';
+    } else if (s === 1) {
+      if (!country) e.country = 'Choisissez votre pays de résidence.';
+      if (!city.trim()) e.city = 'Saisissez votre ville.';
+    } else if (s === 2) {
+      if (!EMAIL_RE.test(email.trim())) e.email = 'Saisissez une adresse email valide.';
+      const p = validatePhone(phone);
+      if (p) e.phone = p;
+    } else if (s === 3) {
+      if (!isPasswordAcceptable(password)) e.password = `Entre ${PASSWORD_MIN} et ${PASSWORD_MAX} caractères.`;
+      if (!confirm) e.confirm = 'Confirmez votre mot de passe.';
+      else if (confirm !== password) e.confirm = 'Les deux mots de passe ne correspondent pas.';
+      if (!terms) e.terms = 'Vous devez accepter les conditions pour continuer.';
     }
+    return e;
   };
 
-  // ── Navigation ──────────────────────────────────────────
-  const animateToStep = (nextStep: number, direction: 1 | -1) => {
-    Keyboard.dismiss();
-    Animated.parallel([
-      Animated.timing(slideAnim, {
-        toValue: -direction * SW * 0.35,
-        duration: 220,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacityAnim, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      setCurrentStep(nextStep);
-      slideAnim.setValue(direction * SW * 0.35);
-      Animated.spring(progressAnim, {
-        toValue: (nextStep + 1) / TOTAL_STEPS,
-        useNativeDriver: false,
-        speed: 14,
-        bounciness: 2,
-      }).start();
-      Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          useNativeDriver: true,
-          speed: 16,
-          bounciness: 2,
-        }),
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    });
-  };
+  const errors: Errors = showErrors ? { ...validate(step), ...serverErrors } : serverErrors;
+  const clearServer = (k: keyof Errors) => setServerErrors((s) => (s[k] ? { ...s, [k]: undefined } : s));
 
-  const handleNext = () => {
-    if (!isStepValid()) return;
-    if (currentStep < TOTAL_STEPS - 1) {
-      animateToStep(currentStep + 1, 1);
-    } else {
-      void handleRegister();
+  const goBack = () => {
+    setFormError(null);
+    if (step === 0) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/(auth)/login-v2');
+      return;
     }
+    setShowErrors(false);
+    setStep(step - 1);
   };
 
-  const handleBack = () => {
-    if (currentStep === 0) {
-      router.back();
-    } else {
-      animateToStep(currentStep - 1, -1);
-    }
+  const goNext = () => {
+    setFormError(null);
+    if (Object.keys(validate(step)).length > 0) { setShowErrors(true); return; }
+    setShowErrors(false);
+    if (step < STEPS.length - 1) setStep(step + 1);
+    else void submit();
   };
 
-  // ── Inscription ─────────────────────────────────────────
-  // ✅ v6.3 FIX — appel DIRECT à api.register() (voir changelog en tête
-  // de fichier). AUCUN état global (AuthProvider) n'est touché ici :
-  // c'est précisément ce qui empêche le garde de navigation
-  // d'AuthProvider de rediriger cet écran avant que la SuccessModal
-  // ait pu s'afficher. Le résultat brut est gardé dans pendingAuth,
-  // appliqué uniquement dans handleSuccessContinue.
-  const handleRegister = async () => {
+  const pickResidence = (c: AuthCountry) => {
+    setCountry(c.name);
+    clearServer('country');
+    if (!dialTouched) setDialCountry(c);   // l'indicatif suit le pays tant que l'utilisateur ne l'a pas choisi lui-même
+    setPicker(null);
+  };
+
+  // ── Envoi ─────────────────────────────────────────────
+  const submit = async () => {
     setSubmitting(true);
+    setFormError(null);
     try {
-      const birthDate = `${birthDay.padStart(2, "0")}/${birthMonth.padStart(2, "0")}/${birthYear}`;
+      // Pas de rejeu automatique d'une inscription (risque de doublon) : on s'assure d'abord que le serveur répond.
+      setWaking(true);
+      const alive = await warmUpServer();
+      setWaking(false);
+      if (!alive) {
+        setFormError({ title: 'Serveur injoignable', message: 'Nous n’arrivons pas à joindre le serveur. Vérifiez votre connexion puis réessayez dans un instant.' });
+        return;
+      }
+
       const payload = {
-        firstName:    firstName.trim(),
-        lastName:     lastName.trim(),
-        email:        email.trim().toLowerCase(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
         password,
-        phone:        `${phoneCode}${phone.trim()}`,
-        country,
-        city:         city.trim(),
-        nationality,
-        birthDate,
-        birthPlace:   "",
-        birthCity:    "",
-        birthCountry: "",
-        addressStreet:"",
-        postalCode:   "",
-        addressCity:  city.trim(),
+        phone: `${dialCountry.dial}${normalizeNationalNumber(phone)}`,
+        country: country ?? '',
+        city: city.trim(),
+        nationality: nationality ?? '',
+        birthDate: formatBirthDate(dob),
       };
 
       const res: any = await api.register(payload as any);
 
-      if (res?.user) {
-        setRegisteredUser({ id: res.user.id, phone: res.user.phone ?? null });
+      if (res?.user) setRegisteredUser({ id: res.user.id, phone: res.user.phone ?? null });
+      if (res && typeof res.access_token === 'string' && res.access_token.length > 0) {
+        setPending({ accessToken: res.access_token, refreshToken: res.refresh_token ?? null, user: res.user });
       }
-      if (res && typeof res.access_token === "string" && res.access_token.length > 0) {
-        setPendingAuth({
-          accessToken:  res.access_token,
-          refreshToken: res.refresh_token ?? null,
-          user:         res.user,
-        });
-      }
-      setShowSuccess(true);
-
+      setDone(true);
     } catch (e: any) {
-      const status = e?.response?.status;
-      if (status && REAL_ERROR_STATUSES.has(status)) {
-        const raw = e?.response?.data?.message || e?.message || "Erreur inconnue.";
-        showAlert("Inscription échouée", Array.isArray(raw) ? raw[0] : String(raw));
-        return;
+      setWaking(false);
+      const info = describeAuthError(e, 'register');
+      const msg = info.message.toLowerCase();
+      if (info.kind === 'conflict' && msg.includes('email')) {
+        setServerErrors({ email: info.message });
+        setStep(2);
+        setFormError({ title: info.title, message: 'Cette adresse est déjà associée à un compte. Connectez-vous, ou utilisez une autre adresse.', action: 'login' });
+      } else if (info.kind === 'conflict' && (msg.includes('numéro') || msg.includes('téléphone'))) {
+        setServerErrors({ phone: info.message });
+        setStep(2);
+        setFormError({ title: info.title, message: 'Ce numéro est déjà associé à un compte. Connectez-vous, ou utilisez un autre numéro.', action: 'login' });
+      } else if (msg.includes('numéro de téléphone invalide')) {
+        setServerErrors({ phone: 'Ce numéro n’est pas reconnu. Vérifiez l’indicatif et le numéro.' });
+        setStep(2);
+        setShowErrors(true);
+      } else {
+        setFormError({ title: info.title, message: info.message });
       }
-      const isNetwork = !status || e?.message?.toLowerCase().includes("network");
-      showAlert(
-        isNetwork ? "Erreur de connexion" : "Erreur inattendue",
-        isNetwork
-          ? "Impossible de créer le compte. Vérifiez votre connexion internet."
-          : (e?.message ?? "Une erreur est survenue. Réessayez."),
-      );
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ✅ v6.3 FIX — c'est ICI, et seulement ici (au clic de l'utilisateur
-  // sur "Vérifier mon email"), que la session est committée dans
-  // l'état global via applyLoginResult() — voir changelog en tête de
-  // fichier. Repli (cas rare où l'API n'a pas renvoyé de session
-  // directement) : login() avec les identifiants tout juste saisis,
-  // lui aussi différé jusqu'ici pour la même raison. Si ce repli
-  // échoue, on laisse quand même l'utilisateur continuer : son compte
-  // a bien été créé (confirmé par handleRegister), il pourra toujours
-  // se connecter manuellement ensuite.
-  const handleSuccessContinue = async () => {
-    setShowSuccess(false);
-
+  // Session committée ICI seulement (correctif v6.3 — voir en-tête).
+  const continueToVerification = async () => {
     try {
-      if (pendingAuth) {
-        await applyLoginResult(pendingAuth.accessToken, pendingAuth.refreshToken, pendingAuth.user);
-      } else {
-        await login({ identifier: email.trim().toLowerCase(), password });
-      }
+      if (pending) await applyLoginResult(pending.accessToken, pending.refreshToken, pending.user);
+      else await login({ identifier: email.trim().toLowerCase(), password });
     } catch {
-      // Le compte est créé quoi qu'il arrive — on n'empêche pas la
-      // suite du parcours pour un échec de connexion automatique.
+      // Le compte existe : l'échec de la connexion automatique ne doit pas bloquer la suite.
     }
-
     if (registeredUser) {
       router.replace({
-        pathname: "/(auth)/verify-contact",
+        pathname: '/(auth)/verify-contact',
         params: {
-          userId:        registeredUser.id,
-          emailVerified: "0",
-          phoneVerified: registeredUser.phone ? "0" : "1",
-          hasPhone:      registeredUser.phone ? "1" : "0",
+          userId: registeredUser.id,
+          emailVerified: '0',
+          phoneVerified: registeredUser.phone ? '0' : '1',
+          hasPhone: registeredUser.phone ? '1' : '0',
         },
       } as any);
     } else {
-      router.replace("/(tabs)/home" as any);
+      router.replace('/(tabs)/home' as any);
     }
   };
 
-  // ── Rendu de l'étape ────────────────────────────────────
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 0:
-        return (
-          <StepInput
-            value={firstName}
-            onChangeText={setFirstName}
-            placeholder="ex : Alpha"
-            label="PRÉNOM"
-            icon="person-outline"
-            autoFocus
-            onSubmitEditing={isStepValid() ? handleNext : undefined}
-            returnKeyType="done"
-          />
-        );
+  // ═══════════════════════════════════════════════════════
+  // ÉCRAN DE SUCCÈS
+  // ═══════════════════════════════════════════════════════
+  if (done) {
+    return (
+      <AuthShell title="Compte créé" subtitle="Bienvenue ! Votre espace est prêt.">
+        <View style={s.successIcon}>
+          <View style={[s.successRing, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
+            <Ionicons name="checkmark" size={44} color={P.action} />
+          </View>
+        </View>
+        <Text style={s.successText}>
+          Dernière étape : confirmez votre adresse email.{'\n'}Nous venons de vous envoyer un code à 6 chiffres à{' '}
+          <Text style={{ fontWeight: '800', color: N.ink }}>{email.trim().toLowerCase()}</Text>.
+        </Text>
+        <View style={{ height: 22 }} />
+        <AuthButton label="Vérifier mon email" icon="arrow-forward" iconRight accent={P.action} onPress={continueToVerification} />
+      </AuthShell>
+    );
+  }
 
-      case 1:
-        return (
-          <StepInput
-            value={lastName}
-            onChangeText={setLastName}
-            placeholder="ex : DIALLO"
-            label="NOM DE FAMILLE"
-            icon="person-circle-outline"
-            autoCapitalize="characters"
-            autoFocus
-            onSubmitEditing={isStepValid() ? handleNext : undefined}
-            returnKeyType="done"
-          />
-        );
-
-      case 2:
-        return (
-          <StepInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="email@exemple.com"
-            label="ADRESSE EMAIL"
-            icon="mail-outline"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoFocus
-            onSubmitEditing={isStepValid() ? handleNext : undefined}
-            returnKeyType="done"
-          />
-        );
-
-      case 3:
-        return (
-          <PasswordStep
-            password={password}
-            confirmPassword={confirmPassword}
-            onChangePassword={setPassword}
-            onChangeConfirm={setConfirmPassword}
-          />
-        );
-
-      case 4:
-        return (
-          <PhoneStep
-            phone={phone}
-            phoneCode={phoneCode}
-            onChangePhone={setPhone}
-            onPressCode={() => setPicker("country")}
-          />
-        );
-
-      case 5:
-        return (
-          <>
-            <CountryCard
-              label="PAYS DE RÉSIDENCE"
-              country={country}
-              onPress={() => setPicker("country")}
-            />
-            {country && (
-              <View style={{
-                flexDirection: "row", alignItems: "center", gap: 6,
-                marginTop: 14, backgroundColor: T.blueLt,
-                borderRadius: T.r.sm, padding: 10,
-              }}>
-                <Ionicons name="information-circle-outline" size={14} color={T.blue} />
-                <Text style={[{ fontSize: 12, color: T.blue, fontWeight: "600", flex: 1, fontFamily: T.font.sans }]}>
-                  Indicatif téléphonique : {COUNTRY_CODES[country] ?? "+?"}
-                </Text>
-              </View>
-            )}
-          </>
-        );
-
-      case 6:
-        return (
-          <StepInput
-            value={city}
-            onChangeText={setCity}
-            placeholder="ex : Conakry, Paris, Dakar…"
-            label="VILLE"
-            icon="business-outline"
-            autoFocus
-            onSubmitEditing={isStepValid() ? handleNext : undefined}
-            returnKeyType="done"
-          />
-        );
-
-      case 7:
-        return (
-          <DateStep
-            birthDay={birthDay}
-            birthMonth={birthMonth}
-            birthYear={birthYear}
-            onDay={setBirthDay}
-            onMonth={setBirthMonth}
-            onYear={setBirthYear}
-          />
-        );
-
-      case 8:
-        return (
-          <CountryCard
-            label="NATIONALITÉ"
-            country={nationality}
-            onPress={() => setPicker("nationality")}
-          />
-        );
-
-      case 9:
-        return (
-          <>
-            <View style={s.summary}>
-              <View style={s.summaryRow}>
-                <Ionicons name="person-outline" size={15} color={T.inkMuted} />
-                <Text style={[s.summaryTxt, { fontFamily: T.font.sans }]}>
-                  {firstName} {lastName}
-                </Text>
-              </View>
-              <View style={s.summaryRow}>
-                <Ionicons name="mail-outline" size={15} color={T.inkMuted} />
-                <Text style={[s.summaryTxt, { fontFamily: T.font.sans }]} numberOfLines={1}>
-                  {email}
-                </Text>
-              </View>
-              <View style={s.summaryRow}>
-                <Ionicons name="location-outline" size={15} color={T.inkMuted} />
-                <Text style={[s.summaryTxt, { fontFamily: T.font.sans }]}>
-                  {FLAG_MAP[country] ?? "🌍"} {city}, {country}
-                </Text>
-              </View>
-            </View>
-            <View style={{ height: 16 }} />
-            <TermsStep
-              accepted={termsAccepted}
-              onToggle={() => setTermsAccepted(!termsAccepted)}
-              onTerms={() => router.push("/(auth)/terms")}
-              onPrivacy={() => router.push("/(auth)/privacy-policy")}
-            />
-          </>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  const progressWidth = progressAnim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: ["0%", "100%"],
-    extrapolate: "clamp",
-  });
-
-  const isLast  = currentStep === TOTAL_STEPS - 1;
-  const canNext = isStepValid();
+  // ═══════════════════════════════════════════════════════
+  // FORMULAIRE
+  // ═══════════════════════════════════════════════════════
+  const meta = STEPS[step]!;
+  const isLast = step === STEPS.length - 1;
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.white} />
+    <AuthShell compact title={meta.title} subtitle={meta.subtitle} onBack={goBack}>
+      {/* ── Progression ── */}
+      <View style={s.progress} accessibilityLabel={`Étape ${step + 1} sur ${STEPS.length}`}>
+        {STEPS.map((_, i) => (
+          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : '#E3EBE8' }]} />
+        ))}
+      </View>
+      <Text style={s.progTxt}>Étape {step + 1} sur {STEPS.length}</Text>
 
-      {/* ── Header : back + barre de progression ── */}
-      <SafeAreaView style={s.headerSafe}>
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={handleBack} hitSlop={14}>
-            <Ionicons name="arrow-back" size={22} color={T.ink} />
-          </TouchableOpacity>
-          <View style={s.progressTrack}>
-            <Animated.View style={[s.progressFill, { width: progressWidth }]} />
-          </View>
-          <Text style={[s.stepCount, { fontFamily: T.font.mono }]}>
-            {currentStep + 1}/{TOTAL_STEPS}
-          </Text>
-        </View>
-      </SafeAreaView>
+      {formError ? (
+        <AuthNotice
+          kind="error"
+          title={formError.title}
+          message={formError.message}
+          actionLabel={formError.action === 'login' ? 'Aller à la connexion' : undefined}
+          onAction={formError.action === 'login' ? () => router.replace('/(auth)/login-v2') : undefined}
+        />
+      ) : null}
+      {waking ? <AuthNotice kind="info" title="Le serveur démarre" message="Quelques secondes après une période d’inactivité, merci de patienter…" /> : null}
 
-      {/* ── Contenu animé ── */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={{ flex: 1 }}
-      >
-        <Animated.View style={[
-          s.content,
-          { transform: [{ translateX: slideAnim }], opacity: opacityAnim },
-        ]}>
-          <ScrollView
-            contentContainerStyle={s.scroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Icône de l'étape */}
-            <View style={s.iconCircle}>
-              <Ionicons
-                name={STEPS[currentStep].icon as any}
-                size={36}
-                color={T.blue}
-              />
-            </View>
+      {step === 0 && (
+        <>
+          <AuthField
+            label="Prénom" icon="person-outline" value={firstName} onChangeText={setFirstName}
+            error={errors.firstName} autoCapitalize="words" autoComplete="given-name" textContentType="givenName"
+            returnKeyType="next" onSubmitEditing={() => lastNameRef.current?.focus()} accent={P.accent} autoFocus
+          />
+          <AuthField
+            label="Nom de famille" icon="person-circle-outline" value={lastName} onChangeText={setLastName}
+            error={errors.lastName} autoCapitalize="characters" autoComplete="family-name" textContentType="familyName"
+            returnKeyType="next" inputRef={lastNameRef} accent={P.accent}
+          />
+          <DateOfBirthField value={dob} onChange={setDob} error={errors.dob} accent={P.accent} />
+          <SelectField
+            label="Nationalité" icon="flag-outline" placeholder="Choisir une nationalité"
+            value={nationality ?? undefined} prefix={nationality ? findCountry(nationality)?.flag : undefined}
+            error={errors.nationality} onPress={() => setPicker('nationality')}
+          />
+        </>
+      )}
 
-            {/* Question */}
-            <Text style={[s.question, { fontFamily: T.font.serif }]}>
-              {STEPS[currentStep].question}
-            </Text>
+      {step === 1 && (
+        <>
+          <SelectField
+            label="Pays de résidence" icon="location-outline" placeholder="Choisir votre pays"
+            value={country ?? undefined} prefix={country ? findCountry(country)?.flag : undefined}
+            error={errors.country} onPress={() => setPicker('country')}
+          />
+          <AuthField
+            label="Ville" icon="business-outline" value={city} onChangeText={setCity}
+            error={errors.city} autoCapitalize="words" autoComplete="postal-address-locality"
+            returnKeyType="next" onSubmitEditing={goNext} inputRef={cityRef} accent={P.accent}
+          />
+        </>
+      )}
 
-            {/* Sous-texte */}
-            <Text style={[s.hint, { fontFamily: T.font.sans }]}>
-              {STEPS[currentStep].hint}
-            </Text>
+      {step === 2 && (
+        <>
+          <AuthField
+            label="Adresse email" icon="mail-outline" value={email}
+            onChangeText={(t) => { setEmail(t); clearServer('email'); }}
+            error={errors.email} keyboardType="email-address" autoComplete="email" textContentType="emailAddress"
+            returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} accent={P.accent} autoFocus
+            hint="Elle vous servira à vous connecter et à recevoir vos confirmations."
+          />
+          <PhoneField
+            country={dialCountry}
+            onCountryChange={(c) => { setDialCountry(c); setDialTouched(true); }}
+            value={phone}
+            onChangeText={(t) => { setPhone(t); clearServer('phone'); }}
+            error={errors.phone}
+            hint="Sans le 0 de tête. Utilisé pour sécuriser votre compte."
+            accent={P.accent}
+            inputRef={phoneRef}
+            onSubmitEditing={goNext}
+          />
+        </>
+      )}
 
-            {/* Contenu */}
-            {renderStepContent()}
+      {step === 3 && (
+        <>
+          <AuthField
+            label="Mot de passe" icon="lock-closed-outline" value={password} onChangeText={setPassword}
+            error={errors.password} secure autoComplete="new-password" textContentType="newPassword"
+            returnKeyType="next" onSubmitEditing={() => confirmRef.current?.focus()} inputRef={passRef}
+            accent={P.accent} maxLength={PASSWORD_MAX} autoFocus
+          />
+          <PasswordGuide password={password} />
+          <AuthField
+            label="Confirmer le mot de passe" icon="shield-checkmark-outline" value={confirm} onChangeText={setConfirm}
+            error={errors.confirm} secure autoComplete="new-password" textContentType="newPassword"
+            returnKeyType="done" inputRef={confirmRef} accent={P.accent} maxLength={PASSWORD_MAX}
+            valid={confirm.length > 0 && confirm === password}
+          />
 
-            <View style={{ height: 20 }} />
-          </ScrollView>
-        </Animated.View>
-
-        {/* ── Bouton bas de page ── */}
-        <View style={s.bottomBar}>
           <TouchableOpacity
-            style={[s.continueBtn, !canNext && s.continueBtnOff]}
-            onPress={handleNext}
-            disabled={!canNext || submitting}
-            activeOpacity={0.85}
+            style={s.termsRow}
+            onPress={() => setTerms((v) => !v)}
+            activeOpacity={0.8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: terms }}
+            accessibilityLabel="J'accepte les conditions générales et la politique de confidentialité"
           >
-            {submitting ? (
-              <ActivityIndicator color={T.white} />
-            ) : (
-              <>
-                <Text style={[s.continueTxt, { fontFamily: T.font.sans }]}>
-                  {isLast ? "Créer mon compte" : "Continuer"}
-                </Text>
-                {!isLast && (
-                  <View style={s.arrowCircle}>
-                    <Ionicons name="arrow-forward" size={16} color={T.blue} />
-                  </View>
-                )}
-              </>
-            )}
+            <View style={[s.check, terms && { backgroundColor: P.action, borderColor: P.action }, errors.terms ? { borderColor: N.danger } : null]}>
+              {terms ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
+            </View>
+            <Text style={s.termsTxt}>
+              J’accepte les{' '}
+              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/terms')}>conditions générales</Text>
+              {' '}et la{' '}
+              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/privacy-policy')}>politique de confidentialité</Text>.
+            </Text>
           </TouchableOpacity>
+          {errors.terms ? (
+            <View style={s.termsErr}>
+              <Ionicons name="alert-circle" size={14} color={N.danger} />
+              <Text style={s.termsErrTxt}>{errors.terms}</Text>
+            </View>
+          ) : null}
+        </>
+      )}
 
-          {currentStep === 0 && (
-            <TouchableOpacity
-              style={s.loginLink}
-              onPress={() => router.replace("/(auth)/login-v2" as any)}
-            >
-              <Text style={[s.loginLinkTxt, { fontFamily: T.font.sans }]}>
-                Déjà un compte ?{" "}
-                <Text style={{ color: T.blue, fontWeight: "700" }}>Se connecter</Text>
-              </Text>
-            </TouchableOpacity>
-          )}
+      <View style={{ height: 8 }} />
+      <AuthButton
+        label={isLast ? 'Créer mon compte' : 'Continuer'}
+        icon={isLast ? 'checkmark-circle' : 'arrow-forward'}
+        iconRight
+        accent={P.action}
+        loading={submitting}
+        onPress={goNext}
+        testID="register-next"
+      />
+      {step === 0 ? (
+        <View style={s.loginRow}>
+          <Text style={s.loginTxt}>Vous avez déjà un compte ?</Text>
+          <AuthButton label="Se connecter" variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
         </View>
-      </KeyboardAvoidingView>
+      ) : null}
 
-      {/* ── Country Picker ── */}
-      <CountryPickerModal
-        visible={picker === "country" || picker === "nationality"}
-        title={picker === "country" ? "Pays de résidence" : "Nationalité"}
+      <CountryPickerSheet
+        visible={picker === 'country'}
+        title="Pays de résidence"
+        selected={country ?? undefined}
+        accent={P.accent}
+        onSelect={pickResidence}
         onClose={() => setPicker(null)}
-        onSelect={(c) => {
-          if (picker === "country") {
-            setCountry(c);
-            setPhoneCode(COUNTRY_CODES[c] ?? "+");
-          } else if (picker === "nationality") {
-            setNationality(c);
-          }
-          setPicker(null);
-        }}
       />
-
-      {/* ── Success Modal ── */}
-      <SuccessModal
-        visible={showSuccess}
-        onContinue={handleSuccessContinue}
-        hasPhone={!!phone.trim()}
+      <CountryPickerSheet
+        visible={picker === 'nationality'}
+        title="Nationalité"
+        selected={nationality ?? undefined}
+        accent={P.accent}
+        onSelect={(c) => { setNationality(c.name); setPicker(null); }}
+        onClose={() => setPicker(null)}
       />
-    </View>
+    </AuthShell>
   );
 }
 
-// ─── Styles principaux ────────────────────────────────────
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: T.white },
+  progress: { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  progSeg:  { flex: 1, height: 5, borderRadius: 99 },
+  progTxt:  { fontFamily: FONT.medium, fontSize: 12, fontWeight: '700', color: N.muted, marginBottom: 18 },
 
-  headerSafe: { backgroundColor: T.white },
-  header: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    paddingHorizontal: 20,
-    paddingTop:    Platform.OS === "android" ? 12 : 4,
-    paddingBottom: 14,
+  termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 4 },
+  check: {
+    width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: '#B8C7C2',
+    alignItems: 'center', justifyContent: 'center', marginTop: 1, backgroundColor: N.surface,
   },
-  backBtn: {
-    width: 40, height: 40, borderRadius: T.r.sm,
-    backgroundColor: "#F1F5F9",
-    justifyContent: "center", alignItems: "center",
-    flexShrink: 0,
-  },
-  progressTrack: {
-    flex: 1, height: 5, backgroundColor: T.border,
-    borderRadius: 99, overflow: "hidden",
-  },
-  progressFill: { height: 5, backgroundColor: T.blue, borderRadius: 99 },
-  stepCount:    { fontSize: 12, fontWeight: "700", color: T.inkMuted, flexShrink: 0 },
+  termsTxt:  { flex: 1, fontFamily: FONT.body, fontSize: 13.5, lineHeight: 20, color: N.inkSub },
+  termsLink: { fontWeight: '800', textDecorationLine: 'underline' },
+  termsErr:    { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  termsErrTxt: { fontFamily: FONT.body, fontSize: 12.5, color: N.danger },
 
-  content: { flex: 1 },
-  scroll:  { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 20 },
+  loginRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' },
+  loginTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
 
-  iconCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: T.blueLt,
-    justifyContent: "center", alignItems: "center",
-    alignSelf: "center",
-    marginBottom: 28, marginTop: 8,
-    borderWidth: 1.5, borderColor: T.blueMd,
-  },
-
-  question: {
-    fontSize: 30, fontWeight: "700", color: T.ink,
-    marginBottom: 10, lineHeight: 38,
-  },
-  hint: {
-    fontSize: 14, color: T.inkMuted, fontWeight: "500",
-    lineHeight: 21, marginBottom: 28,
-  },
-
-  summary: {
-    backgroundColor: "#F8FAFF", borderRadius: T.r.md,
-    borderWidth: 1, borderColor: T.border, padding: 16, gap: 10,
-  },
-  summaryRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  summaryTxt: { fontSize: 14, fontWeight: "600", color: T.ink, flex: 1 },
-
-  bottomBar: {
-    paddingHorizontal: 24,
-    paddingBottom: Platform.OS === "ios" ? 36 : 24,
-    paddingTop: 12,
-    backgroundColor: T.white,
-    borderTopWidth: 1, borderTopColor: T.border,
-    gap: 12,
-  },
-  continueBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    backgroundColor: T.blue, borderRadius: T.r.lg,
-    paddingVertical: 18, gap: 10,
-    shadowColor: T.blue, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
-  },
-  continueBtnOff: { backgroundColor: T.inkMuted, shadowOpacity: 0 },
-  continueTxt:    { color: T.white, fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
-  arrowCircle: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    justifyContent: "center", alignItems: "center",
-  },
-  loginLink:    { alignItems: "center" },
-  loginLinkTxt: { fontSize: 14, color: T.inkMuted, fontWeight: "500" },
+  successIcon: { alignItems: 'center', marginVertical: 14 },
+  successRing: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  successText: { fontFamily: FONT.body, fontSize: 15, lineHeight: 23, color: N.inkSub, textAlign: 'center' },
 });

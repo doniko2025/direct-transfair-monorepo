@@ -1,6 +1,23 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
-// VERIFY CONTACT v1.4 — Direct Transf'air
+// VERIFY CONTACT v2.0 — Direct Transf'air
+// ✅ v2.0 : REFONTE VISUELLE de la vérification — Thierno Doniko (Grand Chef).
+//   TOUTE la logique v1.0 → v1.4 est conservée à l'identique : étapes requises, envoi
+//   automatique unique au montage (garde anti-double appel), compte à rebours de renvoi,
+//   gestion du plafond de demandes, et navigation centralisée dans UN SEUL effet
+//   (correctif v1.4 : l'écran ne se fige plus sur « Connexion en cours »).
+//   CHANGEMENTS :
+//   - écran refait avec le kit components/auth (cadre, bandeaux, bouton) ;
+//   - saisie du code : un seul champ réel + 6 cases (OtpCodeInput) → le code reçu par
+//     SMS / email se colle ou se remplit automatiquement, et la vérification part toute seule
+//     au 6ᵉ chiffre (avant : 6 champs séparés, collage impossible) ;
+//   - code faux : message dans l'écran, cases remises à zéro (avant : pop-up) ;
+//   - « Veuillez patienter N secondes » (renvoi trop rapproché du serveur) n'est plus pris
+//     pour une panne : le code précédent est valide, on affiche la saisie ;
+//   - serveur en veille : le serveur est réveillé avant l'envoi du code ;
+//   - ajout de « Utiliser un autre compte » : un client qui s'est trompé d'adresse
+//     n'est plus bloqué sur cet écran (l'écran bloque volontairement le retour arrière) ;
+//   - accès sans identifiant (lien ouvert à froid) : message clair au lieu d'un écran vide.
 // ✅ v1.0, v1.1, v1.2 conservés intégralement
 // ✅ v1.3 : FIX RÉEL de l'écran figé sur "Connexion en cours..."
 //
@@ -51,136 +68,32 @@
 //      possible d'avoir un chemin qui atteint 'done' sans être couvert.
 // =========================================================
 
-import React, {
-  useCallback, useEffect, useMemo, useRef, useState,
-} from 'react';
-import {
-  ActivityIndicator, Animated, KeyboardAvoidingView,
-  Platform, ScrollView, StatusBar, StyleSheet, Text,
-  TextInput, TouchableOpacity, View,
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+
 import { useAuth } from '../../providers/AuthProvider';
-import { useTenant } from '../../providers/TenantProvider';
 import { v2Auth } from '../../services/v2-auth';
+import { warmUpServer } from '../../services/serverWarmup';
 
-// ─── Polices ─────────────────────────────────────────────
-const F = {
-  display: Platform.select({ ios: 'Georgia',  android: 'serif',      default: 'serif' }),
-  body:    Platform.select({ ios: 'System',   android: 'sans-serif', default: 'sans-serif' }),
-};
-
-// ─── Palette depuis couleur primaire ─────────────────────
-function hexToRgb(hex: string): [number, number, number] | null {
-  const c = hex.replace('#', '');
-  if (c.length !== 6) return null;
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return isNaN(r + g + b) ? null : [r, g, b];
-}
-const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
-function toHex(r: number, g: number, b: number) {
-  return '#' + [r, g, b].map((v) => clamp(v).toString(16).padStart(2, '0')).join('');
-}
-function darken(hex: string, f: number) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  return toHex(rgb[0] * (1 - f), rgb[1] * (1 - f), rgb[2] * (1 - f));
-}
-function lighten(hex: string, f: number) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex;
-  return toHex(
-    rgb[0] + (255 - rgb[0]) * f,
-    rgb[1] + (255 - rgb[1]) * f,
-    rgb[2] + (255 - rgb[2]) * f,
-  );
-}
-function buildTheme(primary: string) {
-  const p = /^#[0-9A-Fa-f]{6}$/.test(primary) ? primary : '#059669';
-  return {
-    g1: darken(p, 0.85),
-    g2: darken(p, 0.70),
-    g3: darken(p, 0.45),
-    g4: p,
-    g5: lighten(p, 0.30),
-    g6: lighten(p, 0.55),
-  };
-}
+import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
+import AuthButton   from '../../components/auth/AuthButton';
+import AuthNotice   from '../../components/auth/AuthNotice';
+import OtpCodeInput from '../../components/auth/OtpCodeInput';
+import { describeAuthError } from '../../components/auth/authErrors';
+import { FONT, N } from '../../components/auth/authTheme';
 
 // ─── Constantes ──────────────────────────────────────────
 const OTP_LENGTH          = 6;
 const RESEND_COOLDOWN_SEC = 60;
 
-// ─── Types internes ───────────────────────────────────────
 type Step = 'email' | 'phone';
 
-// =========================================================
-// COMPOSANT : Case OTP (1 chiffre)
-// =========================================================
-function OtpBox({
-  value, accentColor, inputRef, onChangeText, onKeyPress,
-}: {
-  value: string;
-  accentColor: string;
-  inputRef: React.Ref<TextInput>;
-  onChangeText: (t: string) => void;
-  onKeyPress: (key: string) => void;
-}) {
-  return (
-    <TextInput
-      ref={inputRef}
-      style={[
-        s.otpBox,
-        value ? { borderColor: accentColor } : {},
-        Platform.OS === 'web' && ({ outlineStyle: 'none' } as any),
-      ]}
-      value={value}
-      onChangeText={onChangeText}
-      onKeyPress={({ nativeEvent }) => onKeyPress(nativeEvent.key)}
-      keyboardType="number-pad"
-      maxLength={1}
-      textAlign="center"
-      caretHidden
-      selectTextOnFocus
-      underlineColorAndroid="transparent"
-    />
-  );
-}
-
-// =========================================================
-// COMPOSANT : Barre de progression
-// =========================================================
-function ProgressBar({
-  current, total, accentColor,
-}: {
-  current: number; total: number; accentColor: string;
-}) {
-  if (total < 2) return null;
-  return (
-    <View style={s.progressWrap}>
-      {Array.from({ length: total }).map((_, i) => (
-        <View
-          key={i}
-          style={[
-            s.progressDot,
-            { backgroundColor: i < current ? accentColor : '#E2E8F0' },
-          ]}
-        />
-      ))}
-    </View>
-  );
-}
-
-// =========================================================
-// ÉCRAN PRINCIPAL
-// =========================================================
 export default function VerifyContactScreen() {
-  const { token, refreshUser } = useAuth();
-  const { branding }           = useTenant();
-  const router                 = useRouter();
+  const { token, refreshUser, logout } = useAuth();
+  const router = useRouter();
+  const P = useAuthPalette();
 
   const params = useLocalSearchParams<{
     userId:        string;
@@ -191,10 +104,6 @@ export default function VerifyContactScreen() {
 
   const userId        = params.userId        ?? '';
   const emailVerified = params.emailVerified === '1';
-  const phoneVerified = params.phoneVerified === '1';
-  const hasPhone      = params.hasPhone      === '1';
-
-  const C = useMemo(() => buildTheme(branding.primaryColor), [branding.primaryColor]);
 
   // ── Étapes requises ──────────────────────────────────────
   const stepsRequired = useMemo<Step[]>(() => {
@@ -203,22 +112,22 @@ export default function VerifyContactScreen() {
     // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
     // if (!phoneVerified && hasPhone) steps.push('phone');
     return steps;
-  }, [emailVerified, phoneVerified, hasPhone]);
+  }, [emailVerified]);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const currentStep: Step | 'done' =
     currentStepIndex < stepsRequired.length ? stepsRequired[currentStepIndex]! : 'done';
 
   // ── État OTP ─────────────────────────────────────────────
-  const emptyOtp = () => Array(OTP_LENGTH).fill('');
-  const [otpValues,   setOtpValues]   = useState<string[]>(emptyOtp());
+  const [code,        setCode]        = useState('');
+  const [wrong,       setWrong]       = useState(false);
   const [maskedInfo,  setMaskedInfo]  = useState('');
   const [isSending,   setIsSending]   = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [codeSent,    setCodeSent]    = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
-  // ✅ v1.1 : state erreur inline (remplace Alert.alert)
   const [sendError,   setSendError]   = useState<string | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // ── Minuteur renvoi ──────────────────────────────────────
   const [countdown, setCountdown] = useState(0);
@@ -241,139 +150,94 @@ export default function VerifyContactScreen() {
 
   // ── Animation succès ─────────────────────────────────────
   const checkScale = useRef(new Animated.Value(0)).current;
-
   const animateSuccess = () => {
-    Animated.spring(checkScale, {
-      toValue: 1, useNativeDriver: true,
-      friction: 5, tension: 80,
-    }).start();
+    Animated.spring(checkScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 80 }).start();
   };
 
-  // ── Refs cases OTP ───────────────────────────────────────
-  const otpRefs = [
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-    useRef<TextInput>(null),
-  ];
-
   // ── Envoi du code ────────────────────────────────────────
-  // ✅ v1.1 : setSendError au lieu d'Alert + reset error au départ
   const sendCode = useCallback(async (step: Step) => {
     if (!userId) return;
     setIsSending(true);
     setRateLimited(false);
-    setSendError(null); // Reset l'erreur précédente
+    setSendError(null);
 
     try {
+      await warmUpServer();   // réveille le serveur s'il dormait, avant d'envoyer
       const channel = step === 'email' ? 'EMAIL' : 'PHONE';
       const res = await v2Auth.sendVerification(userId, channel);
       setMaskedInfo(res.maskedRecipient);
       setCodeSent(true);
       startCountdown();
-      setTimeout(() => otpRefs[0]?.current?.focus(), 250);
     } catch (e: any) {
       const msg = v2Auth.extractMessage(e);
+      const low = msg.toLowerCase();
       const isRateLimit =
-        msg.toLowerCase().includes('rate')  ||
-        msg.toLowerCase().includes('heure') ||
-        msg.includes('3');
+        low.includes('rate') || low.includes('heure') || low.includes('patienter') || msg.includes('3');
 
       if (isRateLimit) {
-        // Rate limit : afficher UI OTP quand même (code peut déjà exister)
+        // Un code valide existe déjà (envoi précédent) : on affiche la saisie.
         setRateLimited(true);
         setCodeSent(true);
       } else {
-        // ✅ v1.1 : erreur inline avec retry, pas d'Alert
-        setSendError(msg);
+        setSendError(describeAuthError(e, 'generic').message);
       }
     } finally {
       setIsSending(false);
     }
   }, [userId, startCountdown]);
 
-  // ── Envoi automatique au montage et changement d'étape ───
-  const hasSentRef = useRef(false); // ← ajoute cette ligne avec les autres refs
-
- useEffect(() => {
-  // ✅ Guard anti-double-appel (React StrictMode + Railway)
-  // Sans ce guard : 3 appels → rate limit immédiat → plus aucun email
-  if (currentStep !== 'done' && !codeSent && !hasSentRef.current) {
-    hasSentRef.current = true;
-    void sendCode(currentStep);
+  // ── Envoi automatique unique au montage ──────────────────
+  const hasSentRef = useRef(false);
+  useEffect(() => {
+    // Garde anti-double-appel (React StrictMode) : sans elle, plusieurs appels → plafond atteint → plus aucun email.
+    if (currentStep !== 'done' && !codeSent && !hasSentRef.current) {
+      hasSentRef.current = true;
+      void sendCode(currentStep);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
-  // ── Changement étape : reset état ────────────────────────
+  // ── Changement d'étape : reset état ──────────────────────
   const moveToNextStep = () => {
-    setOtpValues(emptyOtp());
+    setCode('');
+    setWrong(false);
     setCodeSent(false);
     setRateLimited(false);
     setCountdown(0);
-    setSendError(null); // ✅ v1.1 : reset l'erreur
+    setSendError(null);
+    setVerifyError(null);
     checkScale.setValue(0);
     setCurrentStepIndex((i) => i + 1);
   };
 
-  // ── Gestion saisie OTP ───────────────────────────────────
-  const handleOtpChange = (text: string, index: number) => {
-    const digit = text.replace(/\D/g, '').slice(-1);
-    const next = [...otpValues];
-    next[index] = digit;
-    setOtpValues(next);
-    if (digit && index < OTP_LENGTH - 1) {
-      otpRefs[index + 1]?.current?.focus();
-    }
-    if (digit && index === OTP_LENGTH - 1 && next.every((d) => d !== '')) {
-      void handleVerify(next.join(''));
-    }
-  };
-
-  const handleOtpKeyPress = (key: string, index: number) => {
-    if (key === 'Backspace' && !otpValues[index] && index > 0) {
-      const next = [...otpValues];
-      next[index - 1] = '';
-      setOtpValues(next);
-      otpRefs[index - 1]?.current?.focus();
-    }
-  };
-
   // ── Vérification ─────────────────────────────────────────
-  // ✅ v1.4 — handleVerify() ne navigue plus lui-même. Quand tout est
-  // vérifié, il se contente de pousser currentStepIndex jusqu'à la fin
-  // de stepsRequired (→ currentStep devient 'done'). La navigation
-  // réelle est centralisée dans l'effet ci-dessous, qui couvre TOUS
-  // les chemins menant à 'done', pas seulement celui-ci.
+  // v1.4 — handleVerify() ne navigue pas : il pousse currentStepIndex jusqu'à 'done',
+  // et l'effet de navigation ci-dessous (unique) décide de la suite.
   const handleVerify = async (codeOverride?: string) => {
-    const code = codeOverride ?? otpValues.join('');
-    if (code.length < OTP_LENGTH) return;
+    const value = codeOverride ?? code;
+    if (value.length < OTP_LENGTH || isVerifying) return;
     if (currentStep === 'done') return;
 
     setIsVerifying(true);
+    setVerifyError(null);
     try {
       const channel = currentStep === 'email' ? 'EMAIL' : 'PHONE';
-      const res = await v2Auth.verifyContact(userId, code, channel);
+      const res = await v2Auth.verifyContact(userId, value, channel);
 
       if (res.allVerified) {
         animateSuccess();
         setTimeout(() => setCurrentStepIndex(stepsRequired.length), 700);
         return;
       }
-
       moveToNextStep();
       animateSuccess();
     } catch (e: any) {
-      const msg = v2Auth.extractMessage(e);
-      if (Platform.OS === 'web') {
-        alert(msg);
-      } else {
-        const { Alert } = require('react-native');
-        Alert.alert('Code invalide', msg);
-      }
-      setOtpValues(emptyOtp());
-      setTimeout(() => otpRefs[0]?.current?.focus(), 100);
+      const info = describeAuthError(e, 'otp');
+      setVerifyError(info.kind === 'validation' || info.kind === 'unknown'
+        ? 'Code incorrect ou expiré. Vérifiez le code reçu ou demandez-en un nouveau.'
+        : info.message);
+      setWrong(true);
+      setCode('');
     } finally {
       setIsVerifying(false);
     }
@@ -382,20 +246,15 @@ export default function VerifyContactScreen() {
   // ── Renvoi ───────────────────────────────────────────────
   const handleResend = async () => {
     if (countdown > 0 || isSending || currentStep === 'done') return;
-    setOtpValues(emptyOtp());
+    setCode('');
+    setWrong(false);
+    setVerifyError(null);
     setCodeSent(false);
     setSendError(null);
-    await sendCode(currentStep as Step);
+    await sendCode(currentStep);
   };
 
-  // ── Navigation — SEUL endroit qui quitte cet écran ───────
-  // ✅ v1.4 — Filet de sécurité unique : réagit à currentStep === 'done'
-  // quel que soit le chemin qui y a mené (allVerified===true dans
-  // handleVerify(), OU stepsRequired déjà vide dès le montage, OU tout
-  // futur chemin qui ferait avancer currentStepIndex jusqu'au bout).
-  // hasNavigatedRef évite un double déclenchement (React StrictMode
-  // invoque les effets deux fois en dev — même pattern que hasSentRef
-  // plus haut).
+  // ── Navigation — SEUL endroit qui quitte cet écran (v1.4) ─
   const hasNavigatedRef = useRef(false);
   useEffect(() => {
     if (currentStep !== 'done' || hasNavigatedRef.current) return;
@@ -404,17 +263,11 @@ export default function VerifyContactScreen() {
     const t = setTimeout(async () => {
       if (token) {
         await refreshUser().catch((refreshErr) => {
-          // refreshUser() avale déjà ses propres erreurs (sauf 401/403,
-          // qui déclenchent logout() en interne) — ce catch est juste
-          // une trace de diagnostic, pas un vrai filet de sécurité.
           console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
         });
         router.replace('/(tabs)/home' as any);
       } else {
-        router.replace({
-          pathname: '/(auth)/login-v2',
-          params: { verified: '1' },
-        } as any);
+        router.replace({ pathname: '/(auth)/login-v2', params: { verified: '1' } } as any);
       }
     }, 400);
 
@@ -422,328 +275,118 @@ export default function VerifyContactScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
-  const canVerify   = otpValues.every((d) => d !== '') && !isVerifying;
-  const totalSteps  = stepsRequired.length;
-  const stepNumber  = currentStepIndex + 1;
+  const totalSteps = stepsRequired.length;
+  const stepNumber = currentStepIndex + 1;
 
-  // ── Contenu contextuel ───────────────────────────────────
-  const stepConfig = useMemo(() => {
-    if (currentStep === 'email') {
-      return {
-        icon:     'mail-outline'    as const,
-        title:    'Vérification email',
-        subtitle: maskedInfo
-          ? `Code envoyé à ${maskedInfo}. Saisissez les ${OTP_LENGTH} chiffres.`
-          : 'Envoi du code de vérification en cours…',
-        label:    'Adresse email',
-      };
-    }
-    if (currentStep === 'phone') {
-      return {
-        icon:     'phone-portrait-outline' as const,
-        title:    'Vérification téléphone',
-        subtitle: maskedInfo
-          ? `Code envoyé au ${maskedInfo}. Saisissez les ${OTP_LENGTH} chiffres.`
-          : 'Envoi du code SMS en cours…',
-        label:    'Numéro de téléphone',
-      };
-    }
-    return {
-      icon:  'checkmark-circle-outline' as const,
-      title: 'Compte activé',
-      subtitle: 'Toutes vos coordonnées ont été vérifiées.',
-      label: '',
-    };
-  }, [currentStep, maskedInfo]);
+  // ── Accès sans identifiant (lien ouvert à froid) ─────────
+  if (!userId && currentStep !== 'done') {
+    return (
+      <AuthShell compact title="Vérification impossible" subtitle="Nous ne retrouvons pas le compte à vérifier.">
+        <AuthNotice kind="warning" message="Reconnectez-vous : la vérification reprendra là où vous l'avez laissée." />
+        <AuthButton label="Aller à la connexion" accent={P.action} onPress={() => router.replace('/(auth)/login-v2')} />
+      </AuthShell>
+    );
+  }
 
-  // ─────────────────────────────────────────────────────────
-  // RENDU
-  // ─────────────────────────────────────────────────────────
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: C.g3 }}
-    >
-      <StatusBar barStyle="light-content" backgroundColor={C.g2} />
-
-      {/* Fond décoratif */}
-      <View style={[s.bgBase, { backgroundColor: C.g3 }]} />
-      <View style={s.bgCircle1} />
-      <View style={s.bgCircle2} />
-
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        style={{ flex: 1, backgroundColor: 'transparent' }}
-      >
-        {/* ══ EN-TÊTE ══ */}
-        <View style={s.header}>
-          <View style={s.headerSpacer} />
-          {totalSteps > 1 && (
-            <Text style={[s.stepCounter, { fontFamily: F.body }]}>
-              Étape {stepNumber}/{totalSteps}
-            </Text>
-          )}
-        </View>
-
-        {/* ══ HERO ══ */}
-        <View style={s.hero}>
-          <View style={[s.iconBox, { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
-            <Animated.View
-              style={[
-                s.iconInner,
-                { backgroundColor: '#FFFFFF' },
-                currentStep === 'done' && { transform: [{ scale: checkScale }] },
-              ]}
-            >
-              <Ionicons name={stepConfig.icon} size={28} color={C.g4} />
-            </Animated.View>
-          </View>
-
-          <Text style={[s.heroTitle, { fontFamily: F.display }]}>
-            {stepConfig.title}
-          </Text>
-          <Text style={[s.heroSub, { fontFamily: F.body }]}>
-            {stepConfig.subtitle}
-          </Text>
-
-          <ProgressBar current={stepNumber} total={totalSteps} accentColor={C.g4} />
-        </View>
-
-        {/* ══ CARD ══ */}
-        <View style={[s.card, { shadowColor: C.g1 }]}>
-          <View style={[s.cardAccent, { backgroundColor: C.g4 }]} />
-
-          {/* ── Cas : tout vérifié ── */}
-          {currentStep === 'done' && (
-            <View style={s.doneWrap}>
-              <Animated.View style={{ transform: [{ scale: checkScale }] }}>
-                <View style={[s.doneCircle, { backgroundColor: C.g4 + '18' }]}>
-                  <Ionicons name="checkmark-circle" size={64} color={C.g4} />
-                </View>
-              </Animated.View>
-              <Text style={[s.doneTitle, { fontFamily: F.display }]}>
-                Compte activé !
-              </Text>
-              <Text style={[s.doneSub, { fontFamily: F.body }]}>
-                Toutes vos coordonnées sont vérifiées. Connexion en cours…
-              </Text>
-              <ActivityIndicator color={C.g4} style={{ marginTop: 20 }} />
+  // ── Tout est vérifié ─────────────────────────────────────
+  if (currentStep === 'done') {
+    return (
+      <AuthShell compact title="Compte activé" subtitle="Toutes vos coordonnées sont vérifiées.">
+        <View style={s.doneWrap}>
+          <Animated.View style={{ transform: [{ scale: checkScale.interpolate({ inputRange: [0, 1], outputRange: [1, 1] }) }] }}>
+            <View style={[s.doneRing, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
+              <Ionicons name="checkmark" size={46} color={P.action} />
             </View>
-          )}
-
-          {/* ── OTP UI ── */}
-          {currentStep !== 'done' && (
-            <>
-              <Text style={[s.cardTitle, { fontFamily: F.display }]}>
-                Code de vérification
-              </Text>
-              <Text style={[s.cardSub, { fontFamily: F.body }]}>
-                {stepConfig.label}
-                {maskedInfo ? ` : ${maskedInfo}` : ''}
-              </Text>
-
-              {/* Chargement initial */}
-              {isSending && !codeSent && !sendError && (
-                <View style={s.sendingWrap}>
-                  <ActivityIndicator color={C.g4} />
-                  <Text style={[s.sendingTxt, { fontFamily: F.body }]}>
-                    Envoi du code…
-                  </Text>
-                </View>
-              )}
-
-              {/* ✅ v1.1 : Erreur d'envoi avec bouton Réessayer inline */}
-              {!isSending && !codeSent && !!sendError && (
-                <View style={[s.errorBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
-                  <Ionicons name="alert-circle-outline" size={16} color="#EF4444" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.errorTxt, { fontFamily: F.body }]}>
-                      {sendError}
-                    </Text>
-                    <TouchableOpacity
-                      style={[s.btn, { backgroundColor: C.g3, paddingVertical: 13, marginTop: 12 }]}
-                      onPress={() => void sendCode(currentStep as Step)}
-                      activeOpacity={0.9}
-                    >
-                      <Text style={[s.btnTxt, { fontFamily: F.body, fontSize: 14 }]}>
-                        Réessayer
-                      </Text>
-                      <View style={s.btnArrow}>
-                        <Ionicons name="refresh-outline" size={14} color={C.g4} />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              {/* Cases OTP */}
-              {codeSent && (
-                <>
-                  <View style={s.otpRow}>
-                    {Array.from({ length: OTP_LENGTH }).map((_, i) => (
-                      <OtpBox
-                        key={i}
-                        value={otpValues[i] ?? ''}
-                        accentColor={C.g4}
-                        inputRef={otpRefs[i]}
-                        onChangeText={(t) => handleOtpChange(t, i)}
-                        onKeyPress={(key) => handleOtpKeyPress(key, i)}
-                      />
-                    ))}
-                  </View>
-
-                  {/* Bouton Vérifier */}
-                  <TouchableOpacity
-                    style={[
-                      s.btn,
-                      { backgroundColor: C.g3, shadowColor: C.g3 },
-                      !canVerify && s.btnDisabled,
-                    ]}
-                    onPress={() => handleVerify()}
-                    disabled={!canVerify}
-                    activeOpacity={0.9}
-                  >
-                    {isVerifying ? (
-                      <ActivityIndicator color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <Text style={[s.btnTxt, { fontFamily: F.body }]}>
-                          Vérifier
-                        </Text>
-                        <View style={s.btnArrow}>
-                          <Ionicons name="checkmark" size={16} color={C.g4} />
-                        </View>
-                      </>
-                    )}
-                  </TouchableOpacity>
-
-                  {/* Renvoi */}
-                  <TouchableOpacity
-                    style={s.resendBtn}
-                    onPress={handleResend}
-                    disabled={countdown > 0 || isSending}
-                    activeOpacity={0.75}
-                  >
-                    {isSending ? (
-                      <ActivityIndicator color={C.g4} size="small" />
-                    ) : (
-                      <Text style={[
-                        s.resendTxt,
-                        {
-                          color: (countdown > 0 || rateLimited) ? '#9CA3AF' : C.g4,
-                          fontFamily: F.body,
-                        },
-                      ]}>
-                        {countdown > 0
-                          ? `Renvoyer dans ${countdown}s`
-                          : rateLimited
-                            ? 'Limite atteinte (3/heure) — réessayez plus tard'
-                            : 'Renvoyer le code'}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {/* Note de sécurité */}
-              <View style={[s.noteBox, { backgroundColor: C.g4 + '10', borderColor: C.g4 + '30' }]}>
-                <Ionicons name="shield-checkmark-outline" size={14} color={C.g4} />
-                <Text style={[s.noteTxt, { color: C.g4, fontFamily: F.body }]}>
-                  Le code expire dans 10 minutes.
-                  {' '}Limite : 3 envois par heure.
-                </Text>
-              </View>
-            </>
-          )}
+          </Animated.View>
+          <Text style={s.doneTxt}>Connexion en cours…</Text>
+          <ActivityIndicator color={P.accent} style={{ marginTop: 14 }} />
         </View>
+      </AuthShell>
+    );
+  }
 
-        {/* ══ BOTTOM ══ */}
-        <View style={s.bottom}>
-          <Text style={[s.bottomTxt, { fontFamily: F.body }]}>
-            Cette vérification garantit la sécurité de votre compte.
-          </Text>
+  // ── Saisie du code ───────────────────────────────────────
+  const isEmail = currentStep === 'email';
+  const title = isEmail ? 'Vérifiez votre email' : 'Vérifiez votre téléphone';
+  const subtitle = maskedInfo
+    ? `Un code à ${OTP_LENGTH} chiffres a été envoyé ${isEmail ? 'à' : 'au'} ${maskedInfo}.`
+    : isEmail ? 'Envoi du code à votre adresse email…' : 'Envoi du code par SMS…';
+
+  return (
+    <AuthShell
+      compact
+      title={title}
+      subtitle={subtitle}
+      headerRight={totalSteps > 1 ? <Text style={s.counter}>Étape {stepNumber}/{totalSteps}</Text> : undefined}
+      footer={
+        <View style={s.otherRow}>
+          <AuthButton label="Utiliser un autre compte" variant="link" accent={P.accent} onPress={() => void logout()} />
         </View>
+      }
+    >
+      {isSending && !codeSent && !sendError ? (
+        <View style={s.sending}>
+          <ActivityIndicator color={P.accent} />
+          <Text style={s.sendingTxt}>Envoi du code…</Text>
+        </View>
+      ) : null}
 
-        <View style={{ height: 32 }} />
-      </ScrollView>
-    </KeyboardAvoidingView>
+      {!isSending && !codeSent && sendError ? (
+        <AuthNotice
+          kind="error"
+          title="Code non envoyé"
+          message={sendError}
+          actionLabel="Réessayer"
+          onAction={() => void sendCode(currentStep)}
+        />
+      ) : null}
+
+      {codeSent ? (
+        <>
+          {rateLimited ? (
+            <AuthNotice kind="info" message="Un code vous a déjà été envoyé il y a un instant. Utilisez-le, ou patientez avant d'en demander un nouveau." />
+          ) : null}
+          {verifyError ? <AuthNotice kind="error" message={verifyError} /> : null}
+
+          <OtpCodeInput
+            value={code}
+            onChange={(c) => { setCode(c); if (wrong) { setWrong(false); setVerifyError(null); } }}
+            onComplete={(c) => void handleVerify(c)}
+            accent={P.accent}
+            error={wrong}
+            disabled={isVerifying}
+          />
+          <View style={{ height: 22 }} />
+          <AuthButton
+            label="Vérifier"
+            icon="checkmark"
+            iconRight
+            accent={P.action}
+            loading={isVerifying}
+            disabled={code.length < OTP_LENGTH}
+            onPress={() => void handleVerify()}
+          />
+          <View style={s.resend}>
+            {countdown > 0 ? (
+              <Text style={s.hint}>Renvoyer le code dans {countdown} s</Text>
+            ) : (
+              <AuthButton label="Renvoyer le code" variant="link" accent={P.accent} loading={isSending} onPress={() => void handleResend()} />
+            )}
+          </View>
+        </>
+      ) : null}
+    </AuthShell>
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  bgBase:    { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  bgCircle1: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: 'rgba(255,255,255,0.05)', top: -80, right: -80 },
-  bgCircle2: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.04)', top: 120, left: -60 },
-
-  scroll: { flexGrow: 1, paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 48 : 60 },
-
-  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 8 },
-  headerSpacer:{ flex: 1 },
-  stepCounter: { fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.7)', letterSpacing: 0.5 },
-
-  hero:      { alignItems: 'center', marginBottom: 24 },
-  iconBox:   { width: 78, height: 78, borderRadius: 26, borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  iconInner: { width: 58, height: 58, borderRadius: 19, justifyContent: 'center', alignItems: 'center' },
-  heroTitle: { fontSize: 26, color: '#FFFFFF', letterSpacing: -0.3, marginBottom: 8, textAlign: 'center', fontWeight: '800' },
-  heroSub:   { fontSize: 13, color: 'rgba(255,255,255,0.75)', textAlign: 'center', lineHeight: 20, fontWeight: '500', paddingHorizontal: 10, marginBottom: 12 },
-
-  progressWrap: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  progressDot:  { width: 24, height: 4, borderRadius: 99 },
-
-  card:       { backgroundColor: '#FFFFFF', borderRadius: 28, padding: 24, overflow: 'hidden', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 10, maxWidth: 520, alignSelf: 'center', width: '100%' },
-  cardAccent: { height: 4, position: 'absolute', top: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  cardTitle:  { fontSize: 20, fontWeight: '800', color: '#0F172A', marginBottom: 4, marginTop: 6 },
-  cardSub:    { fontSize: 13, color: '#6B7280', fontWeight: '500', lineHeight: 19, marginBottom: 20 },
-
-  sendingWrap: { flexDirection: 'row', alignItems: 'center', gap: 12, justifyContent: 'center', paddingVertical: 20 },
-  sendingTxt:  { fontSize: 14, color: '#6B7280', fontWeight: '500' },
-
-  // ✅ v1.1 : Boîte d'erreur inline
-  errorBox: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: 10,
-    borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8,
-  },
-  errorTxt: { fontSize: 13, color: '#EF4444', fontWeight: '500', lineHeight: 19 },
-
-  otpRow: {
-    flexDirection: 'row', justifyContent: 'center',
-    gap: Platform.OS === 'web' ? 8 : 7,
-    marginBottom: 24, flexWrap: 'nowrap',
-  },
-  otpBox: {
-    width: Platform.OS === 'web' ? 46 : 44,
-    height: Platform.OS === 'web' ? 56 : 52,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14, borderWidth: 2,
-    borderColor: '#E2E8F0',
-    fontSize: 22, fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
-  },
-
-  btn:         { borderRadius: 16, paddingVertical: 17, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 6 },
-  btnDisabled: { opacity: 0.45 },
-  btnTxt:      { color: '#FFFFFF', fontWeight: '800', fontSize: 16, letterSpacing: 0.3 },
-  btnArrow:    { width: 30, height: 30, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
-
-  resendBtn: { alignItems: 'center', paddingVertical: 14 },
-  resendTxt: { fontSize: 13, fontWeight: '600' },
-
-  noteBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 4 },
-  noteTxt: { flex: 1, fontSize: 11, fontWeight: '600', lineHeight: 17 },
-
-  doneWrap:   { alignItems: 'center', paddingVertical: 24 },
-  doneCircle: { width: 100, height: 100, borderRadius: 99, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  doneTitle:  { fontSize: 22, fontWeight: '800', color: '#0F172A', marginBottom: 8 },
-  doneSub:    { fontSize: 14, color: '#6B7280', fontWeight: '500', textAlign: 'center', lineHeight: 21 },
-
-  bottom:    { marginTop: 20, alignItems: 'center', paddingHorizontal: 16 },
-  bottomTxt: { fontSize: 12, color: 'rgba(255,255,255,0.55)', textAlign: 'center', lineHeight: 18, fontWeight: '500' },
+  counter:    { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '700', color: 'rgba(255,255,255,0.85)' },
+  sending:    { alignItems: 'center', paddingVertical: 28, gap: 12 },
+  sendingTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
+  resend:     { alignItems: 'center', marginTop: 14 },
+  hint:       { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
+  otherRow:   { alignItems: 'center', marginTop: 6 },
+  doneWrap:   { alignItems: 'center', paddingVertical: 18 },
+  doneRing:   { width: 100, height: 100, borderRadius: 50, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  doneTxt:    { fontFamily: FONT.body, fontSize: 15, color: N.inkSub, marginTop: 18 },
 });

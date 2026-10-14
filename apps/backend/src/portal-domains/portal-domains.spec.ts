@@ -1,6 +1,7 @@
 // apps/backend/src/portal-domains/portal-domains.spec.ts
 // Domaines des portails de sociétés : règles de nommage, machine d'états, conflits, échecs, planification.
 // Cloudflare, Vercel et la base sont simulés : aucun appel réseau.
+// v1.1 — « le site vitrine » remplacé par un hôte de PLATFORM_CONSOLE_HOSTS : plus aucun domaine codé en dur.
 import 'reflect-metadata';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -80,7 +81,7 @@ describe('planCustomDomain', () => {
     ['un tiret en tête de libellé', '-x.com'],
     ['un domaine de la console', 'dkmoney.store'],
     ['un sous-domaine de la console', 'x.dkmoney.store'],
-    ['le site vitrine', 'direct-transfair.eu'],
+    ['un hôte de PLATFORM_CONSOLE_HOSTS', 'www.dkmoney.store'],
     ['un hébergeur', 'mon-portail.vercel.app'],
   ])('refuse %s', (_label, value) => {
     expect(() => planCustomDomain(value)).toThrow(DomainRuleError);

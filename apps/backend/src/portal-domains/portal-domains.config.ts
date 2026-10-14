@@ -1,6 +1,9 @@
 // apps/backend/src/portal-domains/portal-domains.config.ts
 // =========================================================
-// CONFIGURATION DES DOMAINES DE PORTAIL v1.0
+// CONFIGURATION DES DOMAINES DE PORTAIL v1.1
+// v1.1 — 🔥 CORRIGÉ : protectedHosts() ne contient plus 'direct-transfair.eu' / 'www.direct-transfair.eu' en dur
+//        (ancien site vitrine, libéré). Les hôtes protégés viennent uniquement de PLATFORM_CONSOLE_HOSTS et de
+//        PORTAL_BASE_DOMAIN : plateforme multi-tenant, aucun domaine codé dans le source.
 //
 // Tout se règle par variables d'environnement, lues à chaque appel (jamais figées au démarrage) :
 //
@@ -70,9 +73,9 @@ export function cronEnabled(): boolean {
   return (process.env.PORTAL_DOMAINS_CRON ?? '').trim().toLowerCase() !== 'false';
 }
 
-/** Hôtes de la plateforme qu'une société ne peut jamais revendiquer (console, site vitrine, hébergeurs). */
+/** Hôtes de la plateforme qu'une société ne peut jamais revendiquer (console et domaine de plateforme, définis par variables d'environnement). */
 export function protectedHosts(): string[] {
-  const hosts = ['direct-transfair.eu', 'www.direct-transfair.eu'];
+  const hosts: string[] = [];
   for (const h of (process.env.PLATFORM_CONSOLE_HOSTS ?? '').split(',')) {
     const host = h.trim().toLowerCase();
     if (host) hosts.push(host);

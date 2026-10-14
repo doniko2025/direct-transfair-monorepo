@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v5.9
+// DIRECT TRANSF'AIR — API Service v6.0
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -44,6 +44,13 @@
 //   Money / Sendwave), section "RECHARGE WALLET" nouvelle, juste après
 //   WALLETS. Backend : voir recharge.service.ts + payments.controller.ts.
 //   Aucune méthode existante modifiée.
+// v6.0 — 🔥 CORRIGÉ « Application not found » à la connexion : l'URL du serveur
+//   n'est plus décidée ici. buildApiBaseURL() passe par
+//   services/serverConfig.ts, qui lit EXPO_PUBLIC_API_URL, puis app.json,
+//   puis l'URL de production Render, et REFUSE toute URL de l'ancien
+//   hébergeur Railway (supprimé). Avant, l'URL de secours codée en dur
+//   pointait vers Railway : un build sans variable d'environnement
+//   appelait un serveur inexistant. Aucune autre méthode modifiée.
 // =========================================================
 
 import axios, {
@@ -54,6 +61,8 @@ import axios, {
 } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
+
+import { getApiBaseUrl } from "./serverConfig";
 
 import type {
   Agency,
@@ -118,12 +127,7 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
 // CONFIG
 // ============================================================
 
-const PROD_FALLBACK_BASE_URL =
-  "https://direct-transfair-monorepo-production.up.railway.app";
-
 const PLATFORM_TENANT = "DONIKO";
-
-const DEFAULT_API_PREFIX = "/api";
 
 const STORAGE_KEYS = {
   PREFERRED_TENANT: "PREFERRED_TENANT",
@@ -153,12 +157,6 @@ function devWarn(...args: unknown[]): void {
 
 function normalizeBaseUrl(input: string): string {
   return input.trim().replace(/\/+$/, "").replace(/\/api$/, "");
-}
-
-function getBaseUrl(): string {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  if (envUrl && envUrl.trim().length > 0) return normalizeBaseUrl(envUrl);
-  return PROD_FALLBACK_BASE_URL;
 }
 
 function normalizeTenant(input: string | null | undefined): string {
@@ -231,11 +229,7 @@ function getInitialTenantId(): string {
 }
 
 function buildApiBaseURL(): string {
-  const base = getBaseUrl();
-  const envPrefix = (process.env.EXPO_PUBLIC_API_PREFIX ?? "").trim();
-  const prefix = envPrefix.length > 0 ? envPrefix : DEFAULT_API_PREFIX;
-  const p = prefix.startsWith("/") ? prefix : `/${prefix}`;
-  return `${base}${p}`;
+  return getApiBaseUrl();
 }
 
 function ensureAxiosHeaders(

@@ -1,6 +1,12 @@
 // apps/backend/src/main.ts
 // =========================================================
-// MAIN v2.4
+// MAIN v2.5
+// ✅ v2.5 : CORS — plus AUCUN domaine en dur (retrait de direct-transfair.eu / www.direct-transfair.eu, ancien site
+//   vitrine). Plateforme multi-tenant : les origines autorisées viennent uniquement des variables d'environnement
+//   (FRONTEND_URL / CORS_ORIGINS, PLATFORM_CONSOLE_HOSTS, PORTAL_BASE_DOMAIN) et des domaines des sociétés lus en base. Nouvelles variables : CORS_ORIGINS (origines exactes, séparées par des
+//   virgules ; FRONTEND_URL est ajoutée), CORS_ALLOWED_SUFFIXES (défaut « .vercel.app,.railway.app » = comportement
+//   précédent ; vide = aucun suffixe, recommandé en production), CORS_ALLOW_LOCALHOST (défaut true ; « false » = refuse
+//   localhost). Les deux adresses Vercel/Railway codées en dur sont retirées (couvertes par les suffixes ou CORS_ORIGINS).
 // ✅ v2.4 : CORS — les sous-domaines de portail (<sous-domaine>.PORTAL_BASE_DOMAIN) des sociétés sont autorisés en plus de
 //   leurs domaines propres (lot C : sans cela le portail d'une société servi sur son sous-domaine était bloqué par CORS).
 // ✅ v2.3 : CORS — PLATFORM_CONSOLE_HOSTS (ex. dkmoney.store,www.dkmoney.store) : domaines de la console du
@@ -69,10 +75,8 @@ import { PrismaService } from './prisma/prisma.service'; // ✅ v2.1
 // Domaines connus dès le déploiement, indépendants du cache DB —
 // filet de sécurité immédiat (fonctionne même si le premier
 // rafraîchissement échoue ou n'a pas encore eu lieu).
-const STATIC_KNOWN_HOSTNAMES = new Set<string>([
-  'direct-transfair.eu',
-  'www.direct-transfair.eu',
-]);
+// ✅ v2.5 : vide au départ, rempli uniquement depuis PLATFORM_CONSOLE_HOSTS (aucun domaine en dur).
+const STATIC_KNOWN_HOSTNAMES = new Set<string>();
 
 // ✅ v2.3 : domaines de la console du Grand Chef (variable d'environnement, jamais en dur)
 for (const h of (process.env.PLATFORM_CONSOLE_HOSTS ?? '').split(',')) {
@@ -205,21 +209,25 @@ async function bootstrap(): Promise<void> {
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      const allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://localhost:8081',
-        'https://direct-transfair-monorepo-direct-tr.vercel.app',
-        'https://direct-transfair-backend-production.up.railway.app',
-      ];
+      // ✅ v2.5 : tout vient de l'environnement, relu à chaque requête (aucun changement de code pour ajouter un domaine)
+      const listEnv = (v: string | undefined): string[] =>
+        (v ?? '').split(',').map((s) => s.trim().replace(/\/+$/, '').toLowerCase()).filter(Boolean);
+
+      const allowedOrigins = [...listEnv(process.env.CORS_ORIGINS), ...listEnv(process.env.FRONTEND_URL)];
+      const allowedSuffixes =
+        process.env.CORS_ALLOWED_SUFFIXES === undefined
+          ? ['.vercel.app', '.railway.app'] // comportement historique, à restreindre en production
+          : listEnv(process.env.CORS_ALLOWED_SUFFIXES);
+      const allowLocalhost = (process.env.CORS_ALLOW_LOCALHOST ?? 'true').trim().toLowerCase() !== 'false';
 
       const hostname = origin ? extractHostname(origin) : null;
+      const originLc = origin ? origin.replace(/\/+$/, '').toLowerCase() : null;
 
       const isAllowed =
         !origin ||
-        allowedOrigins.includes(origin) ||
-        origin.endsWith('.vercel.app')  ||
-        origin.endsWith('.railway.app') ||
+        (originLc !== null && allowedOrigins.includes(originLc)) ||
+        (allowLocalhost && hostname !== null && (hostname === 'localhost' || hostname === '127.0.0.1')) ||
+        (hostname !== null && allowedSuffixes.some((s) => hostname.endsWith(s))) ||
         (hostname !== null && STATIC_KNOWN_HOSTNAMES.has(hostname)) || // ✅ v2.1
         (hostname !== null && knownCustomDomains.has(hostname));       // ✅ v2.1
 
