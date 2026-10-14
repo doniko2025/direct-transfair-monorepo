@@ -1,6 +1,13 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
-// AUTH PROVIDER v7.0 — Direct Transf'air
+// AUTH PROVIDER v7.1 — Direct Transf'air
+// ✅ v7.1 : 🔥 CORRIGÉ « le chargement tourne sans fin » au démarrage. La restauration de session attendait
+//   GET /auth/me (puis, sur 401, POST /auth/refresh) AVANT d'afficher quoi que ce soit : avec un serveur qui se
+//   réveille (Render gratuit) ou qui ne répond pas, l'écran de chargement restait bloqué 30 à 60 s, voire plus.
+//   Désormais la session enregistrée (déjà vérifiée localement : rôle client) est restaurée tout de suite, l'écran
+//   s'affiche, et la validation auprès du serveur se fait en arrière-plan : 401/403 ⇒ déconnexion propre ; serveur
+//   injoignable ⇒ on garde la session, sans blocage. Garde-fou : le chargement initial ne dépasse jamais
+//   INIT_MAX_WAIT_MS.
 // ✅ v6.1, v6.2, v6.3 conservés intégralement
 // ✅ v7.0 : (phase 5) l'app mobile est réservée aux clients wallet
 //   (rôle USER). Toute session d'un autre rôle (SUPER_ADMIN,
@@ -150,6 +157,12 @@ const injectCurrencyToUser = (u: AuthUser): AuthUser => {
   return { ...u, currency: officialCurrency } as unknown as AuthUser;
 };
 
+// ✅ v7.1 : durée maximale du chargement initial (configurable : EXPO_PUBLIC_AUTH_INIT_MAX_WAIT_MS)
+const INIT_MAX_WAIT_MS = (() => {
+  const n = Number(process.env.EXPO_PUBLIC_AUTH_INIT_MAX_WAIT_MS);
+  return Number.isFinite(n) && n >= 2000 && n <= 60000 ? n : 8000;
+})();
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,      setUser]      = useState<AuthUser | null>(null);
   const [token,     setToken]     = useState<string | null>(null);
@@ -247,6 +260,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Init ─────────────────────────────────────────────────
   useEffect(() => {
+    // ✅ v7.1 : garde-fou — quoi qu'il arrive, l'écran de chargement initial ne dépasse pas INIT_MAX_WAIT_MS
+    const capTimer = setTimeout(() => setIsLoading(false), INIT_MAX_WAIT_MS);
     const initAuth = async () => {
       try {
         await ensureTenantReady();
@@ -271,30 +286,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           tokenRef.current = storedToken;
           setUser(injectCurrencyToUser(storedUser));
 
-          try {
-            const me = await api.getMe();
-            if (!isClientRole(me)) {
-              await closeForeignSession(storedToken);
-              return;
+          // ✅ v7.1 : validation serveur en arrière-plan (ne bloque plus l'affichage)
+          void (async () => {
+            try {
+              const me = await api.getMe();
+              if (!isClientRole(me)) {
+                await closeForeignSession(storedToken);
+                return;
+              }
+              const enrichedMe = injectCurrencyToUser(me);
+              const meCode = (me as any)?.client?.code;
+              if (meCode) await applyTenant(meCode);
+              setUser(enrichedMe);
+              await setStorage(USER_KEY, JSON.stringify(enrichedMe));
+              void registerCurrentDeviceIfNeeded();
+            } catch (e: any) {
+              const status = e?.response?.status;
+              if (status === 401 || status === 403) await logout();
             }
-            const enrichedMe = injectCurrencyToUser(me);
-            const meCode = (me as any)?.client?.code;
-            if (meCode) await applyTenant(meCode);
-            setUser(enrichedMe);
-            await setStorage(USER_KEY, JSON.stringify(enrichedMe));
-            void registerCurrentDeviceIfNeeded();
-          } catch (e: any) {
-            const status = e?.response?.status;
-            if (status === 401 || status === 403) await logout();
-          }
+          })();
         }
       } catch (e) {
         console.log("Erreur init auth", e);
       } finally {
+        clearTimeout(capTimer);
         setIsLoading(false);
       }
     };
     void initAuth();
+    return () => clearTimeout(capTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

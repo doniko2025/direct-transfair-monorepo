@@ -51,6 +51,8 @@
 //   hébergeur Railway (supprimé). Avant, l'URL de secours codée en dur
 //   pointait vers Railway : un build sans variable d'environnement
 //   appelait un serveur inexistant. Aucune autre méthode modifiée.
+// v6.1 — 🔥 CORRIGÉ : l'appel POST /auth/refresh a maintenant son propre délai (15 s, EXPO_PUBLIC_REFRESH_TIMEOUT_MS)
+//   au lieu des 30 s communs : un serveur qui ne répond pas ne fige plus la restauration de session pendant 1 minute.
 // =========================================================
 
 import axios, {
@@ -666,9 +668,12 @@ class API {
   }
 
   private async attemptTokenRefresh(): Promise<string> {
-    const res = await this.http.post<RefreshTokenResponse>("/auth/refresh", {
-      refresh_token: this.refreshToken,
-    });
+    const rt = Number(process.env.EXPO_PUBLIC_REFRESH_TIMEOUT_MS);
+    const res = await this.http.post<RefreshTokenResponse>(
+      "/auth/refresh",
+      { refresh_token: this.refreshToken },
+      { timeout: Number.isFinite(rt) && rt >= 3000 ? rt : 15_000 },
+    );
     const { access_token, refresh_token } = res.data;
     this.token = access_token;
     await AsyncStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, access_token);
