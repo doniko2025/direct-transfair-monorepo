@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/services/serverWarmup.ts
 // =========================================================
-// RÉVEIL DU SERVEUR + REQUÊTES RÉSILIENTES v1.0 — Direct Transf'air
+// RÉVEIL DU SERVEUR + REQUÊTES RÉSILIENTES v1.1 — Direct Transf'air
+// ✅ v1.1 : markServerReady() / useServerStatus().markReady — dès qu'une vraie requête reçoit une réponse HTTP du
+//    serveur (même un refus 401/403), l'état « Hors ligne » périmé du réveil est effacé (avant : la pastille
+//    restait affichée alors que la connexion venait de répondre).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 //
 // POURQUOI : un serveur d'hébergement économique se met en veille après
@@ -31,6 +34,11 @@ const READY_CACHE_MS = 5 * 60_000;  // un serveur vu vivant il y a moins de 5 mi
 
 let lastReadyAt = 0;
 let inflight: Promise<boolean> | null = null;
+
+/** À appeler quand une vraie requête a reçu une réponse HTTP : le serveur est vivant. */
+export function markServerReady(): void {
+  lastReadyAt = Date.now();
+}
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -79,7 +87,7 @@ export function warmUpServer(onProgress?: (s: ServerStatus) => void): Promise<bo
 }
 
 /** État du serveur pour l'interface (démarre le réveil à l'ouverture de l'écran). */
-export function useServerStatus(): { status: ServerStatus; retry: () => void } {
+export function useServerStatus(): { status: ServerStatus; retry: () => void; markReady: () => void } {
   const [status, setStatus] = useState<ServerStatus>(
     Date.now() - lastReadyAt < READY_CACHE_MS ? 'ready' : 'checking',
   );
@@ -104,7 +112,12 @@ export function useServerStatus(): { status: ServerStatus; retry: () => void } {
     };
   }, [run]);
 
-  return { status, retry: run };
+  const markReady = useCallback(() => {
+    markServerReady();
+    if (alive.current) setStatus('ready');
+  }, []);
+
+  return { status, retry: run, markReady };
 }
 
 /**

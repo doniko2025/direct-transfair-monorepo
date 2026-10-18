@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// DIRECT TRANSF'AIR — API Service v6.0
+// DIRECT TRANSF'AIR — API Service v6.1
+// ✅ v6.1 : les refus attendus (HTTP 4xx : mauvais identifiants, compte réservé au portail web…) sont journalisés en
+//    console.warn au lieu de console.error — en développement, console.error ouvre un bandeau rouge « HTTP ERROR »
+//    qui laissait croire à une panne. Les pannes réelles (5xx, réseau) restent en console.error. Rien d'autre modifié.
 // ✅ v5.0 — Hardening production (tout conservé)
 // v5.1 — Fix "Application not found" sur Expo/Railway
 // ✅ normalizeTenant() — blacklist étendue Railway/Expo
@@ -567,7 +570,7 @@ class API {
             });
           }
 
-          console.error(
+          (status !== undefined && status < 500 ? console.warn : console.error)(
             "❌ HTTP ERROR",
             method,
             fullUrl,

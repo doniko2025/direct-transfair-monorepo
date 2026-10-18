@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
 // LOGIN v3.0 — Direct Transf'air
+// ✅ v3.3 : la pastille « Hors ligne » disparaît dès que le serveur répond (même par un refus, ex. compte réservé au portail web).
 // ✅ v3.2 : MISE EN PAGE — l'encadré teinté « Pas encore de compte ? » + bouton (deux blocs empilés qui allongeaient la page) devient un séparateur fin suivi du seul bouton « Créer un compte » (toujours visible dès l'ouverture). Aucune logique modifiée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v3.1 : THÈME CLAIR — l'écran passe au design clair via le kit components/auth v2.0 (cadre, champs, boutons) ; aucune logique modifiée.
 // ✅ v3.0 : REFONTE COMPLÈTE de l'écran (design fintech + parcours) — Thierno Doniko (Grand Chef).
@@ -115,7 +116,7 @@ export default function LoginV2Screen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ verified?: string; reset?: string }>();
   const P = useAuthPalette();
-  const { status: serverStatus, retry: retryServer } = useServerStatus();
+  const { status: serverStatus, retry: retryServer, markReady } = useServerStatus();
 
   const [view, setView]       = useState<View_>('PASSWORD');
   const [loading, setLoading] = useState(false);
@@ -181,12 +182,15 @@ export default function LoginV2Screen() {
   // ─────────────────────────────────────────────────────
   // Aides
   // ─────────────────────────────────────────────────────
-  const showError = (info: AuthErrorInfo) =>
+  const showError = (info: AuthErrorInfo) => {
+    // Une réponse HTTP (même un refus) prouve que le serveur est joignable : on efface « Hors ligne ».
+    if (info.code || (info.status !== undefined && info.status !== 502 && info.status !== 503 && info.status !== 504)) markReady();
     setNotice({
       kind: info.kind === 'forbidden' ? 'warning' : 'error',
       title: info.title,
       message: info.message,
     });
+  };
 
   const isWebPortalRequired = (e: any): boolean =>
     e?.response?.data?.code === 'USE_WEB_PORTAL' || e?.code === 'USE_WEB_PORTAL';
