@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
 // LOGIN v3.0 — Direct Transf'air
+// ✅ v3.2 : MISE EN PAGE — l'encadré teinté « Pas encore de compte ? » + bouton (deux blocs empilés qui allongeaient la page) devient un séparateur fin suivi du seul bouton « Créer un compte » (toujours visible dès l'ouverture). Aucune logique modifiée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v3.1 : THÈME CLAIR — l'écran passe au design clair via le kit components/auth v2.0 (cadre, champs, boutons) ; aucune logique modifiée.
 // ✅ v3.0 : REFONTE COMPLÈTE de l'écran (design fintech + parcours) — Thierno Doniko (Grand Chef).
 //   PROBLÈMES CONSTATÉS EN PRODUCTION (APK du 13/10/2026) :
@@ -517,20 +518,14 @@ export default function LoginV2Screen() {
       </View>
 
       {/* ── Invitation à créer un compte : visible dès l'ouverture ── */}
-      <View style={[s.signup, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
-        <View style={[s.signupIcon, { backgroundColor: P.action }]}>
-          <Ionicons name="person-add" size={18} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={s.signupTitle}>Pas encore de compte ?</Text>
-          <Text style={s.signupSub}>Ouvrez votre espace en quelques minutes.</Text>
-        </View>
+      <View style={s.signupDivider}>
+        <View style={s.signupLine} />
+        <Text style={s.signupTitle}>Pas encore de compte ?</Text>
+        <View style={s.signupLine} />
       </View>
-      <View style={{ height: 10 }} />
       <AuthButton
         label="Créer un compte"
-        icon="arrow-forward"
-        iconRight
+        icon="person-add-outline"
         variant="outline"
         accent={P.action}
         onPress={() => router.push('/(auth)/register')}
@@ -546,13 +541,9 @@ const s = StyleSheet.create({
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
-  signup: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    marginTop: 26, padding: 14, borderRadius: RADIUS.lg, borderWidth: 1,
-  },
-  signupIcon:  { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  signupTitle: { fontFamily: FONT.medium, fontSize: 15, fontWeight: '800', color: N.ink },
-  signupSub:   { fontFamily: FONT.body, fontSize: 13, color: N.inkSub, marginTop: 1 },
+  signupDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 24, marginBottom: 14 },
+  signupLine:    { flex: 1, height: 1, backgroundColor: N.border },
+  signupTitle:   { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.muted },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: N.muted, fontWeight: '700', paddingVertical: 6 },

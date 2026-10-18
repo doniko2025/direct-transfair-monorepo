@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/auth/authErrors.ts
 // =========================================================
-// MESSAGES D'ERREUR D'AUTHENTIFICATION v1.0 — Direct Transf'air
+// MESSAGES D'ERREUR D'AUTHENTIFICATION v1.1 — Direct Transf'air
+// ✅ v1.1 : sur navigateur, « aucune réponse » n'affiche plus « vérifiez votre connexion internet » (trompeur :
+//    serveur en veille/arrêté ou CORS) mais un message exact avec l'adresse de la page. Mobile inchangé.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Transforme n'importe quelle erreur (réseau, timeout, serveur qui
 // dort, mauvais identifiants, quota…) en un message clair en français,
@@ -72,6 +74,18 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
         kind: 'timeout',
         title: 'Le serveur met du temps à répondre',
         message: 'Il démarre peut-être après une période d’inactivité. Patientez quelques secondes puis réessayez.',
+      };
+    }
+    // Navigateur : une erreur sans statut HTTP n'est pas forcément une coupure internet — le serveur peut
+    // être en veille / en panne (réponse d'hébergeur sans en-têtes CORS) ou refuser cette adresse (CORS).
+    if (typeof document !== 'undefined') {
+      return {
+        kind: 'network',
+        title: 'Le serveur ne répond pas',
+        message:
+          'Le navigateur n’a reçu aucune réponse. Le serveur est peut-être en veille ou arrêté, ou il n’autorise pas cette adresse (' +
+          (typeof window !== 'undefined' ? window.location.host : 'cette page') +
+          '). Réessayez dans une minute ; si cela persiste, contactez l’assistance.',
       };
     }
     return {

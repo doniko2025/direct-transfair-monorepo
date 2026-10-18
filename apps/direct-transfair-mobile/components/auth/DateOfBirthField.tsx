@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/DateOfBirthField.tsx
 // =========================================================
-// DATE DE NAISSANCE v2.0 — Direct Transf'air
+// DATE DE NAISSANCE v2.1 — Direct Transf'air
+// ✅ v2.1 : texte des trois cases centré avec un petit retrait (sur le web « JJ » touchait le bord gauche).
 // ✅ v2.0 : THÈME CLAIR — contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Trois cases (jour / mois / année) avec passage automatique à la case
@@ -144,7 +145,7 @@ const s = StyleSheet.create({
   box: {
     flex: 1, minWidth: 0, minHeight: 54, backgroundColor: N.field, borderRadius: RADIUS.md, borderWidth: 1.5,
   },
-  input: { fontFamily: FONT.body, fontSize: 17, fontWeight: '700', color: N.ink, paddingVertical: 12 },
+  input: { fontFamily: FONT.body, fontSize: 17, fontWeight: '700', color: N.ink, paddingVertical: 12, paddingHorizontal: 4, textAlign: 'center' },
   sep:   { fontSize: 20, color: N.muted, fontWeight: '600' },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, color: N.danger, flexShrink: 1 },

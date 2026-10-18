@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.0 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.1 — Direct Transf'air
+// ✅ v2.1 : MISE EN PAGE ORDINATEUR (web ≥ 900 px) — avant, la même colonne étroite collée en haut de
+//    la page laissait un grand vide crème et obligeait à défiler. Désormais : carte blanche arrondie
+//    et ombrée, centrée à l'écran (verticalement et horizontalement), titre un peu plus petit, marque
+//    et pastille d'état dans la carte. Sur téléphone / petite fenêtre : rendu strictement inchangé.
 // ✅ v2.0 : REFONTE TOTALE en thème clair (inspirée de « Taptap Send » : grand titre, champs sur fond crème,
 //    bouton principal en pilule). Plus de dégradé sombre ni de « feuille » : fond crème, rangée du haut
 //    (retour / pastille d'état du serveur), marque (logo + nom du tenant), gros titre, sous-titre, contenu.
@@ -10,7 +14,7 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View,
 } from 'react-native';
@@ -35,6 +39,24 @@ type Props = {
   children: React.ReactNode;
 };
 
+/**
+ * Largeur de la fenêtre du navigateur (0 hors web, et 0 au tout premier rendu).
+ * Départ volontairement à 0 : en export statique le HTML est pré-rendu sans fenêtre ; si le 1er rendu client
+ * différait, React garderait les styles du pré-rendu (aucune correction d'attributs à l'hydratation).
+ * La vraie largeur est lue juste après, ce qui force un rendu propre.
+ */
+function useBrowserWidth(): number {
+  const [w, setW] = useState<number>(0);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const on = () => setW(window.innerWidth);
+    on();
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  return w;
+}
+
 export function useAuthPalette(): AuthPalette {
   const { branding } = useTenant();
   return React.useMemo(() => buildPalette(branding.primaryColor), [branding.primaryColor]);
@@ -46,6 +68,8 @@ export default function AuthShell({
   const { branding } = useTenant();
   const C = React.useMemo(() => buildColors(branding.primaryColor), [branding.primaryColor]);
   const insets = useSafeAreaInsets();
+  const winW = useBrowserWidth();
+  const wide = Platform.OS === 'web' && winW >= 900;
   const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 6;
 
   return (
@@ -54,13 +78,21 @@ export default function AuthShell({
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={s.scroll}
+        contentContainerStyle={[s.scroll, wide && s.scrollWide]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         automaticallyAdjustKeyboardInsets
       >
-        <View style={[s.column, { paddingTop: topPad }]}>
+        <View
+          style={[
+            s.column,
+            wide
+              ? [s.card, { backgroundColor: C.surface, borderColor: C.line }]
+              : { paddingTop: topPad },
+          ]}
+        >
           {/* ── Rangée du haut ── */}
+          {(!wide || onBack) && (
           <View style={s.topRow}>
             {onBack ? (
               <Pressable
@@ -78,9 +110,11 @@ export default function AuthShell({
             <View style={{ flex: 1 }} />
             {headerRight}
           </View>
+          )}
 
           {/* ── Marque du tenant ── */}
-          <View style={[s.brand, compact && { marginTop: 10 }]}>
+          {wide && !onBack && headerRight ? <View style={s.floatRight}>{headerRight}</View> : null}
+          <View style={[s.brand, compact && { marginTop: 10 }, wide && !onBack && { marginTop: 0 }]}>
             <View style={[s.mark, { backgroundColor: C.accent }]}>
               {branding.logoUrl ? (
                 <Image source={{ uri: branding.logoUrl }} style={s.markImg} resizeMode="contain" />
@@ -92,10 +126,10 @@ export default function AuthShell({
           </View>
 
           {/* ── Titre ── */}
-          <Text style={[s.title, { color: C.ink }]} accessibilityRole="header">{title}</Text>
+          <Text style={[s.title, { color: C.ink }, wide && { fontSize: 30, lineHeight: 36, marginTop: 18 }]} accessibilityRole="header">{title}</Text>
           {subtitle ? <Text style={[s.subtitle, { color: C.muted }]}>{subtitle}</Text> : null}
 
-          <View style={s.body}>{children}</View>
+          <View style={[s.body, wide && { marginTop: 22, flexGrow: 0 }]}>{children}</View>
 
           <View style={s.trust}>
             <Ionicons name="lock-closed" size={12} color={N.muted} />
@@ -113,6 +147,14 @@ const s = StyleSheet.create({
   scroll: { flexGrow: 1 },
   column: { flexGrow: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 22, paddingBottom: 28 },
 
+  scrollWide: { justifyContent: 'center', paddingVertical: 32, paddingHorizontal: 20 },
+  card: {
+    flexGrow: 0, maxWidth: 480, paddingHorizontal: 36, paddingTop: 26, paddingBottom: 26,
+    borderRadius: 28, borderWidth: 1,
+    ...(Platform.OS === 'web' ? ({ boxShadow: '0 18px 50px rgba(20,20,10,0.08), 0 2px 6px rgba(20,20,10,0.04)' } as any) : {}),
+  },
+
+  floatRight: { position: 'absolute', top: -8, right: -14, zIndex: 2 },
   topRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
   backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   backSpacer: { width: 44, height: 44 },

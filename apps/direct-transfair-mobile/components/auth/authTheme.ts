@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/authTheme.ts
+// ✅ v2.1 : (web) texte d'exemple des champs plus foncé que prévu — voir WEB_INPUT_RESET.
 // =========================================================
 // THÈME DES ÉCRANS D'AUTHENTIFICATION v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR (refonte totale) — neutres chauds (fond crème #FAF9F5, champs sable, encre
@@ -122,8 +123,12 @@ export const SHADOW = {
   },
 } as const;
 
-/** Neutralise le contour bleu et le fond jaune d'autofill des navigateurs (web uniquement). */
+/**
+ * Neutralise le contour bleu et le fond jaune d'autofill des navigateurs (web uniquement).
+ * v2.1 : `WebkitTextFillColor` retiré — il forçait le texte d'exemple (placeholder) à la couleur de la saisie
+ * (les champs vides paraissaient déjà remplis).
+ */
 export const WEB_INPUT_RESET: any =
   Platform.OS === 'web'
-    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2EFE8 inset', WebkitTextFillColor: '#111214' }
+    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2EFE8 inset' }
     : {};
