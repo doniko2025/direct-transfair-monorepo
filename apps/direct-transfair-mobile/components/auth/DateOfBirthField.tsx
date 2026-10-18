@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/DateOfBirthField.tsx
 // =========================================================
-// DATE DE NAISSANCE v1.1 — Direct Transf'air
+// DATE DE NAISSANCE v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Trois cases (jour / mois / année) avec passage automatique à la case
 // suivante, retour arrière intelligent, clavier numérique. Un seul message
@@ -56,7 +57,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
 
   const box = (key: 'day' | 'month' | 'year') => [
     s.box,
-    { borderColor: hasError ? N.danger : focus === key ? accent : N.border },
+    { borderColor: hasError ? N.danger : focus === key ? N.ink : N.border },
     key === 'year' && { flex: 1.6 },
   ];
 
@@ -71,7 +72,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('day'), s.input, WEB_INPUT_RESET]}
           value={value.day}
           placeholder="JJ"
-          placeholderTextColor="#A5B3AE"
+          placeholderTextColor="#B9B6AD"
           keyboardType="number-pad"
           maxLength={2}
           textAlign="center"
@@ -91,7 +92,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('month'), s.input, WEB_INPUT_RESET]}
           value={value.month}
           placeholder="MM"
-          placeholderTextColor="#A5B3AE"
+          placeholderTextColor="#B9B6AD"
           keyboardType="number-pad"
           maxLength={2}
           textAlign="center"
@@ -112,7 +113,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('year'), s.input, WEB_INPUT_RESET]}
           value={value.year}
           placeholder="AAAA"
-          placeholderTextColor="#A5B3AE"
+          placeholderTextColor="#B9B6AD"
           keyboardType="number-pad"
           maxLength={4}
           textAlign="center"

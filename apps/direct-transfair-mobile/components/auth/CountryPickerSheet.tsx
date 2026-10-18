@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/CountryPickerSheet.tsx
 // =========================================================
-// SÉLECTEUR DE PAYS v1.0 — Direct Transf'air
+// SÉLECTEUR DE PAYS v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR (neutres chauds via authTheme).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Feuille plein écran avec recherche insensible aux accents, pays
 // fréquents en tête, drapeau + indicatif. Sert au pays de résidence,
@@ -70,7 +71,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
             value={query}
             onChangeText={setQuery}
             placeholder="Rechercher un pays"
-            placeholderTextColor="#A5B3AE"
+            placeholderTextColor="#B9B6AD"
             autoCorrect={false}
             autoCapitalize="none"
             underlineColorAndroid="transparent"

@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/privacy-policy.tsx
 // =========================================================
 // POLITIQUE DE CONFIDENTIALITÉ v1.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu inchangé.
 // ✅ Conforme RGPD (Règlement UE 2016/679)
 // ✅ Adapté aux obligations PSP / transferts d'argent
 // ✅ Présentation modale depuis index.tsx et login.tsx
@@ -15,24 +16,24 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 const T = {
-  bg:         "#F0FDF4",
+  bg:         "#FAF9F5",
   surface:    "#FFFFFF",
-  accent:     "#059669",
-  accentSoft: "#D1FAE5",
-  accentText: "#065F46",
-  text:       "#0F172A",
-  textSub:    "#374151",
-  textDim:    "#6B7280",
-  border:     "#E2E8F0",
-  borderGreen:"#A7F3D0",
+  accent:     "#111214",
+  accentSoft: "#EFEBE1",
+  accentText: "#111214",
+  text:       "#111214",
+  textSub:    "#4A4945",
+  textDim:    "#8B887F",
+  border:     "#E3DFD5",
+  borderGreen:"#E3DFD5",
   blue:       "#1D4ED8",
   blueSoft:   "#DBEAFE",
   amber:      "#D97706",
   amberSoft:  "#FEF3C7",
   radius: { sm: 10, md: 14, lg: 18, xl: 24 },
   font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    display: Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
+    sans:    Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };

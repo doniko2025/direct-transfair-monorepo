@@ -1,130 +1,45 @@
 // apps/direct-transfair-mobile/app/(tabs)/rates.tsx
 // =========================================================
-// TAUX DU JOUR v8.5 — Direct Transf'air
-// ✅ v8.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
-//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
-//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
-//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
-//    En-tête commun du wallet (ScreenHeader) ; l'accent bleu #4361EE (codé en dur)
-//    devient la couleur de marque du tenant.
-// ✅ v8.4 : FIX — plus de faux taux ni de spinner sans fin.
-//   • AVANT : si GET /exchange-rates échouait, l'écran affichait en silence
-//     9 taux écrits en dur (EUR/XOF 655.957, EUR/GNF 9500…) sous l'étiquette
-//     « EN TEMPS RÉEL » — des chiffres inventés, hors multi-tenant, qui
-//     pouvaient tromper l'utilisateur. Et sans réponse, le spinner tournait
-//     jusqu'au délai réseau (30 s).
-//   • MAINTENANT : appel borné (withTimeout, 20 s — EXPO_PUBLIC_LOAD_TIMEOUT_MS),
-//     message d'attente rassurant après 4 s, et en cas d'échec un état
-//     d'erreur clair avec « Réessayer ». Si des taux ont déjà été chargés,
-//     ils restent affichés (données précédentes conservées).
-//   Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
-// ✅ v7.0 conservé : hero chips, animations
-// ✅ v8.0 conservé : Convertisseur redesigné style Wise (modal recherche, 2 lignes FROM/TO, disclaimer marché)
-// ✅ v8.1 conservé : suppression de la section "TOUTES LES PAIRES", correction du cadre parasite du champ FROM (outlineStyle en `style`)
-// ✅ v8.2 conservé :
-//   • Correction du sélecteur de devise FROM qui disparaissait dès qu'un montant
-//     était saisi : sur react-native-web, un enfant flexible (`flex:1`) sans
-//     `minWidth:0` refuse de rétrécir sous la largeur de son contenu — dès que
-//     le texte tapé grandissait, le champ montant "poussait" le sélecteur de
-//     devise hors de la zone visible (le conteneur a `overflow:"hidden"`).
-//     Fix : `minWidth: 0` ajouté sur `amountInput` et `resultWrap`, et
-//     `flexShrink: 0 / flexGrow: 0` verrouillés en dur sur les éléments à
-//     largeur fixe (`currencyBtn`, `flagCircle`, `vSep`, `actionBtn`) pour
-//     qu'ils ne puissent plus jamais être écrasés par le voisin flexible.
-//   • Correction du montant converti tronqué ("FCFA 2…", "GNF 3 3…") côté TO :
-//     `adjustsFontSizeToFit` n'a aucun effet sur react-native-web (prop iOS
-//     uniquement), donc le texte restait coupé à taille fixe. Remplacé par une
-//     fonction `dynamicFontSize()` qui recalcule la taille de police selon la
-//     longueur du texte affiché — appliquée au montant saisi (FROM) et au
-//     montant converti (TO), de façon identique sur toutes les plateformes.
-//   • Tailles et espacements resserrés (padding des sélecteurs de devise,
-//     icônes, police de base) pour que tout tienne sur une seule ligne, comme
-//     demandé.
-// ✅ v8.3 (cette version) :
-//   • Suppression du code mort confirmé par toi : le composant RateCard, ses
-//     styles `rc`, les constantes PRIORITY / PAIR_COLORS / CURRENCIES / META
-//     et la variable `sorted` (tous orphelins depuis la suppression de la
-//     section "TOUTES LES PAIRES" en v8.1). `normPair` et `fmt` sont conservés
-//     car toujours utilisés (hero chips notamment).
+// TAUX DU JOUR v9.0 — Direct Transf'air
+// ✅ v9.0 : REFONTE THÈME CLAIR — fond crème, trois taux clés en cartes, convertisseur
+//    à deux grandes lignes (De / Vers) avec bouton d'inversion rond, sélecteur de devise
+//    en feuille basse avec recherche. Couleurs dérivées de la marque du tenant (plus de
+//    bleu #1D4ED8 ni de vert en dur), police système. Chargement borné via useLoader
+//    (20 s, message d'attente après 4 s, « Réessayer ») — même comportement qu'en v8.4 :
+//    jamais de faux taux ; si des taux sont déjà là, ils restent affichés en cas d'échec.
+//    Les formules de conversion (findRate, fmtRate…) sont INCHANGÉES.
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// ✅ v8.5 : WHITE-LABEL — couleurs d'accent suivent la marque du tenant.
+// ✅ v8.4 : FIX — plus de faux taux ni de spinner sans fin (appel borné + erreur claire).
+// ✅ v8.0 → v8.3 conservés : convertisseur style Wise, 5 devises de l'application,
+//    taille de police dégressive (react-native-web n'a pas adjustsFontSizeToFit).
 // =========================================================
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  Platform,
-  ScrollView,
-  RefreshControl,
-  TextInput,
-  Animated,
-  ActivityIndicator,
-  Modal,
-  FlatList,
-} from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import React, { useCallback, useMemo, useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
-import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
-import { ErrorState, SlowHint } from "../../components/wallet/StateViews";
-
-import { themed, getBrandPrimary } from "../../components/wallet/brand";
-import { buildPalette, N as WN } from "../../components/auth/authTheme";
-import { useWalletTheme } from "../../components/wallet/walletTheme";
-import ScreenHeader, { HeaderIconButton } from "../../components/wallet/ScreenHeader";
-// ─── Palette ─────────────────────────────────────────────
-// v8.5 — l'accent bleu #4361EE était écrit en dur : il suit maintenant la couleur de marque.
-const BP = () => buildPalette(getBrandPrimary());
-const T = themed(() => ({
-  pageBg:   WN.page,
-  surface:  "#FFFFFF",
-  border:   WN.border,
-  borderLt: "#E8EFED",
-  ink:      "#0F172A",
-  inkSub:   "#64748B",
-  inkMuted: "#94A3B8",
-  accent:   BP().action,
-  accentLt: BP().tint,
-  accentMd: BP().tintBorder,
-  green:    "#22C55E",
-  greenBg:  "#DCFCE7",
-  greenBdr: "#86EFAC",
-  greenDark:"#15803D",
-  red:      "#EF4444",
-  redBg:    "#FEE2E2",
-  redBdr:   "#FECACA",
-  redDark:  "#B91C1C",
-  amber:    "#F59E0B",
-  amberBg:  "#FFFBEB",
-  amberBdr: "#FDE68A",
-  white:    "#FFFFFF",
-  r: { xs: 6, sm: 10, md: 14, lg: 18, xl: 22, pill: 99 },
-  font: {
-    serif:   Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"     }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:    Platform.select({ ios: "Courier New", android: "monospace",          default: "monospace"  }),
-  },
-} as const));
+import { useLoader } from "../../components/wallet/useLoader";
+import {
+  Card, EmptyView, ErrorView, IconButton, ListRow, NavBar, Notice, Screen, SearchPill, Sheet, SkeletonRows, SlowNote, UText,
+  SYSTEM_FONT, useUI,
+} from "../../components/ui";
 
 // ─── 5 devises de l'application ──────────────────────────
-// ✅ v8.0 : seules ces devises apparaissent dans le picker
 const APP_CURRENCIES = [
   { code: "EUR", name: "Euro",             flag: "🇪🇺", symbol: "€"    },
   { code: "USD", name: "Dollar américain", flag: "🇺🇸", symbol: "$"    },
   { code: "GBP", name: "Livre sterling",   flag: "🇬🇧", symbol: "£"    },
-  { code: "XOF", name: "Franc CFA BCEAO", flag: "🌍",  symbol: "FCFA" },
+  { code: "XOF", name: "Franc CFA BCEAO",  flag: "🌍",  symbol: "FCFA" },
   { code: "GNF", name: "Franc guinéen",    flag: "🇬🇳", symbol: "GNF"  },
 ] as const;
 
 function getCurrencyMeta(code: string) {
-  return APP_CURRENCIES.find(c => c.code === code) ?? APP_CURRENCIES[0];
+  return APP_CURRENCIES.find((c) => c.code === code) ?? APP_CURRENCIES[0];
 }
 
-// ─── Helpers ─────────────────────────────────────────────
+// ─── Helpers (inchangés) ─────────────────────────────────
 function normPair(p: string): string {
   return p.replace("_", "/");
 }
@@ -133,749 +48,281 @@ function fmt(n: number, cur = "XOF"): string {
   if (!isFinite(n)) return "—";
   const d = cur === "GNF" || cur === "XOF" ? 0 : 4;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(n);
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch {
     return n.toFixed(d);
   }
 }
 
-// Formatage pour les montants du convertisseur (2 décimales max, 0 pour GNF/XOF)
 function fmtAmount(n: number, cur: string): string {
   if (!isFinite(n)) return "—";
   const d = cur === "GNF" || cur === "XOF" ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(n);
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch {
     return n.toFixed(d);
   }
 }
 
-// Formatage du taux (plus de décimales pour les petits nombres)
 function fmtRate(rate: number, toCur: string): string {
   if (!isFinite(rate)) return "—";
   if (rate < 0.001) {
     try {
-      return new Intl.NumberFormat("fr-FR", {
-        minimumFractionDigits: 6,
-        maximumFractionDigits: 6,
-      }).format(rate);
+      return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(rate);
     } catch { return rate.toFixed(6); }
   }
   const d = toCur === "GNF" || toCur === "XOF" ? 2 : 4;
   try {
-    return new Intl.NumberFormat("fr-FR", {
-      minimumFractionDigits: d,
-      maximumFractionDigits: d,
-    }).format(rate);
+    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(rate);
   } catch { return rate.toFixed(d); }
 }
 
-// ✅ v8.2 : `adjustsFontSizeToFit` n'a aucun effet sur react-native-web -> le texte
-// (montant saisi ou converti) était tronqué avec "…" au lieu de rétrécir (cf.
-// captures). On calcule nous-mêmes une taille de police dégressive selon la
-// longueur du texte affiché, valable de façon identique sur toutes les plateformes.
+/** Taille de police dégressive selon la longueur affichée (identique sur toutes les plateformes). */
 function dynamicFontSize(length: number): number {
-  if (length <= 8)  return 20;
-  if (length <= 11) return 18;
-  if (length <= 14) return 15;
-  if (length <= 18) return 13;
-  return 11;
+  if (length <= 8)  return 34;
+  if (length <= 11) return 28;
+  if (length <= 14) return 23;
+  if (length <= 18) return 19;
+  return 15;
 }
 
 function findRate(rates: any[], from: string, to: string): number | null {
   if (from === to) return 1;
-  const direct = rates.find(r =>
-    normPair(r.pair) === `${from}/${to}` || r.pair === `${from}_${to}`
-  );
+  const direct = rates.find((r) => normPair(r.pair) === `${from}/${to}` || r.pair === `${from}_${to}`);
   if (direct?.rate > 0) return Number(direct.rate);
-  const inverse = rates.find(r =>
-    normPair(r.pair) === `${to}/${from}` || r.pair === `${to}_${from}`
-  );
+  const inverse = rates.find((r) => normPair(r.pair) === `${to}/${from}` || r.pair === `${to}_${from}`);
   if (inverse?.rate > 0) return 1 / Number(inverse.rate);
   return null;
 }
 
-// ─── Hero Chip (inchangé) ─────────────────────────────────
-function HeroChip({ label, value, anim }: { label: string; value: string; anim: Animated.Value }) {
-  return (
-    <Animated.View style={[hc.chip, {
-      opacity: anim,
-      transform: [{ translateY: anim.interpolate({ inputRange: [0,1], outputRange: [10,0] }) }],
-    }]}>
-      <Text style={[hc.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <Text style={[hc.value, { fontFamily: T.font.serif }]}>{value}</Text>
-    </Animated.View>
-  );
-}
-const hc = themed(() => StyleSheet.create({
-  chip: {
-    flex: 1, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border,
-    borderRadius: T.r.md, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", gap: 3,
-    shadowColor: T.accent, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
-  },
-  label: { fontSize: 8, fontWeight: "700", color: T.inkMuted, letterSpacing: 0.5 },
-  value: { fontSize: 17, fontWeight: "900", color: T.accent, lineHeight: 20 },
-}));
-
-// =========================================================
-// ✅ v8.0 — MODAL SÉLECTEUR DE DEVISE
-// Style : plein écran, X en haut à gauche, liste avec drapeaux
-// =========================================================
-function CurrencyPickerModal({
-  visible,
-  selectedCode,
-  onSelect,
-  onClose,
-}: {
-  visible: boolean;
-  selectedCode: string;
-  onSelect: (code: string) => void;
-  onClose: () => void;
-}) {
+// ─── Sélecteur de devise (feuille basse) ─────────────────
+function CurrencySheet({
+  visible, selectedCode, onSelect, onClose,
+}: { visible: boolean; selectedCode: string; onSelect: (code: string) => void; onClose: () => void }) {
+  const { C } = useUI();
   const [search, setSearch] = useState("");
-  const searchRef = useRef<TextInput>(null);
-
-  const filtered = search.trim()
-    ? APP_CURRENCIES.filter(c =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.code.toLowerCase().includes(search.toLowerCase())
-      )
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? APP_CURRENCIES.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
     : [...APP_CURRENCIES];
 
-  const handleSelect = (code: string) => {
-    onSelect(code);
-    setSearch("");
-    onClose();
-  };
-
-  const handleClose = () => {
-    setSearch("");
-    onClose();
-  };
+  const close = () => { setSearch(""); onClose(); };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      onRequestClose={handleClose}
-      statusBarTranslucent={Platform.OS === "android"}
-    >
-      <SafeAreaView style={pm.safe}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-        {/* ── Bouton fermer ── */}
-        <View style={pm.headerRow}>
-          <TouchableOpacity style={pm.closeBtn} onPress={handleClose} hitSlop={12}>
-            <Ionicons name="close" size={22} color={T.ink} />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Titre ── */}
-        <Text style={[pm.title, { fontFamily: T.font.serif }]}>
-          Sélectionnez une devise
-        </Text>
-
-        {/* ── Barre de recherche ── */}
-        <View style={pm.searchBar}>
-          <Ionicons name="search" size={18} color={T.inkMuted} />
-          <TextInput
-            ref={searchRef}
-            style={[pm.searchInput, { fontFamily: T.font.sans }]}
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Rechercher"
-            placeholderTextColor={T.inkMuted}
-            autoCorrect={false}
-            autoCapitalize="none"
-            returnKeyType="search"
-          />
-          {!!search && (
-            <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={18} color={T.inkMuted} />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* ── Liste des 5 devises ── */}
-        <FlatList
-          data={filtered}
-          keyExtractor={item => item.code}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => {
-            const isSelected = item.code === selectedCode;
-            return (
-              <TouchableOpacity
-                style={[pm.item, isSelected && pm.itemActive]}
-                onPress={() => handleSelect(item.code)}
-                activeOpacity={0.6}
-              >
-                {/* Drapeau en cercle */}
-                <View style={pm.flagCircle}>
-                  <Text style={{ fontSize: 28 }}>{item.flag}</Text>
+    <Sheet visible={visible} onClose={close} title="Sélectionnez une devise">
+      <SearchPill value={search} onChangeText={setSearch} placeholder="Rechercher" style={{ marginTop: 6, marginBottom: 6 }} />
+      {filtered.length === 0 ? (
+        <EmptyView icon="search-outline" title="Aucune devise trouvée" />
+      ) : (
+        filtered.map((item, i) => {
+          const on = item.code === selectedCode;
+          return (
+            <ListRow
+              key={item.code}
+              title={item.name}
+              subtitle={item.code}
+              last={i === filtered.length - 1}
+              left={
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontSize: 22 }}>{item.flag}</Text>
                 </View>
-
-                {/* Nom et code */}
-                <Text style={[pm.itemLabel, { fontFamily: T.font.sans }]}>
-                  {item.name}
-                  {"  "}
-                  <Text style={pm.itemCode}>-  {item.code}</Text>
-                </Text>
-
-                {/* Coche si sélectionné */}
-                {isSelected && (
-                  <Ionicons name="checkmark" size={24} color="#1D4ED8" />
-                )}
-              </TouchableOpacity>
-            );
-          }}
-          ListEmptyComponent={
-            <View style={pm.empty}>
-              <Ionicons name="search-outline" size={36} color={T.inkMuted} />
-              <Text style={[pm.emptyTxt, { fontFamily: T.font.sans }]}>
-                Aucune devise trouvée
-              </Text>
-            </View>
-          }
-          contentContainerStyle={{ paddingBottom: 40 }}
-        />
-      </SafeAreaView>
-    </Modal>
+              }
+              right={on ? <Ionicons name="checkmark-circle" size={24} color={C.ink} /> : undefined}
+              onPress={() => { onSelect(item.code); close(); }}
+            />
+          );
+        })
+      )}
+    </Sheet>
   );
 }
 
-const pm = themed(() => StyleSheet.create({
-  safe:      { flex: 1, backgroundColor: "#FFFFFF" },
-  headerRow: {
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 16 : 12,
-    paddingBottom: 4,
-  },
-  closeBtn: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: "#F1F5F9",
-    justifyContent: "center", alignItems: "center",
-  },
-  title: {
-    fontSize: 26, fontWeight: "700", color: T.ink,
-    paddingHorizontal: 20, marginTop: 18, marginBottom: 22,
-    lineHeight: 32,
-  },
-  searchBar: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    backgroundColor: "#F1F5F9", borderRadius: 14,
-    paddingHorizontal: 16, height: 52,
-    marginHorizontal: 20, marginBottom: 8,
-  },
-  searchInput: {
-    flex: 1, fontSize: 16, color: T.ink, fontWeight: "500",
-  },
-  item: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingVertical: 20,
-    borderBottomWidth: 1, borderBottomColor: "#F1F5F9",
-  },
-  itemActive: { backgroundColor: "#EFF6FF" },
-  flagCircle: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: T.accentLt,
-    borderWidth: 1, borderColor: "#E2E8F0",
-    justifyContent: "center", alignItems: "center",
-    marginRight: 16, overflow: "hidden",
-  },
-  itemLabel: {
-    flex: 1, fontSize: 15, fontWeight: "500", color: T.ink,
-  },
-  itemCode:  { color: T.inkSub, fontWeight: "600" },
-  empty: {
-    alignItems: "center", paddingTop: 48, gap: 12,
-  },
-  emptyTxt:  { fontSize: 14, color: T.inkMuted, fontWeight: "600" },
-}));
-
-// =========================================================
-// ✅ v8.0 — CONVERTISSEUR REDESIGNÉ — style Wise
-// 2 lignes FROM/TO empilées, sélecteur devise avec modal
-// ✅ v8.1 — champ de saisie du montant : reset du contour web déplacé dans `style`
-// ✅ v8.2 — sélecteur de devise verrouillé (flexShrink:0) + minWidth:0 sur les
-//   zones flexibles + taille de police dynamique pour FROM et TO (voir en-tête)
-// =========================================================
+// ─── Convertisseur ───────────────────────────────────────
 function Converter({ rates }: { rates: any[] }) {
+  const { C, R } = useUI();
   const [fromCur, setFromCur] = useState("EUR");
-  const [toCur,   setToCur]   = useState("XOF");
-  const [amount,  setAmount]  = useState("100");
-  const [showFromPicker, setShowFromPicker] = useState(false);
-  const [showToPicker,   setShowToPicker]   = useState(false);
+  const [toCur, setToCur] = useState("XOF");
+  const [amount, setAmount] = useState("100");
+  const [pick, setPick] = useState<null | "from" | "to">(null);
 
-  const rate      = findRate(rates, fromCur, toCur);
+  const rate = findRate(rates, fromCur, toCur);
   const numAmount = parseFloat(String(amount).replace(/\s/g, "").replace(",", ".")) || 0;
   const converted = rate !== null ? numAmount * rate : null;
 
   const fromMeta = getCurrencyMeta(fromCur);
-  const toMeta   = getCurrencyMeta(toCur);
+  const toMeta = getCurrencyMeta(toCur);
 
-  // ✅ v8.2 : taille de police dégressive selon la longueur du texte affiché,
-  // recalculée à chaque frappe / conversion (voir `dynamicFontSize` en en-tête)
-  const amountFontSize = dynamicFontSize((amount || "0").length);
-  const resultText     = converted !== null ? `${toMeta.symbol} ${fmtAmount(converted, toCur)}` : "—";
-  const resultFontSize = dynamicFontSize(resultText.length);
+  const amountFont = dynamicFontSize((amount || "0").length);
+  const resultText = converted !== null ? fmtAmount(converted, toCur) : "—";
+  const resultFont = dynamicFontSize(resultText.length);
 
-  // Sélection FROM : si l'utilisateur choisit la devise TO → on swap
   const handleSelectFrom = (code: string) => {
-    if (code === toCur) { setToCur(fromCur); }
+    if (code === toCur) setToCur(fromCur);
     setFromCur(code);
   };
-
-  // Sélection TO : si l'utilisateur choisit la devise FROM → on swap
   const handleSelectTo = (code: string) => {
-    if (code === fromCur) { setFromCur(toCur); }
+    if (code === fromCur) setFromCur(toCur);
     setToCur(code);
   };
-
   const handleSwap = () => {
     const prevFrom = fromCur;
     setFromCur(toCur);
     setToCur(prevFrom);
-    if (converted !== null) {
-      setAmount(fmtAmount(converted, toCur).replace(/\s/g, ""));
-    }
+    if (converted !== null) setAmount(fmtAmount(converted, toCur).replace(/\s/g, ""));
   };
 
+  const curBtn = (meta: { code: string; flag: string }, onPress: () => void) => (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Devise ${meta.code}`}
+      style={({ pressed }) => ({
+        flexDirection: "row", alignItems: "center", gap: 8, height: 44, paddingLeft: 6, paddingRight: 12,
+        borderRadius: R.pill, backgroundColor: C.beige, opacity: pressed ? 0.7 : 1, flexShrink: 0,
+      })}
+    >
+      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontSize: 18 }}>{meta.flag}</Text>
+      </View>
+      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 16, fontWeight: "800", color: C.ink }}>{meta.code}</Text>
+      <Ionicons name="chevron-down" size={14} color={C.muted} />
+    </Pressable>
+  );
+
   return (
-    <View style={cv.card}>
-
-      {/* ══ Ligne FROM — bordure bleue active ══ */}
-      <View style={cv.fromRow}>
-
-        {/* Sélecteur devise FROM */}
-        <TouchableOpacity
-          style={cv.currencyBtn}
-          onPress={() => setShowFromPicker(true)}
-          activeOpacity={0.7}
-        >
-          <View style={cv.flagCircle}>
-            <Text style={{ fontSize: 18 }}>{fromMeta.flag}</Text>
-          </View>
-          <Text style={[cv.currencyCode, { fontFamily: T.font.sans }]}>
-            {fromCur}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={T.inkSub} />
-        </TouchableOpacity>
-
-        {/* Séparateur vertical */}
-        <View style={cv.vSep} />
-
-        {/* Montant (saisie) */}
-        {/* ✅ v8.1 : le reset "outline" doit être passé dans le tableau `style`, pas en tant que
-            prop du composant — react-native-web ignorait `outlineStyle` passé en prop, d'où le
-            contour bleu de focus + la bordure grise par défaut du <input> qui polluaient la
-            saisie. borderWidth:0 est aussi mis en dur sur amountInput.
-            ✅ v8.2 : `minWidth: 0` (dans le style `cv.amountInput`) empêche ce champ de forcer
-            la ligne à dépasser sa largeur et de pousser le sélecteur de devise hors champ ; la
-            taille de police est désormais dynamique (`amountFontSize`) au lieu d'être fixe. */}
-        <TextInput
-          style={[
-            cv.amountInput,
-            { fontFamily: T.font.serif, fontSize: amountFontSize },
-            ...(Platform.OS === "web"
-              ? [{ outlineStyle: "none", outlineWidth: 0, borderWidth: 0, boxShadow: "none" } as any]
-              : []),
-          ]}
-          value={amount}
-          onChangeText={setAmount}
-          keyboardType="numeric"
-          selectTextOnFocus
-          underlineColorAndroid="transparent"
-          placeholder="0"
-          placeholderTextColor={T.inkMuted}
-        />
-
-        {/* Icône calculatrice */}
-        <View style={cv.actionBtn}>
-          <Ionicons name="calculator-outline" size={18} color={T.inkSub} />
-        </View>
-      </View>
-
-      {/* ══ Ligne TO — bordure grise inactive ══ */}
-      <View style={cv.toRow}>
-
-        {/* Sélecteur devise TO */}
-        <TouchableOpacity
-          style={cv.currencyBtn}
-          onPress={() => setShowToPicker(true)}
-          activeOpacity={0.7}
-        >
-          <View style={cv.flagCircle}>
-            <Text style={{ fontSize: 18 }}>{toMeta.flag}</Text>
-          </View>
-          <Text style={[cv.currencyCode, { fontFamily: T.font.sans }]}>
-            {toCur}
-          </Text>
-          <Ionicons name="chevron-down" size={14} color={T.inkSub} />
-        </TouchableOpacity>
-
-        {/* Séparateur vertical */}
-        <View style={cv.vSep} />
-
-        {/* Résultat + taux */}
-        {/* ✅ v8.2 : `adjustsFontSizeToFit` retiré (sans effet sur web, cf. en-tête) et
-            remplacé par `resultFontSize`, recalculé selon la longueur du texte affiché,
-            pour que le montant complet reste toujours visible sans être coupé. */}
-        <View style={cv.resultWrap}>
-          <Text
-            style={[cv.resultAmount, { fontFamily: T.font.serif, fontSize: resultFontSize }]}
-            numberOfLines={1}
-          >
-            {resultText}
-          </Text>
-          {rate !== null && (
-            <Text style={[cv.rateSmall, { fontFamily: T.font.sans }]}>
-              1 {fromCur} = {fmtRate(rate, toCur)} {toCur}
-            </Text>
-          )}
-        </View>
-
-        {/* Bouton swap (⋮ dans Wise → ici swap vertical) */}
-        <TouchableOpacity style={cv.actionBtn} onPress={handleSwap}>
-          <Ionicons name="swap-vertical-outline" size={18} color={T.inkSub} />
-        </TouchableOpacity>
-      </View>
-
-      {/* ══ Barre inférieure ══ */}
-      <View style={cv.bottomBar}>
-        {/* Bouton inverser */}
-        <TouchableOpacity style={cv.invertBtn} onPress={handleSwap}>
-          <Ionicons name="swap-horizontal" size={14} color={T.accent} />
-          <Text style={[cv.invertTxt, { fontFamily: T.font.sans }]}>
-            Inverser
-          </Text>
-        </TouchableOpacity>
-
-        {/* Disclaimer marché */}
-        <View style={cv.marketWrap}>
-          <Text style={[cv.marketTxt, { fontFamily: T.font.sans }]}>
-            Taux de change moyen du marché
-          </Text>
-          <Ionicons
-            name="information-circle-outline"
-            size={14}
-            color={T.inkMuted}
+    <Card pad={0} style={{ overflow: "hidden" }}>
+      {/* De */}
+      <View style={{ padding: 20, paddingBottom: 26 }}>
+        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>Vous convertissez</UText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {curBtn(fromMeta, () => setPick("from"))}
+          <TextInput
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            selectTextOnFocus
+            underlineColorAndroid="transparent"
+            placeholder="0"
+            placeholderTextColor={C.faint}
+            selectionColor={C.accent}
+            accessibilityLabel="Montant à convertir"
+            style={[
+              { flex: 1, minWidth: 0, textAlign: "right", padding: 0, fontFamily: SYSTEM_FONT, fontWeight: "800", letterSpacing: -1, color: C.ink, fontSize: amountFont },
+              { outlineStyle: "none", outlineWidth: 0, borderWidth: 0 } as any,
+            ]}
           />
         </View>
       </View>
 
-      {/* ── Modals sélecteur ── */}
-      <CurrencyPickerModal
-        visible={showFromPicker}
-        selectedCode={fromCur}
-        onSelect={handleSelectFrom}
-        onClose={() => setShowFromPicker(false)}
-      />
-      <CurrencyPickerModal
-        visible={showToPicker}
-        selectedCode={toCur}
-        onSelect={handleSelectTo}
-        onClose={() => setShowToPicker(false)}
-      />
-    </View>
+      {/* Séparateur + inversion */}
+      <View style={{ height: 1, backgroundColor: C.line, zIndex: 2, overflow: "visible" }}>
+        <Pressable
+          onPress={handleSwap}
+          accessibilityRole="button"
+          accessibilityLabel="Inverser les devises"
+          style={({ pressed }) => ({
+            position: "absolute", right: 20, top: -20, width: 40, height: 40, borderRadius: 20,
+            backgroundColor: C.dark, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Ionicons name="swap-vertical" size={20} color={C.darkInk} />
+        </Pressable>
+      </View>
+
+      {/* Vers */}
+      <View style={{ padding: 20, paddingTop: 26, backgroundColor: C.sunken }}>
+        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>Ils reçoivent environ</UText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          {curBtn(toMeta, () => setPick("to"))}
+          <Text
+            numberOfLines={1}
+            style={{ flex: 1, minWidth: 0, textAlign: "right", fontFamily: SYSTEM_FONT, fontWeight: "800", letterSpacing: -1, color: C.ink, fontSize: resultFont }}
+          >
+            {resultText}
+          </Text>
+        </View>
+        <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 13, fontWeight: "500", color: C.muted, textAlign: "right", marginTop: 8 }}>
+          {rate !== null ? `1 ${fromCur} = ${fmtRate(rate, toCur)} ${toCur}` : `Taux ${fromCur}/${toCur} indisponible`}
+        </Text>
+      </View>
+
+      <CurrencySheet visible={pick === "from"} selectedCode={fromCur} onSelect={handleSelectFrom} onClose={() => setPick(null)} />
+      <CurrencySheet visible={pick === "to"} selectedCode={toCur} onSelect={handleSelectTo} onClose={() => setPick(null)} />
+    </Card>
   );
 }
 
-const cv = themed(() => StyleSheet.create({
-  card: {
-    backgroundColor: T.surface, borderRadius: T.r.xl,
-    marginBottom: 16, overflow: "hidden",
-    shadowColor: T.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.10, shadowRadius: 16, elevation: 5,
-    borderWidth: 1, borderColor: T.borderLt,
-  },
-
-  // ── FROM row : bordure bleue active ──
-  fromRow: {
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 2, borderColor: "#1D4ED8",
-    borderRadius: T.r.lg, margin: 12, marginBottom: 6,
-    overflow: "hidden", backgroundColor: "#FAFBFF",
-  },
-
-  // ── TO row : bordure grise inactive ──
-  toRow: {
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 1.5, borderColor: T.border,
-    borderRadius: T.r.lg, marginHorizontal: 12, marginBottom: 6,
-    overflow: "hidden", backgroundColor: T.surface,
-  },
-
-  // Sélecteur devise (flag + code + chevron)
-  // ✅ v8.2 : flexShrink/flexGrow verrouillés à 0 — cet élément a une largeur fixe
-  // et ne doit jamais pouvoir être écrasé par le champ montant voisin (flex:1)
-  currencyBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 14,
-    flexShrink: 0, flexGrow: 0,
-  },
-  flagCircle: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: T.accentLt,
-    borderWidth: 1, borderColor: T.border,
-    justifyContent: "center", alignItems: "center",
-    overflow: "hidden",
-    flexShrink: 0, flexGrow: 0,
-  },
-  currencyCode: {
-    fontSize: 15, fontWeight: "700", color: T.ink,
-  },
-
-  // Séparateur vertical
-  vSep: {
-    width: 1, height: 34, backgroundColor: T.border,
-    flexShrink: 0, flexGrow: 0,
-  },
-
-  // TextInput montant (FROM)
-  // ✅ v8.2 : `minWidth: 0` est la correction clé — sans elle, un enfant `flex:1`
-  // refuse de rétrécir sous la largeur de son propre contenu et peut pousser les
-  // éléments voisins (le sélecteur de devise) hors de la zone visible dès que du
-  // texte est saisi. borderWidth:0 (v8.1) conservé.
-  amountInput: {
-    flex: 1, minWidth: 0, paddingHorizontal: 12,
-    fontWeight: "700", color: T.ink,
-    textAlign: "right",
-    borderWidth: 0,
-    backgroundColor: "transparent",
-  },
-
-  // Zone résultat (TO)
-  // ✅ v8.2 : minWidth:0 pour la même raison que amountInput ci-dessus
-  resultWrap: {
-    flex: 1, minWidth: 0, paddingHorizontal: 12,
-    alignItems: "flex-end", justifyContent: "center",
-    gap: 3, paddingVertical: 12,
-  },
-  resultAmount: {
-    fontWeight: "700", color: T.ink, textAlign: "right",
-  },
-  rateSmall: {
-    fontSize: 10, color: T.inkSub, fontWeight: "500", textAlign: "right",
-  },
-
-  // Icône droite (calculatrice ou swap)
-  // ✅ v8.2 : flexShrink/flexGrow verrouillés à 0, padding resserré
-  actionBtn: {
-    paddingHorizontal: 10, paddingVertical: 14,
-    flexShrink: 0, flexGrow: 0,
-  },
-
-  // Barre inférieure
-  bottomBar: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 16, paddingVertical: 13,
-    borderTopWidth: 1, borderTopColor: T.borderLt,
-    gap: 8,
-  },
-  invertBtn: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-  },
-  invertTxt: {
-    fontSize: 13, fontWeight: "700", color: T.accent,
-  },
-  marketWrap: {
-    flex: 1, flexDirection: "row", alignItems: "center",
-    justifyContent: "flex-end", gap: 5,
-  },
-  marketTxt: {
-    fontSize: 11, color: T.inkMuted, fontWeight: "500", textAlign: "right",
-    flexShrink: 1,
-  },
-}));
-
-// ─── Écran principal ──────────────────────────────────────
+// ─── Écran principal ─────────────────────────────────────
 export default function RatesScreen() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
+  const { C } = useUI();
 
-  const [rates,      setRates]      = useState<any[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState("");
-  const [loadError,  setLoadError]  = useState<LoadError | null>(null);
-  const [slow,       setSlow]       = useState(false);
-
-  const headerAnim = useRef(new Animated.Value(0)).current;
-  const chip1Anim  = useRef(new Animated.Value(0)).current;
-  const chip2Anim  = useRef(new Animated.Value(0)).current;
-  const chip3Anim  = useRef(new Animated.Value(0)).current;
-  const listAnim   = useRef(new Animated.Value(0)).current;
-
-  const animateIn = () => {
-    [chip1Anim, chip2Anim, chip3Anim].forEach(a => a.setValue(0));
-    listAnim.setValue(0);
-    Animated.stagger(70, [
-      Animated.spring(chip1Anim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 5 }),
-      Animated.spring(chip2Anim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 5 }),
-      Animated.spring(chip3Anim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 5 }),
-      Animated.spring(listAnim,  { toValue: 1, useNativeDriver: true, speed: 10, bounciness: 3 }),
-    ]).start();
-  };
-
-  const ratesRef = useRef<any[]>([]);
-  ratesRef.current = rates;
-  const loadSeq = useRef(0);
-
-  const load = useCallback(async () => {
-    const id = ++loadSeq.current;
-    setRefreshing(true);
-    setLoadError(null);
-    try {
-      const res  = await withTimeout(api.getExchangeRates(), defaultTimeoutMs());
-      if (id !== loadSeq.current) return;
-      const list = Array.isArray(res) ? res : [];
-      const normalized = list.map((r: any) => ({ ...r, pair: normPair(r.pair) }));
-      setRates(normalized);
-      setLastUpdate(
-        new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-      );
-      animateIn();
-    } catch (e) {
-      if (id !== loadSeq.current) return;
-      // Données déjà chargées : on les garde. Sinon : état d'erreur.
-      if (ratesRef.current.length === 0) setLoadError(explainLoadError(e));
-    } finally {
-      if (id === loadSeq.current) { setLoading(false); setRefreshing(false); }
+  const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
+    const res = await api.getExchangeRates();
+    const list = Array.isArray(res) ? res : [];
+    return list.map((r: any) => ({ ...r, pair: normPair(r.pair) }));
+  });
+  const rates = useMemo(() => data ?? [], [data]);
+  const [stamp, setStamp] = useState("");
+  React.useEffect(() => {
+    if (status === "ready") {
+      setStamp(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
     }
-  }, []);
-
-  // Message rassurant si le serveur met plus de 4 s (hébergeur en réveil)
-  useEffect(() => {
-    if (!loading) { setSlow(false); return; }
-    const timer = setTimeout(() => setSlow(true), 4000);
-    return () => clearTimeout(timer);
-  }, [loading]);
-
-  useFocusEffect(
-    useCallback(() => {
-      [headerAnim, chip1Anim, chip2Anim, chip3Anim, listAnim].forEach(a => a.setValue(0));
-      void load();
-      Animated.spring(headerAnim, {
-        toValue: 1, useNativeDriver: true, speed: 12, bounciness: 4,
-      }).start();
-    }, [load])
-  );
+  }, [data, status]);
 
   const eurXof = findRate(rates, "EUR", "XOF");
   const eurGnf = findRate(rates, "EUR", "GNF");
   const usdXof = findRate(rates, "USD", "XOF");
 
+  const keyRates = [
+    { label: "€ → CFA", value: eurXof ? fmt(eurXof, "XOF") : "—" },
+    { label: "€ → GNF", value: eurGnf ? fmt(eurGnf, "GNF") : "—" },
+    { label: "$ → CFA", value: usdXof ? fmt(usdXof, "XOF") : "—" },
+  ];
+
+  const onRetry = useCallback(() => { void reload(); }, [reload]);
+
   return (
-    <View style={s.safe}>
-
-      {/* ── En-tête commun du wallet + 3 taux clés ── */}
-      <ScreenHeader
-        compact
-        title="Taux du jour"
-        subtitle={lastUpdate ? `Mis à jour à ${lastUpdate}` : "Taux indicatifs du marché"}
-        onBack={() => router.back()}
-        right={<HeaderIconButton icon="refresh" label="Actualiser les taux" onPress={() => void load()} />}
-      >
-        <View style={s.chipsRow}>
-          <HeroChip label="€ → CFA" value={eurXof ? fmt(eurXof, "XOF") : "—"} anim={chip1Anim} />
-          <HeroChip label="€ → GNF" value={eurGnf ? fmt(eurGnf, "GNF") : "—"} anim={chip2Anim} />
-          <HeroChip label="$ → CFA" value={usdXof ? fmt(usdXof, "XOF") : "—"} anim={chip3Anim} />
-        </View>
-      </ScreenHeader>
-
-      {/* ── Contenu ── */}
-      {loading ? (
-        <View style={s.loadBox}>
-          <ActivityIndicator color={T.accent} size="large" />
-          <Text style={[s.loadTxt, { fontFamily: T.font.sans }]}>Chargement des taux…</Text>
-          <SlowHint visible={slow} />
-        </View>
-      ) : loadError && rates.length === 0 ? (
-        <View style={s.loadBox}>
-          <ErrorState title={loadError.title} message={loadError.message} onRetry={() => { setLoading(true); void load(); }} />
-        </View>
+    <Screen
+      header={
+        <NavBar
+          title="Taux du jour"
+          subtitle={stamp ? `Mis à jour à ${stamp}` : "Taux indicatifs du marché"}
+          onBack={() => router.back()}
+          right={<IconButton icon="refresh" label="Actualiser les taux" onPress={() => void refresh()} />}
+        />
+      }
+      refreshing={refreshing}
+      onRefresh={() => void refresh()}
+    >
+      {status === "loading" ? (
+        <>
+          <SlowNote visible={slow} />
+          <SkeletonRows rows={4} />
+        </>
+      ) : status === "error" && rates.length === 0 ? (
+        <ErrorView title={error?.title ?? "Taux indisponibles"} message={error?.message ?? "Réessaie dans un instant."} onRetry={onRetry} />
       ) : (
-        <Animated.ScrollView
-          style={{ opacity: listAnim, flex: 1 }}
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => void load()}
-              tintColor={T.accent}
-              colors={[T.accent]}
-            />
-          }
-        >
-          {/* ✅ v8.1 : Convertisseur — seule section conservée dans le scroll,
-              la liste "TOUTES LES PAIRES" a été retirée à la demande */}
-          <Converter rates={rates} />
-
-          <View style={s.legal}>
-            <Ionicons name="information-circle-outline" size={12} color={T.inkMuted} />
-            <Text style={[s.legalTxt, { fontFamily: T.font.sans }]}>
-              Taux indicatifs, non contractuels. Les taux réels peuvent légèrement
-              varier au moment de l'exécution.
-            </Text>
+        <>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            {keyRates.map((k) => (
+              <Card key={k.label} pad={14} style={{ flex: 1, alignItems: "center", gap: 4 }}>
+                <UText v="overline" tone="muted" numberOfLines={1}>{k.label}</UText>
+                <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontFamily: SYSTEM_FONT, fontSize: 20, fontWeight: "800", letterSpacing: -0.5, color: C.ink }}>
+                  {k.value}
+                </Text>
+              </Card>
+            ))}
           </View>
 
-          <View style={{ height: 100 }} />
-        </Animated.ScrollView>
+          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>Convertisseur</UText>
+          <Converter rates={rates} />
+
+          <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 16 }}>
+            Taux de change moyen du marché, indicatif et non contractuel. Les taux réels peuvent légèrement varier au moment de l'exécution.
+          </Notice>
+        </>
       )}
-    </View>
+    </Screen>
   );
 }
-
-// ─── Styles principaux ────────────────────────────────────
-const s = themed(() => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.pageBg },
-
-  hero: {
-    paddingTop:        Platform.OS === "android" ? 46 : 14,
-    paddingBottom:     18, paddingHorizontal: 20,
-    borderBottomWidth: 1, borderBottomColor: T.border,
-  },
-  heroNav:   { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
-  navBtn: {
-    width: 36, height: 36, borderRadius: 11, backgroundColor: T.surface,
-    borderWidth: 1, borderColor: T.border, justifyContent: "center", alignItems: "center",
-    shadowColor: T.accent, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
-  },
-  heroTitle: { fontSize: 22, fontWeight: "800", color: T.ink, lineHeight: 26 },
-  liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 3 },
-  liveDot:   { width: 6, height: 6, borderRadius: 99, backgroundColor: T.green },
-  liveTxt:   { fontSize: 9, color: T.green, fontWeight: "800", letterSpacing: 0.5 },
-  chipsRow:  { flexDirection: "row", gap: 8 },
-
-  loadBox: { flex: 1, justifyContent: "center", alignItems: "center", gap: 14 },
-  loadTxt: { fontSize: 13, color: T.inkSub, fontWeight: "600" },
-
-  scroll: { paddingHorizontal: 16, paddingTop: 18 },
-
-  secRow:   { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
-  secDot:   { width: 5, height: 5, borderRadius: 99, backgroundColor: T.accent },
-  secTitle: { flex: 1, fontSize: 10, fontWeight: "800", color: T.inkSub, letterSpacing: 1 },
-  secBadge: {
-    backgroundColor: T.accentLt, borderRadius: 7,
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderWidth: 1, borderColor: T.accentMd,
-  },
-  secCount: { fontSize: 10, fontWeight: "800", color: T.accent },
-
-  legal: {
-    flexDirection: "row", alignItems: "flex-start", gap: 6,
-    backgroundColor: T.surface, borderRadius: T.r.md, padding: 12,
-    borderWidth: 1, borderColor: T.borderLt, marginTop: 6,
-  },
-  legalTxt: { flex: 1, fontSize: 10, fontWeight: "600", color: T.inkMuted, lineHeight: 16 },
-}));

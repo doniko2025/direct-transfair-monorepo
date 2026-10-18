@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/PhoneField.tsx
 // =========================================================
-// TÉLÉPHONE v1.0 — Direct Transf'air
+// TÉLÉPHONE v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Indicatif (drapeau + code, sélecteur de tous les pays) + numéro national.
 // normalizeNationalNumber() retire le « 0 » de tête (préfixe national :
@@ -51,7 +52,7 @@ export default function PhoneField({
   return (
     <View style={s.wrap}>
       <Text style={[s.label, hasError && { color: N.danger }]}>Numéro de téléphone</Text>
-      <View style={[s.box, { borderColor: hasError ? N.danger : focused ? accent : N.border }]}>
+      <View style={[s.box, { borderColor: hasError ? N.danger : focused ? N.ink : N.border }]}>
         <TouchableOpacity
           onPress={() => setOpen(true)}
           style={s.dial}
@@ -68,7 +69,7 @@ export default function PhoneField({
           value={value}
           onChangeText={(t) => onChangeText(t.replace(/[^\d\s]/g, ''))}
           placeholder="6 12 34 56 78"
-          placeholderTextColor="#A5B3AE"
+          placeholderTextColor="#B9B6AD"
           keyboardType="phone-pad"
           autoComplete="tel-national"
           textContentType="telephoneNumber"

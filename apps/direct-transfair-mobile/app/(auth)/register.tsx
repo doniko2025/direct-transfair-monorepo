@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // =========================================================
 // REGISTER v7.0 — Direct Transf'air
+// ✅ v7.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; aucune logique modifiée.
 // ✅ v7.0 : REFONTE COMPLÈTE de l'inscription — Thierno Doniko (Grand Chef).
 //   PROBLÈMES CONSTATÉS :
 //   1. L'écran était INATTEIGNABLE depuis l'écran de connexion (voir login-v2 v3.0).

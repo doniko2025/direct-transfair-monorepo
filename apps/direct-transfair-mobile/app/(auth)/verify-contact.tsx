@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
 // =========================================================
 // VERIFY CONTACT v2.0 — Direct Transf'air
+// ✅ v2.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; compteur d'étape en gris ; aucune logique modifiée.
 // ✅ v2.0 : REFONTE VISUELLE de la vérification — Thierno Doniko (Grand Chef).
 //   TOUTE la logique v1.0 → v1.4 est conservée à l'identique : étapes requises, envoi
 //   automatique unique au montage (garde anti-double appel), compte à rebours de renvoi,
@@ -380,7 +381,7 @@ export default function VerifyContactScreen() {
 }
 
 const s = StyleSheet.create({
-  counter:    { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '700', color: 'rgba(255,255,255,0.85)' },
+  counter:    { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '700', color: N.muted },
   sending:    { alignItems: 'center', paddingVertical: 28, gap: 12 },
   sendingTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
   resend:     { alignItems: 'center', marginTop: 14 },

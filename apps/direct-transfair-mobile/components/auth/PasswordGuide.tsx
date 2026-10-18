@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/PasswordGuide.tsx
 // =========================================================
-// JAUGE + CONSEILS MOT DE PASSE v1.0 — Direct Transf'air
+// JAUGE + CONSEILS MOT DE PASSE v2.0 — Direct Transf'air
+// ✅ v2.0 : thème clair (jauge sur fond sable).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -11,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FONT, N } from './authTheme';
 import { evaluatePassword, PASSWORD_MAX, PASSWORD_MIN } from './passwordRules';
 
-const LEVEL_COLOR = ['#DAE3E0', N.danger, '#D97706', '#16A34A', '#067647'];
+const LEVEL_COLOR = ['#E3DFD5', N.danger, '#D97706', '#4CAF73', '#2E8B57'];
 
 function Rule({ ok, text, soft = false }: { ok: boolean; text: string; soft?: boolean }) {
   return (
@@ -34,7 +35,7 @@ export default function PasswordGuide({ password }: { password: string }) {
       <View style={s.meterRow}>
         <View style={s.meter}>
           {[1, 2, 3, 4].map((i) => (
-            <View key={i} style={[s.seg, { backgroundColor: i <= r.score ? color : '#E6ECEA' }]} />
+            <View key={i} style={[s.seg, { backgroundColor: i <= r.score ? color : '#ECE8DE' }]} />
           ))}
         </View>
         <Text style={[s.level, { color }]}>{r.label}</Text>

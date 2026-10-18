@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/authTheme.ts
 // =========================================================
-// THÈME DES ÉCRANS D'AUTHENTIFICATION v1.0 — Direct Transf'air
+// THÈME DES ÉCRANS D'AUTHENTIFICATION v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR (refonte totale) — neutres chauds (fond crème #FAF9F5, champs sable, encre
+//    quasi noire), police système (plus de Georgia), rayons plus généreux, ombres légères.
+//    Les noms d'exports sont inchangés : tous les écrans et composants qui l'utilisent passent
+//    automatiquement au thème clair. buildPalette() garde action/accent/tint dérivés de la marque.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Une seule source pour les couleurs, polices, rayons et ombres des
 // écrans de connexion / inscription / mot de passe / vérification.
@@ -70,56 +74,56 @@ export function buildPalette(primary?: string | null): AuthPalette {
 
 // ─── Couleurs neutres et sémantiques ─────────────────────
 export const N = {
-  page:      '#F3F6F5',
+  page:      '#FAF9F5',
   surface:   '#FFFFFF',
-  field:     '#F7FAF9',
-  ink:       '#0B1F1A',
-  inkSub:    '#42564F',
-  muted:     '#7C8E88',
-  border:    '#DAE3E0',
-  danger:    '#B42318',
-  dangerBg:  '#FEF3F2',
-  dangerBd:  '#FECDCA',
-  warn:      '#B54708',
-  warnBg:    '#FFFAEB',
-  warnBd:    '#FEDF89',
-  ok:        '#067647',
-  okBg:      '#ECFDF3',
-  okBd:      '#ABEFC6',
+  field:     '#F2EFE8',
+  ink:       '#111214',
+  inkSub:    '#4A4945',
+  muted:     '#8B887F',
+  border:    '#E3DFD5',
+  danger:    '#C62828',
+  dangerBg:  '#FDECEA',
+  dangerBd:  '#F5C6C2',
+  warn:      '#B26A00',
+  warnBg:    '#FFF4DB',
+  warnBd:    '#F1D79A',
+  ok:        '#2E8B57',
+  okBg:      '#DFF3E6',
+  okBd:      '#BFE5CD',
   white:     '#FFFFFF',
 } as const;
 
 // ─── Typographie ─────────────────────────────────────────
 export const FONT = {
-  display: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, serif' }) as string,
+  display: Platform.select({ ios: 'System', android: 'sans-serif', default: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' }) as string,
   body:    Platform.select({ ios: 'System', android: 'sans-serif', default: 'system-ui, sans-serif' }) as string,
   medium:  Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'system-ui, sans-serif' }) as string,
 };
 
-export const RADIUS = { sm: 10, md: 14, lg: 18, xl: 28 } as const;
+export const RADIUS = { sm: 12, md: 16, lg: 20, xl: 32 } as const;
 
 /** Largeur maximale du contenu (web / tablette). */
 export const MAX_WIDTH = 520;
 
 export const SHADOW = {
   card: {
-    shadowColor: '#06231C',
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-  },
-  button: {
-    shadowColor: '#06231C',
-    shadowOpacity: 0.22,
-    shadowRadius: 14,
+    shadowColor: '#111214',
+    shadowOpacity: 0.07,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
+  },
+  button: {
+    shadowColor: '#111214',
+    shadowOpacity: 0.10,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
 } as const;
 
 /** Neutralise le contour bleu et le fond jaune d'autofill des navigateurs (web uniquement). */
 export const WEB_INPUT_RESET: any =
   Platform.OS === 'web'
-    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F7FAF9 inset', WebkitTextFillColor: '#0B1F1A' }
+    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2EFE8 inset', WebkitTextFillColor: '#111214' }
     : {};

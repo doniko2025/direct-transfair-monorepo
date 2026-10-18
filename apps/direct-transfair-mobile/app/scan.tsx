@@ -1,62 +1,34 @@
 // apps/direct-transfair-mobile/app/scan.tsx
 // =========================================================
-// QR SCANNER SCREEN v1.1 — Direct Transf'air
-// ✅ v1.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
-//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
-//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
-//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
-//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
-// ✅ Scanne le QR généré par qr.tsx (directtransfair://pay/{userId})
-// ✅ Résout l'identité via api.getPublicUser(id) — route backend
-//    GET /users/public/:id (accessible à tout utilisateur authentifié,
-//    scopée au même tenant — voir users.controller.ts v4.2)
-// ✅ Gère : permission refusée, QR étranger non reconnu, auto-scan
-//    de son propre QR, utilisateur introuvable / autre société
-// ✅ Sur succès → navigue vers /(tabs)/send avec mode=WALLET et le
-//    téléphone du destinataire pré-rempli (réutilise la détection
-//    par téléphone déjà existante dans send.tsx, aucune logique
-//    métier dupliquée)
-//
-// ⚠️ Dépendance requise : `npx expo install expo-camera`
-//    (pas encore installée au moment de l'écriture de ce fichier)
+// QR SCANNER SCREEN v2.0 — Direct Transf'air
+// ✅ v2.0 : REFONTE THÈME CLAIR — écran de permission crème (icône beige, bouton pilule),
+//    viseur à quatre coins de la couleur de la société sur l'image caméra, résultat dans
+//    une feuille basse claire (avatar beige, bouton pilule « Envoyer de l'argent »).
+//    Plus aucune couleur verte/rouge écrite en dur : accent = marque du tenant, états
+//    via la palette du design system. LOGIQUE INCHANGÉE (extraction de l'ID depuis
+//    directtransfair://pay/{id}, résolution api.getPublicUser, gestion permission
+//    refusée / QR étranger / auto-scan / introuvable / autre société, redirection vers
+//    /(tabs)/send avec mode=WALLET et le téléphone pré-rempli).
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// ✅ v1.1 : WHITE-LABEL — couleurs suivent la marque ; nom = branding.name du tenant.
+// ✅ v1.0 : Scanne le QR généré par qr.tsx, résout l'identité via GET /users/public/:id
+//    (même tenant), gère permission refusée, QR étranger, auto-scan, utilisateur introuvable.
+// ⚠️ Dépendance requise : expo-camera.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
-import {
-  View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Platform, StatusBar, ActivityIndicator, Dimensions,
-} from "react-native";
+import { View, StyleSheet, Dimensions, ActivityIndicator, Platform, StatusBar } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../providers/AuthProvider";
-import { api } from "../services/api";
-
-import { themed, brand } from "../components/wallet/brand";
-import { useWalletTheme } from "../components/wallet/walletTheme";
 import { useTenant } from "../providers/TenantProvider";
+import { api } from "../services/api";
+import { Avatar, Button, IconButton, Screen, NavBar, UText, useUI } from "../components/ui";
+
 const { width: SW } = Dimensions.get("window");
 const DEEP_LINK_SCHEME = "directtransfair";
-
-const T = themed(() => ({
-  black:   "#000000",
-  white:   "#FFFFFF",
-  ink:     brand("#0D1F14"),
-  inkSub:  brand("#6B9E85"),
-  green:   brand("#059669"),
-  greenLt: brand("#ECFDF5"),
-  red:     "#DC2626",
-  redLt:   "#FEF2F2",
-  amber:   "#D97706",
-  amberLt: "#FFFBEB",
-  border:  "#E5E5EA",
-  r: { sm: 12, md: 16, lg: 22, pill: 99 },
-  font: {
-    serif: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans:  Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-  },
-}));
+const FRAME_SIZE = Math.min(SW * 0.7, 260);
 
 type ResolvedUser = {
   id: string;
@@ -75,7 +47,7 @@ type ScanState =
   | { kind: "forbidden" }
   | { kind: "invalid" };
 
-// ✅ Extrait l'ID depuis directtransfair://pay/{id} (ou directtransfair://pay/{id}?...)
+// Extrait l'ID depuis directtransfair://pay/{id} (ou directtransfair://pay/{id}?...)
 function extractUserId(raw: string): string | null {
   try {
     const match = raw.match(new RegExp(`^${DEEP_LINK_SCHEME}://pay/([^/?]+)`));
@@ -86,7 +58,7 @@ function extractUserId(raw: string): string | null {
 }
 
 export default function ScanScreen() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { C, R, S } = useUI();
   const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
@@ -148,41 +120,52 @@ export default function ScanScreen() {
     } as any);
   };
 
-  // ── Permission pas encore accordée ──────────────────────
+  // ── Permission pas encore connue ────────────────────────
   if (!permission) {
     return (
-      <SafeAreaView style={[s.safe, { justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator color={T.green} size="large" />
-      </SafeAreaView>
+      <View style={{ flex: 1, backgroundColor: C.bg, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={C.ink} size="large" />
+      </View>
     );
   }
 
+  // ── Permission refusée / non accordée ───────────────────
   if (!permission.granted) {
     return (
-      <SafeAreaView style={s.safe}>
-        <View style={s.permissionWrap}>
-          <View style={s.permissionIcon}>
-            <Ionicons name="camera-outline" size={36} color={T.green} />
+      <Screen
+        header={<NavBar onBack={() => router.back()} />}
+        footer={<Button label="Autoriser la caméra" icon="camera-outline" onPress={requestPermission} />}
+      >
+        <View style={{ alignItems: "center", paddingTop: 36, gap: 10 }}>
+          <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
+            <Ionicons name="camera-outline" size={38} color={C.ink} />
           </View>
-          <Text style={[s.permissionTitle, { fontFamily: T.font.serif }]}>
-            Accès à la caméra requis
-          </Text>
-          <Text style={[s.permissionTxt, { fontFamily: T.font.sans }]}>
+          <UText v="title" align="center">Accès à la caméra requis</UText>
+          <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>
             {branding.name} a besoin de la caméra pour scanner les QR codes de paiement.
-          </Text>
-          <TouchableOpacity style={s.permissionBtn} onPress={requestPermission}>
-            <Text style={[s.permissionBtnTxt, { fontFamily: T.font.sans }]}>Autoriser la caméra</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.backLink} onPress={() => router.back()}>
-            <Text style={[s.backLinkTxt, { fontFamily: T.font.sans }]}>Retour</Text>
-          </TouchableOpacity>
+          </UText>
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
+  const corner = (pos: object) => (
+    <View style={[{ position: "absolute", width: 40, height: 40, borderColor: C.accent }, pos]} />
+  );
+
+  const status = (icon: string, tone: "warn" | "danger", title: string, message: string) => (
+    <View style={{ alignItems: "center", gap: 8 }}>
+      <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: tone === "warn" ? C.warnBg : C.dangerBg, alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
+        <Ionicons name={icon as any} size={30} color={tone === "warn" ? C.warn : C.danger} />
+      </View>
+      <UText v="heading" align="center">{title}</UText>
+      <UText v="body" tone="muted" align="center" style={{ marginBottom: 12 }}>{message}</UText>
+      <Button label="Réessayer" kind="dark" icon="refresh" onPress={reset} />
+    </View>
+  );
+
   return (
-    <View style={s.root}>
+    <View style={{ flex: 1, backgroundColor: "#000" }}>
       <StatusBar barStyle="light-content" />
 
       <CameraView
@@ -192,184 +175,80 @@ export default function ScanScreen() {
         onBarcodeScanned={state.kind === "scanning" ? handleBarcodeScanned : undefined}
       />
 
-      {/* Overlay sombre + cadre de visée */}
-      <View style={s.overlay} pointerEvents="box-none">
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={s.topBar}>
-            <TouchableOpacity style={s.iconBtn} onPress={() => router.back()} hitSlop={12}>
-              <Ionicons name="arrow-back" size={22} color={T.white} />
-            </TouchableOpacity>
-            <Text style={[s.topTitle, { fontFamily: T.font.serif }]}>Scanner un QR</Text>
-            <View style={{ width: 38 }} />
+      {/* Barre du haut + viseur */}
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.18)" }]} pointerEvents="box-none">
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 24) + 8 : 56 }}>
+          <IconButton icon="chevron-back" label="Retour" onPress={() => router.back()} />
+          <View style={{ paddingHorizontal: 16, height: 40, borderRadius: R.pill, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
+            <UText v="bodyStrong">Scanner un QR</UText>
           </View>
+          <View style={{ width: 44 }} />
+        </View>
 
-          {state.kind === "scanning" && (
-            <View style={s.frameWrap}>
-              <View style={s.frame} />
-              <Text style={[s.hint, { fontFamily: T.font.sans }]}>
-                Placez le QR code de paiement dans le cadre
-              </Text>
+        {state.kind === "scanning" && (
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", gap: 22 }} pointerEvents="none">
+            <View style={{ width: FRAME_SIZE, height: FRAME_SIZE }}>
+              {corner({ top: 0, left: 0, borderTopWidth: 5, borderLeftWidth: 5, borderTopLeftRadius: 22 })}
+              {corner({ top: 0, right: 0, borderTopWidth: 5, borderRightWidth: 5, borderTopRightRadius: 22 })}
+              {corner({ bottom: 0, left: 0, borderBottomWidth: 5, borderLeftWidth: 5, borderBottomLeftRadius: 22 })}
+              {corner({ bottom: 0, right: 0, borderBottomWidth: 5, borderRightWidth: 5, borderBottomRightRadius: 22 })}
             </View>
-          )}
-        </SafeAreaView>
+            <View style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: R.pill, backgroundColor: C.surface }}>
+              <UText v="caption" align="center">Place le QR code de paiement dans le cadre</UText>
+            </View>
+          </View>
+        )}
       </View>
 
-      {/* ── Bottom sheet résultat ── */}
+      {/* Feuille résultat */}
       {state.kind !== "scanning" && (
-        <View style={s.sheet}>
+        <View
+          style={[
+            { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, padding: 24, paddingBottom: Platform.OS === "ios" ? 40 : 28, width: "100%", maxWidth: 640, alignSelf: "center" },
+            S.lg,
+          ]}
+        >
           {state.kind === "resolving" && (
-            <View style={s.sheetCenter}>
-              <ActivityIndicator color={T.green} size="large" />
-              <Text style={[s.sheetMsg, { fontFamily: T.font.sans }]}>Recherche du destinataire…</Text>
+            <View style={{ alignItems: "center", gap: 14, paddingVertical: 12 }}>
+              <ActivityIndicator color={C.ink} size="large" />
+              <UText v="body" tone="muted">Recherche du destinataire…</UText>
             </View>
           )}
 
           {state.kind === "found" && (
-            <View>
-              <View style={s.foundRow}>
-                <View style={s.avatarBox}>
-                  <Text style={[s.avatarTxt, { fontFamily: T.font.serif }]}>
-                    {(state.data.firstName?.[0] ?? "?").toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.foundName, { fontFamily: T.font.serif }]}>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 6 }}>
+                <Avatar name={`${state.data.firstName ?? ""} ${state.data.lastName ?? ""}`.trim() || "?"} size={56} />
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <UText v="heading" numberOfLines={1}>
                     {`${state.data.firstName ?? ""} ${state.data.lastName ?? ""}`.trim() || "Utilisateur"}
-                  </Text>
-                  {!!state.data.phone && (
-                    <Text style={[s.foundSub, { fontFamily: T.font.sans }]}>{state.data.phone}</Text>
-                  )}
+                  </UText>
+                  {!!state.data.phone && <UText v="caption" tone="muted">{state.data.phone}</UText>}
                 </View>
-                <View style={s.checkBadge}>
-                  <Ionicons name="checkmark" size={16} color={T.white} />
+                <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: C.pos, alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="checkmark" size={18} color="#fff" />
                 </View>
               </View>
-              <TouchableOpacity style={s.primaryBtn} onPress={handleSendMoney} activeOpacity={0.88}>
-                <Ionicons name="paper-plane-outline" size={18} color={T.white} />
-                <Text style={[s.primaryBtnTxt, { fontFamily: T.font.sans }]}>Envoyer de l'argent</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
-                <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Scanner un autre QR</Text>
-              </TouchableOpacity>
+              <Button label="Envoyer de l'argent" icon="paper-plane-outline" onPress={handleSendMoney} />
+              <Button label="Scanner un autre QR" kind="ghost" onPress={reset} />
             </View>
           )}
 
-          {state.kind === "self" && (
-            <View style={s.sheetCenter}>
-              <View style={[s.statusIcon, { backgroundColor: T.amberLt }]}>
-                <Ionicons name="information-circle-outline" size={28} color={T.amber} />
-              </View>
-              <Text style={[s.sheetTitle, { fontFamily: T.font.serif }]}>C'est votre propre QR</Text>
-              <Text style={[s.sheetMsg, { fontFamily: T.font.sans }]}>
-                Présentez ce code à quelqu'un d'autre pour recevoir un paiement.
-              </Text>
-              <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
-                <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {state.kind === "self" &&
+            status("information-circle-outline", "warn", "C'est ton propre QR", "Présente ce code à quelqu'un d'autre pour recevoir un paiement.")}
 
-          {(state.kind === "not-found" || state.kind === "invalid") && (
-            <View style={s.sheetCenter}>
-              <View style={[s.statusIcon, { backgroundColor: T.redLt }]}>
-                <Ionicons name="close-circle-outline" size={28} color={T.red} />
-              </View>
-              <Text style={[s.sheetTitle, { fontFamily: T.font.serif }]}>QR non reconnu</Text>
-              <Text style={[s.sheetMsg, { fontFamily: T.font.sans }]}>
-                {state.kind === "not-found"
-                  ? "Ce destinataire n'existe pas ou son compte est inactif."
-                  : `Ce QR code ne provient pas de ${branding.name}.`}
-              </Text>
-              <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
-                <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {(state.kind === "not-found" || state.kind === "invalid") &&
+            status(
+              "close-circle-outline", "danger", "QR non reconnu",
+              state.kind === "not-found"
+                ? "Ce destinataire n'existe pas ou son compte est inactif."
+                : `Ce QR code ne provient pas de ${branding.name}.`,
+            )}
 
-          {state.kind === "forbidden" && (
-            <View style={s.sheetCenter}>
-              <View style={[s.statusIcon, { backgroundColor: T.redLt }]}>
-                <Ionicons name="lock-closed-outline" size={28} color={T.red} />
-              </View>
-              <Text style={[s.sheetTitle, { fontFamily: T.font.serif }]}>Société différente</Text>
-              <Text style={[s.sheetMsg, { fontFamily: T.font.sans }]}>
-                Ce destinataire n'appartient pas à votre société et ne peut pas recevoir de paiement ici.
-              </Text>
-              <TouchableOpacity style={s.secondaryBtn} onPress={reset}>
-                <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
-              </TouchableOpacity>
-            </View>
-          )}
+          {state.kind === "forbidden" &&
+            status("lock-closed-outline", "danger", "Société différente", "Ce destinataire n'appartient pas à ta société et ne peut pas recevoir de paiement ici.")}
         </View>
       )}
     </View>
   );
 }
-
-const FRAME_SIZE = Math.min(SW * 0.7, 260);
-
-const s = themed(() => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.white },
-  root: { flex: 1, backgroundColor: T.black },
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.25)" },
-
-  topBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 16, paddingTop: Platform.OS === "android" ? 8 : 0,
-  },
-  iconBtn: {
-    width: 38, height: 38, borderRadius: T.r.sm,
-    backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.25)",
-    justifyContent: "center", alignItems: "center",
-  },
-  topTitle: { color: T.white, fontSize: 17, fontWeight: "700" },
-
-  frameWrap: { flex: 1, justifyContent: "center", alignItems: "center", gap: 18 },
-  frame: {
-    width: FRAME_SIZE, height: FRAME_SIZE, borderRadius: 20,
-    borderWidth: 3, borderColor: T.white,
-  },
-  hint: { color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: "600", textAlign: "center", paddingHorizontal: 40 },
-
-  sheet: {
-    backgroundColor: T.white, borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    padding: 22, paddingBottom: Platform.OS === "ios" ? 36 : 24,
-  },
-  sheetCenter: { alignItems: "center", gap: 10 },
-  sheetTitle: { fontSize: 18, fontWeight: "700", color: T.ink },
-  sheetMsg:   { fontSize: 13, color: T.inkSub, fontWeight: "600", textAlign: "center", lineHeight: 19, marginBottom: 6 },
-  statusIcon: { width: 60, height: 60, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-
-  foundRow: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 18 },
-  avatarBox: {
-    width: 52, height: 52, borderRadius: 16, backgroundColor: T.greenLt,
-    justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: brand("#A7F3D0"),
-  },
-  avatarTxt: { fontSize: 20, fontWeight: "900", color: T.green },
-  foundName: { fontSize: 17, fontWeight: "700", color: T.ink, marginBottom: 2 },
-  foundSub:  { fontSize: 12, color: T.inkSub, fontWeight: "600" },
-  checkBadge: {
-    width: 28, height: 28, borderRadius: T.r.pill, backgroundColor: T.green,
-    justifyContent: "center", alignItems: "center",
-  },
-
-  primaryBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: T.green, borderRadius: T.r.md, paddingVertical: 16, marginBottom: 10,
-  },
-  primaryBtnTxt: { color: T.white, fontSize: 14, fontWeight: "900", letterSpacing: 0.3 },
-  secondaryBtn: { alignItems: "center", paddingVertical: 12 },
-  secondaryBtnTxt: { color: T.inkSub, fontSize: 13, fontWeight: "700" },
-
-  permissionWrap: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32, gap: 8 },
-  permissionIcon: {
-    width: 64, height: 64, borderRadius: 20, backgroundColor: T.greenLt,
-    justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 1.5, borderColor: brand("#A7F3D0"),
-  },
-  permissionTitle: { fontSize: 19, fontWeight: "700", color: T.ink, textAlign: "center" },
-  permissionTxt: { fontSize: 13, color: T.inkSub, fontWeight: "600", textAlign: "center", lineHeight: 19, marginBottom: 12 },
-  permissionBtn: { backgroundColor: T.green, borderRadius: T.r.md, paddingVertical: 15, paddingHorizontal: 32 },
-  permissionBtnTxt: { color: T.white, fontSize: 14, fontWeight: "800" },
-  backLink: { paddingVertical: 14 },
-  backLinkTxt: { color: T.inkSub, fontSize: 13, fontWeight: "700" },
-}));

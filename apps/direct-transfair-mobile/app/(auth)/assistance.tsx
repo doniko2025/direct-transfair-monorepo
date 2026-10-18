@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/assistance.tsx
 // =========================================================
 // ASSISTANCE & COOKIES v1.1 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu et coordonnées dynamiques inchangés.
 // ✅ v1.1 : Branding dynamique pour les canaux de contact
 //   PROBLÈME RÉSOLU : email/téléphone/WhatsApp/médiateur de support
 //   étaient écrits en dur, ainsi qu'une mention "Direct Transf'air"
@@ -28,16 +29,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTenant } from "../../providers/TenantProvider";
 
 const T = {
-  bg:         "#FFFBF0",
+  bg:         "#FAF9F5",
   surface:    "#FFFFFF",
-  accent:     "#D97706",
-  accentSoft: "#FEF3C7",
-  accentText: "#92400E",
-  text:       "#0F172A",
-  textSub:    "#374151",
-  textDim:    "#6B7280",
-  border:     "#E2E8F0",
-  borderAmber:"#FDE68A",
+  accent:     "#111214",
+  accentSoft: "#EFEBE1",
+  accentText: "#111214",
+  text:       "#111214",
+  textSub:    "#4A4945",
+  textDim:    "#8B887F",
+  border:     "#E3DFD5",
+  borderAmber:"#E3DFD5",
   green:      "#059669",
   greenSoft:  "#D1FAE5",
   blue:       "#1D4ED8",
@@ -47,8 +48,8 @@ const T = {
   red:        "#DC2626",
   radius: { sm: 10, md: 14, lg: 18 },
   font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    display: Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
+    sans:    Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
@@ -90,7 +91,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 }
 const faqS = StyleSheet.create({
   wrap:     { backgroundColor: T.surface, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, padding: 16, marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  wrapOpen: { borderColor: T.borderAmber, backgroundColor: "#FFFDF5" },
+  wrapOpen: { borderColor: T.borderAmber, backgroundColor: "#FFFFFF" },
   row:      { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   q:        { flex: 1, fontSize: 13, fontWeight: "700", color: T.text, lineHeight: 20 },
   a:        { marginTop: 12, fontSize: 13, color: T.textSub, lineHeight: 21, fontWeight: "500" },

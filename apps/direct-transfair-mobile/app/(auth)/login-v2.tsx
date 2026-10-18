@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
 // =========================================================
 // LOGIN v3.0 — Direct Transf'air
+// ✅ v3.1 : THÈME CLAIR — l'écran passe au design clair via le kit components/auth v2.0 (cadre, champs, boutons) ; aucune logique modifiée.
 // ✅ v3.0 : REFONTE COMPLÈTE de l'écran (design fintech + parcours) — Thierno Doniko (Grand Chef).
 //   PROBLÈMES CONSTATÉS EN PRODUCTION (APK du 13/10/2026) :
 //   1. « Application not found » à chaque connexion : l'app appelait une URL de

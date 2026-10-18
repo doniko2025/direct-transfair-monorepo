@@ -1,334 +1,109 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/personal-info-wallet.tsx
 // =========================================================
-// PERSONAL INFO — CLIENT (WALLET) v5.7
-// ✅ v5.7 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
-//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
-//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
-//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
-// ✅ v5.6 : HERO — dégradé sombre identique à ClientDashboard
-//    PUREMENT PRÉSENTATIONNEL — aucune ligne de logique métier touchée
-//    (save, cancelEdit, formatDate, handleDateChange : tout identique).
-//    - En-tête (bouton retour, titre "Mes Informations", sous-titre
-//      "Profil & KYC", bouton crayon/annuler) : fond blanc plat →
-//      LinearGradient sombre (#0A0F0D → #123324), mêmes teintes que
-//      ClientDashboard.
-//    - SafeAreaView passe en fond sombre ; le KeyboardAvoidingView
-//      (juste en dessous) reçoit un fond clair explicite (T.bg) pour
-//      ne pas hériter du sombre du parent.
-//    - useSafeAreaInsets (nouveau) remplace le paddingTop conditionnel
-//      Platform.OS.
-//    - Boutons retour/crayon : recolorés en style "verre" (fond blanc
-//      translucide) ; le bouton "annuler" (mode édition) garde une
-//      teinte rouge, adaptée en glass rouge pour rester lisible sur
-//      fond sombre. Le reste de l'écran (cartes Identité/État civil/
-//      Adresse, bouton Enregistrer) reste inchangé.
-// ✅ v5.4 conservé intégralement (reset du cadre de focus web)
-// ✅ v5.5 : Correction des erreurs TypeScript signalées (ts(2769))
+// PERSONAL INFO — CLIENT (WALLET) v6.0 — Direct Transf'air
+// ✅ v6.0 : REFONTE THÈME CLAIR — fini l'en-tête dégradé sombre : barre de navigation
+//    claire avec crayon (modifier) / croix (annuler), avatar centré, puis trois sections
+//    (Identité, État civil, Adresse de résidence) avec champs arrondis du design system ;
+//    champs verrouillés (email) grisés avec cadenas ; sélecteurs de pays et de ville dans
+//    des feuilles basses claires avec recherche ; bouton « Enregistrer » pilule collé en bas
+//    pendant la modification. Plus de vert/bleu/rouge écrits en dur ni de police serif :
+//    tout suit la marque du tenant. Les deux sélecteurs (pays / ville) sont factorisés en
+//    un seul composant PickerSheet (avant : deux copies de ~90 lignes).
+//    LOGIQUE INCHANGÉE (préremplissage depuis useAuth().user, formatDate, handleDateChange
+//    JJ/MM/AAAA, cancelEdit, save → api.updateProfile + refreshUser, mêmes champs
+//    obligatoires et messages, liste de villes citiesByCountry, reset de la ville si elle
+//    n'appartient pas au nouveau pays).
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// ✅ v5.7 : WHITE-LABEL — couleurs vertes suivent la marque du tenant.
+// ✅ v5.6 : HERO — dégradé sombre identique à ClientDashboard (remplacé en v6.0).
+// ✅ v5.5 : Correction des erreurs TypeScript signalées (ts(2769)).
+// ✅ v5.4 : reset du cadre de focus web.
 // =========================================================
 
-import React, { useEffect, useState, useRef } from "react";
-import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity,
-  ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
-  Platform, StatusBar, Animated, ScrollView, Modal, FlatList,
-} from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient"; // ✅ v5.6 (nouveau)
-import { useSafeAreaInsets } from "react-native-safe-area-context"; // ✅ v5.6 (nouveau)
 import { useAuth } from "../../../providers/AuthProvider";
-import { api }    from "../../../services/api";
-import { COUNTRIES }        from "../../../utils/countries";
-import { citiesByCountry }  from "../../../data/cities";
+import { api } from "../../../services/api";
+import { COUNTRIES } from "../../../utils/countries";
+import { citiesByCountry } from "../../../data/cities";
+import {
+  Avatar, Button, EmptyView, Field, IconButton, ListRow, NavBar, Notice, Pill, Screen, SearchPill, SectionHeader, SelectRow, Sheet, UText, useUI,
+} from "../../../components/ui";
 
-import { themed, brand, brandRgba } from "../../../components/wallet/brand";
-import { useWalletTheme } from "../../../components/wallet/walletTheme";
-// ─── Design tokens ──────────────────────────────────
-const T = themed(() => ({
-  bg:          "#FAFAFA",
-  surface:     "#FFFFFF",
-  surfaceAlt:  "#F5F5F5",
-  border:      "#E5E5EA",
-  borderFocus: brand("#059669"),
-  accent:      brand("#059669"),
-  accentSoft:  brand("#D1FAE5"),
-  accentText:  brand("#065F46"),
-  text:        "#0F172A",
-  textSub:     "#374151",
-  textDim:     "#9CA3AF",
-  red:         "#DC2626",
-  redSoft:     "#FEF2F2",
-  redBorder:   "#FECACA",
-  info:        "#0284C7",
-  infoSoft:    "#E0F2FE",
-  // ✅ v5.6 (nouveau) — mêmes teintes exactes que le hero de ClientDashboard
-  heroFrom:    brand("#0A0F0D"),
-  heroTo:      brand("#123324"),
-  heroGlow:    brandRgba("rgba(5,150,105,0.2)"),
-  heroMuted:   "rgba(255,255,255,0.6)",
-  radius: { sm: 10, md: 14, lg: 20, xl: 24 },
-  font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-  },
-}));
-
-// ─── Field ────────────────────────────────────────────────
-function Field({ label, value, onChange, editable = true, style, placeholder, keyboardType, maxLength }: any) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <View style={[{ marginBottom: 14 }, style]}>
-      <Text style={[fS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <View style={[fS.box, focused && fS.boxFocused, !editable && fS.boxDisabled]}>
-        <TextInput
-          value={value}
-          onChangeText={onChange}
-          editable={editable}
-          placeholder={placeholder}
-          placeholderTextColor={T.textDim}
-          keyboardType={keyboardType}
-          maxLength={maxLength}
-          style={[
-            fS.input,
-            { fontFamily: T.font.sans },
-            !editable && fS.inputDisabled,
-            Platform.OS === "web" && ({
-              outlineStyle: "none",
-              outlineWidth: 0,
-              borderWidth: 0,
-              boxShadow: "none",
-            } as any),
-          ]}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-        />
-        {!editable && <Ionicons name="lock-closed" size={12} color={T.textDim} style={{ paddingRight: 12 }} />}
-      </View>
-    </View>
-  );
-}
-const fS = themed(() => StyleSheet.create({
-  label:         { fontSize: 10, fontWeight: "800", color: T.textSub, letterSpacing: 1.2, marginBottom: 6, textTransform: "uppercase" },
-  box:           { backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, flexDirection: "row", alignItems: "center" },
-  boxFocused:    { borderColor: T.borderFocus, shadowColor: T.accent, shadowOpacity: 0.1, shadowRadius: 6, elevation: 2 },
-  boxDisabled:   { backgroundColor: T.surfaceAlt },
-  input:         { flex: 1, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: T.text, fontWeight: "600", borderWidth: 0 },
-  inputDisabled: { color: T.textSub },
-}));
-
-// ─── CountryPicker ────────────────────────────────────────
-function CountryPicker({ label, value, onChange, editable }: any) {
-  const [visible, setVisible] = useState(false);
-  const [q, setQ] = useState("");
-  const filtered = q.trim()
-    ? (COUNTRIES as string[]).filter(c => c.toLowerCase().includes(q.toLowerCase()))
-    : (COUNTRIES as string[]);
-
-  return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={[fS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <TouchableOpacity
-        style={[fS.box, !editable && fS.boxDisabled, { paddingHorizontal: 14, paddingVertical: 13 }]}
-        onPress={() => editable && setVisible(true)}
-        activeOpacity={editable ? 0.8 : 1}
-      >
-        <Text style={{ flex: 1, fontSize: 14, color: value ? T.text : T.textDim, fontWeight: "600", fontFamily: T.font.sans }}>
-          {value || "Sélectionner…"}
-        </Text>
-        {editable
-          ? <Ionicons name="chevron-down" size={14} color={T.accent} />
-          : <Ionicons name="lock-closed"  size={12} color={T.textDim} />
-        }
-      </TouchableOpacity>
-
-      <Modal visible={visible} animationType="slide" transparent onRequestClose={() => setVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "72%", borderWidth: 1, borderColor: T.border }}>
-            <View style={{ width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 }} />
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border }}>
-              <Text style={{ color: T.text, fontSize: 17, fontWeight: "700", fontFamily: T.font.display }}>Sélectionner un pays</Text>
-              <TouchableOpacity
-                style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border }}
-                onPress={() => { setVisible(false); setQ(""); }}
-              >
-                <Ionicons name="close" size={17} color={T.textSub} />
-              </TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", margin: 14, gap: 8, backgroundColor: T.surfaceAlt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 12, height: 42 }}>
-              <Ionicons name="search" size={14} color={T.textDim} />
-              <TextInput
-                style={{ flex: 1, color: T.text, fontSize: 14, fontWeight: "600", fontFamily: T.font.sans }}
-                value={q}
-                onChangeText={setQ}
-                placeholder="Rechercher un pays…"
-                placeholderTextColor={T.textDim}
-                autoFocus
-              />
-              {!!q && (
-                <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-                  <Ionicons name="close-circle" size={14} color={T.textDim} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 30 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.border, backgroundColor: value === item ? T.accentSoft : T.surface }}
-                  onPress={() => { onChange(item); setVisible(false); setQ(""); }}
-                >
-                  <Text style={{ color: T.text, fontSize: 14, fontWeight: value === item ? "700" : "500", fontFamily: T.font.sans }}>{item}</Text>
-                  {value === item && <Ionicons name="checkmark-circle" size={18} color={T.accent} />}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
-// ─── CityPicker ✅ v5.2 ───────────────────────────────────
-function CityPicker({ label, value, onChange, cities, editable }: {
-  label:    string;
-  value:    string;
+// ─── Sélecteur en feuille basse (pays / ville) ───────────
+function PickerSheet({
+  label, value, onChange, items, editable, placeholder, searchPlaceholder, icon, emptyText,
+}: {
+  label: string;
+  value: string;
   onChange: (v: string) => void;
-  cities:   string[];
+  items: string[];
   editable: boolean;
+  placeholder: string;
+  searchPlaceholder: string;
+  icon?: string;
+  emptyText: string;
 }) {
+  const { C } = useUI();
   const [visible, setVisible] = useState(false);
   const [q, setQ] = useState("");
-  const filtered = q.trim()
-    ? cities.filter(c => c.toLowerCase().includes(q.toLowerCase()))
-    : cities;
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return needle ? items.filter((c) => c.toLowerCase().includes(needle)) : items;
+  }, [q, items]);
+
+  const close = () => { setVisible(false); setQ(""); };
 
   return (
-    <View style={{ marginBottom: 14 }}>
-      <Text style={[fS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <TouchableOpacity
-        style={[fS.box, !editable && fS.boxDisabled, { paddingHorizontal: 14, paddingVertical: 13 }]}
-        onPress={() => editable && setVisible(true)}
-        activeOpacity={editable ? 0.8 : 1}
-      >
-        <Text style={{ flex: 1, fontSize: 14, color: value ? T.text : T.textDim, fontWeight: "600", fontFamily: T.font.sans }}>
-          {value || "Sélectionner une ville…"}
-        </Text>
-        {editable
-          ? <Ionicons name="chevron-down" size={14} color={T.accent} />
-          : <Ionicons name="lock-closed"  size={12} color={T.textDim} />
-        }
-      </TouchableOpacity>
-
-      <Modal visible={visible} animationType="slide" transparent onRequestClose={() => { setVisible(false); setQ(""); }}>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: T.surface, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "72%", borderWidth: 1, borderColor: T.border }}>
-            <View style={{ width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14 }} />
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border }}>
-              <Text style={{ color: T.text, fontSize: 17, fontWeight: "700", fontFamily: T.font.display }}>{label}</Text>
-              <TouchableOpacity
-                style={{ width: 32, height: 32, borderRadius: 9, backgroundColor: T.surfaceAlt, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border }}
-                onPress={() => { setVisible(false); setQ(""); }}
-              >
-                <Ionicons name="close" size={17} color={T.textSub} />
-              </TouchableOpacity>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", margin: 14, gap: 8, backgroundColor: T.surfaceAlt, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 12, height: 42 }}>
-              <Ionicons name="search" size={14} color={T.textDim} />
-              <TextInput
-                style={{ flex: 1, color: T.text, fontSize: 14, fontWeight: "600", fontFamily: T.font.sans }}
-                value={q}
-                onChangeText={setQ}
-                placeholder="Rechercher une ville…"
-                placeholderTextColor={T.textDim}
-                autoFocus
-              />
-              {!!q && (
-                <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-                  <Ionicons name="close-circle" size={14} color={T.textDim} />
-                </TouchableOpacity>
-              )}
-            </View>
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 30 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: T.border, backgroundColor: value === item ? T.accentSoft : T.surface }}
-                  onPress={() => { onChange(item); setVisible(false); setQ(""); }}
-                >
-                  <Text style={{ color: T.text, fontSize: 14, fontWeight: value === item ? "700" : "500", fontFamily: T.font.sans }}>{item}</Text>
-                  {value === item && <Ionicons name="checkmark-circle" size={18} color={T.accent} />}
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View style={{ padding: 24, alignItems: "center" }}>
-                  <Text style={{ color: T.textDim, fontSize: 13, fontFamily: T.font.sans }}>Aucune ville disponible</Text>
-                </View>
-              }
-            />
-          </View>
+    <>
+      {editable ? (
+        <SelectRow label={label} value={value} placeholder={placeholder} icon={icon} onPress={() => setVisible(true)} />
+      ) : (
+        <Field label={label} value={value} onChangeText={() => {}} editable={false} placeholder="—" icon="lock-closed-outline" />
+      )}
+      <Sheet visible={visible} onClose={close} title={label.replace(/\s*\*$/, "")}>
+        <View style={{ paddingTop: 8, paddingBottom: 6 }}>
+          <SearchPill value={q} onChangeText={setQ} placeholder={searchPlaceholder} autoFocus />
         </View>
-      </Modal>
-    </View>
+        {filtered.length === 0 ? (
+          <EmptyView icon="search-outline" title={emptyText} />
+        ) : (
+          filtered.map((item, i) => (
+            <ListRow
+              key={item}
+              title={item}
+              last={i === filtered.length - 1}
+              chevron={false}
+              right={value === item ? <UText v="bodyStrong" color={C.accentDeep}>✓</UText> : undefined}
+              onPress={() => { onChange(item); close(); }}
+            />
+          ))
+        )}
+      </Sheet>
+    </>
   );
 }
 
-// ─── Section Card ─────────────────────────────────────────
-function SectionCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
-  return (
-    <View style={sC.card}>
-      <View style={sC.header}>
-        <View style={sC.iconBox}><Ionicons name={icon as any} size={14} color={T.accentText} /></View>
-        <Text style={[sC.title, { fontFamily: T.font.sans }]}>{title}</Text>
-      </View>
-      {children}
-    </View>
-  );
-}
-const sC = themed(() => StyleSheet.create({
-  card:    {
-    backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 18, marginBottom: 14,
-    borderWidth: 1.5, borderColor: T.border,
-    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, elevation: 1,
-  },
-  header:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 16 },
-  iconBox: {
-    width: 28, height: 28, borderRadius: 8,
-    backgroundColor: T.accentSoft,
-    justifyContent: "center", alignItems: "center",
-  },
-  title:   { fontSize: 11, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-}));
-
-// ─── Main Screen ──────────────────────────────────────────
+// ─── Écran ───────────────────────────────────────────────
 export default function PersonalInfoWallet() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
   const router = useRouter();
+  const { C } = useUI();
   const { user, refreshUser } = useAuth();
-  const insets = useSafeAreaInsets(); // ✅ v5.6 (nouveau)
 
-  const [loading,     setLoading]     = useState(false);
-  const [isEditing,   setIsEditing]   = useState(false);
-  const [firstName,   setFirstName]   = useState("");
-  const [lastName,    setLastName]    = useState("");
-  const [phone,       setPhone]       = useState("");
-  const [email,       setEmail]       = useState("");
-  const [birthDate,   setBirthDate]   = useState("");
-  const [birthPlace,  setBirthPlace]  = useState("");
+  const [loading, setLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [birthDate, setBirthDate] = useState("");
+  const [birthPlace, setBirthPlace] = useState("");
   const [nationality, setNationality] = useState("");
-  const [address,     setAddress]     = useState("");
-  const [postalCode,  setPostalCode]  = useState("");
-  const [city,        setCity]        = useState("");
-  const [country,     setCountry]     = useState("");
-
-  const fadeAnim  = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const [address, setAddress] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [city, setCity] = useState("");
+  const [country, setCountry] = useState("");
 
   const formatDate = (iso: string) => {
     if (!iso) return "";
@@ -349,35 +124,31 @@ export default function PersonalInfoWallet() {
 
   useEffect(() => {
     if (!user) return;
-    setFirstName(user.firstName     || "");
-    setLastName(user.lastName       || "");
-    setPhone(user.phone             || "");
-    setEmail(user.email             || "");
+    setFirstName(user.firstName || "");
+    setLastName(user.lastName || "");
+    setPhone(user.phone || "");
+    setEmail(user.email || "");
     setBirthDate(formatDate(user.birthDate || ""));
-    setBirthPlace(user.birthPlace   || "");
+    setBirthPlace(user.birthPlace || "");
     setNationality(user.nationality || "");
-    setAddress(user.addressStreet   || "");
-    setPostalCode(user.postalCode   || "");
-    setCity(user.city               || "");
-    setCountry(user.country         || "");
-    Animated.parallel([
-      Animated.spring(fadeAnim,  { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 2 }),
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, speed: 14, bounciness: 2 }),
-    ]).start();
+    setAddress(user.addressStreet || "");
+    setPostalCode(user.postalCode || "");
+    setCity(user.city || "");
+    setCountry(user.country || "");
   }, [user]);
 
   const cancelEdit = () => {
     if (!user) return;
-    setFirstName(user.firstName     || "");
-    setLastName(user.lastName       || "");
-    setPhone(user.phone             || "");
+    setFirstName(user.firstName || "");
+    setLastName(user.lastName || "");
+    setPhone(user.phone || "");
     setBirthDate(formatDate(user.birthDate || ""));
-    setBirthPlace(user.birthPlace   || "");
+    setBirthPlace(user.birthPlace || "");
     setNationality(user.nationality || "");
-    setAddress(user.addressStreet   || "");
-    setPostalCode(user.postalCode   || "");
-    setCity(user.city               || "");
-    setCountry(user.country         || "");
+    setAddress(user.addressStreet || "");
+    setPostalCode(user.postalCode || "");
+    setCity(user.city || "");
+    setCountry(user.country || "");
     setIsEditing(false);
   };
 
@@ -396,15 +167,15 @@ export default function PersonalInfoWallet() {
         ? (() => { const p = birthDate.split("/"); return `${p[2]}-${p[1]}-${p[0]}T00:00:00.000Z`; })()
         : undefined;
       await api.updateProfile({
-        firstName:     firstName.trim(),
-        lastName:      lastName.trim(),
-        phone:         phone.trim(),
-        birthDate:     parsedDate,
-        birthPlace:    birthPlace.trim(),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
+        birthDate: parsedDate,
+        birthPlace: birthPlace.trim(),
         nationality,
         addressStreet: address.trim(),
-        postalCode:    postalCode.trim(),
-        city:          city.trim(),
+        postalCode: postalCode.trim(),
+        city: city.trim(),
         country,
       });
       await refreshUser();
@@ -416,228 +187,116 @@ export default function PersonalInfoWallet() {
     } finally { setLoading(false); }
   };
 
-  // ── Villes disponibles pour le pays de résidence ✅ v5.2
-  const residenceCities  = (citiesByCountry as any)[country] ?? [];
-  const showCityPicker   = isEditing && residenceCities.length > 0;
-
-  const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  // Villes disponibles pour le pays de résidence
+  const residenceCities: string[] = (citiesByCountry as any)[country] ?? [];
+  const showCityPicker = isEditing && residenceCities.length > 0;
+  const fullName = `${firstName} ${lastName}`.trim();
 
   return (
-    // ✅ v5.6 : fond sombre (zone sous l'encoche) — le
-    // KeyboardAvoidingView ci-dessous repeint T.bg par-dessus.
-    <SafeAreaView style={{ flex: 1, backgroundColor: T.heroFrom }}>
-      <StatusBar barStyle="light-content" backgroundColor={T.heroFrom} />
+    <Screen
+      keyboard
+      header={
+        <NavBar
+          title="Mes informations"
+          subtitle="Profil & KYC"
+          onBack={() => router.back()}
+          right={
+            <IconButton
+              icon={isEditing ? "close" : "pencil"}
+              label={isEditing ? "Annuler la modification" : "Modifier mes informations"}
+              onPress={() => (isEditing ? cancelEdit() : setIsEditing(true))}
+            />
+          }
+        />
+      }
+      footer={isEditing ? <Button label="Enregistrer les modifications" icon="save-outline" onPress={save} loading={loading} disabled={loading} /> : undefined}
+    >
+      {/* Identité visuelle */}
+      <View style={{ alignItems: "center", paddingTop: 4, paddingBottom: 18 }}>
+        <Avatar name={fullName || "Client"} size={72} />
+        <UText v="title" align="center" style={{ marginTop: 12 }} numberOfLines={1}>{fullName || "—"}</UText>
+        {!!email && <UText v="caption" tone="muted" align="center" style={{ marginTop: 2 }} numberOfLines={1}>{email}</UText>}
+        <Pill label="Client" tone="neutral" icon="wallet-outline" style={{ marginTop: 10 }} />
+      </View>
 
-      {/* ✅ v5.6 : LinearGradient sombre au lieu du fond blanc plat */}
-      <LinearGradient
-        colors={[T.heroFrom, T.heroTo]}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={[s.header, { paddingTop: insets.top + 8 }]}
-      >
-        <View style={s.heroGlow} pointerEvents="none" />
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>Mes Informations</Text>
-          <Text style={[s.headerSub,   { fontFamily: T.font.sans   }]}>Profil & KYC</Text>
+      {!isEditing && (
+        <Notice tone="info" icon="create-outline" style={{ marginBottom: 6 }}>
+          Appuie sur le crayon en haut à droite pour modifier tes informations.
+        </Notice>
+      )}
+
+      {/* Identité */}
+      <SectionHeader title="Identité" style={{ marginBottom: 14 }} />
+      <View style={{ flexDirection: "row", gap: 12 }}>
+        <Field label="Prénom *" value={firstName} onChangeText={setFirstName} editable={isEditing} autoCapitalize="words" placeholder="Prénom" style={{ flex: 1 }} />
+        <Field label="Nom *" value={lastName} onChangeText={setLastName} editable={isEditing} autoCapitalize="words" placeholder="Nom" style={{ flex: 1 }} />
+      </View>
+      <Field label="Téléphone *" icon="call-outline" value={phone} onChangeText={setPhone} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
+      <Field label="Adresse email" icon="lock-closed-outline" value={email} onChangeText={() => {}} editable={false} placeholder="—" hint={isEditing ? "L'email ne peut pas être modifié ici." : undefined} />
+
+      {/* État civil */}
+      <SectionHeader title="État civil" style={{ marginBottom: 14 }} />
+      <Field
+        label="Date de naissance (JJ/MM/AAAA)"
+        icon="calendar-outline"
+        value={birthDate}
+        onChangeText={handleDateChange}
+        editable={isEditing}
+        keyboardType="numeric"
+        maxLength={10}
+        placeholder="15/06/1990"
+      />
+      <Field label="Lieu de naissance" icon="location-outline" value={birthPlace} onChangeText={setBirthPlace} editable={isEditing} autoCapitalize="words" placeholder="Paris, France" />
+      <PickerSheet
+        label="Nationalité"
+        value={nationality}
+        onChange={setNationality}
+        items={COUNTRIES as string[]}
+        editable={isEditing}
+        placeholder="Sélectionner…"
+        searchPlaceholder="Rechercher un pays"
+        icon="flag-outline"
+        emptyText="Aucun pays trouvé"
+      />
+
+      {/* Adresse de résidence */}
+      <SectionHeader title="Adresse de résidence" style={{ marginBottom: 14 }} />
+      <Field label="Adresse complète *" icon="home-outline" value={address} onChangeText={setAddress} editable={isEditing} autoCapitalize="sentences" placeholder="12 Rue des Lilas…" />
+      <View style={{ flexDirection: "row", gap: 12 }}>
+        <Field label="Code postal" value={postalCode} onChangeText={setPostalCode} editable={isEditing} keyboardType="numeric" placeholder="75001" style={{ flex: 0.45 }} />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {showCityPicker ? (
+            <PickerSheet
+              label="Ville *"
+              value={city}
+              onChange={setCity}
+              items={residenceCities}
+              editable={isEditing}
+              placeholder="Sélectionner…"
+              searchPlaceholder="Rechercher une ville"
+              emptyText="Aucune ville disponible"
+            />
+          ) : (
+            <Field label="Ville *" value={city} onChangeText={setCity} editable={isEditing} autoCapitalize="words" placeholder="Paris" />
+          )}
         </View>
-        <TouchableOpacity
-          style={[s.editBtn, isEditing && s.editBtnCancel]}
-          onPress={() => isEditing ? cancelEdit() : setIsEditing(true)}
-        >
-          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? "#FCA5A5" : "#FFFFFF"} />
-        </TouchableOpacity>
-      </LinearGradient>
-
-      {/* ✅ v5.6 — fond clair explicite (le SafeAreaView est désormais sombre) */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: T.bg }}>
-        <ScrollView
-          contentContainerStyle={{
-            paddingHorizontal: 20,
-            paddingTop: 16,
-            paddingBottom: 120,
-          }}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-
-            {/* Avatar */}
-            <View style={s.avatarCard}>
-              <View style={s.avatarCircle}>
-                <Text style={[s.avatarText, { fontFamily: T.font.display }]}>{initials || "CL"}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.name, { fontFamily: T.font.display }]}>
-                  {firstName || lastName ? `${firstName} ${lastName}`.trim() : "—"}
-                </Text>
-                {!!email && <Text style={[s.emailText, { fontFamily: T.font.sans }]}>{email}</Text>}
-                <View style={s.badge}>
-                  <Ionicons name="wallet-outline" size={10} color={T.accentText} />
-                  <Text style={[s.badgeText, { fontFamily: T.font.sans }]}>Client</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Bannière info */}
-            {!isEditing && (
-              <View style={s.infoBanner}>
-                <Ionicons name="information-circle-outline" size={16} color={T.info} />
-                <Text style={[s.infoText, { fontFamily: T.font.sans }]}>
-                  Appuyez sur le crayon en haut à droite pour modifier vos informations.
-                </Text>
-              </View>
-            )}
-
-            {/* Identité */}
-            <SectionCard icon="person-outline" title="Identité">
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Field label="Prénom *" value={firstName} onChange={setFirstName} editable={isEditing} style={{ flex: 1 }} placeholder="Prénom" />
-                <Field label="Nom *"    value={lastName}  onChange={setLastName}  editable={isEditing} style={{ flex: 1 }} placeholder="Nom"    />
-              </View>
-              <Field label="Téléphone *"  value={phone} onChange={setPhone} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
-              <Field label="Adresse email" value={email} editable={false} placeholder="—" />
-            </SectionCard>
-
-            {/* État civil */}
-            <SectionCard icon="document-text-outline" title="État Civil">
-              <Field
-                label="Date de naissance (JJ/MM/AAAA)"
-                value={birthDate}
-                onChange={handleDateChange}
-                editable={isEditing}
-                keyboardType="numeric"
-                maxLength={10}
-                placeholder="15/06/1990"
-              />
-              <Field label="Lieu de naissance" value={birthPlace} onChange={setBirthPlace} editable={isEditing} placeholder="Paris, France" />
-              <CountryPicker label="Nationalité" value={nationality} onChange={setNationality} editable={isEditing} />
-            </SectionCard>
-
-            {/* Adresse de Résidence */}
-            <SectionCard icon="home-outline" title="Adresse de Résidence">
-              <Field label="Adresse complète *" value={address} onChange={setAddress} editable={isEditing} placeholder="12 Rue des Lilas…" />
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <Field label="Code postal" value={postalCode} onChange={setPostalCode} editable={isEditing} keyboardType="numeric" style={{ flex: 0.45 }} placeholder="75001" />
-                {showCityPicker ? (
-                  <View style={{ flex: 1 }}>
-                    <CityPicker
-                      label="Ville *"
-                      value={city}
-                      onChange={setCity}
-                      cities={residenceCities}
-                      editable={isEditing}
-                    />
-                  </View>
-                ) : (
-                  <Field label="Ville *" value={city} onChange={setCity} editable={isEditing} style={{ flex: 1 }} placeholder="Paris" />
-                )}
-              </View>
-              <CountryPicker
-                label="Pays de résidence *"
-                value={country}
-                onChange={(newCountry: string) => {
-                  setCountry(newCountry);
-                  const cities = (citiesByCountry as any)[newCountry] ?? [];
-                  if (city && cities.length > 0 && !cities.includes(city)) setCity("");
-                }}
-                editable={isEditing}
-              />
-            </SectionCard>
-
-            {/* Bouton Enregistrer */}
-            {isEditing && (
-              <TouchableOpacity
-                style={[s.saveBtn, loading && { opacity: 0.6 }]}
-                onPress={save}
-                disabled={loading}
-                activeOpacity={0.85}
-              >
-                {loading
-                  ? <ActivityIndicator color="#FFFFFF" />
-                  : <>
-                      <Ionicons name="save-outline" size={16} color="#FFFFFF" />
-                      <Text style={[s.saveTxt, { fontFamily: T.font.sans }]}>ENREGISTRER LES MODIFICATIONS</Text>
-                    </>
-                }
-              </TouchableOpacity>
-            )}
-
-          </Animated.View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      </View>
+      <PickerSheet
+        label="Pays de résidence *"
+        value={country}
+        onChange={(newCountry: string) => {
+          setCountry(newCountry);
+          const cities: string[] = (citiesByCountry as any)[newCountry] ?? [];
+          if (city && cities.length > 0 && !cities.includes(city)) setCity("");
+        }}
+        items={COUNTRIES as string[]}
+        editable={isEditing}
+        placeholder="Sélectionner…"
+        searchPlaceholder="Rechercher un pays"
+        icon="globe-outline"
+        emptyText="Aucun pays trouvé"
+      />
+      <View style={{ height: 8 }} />
+    </Screen>
   );
 }
-
-const s = themed(() => StyleSheet.create({
-  // ✅ v5.6 — backgroundColor géré par LinearGradient désormais ;
-  // coins bas arrondis + overflow hidden pour le halo décoratif.
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 18,
-    gap: 12,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    overflow: "hidden",
-  },
-  heroGlow: {
-    position: "absolute", top: -50, right: -50,
-    width: 160, height: 160, borderRadius: 80,
-    backgroundColor: T.heroGlow,
-  },
-  backBtn: {
-    width: 38, height: 38, borderRadius: T.radius.sm,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
-  },
-  headerTitle:   { color: "#FFFFFF", fontSize: 17, fontWeight: "700" },
-  headerSub:     { color: T.heroMuted, fontSize: 12, marginTop: 1 },
-  editBtn:       {
-    width: 38, height: 38, borderRadius: T.radius.sm,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.18)",
-  },
-  editBtnCancel: { backgroundColor: "rgba(220,38,38,0.25)", borderColor: "rgba(252,165,165,0.45)" },
-
-  avatarCard:   {
-    flexDirection: "row", alignItems: "center", gap: 14,
-    backgroundColor: T.surface, borderRadius: T.radius.xl, padding: 18, marginBottom: 14,
-    borderWidth: 1.5, borderColor: T.border,
-    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
-  },
-  avatarCircle: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: T.accentSoft,
-    justifyContent: "center", alignItems: "center",
-    borderWidth: 2, borderColor: T.borderFocus,
-  },
-  avatarText:   { fontSize: 20, fontWeight: "700", color: T.accentText },
-  name:         { fontSize: 17, fontWeight: "700", color: T.text },
-  emailText:    { fontSize: 12, color: T.textSub, marginTop: 2 },
-  badge:        {
-    flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6,
-    backgroundColor: T.accentSoft,
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 99, alignSelf: "flex-start",
-  },
-  badgeText:    { fontSize: 10, fontWeight: "700", color: T.accentText, letterSpacing: 0.5 },
-
-  infoBanner: {
-    flexDirection: "row", alignItems: "flex-start", gap: 10,
-    backgroundColor: T.infoSoft, borderRadius: T.radius.md,
-    padding: 14, borderWidth: 1, borderColor: "#BAE6FD", marginBottom: 14,
-  },
-  infoText:   { flex: 1, color: T.info, fontSize: 12, fontWeight: "600", lineHeight: 18 },
-
-  saveBtn: {
-    backgroundColor: T.accent, borderRadius: T.radius.md, paddingVertical: 16,
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    shadowColor: T.accent, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4,
-  },
-  saveTxt: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 1 },
-}));

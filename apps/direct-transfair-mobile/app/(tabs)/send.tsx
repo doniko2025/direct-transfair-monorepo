@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
 // SEND MONEY v3.0 — Direct Transf'air
+// ✅ v4.0 : 🔥 REFONTE TOTALE en thème clair (maquette « Flash Transfert / Transfert »). Fond crème,
+//    en-tête allégé (retour, titre, solde en gros chiffres), onglets Wallet | Cash Pickup soulignés,
+//    blocs blancs très arrondis, montants en gros chiffres, CTA en pilule à la couleur d'accent de la
+//    société (texte auto-contrasté). Palette issue du design system components/ui (plus aucun vert,
+//    ni nom de société codé en dur). LOGIQUE INCHANGÉE : modes WALLET / CASH, montants bidirectionnels,
+//    détection du bénéficiaire, frais dynamiques, motif, reçu, chargement borné.
 // ✅ v3.0 : REFONTE — écran qui ne reste plus bloqué sur « Chargement… »
 //
 //   CAUSE RACINE : l'écran entier était masqué par un `if (loading)`
@@ -276,9 +282,8 @@ import { useAuth } from "../../providers/AuthProvider";
 import type { Beneficiary, ExchangeRate } from "../../services/types";
 import { countriesList, CountryData } from "../../data/countries";
 import { useTenant } from "../../providers/TenantProvider";
-import { useWalletTheme, N as WN, lighten as wLighten } from "../../components/wallet/walletTheme";
+import { useUI, buildColors, type UIColors } from "../../components/ui/theme";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
-import type { WalletPalette } from "../../components/wallet/walletTheme";
 
 const { width: W } = Dimensions.get("window");
 
@@ -291,21 +296,23 @@ const F = {
 
 // ✅ v3.0 — palette dynamique : les tons « g* » dérivent de la couleur de
 // marque du tenant (white-label), plus aucun vert codé en dur.
-function makeColors(P: WalletPalette) {
+function makeColors(U: UIColors) {
   return {
-    g1: P.bg1, g2: P.bg2, g3: P.bg3, g4: P.action,
-    g5: P.accent, g6: wLighten(P.accent, 0.4), gSoft: P.tint, gBorder: P.tintBorder,
+    // « g* » : tons de marque lisibles sur fond clair (g4 = accent foncé, g5 = accent pur)
+    g1: U.bg, g2: U.bg, g3: U.bg, g4: U.accentDeep,
+    g5: U.accent, g6: U.accentLine, gSoft: U.accentSoft, gBorder: U.accentLine,
+    accent: U.accent, accentInk: U.accentInk, ink: U.ink, field: U.field, beige: U.beige,
     white: "#FFFFFF",
-    bg: WN.page,
-    surface: "#FFFFFF",
-    border: WN.border,
-    borderLight: "#EEF2F1",
-    text: WN.ink, textSub: WN.inkSub, textMuted: WN.muted, textFaint: "#9AA9A4",
-    danger: WN.danger, dangerSoft: WN.dangerBg,
-    amber: WN.warn, amberSoft: WN.warnBg,
-    blue: "#2563EB", blueSoft: "#EFF6FF",
+    bg: U.bg,
+    surface: U.surface,
+    border: U.line,
+    borderLight: U.line,
+    text: U.ink, textSub: U.text, textMuted: U.muted, textFaint: U.faint,
+    danger: U.danger, dangerSoft: U.dangerBg,
+    amber: U.warn, amberSoft: U.warnBg, amberLine: U.warnLine,
+    blue: U.info, blueSoft: U.infoBg, blueLine: U.infoLine,
     orange: "#EA580C", orangeSoft: "#FFF7ED",
-    heroMuted: "rgba(255,255,255,0.6)",
+    heroMuted: U.muted,
   };
 }
 type Colors = ReturnType<typeof makeColors>;
@@ -375,22 +382,16 @@ function ModeTab({ label, icon, active, onPress }: {
       style={[tS.tab, active && tS.tabActive]}
       onPress={onPress} activeOpacity={0.85}
     >
-      <Ionicons name={icon as any} size={17} color={active ? C.g4 : C.textMuted} style={{ marginBottom: 4 }} />
+      <Ionicons name={icon as any} size={17} color={active ? C.ink : C.textMuted} />
       <Text style={[tS.txt, { fontFamily: F.body }, active && tS.txtActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 const make_tS = (C: Colors) => StyleSheet.create({
-  tab:       { flex: 1, alignItems: "center", paddingVertical: 8, borderRadius: 13, gap: 2 },
-  tabActive: {
-    backgroundColor: C.white,
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.09, shadowRadius: 6 },
-      android: { elevation: 3 },
-    }),
-  },
-  txt:       { fontSize: 12, fontWeight: "600", color: C.textMuted },
-  txtActive: { color: C.g4, fontWeight: "800" },
+  tab:       { flex: 1, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6, paddingVertical: 14, borderBottomWidth: 3, borderBottomColor: "transparent", marginBottom: -1 },
+  tabActive: { borderBottomColor: C.ink },
+  txt:       { fontSize: 15, fontWeight: "600", color: C.textMuted },
+  txtActive: { color: C.ink, fontWeight: "800" },
 });
 
 // ─── Beneficiary Card ─────────────────────────────────────
@@ -427,9 +428,9 @@ function BeneficiaryCard({ item, selected, onPress }: {
 const make_bS = (C: Colors) => StyleSheet.create({
   card:           { width: 72, alignItems: "center", marginRight: 10, padding: 9, backgroundColor: C.surface, borderRadius: 18, borderWidth: 1.5, borderColor: C.border },
   cardSelected:   { borderColor: C.g4, backgroundColor: C.gSoft },
-  avatar:         { width: 40, height: 40, borderRadius: 12, backgroundColor: "#E0F2FE", justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  avatar:         { width: 40, height: 40, borderRadius: 12, backgroundColor: C.beige, justifyContent: "center", alignItems: "center", marginBottom: 4 },
   avatarSelected: { backgroundColor: `${C.g4}20` },
-  avatarTxt:      { fontSize: 16, fontWeight: "900", color: "#0284C7" },
+  avatarTxt:      { fontSize: 16, fontWeight: "900", color: C.textSub },
   name:           { fontSize: 11, fontWeight: "700", color: C.textSub, textAlign: "center" },
   flag:           { fontSize: 14, marginTop: 4 },
   check:          { position: "absolute", top: -5, right: -5, backgroundColor: C.g4, borderRadius: 99, width: 20, height: 20, justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: C.white },
@@ -666,7 +667,7 @@ const make_mmS = (C: Colors) => StyleSheet.create({
   head:         { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: C.borderLight, marginBottom: 8 },
   title:        { fontSize: 20, color: C.text, fontWeight: "700", marginBottom: 6 },
   sub:          { fontSize: 13, color: C.textMuted, fontWeight: "500", lineHeight: 20 },
-  closeBtn:     { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center", marginTop: 2 },
+  closeBtn:     { width: 32, height: 32, borderRadius: 10, backgroundColor: C.field, justifyContent: "center", alignItems: "center", marginTop: 2 },
   item:         { flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 17, borderBottomWidth: 1, borderBottomColor: C.borderLight },
   itemSelected: {},
   itemIcon:     { fontSize: 22, width: 32, textAlign: "center" },
@@ -1260,47 +1261,33 @@ useEffect(() => {
   // plateforme (non sauvegardé), false/undefined sinon
   const isPlatformOnly = (detectedBeneficiary as any)?.isFavorite === false;
 
+  const ctaFg = insufficient ? C.white : (!canSend ? C.textMuted : C.accentInk);
+
   return (
     <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" backgroundColor={C.g1} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* ══ HEADER — ✅ v2.11 : dégradé sombre, solde intégré (plus de
-          carte flottante séparée) ══ */}
+      {/* ══ HEADER — v4.0 : retour, titre, solde en gros chiffres (thème clair) ══ */}
       <Animated.View style={{
         opacity: headerAnim,
         transform: [{ translateY: headerAnim.interpolate({ inputRange: [0,1], outputRange: [-20,0] }) }],
       }}>
-        <LinearGradient
-          colors={[C.g1, C.g3]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={s.header}
-        >
-          {/* Halo décoratif — élément signature, discret */}
-          <View style={s.heroGlow} pointerEvents="none" />
-
+        <View style={s.header}>
           <View style={s.headerTop}>
-            <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={20} color={C.white} />
+            <TouchableOpacity style={s.backBtn} onPress={() => router.back()} accessibilityLabel="Retour">
+              <Ionicons name="chevron-back" size={20} color={C.text} />
             </TouchableOpacity>
-            <Text style={[s.headerTitle, { fontFamily: F.display }]}>
-              {mode === "WALLET" ? "Transfert Wallet" : "Envoi d'Argent"}
-            </Text>
-            <TouchableOpacity style={s.eyeBtn} onPress={() => setShowBalance(!showBalance)}>
-              <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.white} />
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity style={s.eyeBtn} onPress={() => setShowBalance(!showBalance)} accessibilityLabel={showBalance ? "Masquer le solde" : "Afficher le solde"}>
+              <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.text} />
             </TouchableOpacity>
           </View>
-
-          <Ionicons
-            name="wallet"
-            size={72}
-            color="rgba(255,255,255,0.10)"
-            style={s.balanceWatermark}
-            pointerEvents="none"
-          />
+          <Text style={[s.headerTitle, { fontFamily: F.display }]}>
+            {mode === "WALLET" ? "Transfert" : "Envoi d'argent"}
+          </Text>
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
           {loadingWallet
-            ? <ActivityIndicator color={C.heroMuted} size="small" />
+            ? <ActivityIndicator color={C.heroMuted} size="small" style={{ alignSelf: "flex-start", marginTop: 6 }} />
             : <Text style={[s.balanceVal, { fontFamily: F.display }]}>
                 {showBalance ? `${fmt(walletBalance, userCurrency)} ${userCurrency}` : "• • • • •"}
               </Text>
@@ -1311,7 +1298,7 @@ useEffect(() => {
               <Text style={[s.insufficientTxt, { fontFamily: F.body }]}>Solde insuffisant</Text>
             </View>
           )}
-        </LinearGradient>
+        </View>
       </Animated.View>
 
       {/* ══ SHEET — ✅ v2.11 : enveloppe arrondie qui chevauche le header.
@@ -1573,7 +1560,7 @@ useEffect(() => {
                 </View>
                 {sendAmount > 0 && rate !== 1 && (
                   <View style={s.rateChip}>
-                    <Ionicons name="trending-up-outline" size={13} color={C.g4} />
+                    <Ionicons name="trending-up-outline" size={13} color={C.white} />
                     <Text style={[s.rateTxt, { fontFamily: F.body }]}>
                       1 {userCurrency} = {rate.toFixed(4)} {targetCurrency}
                     </Text>
@@ -1638,7 +1625,7 @@ useEffect(() => {
                   />
                   {targetCurrency !== userCurrency && rate !== 1 && (
                     <View style={s.rateChip}>
-                      <Ionicons name="trending-up-outline" size={13} color={C.g4} />
+                      <Ionicons name="trending-up-outline" size={13} color={C.white} />
                       <Text style={[s.rateTxt, { fontFamily: F.body }]}>
                         1 {userCurrency} = {rate.toFixed(4)} {targetCurrency}
                       </Text>
@@ -1680,23 +1667,23 @@ useEffect(() => {
                 disabled={sending || (!canSend && !insufficient)}
               >
                 {sending ? (
-                  <ActivityIndicator color={C.white} />
+                  <ActivityIndicator color={ctaFg} />
                 ) : (
                   <>
                     <View style={s.ctaIcon}>
                       <Ionicons
                         name={insufficient ? "options-outline" : mode === "WALLET" ? "phone-portrait-outline" : "cash-outline"}
-                        size={20} color={C.white}
+                        size={20} color={ctaFg}
                       />
                     </View>
-                    <Text style={[s.ctaTxt, { fontFamily: F.body }]}>
+                    <Text style={[s.ctaTxt, { fontFamily: F.body, color: ctaFg }]}>
                       {insufficient
                         ? "AUTRE MOYEN DE PAIEMENT"
                         : mode === "WALLET"
                           ? "CONFIRMER LE TRANSFERT"
                           : "GÉNÉRER LE CODE DE RETRAIT"}
                     </Text>
-                    <Ionicons name="arrow-forward" size={18} color={C.white} style={{ opacity: 0.7 }} />
+                    <Ionicons name="arrow-forward" size={18} color={ctaFg} style={{ opacity: 0.7 }} />
                   </>
                 )}
               </Pressable>
@@ -1786,89 +1773,44 @@ useEffect(() => {
 const make_s = (C: Colors) => StyleSheet.create({
   // ✅ v2.11 — fond aligné sur le 1er ton du dégradé (zone réservée par
   // SafeAreaView sous l'encoche iOS, doit rester sombre en continuité du header)
-  safe:      { flex: 1, backgroundColor: C.g1 },
+  safe:      { flex: 1, backgroundColor: C.bg },
   // ✅ v3.0 — bandeaux de chargement / d'erreur non bloquants
   loadNote:  { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.gSoft, borderWidth: 1, borderColor: C.gBorder, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 14 },
   loadNoteTxt: { flex: 1, fontSize: 12.5, color: C.textSub, fontWeight: "600" },
-  loadErr:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.amberSoft, borderWidth: 1, borderColor: "#FEDF89", borderRadius: 14, padding: 12, marginBottom: 14 },
+  loadErr:   { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.amberSoft, borderWidth: 1, borderColor: C.amberLine, borderRadius: 14, padding: 12, marginBottom: 14 },
   loadErrTitle: { fontSize: 13, color: C.text, fontWeight: "800" },
   loadErrMsg:   { fontSize: 12, color: C.textSub, marginTop: 2, lineHeight: 16 },
-  loadErrBtn:   { backgroundColor: C.g4, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 14 },
+  loadErrBtn:   { backgroundColor: C.ink, borderRadius: 99, paddingVertical: 9, paddingHorizontal: 14 },
   loadErrBtnTxt:{ color: "#fff", fontSize: 12.5, fontWeight: "800" },
 
-  // ── Header — ✅ v2.11 : plus de backgroundColor ici, géré par
-  // LinearGradient (colors=[C.g1, C.g3]) sur le composant parent.
-  // paddingTop INCHANGÉ. paddingBottom augmenté pour laisser la sheet
-  // chevaucher proprement le bas du header.
-  header: {
-    paddingTop: Platform.OS === "android" ? 44 : 10,
-    paddingBottom: 32, paddingHorizontal: 20,
-    overflow: "hidden",
-  },
-  // ✅ v2.11 — halo décoratif discret, coin haut-droit
-  heroGlow: {
-    position: "absolute",
-    top: -50,
-    right: -50,
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: "rgba(5,150,105,0.18)",
-  },
-  headerTop:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  // ✅ v2.11 — style "verre" (fond blanc translucide), forme inchangée
-  backBtn:     {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.16)",
-    justifyContent: "center", alignItems: "center",
-  },
-  // ✅ v2.11 — blanc (était C.text)
-  headerTitle: { fontSize: 20, color: C.white, letterSpacing: -0.2 },
-  // ✅ v2.11 — style "verre", identique à backBtn
-  eyeBtn:      {
-    width: 38, height: 38, borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.10)",
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.16)",
-    justifyContent: "center", alignItems: "center",
-  },
-  // ✅ v2.11 — repositionné à même le header (plus de carte séparée derrière)
-  balanceWatermark:  { position: "absolute", bottom: 10, right: 12 },
-  // ✅ v2.11 — clair sur fond sombre (était C.textMuted)
-  balanceLbl:  { color: C.heroMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase" },
-  // ✅ v2.11 — blanc (était C.text), fontSize INCHANGÉ (30, cf. v2.7 compact)
-  balanceVal:  { color: C.white, fontSize: 30, letterSpacing: -0.8 },
+  // ── Header v4.0 (thème clair) ──
+  header: { paddingTop: Platform.OS === "android" ? 36 : 6, paddingBottom: 16, paddingHorizontal: 20 },
+  headerTop:   { flexDirection: "row", alignItems: "center", marginBottom: 14 },
+  backBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, justifyContent: "center", alignItems: "center" },
+  headerTitle: { fontSize: 34, fontWeight: "800", color: C.ink, letterSpacing: -1 },
+  eyeBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, justifyContent: "center", alignItems: "center" },
+  balanceLbl:  { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginTop: 10 },
+  balanceVal:  { color: C.ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.8, marginTop: 2 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
 
-  // ✅ v2.11 — sheet arrondie qui enveloppe le body et chevauche le header
-  sheet: {
-    flex: 1,
-    backgroundColor: C.bg,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    marginTop: -20,
-    overflow: "hidden",
-  },
+  // v4.0 — plus de feuille qui chevauche : le contenu repose sur le fond crème
+  sheet: { flex: 1, backgroundColor: C.bg },
 
   // scroll.paddingTop 10 → 16 (✅ v2.11, pour respirer sous l'arrondi de la sheet)
-  scroll:   { paddingHorizontal: 14, paddingTop: 16, paddingBottom: 16 },
-  tabsWrap: { flexDirection: "row", backgroundColor: "#F0F0F0", borderRadius: 16, padding: 4, marginBottom: 10 },
+  scroll:   { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16 },
+  tabsWrap: { flexDirection: "row", borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 16 },
 
   block: {
-    backgroundColor: C.surface, borderRadius: 18, borderWidth: 1, borderColor: C.border,
-    padding: 13, marginBottom: 10,
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8 },
-      android: { elevation: 2 },
-    }),
+    backgroundColor: C.surface, borderRadius: 24, borderWidth: 1, borderColor: C.border,
+    padding: 18, marginBottom: 14,
   },
   blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  blockNum:    { width: 26, height: 26, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-  blockTitle:  { fontSize: 14, fontWeight: "800", color: C.text },
+  blockNum:    { width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" },
+  blockTitle:  { fontSize: 13, fontWeight: "800", color: C.textMuted, letterSpacing: 0.8, textTransform: "uppercase" },
 
-  phoneWrap:     { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, overflow: "hidden" },
-  dialBtn:       { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border },
+  phoneWrap:     { flexDirection: "row", alignItems: "center", backgroundColor: C.field, borderRadius: 16, overflow: "hidden" },
+  dialBtn:       { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border, minHeight: 54 },
   dialFlag:      { fontSize: 18 },
   dialCode:      { fontSize: 13, fontWeight: "700", color: C.text },
   phoneInput:    { flex: 1, paddingHorizontal: 12, paddingVertical: 14, fontSize: 15, color: C.text },
@@ -1876,7 +1818,7 @@ const make_s = (C: Colors) => StyleSheet.create({
 
   detectedCard:      { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12, backgroundColor: C.gSoft, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: C.gBorder },
   // ✅ v2.10 — variante "utilisateur plateforme détecté, non sauvegardé"
-  detectedCardPlatform:   { backgroundColor: C.blueSoft, borderColor: "#BFDBFE" },
+  detectedCardPlatform:   { backgroundColor: C.blueSoft, borderColor: C.blueLine },
   detectedAvatar:    { width: 40, height: 40, borderRadius: 12, backgroundColor: `${C.g4}20`, justifyContent: "center", alignItems: "center" },
   detectedAvatarPlatform: { backgroundColor: `${C.blue}20` },
   detectedAvatarTxt: { fontSize: 18, fontWeight: "900", color: C.g4 },
@@ -1894,30 +1836,26 @@ const make_s = (C: Colors) => StyleSheet.create({
   addHintTxt:  { fontSize: 12, color: C.textMuted, fontWeight: "600" },
   addHintLink: { fontSize: 13, color: C.g4, fontWeight: "800" },
 
-  amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.bg, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, padding: 12, gap: 8 },
+  amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.field, borderRadius: 20, padding: 16, gap: 10 },
   amountSide:      { flex: 1 },
-  amountSideLabel: { fontSize: 9, fontWeight: "900", color: C.textFaint, letterSpacing: 0.8, marginBottom: 3 },
+  amountSideLabel: { fontSize: 10, fontWeight: "800", color: C.textMuted, letterSpacing: 0.8, marginBottom: 4 },
   amountInputRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
-  amountInput:     { fontSize: 22, color: C.text, letterSpacing: -0.5, minWidth: 60 },
+  amountInput:     { fontSize: 30, fontWeight: "800", color: C.text, letterSpacing: -1, minWidth: 60 },
   // ✅ v2.15 — minWidth ajouté (60, comme amountInput) : c'est
   // désormais un <TextInput>, pas un <Text>, et sans largeur minimale
   // un champ vide se réduit à ~0px et devient impossible à toucher.
-  amountReceived:  { fontSize: 20, color: C.text, letterSpacing: -0.5, minWidth: 60 },
-  amountArrow:     { width: 32, height: 32, borderRadius: 9, backgroundColor: C.gSoft, justifyContent: "center", alignItems: "center" },
+  amountReceived:  { fontSize: 26, fontWeight: "800", color: C.text, letterSpacing: -1, minWidth: 60 },
+  amountArrow:     { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, justifyContent: "center", alignItems: "center" },
   currBadge:       { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   currTxt:         { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
 
-  rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.gSoft, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 6 },
-  rateTxt:  { fontSize: 12, color: C.g4, fontWeight: "700" },
+  rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.ink, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7 },
+  rateTxt:  { fontSize: 12, color: C.white, fontWeight: "700" },
 
   motifRow:    {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    backgroundColor: C.surface, borderRadius: 14, borderWidth: 1, borderColor: C.border,
-    padding: 12, marginBottom: 10,
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 4 },
-      android: { elevation: 1 },
-    }),
+    backgroundColor: C.surface, borderRadius: 24, borderWidth: 1, borderColor: C.border,
+    paddingVertical: 16, paddingHorizontal: 18, marginBottom: 14,
   },
   motifLeft:   { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
   motifEmoji:  { fontSize: 20, width: 28, textAlign: "center" },
@@ -1931,27 +1869,23 @@ const make_s = (C: Colors) => StyleSheet.create({
 
   cta: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: C.g4, borderRadius: 18, paddingVertical: 18, marginTop: 8,
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.20, shadowRadius: 12 },
-      android: { elevation: 6 },
-    }),
+    backgroundColor: C.accent, borderRadius: 99, height: 58, marginTop: 8,
   },
-  ctaAlt:      { backgroundColor: C.amber },
-  ctaDisabled: { backgroundColor: C.border },
-  ctaIcon:     { width: 32, height: 32, borderRadius: 10, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center" },
-  ctaTxt:      { fontSize: 15, fontWeight: "900", color: C.white, letterSpacing: 0.3 },
+  ctaAlt:      { backgroundColor: C.ink },
+  ctaDisabled: { backgroundColor: C.beige },
+  ctaIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(0,0,0,0.08)", justifyContent: "center", alignItems: "center" },
+  ctaTxt:      { fontSize: 15, fontWeight: "900", color: C.accentInk, letterSpacing: 0.4 },
 
   secNote: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 16 },
   secTxt:  { fontSize: 11, color: C.textFaint, fontWeight: "600" },
 
-  modalOverlay:     { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  modalSheet:       { backgroundColor: C.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: "70%" },
+  modalOverlay:     { flex: 1, backgroundColor: "rgba(17,18,20,0.45)", justifyContent: "flex-end" },
+  modalSheet:       { backgroundColor: C.bg, borderTopLeftRadius: 32, borderTopRightRadius: 32, padding: 20, maxHeight: "70%" },
   modalHandle:      { width: 40, height: 4, borderRadius: 99, backgroundColor: C.border, alignSelf: "center", marginBottom: 16 },
   modalHeaderRow:   { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
   modalTitle:       { fontSize: 18, color: C.text },
-  modalClose:       { width: 32, height: 32, borderRadius: 10, backgroundColor: "#F5F5F5", justifyContent: "center", alignItems: "center" },
-  modalSearch:      { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F5F5F5", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: C.border },
+  modalClose:       { width: 32, height: 32, borderRadius: 10, backgroundColor: C.field, justifyContent: "center", alignItems: "center" },
+  modalSearch:      { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.field, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: C.border },
   modalSearchInput: { flex: 1, fontSize: 14, color: C.text },
   modalItem:        { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.borderLight },
   modalItemFlag:    { fontSize: 22 },
@@ -1962,14 +1896,14 @@ const make_s = (C: Colors) => StyleSheet.create({
 
 // ─── Thème (couleurs du tenant + styles) ──────────────────
 function useSendTheme() {
-  const { P } = useWalletTheme();
+  const { C: U } = useUI();
   return useMemo(() => {
-    const C = makeColors(P);
+    const C = makeColors(U);
     return {
       C,
       tS: make_tS(C), bS: make_bS(C), abS: make_abS(C), psS: make_psS(C),
       srS: make_srS(C), fbS: make_fbS(C), mmS: make_mmS(C), rcS: make_rcS(C),
       s: make_s(C),
     };
-  }, [P]);
+  }, [U]);
 }

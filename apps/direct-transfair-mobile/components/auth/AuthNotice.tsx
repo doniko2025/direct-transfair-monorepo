@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/AuthNotice.tsx
 // =========================================================
-// BANDEAU DE MESSAGE v1.0 — Direct Transf'air
+// BANDEAU DE MESSAGE v2.0 — Direct Transf'air
+// ✅ v2.0 : thème clair (teintes chaudes, coins plus ronds) ; API inchangée.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Remplace les pop-ups d'alerte : le message reste visible dans le
 // formulaire, annoncé aux lecteurs d'écran, avec une action optionnelle
@@ -17,7 +18,7 @@ type Kind = 'error' | 'info' | 'success' | 'warning';
 
 const LOOK: Record<Kind, { bg: string; bd: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> = {
   error:   { bg: N.dangerBg, bd: N.dangerBd, fg: N.danger, icon: 'alert-circle' },
-  info:    { bg: '#EFF8FF',  bd: '#B2DDFF',  fg: '#175CD3', icon: 'information-circle' },
+  info:    { bg: '#E8F0FE',  bd: '#C3D6FA',  fg: '#1D5FD1', icon: 'information-circle' },
   success: { bg: N.okBg,     bd: N.okBd,     fg: N.ok,     icon: 'checkmark-circle' },
   warning: { bg: N.warnBg,   bd: N.warnBd,   fg: N.warn,   icon: 'time' },
 };

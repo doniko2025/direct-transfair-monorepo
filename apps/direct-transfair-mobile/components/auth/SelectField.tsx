@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/SelectField.tsx
 // =========================================================
-// CHAMP À CHOIX v1.0 — Direct Transf'air
+// CHAMP À CHOIX v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR (placeholder et neutres chauds).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Ressemble à un champ de saisie mais ouvre un sélecteur (pays,
 // nationalité). Même libellé / erreur / accessibilité que AuthField.
@@ -38,7 +39,7 @@ export default function SelectField({ label, value, prefix, placeholder, icon, e
       >
         {icon ? <Ionicons name={icon} size={19} color={hasError ? N.danger : N.muted} style={{ marginRight: 10 }} /> : null}
         {prefix ? <Text style={s.prefix}>{prefix}</Text> : null}
-        <Text style={[s.value, !value && { color: '#A5B3AE', fontWeight: '500' }]} numberOfLines={1}>
+        <Text style={[s.value, !value && { color: '#B9B6AD', fontWeight: '500' }]} numberOfLines={1}>
           {value ?? placeholder}
         </Text>
         <Ionicons name="chevron-down" size={18} color={N.muted} />

@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/forgot-password.tsx
 // =========================================================
 // FORGOT PASSWORD v2.0 — Direct Transf'air
+// ✅ v2.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; aucune logique modifiée.
 // ✅ v2.0 : REFONTE COMPLÈTE de la réinitialisation — Thierno Doniko (Grand Chef).
 //   🔥 CAUSE RACINE (lecture du code, auth.service.ts) : l'ancien écran appelait d'abord
 //   POST /auth/verify-otp pour contrôler le code, puis POST /auth/reset-password avec le

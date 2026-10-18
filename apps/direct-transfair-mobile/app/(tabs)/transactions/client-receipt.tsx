@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/client-receipt.tsx
 // =========================================================
-// REÇU CLIENT v1.1 — Direct Transf'air
+// REÇU CLIENT v2.0 — Direct Transf'air
+// ✅ v2.0 : 🔥 REFONTE de l'écran en thème clair (design system components/ui) : reçu « ticket » blanc sur
+//    fond crème, montant géant, lignes à filets, parties expéditeur → destinataire, boutons « Partager PDF »
+//    (accent de la société) et « Imprimer » (noir). Le PDF (buildHtml) et toutes les données sont INCHANGÉS.
 // ✅ v1.1 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
 //    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
 //    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
@@ -23,17 +26,14 @@
 // =========================================================
 
 import React, { useCallback } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, SafeAreaView, StatusBar, Platform, Alert,
-} from "react-native";
+import { View, Platform, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print   from "expo-print";
 import * as Sharing from "expo-sharing";
 
 import { themed, brand } from "../../../components/wallet/brand";
-import { useWalletTheme } from "../../../components/wallet/walletTheme";
+import { Button, Card, NavBar, Pill, Screen, UText, useUI } from "../../../components/ui";
 import { useTenant } from "../../../providers/TenantProvider";
 // ─── Type du reçu client ─────────────────────────────────
 // (construit dans [id].tsx > handleShare, passé en param URL)
@@ -115,33 +115,6 @@ function statusInfo(status: string, isIncoming: boolean) {
   if (status === "FAILED")              return { label: "ÉCHOUÉE",    color: T.red,   bg: T.redBg   };
   return { label: "EN ATTENTE", color: T.amber, bg: T.amberBg };
 }
-
-// ─── Composants UI ───────────────────────────────────────
-function Row({ label, value, mono, bold }: {
-  label: string; value: string; mono?: boolean; bold?: boolean;
-}) {
-  return (
-    <View style={ro.row}>
-      <Text style={[ro.label, { fontFamily: T.font.sans }]}>{label}</Text>
-      <Text style={[ro.value, { fontFamily: mono ? T.font.mono : T.font.sans }, bold && ro.bold]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-const ro = themed(() => StyleSheet.create({
-  row:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: T.divider },
-  label: { fontSize: 13, color: T.inkSub, fontWeight: "500", flex: 1 },
-  value: { fontSize: 13, color: T.ink,    fontWeight: "600", textAlign: "right", flex: 2 },
-  bold:  { fontWeight: "800", color: T.ink, fontSize: 14 },
-}));
-
-function SectionTitle({ children }: { children: string }) {
-  return <Text style={[st.txt, { fontFamily: T.font.sans }]}>{children}</Text>;
-}
-const st = themed(() => StyleSheet.create({
-  txt: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.5, textTransform: "uppercase", paddingTop: 10, paddingBottom: 2 },
-}));
 
 // ─── PDF builder ─────────────────────────────────────────
 const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
@@ -311,7 +284,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 
 // ─── Écran principal ─────────────────────────────────────
 export default function ClientReceiptScreen() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { C } = useUI(); // synchronise aussi la marque pour buildHtml (brand())
   const { branding } = useTenant();
   const tagline = branding.tagline || "";
   const router = useRouter();
@@ -342,253 +315,119 @@ export default function ClientReceiptScreen() {
 
   if (!data) {
     return (
-      <SafeAreaView style={s.safe}>
-        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 32 }}>
-          <Ionicons name="alert-circle-outline" size={48} color={T.inkMuted} />
-          <Text style={[s.errTxt, { fontFamily: T.font.sans }]}>Données introuvables</Text>
-          <TouchableOpacity style={s.errBtn} onPress={() => router.back()}>
-            <Text style={[s.errBtnTxt, { fontFamily: T.font.sans }]}>Retour</Text>
-          </TouchableOpacity>
+      <Screen header={<NavBar onBack={() => router.back()} title="Reçu" />}>
+        <View style={{ alignItems: "center", paddingTop: 60, gap: 12 }}>
+          <Ionicons name="alert-circle-outline" size={48} color={C.faint} />
+          <UText v="body" tone="muted">Données introuvables</UText>
+          <Button label="Retour" kind="outline" full={false} small onPress={() => router.back()} />
         </View>
-      </SafeAreaView>
+      </Screen>
     );
   }
 
   const dt      = fmtDate(data.date);
-  const st      = statusInfo(data.status, data.isIncoming);
   const hasConv = !!(data.receivedCurrency && data.receivedCurrency !== data.sentCurrency && (data.receivedAmount ?? 0) > 0);
-  const amtColor = data.isIncoming ? T.green : T.red;
+  const amtColor = data.isIncoming ? C.pos : C.ink;
+  const stTone: "pos" | "info" | "danger" | "warn" | "neutral" =
+    data.status === "PAID" ? "pos" : data.status === "VALIDATED" ? "info"
+      : data.status === "CANCELLED" || data.status === "FAILED" ? "danger" : "warn";
+  const stLabel = statusInfo(data.status, data.isIncoming).label.replace(" ✓", "");
+
+  const Line = ({ label, value, bold, last }: { label: string; value: string; bold?: boolean; last?: boolean }) => (
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16, paddingVertical: 12, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
+      <UText v="caption" tone="muted" style={{ flex: 1 }}>{label}</UText>
+      <UText v={bold ? "subheading" : "bodyStrong"} style={{ flex: 2, textAlign: "right", fontWeight: bold ? "800" : "600" }}>{value}</UText>
+    </View>
+  );
 
   return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
-
-      {/* ── Barre haute ── */}
-      <View style={s.topBar}>
-        <TouchableOpacity style={s.closeBtn} onPress={() => router.back()} hitSlop={12}>
-          <Ionicons name="close" size={20} color={T.ink} />
-        </TouchableOpacity>
-        <Text style={[s.topTitle, { fontFamily: T.font.sans }]}>REÇU</Text>
-        <View style={{ width: 34 }} />
+    <Screen
+      header={<NavBar onBack={() => router.back()} title="Reçu" subtitle={data.reference} />}
+      footer={
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <Button label="Partager PDF" icon="share-outline" onPress={handleShare} style={{ flex: 1 }} />
+          <Button label="Imprimer" icon="print-outline" kind="dark" onPress={handlePrint} style={{ flex: 1 }} />
+        </View>
+      }
+    >
+      {/* ── Montant ── */}
+      <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: 18, gap: 8 }}>
+        <Pill label={stLabel} tone={stTone} icon="checkmark-circle" style={{ alignSelf: "center" }} />
+        <UText v="overline" tone="muted">{data.txLabel}</UText>
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
+          <UText v="display" color={amtColor} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} style={{ flexShrink: 1 }}>
+            {data.isIncoming ? "+" : "−"}{fmt(data.heroDisplayAmount, data.heroDisplayCurrency)}
+          </UText>
+          <UText v="heading" tone="muted">{data.heroDisplayCurrency}</UText>
+        </View>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+      {/* ── Référence & date ── */}
+      <Card pad={18} style={{ marginBottom: 14 }}>
+        <Line label="Référence" value={data.reference} />
+        <Line label="Date" value={dt.day} />
+        <Line label="Heure" value={dt.time} last />
+      </Card>
 
-        {/* ── Héro montant ── */}
-        <View style={s.amtBlock}>
-          <View style={[s.statusBadge, { backgroundColor: st.bg }]}>
-            <Ionicons name="checkmark-circle" size={13} color={st.color} />
-            <Text style={[s.statusTxt, { color: st.color, fontFamily: T.font.sans }]}>{st.label}</Text>
+      {/* ── Conversion ── */}
+      {hasConv && (
+        <Card tone="accent" pad={16} style={{ marginBottom: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <Ionicons name="swap-horizontal-outline" size={20} color={C.ink} />
+          <View style={{ flex: 1 }}>
+            <UText v="caption" tone="muted">
+              {data.isIncoming ? "Montant envoyé par l'expéditeur" : "Montant reçu par le destinataire"}
+            </UText>
+            <UText v="heading">
+              {data.isIncoming
+                ? `${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`
+                : `${fmt(data.receivedAmount ?? 0, data.receivedCurrency ?? "")} ${data.receivedCurrency ?? ""}`}
+            </UText>
           </View>
-          <Text style={[s.typeLabel, { fontFamily: T.font.sans }]}>{data.txLabel}</Text>
-          <Text
-            style={[s.amtMain, { color: amtColor, fontFamily: T.font.display }]}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {data.isIncoming ? "+" : "−"}{fmt(data.heroDisplayAmount, data.heroDisplayCurrency)}
-          </Text>
-          <Text style={[s.amtCurr, { color: amtColor, fontFamily: T.font.mono }]}>
-            {data.heroDisplayCurrency}
-          </Text>
+          {!!data.exchangeRate && (
+            <UText v="label" tone="muted" align="center">
+              1 {data.sentCurrency}{"\n"}= {Number(data.exchangeRate).toFixed(2)}{"\n"}{data.receivedCurrency}
+            </UText>
+          )}
+        </Card>
+      )}
+
+      {/* ── Parties ── */}
+      <Card pad={18} style={{ marginBottom: 14, flexDirection: "row", alignItems: "center" }}>
+        <View style={{ flex: 1 }}>
+          <UText v="overline" tone="muted">Expéditeur</UText>
+          <UText v="bodyStrong" style={{ marginTop: 4 }}>{data.senderName}</UText>
         </View>
-
-        <View style={s.hairline} />
-
-        {/* ── Référence & Date ── */}
-        <View style={s.section}>
-          <Row label="Référence" value={data.reference} mono />
-          <Row label="Date"      value={dt.day} />
-          <Row label="Heure"     value={dt.time} />
+        <Ionicons name="arrow-forward" size={18} color={C.faint} style={{ marginHorizontal: 10 }} />
+        <View style={{ flex: 1, alignItems: "flex-end" }}>
+          <UText v="overline" tone="muted">Destinataire</UText>
+          <UText v="bodyStrong" style={{ marginTop: 4, textAlign: "right" }}>{data.recipientName}</UText>
+          {!!data.recipientPhone && <UText v="caption" tone="muted">{data.recipientPhone}</UText>}
         </View>
+      </Card>
 
-        {/* ── Conversion (si applicable) ── */}
-        {hasConv && (
+      {/* ── Détails financiers ── */}
+      <Card tone="sunken" pad={18}>
+        <UText v="overline" tone="muted" style={{ marginBottom: 4 }}>Détails financiers</UText>
+        {data.isIncoming ? (
+          <Line label="Montant crédité" value={`${fmt(data.heroDisplayAmount, data.heroDisplayCurrency)} ${data.heroDisplayCurrency}`} bold last />
+        ) : (
           <>
-            <View style={s.hairline} />
-            <View style={s.section}>
-              <SectionTitle>Conversion</SectionTitle>
-              <View style={s.convRow}>
-                <Ionicons name="swap-horizontal-outline" size={16} color={T.blue} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.convLabel, { fontFamily: T.font.sans }]}>
-                    {data.isIncoming ? "Montant envoyé par l'expéditeur" : "Montant reçu par le destinataire"}
-                  </Text>
-                  <Text style={[s.convAmt, { fontFamily: T.font.display }]}>
-                    {data.isIncoming
-                      ? `${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`
-                      : `${fmt(data.receivedAmount ?? 0, data.receivedCurrency ?? "")} ${data.receivedCurrency ?? ""}`
-                    }
-                  </Text>
-                </View>
-                {!!data.exchangeRate && (
-                  <Text style={[s.convRate, { fontFamily: T.font.sans }]}>
-                    1 {data.sentCurrency}{"\n"}= {Number(data.exchangeRate).toFixed(2)}{"\n"}{data.receivedCurrency}
-                  </Text>
-                )}
-              </View>
-            </View>
+            <Line label="Montant envoyé" value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
+            {data.fees > 0 && <Line label="Frais de service" value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} />}
+            <Line label="Total débité" value={`${fmt(data.total, data.sentCurrency)} ${data.sentCurrency}`} bold last />
           </>
         )}
+      </Card>
 
-        {/* ── Parties ── */}
-        <View style={s.hairline} />
-        <View style={s.section}>
-          <SectionTitle>Parties</SectionTitle>
-          <View style={s.partiesCard}>
-            <View style={s.partyBox}>
-              <Text style={[s.partyRole, { fontFamily: T.font.sans }]}>EXPÉDITEUR</Text>
-              <Text style={[s.partyName, { fontFamily: T.font.sans }]}>{data.senderName}</Text>
-            </View>
-            <View style={s.partyArrow}>
-              <Ionicons name="arrow-forward" size={18} color={T.inkMuted} />
-            </View>
-            <View style={[s.partyBox, { alignItems: "flex-end" }]}>
-              <Text style={[s.partyRole, { fontFamily: T.font.sans }]}>DESTINATAIRE</Text>
-              <Text style={[s.partyName, { fontFamily: T.font.sans }]}>{data.recipientName}</Text>
-              {!!data.recipientPhone && (
-                <Text style={[s.partyPhone, { fontFamily: T.font.mono }]}>{data.recipientPhone}</Text>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* ── Détails financiers ── */}
-        <View style={s.hairline} />
-        <View style={s.section}>
-          <SectionTitle>Détails financiers</SectionTitle>
-          {data.isIncoming ? (
-            <Row
-              label="Montant crédité"
-              value={`${fmt(data.heroDisplayAmount, data.heroDisplayCurrency)} ${data.heroDisplayCurrency}`}
-              bold
-            />
-          ) : (
-            <>
-              <Row label="Montant envoyé" value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
-              {data.fees > 0 && (
-                <Row label="Frais de service" value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} />
-              )}
-              <Row
-                label="Total débité"
-                value={`${fmt(data.total, data.sentCurrency)} ${data.sentCurrency}`}
-                bold
-              />
-            </>
-          )}
-        </View>
-
-        {/* ── Footer ── */}
-        <View style={s.hairline} />
-        <View style={s.footer}>
-          <Text style={[s.footLogo,  { fontFamily: T.font.sans }]}>{branding.name.toUpperCase()}</Text>
-          {!!tagline && <Text style={[s.footSub,   { fontFamily: T.font.sans }]}>{tagline}</Text>}
-          <Text style={[s.footLegal, { fontFamily: T.font.sans }]}>
-            Ce reçu constitue une preuve officielle de votre transaction.
-            Pour toute réclamation, contactez le service client dans les 48 heures.
-          </Text>
-          <Text style={[s.footRef, { fontFamily: T.font.mono }]}>
-            Réf. {data.reference} · {dt.short}
-          </Text>
-        </View>
-
-        <View style={{ height: 80 }} />
-      </ScrollView>
-
-      {/* ── Boutons bas ── */}
-      <View style={s.actions}>
-        <TouchableOpacity style={s.shareBtn} onPress={handleShare} activeOpacity={0.85}>
-          <Ionicons name="share-outline" size={17} color={T.ink} />
-          <Text style={[s.shareTxt, { fontFamily: T.font.sans }]}>Partager PDF</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.printBtn} onPress={handlePrint} activeOpacity={0.88}>
-          <Ionicons name="print-outline" size={17} color="#fff" />
-          <Text style={[s.printTxt, { fontFamily: T.font.sans }]}>Imprimer</Text>
-        </TouchableOpacity>
+      {/* ── Pied de reçu ── */}
+      <View style={{ alignItems: "center", paddingVertical: 24, gap: 6 }}>
+        <UText v="label" style={{ letterSpacing: 2 }}>{branding.name.toUpperCase()}</UText>
+        {!!tagline && <UText v="caption" tone="muted" align="center">{tagline}</UText>}
+        <UText v="caption" tone="faint" align="center" style={{ marginTop: 6 }}>
+          Ce reçu constitue une preuve de votre transaction. Pour toute réclamation, contactez le service client dans les 48 heures.
+        </UText>
+        <UText v="label" tone="faint">Réf. {data.reference} · {dt.short}</UText>
       </View>
-    </SafeAreaView>
+    </Screen>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────
-const s = themed(() => StyleSheet.create({
-  safe: { flex: 1, backgroundColor: T.bg },
-
-  errTxt:    { fontSize: 14, color: T.inkMuted, marginTop: 14, fontWeight: "600", textAlign: "center" },
-  errBtn:    { marginTop: 18, paddingVertical: 10, paddingHorizontal: 24, borderRadius: 10, borderWidth: 1.5, borderColor: "#CBD5E1" },
-  errBtnTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
-
-  topBar: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: T.divider,
-  },
-  closeBtn: { width: 34, height: 34, borderRadius: 10, backgroundColor: T.divider, justifyContent: "center", alignItems: "center" },
-  topTitle: { fontSize: 10, fontWeight: "900", color: T.inkMuted, letterSpacing: 2 },
-
-  scroll: { paddingHorizontal: 22 },
-
-  amtBlock: { alignItems: "center", paddingTop: 20, paddingBottom: 16 },
-  statusBadge: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 5,
-    borderRadius: 20, marginBottom: 10,
-  },
-  statusTxt: { fontSize: 11, fontWeight: "700" },
-  typeLabel: { fontSize: 11, fontWeight: "700", color: T.inkMuted, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 4 },
-  amtMain:   { fontSize: 44, fontWeight: "900", letterSpacing: -1.5, textAlign: "center" },
-  amtCurr:   { fontSize: 16, fontWeight: "700", marginTop: 4, letterSpacing: 2 },
-
-  hairline: { height: 1, backgroundColor: T.dividerMd },
-  section:  { paddingVertical: 2 },
-
-  convRow: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: T.blueBg, borderRadius: 12,
-    borderWidth: 1, borderColor: "#BFDBFE",
-    padding: 12, marginTop: 4,
-  },
-  convLabel: { fontSize: 10, color: T.inkSub, fontWeight: "600", marginBottom: 3 },
-  convAmt:   { fontSize: 18, fontWeight: "800", color: T.blue },
-  convRate:  { fontSize: 9, color: T.inkMuted, fontWeight: "600", textAlign: "center", lineHeight: 14 },
-
-  partiesCard: {
-    flexDirection: "row", alignItems: "center",
-    backgroundColor: "#F8FAFF", borderRadius: 12,
-    borderWidth: 1, borderColor: T.dividerMd,
-    padding: 14, marginTop: 4,
-  },
-  partyBox:   { flex: 1 },
-  partyArrow: { paddingHorizontal: 10 },
-  partyRole:  { fontSize: 8, fontWeight: "900", color: T.inkMuted, letterSpacing: 1.2, marginBottom: 4 },
-  partyName:  { fontSize: 13, fontWeight: "800", color: T.ink },
-  partyPhone: { fontSize: 10, color: T.inkSub, marginTop: 3 },
-
-  footer:    { paddingVertical: 14, alignItems: "center" },
-  footLogo:  { fontSize: 12, fontWeight: "900", color: T.ink, letterSpacing: 2.5, marginBottom: 3 },
-  footSub:   { fontSize: 10, color: T.inkMuted, letterSpacing: 0.5, marginBottom: 10 },
-  footLegal: { fontSize: 10, color: T.inkMuted, lineHeight: 16, textAlign: "center", marginBottom: 8 },
-  footRef:   { fontSize: 9,  color: T.inkMuted },
-
-  actions: {
-    flexDirection: "row", gap: 12,
-    paddingHorizontal: 20, paddingVertical: 12,
-    paddingBottom: Platform.OS === "ios" ? 26 : 12,
-    backgroundColor: T.bg,
-    borderTopWidth: 1, borderTopColor: T.dividerMd,
-  },
-  shareBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    paddingVertical: 14, borderRadius: 14,
-    backgroundColor: T.bg, borderWidth: 1.5, borderColor: T.dividerMd,
-  },
-  printBtn: {
-    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    paddingVertical: 14, borderRadius: 14,
-    backgroundColor: T.ink,
-  },
-  shareTxt: { color: T.ink, fontWeight: "700", fontSize: 13 },
-  printTxt: { color: "#fff", fontWeight: "700", fontSize: 13 },
-}));

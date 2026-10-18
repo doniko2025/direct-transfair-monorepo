@@ -1,85 +1,50 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
 // =========================================================
-// LOCATIONS v6.5 — Direct Transf'air
-// ✅ v6.5 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
-//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
-//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
-//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
-//    Nom de la société = branding.name du tenant (était « Direct Transf'air » écrit en dur).
-//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
-//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
-// ✅ v6.4 (phase 6) : la liste vient uniquement de GET /locations (agences de la société, champs publics). /agencies est
-//    réservé aux administrateurs (le client recevait 403 puis une erreur sur /agencies/public, qui n'existe pas).
-//    L'email d'une agence n'est plus servi : c'est l'identifiant de connexion de son responsable.
-// ✅ v6.2 : fetchAgencies multi-endpoints, 403 silencieux
-// ✅ v6.3 :
-//    - Téléphone affiché sur chaque carte (si disponible)
-//    - Email affiché sur chaque carte (si disponible)
-//    - Chaque info cliquable : tel: / mailto: via Linking
-//    - Affichage conditionnel : rien si champ absent en base
-//    - Carte wrapper → View (pas de faux tap sans action)
+// LOCATIONS v7.0 — Direct Transf'air
+// ✅ v7.0 : REFONTE THÈME CLAIR — grand titre, cartes d'agence blanches arrondies (pastille
+//    d'icône beige, point de statut « Ouvert / Fermé », devise en pastille), contacts
+//    téléphone / email cliquables en puces. Chargement borné via useLoader (20 s) avec
+//    squelette, message d'attente et « Réessayer ». Plus de teintes par rôle codées en dur
+//    (bleu / ambre / vert) : tout suit la marque du tenant. Police système.
+//    LOGIQUE INCHANGÉE (GET /locations uniquement, 401/403 silencieux, formats de réponse
+//    tableau | {data} | {items}, tel: / mailto: via Linking, affichage conditionnel des
+//    contacts, nom de la société = branding.name).
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// ✅ v6.5 : WHITE-LABEL + chargement borné (20 s).
+// ✅ v6.4 (phase 6) : la liste vient uniquement de GET /locations (agences de la société,
+//    champs publics) ; l'email d'une agence n'est plus servi (identifiant de connexion).
+// ✅ v6.3 : téléphone / email cliquables, affichage conditionnel.
+// ✅ v6.2 : fetchAgencies multi-endpoints, 403 silencieux.
 // =========================================================
 
-import React, { useEffect, useState, useCallback } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, FlatList,
-  SafeAreaView, StatusBar, Platform, ActivityIndicator,
-  RefreshControl, Linking,
-} from "react-native";
+import React from "react";
+import { Linking, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import type { Agency } from "../../../services/types";
 import { useAuth } from "../../../providers/AuthProvider";
-import { api } from "../../../services/api";
-
-import { themed, brand } from "../../../components/wallet/brand";
-import { useWalletTheme } from "../../../components/wallet/walletTheme";
-import ScreenHeader from "../../../components/wallet/ScreenHeader";
-import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
 import { useTenant } from "../../../providers/TenantProvider";
-// ─── Thème par rôle ──────────────────────────────────────
-const ROLE_THEMES = themed(() => ({
-  SUPER_ADMIN:   { bg: "#F8FAFF", accent: "#1D4ED8", accentSoft: "#EFF6FF" },
-  COMPANY_ADMIN: { bg: brand("#F0FDFA"), accent: brand("#0D9488"), accentSoft: brand("#CCFBF1") },
-  AGENT:         { bg: "#FFFBEB", accent: "#D97706", accentSoft: "#FEF3C7" },
-  USER:          { bg: brand("#F0FDF4"), accent: brand("#059669"), accentSoft: brand("#DCFCE7") },
-} as const));
+import { api } from "../../../services/api";
+import { useLoader } from "../../../components/wallet/useLoader";
+import {
+  Card, EmptyView, ErrorView, NavBar, Pill, Screen, SectionHeader, SkeletonRows, SlowNote, StatusDot, UText, useUI,
+} from "../../../components/ui";
 
-const T = themed(() => ({
-  surface: "#FFFFFF",
-  text:    "#0F172A",
-  textSub: "#475569",
-  textDim: "#94A3B8",
-  border:  "#E2E8F0",
-  borderLight: "#F1F5F9",
-  green:   "#16A34A",
-  red:     "#DC2626",
-  blue:    "#2563EB",
-  blueSoft:"#EFF6FF",
-  radius:  { md: 14, lg: 20 },
-  font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
-  },
-}));
-
-// Phase 6 : /agencies est réservé aux administrateurs et /agencies/public n'existe pas — la liste des agences de la
-// société (champs publics) est servie par /locations, avec l'en-tête x-tenant-id que l'application envoie déjà.
+// Phase 6 : la liste des agences de la société (champs publics) est servie par /locations,
+// avec l'en-tête x-tenant-id que l'application envoie déjà.
 const AGENCY_ENDPOINTS = ["/locations"] as const;
 
 function unwrapAgencies(raw: unknown): Agency[] {
   if (Array.isArray(raw)) return raw as Agency[];
   if (raw && typeof raw === "object") {
     const r = raw as Record<string, unknown>;
-    if (Array.isArray(r.data))  return r.data  as Agency[];
+    if (Array.isArray(r.data)) return r.data as Agency[];
     if (Array.isArray(r.items)) return r.items as Agency[];
   }
   return [];
 }
 
-// ─── Ouvre tel: ou mailto: sans crash ────────────────────
+// Ouvre tel: ou mailto: sans crash
 async function openLink(url: string) {
   try {
     const supported = await Linking.canOpenURL(url);
@@ -88,301 +53,111 @@ async function openLink(url: string) {
 }
 
 export default function LocationsScreen() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { C, R } = useUI();
   const { branding } = useTenant();
-  const router   = useRouter();
+  const router = useRouter();
   const { user } = useAuth();
+  const role = user?.role ?? "USER";
 
-  const role  = (user?.role ?? "USER") as keyof typeof ROLE_THEMES;
-  const theme = ROLE_THEMES[role] ?? ROLE_THEMES.USER;
-
-  const [agencies,   setAgencies]   = useState<Agency[]>([]);
-  const [loading,    setLoading]    = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error,      setError]      = useState<string | null>(null);
-
-  const fetchAgencies = useCallback(async () => {
-    try {
-      setError(null);
-      let found: Agency[] = [];
-      let allForbidden = true;
-
-      for (const endpoint of AGENCY_ENDPOINTS) {
-        try {
-          const res = await withTimeout(api.http.get<unknown>(endpoint), defaultTimeoutMs());
-          found        = unwrapAgencies(res.data);
-          allForbidden = false;
-          break;
-        } catch (err: any) {
-          const status = err?.response?.status as number | undefined;
-          if (status === 403 || status === 401) continue;
-          throw err;
-        }
+  const { data, status, error, refreshing, slow, reload, refresh } = useLoader<Agency[]>(async () => {
+    let found: Agency[] = [];
+    let allForbidden = true;
+    for (const endpoint of AGENCY_ENDPOINTS) {
+      try {
+        const res = await api.http.get<unknown>(endpoint);
+        found = unwrapAgencies(res.data);
+        allForbidden = false;
+        break;
+      } catch (err: any) {
+        const st = err?.response?.status as number | undefined;
+        if (st === 403 || st === 401) continue;
+        throw err;
       }
-
-      setAgencies(allForbidden ? [] : found);
-    } catch (e: any) {
-      const raw = e?.response?.data?.message;
-      setError(Array.isArray(raw) ? raw[0] : (raw || explainLoadError(e).message));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
     }
-  }, []);
+    return allForbidden ? [] : found;
+  });
+  const agencies = data ?? [];
 
-  useEffect(() => { void fetchAgencies(); }, [fetchAgencies]);
+  const subtitle =
+    status === "loading"
+      ? "Chargement…"
+      : status === "error"
+        ? "Erreur de chargement"
+        : agencies.length === 0
+          ? "Aucun point disponible pour le moment"
+          : `${agencies.length} point${agencies.length > 1 ? "s" : ""} ${branding.name}`;
 
-  const onRefresh = () => { setRefreshing(true); void fetchAgencies(); };
-
-  // ── Carte agence ─────────────────────────────────────────
-  const renderItem = ({ item }: { item: Agency }) => {
-    const ag = item as any;
-
-    // ✅ Champs contact — plusieurs noms possibles selon le backend
-    const phone = ag.phone || ag.phoneNumber || ag.tel || null;
-    const email = ag.email || ag.contactEmail || null;
-    const hasContact = !!(phone || email);
-
-    return (
-      <View style={s.card}>
-
-        {/* Icône agence */}
-        <View style={[s.iconBox, { backgroundColor: theme.accentSoft }]}>
-          <Ionicons name="location" size={20} color={theme.accent} />
-        </View>
-
-        <View style={{ flex: 1, minWidth: 0 }}>
-
-          {/* Nom */}
-          <Text style={[s.name, { fontFamily: T.font.sans }]} numberOfLines={1}>
-            {item.name}
-          </Text>
-
-          {/* Adresse */}
-          <Text style={[s.address, { fontFamily: T.font.sans }]} numberOfLines={1}>
-            {[ag.address, item.city, item.country].filter(Boolean).join(", ")}
-          </Text>
-
-          {/* Statut + client (SuperAdmin) */}
-          <View style={s.metaRow}>
-            <View style={[
-              s.openPill,
-              {
-                backgroundColor: item.isActive ? "#DCFCE7" : "#FEE2E2",
-                borderColor:     item.isActive ? "#16A34A40" : "#DC262640",
-              },
-            ]}>
-              <View style={[s.openDot, { backgroundColor: item.isActive ? T.green : T.red }]} />
-              <Text style={[s.openTxt, { color: item.isActive ? T.green : T.red, fontFamily: T.font.sans }]}>
-                {item.isActive ? "Ouvert" : "Fermé"}
-              </Text>
-            </View>
-            {role === "SUPER_ADMIN" && ag.clientName ? (
-              <View style={[s.clientPill, { backgroundColor: theme.accentSoft }]}>
-                <Text style={[s.clientTxt, { color: theme.accent, fontFamily: T.font.sans }]}>
-                  {ag.clientName}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-
-          {/* ── Contact (téléphone + email) ── */}
-          {hasContact && (
-            <View>
-              <View style={s.contactDivider} />
-              <View style={s.contactRow}>
-
-                {/* Téléphone — cliquable */}
-                {phone && (
-                  <TouchableOpacity
-                    style={s.contactBtn}
-                    onPress={() => openLink(`tel:${phone.replace(/\s/g, "")}`)}
-                    activeOpacity={0.7}
-                    hitSlop={8}
-                  >
-                    <View style={[s.contactIconBox, { backgroundColor: theme.accentSoft }]}>
-                      <Ionicons name="call-outline" size={11} color={theme.accent} />
-                    </View>
-                    <Text style={[s.contactTxt, { color: T.textSub, fontFamily: T.font.mono }]}>
-                      {phone}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* Email — cliquable */}
-                {email && (
-                  <TouchableOpacity
-                    style={[s.contactBtn, { flex: 1 }]}
-                    onPress={() => openLink(`mailto:${email}`)}
-                    activeOpacity={0.7}
-                    hitSlop={8}
-                  >
-                    <View style={[s.contactIconBox, { backgroundColor: T.blueSoft }]}>
-                      <Ionicons name="mail-outline" size={11} color={T.blue} />
-                    </View>
-                    <Text
-                      style={[s.contactTxt, { color: T.textSub, fontFamily: T.font.sans }]}
-                      numberOfLines={1}
-                    >
-                      {email}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-
-              </View>
-            </View>
-          )}
-        </View>
-
-        {/* Badge devise */}
-        <View style={[s.currBox, { backgroundColor: theme.accentSoft, borderColor: theme.accent + "40" }]}>
-          <Text style={[s.currTxt, { color: theme.accent, fontFamily: T.font.mono }]}>
-            {item.primaryCurrency ?? "—"}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  const headerSub = loading
-    ? "Chargement…"
-    : error
-      ? "Erreur de chargement"
-      : agencies.length === 0
-        ? "Aucun point disponible pour le moment"
-        : `${agencies.length} point${agencies.length > 1 ? "s" : ""} ${branding.name}`;
+  const chip = (icon: string, label: string, onPress: () => void) => (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="link"
+      hitSlop={6}
+      style={({ pressed }) => ({
+        flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, height: 34, borderRadius: R.pill,
+        backgroundColor: C.beige, maxWidth: "100%", opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <Ionicons name={icon as any} size={14} color={C.ink} />
+      <UText v="label" numberOfLines={1} style={{ flexShrink: 1 }}>{label}</UText>
+    </Pressable>
+  );
 
   return (
-    <LinearGradient colors={[theme.bg, "rgba(255,255,255,0.3)"]} style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={theme.bg} />
-
-        {/* ── Header ── */}
-        <ScreenHeader compact title="Nos Agences" subtitle={headerSub} onBack={() => router.back()} />
-
-        {/* ── Chargement ── */}
-        {loading && (
-          <View style={s.centered}>
-            <ActivityIndicator size="large" color={theme.accent} />
-            <Text style={[s.loadingTxt, { fontFamily: T.font.sans, color: T.textSub }]}>
-              Chargement des agences…
-            </Text>
-          </View>
-        )}
-
-        {/* ── Erreur réseau ── */}
-        {!loading && !!error && (
-          <View style={s.centered}>
-            <Ionicons name="cloud-offline-outline" size={44} color={T.red} />
-            <Text style={[s.errorTxt, { fontFamily: T.font.sans }]}>{error}</Text>
-            <TouchableOpacity
-              style={[s.retryBtn, { backgroundColor: theme.accent }]}
-              onPress={onRefresh}
-            >
-              <Text style={[s.retryTxt, { fontFamily: T.font.sans }]}>Réessayer</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── Liste ── */}
-        {!loading && !error && (
-          <FlatList
-            data={agencies}
-            keyExtractor={(item) => String(item.id)}
-            contentContainerStyle={s.list}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={theme.accent}
-                colors={[theme.accent]}
-              />
-            }
-            ListHeaderComponent={
-              agencies.length > 0 ? (
-                <View style={s.sectionRow}>
-                  <View style={[s.sectionDot, { backgroundColor: theme.accent }]} />
-                  <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>
-                    {role === "SUPER_ADMIN" ? "TOUTES LES AGENCES" : "POINTS DE SERVICE"}
-                  </Text>
+    <Screen
+      header={<NavBar title="Nos agences" subtitle={subtitle} onBack={() => router.back()} />}
+      refreshing={refreshing}
+      onRefresh={() => void refresh()}
+    >
+      {status === "loading" ? (
+        <>
+          <SlowNote visible={slow} />
+          <SkeletonRows rows={3} />
+        </>
+      ) : status === "error" ? (
+        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+      ) : agencies.length === 0 ? (
+        <EmptyView
+          icon="storefront-outline"
+          title="Aucune agence disponible"
+          message={`Les points ${branding.name} apparaîtront ici dès leur ouverture.`}
+        />
+      ) : (
+        <>
+          <SectionHeader title={role === "SUPER_ADMIN" ? "Toutes les agences" : "Points de service"} style={{ marginTop: 4, marginBottom: 12 }} />
+          {agencies.map((item) => {
+            const ag = item as any;
+            // Champs contact — plusieurs noms possibles selon le backend
+            const phone = ag.phone || ag.phoneNumber || ag.tel || null;
+            const email = ag.email || ag.contactEmail || null;
+            const address = [ag.address, item.city, item.country].filter(Boolean).join(", ");
+            return (
+              <Card key={String(item.id)} style={{ marginBottom: 12 }} pad={18}>
+                <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 14 }}>
+                  <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name="location" size={21} color={C.ink} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <UText v="subheading" numberOfLines={1}>{item.name}</UText>
+                    {!!address && <UText v="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>{address}</UText>}
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+                      <StatusDot color={item.isActive ? C.pos : C.danger} label={item.isActive ? "Ouvert" : "Fermé"} />
+                      {role === "SUPER_ADMIN" && ag.clientName ? <Pill label={String(ag.clientName)} tone="neutral" /> : null}
+                    </View>
+                  </View>
+                  {!!item.primaryCurrency && <Pill label={item.primaryCurrency} tone="neutral" />}
                 </View>
-              ) : null
-            }
-            renderItem={renderItem}
-            ListEmptyComponent={
-              <View style={s.centered}>
-                <View style={[s.emptyIcon, { backgroundColor: theme.accentSoft }]}>
-                  <Ionicons name="storefront-outline" size={30} color={theme.accent} />
-                </View>
-                <Text style={[s.emptyTitle, { fontFamily: T.font.display }]}>
-                  Aucune agence disponible
-                </Text>
-                <Text style={[s.emptySubtxt, { fontFamily: T.font.sans }]}>
-                  Les points {branding.name}{"\n"}apparaîtront ici dès leur ouverture.
-                </Text>
-              </View>
-            }
-            ListFooterComponent={<View style={{ height: 80 }} />}
-          />
-        )}
-      </View>
-    </LinearGradient>
+
+                {(phone || email) && (
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.line }}>
+                    {phone ? chip("call-outline", String(phone), () => openLink(`tel:${String(phone).replace(/\s/g, "")}`)) : null}
+                    {email ? chip("mail-outline", String(email), () => openLink(`mailto:${email}`)) : null}
+                  </View>
+                )}
+              </Card>
+            );
+          })}
+        </>
+      )}
+    </Screen>
   );
 }
-
-const s = themed(() => StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center",
-    paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 44 : 16,
-    paddingBottom: 16, gap: 12,
-    backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border,
-  },
-  backBtn: {
-    width: 38, height: 38, borderRadius: 10, backgroundColor: "#F3F4F6",
-    justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border,
-  },
-  headerTitle: { color: T.text, fontSize: 18, fontWeight: "700" },
-  headerSub:   { fontSize: 11, fontWeight: "700", marginTop: 2 },
-
-  list:       { paddingHorizontal: 20, paddingTop: 16 },
-  sectionRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
-  sectionDot: { width: 6, height: 6, borderRadius: 99 },
-  sectionLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-
-  // ── Carte ──
-  card: {
-    flexDirection: "row", alignItems: "flex-start", gap: 12,
-    backgroundColor: T.surface, borderRadius: 16, padding: 14,
-    marginBottom: 10, borderWidth: 1, borderColor: T.border,
-    shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
-  },
-  iconBox:  { width: 42, height: 42, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 1, flexShrink: 0 },
-  name:     { color: T.text, fontSize: 14, fontWeight: "700", marginBottom: 3 },
-  address:  { color: T.textDim, fontSize: 11, fontWeight: "600", marginBottom: 6 },
-  metaRow:  { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
-  openPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, borderWidth: 1 },
-  openDot:  { width: 5, height: 5, borderRadius: 99 },
-  openTxt:  { fontSize: 9, fontWeight: "900", letterSpacing: 0.3 },
-  clientPill:{ paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7 },
-  clientTxt: { fontSize: 9, fontWeight: "800", letterSpacing: 0.3 },
-  currBox:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 9, borderWidth: 1, alignItems: "center", alignSelf: "flex-start", marginTop: 2, flexShrink: 0 },
-  currTxt:  { fontSize: 11, fontWeight: "800" },
-
-  // ── Contact ──
-  contactDivider: { height: 1, backgroundColor: T.borderLight, marginTop: 9, marginBottom: 7 },
-  contactRow:     { flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" },
-  contactBtn:     { flexDirection: "row", alignItems: "center", gap: 5, minWidth: 0 },
-  contactIconBox: { width: 20, height: 20, borderRadius: 6, justifyContent: "center", alignItems: "center", flexShrink: 0 },
-  contactTxt:     { fontSize: 10, fontWeight: "700", color: T.textSub, flexShrink: 1 },
-
-  // ── États ──
-  centered:   { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, padding: 32 },
-  loadingTxt: { fontSize: 13, marginTop: 8 },
-  errorTxt:   { color: T.red, fontSize: 13, textAlign: "center", lineHeight: 20 },
-  retryBtn:   { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
-  retryTxt:   { color: "#fff", fontSize: 13, fontWeight: "700" },
-  emptyIcon:    { width: 64, height: 64, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 4 },
-  emptyTitle:   { color: T.text, fontSize: 16, fontWeight: "700", textAlign: "center" },
-  emptySubtxt:  { color: T.textDim, fontSize: 12, textAlign: "center", lineHeight: 18 },
-}));

@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/AuthField.tsx
 // =========================================================
-// CHAMP DE SAISIE v1.1 — Direct Transf'air
+// CHAMP DE SAISIE v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — champ sable arrondi, contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Libellé toujours visible au-dessus (jamais un placeholder qui disparaît),
 // icône, œil pour les mots de passe, message d'erreur ou d'aide dessous,
@@ -54,7 +55,7 @@ export default function AuthField({
   const [focused, setFocused] = useState(false);
   const [reveal, setReveal] = useState(false);
   const hasError = !!error;
-  const borderColor = hasError ? N.danger : focused ? accent : N.border;
+  const borderColor = hasError ? N.danger : focused ? N.ink : N.border;
 
   return (
     <View style={s.wrap}>
@@ -67,7 +68,7 @@ export default function AuthField({
         ]}
       >
         {icon ? (
-          <Ionicons name={icon} size={19} color={hasError ? N.danger : focused ? accent : N.muted} style={s.icon} />
+          <Ionicons name={icon} size={19} color={hasError ? N.danger : focused ? N.ink : N.muted} style={s.icon} />
         ) : null}
         {leftSlot}
         <TextInput
@@ -77,7 +78,7 @@ export default function AuthField({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#A5B3AE"
+          placeholderTextColor="#B9B6AD"
           secureTextEntry={secure && !reveal}
           keyboardType={keyboardType ?? 'default'}
           autoCapitalize={autoCapitalize}

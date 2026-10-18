@@ -1,200 +1,117 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
-// SPLASH / LANDING v4.1 — Direct Transf'air
-// ✅ v4.0 conservé intégralement
-// ✅ v4.1 : liens "Conditions générales" et
-//           "Politique de confidentialité" cliquables
-//           → router.push vers les modaux (auth)
+// SPLASH / LANDING v5.0 — Direct Transf'air (white-label)
+// ✅ v5.0 : REFONTE TOTALE en thème clair (inspirée de « Taptap Send ») : fond crème, grande carte d'accueil
+//    qui se fond vers la couleur d'accent de la société (logo du tenant), slogan et nom de la société venant
+//    de la configuration du tenant (plus de texte « Direct Transf'air » ni de promesses « Sans frais /
+//    Instantané » écrites en dur), boutons « Se connecter » (pilule d'accent) et « Devenir client »
+//    (contour noir), liens légaux cliquables. Navigation INCHANGÉE (replace /(auth)/login et /(auth)/register,
+//    push vers terms et privacy-policy).
+// ✅ v4.1 : liens « Conditions générales » et « Politique de confidentialité » cliquables.
+// ✅ v4.0 : splash animé (logo, texte, boutons).
+// Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
 import React, { useRef, useEffect } from "react";
-import {
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-  StatusBar, Platform, Animated, useWindowDimensions,
-} from "react-native";
+import { View, Text, Image, Animated, Platform, StatusBar, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-
-const T = {
-  g1: "#022C22", g2: "#065F46", g3: "#059669",
-  white: "#FFFFFF",
-  font: {
-    display: Platform.select({ ios: "Georgia", android: "serif", default: "serif" }),
-    sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono: Platform.select({ ios: "Courier New", android: "monospace", default: "monospace" }),
-  },
-};
-
-// ─── Feature Pill ─────────────────────────────────────────
-function FeaturePill({ icon, label }: { icon: string; label: string }) {
-  return (
-    <View style={fpS.pill}>
-      <Ionicons name={icon as any} size={13} color="rgba(255,255,255,0.9)" />
-      <Text style={[fpS.label, { fontFamily: T.font.sans }]}>{label}</Text>
-    </View>
-  );
-}
-const fpS = StyleSheet.create({
-  pill: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    paddingHorizontal: 12, paddingVertical: 6,
-    backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 99,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.2)",
-  },
-  label: { color: "rgba(255,255,255,0.9)", fontSize: 11, fontWeight: "700" },
-});
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useUI, SYSTEM_FONT } from "../components/ui/theme";
+import { Button } from "../components/ui/Primitives";
+import { useTenant } from "../providers/TenantProvider";
 
 export default function Index() {
   const router = useRouter();
+  const { C, R, S } = useUI();
+  const { branding } = useTenant();
+  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isDesktop = width > 768;
 
-  const fadeAnim      = useRef(new Animated.Value(0)).current;
-  const slideAnim     = useRef(new Animated.Value(40)).current;
-  const scaleLogoAnim = useRef(new Animated.Value(0.7)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const scaleAnim = useRef(new Animated.Value(0.92)).current;
 
   useEffect(() => {
-    Animated.stagger(80, [
-      Animated.spring(scaleLogoAnim, {
-        toValue: 1, useNativeDriver: true, speed: 8, bounciness: 8,
-      }),
-      Animated.parallel([
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 600, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true }),
-      ]),
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, friction: 8, tension: 40, useNativeDriver: true }),
+      Animated.spring(scaleAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
     ]).start();
   }, []);
 
+  const top = Math.max(insets.top, Platform.OS === "android" ? (StatusBar.currentHeight ?? 24) : 12) + 16;
+  const bottom = Math.max(insets.bottom, 16) + 12;
+
   return (
-    <LinearGradient colors={[T.g1, T.g2, T.g3]} style={{ flex: 1 }}>
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="light-content" />
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <View
+        style={{
+          flex: 1, width: "100%", maxWidth: isDesktop ? 480 : undefined, alignSelf: "center",
+          paddingHorizontal: 22, paddingTop: top, paddingBottom: bottom, justifyContent: "space-between",
+        }}
+      >
+        {/* ── Marque ── */}
+        <Animated.View style={{ flexDirection: "row", alignItems: "center", gap: 10, opacity: fadeAnim }}>
+          <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.accent, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            {branding.logoUrl
+              ? <Image source={{ uri: branding.logoUrl }} style={{ width: "78%", height: "78%" }} resizeMode="contain" />
+              : <Ionicons name="swap-horizontal" size={20} color={C.accentInk} />}
+          </View>
+          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 17, fontWeight: "800", color: C.ink, letterSpacing: -0.3, flexShrink: 1 }} numberOfLines={1}>
+            {branding.name}
+          </Text>
+        </Animated.View>
 
-        {/* Déco cercles */}
-        <View style={s.deco1} pointerEvents="none" />
-        <View style={s.deco2} pointerEvents="none" />
-        <View style={s.deco3} pointerEvents="none" />
-
-        <View style={[s.container, isDesktop && s.containerDesktop]}>
-
-          {/* ── Logo ── */}
-          <Animated.View style={[s.logoSection, { transform: [{ scale: scaleLogoAnim }] }]}>
-            <View style={s.logoOuter}>
-              <LinearGradient
-                colors={["rgba(255,255,255,0.18)", "rgba(255,255,255,0.06)"]}
-                style={s.logoGrad}
-              >
-                <View style={s.logoInner}>
-                  <Ionicons name="swap-horizontal" size={38} color="#059669" />
-                </View>
-              </LinearGradient>
-            </View>
-          </Animated.View>
-
-          {/* ── Hero text ── */}
-          <Animated.View
-            style={[
-              s.heroSection,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            <Text style={[s.title, { fontFamily: T.font.display }]}>Direct Transf'air</Text>
-            <Text style={[s.subtitle, { fontFamily: T.font.sans }]}>
-              L'argent sans frontières.{"\n"}Transferts instantanés et sécurisés.
-            </Text>
-
-            <View style={s.pillsRow}>
-              <FeaturePill icon="flash-outline"           label="Instantané" />
-              <FeaturePill icon="shield-checkmark-outline" label="Sécurisé"  />
-              <FeaturePill icon="cash-outline"            label="Sans frais" />
-            </View>
-          </Animated.View>
-
-          {/* ── CTAs ── */}
-          <Animated.View
-            style={[
-              s.ctaSection,
-              { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
-            ]}
-          >
-            <TouchableOpacity
-              style={s.primaryBtn}
-              activeOpacity={0.9}
-              onPress={() => router.replace("/(auth)/login")}
+        {/* ── Carte d'accueil ── */}
+        <Animated.View style={[{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
+          <View style={[{ borderRadius: R.xl }, S.md]}>
+            <LinearGradient
+              colors={[C.surface, C.accentSoft, C.accent]}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={{ borderRadius: R.xl, padding: 26, minHeight: 230, justifyContent: "space-between", borderWidth: 1, borderColor: C.line, overflow: "hidden" }}
             >
-              <Text style={[s.primaryBtnTxt, { fontFamily: T.font.sans }]}>Se connecter</Text>
-              <View style={s.primaryBtnArrow}>
-                <Ionicons name="arrow-forward" size={18} color="#059669" />
+              <View style={{ width: 84, height: 84, borderRadius: 26, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", ...S.sm }}>
+                {branding.logoUrl
+                  ? <Image source={{ uri: branding.logoUrl }} style={{ width: "72%", height: "72%" }} resizeMode="contain" />
+                  : <Ionicons name="swap-horizontal" size={40} color={C.ink} />}
               </View>
-            </TouchableOpacity>
+              <View style={{ marginTop: 28 }}>
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 34, lineHeight: 38, fontWeight: "800", letterSpacing: -1, color: C.ink }}>
+                  {branding.name}
+                </Text>
+                {!!branding.tagline && (
+                  <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 16, lineHeight: 23, color: C.ink, opacity: 0.72, marginTop: 8 }}>
+                    {branding.tagline}
+                  </Text>
+                )}
+              </View>
+            </LinearGradient>
+          </View>
+        </Animated.View>
 
-            <TouchableOpacity
-              style={s.secondaryBtn}
-              activeOpacity={0.85}
-              onPress={() => router.replace("/(auth)/register")}
-            >
-              <Text style={[s.secondaryBtnTxt, { fontFamily: T.font.sans }]}>Devenir client</Text>
-            </TouchableOpacity>
-          </Animated.View>
+        {/* ── Actions ── */}
+        <Animated.View style={{ gap: 12, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <Button label="Se connecter" iconRight="arrow-forward" onPress={() => router.replace("/(auth)/login")} />
+          <Button label="Devenir client" kind="outline" onPress={() => router.replace("/(auth)/register")} />
 
-          {/* ── Footer ✅ v4.1 : liens cliquables ── */}
-          <Animated.View style={[s.footer, { opacity: fadeAnim }]}>
-            <Text style={[s.footerTxt, { fontFamily: T.font.sans }]}>
-              En continuant, vous acceptez nos{" "}
-              <Text
-                style={s.footerLink}
-                onPress={() => router.push("/(auth)/terms")}
-              >
-                Conditions générales
-              </Text>
-              {" "}et notre{" "}
-              <Text
-                style={s.footerLink}
-                onPress={() => router.push("/(auth)/privacy-policy")}
-              >
-                Politique de confidentialité
-              </Text>
-              .
+          <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11.5, color: C.muted, lineHeight: 17, marginTop: 6 }}>
+            En continuant, vous acceptez nos{" "}
+            <Text style={{ color: C.ink, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/terms")}>
+              Conditions générales
             </Text>
-          </Animated.View>
-
-        </View>
-      </SafeAreaView>
-    </LinearGradient>
+            {" "}et notre{" "}
+            <Text style={{ color: C.ink, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/privacy-policy")}>
+              Politique de confidentialité
+            </Text>
+            .
+          </Text>
+        </Animated.View>
+      </View>
+    </View>
   );
 }
-
-const s = StyleSheet.create({
-  deco1: { position: "absolute", width: 400, height: 400, borderRadius: 200, backgroundColor: "rgba(255,255,255,0.05)", top: -100, right: -120 },
-  deco2: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(255,255,255,0.04)", top: "35%", left: -80 },
-  deco3: { position: "absolute", width: 140, height: 140, borderRadius: 70,  backgroundColor: "rgba(255,255,255,0.04)", bottom: -40, right: "22%" },
-
-  container:        { flex: 1, paddingHorizontal: 24, justifyContent: "space-between", paddingVertical: Platform.OS === "android" ? 60 : 80 },
-  containerDesktop: { maxWidth: 500, alignSelf: "center", width: "100%" },
-
-  logoSection: { alignItems: "center" },
-  logoOuter:   { width: 96, height: 96, borderRadius: 28, overflow: "hidden" },
-  logoGrad:    { flex: 1, justifyContent: "center", alignItems: "center" },
-  logoInner:   { width: 74, height: 74, borderRadius: 22, backgroundColor: T.white, justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 14, elevation: 8 },
-
-  heroSection: { alignItems: "center", gap: 12 },
-  title:       { fontSize: 38, color: T.white, fontWeight: "900", letterSpacing: -0.5, textAlign: "center" },
-  subtitle:    { fontSize: 16, color: "rgba(255,255,255,0.8)", textAlign: "center", lineHeight: 24, fontWeight: "500" },
-  pillsRow:    { flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "center" },
-
-  ctaSection: { gap: 14 },
-  primaryBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    backgroundColor: T.white, borderRadius: 20, paddingVertical: 18,
-    shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 16, elevation: 6, gap: 12,
-  },
-  primaryBtnTxt:   { color: "#059669", fontSize: 18, fontWeight: "900", letterSpacing: 0.3 },
-  primaryBtnArrow: { width: 30, height: 30, borderRadius: 99, backgroundColor: "#ECFDF5", justifyContent: "center", alignItems: "center" },
-  secondaryBtn:    { alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 20, paddingVertical: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.28)" },
-  secondaryBtnTxt: { color: T.white, fontSize: 16, fontWeight: "800", letterSpacing: 0.3 },
-
-  footer:    { alignItems: "center", paddingHorizontal: 10 },
-  footerTxt: { textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.5)", lineHeight: 17 },
-  footerLink:{ color: "rgba(255,255,255,0.85)", fontWeight: "700", textDecorationLine: "underline" },
-});

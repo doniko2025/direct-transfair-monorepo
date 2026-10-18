@@ -1,116 +1,43 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/payment-methods.tsx
 // =========================================================
-// PAYMENT METHODS v6.4 — Direct Transf'air
-// ✅ v6.4 : WHITE-LABEL — les couleurs vertes écrites en dur suivent maintenant la
-//    couleur de marque du tenant (components/wallet/brand.ts) ; palette et styles
-//    évalués paresseusement. Avec la marque par défaut, rendu strictement identique.
-//    Aucune logique métier touchée. Développé par Thierno Doniko (Grand Chef).
-//    En-tête commun du wallet (ScreenHeader) : même style que l'accueil, l'activité, les contacts et le compte.
-//    Chargement BORNÉ (20 s, EXPO_PUBLIC_LOAD_TIMEOUT_MS) : message clair + « Réessayer » au lieu d'un spinner sans fin.
-// ✅ v6.3 : Affichage du titulaire dans la liste des cartes
-//    PROBLÈME : cardholderName était collecté dans le formulaire
-//    depuis la v6.2 mais jamais affiché dans la liste — seul
-//    "{brand} ···· {last4}" apparaissait. Backend corrigé en
-//    parallèle (add-card.dto.ts v1.1 + payment-methods.service.ts
-//    v1.1) pour que ce champ soit enfin écrit et retourné.
-//    - Type Card : ajout de cardholderName (optionnel/nullable — les
-//      cartes ajoutées avant ce correctif ont ce champ vide en base).
-//    - Ligne principale de la carte : titulaire en majuscules si
-//      présent, sinon repli sur "{brand} ···· {last4}" (comportement
-//      identique à avant pour les cartes existantes).
-//    - Ligne secondaire : "{brand} ···· {last4} · Expire {expiry}"
-//      (fusionne les deux infos qui étaient avant sur 2 lignes
-//      séparées, puisque la marque/le numéro masqué remontent
-//      maintenant en ligne 2 pour laisser la place au titulaire).
-//    Aucune autre logique touchée (ajout/suppression carte, liaison
-//    mobile wallet : tout identique).
-// ✅ v6.1 : Remplacement du fetch brut par api.http
-//           Le fetch brut n'envoyait pas x-tenant-id
-//           → TenantGuard rejetait avant d'atteindre la route
-//           → "Cannot GET /payments/methods"
-//           api.http ajoute automatiquement x-tenant-id via l'intercepteur
-// ✅ v6.2 : FORMULAIRE D'AJOUT DE CARTE — refonte complète
-//    PROBLÈME : formulaire minimal (numéro + expiration seulement),
-//    pas de nom du titulaire, pas de CVV, pas de formatage de saisie.
-//    AJOUTS :
-//    - Champ "Titulaire de la carte" (cardholderName), envoyé au backend
-//    - Champ CVV (3-4 chiffres, secureTextEntry) — ⚠️ collecté pour la
-//      complétude du formulaire mais JAMAIS envoyé au backend ni stocké.
-//      Règle PCI-DSS de base : le CVV ne doit jamais être persisté,
-//      même chiffré, après une autorisation. Si un vrai prestataire de
-//      paiement (Stripe, etc.) tokenise la carte côté client, le CVV
-//      doit lui être transmis directement, jamais via votre propre API.
-//    - Aperçu de carte en temps réel (CardPreview) : numéro masqué,
-//      titulaire, expiration, et badge de marque détectée
-//    - Formatage automatique du numéro de carte (espace tous les 4
-//      chiffres) et de l'expiration (MM/AA avec "/" auto-inséré)
-//    - Détection de marque (Visa/Mastercard/Amex) côté client, purement
-//      visuelle pour l'aperçu — le backend reste seul responsable du
-//      champ `brand` retourné et affiché dans la liste des cartes
-//    - Validation étendue : nom non vide, CVV 3-4 chiffres
-//    Logique de chargement/suppression/liaison wallet mobile inchangée.
+// PAYMENT METHODS v7.0 — Direct Transf'air
+// ✅ v7.0 : REFONTE THÈME CLAIR — grand titre, cartes bancaires et comptes Mobile Money en
+//    lignes à filet (pastille d'icône beige, bouton « Lier » / puce « Lié » discrets),
+//    ajout de carte et liaison de numéro dans des feuilles basses claires, aperçu de carte
+//    en temps réel aux couleurs de la société (texte auto-contrasté) au lieu du dégradé
+//    sombre fixe. Chargement borné via useLoader (20 s) avec squelette et « Réessayer »
+//    (avant : simple Alert en cas d'erreur). Plus de bleu/orange/vert écrits en dur.
+//    LOGIQUE INCHANGÉE (GET /payments/methods, POST /payments/cards sans CVV — jamais
+//    envoyé ni stocké —, DELETE /payments/cards/:id, PATCH /payments/mobile-wallet pour
+//    lier / délier, mêmes validations et formatages, titulaire en ligne principale).
+//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
+// ✅ v6.4 : WHITE-LABEL + chargement borné (20 s).
+// ✅ v6.3 : titulaire affiché dans la liste des cartes (repli « {brand} ···· {last4} »).
+// ✅ v6.2 : formulaire d'ajout de carte complet (titulaire, CVV non envoyé, aperçu live,
+//    formatage numéro / expiration, détection de marque purement visuelle).
+// ✅ v6.1 : api.http (x-tenant-id ajouté automatiquement).
 // =========================================================
 
-import React, { useCallback, useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Platform,
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { useState } from "react";
+import { Alert, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { themed, brand } from "../../../components/wallet/brand";
-import { useWalletTheme } from "../../../components/wallet/walletTheme";
-import ScreenHeader from "../../../components/wallet/ScreenHeader";
-import { withTimeout, explainLoadError, defaultTimeoutMs } from "../../../components/wallet/useLoader";
-import { api } from "../../../services/api"; // ✅ v6.1 — import api.http
-
-// ─── Thème ─────────────────────────────────────────────
-const T = themed(() => ({
-  bg:         brand("#F0FDF4"),
-  surface:    "#FFFFFF",
-  border:     brand("#D1FAE5"),
-  text:       "#0F172A",
-  textSub:    "#475569",
-  textDim:    "#94A3B8",
-  accent:     brand("#059669"),
-  accentSoft: "#DCFCE7",
-  blue:       "#0284C7",
-  blueSoft:   "#E0F2FE",
-  orange:     "#D97706",
-  orangeSoft: "#FED7AA",
-  red:        "#DC2626",
-  redSoft:    "#FEE2E2",
-  green:      "#16A34A",
-  radius: { sm: 10, md: 14, lg: 20, xl: 28 },
-  font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
-    mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
-  },
-}));
+import { Ionicons } from "@expo/vector-icons";
+import { api } from "../../../services/api";
+import { useLoader } from "../../../components/wallet/useLoader";
+import {
+  Button, EmptyView, ErrorView, Field, IconButton, ListRow, NavBar, Pill, Screen, SectionHeader, Sheet, SkeletonRows, SlowNote, StatusDot, UText, useUI,
+} from "../../../components/ui";
 
 // ─── Config UI des providers (aucune valeur métier en dur) ─
-const WALLET_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
-  ORANGE_MONEY: { label: "Orange Money", color: T.orange, icon: "briefcase" },
-  SENDWAVE:     { label: "Wave",         color: T.blue,   icon: "penguin"   },
+const WALLET_CONFIG: Record<string, { label: string; icon: string }> = {
+  ORANGE_MONEY: { label: "Orange Money", icon: "phone-portrait-outline" },
+  SENDWAVE: { label: "Wave", icon: "swap-horizontal-outline" },
 };
 
 // ─── Types ─────────────────────────────────────────────
 type Card = {
   id: string;
-  // ✅ v6.3 — nullable : vide pour les cartes ajoutées avant le fix
-  // backend (add-card.dto.ts v1.1 / payment-methods.service.ts v1.1)
+  // nullable : vide pour les cartes ajoutées avant le fix backend (add-card.dto.ts v1.1)
   cardholderName?: string | null;
   last4: string;
   expiry: string;
@@ -125,7 +52,9 @@ type MobileWallet = {
   recordId: string | null;
 };
 
-// ─── ✅ v6.2 — Helpers de formatage / détection carte ─────
+type Methods = { cards: Card[]; mobileWallets: MobileWallet[] };
+
+// ─── Helpers de formatage / détection carte ──────────────
 function formatCardNumber(text: string): string {
   const digits = text.replace(/\D/g, "").slice(0, 16);
   return digits.replace(/(.{4})/g, "$1 ").trim();
@@ -135,181 +64,93 @@ function formatExpiry(text: string): string {
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}/${digits.slice(2)}`;
 }
-function detectBrand(cardNumber: string): { label: string; icon: string } {
+function detectBrand(cardNumber: string): string {
   const digits = cardNumber.replace(/\D/g, "");
-  if (/^4/.test(digits))        return { label: "VISA",       icon: "card" };
-  if (/^5[1-5]/.test(digits))   return { label: "MASTERCARD",  icon: "card" };
-  if (/^3[47]/.test(digits))    return { label: "AMEX",        icon: "card" };
-  if (digits.length === 0)      return { label: "CARTE",       icon: "card-outline" };
-  return { label: "CARTE", icon: "card-outline" };
+  if (/^4/.test(digits)) return "VISA";
+  if (/^5[1-5]/.test(digits)) return "MASTERCARD";
+  if (/^3[47]/.test(digits)) return "AMEX";
+  return "CARTE";
 }
 
-// ─── ✅ v6.2 — Aperçu de carte en temps réel ──────────────
-function CardPreview({
-  number, name, expiry,
-}: { number: string; name: string; expiry: string }) {
-  const brand = detectBrand(number);
+// ─── Aperçu de carte en temps réel (couleur de la société) ─
+function CardPreview({ number, name, expiry }: { number: string; name: string; expiry: string }) {
+  const { C, R } = useUI();
   const digits = number.replace(/\D/g, "");
   const groups = [0, 1, 2, 3].map((i) => {
     const slice = digits.slice(i * 4, i * 4 + 4);
     return slice.length > 0 ? slice.padEnd(4, "•") : "••••";
   });
   return (
-    <LinearGradient
-      colors={["#1E293B", "#0F172A"]}
-      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-      style={cp.card}
-    >
-      <View style={cp.topRow}>
-        <Ionicons name="wifi" size={18} color="rgba(255,255,255,0.55)" style={{ transform: [{ rotate: "90deg" }] }} />
-        <Text style={[cp.brand, { fontFamily: T.font.sans }]}>{brand.label}</Text>
+    <View style={{ backgroundColor: C.accent, borderRadius: R.lg, padding: 20, height: 168, justifyContent: "space-between", marginBottom: 20 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+        <Ionicons name="wifi" size={20} color={C.accentInk} style={{ opacity: 0.6, transform: [{ rotate: "90deg" }] }} />
+        <UText v="overline" color={C.accentInk}>{detectBrand(number)}</UText>
       </View>
-      <Text style={[cp.number, { fontFamily: T.font.mono }]}>{groups.join("  ")}</Text>
-      <View style={cp.bottomRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={[cp.label, { fontFamily: T.font.sans }]}>TITULAIRE</Text>
-          <Text style={[cp.value, { fontFamily: T.font.sans }]} numberOfLines={1}>
+      <UText v="subheading" color={C.accentInk} style={{ letterSpacing: 2 }} numberOfLines={1}>{groups.join("  ")}</UText>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>Titulaire</UText>
+          <UText v="label" color={C.accentInk} numberOfLines={1} style={{ marginTop: 3 }}>
             {name.trim() ? name.trim().toUpperCase() : "VOTRE NOM"}
-          </Text>
+          </UText>
         </View>
         <View>
-          <Text style={[cp.label, { fontFamily: T.font.sans }]}>EXP.</Text>
-          <Text style={[cp.value, { fontFamily: T.font.mono }]}>{expiry || "MM/AA"}</Text>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>Exp.</UText>
+          <UText v="label" color={C.accentInk} style={{ marginTop: 3 }}>{expiry || "MM/AA"}</UText>
         </View>
       </View>
-    </LinearGradient>
+    </View>
   );
 }
-const cp = themed(() => StyleSheet.create({
-  card: {
-    borderRadius: 18, padding: 18, marginBottom: 18,
-    height: 160, justifyContent: "space-between",
-    ...Platform.select({
-      ios:     { shadowColor: "#000", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 12 },
-      android: { elevation: 5 },
-      default: {},
-    }),
-  },
-  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  brand:  { color: "rgba(255,255,255,0.85)", fontSize: 12, fontWeight: "800", letterSpacing: 1 },
-  number: { color: "#FFFFFF", fontSize: 18, fontWeight: "700", letterSpacing: 1.5 },
-  bottomRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" },
-  label:  { color: "rgba(255,255,255,0.45)", fontSize: 9, fontWeight: "800", letterSpacing: 1, marginBottom: 3 },
-  value:  { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
-}));
 
-// ─── Light Modal ───────────────────────────────────────
-function LightModal({ visible, onClose, title, children }: {
-  visible: boolean; onClose: () => void; title: string; children: React.ReactNode;
-}) {
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={dmS.overlay}>
-        <View style={dmS.sheet}>
-          <View style={dmS.handle} />
-          <View style={dmS.headerRow}>
-            <Text style={[dmS.title, { fontFamily: T.font.display }]}>{title}</Text>
-            <TouchableOpacity style={dmS.closeBtn} onPress={onClose}>
-              <Ionicons name="close" size={18} color={T.textDim} />
-            </TouchableOpacity>
-          </View>
-          {children}
-        </View>
-      </View>
-    </Modal>
-  );
-}
-const dmS = themed(() => StyleSheet.create({
-  overlay:   { flex: 1, backgroundColor: "rgba(0,0,0,0.15)", justifyContent: "flex-end" },
-  sheet:     { backgroundColor: T.surface, borderTopLeftRadius: T.radius.xl, borderTopRightRadius: T.radius.xl, maxHeight: "88%", borderWidth: 1, borderColor: T.border, paddingBottom: 30 },
-  handle:    { width: 36, height: 4, borderRadius: 99, backgroundColor: T.border, alignSelf: "center", marginTop: 14, marginBottom: 4 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: T.border },
-  title:     { color: T.text, fontSize: 18, fontWeight: "700" },
-  closeBtn:  { width: 32, height: 32, borderRadius: T.radius.sm, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center" },
-}));
-
-// ─── Main Screen ───────────────────────────────────────
 export default function PaymentMethodsScreen() {
-  useWalletTheme(); // synchronise la marque (couleurs dynamiques du tenant)
+  const { C } = useUI();
   const router = useRouter();
 
-  const [cards,         setCards]         = useState<Card[]>([]);
-  const [mobileWallets, setMobileWallets] = useState<MobileWallet[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [saving,        setSaving]        = useState(false);
+  const { data, status, error, refreshing, slow, reload, refresh } = useLoader<Methods>(async () => {
+    const res = await api.http.get<{ cards: Card[]; mobileWallets: MobileWallet[] }>("/payments/methods");
+    return { cards: res.data.cards ?? [], mobileWallets: res.data.mobileWallets ?? [] };
+  });
+  const cards = data?.cards ?? [];
+  const mobileWallets = data?.mobileWallets ?? [];
 
-  const [showCardModal,   setShowCardModal]   = useState(false);
-  const [showPhoneModal,  setShowPhoneModal]  = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
 
-  // ✅ v6.2 — nouveaux champs : titulaire + CVV (CVV jamais envoyé au backend)
-  const [newCardName,   setNewCardName]   = useState("");
+  // Champs : titulaire + CVV (CVV jamais envoyé au backend)
+  const [newCardName, setNewCardName] = useState("");
   const [newCardNumber, setNewCardNumber] = useState("");
   const [newCardExpiry, setNewCardExpiry] = useState("");
-  const [newCardCvv,    setNewCardCvv]    = useState("");
-  const [newPhone,      setNewPhone]      = useState("");
+  const [newCardCvv, setNewCardCvv] = useState("");
+  const [newPhone, setNewPhone] = useState("");
 
   const resetCardForm = () => {
-    setNewCardName("");
-    setNewCardNumber("");
-    setNewCardExpiry("");
-    setNewCardCvv("");
+    setNewCardName(""); setNewCardNumber(""); setNewCardExpiry(""); setNewCardCvv("");
   };
 
-  // ── ✅ v6.1 : Chargement via api.http (x-tenant-id ajouté automatiquement) ──
-  const fetchMethods = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await withTimeout(api.http.get<{ cards: Card[]; mobileWallets: MobileWallet[] }>(
-        "/payments/methods"
-      ), defaultTimeoutMs());
-      setCards(res.data.cards ?? []);
-      setMobileWallets(res.data.mobileWallets ?? []);
-    } catch (e: any) {
-      const msg = e?.response?.data?.message ?? explainLoadError(e).message;
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void fetchMethods(); }, [fetchMethods]);
-
-  // ── ✅ v6.2 : Ajouter une carte — validation étendue (nom + CVV) ──
-  // ⚠️ Le CVV (newCardCvv) n'est INTENTIONNELLEMENT PAS envoyé dans le
-  // payload ci-dessous — voir le commentaire d'en-tête du fichier.
+  // ⚠️ Le CVV (newCardCvv) n'est INTENTIONNELLEMENT PAS envoyé dans le payload ci-dessous.
   const handleAddCard = async () => {
     const cleanNumber = newCardNumber.replace(/\s/g, "");
-    const cleanName   = newCardName.trim();
+    const cleanName = newCardName.trim();
 
-    if (!cleanName) {
-      Alert.alert("Erreur", "Le nom du titulaire est requis.");
-      return;
-    }
-    if (cleanNumber.length < 13) {
-      Alert.alert("Erreur", "Numéro de carte invalide.");
-      return;
-    }
-    if (newCardExpiry.length < 5) {
-      Alert.alert("Erreur", "Date d'expiration invalide.");
-      return;
-    }
-    if (newCardCvv.length < 3) {
-      Alert.alert("Erreur", "Code de sécurité (CVV) invalide.");
-      return;
-    }
+    if (!cleanName) { Alert.alert("Erreur", "Le nom du titulaire est requis."); return; }
+    if (cleanNumber.length < 13) { Alert.alert("Erreur", "Numéro de carte invalide."); return; }
+    if (newCardExpiry.length < 5) { Alert.alert("Erreur", "Date d'expiration invalide."); return; }
+    if (newCardCvv.length < 3) { Alert.alert("Erreur", "Code de sécurité (CVV) invalide."); return; }
 
     try {
       setSaving(true);
       await api.http.post("/payments/cards", {
         cardholderName: cleanName,
-        cardNumber:     cleanNumber,
-        expiry:         newCardExpiry,
+        cardNumber: cleanNumber,
+        expiry: newCardExpiry,
         // cvv volontairement omis — non persisté côté backend (PCI-DSS)
       });
       setShowCardModal(false);
       resetCardForm();
-      await fetchMethods();
+      await refresh();
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? "Erreur lors de l'ajout";
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
@@ -318,7 +159,6 @@ export default function PaymentMethodsScreen() {
     }
   };
 
-  // ── ✅ v6.1 : Supprimer une carte via api.http ──
   const handleDeleteCard = async (cardId: string) => {
     Alert.alert("Supprimer la carte", "Confirmer la suppression ?", [
       { text: "Annuler", style: "cancel" },
@@ -329,7 +169,7 @@ export default function PaymentMethodsScreen() {
           try {
             setSaving(true);
             await api.http.delete(`/payments/cards/${cardId}`);
-            await fetchMethods();
+            await refresh();
           } catch (e: any) {
             const msg = e?.response?.data?.message ?? e?.message ?? "Erreur";
             Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
@@ -341,21 +181,14 @@ export default function PaymentMethodsScreen() {
     ]);
   };
 
-  // ── ✅ v6.1 : Lier un wallet mobile via api.http ──
   const handleLinkWallet = async () => {
-    if (newPhone.trim().length < 8) {
-      Alert.alert("Erreur", "Numéro invalide");
-      return;
-    }
+    if (newPhone.trim().length < 8) { Alert.alert("Erreur", "Numéro invalide"); return; }
     try {
       setSaving(true);
-      await api.http.patch("/payments/mobile-wallet", {
-        provider: selectedProvider,
-        number: newPhone.trim(),
-      });
+      await api.http.patch("/payments/mobile-wallet", { provider: selectedProvider, number: newPhone.trim() });
       setShowPhoneModal(false);
       setNewPhone("");
-      await fetchMethods();
+      await refresh();
     } catch (e: any) {
       const msg = e?.response?.data?.message ?? e?.message ?? "Erreur de liaison";
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
@@ -364,7 +197,6 @@ export default function PaymentMethodsScreen() {
     }
   };
 
-  // ── ✅ v6.1 : Délier un wallet mobile via api.http ──
   const handleUnlinkWallet = async (provider: string) => {
     Alert.alert("Délier le compte", `Délier ${WALLET_CONFIG[provider]?.label ?? provider} ?`, [
       { text: "Annuler", style: "cancel" },
@@ -374,11 +206,8 @@ export default function PaymentMethodsScreen() {
         onPress: async () => {
           try {
             setSaving(true);
-            await api.http.patch("/payments/mobile-wallet", {
-              provider,
-              number: null,
-            });
-            await fetchMethods();
+            await api.http.patch("/payments/mobile-wallet", { provider, number: null });
+            await refresh();
           } catch (e: any) {
             const msg = e?.response?.data?.message ?? e?.message ?? "Erreur";
             Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
@@ -391,256 +220,128 @@ export default function PaymentMethodsScreen() {
   };
 
   return (
-    <LinearGradient colors={[T.bg, "rgba(220,252,231,0.5)"]} style={{ flex: 1 }}>
-      <View style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
-
-        <ScreenHeader compact title="Moyens de Paiement" subtitle="Cartes & Mobile Money" onBack={() => router.back()} />
-
-        {loading ? (
-          <View style={s.loader}>
-            <ActivityIndicator size="large" color={T.accent} />
+    <Screen
+      header={<NavBar title="Moyens de paiement" subtitle="Cartes & Mobile Money" onBack={() => router.back()} />}
+      refreshing={refreshing}
+      onRefresh={() => void refresh()}
+    >
+      {status === "loading" ? (
+        <>
+          <SlowNote visible={slow} />
+          <SkeletonRows rows={3} />
+        </>
+      ) : status === "error" ? (
+        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+      ) : (
+        <>
+          {/* Cartes bancaires */}
+          <SectionHeader title="Cartes bancaires" style={{ marginTop: 4 }} />
+          {cards.map((card) => (
+            <ListRow
+              key={card.id}
+              icon="card-outline"
+              // titulaire en ligne principale, repli sur « {brand} ···· {last4} » si absent
+              title={card.cardholderName ? card.cardholderName.toUpperCase() : `${card.brand} ···· ${card.last4}`}
+              subtitle={card.cardholderName ? `${card.brand} ···· ${card.last4} · Expire ${card.expiry}` : `Expire ${card.expiry}`}
+              right={
+                <IconButton icon="trash-outline" label="Supprimer la carte" kind="plain" onPress={() => handleDeleteCard(card.id)} />
+              }
+            />
+          ))}
+          <View style={{ marginTop: 14 }}>
+            <Button label="Ajouter une carte bancaire" kind="outline" icon="add-circle-outline" onPress={() => setShowCardModal(true)} />
           </View>
-        ) : (
-          <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-            {/* ── Cartes bancaires ── */}
-            <View style={s.sectionRow}>
-              <View style={[s.sectionDot, { backgroundColor: T.blue }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>CARTES BANCAIRES</Text>
-            </View>
-
-            {cards.map((card) => (
-              <View key={card.id} style={s.card}>
-                <View style={[s.iconBox, { backgroundColor: T.blueSoft }]}>
-                  <Ionicons name="card" size={20} color={T.blue} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  {/* ✅ v6.3 — titulaire en ligne principale, repli sur
-                      "{brand} ···· {last4}" si absent (cartes pré-fix) */}
-                  <Text style={[s.cardName, { fontFamily: T.font.sans }]} numberOfLines={1}>
-                    {card.cardholderName ? card.cardholderName.toUpperCase() : `${card.brand} ···· ${card.last4}`}
-                  </Text>
-                  <Text style={[s.cardExp, { fontFamily: T.font.mono }]}>
-                    {card.brand} ···· {card.last4} · Expire {card.expiry}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={s.deleteCardBtn}
-                  onPress={() => handleDeleteCard(card.id)}
-                  disabled={saving}
-                >
-                  <Ionicons name="trash-outline" size={16} color={T.red} />
-                </TouchableOpacity>
-              </View>
-            ))}
-
-            <TouchableOpacity style={s.addCard} onPress={() => setShowCardModal(true)} activeOpacity={0.85}>
-              <Ionicons name="add-circle-outline" size={18} color={T.blue} />
-              <Text style={[s.addCardTxt, { color: T.blue, fontFamily: T.font.sans }]}>
-                Ajouter une carte bancaire
-              </Text>
-            </TouchableOpacity>
-
-            {/* ── Mobile Money ── */}
-            <View style={[s.sectionRow, { marginTop: 20 }]}>
-              <View style={[s.sectionDot, { backgroundColor: T.orange }]} />
-              <Text style={[s.sectionLabel, { fontFamily: T.font.sans }]}>MOBILE MONEY</Text>
-            </View>
-
-            {mobileWallets.length === 0 && (
-              <View style={s.emptyWallets}>
-                <Ionicons name="phone-portrait-outline" size={22} color={T.textDim} />
-                <Text style={[s.emptyTxt, { fontFamily: T.font.sans }]}>
-                  Aucun compte Mobile Money configuré
-                </Text>
-              </View>
-            )}
-
-            {mobileWallets.map((wallet) => {
-              const config = WALLET_CONFIG[wallet.provider] ?? {
-                label: wallet.provider, color: T.textSub, icon: "wallet",
-              };
-              return (
-                <View key={wallet.provider} style={s.card}>
-                  <View style={[s.iconBox, { backgroundColor: `${config.color}18` }]}>
-                    <MaterialCommunityIcons name={config.icon as any} size={20} color={config.color} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.cardName, { fontFamily: T.font.sans }]}>{config.label}</Text>
-                    <Text style={[s.cardExp, { fontFamily: T.font.mono }, !wallet.isLinked && { color: T.textDim }]}>
-                      {wallet.isLinked ? wallet.number : "Non lié"}
-                    </Text>
-                  </View>
-                  {wallet.isLinked ? (
-                    <TouchableOpacity
-                      style={[s.linkedBadge, { borderColor: `${T.green}40` }]}
+          {/* Mobile Money */}
+          <SectionHeader title="Mobile Money" />
+          {mobileWallets.length === 0 && (
+            <EmptyView icon="phone-portrait-outline" title="Aucun compte Mobile Money configuré" />
+          )}
+          {mobileWallets.map((wallet, i) => {
+            const config = WALLET_CONFIG[wallet.provider] ?? { label: wallet.provider, icon: "wallet-outline" };
+            return (
+              <ListRow
+                key={wallet.provider}
+                icon={config.icon}
+                title={config.label}
+                subtitle={wallet.isLinked ? wallet.number ?? "" : "Non lié"}
+                last={i === mobileWallets.length - 1}
+                right={
+                  wallet.isLinked ? (
+                    <Pressable
                       onPress={() => handleUnlinkWallet(wallet.provider)}
                       disabled={saving}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Délier ${config.label}`}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                     >
-                      <Ionicons name="checkmark-circle" size={14} color={T.green} />
-                      <Text style={[s.linkedTxt, { fontFamily: T.font.sans }]}>Lié</Text>
-                    </TouchableOpacity>
+                      <StatusDot color={C.pos} label="Lié" />
+                    </Pressable>
                   ) : (
-                    <TouchableOpacity
-                      style={[s.linkBtn, { backgroundColor: `${config.color}15`, borderColor: config.color }]}
-                      onPress={() => { setSelectedProvider(wallet.provider); setShowPhoneModal(true); }}
-                      disabled={saving}
-                    >
-                      <Text style={[s.linkTxt, { color: config.color, fontFamily: T.font.sans }]}>Lier</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              );
-            })}
-
-            <View style={{ height: 80 }} />
-          </ScrollView>
-        )}
-
-        {/* ── Modal Carte — ✅ v6.2 : refonte avec aperçu live + nom + CVV ── */}
-        <LightModal
-          visible={showCardModal}
-          onClose={() => { setShowCardModal(false); resetCardForm(); }}
-          title="Ajouter une Carte"
-        >
-          <ScrollView style={{ padding: 20 }} keyboardShouldPersistTaps="handled">
-            <CardPreview number={newCardNumber} name={newCardName} expiry={newCardExpiry} />
-
-            <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>TITULAIRE DE LA CARTE</Text>
-            <TextInput
-              style={[s.input, { fontFamily: T.font.sans, textTransform: "uppercase" }]}
-              value={newCardName} onChangeText={setNewCardName}
-              placeholder="NOM PRÉNOM" placeholderTextColor={T.textDim}
-              autoCapitalize="characters"
-            />
-
-            <Text style={[s.inputLabel, { fontFamily: T.font.sans, marginTop: 14 }]}>NUMÉRO DE CARTE</Text>
-            <TextInput
-              style={[s.input, { fontFamily: T.font.mono }]}
-              value={newCardNumber}
-              onChangeText={(t) => setNewCardNumber(formatCardNumber(t))}
-              placeholder="0000 0000 0000 0000" placeholderTextColor={T.textDim}
-              keyboardType="numeric" maxLength={19}
-            />
-
-            <View style={{ flexDirection: "row", gap: 12, marginTop: 14 }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>EXPIRATION</Text>
-                <TextInput
-                  style={[s.input, { fontFamily: T.font.mono }]}
-                  value={newCardExpiry}
-                  onChangeText={(t) => setNewCardExpiry(formatExpiry(t))}
-                  placeholder="MM/AA" placeholderTextColor={T.textDim}
-                  keyboardType="numeric" maxLength={5}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>CVV</Text>
-                <TextInput
-                  style={[s.input, { fontFamily: T.font.mono }]}
-                  value={newCardCvv}
-                  onChangeText={(t) => setNewCardCvv(t.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="•••" placeholderTextColor={T.textDim}
-                  keyboardType="numeric" maxLength={4} secureTextEntry
-                />
-              </View>
-            </View>
-
-            <View style={s.secureNote}>
-              <Ionicons name="lock-closed" size={12} color={T.textDim} />
-              <Text style={[s.secureNoteTxt, { fontFamily: T.font.sans }]}>
-                Vos informations sont chiffrées. Le CVV n'est jamais stocké.
-              </Text>
-            </View>
-
-            <TouchableOpacity style={s.confirmBtn} onPress={handleAddCard} activeOpacity={0.85} disabled={saving}>
-              <LinearGradient colors={[T.blue, "#0369A1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.confirmGrad}>
-                {saving
-                  ? <ActivityIndicator color={T.surface} />
-                  : <Text style={[s.confirmTxt, { fontFamily: T.font.sans }]}>AJOUTER LA CARTE</Text>
+                    <Pill
+                      label="Lier"
+                      tone="dark"
+                      style={{ opacity: saving ? 0.5 : 1 }}
+                    />
+                  )
                 }
-              </LinearGradient>
-            </TouchableOpacity>
-          </ScrollView>
-        </LightModal>
+                onPress={wallet.isLinked ? undefined : () => { setSelectedProvider(wallet.provider); setShowPhoneModal(true); }}
+              />
+            );
+          })}
+        </>
+      )}
 
-        {/* ── Modal Wallet ── */}
-        <LightModal
-          visible={showPhoneModal}
-          onClose={() => setShowPhoneModal(false)}
-          title={`Lier ${selectedProvider ? (WALLET_CONFIG[selectedProvider]?.label ?? selectedProvider) : ""}`}
-        >
-          <View style={{ padding: 20 }}>
-            <Text style={[s.inputLabel, { fontFamily: T.font.sans }]}>NUMÉRO MOBILE MONEY</Text>
-            <TextInput
-              style={[s.input, { fontFamily: T.font.sans }]}
-              value={newPhone} onChangeText={setNewPhone}
-              placeholder="+224 6XX XX XX XX" placeholderTextColor={T.textDim}
-              keyboardType="phone-pad" autoFocus
-            />
-            <TouchableOpacity style={s.confirmBtn} onPress={handleLinkWallet} activeOpacity={0.85} disabled={saving}>
-              <LinearGradient colors={[T.accent, brand("#10B981")]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.confirmGrad}>
-                {saving
-                  ? <ActivityIndicator color={T.surface} />
-                  : <Text style={[s.confirmTxt, { fontFamily: T.font.sans }]}>LIER CE NUMÉRO</Text>
-                }
-              </LinearGradient>
-            </TouchableOpacity>
+      {/* Feuille : ajout de carte (aperçu live + titulaire + CVV) */}
+      <Sheet
+        visible={showCardModal}
+        onClose={() => { setShowCardModal(false); resetCardForm(); }}
+        title="Ajouter une carte"
+        footer={<Button label="Ajouter la carte" onPress={handleAddCard} loading={saving} disabled={saving} />}
+      >
+        <View style={{ paddingTop: 8 }}>
+          <CardPreview number={newCardNumber} name={newCardName} expiry={newCardExpiry} />
+          <Field label="Titulaire de la carte" value={newCardName} onChangeText={setNewCardName} placeholder="NOM PRÉNOM" autoCapitalize="characters" />
+          <Field
+            label="Numéro de carte"
+            icon="card-outline"
+            value={newCardNumber}
+            onChangeText={(t) => setNewCardNumber(formatCardNumber(t))}
+            placeholder="0000 0000 0000 0000"
+            keyboardType="numeric"
+            maxLength={19}
+          />
+          <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Field label="Expiration" value={newCardExpiry} onChangeText={(t) => setNewCardExpiry(formatExpiry(t))} placeholder="MM/AA" keyboardType="numeric" maxLength={5} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field label="CVV" value={newCardCvv} onChangeText={(t) => setNewCardCvv(t.replace(/\D/g, "").slice(0, 4))} placeholder="•••" keyboardType="numeric" maxLength={4} secure />
+            </View>
           </View>
-        </LightModal>
-      </View>
-    </LinearGradient>
+          <UText v="caption" tone="muted">🔒 Tes informations sont chiffrées. Le CVV n'est jamais stocké.</UText>
+        </View>
+      </Sheet>
+
+      {/* Feuille : liaison d'un numéro Mobile Money */}
+      <Sheet
+        visible={showPhoneModal}
+        onClose={() => setShowPhoneModal(false)}
+        title={`Lier ${selectedProvider ? (WALLET_CONFIG[selectedProvider]?.label ?? selectedProvider) : ""}`}
+        footer={<Button label="Lier ce numéro" onPress={handleLinkWallet} loading={saving} disabled={saving} />}
+      >
+        <View style={{ paddingTop: 8 }}>
+          <Field
+            label="Numéro Mobile Money"
+            icon="call-outline"
+            value={newPhone}
+            onChangeText={setNewPhone}
+            placeholder="+224 6XX XX XX XX"
+            keyboardType="phone-pad"
+            autoFocus
+          />
+        </View>
+      </Sheet>
+    </Screen>
   );
 }
-
-const s = themed(() => StyleSheet.create({
-  header: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 20,
-    paddingTop: Platform.OS === "android" ? 44 : 16, paddingBottom: 16, gap: 12,
-    backgroundColor: T.surface, borderBottomWidth: 1, borderBottomColor: T.border,
-  },
-  backBtn:    { width: 38, height: 38, borderRadius: T.radius.sm, backgroundColor: "#F3F4F6", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: T.border },
-  headerTitle:{ color: T.text, fontSize: 18, fontWeight: "700" },
-  headerSub:  { fontSize: 11, fontWeight: "700", marginTop: 2 },
-
-  loader: { flex: 1, justifyContent: "center", alignItems: "center" },
-  scroll: { paddingHorizontal: 20, paddingTop: 16 },
-
-  sectionRow:  { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
-  sectionDot:  { width: 6, height: 6, borderRadius: 99 },
-  sectionLabel:{ fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1.5, textTransform: "uppercase" },
-
-  card: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: T.border, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
-  },
-  iconBox:       { width: 40, height: 40, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center" },
-  cardName:      { color: T.text, fontSize: 14, fontWeight: "700", marginBottom: 2 },
-  cardExp:       { color: T.textDim, fontSize: 11, fontWeight: "600" },
-  deleteCardBtn: { width: 32, height: 32, borderRadius: 9, backgroundColor: T.redSoft, justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "#FECACA" },
-
-  addCard: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: T.blueSoft, borderRadius: T.radius.md, paddingVertical: 14, marginBottom: 20,
-    borderWidth: 1.5, borderColor: T.blue, borderStyle: "dashed",
-  },
-  addCardTxt: { fontSize: 13, fontWeight: "800" },
-
-  emptyWallets: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: T.surface, borderRadius: T.radius.md, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: T.border },
-  emptyTxt:     { color: T.textDim, fontSize: 12, fontWeight: "600" },
-
-  linkedBadge: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: `${T.green}12`, paddingHorizontal: 10, paddingVertical: 6, borderRadius: T.radius.sm, borderWidth: 1 },
-  linkedTxt:   { color: T.green, fontSize: 11, fontWeight: "900" },
-  linkBtn:     { paddingHorizontal: 12, paddingVertical: 6, borderRadius: T.radius.sm, borderWidth: 1 },
-  linkTxt:     { fontSize: 11, fontWeight: "800" },
-
-  inputLabel: { fontSize: 10, fontWeight: "900", color: T.textSub, letterSpacing: 1, marginBottom: 6, textTransform: "uppercase" },
-  input:      { backgroundColor: "#F9FAFB", borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: T.text, fontWeight: "600", marginBottom: 4 },
-  secureNote: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
-  secureNoteTxt: { fontSize: 10.5, color: T.textDim, fontWeight: "600", flexShrink: 1 },
-  confirmBtn: { borderRadius: T.radius.md, overflow: "hidden", marginTop: 20 },
-  confirmGrad:{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 16, gap: 8 },
-  confirmTxt: { color: T.surface, fontWeight: "900", fontSize: 13, letterSpacing: 0.8 },
-}));

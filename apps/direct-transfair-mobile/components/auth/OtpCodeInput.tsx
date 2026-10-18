@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/OtpCodeInput.tsx
 // =========================================================
-// SAISIE DU CODE À 6 CHIFFRES v1.0 — Direct Transf'air
+// SAISIE DU CODE À 6 CHIFFRES v2.0 — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — cases sable, contour noir sur la case active / remplie.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // UN SEUL champ réel (invisible) + six cases d'affichage. Conséquences :
 //   • le collage d'un code et la saisie automatique SMS / email du
@@ -60,8 +61,8 @@ export default function OtpCodeInput({
               key={i}
               style={[
                 s.box,
-                char ? { borderColor: error ? N.danger : accent, backgroundColor: N.surface } : null,
-                isActive && { borderColor: accent, borderWidth: 2 },
+                char ? { borderColor: error ? N.danger : N.ink, backgroundColor: N.surface } : null,
+                isActive && { borderColor: N.ink, borderWidth: 2 },
                 error && !char && { borderColor: N.dangerBd },
               ]}
             >

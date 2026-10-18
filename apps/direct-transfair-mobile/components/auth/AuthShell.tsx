@@ -1,35 +1,36 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v1.0 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.0 — Direct Transf'air
+// ✅ v2.0 : REFONTE TOTALE en thème clair (inspirée de « Taptap Send » : grand titre, champs sur fond crème,
+//    bouton principal en pilule). Plus de dégradé sombre ni de « feuille » : fond crème, rangée du haut
+//    (retour / pastille d'état du serveur), marque (logo + nom du tenant), gros titre, sous-titre, contenu.
+//    Mêmes props qu'avant (title, subtitle, onBack, compact, footer, headerRight, children) : tous les
+//    écrans qui utilisent ce cadre passent au thème clair sans changement de logique.
+// ✅ v1.0 : cadre commun (clavier géré, contenu borné sur tablette / web, logo du tenant).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
-// Structure commune à tous les écrans : dégradé de marque, en-tête avec
-// logo, « feuille » blanche arrondie qui occupe toute la hauteur
-// (plus de grand vide en bas), clavier géré, contenu centré et borné
-// sur tablette / web. Le logo et la couleur viennent du tenant.
 // =========================================================
 
 import React from 'react';
 import {
-  Image, KeyboardAvoidingView, Platform, ScrollView, StatusBar,
-  StyleSheet, Text, TouchableOpacity, View,
+  Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
-import { alpha, buildPalette, FONT, MAX_WIDTH, N, RADIUS, SHADOW, type AuthPalette } from './authTheme';
+import { buildPalette, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
+import { buildColors } from '../ui/theme';
 
 type Props = {
   title: string;
   subtitle?: string;
   /** Affiche la flèche de retour. */
   onBack?: () => void;
-  /** En-tête réduit (écrans secondaires) : le logo devient une simple pastille. */
+  /** En-tête réduit (écrans secondaires) : marque plus discrète. */
   compact?: boolean;
-  /** Contenu affiché sous la feuille (liens légaux, aide…). */
+  /** Contenu affiché sous le formulaire (liens légaux, aide…). */
   footer?: React.ReactNode;
-  /** Élément à droite du titre de l'en-tête (ex. pastille d'état serveur). */
+  /** Élément à droite de la rangée du haut (ex. pastille d'état serveur). */
   headerRight?: React.ReactNode;
   children: React.ReactNode;
 };
@@ -43,25 +44,13 @@ export default function AuthShell({
   title, subtitle, onBack, compact = false, footer, headerRight, children,
 }: Props) {
   const { branding } = useTenant();
-  const P = useAuthPalette();
+  const C = React.useMemo(() => buildColors(branding.primaryColor), [branding.primaryColor]);
   const insets = useSafeAreaInsets();
-  const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 20) + 8;
+  const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 6;
 
   return (
-    <KeyboardAvoidingView
-      style={[s.root, { backgroundColor: P.bg2 }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <StatusBar barStyle="light-content" backgroundColor={P.bg1} />
-
-      <LinearGradient
-        colors={[P.bg1, P.bg2, P.bg3]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
-      <View pointerEvents="none" style={[s.orb, s.orbA, { backgroundColor: alpha('#FFFFFF', 0.06) }]} />
-      <View pointerEvents="none" style={[s.orb, s.orbB, { backgroundColor: alpha('#FFFFFF', 0.05) }]} />
+    <KeyboardAvoidingView style={[s.root, { backgroundColor: C.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -70,62 +59,49 @@ export default function AuthShell({
         showsVerticalScrollIndicator={false}
         automaticallyAdjustKeyboardInsets
       >
-        <View style={s.column}>
-          {/* ── En-tête ── */}
-          <View style={[s.header, { paddingTop: topPad }, compact && s.headerCompact]}>
-            <View style={s.headerRow}>
-              {onBack ? (
-                <TouchableOpacity
-                  onPress={onBack}
-                  style={s.backBtn}
-                  activeOpacity={0.75}
-                  accessibilityRole="button"
-                  accessibilityLabel="Retour"
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="arrow-back" size={20} color={N.white} />
-                </TouchableOpacity>
+        <View style={[s.column, { paddingTop: topPad }]}>
+          {/* ── Rangée du haut ── */}
+          <View style={s.topRow}>
+            {onBack ? (
+              <Pressable
+                onPress={onBack}
+                style={[s.backBtn, { backgroundColor: C.surface, borderColor: C.line }]}
+                accessibilityRole="button"
+                accessibilityLabel="Retour"
+                hitSlop={8}
+              >
+                <Ionicons name="chevron-back" size={22} color={C.ink} />
+              </Pressable>
+            ) : (
+              <View style={s.backSpacer} />
+            )}
+            <View style={{ flex: 1 }} />
+            {headerRight}
+          </View>
+
+          {/* ── Marque du tenant ── */}
+          <View style={[s.brand, compact && { marginTop: 10 }]}>
+            <View style={[s.mark, { backgroundColor: C.accent }]}>
+              {branding.logoUrl ? (
+                <Image source={{ uri: branding.logoUrl }} style={s.markImg} resizeMode="contain" />
               ) : (
-                <View style={s.backSpacer} />
+                <Ionicons name="swap-horizontal" size={18} color={C.accentInk} />
               )}
-              <View style={{ flex: 1 }} />
-              {headerRight}
             </View>
-
-            <View style={[s.brand, compact && s.brandCompact]}>
-              <View style={[s.mark, compact && s.markCompact]}>
-                {branding.logoUrl ? (
-                  <Image source={{ uri: branding.logoUrl }} style={s.markImg} resizeMode="contain" />
-                ) : (
-                  <Ionicons name="swap-horizontal" size={compact ? 22 : 30} color={P.action} />
-                )}
-              </View>
-              <View style={compact ? { flex: 1 } : { alignItems: 'center' }}>
-                <Text style={[s.brandName, compact && s.brandNameCompact]} numberOfLines={1}>
-                  {branding.name}
-                </Text>
-                {!compact && (
-                  <Text style={s.brandTag} numberOfLines={2}>
-                    {branding.tagline ?? 'Transferts internationaux sécurisés'}
-                  </Text>
-                )}
-              </View>
-            </View>
+            <Text style={[s.brandName, { color: C.ink }]} numberOfLines={1}>{branding.name}</Text>
           </View>
 
-          {/* ── Feuille blanche ── */}
-          <View style={[s.sheet, SHADOW.card]}>
-            <View style={[s.sheetAccent, { backgroundColor: P.accent }]} />
-            <Text style={s.title} accessibilityRole="header">{title}</Text>
-            {subtitle ? <Text style={s.subtitle}>{subtitle}</Text> : null}
-            <View style={s.body}>{children}</View>
+          {/* ── Titre ── */}
+          <Text style={[s.title, { color: C.ink }]} accessibilityRole="header">{title}</Text>
+          {subtitle ? <Text style={[s.subtitle, { color: C.muted }]}>{subtitle}</Text> : null}
 
-            <View style={s.trust}>
-              <Ionicons name="lock-closed" size={12} color={N.muted} />
-              <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
-            </View>
-            {footer}
+          <View style={s.body}>{children}</View>
+
+          <View style={s.trust}>
+            <Ionicons name="lock-closed" size={12} color={N.muted} />
+            <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
           </View>
+          {footer}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -135,45 +111,20 @@ export default function AuthShell({
 const s = StyleSheet.create({
   root:   { flex: 1 },
   scroll: { flexGrow: 1 },
-  column: { flexGrow: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
+  column: { flexGrow: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 22, paddingBottom: 28 },
 
-  orb:  { position: 'absolute', borderRadius: 999 },
-  orbA: { width: 340, height: 340, top: -110, right: -120 },
-  orbB: { width: 220, height: 220, top: 160, left: -90 },
+  topRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  backSpacer: { width: 44, height: 44 },
 
-  header:        { paddingHorizontal: 24, paddingBottom: 26 },
-  headerCompact: { paddingBottom: 18 },
-  headerRow:     { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
-  backBtn: {
-    width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.14)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
-  },
-  backSpacer: { width: 40, height: 40 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22 },
+  mark: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  markImg: { width: '78%', height: '78%' },
+  brandName: { fontFamily: FONT.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
 
-  brand:        { alignItems: 'center', marginTop: 14, gap: 12 },
-  brandCompact: { flexDirection: 'row', marginTop: 12, gap: 12 },
-  mark: {
-    width: 68, height: 68, borderRadius: 20, backgroundColor: N.white,
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 8,
-  },
-  markCompact: { width: 46, height: 46, borderRadius: 14 },
-  markImg:     { width: '78%', height: '78%' },
-  brandName:        { fontFamily: FONT.display, fontSize: 30, fontWeight: '800', color: N.white, letterSpacing: -0.4, textAlign: 'center' },
-  brandNameCompact: { fontSize: 20, textAlign: 'left' },
-  brandTag:         { fontFamily: FONT.body, fontSize: 14, color: 'rgba(255,255,255,0.78)', textAlign: 'center', marginTop: 2 },
-
-  sheet: {
-    flexGrow: 1,
-    backgroundColor: N.surface,
-    borderTopLeftRadius: RADIUS.xl, borderTopRightRadius: RADIUS.xl,
-    paddingHorizontal: 24, paddingTop: 30, paddingBottom: 28,
-    overflow: 'hidden',
-  },
-  sheetAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
-  title:    { fontFamily: FONT.display, fontSize: 27, fontWeight: '800', color: N.ink, letterSpacing: -0.3 },
-  subtitle: { fontFamily: FONT.body, fontSize: 15, lineHeight: 22, color: N.inkSub, marginTop: 6 },
-  body:     { marginTop: 22, flexGrow: 1 },
+  title:    { fontFamily: FONT.display, fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1, marginTop: 22 },
+  subtitle: { fontFamily: FONT.body, fontSize: 16, lineHeight: 23, marginTop: 8 },
+  body:     { marginTop: 26, flexGrow: 1 },
 
   trust:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 26 },
   trustTxt: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted },

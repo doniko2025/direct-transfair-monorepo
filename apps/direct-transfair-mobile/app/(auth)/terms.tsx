@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/terms.tsx
 // =========================================================
 // CONDITIONS GÉNÉRALES D'UTILISATION — Direct Transf'air
+// ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu juridique inchangé.
 // ✅ v1.1 (code) : Branding dynamique — plus de code en dur
 //   PROBLÈME RÉSOLU : "Direct Transf'air SAS", l'agrément ACPR, le
 //   capital social, le siège social, le contact, le médiateur et la
@@ -34,15 +35,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useTenant } from "../../providers/TenantProvider";
 
 const T = {
-  bg:         "#F8FAFF",
+  bg:         "#FAF9F5",
   surface:    "#FFFFFF",
-  accent:     "#1D4ED8",
-  accentSoft: "#EFF6FF",
-  accentText: "#1E3A8A",
-  text:       "#0F172A",
-  textSub:    "#374151",
-  textDim:    "#6B7280",
-  border:     "#E2E8F0",
+  accent:     "#111214",
+  accentSoft: "#EFEBE1",
+  accentText: "#111214",
+  text:       "#111214",
+  textSub:    "#4A4945",
+  textDim:    "#8B887F",
+  border:     "#E3DFD5",
   green:      "#059669",
   greenSoft:  "#D1FAE5",
   red:        "#DC2626",
@@ -51,8 +52,8 @@ const T = {
   amberSoft:  "#FEF3C7",
   radius: { sm: 10, md: 14, lg: 18, xl: 24 },
   font: {
-    display: Platform.select({ ios: "Georgia",     android: "serif",             default: "serif"      }),
-    sans:    Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),
+    display: Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
+    sans:    Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
 };
