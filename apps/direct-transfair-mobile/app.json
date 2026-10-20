@@ -32,7 +32,9 @@
       "package": "com.doniko.directtransfair",
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.READ_CONTACTS",
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "web": {
@@ -71,6 +73,9 @@
     "extra": {
       "router": {
         "origin": "https://directtransfair.app"
+      },
+      "eas": {
+        "projectId": "047c62b4-1687-4935-b8e1-c30aef4548f7"
       }
     }
   }

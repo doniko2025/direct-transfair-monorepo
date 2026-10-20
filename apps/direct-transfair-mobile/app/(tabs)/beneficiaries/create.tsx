@@ -1,7 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// BENEFICIARY CREATE v7.0 — Direct Transf'air
+// BENEFICIARY CREATE v7.1 — Direct Transf'air
+// ✅ v7.1 : FIX « Impossible d'accéder aux contacts — Method getContactsAsync … is deprecated » : expo-contacts 56 a une nouvelle API par classes ;
+//    on garde l'API historique (mêmes fonctions) via « expo-contacts/legacy ». Aucune autre modification.
 // ✅ v7.0 : REFONTE THÈME CLAIR — fini le hero dégradé sombre : barre de navigation claire
 //    (« Nouveau contact », « X/3 étapes »), trois segments de progression aux couleurs de la
 //    société, bouton « Importer depuis mes contacts » en carte, trois sections (Identité,
@@ -30,7 +32,7 @@ import React, { useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
-import * as Contacts from "expo-contacts";
+import * as Contacts from "expo-contacts/legacy";
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
