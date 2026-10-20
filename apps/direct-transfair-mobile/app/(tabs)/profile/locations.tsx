@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/locations.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // LOCATIONS v7.0 — Direct Transf'air
 // ✅ v7.0 : REFONTE THÈME CLAIR — grand titre, cartes d'agence blanches arrondies (pastille
@@ -20,7 +21,7 @@
 import React from "react";
 import { Linking, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import type { Agency } from "../../../services/types";
 import { useAuth } from "../../../providers/AuthProvider";
 import { useTenant } from "../../../providers/TenantProvider";

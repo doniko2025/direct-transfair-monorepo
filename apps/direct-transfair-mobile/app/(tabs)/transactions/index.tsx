@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TRANSACTIONS HISTORY v8.0 — Direct Transf'air
 // ✅ v8.0 : 🔥 REFONTE TOTALE en thème clair (maquette « Flash Transfert / Activité ») : gros titre,
@@ -106,7 +107,7 @@ export default function TransactionsScreen() {
           {error ? <Notice tone="warn" style={{ marginBottom: 12 }}>Actualisation impossible pour le moment. Tire pour réessayer.</Notice> : null}
           {groups.map((g) => (
             <View key={g.key} style={{ marginBottom: 8 }}>
-              <UText v="overline" tone="muted" style={{ marginTop: 14, marginBottom: 2, textTransform: "uppercase" }}>{g.title}</UText>
+              <UText v="overline" tone="muted" style={{ marginTop: 14, marginBottom: 2 }}>{g.title}</UText>
               {g.items.map((tx, i) => (
                 <TxRow
                   key={tx.id ?? `${g.key}-${i}`}

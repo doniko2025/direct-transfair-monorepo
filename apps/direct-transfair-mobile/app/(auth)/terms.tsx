@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/terms.tsx
+// ✅ v3.0 : DESIGN « CORRIDOR » — palette brume / forêt / feuille, polices Manrope (contenu inchangé).
 // =========================================================
+// ✅ phase 7 : la juridiction citée dans les CGU vient de la configuration (EXPO_PUBLIC_LEGAL_JURISDICTION, ex. « les tribunaux du ressort de la Cour d'Appel de Paris »).
 // CONDITIONS GÉNÉRALES D'UTILISATION — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu juridique inchangé.
 // ✅ v1.1 (code) : Branding dynamique — plus de code en dur
@@ -27,25 +29,26 @@
 
 import React from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, StatusBar, Platform, Linking,
-} from "react-native";
+  View, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Linking,
+} from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { useTenant } from "../../providers/TenantProvider";
+import { getLegalJurisdiction } from "../../services/platformConfig";
 
+import { Text } from '../../components/ui/Text';
 const T = {
-  bg:         "#FAF9F5",
+  bg:         "#E8F0EA",
   surface:    "#FFFFFF",
-  accent:     "#111214",
-  accentSoft: "#EFEBE1",
-  accentText: "#111214",
-  text:       "#111214",
-  textSub:    "#4A4945",
-  textDim:    "#8B887F",
-  border:     "#E3DFD5",
-  green:      "#059669",
-  greenSoft:  "#D1FAE5",
+  accent:     "#0E3B2D",
+  accentSoft: "#DDEBE2",
+  accentText: "#0E3B2D",
+  text:       "#10231B",
+  textSub:    "#2F463A",
+  textDim:    "#5E7468",
+  border:     "#D3E0D7",
+  green:      "#1F8A5B",
+  greenSoft:  "#DDEFE5",
   red:        "#DC2626",
   redSoft:    "#FEF2F2",
   amber:      "#D97706",
@@ -320,7 +323,7 @@ export default function TermsScreen() {
               </Para>
             )}
             <Para>
-              À défaut de résolution amiable, les tribunaux compétents sont ceux du ressort de la Cour d'Appel de Paris.
+              À défaut de résolution amiable, les litiges relèvent de {getLegalJurisdiction() ?? "la juridiction compétente"}.
             </Para>
           </Section>
 

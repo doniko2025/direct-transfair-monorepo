@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/services/serverWarmup.ts
 // =========================================================
+// ✅ phase 7 : en-tête x-tenant-id du ping lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
 // RÉVEIL DU SERVEUR + REQUÊTES RÉSILIENTES v1.1 — Direct Transf'air
 // ✅ v1.1 : markServerReady() / useServerStatus().markReady — dès qu'une vraie requête reçoit une réponse HTTP du
 //    serveur (même un refus 401/403), l'état « Hors ligne » périmé du réveil est effacé (avant : la pastille
@@ -24,6 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { isTransientError } from '../components/auth/authErrors';
 import { getApiBaseUrl } from './serverConfig';
+import { getPlatformCode } from './platformConfig';
 
 export type ServerStatus = 'checking' | 'ready' | 'waking' | 'down';
 
@@ -49,7 +51,7 @@ async function pingOnce(): Promise<boolean> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/`, {
       method: 'GET',
-      headers: { 'x-tenant-id': 'DONIKO', Accept: 'application/json, text/plain' },
+      headers: { 'x-tenant-id': getPlatformCode(), Accept: 'application/json, text/plain' },
       signal: ctrl?.signal,
     });
     return res.status !== 502 && res.status !== 503 && res.status !== 504;

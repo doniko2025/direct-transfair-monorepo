@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/account.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // ACCOUNT MENU v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR — fond crème, grande carte d'identité (avatar beige, pastille
@@ -15,7 +16,7 @@
 import React from "react";
 import { Alert, Platform, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import { useAuth } from "../../../providers/AuthProvider";
 import { Avatar, Button, Group, ListRow, NavBar, Pill, Screen, UText } from "../../../components/ui";
 

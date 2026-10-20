@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/OtpCodeInput.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // SAISIE DU CODE À 6 CHIFFRES v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — cases sable, contour noir sur la case active / remplie.
@@ -11,10 +12,11 @@
 // =========================================================
 
 import React, { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
+import { Text, TextInput } from '../ui/Text';
 type Props = {
   value: string;
   onChange: (code: string) => void;

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TRANSACTION DETAIL v8.0
 // ✅ v8.0 : 🔥 REFONTE TOTALE en thème clair : retour + titre, montant géant signé (vert reçu / noir envoyé),
@@ -14,7 +15,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Alert, Pressable } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import * as Clipboard from "expo-clipboard";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(auth)/otp-phone.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CONNEXION PAR TÉLÉPHONE (OTP 4 chiffres) v2.0
 // ✅ v2.0 : REFONTE TOTALE en thème clair (cadre AuthShell, champ téléphone, code à 4 chiffres OtpInput,
@@ -10,7 +11,7 @@
 // =========================================================
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Alert, Platform, Text, View } from "react-native";
+import { Alert, Platform, View } from 'react-native';
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
@@ -19,6 +20,7 @@ import AuthButton from "../../components/auth/AuthButton";
 import { Field, OtpInput } from "../../components/ui";
 import { FONT, N } from "../../components/auth/authTheme";
 
+import { Text } from '../../components/ui/Text';
 // ─── Durée du minuteur de renvoi ─────────────────────────
 const RESEND_DELAY_SECONDS = 60;
 

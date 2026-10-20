@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/assistance.tsx
+// ✅ v3.0 : DESIGN « CORRIDOR » — palette brume / forêt / feuille, polices Manrope (contenu inchangé).
 // =========================================================
+// ✅ phase 7 : contacts de secours fictifs supprimés (secours via services/platformConfig.ts) ; cartes e-mail / téléphone / WhatsApp masquées si aucun contact n'est configuré.
 // ASSISTANCE & COOKIES v1.1 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu et coordonnées dynamiques inchangés.
 // ✅ v1.1 : Branding dynamique pour les canaux de contact
@@ -21,26 +23,27 @@
 
 import React, { useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, StatusBar, Platform, Linking, Switch,
-} from "react-native";
+  View, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Linking, Switch,
+} from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { useTenant } from "../../providers/TenantProvider";
+import { getFallbackSupportEmail, getFallbackSupportPhone } from "../../services/platformConfig";
 
+import { Text } from '../../components/ui/Text';
 const T = {
-  bg:         "#FAF9F5",
+  bg:         "#E8F0EA",
   surface:    "#FFFFFF",
-  accent:     "#111214",
-  accentSoft: "#EFEBE1",
-  accentText: "#111214",
-  text:       "#111214",
-  textSub:    "#4A4945",
-  textDim:    "#8B887F",
-  border:     "#E3DFD5",
-  borderAmber:"#E3DFD5",
-  green:      "#059669",
-  greenSoft:  "#D1FAE5",
+  accent:     "#0E3B2D",
+  accentSoft: "#DDEBE2",
+  accentText: "#0E3B2D",
+  text:       "#10231B",
+  textSub:    "#2F463A",
+  textDim:    "#5E7468",
+  border:     "#D3E0D7",
+  borderAmber:"#D3E0D7",
+  green:      "#1F8A5B",
+  greenSoft:  "#DDEFE5",
   blue:       "#1D4ED8",
   blueSoft:   "#DBEAFE",
   purple:     "#7C3AED",
@@ -56,8 +59,9 @@ const T = {
 
 // ✅ v1.1 (nouveau) — filet de sécurité uniquement, jamais utilisé pour
 // DONIKO (DEFAULT_BRANDING fournit déjà de vraies valeurs).
-const FALLBACK_EMAIL = "support@directtransfair.com";
-const FALLBACK_PHONE = "+33123456789";
+// ✅ phase 7 : plus de contact fictif en dur — secours configurables (EXPO_PUBLIC_SUPPORT_EMAIL / _PHONE), sinon carte masquée.
+const FALLBACK_EMAIL = getFallbackSupportEmail();
+const FALLBACK_PHONE = getFallbackSupportPhone();
 
 // ─── Tab bar ──────────────────────────────────────────────
 const TABS = [
@@ -198,9 +202,9 @@ export default function AssistanceScreen() {
     else router.replace("/(auth)/login-v2");
   };
 
-  const supportEmail = branding.supportEmail || FALLBACK_EMAIL;
-  const supportPhone = branding.contactPhone || FALLBACK_PHONE;
-  const whatsappRaw   = (branding.whatsappNumber || branding.contactPhone || FALLBACK_PHONE).replace(/\D/g, "");
+  const supportEmail = branding.supportEmail || FALLBACK_EMAIL || "";
+  const supportPhone = branding.contactPhone || FALLBACK_PHONE || "";
+  const whatsappRaw   = (branding.whatsappNumber || branding.contactPhone || FALLBACK_PHONE || "").replace(/\D/g, "");
 
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
@@ -317,7 +321,7 @@ export default function AssistanceScreen() {
               </View>
 
               <SectionLabel label="Nous contacter" />
-              <ContactCard
+              {!!supportEmail && <ContactCard
                 icon="mail-outline"
                 title="Email"
                 subtitle="Réponse sous 24h ouvrées"
@@ -325,8 +329,8 @@ export default function AssistanceScreen() {
                 actionLabel="Écrire"
                 color={T.blue}
                 bgColor={T.blueSoft}
-              />
-              <ContactCard
+              />}
+              {!!supportPhone && <ContactCard
                 icon="call-outline"
                 title="Téléphone"
                 subtitle="Lun–Ven 9h–18h · Sam 9h–13h"
@@ -334,8 +338,8 @@ export default function AssistanceScreen() {
                 actionLabel="Appeler"
                 color={T.green}
                 bgColor={T.greenSoft}
-              />
-              <ContactCard
+              />}
+              {!!whatsappRaw && <ContactCard
                 icon="logo-whatsapp"
                 title="WhatsApp"
                 subtitle="Réponse rapide, 7j/7 de 8h à 20h"
@@ -343,7 +347,7 @@ export default function AssistanceScreen() {
                 actionLabel="Ouvrir"
                 color="#25D366"
                 bgColor="#F0FDF4"
-              />
+              />}
               <ContactCard
                 icon="chatbubbles-outline"
                 title="Chat en direct"

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/client-receipt.tsx
+// ✅ v-Corridor : neutres vert brume / forêt alignés sur le design « Corridor » (logique inchangée).
 // =========================================================
 // REÇU CLIENT v2.0 — Direct Transf'air
 // ✅ v2.0 : 🔥 REFONTE de l'écran en thème clair (design system components/ui) : reçu « ticket » blanc sur
@@ -28,7 +29,7 @@
 import React, { useCallback } from "react";
 import { View, Platform, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import * as Print   from "expo-print";
 import * as Sharing from "expo-sharing";
 
@@ -65,14 +66,14 @@ export interface ClientReceiptData {
 // ─── Design tokens ───────────────────────────────────────
 const T = themed(() => ({
   bg:         "#FFFFFF",
-  ink:        "#0F172A",
-  inkSub:     "#475569",
-  inkMuted:   "#94A3B8",
-  divider:    "#F1F5F9",
-  dividerMd:  "#E2E8F0",
-  green:      brand("#059669"),
-  greenBg:    "#DCFCE7",
-  greenText:  brand("#065F46"),
+  ink:        "#10231B",
+  inkSub:     "#2F463A",
+  inkMuted:   "#5E7468",
+  divider:    "#E8F0EA",
+  dividerMd:  "#D3E0D7",
+  green:      brand("#1F8A5B"),
+  greenBg:    "#DDEFE5",
+  greenText:  brand("#0E3B2D"),
   red:        "#DC2626",
   redBg:      "#FEE2E2",
   blue:       "#2563EB",

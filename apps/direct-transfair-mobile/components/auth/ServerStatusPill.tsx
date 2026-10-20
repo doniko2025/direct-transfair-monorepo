@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/ServerStatusPill.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // PASTILLE D'ÉTAT DU SERVEUR v2.0 — Direct Transf'air
 // ✅ v2.0 : thème clair (pilule beige / rouge doux au lieu du verre blanc sur fond sombre).
@@ -9,12 +10,13 @@
 // =========================================================
 
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import type { ServerStatus } from '../../services/serverWarmup';
 import { FONT, N } from './authTheme';
 
+import { Text } from '../ui/Text';
 export default function ServerStatusPill({ status, onRetry }: { status: ServerStatus; onRetry: () => void }) {
   if (status === 'ready') return null;
 

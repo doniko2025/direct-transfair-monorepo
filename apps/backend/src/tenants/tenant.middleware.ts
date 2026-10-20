@@ -1,22 +1,20 @@
 // src/tenants/tenant.middleware.ts
+// ✅ phase 7 : société par défaut et alias « 10 » lus dans la configuration plateforme (PLATFORM_TENANT_CODE / PLATFORM_LEGACY_CODES).
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
 
 import { TenantResolverService } from './tenant-resolver.service';
 import type { TenantContext } from './tenant-context';
+import { platform } from '../common/platform.config';
 
 export type RequestWithTenant = Request & {
   tenantCode?: string;
   tenantContext?: TenantContext;
 };
 
-const DEFAULT_TENANT_CODE = 'DONIKO';
-
+// ✅ phase 7 : société par défaut et alias historique « 10 » viennent de la configuration plateforme.
 function normalizeTenant(v: unknown): string {
-  if (typeof v !== 'string') return DEFAULT_TENANT_CODE;
-  const t = v.trim().toUpperCase();
-  if (!t || t === '10') return DEFAULT_TENANT_CODE;
-  return t;
+  return platform.canonicalCode(v);
 }
 
 @Injectable()
@@ -29,7 +27,7 @@ export class TenantMiddleware implements NestMiddleware {
       const rawHeader = req.headers['x-tenant-id'];
       const raw = Array.isArray(rawHeader)
         ? rawHeader[0]
-        : rawHeader ?? DEFAULT_TENANT_CODE;
+        : rawHeader ?? platform.code;
 
       const code = normalizeTenant(raw);
 

@@ -1,5 +1,13 @@
+// apps/backend/prisma/seed.ts
 // =========================================================
-// SEED v4.2 — Direct Transf'air
+// SEED v4.3 — Direct Transf'air
+// ✅ v4.3 : SÉCURITÉ — (1) plus de mot de passe Super Admin écrit dans le code ni affiché : il vient de
+//   SEED_SUPER_ADMIN_PASSWORD, sinon un mot de passe aléatoire fort est généré et montré UNE seule fois ;
+//   (2) le TRUNCATE de toutes les tables ne part plus tout seul : base non vide → refus, sauf SEED_FORCE=true ;
+//   en production il faut en plus SEED_ALLOW_PRODUCTION=true ; (3) couleurs de la société DONIKO = vert de la
+//   marque (#059669 / #10B981, surchargeables : SEED_BRAND_PRIMARY, SEED_BRAND_SECONDARY) au lieu de rouge/bleu ;
+//   e-mail du Super Admin surchargeable (SEED_SUPER_ADMIN_EMAIL).
+//   Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // ✅ v4.0 : Super Admin + Client DONIKO + taux + pays
 // ✅ v4.1 : Cleanup étendu nouveaux modèles
 // ✅ v4.2 : FIX cleanup — TRUNCATE CASCADE SQL brut
@@ -12,6 +20,7 @@
 
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
+const { randomBytes } = require('crypto');
 
 const prisma = new PrismaClient();
 
@@ -26,8 +35,22 @@ const SubscriptionType   = { PURCHASE: 'PURCHASE', RENTAL: 'RENTAL' };
 const SubscriptionStatus = { ACTIVE: 'ACTIVE' };
 const KycLevel           = { LEVEL_3: 'LEVEL_3' };
 
-const SUPER_ADMIN_EMAIL    = 'thiernodoniko@gmail.com';
-const SUPER_ADMIN_PASSWORD = 'Lcd123456!';
+const SUPER_ADMIN_EMAIL = (process.env.SEED_SUPER_ADMIN_EMAIL || 'thiernodoniko@gmail.com').trim().toLowerCase();
+
+/** Mot de passe fourni par l'environnement, sinon généré (24 caractères, lettres + chiffres + symbole). */
+function resolveSuperAdminPassword(): { value: string; generated: boolean } {
+  const fromEnv = process.env.SEED_SUPER_ADMIN_PASSWORD;
+  if (fromEnv && fromEnv.length >= 12) return { value: fromEnv, generated: false };
+  if (fromEnv) {
+    console.error('❌ SEED_SUPER_ADMIN_PASSWORD doit faire au moins 12 caractères.');
+    process.exit(1);
+  }
+  const core = randomBytes(18).toString('base64').replace(/[+/=]/g, 'x').slice(0, 22);
+  return { value: `${core}A9!`, generated: true };
+}
+
+const BRAND_PRIMARY   = /^#[0-9a-f]{6}$/i.test(process.env.SEED_BRAND_PRIMARY   || '') ? process.env.SEED_BRAND_PRIMARY   : '#059669';
+const BRAND_SECONDARY = /^#[0-9a-f]{6}$/i.test(process.env.SEED_BRAND_SECONDARY || '') ? process.env.SEED_BRAND_SECONDARY : '#10B981';
 
 const COUNTRY_CURRENCIES = [
   // Eurozone
@@ -86,6 +109,22 @@ const EXCHANGE_RATES = [
 ];
 
 async function main() {
+  // ═══════════════════════════════════════════════════════
+  // GARDE-FOU — ne jamais vider une base remplie par accident
+  // ═══════════════════════════════════════════════════════
+  const isProd = process.env.NODE_ENV === 'production';
+  if (isProd && process.env.SEED_ALLOW_PRODUCTION !== 'true') {
+    console.error('❌ NODE_ENV=production : seed refusé (il efface TOUTES les tables). Pour le forcer : SEED_ALLOW_PRODUCTION=true SEED_FORCE=true');
+    process.exit(1);
+  }
+  let existingUsers = 0;
+  try { existingUsers = await prisma.user.count(); } catch { existingUsers = 0; } // table absente = base vierge
+  if (existingUsers > 0 && process.env.SEED_FORCE !== 'true') {
+    console.error(`❌ La base contient déjà ${existingUsers} utilisateur(s) : le seed effacerait tout. Pour confirmer : SEED_FORCE=true pnpm prisma:seed`);
+    process.exit(1);
+  }
+  const admin = resolveSuperAdminPassword();
+
   // ═══════════════════════════════════════════════════════
   // CLEANUP — TRUNCATE CASCADE (v4.2)
   // Plus fiable que les deleteMany() en boucle :
@@ -146,8 +185,8 @@ async function main() {
     data: {
       code:               'DONIKO',
       name:               'Doniko SAS',
-      primaryColor:       '#DC2626',
-      secondaryColor:     '#1E40AF',
+      primaryColor:       BRAND_PRIMARY,
+      secondaryColor:     BRAND_SECONDARY,
       timezone:           'Europe/Paris',
       locale:             'fr-FR',
       defaultCurrency:    'EUR',
@@ -183,7 +222,7 @@ async function main() {
   console.log(`💼 5 wallets plateforme créés (${platformCurrencies.join(', ')})\n`);
 
   // ── 5. Super Admin ──────────────────────────────────────
-  const password   = await bcrypt.hash(SUPER_ADMIN_PASSWORD, 10);
+  const password   = await bcrypt.hash(admin.value, 12);
   const superAdmin = await prisma.user.create({
     data: {
       email:             SUPER_ADMIN_EMAIL,
@@ -216,7 +255,11 @@ async function main() {
 
   console.log('✅ SUPER ADMIN créé');
   console.log(`   👤 Email    : ${SUPER_ADMIN_EMAIL}`);
-  console.log(`   🔑 Password : ${SUPER_ADMIN_PASSWORD}`);
+  if (admin.generated) {
+    console.log(`   🔑 Mot de passe généré (affiché UNE seule fois, change-le à la première connexion) : ${admin.value}`);
+  } else {
+    console.log('   🔑 Mot de passe : celui de SEED_SUPER_ADMIN_PASSWORD');
+  }
   console.log(`   💼 Wallet   : EUR créé\n`);
 
   // ── 6. Taux de change ───────────────────────────────────

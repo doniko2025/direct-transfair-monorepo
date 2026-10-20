@@ -1,5 +1,6 @@
 // apps/backend/src/fees-admin/fees-admin.service.ts
 // =========================================================
+// ✅ phase 7 : le code de la société système est lu via getPlatformCode() (configuration plateforme) au lieu de la constante « DONIKO ».
 // FEES ADMIN v1.0 — frais d'envoi par société
 //
 //   mine       : les frais de MA société (admin de société)
@@ -17,7 +18,7 @@ import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { CommissionsService } from '../commissions/commissions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { FeeHistoryQueryDto, SetFeeDto } from './dto/fees-admin.dto';
-import { DEFAULT_FEE_RATE, FEE_METHOD_KEYS, FEE_METHODS, hasAtMostTwoDecimals, PLATFORM_CODE } from './fee-rules';
+import { DEFAULT_FEE_RATE, FEE_METHOD_KEYS, FEE_METHODS, hasAtMostTwoDecimals, getPlatformCode } from './fee-rules';
 
 interface FeeRow {
   clientId: number;
@@ -108,7 +109,7 @@ export class FeesAdminService {
 
   async companies() {
     const clients = await this.prisma.client.findMany({
-      where: { deletedAt: null, code: { not: PLATFORM_CODE } },
+      where: { deletedAt: null, code: { not: getPlatformCode() } },
       select: { id: true, name: true, code: true, subscriptionStatus: true },
       orderBy: { name: 'asc' },
     });

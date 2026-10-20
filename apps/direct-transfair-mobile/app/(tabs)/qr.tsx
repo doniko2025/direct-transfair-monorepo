@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/qr.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // QR CODE SCREEN v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR — fond crème, carte blanche avec identité (avatar beige),
@@ -19,7 +20,7 @@ import { Share, View } from "react-native";
 import { useRouter } from "expo-router";
 import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { useAuth } from "../../providers/AuthProvider";
 import { useTenant } from "../../providers/TenantProvider";
 import { Avatar, Button, Card, IconButton, NavBar, Pill, Screen, UText, useUI } from "../../components/ui";

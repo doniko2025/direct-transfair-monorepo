@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/CountryPickerSheet.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // SÉLECTEUR DE PAYS v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR (neutres chauds via authTheme).
@@ -10,14 +11,15 @@
 
 import React, { useMemo, useState } from 'react';
 import {
-  FlatList, Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  FlatList, Modal, Platform, StyleSheet, TouchableOpacity, View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../ui/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AUTH_COUNTRIES, fold, POPULAR_COUNTRIES, type AuthCountry } from './authCountries';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
+import { Text, TextInput } from '../ui/Text';
 type Props = {
   visible: boolean;
   title: string;
@@ -71,7 +73,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
             value={query}
             onChangeText={setQuery}
             placeholder="Rechercher un pays"
-            placeholderTextColor="#B9B6AD"
+            placeholderTextColor={N.faint}
             autoCorrect={false}
             autoCapitalize="none"
             underlineColorAndroid="transparent"

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // BENEFICIARY DETAIL v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR — fini le hero dégradé sombre : barre de navigation claire
@@ -24,7 +25,7 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter, useFocusEffect } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";

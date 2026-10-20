@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/privacy-policy.tsx
+// ✅ v3.0 : DESIGN « CORRIDOR » — palette brume / forêt / feuille, polices Manrope (contenu inchangé).
 // =========================================================
+// ✅ v3.1 (phase 7) : marque, raison sociale, régulateur, e-mail du DPO et autorité de protection des données viennent du tenant / de services/platformConfig.ts (plus rien d'écrit en dur).
 // POLITIQUE DE CONFIDENTIALITÉ v1.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — palette neutre chaude (fond crème, accent encre, police système) ; contenu inchangé.
 // ✅ Conforme RGPD (Règlement UE 2016/679)
@@ -9,23 +11,25 @@
 
 import React from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  SafeAreaView, StatusBar, Platform, Linking,
-} from "react-native";
+  View, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, StatusBar, Platform, Linking,
+} from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 
+import { Text } from '../../components/ui/Text';
+import { useTenant } from '../../providers/TenantProvider';
+import { getDpoEmail, getDataAuthority } from '../../services/platformConfig';
 const T = {
-  bg:         "#FAF9F5",
+  bg:         "#E8F0EA",
   surface:    "#FFFFFF",
-  accent:     "#111214",
-  accentSoft: "#EFEBE1",
-  accentText: "#111214",
-  text:       "#111214",
-  textSub:    "#4A4945",
-  textDim:    "#8B887F",
-  border:     "#E3DFD5",
-  borderGreen:"#E3DFD5",
+  accent:     "#0E3B2D",
+  accentSoft: "#DDEBE2",
+  accentText: "#0E3B2D",
+  text:       "#10231B",
+  textSub:    "#2F463A",
+  textDim:    "#5E7468",
+  border:     "#D3E0D7",
+  borderGreen:"#D3E0D7",
   blue:       "#1D4ED8",
   blueSoft:   "#DBEAFE",
   amber:      "#D97706",
@@ -109,6 +113,16 @@ const rbS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function PrivacyPolicyScreen() {
+  // ✅ phase 7 : marque, raison sociale, régulateur, DPO et autorité de protection viennent du tenant / de la configuration.
+  const { branding } = useTenant();
+  const brandName = branding.name;
+  const legalName = branding.legalCompanyName || branding.name;
+  const regulatorAcronym = branding.regulatorAcronym;
+  const regulatorLabel = branding.regulatorName
+    ? `${branding.regulatorName}${regulatorAcronym ? ` (${regulatorAcronym})` : ""}`
+    : "l'autorité de supervision compétente";
+  const dpoEmail = getDpoEmail() || branding.contactEmail || branding.supportEmail || "";
+  const authority = getDataAuthority();
   const router = useRouter();
 
   return (
@@ -142,17 +156,17 @@ export default function PrivacyPolicyScreen() {
           <View style={s.introBanner}>
             <Ionicons name="shield-checkmark" size={22} color={T.accent} />
             <Text style={[s.introTxt, { fontFamily: T.font.sans }]}>
-              Direct Transf'air s'engage à protéger vos données personnelles conformément au Règlement Général sur la Protection des Données (RGPD — UE 2016/679) et à la loi Informatique et Libertés.
+              {brandName} s'engage à protéger vos données personnelles conformément au Règlement Général sur la Protection des Données (RGPD — UE 2016/679) et à la loi Informatique et Libertés.
             </Text>
           </View>
 
           {/* 1. Responsable */}
           <Section icon="business-outline" title="1. Responsable du traitement" color={T.accent} bgColor={T.accentSoft}>
             <Para>
-              Le responsable du traitement de vos données personnelles est la société <Text style={{ fontWeight: "700", color: T.text }}>Direct Transf'air SAS</Text>, immatriculée au Registre du Commerce et des Sociétés.
+              Le responsable du traitement de vos données personnelles est la société <Text style={{ fontWeight: "700", color: T.text }}>{legalName}</Text>, immatriculée au Registre du Commerce et des Sociétés.
             </Para>
             <Para>
-              En qualité d'établissement de paiement, Direct Transf'air est soumis à la supervision de l'Autorité de Contrôle Prudentiel et de Résolution (ACPR) et au respect des obligations LCB-FT (Lutte contre le Blanchiment de Capitaux et le Financement du Terrorisme).
+              En qualité d'établissement de paiement, {brandName} est soumis à la supervision de {regulatorLabel} et au respect des obligations LCB-FT (Lutte contre le Blanchiment de Capitaux et le Financement du Terrorisme).
             </Para>
           </Section>
 
@@ -197,7 +211,7 @@ export default function PrivacyPolicyScreen() {
             <Para>Vos données peuvent être transmises aux catégories de destinataires suivantes :</Para>
             <Bullet>Partenaires bancaires et établissements de paiement pour l'exécution des virements</Bullet>
             <Bullet>Prestataires de vérification d'identité (KYC) et de scoring anti-fraude</Bullet>
-            <Bullet>Autorités réglementaires (ACPR, Tracfin, autorités judiciaires) sur réquisition légale</Bullet>
+            <Bullet>Autorités réglementaires ({regulatorAcronym ? `${regulatorAcronym}, ` : ""}autorités de lutte contre le blanchiment, autorités judiciaires) sur réquisition légale</Bullet>
             <Bullet>Prestataires techniques (hébergement, messagerie, push notifications) soumis à des accords de traitement</Bullet>
             <Para>
             <Text style={{ fontWeight: "700", color: T.text, marginTop: 6 }}>Aucune donnée n'est vendue à des tiers à des fins publicitaires.</Text>
@@ -226,18 +240,18 @@ export default function PrivacyPolicyScreen() {
               Pour exercer vos droits, contactez notre Délégué à la Protection des Données :{"\n"}
               <Text
                 style={{ color: T.blue, fontWeight: "700", textDecorationLine: "underline" }}
-                onPress={() => Linking.openURL("mailto:dpo@directtransfair.com")}
+                onPress={() => Linking.openURL(`mailto:${dpoEmail}`)}
               >
-                dpo@directtransfair.com
+                {dpoEmail}
               </Text>
             </Para>
             <Para>
-              Vous pouvez également introduire une réclamation auprès de la <Text style={{ fontWeight: "700" }}>CNIL</Text> (Commission Nationale de l'Informatique et des Libertés) sur{" "}
+              Vous pouvez également introduire une réclamation auprès de la <Text style={{ fontWeight: "700" }}>{authority.name}</Text> (Commission Nationale de l'Informatique et des Libertés) sur{" "}
               <Text
                 style={{ color: T.blue, textDecorationLine: "underline" }}
-                onPress={() => Linking.openURL("https://www.cnil.fr")}
+                onPress={() => Linking.openURL(authority.url)}
               >
-                www.cnil.fr
+                {authority.url.replace(/^https?:\/\//, "")}
               </Text>.
             </Para>
           </Section>
@@ -245,7 +259,7 @@ export default function PrivacyPolicyScreen() {
           {/* 7. Sécurité */}
           <Section icon="lock-closed-outline" title="7. Sécurité des données" color="#DC2626" bgColor="#FEF2F2">
             <Para>
-              Direct Transf'air met en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données contre tout accès non autorisé, perte, destruction ou divulgation :
+              {brandName} met en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données contre tout accès non autorisé, perte, destruction ou divulgation :
             </Para>
             <Bullet>Chiffrement TLS 1.3 pour toutes les communications</Bullet>
             <Bullet>Authentification forte (MFA / biométrie)</Bullet>
@@ -264,9 +278,9 @@ export default function PrivacyPolicyScreen() {
               </Text>
               <Text
                 style={[s.contactLink, { fontFamily: T.font.mono }]}
-                onPress={() => Linking.openURL("mailto:dpo@directtransfair.com")}
+                onPress={() => Linking.openURL(`mailto:${dpoEmail}`)}
               >
-                dpo@directtransfair.com
+                {dpoEmail}
               </Text>
             </View>
           </View>

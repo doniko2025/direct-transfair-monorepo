@@ -1,6 +1,7 @@
 // apps/backend/src/agencies/agencies.service.ts
 // =========================================================
-// AGENCIES SERVICE v4.9
+// ✅ v4.10 (phase 7) : nom de marque du courriel « compte agence » lu dans la configuration plateforme (PLATFORM_NAME).
+// AGENCIES SERVICE v4.10
 // ✅ v4.9 (phase 6) : changer le pays d'une agence lui donne la devise locale ET sa caisse.
 //   Avant, update() recalculait primaryCurrency (à partir des 2 premières lettres du pays, donc « Guinée » → XOF)
 //   mais ne créait aucun wallet : l'agence n'avait plus de caisse dans sa propre devise. Maintenant : pays reconnu
@@ -196,6 +197,7 @@ import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { toIso2 } from '../fee-schedule/countries';
 import { CreateAgencyDto } from './dto/create-agency.dto';
 import { UpdateAgencyDto } from './dto/update-agency.dto';
+import { platform, escapeHtml } from '../common/platform.config';
 
 // =========================================================
 // HELPERS
@@ -398,9 +400,9 @@ export class AgenciesService {
     if (generatedPassword && agent.email) {
       this.mail.sendEmail(
         agent.email,
-        "Votre compte agence Direct Transf'air",
+        `Votre compte agence ${platform.name}`,
         `<p>Bonjour ${agent.firstName ?? ''},</p>
-         <p>Votre compte responsable d'agence a été créé sur Direct Transf'air.</p>
+         <p>Votre compte responsable d'agence a été créé sur ${escapeHtml(platform.name)}.</p>
          <p>Mot de passe temporaire :</p>
          <p style="font-size:22px;font-weight:700;letter-spacing:3px;font-family:monospace;background:#F0FDF4;color:#059669;padding:14px;border-radius:8px;text-align:center;">${generatedPassword}</p>
          <p>Nous vous recommandons de le changer dès votre première connexion.</p>`,

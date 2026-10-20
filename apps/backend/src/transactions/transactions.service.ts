@@ -1,7 +1,10 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.27 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.28 — Direct Transf'air
 // =========================================================
+// ✅ v4.28 (audit sécurité) : findForUser() est PAGINÉ (take/skip). Avant, GET /transactions renvoyait tout l'historique
+//    d'un utilisateur en une seule requête (mémoire/latence croissantes, vecteur de déni de service). Défaut 200 lignes,
+//    plafond 500 ; la réponse reste un tableau (rétro-compatible mobile + web-admin). Auteur : Thierno Doniko (Grand Chef).
 // ✅ v4.27 (phase 6) : ATOMICITÉ des mouvements d'argent. create(), deposit() et refillAgency() faisaient « débit »,
 //    « crédit » puis « écriture de la transaction » en étapes séparées : une panne, une référence en doublon ou un
 //    solde insuffisant au 2ᵉ pas laissait de l'argent débité sans trace ou crédité sans contrepartie. Chacune écrit
@@ -1455,11 +1458,19 @@ export class TransactionsService {
     };
   }
 
-  async findForUser(userId: string): Promise<any[]> {
+  async findForUser(
+    userId: string,
+    opts: { page?: number; limit?: number } = {},
+  ): Promise<any[]> {
     const { where } = await this.buildUserTransactionFilter(userId);
+    // ✅ v4.28 : pagination bornée (défaut 200, max 500)
+    const limit = Math.min(Math.max(Math.floor(opts.limit ?? 200) || 200, 1), 500);
+    const page = Math.max(Math.floor(opts.page ?? 1) || 1, 1);
     const transactions = await this.prisma.transaction.findMany({
       where,
       orderBy: { createdAt: 'desc' },
+      take: limit,
+      skip: (page - 1) * limit,
       include: {
         withdrawal:  true,
         sender:      { select: { id: true, firstName: true, lastName: true, phone: true } },

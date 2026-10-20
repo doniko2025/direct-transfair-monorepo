@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/notifications.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // NOTIFICATIONS v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR — fond crème, puces Toutes / Non lues (noire quand
@@ -17,7 +18,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {

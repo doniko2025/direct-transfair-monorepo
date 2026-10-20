@@ -1,4 +1,5 @@
 // apps/backend/src/tenants/tenant.guard.ts
+// ✅ phase 7 : l'alias historique « 10 » et le code plateforme viennent de la configuration plateforme (plus de « DONIKO » en dur).
 import {
   CanActivate,
   ExecutionContext,
@@ -9,6 +10,7 @@ import type { Request } from 'express';
 
 import { TenantResolverService } from './tenant-resolver.service';
 import type { RequestWithTenant } from './tenant.middleware';
+import { platform } from '../common/platform.config';
 
 function stripQuery(url: string): string {
   const i = url.indexOf('?');
@@ -49,9 +51,8 @@ function normalizeTenantHeader(v: unknown): string | null {
   if (typeof v !== 'string') return null;
   const t = v.trim().toUpperCase();
   if (!t) return null;
-  // ton “bug tenant=10”
-  if (t === '10') return 'DONIKO';
-  return t;
+  // alias historiques (ex. « 10 ») → code plateforme, via la configuration
+  return platform.canonicalCode(t);
 }
 
 @Injectable()

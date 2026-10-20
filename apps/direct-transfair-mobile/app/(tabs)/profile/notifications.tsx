@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/notifications.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // NOTIFICATIONS (préférences) v2.0 — Direct Transf'air
 // ✅ v2.0 : REFONTE THÈME CLAIR — grand titre, interrupteur « Tout activer » par canal,
@@ -16,7 +17,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Button, NavBar, Notice, Screen, Toggle, UText, useUI } from "../../../components/ui";
 

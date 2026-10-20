@@ -1,6 +1,7 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
-// MAIL SERVICE v4.6 — Direct Transf'air
+// ✅ v4.7 (phase 7) : nom de marque par défaut des courriels lu dans la configuration plateforme (PLATFORM_NAME).
+// MAIL SERVICE v4.7 — Direct Transf'air
 // ✅ v4.6 (phase 6) : le journal des communications (communication_logs) ne garde plus le CORPS des emails.
 //   Il contenait en clair mots de passe temporaires, codes OTP et codes de retrait cash. Restent : destinataire,
 //   objet, statut, identifiant du fournisseur, erreur éventuelle.
@@ -51,6 +52,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
+import { platform } from '../common/platform.config';
 
 // =========================================================
 // CURRENCY HELPERS (inchangés)
@@ -420,7 +422,7 @@ export class MailService {
     opts:    { brandColor?: string; brandName?: string } = {},
   ): string {
     const brandColor = opts.brandColor ?? '#DC2626';
-    const brandName  = opts.brandName  ?? "Direct Transf'air";
+    const brandName  = opts.brandName  ?? platform.name;
 
     return `
 <!DOCTYPE html>

@@ -1,7 +1,9 @@
 // apps/backend/src/transactions/transactions.controller.ts
 // =========================================================
-// TRANSACTIONS CONTROLLER v4.2 — Direct Transf'air
+// TRANSACTIONS CONTROLLER v4.3 — Direct Transf'air
 // =========================================================
+// ✅ v4.3 : GET /transactions accepte ?page= & ?limit= (défaut 200, max 500) — réponse toujours un tableau.
+//          Auteur : Thierno Doniko (Grand Chef, Doniko Digital)
 // ✅ v4.0 : Routes B2B, admin, deposit, cancel, findMine
 // ✅ v4.1 : Guards et vérifications de rôles
 // ✅ v4.2 : FIX GET /transactions/admin → 404
@@ -24,6 +26,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
   ForbiddenException,
@@ -233,9 +236,16 @@ export class TransactionsController {
   }
 
   @Get()
-  async findMine(@Req() req: AuthedRequest) {
+  async findMine(
+    @Req() req: AuthedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     const userId = this.getUserId(req);
-    return this.transactionsService.findForUser(userId);
+    return this.transactionsService.findForUser(userId, {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
   }
 
   // ⚠️ DOIT RESTER EN DERNIER — capture tout /:id non matché au-dessus

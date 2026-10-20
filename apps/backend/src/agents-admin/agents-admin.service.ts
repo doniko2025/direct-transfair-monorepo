@@ -1,6 +1,7 @@
 // apps/backend/src/agents-admin/agents-admin.service.ts
 // =========================================================
-// AGENTS ADMIN v1.1 — les agents d'une société, rattachés à une agence
+// ✅ v1.2 (phase 7) : objets des courriels (compte agent, nouveau mot de passe) — nom de marque lu dans la configuration plateforme.
+// AGENTS ADMIN v1.2 — les agents d'une société, rattachés à une agence
 // ✅ v1.1 (phase 6, passe 2) : resetPassword() ferme aussi les sessions ouvertes de l'agent.
 //
 //   list           : agents de ma société (admin de société) ou de toutes (super admin, lecture seule)
@@ -30,6 +31,7 @@ import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AssignAgencyDto, CreateAgentDto } from './dto/agents-admin.dto';
+import { platform } from '../common/platform.config';
 
 const MAX_LISTED = 1000;
 
@@ -233,7 +235,7 @@ export class AgentsAdminService {
       email,
       firstName,
       password,
-      "Votre compte agent Direct Transf'air",
+      `Votre compte agent ${platform.name}`,
       `Votre compte agent a été créé pour l'agence « ${agency.name} ».`,
     );
 
@@ -309,7 +311,7 @@ export class AgentsAdminService {
       agent.email,
       agent.firstName,
       password,
-      "Nouveau mot de passe Direct Transf'air",
+      `Nouveau mot de passe ${platform.name}`,
       'Votre administrateur a réinitialisé votre mot de passe.',
     );
     return { generatedPassword: password };

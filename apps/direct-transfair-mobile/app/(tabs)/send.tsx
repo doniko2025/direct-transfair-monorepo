@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v3.0 — Direct Transf'air
+// SEND MONEY v5.0 — Direct Transf'air
+// ✅ v5.0 : DESIGN « CORRIDOR » — palette/polices issues du design system (feuille, forêt, brume), bouton d'envoi jaune
+//    soleil (coins 20, 60 px), polices Manrope/Fraunces, icônes Lucide. Nouveau paramètre de route `amount` : le
+//    montant saisi sur l'accueil arrive déjà rempli. LOGIQUE INCHANGÉE.
 // ✅ v4.0 : 🔥 REFONTE TOTALE en thème clair (maquette « Flash Transfert / Transfert »). Fond crème,
 //    en-tête allégé (retour, titre, solde en gros chiffres), onglets Wallet | Cash Pickup soulignés,
 //    blocs blancs très arrondis, montants en gros chiffres, CTA en pilule à la couleur d'accent de la
@@ -268,14 +271,11 @@
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
-  View, Text, StyleSheet, TextInput, TouchableOpacity, Pressable,
-  ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform,
-  ScrollView, Alert, Modal, FlatList, StatusBar, Animated,
-  Dimensions, Share,
-} from "react-native";
+  View, StyleSheet, TouchableOpacity, Pressable, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView, Alert, Modal, FlatList, StatusBar, Animated, Dimensions, Share,
+} from 'react-native';
 import * as Clipboard from "expo-clipboard";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
@@ -285,13 +285,15 @@ import { useTenant } from "../../providers/TenantProvider";
 import { useUI, buildColors, type UIColors } from "../../components/ui/theme";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 
+import { Text, TextInput } from '../../components/ui/Text';
+import { SANS, SERIF } from '../../components/ui/fonts';
 const { width: W } = Dimensions.get("window");
 
 // ✅ v3.0 — police des chiffres : système (lisible, chiffres alignés) ;
 // plus de Georgia/serif pour les montants.
 const F = {
-  display: Platform.select({ ios: "System", android: "sans-serif-medium", default: "system-ui, sans-serif" }),
-  body:    Platform.select({ ios: "System", android: "sans-serif",        default: "system-ui, sans-serif" }),
+  display: SANS as string,
+  body:    SANS as string,
 };
 
 // ✅ v3.0 — palette dynamique : les tons « g* » dérivent de la couleur de
@@ -301,7 +303,7 @@ function makeColors(U: UIColors) {
     // « g* » : tons de marque lisibles sur fond clair (g4 = accent foncé, g5 = accent pur)
     g1: U.bg, g2: U.bg, g3: U.bg, g4: U.accentDeep,
     g5: U.accent, g6: U.accentLine, gSoft: U.accentSoft, gBorder: U.accentLine,
-    accent: U.accent, accentInk: U.accentInk, ink: U.ink, field: U.field, beige: U.beige,
+    accent: U.sun, accentInk: U.sunInk, ink: U.ink, field: U.field, beige: U.beige,
     white: "#FFFFFF",
     bg: U.bg,
     surface: U.surface,
@@ -885,6 +887,11 @@ export default function SendMoneyScreen() {
       if (m === "WALLET" && params.phone) setWalletInput(params.phone as string);
       if (m === "CASH" && params.beneficiaryId) setSelectedCashId(params.beneficiaryId as string);
     }
+    // ✅ v3.1 — montant pré-rempli depuis l'accueil « Corridor » (champ « Tu envoies »)
+    if (params.amount) {
+      const a = String(params.amount).replace(",", ".");
+      if (Number(a) > 0) { setRawAmount(a); setAmountSource("SEND"); }
+    }
   }, [params]);
 
 useEffect(() => {
@@ -1282,7 +1289,7 @@ useEffect(() => {
               <Ionicons name={showBalance ? "eye-outline" : "eye-off-outline"} size={18} color={C.text} />
             </TouchableOpacity>
           </View>
-          <Text style={[s.headerTitle, { fontFamily: F.display }]}>
+          <Text style={[s.headerTitle, { fontFamily: SERIF }]}>
             {mode === "WALLET" ? "Transfert" : "Envoi d'argent"}
           </Text>
           <Text style={[s.balanceLbl, { fontFamily: F.body }]}>Solde disponible</Text>
@@ -1678,10 +1685,10 @@ useEffect(() => {
                     </View>
                     <Text style={[s.ctaTxt, { fontFamily: F.body, color: ctaFg }]}>
                       {insufficient
-                        ? "AUTRE MOYEN DE PAIEMENT"
+                        ? "Autre moyen de paiement"
                         : mode === "WALLET"
-                          ? "CONFIRMER LE TRANSFERT"
-                          : "GÉNÉRER LE CODE DE RETRAIT"}
+                          ? "Confirmer le transfert"
+                          : "Générer le code de retrait"}
                     </Text>
                     <Ionicons name="arrow-forward" size={18} color={ctaFg} style={{ opacity: 0.7 }} />
                   </>
@@ -1787,9 +1794,9 @@ const make_s = (C: Colors) => StyleSheet.create({
   header: { paddingTop: Platform.OS === "android" ? 36 : 6, paddingBottom: 16, paddingHorizontal: 20 },
   headerTop:   { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   backBtn:     { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, justifyContent: "center", alignItems: "center" },
-  headerTitle: { fontSize: 34, fontWeight: "800", color: C.ink, letterSpacing: -1 },
+  headerTitle: { fontSize: 31, fontWeight: "700", color: C.g4, letterSpacing: -0.5 },
   eyeBtn:      { width: 44, height: 44, borderRadius: 22, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, justifyContent: "center", alignItems: "center" },
-  balanceLbl:  { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1, textTransform: "uppercase", marginTop: 10 },
+  balanceLbl:  { color: C.textMuted, fontSize: 13, fontWeight: "600", marginTop: 10 },
   balanceVal:  { color: C.ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.8, marginTop: 2 },
   insufficientBadge: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: C.amberSoft, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4, marginTop: 4 },
   insufficientTxt:   { fontSize: 11, color: C.amber, fontWeight: "700" },
@@ -1807,7 +1814,7 @@ const make_s = (C: Colors) => StyleSheet.create({
   },
   blockHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
   blockNum:    { width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" },
-  blockTitle:  { fontSize: 13, fontWeight: "800", color: C.textMuted, letterSpacing: 0.8, textTransform: "uppercase" },
+  blockTitle:  { fontSize: 14, fontWeight: "800", color: C.textSub },
 
   phoneWrap:     { flexDirection: "row", alignItems: "center", backgroundColor: C.field, borderRadius: 16, overflow: "hidden" },
   dialBtn:       { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12, paddingVertical: 14, borderRightWidth: 1, borderRightColor: C.border, minHeight: 54 },
@@ -1869,12 +1876,12 @@ const make_s = (C: Colors) => StyleSheet.create({
 
   cta: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-    backgroundColor: C.accent, borderRadius: 99, height: 58, marginTop: 8,
+    backgroundColor: C.accent, borderRadius: 20, height: 60, marginTop: 8,
   },
   ctaAlt:      { backgroundColor: C.ink },
   ctaDisabled: { backgroundColor: C.beige },
   ctaIcon:     { width: 30, height: 30, borderRadius: 15, backgroundColor: "rgba(0,0,0,0.08)", justifyContent: "center", alignItems: "center" },
-  ctaTxt:      { fontSize: 15, fontWeight: "900", color: C.accentInk, letterSpacing: 0.4 },
+  ctaTxt:      { fontSize: 17, fontWeight: "800", color: C.accentInk, letterSpacing: -0.1 },
 
   secNote: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 16 },
   secTxt:  { fontSize: 11, color: C.textFaint, fontWeight: "600" },

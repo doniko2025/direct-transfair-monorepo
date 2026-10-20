@@ -1,5 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
+// ✅ v2.7 (phase 7) : code de la société système et nom de marque du courriel OTP lus dans la configuration plateforme (plus de « DONIKO » en dur).
 // AUTH SERVICE v2.5 — Sécurité production
 //
 // ✅ v2.6 : completeSsoLogin() — ouvre la session après une connexion unique validée par
@@ -99,6 +100,7 @@ import { MailService } from '../mail/mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v2.5
+import { platform, escapeHtml } from '../common/platform.config';
 
 import type {
   LoginPasswordV2Dto,
@@ -688,7 +690,7 @@ export class V2AuthService {
   }
 
   private assertPortalIsolation(user: any, tenantCode: string | null): void {
-    const isDefaultPortal = !tenantCode || tenantCode === 'DONIKO';
+    const isDefaultPortal = !tenantCode || platform.isPlatformCode(tenantCode);
 
     if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
       throw new HttpException(
@@ -887,7 +889,7 @@ export class V2AuthService {
         recipient,
         subject,
         `<div style="font-family:sans-serif;max-width:500px;margin:auto;padding:20px;">
-          <h2 style="color:#059669;margin-bottom:8px;">Direct Transf'air</h2>
+          <h2 style="color:#059669;margin-bottom:8px;">${escapeHtml(platform.name)}</h2>
           <p>Votre code pour ${actionLabel} :</p>
           <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:#059669;
                       background:#ECFDF5;text-align:center;padding:24px;

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/rates.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TAUX DU JOUR v9.0 — Direct Transf'air
 // ✅ v9.0 : REFONTE THÈME CLAIR — fond crème, trois taux clés en cartes, convertisseur
@@ -16,9 +17,9 @@
 // =========================================================
 
 import React, { useCallback, useMemo, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, View } from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
 import { useLoader } from "../../components/wallet/useLoader";
 import {
@@ -26,6 +27,7 @@ import {
   SYSTEM_FONT, useUI,
 } from "../../components/ui";
 
+import { Text, TextInput } from '../../components/ui/Text';
 // ─── 5 devises de l'application ──────────────────────────
 const APP_CURRENCIES = [
   { code: "EUR", name: "Euro",             flag: "🇪🇺", symbol: "€"    },

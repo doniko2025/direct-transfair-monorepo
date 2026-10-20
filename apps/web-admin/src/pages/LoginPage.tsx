@@ -1,4 +1,5 @@
 // src/pages/LoginPage.tsx
+// ✅ phase 7 : message « compte client » avec le nom de marque du branding (plus de « Direct Transf'air » en dur).
 // Connexion à l'espace de gestion. À gauche l'identité de la société (ou de la
 // plateforme) sur un motif de guilloché ; à droite le formulaire.
 
@@ -14,8 +15,9 @@ import { useAuth, type LoginOutcome } from '../providers/AuthProvider';
 import { useTenant } from '../providers/TenantProvider';
 import { VerifyContactPanel } from './login/VerifyContactPanel';
 
-const CLIENT_ACCOUNT_MESSAGE =
-  "Ce compte est un compte client. Utilisez l'application mobile Direct Transf'air pour vous connecter.";
+// ✅ phase 7 : le nom de l'application vient du branding (plus de « Direct Transf'air » en dur).
+const clientAccountMessage = (brandName: string): string =>
+  `Ce compte est un compte client. Utilisez l'application mobile ${brandName} pour vous connecter.`;
 
 export default function LoginPage() {
   const { state, login, dismissNotice } = useAuth();
@@ -48,7 +50,7 @@ export default function LoginPage() {
       setPending(outcome.pending);
       return;
     }
-    if (outcome.kind === 'client-account') setError({ message: CLIENT_ACCOUNT_MESSAGE });
+    if (outcome.kind === 'client-account') setError({ message: clientAccountMessage(branding.name) });
     // « success » : l'état d'authentification change, <Navigate> prend le relais.
   }
 

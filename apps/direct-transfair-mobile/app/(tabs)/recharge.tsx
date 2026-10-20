@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/recharge.tsx
 // =========================================================
+// ✅ phase 7 : URL Sendwave lue dans services/platformConfig.ts. Logique de recharge (y compris simulée) inchangée.
 // RECHARGE WALLET v2.0 — Direct Transf'air
 // ✅ v2.0 : REFONTE THÈME CLAIR — fond crème, grand montant, onglets de méthode
 //    soulignés, champs arrondis et bouton pilule pleine largeur ; toutes les
@@ -30,11 +31,12 @@ import { ActivityIndicator, Alert, Linking, ScrollView, View } from "react-nativ
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+import { getSendwaveUrl } from "../../services/platformConfig";
 import {
   AmountInput, Button, Card, Chip, Field, NavBar, Notice, Screen, Tabs, UText, useUI,
 } from "../../components/ui";
 
-const SENDWAVE_URL = "https://www.sendwave.com";
+const SENDWAVE_URL = getSendwaveUrl(); // ✅ phase 7 : modifiable (EXPO_PUBLIC_SENDWAVE_URL)
 
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;

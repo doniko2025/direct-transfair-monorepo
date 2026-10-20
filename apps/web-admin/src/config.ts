@@ -1,4 +1,5 @@
 // src/config.ts — lecture unique des variables d'environnement Vite.
+// ✅ phase 7 : identité de la plateforme (nom, accroche, couleurs, nom du portail embarqué) pilotée par VITE_* — plus rien en dur dans branding.ts.
 import { normalizeHost, normalizeTenantCode } from '@direct-transfair/shared';
 
 const rawApiUrl = (import.meta.env.VITE_API_URL ?? '').trim();
@@ -33,3 +34,18 @@ export const BASE_PATH: string = (import.meta.env.BASE_URL ?? '/').replace(/\/+$
 export const CONSOLE_URL: string = (import.meta.env.VITE_CONSOLE_URL ?? '').trim();
 export const CONSOLE_EMBEDDED: boolean = CONSOLE_URL !== '';
 export const CONSOLE_NAME: string = (import.meta.env.VITE_CONSOLE_NAME ?? '').trim() || 'Console Grand Chef';
+
+// ─── Identité de la plateforme (valeurs par défaut du portail plateforme) ───
+const envText = (v: string | undefined, fallback: string): string => (v ?? '').trim() || fallback;
+
+export const PLATFORM_NAME: string = envText(import.meta.env.VITE_PLATFORM_NAME, "Direct Transf'air");
+export const PLATFORM_TAGLINE: string = envText(import.meta.env.VITE_PLATFORM_TAGLINE, 'Espace de gestion de la plateforme');
+export const BRAND_PRIMARY: string = envText(import.meta.env.VITE_BRAND_PRIMARY, '#0b7a5b');
+export const BRAND_SECONDARY: string = envText(import.meta.env.VITE_BRAND_SECONDARY, '#f7931e');
+
+/** Identité du portail plateforme quand il est embarqué dans la console. */
+export const CONSOLE_PORTAL_NAME: string = envText(import.meta.env.VITE_CONSOLE_PORTAL_NAME, 'Sociétés de transfert');
+export const CONSOLE_PORTAL_TAGLINE: string = envText(
+  import.meta.env.VITE_CONSOLE_PORTAL_TAGLINE,
+  'Pilotage des sociétés de transfert d’argent',
+);

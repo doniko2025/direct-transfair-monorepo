@@ -1,6 +1,7 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
-// CLIENTS SERVICE v4.12
+// ✅ v4.13 (phase 7) : la société système protégée contre la suppression est lue dans la configuration plateforme (PLATFORM_TENANT_CODE).
+// CLIENTS SERVICE v4.13
 // ✅ v4.12 : findPublicByHost — un domaine propre est reconnu avec ou sans « www. » (lot C : le portail est servi sur
 //   le domaine nu ET sur www, mais customDomain n'en stocke qu'un). Comportement précédent conservé (correspondance exacte).
 // ✅ v4.10 conservé intégralement
@@ -44,6 +45,7 @@ import * as crypto from 'crypto';
 
 import { CompanyMailService } from '../mail/channels/company-mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
+import { platform } from '../common/platform.config';
 
 // ─── Constantes ──────────────────────────────────────────
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
@@ -524,9 +526,9 @@ export class ClientsService {
     });
     if (!client) throw new NotFoundException('Société introuvable');
     if (client.deletedAt) throw new NotFoundException('Société déjà supprimée');
-    if (client.code === 'DONIKO') {
+    if (client.code === platform.code) {
       throw new ConflictException(
-        'Impossible de supprimer la société système DONIKO.',
+        `Impossible de supprimer la société système ${platform.code}.`,
       );
     }
 

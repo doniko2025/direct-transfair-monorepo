@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/wallet-transfer.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // WALLET TRANSFER v7.0 — Direct Transf'air
 // ✅ v7.0 : REFONTE THÈME CLAIR (modale) — fond crème, carte de solde dégradée
@@ -17,15 +18,16 @@
 // =========================================================
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 import {
   Avatar, BalanceCard, Button, Card, Chip, IconButton, ListRow, Notice, Pill, Screen, Sheet, UText, SYSTEM_FONT, useUI,
 } from "../components/ui";
 
+import { Text, TextInput } from '../components/ui/Text';
 // ─── Indicatifs pays ────────────────────────────────────
 const COUNTRY_CODES = [
   { code: "+224", flag: "🇬🇳", name: "Guinée",        country: "GN", currency: "GNF" },

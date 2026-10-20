@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // REGISTER v7.0 — Direct Transf'air
 // ✅ v7.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; aucune logique modifiée.
@@ -82,9 +83,9 @@
 // =========================================================
 
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../components/ui/Icon';
 
 import { useAuth }   from '../../providers/AuthProvider';
 import { api }       from '../../services/api';
@@ -105,6 +106,7 @@ import { describeAuthError } from '../../components/auth/authErrors';
 import { isPasswordAcceptable, PASSWORD_MAX, PASSWORD_MIN } from '../../components/auth/passwordRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
+import { Text, TextInput } from '../../components/ui/Text';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const STEPS = [

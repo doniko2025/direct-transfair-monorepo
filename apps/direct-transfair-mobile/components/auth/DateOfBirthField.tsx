@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/DateOfBirthField.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // DATE DE NAISSANCE v2.1 — Direct Transf'air
 // ✅ v2.1 : texte des trois cases centré avec un petit retrait (sur le web « JJ » touchait le bord gauche).
@@ -13,11 +14,12 @@
 // =========================================================
 
 import React, { useRef } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
+import { Text, TextInput } from '../ui/Text';
 export type Dob = { day: string; month: string; year: string };
 
 /** Retourne un message d'erreur, ou null si la date est valide et l'âge suffisant. */
@@ -73,7 +75,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('day'), s.input, WEB_INPUT_RESET]}
           value={value.day}
           placeholder="JJ"
-          placeholderTextColor="#B9B6AD"
+          placeholderTextColor={N.faint}
           keyboardType="number-pad"
           maxLength={2}
           textAlign="center"
@@ -93,7 +95,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('month'), s.input, WEB_INPUT_RESET]}
           value={value.month}
           placeholder="MM"
-          placeholderTextColor="#B9B6AD"
+          placeholderTextColor={N.faint}
           keyboardType="number-pad"
           maxLength={2}
           textAlign="center"
@@ -114,7 +116,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           style={[box('year'), s.input, WEB_INPUT_RESET]}
           value={value.year}
           placeholder="AAAA"
-          placeholderTextColor="#B9B6AD"
+          placeholderTextColor={N.faint}
           keyboardType="number-pad"
           maxLength={4}
           textAlign="center"

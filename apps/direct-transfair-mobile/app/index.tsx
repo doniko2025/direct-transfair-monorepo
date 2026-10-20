@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/index.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // SPLASH / LANDING v5.0 — Direct Transf'air (white-label)
 // ✅ v5.0 : REFONTE TOTALE en thème clair (inspirée de « Taptap Send ») : fond crème, grande carte d'accueil
@@ -13,15 +14,16 @@
 // =========================================================
 
 import React, { useRef, useEffect } from "react";
-import { View, Text, Image, Animated, Platform, StatusBar, useWindowDimensions } from "react-native";
+import { View, Image, Animated, Platform, StatusBar, useWindowDimensions } from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUI, SYSTEM_FONT } from "../components/ui/theme";
 import { Button } from "../components/ui/Primitives";
 import { useTenant } from "../providers/TenantProvider";
 
+import { Text } from '../components/ui/Text';
 export default function Index() {
   const router = useRouter();
   const { C, R, S } = useUI();

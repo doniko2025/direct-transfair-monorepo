@@ -1,6 +1,7 @@
 // apps/backend/src/locations/locations.service.ts
 // =========================================================
-// LOCATIONS SERVICE v1.1 — Direct Transf'air
+// ✅ v1.2 (phase 7) : l'alias historique « 10 » et le code de la société système viennent de la configuration plateforme (plus de « DONIKO » en dur).
+// LOCATIONS SERVICE v1.2 — Direct Transf'air
 // ✅ Endpoint PUBLIC — aucune donnée sensible exposée
 //    (pas de solde, pas de clientId, pas d'infos admin)
 // ✅ Retourne uniquement les agences actives
@@ -9,6 +10,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { platform } from '../common/platform.config';
 
 export interface PublicLocationDto {
   id: string;
@@ -34,7 +36,7 @@ export class LocationsService {
     if (!code) return [];
 
     const client = await this.prisma.client.findFirst({
-      where: { code: code === '10' ? 'DONIKO' : code, isActive: true, deletedAt: null },
+      where: { code: platform.canonicalCode(code), isActive: true, deletedAt: null },
       select: { id: true },
     });
     if (!client) return [];

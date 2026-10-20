@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/PhoneField.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TÉLÉPHONE v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — contour noir au focus.
@@ -10,13 +11,14 @@
 // =========================================================
 
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import CountryPickerSheet from './CountryPickerSheet';
 import type { AuthCountry } from './authCountries';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
+import { Text, TextInput } from '../ui/Text';
 /** Garde les chiffres et retire les « 0 » de tête (préfixe national). */
 export function normalizeNationalNumber(raw: string): string {
   return raw.replace(/\D/g, '').replace(/^0+/, '');
@@ -69,7 +71,7 @@ export default function PhoneField({
           value={value}
           onChangeText={(t) => onChangeText(t.replace(/[^\d\s]/g, ''))}
           placeholder="6 12 34 56 78"
-          placeholderTextColor="#B9B6AD"
+          placeholderTextColor={N.faint}
           keyboardType="phone-pad"
           autoComplete="tel-national"
           textContentType="telephoneNumber"

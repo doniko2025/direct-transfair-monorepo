@@ -1,6 +1,11 @@
 // apps/backend/src/main.ts
 // =========================================================
-// MAIN v2.5
+// ✅ v2.7 (phase 7) : titre et description Swagger lus dans la configuration plateforme (PLATFORM_NAME).
+// MAIN v2.7
+// ✅ v2.6 : SÉCURITÉ — Swagger n'est plus public en production : désactivé par défaut quand NODE_ENV=production,
+//   réactivable avec SWAGGER_ENABLED=true (en développement il reste actif, SWAGGER_ENABLED=false le coupe).
+//   Avertissement au démarrage si, en production, CORS_ALLOWED_SUFFIXES n'est pas défini (le défaut historique
+//   « .vercel.app,.railway.app » autorise TOUT site hébergé chez ces fournisseurs) — comportement inchangé, à restreindre.
 // ✅ v2.5 : CORS — plus AUCUN domaine en dur (retrait de direct-transfair.eu / www.direct-transfair.eu, ancien site
 //   vitrine). Plateforme multi-tenant : les origines autorisées viennent uniquement des variables d'environnement
 //   (FRONTEND_URL / CORS_ORIGINS, PLATFORM_CONSOLE_HOSTS, PORTAL_BASE_DOMAIN) et des domaines des sociétés lus en base. Nouvelles variables : CORS_ORIGINS (origines exactes, séparées par des
@@ -66,6 +71,7 @@ import helmet from 'helmet'; // ✅ v2.0 — npm install helmet
 
 import { AppModule }     from './app.module';
 import { TenantGuard }   from './tenants/tenant.guard';
+import { platform } from './common/platform.config';
 import { PrismaService } from './prisma/prisma.service'; // ✅ v2.1
 
 // =========================================================
@@ -252,17 +258,30 @@ async function bootstrap(): Promise<void> {
   // =========================================================
   // SWAGGER
   // =========================================================
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("Direct Transf'air API")
-    .setDescription("Documentation officielle du backend Direct Transf'air")
-    .setVersion('1.0')
-    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' }, 'access-token')
-    .addApiKey({ type: 'apiKey', name: 'x-tenant-id', in: 'header' }, 'x-tenant-id')
-    .build();
+  const isProduction = process.env.NODE_ENV === 'production';
+  const swaggerFlag = (process.env.SWAGGER_ENABLED ?? '').trim().toLowerCase();
+  const swaggerEnabled = swaggerFlag ? swaggerFlag === 'true' : !isProduction;
 
-  const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('swagger',     app, swaggerDocument);
-  SwaggerModule.setup('api/swagger', app, swaggerDocument);
+  if (isProduction && process.env.CORS_ALLOWED_SUFFIXES === undefined) {
+    console.warn(
+      "⚠️  [CORS] CORS_ALLOWED_SUFFIXES n'est pas défini : « .vercel.app » et « .railway.app » restent autorisés (tout site hébergé là). " +
+      'Définis CORS_ORIGINS / FRONTEND_URL puis CORS_ALLOWED_SUFFIXES= (vide) pour restreindre.',
+    );
+  }
+
+  if (swaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle(`${platform.name} API`)
+      .setDescription(`Documentation officielle du backend ${platform.name}`)
+      .setVersion('1.0')
+      .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT', in: 'header' }, 'access-token')
+      .addApiKey({ type: 'apiKey', name: 'x-tenant-id', in: 'header' }, 'x-tenant-id')
+      .build();
+
+    const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('swagger',     app, swaggerDocument);
+    SwaggerModule.setup('api/swagger', app, swaggerDocument);
+  }
 
   // =========================================================
   // START
@@ -271,7 +290,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(port, '0.0.0.0');
 
   console.log(`🚀 Backend démarré sur le port ${port}`);
-  console.log(`📚 Swagger : http://localhost:${port}/swagger`);
+  console.log(swaggerEnabled ? `📚 Swagger : http://localhost:${port}/swagger` : '📚 Swagger désactivé (SWAGGER_ENABLED=true pour l\'activer)');
 }
 
 void bootstrap();

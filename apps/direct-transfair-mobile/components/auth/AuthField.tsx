@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/AuthField.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CHAMP DE SAISIE v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR — champ sable arrondi, contour noir au focus.
@@ -12,13 +13,13 @@
 
 import React, { useState } from 'react';
 import {
-  StyleSheet, Text, TextInput, TouchableOpacity, View,
-  type KeyboardTypeOptions, type ReturnKeyTypeOptions, type TextInputProps,
+  StyleSheet, TouchableOpacity, View, type KeyboardTypeOptions, type ReturnKeyTypeOptions, type TextInputProps,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../ui/Icon';
 
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
+import { Text, TextInput } from '../ui/Text';
 type Props = {
   label: string;
   value: string;
@@ -78,7 +79,7 @@ export default function AuthField({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#B9B6AD"
+          placeholderTextColor={N.faint}
           secureTextEntry={secure && !reveal}
           keyboardType={keyboardType ?? 'default'}
           autoCapitalize={autoCapitalize}

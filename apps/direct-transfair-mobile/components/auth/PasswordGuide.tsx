@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/PasswordGuide.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // JAUGE + CONSEILS MOT DE PASSE v2.0 — Direct Transf'air
 // ✅ v2.0 : thème clair (jauge sur fond sable).
@@ -6,13 +7,14 @@
 // =========================================================
 
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import { FONT, N } from './authTheme';
 import { evaluatePassword, PASSWORD_MAX, PASSWORD_MIN } from './passwordRules';
 
-const LEVEL_COLOR = ['#E3DFD5', N.danger, '#D97706', '#4CAF73', '#2E8B57'];
+import { Text } from '../ui/Text';
+const LEVEL_COLOR = [N.border, N.danger, '#D97706', '#4CAF73', '#2E8B57'];
 
 function Rule({ ok, text, soft = false }: { ok: boolean; text: string; soft?: boolean }) {
   return (
@@ -35,7 +37,7 @@ export default function PasswordGuide({ password }: { password: string }) {
       <View style={s.meterRow}>
         <View style={s.meter}>
           {[1, 2, 3, 4].map((i) => (
-            <View key={i} style={[s.seg, { backgroundColor: i <= r.score ? color : '#ECE8DE' }]} />
+            <View key={i} style={[s.seg, { backgroundColor: i <= r.score ? color : N.border }]} />
           ))}
         </View>
         <Text style={[s.level, { color }]}>{r.label}</Text>

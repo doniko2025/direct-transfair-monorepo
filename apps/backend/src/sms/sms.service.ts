@@ -1,6 +1,7 @@
 // apps/backend/src/sms/sms.service.ts
 // =========================================================
-// SMS SERVICE v4.1 — Direct Transf'air
+// ✅ v4.2 (phase 7) : préfixe des SMS (« [Direct Transf'air] ») lu dans la configuration plateforme (PLATFORM_NAME) au lieu d'être écrit en dur.
+// SMS SERVICE v4.2 — Direct Transf'air
 // ✅ v4.1 (phase 6) : le journal des communications ne garde plus le texte des SMS (OTP, codes de retrait).
 //   Le mode « stub » (sans Twilio) n'écrit plus le message dans les logs en production.
 // ✅ Provider : Twilio (principal) + Orange API (fallback)
@@ -12,6 +13,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Twilio } from 'twilio';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { platform } from '../common/platform.config';
 
 // =========================================================
 // TYPES
@@ -154,7 +156,7 @@ export class SmsService {
 
   async sendOtp(to: string, code: string, userId?: string): Promise<SmsResult> {
     const message =
-      `[Direct Transf'air] Votre code de vérification : ${code}\n` +
+      `${platform.smsTag} Votre code de vérification : ${code}\n` +
       `Valable 10 minutes. Ne le partagez jamais.`;
 
     return this.send({ to, message, userId });
@@ -170,7 +172,7 @@ export class SmsService {
     transactionId?: string;
   }): Promise<SmsResult> {
     let message =
-      `[Direct Transf'air] Votre transfert de ${params.amount} ${params.currency} ` +
+      `${platform.smsTag} Votre transfert de ${params.amount} ${params.currency} ` +
       `vers ${params.recipientName} est enregistré.`;
 
     if (params.pickupCode) {
@@ -193,7 +195,7 @@ export class SmsService {
     userId?: string;
   }): Promise<SmsResult> {
     const message =
-      `[Direct Transf'air] Vous avez reçu ${params.amount} ${params.currency} ` +
+      `${platform.smsTag} Vous avez reçu ${params.amount} ${params.currency} ` +
       `de ${params.senderName}. Connectez-vous pour voir votre solde.`;
 
     return this.send({ to: params.to, message, userId: params.userId });
@@ -207,7 +209,7 @@ export class SmsService {
     userId?: string;
   }): Promise<SmsResult> {
     const message =
-      `[Direct Transf'air] Code retrait : ${params.code}\n` +
+      `${platform.smsTag} Code retrait : ${params.code}\n` +
       `Montant : ${params.amount} ${params.currency}.\n` +
       `Présentez ce code à un agent agréé.`;
 
@@ -222,7 +224,7 @@ export class SmsService {
     userId?: string;
   }): Promise<SmsResult> {
     const message =
-      `[Direct Transf'air] ⚠️ Solde bas - ${params.agencyName}\n` +
+      `${platform.smsTag} ⚠️ Solde bas - ${params.agencyName}\n` +
       `${params.currency} : ${params.balance}. Rechargement nécessaire.`;
 
     return this.send({ to: params.to, message, userId: params.userId });
@@ -237,7 +239,7 @@ export class SmsService {
   }): Promise<SmsResult> {
     const dir = params.direction === 'ABOVE' ? 'dépassé' : 'passé sous';
     const message =
-      `[Direct Transf'air] 📊 Alerte taux !\n` +
+      `${platform.smsTag} 📊 Alerte taux !\n` +
       `Le taux ${params.pair.replace('_', '→')} a ${dir} votre seuil.\n` +
       `Taux actuel : ${params.rate}`;
 

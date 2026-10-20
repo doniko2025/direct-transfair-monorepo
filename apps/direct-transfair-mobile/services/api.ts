@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
+// ✅ phase 7 : code de la société système et taux de secours lus dans services/platformConfig.ts (plus de « DONIKO » ni de taux écrits en dur).
 // DIRECT TRANSF'AIR — API Service v6.1
 // ✅ v6.1 : les refus attendus (HTTP 4xx : mauvais identifiants, compte réservé au portail web…) sont journalisés en
 //    console.warn au lieu de console.error — en développement, console.error ouvre un bandeau rouge « HTTP ERROR »
@@ -68,6 +69,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
 import { getApiBaseUrl } from "./serverConfig";
+import { getPlatformCode, getFallbackRates } from "./platformConfig";
 
 import type {
   Agency,
@@ -132,7 +134,7 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & {
 // CONFIG
 // ============================================================
 
-const PLATFORM_TENANT = "DONIKO";
+const PLATFORM_TENANT = getPlatformCode(); // ✅ phase 7 : plus de code de société en dur
 
 const STORAGE_KEYS = {
   PREFERRED_TENANT: "PREFERRED_TENANT",
@@ -185,25 +187,25 @@ function normalizeTenant(input: string | null | undefined): string {
   ];
 
   if (!raw) {
-    devLog("🔧 normalizeTenant: vide → DONIKO");
+    devLog("🔧 normalizeTenant: vide → plateforme");
     return PLATFORM_TENANT;
   }
 
   if (blackList.includes(raw)) {
-    devLog(`🔧 normalizeTenant: "${raw}" blacklisté → DONIKO`);
+    devLog(`🔧 normalizeTenant: "${raw}" blacklisté → plateforme`);
     return PLATFORM_TENANT;
   }
 
   const badPrefixes = ["192.168.", "192.", "10.", "172.", "EXP://"];
   for (const prefix of badPrefixes) {
     if (raw.startsWith(prefix)) {
-      devLog(`🔧 normalizeTenant: "${raw}" préfixe IP → DONIKO`);
+      devLog(`🔧 normalizeTenant: "${raw}" préfixe IP → plateforme`);
       return PLATFORM_TENANT;
     }
   }
 
   if (/^\d{1,3}$/.test(raw)) {
-    devLog(`🔧 normalizeTenant: "${raw}" segment IP isolé → DONIKO`);
+    devLog(`🔧 normalizeTenant: "${raw}" segment IP isolé → plateforme`);
     return PLATFORM_TENANT;
   }
 
@@ -218,7 +220,7 @@ function normalizeTenant(input: string | null | undefined): string {
   ];
   for (const sub of badSubstrings) {
     if (raw.includes(sub)) {
-      devLog(`🔧 normalizeTenant: "${raw}" contient "${sub}" → DONIKO`);
+      devLog(`🔧 normalizeTenant: "${raw}" contient "${sub}" → plateforme`);
       return PLATFORM_TENANT;
     }
   }
@@ -918,7 +920,7 @@ class API {
     try {
       const res = await this.http.get(
         `/branding/by-host?host=${encodeURIComponent(host)}`,
-        { headers: { "x-tenant-id": "DONIKO" } },
+        { headers: { "x-tenant-id": PLATFORM_TENANT } },
       );
       return res.data ?? null;
     } catch (e) {
@@ -930,7 +932,7 @@ class API {
   async getClientPublicBranding(code: string): Promise<any> {
     const res = await this.http.get(
       `/branding/${code.trim().toUpperCase()}`,
-      { headers: { "x-tenant-id": "DONIKO" } },
+      { headers: { "x-tenant-id": PLATFORM_TENANT } },
     );
     return res.data;
   }
@@ -1150,15 +1152,10 @@ class API {
       throw new Error("Réponse vide");
     } catch {
       devLog("⚠️ getExchangeRates: API indisponible → taux de secours");
-      return [
-        { pair: "EUR_XOF", rate: 655.957, inverseRate: 1 / 655.957 },
-        { pair: "EUR_GNF", rate: 9600,    inverseRate: 1 / 9600    },
-        { pair: "EUR_USD", rate: 1.08,    inverseRate: 1 / 1.08    },
-        { pair: "EUR_GBP", rate: 0.85,    inverseRate: 1 / 0.85    },
-        { pair: "USD_XOF", rate: 607.55,  inverseRate: 1 / 607.55  },
-        { pair: "GBP_XOF", rate: 771.71,  inverseRate: 1 / 771.71  },
-        { pair: "XOF_GNF", rate: 14.63,   inverseRate: 1 / 14.63   },
-      ].map(normalizeExchangeRate);
+      // ✅ phase 7 : plus de taux inventés — liste vide sauf si EXPO_PUBLIC_FALLBACK_RATES est défini.
+      return getFallbackRates()
+        .map((r) => ({ pair: r.pair, rate: r.rate, inverseRate: 1 / r.rate }))
+        .map(normalizeExchangeRate);
     }
   }
 

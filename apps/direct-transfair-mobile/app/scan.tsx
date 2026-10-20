@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/scan.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // QR SCANNER SCREEN v2.0 — Direct Transf'air
 // ✅ v2.0 : REFONTE THÈME CLAIR — écran de permission crème (icône beige, bouton pilule),
@@ -20,7 +21,7 @@ import React, { useState, useCallback, useRef } from "react";
 import { View, StyleSheet, Dimensions, ActivityIndicator, Platform, StatusBar } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter, useFocusEffect } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { useTenant } from "../providers/TenantProvider";
 import { api } from "../services/api";

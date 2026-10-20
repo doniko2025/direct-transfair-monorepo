@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/limits.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // LIMITS SCREEN v7.0 — Direct Transf'air
 // ✅ v7.0 : REFONTE THÈME CLAIR — grand titre, carte « niveau de vérification », trois
@@ -18,7 +19,7 @@
 import React, { useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {

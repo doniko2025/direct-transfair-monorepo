@@ -1,4 +1,6 @@
 // apps/direct-transfair-mobile/components/auth/authTheme.ts
+// ✅ v3.0 : DESIGN « CORRIDOR » — neutres vert brume (fond #E8F0EA, champs blancs cassés, encre verte, filets vert pâle),
+//    palette dérivée du thème (forêt / feuille), polices Manrope. Noms d'exports inchangés.
 // ✅ v2.1 : (web) texte d'exemple des champs plus foncé que prévu — voir WEB_INPUT_RESET.
 // =========================================================
 // THÈME DES ÉCRANS D'AUTHENTIFICATION v2.0 — Direct Transf'air
@@ -14,6 +16,8 @@
 // =========================================================
 
 import { Platform } from 'react-native';
+import { buildColors } from '../ui/theme';
+import { SANS } from '../ui/fonts';
 
 export const DEFAULT_BRAND = '#059669';
 
@@ -62,44 +66,43 @@ export type AuthPalette = {
 
 export function buildPalette(primary?: string | null): AuthPalette {
   const p = primary && /^#[0-9A-Fa-f]{6}$/.test(primary) ? primary : DEFAULT_BRAND;
+  const C = buildColors(p);
   return {
-    bg1: darken(p, 0.86),
-    bg2: darken(p, 0.72),
-    bg3: darken(p, 0.5),
-    action: darken(p, 0.2),
-    accent: darken(p, 0.1),
-    tint: lighten(p, 0.9),
-    tintBorder: lighten(p, 0.7),
+    bg1: C.forest,
+    bg2: darken(C.forest, 0.1),
+    bg3: C.leaf,
+    action: C.forest,
+    accent: C.leaf,
+    tint: C.accentSoft,
+    tintBorder: C.accentLine,
   };
 }
 
 // ─── Couleurs neutres et sémantiques ─────────────────────
 export const N = {
-  page:      '#FAF9F5',
+  page:      '#E8F0EA',
   surface:   '#FFFFFF',
-  field:     '#F2EFE8',
-  ink:       '#111214',
-  inkSub:    '#4A4945',
-  muted:     '#8B887F',
-  border:    '#E3DFD5',
+  field:     '#F3F8F4',
+  ink:       '#10231B',
+  inkSub:    '#2F463A',
+  muted:     '#5E7468',
+  faint:     '#98ABA0',
+  border:    '#D3E0D7',
   danger:    '#C62828',
   dangerBg:  '#FDECEA',
   dangerBd:  '#F5C6C2',
-  warn:      '#B26A00',
+  warn:      '#A86400',
   warnBg:    '#FFF4DB',
   warnBd:    '#F1D79A',
-  ok:        '#2E8B57',
-  okBg:      '#DFF3E6',
-  okBd:      '#BFE5CD',
+  ok:        '#1F8A5B',
+  okBg:      '#DDEFE5',
+  okBd:      '#BFE0CD',
   white:     '#FFFFFF',
 } as const;
 
 // ─── Typographie ─────────────────────────────────────────
-export const FONT = {
-  display: Platform.select({ ios: 'System', android: 'sans-serif', default: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif' }) as string,
-  body:    Platform.select({ ios: 'System', android: 'sans-serif', default: 'system-ui, sans-serif' }) as string,
-  medium:  Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'system-ui, sans-serif' }) as string,
-};
+// Nom logique « Manrope » : le composant Text choisit le fichier de police d'après le poids (voir ui/fonts.ts).
+export const FONT = { display: SANS, body: SANS, medium: SANS };
 
 export const RADIUS = { sm: 12, md: 16, lg: 20, xl: 32 } as const;
 
@@ -108,14 +111,14 @@ export const MAX_WIDTH = 520;
 
 export const SHADOW = {
   card: {
-    shadowColor: '#111214',
+    shadowColor: '#0E3B2D',
     shadowOpacity: 0.07,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
   button: {
-    shadowColor: '#111214',
+    shadowColor: '#0E3B2D',
     shadowOpacity: 0.10,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
@@ -130,5 +133,5 @@ export const SHADOW = {
  */
 export const WEB_INPUT_RESET: any =
   Platform.OS === 'web'
-    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2EFE8 inset' }
+    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F3F8F4 inset' }
     : {};

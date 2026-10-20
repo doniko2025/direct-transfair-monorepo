@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/payment-methods.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // PAYMENT METHODS v7.0 — Direct Transf'air
 // ✅ v7.0 : REFONTE THÈME CLAIR — grand titre, cartes bancaires et comptes Mobile Money en
@@ -21,7 +22,7 @@
 import React, { useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {

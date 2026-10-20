@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/ui/Field.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CHAMPS DE SAISIE v2.2 — Direct Transf'air (thème clair, white-label)
 // ✅ v2.2 : (web uniquement) le texte d'exemple (placeholder) s'affichait aussi foncé qu'une vraie
@@ -17,14 +18,14 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Platform, Pressable, StyleSheet, Text, TextInput, View,
-  type KeyboardTypeOptions, type ReturnKeyTypeOptions, type StyleProp, type TextInputProps, type ViewStyle,
+  Platform, Pressable, StyleSheet, View, type KeyboardTypeOptions, type ReturnKeyTypeOptions, type StyleProp, type TextInputProps, type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from './Icon';
 import { useUI, SYSTEM_FONT } from './theme';
 import CountryPickerSheet from '../auth/CountryPickerSheet';
 import type { AuthCountry } from '../auth/authCountries';
 
+import { Text, TextInput } from './Text';
 export { normalizeNationalNumber, validatePhone } from '../auth/PhoneField';
 
 /** Supprime le halo du navigateur et la teinte d'auto-remplissage (web). */

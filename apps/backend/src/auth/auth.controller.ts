@@ -1,6 +1,10 @@
 // apps/backend/src/auth/auth.controller.ts
 // =========================================================
-// AUTH CONTROLLER v4.3
+// AUTH CONTROLLER v4.4
+// ✅ v4.4 : SÉCURITÉ — limitation de débit (par IP) sur TOUTES les routes publiques v1, comme déjà fait sur la v2 :
+//   register 10/min, login 5/min, login/verify-otp 10/min, login-by-phone et send-otp 10/h (coût SMS/e-mail),
+//   find-account 10/min, verify-otp 10/min, reset-password 5/min. Avant, elles n'étaient limitées qu'à 100 req/min
+//   (force brute du mot de passe et du code OTP possible). `refresh` reste au régime général.
 // ✅ v4.3 (phase 6, passe 2) : POST /auth/devices — un jeton push appartient à UN seul compte. Avant, si deux comptes
 //   se connectaient sur le même téléphone, l'ancien gardait le jeton : ses notifications (montants, codes de retrait)
 //   continuaient d'arriver sur un appareil utilisé par quelqu'un d'autre. Le jeton est maintenant retiré aux autres
@@ -26,6 +30,7 @@ import {
   Headers,
   Param,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { DevicePlatform } from '@prisma/client';
@@ -53,6 +58,7 @@ export class AuthController {
 
   @Public()
   @Post('register')
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({
     summary: 'Inscription — crée le compte + wallet selon le pays de résidence',
   })
@@ -70,6 +76,7 @@ export class AuthController {
 
   @Public()
   @Post('login')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   @ApiOperation({
     summary:
       'Connexion avec isolation tenant. ' +
@@ -91,6 +98,7 @@ export class AuthController {
 
   @Public()
   @Post('login-by-phone')
+  @Throttle({ otp: { limit: 10, ttl: 3_600_000 } })
   @ApiOperation({
     summary:
       'Connexion sans mot de passe — envoie un OTP à 4 chiffres par SMS. ' +
@@ -119,6 +127,7 @@ export class AuthController {
 
   @Public()
   @Post('login/verify-otp')
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: "Étape 2 du login : vérifie l'OTP et retourne le JWT" })
   async verifyLoginOtp(
     @Body() dto: VerifyLoginOtpDto,
@@ -162,6 +171,7 @@ export class AuthController {
 
   @Public()
   @Post('find-account')
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   async findAccount(@Body('identifier') identifier: string) {
     if (!identifier) throw new BadRequestException('Identifiant requis');
     return this.authService.findAccount(identifier);
@@ -169,6 +179,7 @@ export class AuthController {
 
   @Public()
   @Post('send-otp')
+  @Throttle({ otp: { limit: 10, ttl: 3_600_000 } })
   async sendOtp(
     @Body() body: { userId: string; channel: 'EMAIL' | 'PHONE'; purpose?: string },
   ) {
@@ -179,6 +190,7 @@ export class AuthController {
 
   @Public()
   @Post('verify-otp')
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   async verifyOtp(
     @Body() body: { userId: string; code: string; type?: string },
   ) {
@@ -189,6 +201,7 @@ export class AuthController {
 
   @Public()
   @Post('reset-password')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   async resetPassword(
     @Body() body: { userId: string; code: string; newPassword: string },
   ) {

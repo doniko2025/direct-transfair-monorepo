@@ -1,7 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v11.0 — Clients wallet uniquement (rôle USER)
+// TAB LAYOUT v12.0 — Clients wallet uniquement (rôle USER)
 //
+// ✅ v12.0 : DESIGN « CORRIDOR » — barre à 4 onglets (Accueil, Activité, Contacts, Compte) comme la maquette :
+//   fond blanc, filet vert pâle, icônes Lucide, onglet actif vert forêt coiffé d'une languette jaune.
+//   L'envoi se lance depuis le gros bouton jaune de l'accueil ; l'écran « send » reste une route (hors barre).
+//   Aucun changement de navigation : mêmes routes, mêmes écrans « poussés ».
 // ✅ v11.0 : REFONTE TOTALE en thème clair (maquettes « Flash Transfert »). Barre d'onglets blanche à plat
 //   (filet fin en haut, plus de barre flottante), onglet central « Envoyer » en pilule à la couleur
 //   d'accent de la société (texte auto-contrasté), onglet actif en noir. Aucun changement de navigation :
@@ -18,13 +22,14 @@
 // =========================================================
 
 import React from "react";
-import { View, Text, ActivityIndicator, Platform, Pressable } from "react-native";
+import { View, ActivityIndicator, Platform, Pressable } from 'react-native';
 import { Tabs, useRouter, usePathname } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../../components/ui/Icon';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../providers/AuthProvider";
 import { useUI, SYSTEM_FONT } from "../../components/ui/theme";
 
+import { Text } from '../../components/ui/Text';
 // Type local — évite l'incompatibilité de version avec expo-router
 type BottomTabBarProps = {
   state: { index: number; routes: Array<{ name: string; key: string }> };
@@ -33,14 +38,13 @@ type BottomTabBarProps = {
 };
 
 // Chemins pour lesquels la barre d'onglets est visible (écrans racines)
-const ROOT_PATHS = new Set(["", "/", "/home", "/transactions", "/beneficiaries", "/profile", "/send"]);
+const ROOT_PATHS = new Set(["", "/", "/home", "/transactions", "/beneficiaries", "/profile"]);
 
-type TabDef = { name: string; label: string; icon: string; isCenter?: boolean };
+type TabDef = { name: string; label: string; icon: string };
 
 const USER_TABS: TabDef[] = [
   { name: "home",          label: "Accueil",  icon: "home" },
   { name: "transactions",  label: "Activité", icon: "time" },
-  { name: "send",          label: "Envoyer",  icon: "paper-plane", isCenter: true },
   { name: "beneficiaries", label: "Contacts", icon: "people" },
   { name: "profile",       label: "Compte",   icon: "person" },
 ];
@@ -51,7 +55,8 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
   const router = useRouter();
   const pathname = usePathname();
   const bottom = Math.max(insets.bottom, Platform.OS === "android" ? 8 : 6);
-  if (!ROOT_PATHS.has((pathname || "").replace(/\/+$/, ""))) return null;
+  const clean = (pathname || "").replace(/\/+$/, "");
+  if (!ROOT_PATHS.has(clean)) return null;
 
   const go = (name: string) => {
     const idx = state.routes.findIndex((r) => r.name === name);
@@ -64,44 +69,27 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
       style={{
         position: "absolute", left: 0, right: 0, bottom: 0,
         backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.line,
-        flexDirection: "row", alignItems: "center", paddingTop: 8, paddingBottom: bottom, paddingHorizontal: 6,
+        flexDirection: "row", alignItems: "flex-start", paddingTop: 10, paddingBottom: bottom, paddingHorizontal: 8,
       }}
     >
       {USER_TABS.map((tab) => {
-        const isActive = pathname.includes(tab.name) || state.routes[state.index]?.name === tab.name;
-
-        if (tab.isCenter) {
-          return (
-            <Pressable
-              key={tab.name}
-              onPress={() => go(tab.name)}
-              accessibilityRole="button"
-              accessibilityLabel={tab.label}
-              style={({ pressed }) => ({ flex: 1.15, alignItems: "center", opacity: pressed ? 0.85 : 1 })}
-            >
-              <View
-                style={{
-                  height: 44, minWidth: 64, paddingHorizontal: 20, borderRadius: 22, backgroundColor: C.accent,
-                  alignItems: "center", justifyContent: "center",
-                  transform: [{ scale: isActive ? 1.04 : 1 }],
-                }}
-              >
-                <Ionicons name={tab.icon as any} size={21} color={C.accentInk} />
-              </View>
-            </Pressable>
-          );
-        }
+        const isActive = tab.name === "home"
+          ? clean === "" || clean === "/" || clean === "/home"
+          : clean.startsWith(`/${tab.name}`);
 
         return (
           <Pressable
             key={tab.name}
-            style={{ flex: 1, alignItems: "center", gap: 3, paddingVertical: 2 }}
+            style={{ flex: 1, alignItems: "center", gap: 5, paddingBottom: 4 }}
             onPress={() => go(tab.name)}
             accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}
           >
-            <Ionicons name={(isActive ? tab.icon : `${tab.icon}-outline`) as any} size={23} color={isActive ? C.ink : C.faint} />
-            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11, fontWeight: isActive ? "800" : "600", color: isActive ? C.ink : C.muted }}>
+            {isActive && (
+              <View style={{ position: "absolute", top: -11, width: 34, height: 4, borderBottomLeftRadius: 4, borderBottomRightRadius: 4, backgroundColor: C.sun }} />
+            )}
+            <Ionicons name={tab.icon as any} size={22} color={isActive ? C.forest : C.faint} />
+            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "600", color: isActive ? C.forest : C.faint }}>
               {tab.label}
             </Text>
           </Pressable>
@@ -118,7 +106,7 @@ export default function TabLayout() {
   if (isLoading || !user) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: C.bg }}>
-        <ActivityIndicator size="large" color={C.ink} />
+        <ActivityIndicator size="large" color={C.forest} />
       </View>
     );
   }

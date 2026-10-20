@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/AuthNotice.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // BANDEAU DE MESSAGE v2.0 — Direct Transf'air
 // ✅ v2.0 : thème clair (teintes chaudes, coins plus ronds) ; API inchangée.
@@ -9,11 +10,12 @@
 // =========================================================
 
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import { FONT, N, RADIUS } from './authTheme';
 
+import { Text } from '../ui/Text';
 type Kind = 'error' | 'info' | 'success' | 'warning';
 
 const LOOK: Record<Kind, { bg: string; bd: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> = {

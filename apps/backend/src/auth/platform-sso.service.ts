@@ -1,6 +1,7 @@
 // apps/backend/src/auth/platform-sso.service.ts
 // =========================================================
-// CONNEXION UNIQUE DEPUIS LA CONSOLE dkmoney.store v1.0
+// ✅ v1.1 (phase 7) : émetteur et destinataire de l'assertion (PLATFORM_SSO_ISSUER / PLATFORM_SSO_AUDIENCE) et nom de marque du message lus dans la configuration plateforme.
+// CONNEXION UNIQUE DEPUIS LA CONSOLE dkmoney.store v1.1
 //
 // Le Grand Chef s'authentifie UNE fois sur la console (Assograndchef). Pour ouvrir le
 // back-office Direct Transf'air sans retaper son mot de passe, la console signe une
@@ -31,7 +32,10 @@ import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertAppClientAllowed } from './app-client.policy';
 import { V2AuthService } from './v2-auth.service';
+import { platform } from '../common/platform.config';
 
+// ✅ v1.1 (phase 7) : émetteur / destinataire attendus pilotés par PLATFORM_SSO_ISSUER / PLATFORM_SSO_AUDIENCE
+//   (défauts identiques à avant). Lus à chaque appel : exportés pour la spec comme valeurs par défaut.
 export const SSO_ISSUER = 'dkmoney-console';
 export const SSO_AUDIENCE = 'direct-transfair';
 const MAX_LIFETIME_SECONDS = 120;
@@ -81,8 +85,8 @@ export class PlatformSsoService {
       claims = this.jwt.verify<SsoClaims>(assertion, {
         secret,
         algorithms: ['HS256'],
-        issuer: SSO_ISSUER,
-        audience: SSO_AUDIENCE,
+        issuer: platform.ssoIssuer,
+        audience: platform.ssoAudience,
       });
     } catch {
       throw new UnauthorizedException('Assertion invalide ou expirée.');
@@ -120,7 +124,7 @@ export class PlatformSsoService {
     if (!ok) {
       this.logger.warn(`SSO refusé : aucun SUPER_ADMIN actif pour ${email}`);
       throw new ForbiddenException(
-        "Aucun compte Super Admin actif de Direct Transf'air ne correspond à ton adresse e-mail.",
+        `Aucun compte Super Admin actif de ${platform.name} ne correspond à ton adresse e-mail.`,
       );
     }
 
@@ -143,6 +147,6 @@ export class PlatformSsoService {
       throw e;
     }
 
-    return this.v2Auth.completeSsoLogin(user, SSO_ISSUER);
+    return this.v2Auth.completeSsoLogin(user, platform.ssoIssuer);
   }
 }

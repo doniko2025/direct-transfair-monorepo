@@ -1,16 +1,29 @@
 // packages/shared/src/tenant.ts
 // =========================================================
-// TENANT v1.0
+// TENANT v1.1
+// ✅ v1.1 (phase 7) : le code de la société plateforme n'est plus écrit en dur — il vient de VITE_PLATFORM_CODE
+//   (défaut « DONIKO »), comme PLATFORM_NAME & co. dans web-admin/src/config.ts.
 //
 // Règles issues du backend (auth.service.ts, tenant.middleware.ts) :
 //   - le tenant voyage dans l'en-tête `x-tenant-id` (code en MAJUSCULES)
-//   - le tenant par défaut est la plateforme : "DONIKO"
+//   - le tenant par défaut est la plateforme (VITE_PLATFORM_CODE, défaut "DONIKO")
 //   - isolation des portails : SUPER_ADMIN ne se connecte QUE sur le
 //     portail plateforme ; tous les autres rôles QUE sur le portail de
 //     leur société (sinon 403 USE_COMPANY_PORTAL / USE_DEFAULT_PORTAL)
 // =========================================================
 
-export const PLATFORM_TENANT = 'DONIKO';
+function readPlatformCode(): string {
+  try {
+    // @ts-ignore — import.meta.env n'existe que sous Vite (typé par vite/client dans web-admin) ; ailleurs, repli sur le défaut.
+    const v = import.meta.env.VITE_PLATFORM_CODE as string | undefined;
+    const t = typeof v === 'string' ? v.trim().toUpperCase() : '';
+    return t || 'DONIKO';
+  } catch {
+    return 'DONIKO';
+  }
+}
+
+export const PLATFORM_TENANT: string = readPlatformCode();
 
 /** Nettoie un code société : majuscules, caractères A-Z 0-9 _ - uniquement. */
 export function normalizeTenantCode(input: unknown): string | null {

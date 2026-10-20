@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/topup.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TOP-UP SCREEN v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR (modale) — fond crème, grand montant, puces de montants
@@ -18,7 +19,7 @@
 import React, { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 import { AmountInput, Button, Chip, Field, IconButton, Notice, Screen, Tabs, UText, useUI } from "../components/ui";

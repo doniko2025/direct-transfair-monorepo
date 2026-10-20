@@ -1,6 +1,7 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
-// AUTH SERVICE v5.10 — Direct Transf'air
+// ✅ v5.11 (phase 7) : code de la société système (« DONIKO ») et nom de marque du courriel de bienvenue lus dans la configuration plateforme.
+// AUTH SERVICE v5.11 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
 // ✅ v5.0 : BÉTON — 6 correctifs critiques
 //
@@ -229,6 +230,7 @@ import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v5.1
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
+import { platform } from '../common/platform.config';
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
@@ -429,7 +431,7 @@ export class AuthService {
 
     let tenantClientId: number | null = null;
     const normalizedTenantCode = normalizeTenantCode(tenantCode);
-    if (normalizedTenantCode && normalizedTenantCode !== 'DONIKO') {
+    if (normalizedTenantCode && !platform.isPlatformCode(normalizedTenantCode)) {
       const tenantClient = await this.prisma.client.findUnique({
         where: { code: normalizedTenantCode },
         select: { id: true, isActive: true },
@@ -451,7 +453,7 @@ export class AuthService {
     }
 
     // ── v4.7 : Isolation portail ─────────────────────────
-    const isDefaultPortal = !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
+    const isDefaultPortal = !normalizedTenantCode || platform.isPlatformCode(normalizedTenantCode);
 
     if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
       throw new HttpException(
@@ -779,7 +781,7 @@ export class AuthService {
 
     let tenantClientId: number | null = null;
     const normalizedTenantCode = normalizeTenantCode(tenantCode);
-    if (normalizedTenantCode && normalizedTenantCode !== 'DONIKO') {
+    if (normalizedTenantCode && !platform.isPlatformCode(normalizedTenantCode)) {
       const tenantClient = await this.prisma.client.findUnique({
         where: { code: normalizedTenantCode },
         select: { id: true, isActive: true },
@@ -816,7 +818,7 @@ export class AuthService {
       );
     }
 
-    const isDefaultPortal = !normalizedTenantCode || normalizedTenantCode === 'DONIKO';
+    const isDefaultPortal = !normalizedTenantCode || platform.isPlatformCode(normalizedTenantCode);
     if (isDefaultPortal && user.role !== Role.SUPER_ADMIN) {
       throw new HttpException(
         {
@@ -870,7 +872,7 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const resolvedTenantCode =
-      normalizeTenantCode(tenantFromHeader) ?? normalizeTenantCode(dto.tenantCode) ?? 'DONIKO';
+      normalizeTenantCode(tenantFromHeader) ?? normalizeTenantCode(dto.tenantCode) ?? platform.code;
 
     const client = await this.prisma.client.findUnique({ where: { code: resolvedTenantCode } });
     if (!client) throw new BadRequestException(`Société introuvable (${resolvedTenantCode}).`);
@@ -926,7 +928,7 @@ export class AuthService {
 
     this.mail.sendEmail(
       email,
-      "Bienvenue sur Direct Transf'air 🎉",
+      `Bienvenue sur ${platform.name} 🎉`,
       `<p>Bonjour ${dto.firstName},</p>
        <p>Votre compte a bien été créé. Pour l'activer, vérifiez votre adresse email.</p>`,
     ).catch((e) => { this.logger.warn('Échec email bienvenue', e); });

@@ -1,11 +1,11 @@
 // apps/backend/src/tenants/tenant.service.ts
+// ✅ phase 7 : société par défaut lue dans la configuration plateforme (PLATFORM_TENANT_CODE) au lieu de « DONIKO » en dur.
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Client } from '@prisma/client';
 
 import { ClientsService } from '../clients/clients.service';
 import type { RequestWithTenant } from './tenant.middleware';
-
-const DEFAULT_TENANT_CODE = 'DONIKO';
+import { platform } from '../common/platform.config';
 
 @Injectable()
 export class TenantService {
@@ -19,7 +19,7 @@ export class TenantService {
         ? req.tenantCode.trim().toUpperCase()
         : undefined;
 
-    const code = (fromContext ?? fromLegacy ?? DEFAULT_TENANT_CODE)
+    const code = (fromContext ?? fromLegacy ?? platform.code)
       .trim()
       .toUpperCase();
 

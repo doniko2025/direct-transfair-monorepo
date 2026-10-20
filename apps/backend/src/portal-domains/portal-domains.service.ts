@@ -1,5 +1,6 @@
 // apps/backend/src/portal-domains/portal-domains.service.ts
 // =========================================================
+// ✅ v1.2 (phase 7) : la société système (exclue de la gestion des domaines) est lue dans la configuration plateforme (PLATFORM_TENANT_CODE) ; SYSTEM_COMPANY_CODE supprimé.
 // DOMAINES DES PORTAILS DE SOCIÉTÉS v1.1 (lot C — console unique)
 //
 // v1.1 — 🔥 CORRIGÉ : un domaine restait en « Validation en cours » alors que le TXT de preuve était en place — le moteur
@@ -38,8 +39,8 @@ import {
 } from './portal-domains.rules';
 import { CloudflareClient, ProviderError } from './providers/cloudflare.client';
 import { VercelClient } from './providers/vercel.client';
+import { platform } from '../common/platform.config';
 
-export const SYSTEM_COMPANY_CODE = 'DONIKO';
 const LEASE_MS = 2 * 60_000;
 const ACTIVE_RECHECK_MS = 24 * 3_600_000;
 const FAST_POLL_MS = 5 * 60_000;
@@ -173,7 +174,7 @@ export class PortalDomainsService {
   async list() {
     const [clients, records] = await Promise.all([
       this.prisma.client.findMany({
-        where: { code: { not: SYSTEM_COMPANY_CODE }, deletedAt: null },
+        where: { code: { not: platform.code }, deletedAt: null },
         select: CLIENT_SELECT,
         orderBy: { name: 'asc' },
       }),
@@ -460,7 +461,7 @@ export class PortalDomainsService {
   private async loadClient(clientId: number): Promise<ClientRow> {
     const client = await this.prisma.client.findUnique({ where: { id: clientId }, select: CLIENT_SELECT });
     if (!client || client.deletedAt) throw new NotFoundException('Société introuvable.');
-    if (client.code === SYSTEM_COMPANY_CODE) {
+    if (client.code === platform.code) {
       throw new BadRequestException('La société système de la plateforme n’a pas de domaine de portail.');
     }
     return client;

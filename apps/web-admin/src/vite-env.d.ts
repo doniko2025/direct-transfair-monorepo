@@ -1,3 +1,5 @@
+// src/vite-env.d.ts
+// ✅ phase 7 : variables d'identité de la plateforme (VITE_PLATFORM_*, VITE_BRAND_*, VITE_CONSOLE_PORTAL_*).
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
@@ -8,6 +10,13 @@ interface ImportMetaEnv {
   readonly VITE_BASE_PATH?: string;
   readonly VITE_CONSOLE_URL?: string;
   readonly VITE_CONSOLE_NAME?: string;
+  readonly VITE_PLATFORM_CODE?: string;
+  readonly VITE_PLATFORM_NAME?: string;
+  readonly VITE_PLATFORM_TAGLINE?: string;
+  readonly VITE_BRAND_PRIMARY?: string;
+  readonly VITE_BRAND_SECONDARY?: string;
+  readonly VITE_CONSOLE_PORTAL_NAME?: string;
+  readonly VITE_CONSOLE_PORTAL_TAGLINE?: string;
 }
 
 interface ImportMeta {

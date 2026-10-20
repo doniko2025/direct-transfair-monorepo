@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
+// ✅ phase 7 : le code de la société système est lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
 // AUTH PROVIDER v7.1 — Direct Transf'air
 // ✅ v7.1 : 🔥 CORRIGÉ « le chargement tourne sans fin » au démarrage. La restauration de session attendait
 //   GET /auth/me (puis, sur 401, POST /auth/refresh) AVANT d'afficher quoi que ce soit : avec un serveur qui se
@@ -49,6 +50,7 @@ import { useRouter, useSegments } from "expo-router";
 import { api } from "../services/api";
 import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
 import { getCurrencyByCountry } from "../data/countries";
+import { isPlatformCode } from "../services/platformConfig";
 import { promptBiometrics } from "../hooks/useBiometrics"; // ✅ v6.2
 import type {
   AuthUser, LoginPayload, RegisterPayload, LoginResponse,
@@ -428,7 +430,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         normalizeTenant(tenantCode) ?? normalizeTenant(api.getTenant());
       const payload: RegisterPayload & { tenantCode?: string } = {
         ...data,
-        ...(activeTenant && activeTenant !== "DONIKO" ? { tenantCode: activeTenant } : {}),
+        ...(activeTenant && !isPlatformCode(activeTenant) ? { tenantCode: activeTenant } : {}),
       };
       const res = await api.register(payload);
       if (res && typeof res.access_token === "string" && res.access_token.length > 0) {

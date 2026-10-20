@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/ui/Layout.tsx
 // =========================================================
-// MISE EN PAGE v2.0 — Direct Transf'air (thème clair, white-label)
+// MISE EN PAGE v3.0 — Direct Transf'air (design « Corridor », white-label)
+// ✅ v3.0 : design « Corridor » — fond brume, titres Fraunces vert forêt, intitulés de section en Manrope gras,
+//    pastilles d'icône teintées forêt, lignes de liste séparées par le filet vert pâle.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Screen (fond crème, zone sûre, défilement, tirer-pour-rafraîchir, clavier),
 // NavBar (retour + titre), PageTitle (gros titre), SectionHeader, ListRow et
@@ -9,15 +11,15 @@
 
 import React from 'react';
 import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, Text, View,
-  type StyleProp, type ViewStyle,
+  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, View, type StyleProp, type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from './Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUI, SYSTEM_FONT, TAB_SPACE, type UIColors } from './theme';
 import { Avatar, IconButton, UText } from './Primitives';
 import { describeTx, formatMoney, formatShortDate, currencySymbol } from '../wallet/walletTheme';
 
+import { Text } from './Text';
 // ─── Écran ───────────────────────────────────────────────
 type ScreenProps = {
   children: React.ReactNode;
@@ -110,10 +112,10 @@ export function SectionHeader({
   const { C } = useUI();
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, marginBottom: 6 }, style]}>
-      <UText v="overline" tone="muted">{title}</UText>
+      <UText v="subheading" color={C.dark}>{title}</UText>
       {!!action && (
         <Pressable onPress={onAction} hitSlop={8}>
-          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '700', color: C.ink }}>{action}</Text>
+          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '800', color: C.accent }}>{action}</Text>
         </Pressable>
       )}
     </View>
@@ -139,7 +141,7 @@ export function ListRow({ title, subtitle, left, right, icon, onPress, chevron, 
     <>
       {left ?? (icon ? (
         <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: danger ? C.dangerBg : C.beige, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name={icon as any} size={20} color={danger ? C.danger : C.ink} />
+          <Ionicons name={icon as any} size={20} color={danger ? C.danger : C.dark} />
         </View>
       ) : null)}
       <View style={{ flex: 1, minWidth: 0 }}>

@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/ui/Primitives.tsx
 // =========================================================
-// BRIQUES DE BASE v2.0 — Direct Transf'air (thème clair, white-label)
+// BRIQUES DE BASE v3.0 — Direct Transf'air (design « Corridor », white-label)
+// ✅ v3.0 : design « Corridor » — bouton principal jaune soleil (coins 20), puces à contour 1,5,
+//    onglets soulignés par la barre jaune, avatars aux teintes forêt, icônes Lucide, polices Manrope.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Texte, boutons, puces, onglets soulignés, carte, séparateur, avatar,
 // pastille de statut, interrupteur, bandeau d'info. Toutes les couleurs
@@ -9,12 +11,12 @@
 
 import React from 'react';
 import {
-  ActivityIndicator, Pressable, StyleSheet, Switch, Text, View,
-  type StyleProp, type TextProps, type TextStyle, type ViewStyle,
+  ActivityIndicator, Pressable, StyleSheet, Switch, View, type StyleProp, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from './Icon';
 import { useUI, type TextVariant, SYSTEM_FONT } from './theme';
 
+import { Text } from './Text';
 // ─── Texte ───────────────────────────────────────────────
 type UTextProps = TextProps & {
   v?: TextVariant;
@@ -22,7 +24,7 @@ type UTextProps = TextProps & {
   tone?: 'ink' | 'muted' | 'faint' | 'accent' | 'pos' | 'danger' | 'warn';
   align?: TextStyle['textAlign'];
 };
-export function UText({ v = 'body', color, tone = 'ink', align, style, ...rest }: UTextProps) {
+export function UText({ v = 'body', color, tone, align, style, ...rest }: UTextProps) {
   const { C, T } = useUI();
   const tones: Record<string, string> = {
     ink: C.ink, muted: C.muted, faint: C.faint, accent: C.accentDeep, pos: C.pos, danger: C.danger, warn: C.warn,
@@ -30,7 +32,7 @@ export function UText({ v = 'body', color, tone = 'ink', align, style, ...rest }
   return (
     <Text
       {...rest}
-      style={[{ fontFamily: SYSTEM_FONT }, T[v], { color: color ?? tones[tone] }, align ? { textAlign: align } : null, style]}
+      style={[{ fontFamily: SYSTEM_FONT }, T[v], { color: color ?? (tone ? tones[tone] : v === 'hero' || v === 'title' ? C.dark : C.ink) }, align ? { textAlign: align } : null, style]}
     />
   );
 }
@@ -55,9 +57,9 @@ export function Button({
 }: ButtonProps) {
   const { C, R, T } = useUI();
   const palette: Record<ButtonKind, { bg: string; fg: string; bd?: string }> = {
-    primary: { bg: C.accent, fg: C.accentInk },
+    primary: { bg: C.sun, fg: C.sunInk },
     dark: { bg: C.dark, fg: C.darkInk },
-    outline: { bg: 'transparent', fg: C.ink, bd: C.lineStrong },
+    outline: { bg: C.surface, fg: C.dark, bd: C.line },
     soft: { bg: C.accentSoft, fg: C.accentDeep },
     ghost: { bg: 'transparent', fg: C.ink },
     danger: { bg: C.dangerBg, fg: C.danger, bd: C.dangerLine },
@@ -74,7 +76,7 @@ export function Button({
         {
           height: small ? 42 : 56,
           paddingHorizontal: small ? 18 : 24,
-          borderRadius: R.pill,
+          borderRadius: small ? R.pill : R.md,
           backgroundColor: p.bg,
           borderWidth: p.bd ? 1.5 : 0,
           borderColor: p.bd,
@@ -141,7 +143,7 @@ export function IconButton({
   );
 }
 
-// ─── Puce (filtre / choix) : noire quand sélectionnée ────
+// ─── Puce (filtre / choix) : forêt quand sélectionnée ────
 export function Chip({
   label, active, onPress, icon, count, style,
 }: { label: string; active?: boolean; onPress?: () => void; icon?: string; count?: number; style?: StyleProp<ViewStyle> }) {
@@ -152,13 +154,13 @@ export function Chip({
       accessibilityState={{ selected: !!active }}
       onPress={onPress}
       style={({ pressed }) => [{
-        height: 40, paddingHorizontal: 16, borderRadius: R.pill, flexDirection: 'row', alignItems: 'center', gap: 6,
-        backgroundColor: active ? C.dark : C.surface, borderWidth: 1, borderColor: active ? C.dark : C.line,
+        height: 42, paddingHorizontal: 16, borderRadius: R.pill, flexDirection: 'row', alignItems: 'center', gap: 6,
+        backgroundColor: active ? C.dark : C.surface, borderWidth: 1.5, borderColor: active ? C.dark : C.line,
         opacity: pressed ? 0.85 : 1,
       }, style]}
     >
       {!!icon && <Ionicons name={icon as any} size={15} color={active ? C.darkInk : C.ink} />}
-      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '600', color: active ? C.darkInk : C.ink }}>{label}</Text>
+      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '700', color: active ? C.darkInk : C.dark }}>{label}</Text>
       {count !== undefined && count > 0 && (
         <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, fontWeight: '700', color: active ? C.darkInk : C.muted, opacity: 0.8 }}>{count}</Text>
       )}
@@ -183,9 +185,9 @@ export function Tabs<K extends string>({
             onPress={() => onChange(it.key)}
             style={{ flex: 1, alignItems: 'center', paddingVertical: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
           >
-            {!!it.icon && <Ionicons name={it.icon as any} size={16} color={on ? C.ink : C.muted} />}
-            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 15, fontWeight: on ? '800' : '600', color: on ? C.ink : C.muted }}>{it.label}</Text>
-            <View style={{ position: 'absolute', left: 16, right: 16, bottom: -1, height: 3, borderRadius: 2, backgroundColor: on ? C.ink : 'transparent' }} />
+            {!!it.icon && <Ionicons name={it.icon as any} size={16} color={on ? C.dark : C.muted} />}
+            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 15, fontWeight: on ? '800' : '600', color: on ? C.dark : C.muted }}>{it.label}</Text>
+            <View style={{ position: 'absolute', left: 16, right: 16, bottom: -1, height: 4, borderRadius: 2, backgroundColor: on ? C.sun : 'transparent' }} />
           </Pressable>
         );
       })}
@@ -217,10 +219,10 @@ export function Divider({ inset = 0, style }: { inset?: number; style?: StylePro
   return <View style={[{ height: StyleSheet.hairlineWidth > 0.5 ? 1 : 1, backgroundColor: C.line, marginLeft: inset }, style]} />;
 }
 
-// ─── Avatar rond (beige, menthe si entrant) ──────────────
+// ─── Avatar rond (teintes forêt, vert si entrant) ──────────────
 const AV = [
-  { bg: '#EFEBE1', fg: '#5B5648' }, { bg: '#E7EEE3', fg: '#46603B' }, { bg: '#EAE7F2', fg: '#554A7A' },
-  { bg: '#F3E8E4', fg: '#7A4A3C' }, { bg: '#E3EDF0', fg: '#3B5C66' }, { bg: '#F2EDDA', fg: '#6E5F25' },
+  { bg: '#DCEBE2', fg: '#1F6B4A' }, { bg: '#FFF1BF', fg: '#7A5B00' }, { bg: '#E4ECF3', fg: '#3B5C75' },
+  { bg: '#F3E6DE', fg: '#7A4A3C' }, { bg: '#E7E3F2', fg: '#554A7A' }, { bg: '#D9EEE9', fg: '#1B6B66' },
 ];
 export function initials(name?: string): string {
   const parts = (name || '?').trim().split(/\s+/);
@@ -261,7 +263,7 @@ export function Pill({
 }: { label: string; tone?: 'accent' | 'neutral' | 'pos' | 'warn' | 'danger' | 'info' | 'dark'; icon?: string; style?: StyleProp<ViewStyle> }) {
   const { C, R } = useUI();
   const m = {
-    accent: { bg: C.accent, fg: C.accentInk },
+    accent: { bg: C.sun, fg: C.sunInk },
     neutral: { bg: C.beige, fg: C.text },
     pos: { bg: C.posBg, fg: C.pos },
     warn: { bg: C.warnBg, fg: C.warn },

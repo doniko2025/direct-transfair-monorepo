@@ -1,5 +1,6 @@
 // apps/backend/src/fees-admin/fee-rules.ts
 // =========================================================
+// ✅ phase 7 : PLATFORM_CODE (constante « DONIKO ») remplacé par getPlatformCode(), qui lit la configuration plateforme.
 // Règles des frais d'envoi (par société et par mode de retrait).
 //
 // Ce qui est réellement appliqué par transactions.service.ts (create) :
@@ -9,6 +10,8 @@
 //
 // Le frais fixe est ajouté tel quel, dans la devise de l'envoi (le code ne le convertit pas).
 // =========================================================
+
+import { platform } from '../common/platform.config';
 
 export type FeeMethodKey = 'CASH_PICKUP' | 'BANK_DEPOSIT' | 'IBAN_TRANSFER' | 'MOBILE_MONEY' | 'WALLET';
 
@@ -39,8 +42,11 @@ export const DEFAULT_FEE_RATE = 1.5;
 export const MAX_FEE_RATE = 25;
 export const MAX_FIXED_FEE = 10_000_000;
 
-/** Code de la société système (plateforme) : elle n'envoie pas d'argent, elle n'a pas de frais. */
-export const PLATFORM_CODE = 'DONIKO';
+/**
+ * Code de la société système (plateforme) : elle n'envoie pas d'argent, elle n'a pas de frais.
+ * ✅ phase 7 : lu dans la configuration (PLATFORM_TENANT_CODE) à chaque appel, plus écrit en dur.
+ */
+export const getPlatformCode = (): string => platform.code;
 
 /** Vrai si le nombre a au plus deux décimales. */
 export const hasAtMostTwoDecimals = (n: number): boolean => Math.round(n * 100) / 100 === n;

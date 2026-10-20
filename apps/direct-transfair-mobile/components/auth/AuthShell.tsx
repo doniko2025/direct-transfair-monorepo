@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CADRE DES ÉCRANS D'AUTHENTIFICATION v2.1 — Direct Transf'air
 // ✅ v2.1 : MISE EN PAGE ORDINATEUR (web ≥ 900 px) — avant, la même colonne étroite collée en haut de
@@ -16,15 +17,17 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Text, View,
+  Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../ui/Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
 import { buildPalette, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
+import { SERIF } from '../ui/fonts';
 import { buildColors } from '../ui/theme';
 
+import { Text } from '../ui/Text';
 type Props = {
   title: string;
   subtitle?: string;
@@ -164,7 +167,7 @@ const s = StyleSheet.create({
   markImg: { width: '78%', height: '78%' },
   brandName: { fontFamily: FONT.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
 
-  title:    { fontFamily: FONT.display, fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1, marginTop: 22 },
+  title:    { fontFamily: SERIF, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -0.5, marginTop: 22 },
   subtitle: { fontFamily: FONT.body, fontSize: 16, lineHeight: 23, marginTop: 8 },
   body:     { marginTop: 26, flexGrow: 1 },
 

@@ -1,18 +1,22 @@
 // src/lib/branding.ts
+// ✅ phase 7 : nom, accroche et couleurs de la plateforme lus dans config.ts (VITE_PLATFORM_* / VITE_BRAND_* / VITE_CONSOLE_PORTAL_*).
 // Applique le branding d'une société (couleurs, police, titre) via des
 // variables CSS : les composants ne connaissent jamais une couleur en dur.
 
 import { PLATFORM_TENANT, type TenantBranding } from '@direct-transfair/shared';
-import { BASE_PATH, CONSOLE_EMBEDDED } from '../config';
+import {
+  BASE_PATH, CONSOLE_EMBEDDED, PLATFORM_NAME, PLATFORM_TAGLINE, BRAND_PRIMARY, BRAND_SECONDARY,
+  CONSOLE_PORTAL_NAME, CONSOLE_PORTAL_TAGLINE,
+} from '../config';
 import { parseHex, readableOn } from './colors';
 
 export const DEFAULT_BRANDING: TenantBranding = {
   code: PLATFORM_TENANT,
-  name: "Direct Transf'air",
+  name: PLATFORM_NAME,
   logoUrl: null,
-  primaryColor: '#0b7a5b',
-  secondaryColor: '#f7931e',
-  tagline: 'Espace de gestion de la plateforme',
+  primaryColor: BRAND_PRIMARY,
+  secondaryColor: BRAND_SECONDARY,
+  tagline: PLATFORM_TAGLINE,
   fontFamily: null,
   welcomeMessage: null,
   subdomain: null,
@@ -27,8 +31,8 @@ export const DEFAULT_BRANDING: TenantBranding = {
 export function consoleBranding(): TenantBranding {
   return {
     ...DEFAULT_BRANDING,
-    name: 'Sociétés de transfert',
-    tagline: 'Pilotage des sociétés de transfert d’argent',
+    name: CONSOLE_PORTAL_NAME,
+    tagline: CONSOLE_PORTAL_TAGLINE,
     logoUrl: `${BASE_PATH}/favicon.svg`,
   };
 }

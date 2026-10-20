@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/ui/Feedback.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // ÉTATS v2.0 — Direct Transf'air (thème clair, white-label)
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
@@ -8,7 +9,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Animated, View, type DimensionValue, type StyleProp, type ViewStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from './Icon';
 import { useUI } from './theme';
 import { Button, UText } from './Primitives';
 

@@ -1,5 +1,7 @@
 // apps/backend/src/mail/channels/company-mail.service.ts
 // =========================================================
+// ✅ v1.1 (phase 7) : courriel de bienvenue société — marque, liens (portail, site, App Store / Google Play) et e-mail de support lus dans
+//   la configuration plateforme (PLATFORM_*) ; un bloc dont la valeur n'est pas configurée est simplement omis (plus de domaine en dur).
 // COMPANY MAIL — Notifications société cliente B2B
 // ✅ Multi-devises
 // ✅ Trésorerie 5 devises
@@ -8,6 +10,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { MailService, formatAmount } from '../mail.service';
+import { platform, escapeHtml } from '../../common/platform.config';
 
 @Injectable()
 export class CompanyMailService {
@@ -273,12 +276,85 @@ async sendWelcomeCompanyAdmin(params: {
   const initial = (params.companyName?.[0] ?? 'C').toUpperCase();
   const year    = new Date().getFullYear();
 
+  // ✅ v1.1 (phase 7) : marque, liens et support viennent de la configuration plateforme (plus rien en dur).
+  const brand    = escapeHtml(platform.legalName);
+  const appUrl   = platform.appUrl;
+  const siteUrl  = platform.websiteUrl;
+  const support  = platform.supportEmail;
+  const storeBtn = (href: string, icon: string, small: string, big: string, pad: string) => `
+          <td style="${pad}">
+            <a href="${escapeHtml(href)}"
+               style="display:block;text-decoration:none;background:#0F172A;
+                      border-radius:14px;padding:14px 22px;text-align:center;
+                      min-width:130px;">
+              <p style="margin:0 0 2px;font-size:20px;">${icon}</p>
+              <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;font-weight:600;">${small}</p>
+              <p style="margin:0;font-size:15px;color:#ffffff;font-weight:800;">${big}</p>
+            </a>
+          </td>`;
+  const storeCells = [
+    platform.androidUrl ? storeBtn(platform.androidUrl, '▶', 'Télécharger sur', 'Google Play', 'padding:0 6px;') : '',
+    platform.iosUrl     ? storeBtn(platform.iosUrl, '🍎', 'Disponible sur', 'App Store', 'padding:0 6px;') : '',
+  ].join('');
+  const downloadBlock = storeCells ? `
+  <tr>
+    <td style="background:#ffffff;padding:28px 36px 0;text-align:center;">
+      <p style="margin:0 0 18px;font-size:14px;font-weight:700;color:#374151;">
+        📱 Téléchargez votre application mobile :
+      </p>
+      <table align="center" cellpadding="0" cellspacing="0" border="0">
+        <tr>${storeCells}
+        </tr>
+      </table>
+    </td>
+  </tr>` : '';
+  const webBlock = appUrl ? `
+  <tr>
+    <td style="background:#ffffff;padding:24px 36px 0;text-align:center;">
+      <p style="margin:0 0 16px;font-size:13px;color:#6B7280;font-weight:500;">
+        Ou connectez-vous directement depuis votre navigateur :
+      </p>
+      <a href="${escapeHtml(appUrl)}"
+         style="display:inline-block;
+                background:linear-gradient(135deg,#1240D6,#1956F0);
+                color:#ffffff;text-decoration:none;border-radius:14px;
+                padding:16px 44px;font-size:15px;font-weight:800;letter-spacing:0.3px;">
+        Accéder à mon espace professionnel →
+      </a>
+      <p style="margin:10px 0 0;font-size:11px;color:#94A3B8;font-family:monospace;">
+        ${escapeHtml(appUrl)}
+      </p>
+    </td>
+  </tr>` : '';
+  const contactLines = [
+    support ? `📧 <a href="mailto:${escapeHtml(support)}" style="color:#1956F0;text-decoration:none;font-weight:600;">${escapeHtml(support)}</a>` : '',
+    siteUrl ? `🌐 <a href="${escapeHtml(siteUrl)}" style="color:#1956F0;text-decoration:none;font-weight:600;">${escapeHtml(siteUrl.replace(/^https?:\/\//, ''))}</a>` : '',
+  ].filter(Boolean).join('<br/>');
+  const supportBlock = contactLines ? `
+  <tr>
+    <td style="background:#ffffff;padding:0 36px 28px;">
+      <table width="100%" cellpadding="20" cellspacing="0"
+        style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;">
+        <tr>
+          <td style="text-align:center;">
+            <p style="margin:0 0 10px;font-size:14px;font-weight:800;color:#0F172A;">
+              Une question ? Notre équipe est là pour vous 💬
+            </p>
+            <p style="margin:0;font-size:13px;color:#6B7280;line-height:1.8;">
+              ${contactLines}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>` : '';
+
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Bienvenue chez Transf'Air International</title>
+  <title>Bienvenue chez ${brand}</title>
 </head>
 <body style="margin:0;padding:0;background:#EEF2FF;font-family:'Segoe UI',Helvetica,Arial,sans-serif;-webkit-text-size-adjust:100%;">
 
@@ -300,7 +376,7 @@ async sendWelcomeCompanyAdmin(params: {
                          border:1.5px solid rgba(255,255,255,0.3);border-radius:50px;
                          padding:7px 22px;font-size:11px;font-weight:800;
                          color:rgba(255,255,255,0.9);letter-spacing:2.5px;">
-              DIRECT TRANSF'AIR INTERNATIONAL
+              ${brand.toUpperCase()}
             </span>
           </td>
         </tr>
@@ -364,7 +440,7 @@ async sendWelcomeCompanyAdmin(params: {
       </p>
       <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.9;">
         Nous sommes ravis de vous accueillir dans la famille
-        <strong>Direct Transf'Air International</strong> ! 🌍<br/>
+        <strong>${brand}</strong> ! 🌍<br/>
         Votre société <strong style="color:#1956F0;">${params.companyName}</strong>
         est désormais <strong>enregistrée et pleinement opérationnelle</strong>
         sur notre plateforme SaaS de transfert de fonds international.
@@ -561,65 +637,9 @@ async sendWelcomeCompanyAdmin(params: {
     </td>
   </tr>
 
-  <!-- ═══ TÉLÉCHARGEMENT ═══ -->
-  <tr>
-    <td style="background:#ffffff;padding:28px 36px 0;text-align:center;">
-      <p style="margin:0 0 18px;font-size:14px;font-weight:700;color:#374151;">
-        📱 Téléchargez votre application mobile :
-      </p>
-      <table align="center" cellpadding="0" cellspacing="0" border="0">
-        <tr>
-          <td style="padding:0 6px 0 0;">
-            <a href="https://play.google.com/store"
-               style="display:block;text-decoration:none;background:#0F172A;
-                      border-radius:14px;padding:14px 22px;text-align:center;
-                      min-width:130px;">
-              <p style="margin:0 0 2px;font-size:20px;">▶</p>
-              <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;font-weight:600;">
-                Télécharger sur
-              </p>
-              <p style="margin:0;font-size:15px;color:#ffffff;font-weight:800;">
-                Google Play
-              </p>
-            </a>
-          </td>
-          <td style="padding:0 0 0 6px;">
-            <a href="https://apps.apple.com"
-               style="display:block;text-decoration:none;background:#0F172A;
-                      border-radius:14px;padding:14px 22px;text-align:center;
-                      min-width:130px;">
-              <p style="margin:0 0 2px;font-size:20px;">🍎</p>
-              <p style="margin:0 0 2px;font-size:10px;color:#9CA3AF;font-weight:600;">
-                Disponible sur
-              </p>
-              <p style="margin:0;font-size:15px;color:#ffffff;font-weight:800;">
-                App Store
-              </p>
-            </a>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-
-  <!-- ═══ BOUTON ACCÈS WEB ═══ -->
-  <tr>
-    <td style="background:#ffffff;padding:24px 36px 0;text-align:center;">
-      <p style="margin:0 0 16px;font-size:13px;color:#6B7280;font-weight:500;">
-        Ou connectez-vous directement depuis votre navigateur :
-      </p>
-      <a href="https://app.direct-transfair.com"
-         style="display:inline-block;
-                background:linear-gradient(135deg,#1240D6,#1956F0);
-                color:#ffffff;text-decoration:none;border-radius:14px;
-                padding:16px 44px;font-size:15px;font-weight:800;letter-spacing:0.3px;">
-        Accéder à mon espace professionnel →
-      </a>
-      <p style="margin:10px 0 0;font-size:11px;color:#94A3B8;font-family:monospace;">
-        https://app.direct-transfair.com
-      </p>
-    </td>
-  </tr>
+  <!-- ═══ TÉLÉCHARGEMENT + ACCÈS WEB (selon la configuration) ═══ -->
+  ${downloadBlock}
+  ${webBlock}
 
   <!-- ═══ SÉPARATEUR ═══ -->
   <tr>
@@ -632,45 +652,22 @@ async sendWelcomeCompanyAdmin(params: {
     </td>
   </tr>
 
-  <!-- ═══ SUPPORT ═══ -->
-  <tr>
-    <td style="background:#ffffff;padding:0 36px 28px;">
-      <table width="100%" cellpadding="20" cellspacing="0"
-        style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:14px;">
-        <tr>
-          <td style="text-align:center;">
-            <p style="margin:0 0 10px;font-size:14px;font-weight:800;color:#0F172A;">
-              Une question ? Notre équipe est là pour vous 💬
-            </p>
-            <p style="margin:0;font-size:13px;color:#6B7280;line-height:1.8;">
-              📧 <a href="mailto:support@direct-transfair.com"
-                    style="color:#1956F0;text-decoration:none;font-weight:600;">
-                support@direct-transfair.com
-              </a><br/>
-              🌐 <a href="https://www.direct-transfair.com"
-                    style="color:#1956F0;text-decoration:none;font-weight:600;">
-                www.direct-transfair.com
-              </a>
-            </p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+  <!-- ═══ SUPPORT (selon la configuration) ═══ -->
+  ${supportBlock}
 
   <!-- ═══ FOOTER ═══ -->
   <tr>
     <td style="background:linear-gradient(135deg,#0C1020,#111827);
                padding:28px 36px;text-align:center;border-radius:0 0 24px 24px;">
       <p style="margin:0 0 10px;color:rgba(255,255,255,0.88);font-size:14px;font-weight:700;">
-        Direct Transf'Air International
+        ${brand}
       </p>
       <p style="margin:0 0 14px;color:#4B5563;font-size:11px;line-height:1.75;">
         Ce message a été envoyé automatiquement suite à la création de votre espace société.<br/>
         Merci de ne pas répondre directement à cet email.
       </p>
       <p style="margin:0;color:#374151;font-size:11px;">
-        © ${year} Direct Transf'Air International. Tous droits réservés.
+        © ${year} ${brand}. Tous droits réservés.
       </p>
     </td>
   </tr>
@@ -686,7 +683,7 @@ async sendWelcomeCompanyAdmin(params: {
   // sendRaw = HTML complet sans le wrapHtml() de base
   await this.mailService.sendRaw(
     params.email,
-    `🎉 Bienvenue chez Transf'Air — ${params.companyName} est officiellement active !`,
+    `🎉 Bienvenue chez ${platform.name} — ${params.companyName} est officiellement active !`,
     html,
   );
 }

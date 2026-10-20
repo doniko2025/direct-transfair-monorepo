@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
+// ✅ phase 7 : code plateforme et domaine des portails lus dans services/platformConfig.ts (plus de « DONIKO » ni de domaine en dur).
 // LOGIN v3.0 — Direct Transf'air
 // ✅ v3.3 : la pastille « Hors ligne » disparaît dès que le serveur répond (même par un refus, ex. compte réservé au portail web).
 // ✅ v3.2 : MISE EN PAGE — l'encadré teinté « Pas encore de compte ? » + bouton (deux blocs empilés qui allongeaient la page) devient un séparateur fin suivi du seul bouton « Créer un compte » (toujours visible dès l'ouverture). Aucune logique modifiée. Développé par Thierno Doniko (Grand Chef).
@@ -79,13 +81,14 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../components/ui/Icon';
 
 import { useAuth }   from '../../providers/AuthProvider';
 import { useTenant } from '../../providers/TenantProvider';
 import { api }       from '../../services/api';
+import { isPlatformCode, getPortalBaseDomain } from '../../services/platformConfig';
 import { v2Auth }    from '../../services/v2-auth';
 import { authRequest, useServerStatus } from '../../services/serverWarmup';
 
@@ -104,6 +107,7 @@ import ServerStatusPill from '../../components/auth/ServerStatusPill';
 import { describeAuthError, type AuthErrorInfo } from '../../components/auth/authErrors';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
+import { Text, TextInput } from '../../components/ui/Text';
 type View_ = 'PASSWORD' | 'OTP_REQUEST' | 'OTP_VERIFY';
 type NoticeState = { kind: 'error' | 'info' | 'success' | 'warning'; title?: string; message: string } | null;
 
@@ -157,7 +161,7 @@ export default function LoginV2Screen() {
   // ── Synchronisation du tenant ─────────────────────────
   useFocusEffect(
     useCallback(() => {
-      if (branding.code !== 'DONIKO') void api.setTenant(branding.code);
+      if (!isPlatformCode(branding.code)) void api.setTenant(branding.code);
     }, [branding.code]),
   );
 
@@ -229,7 +233,7 @@ export default function LoginV2Screen() {
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         const targetUrl = customDomain
           ? `https://${customDomain}`
-          : subdomain ? `https://${subdomain}.direct-transfer.com` : null;
+          : subdomain && getPortalBaseDomain() ? `https://${subdomain}.${getPortalBaseDomain()}` : null;
         if (targetUrl) {
           setNotice({ kind: 'info', title: 'Redirection', message: `Ouverture de l'espace ${clientCode ?? 'de votre société'}…` });
           window.location.href = targetUrl;

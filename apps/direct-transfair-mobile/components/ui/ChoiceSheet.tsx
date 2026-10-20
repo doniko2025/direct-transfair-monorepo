@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/ui/ChoiceSheet.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CHOICE SHEET v1.0 — Direct Transf'air (design system clair)
 // Feuille basse de sélection avec recherche : pays, ville, indicatif téléphonique…
@@ -11,7 +12,7 @@
 
 import React, { useMemo, useState } from "react";
 import { View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from './Icon';
 import { useUI } from "./theme";
 import { UText } from "./Primitives";
 import { SearchPill } from "./Field";

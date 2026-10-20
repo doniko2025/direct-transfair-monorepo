@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/providers/TenantProvider.tsx
 // =========================================================
-// TENANT PROVIDER v1.3 — Direct Transf'air
+// ✅ v1.4 (phase 7) : DEFAULT_BRANDING, code plateforme (« DONIKO »), hôtes de la plateforme et domaine des portails (buildCompanyPortalUrl)
+//   viennent de services/platformConfig.ts ; mentions légales fictives supprimées (voir DEFAULT_BRANDING).
+// TENANT PROVIDER v1.4 — Direct Transf'air
 // ✅ v1.3 : Mentions légales publiques dans TenantBranding
 //   PROBLÈME RÉSOLU : terms.tsx / assistance.tsx avaient "Direct
 //   Transf'air SAS", l'agrément ACPR, le capital social, le contact
@@ -25,6 +27,10 @@ import React, {
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../services/api";
+import {
+  getPlatformCode, isPlatformCode, getPlatformName, getPlatformTagline, getPlatformColors,
+  getFallbackSupportEmail, getFallbackSupportPhone, getLegalFallbacks, getPlatformHosts, getPortalBaseDomain,
+} from "../services/platformConfig";
 
 // ─── Types ───────────────────────────────────────────────
 export type TenantBranding = {
@@ -37,7 +43,7 @@ export type TenantBranding = {
   fontFamily:     string | null;
   splashBgColor:  string | null;
   welcomeMessage: string | null;
-  subdomain:      string | null;  // "flash" → flash.direct-transfer.com
+  subdomain:      string | null;  // « flash » → flash.<domaine de base configuré>
   customDomain:   string | null;  // "www.flash-transfer.com"
   // ✅ v1.3 — Mentions légales publiques (écrans CGU / Assistance)
   contactEmail:             string | null;
@@ -58,36 +64,41 @@ export type TenantBranding = {
   termsEffectiveDate:       string | null; // ISO — formaté à l'affichage
 };
 
+// ✅ v1.4 (phase 7) : plus aucune valeur de société écrite en dur. Identité, couleurs et mentions légales de la
+//   plateforme viennent de services/platformConfig.ts (variables EXPO_PUBLIC_*). Les mentions légales fictives
+//   (agrément « N° 12345 », capital, téléphone +33123456789…) sont supprimées : les vraies valeurs viennent de l'API
+//   (fiche de la société) et les écrans masquent déjà un champ vide.
+const PF_COLORS = getPlatformColors();
+const PF_LEGAL  = getLegalFallbacks();
+
 export const DEFAULT_BRANDING: TenantBranding = {
-  code:           "DONIKO",
-  name:           "Direct Transf'air",
+  code:           getPlatformCode(),
+  name:           getPlatformName(),
   logoUrl:        null,
-  primaryColor:   "#059669",
-  secondaryColor: "#10B981",
-  tagline:        "Transferts internationaux sécurisés",
+  primaryColor:   PF_COLORS.primary,
+  secondaryColor: PF_COLORS.secondary,
+  tagline:        getPlatformTagline(),
   fontFamily:     null,
-  splashBgColor:  "#064E3B",
+  splashBgColor:  PF_COLORS.splash,
   welcomeMessage: null,
   subdomain:      null,
   customDomain:   null,
-  // ✅ v1.3 (nouveau) — reprend exactement les valeurs jusqu'ici en dur
-  // dans terms.tsx / assistance.tsx : comportement inchangé pour DONIKO.
-  contactEmail:             "contact@directtransfair.com",
-  contactPhone:             "+33123456789",
-  address:                  "Paris, France",
-  legalCompanyName:         "Direct Transf'air SAS",
-  regulatorName:            "Autorité de Contrôle Prudentiel et de Résolution (ACPR)",
-  regulatorAcronym:         "ACPR",
-  regulatoryFrameworkLabel: "DSP2",
-  regulatorLicenseNumber:   "N° 12345",
-  regulatorLicenseType:     "Établissement de paiement",
-  capitalSocial:            "100 000 € entièrement libéré",
-  supportEmail:             "support@directtransfair.com",
-  whatsappNumber:           "+33123456789",
-  mediatorName:             "Médiateur de l'ACPR",
-  mediatorUrl:              "https://www.acpr.banque-france.fr",
-  termsVersion:             "1.0",
-  termsEffectiveDate:       "2025-06-01",
+  contactEmail:             getFallbackSupportEmail(),
+  contactPhone:             getFallbackSupportPhone(),
+  address:                  PF_LEGAL.address,
+  legalCompanyName:         PF_LEGAL.legalCompanyName,
+  regulatorName:            PF_LEGAL.regulatorName,
+  regulatorAcronym:         PF_LEGAL.regulatorAcronym,
+  regulatoryFrameworkLabel: PF_LEGAL.regulatoryFrameworkLabel,
+  regulatorLicenseNumber:   PF_LEGAL.regulatorLicenseNumber,
+  regulatorLicenseType:     PF_LEGAL.regulatorLicenseType,
+  capitalSocial:            PF_LEGAL.capitalSocial,
+  supportEmail:             getFallbackSupportEmail(),
+  whatsappNumber:           getFallbackSupportPhone(),
+  mediatorName:             PF_LEGAL.mediatorName,
+  mediatorUrl:              PF_LEGAL.mediatorUrl,
+  termsVersion:             PF_LEGAL.termsVersion,
+  termsEffectiveDate:       PF_LEGAL.termsEffectiveDate,
 };
 
 const STORAGE_KEY = "dt_tenant_branding_v1";
@@ -119,8 +130,8 @@ function isDefaultHost(host: string): boolean {
   if (lower.includes("onrender.com")) return true;
   if (lower.includes("fly.dev"))      return true;
 
-  if (lower === "direct-transfer.com")     return true;
-  if (lower === "www.direct-transfer.com") return true;
+  // ✅ v1.4 : hôtes de la plateforme lus dans la configuration (EXPO_PUBLIC_PORTAL_BASE_DOMAIN / _PLATFORM_HOSTS)
+  if (getPlatformHosts().includes(lower)) return true;
 
   return false;
 }
@@ -134,8 +145,10 @@ export function buildCompanyPortalUrl(branding: TenantBranding | {
   if ((branding as any).customDomain) {
     return `https://${(branding as any).customDomain}`;
   }
-  if ((branding as any).subdomain) {
-    return `https://${(branding as any).subdomain}.direct-transfer.com`;
+  // ✅ v1.4 : domaine de base configurable (EXPO_PUBLIC_PORTAL_BASE_DOMAIN) — sans lui, pas de lien par sous-domaine.
+  const baseDomain = getPortalBaseDomain();
+  if ((branding as any).subdomain && baseDomain) {
+    return `https://${(branding as any).subdomain}.${baseDomain}`;
   }
   return null;
 }
@@ -159,7 +172,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
             try {
               const data = await (api as any).getBrandingByHost(host);
 
-              if (data?.code && data.code !== "DONIKO") {
+              if (data?.code && !isPlatformCode(data.code)) {
                 const next: TenantBranding = {
                   code:           data.code,
                   name:           data.name,
@@ -208,7 +221,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         if (!raw) return;
 
         const parsed = JSON.parse(raw) as TenantBranding;
-        if (parsed?.code && parsed.code !== "DONIKO") {
+        if (parsed?.code && !isPlatformCode(parsed.code)) {
           // ✅ v1.3 — enrichit avec les nouveaux champs si absents
           // (migration v1.2 → v1.3, cache persistant plus ancien)
           const enriched: TenantBranding = {
@@ -233,7 +246,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
   const loadBranding = useCallback(async (code: string) => {
     const upper = code.trim().toUpperCase();
-    if (!upper || upper === "DONIKO") {
+    if (!upper || isPlatformCode(upper)) {
       clearBranding();
       return;
     }
@@ -288,7 +301,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     setBranding(DEFAULT_BRANDING);
     setIsCustomBranding(false);
     void AsyncStorage.removeItem(STORAGE_KEY);
-    void api.setTenant("DONIKO");
+    void api.setTenant(getPlatformCode());
   }, []);
 
   return (

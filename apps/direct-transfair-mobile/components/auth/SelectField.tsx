@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/SelectField.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // CHAMP À CHOIX v2.0 — Direct Transf'air
 // ✅ v2.0 : THÈME CLAIR (placeholder et neutres chauds).
@@ -8,11 +9,12 @@
 // =========================================================
 
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '../ui/Icon';
 
 import { FONT, N, RADIUS } from './authTheme';
 
+import { Text } from '../ui/Text';
 type Props = {
   label: string;
   value?: string;
@@ -39,7 +41,7 @@ export default function SelectField({ label, value, prefix, placeholder, icon, e
       >
         {icon ? <Ionicons name={icon} size={19} color={hasError ? N.danger : N.muted} style={{ marginRight: 10 }} /> : null}
         {prefix ? <Text style={s.prefix}>{prefix}</Text> : null}
-        <Text style={[s.value, !value && { color: '#B9B6AD', fontWeight: '500' }]} numberOfLines={1}>
+        <Text style={[s.value, !value && { color: N.faint, fontWeight: '500' }]} numberOfLines={1}>
           {value ?? placeholder}
         </Text>
         <Ionicons name="chevron-down" size={18} color={N.muted} />

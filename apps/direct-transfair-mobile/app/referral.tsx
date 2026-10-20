@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/referral.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // REFERRAL SCREEN v6.0 — Direct Transf'air
 // ✅ v6.0 : REFONTE THÈME CLAIR — fond crème, grand titre, carte « code de parrainage »
@@ -15,7 +16,8 @@
 import React from "react";
 import { View, Pressable, Linking, Share, Platform } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons, FontAwesome } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
+import { FontAwesome } from '@expo/vector-icons';
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "../providers/AuthProvider";
 import { useTenant, buildCompanyPortalUrl } from "../providers/TenantProvider";

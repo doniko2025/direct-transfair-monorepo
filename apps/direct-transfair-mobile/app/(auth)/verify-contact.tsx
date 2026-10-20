@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // VERIFY CONTACT v2.0 — Direct Transf'air
 // ✅ v2.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; compteur d'étape en gris ; aucune logique modifiée.
@@ -70,9 +71,9 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, StyleSheet, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../components/ui/Icon';
 
 import { useAuth } from '../../providers/AuthProvider';
 import { v2Auth } from '../../services/v2-auth';
@@ -85,6 +86,7 @@ import OtpCodeInput from '../../components/auth/OtpCodeInput';
 import { describeAuthError } from '../../components/auth/authErrors';
 import { FONT, N } from '../../components/auth/authTheme';
 
+import { Text } from '../../components/ui/Text';
 // ─── Constantes ──────────────────────────────────────────
 const OTP_LENGTH          = 6;
 const RESEND_COOLDOWN_SEC = 60;

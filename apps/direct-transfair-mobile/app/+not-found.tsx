@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/+not-found.tsx
+// ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // 404 NOT FOUND v2.0 — Direct Transf'air (white-label)
 // ✅ v2.0 : REFONTE en thème clair (design system components/ui) ; le badge affiche le nom de la société du
@@ -10,7 +11,7 @@
 import React from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons } from '../components/ui/Icon';
 import { Button, Pill, Screen, UText, useUI } from "../components/ui";
 import { useTenant } from "../providers/TenantProvider";
 
