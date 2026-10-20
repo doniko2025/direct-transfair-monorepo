@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/components/brand/BrandMark.tsx
 // =========================================================
-// MARQUE « t’ » v1.0 — Direct Transf'air
+// MARQUE « t’ » v1.2 — Direct Transf'air
+// ✅ v1.2 : FIX web — « Received `false` for a non-boolean attribute `collapsable` » : sur le web, Animated.createAnimatedComponent(Path) transmettait
+//    `collapsable` au DOM. Les tracés du « t » passent par <DrawPath /> : natif = composant animé (inchangé), web = progression lue par écouteur
+//    et appliquée en propriétés ordinaires. Aucun changement visuel.
+// ✅ v1.1 : <TenantMark bare /> — pour la plateforme, le « t’ » est posé SANS tuile (fond sombre déjà vert) ; pas d'effet sur le logo d'une société.
 // ✅ v1.0 : nouvelle identité visuelle (monogramme « t’ » : un t blanc et une apostrophe jaune qui arrive en
 //    étincelle). Deux composants :
 //      • <BrandMark />  — le monogramme seul (tuile verte + t + apostrophe), dessiné en SVG (net à toutes les
@@ -15,7 +19,7 @@
 // =========================================================
 
 import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Image, StyleProp, View, ViewStyle } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Image, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import Svg, { Circle, G, Line, Path, Rect } from 'react-native-svg';
 import { Ionicons } from '../ui/Icon';
 import { isPlatformCode } from '../../services/platformConfig';
@@ -51,6 +55,41 @@ const STEM_LEN = 140;
 const BAR_LEN = 70;
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+/**
+ * Tracé qui « se dessine » (0 → 1). Natif : propriétés animées directement. Web : react-native-svg y transmet des attributs
+ * propres à React Native (`collapsable`) au DOM ; on lit donc la progression et on la passe en propriétés ordinaires.
+ */
+function DrawPath({ d, len, progress, playing, stroke, width, join }: {
+  d: string; len: number; progress: Animated.Value; playing: boolean; stroke: string; width: number; join?: boolean;
+}) {
+  const [p, setP] = useState(1);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const id = progress.addListener(({ value }) => setP(value));
+    return () => progress.removeListener(id);
+  }, [progress]);
+
+  const common = {
+    d, stroke, strokeWidth: width, strokeLinecap: 'round' as const,
+    ...(join ? { strokeLinejoin: 'round' as const } : null),
+  };
+
+  if (!playing) return <Path {...common} />;
+
+  if (Platform.OS === 'web') {
+    return <Path {...common} strokeDasharray={`${len} ${len}`} strokeDashoffset={len * (1 - p)} strokeOpacity={p > 0.02 ? 1 : 0} />;
+  }
+
+  return (
+    <AnimatedPath
+      {...common}
+      strokeDasharray={`${len} ${len}`}
+      strokeDashoffset={progress.interpolate({ inputRange: [0, 1], outputRange: [len, 0] }) as unknown as number}
+      strokeOpacity={progress.interpolate({ inputRange: [0, 0.02, 1], outputRange: [0, 1, 1] }) as unknown as number}
+    />
+  );
+}
 
 export function BrandMark({
   size = 64, animated = false, loop = false, loopEvery = 6000, bare = false, inkColor, sparkColor, style,
@@ -119,11 +158,6 @@ export function BrandMark({
   }, [playing, loop, loopEvery]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // — Dérivées d'animation —
-  const stemOffset = stem.interpolate({ inputRange: [0, 1], outputRange: [STEM_LEN, 0] });
-  const barOffset  = bar.interpolate({ inputRange: [0, 1], outputRange: [BAR_LEN, 0] });
-  // Le bout arrondi d'un tracé « vide » laisse un point : on masque le tracé tant qu'il n'a pas commencé.
-  const stemOpac   = stem.interpolate({ inputRange: [0, 0.02, 1], outputRange: [0, 1, 1] });
-  const barOpac    = bar.interpolate({ inputRange: [0, 0.02, 1], outputRange: [0, 1, 1] });
   const tileScale  = tile.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] });
   const tileOpac   = tile.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1] });
   const sparkX     = shoot.interpolate({ inputRange: [0, 1], outputRange: [0, -size * 1.6] });
@@ -151,20 +185,8 @@ export function BrandMark({
           {!bare && (
             <Rect x={1} y={1} width={198} height={198} rx={52} fill={BRAND_MARK_COLORS.tile} stroke={BRAND_MARK_COLORS.line} strokeOpacity={0.4} strokeWidth={2} />
           )}
-          <AnimatedPath
-            d="M88 44 V124 Q88 154 118 154 Q128 154 136 150"
-            stroke={ink} strokeWidth={20} strokeLinecap="round" strokeLinejoin="round"
-            strokeDasharray={playing ? `${STEM_LEN} ${STEM_LEN}` : undefined}
-            strokeDashoffset={playing ? (stemOffset as unknown as number) : undefined}
-            strokeOpacity={playing ? (stemOpac as unknown as number) : undefined}
-          />
-          <AnimatedPath
-            d="M56 82 H124"
-            stroke={ink} strokeWidth={20} strokeLinecap="round"
-            strokeDasharray={playing ? `${BAR_LEN} ${BAR_LEN}` : undefined}
-            strokeDashoffset={playing ? (barOffset as unknown as number) : undefined}
-            strokeOpacity={playing ? (barOpac as unknown as number) : undefined}
-          />
+          <DrawPath d="M88 44 V124 Q88 154 118 154 Q128 154 136 150" len={STEM_LEN} progress={stem} playing={playing} stroke={ink} width={20} join />
+          <DrawPath d="M56 82 H124" len={BAR_LEN} progress={bar} playing={playing} stroke={ink} width={20} />
           {!playing && (
             <G transform="translate(152 48) rotate(18)">
               <Line x1={0} y1={-14} x2={0} y2={14} stroke={spark} strokeWidth={16} strokeLinecap="round" />
@@ -211,17 +233,19 @@ type TenantMarkProps = {
   logoScale?: number;
   animated?: boolean;
   loop?: boolean;
+  /** Plateforme : monogramme sans tuile (à poser sur un fond sombre). Sans effet pour le logo d'une société. */
+  bare?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
 export function TenantMark({
-  size = 38, radius, background, iconColor, logoScale = 0.75, animated = false, loop = false, style,
+  size = 38, radius, background, iconColor, logoScale = 0.75, animated = false, loop = false, bare = false, style,
 }: TenantMarkProps) {
   const { branding } = useTenant();
   const r = radius ?? Math.round(size * 0.3);
 
   if (!branding.logoUrl && isPlatformCode(branding.code)) {
-    return <BrandMark size={size} animated={animated} loop={loop} style={style} />;
+    return <BrandMark size={size} animated={animated} loop={loop} bare={bare} style={style} />;
   }
 
   return (

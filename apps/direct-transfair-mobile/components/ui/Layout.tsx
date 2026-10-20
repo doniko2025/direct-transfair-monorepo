@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/components/ui/Layout.tsx
 // =========================================================
-// MISE EN PAGE v3.0 — Direct Transf'air (design « Corridor », white-label)
+// MISE EN PAGE v3.1 — Direct Transf'air (design « Corridor », white-label)
+// ✅ v3.1 : ListRow cliquable avec un élément interactif à droite (ex. bouton « Envoyer ») — sur le web, la ligne n'est plus
+//    rendue en <button> (un <button> dans un <button> est invalide en HTML : erreur d'hydratation, clics instables).
+//    Mobile natif inchangé ; la ligne reste cliquable et focalisable au clavier.
 // ✅ v3.0 : design « Corridor » — fond brume, titres Fraunces vert forêt, intitulés de section en Manrope gras,
 //    pastilles d'icône teintées forêt, lignes de liste séparées par le filet vert pâle.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
@@ -157,7 +160,9 @@ export function ListRow({ title, subtitle, left, right, icon, onPress, chevron, 
     borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line,
   };
   if (onPress) {
-    return <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => [base, { opacity: pressed ? 0.6 : 1 }, style]}>{inner}</Pressable>;
+    // Web : si la ligne contient déjà un bouton (zone `right`), elle ne doit pas être un <button> elle-même.
+    const role = Platform.OS === 'web' && right ? undefined : 'button';
+    return <Pressable onPress={onPress} accessibilityRole={role} style={({ pressed }) => [base, { opacity: pressed ? 0.6 : 1 }, style]}>{inner}</Pressable>;
   }
   return <View style={[base, style]}>{inner}</View>;
 }

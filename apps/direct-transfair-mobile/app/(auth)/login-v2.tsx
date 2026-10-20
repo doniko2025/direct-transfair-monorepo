@@ -2,7 +2,14 @@
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // ✅ phase 7 : code plateforme et domaine des portails lus dans services/platformConfig.ts (plus de « DONIKO » ni de domaine en dur).
-// LOGIN v3.0 — Direct Transf'air
+// LOGIN v3.5 — Direct Transf'air
+// ✅ v3.5b : le cadre « logo centré » est désormais celui par défaut d'AuthShell (prop `hero` retirée ici).
+// ✅ v3.5 : écran ÉPURÉ — plus de titre ni de phrase d'accroche : grande tuile « t’ » (icône de l'app) + nom, formulaire, un bouton fort,
+//   « Code par email » / « Biométrie » en liens discrets, « Créer un compte » en bouton contour ; mention « Connexion chiffrée » retirée ici.
+// ✅ v3.4 : NOUVELLE MISE EN PAGE (bandeau + feuille blanche).
+// ✅ v3.4 : NOUVELLE MISE EN PAGE de l'écran principal (téléphone) — bandeau aux couleurs de la société avec la marque et un titre d'accueil,
+//   feuille blanche pour le formulaire, un seul bouton d'action fort, « code par email » et biométrie côte à côte, « Créer un compte » en
+//   lien sous le bouton. Aucune logique modifiée (mêmes appels, mêmes champs, mêmes testID). Étapes OTP : cadre habituel.
 // ✅ v3.3 : la pastille « Hors ligne » disparaît dès que le serveur répond (même par un refus, ex. compte réservé au portail web).
 // ✅ v3.2 : MISE EN PAGE — l'encadré teinté « Pas encore de compte ? » + bouton (deux blocs empilés qui allongeaient la page) devient un séparateur fin suivi du seul bouton « Créer un compte » (toujours visible dès l'ouverture). Aucune logique modifiée. Développé par Thierno Doniko (Grand Chef).
 // ✅ v3.1 : THÈME CLAIR — l'écran passe au design clair via le kit components/auth v2.0 (cadre, champs, boutons) ; aucune logique modifiée.
@@ -461,8 +468,7 @@ export default function LoginV2Screen() {
   // ── Écran principal : email + mot de passe ────────────
   return (
     <AuthShell
-      title="Connexion"
-      subtitle="Accédez à votre espace en toute sécurité."
+      title=""
       headerRight={pill}
       footer={legalFooter}
     >
@@ -518,22 +524,15 @@ export default function LoginV2Screen() {
         testID="login-submit"
       />
 
-      <View style={s.alt}>
+      <View style={s.linksRow}>
+        <AuthButton label="Code par email" variant="link" accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
         {bioReady ? (
-          <AuthButton label={`Se connecter avec ${bioLabel}`} icon="finger-print-outline" variant="secondary" accent={P.accent} disabled={loading} onPress={handleBiometric} />
+          <AuthButton label="Biométrie" variant="link" accent={P.accent} disabled={loading} onPress={handleBiometric} />
         ) : null}
-        <AuthButton label="Recevoir un code par email" icon="mail-open-outline" variant="outline" accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
       </View>
 
-      {/* ── Invitation à créer un compte : visible dès l'ouverture ── */}
-      <View style={s.signupDivider}>
-        <View style={s.signupLine} />
-        <Text style={s.signupTitle}>Pas encore de compte ?</Text>
-        <View style={s.signupLine} />
-      </View>
       <AuthButton
         label="Créer un compte"
-        icon="person-add-outline"
         variant="outline"
         accent={P.action}
         onPress={() => router.push('/(auth)/register')}
@@ -545,13 +544,9 @@ export default function LoginV2Screen() {
 
 const s = StyleSheet.create({
   forgotRow: { alignItems: 'flex-end', marginTop: -6, marginBottom: 10 },
-  alt:       { marginTop: 14, gap: 12 },
+  linksRow:  { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 6, marginBottom: 10 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
-
-  signupDivider: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 24, marginBottom: 14 },
-  signupLine:    { flex: 1, height: 1, backgroundColor: N.border },
-  signupTitle:   { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.muted },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: N.muted, fontWeight: '700', paddingVertical: 6 },
