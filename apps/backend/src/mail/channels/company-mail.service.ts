@@ -1,5 +1,6 @@
 // apps/backend/src/mail/channels/company-mail.service.ts
 // =========================================================
+// ✅ v1.2 : logo « t’ » (platform.logoImg) en tête du courriel de bienvenue société — omis si aucune adresse publique configurée.
 // ✅ v1.1 (phase 7) : courriel de bienvenue société — marque, liens (portail, site, App Store / Google Play) et e-mail de support lus dans
 //   la configuration plateforme (PLATFORM_*) ; un bloc dont la valeur n'est pas configurée est simplement omis (plus de domaine en dur).
 // COMPANY MAIL — Notifications société cliente B2B
@@ -349,6 +350,10 @@ async sendWelcomeCompanyAdmin(params: {
     </td>
   </tr>` : '';
 
+  // Logo « t’ » (PNG transparent) au-dessus du badge — omis si aucune adresse publique n'est configurée.
+  const logoImg = platform.logoImg(60, false, 'margin:0 auto;');
+  const logoRow = logoImg ? `<tr><td align="center" style="padding-bottom:16px;">${logoImg}</td></tr>` : '';
+
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -370,6 +375,7 @@ async sendWelcomeCompanyAdmin(params: {
     <td style="background:linear-gradient(145deg,#0C2D8A 0%,#1240D6 40%,#1956F0 70%,#4B72FF 100%);
                padding:50px 36px 68px;text-align:center;">
       <table width="100%" cellpadding="0" cellspacing="0">
+        ${logoRow}
         <tr>
           <td align="center" style="padding-bottom:22px;">
             <span style="display:inline-block;background:rgba(255,255,255,0.15);

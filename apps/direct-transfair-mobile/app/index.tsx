@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// SPLASH / LANDING v5.0 — Direct Transf'air (white-label)
+// SPLASH / LANDING v5.1 — Direct Transf'air (white-label)
+// ✅ v5.1 : nouvelle marque « t’ » — <TenantMark /> remplace les deux blocs logo (barre du haut : monogramme fixe ;
+//    grande carte : monogramme ANIMÉ — le t se dessine, l'apostrophe file à sa place). Le logo d'une société (logoUrl)
+//    garde la priorité ; une autre société sans logo garde l'icône neutre. Navigation INCHANGÉE.
 // ✅ v5.0 : REFONTE TOTALE en thème clair (inspirée de « Taptap Send ») : fond crème, grande carte d'accueil
 //    qui se fond vers la couleur d'accent de la société (logo du tenant), slogan et nom de la société venant
 //    de la configuration du tenant (plus de texte « Direct Transf'air » ni de promesses « Sans frais /
@@ -14,13 +17,13 @@
 // =========================================================
 
 import React, { useRef, useEffect } from "react";
-import { View, Image, Animated, Platform, StatusBar, useWindowDimensions } from 'react-native';
+import { View, Animated, Platform, StatusBar, useWindowDimensions } from 'react-native';
 import { useRouter } from "expo-router";
-import { Ionicons } from '../components/ui/Icon';
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUI, SYSTEM_FONT } from "../components/ui/theme";
 import { Button } from "../components/ui/Primitives";
+import { TenantMark } from "../components/brand/BrandMark";
 import { useTenant } from "../providers/TenantProvider";
 
 import { Text } from '../components/ui/Text';
@@ -58,11 +61,7 @@ export default function Index() {
       >
         {/* ── Marque ── */}
         <Animated.View style={{ flexDirection: "row", alignItems: "center", gap: 10, opacity: fadeAnim }}>
-          <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: C.accent, alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-            {branding.logoUrl
-              ? <Image source={{ uri: branding.logoUrl }} style={{ width: "78%", height: "78%" }} resizeMode="contain" />
-              : <Ionicons name="swap-horizontal" size={20} color={C.accentInk} />}
-          </View>
+          <TenantMark size={38} radius={12} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
           <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 17, fontWeight: "800", color: C.ink, letterSpacing: -0.3, flexShrink: 1 }} numberOfLines={1}>
             {branding.name}
           </Text>
@@ -77,10 +76,8 @@ export default function Index() {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={{ borderRadius: R.xl, padding: 26, minHeight: 230, justifyContent: "space-between", borderWidth: 1, borderColor: C.line, overflow: "hidden" }}
             >
-              <View style={{ width: 84, height: 84, borderRadius: 26, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", ...S.sm }}>
-                {branding.logoUrl
-                  ? <Image source={{ uri: branding.logoUrl }} style={{ width: "72%", height: "72%" }} resizeMode="contain" />
-                  : <Ionicons name="swap-horizontal" size={40} color={C.ink} />}
+              <View style={{ width: 84, height: 84, borderRadius: 26, ...S.sm }}>
+                <TenantMark size={84} radius={26} background={C.surface} iconColor={C.ink} logoScale={0.72} animated />
               </View>
               <View style={{ marginTop: 28 }}>
                 <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 34, lineHeight: 38, fontWeight: "800", letterSpacing: -1, color: C.ink }}>

@@ -1,11 +1,12 @@
 // src/lib/branding.ts
+// ✅ phase 8 (logo « t’ ») : le portail plateforme (et la console embarquée) affichent le monogramme « t’ » (PLATFORM_LOGO_URL) ; une société garde son logo ou sa lettre.
 // ✅ phase 7 : nom, accroche et couleurs de la plateforme lus dans config.ts (VITE_PLATFORM_* / VITE_BRAND_* / VITE_CONSOLE_PORTAL_*).
 // Applique le branding d'une société (couleurs, police, titre) via des
 // variables CSS : les composants ne connaissent jamais une couleur en dur.
 
 import { PLATFORM_TENANT, type TenantBranding } from '@direct-transfair/shared';
 import {
-  BASE_PATH, CONSOLE_EMBEDDED, PLATFORM_NAME, PLATFORM_TAGLINE, BRAND_PRIMARY, BRAND_SECONDARY,
+  CONSOLE_EMBEDDED, PLATFORM_LOGO_URL, PLATFORM_NAME, PLATFORM_TAGLINE, BRAND_PRIMARY, BRAND_SECONDARY,
   CONSOLE_PORTAL_NAME, CONSOLE_PORTAL_TAGLINE,
 } from '../config';
 import { parseHex, readableOn } from './colors';
@@ -13,7 +14,7 @@ import { parseHex, readableOn } from './colors';
 export const DEFAULT_BRANDING: TenantBranding = {
   code: PLATFORM_TENANT,
   name: PLATFORM_NAME,
-  logoUrl: null,
+  logoUrl: PLATFORM_LOGO_URL,
   primaryColor: BRAND_PRIMARY,
   secondaryColor: BRAND_SECONDARY,
   tagline: PLATFORM_TAGLINE,
@@ -33,7 +34,7 @@ export function consoleBranding(): TenantBranding {
     ...DEFAULT_BRANDING,
     name: CONSOLE_PORTAL_NAME,
     tagline: CONSOLE_PORTAL_TAGLINE,
-    logoUrl: `${BASE_PATH}/favicon.svg`,
+    logoUrl: PLATFORM_LOGO_URL,
   };
 }
 

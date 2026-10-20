@@ -1,5 +1,5 @@
 <!-- docs/PLATFORM-CONFIG.md -->
-# Configuration de la plateforme (v1.0 — phase 7)
+# Configuration de la plateforme (v1.1 — phase 8 : logo « t’ »)
 
 Auteur : Thierno Doniko (Grand Chef, Doniko Digital)
 
@@ -18,6 +18,9 @@ Sans variable, les valeurs par défaut reproduisent le comportement précédent 
 | `PLATFORM_WEBSITE_URL` | site vitrine (pied de courriel) | absent → lien omis |
 | `PLATFORM_SUPPORT_EMAIL` | e-mail du support (pied de courriel) | = `SUPPORT_EMAIL`, sinon omis |
 | `PLATFORM_IOS_URL` / `PLATFORM_ANDROID_URL` | liens App Store / Google Play | absents → boutons omis |
+| `PLATFORM_LOGO_URL` | logo fixe des courriels (PNG) | `<PLATFORM_APP_URL>/brand/logo-mark.png` |
+| `PLATFORM_LOGO_ANIMATED_URL` | logo animé des courriels (GIF) | `<PLATFORM_APP_URL>/brand/logo-mark-animated.gif` |
+| `PLATFORM_BRAND_COLOR` / `PLATFORM_ACCENT_COLOR` | couleurs des courriels de la plateforme | `#0E3B2D` / `#F5C32C` |
 | `PLATFORM_SSO_ISSUER` / `PLATFORM_SSO_AUDIENCE` | émetteur / destinataire de l'assertion SSO | `dkmoney-console` / `direct-transfair` |
 
 ## Mobile (EAS / `.env`) — `apps/direct-transfair-mobile`
@@ -33,7 +36,22 @@ Sans variable, les valeurs par défaut reproduisent le comportement précédent 
 ## Web-admin (Vercel) — `apps/web-admin`
 
 `VITE_PLATFORM_CODE`, `VITE_PLATFORM_NAME`, `VITE_PLATFORM_TAGLINE`, `VITE_BRAND_PRIMARY`, `VITE_BRAND_SECONDARY`,
-`VITE_CONSOLE_PORTAL_NAME`, `VITE_CONSOLE_PORTAL_TAGLINE` (en plus de `VITE_API_URL`, `VITE_PLATFORM_HOSTS`, etc.).
+`VITE_CONSOLE_PORTAL_NAME`, `VITE_CONSOLE_PORTAL_TAGLINE`, `VITE_PLATFORM_LOGO_URL` (logo du portail plateforme, défaut `<base>/brand/logo-mark.svg`) (en plus de `VITE_API_URL`, `VITE_PLATFORM_HOSTS`, etc.).
 
 Le code de la plateforme doit être **identique** partout : `PLATFORM_TENANT_CODE` (backend), `EXPO_PUBLIC_PLATFORM_CODE` (mobile),
 `VITE_PLATFORM_CODE` (web-admin).
+
+
+## Logo « t’ » — où il apparaît et comment le changer
+
+| Endroit | Fichier | Remarque |
+|---|---|---|
+| Icône de l'app, icône adaptative Android, écran de démarrage, favicon web | `apps/direct-transfair-mobile/assets/images/*.png` + couleurs dans `app.json` | remplacer les PNG pour changer d'identité |
+| Écrans d'accueil et de connexion de l'app | `components/brand/BrandMark.tsx` (`<TenantMark />`) | le logo d'une société (`logoUrl`) garde la priorité ; une société sans logo garde l'icône neutre |
+| Portail web (login, menu, favicon) | `apps/web-admin/public/favicon.svg`, `public/brand/*` | `VITE_PLATFORM_LOGO_URL` pour pointer ailleurs |
+| Courriels | `PLATFORM_LOGO_URL` / `PLATFORM_LOGO_ANIMATED_URL` (backend) | **adresse publique obligatoire** : Gmail et consorts n'affichent ni SVG, ni image intégrée, ni animation CSS |
+
+Courriels : les fichiers `public/brand/logo-mark.png` et `logo-mark-animated.gif` du web-admin sont servis à `<portail>/brand/…`.
+Si le portail est servi sous un préfixe (ex. `/transfert`), renseigner `PLATFORM_LOGO_URL` et `PLATFORM_LOGO_ANIMATED_URL` avec l'adresse complète.
+Sans adresse publique, les courriels n'affichent aucune image (le nom de marque reste en texte). Le GIF s'anime dans Gmail, Apple Mail et
+Outlook web ; Outlook pour Windows n'affiche que la première image, qui est le logo complet.

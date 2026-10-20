@@ -1,7 +1,9 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.1 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.2 — Direct Transf'air
+// ✅ v2.2 : marque via <TenantMark /> (monogramme « t’ » pour la plateforme ; logo du tenant prioritaire ; icône neutre
+//    pour une autre société sans logo). Mêmes props, mise en page inchangée.
 // ✅ v2.1 : MISE EN PAGE ORDINATEUR (web ≥ 900 px) — avant, la même colonne étroite collée en haut de
 //    la page laissait un grand vide crème et obligeait à défiler. Désormais : carte blanche arrondie
 //    et ombrée, centrée à l'écran (verticalement et horizontalement), titre un peu plus petit, marque
@@ -17,9 +19,10 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
+  KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
 } from 'react-native';
 import { Ionicons } from '../ui/Icon';
+import { TenantMark } from '../brand/BrandMark';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
@@ -118,13 +121,7 @@ export default function AuthShell({
           {/* ── Marque du tenant ── */}
           {wide && !onBack && headerRight ? <View style={s.floatRight}>{headerRight}</View> : null}
           <View style={[s.brand, compact && { marginTop: 10 }, wide && !onBack && { marginTop: 0 }]}>
-            <View style={[s.mark, { backgroundColor: C.accent }]}>
-              {branding.logoUrl ? (
-                <Image source={{ uri: branding.logoUrl }} style={s.markImg} resizeMode="contain" />
-              ) : (
-                <Ionicons name="swap-horizontal" size={18} color={C.accentInk} />
-              )}
-            </View>
+            <TenantMark size={34} radius={11} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
             <Text style={[s.brandName, { color: C.ink }]} numberOfLines={1}>{branding.name}</Text>
           </View>
 
@@ -163,8 +160,6 @@ const s = StyleSheet.create({
   backSpacer: { width: 44, height: 44 },
 
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22 },
-  mark: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  markImg: { width: '78%', height: '78%' },
   brandName: { fontFamily: FONT.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
 
   title:    { fontFamily: SERIF, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -0.5, marginTop: 22 },

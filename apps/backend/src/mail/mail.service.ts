@@ -1,7 +1,10 @@
 // apps/backend/src/mail/mail.service.ts
 // =========================================================
+// ✅ v4.8 : courriels de la plateforme (ni brandName ni brandColor fournis) → en-tête blanc avec le logo « t’ » ANIMÉ (GIF)
+//   et le nom de marque, filet d'accent ; couleur par défaut = couleur de marque (plus de rouge en dur). Les courriels
+//   d'une société (brandName / brandColor fournis) gardent leur en-tête en dégradé. Sans adresse publique pour le logo : ancien en-tête.
 // ✅ v4.7 (phase 7) : nom de marque par défaut des courriels lu dans la configuration plateforme (PLATFORM_NAME).
-// MAIL SERVICE v4.7 — Direct Transf'air
+// MAIL SERVICE v4.8 — Direct Transf'air
 // ✅ v4.6 (phase 6) : le journal des communications (communication_logs) ne garde plus le CORPS des emails.
 //   Il contenait en clair mots de passe temporaires, codes OTP et codes de retrait cash. Restent : destinataire,
 //   objet, statut, identifiant du fournisseur, erreur éventuelle.
@@ -52,7 +55,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
-import { platform } from '../common/platform.config';
+import { platform, escapeHtml } from '../common/platform.config';
 
 // =========================================================
 // CURRENCY HELPERS (inchangés)
@@ -421,8 +424,24 @@ export class MailService {
     content: string,
     opts:    { brandColor?: string; brandName?: string } = {},
   ): string {
-    const brandColor = opts.brandColor ?? '#DC2626';
+    const isPlatformMail = !opts.brandColor && !opts.brandName;
+    const brandColor = opts.brandColor ?? platform.brandColor;
     const brandName  = opts.brandName  ?? platform.name;
+
+    // En-tête : logo animé + nom (courriels de la plateforme) ou dégradé de la couleur de la société.
+    const logo = isPlatformMail ? platform.logoImg(56, true) : '';
+    const header = logo
+      ? `<td style="background:#ffffff;padding:20px 32px;border-bottom:3px solid ${platform.accentColor};text-align:left;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0"><tr>
+                <td width="56" style="width:56px;">${logo}</td>
+                <td style="padding-left:14px;font-size:19px;font-weight:700;letter-spacing:.2px;color:${brandColor};">${escapeHtml(brandName)}</td>
+              </tr></table>
+            </td>`
+      : `<td style="background:linear-gradient(135deg,${brandColor} 0%,${this.darken(brandColor)} 100%);padding:28px 32px;text-align:left;">
+              <h1 style="margin:0;color:#fff;font-size:18px;font-weight:500;letter-spacing:.3px;">
+                ${brandName}
+              </h1>
+            </td>`;
 
     return `
 <!DOCTYPE html>
@@ -439,11 +458,7 @@ export class MailService {
         <table role="presentation" width="600" cellspacing="0" cellpadding="0" border="0"
           style="max-width:600px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
           <tr>
-            <td style="background:linear-gradient(135deg,${brandColor} 0%,${this.darken(brandColor)} 100%);padding:28px 32px;text-align:left;">
-              <h1 style="margin:0;color:#fff;font-size:18px;font-weight:500;letter-spacing:.3px;">
-                ${brandName}
-              </h1>
-            </td>
+            ${header}
           </tr>
           <tr>
             <td style="padding:32px;color:#1f1f1f;line-height:1.7;font-size:15px;">

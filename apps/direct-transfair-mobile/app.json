@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/images/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F7931E"
+      "backgroundColor": "#06120C"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -27,14 +27,12 @@
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0E3B2D"
       },
       "package": "com.doniko.directtransfair",
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS"
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -73,11 +71,7 @@
     "extra": {
       "router": {
         "origin": "https://directtransfair.app"
-      },
-      "eas": {
-        "projectId": "047c62b4-1687-4935-b8e1-c30aef4548f7"
       }
-    },
-    "owner": "jallow2026"
+    }
   }
 }

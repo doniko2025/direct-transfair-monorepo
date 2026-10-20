@@ -1,5 +1,6 @@
 // apps/backend/src/auth/v2-auth.service.ts
 // =========================================================
+// ✅ v2.8 : courriel OTP aux couleurs de la marque (platform.brandColor) ; le logo « t’ » est dans l'en-tête commun (mail.service v4.8).
 // ✅ v2.7 (phase 7) : code de la société système et nom de marque du courriel OTP lus dans la configuration plateforme (plus de « DONIKO » en dur).
 // AUTH SERVICE v2.5 — Sécurité production
 //
@@ -889,10 +890,9 @@ export class V2AuthService {
         recipient,
         subject,
         `<div style="font-family:sans-serif;max-width:500px;margin:auto;padding:20px;">
-          <h2 style="color:#059669;margin-bottom:8px;">${escapeHtml(platform.name)}</h2>
-          <p>Votre code pour ${actionLabel} :</p>
-          <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:#059669;
-                      background:#ECFDF5;text-align:center;padding:24px;
+          <p>Votre code pour ${actionLabel} sur <strong>${escapeHtml(platform.name)}</strong> :</p>
+          <div style="font-size:40px;font-weight:900;letter-spacing:10px;color:${platform.brandColor};
+                      background:#E8F0EA;text-align:center;padding:24px;
                       border-radius:12px;margin:20px 0;font-family:monospace;">
             ${code}
           </div>

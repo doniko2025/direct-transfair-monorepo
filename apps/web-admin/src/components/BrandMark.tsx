@@ -1,7 +1,9 @@
 // src/components/BrandMark.tsx
 // Logo de la société (si fourni) ou monogramme à la couleur de marque.
+// ✅ phase 8 (logo « t’ ») : le logo de la plateforme (« t’ », déjà en tuile arrondie) s'affiche sans fond blanc ni arrondi ajouté.
 
 import { useState } from 'react';
+import { PLATFORM_LOGO_URL } from '../config';
 
 export function BrandMark({
   name,
@@ -19,6 +21,7 @@ export function BrandMark({
     return (
       <img
         className="brand-mark brand-mark--logo"
+        style={logoUrl === PLATFORM_LOGO_URL ? { background: 'none', borderRadius: 0 } : undefined}
         src={logoUrl}
         alt=""
         width={size}

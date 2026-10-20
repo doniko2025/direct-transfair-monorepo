@@ -1,4 +1,5 @@
 // src/config.ts — lecture unique des variables d'environnement Vite.
+// ✅ phase 8 (logo « t’ ») : PLATFORM_LOGO_URL (VITE_PLATFORM_LOGO_URL, défaut <base>/brand/logo-mark.svg) — logo « t’ » du portail plateforme.
 // ✅ phase 7 : identité de la plateforme (nom, accroche, couleurs, nom du portail embarqué) pilotée par VITE_* — plus rien en dur dans branding.ts.
 import { normalizeHost, normalizeTenantCode } from '@direct-transfair/shared';
 
@@ -42,6 +43,8 @@ export const PLATFORM_NAME: string = envText(import.meta.env.VITE_PLATFORM_NAME,
 export const PLATFORM_TAGLINE: string = envText(import.meta.env.VITE_PLATFORM_TAGLINE, 'Espace de gestion de la plateforme');
 export const BRAND_PRIMARY: string = envText(import.meta.env.VITE_BRAND_PRIMARY, '#0b7a5b');
 export const BRAND_SECONDARY: string = envText(import.meta.env.VITE_BRAND_SECONDARY, '#f7931e');
+/** Logo du portail plateforme (monogramme « t’ »). Surchargeable : VITE_PLATFORM_LOGO_URL (adresse absolue ou chemin). */
+export const PLATFORM_LOGO_URL: string = envText(import.meta.env.VITE_PLATFORM_LOGO_URL, `${BASE_PATH}/brand/logo-mark.svg`);
 
 /** Identité du portail plateforme quand il est embarqué dans la console. */
 export const CONSOLE_PORTAL_NAME: string = envText(import.meta.env.VITE_CONSOLE_PORTAL_NAME, 'Sociétés de transfert');

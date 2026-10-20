@@ -1,6 +1,13 @@
 // apps/backend/src/common/platform.config.ts
 // =========================================================
-// PLATFORM CONFIG v1.0 — Direct Transf'air
+// PLATFORM CONFIG v1.1 — Direct Transf'air
+// ✅ v1.1 : logo « t’ » des courriels — logoUrl / logoAnimatedUrl (PNG transparent et GIF animé hébergés sur une adresse
+//   PUBLIQUE : Gmail & co. n'affichent ni SVG, ni data-URI, ni animation CSS), couleur de marque et d'accent, helper logoImg().
+//     PLATFORM_LOGO_URL            image fixe (défaut : <PLATFORM_APP_URL>/brand/logo-mark.png)
+//     PLATFORM_LOGO_ANIMATED_URL   GIF animé (défaut : <PLATFORM_APP_URL>/brand/logo-mark-animated.gif)
+//     PLATFORM_BRAND_COLOR         couleur principale des courriels de la plateforme (défaut #0E3B2D)
+//     PLATFORM_ACCENT_COLOR        couleur d'accent (défaut #F5C32C)
+//   Sans adresse publique (ni PLATFORM_LOGO_URL ni PLATFORM_APP_URL), les courriels n'affichent aucune image : le nom de marque reste en texte.
 // ✅ v1.0 (phase 7) : identité de la plateforme CENTRALISÉE et pilotable par variables d'environnement.
 //   Avant, le nom de marque (« Direct Transf'air »), le code de la société système (« DONIKO »), l'alias historique « 10 »,
 //   les liens et l'e-mail de support des courriels, le préfixe des SMS et l'émetteur/destinataire SSO étaient écrits
@@ -15,6 +22,7 @@
 //     PLATFORM_APP_URL        adresse du portail web (défaut : FRONTEND_URL) — lien « Accéder à mon espace » des courriels
 //     PLATFORM_WEBSITE_URL    site vitrine — lien du pied de courriel (omis si absent)
 //     PLATFORM_SUPPORT_EMAIL  adresse du support (défaut : SUPPORT_EMAIL) — omise des courriels si absente
+//     PLATFORM_LOGO_URL / PLATFORM_LOGO_ANIMATED_URL / PLATFORM_BRAND_COLOR / PLATFORM_ACCENT_COLOR  voir v1.1 ci-dessus
 //     PLATFORM_IOS_URL / PLATFORM_ANDROID_URL  liens de téléchargement des applications (omis si absents)
 //     PLATFORM_SSO_ISSUER / PLATFORM_SSO_AUDIENCE  émetteur et destinataire attendus de l'assertion SSO
 //
@@ -73,6 +81,40 @@ export const platform = {
   /** E-mail du support, ou null. */
   get supportEmail(): string | null {
     return env('PLATFORM_SUPPORT_EMAIL') ?? env('SUPPORT_EMAIL') ?? null;
+  },
+
+  /** Logo fixe (PNG transparent) des courriels, ou null si aucune adresse publique n'est connue. */
+  get logoUrl(): string | null {
+    const u = env('PLATFORM_LOGO_URL');
+    if (u) return u;
+    const a = this.appUrl;
+    return a ? `${a}/brand/logo-mark.png` : null;
+  },
+
+  /** Logo animé (GIF sur fond blanc) des courriels, ou null. */
+  get logoAnimatedUrl(): string | null {
+    const u = env('PLATFORM_LOGO_ANIMATED_URL');
+    if (u) return u;
+    const a = this.appUrl;
+    return a ? `${a}/brand/logo-mark-animated.gif` : null;
+  },
+
+  /** Couleur principale et couleur d'accent des courriels de la plateforme. */
+  get brandColor(): string {
+    return env('PLATFORM_BRAND_COLOR') ?? '#0E3B2D';
+  },
+  get accentColor(): string {
+    return env('PLATFORM_ACCENT_COLOR') ?? '#F5C32C';
+  },
+
+  /**
+   * Balise <img> du logo (vide si pas d'adresse publique). `animated` = GIF (fond blanc), sinon PNG transparent.
+   * Dimensions explicites + alt vide : le courriel reste lisible quand le client bloque les images.
+   */
+  logoImg(size = 56, animated = false, extraStyle = ''): string {
+    const url = animated ? this.logoAnimatedUrl : this.logoUrl;
+    if (!url) return '';
+    return `<img src="${escapeHtml(url)}" width="${size}" height="${size}" alt="" style="display:block;border:0;outline:none;width:${size}px;height:${size}px;${extraStyle}" />`;
   },
 
   /** Liens de téléchargement des applications mobiles (null = bouton masqué). */
