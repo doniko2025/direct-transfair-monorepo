@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/AuthButton.tsx
 // =========================================================
-// BOUTON v3.0 — Direct Transf'air
+// BOUTON v3.1 — Direct Transf'air
+// ✅ v3.1 : forme en PILULE (hauteur 56, coins entièrement arrondis) pour l'ensemble des écrans d'authentification.
 // ✅ v3.0 : DESIGN « CORRIDOR » — principal = jaune soleil, texte vert forêt, coins 20 (comme « Envoyer » de l'accueil) ;
 //    secondaire = vert pâle ; contour = filet vert, texte forêt ; lien souligné forêt.
 // ✅ v2.0 : THÈME CLAIR — pilule pleine à la couleur d'accent EXACTE de la société (texte noir ou blanc
@@ -72,7 +73,7 @@ export default function AuthButton({
 }
 
 const s = StyleSheet.create({
-  base: { minHeight: 58, borderRadius: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
+  base: { minHeight: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
   link: { minHeight: 44, paddingHorizontal: 8 },
   row:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   label:     { fontFamily: FONT.medium, fontSize: 17, fontWeight: '800', letterSpacing: -0.1 },

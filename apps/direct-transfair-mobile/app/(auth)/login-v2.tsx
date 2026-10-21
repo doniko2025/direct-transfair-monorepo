@@ -3,6 +3,9 @@
 // =========================================================
 // ✅ phase 7 : code plateforme et domaine des portails lus dans services/platformConfig.ts (plus de « DONIKO » ni de domaine en dur).
 // LOGIN v3.5 — Direct Transf'air
+// ✅ v3.7 : « Code par email » et « Mot de passe oublié ? » sur la MÊME ligne (sous le mot de passe) — carte plus compacte. « Biométrie » passe sous le bouton (si disponible).
+// ✅ v3.6 : adapté au nouveau cadre (carte flottante sur dégradé) — titre « Connexion », « Pas encore de compte ? Créer un compte » et liens légaux placés
+//    SOUS la carte en clair (prop `below`). Logique, champs et testID inchangés (login-register conservé).
 // ✅ v3.5b : le cadre « logo centré » est désormais celui par défaut d'AuthShell (prop `hero` retirée ici).
 // ✅ v3.5 : écran ÉPURÉ — plus de titre ni de phrase d'accroche : grande tuile « t’ » (icône de l'app) + nom, formulaire, un bouton fort,
 //   « Code par email » / « Biométrie » en liens discrets, « Créer un compte » en bouton contour ; mention « Connexion chiffrée » retirée ici.
@@ -372,7 +375,7 @@ export default function LoginV2Screen() {
   const legalFooter = (
     <View style={s.legal}>
       <TouchableOpacity onPress={() => router.push('/(auth)/assistance')} accessibilityRole="link">
-        <Text style={[s.legalLink, { color: P.accent }]}>Assistance</Text>
+        <Text style={s.legalLink}>Assistance</Text>
       </TouchableOpacity>
       <Text style={s.legalDot}>·</Text>
       <TouchableOpacity onPress={() => router.push('/(auth)/terms')} accessibilityRole="link">
@@ -382,6 +385,19 @@ export default function LoginV2Screen() {
       <TouchableOpacity onPress={() => router.push('/(auth)/privacy-policy')} accessibilityRole="link">
         <Text style={s.legalLink}>Confidentialité</Text>
       </TouchableOpacity>
+    </View>
+  );
+
+  // Sous la carte (écran principal) : inscription + liens légaux, en clair sur le fond
+  const signupBelow = (
+    <View style={{ alignItems: 'center' }}>
+      <View style={s.signup}>
+        <Text style={s.signupTxt}>Pas encore de compte ? </Text>
+        <TouchableOpacity onPress={() => router.push('/(auth)/register')} accessibilityRole="button" accessibilityLabel="Créer un compte" testID="login-register">
+          <Text style={s.signupLink}>Créer un compte</Text>
+        </TouchableOpacity>
+      </View>
+      {legalFooter}
     </View>
   );
 
@@ -396,7 +412,7 @@ export default function LoginV2Screen() {
         subtitle={maskedRec ? `Un code à 6 chiffres a été envoyé à ${maskedRec}.` : 'Un code à 6 chiffres vient de vous être envoyé.'}
         onBack={() => switchView('OTP_REQUEST')}
         headerRight={pill}
-        footer={legalFooter}
+        below={legalFooter}
       >
         {notice ? <AuthNotice {...notice} /> : null}
         <OtpCodeInput
@@ -435,7 +451,7 @@ export default function LoginV2Screen() {
         subtitle="Entrez votre email : nous vous envoyons un code à 6 chiffres, sans mot de passe."
         onBack={() => switchView('PASSWORD')}
         headerRight={pill}
-        footer={legalFooter}
+        below={legalFooter}
       >
         {notice ? <AuthNotice {...notice} /> : null}
         <AuthField
@@ -468,9 +484,9 @@ export default function LoginV2Screen() {
   // ── Écran principal : email + mot de passe ────────────
   return (
     <AuthShell
-      title=""
+      title="Connexion"
       headerRight={pill}
-      footer={legalFooter}
+      below={signupBelow}
     >
       {notice ? <AuthNotice {...notice} /> : null}
 
@@ -505,6 +521,7 @@ export default function LoginV2Screen() {
       />
 
       <View style={s.forgotRow}>
+        <AuthButton label="Code par email" variant="link" accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
         <AuthButton
           label="Mot de passe oublié ?"
           variant="link"
@@ -524,31 +541,25 @@ export default function LoginV2Screen() {
         testID="login-submit"
       />
 
-      <View style={s.linksRow}>
-        <AuthButton label="Code par email" variant="link" accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
-        {bioReady ? (
+      {bioReady ? (
+        <View style={s.linksRow}>
           <AuthButton label="Biométrie" variant="link" accent={P.accent} disabled={loading} onPress={handleBiometric} />
-        ) : null}
-      </View>
-
-      <AuthButton
-        label="Créer un compte"
-        variant="outline"
-        accent={P.action}
-        onPress={() => router.push('/(auth)/register')}
-        testID="login-register"
-      />
+        </View>
+      ) : null}
     </AuthShell>
   );
 }
 
 const s = StyleSheet.create({
-  forgotRow: { alignItems: 'flex-end', marginTop: -6, marginBottom: 10 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -6, marginBottom: 6 },
   linksRow:  { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 6, marginBottom: 10 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: N.muted, fontWeight: '700', paddingVertical: 6 },
-  legalDot:  { color: N.muted, fontSize: 12.5 },
+  legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: 'rgba(255,255,255,0.78)', fontWeight: '700', paddingVertical: 6 },
+  legalDot:  { color: 'rgba(255,255,255,0.5)', fontSize: 12.5 },
+  signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' },
+  signupTxt: { fontFamily: FONT.body, fontSize: 14.5, color: 'rgba(255,255,255,0.8)' },
+  signupLink:{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: '800', color: '#FFFFFF', textDecorationLine: 'underline', paddingVertical: 8 },
 });

@@ -1,7 +1,11 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.5 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.6 — Direct Transf'air
+// ✅ v2.6 : REFONTE DU CADRE TÉLÉPHONE (style « Rainbow ») — plein écran en dégradé aux couleurs de la société avec halos décoratifs,
+//    icône de l'app centrée dans un anneau clair + nom de la marque, puis UNE carte blanche flottante (coins 28, ombre) qui porte le titre et
+//    le sous-titre centrés, le formulaire et le `footer`. Nouvelle prop `below` : contenu placé SOUS la carte, en clair sur le fond (ex. « Pas encore
+//    de compte ? », liens légaux). Mêmes props qu'avant (title, subtitle, onBack, compact, footer, headerRight, hero, children). Ordinateur inchangé.
 // ✅ v2.5 : la mise en page « logo centré » devient celle de TOUS les écrans d'authentification sur téléphone (connexion, mot de passe oublié,
 //    inscription, vérification, codes) : même tuile d'icône (112 px) centrée au-dessus, même taille partout. Le titre et le sous-titre passent
 //    en tête de la feuille blanche (le bandeau ne porte plus que la marque). `hero={false}` rétablit l'ancien cadre clair. Ordinateur inchangé.
@@ -35,7 +39,7 @@ import { TenantMark } from '../brand/BrandMark';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
-import { buildPalette, darken, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
+import { alpha, buildPalette, darken, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
 import { SERIF } from '../ui/fonts';
 import { buildColors } from '../ui/theme';
 
@@ -47,8 +51,10 @@ type Props = {
   onBack?: () => void;
   /** En-tête réduit (écrans secondaires) : marque plus discrète. */
   compact?: boolean;
-  /** Contenu affiché sous le formulaire (liens légaux, aide…). */
+  /** Contenu affiché en bas de la carte (aide, changer de compte…). */
   footer?: React.ReactNode;
+  /** Contenu placé sous la carte, directement sur le fond dégradé (texte clair attendu). */
+  below?: React.ReactNode;
   /** Élément à droite de la rangée du haut (ex. pastille d'état serveur). */
   headerRight?: React.ReactNode;
   /** Bandeau avec la marque centrée + feuille blanche (téléphone). Actif par défaut ; false = ancien cadre clair. */
@@ -80,7 +86,7 @@ export function useAuthPalette(): AuthPalette {
 }
 
 export default function AuthShell({
-  title, subtitle, onBack, compact = false, footer, headerRight, hero = true, children,
+  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = true, children,
 }: Props) {
   const { branding } = useTenant();
   const C = React.useMemo(() => buildColors(branding.primaryColor), [branding.primaryColor]);
@@ -89,50 +95,57 @@ export default function AuthShell({
   const wide = Platform.OS === 'web' && winW >= 900;
   const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 6;
 
-  // ── Variante « bandeau + feuille » (téléphone) ──
+  // ── Variante « carte flottante sur dégradé » (téléphone) ──
   if (hero && !wide) {
-    const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 10;
-    const dark = darken(C.forest, 0.7);
-    const darkTop = darken(C.forest, 0.5);
+    const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 8;
+    const dark = darken(C.forest, 0.72);
+    const mid = darken(C.forest, 0.45);
+    const tile = compact ? 76 : 92;
     return (
       <KeyboardAvoidingView style={[s.root, { backgroundColor: dark }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <StatusBar barStyle="light-content" backgroundColor={darkTop} />
+        <StatusBar barStyle="light-content" backgroundColor={dark} />
+        <LinearGradient colors={[mid, dark]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* Halos décoratifs (couleurs de la société) */}
+        <View pointerEvents="none" style={[s.bokeh, { width: 260, height: 260, top: -90, right: -90, backgroundColor: alpha(C.leaf, 0.22) }]} />
+        <View pointerEvents="none" style={[s.bokeh, { width: 150, height: 150, top: 150, left: -70, backgroundColor: alpha(C.sun, 0.14) }]} />
+        <View pointerEvents="none" style={[s.bokeh, { width: 220, height: 220, bottom: -80, left: -60, backgroundColor: alpha(C.leaf, 0.16) }]} />
+        <View pointerEvents="none" style={[s.bokeh, { width: 90, height: 90, bottom: 120, right: -30, backgroundColor: alpha('#FFFFFF', 0.07) }]} />
+
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={s.scroll}
+          contentContainerStyle={[s.scroll, { paddingTop: top, paddingBottom: Math.max(insets.bottom, 14) + 18 }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           automaticallyAdjustKeyboardInsets
         >
-          <LinearGradient colors={[darkTop, dark]} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={[s.hero, { paddingTop: top }]}>
-            <View style={s.heroInner}>
-              <View style={s.topRow}>
-                {onBack ? (
-                  <Pressable onPress={onBack} style={s.heroBack} accessibilityRole="button" accessibilityLabel="Retour" hitSlop={8}>
-                    <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-                  </Pressable>
-                ) : <View style={s.backSpacer} />}
-                <View style={{ flex: 1 }} />
-                {headerRight}
-              </View>
-
-              <View style={s.heroBrand}>
-                <TenantMark size={112} radius={29} background="#FFFFFF" iconColor={C.dark} logoScale={0.78} animated />
-                <Text style={s.heroBrandName} numberOfLines={1}>{branding.name}</Text>
-              </View>
-
+          <View style={s.heroInner}>
+            <View style={s.topRow}>
+              {onBack ? (
+                <Pressable onPress={onBack} style={s.heroBack} accessibilityRole="button" accessibilityLabel="Retour" hitSlop={8}>
+                  <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+                </Pressable>
+              ) : <View style={s.backSpacer} />}
+              <View style={{ flex: 1 }} />
+              {headerRight}
             </View>
-          </LinearGradient>
 
-          {/* Feuille blanche qui chevauche le bandeau */}
-          <View style={[s.sheet, { backgroundColor: C.surface, paddingBottom: Math.max(insets.bottom, 14) + 20 }]}>
-            <View style={s.sheetInner}>
-              {title ? <Text style={[s.sheetTitle, { color: C.ink }]} accessibilityRole="header">{title}</Text> : null}
-              {subtitle ? <Text style={[s.sheetSub, { color: C.muted }]}>{subtitle}</Text> : null}
-              {title || subtitle ? <View style={{ height: 22 }} /> : null}
+            <View style={[s.heroBrand, compact && { marginTop: 0, gap: 10 }]}>
+              <View style={[s.ring, { borderRadius: Math.round(tile * 0.34) + 8 }]}>
+                <TenantMark size={tile} radius={Math.round(tile * 0.29)} background="#FFFFFF" iconColor={C.dark} logoScale={0.78} animated />
+              </View>
+              <Text style={s.heroBrandName} numberOfLines={1}>{branding.name}</Text>
+            </View>
+
+            {/* Carte flottante */}
+            <View style={[s.floatCard, { backgroundColor: C.surface }]}>
+              {title ? <Text style={[s.cardTitle, { color: C.ink }]} accessibilityRole="header">{title}</Text> : null}
+              {subtitle ? <Text style={[s.cardSub, { color: C.muted }]}>{subtitle}</Text> : null}
+              {title || subtitle ? <View style={{ height: 20 }} /> : null}
               {children}
               {footer}
             </View>
+
+            {below ? <View style={s.below}>{below}</View> : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -227,17 +240,18 @@ const s = StyleSheet.create({
   subtitle: { fontFamily: FONT.body, fontSize: 16, lineHeight: 23, marginTop: 8 },
   body:     { marginTop: 26, flexGrow: 1 },
 
-  // — Variante hero —
-  hero:      { paddingHorizontal: 22, paddingBottom: 58, overflow: 'hidden' },
-  heroInner: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
-  heroBack:  { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' },
-  heroBrand: { alignItems: 'center', gap: 14, marginTop: 6 },
-  heroBrandName: { fontFamily: FONT.display, fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: 'rgba(255,255,255,0.92)', textAlign: 'center' },
-  sheetTitle: { fontFamily: SERIF, fontSize: 28, lineHeight: 34, fontWeight: '700', letterSpacing: -0.5 },
-  sheetSub:   { fontFamily: FONT.body, fontSize: 15, lineHeight: 22, marginTop: 6 },
-  sheet:      { flexGrow: 1, marginTop: -34, borderTopLeftRadius: 34, borderTopRightRadius: 34, paddingTop: 26, paddingHorizontal: 22,
-                shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 8 },
-  sheetInner: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', flexGrow: 1 },
+  // — Variante hero (carte flottante) —
+  heroInner: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 20 },
+  heroBack:  { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' },
+  heroBrand: { alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 22 },
+  ring:      { padding: 7, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.34)' },
+  heroBrandName: { fontFamily: FONT.display, fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: '#FFFFFF', textAlign: 'center' },
+  bokeh:     { position: 'absolute', borderRadius: 999 },
+  floatCard: { borderRadius: 28, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20,
+               shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 26, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
+  cardTitle: { fontFamily: SERIF, fontSize: 26, lineHeight: 32, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center' },
+  cardSub:   { fontFamily: FONT.body, fontSize: 14.5, lineHeight: 21, marginTop: 6, textAlign: 'center' },
+  below:     { marginTop: 18, alignItems: 'center' },
 
   trust:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 26 },
   trustTxt: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted },

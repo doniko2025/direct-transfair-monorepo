@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v12.0 — Direct Transf'air
+// CLIENT DASHBOARD v12.1 — Direct Transf'air
+// ✅ v12.1 : ACCUEIL ALLÉGÉ ET PLUS SOIGNÉ — montants ramenés à 28 px (plafonnés même si le téléphone agrandit les polices), couloir réduit
+//    (176 → 152 px), calculateur en deux panneaux arrondis (« Tu envoies » encadré, « Montant reçu » teinté) reliés par un bouton d'échange,
+//    bouton d'envoi en pilule plus fin, raccourcis en pastilles rondes avec légende, « Ce mois-ci » compacté. CONTENU ET LOGIQUE INCHANGÉS.
 // ✅ v12.0 : 🔥 DESIGN « CORRIDOR » — l'accueil devient le formulaire d'envoi : salutation en Fraunces,
 //    pastille de solde, « couloir » vert forêt (trame de points, route pointillée jaune, avion, taux du jour,
 //    ville de départ → ville d'arrivée), calculateur « Tu envoies / Montant reçu » avec bénéficiaires en pastilles,
@@ -105,7 +108,7 @@ const initialsOf = (name: string) => {
 function Route({ w, h, sun }: { w: number; h: number; sun: string }) {
   if (!w) return null;
   const k = w / 350;
-  const x1 = 52 * k, y1 = 100, cx = 175 * k, cy = -10, x2 = 298 * k, y2 = 50;
+  const x1 = 52 * k, y1 = 84, cx = 175 * k, cy = -14, x2 = 298 * k, y2 = 40;
   const t = 0.15;
   const px = (1 - t) ** 2 * x1 + 2 * (1 - t) * t * cx + t * t * x2;
   const py = (1 - t) ** 2 * y1 + 2 * (1 - t) * t * cy + t * t * y2;
@@ -135,9 +138,9 @@ function CurrencyChip({ code, tone, onPress }: { code: string; tone: "forest" | 
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={`Devise ${code}`}
-      style={{ flexDirection: "row", alignItems: "center", gap: 8, height: 40, paddingLeft: 6, paddingRight: 14, borderRadius: 20, backgroundColor: C.brume }}
+      style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 36, paddingLeft: 5, paddingRight: 12, borderRadius: 18, backgroundColor: C.brume }}
     >
-      <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: tone === "sun" ? C.sun : C.forest, alignItems: "center", justifyContent: "center" }}>
+      <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: tone === "sun" ? C.sun : C.forest, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 13, fontWeight: "800", color: tone === "sun" ? C.sunInk : "#FFFFFF" }}>{glyph}</Text>
       </View>
       <Text style={{ fontSize: 14, fontWeight: "800", color: C.ink }}>{code === "XOF" || code === "XAF" ? sym : code}</Text>
@@ -259,14 +262,14 @@ export default function ClientDashboard() {
       {/* ── Salutation + notifications ── */}
       <View style={{ flexDirection: "row", alignItems: "flex-start", paddingTop: 10, paddingHorizontal: 2 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 17, color: C.muted }}>{greeting()},</Text>
-          <UText v="hero" numberOfLines={1} style={{ lineHeight: 34, letterSpacing: -0.5 }}>{firstName}</UText>
+          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 15, color: C.muted }}>{greeting()},</Text>
+          <UText v="hero" numberOfLines={1} style={{ fontSize: 26, lineHeight: 30, letterSpacing: -0.5 }}>{firstName}</UText>
         </View>
         <Pressable
           onPress={() => router.push("/(tabs)/notifications")}
           accessibilityRole="button"
           accessibilityLabel="Notifications"
-          style={({ pressed }) => ({ width: 46, height: 46, borderRadius: 23, marginTop: 2, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1 })}
+          style={({ pressed }) => ({ width: 42, height: 42, borderRadius: 21, marginTop: 2, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1 })}
         >
           <Ionicons name="notifications-outline" size={22} color={C.forest} />
         </Pressable>
@@ -290,38 +293,39 @@ export default function ClientDashboard() {
       {/* ── Le couloir : départ → arrivée ── */}
       <View
         onLayout={(e) => setHeroW(e.nativeEvent.layout.width)}
-        style={{ marginTop: 14, height: 176, borderRadius: 28, backgroundColor: C.forest, overflow: "hidden" }}
+        style={{ marginTop: 12, height: 152, borderRadius: 26, backgroundColor: C.forest, overflow: "hidden" }}
       >
         <DotGrid />
-        <Route w={heroW} h={176} sun={C.sun} />
+        <Route w={heroW} h={152} sun={C.sun} />
         {!!rateLabel && (
-          <View style={{ position: "absolute", top: 16, left: 0, right: 0, alignItems: "center" }} pointerEvents="none">
-            <View style={{ height: 34, paddingLeft: 10, paddingRight: 14, borderRadius: 17, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 7, shadowColor: "#000", shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
+          <View style={{ position: "absolute", top: 12, left: 0, right: 0, alignItems: "center" }} pointerEvents="none">
+            <View style={{ height: 30, paddingLeft: 9, paddingRight: 12, borderRadius: 15, backgroundColor: "#FFFFFF", flexDirection: "row", alignItems: "center", gap: 7, shadowColor: "#000", shadowOpacity: 0.28, shadowRadius: 9, shadowOffset: { width: 0, height: 6 }, elevation: 6 }}>
               <Ionicons name="swap-horizontal" size={16} color={C.leaf} />
-              <Text style={{ fontSize: 14, fontWeight: "800", color: C.forest }} numberOfLines={1}>{rateLabel}</Text>
+              <Text style={{ fontSize: 13, fontWeight: "800", color: C.forest }} numberOfLines={1}>{rateLabel}</Text>
             </View>
           </View>
         )}
-        <View style={{ position: "absolute", left: 24, top: 114 }} pointerEvents="none">
-          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 21, color: "#FFFFFF" }}>{from.city}</Text>
-          {!!from.sub && <Text style={{ fontSize: 11.5, fontWeight: "600", color: "#9FC9B4", marginTop: 1 }}>{from.sub}</Text>}
+        <View style={{ position: "absolute", left: 22, top: 90 }} pointerEvents="none">
+          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 18, color: "#FFFFFF" }}>{from.city}</Text>
+          {!!from.sub && <Text style={{ fontSize: 11, fontWeight: "600", color: "#9FC9B4", marginTop: 1 }}>{from.sub}</Text>}
         </View>
-        <View style={{ position: "absolute", right: 20, top: 66, alignItems: "flex-end" }} pointerEvents="none">
-          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 21, color: "#FFFFFF", textAlign: "right" }}>{to.city}</Text>
-          {!!to.sub && <Text style={{ fontSize: 11.5, fontWeight: "600", color: "#9FC9B4", marginTop: 1, textAlign: "right" }}>{to.sub}</Text>}
+        <View style={{ position: "absolute", right: 18, top: 58, alignItems: "flex-end" }} pointerEvents="none">
+          <Text style={{ fontFamily: SERIF_FONT, fontStyle: "italic", fontWeight: "600", fontSize: 18, color: "#FFFFFF", textAlign: "right" }}>{to.city}</Text>
+          {!!to.sub && <Text style={{ fontSize: 11, fontWeight: "600", color: "#9FC9B4", marginTop: 1, textAlign: "right" }}>{to.sub}</Text>}
         </View>
       </View>
 
       {/* ── Calculateur ── */}
       <View
         style={{
-          marginTop: -14, borderRadius: 28, backgroundColor: C.surface, paddingTop: 16, paddingHorizontal: 20, paddingBottom: 14,
-          shadowColor: "#0E3B2D", shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 12 }, elevation: 6,
+          marginTop: -10, borderRadius: 26, backgroundColor: C.surface, paddingTop: 14, paddingHorizontal: 14, paddingBottom: 12,
+          shadowColor: "#0E3B2D", shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: { width: 0, height: 10 }, elevation: 5,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        {/* Tu envoies — panneau encadré (modifiable) */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 18, borderWidth: 1.5, borderColor: C.lineStrong, backgroundColor: C.surface, paddingVertical: 10, paddingLeft: 14, paddingRight: 10 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: C.muted }}>Tu envoies</Text>
+            <Text maxFontSizeMultiplier={1.1} style={{ fontSize: 12, fontWeight: "600", color: C.muted }}>Tu envoies</Text>
             <TextInput
               value={hidden && !editing ? "••••" : shownAmount}
               onChangeText={(t) => setAmountText(t.replace(/[^0-9.,\s]/g, ""))}
@@ -330,34 +334,37 @@ export default function ClientDashboard() {
               keyboardType="decimal-pad"
               inputMode="decimal"
               selectTextOnFocus
+              maxFontSizeMultiplier={1.1}
               accessibilityLabel="Montant à envoyer"
               placeholder="0,00"
               placeholderTextColor={C.faint}
-              style={{ fontSize: 36, fontWeight: "800", letterSpacing: -1.2, color: C.ink, padding: 0, marginTop: 2, minWidth: 0, ...( { outlineStyle: "none" } as any) }}
+              style={{ fontSize: 28, fontWeight: "800", letterSpacing: -0.6, color: C.ink, padding: 0, marginTop: 1, minWidth: 0, ...( { outlineStyle: "none" } as any) }}
             />
           </View>
           <CurrencyChip code={primaryCurrency} tone="forest" />
         </View>
 
-        <View style={{ height: 1, backgroundColor: C.line, marginVertical: 12 }}>
-          <View style={{ position: "absolute", left: "50%", top: "50%", width: 34, height: 34, marginLeft: -17, marginTop: -17, borderRadius: 17, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, alignItems: "center", justifyContent: "center" }}>
+        {/* Échange */}
+        <View style={{ height: 8, alignItems: "center", justifyContent: "center", zIndex: 2 }}>
+          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: C.forest, borderWidth: 3, borderColor: C.surface, alignItems: "center", justifyContent: "center" }}>
             <View style={{ transform: [{ rotate: "90deg" }] }}>
-              <Ionicons name="swap-horizontal" size={16} color={C.forest} />
+              <Ionicons name="swap-horizontal" size={15} color="#FFFFFF" />
             </View>
           </View>
         </View>
 
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        {/* Montant reçu — panneau teinté (calculé) */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, borderRadius: 18, backgroundColor: C.accentSoft, paddingVertical: 10, paddingLeft: 14, paddingRight: 10 }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: C.muted }}>Montant reçu</Text>
-            <Text style={{ fontSize: 36, fontWeight: "800", letterSpacing: -1.2, lineHeight: 40, color: C.leaf, marginTop: 2 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
+            <Text maxFontSizeMultiplier={1.1} style={{ fontSize: 12, fontWeight: "600", color: C.muted }}>Montant reçu</Text>
+            <Text maxFontSizeMultiplier={1.1} style={{ fontSize: 28, fontWeight: "800", letterSpacing: -0.6, lineHeight: 34, color: C.forest, marginTop: 1 }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5}>
               {received == null || !dest ? "—" : hidden && !editing ? "••••" : formatMoney(received, dest)}
             </Text>
           </View>
           {!!dest && <CurrencyChip code={dest} tone="sun" onPress={destOptions.length > 1 ? () => setSheet(true) : undefined} />}
         </View>
 
-        <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line }}>
+        <View style={{ marginTop: 12 }}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {recentContacts.map((c) => {
               const on = selected?.name === c.name;
@@ -367,7 +374,7 @@ export default function ClientDashboard() {
                   onPress={() => { setPickedContact(c.name); setPickedDest(null); }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: on }}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 36, paddingLeft: 8, paddingRight: 13, borderRadius: 18, borderWidth: 1.5, borderColor: on ? C.sun : C.line, backgroundColor: on ? C.sunSoft : C.surface }}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 34, paddingLeft: 6, paddingRight: 13, borderRadius: 17, borderWidth: 1.5, borderColor: on ? C.sun : C.line, backgroundColor: on ? C.sunSoft : C.surface }}
                 >
                   <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#F3E3B0", alignItems: "center", justifyContent: "center" }}>
                     <Text style={{ fontSize: 10, fontWeight: "800", color: "#6A5415" }}>{initialsOf(c.name)}</Text>
@@ -379,7 +386,7 @@ export default function ClientDashboard() {
             <Pressable
               onPress={() => router.push("/(tabs)/beneficiaries/create")}
               accessibilityRole="button"
-              style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 36, paddingLeft: 8, paddingRight: 13, borderRadius: 18, borderWidth: 1.5, borderColor: C.line }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 34, paddingLeft: 10, paddingRight: 13, borderRadius: 17, borderWidth: 1.5, borderStyle: "dashed", borderColor: C.lineStrong }}
             >
               <Ionicons name="add" size={15} color={C.forest} />
               <Text style={{ fontSize: 13, fontWeight: "700", color: C.forest }}>Autre bénéficiaire</Text>
@@ -393,28 +400,31 @@ export default function ClientDashboard() {
         onPress={goSend}
         accessibilityRole="button"
         style={({ pressed }) => ({
-          marginTop: 20, height: 60, borderRadius: 20, backgroundColor: C.sun, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-          shadowColor: "#A07800", shadowOpacity: 0.45, shadowRadius: 10, shadowOffset: { width: 0, height: 8 }, elevation: 5,
+          marginTop: 16, height: 54, borderRadius: 27, backgroundColor: C.sun, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
+          shadowColor: "#A07800", shadowOpacity: 0.32, shadowRadius: 9, shadowOffset: { width: 0, height: 6 }, elevation: 4,
           opacity: pressed ? 0.92 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
         })}
       >
-        <Ionicons name="send" size={21} color={C.sunInk} />
-        <Text style={{ fontSize: 18, fontWeight: "800", color: C.sunInk }}>
+        <Ionicons name="send" size={19} color={C.sunInk} />
+        <Text maxFontSizeMultiplier={1.15} style={{ fontSize: 16.5, fontWeight: "800", color: C.sunInk }}>
           {amount > 0 ? `Envoyer ${formatMoney(amount, primaryCurrency)} ${sym}` : "Envoyer de l'argent"}
         </Text>
       </Pressable>
 
       {/* ── Raccourcis ── */}
-      <View style={{ flexDirection: "row", gap: 10, marginTop: 16 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 18 }}>
         {quick.map((q) => (
           <Pressable
             key={q.label}
             onPress={() => router.push(q.route as any)}
             accessibilityRole="button"
-            style={({ pressed }) => ({ flex: 1, height: 46, borderRadius: 23, borderWidth: 1.5, borderColor: C.line, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: pressed ? 0.7 : 1 })}
+            accessibilityLabel={q.label}
+            style={({ pressed }) => ({ alignItems: "center", gap: 7, width: 84, opacity: pressed ? 0.7 : 1 })}
           >
-            <Ionicons name={q.icon} size={18} color={C.forest} />
-            <Text style={{ fontSize: 13.5, fontWeight: "700", color: C.forest }} numberOfLines={1}>{q.label}</Text>
+            <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name={q.icon} size={22} color={C.forest} />
+            </View>
+            <Text maxFontSizeMultiplier={1.15} style={{ fontSize: 12.5, fontWeight: "700", color: C.forest }} numberOfLines={1}>{q.label}</Text>
           </Pressable>
         ))}
       </View>
@@ -422,22 +432,22 @@ export default function ClientDashboard() {
       {/* ── Ce mois-ci ── */}
       <SectionHeader title="Ce mois-ci" />
       <View style={{ flexDirection: "row", gap: 12 }}>
-        <Card style={{ flex: 1 }} pad={16}>
+        <Card style={{ flex: 1 }} pad={14}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Ionicons name="arrow-up" size={14} color={C.muted} />
             <UText v="label" tone="muted">Envoyé</UText>
           </View>
-          <UText v="heading" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ marginTop: 6, fontSize: 22 }}>
+          <UText v="heading" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ marginTop: 4, fontSize: 19, lineHeight: 24 }}>
             {hidden ? "••••" : formatMoney(monthSent, primaryCurrency)}
           </UText>
           <UText v="label" tone="muted">{primaryCurrency}</UText>
         </Card>
-        <Card style={{ flex: 1 }} pad={16}>
+        <Card style={{ flex: 1 }} pad={14}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
             <Ionicons name="arrow-down" size={14} color={C.pos} />
             <UText v="label" tone="muted">Reçu</UText>
           </View>
-          <UText v="heading" tone="pos" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ marginTop: 6, fontSize: 22 }}>
+          <UText v="heading" tone="pos" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6} style={{ marginTop: 4, fontSize: 19, lineHeight: 24 }}>
             {hidden ? "••••" : formatMoney(monthRecv, primaryCurrency)}
           </UText>
           <UText v="label" tone="muted">{primaryCurrency}</UText>
