@@ -1,6 +1,6 @@
 // apps/web-admin/src/pages/AccountPage.tsx
-// v1.2 — 🔥 AJOUT : la carte « Votre session » (e-mail, téléphone, société, agence, contacts vérifiés) quitte le
-//        tableau de bord pour vivre ici, avec la « Connexion technique ». « Identité » reste en tête.
+// v1.3 — « Votre session » ne répète plus l'e-mail ni le téléphone (déjà dans « Identité ») : société, agence, contacts vérifiés.
+// v1.2 — 🔥 AJOUT : la carte « Votre session » quitte le tableau de bord pour vivre ici, avec la « Connexion technique ».
 // v1.1 — 🔥 AJOUT : carte « Mot de passe » (ChangePasswordCard). Avant, la page affichait
 //        « la modification du mot de passe arrive avec les prochains modules » : un
 //        utilisateur ne pouvait pas changer son mot de passe depuis le back-office
@@ -76,18 +76,16 @@ export default function AccountPage() {
         <Card>
           <h2 className="card-title">Votre session</h2>
           <dl className="kv kv--grid">
-            <Row label="Adresse email">{user.email}</Row>
-            {user.phone ? (
-              <Row label="Téléphone" half>
-                {user.phone}
-              </Row>
-            ) : null}
             {!isPlatform ? (
-              <Row label="Société" half>
+              <Row label="Société" half={Boolean(agency)}>
                 {company}
               </Row>
             ) : null}
-            {agency ? <Row label="Agence">{agency}</Row> : null}
+            {agency ? (
+              <Row label="Agence" half>
+                {agency}
+              </Row>
+            ) : null}
             <Row label="Contacts vérifiés">
               <span className="kv__pills">
                 <Pill tone={user.isEmailVerified === false ? 'warn' : 'ok'} icon="check">

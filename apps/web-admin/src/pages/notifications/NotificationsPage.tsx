@@ -1,4 +1,6 @@
-// src/pages/notifications/NotificationsPage.tsx
+// apps/web-admin/src/pages/notifications/NotificationsPage.tsx
+// v2.0 : SUPPRESSION — « Supprimer » ouvre le mode sélection (cases à cocher, « Tout sélectionner », « Supprimer (N) »),
+//        confirmation dans une fenêtre puis toast de succès centré. Appelle POST /notifications/delete.
 // Boîte de réception : une carte par notification, les plus récentes d'abord. Chaque utilisateur ne voit que les siennes.
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,6 +13,7 @@ import { ConfirmDialog, SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { describeError } from '../../lib/errors';
+import { deleteNotifications, describeDeleteError } from '../../lib/notificationsApi';
 import { isUrgent, TYPE_OPTIONS, transactionIdOf, viewOf } from '../../lib/notificationRules';
 import { fullDate, plural, when } from '../../lib/supervisionRules';
 import { useResource } from '../../lib/useResource';
@@ -28,11 +31,36 @@ const VIEW_OPTIONS: readonly { id: View; label: string }[] = [
 
 // Carte compacte : une ligne de titre, un aperçu d'une ligne, l'heure. Le texte complet
 // s'ouvre dans une fenêtre (NotificationDetail) au clic.
-function NotificationCard({ n, read, onOpen }: { n: AppNotification; read: boolean; onOpen: (n: AppNotification) => void }) {
+function NotificationCard({
+  n,
+  read,
+  onOpen,
+  selectMode,
+  checked,
+  onToggle,
+}: {
+  n: AppNotification;
+  read: boolean;
+  onOpen: (n: AppNotification) => void;
+  /** Mode sélection : un clic coche la carte au lieu de l'ouvrir. */
+  selectMode: boolean;
+  checked: boolean;
+  onToggle: (id: string) => void;
+}) {
   const view = viewOf(n.type);
   return (
-    <li className={`notif${read ? '' : ' notif--unread'}`} data-id={n.id}>
-      <button type="button" className="notif__open" aria-haspopup="dialog" onClick={() => onOpen(n)}>
+    <li className={`notif${read ? '' : ' notif--unread'}${checked ? ' notif--selected' : ''}`} data-id={n.id}>
+      <button
+        type="button"
+        className="notif__open"
+        {...(selectMode ? { role: 'checkbox', 'aria-checked': checked } : { 'aria-haspopup': 'dialog' as const })}
+        onClick={() => (selectMode ? onToggle(n.id) : onOpen(n))}
+      >
+        {selectMode ? (
+          <span className={`notif__check${checked ? ' is-checked' : ''}`} aria-hidden="true">
+            {checked ? <Icon name="check" size={14} /> : null}
+          </span>
+        ) : null}
         <span className={`notif__icon notif__icon--${view.tone}`} aria-hidden="true">
           <Icon name={view.icon} size={18} />
         </span>
@@ -81,6 +109,19 @@ export default function NotificationsPage() {
   const [type, setType] = useState('');
   const [limit, setLimit] = useState(FIRST);
   const [opened, setOpened] = useState<AppNotification | null>(null);
+
+  // Suppression : mode sélection, confirmation, toast de succès
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 2200);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const list = useResource(() => api.notifications.list({ limit, unreadOnly: view === 'unread' }), [limit, view]);
 
@@ -134,6 +175,54 @@ export default function NotificationsPage() {
     }
   }
 
+  // Seules les notifications visibles ET cochées sont supprimées : jamais une carte masquée par le filtre de type.
+  const selectedShown = shown.filter((n) => selected.has(n.id));
+  const allSelected = shown.length > 0 && selectedShown.length === shown.length;
+
+  function startSelecting() {
+    setFailure(null);
+    setSelected(new Set());
+    setSelectMode(true);
+  }
+
+  function stopSelecting() {
+    setSelectMode(false);
+    setSelected(new Set());
+    setConfirmOpen(false);
+  }
+
+  function toggle(id: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(shown.map((n) => n.id)));
+  }
+
+  async function removeSelected() {
+    const ids = selectedShown.map((n) => n.id);
+    if (ids.length === 0 || deleting) return;
+    setDeleting(true);
+    setFailure(null);
+    try {
+      await deleteNotifications(ids);
+      stopSelecting();
+      refresh();
+      list.reload();
+      setToast(ids.length > 1 ? `${ids.length} notifications supprimées` : 'Notification supprimée');
+    } catch (err) {
+      setConfirmOpen(false);
+      setFailure(describeDeleteError(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   // Ouvrir une notification non lue la marque comme lue : c'est la lire.
   function open(n: AppNotification) {
     setOpened(n);
@@ -149,6 +238,9 @@ export default function NotificationsPage() {
           <div className="notif-actions hide-mobile">
             <Button variant="secondary" onClick={markAll} busy={allBusy} disabled={unread === 0 && unreadShown === 0}>
               Tout marquer comme lu
+            </Button>
+            <Button variant="secondary" icon="trash" onClick={startSelecting} disabled={selectMode || items.length === 0}>
+              Supprimer
             </Button>
             <Button variant="secondary" onClick={() => { list.reload(); refresh(); }} busy={list.loading && list.data !== null}>
               Actualiser
@@ -237,22 +329,60 @@ export default function NotificationsPage() {
         </Card>
       ) : (
         <>
-          <div className="notif-summary">
-            <p className="tx-summary">
-              <strong>
-                {shown.length} {plural(shown.length, 'notification', 'notifications')}
-              </strong>
-              {unreadShown > 0 ? ` · ${unreadShown} ${plural(unreadShown, 'non lue', 'non lues')}` : ''}
-            </p>
-            {unread > 0 || unreadShown > 0 ? (
-              <button type="button" className="link-btn show-mobile" disabled={allBusy} onClick={() => void markAll()}>
-                Tout marquer comme lu
-              </button>
-            ) : null}
-          </div>
+          {selectMode ? (
+            <div className="notif-bar" role="group" aria-label="Sélection de notifications">
+              <label className="notif-bar__all">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                <span>{allSelected ? 'Tout désélectionner' : 'Tout sélectionner'}</span>
+              </label>
+              <span className="notif-bar__count muted">
+                {selectedShown.length} {plural(selectedShown.length, 'sélectionnée', 'sélectionnées')}
+              </span>
+              <div className="notif-bar__actions">
+                <Button variant="secondary" onClick={stopSelecting} disabled={deleting}>
+                  Annuler
+                </Button>
+                <Button
+                  icon="trash"
+                  className="btn--danger"
+                  disabled={selectedShown.length === 0}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  Supprimer{selectedShown.length > 0 ? ` (${selectedShown.length})` : ''}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="notif-summary">
+              <p className="tx-summary">
+                <strong>
+                  {shown.length} {plural(shown.length, 'notification', 'notifications')}
+                </strong>
+                {unreadShown > 0 ? ` · ${unreadShown} ${plural(unreadShown, 'non lue', 'non lues')}` : ''}
+              </p>
+              <div className="notif-summary__links show-mobile">
+                {unread > 0 || unreadShown > 0 ? (
+                  <button type="button" className="link-btn" disabled={allBusy} onClick={() => void markAll()}>
+                    Tout marquer comme lu
+                  </button>
+                ) : null}
+                <button type="button" className="link-btn" onClick={startSelecting}>
+                  Supprimer
+                </button>
+              </div>
+            </div>
+          )}
           <ul className="notif-list">
             {shown.map((n) => (
-              <NotificationCard key={n.id} n={n} read={isRead(n)} onOpen={open} />
+              <NotificationCard
+                key={n.id}
+                n={n}
+                read={isRead(n)}
+                onOpen={open}
+                selectMode={selectMode}
+                checked={selected.has(n.id)}
+                onToggle={toggle}
+              />
             ))}
           </ul>
           {mayHaveMore ? (
@@ -277,6 +407,31 @@ export default function NotificationsPage() {
       >
         {opened ? <NotificationDetail n={opened} onNavigate={() => setOpened(null)} /> : null}
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title={selectedShown.length > 1 ? `Supprimer ${selectedShown.length} notifications ?` : 'Supprimer cette notification ?'}
+        confirmLabel="Supprimer"
+        tone="danger"
+        busy={deleting}
+        onConfirm={() => void removeSelected()}
+        onCancel={() => setConfirmOpen(false)}
+      >
+        <p>
+          {selectedShown.length > 1
+            ? 'Ces notifications seront supprimées définitivement.'
+            : 'Cette notification sera supprimée définitivement.'}
+        </p>
+      </ConfirmDialog>
+
+      {toast ? (
+        <div className="toast-center" role="status">
+          <span>
+            <Icon name="check" size={18} />
+            {toast}
+          </span>
+        </div>
+      ) : null}
     </>
   );
 }

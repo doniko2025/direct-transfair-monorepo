@@ -12,18 +12,7 @@ import { useCurrentUser } from '../../providers/AuthProvider';
 import { useResource } from '../../lib/useResource';
 import { CompaniesOverview } from './CompaniesOverview';
 import { DashHero } from './DashHero';
-import { KpiCard, KpiGrid, NotificationsPeek, Panel, PanelState, Shortcuts, TxRows, type ShortcutDef } from './parts';
-
-const SHORTCUTS: readonly ShortcutDef[] = [
-  { to: '/companies', label: 'Sociétés', icon: 'building' },
-  { to: '/portal-domains', label: 'Domaines', icon: 'globe' },
-  { to: '/supervision', label: 'Supervision', icon: 'eye' },
-  { to: '/transactions', label: 'Transactions', icon: 'list' },
-  { to: '/treasury', label: 'Trésorerie', icon: 'vault' },
-  { to: '/rates', label: 'Taux de change', icon: 'swap' },
-  { to: '/fees', label: 'Frais', icon: 'percent' },
-  { to: '/users', label: 'Utilisateurs', icon: 'users' },
-];
+import { KpiCard, KpiGrid, NotificationsPeek, Panel, PanelState, TxRows } from './parts';
 
 export function PlatformDashboard() {
   const user = useCurrentUser();
@@ -88,8 +77,6 @@ export function PlatformDashboard() {
           note={txs.error ? 'Indisponible' : b2b > 0 ? 'À valider' : 'Aucun en attente'}
         />
       </KpiGrid>
-
-      <Shortcuts items={SHORTCUTS} />
 
       <div className="dash-cols">
         <div className="dash-stack">

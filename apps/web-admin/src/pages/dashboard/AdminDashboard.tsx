@@ -13,18 +13,7 @@ import { useCurrentUser } from '../../providers/AuthProvider';
 import { useTenant } from '../../providers/TenantProvider';
 import { useResource } from '../../lib/useResource';
 import { DashHero } from './DashHero';
-import { KpiCard, KpiGrid, NotificationsPeek, Panel, PanelState, Shortcuts, TxRows, type ShortcutDef } from './parts';
-
-const SHORTCUTS: readonly ShortcutDef[] = [
-  { to: '/agencies', label: 'Agences', icon: 'building' },
-  { to: '/agents', label: 'Agents', icon: 'users' },
-  { to: '/wallet-clients', label: 'Clients wallet', icon: 'wallet' },
-  { to: '/treasury', label: 'Trésorerie', icon: 'vault' },
-  { to: '/rates', label: 'Taux de change', icon: 'swap' },
-  { to: '/fees', label: 'Frais', icon: 'percent' },
-  { to: '/agency-withdrawals', label: "Retraits d'agence", icon: 'withdraw' },
-  { to: '/commissions', label: 'Commissions', icon: 'percent' },
-];
+import { KpiCard, KpiGrid, NotificationsPeek, Panel, PanelState, TxRows } from './parts';
 
 export function AdminDashboard() {
   const user = useCurrentUser();
@@ -124,8 +113,6 @@ export function AdminDashboard() {
           }
         />
       </KpiGrid>
-
-      <Shortcuts items={SHORTCUTS} />
 
       <div className="dash-cols">
         <div className="dash-stack">

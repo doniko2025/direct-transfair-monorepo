@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/notifications.css */
 /* =========================================================
    NOTIFICATIONS — boîte de réception de cartes compactes
    Une carte = une ligne de titre + un aperçu d'une ligne + l'heure.
@@ -159,4 +160,106 @@
   align-items: center;
   gap: 6px 10px;
   font-size: var(--t-sm);
+}
+
+/* ─── Suppression : mode sélection ─────────────────────── */
+.notif-summary__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.notif-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+}
+
+.notif-bar__all {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.notif-bar__all input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
+
+.notif-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.notif__check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ink-3);
+  border-radius: 50%;
+  color: var(--brand-ink);
+}
+
+.notif__check.is-checked {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.notif--selected {
+  outline: 2px solid var(--brand);
+  background: var(--brand-soft);
+}
+
+/* Toast de confirmation : centré à l'écran, disparaît seul */
+.toast-center {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.toast-center span {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-radius: var(--r-md);
+  background: var(--ink);
+  box-shadow: var(--sh-2);
+  color: #fff;
+  font-weight: 600;
+  animation: toast-center-in 0.18s ease-out;
+}
+
+@keyframes toast-center-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+@media (max-width: 640px) {
+  .notif-bar__actions {
+    width: 100%;
+  }
+
+  .notif-bar__actions .btn {
+    flex: 1;
+  }
 }

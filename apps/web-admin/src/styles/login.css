@@ -149,6 +149,7 @@
   }
 
   .login__card {
-    padding: 28px 22px;
+    /* La carte remonte de 28 px sous le héro : on ajoute autant de marge pour que « Connexion » respire. */
+    padding: 52px 22px 28px;
   }
 }

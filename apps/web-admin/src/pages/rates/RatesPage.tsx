@@ -1,4 +1,6 @@
-// src/pages/rates/RatesPage.tsx
+// apps/web-admin/src/pages/rates/RatesPage.tsx
+// v1.1 : filtre par devise en liste déroulante sur mobile (FilterTabs), rangé sur la même ligne que « Actualiser » ; cartes plus compactes
+//        (date et actions sur une seule ligne).
 // Taux de change : une carte par couple de devises.
 //   - Super admin : fixe les taux (le sens inverse se déduit) et consulte l'historique.
 //   - Admin de société : lecture seule, pour connaître les taux appliqués à ses clients.
@@ -6,7 +8,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RATE_CURRENCIES, type RateCurrency, type RatePair } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
+import { RefreshButton } from '../../components/RefreshButton';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { describeError } from '../../lib/errors';
@@ -64,6 +68,7 @@ function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean;
         </p>
       ) : null}
 
+      <div className="rate-card__foot">
       <div className="rate-card__meta">
         {change !== null && change !== 0 ? (
           <Pill tone={changeTone(change)}>
@@ -90,6 +95,7 @@ function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean;
         <Link className="link" to={`/rates/${encodeURIComponent(pair.pair)}/history`}>
           Historique
         </Link>
+      </div>
       </div>
     </li>
   );
@@ -129,9 +135,11 @@ export default function RatesPage() {
             : 'Les taux appliqués à vos clients. Ils sont fixés par la plateforme.'
         }
         actions={
-          <Button variant="secondary" onClick={rates.reload} busy={rates.loading && rates.data !== null}>
-            Actualiser
-          </Button>
+          <div className="hide-mobile">
+            <Button variant="secondary" onClick={rates.reload} busy={rates.loading && rates.data !== null}>
+              Actualiser
+            </Button>
+          </div>
         }
       />
 
@@ -180,13 +188,22 @@ export default function RatesPage() {
         </Card>
       ) : (
         <>
-          <div className="tabs tabs--row" role="group" aria-label="Filtrer par devise">
-            {(['ALL', ...RATE_CURRENCIES] as Filter[]).map((c) => (
-              <button key={c} type="button" className="tab" aria-pressed={filter === c} onClick={() => setFilter(c)}>
-                {c === 'ALL' ? 'Toutes' : c}
-                <span>{countOf(c)}</span>
-              </button>
-            ))}
+          <div className="toolbar">
+            <div className="toolbar__filters toolbar__filters--inline">
+              <FilterTabs
+                id="rates-currency"
+                label="Filtrer par devise"
+                rowOnDesktop
+                value={filter}
+                onChange={setFilter}
+                options={(['ALL', ...RATE_CURRENCIES] as Filter[]).map((c) => ({
+                  id: c,
+                  label: c === 'ALL' ? 'Toutes les devises' : c,
+                  count: countOf(c),
+                }))}
+              />
+            </div>
+            <RefreshButton onClick={rates.reload} busy={rates.loading && rates.data !== null} />
           </div>
 
           {shown.length === 0 ? (

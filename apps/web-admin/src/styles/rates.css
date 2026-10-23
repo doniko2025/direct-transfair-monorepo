@@ -5,7 +5,7 @@
 
 .rate-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
   gap: 14px;
   list-style: none;
 }
@@ -13,9 +13,9 @@
 .rate-card {
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 16px 18px;
-  border-radius: var(--r-lg);
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
   background: var(--card);
   box-shadow: var(--sh-1);
 }
@@ -29,7 +29,7 @@
 }
 
 .rate-card__title {
-  font-size: var(--t-lg);
+  font-size: var(--t-md);
   letter-spacing: 0.02em;
 }
 
@@ -48,8 +48,8 @@
 }
 
 .rate-card__rate {
-  margin-top: 6px;
-  font-size: clamp(1.3rem, 1.15rem + 0.6vw, 1.65rem);
+  margin-top: 2px;
+  font-size: clamp(1.1rem, 1rem + 0.4vw, 1.3rem);
   font-stretch: 90%;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
@@ -58,6 +58,7 @@
 
 .rate-card__inverse {
   color: var(--ink-2);
+  font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -87,16 +88,29 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  margin-top: 4px;
   font-size: var(--t-sm);
+}
+
+/* Date de mise à jour à gauche, actions à droite : une seule ligne au lieu de deux. */
+.rate-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 14px;
+  margin-top: 6px;
 }
 
 .rate-card__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 18px;
-  margin-top: 10px;
+  gap: 8px 14px;
+}
+
+.rate-card__actions .btn {
+  min-height: 36px;
+  padding: 6px 14px;
 }
 
 /* ─── Boîte d'édition ──────────────────────────────────── */

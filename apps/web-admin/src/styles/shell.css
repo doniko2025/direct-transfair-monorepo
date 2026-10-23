@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/shell.css */
 /* ─── Cadre : panneau latéral flottant + contenu ───────── */
 .shell {
   display: grid;
@@ -169,6 +170,10 @@ a.nav-item:hover {
 @media (max-width: 960px) {
   .shell {
     grid-template-columns: minmax(0, 1fr);
+    /* Sans ceci, quand la page est plus courte que l'écran, la grille répartit l'espace restant
+       entre ses lignes : la barre du haut (menu + nom de la société) grossissait et laissait un grand vide. */
+    grid-template-rows: auto minmax(0, 1fr);
+    align-content: start;
     gap: 0;
     padding: 0;
   }
