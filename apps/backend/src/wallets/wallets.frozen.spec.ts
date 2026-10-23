@@ -43,6 +43,16 @@ describe('WalletsService v5.7 — wallet gelé', () => {
     expect(ledger).toHaveLength(0);
   });
 
+  it('creditInTx avec { allowFrozen: true } (commission d\'un tiers) crédite quand même et journalise (v5.8)', async () => {
+    const { service, db, ledger, state } = makeDb({ w1: frozen });
+    await service.creditInTx(db, 'w1', 10, 'Commission', 't1', { allowFrozen: true });
+    expect(state.w1).toBe(1010);
+    expect(ledger).toHaveLength(1);
+    // sans l'option, toujours refusé
+    await expect(service.creditInTx(db, 'w1', 10, 'x', 't1')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(state.w1).toBe(1010);
+  });
+
   it('creditInTx refuse un wallet gelé, et le message donne le motif', async () => {
     const { service, db, ledger } = makeDb({ w1: frozen });
     await expect(service.creditInTx(db, 'w1', 10, 'x')).rejects.toThrow(/Contrôle LCB-FT/);

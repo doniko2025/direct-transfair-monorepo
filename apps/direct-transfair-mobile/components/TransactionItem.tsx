@@ -13,6 +13,7 @@ const STATUS_LABEL: Record<string, string> = {
   VALIDATED: "Validée",
   PENDING: "En attente",
   CANCELLED: "Annulée",
+  EXPIRED: "Expirée — remboursée",
 };
 
 const METHOD_LABEL: Record<string, string> = {
@@ -33,6 +34,7 @@ function statusColor(status: string): string {
     case "VALIDATED":
       return "#0ea5e9"; // bleu
     case "CANCELLED":
+    case "EXPIRED":
       return "#dc2626"; // rouge
     case "PENDING":
     default:

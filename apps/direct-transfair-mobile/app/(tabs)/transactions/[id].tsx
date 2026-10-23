@@ -204,6 +204,7 @@ export default function TransactionDetailScreen() {
       case "VALIDATED": return { label: "Disponible", tone: "info",   icon: "shield-checkmark" };
       case "CANCELLED": return { label: "Annulée",    tone: "neutral", icon: "close-circle" };
       case "REFUNDED":  return { label: "Remboursée", tone: "info",   icon: "return-down-back" };
+      case "EXPIRED":   return { label: "Expirée — remboursée", tone: "neutral", icon: "timer" };
       case "FAILED":    return { label: "Échouée",    tone: "danger", icon: "alert-circle" };
       default:          return { label: "En attente", tone: "warn",   icon: "time" };
     }

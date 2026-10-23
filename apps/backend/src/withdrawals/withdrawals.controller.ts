@@ -110,7 +110,7 @@ export class WithdrawalsController {
       throw new ForbiddenException('Réservé aux agents');
     }
 
-    return this.withdrawals.agentCheckCode(clientId, code);
+    return this.withdrawals.agentCheckCode(clientId, code, req.user!.id); // ✅ v4.15 : l'agent est connu pour contrôler le pays
   }
 
   // ── AGENT : Valider le paiement (Cash-Out) ───────────────

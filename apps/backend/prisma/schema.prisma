@@ -661,7 +661,7 @@ model LedgerEntry {
   id String @id @default(cuid())
 
   walletId String
-  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict) // ✅ v4.30 : le journal ne disparaît jamais avec son wallet
 
   transactionId String?
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
@@ -1309,6 +1309,11 @@ model Transaction {
   // ⚠️ Migration requise : 20261023120000_add_transaction_idempotency_key
   idempotencyKey String?
 
+  // ✅ v4.30 — pays de destination (ISO-2) d'un envoi : un code de retrait ne se paie que dans ce pays (voir
+  // transactions/pickup-rules.ts). null pour les anciens envois (le pays du bénéficiaire sert alors de repli).
+  // ⚠️ Migration requise : 20261023140000_add_transaction_receive_country
+  receiveCountry String?
+
   // Relations
   withdrawal          Withdrawal?
   ledgerEntries       LedgerEntry[]
@@ -1327,6 +1332,7 @@ model Transaction {
   @@index([currency, targetCurrency])
   @@index([isFlagged])
   @@unique([senderId, idempotencyKey])
+  @@index([status, pickupExpiry]) // ✅ v4.30 — balayage quotidien des codes expirés
   @@map("transactions")
 }
 
@@ -1844,6 +1850,27 @@ model TransferLimit {
 // =========================================================
 // AUDIT LOGS
 // =========================================================
+
+// =========================================================
+// IDEMPOTENCY RECORD (v4.30) — opérations d'argent sans ligne Transaction (trésorerie : alimentation, retrait)
+// Même principe que Transaction.idempotencyKey : une clé déjà vue renvoie le résultat enregistré au lieu de rejouer.
+// ⚠️ Migration requise : 20261023150000_add_idempotency_records_and_ledger_restrict
+// =========================================================
+
+model IdempotencyRecord {
+  id String @id @default(cuid())
+
+  userId String
+  key    String
+  scope  String // ex. « treasury.inject »
+  response Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, key])
+  @@index([createdAt])
+  @@map("idempotency_records")
+}
 
 model AuditLog {
   id String @id @default(cuid())

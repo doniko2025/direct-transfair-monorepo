@@ -1,6 +1,9 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.5
+// SCHEDULED TRANSFERS SERVICE v4.6
+// ✅ v4.6 : l'envoi créé à chaque échéance porte son pays de destination (Transaction.receiveCountry) et une échéance de code
+//   de 5 mois (pickupExpiry), comme un envoi manuel. Un virement cash dont le bénéficiaire n'a pas de pays reconnu échoue
+//   avec un message clair (au lieu de partir avec la devise XOF par défaut) ; sa devise de paiement est celle du pays.
 // ✅ v4.5 (audit, point faible) : MONTHLY ne déborde plus sur le mois suivant. setMonth(+1) depuis le 31 janvier donnait
 //   le 3 mars (le 31 février n'existe pas) : le virement sautait février et dérivait ensuite sur le 3. Le jour est maintenant
 //   ramené au dernier jour du mois (31 janv. → 28 ou 29 févr.). Limite connue : le jour d'origine n'étant pas mémorisé,
@@ -63,6 +66,8 @@ import * as crypto from 'crypto';
 
 import type { CreateScheduledTransferDto } from './dto/create-scheduled-transfer.dto';
 import { toIso2 } from '../fee-schedule/countries';
+import { currencyOfCountry } from '../fee-schedule/country-currency';
+import { pickupExpiryFrom } from '../transactions/pickup-rules';
 import { FeeScheduleService } from '../fee-schedule/fee-schedule.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
@@ -287,9 +292,21 @@ export class ScheduledTransfersService {
       const threshold = new Prisma.Decimal(await this.thresholds.thresholdFor(transfer.clientId, currency));
       const status = amt.lte(threshold) ? 'VALIDATED' : 'PENDING';
 
+      // v4.6 — pays de destination ; un virement cash se paie dans ce pays, dans sa devise.
+      const receiveCountry = toIso2(transfer.beneficiary?.country ?? null);
+      if (payoutMethod === 'CASH_PICKUP' && !receiveCountry) {
+        throw new Error(
+          `Pays du bénéficiaire non reconnu${transfer.beneficiary?.country ? ` (« ${transfer.beneficiary.country} »)` : ''} : ` +
+          `corrigez le bénéficiaire pour que le code puisse être payé au bon endroit.`,
+        );
+      }
+      const cashCurrency = payoutMethod === 'CASH_PICKUP' && receiveCountry
+        ? ((currencyOfCountry(receiveCountry) as CurrencyCode | null) ?? null)
+        : null;
+
       let receivedAmount = Number(transfer.amount);
       let exchangeRate = 1;
-      const targetCurrency = (transfer.targetCurrency ?? currency) as CurrencyCode;
+      const targetCurrency = (cashCurrency ?? transfer.targetCurrency ?? currency) as CurrencyCode;
 
       if (targetCurrency !== currency) {
         receivedAmount = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
@@ -337,6 +354,8 @@ export class ScheduledTransfersService {
             scheduledTransferId: transfer.id,
             note: transfer.note ?? null,
             providerRef: reference,
+            receiveCountry,                    // v4.6
+            pickupExpiry: pickupExpiryFrom(),  // v4.6 — code valable 5 mois
           },
         });
 

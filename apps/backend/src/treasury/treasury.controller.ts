@@ -1,6 +1,8 @@
 // apps/backend/src/treasury/treasury.controller.ts
 // =========================================================
-// TREASURY CONTROLLER v5.5
+// TREASURY CONTROLLER v5.6
+// ✅ v5.6 : (1) inject et inject-all respectent l'interrupteur ALLOW_SELF_FUNDING (self-funding.ts, ouvert par défaut) ;
+//   (2) inject, inject-all, withdraw et transfer acceptent l'en-tête `Idempotency-Key` (TreasuryService.runIdempotent).
 // ✅ v5.5 (phase 6, passe 3) : GET /treasury/snapshots n'avait AUCUN contrôle de rôle : tout compte rattaché à une
 //   société (client, agent) lisait les volumes, frais, commissions et soldes de clôture quotidiens de sa société.
 //   Réservé au super admin et à l'admin de société, comme /treasury/overview. Les mouvements d'argent
@@ -44,6 +46,8 @@ import type { Request } from 'express';
 
 import { TreasuryService } from './treasury.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { IDEMPOTENCY_HEADER, parseIdempotencyKey } from '../transactions/idempotency';
+import { assertSelfFundingAllowed } from './self-funding';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import {
   InjectFundsDto,
@@ -180,6 +184,8 @@ export class TreasuryController {
         'Cette action est réservée aux admins société (COMPANY_ADMIN).',
       );
     }
+    assertSelfFundingAllowed(); // ✅ v5.6
+    const idemKey = parseIdempotencyKey(req.headers?.[IDEMPOTENCY_HEADER]);
 
     if (!body.currency) {
       throw new BadRequestException('Le champ "currency" est requis.');
@@ -190,18 +196,20 @@ export class TreasuryController {
       throw new BadRequestException('Le montant doit être un nombre supérieur à 0.');
     }
 
-    const result = await this.treasuryService.injectFunds({
-      clientId:    user.clientId,
-      currency:    body.currency,
-      amount:      parsedAmount,
-      performedBy: user.id,
-      description: body.description || 'Auto-injection admin',
+    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_INJECT', async () => {
+      const result = await this.treasuryService.injectFunds({
+        clientId:    user.clientId!,
+        currency:    body.currency,
+        amount:      parsedAmount,
+        performedBy: user.id,
+        description: body.description || 'Auto-injection admin',
+      });
+      await this.treasuryService.audit(user, 'TREASURY_INJECT', {
+        currency: body.currency.toUpperCase(),
+        amount: parsedAmount,
+      });
+      return result;
     });
-    await this.treasuryService.audit(user, 'TREASURY_INJECT', {
-      currency: body.currency.toUpperCase(),
-      amount: parsedAmount,
-    });
-    return result;
   }
 
   // ========================================================
@@ -227,6 +235,8 @@ export class TreasuryController {
         'Cette action est réservée aux admins société (COMPANY_ADMIN).',
       );
     }
+    assertSelfFundingAllowed(); // ✅ v5.6
+    const idemKey = parseIdempotencyKey(req.headers?.[IDEMPOTENCY_HEADER]);
 
     if (!body?.amounts || typeof body.amounts !== 'object') {
       throw new BadRequestException(
@@ -234,15 +244,17 @@ export class TreasuryController {
       );
     }
 
-    const result = await this.treasuryService.selfFundAll({
-      clientId: user.clientId,
-      amounts:  body.amounts,
-      reason:   body.reason || 'Auto-alimentation admin multi-devises',
+    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_SELF_FUND', async () => {
+      const result = await this.treasuryService.selfFundAll({
+        clientId: user.clientId!,
+        amounts:  body.amounts,
+        reason:   body.reason || 'Auto-alimentation admin multi-devises',
+      });
+      await this.treasuryService.audit(user, 'TREASURY_SELF_FUND', {
+        credited: result.results.map((r) => ({ currency: r.currency, amount: r.credited })),
+      });
+      return result;
     });
-    await this.treasuryService.audit(user, 'TREASURY_SELF_FUND', {
-      credited: result.results.map((r) => ({ currency: r.currency, amount: r.credited })),
-    });
-    return result;
   }
 
   // ========================================================
@@ -274,18 +286,21 @@ export class TreasuryController {
     if (!parsedAmount || parsedAmount <= 0) {
       throw new BadRequestException('Le montant doit être > 0.');
     }
+    const idemKey = parseIdempotencyKey(req.headers?.[IDEMPOTENCY_HEADER]);
 
-    const result = await this.treasuryService.withdrawFunds({
-      clientId: user.clientId,
-      currency: body.currency,
-      amount:   parsedAmount,
-      reason:   body.reason || 'Retrait admin',
+    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_WITHDRAW', async () => {
+      const result = await this.treasuryService.withdrawFunds({
+        clientId: user.clientId!,
+        currency: body.currency,
+        amount:   parsedAmount,
+        reason:   body.reason || 'Retrait admin',
+      });
+      await this.treasuryService.audit(user, 'TREASURY_WITHDRAW', {
+        currency: body.currency.toUpperCase(),
+        amount: parsedAmount,
+      });
+      return result;
     });
-    await this.treasuryService.audit(user, 'TREASURY_WITHDRAW', {
-      currency: body.currency.toUpperCase(),
-      amount: parsedAmount,
-    });
-    return result;
   }
 
   // ========================================================
@@ -307,17 +322,22 @@ export class TreasuryController {
       throw new ForbiddenException('Réservé au Super Admin');
     }
 
-    const result = await this.treasuryService.transferBetweenWallets({
-      fromWalletId: body.fromWalletId,
-      toWalletId:   body.toWalletId,
-      amount:       body.amount,
-      description:  body.description || 'Transfert interne Super Admin',
+    const user = req.user;
+    const idemKey = parseIdempotencyKey(req.headers?.[IDEMPOTENCY_HEADER]);
+
+    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_TRANSFER', async () => {
+      const result = await this.treasuryService.transferBetweenWallets({
+        fromWalletId: body.fromWalletId,
+        toWalletId:   body.toWalletId,
+        amount:       body.amount,
+        description:  body.description || 'Transfert interne Super Admin',
+      });
+      await this.treasuryService.audit(user, 'TREASURY_TRANSFER', {
+        fromWalletId: body.fromWalletId,
+        toWalletId: body.toWalletId,
+        amount: body.amount,
+      });
+      return result;
     });
-    await this.treasuryService.audit(req.user, 'TREASURY_TRANSFER', {
-      fromWalletId: body.fromWalletId,
-      toWalletId: body.toWalletId,
-      amount: body.amount,
-    });
-    return result;
   }
 }

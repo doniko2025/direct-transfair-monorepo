@@ -13,7 +13,7 @@ import { GetSnapshotsQueryDto, InjectFundsDto } from './dto/treasury.dto';
 const req = (role: string, clientId: number | undefined = 7): any => ({ user: { id: 'u1', role, clientId } });
 
 describe('TreasuryController — rôles', () => {
-  const svc: any = { getSnapshots: jest.fn().mockResolvedValue([]), audit: jest.fn(), injectFunds: jest.fn().mockResolvedValue({ ok: true }), withdrawFunds: jest.fn().mockResolvedValue({ ok: true }), selfFundAll: jest.fn().mockResolvedValue({ results: [{ currency: 'EUR', credited: 10, walletId: 'w' }] }), transferBetweenWallets: jest.fn().mockResolvedValue({ ok: true }) };
+  const svc: any = { runIdempotent: jest.fn((_u: string, _k: string | null, _s: string, job: () => Promise<unknown>) => job()), getSnapshots: jest.fn().mockResolvedValue([]), audit: jest.fn(), injectFunds: jest.fn().mockResolvedValue({ ok: true }), withdrawFunds: jest.fn().mockResolvedValue({ ok: true }), selfFundAll: jest.fn().mockResolvedValue({ results: [{ currency: 'EUR', credited: 10, walletId: 'w' }] }), transferBetweenWallets: jest.fn().mockResolvedValue({ ok: true }) };
   const ctrl = new TreasuryController(svc);
 
   it('GET /treasury/snapshots : refusé à un client et à un agent', async () => {
@@ -37,6 +37,27 @@ describe('TreasuryController — rôles', () => {
     await ctrl.transferBetweenWallets(req('SUPER_ADMIN'), { fromWalletId: 'a', toWalletId: 'b', amount: 3 } as any);
     expect(svc.audit.mock.calls.map((c: any[]) => c[1])).toEqual(['TREASURY_INJECT', 'TREASURY_SELF_FUND', 'TREASURY_WITHDRAW', 'TREASURY_TRANSFER']);
     expect(svc.audit.mock.calls[0][2]).toEqual({ currency: 'EUR', amount: 50 });
+  });
+
+  it("v5.6 : ALLOW_SELF_FUNDING=false ferme inject et inject-all (403) sans rien créditer ; withdraw reste ouvert", async () => {
+    process.env.ALLOW_SELF_FUNDING = 'false';
+    try {
+      svc.injectFunds.mockClear(); svc.selfFundAll.mockClear();
+      await expect(ctrl.injectFunds(req('COMPANY_ADMIN'), { currency: 'EUR', amount: 50 } as any)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(ctrl.injectAll(req('COMPANY_ADMIN'), { amounts: { EUR: 10 } } as any)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(svc.injectFunds).not.toHaveBeenCalled();
+      expect(svc.selfFundAll).not.toHaveBeenCalled();
+      await expect(ctrl.withdrawFunds(req('COMPANY_ADMIN'), { currency: 'EUR', amount: 5 } as any)).resolves.toBeDefined();
+    } finally { delete process.env.ALLOW_SELF_FUNDING; }
+  });
+
+  it("v5.6 : l'en-tête Idempotency-Key est transmis à runIdempotent ; une clé invalide → 400", async () => {
+    svc.runIdempotent.mockClear();
+    const r = req('COMPANY_ADMIN'); r.headers = { 'idempotency-key': 'abcd-1234-efgh' };
+    await ctrl.injectFunds(r, { currency: 'EUR', amount: 50 } as any);
+    expect(svc.runIdempotent).toHaveBeenCalledWith('u1', 'abcd-1234-efgh', 'TREASURY_INJECT', expect.any(Function));
+    const bad = req('COMPANY_ADMIN'); bad.headers = { 'idempotency-key': 'x' };
+    await expect(ctrl.injectFunds(bad, { currency: 'EUR', amount: 50 } as any)).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 

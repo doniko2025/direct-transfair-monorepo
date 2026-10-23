@@ -1,6 +1,7 @@
 // apps/backend/src/transactions/transactions.module.ts
 // =========================================================
-// TRANSACTIONS MODULE v4.1 — Direct Transf'air
+// TRANSACTIONS MODULE v4.2 — Direct Transf'air
+// ✅ v4.2 : PickupExpiryService (cron quotidien d'expiration des codes de retrait, voir pickup-rules.ts)
 // ✅ v4.0 : WalletsModule, PushModule, SmsModule, MailModule
 // ✅ v4.1 : FIX — NotificationsModule ajouté aux imports
 //   TransactionsService injecte WalletNotifierService etc.
@@ -10,6 +11,7 @@
 import { Module } from '@nestjs/common';
 import { TransactionsService }    from './transactions.service';
 import { TransactionsController } from './transactions.controller';
+import { PickupExpiryService }    from './pickup-expiry.service'; // ✅ v4.2 — expiration des codes (5 mois)
 import { PrismaModule }           from '../prisma/prisma.module';
 import { AuthModule }             from '../auth/auth.module';
 import { RatesModule }            from '../rates/rates.module';
@@ -37,7 +39,7 @@ import { TransferLimitsModule } from '../transfer-limits/transfer-limits.module'
     TransferLimitsModule, // plafonds d'envoi par niveau KYC
   ],
   controllers: [TransactionsController],
-  providers:   [TransactionsService],
+  providers:   [TransactionsService, PickupExpiryService],
   exports:     [TransactionsService],
 })
 export class TransactionsModule {} 

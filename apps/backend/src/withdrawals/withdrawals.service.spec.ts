@@ -260,3 +260,80 @@ describe('WithdrawalsService — un retrait clos n\'est plus payable (audit poin
     });
   });
 });
+
+// ✅ v4.15 — pays de paiement + expiration à 5 mois
+describe('WithdrawalsService — pays de paiement et expiration (v4.15)', () => {
+  const agentIn = (country: string | null, primaryCurrency = 'XOF') => ({
+    id: 'ag', agencyId: 'a1', agency: { id: 'a1', type: 'SUBSIDIARY', name: 'Agence', country, primaryCurrency }, email: null, firstName: 'A', lastName: 'B',
+  });
+  const monthsAgo = (n: number) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d; };
+  const tx = (over: any = {}) => ({
+    id: 't1', status: TransactionStatus.VALIDATED, currency: 'EUR', targetCurrency: 'GNF', payoutMethod: 'CASH_PICKUP',
+    amount: 100, receivedAmount: 1_000_000, fees: 1, agencyId: 'a-envoi', senderId: null, receiveCountry: 'GN',
+    createdAt: new Date(), pickupExpiry: null,
+    sender: { id: 's1', agencyId: 'a-envoi', firstName: 'S', lastName: 'T' }, withdrawal: null, beneficiary: null, ...over,
+  });
+
+  it('un code EUR → Guinée (GNF) ne peut PAS être payé au Sénégal (XOF) : message qui indique la Guinée', async () => {
+    const m = make({ tx: tx(), agent: agentIn('SN') });
+    const p = m.service.agentProcessPayment(5, 'ag', 'REF');
+    await expect(p).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toThrow(/Guinée/);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+    expect(m.credits).toHaveLength(0);
+  });
+
+  it('la vérification du code (avant paiement) donne déjà le même message', async () => {
+    const m = make({ tx: tx() });
+    m.prisma.user.findUnique.mockResolvedValue(agentIn('SN'));
+    await expect(m.service.agentCheckCode(5, 'REF', 'ag')).rejects.toThrow(/Guinée/);
+  });
+
+  it('un code envoyé en Côte d\'Ivoire ne se paie pas au Sénégal, même devise XOF', async () => {
+    const m = make({ tx: tx({ currency: 'EUR', targetCurrency: 'XOF', receiveCountry: 'CI' }), agent: agentIn('SN', 'XOF') });
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toThrow(/Côte d'Ivoire/);
+  });
+
+  it('un code envoyé en Côte d\'Ivoire se paie en Côte d\'Ivoire', async () => {
+    const m = make({ tx: tx({ currency: 'EUR', targetCurrency: 'XOF', receiveCountry: 'CI' }), agent: agentIn('CI', 'XOF'), wallets: [{ id: 'w-agence', currency: 'XOF', balance: 0 }] });
+    m.prisma.$transaction.mockImplementation(async (fn: any) => fn({
+      transaction: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      withdrawal: m.prisma.withdrawal,
+    }));
+    await m.service.agentCheckCode(5, 'REF', 'ag').catch(() => undefined);
+    // Le contrôle de pays ne doit pas être la cause d'un refus.
+    await m.service.agentProcessPayment(5, 'ag', 'REF').catch((e: any) => {
+      expect(e).not.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  it('agence sans pays renseigné + destination connue → refus explicite', async () => {
+    const m = make({ tx: tx(), agent: agentIn(null, 'GNF') });
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('ancien envoi sans receiveCountry : le pays du bénéficiaire fait foi', async () => {
+    const m = make({ tx: tx({ receiveCountry: null, beneficiary: { country: 'Guinée' } }), agent: agentIn('SN') });
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toThrow(/Guinée/);
+  });
+
+  it('code expiré (plus de 5 mois) : refusé au guichet avant le passage du cron, vérification comme paiement', async () => {
+    const old = tx({ createdAt: monthsAgo(6), pickupExpiry: null, receiveCountry: 'SN' });
+    const m = make({ tx: old, agent: agentIn('SN') });
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toThrow(/expiré/);
+    await expect(m.service.agentCheckCode(5, 'REF', 'ag')).rejects.toThrow(/expiré/);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('pickupExpiry explicite dans le passé → expiré ; dans le futur → pas expiré', async () => {
+    const past = make({ tx: tx({ pickupExpiry: new Date(Date.now() - 1000), receiveCountry: 'SN' }), agent: agentIn('SN') });
+    await expect(past.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toThrow(/expiré/);
+    const future = make({ tx: tx({ createdAt: monthsAgo(8), pickupExpiry: new Date(Date.now() + 86_400_000), receiveCountry: 'SN' }), agent: agentIn('SN') });
+    await future.service.agentCheckCode(5, 'REF', 'ag').catch((e: any) => expect(String(e.message)).not.toMatch(/expiré/));
+  });
+
+  it('statut EXPIRED : refusé', async () => {
+    const m = make({ tx: tx({ status: TransactionStatus.EXPIRED, receiveCountry: 'SN' }), agent: agentIn('SN') });
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toBeInstanceOf(ConflictException);
+  });
+});

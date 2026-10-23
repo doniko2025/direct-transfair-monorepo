@@ -1,6 +1,14 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.14 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.15 — Direct Transf'air
+// ✅ v4.15 : (1) PAYS DE PAIEMENT. Un code ne se paie que dans le pays de destination de l'envoi (Transaction.receiveCountry,
+//    repli : pays du bénéficiaire). Une agence d'un autre pays — même si sa devise est la même, le XOF étant partagé par huit
+//    pays — est refusée avec un message qui indique le pays de destination (pickup-rules.ts). Appliqué à la VÉRIFICATION du code
+//    (agentCheckCode, qui reçoit maintenant l'agent) comme au PAIEMENT.
+//    (2) EXPIRATION. Un code de plus de 5 mois n'est plus vérifiable ni payable, même avant le passage du cron qui annule
+//    l'envoi et rembourse l'expéditeur (TransactionsService.expireUnclaimed).
+//    (3) Le crédit de commission vers la société / l'agence d'envoi n'est plus bloqué par le gel d'un wallet (voir wallets v5.8) :
+//    un wallet gelé ne doit pas empêcher un retrait déjà autorisé d'être payé.
 // ✅ v4.14 (audit point 4) : un retrait rejeté / annulé / échoué / expiré n'est plus payable en agence.
 //    (1) agentCheckCode() et agentProcessPayment() refusent un code dont le retrait n'est ni PENDING ni APPROVED ;
 //    (2) le passage du retrait à PAID est conditionné à ce statut, dans la même transaction SQL que le paiement
@@ -138,6 +146,8 @@ import {
 import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { toIso2 } from '../fee-schedule/countries';
+import { assertPayableInCountry, destinationCountryOf, isPickupExpired } from '../transactions/pickup-rules';
 import { RatesService }   from '../rates/rates.service';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 import { defaultShares, type Shares } from '../commission-rules/commission-rule-defaults';
@@ -160,6 +170,9 @@ const MANUAL_TARGETS: WithdrawalStatus[] = [
   WithdrawalStatus.CANCELLED,
   WithdrawalStatus.EXPIRED,
 ];
+
+/** Statuts de transaction depuis lesquels un code peut encore expirer. */
+const PAYABLE_STATUSES: TransactionStatus[] = [TransactionStatus.PENDING, TransactionStatus.VALIDATED];
 
 /** Statuts de retrait depuis lesquels un paiement en agence reste possible. */
 const PAYABLE_WITHDRAWAL: WithdrawalStatus[] = [WithdrawalStatus.PENDING, WithdrawalStatus.APPROVED];
@@ -225,7 +238,7 @@ export class WithdrawalsService {
   // AGENT — Vérifier un code de retrait
   // =========================================================
 
-  async agentCheckCode(clientId: number, code: string) {
+  async agentCheckCode(clientId: number, code: string, agentId?: string) {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
 
@@ -238,6 +251,21 @@ export class WithdrawalsService {
     // ✅ v4.14 : un retrait rejeté / annulé / échoué / expiré n'est plus vérifiable comme payable.
     if (tx.withdrawal && !PAYABLE_WITHDRAWAL.includes(tx.withdrawal.status)) {
       throw new ConflictException(`Retrait ${tx.withdrawal.status.toLowerCase()} : ce code ne peut plus être payé.`);
+    }
+    // ✅ v4.15 — code expiré (5 mois) : informé dès la vérification.
+    if (tx.status === TransactionStatus.EXPIRED || (PAYABLE_STATUSES.includes(tx.status) && isPickupExpired(tx))) {
+      throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
+    }
+    // ✅ v4.15 — pays de paiement : l'agent est informé dès la vérification que ce code se paie dans un autre pays.
+    if (agentId) {
+      const agent = await this.prisma.user.findUnique({ where: { id: agentId }, include: { agency: true } });
+      if (!agent?.agency) throw new ForbiddenException('Agent sans agence');
+      assertPayableInCountry({
+        destinationCountry: destinationCountryOf(tx),
+        payerCountry:       toIso2(agent.agency.country ?? null),
+        payoutCurrency:     tx.targetCurrency ?? tx.currency,
+        payerCurrency:      agent.agency.primaryCurrency ?? null,
+      });
     }
 
     const richTx = this.enrichTransaction({ ...tx });
@@ -292,11 +320,18 @@ export class WithdrawalsService {
       throw new ConflictException('Code déjà payé.');
     if (tx.status === TransactionStatus.CANCELLED)
       throw new ConflictException('Transaction annulée.');
+    if (tx.status === TransactionStatus.EXPIRED)
+      throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé.');
     if (tx.status !== TransactionStatus.VALIDATED)
       throw new ForbiddenException(`Statut invalide: ${tx.status}`);
     // ✅ v4.14 (audit point 4) : le statut du RETRAIT compte aussi — un retrait rejeté / annulé / échoué / expiré ne se paie pas.
     if (tx.withdrawal && !PAYABLE_WITHDRAWAL.includes(tx.withdrawal.status)) {
       throw new ConflictException(`Retrait ${tx.withdrawal.status.toLowerCase()} : ce code ne peut plus être payé.`);
+    }
+
+    // ✅ v4.15 — code expiré (5 mois) : refusé même avant le passage du cron d'expiration.
+    if (isPickupExpired(tx)) {
+      throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
     }
 
     // ── Agent et agence ───────────────────────────────────
@@ -309,6 +344,14 @@ export class WithdrawalsService {
     }
 
     const payoutCurrency = tx.targetCurrency ?? tx.currency;
+
+    // ✅ v4.15 — pays de paiement : un code ne se paie que dans le pays de destination de l'envoi.
+    assertPayableInCountry({
+      destinationCountry: destinationCountryOf(tx),
+      payerCountry:       toIso2(agent.agency.country ?? null),
+      payoutCurrency,
+      payerCurrency:      agent.agency.primaryCurrency ?? null,
+    });
 
     const agencyWallets = await this.prisma.wallet.findMany({
       where: { agencyId: agent.agencyId, isActive: true },
@@ -455,7 +498,7 @@ export class WithdrawalsService {
       if (finalSenderCommission > 0 && senderAgencyWallet) {
         await this.walletsService.creditInTx(
           prismaTx, senderAgencyWallet.id, finalSenderCommission,
-          `Commission envoi ${cleanCode} (${senderSharePct}%)`, tx.id,
+          `Commission envoi ${cleanCode} (${senderSharePct}%)`, tx.id, { allowFrozen: true }, // v4.15 : un tiers gelé ne bloque pas le paiement
         );
       }
 
@@ -463,7 +506,7 @@ export class WithdrawalsService {
       if (finalPlatformCommission > 0 && companyWallet) {
         await this.walletsService.creditInTx(
           prismaTx, companyWallet.id, finalPlatformCommission,
-          `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`, tx.id,
+          `Commission plateforme ${cleanCode} (${platformSharePct}%${senderIsClient ? `+${senderSharePct}%↑client` : ''})`, tx.id, { allowFrozen: true }, // v4.15
         );
       }
 

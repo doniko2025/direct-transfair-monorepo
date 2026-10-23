@@ -114,6 +114,7 @@ function statusInfo(status: string, isIncoming: boolean) {
   if (status === "VALIDATED")           return { label: "DISPONIBLE", color: T.blue,  bg: T.blueBg  };
   if (status === "CANCELLED")           return { label: "ANNULÉE",    color: T.red,   bg: T.redBg   };
   if (status === "FAILED")              return { label: "ÉCHOUÉE",    color: T.red,   bg: T.redBg   };
+  if (status === "EXPIRED")             return { label: "EXPIRÉE",    color: T.red,   bg: T.redBg   };
   return { label: "EN ATTENTE", color: T.amber, bg: T.amberBg };
 }
 
@@ -331,7 +332,7 @@ export default function ClientReceiptScreen() {
   const amtColor = data.isIncoming ? C.pos : C.ink;
   const stTone: "pos" | "info" | "danger" | "warn" | "neutral" =
     data.status === "PAID" ? "pos" : data.status === "VALIDATED" ? "info"
-      : data.status === "CANCELLED" || data.status === "FAILED" ? "danger" : "warn";
+      : data.status === "CANCELLED" || data.status === "FAILED" || data.status === "EXPIRED" ? "danger" : "warn";
   const stLabel = statusInfo(data.status, data.isIncoming).label.replace(" ✓", "");
 
   const Line = ({ label, value, bold, last }: { label: string; value: string; bold?: boolean; last?: boolean }) => (

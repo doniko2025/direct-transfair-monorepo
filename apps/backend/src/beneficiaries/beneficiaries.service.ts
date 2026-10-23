@@ -1,6 +1,7 @@
 // apps/backend/src/beneficiaries/beneficiaries.service.ts
 // =========================================================
-// BENEFICIARIES SERVICE v4.2
+// BENEFICIARIES SERVICE v4.3
+// ✅ v4.3 : deleteForUser refuse un bénéficiaire utilisé par un virement programmé actif ou en pause.
 // ✅ v4.0 : create() accepte clientId en argument
 // ✅ v4.1 : lookupByPhone() — recherche d'un destinataire par téléphone
 //    Priorité :
@@ -180,6 +181,16 @@ export class BeneficiariesService {
     if (txCount > 0)
       throw new BadRequestException(
         'Cannot delete beneficiary linked to transactions',
+      );
+
+    // ✅ v4.3 : un virement programmé encore à venir (actif ou en pause) pointe sur ce bénéficiaire : le supprimer le
+    // ferait échouer (ou partir sans destinataire) à la prochaine échéance. L'utilisateur doit d'abord le supprimer.
+    const scheduledCount = await this.prisma.scheduledTransfer.count({
+      where: { beneficiaryId: existing.id, status: { in: ['ACTIVE', 'PAUSED'] } },
+    });
+    if (scheduledCount > 0)
+      throw new BadRequestException(
+        'Ce bénéficiaire est utilisé par un virement programmé en cours. Supprimez ou terminez d\'abord ce virement programmé.',
       );
 
     await this.prisma.beneficiary.delete({ where: { id: existing.id } });

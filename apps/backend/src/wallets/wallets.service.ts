@@ -1,6 +1,10 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.7
+// WALLETS SERVICE v5.8
+// ✅ v5.8 : creditInTx accepte { allowFrozen: true } (paramètre ajouté en dernier). Réservé aux commissions versées à des
+//    TIERS lors du paiement d'un code (agence d'envoi, société) : le gel du wallet d'un tiers ne doit pas empêcher un
+//    retrait déjà autorisé d'être payé au bénéficiaire. L'argent arrive sur le wallet gelé (il reste bloqué pour les
+//    sorties) ; le journal garde la trace. Tous les autres crédits continuent de refuser un wallet gelé.
 // ✅ v5.7 (audit points 6 et 9) :
 //    (1) GEL DE WALLET APPLIQUÉ. Wallet.isFrozen (gel conformité / LCB-FT) n'était lu que pour l'affichage : un wallet gelé
 //        continuait d'envoyer et de recevoir. debitInTx, creditInTx, transferInTx (source ET destination) et hold refusent
@@ -384,6 +388,7 @@ export class WalletsService {
     amount: number,
     description: string,
     transactionId?: string,
+    opts?: { allowFrozen?: boolean },
   ) {
     if (amount <= 0) throw new BadRequestException('Montant invalide');
 
@@ -391,7 +396,7 @@ export class WalletsService {
 
     const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
     if (!wallet) throw new NotFoundException('Wallet introuvable');
-    this.assertNotFrozen(wallet); // ✅ v5.7
+    if (!opts?.allowFrozen) this.assertNotFrozen(wallet); // ✅ v5.7 (v5.8 : sauf commission de tiers)
 
     const amt = new Prisma.Decimal(amount);
 

@@ -1,7 +1,18 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.29 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.30 — Direct Transf'air
 // =========================================================
+// ✅ v4.30 : (1) EXPIRATION DES CODES. Un envoi non retiré expire après 5 mois (PICKUP_CODE_VALIDITY_MONTHS) : pickupExpiry est
+//    posé à la création, expireUnclaimed() (cron quotidien, PickupExpiryService) annule les envois échus (statut EXPIRED) et
+//    rembourse l'expéditeur dans la même transaction SQL. Avant, un code non retiré gardait l'argent bloqué indéfiniment.
+//    (2) PAYS DE DESTINATION. Transaction.receiveCountry (ISO-2) est enregistré à la création ; un envoi cash exige un pays de
+//    bénéficiaire reconnu et sa devise de paiement est celle de CE pays. Le contrôle au guichet est dans WithdrawalsService
+//    (pickup-rules.ts). Avant, la devise par défaut (XOF) s'appliquait à un pays non reconnu.
+//    ⚠️ Migration : 20261023140000_add_transaction_receive_country
+//    (3) fund-self : interrupteur ALLOW_SELF_FUNDING (ouvert par défaut, la route reste en place pendant le développement) et
+//    trace d'audit (BALANCE_ADJUSTMENT) de chaque auto-alimentation.
+//    (4) SCORING AML non bloquant (aml-scoring.ts) : riskScore / isFlagged renseignés après chaque envoi, signalement AmlFlag
+//    pour la conformité au-delà du seuil. Un envoi n'est jamais bloqué par ce scoring.
 // ✅ v4.29 (audit du backend, 12 points ; le point 1 « fund-self » est volontairement conservé tel quel jusqu'à la fin du dev) :
 //    (2)  un envoi passé en FAILED par un admin est remboursé (atomique), comme CANCELLED — cancelWithRefund(tx, target) ;
 //    (3)  IDEMPOTENCE : create(), deposit(), refillAgency() acceptent une clé (en-tête Idempotency-Key) — voir idempotency.ts.
@@ -298,6 +309,9 @@ import { ValidationThresholdsService } from '../validation-thresholds/validation
 import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
+import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
+import { assertSelfFundingAllowed } from '../treasury/self-funding';
+import { approxXof, computeRiskScore } from './aml-scoring';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -770,11 +784,12 @@ export class TransactionsService {
    */
   private async cancelWithRefund(
     tx: Transaction,
-    target: typeof TransactionStatus.CANCELLED | typeof TransactionStatus.FAILED = TransactionStatus.CANCELLED,
+    target: typeof TransactionStatus.CANCELLED | typeof TransactionStatus.FAILED | typeof TransactionStatus.EXPIRED = TransactionStatus.CANCELLED,
     withdrawalStatus?: WithdrawalStatus,
   ): Promise<Transaction> {
     const refund = await this.refundTargetFor(tx);
-    const failed = target === TransactionStatus.FAILED;
+    const failed  = target === TransactionStatus.FAILED;
+    const expired = target === TransactionStatus.EXPIRED; // ✅ v4.30
 
     return this.prisma.$transaction(async (prismaTx) => {
       const claimed = await prismaTx.transaction.updateMany({
@@ -786,7 +801,7 @@ export class TransactionsService {
               providerStatus: ProviderStatus.FAILED,
             }
           : {
-              status:         TransactionStatus.CANCELLED,
+              status:         expired ? TransactionStatus.EXPIRED : TransactionStatus.CANCELLED,
               cancelledAt:    new Date(),
               providerStatus: ProviderStatus.CANCELLED,
             },
@@ -800,14 +815,14 @@ export class TransactionsService {
           prismaTx,
           refund.walletId,
           refund.amount,
-          `${failed ? 'Remboursement échec' : refund.label} ${tx.reference}`,
+          `${failed ? 'Remboursement échec' : expired ? 'Remboursement code expiré' : refund.label} ${tx.reference}`,
           tx.id,
         );
       }
 
       await prismaTx.withdrawal.updateMany({
         where: { transactionId: tx.id },
-        data:  { status: withdrawalStatus ?? (failed ? WithdrawalStatus.FAILED : WithdrawalStatus.CANCELLED) },
+        data:  { status: withdrawalStatus ?? (failed ? WithdrawalStatus.FAILED : expired ? WithdrawalStatus.EXPIRED : WithdrawalStatus.CANCELLED) },
       });
 
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
@@ -843,6 +858,58 @@ export class TransactionsService {
   }
 
   /**
+   * ✅ v4.30 — expire les codes de retrait non utilisés depuis plus de PICKUP_CODE_VALIDITY_MONTHS (5) mois : envoi passé en
+   * EXPIRED + expéditeur remboursé (montant + frais), dans la même transaction SQL. Appelé chaque nuit par PickupExpiryService.
+   *   - envois (TRANSFER / SCHEDULED) encore PENDING ou VALIDATED ; jamais un envoi déjà payé ou en cours (PROCESSING) ;
+   *   - échéance = pickupExpiry, ou création + 5 mois pour les envois antérieurs à la règle (pickupExpiry absent) ;
+   *   - sûr en multi-instance : le statut est réservé par updateMany, la seconde instance reçoit 409 et passe son chemin ;
+   *   - un envoi qui ne peut pas être remboursé (wallet gelé…) est laissé tel quel et retenté le lendemain.
+   * Renvoie le nombre d'envois expirés.
+   */
+  async expireUnclaimed(limit: number = 200, now: Date = new Date()): Promise<number> {
+    const cutoff = addMonths(now, -pickupValidityMonths());
+    const due = await this.prisma.transaction.findMany({
+      where: {
+        type:      { in: REFUNDABLE_TYPES },
+        status:    { in: [TransactionStatus.PENDING, TransactionStatus.VALIDATED] },
+        deletedAt: null,
+        OR: [
+          { pickupExpiry: { lte: now } },
+          { pickupExpiry: null, createdAt: { lte: cutoff } },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: limit,
+    });
+
+    let expired = 0;
+    for (const tx of due) {
+      try {
+        await this.cancelWithRefund(tx, TransactionStatus.EXPIRED, WithdrawalStatus.EXPIRED);
+        expired++;
+      } catch (err) {
+        if (err instanceof ConflictException) continue; // payé ou annulé entre-temps, ou pris par une autre instance
+        this.logger.warn(`Expiration du code ${tx.reference} impossible, nouvel essai demain : ${(err as Error)?.message}`);
+        continue;
+      }
+
+      await this.audit(null, tx.clientId, 'TRANSACTION_CANCEL', tx.id, {
+        decision: 'PICKUP_CODE_EXPIRED', from: tx.status, to: TransactionStatus.EXPIRED,
+        refunded: Number(tx.total), currency: tx.currency, validityMonths: pickupValidityMonths(),
+      });
+
+      this.fireAndForget('Notification code expiré', () => this.notificationsService.create(
+        tx.senderId,
+        'Envoi expiré — remboursé',
+        `Le code ${tx.reference} n'a pas été retiré à temps : ${Number(tx.total).toLocaleString('fr-FR')} ${tx.currency} ont été remboursés sur votre compte.`,
+        'INFO',
+        { transactionId: tx.id },
+      ));
+    }
+    return expired;
+  }
+
+  /**
    * ✅ v4.29 (audit point 12) : journal d'audit des décisions (création d'envoi, dépôt, recharge d'agence, changement de
    * statut). Jamais bloquant : l'argent a déjà bougé, une panne du journal ne doit pas renvoyer une erreur au client.
    */
@@ -862,6 +929,41 @@ export class TransactionsService {
       });
     } catch (err) {
       this.logger.error(`Journal d'audit non écrit (transaction ${entityId}) : ${(err as Error)?.message}`);
+    }
+  }
+
+  /**
+   * ✅ v4.30 — calcule le score de risque d'un envoi et, au-delà du seuil, lève un signalement pour la conformité.
+   * N'empêche jamais l'envoi (appelé sans await) ; une erreur ici est seulement journalisée.
+   */
+  async scoreAml(transactionId: string, senderId: string, amount: number, currency: string): Promise<void> {
+    const since = new Date(Date.now() - 24 * 3_600_000);
+    const [recent, sender] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where:  { senderId, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } },
+        select: { amount: true, currency: true },
+        take:   200,
+      }),
+      this.prisma.user.findUnique({ where: { id: senderId }, select: { createdAt: true } }),
+    ]);
+
+    const result = computeRiskScore({
+      amount, currency,
+      recentCount24h:  recent.length,
+      recentSumXof24h: recent.reduce((sum, t) => sum + approxXof(Number(t.amount), String(t.currency)), 0),
+      accountCreatedAt: sender?.createdAt ?? null,
+    });
+
+    await this.prisma.transaction.update({
+      where: { id: transactionId },
+      data:  { riskScore: result.score, isFlagged: result.flagged },
+    });
+
+    if (result.flagged) {
+      await this.prisma.amlFlag.create({
+        data: { userId: senderId, transactionId, reason: result.reasons.join(' ; '), riskScore: result.score },
+      });
+      this.logger.warn(`🚩 AML — envoi ${transactionId} signalé (score ${result.score}) : ${result.reasons.join(' ; ')}`);
     }
   }
 
@@ -999,13 +1101,23 @@ export class TransactionsService {
     // v4.26 — plafonds du client (sans effet pour un agent : l'expéditeur de passage n'a pas de niveau KYC).
     await this.transferLimits.assertWithinLimits(this.prisma, { clientId, userId: senderId, currency, amount: Number(amount) });
 
+    // ✅ v4.30 — pays de destination (ISO-2). Un envoi cash l'exige : le code ne se paiera que dans ce pays.
+    const receiveCountry = toIso2(beneficiary?.country ?? directRecipientUser?.country ?? null);
+    const isCashSend = !isWalletTransfer && (dto.payoutMethod ?? PayoutMethod.CASH_PICKUP) === PayoutMethod.CASH_PICKUP;
+    if (isCashSend && !receiveCountry) {
+      throw new BadRequestException(
+        `Le pays du bénéficiaire${beneficiary?.country ? ` (« ${beneficiary.country} »)` : ''} n'est pas reconnu : ` +
+        `modifiez le bénéficiaire en choisissant un pays pris en charge pour que le code puisse être payé au bon endroit.`,
+      );
+    }
+
     const feeQuote = await this.feeSchedule.quote({
       clientId,
       senderId,
       payoutMethod:   isWalletTransfer ? 'WALLET' : (dto.payoutMethod ?? PayoutMethod.CASH_PICKUP),
       amount:         Number(amount),
       currency,
-      receiveCountry: toIso2(beneficiary?.country ?? directRecipientUser?.country ?? null),
+      receiveCountry,
     });
     const fees   = new Prisma.Decimal(feeQuote.fees);
     const total  = amount.plus(fees);
@@ -1033,8 +1145,14 @@ export class TransactionsService {
     // texte-vers-devise depuis .country, qui reste le repli si absent.
     // Puis la devise du destinataire direct (User.primaryCurrency, cf.
     // PROBLÈME 1), puis en tout dernier recours celle de l'expéditeur.
+    // ✅ v4.30 — un envoi cash se paie dans une agence du pays de destination : sa devise est celle de CE pays
+    // (jamais le XOF par défaut d'un pays mal saisi).
+    const cashCountryCurrency: CurrencyCode | null = isCashSend && receiveCountry
+      ? ((currencyOfCountry(receiveCountry) as CurrencyCode | null) ?? null)
+      : null;
     const targetCurrency: CurrencyCode =
-      beneficiary?.expectedCurrency
+      cashCountryCurrency
+      ?? beneficiary?.expectedCurrency
       ?? (beneficiary?.country ? getCurrencyFromCountryOrText(beneficiary.country) : null)
       ?? (directRecipientUser?.primaryCurrency as CurrencyCode | undefined)
       ?? currency;
@@ -1105,6 +1223,8 @@ export class TransactionsService {
           providerRef:    storedRef,
           providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
           paidAt,
+          receiveCountry,                                          // ✅ v4.30
+          pickupExpiry:   recipientUser ? null : pickupExpiryFrom(), // ✅ v4.30 — code valable 5 mois
           // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
           note:           (dto as any).note ?? null,
         },
@@ -1160,6 +1280,9 @@ export class TransactionsService {
       received: convertedAmount, status, payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
       agencyId: user.agencyId ?? null, idempotent: !!idempotencyKey,
     });
+
+    // ✅ v4.30 — scoring AML : jamais bloquant, jamais attendu.
+    this.fireAndForget('Scoring AML', () => this.scoreAml(transaction.id, senderId, Number(amount), currency));
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName
@@ -1388,8 +1511,15 @@ export class TransactionsService {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) throw new BadRequestException('Montant invalide');
     const currencyCode = currency.toUpperCase() as CurrencyCode;
+    // ✅ v4.30 : interrupteur ALLOW_SELF_FUNDING (ouvert par défaut) + trace d'audit de chaque auto-alimentation.
+    assertSelfFundingAllowed();
     const walletRef    = await this.walletsService.getOrCreateWallet({ userId: adminId, currency: currencyCode });
-    return this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
+    const result       = await this.walletsService.credit(walletRef.id, amt, `Auto-alimentation admin`);
+    const admin        = await this.prisma.user.findUnique({ where: { id: adminId }, select: { clientId: true } }).catch(() => null);
+    await this.audit(adminId, admin?.clientId ?? null, 'BALANCE_ADJUSTMENT', walletRef.id, {
+      kind: 'FUND_SELF', amount: amt, currency: currencyCode,
+    });
+    return result;
   }
 
   // ========================================================

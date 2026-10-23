@@ -1,6 +1,12 @@
 // apps/backend/src/treasury/treasury.service.ts
 // =========================================================
-// TREASURY SERVICE v5.5 — Direct Transf'air
+// TREASURY SERVICE v5.6 — Direct Transf'air
+// ✅ v5.6 : runIdempotent() — idempotence des opérations de trésorerie (inject, inject-all, withdraw, transfer). Même
+//   en-tête `Idempotency-Key` pour le même utilisateur = même opération : un double clic ou un nouvel essai après une
+//   coupure ne crédite / ne débite plus deux fois ; la réponse de la première exécution est rejouée. Table
+//   idempotency_records (unique (userId, key)). Sans en-tête : comportement inchangé. Réutiliser une clé pour une autre
+//   route → 409. Une exécution encore en cours → 409. Une exécution échouée libère la clé (on peut réessayer).
+//   ⚠️ Migration : 20261023150000_add_idempotency_records_and_ledger_restrict
 // ✅ v5.5 (phase 6, passe 3) :
 //   (1) audit() : trace dans le journal d'audit (action BALANCE_ADJUSTMENT) de chaque injection, auto-alimentation,
 //       retrait et transfert interne — ces opérations créent ou déplacent de l'argent sans contrepartie réelle.
@@ -34,6 +40,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -213,6 +220,51 @@ export class TreasuryService {
   // ========================================================
   // JOURNAL D'AUDIT — mouvements de trésorerie
   // ========================================================
+
+  /**
+   * ✅ v5.6 — exécute `job` au plus une fois par (userId, key). key null = pas d'idempotence (anciens clients).
+   * La clé est réservée AVANT l'opération (index unique) : deux requêtes simultanées ne peuvent pas toutes deux l'exécuter.
+   */
+  async runIdempotent<T>(
+    userId: string,
+    key: string | null,
+    scope: string,
+    job: () => Promise<T>,
+  ): Promise<T> {
+    if (!key) return job();
+
+    try {
+      await this.prisma.idempotencyRecord.create({ data: { userId, key, scope } });
+    } catch (err) {
+      if ((err as { code?: string })?.code !== 'P2002') throw err;
+      const prior = await this.prisma.idempotencyRecord.findUnique({ where: { userId_key: { userId, key } } });
+      if (prior && prior.scope !== scope) {
+        throw new ConflictException('Idempotency-Key déjà utilisée pour une autre opération.');
+      }
+      if (prior?.response !== null && prior?.response !== undefined) {
+        return prior.response as unknown as T;
+      }
+      throw new ConflictException('Cette opération est déjà en cours de traitement. Réessayez dans un instant.');
+    }
+
+    try {
+      const result = await job();
+      try {
+        await this.prisma.idempotencyRecord.update({
+          where: { userId_key: { userId, key } },
+          data:  { response: result as unknown as Prisma.InputJsonValue },
+        });
+      } catch (err) {
+        // L'argent a bougé : on ne fait pas échouer l'opération. La clé reste réservée (un rejeu répondra « en cours »).
+        this.logger.error(`Réponse idempotente non enregistrée (${scope}) : ${(err as Error).message}`);
+      }
+      return result;
+    } catch (err) {
+      // Échec : rien n'a été fait, la clé est libérée pour un nouvel essai.
+      await this.prisma.idempotencyRecord.delete({ where: { userId_key: { userId, key } } }).catch(() => undefined);
+      throw err;
+    }
+  }
 
   /** L'opération est faite : un échec d'écriture du journal ne doit pas la faire passer pour un échec. */
   async audit(

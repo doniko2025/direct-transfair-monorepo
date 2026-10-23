@@ -100,6 +100,7 @@ export const TX_STATUS: Record<string, StatusTone> = {
   CANCELLED:  { ...TONE.neutral, label: 'Annulé',     labelIncoming: 'Annulé',     icon: 'close-circle-outline' },
   FAILED:     { ...TONE.danger,  label: 'Échoué',     labelIncoming: 'Échoué',     icon: 'alert-circle-outline' },
   REFUNDED:   { ...TONE.violet,  label: 'Remboursé',  labelIncoming: 'Remboursé',  icon: 'return-down-back-outline' },
+  EXPIRED:    { ...TONE.neutral, label: 'Expiré — remboursé', labelIncoming: 'Expiré', icon: 'timer-outline' },
 };
 export function statusOf(status: string): StatusTone {
   return TX_STATUS[status] ?? { ...TONE.neutral, label: status || '—', labelIncoming: status || '—', icon: 'help-circle-outline' };
