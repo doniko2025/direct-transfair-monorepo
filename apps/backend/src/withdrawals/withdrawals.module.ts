@@ -1,6 +1,8 @@
 // apps/backend/src/withdrawals/withdrawals.module.ts
 // =========================================================
-// WITHDRAWALS MODULE v2.0
+// WITHDRAWALS MODULE v2.1
+// ✅ v2.1 : TransactionsModule importé — un retrait rejeté / annulé / échoué ferme la transaction et rembourse
+//   l'expéditeur (TransactionsService.closeFromWithdrawal). Pas de cycle : TransactionsModule n'importe pas WithdrawalsModule.
 // ✅ v1.0 : PrismaModule, AuthModule, WalletsModule, TenantsModule
 // ✅ v2.0 : NotificationsModule ajouté explicitement
 //   WithdrawalsService injecte WalletNotifierService et
@@ -19,6 +21,7 @@ import { WalletsModule }         from '../wallets/wallets.module';
 import { TenantsModule }         from '../tenants/tenants.module';
 import { NotificationsModule }   from '../notifications/notifications.module'; // ✅ v2.0
 import { RatesService }          from '../rates/rates.service';
+import { TransactionsModule }    from '../transactions/transactions.module'; // ✅ v2.1
 
 @Module({
   imports: [
@@ -27,6 +30,7 @@ import { RatesService }          from '../rates/rates.service';
     WalletsModule,        // WalletsService (débit/crédit)
     TenantsModule,        // TenantGuard
     NotificationsModule,  // ✅ WalletNotifierService + AgentNotifierService
+    TransactionsModule,   // ✅ v2.1 — TransactionsService (clôture + remboursement)
   ],
   controllers: [WithdrawalsController],
   providers:   [WithdrawalsService, RatesService],

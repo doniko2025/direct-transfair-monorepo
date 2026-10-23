@@ -246,6 +246,7 @@ async function bootstrap(): Promise<void> {
       'Origin', 'X-Requested-With', 'Content-Type',
       'Accept', 'Authorization', 'x-tenant-id',
       'x-app-client', // ✅ phase 5 : le portail web s'identifie (voir auth/app-client.policy.ts)
+      'Idempotency-Key', // ✅ audit point 3 : clé d'idempotence des envois / dépôts / remises (transactions/idempotency.ts)
     ],
   });
 

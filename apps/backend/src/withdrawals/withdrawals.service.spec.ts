@@ -1,13 +1,14 @@
 // apps/backend/src/withdrawals/withdrawals.service.spec.ts
 // Phase 6 (v4.11) — paiement en agence : seuls les envois cash sont payables, pas de caisse d'une autre
 // devise, retraits limités à la société de l'appelant. (create() a été supprimé en v4.12.)
+// Audit point 4 (v4.14) — retrait rejeté / annulé : jamais payable, et la transaction est close + remboursée.
 // Lot 2c (v4.13) — commissions arrondies et exactes, taux indisponible = 503, crédits verrouillés, statut manuel encadré.
 import 'reflect-metadata';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PayoutMethod, TransactionStatus, TransactionType } from '@prisma/client';
 import { WithdrawalsService } from './withdrawals.service';
 
-function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; convert?: jest.Mock; withdrawalBefore?: any } = {}) {
+function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; convert?: jest.Mock; withdrawalBefore?: any; closeFromWithdrawal?: jest.Mock } = {}) {
   const prisma: any = {
     transaction: {
       findFirst: jest.fn().mockResolvedValue(over.tx === undefined ? null : over.tx),
@@ -27,7 +28,7 @@ function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; conve
     auditLog: { create: jest.fn().mockResolvedValue({}) },
     withdrawal: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      findFirst: jest.fn().mockResolvedValue(over.withdrawalBefore === undefined ? { status: 'PENDING' } : over.withdrawalBefore),
+      findFirst: jest.fn().mockResolvedValue(over.withdrawalBefore === undefined ? { status: 'PENDING', transactionId: 't1' } : over.withdrawalBefore),
       findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'w1' }),
       findUnique: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'new' }),
@@ -50,8 +51,9 @@ function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; conve
     sendMoneyReceived: jest.fn().mockResolvedValue(undefined),
     sendWithdrawalProcessed: jest.fn().mockResolvedValue(undefined),
   };
-  const service = new (WithdrawalsService as any)(prisma, wallets, rates, noop, noop, noop, noop) as WithdrawalsService;
-  return { service, prisma, wallets, rates, credits };
+  const transactions: any = { closeFromWithdrawal: over.closeFromWithdrawal ?? jest.fn().mockResolvedValue({ id: 't1', status: 'CANCELLED' }) };
+  const service = new (WithdrawalsService as any)(prisma, wallets, rates, noop, noop, noop, noop, transactions) as WithdrawalsService;
+  return { service, prisma, wallets, rates, credits, transactions };
 }
 
 describe('WithdrawalsService — code de retrait', () => {
@@ -170,11 +172,30 @@ describe('WithdrawalsService.agentProcessPayment — commissions (v4.13)', () =>
 
 describe('WithdrawalsService.adminUpdateStatus — société de l\'appelant et statuts (v4.13)', () => {
   it('met à jour un retrait de SA société, conditionnellement au statut lu, et journalise', async () => {
-    const { service, prisma } = make();
-    await service.adminUpdateStatus(5, 'admin', 'w1', { status: 'REJECTED' } as any);
+    const { service, prisma, transactions } = make();
+    await service.adminUpdateStatus(5, 'admin', 'w1', { status: 'APPROVED' } as any);
     expect(prisma.withdrawal.findFirst).toHaveBeenCalledWith({ where: { id: 'w1', clientId: 5 }, select: { status: true } });
-    expect(prisma.withdrawal.updateMany).toHaveBeenCalledWith({ where: { id: 'w1', clientId: 5, status: 'PENDING' }, data: { status: 'REJECTED' } });
+    expect(prisma.withdrawal.updateMany).toHaveBeenCalledWith({ where: { id: 'w1', clientId: 5, status: 'PENDING' }, data: { status: 'APPROVED' } });
     expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    expect(transactions.closeFromWithdrawal).not.toHaveBeenCalled();
+  });
+
+  it('REJECTED / CANCELLED / FAILED / EXPIRED ferment la transaction et remboursent (audit point 4)', async () => {
+    for (const status of ['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED']) {
+      const { service, prisma, transactions } = make();
+      await service.adminUpdateStatus(5, 'admin', 'w1', { status } as any);
+      expect(transactions.closeFromWithdrawal).toHaveBeenCalledWith(5, 'admin', 't1', status);
+      // le statut du retrait est posé DANS la transaction de remboursement, pas par un updateMany séparé
+      expect(prisma.withdrawal.updateMany).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('si la transaction ne peut plus être close (déjà payée), l\'erreur remonte et rien n\'est journalisé', async () => {
+    const closeFromWithdrawal = jest.fn().mockRejectedValue(new ConflictException('déjà PAID'));
+    const { service, prisma } = make({ closeFromWithdrawal });
+    await expect(service.adminUpdateStatus(5, 'admin', 'w1', { status: 'REJECTED' } as any)).rejects.toBeInstanceOf(ConflictException);
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
   it('retrait d\'une autre société → 404, rien n\'est modifié', async () => {
@@ -200,7 +221,42 @@ describe('WithdrawalsService.adminUpdateStatus — société de l\'appelant et s
   it('modification concurrente (0 ligne mise à jour) → 409', async () => {
     const { service, prisma } = make();
     prisma.withdrawal.updateMany.mockResolvedValue({ count: 0 });
-    await expect(service.adminUpdateStatus(5, 'admin', 'w1', { status: 'REJECTED' } as any)).rejects.toBeInstanceOf(ConflictException);
+    await expect(service.adminUpdateStatus(5, 'admin', 'w1', { status: 'APPROVED' } as any)).rejects.toBeInstanceOf(ConflictException);
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('WithdrawalsService — un retrait clos n\'est plus payable (audit point 4)', () => {
+  const agentWallets = [{ id: 'w-agence', currency: 'XOF' }];
+  const tx = (withdrawal: any) => ({
+    id: 't1', status: TransactionStatus.VALIDATED, currency: 'XOF', targetCurrency: null, payoutMethod: 'CASH_PICKUP',
+    amount: 100_000, receivedAmount: null, fees: 1_000, agencyId: 'a-envoi', senderId: null,
+    sender: { id: 's1', agencyId: 'a-envoi', firstName: 'S', lastName: 'T' }, withdrawal, beneficiary: null,
+  });
+
+  it('agentProcessPayment refuse un retrait REJECTED / CANCELLED / FAILED / EXPIRED, sans ouvrir de transaction SQL', async () => {
+    for (const status of ['REJECTED', 'CANCELLED', 'FAILED', 'EXPIRED']) {
+      const m = make({ tx: tx({ id: 'wd1', status }), wallets: agentWallets });
+      await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toBeInstanceOf(ConflictException);
+      expect(m.prisma.$transaction).not.toHaveBeenCalled();
+      expect(m.credits).toHaveLength(0);
+    }
+  });
+
+  it('agentCheckCode refuse aussi un retrait clos', async () => {
+    const m = make({ tx: tx({ id: 'wd1', status: 'REJECTED' }) });
+    await expect(m.service.agentCheckCode(5, 'REF')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('un admin qui rejette pendant le paiement : le retrait n\'est pas réclamé (0 ligne) → 409, paiement annulé', async () => {
+    const m = make({ tx: tx({ id: 'wd1', status: 'PENDING' }), wallets: agentWallets });
+    m.prisma.withdrawal.updateMany.mockResolvedValue({ count: 0 });
+    m.prisma.$transaction.mockImplementation(async (fn: any) => fn({ transaction: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) }, withdrawal: m.prisma.withdrawal }));
+    await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toBeInstanceOf(ConflictException);
+    expect(m.prisma.withdrawal.updateMany).toHaveBeenCalledWith({
+      where: { id: 'wd1', status: { in: ['PENDING', 'APPROVED'] } },
+      data: expect.objectContaining({ status: 'PAID' }),
+    });
   });
 });

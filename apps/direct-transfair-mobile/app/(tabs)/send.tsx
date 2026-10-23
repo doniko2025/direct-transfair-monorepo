@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v5.1 — Direct Transf'air
+// SEND MONEY v5.2 — Direct Transf'air
+// ✅ v5.2 : IDEMPOTENCE — chaque envoi porte une clé (services/idempotency.ts, champ `idempotencyKey`). Un double-tap, ou un
+//    nouvel essai après une coupure réseau / un délai dépassé, renvoie l'envoi déjà créé au lieu de débiter une seconde fois.
+//    Une clé est conservée tant que l'issue est incertaine, puis oubliée dès qu'une réponse définitive arrive. LOGIQUE D'ENVOI INCHANGÉE.
 // ✅ v5.1 : FIX — on peut de nouveau choisir un autre bénéficiaire (Cash Pickup) que celui passé dans l'URL
 //    (`beneficiaryId`) : les paramètres de route n'étaient pas appliqués une fois mais à chaque rendu,
 //    ce qui réinitialisait la sélection. Voir « v3.2 » au-dessus de l'effet des paramètres. LOGIQUE D'ENVOI INCHANGÉE.
@@ -281,6 +284,7 @@ import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
+import { runOnce } from "../../services/idempotency";
 import { useAuth } from "../../providers/AuthProvider";
 import type { Beneficiary, ExchangeRate } from "../../services/types";
 import { countriesList, CountryData } from "../../data/countries";
@@ -1205,13 +1209,15 @@ useEffect(() => {
           setSending(false);
           return Alert.alert("Erreur", "Numéro trop court ou contact introuvable.");
         }
-        const tx: any = await api.createTransaction({
+        const walletPayload = {
           amount:          sendAmount,
           currency:        userCurrency,
           beneficiaryId:   detectedBeneficiary ? String(detectedBeneficiary.id) : undefined,
-          payoutMethod:    "MOBILE_MONEY",
+          payoutMethod:    "MOBILE_MONEY" as const,
           note:            motif ?? undefined,
-        });
+        };
+        const tx: any = await runOnce(JSON.stringify(walletPayload), (idempotencyKey) =>
+          api.createTransaction({ ...walletPayload, idempotencyKey }));
         // ✅ "id" confirmé comme champ de référence (utilisé par cancelTransaction/getTransaction dans api.ts)
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
         // ✅ v2.13 — FIX (voir changelog en tête de fichier) : si le
@@ -1246,13 +1252,15 @@ useEffect(() => {
           setSending(false);
           return Alert.alert("Erreur", "Sélectionnez un bénéficiaire.");
         }
-        const tx: any = await api.createTransaction({
+        const cashPayload = {
           amount:        sendAmount,
           currency:      userCurrency,
           beneficiaryId: selectedCashId,
-          payoutMethod:  "CASH_PICKUP",
+          payoutMethod:  "CASH_PICKUP" as const,
           note:          motif ?? undefined,
-        });
+        };
+        const tx: any = await runOnce(JSON.stringify(cashPayload), (idempotencyKey) =>
+          api.createTransaction({ ...cashPayload, idempotencyKey }));
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
         // ✅ Confirmé via transactions.service.ts : storedRef (providerRef)
         // == transactionRef (reference) tant que senderFirstName n'est pas

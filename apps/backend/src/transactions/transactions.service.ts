@@ -1,7 +1,18 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.28 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.29 — Direct Transf'air
 // =========================================================
+// ✅ v4.29 (audit du backend, 12 points ; le point 1 « fund-self » est volontairement conservé tel quel jusqu'à la fin du dev) :
+//    (2)  un envoi passé en FAILED par un admin est remboursé (atomique), comme CANCELLED — cancelWithRefund(tx, target) ;
+//    (3)  IDEMPOTENCE : create(), deposit(), refillAgency() acceptent une clé (en-tête Idempotency-Key) — voir idempotency.ts.
+//         Même clé = même opération renvoyée, pas de second débit. ⚠️ Migration : 20261023120000_add_transaction_idempotency_key ;
+//    (4)  closeFromWithdrawal() : un retrait rejeté / annulé / échoué / expiré ferme la transaction et rembourse l'expéditeur ;
+//    (5)  declareBankTransfer() débite via WalletsService.debitInTx (même verrou que le reste, plus de verrou int4/int4 à part) ;
+//    (6)  le gel de wallet est appliqué dans WalletsService (v5.7) ;
+//    (8)  notifications push / in-app / mail lancées SANS await après le commit (fireAndForget) : une panne de notification
+//         ne renvoie plus un 500 alors que l'argent a bougé (le client réessayait → double envoi) ;
+//    (9)  le montant reçu est arrondi à la devise de réception (65 595,7 XOF → 65 596) avant d'être stocké et crédité ;
+//    (12) journal d'audit : création d'envoi, dépôt, recharge d'agence, déclaration B2B, changement de statut (audit()).
 // ✅ v4.28 (audit sécurité) : findForUser() est PAGINÉ (take/skip). Avant, GET /transactions renvoyait tout l'historique
 //    d'un utilisateur en une seule requête (mémoire/latence croissantes, vecteur de déni de service). Défaut 200 lignes,
 //    plafond 500 ; la réponse reste un tableau (rétro-compatible mobile + web-admin). Auteur : Thierno Doniko (Grand Chef).
@@ -243,6 +254,7 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
+  AuditAction,
   CurrencyCode,
   Prisma,
   ProviderStatus,
@@ -284,6 +296,8 @@ import { CompanyNotifierService } from '../notifications/channels/company-notifi
 import { AdminNotifierService }   from '../notifications/channels/admin-notifier.service';
 import { ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
 import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
+import { roundToCurrency } from '../fee-schedule/fee-engine';
+import { findIdempotent, isIdempotencyConflict } from './idempotency';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -345,11 +359,6 @@ function assertTxTransition(from: TransactionStatus, to: TransactionStatus) {
     throw new BadRequestException(`Transition interdite: ${from} -> ${to}`);
   }
 }
-
-const TX_ERROR = {
-  WALLET_NOT_FOUND:            'TX_ERR_WALLET_NOT_FOUND',
-  INSUFFICIENT_BALANCE_PREFIX: 'TX_ERR_INSUFFICIENT_BALANCE:',
-} as const;
 
 // ── Service ───────────────────────────────────────────────
 
@@ -443,32 +452,6 @@ export class TransactionsService {
     });
   }
 
-  // ── Advisory lock key ─────────────────────────────────
-
-  private walletLockKey(id: string): bigint {
-    let hash = 0n;
-    for (let i = 0; i < id.length; i++) {
-      hash = (hash * 31n + BigInt(id.charCodeAt(i))) & 0x7FFFFFFFFFFFFFFFn;
-    }
-    return hash;
-  }
-
-  // ── Advisory lock ─────────────────────────────────────
-  // ✅ FIX v4.15 : ::int4 dans le SQL
-  private async acquireAdvisoryLock(
-    prismaTx: Prisma.TransactionClient,
-    walletId: string,
-  ): Promise<void> {
-    const lockKey  = this.walletLockKey(walletId);
-    const lockHigh = (Number((lockKey >> 32n) & 0xFFFFFFFFn)) | 0;
-    const lockLow  = (Number(lockKey & 0xFFFFFFFFn)) | 0;
-    await prismaTx.$executeRawUnsafe(
-      'SELECT pg_advisory_xact_lock($1::int4, $2::int4)',
-      lockHigh,
-      lockLow,
-    );
-  }
-
   // ========================================================
   // B2B — Déclaration virement société → SuperAdmin
   // ========================================================
@@ -495,13 +478,14 @@ export class TransactionsService {
 
     if (!preCheckWallet) throw new NotFoundException('Wallet société introuvable');
 
-    const preAvailable =
-      Number(preCheckWallet.balance) - Number(preCheckWallet.reservedBalance ?? 0);
+    // ✅ v4.29 (audit point 5) : lecture en Decimal (et non Number) ; le contrôle qui fait foi est celui de
+    // WalletsService.debitInTx, sous le verrou du wallet, plus bas.
+    const preAvailable = preCheckWallet.balance.minus(preCheckWallet.reservedBalance ?? 0);
 
-    if (preAvailable < amount) {
+    if (preAvailable.lessThan(amount)) {
       throw new ForbiddenException(
         `Solde ${currencyCode} insuffisant. ` +
-        `Disponible : ${preAvailable.toLocaleString('fr-FR')} ${currencyCode}. ` +
+        `Disponible : ${Number(preAvailable).toLocaleString('fr-FR')} ${currencyCode}. ` +
         `Alimentez d'abord votre compte via Trésorerie > Alimenter en ${currencyCode}.`,
       );
     }
@@ -509,20 +493,6 @@ export class TransactionsService {
     let newTx: Transaction;
     try {
       newTx = await this.prisma.$transaction(async (prismaTx) => {
-        await this.acquireAdvisoryLock(prismaTx, walletRef.id);
-
-        const wallet = await prismaTx.wallet.findUnique({ where: { id: walletRef.id } });
-        if (!wallet) throw new Error(TX_ERROR.WALLET_NOT_FOUND);
-
-        const available =
-          Number(wallet.balance) - Number(wallet.reservedBalance ?? 0);
-
-        if (available < amount) {
-          throw new Error(
-            `${TX_ERROR.INSUFFICIENT_BALANCE_PREFIX}${available}:${currencyCode}`,
-          );
-        }
-
         const reference = this.stampedReference('BILL');
 
         const created = await prismaTx.transaction.create({
@@ -542,22 +512,13 @@ export class TransactionsService {
           },
         });
 
-        const updatedWallet = await prismaTx.wallet.update({
-          where: { id: walletRef.id },
-          data:  { balance: { decrement: new Prisma.Decimal(amount) } },
-        });
-
-        await prismaTx.ledgerEntry.create({
-          data: {
-            walletId:      walletRef.id,
-            type:          'DEBIT',
-            amount:        new Prisma.Decimal(amount),
-            currency:      currencyCode,
-            description:   `Virement B2B ${proofReference}`,
-            transactionId: created.id,
-            balanceAfter:  updatedWallet.balance,
-          },
-        });
+        // ✅ v4.29 (audit point 5) : le débit passe par WalletsService.debitInTx — le MÊME verrou (pg_advisory_xact_lock
+        // bigint) que tous les autres mouvements de ce wallet, solde relu sous verrou, gel vérifié, ligne de journal
+        // écrite par le service. Avant : un second verrou (int4/int4, autre espace de clés) qui n'excluait pas
+        // wallets.service, et un solde lu en Number puis décrémenté à la main.
+        await this.walletsService.debitInTx(
+          prismaTx, walletRef.id, amount, `Virement B2B ${proofReference}`, created.id,
+        );
 
         return created;
       });
@@ -565,17 +526,11 @@ export class TransactionsService {
     } catch (e: any) {
       const msg: string = e?.message ?? '';
 
-      if (msg === TX_ERROR.WALLET_NOT_FOUND) {
+      if (e instanceof NotFoundException) {
         throw new NotFoundException('Wallet société introuvable');
       }
-      if (msg.startsWith(TX_ERROR.INSUFFICIENT_BALANCE_PREFIX)) {
-        const parts = msg.replace(TX_ERROR.INSUFFICIENT_BALANCE_PREFIX, '').split(':');
-        const avail = Number(parts[0]);
-        const cur   = parts[1] ?? currencyCode;
-        throw new ForbiddenException(
-          `Solde insuffisant (concurrence détectée). ` +
-          `Disponible : ${avail.toLocaleString('fr-FR')} ${cur}.`,
-        );
+      if (e instanceof BadRequestException && msg.startsWith('Solde insuffisant')) {
+        throw new ForbiddenException(`${msg} (concurrence détectée).`);
       }
       if (e?.code === 'P2002' || msg.toLowerCase().includes('unique constraint')) {
         throw new ConflictException(
@@ -616,6 +571,10 @@ export class TransactionsService {
         ).catch(() => {});
       }
     }).catch(() => {});
+
+    await this.audit(adminId, admin.clientId, 'TRANSACTION_CREATE', newTx.id, {
+      type: 'SERVICE_PAYMENT', decision: 'B2B_DECLARED', amount, currency: currencyCode, proofReference,
+    });
 
     return newTx;
   }
@@ -665,6 +624,11 @@ export class TransactionsService {
       );
 
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: transactionId } });
+    });
+
+    await this.audit(superAdminId, tx.clientId, 'TRANSACTION_UPDATE', tx.id, {
+      type: 'SERVICE_PAYMENT', decision: 'B2B_VALIDATED', from: tx.status, to: TransactionStatus.PAID,
+      amount: Number(tx.amount), currency: tx.currency, companySenderId: tx.senderId,
     });
 
     this.prisma.user.findUnique({ where: { id: tx.senderId } })
@@ -736,6 +700,11 @@ export class TransactionsService {
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: transactionId } });
     });
 
+    await this.audit(superAdminId, tx.clientId, 'TRANSACTION_REFUND', tx.id, {
+      type: 'SERVICE_PAYMENT', decision: 'B2B_REJECTED', from: tx.status, amount: Number(tx.amount),
+      currency: tx.currency, refundedTo: tx.senderId,
+    });
+
     this.push.notifyTransferReceived(
       tx.senderId, 'Plateforme', `${tx.amount}`, tx.currency,
     ).catch(() => {});
@@ -793,17 +762,34 @@ export class TransactionsService {
   //   2. le remboursement est écrit dans la même transaction SQL.
   // ========================================================
 
-  private async cancelWithRefund(tx: Transaction): Promise<Transaction> {
+  /**
+   * ✅ v4.29 (audit point 2) : `target` = CANCELLED (défaut) ou FAILED. Un envoi passé en « échec » par un admin est
+   * lui aussi remboursé, dans la même transaction SQL que le changement de statut : FAILED est un statut final, sans
+   * remboursement l'expéditeur (débité de montant + frais) perdait son argent sans recours.
+   * `withdrawalStatus` : statut posé sur le retrait lié (défaut : CANCELLED / FAILED selon `target`).
+   */
+  private async cancelWithRefund(
+    tx: Transaction,
+    target: typeof TransactionStatus.CANCELLED | typeof TransactionStatus.FAILED = TransactionStatus.CANCELLED,
+    withdrawalStatus?: WithdrawalStatus,
+  ): Promise<Transaction> {
     const refund = await this.refundTargetFor(tx);
+    const failed = target === TransactionStatus.FAILED;
 
     return this.prisma.$transaction(async (prismaTx) => {
       const claimed = await prismaTx.transaction.updateMany({
         where: { id: tx.id, status: { in: CANCELLABLE_TX } },
-        data: {
-          status:         TransactionStatus.CANCELLED,
-          cancelledAt:    new Date(),
-          providerStatus: ProviderStatus.CANCELLED,
-        },
+        data: failed
+          ? {
+              status:         TransactionStatus.FAILED,
+              failedAt:       new Date(),
+              providerStatus: ProviderStatus.FAILED,
+            }
+          : {
+              status:         TransactionStatus.CANCELLED,
+              cancelledAt:    new Date(),
+              providerStatus: ProviderStatus.CANCELLED,
+            },
       });
       if (claimed.count !== 1) {
         throw new ConflictException('Transaction déjà traitée ou annulée.');
@@ -814,18 +800,79 @@ export class TransactionsService {
           prismaTx,
           refund.walletId,
           refund.amount,
-          `${refund.label} ${tx.reference}`,
+          `${failed ? 'Remboursement échec' : refund.label} ${tx.reference}`,
           tx.id,
         );
       }
 
       await prismaTx.withdrawal.updateMany({
         where: { transactionId: tx.id },
-        data:  { status: WithdrawalStatus.CANCELLED },
+        data:  { status: withdrawalStatus ?? (failed ? WithdrawalStatus.FAILED : WithdrawalStatus.CANCELLED) },
       });
 
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
     });
+  }
+
+  /**
+   * ✅ v4.29 (audit point 4) : appelé par WithdrawalsService quand un admin rejette / annule / fait échouer / expire un
+   * retrait à la main. La transaction est close ET l'expéditeur remboursé dans la même transaction SQL que le statut du
+   * retrait (avant : seul le statut du retrait changeait, la transaction restait VALIDATED, donc payable en agence,
+   * et l'expéditeur n'était jamais remboursé).
+   *   - FAILED  → transaction FAILED ;
+   *   - REJECTED / CANCELLED / EXPIRED → transaction CANCELLED.
+   * Les deux sont remboursés ; un envoi déjà payé (ou déjà clos) est refusé (409).
+   */
+  async closeFromWithdrawal(
+    clientId: number,
+    adminId: string,
+    transactionId: string,
+    withdrawalStatus: WithdrawalStatus,
+  ): Promise<Transaction> {
+    const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+    if (!CANCELLABLE_TX.includes(tx.status)) {
+      throw new ConflictException(`Cette transaction est déjà « ${tx.status} » : le retrait ne peut plus être clos.`);
+    }
+    const target = withdrawalStatus === WithdrawalStatus.FAILED ? TransactionStatus.FAILED : TransactionStatus.CANCELLED;
+    const closed = await this.cancelWithRefund(tx, target, withdrawalStatus);
+    await this.audit(adminId, clientId, target === TransactionStatus.FAILED ? 'TRANSACTION_UPDATE' : 'TRANSACTION_CANCEL', tx.id, {
+      from: tx.status, to: target, via: `retrait ${withdrawalStatus}`, refunded: REFUNDABLE_TYPES.includes(tx.type) ? Number(tx.total) : 0,
+    });
+    return closed;
+  }
+
+  /**
+   * ✅ v4.29 (audit point 12) : journal d'audit des décisions (création d'envoi, dépôt, recharge d'agence, changement de
+   * statut). Jamais bloquant : l'argent a déjà bougé, une panne du journal ne doit pas renvoyer une erreur au client.
+   */
+  private async audit(
+    userId: string | null,
+    clientId: number | null,
+    action: AuditAction,
+    entityId: string,
+    details: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId, clientId, action, entity: 'Transaction', entityId,
+          details: details as Prisma.InputJsonValue, successful: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Journal d'audit non écrit (transaction ${entityId}) : ${(err as Error)?.message}`);
+    }
+  }
+
+  /**
+   * ✅ v4.29 (audit point 8) : notification lancée SANS être attendue. L'argent a déjà bougé : une panne de push / SMS /
+   * mail ne doit plus renvoyer une erreur 500 au client (qui réessayait, d'où un double envoi).
+   */
+  private fireAndForget(label: string, job: () => unknown): void {
+    void Promise.resolve()
+      .then(job)
+      .catch((err) => this.logger.warn(`${label} non envoyée : ${(err as Error)?.message}`));
   }
 
   /**
@@ -864,7 +911,15 @@ export class TransactionsService {
   // Création transfert (client / agent → bénéficiaire)
   // ========================================================
 
-  async create(senderId: string, dto: CreateTransactionDto): Promise<Transaction> {
+  async create(senderId: string, dto: CreateTransactionDto, idempotencyKey: string | null = null): Promise<Transaction> {
+    // ✅ v4.29 — nouvel essai avec la même clé : on renvoie l'envoi déjà créé, sans rien débiter.
+    if (idempotencyKey) {
+      const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, {
+        type: TransactionType.TRANSFER, amount: dto.amount, currency: dto.currency.toUpperCase(),
+      });
+      if (replay) return replay;
+    }
+
     const user = await this.prisma.user.findUnique({
       where:   { id: senderId },
       include: { wallets: { where: { isActive: true } } },
@@ -984,9 +1039,16 @@ export class TransactionsService {
       ?? (directRecipientUser?.primaryCurrency as CurrencyCode | undefined)
       ?? currency;
 
-    const convertedAmount = await this.ratesService.convert(Number(amount), currency, targetCurrency);
+    // ✅ v4.29 (audit point 9) : le montant reçu est arrondi à la devise de réception (XOF / GNF : unités entières,
+    // autres : 2 décimales) AVANT d'être stocké et crédité. Avant : 65 595,7 XOF stockés, alors que le cash remis est
+    // en unités entières et que la caisse de l'agence était créditée de la fraction. Le taux enregistré reste le taux brut.
+    const rawConverted    = await this.ratesService.convert(Number(amount), currency, targetCurrency);
+    const convertedAmount = roundToCurrency(rawConverted, targetCurrency);
+    if (!(convertedAmount > 0)) {
+      throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
+    }
     const receivedAmount  = new Prisma.Decimal(convertedAmount);
-    const exchangeRate    = Number(amount) > 0 ? convertedAmount / Number(amount) : 1;
+    const exchangeRate    = Number(amount) > 0 ? rawConverted / Number(amount) : 1;
 
     const transactionRef = await this.uniqueReference();
     let status: TransactionStatus = TransactionStatus.PENDING;
@@ -1021,10 +1083,13 @@ export class TransactionsService {
       ? await this.walletsService.getOrCreateWallet({ clientId, currency })
       : null;
 
-    const transaction = await this.prisma.$transaction(async (tx) => {
+    let transaction: Transaction;
+    try {
+    transaction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data: {
           reference:      transactionRef,
+          idempotencyKey, // ✅ v4.29 — index unique (senderId, idempotencyKey)
           amount, fees, total,
           currency,
           targetCurrency,
@@ -1077,19 +1142,38 @@ export class TransactionsService {
 
       return created;
     });
+    } catch (e) {
+      // Deux requêtes simultanées avec la même clé : la base a refusé la seconde, sa transaction SQL est annulée
+      // (aucun débit). On renvoie l'envoi de la première.
+      if (idempotencyKey && isIdempotencyConflict(e)) {
+        const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, {
+          type: TransactionType.TRANSFER, amount: dto.amount, currency: dto.currency.toUpperCase(),
+        });
+        if (replay) return replay;
+      }
+      throw e;
+    }
+
+    // ✅ v4.29 (audit point 12) — décision tracée.
+    await this.audit(senderId, clientId, 'TRANSACTION_CREATE', transaction.id, {
+      type: 'TRANSFER', amount: Number(amount), fees: Number(fees), currency, targetCurrency,
+      received: convertedAmount, status, payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
+      agencyId: user.agencyId ?? null, idempotent: !!idempotencyKey,
+    });
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName
       ?? (recipientUser ? `${recipientUser.firstName ?? ''} ${recipientUser.lastName ?? ''}`.trim() : 'Bénéficiaire');
 
-    await this.push.notifyTransferSent(senderId, earlyRecipientLabel, `${amount}`, currency);
+    // ✅ v4.29 (audit point 8) — plus d'await : l'argent a déjà bougé, une panne du push ne doit pas renvoyer une erreur.
+    this.fireAndForget('Push envoi', () => this.push.notifyTransferSent(senderId, earlyRecipientLabel, `${amount}`, currency));
     if (recipientUser?.id) {
-      await this.push.notifyTransferReceived(
+      this.fireAndForget('Push réception', () => this.push.notifyTransferReceived(
         recipientUser.id,
         `${user.firstName} ${user.lastName}`,
         `${receivedAmount}`,
         targetCurrency,
-      );
+      ));
     }
 
     const recipientDisplayName = beneficiary?.fullName ??
@@ -1150,7 +1234,14 @@ export class TransactionsService {
   // Dépôt agent → client
   // ========================================================
 
-  async deposit(agentId: string, dto: CreateDepositDto): Promise<Transaction> {
+  async deposit(agentId: string, dto: CreateDepositDto, idempotencyKey: string | null = null): Promise<Transaction> {
+    // ✅ v4.29 (audit point 3) — nouvel essai avec la même clé : le dépôt déjà fait est renvoyé, rien n'est rejoué.
+    if (idempotencyKey) {
+      // La devise d'un dépôt est celle de la caisse de l'agence (dérivée côté serveur) : seuls type et montant sont comparés.
+      const replay = await findIdempotent(this.prisma, agentId, idempotencyKey, { type: TransactionType.DEPOSIT, amount: dto.amount });
+      if (replay) return replay;
+    }
+
     const agent = await this.prisma.user.findUnique({
       where:   { id: agentId },
       include: { wallets: { where: { isActive: true } } },
@@ -1187,10 +1278,13 @@ export class TransactionsService {
 
     // ✅ v4.27 — transaction + débit de la caisse + crédit du client : une seule transaction SQL.
     const depositClientId = agent.clientId;
-    const result = await this.prisma.$transaction(async (tx) => {
+    let result: Transaction;
+    try {
+    result = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data: {
           reference:      depositRef,
+          idempotencyKey, // ✅ v4.29
           // ✅ v4.21 — FIX (POINT 1, voir changelog en tête de fichier) :
           // sans ce champ, la transaction retombait sur le défaut Prisma
           // TransactionType.TRANSFER, indiscernable d'un vrai transfert
@@ -1217,12 +1311,24 @@ export class TransactionsService {
       await this.walletsService.creditInTx(tx, clientWalletRef.id, Number(amountDec), `Dépôt agent`, created.id);
       return created;
     });
+    } catch (e) {
+      if (idempotencyKey && isIdempotencyConflict(e)) {
+        const replay = await findIdempotent(this.prisma, agentId, idempotencyKey, { type: TransactionType.DEPOSIT, amount: dto.amount });
+        if (replay) return replay;
+      }
+      throw e;
+    }
 
-    await this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency);
+    await this.audit(agentId, depositClientId, 'TRANSACTION_CREATE', result.id, {
+      type: 'DEPOSIT', amount: Number(amountDec), currency, agencyId: agent.agencyId, recipientId: clientUser.id, idempotent: !!idempotencyKey,
+    });
+
+    // ✅ v4.29 (audit point 8) — notifications sans await (voir create()).
+    this.fireAndForget('Push dépôt', () => this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency));
 
     const updatedAgencyWallet = await this.prisma.wallet.findUnique({ where: { id: agencyWallet.id } });
     if (updatedAgencyWallet && Number(updatedAgencyWallet.balance) < 50000) {
-      await this.push.notifyLowBalance(agentId, currency, `${updatedAgencyWallet.balance}`);
+      this.fireAndForget('Push solde bas', () => this.push.notifyLowBalance(agentId, currency, `${updatedAgencyWallet.balance}`));
       this.agentNotifier.notifyLowBalance(agentId, Number(updatedAgencyWallet.balance)).catch(() => {});
     }
 
@@ -1290,7 +1396,15 @@ export class TransactionsService {
   // Recharge agence
   // ========================================================
 
-  async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF') {
+  async refillAgency(adminId: string, agencyId: string, amount: number, currency: string = 'XOF', idempotencyKey: string | null = null) {
+    // ✅ v4.29 (audit point 3) — même clé = même recharge : on renvoie le résultat de la première, sans second débit.
+    if (idempotencyKey) {
+      const replay = await findIdempotent(this.prisma, adminId, idempotencyKey, {
+        type: TransactionType.AGENCY_REFILL, amount, currency: currency.toUpperCase(),
+      });
+      if (replay) return this.refillResultFrom(replay, agencyId);
+    }
+
     this.logger.debug(`refillAgency START | adminId=${adminId} agencyId=${agencyId} amount=${amount} currency=${currency}`);
 
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
@@ -1331,10 +1445,13 @@ export class TransactionsService {
     const txRef = this.stampedReference('REFILL');
 
     // ✅ v4.27 — transaction + débit de la société + crédit de la caisse : une seule transaction SQL.
-    await this.prisma.$transaction(async (tx) => {
+    let refillTx: Transaction;
+    try {
+    refillTx = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data: {
           reference:      txRef,
+          idempotencyKey, // ✅ v4.29
           type:           TransactionType.AGENCY_REFILL,
           amount:         new Prisma.Decimal(amount),
           fees:           new Prisma.Decimal(0),
@@ -1354,6 +1471,20 @@ export class TransactionsService {
 
       await this.walletsService.debitInTx(tx, adminWallet.id, amount, `Recharge agence ${agency.name} (${agencyId})`, created.id);
       await this.walletsService.creditInTx(tx, agencyWalletRef.id, amount, `Recharge admin → ${agency.name}`, created.id);
+      return created;
+    });
+    } catch (e) {
+      if (idempotencyKey && isIdempotencyConflict(e)) {
+        const replay = await findIdempotent(this.prisma, adminId, idempotencyKey, {
+          type: TransactionType.AGENCY_REFILL, amount, currency: currencyCode,
+        });
+        if (replay) return this.refillResultFrom(replay, agencyId);
+      }
+      throw e;
+    }
+
+    await this.audit(adminId, admin.clientId, 'TRANSACTION_CREATE', refillTx.id, {
+      type: 'AGENCY_REFILL', amount, currency: currencyCode, agencyId, agencyName: agency.name, idempotent: !!idempotencyKey,
     });
 
     const successResult = {
@@ -1392,6 +1523,18 @@ export class TransactionsService {
     }).catch(() => {});
 
     return successResult;
+  }
+
+  /** Résultat d'une recharge d'agence reconstruit depuis la transaction (nouvel essai avec la même clé). */
+  private async refillResultFrom(tx: Transaction, agencyId: string) {
+    const agencyWallet = await this.prisma.wallet.findFirst({
+      where: { agencyId, currency: tx.currency },
+      select: { id: true },
+    });
+    return {
+      status: 'SUCCESS', sent: Number(tx.amount), currency: tx.currency, agencyId, txRef: tx.reference,
+      agencyWalletId: agencyWallet?.id ?? null, replayed: true,
+    };
   }
 
   // ========================================================
@@ -1534,9 +1677,14 @@ export class TransactionsService {
 
     assertTxTransition(tx.status, dto.status);
 
-    if (dto.status === TransactionStatus.CANCELLED) {
+    if (dto.status === TransactionStatus.CANCELLED || dto.status === TransactionStatus.FAILED) {
       // ✅ v4.24 — statut réservé + remboursement atomique, type contrôlé (voir cancelWithRefund).
-      return this.cancelWithRefund(tx);
+      // ✅ v4.29 — FAILED est remboursé lui aussi (audit point 2).
+      const closed = await this.cancelWithRefund(tx, dto.status);
+      await this.audit(adminId, tx.clientId, dto.status === TransactionStatus.CANCELLED ? 'TRANSACTION_CANCEL' : 'TRANSACTION_UPDATE', tx.id, {
+        from: tx.status, to: dto.status, refunded: REFUNDABLE_TYPES.includes(tx.type) ? Number(tx.total) : 0,
+      });
+      return closed;
     }
 
     const data: Prisma.TransactionUpdateManyMutationInput =
@@ -1552,6 +1700,8 @@ export class TransactionsService {
     if (updated.count !== 1) {
       throw new ConflictException('Cette transaction vient d\'être modifiée : rechargez la page.');
     }
+    // ✅ v4.29 (audit point 12) — décision d'un admin tracée, y compris le passage manuel à PAID.
+    await this.audit(adminId, tx.clientId, 'TRANSACTION_UPDATE', tx.id, { from: tx.status, to: dto.status, manual: true });
     return this.prisma.transaction.findUniqueOrThrow({ where: { id } });
   }
 

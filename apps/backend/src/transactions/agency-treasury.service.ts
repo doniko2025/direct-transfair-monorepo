@@ -1,6 +1,9 @@
 // apps/backend/src/transactions/agency-treasury.service.ts
 // =========================================================
-// AGENCY TREASURY SERVICE v1.3 — Direct Transf'air
+// AGENCY TREASURY SERVICE v1.4 — Direct Transf'air
+// ✅ v1.4 (audit points 3 et 12) : remitToAdmin() et collectFromAgency() acceptent une clé d'idempotence (en-tête
+//    Idempotency-Key, voir idempotency.ts) — un double-tap ou un nouvel essai renvoie la remise déjà faite au lieu d'en
+//    débiter une seconde, sans renotifier. Chaque mouvement est inscrit au journal d'audit.
 // ✅ v1.3 (phase 6) : le mouvement de caisse (WalletsService.transferInTx) et la ligne Transaction sont écrits dans
 //    UNE SEULE transaction SQL. Avant, si l'écriture de la Transaction échouait après le transfert (référence en
 //    doublon, coupure), l'argent avait bougé sans aucune trace dans l'historique. Les lignes de ledger portent
@@ -67,6 +70,7 @@ import { TreasuryMailService } from '../mail/channels/treasury-mail.service';
 import { TreasuryNotifierService } from '../notifications/channels/treasury-notifier.service';
 import { CreateAgencyRemittanceDto } from './dto/create-agency-remittance.dto';
 import { CreateAgencyCollectionDto } from './dto/create-agency-collection.dto';
+import { findIdempotent, isIdempotencyConflict } from './idempotency';
 
 function fmtAmount(amount: number, currency: string): string {
   const d = currency === 'GNF' || currency === 'XOF' ? 0 : 2;
@@ -123,8 +127,16 @@ export class AgencyTreasuryService {
     note?: string;
     type: TransactionType;
     senderId: string;
-  }): Promise<Transaction> {
+    idempotencyKey?: string | null;
+  }): Promise<{ transaction: Transaction; replayed: boolean }> {
     const { agencyId, agencyName, clientId, amount, currency, note, type, senderId } = params;
+    const idempotencyKey = params.idempotencyKey ?? null;
+
+    // ✅ v1.4 — même clé = même opération : rien n'est rejoué.
+    if (idempotencyKey) {
+      const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, { type, amount, currency });
+      if (replay) return { transaction: replay, replayed: true };
+    }
 
     const agencyWalletRef = await this.walletsService.getOrCreateWallet({ agencyId, currency });
     const companyWalletRef = await this.walletsService.getOrCreateWallet({ clientId, currency });
@@ -159,10 +171,13 @@ export class AgencyTreasuryService {
 
     // ✅ v1.3 — Transaction + débit agence + crédit société dans la MÊME transaction SQL (verrous des deux
     // wallets, voir WalletsService.transferInTx) : tout passe ou rien ne passe.
-    const transaction = await this.prisma.$transaction(async (tx) => {
+    let transaction: Transaction;
+    try {
+    transaction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data: {
           reference,
+          idempotencyKey, // ✅ v1.4
           type,
           direction: TransactionDirection.INTERNAL,
           amount: new Prisma.Decimal(amount),
@@ -192,15 +207,35 @@ export class AgencyTreasuryService {
 
       return created;
     });
+    } catch (e) {
+      if (idempotencyKey && isIdempotencyConflict(e)) {
+        const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, { type, amount, currency });
+        if (replay) return { transaction: replay, replayed: true };
+      }
+      throw e;
+    }
 
-    return transaction;
+    // ✅ v1.4 (audit point 12) — jamais bloquant : l'argent a déjà bougé.
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: senderId, clientId, action: 'TRANSACTION_CREATE', entity: 'Transaction', entityId: transaction.id,
+          details: { type, amount, currency, agencyId, agencyName, idempotent: !!idempotencyKey } as Prisma.InputJsonValue,
+          successful: true,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Journal d'audit non écrit (transaction ${transaction.id}) : ${(err as Error)?.message}`);
+    }
+
+    return { transaction, replayed: false };
   }
 
   // ========================================================
   // FLUX 1 — Agent → Admin (remontée de fonds)
   // ========================================================
 
-  async remitToAdmin(agentId: string, dto: CreateAgencyRemittanceDto): Promise<Transaction> {
+  async remitToAdmin(agentId: string, dto: CreateAgencyRemittanceDto, idempotencyKey: string | null = null): Promise<Transaction> {
     const amount = Number(dto.amount);
     if (!amount || amount <= 0) throw new BadRequestException('Montant invalide');
 
@@ -214,7 +249,7 @@ export class AgencyTreasuryService {
 
     const currency = await this.resolveAgencyCurrency(agency);
 
-    const transaction = await this.executeAgencyToCompanyTransfer({
+    const { transaction, replayed } = await this.executeAgencyToCompanyTransfer({
       agencyId: agency.id,
       agencyName: agency.name,
       clientId: agent.clientId,
@@ -223,7 +258,9 @@ export class AgencyTreasuryService {
       note: dto.note,
       type: TransactionType.AGENCY_REMITTANCE,
       senderId: agentId,
+      idempotencyKey,
     });
+    if (replayed) return transaction; // déjà fait et déjà notifié
 
     // Notifications + emails — fire and forget, ne bloquent jamais
     // la réponse HTTP et n'annulent jamais la transaction en cas
@@ -295,7 +332,7 @@ export class AgencyTreasuryService {
   // FLUX 2 — Admin → Agence (retrait forcé)
   // ========================================================
 
-  async collectFromAgency(adminId: string, dto: CreateAgencyCollectionDto): Promise<Transaction> {
+  async collectFromAgency(adminId: string, dto: CreateAgencyCollectionDto, idempotencyKey: string | null = null): Promise<Transaction> {
     const amount = Number(dto.amount);
     if (!amount || amount <= 0) throw new BadRequestException('Montant invalide');
     if (!dto.note || !dto.note.trim()) throw new BadRequestException('Le libellé est requis.');
@@ -317,7 +354,7 @@ export class AgencyTreasuryService {
     const clientId = isSuperAdmin ? agency.clientId : admin.clientId!;
     const currency = await this.resolveAgencyCurrency(agency);
 
-    const transaction = await this.executeAgencyToCompanyTransfer({
+    const { transaction, replayed } = await this.executeAgencyToCompanyTransfer({
       agencyId: agency.id,
       agencyName: agency.name,
       clientId,
@@ -326,7 +363,9 @@ export class AgencyTreasuryService {
       note: dto.note,
       type: TransactionType.AGENCY_COLLECTION,
       senderId: adminId,
+      idempotencyKey,
     });
+    if (replayed) return transaction; // déjà fait et déjà notifié
 
     this.notifyCollection(admin, agency, transaction, amount, currency).catch((err) =>
       this.logger.warn(`Notification collection non envoyée : ${err?.message}`),

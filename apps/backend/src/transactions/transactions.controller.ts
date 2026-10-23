@@ -1,7 +1,9 @@
 // apps/backend/src/transactions/transactions.controller.ts
 // =========================================================
-// TRANSACTIONS CONTROLLER v4.3 — Direct Transf'air
+// TRANSACTIONS CONTROLLER v4.4 — Direct Transf'air
 // =========================================================
+// ✅ v4.4 (audit point 3) : en-tête Idempotency-Key accepté sur POST /transactions, /deposit et /admin/refill-agency.
+//          Même clé = même opération renvoyée, jamais un second débit (voir idempotency.ts).
 // ✅ v4.3 : GET /transactions accepte ?page= & ?limit= (défaut 200, max 500) — réponse toujours un tableau.
 //          Auteur : Thierno Doniko (Grand Chef, Doniko Digital)
 // ✅ v4.0 : Routes B2B, admin, deposit, cancel, findMine
@@ -23,6 +25,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -39,10 +42,22 @@ import {
   CreateDepositDto,
 } from './dto/create-transaction.dto';
 import { UpdateTransactionStatusDto } from './dto/update-transaction-status.dto';
+import { IDEMPOTENCY_HEADER, parseIdempotencyKey } from './idempotency';
+import { MAX_AMOUNT } from './dto/create-transaction.dto';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminGuard }   from '../common/guards/admin.guard';
 import type { AuthedRequest } from '../types/requests';
+
+/**
+ * ✅ v4.4 (audit point 11) — bornes des montants lus dans le corps brut (refill-agency, b2b/declare) : fini, positif,
+ * au plus MAX_AMOUNT et 4 décimales (précision Decimal(18,4)). fund-self n'est volontairement pas touché.
+ */
+function assertAmountBounds(n: number): void {
+  if (!Number.isFinite(n) || n <= 0) throw new BadRequestException('Montant invalide');
+  if (n > MAX_AMOUNT) throw new BadRequestException(`Montant trop élevé (maximum ${MAX_AMOUNT.toLocaleString('fr-FR')}).`);
+  if (Math.round(n * 10_000) / 10_000 !== n) throw new BadRequestException('Montant invalide : 4 décimales maximum.');
+}
 
 @UseGuards(JwtAuthGuard)
 @Controller('transactions')
@@ -92,6 +107,7 @@ export class TransactionsController {
     @Body('agencyId')  agencyId:  string,
     @Body('amount')    amount:    string | number,
     @Body('currency')  currency:  string,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -104,11 +120,12 @@ export class TransactionsController {
 
     if (!agencyId || isNaN(numericAmount) || numericAmount <= 0)
       throw new BadRequestException('AgencyId et Amount valides requis');
+    assertAmountBounds(numericAmount);
 
     const safeCurrency = (currency ?? 'XOF').toString().toUpperCase();
 
     return this.transactionsService.refillAgency(
-      userId, agencyId, numericAmount, safeCurrency,
+      userId, agencyId, numericAmount, safeCurrency, parseIdempotencyKey(idempotencyKey),
     );
   }
 
@@ -130,6 +147,7 @@ export class TransactionsController {
     const numericAmount = Number(amount);
     if (isNaN(numericAmount) || !ref)
       throw new BadRequestException('Montant et Référence requis');
+    assertAmountBounds(numericAmount);
 
     const safeCurrency = (currency ?? 'XOF').toString().toUpperCase();
 
@@ -208,19 +226,27 @@ export class TransactionsController {
   // =========================================================
 
   @Post('deposit')
-  async deposit(@Req() req: AuthedRequest, @Body() dto: CreateDepositDto) {
+  async deposit(
+    @Req() req: AuthedRequest,
+    @Body() dto: CreateDepositDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
     const user   = req.user;
     const userId = this.getUserId(req);
     if (!user || (user.role !== 'AGENT' && user.role !== 'COMPANY_ADMIN')) {
       throw new ForbiddenException('Seuls les agents peuvent effectuer des dépôts.');
     }
-    return this.transactionsService.deposit(userId, dto);
+    return this.transactionsService.deposit(userId, dto, parseIdempotencyKey(idempotencyKey ?? dto.idempotencyKey));
   }
 
   @Post()
-  async create(@Req() req: AuthedRequest, @Body() dto: CreateTransactionDto) {
+  async create(
+    @Req() req: AuthedRequest,
+    @Body() dto: CreateTransactionDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
     const userId = this.getUserId(req);
-    return this.transactionsService.create(userId, dto);
+    return this.transactionsService.create(userId, dto, parseIdempotencyKey(idempotencyKey ?? dto.idempotencyKey));
   }
 
   // =========================================================

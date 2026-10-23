@@ -18,7 +18,7 @@ export class CreateScheduledTransferDto {
   @IsString() @IsNotEmpty()
   beneficiaryId!: string;
 
-  @Type(() => Number) @IsNumber({ allowNaN: false, allowInfinity: false }) @IsPositive() @Max(1_000_000_000_000)
+  @Type(() => Number) @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 }) @IsPositive() @Min(0.01) @Max(1_000_000_000) // ✅ audit point 11 : même borne que les envois
   amount!: number;
 
   @Type(() => String) @IsIn(SCHEDULED_CURRENCIES)

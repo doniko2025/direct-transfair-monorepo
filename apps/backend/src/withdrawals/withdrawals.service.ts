@@ -1,6 +1,13 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.13 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.14 — Direct Transf'air
+// ✅ v4.14 (audit point 4) : un retrait rejeté / annulé / échoué / expiré n'est plus payable en agence.
+//    (1) agentCheckCode() et agentProcessPayment() refusent un code dont le retrait n'est ni PENDING ni APPROVED ;
+//    (2) le passage du retrait à PAID est conditionné à ce statut, dans la même transaction SQL que le paiement
+//        (un admin qui rejette au même instant qu'un agent paie ne peut plus laisser un retrait « rejeté » payé) ;
+//    (3) adminUpdateStatus() : REJECTED / CANCELLED / FAILED / EXPIRED ferment AUSSI la transaction et rembourse
+//        l'expéditeur, atomiquement (TransactionsService.closeFromWithdrawal). Avant, seul le statut du retrait
+//        changeait : la transaction restait VALIDATED (payable) et l'expéditeur n'était jamais remboursé.
 // ✅ v4.3 : commission calculée sur fees convertis en devise payout
 // ✅ v4.4 : Notifications in-app + emails
 // ✅ v4.5 : listByAgent()
@@ -130,6 +137,7 @@ import {
 
 import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
+import { TransactionsService } from '../transactions/transactions.service';
 import { RatesService }   from '../rates/rates.service';
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 import { defaultShares, type Shares } from '../commission-rules/commission-rule-defaults';
@@ -147,6 +155,17 @@ const LOW_BALANCE_THRESHOLD = 50_000;
 /** Statuts qu'un admin peut poser à la main (jamais PAID : voir adminUpdateStatus). */
 const MANUAL_TARGETS: WithdrawalStatus[] = [
   WithdrawalStatus.APPROVED,
+  WithdrawalStatus.REJECTED,
+  WithdrawalStatus.FAILED,
+  WithdrawalStatus.CANCELLED,
+  WithdrawalStatus.EXPIRED,
+];
+
+/** Statuts de retrait depuis lesquels un paiement en agence reste possible. */
+const PAYABLE_WITHDRAWAL: WithdrawalStatus[] = [WithdrawalStatus.PENDING, WithdrawalStatus.APPROVED];
+
+/** Statuts manuels qui ferment le retrait : la transaction est close et l'expéditeur remboursé. */
+const CLOSING_TARGETS: WithdrawalStatus[] = [
   WithdrawalStatus.REJECTED,
   WithdrawalStatus.FAILED,
   WithdrawalStatus.CANCELLED,
@@ -182,6 +201,7 @@ export class WithdrawalsService {
     private readonly agentNotifier:  AgentNotifierService,
     private readonly walletMail:     WalletMailService,
     private readonly agentMail:      AgentMailService,
+    private readonly transactions:   TransactionsService,
   ) {}
 
   // ── Enrichissement providerRef ────────────────────────────
@@ -211,10 +231,14 @@ export class WithdrawalsService {
 
     const tx = await this.prisma.transaction.findFirst({
       where: payableCodeWhere(clientId, cleanCode), // ✅ v4.11 : envois cash uniquement
-      include: { sender: true, beneficiary: true },
+      include: { sender: true, beneficiary: true, withdrawal: { select: { status: true } } },
     });
 
     if (!tx) throw new NotFoundException('Code invalide ou introuvable.');
+    // ✅ v4.14 : un retrait rejeté / annulé / échoué / expiré n'est plus vérifiable comme payable.
+    if (tx.withdrawal && !PAYABLE_WITHDRAWAL.includes(tx.withdrawal.status)) {
+      throw new ConflictException(`Retrait ${tx.withdrawal.status.toLowerCase()} : ce code ne peut plus être payé.`);
+    }
 
     const richTx = this.enrichTransaction({ ...tx });
 
@@ -270,6 +294,10 @@ export class WithdrawalsService {
       throw new ConflictException('Transaction annulée.');
     if (tx.status !== TransactionStatus.VALIDATED)
       throw new ForbiddenException(`Statut invalide: ${tx.status}`);
+    // ✅ v4.14 (audit point 4) : le statut du RETRAIT compte aussi — un retrait rejeté / annulé / échoué / expiré ne se paie pas.
+    if (tx.withdrawal && !PAYABLE_WITHDRAWAL.includes(tx.withdrawal.status)) {
+      throw new ConflictException(`Retrait ${tx.withdrawal.status.toLowerCase()} : ce code ne peut plus être payé.`);
+    }
 
     // ── Agent et agence ───────────────────────────────────
     const agent = await this.prisma.user.findUnique({
@@ -441,10 +469,15 @@ export class WithdrawalsService {
 
       // ── Withdrawal ──────────────────────────────────────
       if (tx.withdrawal) {
-        await prismaTx.withdrawal.update({
-          where: { id: tx.withdrawal.id },
+        // ✅ v4.14 : conditionné au statut payable — si un admin vient de rejeter ce retrait, le paiement (et tous les
+        // crédits ci-dessus, annulés avec la transaction SQL) est refusé.
+        const withdrawalClaimed = await prismaTx.withdrawal.updateMany({
+          where: { id: tx.withdrawal.id, status: { in: PAYABLE_WITHDRAWAL } },
           data:  { status: WithdrawalStatus.PAID, processedById: agentId, processedAt: new Date() },
         });
+        if (withdrawalClaimed.count !== 1) {
+          throw new ConflictException('Ce retrait vient d\'être clos par un administrateur : paiement refusé.');
+        }
       } else {
         await prismaTx.withdrawal.create({
           data: {
@@ -639,6 +672,24 @@ export class WithdrawalsService {
 
     if (before.status !== WithdrawalStatus.PENDING && before.status !== WithdrawalStatus.APPROVED) {
       throw new ConflictException(`Ce retrait est déjà « ${before.status} » : son statut n'est plus modifiable.`);
+    }
+
+    // ✅ v4.14 (audit point 4) : fermer un retrait ferme aussi la transaction et rembourse l'expéditeur (atomique).
+    if (CLOSING_TARGETS.includes(dto.status)) {
+      const w = await this.prisma.withdrawal.findFirst({ where: { id, clientId }, select: { transactionId: true } });
+      if (!w) throw new NotFoundException('Retrait introuvable');
+      await this.transactions.closeFromWithdrawal(clientId, adminId, w.transactionId, dto.status);
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            userId: adminId, clientId, action: 'WITHDRAWAL_PROCESS', entity: 'Withdrawal', entityId: id,
+            details: { from: before.status, to: dto.status, transactionClosedAndRefunded: true } as Prisma.InputJsonValue, successful: true,
+          },
+        });
+      } catch (err) {
+        this.logger.error(`Journal d'audit non écrit (retrait ${id}) : ${(err as Error).message}`);
+      }
+      return this.prisma.withdrawal.findUniqueOrThrow({ where: { id } });
     }
 
     // ✅ v4.11 : limité à la société de l'appelant ; v4.13 : et au statut lu ci-dessus.

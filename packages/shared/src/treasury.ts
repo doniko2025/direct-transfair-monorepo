@@ -18,6 +18,7 @@
 
 import type { HttpClient } from './http';
 import type { Transaction } from './transactions';
+import { IDEMPOTENCY_HEADER, createIdempotencyTracker, withIdempotency } from './idempotency';
 
 export const TREASURY_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'] as const;
 export type TreasuryCurrency = (typeof TREASURY_CURRENCIES)[number];
@@ -111,6 +112,12 @@ function asList<T>(raw: unknown): T[] {
 }
 
 export function createTreasuryApi(http: HttpClient) {
+  // ✅ audit point 3 : recharge d'agence et retrait forcé protégés contre le double envoi (voir idempotency.ts).
+  const tracker = createIdempotencyTracker();
+  const postOnce = <T>(path: string, body: object) =>
+    withIdempotency(tracker, `${path}|${JSON.stringify(body)}`, (key) =>
+      http.post<T>(path, body, { headers: { [IDEMPOTENCY_HEADER]: key } }));
+
   const enc = encodeURIComponent;
   return {
     wallets: async (): Promise<TreasuryWallet[]> => asList<TreasuryWallet>(await http.get<unknown>('/wallets/me')),
@@ -133,10 +140,10 @@ export function createTreasuryApi(http: HttpClient) {
     agencies: async (): Promise<TreasuryAgency[]> => asList<TreasuryAgency>(await http.get<unknown>('/agencies')),
 
     refillAgency: (input: { agencyId: string; amount: number; currency: TreasuryCurrency }) =>
-      http.post<RefillAgencyResult>('/transactions/admin/refill-agency', input),
+      postOnce<RefillAgencyResult>('/transactions/admin/refill-agency', input),
 
     collectFromAgency: (input: { agencyId: string; amount: number; note: string }) =>
-      http.post<Transaction>('/transactions/agency/collect', input),
+      postOnce<Transaction>('/transactions/agency/collect', input),
 
     declareB2B: (input: { amount: number; ref: string; currency: TreasuryCurrency }) =>
       http.post<Transaction>('/transactions/b2b/declare', input),

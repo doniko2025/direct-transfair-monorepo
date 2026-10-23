@@ -1,6 +1,10 @@
 // apps/backend/src/payments/recharge.service.ts
 // =========================================================
-// RECHARGE SERVICE v1.3 — Direct Transf'air
+// RECHARGE SERVICE v1.4 — Direct Transf'air
+// ✅ v1.4 (audit point 7) : au démarrage, si NODE_ENV=production et que BLOCK_SIMULATED_RECHARGES n'est pas à « true »,
+//   un avertissement bien visible est écrit dans les logs : les recharges carte / Orange Money / Sendwave créditent
+//   alors le wallet SANS paiement réel. Le comportement par défaut ne change pas (recharges simulées ouvertes pour la
+//   phase de test, comme décidé) : il suffit de poser BLOCK_SIMULATED_RECHARGES=true sur Render au lancement.
 // ✅ v1.3 (phase 6, passe 3) : interrupteur BLOCK_SIMULATED_RECHARGES (voir simulation.flags.ts) pour fermer les
 //   recharges simulées au lancement (le suivi /recharge/:id/status reste ouvert pour solder celles en cours).
 // ✅ v1.2 (phase 6) : (1) creditIfNotAlready() passe par WalletsService.creditOnce() : le contrôle « déjà
@@ -34,6 +38,7 @@
 import {
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -62,12 +67,21 @@ import {
 
 @Injectable()
 export class RechargeService {
+  private readonly logger = new Logger(RechargeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletsService: WalletsService,
     private readonly om: OrangeMoneyService,
     private readonly sendwave: SendwaveService,
-  ) {}
+  ) {
+    if (process.env.NODE_ENV === 'production' && !simulatedRechargesBlocked()) {
+      this.logger.warn(
+        '⚠️ BLOCK_SIMULATED_RECHARGES n\'est pas à « true » en production : les recharges carte / Orange Money / Sendwave ' +
+        'créditent le wallet SANS paiement réel. Posez BLOCK_SIMULATED_RECHARGES=true avant d\'ouvrir au public.',
+      );
+    }
+  }
 
   // ========================================================
   // Carte bancaire — mock synchrone (pas de vrai PSP branché)

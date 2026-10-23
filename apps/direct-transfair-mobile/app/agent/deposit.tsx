@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/agent/deposit.tsx
 // =========================================================
-// AGENT DEPOSIT (CASH-IN) v8.2 — Direct Transf'air
+// AGENT DEPOSIT (CASH-IN) v8.3 — Direct Transf'air
+// ✅ v8.3 : idempotence (services/idempotency.ts) — un double-tap ou un nouvel essai après coupure ne dépose pas deux fois.
 // ✅ v7.0 : héro pill, navigation vers reçu imprimable
 // ✅ v7.1 : fond blanc pur, héro rectangulaire gradient
 // ✅ v8.0 :
@@ -47,6 +48,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
+import { runOnce } from "../../services/idempotency";
 import { useAuth } from "../../providers/AuthProvider";
 import { countriesList, getCountryByName, type CountryData } from "../../data/countries";
 
@@ -472,7 +474,9 @@ export default function AgentDepositScreen() {
   const process = async () => {
     setLoading(true);
     try {
-      const result = await api.http.post("/transactions/deposit", { userPhone: fullPhone, amount: numAmount });
+      // ✅ idempotence (audit point 3) : un double-tap ou un nouvel essai après coupure ne dépose pas deux fois.
+      const result = await runOnce(JSON.stringify({ p: fullPhone, a: numAmount }), (idempotencyKey) =>
+        api.http.post("/transactions/deposit", { userPhone: fullPhone, amount: numAmount, idempotencyKey }));
       const creditedCurrency: string = result?.data?.currency ?? agentCurrency;
       const creditedAmount:   number = result?.data?.amount   ?? numAmount;
       setShowConfirm(false);

@@ -1,6 +1,7 @@
 // apps/backend/src/transactions/agency-treasury.controller.ts
 // =========================================================
-// AGENCY TREASURY CONTROLLER v1.0 — Direct Transf'air
+// AGENCY TREASURY CONTROLLER v1.1 — Direct Transf'air
+// ✅ v1.1 : en-tête Idempotency-Key accepté sur /remit et /collect (voir idempotency.ts).
 // Fichier indépendant — n'ajoute aucune route à
 // transactions.controller.ts existant.
 //
@@ -22,7 +23,7 @@
 // certitude qu'il existe déjà sous ce nom exact.
 // =========================================================
 
-import { Body, Controller, Post, Req, SetMetadata, UseGuards } from '@nestjs/common';
+import { Body, Controller, Headers, Post, Req, SetMetadata, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -32,6 +33,7 @@ import { AdminGuard } from '../common/guards/admin.guard';
 import { AgencyTreasuryService } from './agency-treasury.service';
 import { CreateAgencyRemittanceDto } from './dto/create-agency-remittance.dto';
 import { CreateAgencyCollectionDto } from './dto/create-agency-collection.dto';
+import { IDEMPOTENCY_HEADER, parseIdempotencyKey } from './idempotency';
 
 const Roles = (...roles: string[]) => SetMetadata('roles', roles);
 
@@ -47,13 +49,21 @@ export class AgencyTreasuryController {
   @Post('remit')
   @UseGuards(RolesGuard)
   @Roles('AGENT')
-  async remit(@Req() req: AuthenticatedRequest, @Body() dto: CreateAgencyRemittanceDto) {
-    return this.agencyTreasury.remitToAdmin(req.user!.id, dto);
+  async remit(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateAgencyRemittanceDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
+    return this.agencyTreasury.remitToAdmin(req.user!.id, dto, parseIdempotencyKey(idempotencyKey));
   }
 
   @Post('collect')
   @UseGuards(AdminGuard)
-  async collect(@Req() req: AuthenticatedRequest, @Body() dto: CreateAgencyCollectionDto) {
-    return this.agencyTreasury.collectFromAgency(req.user!.id, dto);
+  async collect(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateAgencyCollectionDto,
+    @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
+  ) {
+    return this.agencyTreasury.collectFromAgency(req.user!.id, dto, parseIdempotencyKey(idempotencyKey));
   }
 }

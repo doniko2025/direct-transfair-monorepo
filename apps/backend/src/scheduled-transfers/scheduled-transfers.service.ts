@@ -1,6 +1,10 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.4
+// SCHEDULED TRANSFERS SERVICE v4.5
+// ✅ v4.5 (audit, point faible) : MONTHLY ne déborde plus sur le mois suivant. setMonth(+1) depuis le 31 janvier donnait
+//   le 3 mars (le 31 février n'existe pas) : le virement sautait février et dérivait ensuite sur le 3. Le jour est maintenant
+//   ramené au dernier jour du mois (31 janv. → 28 ou 29 févr.). Limite connue : le jour d'origine n'étant pas mémorisé,
+//   un virement du 31 reste sur le 28 après février (il faudrait une colonne « jour d'ancrage » pour le retrouver).
 // ✅ v4.4 (phase 6) : exécution fiabilisée
 //   (1) 🚨 Double exécution : le cron passe toutes les 5 min et deux instances peuvent tourner ensemble ; rien
 //       n'empêchait deux passages d'exécuter le même virement (débit en double). L'échéance est maintenant
@@ -414,7 +418,14 @@ export class ScheduledTransfersService {
       case 'DAILY':    next.setDate(next.getDate() + 1);   break;
       case 'WEEKLY':   next.setDate(next.getDate() + 7);   break;
       case 'BIWEEKLY': next.setDate(next.getDate() + 14);  break;
-      case 'MONTHLY':  next.setMonth(next.getMonth() + 1); break;
+      case 'MONTHLY': {
+        const day = next.getDate();
+        next.setDate(1);                      // évite le débordement pendant le changement de mois
+        next.setMonth(next.getMonth() + 1);
+        const lastDay = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+        next.setDate(Math.min(day, lastDay));
+        break;
+      }
       default: return null;
     }
     return next;

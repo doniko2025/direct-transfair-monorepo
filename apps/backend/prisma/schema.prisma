@@ -1,3 +1,4 @@
+// apps/backend/prisma/schema.prisma
 // ==========================================================
 //  PRISMA SCHEMA — DIRECT TRANSF'AIR (SAAS EDITION v5.0 ULTIMATE)
 //
@@ -1301,6 +1302,13 @@ model Transaction {
   //   ⚠️ Migration requise : npx prisma migrate dev --name add_transaction_soft_delete
   deletedAt DateTime?
 
+  // ✅ v4.29 (audit point 3) — idempotence : clé fournie par le client (en-tête Idempotency-Key). Un double-tap ou un
+  // nouvel essai après coupure réseau avec la MÊME clé renvoie l'opération déjà créée au lieu d'en débiter une seconde.
+  // Nullable : les opérations sans clé (anciens clients) ne sont pas concernées ; l'unicité (senderId, clé) ne s'applique
+  // qu'aux lignes qui en ont une (PostgreSQL ignore les NULL dans un index unique).
+  // ⚠️ Migration requise : 20261023120000_add_transaction_idempotency_key
+  idempotencyKey String?
+
   // Relations
   withdrawal          Withdrawal?
   ledgerEntries       LedgerEntry[]
@@ -1318,6 +1326,7 @@ model Transaction {
   @@index([reference])
   @@index([currency, targetCurrency])
   @@index([isFlagged])
+  @@unique([senderId, idempotencyKey])
   @@map("transactions")
 }
 

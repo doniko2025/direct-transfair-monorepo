@@ -20,15 +20,17 @@
 // être justifié dans l'historique.
 // =========================================================
 
-import { IsNotEmpty, IsNumber, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateAgencyCollectionDto {
   @IsString()
   @IsNotEmpty()
   agencyId!: string;
 
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 4 })
   @IsPositive()
+  @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsString()

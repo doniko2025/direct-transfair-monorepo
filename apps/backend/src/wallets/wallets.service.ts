@@ -1,6 +1,13 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.6
+// WALLETS SERVICE v5.7
+// ✅ v5.7 (audit points 6 et 9) :
+//    (1) GEL DE WALLET APPLIQUÉ. Wallet.isFrozen (gel conformité / LCB-FT) n'était lu que pour l'affichage : un wallet gelé
+//        continuait d'envoyer et de recevoir. debitInTx, creditInTx, transferInTx (source ET destination) et hold refusent
+//        maintenant un wallet gelé (403, code WALLET_FROZEN). unhold reste permis (libérer une réserve ne sort pas d'argent).
+//        ⚠️ Conséquence voulue : un remboursement (annulation / échec) vers un wallet gelé est refusé tant que le gel dure.
+//    (2) transferInTx : montant converti arrondi à la devise de destination (avant : 65 595,7 XOF stockés en flottant) ;
+//        un transfert d'un wallet vers lui-même est refusé (deux lignes de journal pour un effet nul).
 // ✅ FIX v5.2 : getOrCreateWallet — agencyId est un CUID string,
 //    ne jamais faire parseInt() dessus
 // ✅ FIX v5.2 : getOrCreateWallet — support agencyId comme clé propre
@@ -61,6 +68,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { RatesService } from '../rates/rates.service';
 
 export const SUPPORTED_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'] as const;
@@ -284,6 +292,16 @@ export class WalletsService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey}::bigint)`;
   }
 
+  /** ✅ v5.7 : un wallet gelé (conformité / LCB-FT) ne reçoit ni ne sort d'argent. */
+  private assertNotFrozen(wallet: { isFrozen?: boolean | null; frozenReason?: string | null }): void {
+    if (wallet.isFrozen) {
+      throw new ForbiddenException({
+        code: 'WALLET_FROZEN',
+        message: `Ce wallet est gelé${wallet.frozenReason ? ` (${wallet.frozenReason})` : ''} : opération refusée.`,
+      });
+    }
+  }
+
   // ========================================================
   // DEBIT
   // ========================================================
@@ -313,6 +331,7 @@ export class WalletsService {
 
     const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
     if (!wallet) throw new NotFoundException('Wallet introuvable');
+    this.assertNotFrozen(wallet); // ✅ v5.7
 
     const amt       = new Prisma.Decimal(amount);
     const available = wallet.balance.minus(wallet.reservedBalance);
@@ -372,6 +391,7 @@ export class WalletsService {
 
     const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
     if (!wallet) throw new NotFoundException('Wallet introuvable');
+    this.assertNotFrozen(wallet); // ✅ v5.7
 
     const amt = new Prisma.Decimal(amount);
 
@@ -433,6 +453,7 @@ export class WalletsService {
 
       const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
       if (!wallet) throw new NotFoundException('Wallet introuvable');
+      this.assertNotFrozen(wallet); // ✅ v5.7
 
       const amt       = new Prisma.Decimal(amount);
       const available = wallet.balance.minus(wallet.reservedBalance);
@@ -523,6 +544,9 @@ export class WalletsService {
   ) {
     const { fromWalletId, toWalletId, amount, description, transactionId } = params;
     if (amount <= 0) throw new BadRequestException('Montant invalide');
+    if (fromWalletId === toWalletId) {
+      throw new BadRequestException('Le wallet source et le wallet destination sont identiques.'); // ✅ v5.7
+    }
 
     const ids = [fromWalletId, toWalletId].sort();
     await this.lockWallet(tx, ids[0]);
@@ -532,6 +556,8 @@ export class WalletsService {
     const toWallet   = await tx.wallet.findUnique({ where: { id: toWalletId } });
 
     if (!fromWallet || !toWallet) throw new NotFoundException('Wallet introuvable');
+    this.assertNotFrozen(fromWallet); // ✅ v5.7
+    this.assertNotFrozen(toWallet);
 
     const fromAmt   = new Prisma.Decimal(amount);
     const available = fromWallet.balance.minus(fromWallet.reservedBalance);
@@ -545,7 +571,9 @@ export class WalletsService {
         ? 1
         : await this.rates.getRate(fromWallet.currency, toWallet.currency);
 
-    const toAmount = new Prisma.Decimal(amount * rate);
+    // ✅ v5.7 : arrondi à la devise de destination (XOF / GNF : unités entières, autres : 2 décimales).
+    const toAmount = new Prisma.Decimal(roundToCurrency(amount * rate, toWallet.currency));
+    if (toAmount.lte(0)) throw new BadRequestException('Montant converti nul : augmentez le montant.');
 
     const updatedFrom = await tx.wallet.update({
       where: { id: fromWalletId },

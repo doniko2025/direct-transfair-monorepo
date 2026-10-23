@@ -19,6 +19,7 @@
 
 import type { HttpClient } from './http';
 import type { Transaction } from './transactions';
+import { IDEMPOTENCY_HEADER, createIdempotencyTracker, withIdempotency } from './idempotency';
 
 // ─── /agent-desk/me ──────────────────────────────────────
 export interface DeskAgency {
@@ -152,6 +153,12 @@ export interface CashSendInput {
 }
 
 export function createAgentDeskApi(http: HttpClient) {
+  // ✅ audit point 3 : un double-tap ou un nouvel essai après coupure ne crée pas un second débit (voir idempotency.ts).
+  const tracker = createIdempotencyTracker();
+  const postOnce = <T>(path: string, body: object) =>
+    withIdempotency(tracker, `${path}|${JSON.stringify(body)}`, (key) =>
+      http.post<T>(path, body, { headers: { [IDEMPOTENCY_HEADER]: key } }));
+
   const enc = encodeURIComponent;
   return {
     me: (since?: string) => http.get<AgentDesk>(`/agent-desk/me${since ? `?since=${enc(since)}` : ''}`),
@@ -162,7 +169,7 @@ export function createAgentDeskApi(http: HttpClient) {
     sendPreview: (amount: number, receiveCountry: string) =>
       http.get<SendPreview>(`/agent-desk/send-preview?amount=${enc(String(amount))}&receiveCountry=${enc(receiveCountry)}`),
 
-    deposit: (input: { amount: number; userPhone: string }) => http.post<Transaction>('/transactions/deposit', input),
+    deposit: (input: { amount: number; userPhone: string }) => postOnce<Transaction>('/transactions/deposit', input),
 
     checkWithdrawal: (code: string) => http.post<WithdrawalCheck>('/withdrawals/agent/check', { code }),
 
@@ -171,8 +178,8 @@ export function createAgentDeskApi(http: HttpClient) {
     createBeneficiary: (input: NewBeneficiary) => http.post<Beneficiary>('/beneficiaries', input),
 
     sendCash: (input: CashSendInput) =>
-      http.post<Transaction>('/transactions', { ...input, payoutMethod: 'CASH_PICKUP' }),
+      postOnce<Transaction>('/transactions', { ...input, payoutMethod: 'CASH_PICKUP' }),
 
-    remit: (input: { amount: number; note?: string }) => http.post<Transaction>('/transactions/agency/remit', input),
+    remit: (input: { amount: number; note?: string }) => postOnce<Transaction>('/transactions/agency/remit', input),
   };
 }

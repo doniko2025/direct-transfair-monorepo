@@ -10,11 +10,13 @@
 // depuis l'agence d'un autre en falsifiant le payload.
 // =========================================================
 
-import { IsNumber, IsOptional, IsPositive, IsString, MaxLength } from 'class-validator';
+import { IsNumber, IsOptional, IsPositive, IsString, Max, MaxLength, Min } from 'class-validator';
 
 export class CreateAgencyRemittanceDto {
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 4 })
   @IsPositive()
+  @Min(0.01)
+  @Max(1_000_000_000)
   amount!: number;
 
   @IsOptional()
