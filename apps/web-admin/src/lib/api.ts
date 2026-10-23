@@ -1,4 +1,4 @@
-// src/lib/api.ts
+//apps/web-admin/src/lib/api.ts
 // Instance unique du client HTTP + des endpoints, partagée par toute l'app.
 // Le tenant courant et le handler « session expirée » sont renseignés par
 // les providers (TenantProvider / AuthProvider).

@@ -1,7 +1,15 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
 // ✅ phase 7 : code de la société système et taux de secours lus dans services/platformConfig.ts (plus de « DONIKO » ni de taux écrits en dur).
-// DIRECT TRANSF'AIR — API Service v6.1
+// DIRECT TRANSF'AIR — API Service v6.2
+// ✅ v6.2 : RECONSTRUCTION des méthodes qui manquaient dans ce fichier alors que les écrans les appellent (la copie du
+//    dépôt s'arrêtait à getPromotions : 35 méthodes absentes → erreur de compilation et plantage à l'exécution des écrans
+//    trésorerie, agences, sociétés, utilisateurs, virements B2B, commissions, taux). Sections ajoutées en fin de classe :
+//    TRÉSORERIE ADMIN, TRÉSORERIE AGENCE ⇄ SOCIÉTÉ, VIREMENTS B2B, TRANSACTIONS ADMIN, AGENCES, SOCIÉTÉS, UTILISATEURS,
+//    RETRAITS, COMMISSIONS, TAUX (admin), PROFIL ADMIN. Chemins et corps repris des contrôleurs du backend.
+//    IDEMPOTENCE : adminRefillAgency, agentRemitToAdmin et adminCollectFromAgency envoient un en-tête Idempotency-Key
+//    (services/idempotency.ts, runOnce) : un double appui ou un nouvel essai après coupure ne recharge / ne remet / ne
+//    collecte plus deux fois. Aucune méthode existante modifiée.
 // ✅ v6.1 : les refus attendus (HTTP 4xx : mauvais identifiants, compte réservé au portail web…) sont journalisés en
 //    console.warn au lieu de console.error — en développement, console.error ouvre un bandeau rouge « HTTP ERROR »
 //    qui laissait croire à une panne. Les pannes réelles (5xx, réseau) restent en console.error. Rien d'autre modifié.
@@ -69,6 +77,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as SecureStore from "expo-secure-store";
 
 import { getApiBaseUrl } from "./serverConfig";
+import { runOnce } from "./idempotency";
 import { getPlatformCode, getFallbackRates } from "./platformConfig";
 
 import type {
@@ -1369,6 +1378,256 @@ class API {
   async getPromotions(): Promise<Promotion[]> {
     const res = await this.http.get<unknown>("/promotions");
     return unwrapArray<Promotion>(res.data);
+  }
+
+  // ============================================================
+  // TRÉSORERIE ADMIN — ✅ v6.2 (reconstruit)
+  // ============================================================
+
+  // POST /transactions/admin/fund-self — auto-alimentation du wallet de l'admin société (peut être coupée côté serveur
+  // par ALLOW_SELF_FUNDING=false : le refus 403 est alors remonté tel quel).
+  async adminFundSelf(
+    amount: number,
+    currency: Currency | string = "XOF",
+  ): Promise<unknown> {
+    const res = await this.http.post("/transactions/admin/fund-self", {
+      amount,
+      currency: String(currency).toUpperCase(),
+    });
+    return res.data;
+  }
+
+  // POST /transactions/admin/refill-agency — recharge de la caisse d'une agence depuis le wallet de la société.
+  // ✅ idempotent : même agence + même montant + même devise tant que l'issue est incertaine = même clé.
+  async adminRefillAgency(
+    agencyId: string,
+    amount: number,
+    currency: Currency | string = "XOF",
+  ): Promise<unknown> {
+    const body = { agencyId, amount, currency: String(currency).toUpperCase() };
+    return runOnce(`refill:${JSON.stringify(body)}`, async (key) => {
+      const res = await this.http.post("/transactions/admin/refill-agency", body, {
+        headers: { "Idempotency-Key": key },
+      });
+      return res.data as unknown;
+    });
+  }
+
+  // ============================================================
+  // TRÉSORERIE AGENCE ⇄ SOCIÉTÉ — ✅ v5.8 (reconstruit)
+  // ============================================================
+
+  // POST /transactions/agency/remit — l'agent remet du cash à l'admin (débit caisse agence, crédit société).
+  async agentRemitToAdmin(amount: number, note?: string): Promise<unknown> {
+    const body = { amount, ...(note ? { note } : {}) };
+    return runOnce(`remit:${JSON.stringify(body)}`, async (key) => {
+      const res = await this.http.post("/transactions/agency/remit", body, {
+        headers: { "Idempotency-Key": key },
+      });
+      return res.data as unknown;
+    });
+  }
+
+  // POST /transactions/agency/collect — l'admin retire du cash d'une caisse d'agence (note obligatoire côté serveur).
+  async adminCollectFromAgency(
+    agencyId: string,
+    amount: number,
+    note: string,
+  ): Promise<unknown> {
+    const body = { agencyId, amount, note };
+    return runOnce(`collect:${JSON.stringify(body)}`, async (key) => {
+      const res = await this.http.post("/transactions/agency/collect", body, {
+        headers: { "Idempotency-Key": key },
+      });
+      return res.data as unknown;
+    });
+  }
+
+  // ============================================================
+  // VIREMENTS B2B (société → plateforme) — ✅ v5.3 (reconstruit)
+  // v5.3 : un seul appel (pas de tryMany : il provoquait un double appel), délai 15 s, devise par défaut XOF.
+  // ============================================================
+
+  async declareBankTransfer(
+    amount: number,
+    ref?: string,
+    currency: Currency | string = "XOF",
+  ): Promise<Transaction> {
+    const res = await this.http.post<Transaction>(
+      "/transactions/b2b/declare",
+      { amount, ref, currency: String(currency).toUpperCase() },
+      { timeout: 15_000 },
+    );
+    return normalizeTransaction(res.data);
+  }
+
+  async validateBankTransfer(id: string): Promise<Transaction> {
+    const res = await this.http.patch<Transaction>(`/transactions/b2b/validate/${id}`, {});
+    return normalizeTransaction(res.data);
+  }
+
+  async rejectBankTransfer(id: string): Promise<Transaction> {
+    const res = await this.http.patch<Transaction>(`/transactions/b2b/reject/${id}`, {});
+    return normalizeTransaction(res.data);
+  }
+
+  // ============================================================
+  // TRANSACTIONS ADMIN — ✅ v6.2 (reconstruit)
+  // ============================================================
+
+  // GET /transactions/admin — toutes les opérations de la société (Super Admin : de la plateforme).
+  async adminGetTransactions(): Promise<Transaction[]> {
+    const res = await this.http.get<unknown>("/transactions/admin");
+    return unwrapArray<unknown>(res.data).map(normalizeTransaction);
+  }
+
+  // PATCH /transactions/admin/status/:id — VALIDATED / PAID / CANCELLED / FAILED (remboursement côté serveur).
+  async adminUpdateTransactionStatus(
+    id: string,
+    status: TransactionStatus | string,
+  ): Promise<Transaction> {
+    const res = await this.http.patch<Transaction>(`/transactions/admin/status/${id}`, { status });
+    return normalizeTransaction(res.data);
+  }
+
+  // ============================================================
+  // AGENCES — ✅ v6.2 (reconstruit)
+  // ============================================================
+
+  async getAgencies(): Promise<Agency[]> {
+    const res = await this.http.get<unknown>("/agencies");
+    return unwrapArray<Agency>(res.data);
+  }
+
+  async getAgency(id: string): Promise<Agency> {
+    const res = await this.http.get<Agency>(`/agencies/${id}`);
+    return res.data;
+  }
+
+  async createAgency(data: CreateAgencyPayload): Promise<Agency> {
+    const res = await this.http.post<Agency>("/agencies", normalizeAgencyPayload(data));
+    return res.data;
+  }
+
+  async updateAgency(
+    id: string,
+    data: Partial<CreateAgencyPayload> & Record<string, unknown>,
+  ): Promise<Agency> {
+    const res = await this.http.patch<Agency>(`/agencies/${id}`, data);
+    return res.data;
+  }
+
+  async deleteAgency(id: string): Promise<unknown> {
+    const res = await this.http.delete<unknown>(`/agencies/${id}`);
+    return res.data;
+  }
+
+  // ============================================================
+  // SOCIÉTÉS (clients SaaS) — ✅ v6.2 (reconstruit)
+  // ============================================================
+
+  async getClients(): Promise<Client[]> {
+    const res = await this.http.get<unknown>("/clients");
+    return unwrapArray<Client>(res.data);
+  }
+
+  async getClient(id: number): Promise<Client> {
+    const res = await this.http.get<Client>(`/clients/${id}`);
+    return res.data;
+  }
+
+  async createClient(data: Record<string, unknown>): Promise<Client> {
+    const res = await this.http.post<Client>("/clients", data);
+    return res.data;
+  }
+
+  async updateClient(id: number, data: Record<string, unknown>): Promise<Client> {
+    const res = await this.http.patch<Client>(`/clients/${id}`, data);
+    return res.data;
+  }
+
+  async updateClientStatus(id: number, status: ClientSubscriptionStatus): Promise<Client> {
+    const res = await this.http.patch<Client>(`/clients/${id}/status`, { status });
+    return res.data;
+  }
+
+  async deleteClient(id: number): Promise<unknown> {
+    const res = await this.http.delete<unknown>(`/clients/${id}`);
+    return res.data;
+  }
+
+  // ============================================================
+  // UTILISATEURS — ✅ v6.2 (reconstruit)
+  // ============================================================
+
+  async getUsers(): Promise<AuthUser[]> {
+    const res = await this.http.get<unknown>("/users");
+    return unwrapArray<AuthUser>(res.data);
+  }
+
+  async createUser(data: Record<string, unknown>): Promise<AuthUser> {
+    const res = await this.http.post<AuthUser>("/users", data);
+    return res.data;
+  }
+
+  async suspendUser(id: string | number, reason?: string): Promise<unknown> {
+    const res = await this.http.patch<unknown>(
+      `/users/${id}/suspend`,
+      reason ? { reason } : {},
+    );
+    return res.data;
+  }
+
+  async reactivateUser(id: string | number): Promise<unknown> {
+    const res = await this.http.patch<unknown>(`/users/${id}/reactivate`, {});
+    return res.data;
+  }
+
+  // ============================================================
+  // RETRAITS — ✅ v6.2 (reconstruit)
+  // GET /withdrawals : selon le rôle — admin : ceux de la société, agent : ceux qu'il a payés, client : les siens.
+  // ============================================================
+
+  async getWithdrawals(): Promise<Withdrawal[]> {
+    const res = await this.http.get<unknown>("/withdrawals");
+    return unwrapArray<Withdrawal>(res.data);
+  }
+
+  // ============================================================
+  // COMMISSIONS — ✅ v6.2 (reconstruit)
+  // GET/POST /commissions (admin société). POST : règle de partage (sourceType/destType/senderShare/payerShare) ou, avec
+  // payoutMethod, frais par méthode de paiement (feeRate / fixedFee).
+  // ============================================================
+
+  async getCommissionRules(): Promise<CommissionRule[]> {
+    const res = await this.http.get<unknown>("/commissions");
+    return unwrapArray<CommissionRule>(res.data);
+  }
+
+  async saveCommissionRule(data: Record<string, unknown>): Promise<unknown> {
+    const res = await this.http.post<unknown>("/commissions", data);
+    return res.data;
+  }
+
+  // ============================================================
+  // TAUX DE CHANGE (admin) — ✅ v6.2 (reconstruit)
+  // POST /rates { pair, rate } — Super Admin uniquement (route conservée pour l'app mobile ; l'historique et le garde-fou
+  // de variation sont dans /rates-admin, utilisé par le back-office web).
+  // ============================================================
+
+  async updateExchangeRate(pair: string, rate: number): Promise<unknown> {
+    const res = await this.http.post<unknown>("/rates", { pair, rate });
+    return res.data;
+  }
+
+  // ============================================================
+  // PROFIL ADMIN — ✅ v5.7 (reconstruit)
+  // PATCH /clients/me/company-name — l'admin société corrige le nom de sa propre société.
+  // ============================================================
+
+  async updateMyCompanyName(name: string): Promise<unknown> {
+    const res = await this.http.patch<unknown>("/clients/me/company-name", { name });
+    return res.data;
   }
 }
 

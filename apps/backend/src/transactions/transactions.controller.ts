@@ -1,6 +1,8 @@
 // apps/backend/src/transactions/transactions.controller.ts
 // =========================================================
-// TRANSACTIONS CONTROLLER v4.4 — Direct Transf'air
+// TRANSACTIONS CONTROLLER v4.5 — Direct Transf'air
+// ✅ v4.5 : POST /admin/fund-self lit aussi `currency` (XOF, EUR, USD, GNF, GBP ; XOF par défaut). Avant, la devise choisie sur
+//    l'écran était ignorée et tout était crédité en XOF.
 // =========================================================
 // ✅ v4.4 (audit point 3) : en-tête Idempotency-Key accepté sur POST /transactions, /deposit et /admin/refill-agency.
 //          Même clé = même opération renvoyée, jamais un second débit (voir idempotency.ts).
@@ -78,6 +80,7 @@ export class TransactionsController {
   async fundSelf(
     @Req() req: AuthedRequest,
     @Body('amount') amount: string | number,
+    @Body('currency') currency?: string,
   ) {
     const user = req.user;
     if (!user) throw new ForbiddenException('Non authentifié');
@@ -98,7 +101,12 @@ export class TransactionsController {
     if (!amount || isNaN(numericAmount) || numericAmount <= 0) {
       throw new BadRequestException('Montant invalide');
     }
-    return this.transactionsService.fundAdminWallet(userId, numericAmount);
+    // ✅ v4.30 : la devise choisie à l'écran est maintenant respectée (avant, elle était ignorée : tout partait en XOF).
+    const safeCurrency = (currency ?? 'XOF').toString().toUpperCase().trim();
+    if (!['XOF', 'EUR', 'USD', 'GNF', 'GBP'].includes(safeCurrency)) {
+      throw new BadRequestException('Devise non supportée');
+    }
+    return this.transactionsService.fundAdminWallet(userId, numericAmount, safeCurrency);
   }
 
   @Post('admin/refill-agency')
@@ -280,4 +288,4 @@ export class TransactionsController {
     const userId = this.getUserId(req);
     return this.transactionsService.findOneForUser(id, userId);
   }
-} 
+}
