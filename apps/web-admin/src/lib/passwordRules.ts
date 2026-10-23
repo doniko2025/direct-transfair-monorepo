@@ -1,4 +1,4 @@
-// src/lib/passwordRules.ts
+// apps/web-admin/src/lib/passwordRules.ts
 // v1.0 — Règles du formulaire « Changer mon mot de passe » (page Mon compte).
 // Fonctions pures, sans React ni réseau : faciles à tester et à ajuster.
 //
@@ -96,4 +96,31 @@ export function passwordStrength(value: string): PasswordStrength {
   if (points <= 1) return { level: 2, label: 'Correct' };
   if (points <= 3) return { level: 3, label: 'Bon' };
   return { level: 4, label: 'Excellent' };
+}
+
+// ─── Réinitialisation (« Mot de passe oublié », page de connexion) ───
+
+export interface NewPasswordErrors {
+  next?: string;
+  confirm?: string;
+}
+
+/** Même exigence que le changement de mot de passe, sans « mot de passe actuel » (on ne l'a plus). */
+export function validateNewPassword(next: string, confirm: string): NewPasswordErrors {
+  const errors: NewPasswordErrors = {};
+
+  if (next.length < PASSWORD_MIN_LENGTH) {
+    errors.next = `Au moins ${PASSWORD_MIN_LENGTH} caractères.`;
+  } else if (!fitsBcrypt(next)) {
+    errors.next = `Trop long : ${PASSWORD_MAX_LENGTH} caractères au maximum.`;
+  } else if (!/\p{L}/u.test(next) || !/\d/.test(next)) {
+    errors.next = 'Mélangez des lettres et des chiffres.';
+  }
+
+  if (!errors.next) {
+    if (!confirm) errors.confirm = 'Confirmez le nouveau mot de passe.';
+    else if (confirm !== next) errors.confirm = 'Les deux saisies ne correspondent pas.';
+  }
+
+  return errors;
 }

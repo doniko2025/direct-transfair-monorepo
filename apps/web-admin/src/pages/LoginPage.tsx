@@ -1,4 +1,5 @@
-// src/pages/LoginPage.tsx
+// apps/web-admin/src/pages/LoginPage.tsx
+// ✅ « Mot de passe oublié ? » : lien sous le champ mot de passe → ForgotPasswordPanel (code par email puis nouveau mot de passe), retour à la connexion avec un message de succès.
 // ✅ phase 7 : message « compte client » avec le nom de marque du branding (plus de « Direct Transf'air » en dur).
 // Connexion à l'espace de gestion. À gauche l'identité de la société (ou de la
 // plateforme) sur un motif de guilloché ; à droite le formulaire.
@@ -13,6 +14,7 @@ import { Button, Card, Field, LoadingScreen, Notice } from '../components/ui';
 import { describeError, type DescribedError } from '../lib/errors';
 import { useAuth, type LoginOutcome } from '../providers/AuthProvider';
 import { useTenant } from '../providers/TenantProvider';
+import { ForgotPasswordPanel } from './login/ForgotPasswordPanel';
 import { VerifyContactPanel } from './login/VerifyContactPanel';
 
 // ✅ phase 7 : le nom de l'application vient du branding (plus de « Direct Transf'air » en dur).
@@ -31,6 +33,8 @@ export default function LoginPage() {
   const [error, setError] = useState<DescribedError | null>(null);
   const [pending, setPending] = useState<VerificationNeeded | null>(null);
   const [autoSend, setAutoSend] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? '/';
 
@@ -102,6 +106,20 @@ export default function LoginPage() {
     setError(null);
   }
 
+  function backToLogin(): void {
+    setForgot(false);
+    setError(null);
+  }
+
+  function onResetDone(address: string): void {
+    setEmail(address);
+    setPassword('');
+    setShowPassword(false);
+    setForgot(false);
+    setError(null);
+    setResetDone(true);
+  }
+
   return (
     <div className="login">
       <aside className="login__brand">
@@ -115,7 +133,9 @@ export default function LoginPage() {
 
       <main className="login__panel">
         <Card className="login__card">
-          {pending ? (
+          {forgot ? (
+            <ForgotPasswordPanel initialEmail={email} onBack={backToLogin} onDone={onResetDone} />
+          ) : pending ? (
             <VerifyContactPanel
               key={pending.emailVerified ? 'PHONE' : 'EMAIL'}
               pending={pending}
@@ -130,6 +150,9 @@ export default function LoginPage() {
                 <p>Entrez les identifiants de votre compte de gestion.</p>
               </div>
 
+              {resetDone ? (
+                <Notice tone="ok">Mot de passe modifié. Connectez-vous avec votre nouveau mot de passe.</Notice>
+              ) : null}
               {notice ? <Notice tone="info">{notice}</Notice> : null}
               {error ? (
                 <Notice
@@ -166,6 +189,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete="current-password"
+                autoFocus={resetDone}
                 required
                 trailing={
                   <button
@@ -179,6 +203,18 @@ export default function LoginPage() {
                   </button>
                 }
               />
+
+              <button
+                type="button"
+                className="link-btn login__forgot"
+                onClick={() => {
+                  setError(null);
+                  setResetDone(false);
+                  setForgot(true);
+                }}
+              >
+                Mot de passe oublié ?
+              </button>
 
               <Button type="submit" block busy={busy} disabled={!email.trim() || !password}>
                 Se connecter

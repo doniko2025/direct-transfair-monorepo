@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/login.css */
 /* ─── Connexion ────────────────────────────────────────────
    Un panneau à la couleur de la société, orné d'une rosace de guilloché
    (le motif de sécurité des billets) qui se trace une fois à l'ouverture. */
@@ -103,6 +104,12 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 8px 16px;
+}
+
+.login__forgot {
+  justify-self: end;
+  margin-top: -6px;
+  font-size: var(--t-sm);
 }
 
 .login__footnote {

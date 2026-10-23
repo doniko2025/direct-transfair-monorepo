@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/notifications.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// NOTIFICATIONS v6.1 — Direct Transf'air
+// NOTIFICATIONS v6.2 — Direct Transf'air
+// ✅ v6.2 : confirmation de suppression CENTRÉE à l'écran (fenêtre au milieu, plus de feuille en bas) et toast de succès centré
+//    (« N notifications supprimées »). Si le serveur répond 404 (route /notifications/delete absente : backend pas encore
+//    redéployé), un message explicite remplace l'ancien « Cannot POST … ».
 // ✅ v6.1 : SUPPRESSION — bouton corbeille dans l'en-tête (ou appui long sur une notification) : mode sélection avec
 //    cases à cocher, « Tout sélectionner », compteur et « Supprimer (N) » ; confirmation dans une fenêtre (Sheet, car
 //    Alert.alert à boutons ne fonctionne pas sur le web). Appelle POST /notifications/delete { ids }.
@@ -19,14 +22,14 @@
 // ✅ v5.1 : fond neutre unifié sur tous les rôles.
 // =========================================================
 
-import React, { useState, useCallback, useEffect } from "react";
-import { Pressable, View } from "react-native";
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
-  Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, Sheet, SkeletonRows, SlowNote, UText, alpha, useUI,
+  Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, SkeletonRows, SlowNote, UText, alpha, useUI,
 } from "../../components/ui";
 
 interface NotificationItem {
@@ -71,6 +74,15 @@ export default function NotificationsScreen() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = (text: string) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(text);
+    toastTimer.current = setTimeout(() => setToast(null), 1800);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
   /** Couleurs d'un type : palette sémantique commune, marketing = marque du tenant. */
   const tone = (type: string): { fg: string; bg: string } => {
@@ -155,10 +167,16 @@ export default function NotificationsScreen() {
       setNotifs((prev) => prev.filter((n) => !ids.includes(n.id)));
       setConfirmOpen(false);
       exitSelectMode();
+      showToast(ids.length > 1 ? `${ids.length} notifications supprimées` : "Notification supprimée");
       void fetchNotifs(); // fait remonter d'éventuelles notifications plus anciennes
     } catch (e) {
       setConfirmOpen(false);
-      setDeleteError(explainLoadError(e).message);
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      setDeleteError(
+        status === 404
+          ? "La suppression n'est pas encore disponible sur le serveur. Réessaie un peu plus tard."
+          : explainLoadError(e).message,
+      );
       void fetchNotifs();
     } finally {
       setDeleting(false);
@@ -293,21 +311,44 @@ export default function NotificationsScreen() {
         })
       )}
 
-      <Sheet
-        visible={confirmOpen}
-        onClose={() => { if (!deleting) setConfirmOpen(false); }}
-        title={selectedIds.length > 1 ? `Supprimer ${selectedIds.length} notifications ?` : "Supprimer cette notification ?"}
-        footer={
-          <View style={{ gap: 10 }}>
-            <Button label="Supprimer" icon="trash-outline" kind="danger" loading={deleting} onPress={handleDeleteSelected} />
-            <Button label="Annuler" kind="outline" disabled={deleting} onPress={() => setConfirmOpen(false)} />
+      {/* Confirmation : fenêtre centrée */}
+      <Modal visible={confirmOpen} transparent animationType="fade" onRequestClose={() => { if (!deleting) setConfirmOpen(false); }} statusBarTranslucent>
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <Pressable
+            style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]}
+            onPress={() => { if (!deleting) setConfirmOpen(false); }}
+            accessibilityLabel="Fermer"
+          />
+          <View
+            accessibilityRole="alert"
+            style={{ width: "100%", maxWidth: 360, backgroundColor: C.bg, borderRadius: 24, padding: 22, alignItems: "center", gap: 6 }}
+          >
+            <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: C.dangerBg, alignItems: "center", justifyContent: "center", marginBottom: 6 }}>
+              <Ionicons name="trash-outline" size={24} color={C.danger} />
+            </View>
+            <UText v="title" align="center">
+              {selectedIds.length > 1 ? `Supprimer ${selectedIds.length} notifications ?` : "Supprimer cette notification ?"}
+            </UText>
+            <UText v="body" tone="muted" align="center" style={{ marginBottom: 14 }}>
+              {selectedIds.length > 1 ? "Ces notifications seront supprimées définitivement." : "Cette notification sera supprimée définitivement."}
+            </UText>
+            <View style={{ alignSelf: "stretch", gap: 10 }}>
+              <Button label="Supprimer" icon="trash-outline" kind="danger" loading={deleting} onPress={handleDeleteSelected} />
+              <Button label="Annuler" kind="outline" disabled={deleting} onPress={() => setConfirmOpen(false)} />
+            </View>
           </View>
-        }
-      >
-        <UText v="body" tone="muted" style={{ paddingVertical: 8 }}>
-          {selectedIds.length > 1 ? "Ces notifications seront supprimées définitivement." : "Cette notification sera supprimée définitivement."}
-        </UText>
-      </Sheet>
+        </View>
+      </Modal>
+
+      {/* Toast de succès : centré à l'écran, disparaît seul */}
+      <Modal visible={toast !== null} transparent animationType="fade" statusBarTranslucent>
+        <View pointerEvents="none" style={{ flex: 1, alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.dark, borderRadius: 18, paddingVertical: 14, paddingHorizontal: 20, maxWidth: 340 }}>
+            <Ionicons name="checkmark-circle" size={22} color={C.sun} />
+            <UText v="bodyStrong" color={C.darkInk}>{toast ?? ""}</UText>
+          </View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
