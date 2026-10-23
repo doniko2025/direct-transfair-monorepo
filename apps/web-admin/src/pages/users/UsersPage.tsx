@@ -7,6 +7,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { UserSummary } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -186,49 +187,46 @@ export default function UsersPage() {
             aria-label="Rechercher un utilisateur"
           />
         </div>
-        {isSuper && companies.length > 1 ? (
-          <SelectField
-            id="users-company"
-            label="Société"
-            className="toolbar__select"
-            value={company}
-            onChange={(e) => {
-              setCompany(e.target.value);
-              setLimit(PAGE_SIZE);
-            }}
-            options={companies}
-            placeholder="Toutes les sociétés"
-          />
-        ) : null}
-        <button
-          type="button"
-          className="tab tab--toggle"
-          aria-pressed={onlySuspended}
-          onClick={() => {
-            setOnlySuspended((v) => !v);
-            setLimit(PAGE_SIZE);
-          }}
-        >
-          Suspendus ou désactivés
-        </button>
-      </div>
-
-      <div className="tabs tabs--row" role="group" aria-label="Filtrer par profil">
-        {tabs.map((t) => (
+        <div className="toolbar__filters">
+          {isSuper && companies.length > 1 ? (
+            <SelectField
+              id="users-company"
+              label="Société"
+              className="toolbar__select"
+              value={company}
+              onChange={(e) => {
+                setCompany(e.target.value);
+                setLimit(PAGE_SIZE);
+              }}
+              options={companies}
+              placeholder="Toutes les sociétés"
+              compactPlaceholder="Sociétés"
+            />
+          ) : null}
           <button
-            key={t.id}
             type="button"
-            className="tab"
-            aria-pressed={profile === t.id}
+            className="tab tab--toggle"
+            aria-pressed={onlySuspended}
             onClick={() => {
-              setProfile(t.id);
+              setOnlySuspended((v) => !v);
               setLimit(PAGE_SIZE);
             }}
           >
-            {t.label}
-            <span>{t.count}</span>
+            <span className="hide-mobile">Suspendus ou désactivés</span>
+            <span className="show-mobile">Suspendus</span>
           </button>
-        ))}
+          <FilterTabs
+            id="users-profile"
+            label="Filtrer par profil"
+            rowOnDesktop
+            value={profile}
+            onChange={(next) => {
+              setProfile(next);
+              setLimit(PAGE_SIZE);
+            }}
+            options={tabs}
+          />
+        </div>
       </div>
 
       {loading && !data ? (

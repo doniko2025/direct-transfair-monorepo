@@ -454,9 +454,23 @@
     text-align: left;
   }
 
-  .desk-form__pair,
+  /* Prénom/Nom, pays/ville et indicatif/numéro restent côte à côte, même sur mobile. */
+  .desk-form__pair {
+    gap: 10px;
+  }
+
   .phone-field {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  }
+
+  .phone-field__dial select {
+    padding: 0 28px 0 12px;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+  }
+
+  .phone-field__dial::after {
+    right: 12px;
   }
 
   .desk-form > .btn {

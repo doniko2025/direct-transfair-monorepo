@@ -5,7 +5,9 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { CommissionEntry, CommissionPeriod, CompanyCommissionEntry, CurrencyTotal } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
+import { RefreshButton } from '../../components/RefreshButton';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { countLabel, entryTitle, PERIODS, periodPhrase, sortTotals } from '../../lib/commissionRules';
@@ -93,20 +95,23 @@ export default function CommissionsPage() {
             : 'Ce qui a été crédité à la société et à chaque agence sur les envois et les retraits payés.'
         }
         actions={
-          <Button variant="secondary" onClick={res.reload} busy={res.loading && data !== null}>
+          <Button variant="secondary" className="hide-mobile" onClick={res.reload} busy={res.loading && data !== null}>
             Actualiser
           </Button>
         }
       />
 
       <div className="toolbar">
-        <div className="tabs" role="group" aria-label="Période">
-          {PERIODS.map((p) => (
-            <button key={p.id} type="button" className="tab" aria-pressed={period === p.id} onClick={() => pick(p.id)}>
-              {p.label}
-            </button>
-          ))}
+        <div className="toolbar__filters toolbar__filters--inline">
+          <FilterTabs
+            id="com-period"
+            label="Période"
+            value={period}
+            onChange={pick}
+            options={PERIODS.map((p) => ({ id: p.id, label: p.label }))}
+          />
         </div>
+        <RefreshButton onClick={res.reload} busy={res.loading && data !== null} />
       </div>
 
       {res.loading && !data ? (

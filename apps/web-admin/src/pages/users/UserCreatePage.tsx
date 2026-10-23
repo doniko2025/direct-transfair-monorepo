@@ -209,6 +209,7 @@ export default function UserCreatePage() {
               <Field
                 id="u-first"
                 label="Prénom"
+                className="form-grid__half"
                 value={form.firstName}
                 onChange={(e) => set('firstName', e.target.value)}
                 error={errors.firstName}
@@ -217,6 +218,7 @@ export default function UserCreatePage() {
               <Field
                 id="u-last"
                 label="Nom"
+                className="form-grid__half"
                 value={form.lastName}
                 onChange={(e) => set('lastName', e.target.value)}
                 error={errors.lastName}

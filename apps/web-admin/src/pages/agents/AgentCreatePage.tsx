@@ -173,6 +173,7 @@ export default function AgentCreatePage() {
               <Field
                 id="ng-first"
                 label="Prénom"
+                className="form-grid__half"
                 value={form.firstName}
                 onChange={(e) => set('firstName', e.target.value)}
                 error={errors.firstName}
@@ -182,6 +183,7 @@ export default function AgentCreatePage() {
               <Field
                 id="ng-last"
                 label="Nom"
+                className="form-grid__half"
                 value={form.lastName}
                 onChange={(e) => set('lastName', e.target.value)}
                 error={errors.lastName}

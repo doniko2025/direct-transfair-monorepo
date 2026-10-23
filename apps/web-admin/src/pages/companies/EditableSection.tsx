@@ -34,6 +34,8 @@ export interface FieldDef {
   validate?: (value: string) => string | null;
   /** Occupe toute la largeur du formulaire. */
   wide?: boolean;
+  /** Reste à moitié de largeur, même sur mobile (Prénom + Nom côte à côte). */
+  half?: boolean;
 }
 
 type Values = Record<string, string | null | undefined>;
@@ -173,7 +175,7 @@ export function EditableSection({
             const fid = `${id}-${f.key}`;
             const error = errors[f.key] || null;
             const common = { id: fid, label: f.label, error, hint: f.hint };
-            const wrap = f.wide || f.kind === 'textarea' ? 'form-grid__wide' : undefined;
+            const wrap = f.wide || f.kind === 'textarea' ? 'form-grid__wide' : f.half ? 'form-grid__half' : undefined;
             const value = draft[f.key] ?? '';
             return (
               <div key={f.key} className={wrap}>

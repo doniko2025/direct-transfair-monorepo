@@ -217,6 +217,7 @@ export default function AgencyCreatePage() {
             <Field
               id="ag-first"
               label="Prénom"
+              className="form-grid__half"
               value={form.adminFirstName}
               onChange={(e) => set('adminFirstName', e.target.value)}
               error={errors.adminFirstName}
@@ -226,6 +227,7 @@ export default function AgencyCreatePage() {
             <Field
               id="ag-last"
               label="Nom"
+              className="form-grid__half"
               value={form.adminLastName}
               onChange={(e) => set('adminLastName', e.target.value)}
               error={errors.adminLastName}

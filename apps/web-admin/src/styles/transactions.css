@@ -269,17 +269,61 @@
 }
 
 @media (max-width: 520px) {
+  /* Carte compacte : le titre et l'agence se font face sur la première ligne,
+     le montant et l'état viennent dessous. Le bloc de texte « disparaît » de la grille
+     (display: contents) pour que ses lignes se placent directement. */
   .tx-card {
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      'icon text'
-      'amount amount'
-      'foot foot';
+      'icon title agency'
+      'icon sub sub'
+      'icon company company'
+      'amount amount amount'
+      'foot foot foot';
+    align-items: center;
+    gap: 2px 12px;
+    padding: 14px 16px;
+  }
+
+  .tx-card__text {
+    display: contents;
+  }
+
+  .tx-card__title {
+    grid-area: title;
+    align-self: end;
+  }
+
+  .tx-card__sub {
+    grid-area: sub;
+  }
+
+  .tx-card__company {
+    grid-area: company;
+  }
+
+  .tx-card__agency {
+    grid-area: agency;
+    align-self: start;
+    justify-self: end;
+    max-width: 10rem;
+    font-size: 0.8125rem;
+  }
+
+  .tx-card__agency span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .tx-card__amount {
+    margin-top: 8px;
     justify-items: start;
     text-align: left;
+  }
+
+  .tx-card__foot {
+    margin-top: 4px;
   }
 
   .tx-card__meta {

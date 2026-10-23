@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { CompanySummary } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { CompanyMark } from '../../components/CompanyMark';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -163,19 +164,14 @@ export default function CompaniesPage() {
             aria-label="Rechercher une société"
           />
         </div>
-        <div className="tabs" role="group" aria-label="Filtrer par statut">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="tab"
-              aria-pressed={filter === t.id}
-              onClick={() => setFilter(t.id)}
-            >
-              {t.label}
-              <span>{t.count}</span>
-            </button>
-          ))}
+        <div className="toolbar__filters">
+          <FilterTabs
+            id="companies-status"
+            label="Filtrer par statut"
+            value={filter}
+            onChange={setFilter}
+            options={tabs}
+          />
         </div>
       </div>
 

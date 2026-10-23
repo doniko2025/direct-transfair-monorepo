@@ -1,5 +1,7 @@
 /* =========================================================
-   NOTIFICATIONS — boîte de réception de cartes
+   NOTIFICATIONS — boîte de réception de cartes compactes
+   Une carte = une ligne de titre + un aperçu d'une ligne + l'heure.
+   Le texte complet se lit dans une fenêtre (voir ConfirmDialog dans NotificationsPage).
    ========================================================= */
 
 .notif-actions {
@@ -8,33 +10,63 @@
   gap: 10px;
 }
 
+/* Nombre de notifications + « Tout marquer comme lu » (mobile) */
+.notif-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+
+.notif-summary .tx-summary {
+  margin-bottom: 0;
+}
+
 .notif-list {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   list-style: none;
 }
 
 .notif {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 16px 20px;
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--card);
   box-shadow: var(--sh-1);
 }
 
-.notif--unread {
-  box-shadow: inset 4px 0 0 var(--brand), var(--sh-1);
+.notif__open {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.notif__open:hover {
+  background: var(--brand-soft);
+}
+
+.notif__open:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .notif__icon {
   display: grid;
   flex: none;
   place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-md);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   background: var(--paper);
   color: var(--ink-2);
 }
@@ -59,10 +91,10 @@
   color: var(--danger);
 }
 
-.notif__body {
+.notif__main {
   display: grid;
   flex: 1;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -70,12 +102,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .notif__title {
-  overflow-wrap: anywhere;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--t-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* Non lue : titre en gras + pastille (plus de liseré de couleur sur la carte). */
 .notif--unread .notif__title {
   font-weight: 750;
 }
@@ -88,8 +126,29 @@
   background: var(--brand);
 }
 
-.notif__message {
+.notif__head .pill {
+  flex: none;
+}
+
+.notif__preview {
+  overflow: hidden;
   color: var(--ink-2);
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif__time {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+/* Fenêtre de lecture */
+.notif__message {
+  color: var(--ink);
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
@@ -100,12 +159,4 @@
   align-items: center;
   gap: 6px 10px;
   font-size: var(--t-sm);
-}
-
-.notif__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 18px;
-  margin-top: 2px;
 }

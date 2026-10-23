@@ -138,7 +138,7 @@ function CurrencyChip({ code, tone, onPress }: { code: string; tone: "forest" | 
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityLabel={`Devise ${code}`}
-      style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 36, paddingLeft: 5, paddingRight: 12, borderRadius: 18, backgroundColor: C.brume }}
+      style={{ flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 7, height: 36, paddingLeft: 5, paddingRight: 12, borderRadius: 18, backgroundColor: C.brume }}
     >
       <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: tone === "sun" ? C.sun : C.forest, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 13, fontWeight: "800", color: tone === "sun" ? C.sunInk : "#FFFFFF" }}>{glyph}</Text>
@@ -338,7 +338,7 @@ export default function ClientDashboard() {
               accessibilityLabel="Montant à envoyer"
               placeholder="0,00"
               placeholderTextColor={C.faint}
-              style={{ fontSize: 28, fontWeight: "800", letterSpacing: -0.6, color: C.ink, padding: 0, marginTop: 1, minWidth: 0, ...( { outlineStyle: "none" } as any) }}
+              style={{ fontSize: shownAmount.length <= 10 ? 28 : shownAmount.length <= 13 ? 22 : 18, fontWeight: "800", letterSpacing: -0.6, color: C.ink, padding: 0, marginTop: 1, minWidth: 0, ...( { outlineStyle: "none" } as any) }}
             />
           </View>
           <CurrencyChip code={primaryCurrency} tone="forest" />
@@ -365,7 +365,7 @@ export default function ClientDashboard() {
         </View>
 
         <View style={{ marginTop: 12 }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8 }}>
             {recentContacts.map((c) => {
               const on = selected?.name === c.name;
               return (

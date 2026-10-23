@@ -32,8 +32,8 @@ import type { FieldDef } from '../companies/EditableSection';
 import { EditableSection } from '../companies/EditableSection';
 
 const PROFILE_FIELDS: readonly FieldDef[] = [
-  { key: 'firstName', label: 'Prénom', required: true, maxLength: 80 },
-  { key: 'lastName', label: 'Nom', required: true, maxLength: 80 },
+  { key: 'firstName', label: 'Prénom', required: true, maxLength: 80, half: true },
+  { key: 'lastName', label: 'Nom', required: true, maxLength: 80, half: true },
   {
     key: 'phone',
     label: 'Téléphone',

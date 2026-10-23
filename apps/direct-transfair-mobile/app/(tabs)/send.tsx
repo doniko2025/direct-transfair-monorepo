@@ -351,6 +351,15 @@ const getCountryData = (countryName: string): CountryData => {
   );
 };
 
+// Taille des chiffres d'un montant : réduite quand le nombre s'allonge, pour qu'il reste lisible
+// sans jamais repousser la pastille de devise.
+const amountFontSize = (text: string, base: number): number => {
+  const n = text.length;
+  if (n <= 9) return base;
+  if (n <= 12) return Math.round(base * 0.8);
+  return Math.round(base * 0.62);
+};
+
 const fmt = (val: number, currency?: string): string => {
   const d = !currency || currency === "XOF" || currency === "GNF" ? 0 : 2;
   try {
@@ -1477,6 +1486,7 @@ useEffect(() => {
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
+                      keyboardShouldPersistTaps="handled"
                       contentContainerStyle={{ paddingBottom: 4 }}
                     >
                       {beneficiaries.map((item) => (
@@ -1529,7 +1539,7 @@ useEffect(() => {
                     <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>VOUS ENVOYEZ</Text>
                     <View style={s.amountInputRow}>
                       <TextInput
-                        style={[s.amountInput, { fontFamily: F.display }]}
+                        style={[s.amountInput, { fontFamily: F.display, fontSize: amountFontSize(rawAmount, 30) }]}
                         value={rawAmount}
                         onChangeText={(t) => { setAmountSource("SEND"); setRawAmount(t); }}
                         keyboardType="numeric" placeholder="000" placeholderTextColor={C.textFaint}
@@ -1540,7 +1550,9 @@ useEffect(() => {
                     </View>
                   </View>
                   <View style={s.amountArrow}>
-                    <Ionicons name="swap-horizontal-outline" size={18} color={C.g4} />
+                    <View style={{ transform: [{ rotate: "90deg" }] }}>
+                      <Ionicons name="swap-horizontal-outline" size={18} color={C.g4} />
+                    </View>
                   </View>
                   <View style={s.amountSide}>
                     <Text style={[s.amountSideLabel, { fontFamily: F.body }]}>
@@ -1554,7 +1566,7 @@ useEffect(() => {
                         champ "VOUS ENVOYEZ" se recalcule automatiquement. */}
                     <View style={s.amountInputRow}>
                       <TextInput
-                        style={[s.amountReceived, { fontFamily: F.display }]}
+                        style={[s.amountReceived, { fontFamily: F.display, fontSize: amountFontSize(rawReceivedAmount, 30) }]}
                         value={rawReceivedAmount}
                         onChangeText={(t) => { setAmountSource("RECEIVED"); setRawReceivedAmount(t); }}
                         keyboardType="numeric" placeholder="0" placeholderTextColor={C.textFaint}
@@ -1843,17 +1855,22 @@ const make_s = (C: Colors) => StyleSheet.create({
   addHintTxt:  { fontSize: 12, color: C.textMuted, fontWeight: "600" },
   addHintLink: { fontSize: 13, color: C.g4, fontWeight: "800" },
 
-  amountCard:      { flexDirection: "row", alignItems: "center", backgroundColor: C.field, borderRadius: 20, padding: 16, gap: 10 },
-  amountSide:      { flex: 1 },
+  // ✅ v5.1 — les deux montants sont EMPILÉS (envoi au-dessus, réception dessous) au lieu d'être côte à côte :
+  //    sur un téléphone étroit, deux montants de 7 chiffres + deux pastilles de devise + le bouton d'échange ne
+  //    tiennent pas sur une ligne, et le montant « poussait » la devise hors de la carte. Chaque montant dispose
+  //    maintenant de toute la largeur ; la pastille de devise garde sa taille (flexShrink 0) ; la taille des
+  //    chiffres se réduit d'elle-même quand le nombre s'allonge (amountFontSize).
+  amountCard:      { flexDirection: "column", alignItems: "stretch", backgroundColor: C.field, borderRadius: 20, padding: 16, gap: 8 },
+  amountSide:      { alignSelf: "stretch" },
   amountSideLabel: { fontSize: 10, fontWeight: "800", color: C.textMuted, letterSpacing: 0.8, marginBottom: 4 },
   amountInputRow:  { flexDirection: "row", alignItems: "center", gap: 8 },
-  amountInput:     { fontSize: 30, fontWeight: "800", color: C.text, letterSpacing: -1, minWidth: 60 },
+  amountInput:     { flex: 1, minWidth: 0, fontSize: 30, fontWeight: "800", color: C.text, letterSpacing: -1, padding: 0 },
   // ✅ v2.15 — minWidth ajouté (60, comme amountInput) : c'est
   // désormais un <TextInput>, pas un <Text>, et sans largeur minimale
   // un champ vide se réduit à ~0px et devient impossible à toucher.
-  amountReceived:  { fontSize: 26, fontWeight: "800", color: C.text, letterSpacing: -1, minWidth: 60 },
-  amountArrow:     { width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, justifyContent: "center", alignItems: "center" },
-  currBadge:       { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  amountReceived:  { flex: 1, minWidth: 0, fontSize: 30, fontWeight: "800", color: C.text, letterSpacing: -1, padding: 0 },
+  amountArrow:     { alignSelf: "center", width: 36, height: 36, borderRadius: 18, backgroundColor: C.surface, justifyContent: "center", alignItems: "center" },
+  currBadge:       { flexShrink: 0, minWidth: 54, alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   currTxt:         { fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
 
   rateChip: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 12, alignSelf: "flex-start", backgroundColor: C.ink, borderRadius: 99, paddingHorizontal: 12, paddingVertical: 7 },

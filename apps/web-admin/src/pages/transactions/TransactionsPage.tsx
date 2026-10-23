@@ -5,7 +5,9 @@
 // Le serveur renvoie toute la liste d'un coup : le web filtre en mémoire et n'affiche les cartes par tranches.
 
 import { useMemo, useState } from 'react';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
+import { RefreshButton } from '../../components/RefreshButton';
 import { SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -114,7 +116,7 @@ export default function TransactionsPage() {
               : 'Toutes les opérations de votre société, de la plus récente à la plus ancienne.'
         }
         actions={
-          <Button variant="secondary" onClick={reload} busy={loading && data !== null}>
+          <Button variant="secondary" className="hide-mobile" onClick={reload} busy={loading && data !== null}>
             Actualiser
           </Button>
         }
@@ -134,77 +136,76 @@ export default function TransactionsPage() {
             aria-label="Rechercher une transaction"
           />
         </div>
-        <SelectField
-          id="tx-period"
-          label="Période"
-          className="toolbar__select"
-          value={period === 'all' ? '' : period}
-          onChange={(e) => {
-            setPeriod((e.target.value || 'all') as Period);
-            resetPaging();
-          }}
-          options={PERIODS}
-          placeholder="Toute la période"
-        />
-        {types.length > 1 ? (
+        <RefreshButton onClick={reload} busy={loading && data !== null} />
+        <div className="toolbar__filters">
           <SelectField
-            id="tx-type"
-            label="Type d’opération"
+            id="tx-period"
+            label="Période"
             className="toolbar__select"
-            value={type}
+            value={period === 'all' ? '' : period}
             onChange={(e) => {
-              setType(e.target.value);
+              setPeriod((e.target.value || 'all') as Period);
               resetPaging();
             }}
-            options={types}
-            placeholder="Tous les types"
+            options={PERIODS}
+            placeholder="Toute la période"
+            compactPlaceholder="Période"
           />
-        ) : null}
-        {isSuper && companies.length > 1 ? (
-          <SelectField
-            id="tx-company"
-            label="Société"
-            className="toolbar__select"
-            value={company}
-            onChange={(e) => {
-              setCompany(e.target.value);
+          {types.length > 1 ? (
+            <SelectField
+              id="tx-type"
+              label="Type d’opération"
+              className="toolbar__select"
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                resetPaging();
+              }}
+              options={types}
+              placeholder="Tous les types"
+              compactPlaceholder="Types"
+            />
+          ) : null}
+          <FilterTabs
+            id="tx-status"
+            label="Filtrer par statut"
+            rowOnDesktop
+            value={tab}
+            onChange={(next) => {
+              setTab(next);
               resetPaging();
             }}
-            options={companies}
-            placeholder="Toutes les sociétés"
+            options={STATUS_TABS.map((t) => ({ id: t.id, label: t.label, count: tabCounts[t.id] }))}
           />
-        ) : null}
-        {!isAgent ? (
-          <button
-            type="button"
-            className="tab tab--toggle"
-            aria-pressed={flaggedOnly}
-            onClick={() => {
-              setFlaggedOnly((v) => !v);
-              resetPaging();
-            }}
-          >
-            Signalées
-          </button>
-        ) : null}
-      </div>
-
-      <div className="tabs tabs--row" role="group" aria-label="Filtrer par statut">
-        {STATUS_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className="tab"
-            aria-pressed={tab === t.id}
-            onClick={() => {
-              setTab(t.id);
-              resetPaging();
-            }}
-          >
-            {t.label}
-            <span>{tabCounts[t.id]}</span>
-          </button>
-        ))}
+          {isSuper && companies.length > 1 ? (
+            <SelectField
+              id="tx-company"
+              label="Société"
+              className="toolbar__select"
+              value={company}
+              onChange={(e) => {
+                setCompany(e.target.value);
+                resetPaging();
+              }}
+              options={companies}
+              placeholder="Toutes les sociétés"
+              compactPlaceholder="Sociétés"
+            />
+          ) : null}
+          {!isAgent ? (
+            <button
+              type="button"
+              className="tab tab--toggle"
+              aria-pressed={flaggedOnly}
+              onClick={() => {
+                setFlaggedOnly((v) => !v);
+                resetPaging();
+              }}
+            >
+              Signalées
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {loading && !data ? (

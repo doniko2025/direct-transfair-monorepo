@@ -332,6 +332,7 @@ export default function CompanyCreatePage() {
             <Field
               id="c-admin-first"
               label="Prénom"
+              className="form-grid__half"
               value={form.adminFirstName}
               onChange={(e) => set('adminFirstName', e.target.value)}
               error={errors.adminFirstName}
@@ -340,6 +341,7 @@ export default function CompanyCreatePage() {
             <Field
               id="c-admin-last"
               label="Nom"
+              className="form-grid__half"
               value={form.adminLastName}
               onChange={(e) => set('adminLastName', e.target.value)}
               error={errors.adminLastName}

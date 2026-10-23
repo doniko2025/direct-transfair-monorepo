@@ -14,6 +14,7 @@ import {
 import { Icon } from './Icon';
 import { Button } from './ui';
 import { HEX_COLOR } from '../lib/companyRules';
+import { MOBILE_QUERY, useMediaQuery } from '../lib/useMediaQuery';
 
 // ─── Aide / erreur sous un champ ─────────────────────────
 function FieldNote({ id, hint, error }: { id: string; hint?: string; error?: string | null }) {
@@ -38,9 +39,13 @@ interface SelectFieldProps extends SelectHTMLAttributes<HTMLSelectElement> {
   error?: string | null;
   options: readonly { value: string; label: string }[];
   placeholder?: string;
+  /** Libellé court de l'option vide, utilisé sur mobile où la liste est étroite (ex. « Période »). */
+  compactPlaceholder?: string;
 }
 
-export function SelectField({ label, hint, error, options, placeholder, id, className, ...rest }: SelectFieldProps) {
+export function SelectField({ label, hint, error, options, placeholder, compactPlaceholder, id, className, ...rest }: SelectFieldProps) {
+  const compact = useMediaQuery(MOBILE_QUERY);
+  const shownPlaceholder = compact && compactPlaceholder ? compactPlaceholder : placeholder;
   const inputId = id ?? `s-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
   const noteId = `${inputId}-note`;
   return (
@@ -53,8 +58,8 @@ export function SelectField({ label, hint, error, options, placeholder, id, clas
           aria-describedby={error || hint ? noteId : undefined}
           {...rest}
         >
-          {placeholder ? (
-            <option value="">{placeholder}</option>
+          {shownPlaceholder ? (
+            <option value="">{shownPlaceholder}</option>
           ) : null}
           {options.map((o) => (
             <option key={o.value} value={o.value}>

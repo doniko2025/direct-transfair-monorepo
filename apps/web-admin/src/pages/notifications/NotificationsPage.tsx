@@ -4,8 +4,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AppNotification } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
-import { SelectField } from '../../components/form';
+import { RefreshButton } from '../../components/RefreshButton';
+import { ConfirmDialog, SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { describeError } from '../../lib/errors';
@@ -19,53 +21,57 @@ const MAX = 100;
 
 type View = 'all' | 'unread';
 
-function NotificationCard({
-  n,
-  read,
-  busy,
-  onRead,
-}: {
-  n: AppNotification;
-  read: boolean;
-  busy: boolean;
-  onRead: (id: string) => void;
-}) {
+const VIEW_OPTIONS: readonly { id: View; label: string }[] = [
+  { id: 'all', label: 'Toutes' },
+  { id: 'unread', label: 'Non lues' },
+];
+
+// Carte compacte : une ligne de titre, un aperçu d'une ligne, l'heure. Le texte complet
+// s'ouvre dans une fenêtre (NotificationDetail) au clic.
+function NotificationCard({ n, read, onOpen }: { n: AppNotification; read: boolean; onOpen: (n: AppNotification) => void }) {
+  const view = viewOf(n.type);
+  return (
+    <li className={`notif${read ? '' : ' notif--unread'}`} data-id={n.id}>
+      <button type="button" className="notif__open" aria-haspopup="dialog" onClick={() => onOpen(n)}>
+        <span className={`notif__icon notif__icon--${view.tone}`} aria-hidden="true">
+          <Icon name={view.icon} size={18} />
+        </span>
+        <span className="notif__main">
+          <span className="notif__head">
+            <strong className="notif__title">{n.title}</strong>
+            {read ? null : <span className="notif__dot" aria-label="Non lue" />}
+            {isUrgent(n) ? <Pill tone="danger">{n.priority === 'URGENT' ? 'Urgent' : 'Important'}</Pill> : null}
+          </span>
+          <span className="notif__preview">{n.message}</span>
+        </span>
+        <time className="notif__time muted" dateTime={n.createdAt} title={fullDate(n.createdAt)}>
+          {when(n.createdAt)}
+        </time>
+      </button>
+    </li>
+  );
+}
+
+// Contenu de la fenêtre de lecture : le texte en entier, le type, la date complète et le lien éventuel.
+function NotificationDetail({ n, onNavigate }: { n: AppNotification; onNavigate: () => void }) {
   const view = viewOf(n.type);
   const txId = transactionIdOf(n);
   return (
-    <li className={`notif${read ? '' : ' notif--unread'}`} data-id={n.id}>
-      <span className={`notif__icon notif__icon--${view.tone}`} aria-hidden="true">
-        <Icon name={view.icon} size={20} />
-      </span>
-      <div className="notif__body">
-        <div className="notif__head">
-          <strong className="notif__title">{n.title}</strong>
-          {read ? null : <span className="notif__dot" aria-label="Non lue" />}
-        </div>
-        <p className="notif__message">{n.message}</p>
-        <div className="notif__meta">
-          <Pill tone={view.tone}>{view.label}</Pill>
-          {isUrgent(n) ? <Pill tone="danger">{n.priority === 'URGENT' ? 'Urgent' : 'Important'}</Pill> : null}
-          <time className="muted" dateTime={n.createdAt} title={fullDate(n.createdAt)}>
-            {when(n.createdAt)}
-          </time>
-        </div>
-        {txId || !read ? (
-          <div className="notif__actions">
-            {txId ? (
-              <Link className="link" to={`/transactions/${encodeURIComponent(txId)}`} onClick={() => !read && onRead(n.id)}>
-                Voir la transaction
-              </Link>
-            ) : null}
-            {read ? null : (
-              <button type="button" className="link-btn" disabled={busy} onClick={() => onRead(n.id)}>
-                Marquer comme lue
-              </button>
-            )}
-          </div>
-        ) : null}
+    <>
+      <div className="notif__meta">
+        <Pill tone={view.tone}>{view.label}</Pill>
+        {isUrgent(n) ? <Pill tone="danger">{n.priority === 'URGENT' ? 'Urgent' : 'Important'}</Pill> : null}
+        <time className="muted" dateTime={n.createdAt}>
+          {fullDate(n.createdAt)}
+        </time>
       </div>
-    </li>
+      <p className="notif__message">{n.message}</p>
+      {txId ? (
+        <Link className="link" to={`/transactions/${encodeURIComponent(txId)}`} onClick={onNavigate}>
+          Voir la transaction
+        </Link>
+      ) : null}
+    </>
   );
 }
 
@@ -74,12 +80,12 @@ export default function NotificationsPage() {
   const [view, setView] = useState<View>('all');
   const [type, setType] = useState('');
   const [limit, setLimit] = useState(FIRST);
+  const [opened, setOpened] = useState<AppNotification | null>(null);
 
   const list = useResource(() => api.notifications.list({ limit, unreadOnly: view === 'unread' }), [limit, view]);
 
   // Notifications marquées comme lues ici : affichées lues tout de suite, sans attendre le rechargement.
   const [readNow, setReadNow] = useState<ReadonlySet<string>>(new Set());
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
   const [failure, setFailure] = useState<string | null>(null);
   const [allBusy, setAllBusy] = useState(false);
 
@@ -92,7 +98,6 @@ export default function NotificationsPage() {
     async (id: string) => {
       setFailure(null);
       setReadNow((s) => new Set(s).add(id));
-      setPending((s) => new Set(s).add(id));
       try {
         await api.notifications.markRead(id);
         refresh();
@@ -103,12 +108,6 @@ export default function NotificationsPage() {
           return next;
         });
         setFailure(describeError(err).message);
-      } finally {
-        setPending((s) => {
-          const next = new Set(s);
-          next.delete(id);
-          return next;
-        });
       }
     },
     [refresh],
@@ -135,13 +134,19 @@ export default function NotificationsPage() {
     }
   }
 
+  // Ouvrir une notification non lue la marque comme lue : c'est la lire.
+  function open(n: AppNotification) {
+    setOpened(n);
+    if (!isRead(n)) void markRead(n.id);
+  }
+
   return (
     <>
       <PageHeader
         title="Notifications"
         description="Les messages qui vous sont adressés : transactions à traiter, alertes de sécurité, informations de la plateforme."
         actions={
-          <div className="notif-actions">
+          <div className="notif-actions hide-mobile">
             <Button variant="secondary" onClick={markAll} busy={allBusy} disabled={unread === 0 && unreadShown === 0}>
               Tout marquer comme lu
             </Button>
@@ -169,23 +174,33 @@ export default function NotificationsPage() {
       ) : null}
 
       <div className="toolbar">
-        <div className="tabs" role="group" aria-label="Filtrer les notifications">
-          <button type="button" className="tab" aria-pressed={view === 'all'} onClick={() => { setView('all'); setLimit(FIRST); }}>
-            Toutes
-          </button>
-          <button type="button" className="tab" aria-pressed={view === 'unread'} onClick={() => { setView('unread'); setLimit(FIRST); }}>
-            Non lues
-          </button>
-        </div>
-        <div className="toolbar__select">
+        <div className="toolbar__filters toolbar__filters--inline">
+          <FilterTabs
+            id="notif-view"
+            label="Filtrer les notifications"
+            value={view}
+            onChange={(next) => {
+              setView(next);
+              setLimit(FIRST);
+            }}
+            options={VIEW_OPTIONS}
+          />
           <SelectField
             id="notif-type"
             label="Type"
+            className="toolbar__select"
             value={type}
             onChange={(e) => setType(e.target.value)}
             options={[{ value: '', label: 'Tous les types' }, ...TYPE_OPTIONS]}
           />
         </div>
+        <RefreshButton
+          onClick={() => {
+            list.reload();
+            refresh();
+          }}
+          busy={list.loading && list.data !== null}
+        />
       </div>
 
       {list.loading && !list.data ? (
@@ -222,15 +237,22 @@ export default function NotificationsPage() {
         </Card>
       ) : (
         <>
-          <p className="tx-summary">
-            <strong>
-              {shown.length} {plural(shown.length, 'notification', 'notifications')}
-            </strong>
-            {unreadShown > 0 ? ` · ${unreadShown} ${plural(unreadShown, 'non lue', 'non lues')}` : ''}
-          </p>
+          <div className="notif-summary">
+            <p className="tx-summary">
+              <strong>
+                {shown.length} {plural(shown.length, 'notification', 'notifications')}
+              </strong>
+              {unreadShown > 0 ? ` · ${unreadShown} ${plural(unreadShown, 'non lue', 'non lues')}` : ''}
+            </p>
+            {unread > 0 || unreadShown > 0 ? (
+              <button type="button" className="link-btn show-mobile" disabled={allBusy} onClick={() => void markAll()}>
+                Tout marquer comme lu
+              </button>
+            ) : null}
+          </div>
           <ul className="notif-list">
             {shown.map((n) => (
-              <NotificationCard key={n.id} n={n} read={isRead(n)} busy={pending.has(n.id)} onRead={markRead} />
+              <NotificationCard key={n.id} n={n} read={isRead(n)} onOpen={open} />
             ))}
           </ul>
           {mayHaveMore ? (
@@ -244,6 +266,17 @@ export default function NotificationsPage() {
           ) : null}
         </>
       )}
+
+      <ConfirmDialog
+        open={opened !== null}
+        title={opened?.title ?? ''}
+        confirmLabel="Fermer"
+        hideCancel
+        onConfirm={() => setOpened(null)}
+        onCancel={() => setOpened(null)}
+      >
+        {opened ? <NotificationDetail n={opened} onNavigate={() => setOpened(null)} /> : null}
+      </ConfirmDialog>
     </>
   );
 }

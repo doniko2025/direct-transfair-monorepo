@@ -8,6 +8,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import type { PortalDomainEntry, PortalDomainResult, PortalDomainDnsMode, PortalDomainKind } from '@direct-transfair/shared';
 import { CompanyMark } from '../../components/CompanyMark';
 import { ConfirmDialog, CopyButton } from '../../components/form';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Field, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -343,13 +344,14 @@ export default function PortalDomainsPage() {
             aria-label="Rechercher une société ou un domaine"
           />
         </div>
-        <div className="tabs" role="group" aria-label="Filtrer par état">
-          {tabs.map((t) => (
-            <button key={t.id} type="button" className="tab" aria-pressed={filter === t.id} onClick={() => setFilter(t.id)}>
-              {t.label}
-              <span>{t.count}</span>
-            </button>
-          ))}
+        <div className="toolbar__filters">
+          <FilterTabs
+            id="domains-state"
+            label="Filtrer par état"
+            value={filter}
+            onChange={setFilter}
+            options={tabs}
+          />
         </div>
       </div>
 

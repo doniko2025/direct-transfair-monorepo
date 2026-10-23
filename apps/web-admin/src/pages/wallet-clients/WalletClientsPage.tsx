@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { UserSummary } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -159,38 +160,34 @@ export default function WalletClientsPage() {
             aria-label="Rechercher un client"
           />
         </div>
-        {countries.length > 1 ? (
-          <SelectField
-            id="wc-country"
-            label="Pays"
-            className="toolbar__select"
-            value={country}
-            onChange={(e) => {
-              setCountry(e.target.value);
+        <div className="toolbar__filters">
+          {countries.length > 1 ? (
+            <SelectField
+              id="wc-country"
+              label="Pays"
+              className="toolbar__select"
+              value={country}
+              onChange={(e) => {
+                setCountry(e.target.value);
+                setLimit(PAGE_SIZE);
+              }}
+              options={countries}
+              placeholder="Tous les pays"
+              compactPlaceholder="Pays"
+            />
+          ) : null}
+          <FilterTabs
+            id="wc-status"
+            label="Filtrer les clients"
+            rowOnDesktop
+            value={tab}
+            onChange={(next) => {
+              setTab(next);
               setLimit(PAGE_SIZE);
             }}
-            options={countries}
-            placeholder="Tous les pays"
+            options={CLIENT_TABS.map((t) => ({ id: t.id, label: t.label, count: counts[t.id] }))}
           />
-        ) : null}
-      </div>
-
-      <div className="tabs tabs--row" role="group" aria-label="Filtrer les clients">
-        {CLIENT_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className="tab"
-            aria-pressed={tab === t.id}
-            onClick={() => {
-              setTab(t.id);
-              setLimit(PAGE_SIZE);
-            }}
-          >
-            {t.label}
-            <span>{counts[t.id]}</span>
-          </button>
-        ))}
+        </div>
       </div>
 
       {loading && !data ? (

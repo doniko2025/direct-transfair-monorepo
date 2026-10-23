@@ -30,12 +30,12 @@ export function TxCard({ tx, viewer, showCompany }: { tx: Transaction; viewer: {
           <Icon name={view.icon} size={20} />
         </span>
         <div className="tx-card__text">
-          <strong>{view.title}</strong>
+          <strong className="tx-card__title">{view.title}</strong>
           <span className="tx-card__sub">{view.subtitle}</span>
           {agency ? (
             <span className="tx-card__agency" title="Agence dont la caisse a bougé">
               <Icon name="building" size={14} />
-              {agency}
+              <span>{agency}</span>
             </span>
           ) : null}
           {company ? <span className="tx-card__company">{company}</span> : null}

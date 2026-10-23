@@ -6,6 +6,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Agent } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -175,26 +176,28 @@ export default function AgentsPage() {
             aria-label="Rechercher un agent"
           />
         </div>
-        {agencyOptions.length > 1 ? (
-          <SelectField
-            id="agents-agency"
-            label="Agence"
-            className="toolbar__select"
-            value={agencyFilter}
-            onChange={(e) => setAgencyFilter(e.target.value)}
-            options={agencyOptions}
-            placeholder="Toutes les agences"
+        <div className="toolbar__filters">
+          {agencyOptions.length > 1 ? (
+            <SelectField
+              id="agents-agency"
+              label="Agence"
+              className="toolbar__select"
+              value={agencyFilter}
+              onChange={(e) => setAgencyFilter(e.target.value)}
+              options={agencyOptions}
+              placeholder="Toutes les agences"
+              compactPlaceholder="Agences"
+            />
+          ) : null}
+          <FilterTabs
+            id="agents-status"
+            label="Filtrer les agents"
+            rowOnDesktop
+            value={tab}
+            onChange={setTab}
+            options={tabs}
           />
-        ) : null}
-      </div>
-
-      <div className="tabs tabs--row" role="group" aria-label="Filtrer les agents">
-        {tabs.map((t) => (
-          <button key={t.id} type="button" className="tab" aria-pressed={tab === t.id} onClick={() => setTab(t.id)}>
-            {t.label}
-            <span>{t.count}</span>
-          </button>
-        ))}
+        </div>
       </div>
 
       {agents.loading && !agents.data ? (

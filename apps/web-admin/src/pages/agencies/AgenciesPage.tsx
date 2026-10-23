@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { Agency, AgencyType } from '@direct-transfair/shared';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -179,15 +180,16 @@ export default function AgenciesPage() {
             aria-label="Rechercher une agence"
           />
         </div>
-      </div>
-
-      <div className="tabs tabs--row" role="group" aria-label="Filtrer par type">
-        {tabs.map((t) => (
-          <button key={t.id} type="button" className="tab" aria-pressed={filter === t.id} onClick={() => setFilter(t.id)}>
-            {t.label}
-            <span>{t.count}</span>
-          </button>
-        ))}
+        <div className="toolbar__filters">
+          <FilterTabs
+            id="agencies-type"
+            label="Filtrer par type"
+            rowOnDesktop
+            value={filter}
+            onChange={setFilter}
+            options={tabs}
+          />
+        </div>
       </div>
 
       {loading && !data ? (

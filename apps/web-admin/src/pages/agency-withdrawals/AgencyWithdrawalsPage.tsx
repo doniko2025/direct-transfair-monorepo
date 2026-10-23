@@ -3,6 +3,7 @@
 // puis retrouver l'historique des mouvements de caisse (retraits, remises des agents, recharges).
 
 import { useCallback, useMemo, useState } from 'react';
+import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -144,35 +145,30 @@ export default function AgencyWithdrawalsPage() {
         </div>
 
         <div className="toolbar">
-          <SelectField
-            id="wd-agency"
-            label="Agence"
-            className="toolbar__select"
-            value={agencyFilter}
-            onChange={(e) => {
-              setAgencyFilter(e.target.value);
-              setLimit(PAGE);
-            }}
-            options={agencyOptions}
-          />
-        </div>
-
-        <div className="tabs tabs--row" role="group" aria-label="Filtrer les mouvements">
-          {CASH_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="tab"
-              aria-pressed={tab === t.id}
-              onClick={() => {
-                setTab(t.id);
+          <div className="toolbar__filters">
+            <SelectField
+              id="wd-agency"
+              label="Agence"
+              className="toolbar__select"
+              value={agencyFilter}
+              onChange={(e) => {
+                setAgencyFilter(e.target.value);
                 setLimit(PAGE);
               }}
-            >
-              {t.label}
-              <span>{counts[t.id]}</span>
-            </button>
-          ))}
+              options={agencyOptions}
+            />
+            <FilterTabs
+              id="wd-type"
+              label="Filtrer les mouvements"
+              rowOnDesktop
+              value={tab}
+              onChange={(next) => {
+                setTab(next);
+                setLimit(PAGE);
+              }}
+              options={CASH_TABS.map((t) => ({ id: t.id, label: t.label, count: counts[t.id] }))}
+            />
+          </div>
         </div>
 
         {history.loading && !history.data ? (

@@ -195,8 +195,19 @@
 }
 
 @media (max-width: 640px) {
+  /* Une colonne sur mobile, sauf les champs marqués « form-grid__half » (Prénom + Nom) :
+     deux par ligne. */
   .form-grid {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px 12px;
+  }
+
+  .form-grid > * {
+    grid-column: 1 / -1;
+  }
+
+  .form-grid > .form-grid__half {
+    grid-column: auto;
   }
 
   .dialog__body {

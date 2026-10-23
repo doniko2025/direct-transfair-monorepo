@@ -1,0 +1,122 @@
+/* =========================================================
+   MOBILE — rangement des barres d'outils
+   Importé en dernier : sur grand écran (> 640 px), ce fichier ne change rien
+   à l'affichage existant, il ne fait que masquer les éléments réservés au mobile.
+
+   Principe d'une barre d'outils sur mobile :
+     ligne 1 : recherche  +  bouton Actualiser (icône)
+     ligne 2 : les filtres côte à côte (période, type, statut…)
+   Un filtre en onglets (FilterTabs) devient une liste déroulante qui prend sa place
+   dans cette ligne, au lieu de plusieurs rangées d'onglets.
+   ========================================================= */
+
+/* ─── Éléments réservés au mobile : invisibles par défaut ─ */
+.toolbar__refresh,
+.toolbar__select--tabs,
+.show-mobile {
+  display: none;
+}
+
+/* Le groupe de filtres n'ajoute aucune boîte sur grand écran : ses enfants restent
+   des éléments directs de la barre d'outils, comme avant. */
+.toolbar__filters {
+  display: contents;
+}
+
+/* Onglets « en rangée » (statuts, types…) : sur grand écran ils occupent une ligne
+   à eux seuls, en bas de la barre d'outils. */
+.toolbar .tabs--row {
+  order: 1;
+  flex: 1 1 100%;
+  margin: 8px 0 0;
+}
+
+@media (max-width: 640px) {
+  .hide-mobile {
+    display: none !important;
+  }
+
+  .show-mobile {
+    display: inline;
+  }
+
+  .page-header {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  /* ─── Barre d'outils ─────────────────────────────────── */
+  .toolbar {
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .toolbar .search {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .toolbar .search input {
+    height: 44px;
+  }
+
+  .toolbar__refresh {
+    display: inline-flex;
+    flex: none;
+    width: 44px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .toolbar__refresh span:empty {
+    display: none;
+  }
+
+  /* Les filtres se partagent la largeur de la ligne ; au-delà de trois, ils passent à la suivante. */
+  .toolbar__filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    flex: 1 1 100%;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  /* Filtres qui partagent leur ligne avec le bouton Actualiser. */
+  .toolbar__filters--inline {
+    flex: 1 1 0;
+  }
+
+  .toolbar .tabs--desktop {
+    display: none;
+  }
+
+  .toolbar__select--tabs {
+    display: block;
+  }
+
+  .toolbar .toolbar__select {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .toolbar__select select {
+    height: 44px;
+    padding: 0 28px 0 14px;
+    font-size: 0.875rem;
+    text-overflow: ellipsis;
+  }
+
+  .toolbar__select .field__control--select::after {
+    right: 12px;
+  }
+
+  .toolbar .tab--toggle {
+    justify-content: center;
+    height: 44px;
+    padding: 0 10px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+}
