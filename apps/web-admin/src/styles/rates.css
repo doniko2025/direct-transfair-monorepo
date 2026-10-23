@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/rates.css */
 /* =========================================================
    TAUX DE CHANGE — cartes par couple, édition, historique
    ========================================================= */
@@ -13,7 +14,7 @@
   display: grid;
   align-content: start;
   gap: 8px;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);

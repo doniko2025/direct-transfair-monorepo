@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/users.css */
 /* =========================================================
    UTILISATEURS — annuaire de cartes et fiche
    ========================================================= */
@@ -37,17 +38,24 @@
   list-style: none;
 }
 
+/* Annuaire : cartes étroites (le modificateur laisse intacte la grille des opérations). */
+.user-grid--people {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 300px));
+  justify-content: start;
+  gap: 10px;
+}
+
+/* Carte fine : identité en haut, pastilles et date d'inscription sur UNE seule ligne. */
 .user-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
-    'avatar text'
-    'pills pills'
-    'since since';
+    'avatar text text'
+    'pills pills since';
   align-items: center;
-  gap: 12px 14px;
+  gap: 8px 12px;
   height: 100%;
-  padding: 18px 20px;
+  padding: 12px 14px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -63,8 +71,8 @@
 
 .user-card__avatar {
   grid-area: avatar;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
 }
 
 .user-card__text {
@@ -84,7 +92,7 @@
 .user-card__where {
   overflow: hidden;
   color: var(--ink-2);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -103,7 +111,9 @@
 .user-card__since {
   grid-area: since;
   color: var(--ink-3);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .more {
@@ -126,6 +136,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .user-grid--people {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 520px) {

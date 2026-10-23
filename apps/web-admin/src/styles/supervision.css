@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/supervision.css */
 /* =========================================================
    SUPERVISION — points d'attention, santé, chiffres, alertes, journal d'audit
    ========================================================= */
@@ -60,7 +61,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
   gap: 16px;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -132,7 +133,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -197,7 +198,7 @@
   display: grid;
   align-content: start;
   gap: 4px;
-  padding: 18px 20px;
+  padding: 14px 16px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -253,7 +254,7 @@
   display: grid;
   align-content: start;
   gap: 10px;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);

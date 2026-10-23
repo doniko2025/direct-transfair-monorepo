@@ -1,4 +1,4 @@
-// src/pages/users/UsersPage.tsx
+// apps/web-admin/src/pages/users/UsersPage.tsx
 // Annuaire des comptes : une carte par utilisateur, filtres par profil et statut,
 // recherche, et (super admin) filtre par société.
 // Le serveur renvoie toute la liste d'un coup (pas de pagination) : le web filtre en mémoire
@@ -14,6 +14,7 @@ import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../component
 import { api } from '../../lib/api';
 import { formatDate } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 import {
   ACCOUNT_LABEL,
@@ -74,6 +75,7 @@ function UserCard({ user, showCompany }: { user: UserSummary; showCompany: boole
 export default function UsersPage() {
   const me = useCurrentUser();
   const navigate = useNavigate();
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const flash = (useLocation().state ?? null) as { deleted?: string } | null;
   const [flashVisible, setFlashVisible] = useState(Boolean(flash?.deleted));
   const isSuper = me.role === 'SUPER_ADMIN';
@@ -173,7 +175,7 @@ export default function UsersPage() {
         </div>
       ) : null}
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
@@ -183,7 +185,7 @@ export default function UsersPage() {
               setQuery(e.target.value);
               setLimit(PAGE_SIZE);
             }}
-            placeholder="Nom, email, téléphone ou société"
+            placeholder={mobile ? 'Rechercher' : 'Nom, email, téléphone ou société'}
             aria-label="Rechercher un utilisateur"
           />
         </div>
@@ -270,7 +272,7 @@ export default function UsersPage() {
         </Card>
       ) : (
         <>
-          <ul className="user-grid">
+          <ul className="user-grid user-grid--people">
             {visible.slice(0, limit).map((u) => (
               <UserCard key={u.id} user={u} showCompany={isSuper} />
             ))}

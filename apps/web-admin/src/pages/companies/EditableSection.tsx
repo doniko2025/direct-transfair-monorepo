@@ -1,4 +1,4 @@
-// src/pages/companies/EditableSection.tsx
+// apps/web-admin/src/pages/companies/EditableSection.tsx
 // Carte d'information qui se transforme en formulaire (« Modifier »).
 // Pilotée par une liste de champs : une seule implémentation pour l'identité, le portail,
 // l'apparence et les mentions légales d'une société.
@@ -36,6 +36,11 @@ export interface FieldDef {
   wide?: boolean;
   /** Reste à moitié de largeur, même sur mobile (Prénom + Nom côte à côte). */
   half?: boolean;
+  /**
+   * Fiche en lecture : le champ se range à côté de son voisin (deux par ligne), libellé au-dessus
+   * de la valeur. Suit « half » par défaut ; le formulaire, lui, garde sa propre disposition.
+   */
+  paired?: boolean;
 }
 
 type Values = Record<string, string | null | undefined>;
@@ -236,14 +241,14 @@ export function EditableSection({
         </form>
       ) : (
         <>
-          <dl className="kv">
+          <dl className="kv kv--grid">
             {fields.map((f) => {
               const raw = values[f.key];
               const text = raw && String(raw).trim() ? String(raw) : null;
               const shown =
                 f.kind === 'select' ? (f.options?.find((o) => o.value === text)?.label ?? text) : text;
               return (
-                <div className="kv__row" key={f.key}>
+                <div className={(f.paired ?? f.half) ? 'kv__row kv__row--half' : 'kv__row'} key={f.key}>
                   <dt>{f.label}</dt>
                   <dd>
                     {shown ? (

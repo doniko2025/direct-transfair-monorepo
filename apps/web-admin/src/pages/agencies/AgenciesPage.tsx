@@ -1,5 +1,5 @@
-// src/pages/agencies/AgenciesPage.tsx
-// Les agences de la société : une carte par agence (responsable, équipe, fonds), recherche et filtre par type.
+// apps/web-admin/src/pages/agencies/AgenciesPage.tsx
+// Les agences de la société : une carte compacte par agence (responsable, équipe, fonds), recherche et filtre par type.
 
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -8,10 +8,11 @@ import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
-import { agencyMatches, AGENCY_TYPE_LABEL, agentName, managerOf, totalsByCurrency, typeLabel } from '../../lib/agencyRules';
+import { agencyMatches, AGENCY_TYPE_LABEL, agentName, managerOf, typeLabel } from '../../lib/agencyRules';
 import { formatAmount } from '../../lib/companyRules';
 import { countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 
 type Filter = 'all' | AgencyType;
@@ -44,19 +45,6 @@ function AgencyCard({ agency }: { agency: Agency }) {
           <Pill tone={agency.type === 'PARTNER' ? 'neutral' : 'brand'}>{typeLabel(agency.type)}</Pill>
         </div>
 
-        {agency.isActive ? (
-          <p className="ag-card__manager">
-            {manager ? (
-              <>
-                <Icon name="user" size={16} />
-                <span>{agentName(manager)}</span>
-              </>
-            ) : (
-              <Pill tone="warn">Aucun responsable</Pill>
-            )}
-          </p>
-        ) : null}
-
         {agency.wallets && agency.wallets.length > 0 ? (
           <ul className="ag-card__funds">
             {agency.wallets.map((w) => (
@@ -68,9 +56,20 @@ function AgencyCard({ agency }: { agency: Agency }) {
         )}
 
         <div className="ag-card__foot">
-          <span>{agents === 0 ? 'Aucun agent' : plural(agents, 'agent', 'agents')}</span>
-          {!agency.isActive ? <Pill tone="neutral">Désactivée</Pill> : null}
+          {agency.isActive ? (
+            manager ? (
+              <span className="ag-card__manager">
+                <Icon name="user" size={16} />
+                <span>{agentName(manager)}</span>
+              </span>
+            ) : (
+              <Pill tone="warn">Aucun responsable</Pill>
+            )
+          ) : (
+            <Pill tone="neutral">Désactivée</Pill>
+          )}
           {agency.isCertified ? <Pill tone="ok" icon="shield">Certifiée</Pill> : null}
+          <span className="ag-card__count">{agents === 0 ? 'Aucun agent' : plural(agents, 'agent', 'agents')}</span>
         </div>
       </Link>
     </li>
@@ -79,6 +78,7 @@ function AgencyCard({ agency }: { agency: Agency }) {
 
 export default function AgenciesPage() {
   const navigate = useNavigate();
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const flash = (useLocation().state ?? null) as Flash | null;
   const [flashVisible, setFlashVisible] = useState(Boolean(flash?.removed));
 
@@ -101,7 +101,6 @@ export default function AgenciesPage() {
     { id: 'PARTNER', label: `${AGENCY_TYPE_LABEL.PARTNER}s`, count: scoped.filter((a) => a.type === 'PARTNER').length },
   ];
 
-  const totals = useMemo(() => totalsByCurrency(agencies), [agencies]);
   const agentTotal = agencies.reduce((n, a) => n + (a.agents?.length ?? 0), 0);
   const withoutManager = agencies.filter((a) => a.isActive && !a.managerId).length;
 
@@ -154,29 +153,17 @@ export default function AgenciesPage() {
             <span>Sans responsable</span>
             <strong>{withoutManager}</strong>
           </li>
-          <li className="ag-stats__funds">
-            <span>Fonds en caisse</span>
-            {totals.length === 0 ? (
-              <strong>0</strong>
-            ) : (
-              <strong>
-                {totals.map((t) => (
-                  <span key={t.currency}>{formatAmount(t.amount, t.currency)}</span>
-                ))}
-              </strong>
-            )}
-          </li>
         </ul>
       ) : null}
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Nom, ville, code ou responsable"
+            placeholder={mobile ? 'Rechercher' : 'Nom, ville, code ou responsable'}
             aria-label="Rechercher une agence"
           />
         </div>
@@ -184,7 +171,6 @@ export default function AgenciesPage() {
           <FilterTabs
             id="agencies-type"
             label="Filtrer par type"
-            rowOnDesktop
             value={filter}
             onChange={setFilter}
             options={tabs}

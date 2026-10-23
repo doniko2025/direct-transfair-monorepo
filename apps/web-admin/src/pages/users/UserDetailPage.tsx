@@ -1,4 +1,4 @@
-// src/pages/users/UserDetailPage.tsx
+// apps/web-admin/src/pages/users/UserDetailPage.tsx
 // Fiche d'un compte : profil modifiable, informations de compte, conformité,
 // portefeuilles, suspension / réactivation et suppression.
 
@@ -41,13 +41,15 @@ const PROFILE_FIELDS: readonly FieldDef[] = [
     maxLength: 25,
     hint: 'Format international, exemple : +33612345678. Laisser vide pour retirer le numéro.',
     validate: (v) => (/^\+?[0-9 ().-]{6,25}$/.test(v) ? null : 'Numéro de téléphone invalide.'),
+    paired: true,
   },
-  { key: 'city', label: 'Ville', maxLength: 80 },
+  { key: 'city', label: 'Ville', maxLength: 80, paired: true },
 ];
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+/** `half` : la ligne se range à côté de sa voisine (deux champs par ligne). */
+function Row({ label, children, half = false }: { label: string; children: React.ReactNode; half?: boolean }) {
   return (
-    <div className="kv__row">
+    <div className={half ? 'kv__row kv__row--half' : 'kv__row'}>
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -233,10 +235,12 @@ export default function UserDetailPage() {
                 <p>Identifiant de connexion et vérifications.</p>
               </div>
             </header>
-            <dl className="kv">
+            <dl className="kv kv--grid">
               <Row label="Adresse email">{user.email}</Row>
-              <Row label="Email vérifié">{yesNo(user.isEmailVerified, 'Vérifié', 'Non vérifié')}</Row>
-              <Row label="Téléphone vérifié">
+              <Row label="Email vérifié" half>
+                {yesNo(user.isEmailVerified, 'Vérifié', 'Non vérifié')}
+              </Row>
+              <Row label="Téléphone vérifié" half>
                 {user.phone ? yesNo(user.isPhoneVerified, 'Vérifié', 'Non vérifié') : <span className="muted">Aucun numéro</span>}
               </Row>
               <Row label="Double authentification">{yesNo(user.mfaEnabled, 'Activée', 'Désactivée', 'neutral')}</Row>
@@ -261,7 +265,7 @@ export default function UserDetailPage() {
                 <p>Niveau de vérification d'identité et statut de conformité.</p>
               </div>
             </header>
-            <dl className="kv">
+            <dl className="kv kv--grid">
               <Row label="Vérification d'identité">
                 {user.kycLevel ? KYC_LABEL[user.kycLevel] : <span className="muted">Inconnue</span>}
               </Row>

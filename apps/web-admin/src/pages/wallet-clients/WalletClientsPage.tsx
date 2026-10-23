@@ -1,4 +1,4 @@
-// src/pages/wallet-clients/WalletClientsPage.tsx
+// apps/web-admin/src/pages/wallet-clients/WalletClientsPage.tsx
 // Les clients wallet de la société (comptes de rôle USER) : une carte par client avec ses soldes,
 // sa vérification d'identité et son statut. Le serveur renvoie toute la liste d'un coup :
 // le web filtre en mémoire et n'affiche les cartes que par tranches.
@@ -14,9 +14,10 @@ import { api } from '../../lib/api';
 import { formatAmount, formatDate } from '../../lib/companyRules';
 import { countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 import { ACCOUNT_LABEL, ACCOUNT_TONE, COMPLIANCE_LABEL, COMPLIANCE_TONE, KYC_LABEL, accountState, fullName, initialsOf } from '../../lib/userRules';
-import { CLIENT_TABS, clientMatches, heldFunds, inTab, needsReview, type ClientTab } from '../../lib/walletClientRules';
+import { CLIENT_TABS, clientMatches, inTab, needsReview, type ClientTab } from '../../lib/walletClientRules';
 
 const PAGE_SIZE = 48;
 
@@ -73,6 +74,7 @@ function ClientCard({ client }: { client: UserSummary }) {
 }
 
 export default function WalletClientsPage() {
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const { data, error, loading, reload } = useResource(async () => (await api.users.list()).filter((u) => u.role === 'USER'), []);
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState<ClientTab>('all');
@@ -100,7 +102,6 @@ export default function WalletClientsPage() {
     [scoped],
   );
 
-  const funds = useMemo(() => heldFunds(clients), [clients]);
   const filtered = query.trim() !== '' || country !== '' || tab !== 'all';
 
   function reset() {
@@ -131,22 +132,10 @@ export default function WalletClientsPage() {
             <span>À vérifier</span>
             <strong>{clients.filter(needsReview).length}</strong>
           </li>
-          <li className="ag-stats__funds">
-            <span>Fonds détenus pour vos clients</span>
-            {funds.length === 0 ? (
-              <strong>0</strong>
-            ) : (
-              <strong>
-                {funds.map((f) => (
-                  <span key={f}>{f}</span>
-                ))}
-              </strong>
-            )}
-          </li>
         </ul>
       ) : null}
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
@@ -156,7 +145,7 @@ export default function WalletClientsPage() {
               setQuery(e.target.value);
               setLimit(PAGE_SIZE);
             }}
-            placeholder="Nom, téléphone, email ou ville"
+            placeholder={mobile ? 'Rechercher' : 'Nom, téléphone, email ou ville'}
             aria-label="Rechercher un client"
           />
         </div>
@@ -179,7 +168,6 @@ export default function WalletClientsPage() {
           <FilterTabs
             id="wc-status"
             label="Filtrer les clients"
-            rowOnDesktop
             value={tab}
             onChange={(next) => {
               setTab(next);

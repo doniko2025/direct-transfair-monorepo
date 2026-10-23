@@ -1,4 +1,4 @@
-// src/pages/DashboardPage.tsx
+// apps/web-admin/src/pages/DashboardPage.tsx
 // Tableau de bord de la phase 1 : accueil par rôle + état de la session.
 // Les vrais indicateurs (volumes, trésorerie…) arrivent avec les modules.
 
@@ -32,9 +32,10 @@ function roleSentence(role: WebRole, company: string, agency: string | null): st
   }
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/** `half` : la ligne se range à côté de sa voisine (deux champs par ligne). */
+function Row({ label, children, half = false }: { label: string; children: ReactNode; half?: boolean }) {
   return (
-    <div className="kv__row">
+    <div className={half ? 'kv__row kv__row--half' : 'kv__row'}>
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -73,10 +74,18 @@ export default function DashboardPage() {
 
         <Card>
           <h2 className="card-title">Votre session</h2>
-          <dl className="kv">
+          <dl className="kv kv--grid">
             <Row label="Adresse email">{user.email}</Row>
-            {user.phone ? <Row label="Téléphone">{user.phone}</Row> : null}
-            {!isPlatform ? <Row label="Société">{company}</Row> : null}
+            {user.phone ? (
+              <Row label="Téléphone" half>
+                {user.phone}
+              </Row>
+            ) : null}
+            {!isPlatform ? (
+              <Row label="Société" half>
+                {company}
+              </Row>
+            ) : null}
             {agency ? <Row label="Agence">{agency}</Row> : null}
             <Row label="Contacts vérifiés">
               <span className="kv__pills">

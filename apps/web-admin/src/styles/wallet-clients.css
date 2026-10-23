@@ -1,11 +1,13 @@
+/* apps/web-admin/src/styles/wallet-clients.css */
 /* =========================================================
    CLIENTS WALLET + RETRAITS D'AGENCE
    ========================================================= */
 
 .wc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 300px));
+  justify-content: start;
+  gap: 10px;
   list-style: none;
 }
 
@@ -13,12 +15,13 @@
   display: flex;
 }
 
+/* Carte compacte : identité, soldes, puis pastilles + date sur une même ligne. */
 .wc-card {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: 8px;
   width: 100%;
-  padding: 20px 22px;
+  padding: 14px 16px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -35,13 +38,13 @@
 .wc-card__head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .wc-card__avatar {
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
 }
 
 .wc-card__text {
@@ -60,7 +63,7 @@
 .wc-card__text span {
   overflow: hidden;
   color: var(--ink-2);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -72,9 +75,9 @@
 .wc-card__funds {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 16px;
+  gap: 2px 14px;
   list-style: none;
-  font-size: var(--t-lg);
+  font-size: 1.0625rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
@@ -88,7 +91,7 @@
 .wc-card__funds small {
   margin-left: 6px;
   color: var(--ink-3);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
   font-weight: 600;
   text-decoration: none;
   display: inline-block;
@@ -102,9 +105,16 @@
 }
 
 .wc-card__since {
-  flex-basis: 100%;
+  margin-left: auto;
   color: var(--ink-3);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .wc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── Retraits d'agence ────────────────────────────────── */

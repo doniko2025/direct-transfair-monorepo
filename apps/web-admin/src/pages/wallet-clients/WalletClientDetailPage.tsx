@@ -1,4 +1,4 @@
-// src/pages/wallet-clients/WalletClientDetailPage.tsx
+// apps/web-admin/src/pages/wallet-clients/WalletClientDetailPage.tsx
 // Fiche d'un client wallet : portefeuilles, vérification d'identité et dernières opérations
 // (envois et réceptions). Le profil, la suspension et la suppression restent sur la fiche du compte.
 // v2 (phase 6) : l'admin de société change le niveau KYC du client (qui décide de ses plafonds d'envoi).
@@ -200,7 +200,7 @@ export default function WalletClientDetailPage() {
               }
             />
           ) : null}
-          <dl className="kv">
+          <dl className="kv kv--grid">
             <div className="kv__row">
               <dt>Vérification d'identité</dt>
               <dd>

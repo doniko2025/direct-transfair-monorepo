@@ -1,4 +1,5 @@
 //apps/backend/src/notifications/notifications.service.ts
+// ✅ v1.2 : deleteMany(userId, {ids|all}) — suppression d'une sélection ou de toutes les notifications de l'utilisateur (jamais celles d'un autre).
 // ✅ v1.1 : les notifications expirées (expiresAt) ne sont plus renvoyées, la date de lecture (readAt)
 //   est enregistrée, la liste accepte limit / unreadOnly et le nombre de non lues est disponible.
 //   Sans paramètre, GET /notifications renvoie toujours les 50 dernières (application mobile inchangée).
@@ -58,5 +59,12 @@ export class NotificationsService {
       where: { userId, isRead: false },
       data: { isRead: true, readAt: new Date() },
     });
+  }
+
+  /** Supprime les notifications de CET utilisateur : celles listées dans `ids`, ou toutes si `all`. */
+  async deleteMany(userId: string, opts: { ids?: string[]; all?: boolean }) {
+    const where = opts.all ? { userId } : { userId, id: { in: opts.ids ?? [] } };
+    const res = await this.prisma.notification.deleteMany({ where });
+    return { deleted: res.count };
   }
 }

@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/components.css */
 /* ─── Cartes ─────────────────────────────────────────────
    "raised" : grande carte blanche portée par une ombre.
    "flat"   : carte secondaire, teintée, sans ombre, rayon plus fin. */
@@ -374,6 +375,35 @@
 .kv--compact .kv__row {
   padding: 8px 0;
   border-color: color-mix(in oklab, var(--brand) 12%, white);
+}
+
+/* Liste en grille : deux colonnes, libellé AU-DESSUS de la valeur sur tous les écrans.
+   Un champ occupe toute la ligne, sauf ceux marqués « kv__row--half » : deux champs
+   voisins se rangent alors côte à côte (Nom + Prénom, Téléphone + Ville…). */
+.kv--grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
+
+.kv--grid .kv__row {
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 9px 0;
+}
+
+.kv--grid .kv__row--half {
+  grid-column: auto;
+}
+
+/* Deux champs appariés en tête de liste : pas de filet au-dessus du second. */
+.kv--grid .kv__row--half:first-child + .kv__row--half {
+  border-top: 0;
+}
+
+.kv--grid dt {
+  font-size: var(--t-sm);
 }
 
 @media (max-width: 520px) {

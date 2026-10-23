@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v12.1 — Direct Transf'air
+// CLIENT DASHBOARD v12.2 — Direct Transf'air
+// ✅ v12.2 : CONTACT SÉLECTIONNÉ BIEN VISIBLE — la pastille choisie passe en vert forêt plein, texte blanc gras, coche jaune à la place des initiales.
 // ✅ v12.1 : ACCUEIL ALLÉGÉ ET PLUS SOIGNÉ — montants ramenés à 28 px (plafonnés même si le téléphone agrandit les polices), couloir réduit
 //    (176 → 152 px), calculateur en deux panneaux arrondis (« Tu envoies » encadré, « Montant reçu » teinté) reliés par un bouton d'échange,
 //    bouton d'envoi en pilule plus fin, raccourcis en pastilles rondes avec légende, « Ce mois-ci » compacté. CONTENU ET LOGIQUE INCHANGÉS.
@@ -374,12 +375,15 @@ export default function ClientDashboard() {
                   onPress={() => { setPickedContact(c.name); setPickedDest(null); }}
                   accessibilityRole="button"
                   accessibilityState={{ selected: on }}
-                  style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 34, paddingLeft: 6, paddingRight: 13, borderRadius: 17, borderWidth: 1.5, borderColor: on ? C.sun : C.line, backgroundColor: on ? C.sunSoft : C.surface }}
+                  style={{ flexDirection: "row", alignItems: "center", gap: 7, height: 34, paddingLeft: 6, paddingRight: 13, borderRadius: 17, borderWidth: 1.5, borderColor: on ? C.forest : C.line, backgroundColor: on ? C.forest : C.surface }}
                 >
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: "#F3E3B0", alignItems: "center", justifyContent: "center" }}>
-                    <Text style={{ fontSize: 10, fontWeight: "800", color: "#6A5415" }}>{initialsOf(c.name)}</Text>
+                  {/* Sélectionné : pastille pleine vert forêt + coche jaune ; non sélectionné : initiales sur fond clair. */}
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: on ? C.sun : "#F3E3B0", alignItems: "center", justifyContent: "center" }}>
+                    {on
+                      ? <Ionicons name="checkmark" size={14} color={C.forest} />
+                      : <Text style={{ fontSize: 10, fontWeight: "800", color: "#6A5415" }}>{initialsOf(c.name)}</Text>}
                   </View>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: C.forest }} numberOfLines={1}>{c.name.split(" ")[0]}</Text>
+                  <Text style={{ fontSize: 13, fontWeight: on ? "800" : "700", color: on ? "#FFFFFF" : C.forest }} numberOfLines={1}>{c.name.split(" ")[0]}</Text>
                 </Pressable>
               );
             })}

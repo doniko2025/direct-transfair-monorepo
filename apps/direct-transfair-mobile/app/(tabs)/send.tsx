@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v5.0 — Direct Transf'air
+// SEND MONEY v5.1 — Direct Transf'air
+// ✅ v5.1 : FIX — on peut de nouveau choisir un autre bénéficiaire (Cash Pickup) que celui passé dans l'URL
+//    (`beneficiaryId`) : les paramètres de route n'étaient pas appliqués une fois mais à chaque rendu,
+//    ce qui réinitialisait la sélection. Voir « v3.2 » au-dessus de l'effet des paramètres. LOGIQUE D'ENVOI INCHANGÉE.
 // ✅ v5.0 : DESIGN « CORRIDOR » — palette/polices issues du design system (feuille, forêt, brume), bouton d'envoi jaune
 //    soleil (coins 20, 60 px), polices Manrope/Fraunces, icônes Lucide. Nouveau paramètre de route `amount` : le
 //    montant saisi sur l'accueil arrive déjà rempli. LOGIQUE INCHANGÉE.
@@ -889,19 +892,33 @@ export default function SendMoneyScreen() {
     ]).start();
   }, []);
 
+  // ✅ v3.2 — FIX : impossible de choisir un autre bénéficiaire que celui reçu dans l'URL.
+  //   CAUSE : cet effet dépendait de l'objet `params`, que expo-router renvoie sous une NOUVELLE
+  //   référence à chaque rendu. Dès qu'on touchait Alghassimou ou Djamilatou, le rendu relançait
+  //   l'effet, qui remettait aussitôt `beneficiaryId` (Omar) dans selectedCashId (idem pour le
+  //   téléphone et le montant). CORRECTIF : on ne dépend plus que des VALEURS des paramètres
+  //   (texte), donc les paramètres de route ne sont appliqués qu'une fois, ou quand ils changent
+  //   vraiment (nouvelle navigation vers l'écran).
+  const firstParam = (v: string | string[] | undefined): string | undefined =>
+    Array.isArray(v) ? v[0] : v;
+  const pMode          = firstParam(params.mode);
+  const pPhone         = firstParam(params.phone);
+  const pBeneficiaryId = firstParam(params.beneficiaryId);
+  const pAmount        = firstParam(params.amount);
+
   useEffect(() => {
-    if (params.mode) {
-      const m = params.mode as "WALLET" | "CASH";
+    if (pMode) {
+      const m = pMode as "WALLET" | "CASH";
       setMode(m); setIsModeLocked(true);
-      if (m === "WALLET" && params.phone) setWalletInput(params.phone as string);
-      if (m === "CASH" && params.beneficiaryId) setSelectedCashId(params.beneficiaryId as string);
+      if (m === "WALLET" && pPhone) setWalletInput(pPhone);
+      if (m === "CASH" && pBeneficiaryId) setSelectedCashId(pBeneficiaryId);
     }
     // ✅ v3.1 — montant pré-rempli depuis l'accueil « Corridor » (champ « Tu envoies »)
-    if (params.amount) {
-      const a = String(params.amount).replace(",", ".");
+    if (pAmount) {
+      const a = String(pAmount).replace(",", ".");
       if (Number(a) > 0) { setRawAmount(a); setAmountSource("SEND"); }
     }
-  }, [params]);
+  }, [pMode, pPhone, pBeneficiaryId, pAmount]);
 
 useEffect(() => {
     (api.http as any).get("/commissions/fees")

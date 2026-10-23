@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/fees.css */
 /* =========================================================
    FRAIS D'ENVOI — cartes par mode de retrait, cartes par société, journal
    ========================================================= */
@@ -28,7 +29,7 @@
   display: grid;
   align-content: start;
   gap: 8px;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -187,7 +188,7 @@
 }
 
 .fee-log {
-  padding: 16px 20px;
+  padding: 12px 16px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);

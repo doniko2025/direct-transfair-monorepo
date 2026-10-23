@@ -1,4 +1,4 @@
-// src/pages/companies/CompaniesPage.tsx
+// apps/web-admin/src/pages/companies/CompaniesPage.tsx
 // Liste des sociétés de transfert (SUPER_ADMIN) : une carte par société, recherche et filtre par statut.
 
 import { useMemo, useState } from 'react';
@@ -11,6 +11,7 @@ import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../component
 import { api } from '../../lib/api';
 import { formatAmount, isActiveStatus, safeColor, statusLabel, statusTone } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 
 type Filter = 'all' | 'active' | 'attention';
@@ -91,6 +92,7 @@ function CompanyCard({ company }: { company: CompanySummary }) {
 
 export default function CompaniesPage() {
   const navigate = useNavigate();
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const location = useLocation();
   const flash = (location.state ?? null) as ListState | null;
 
@@ -153,14 +155,14 @@ export default function CompaniesPage() {
         </div>
       ) : null}
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher par nom, code ou domaine"
+            placeholder={mobile ? 'Rechercher' : 'Rechercher par nom, code ou domaine'}
             aria-label="Rechercher une société"
           />
         </div>

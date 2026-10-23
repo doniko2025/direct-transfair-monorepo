@@ -1,4 +1,4 @@
-// src/pages/transactions/TransactionDetailPage.tsx
+// apps/web-admin/src/pages/transactions/TransactionDetailPage.tsx
 // Fiche d'une transaction : montants, parties, règlement, historique et — pour un administrateur —
 // les changements de statut que le serveur accepte (transferts) et la décision sur un paiement B2B.
 
@@ -33,9 +33,10 @@ import { formatDateTime } from '../../lib/userRules';
 import { useResource } from '../../lib/useResource';
 import { useCurrentUser } from '../../providers/AuthProvider';
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+/** `half` : la ligne se range à côté de sa voisine (deux champs par ligne). */
+function Row({ label, children, half = false }: { label: string; children: ReactNode; half?: boolean }) {
   return (
-    <div className="kv__row">
+    <div className={half ? 'kv__row kv__row--half' : 'kv__row'}>
       <dt>{label}</dt>
       <dd>{children}</dd>
     </div>
@@ -303,8 +304,8 @@ export default function TransactionDetailPage() {
 
         <div className="detail-grid">
           <SectionCard id="tx-parties" icon="user" title="Parties" subtitle="Qui envoie et qui reçoit.">
-            <dl className="kv">
-              <Row label="Expéditeur">
+            <dl className="kv kv--grid">
+              <Row label="Expéditeur" half={Boolean(sender?.phone)}>
                 {isAdmin && sender?.id ? (
                   <Link className="link" to={`/users/${encodeURIComponent(sender.id)}`}>
                     {senderName(tx)}
@@ -313,9 +314,19 @@ export default function TransactionDetailPage() {
                   senderName(tx)
                 )}
               </Row>
-              {sender?.phone ? <Row label="Téléphone de l’expéditeur">{sender.phone}</Row> : null}
-              <Row label="Bénéficiaire">{who ?? <span className="muted">Aucun (opération interne)</span>}</Row>
-              {tx.beneficiary?.phone ? <Row label="Téléphone du bénéficiaire">{tx.beneficiary.phone}</Row> : null}
+              {sender?.phone ? (
+                <Row label="Téléphone" half>
+                  {sender.phone}
+                </Row>
+              ) : null}
+              <Row label="Bénéficiaire" half={Boolean(tx.beneficiary?.phone)}>
+                {who ?? <span className="muted">Aucun (opération interne)</span>}
+              </Row>
+              {tx.beneficiary?.phone ? (
+                <Row label="Téléphone" half>
+                  {tx.beneficiary.phone}
+                </Row>
+              ) : null}
               {tx.beneficiary?.country ? (
                 <Row label="Destination">{[tx.beneficiary.city, tx.beneficiary.country].filter(Boolean).join(', ')}</Row>
               ) : null}
@@ -334,13 +345,23 @@ export default function TransactionDetailPage() {
           </SectionCard>
 
           <SectionCard id="tx-amounts" icon="wallet" title="Montants" subtitle="Ce qui est débité et ce qui est reçu.">
-            <dl className="kv">
-              <Row label="Montant envoyé">{formatAmount(tx.amount, tx.currency)}</Row>
-              {fees ? <Row label="Frais">{fees}</Row> : null}
-              <Row label="Total débité">
+            <dl className="kv kv--grid">
+              <Row label="Montant envoyé" half={Boolean(fees)}>
+                {formatAmount(tx.amount, tx.currency)}
+              </Row>
+              {fees ? (
+                <Row label="Frais" half>
+                  {fees}
+                </Row>
+              ) : null}
+              <Row label="Total débité" half={Boolean(converted)}>
                 <strong>{formatAmount(tx.total, tx.currency)}</strong>
               </Row>
-              {converted ? <Row label="Montant reçu">{converted}</Row> : null}
+              {converted ? (
+                <Row label="Montant reçu" half>
+                  {converted}
+                </Row>
+              ) : null}
               {tx.exchangeRate && tx.targetCurrency ? (
                 <Row label="Taux appliqué">
                   1 {tx.currency} = {Number(tx.exchangeRate).toLocaleString('fr-FR', { maximumFractionDigits: 6 })} {tx.targetCurrency}
@@ -357,7 +378,7 @@ export default function TransactionDetailPage() {
 
         <div className="detail-grid">
           <SectionCard id="tx-payout" icon="send" title="Règlement" subtitle="Comment l’argent entre et sort.">
-            <dl className="kv">
+            <dl className="kv kv--grid">
               {tx.agency?.name ? (
                 <Row label="Caisse d’agence">
                   {me.role === 'COMPANY_ADMIN' ? (
@@ -369,14 +390,26 @@ export default function TransactionDetailPage() {
                   )}
                 </Row>
               ) : null}
-              {tx.paymentMethod ? <Row label="Paiement">{PAYMENT_LABEL[tx.paymentMethod] ?? tx.paymentMethod}</Row> : null}
-              {tx.payoutMethod ? <Row label="Versement">{PAYOUT_LABEL[tx.payoutMethod] ?? tx.payoutMethod}</Row> : null}
+              {tx.paymentMethod ? (
+                <Row label="Paiement" half={Boolean(tx.payoutMethod)}>
+                  {PAYMENT_LABEL[tx.paymentMethod] ?? tx.paymentMethod}
+                </Row>
+              ) : null}
+              {tx.payoutMethod ? (
+                <Row label="Versement" half={Boolean(tx.paymentMethod)}>
+                  {PAYOUT_LABEL[tx.payoutMethod] ?? tx.payoutMethod}
+                </Row>
+              ) : null}
               {tx.withdrawal ? (
                 <>
-                  <Row label="Retrait">
+                  <Row label="Retrait" half={Boolean(tx.withdrawal.processedAt)}>
                     <Pill tone={WITHDRAWAL_TONE[tx.withdrawal.status]}>{WITHDRAWAL_LABEL[tx.withdrawal.status] ?? tx.withdrawal.status}</Pill>
                   </Row>
-                  {tx.withdrawal.processedAt ? <Row label="Retiré le">{formatDateTime(tx.withdrawal.processedAt)}</Row> : null}
+                  {tx.withdrawal.processedAt ? (
+                    <Row label="Retiré le" half>
+                      {formatDateTime(tx.withdrawal.processedAt)}
+                    </Row>
+                  ) : null}
                   {tx.withdrawal.rejectionReason ? <Row label="Motif du refus">{tx.withdrawal.rejectionReason}</Row> : null}
                 </>
               ) : null}

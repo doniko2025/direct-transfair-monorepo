@@ -1,6 +1,8 @@
 // apps/backend/src/notifications/notifications.controller.ts
 // =========================================================
-// NOTIFICATIONS CONTROLLER v4.2 — Direct Transf'air
+// NOTIFICATIONS CONTROLLER v4.3 — Direct Transf'air
+// ✅ v4.3 : POST /notifications/delete { ids?: string[], all?: boolean } → { deleted } (suppression partielle ou totale,
+//   limitée aux notifications de l'utilisateur connecté).
 // ✅ v4.2 : GET /notifications accepte ?limit (1-100) et ?unreadOnly=true ;
 //   nouvelle route GET /notifications/unread-count → { count } (pastille du menu web).
 // ✅ v4.1 : FIX ordre des routes PATCH
@@ -9,10 +11,11 @@
 //   jamais la route exacte → updateMany ne tourne jamais
 // =========================================================
 
-import { Controller, Get, Patch, Param, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Patch, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ListNotificationsQueryDto } from './dto/list-notifications.dto';
+import { DeleteNotificationsDto } from './dto/delete-notifications.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -40,6 +43,16 @@ export class NotificationsController {
   @Patch('read-all')
   async markAllAsRead(@Req() req) {
     return this.notificationsService.markAllAsRead(req.user.id);
+  }
+
+  // Suppression : une sélection (ids) ou tout (all: true). Route exacte, sans conflit avec ':id'.
+  @Post('delete')
+  @HttpCode(200)
+  async deleteNotifications(@Req() req, @Body() body: DeleteNotificationsDto) {
+    if (!body.all && !body.ids?.length) {
+      throw new BadRequestException('Indiquez les notifications à supprimer (ids) ou all: true.');
+    }
+    return this.notificationsService.deleteMany(req.user.id, { ids: body.ids, all: body.all === true });
   }
 
   // Route dynamique toujours APRÈS la route exacte

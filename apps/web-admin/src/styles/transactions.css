@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/transactions.css */
 /* =========================================================
    TRANSACTIONS — cartes d'opérations, fiche et historique
    ========================================================= */
@@ -25,9 +26,9 @@
     'icon text amount'
     'foot foot foot';
   align-items: center;
-  gap: 14px 14px;
+  gap: 10px 12px;
   height: 100%;
-  padding: 18px 20px;
+  padding: 14px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);

@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/agencies.css */
 /* =========================================================
    AGENCES ET AGENTS — résumé, cartes d'agences, cartes d'agents
    ========================================================= */
@@ -12,31 +13,34 @@ a.person:hover {
   background: color-mix(in oklab, var(--brand) 10%, white);
 }
 
-/* ── Résumé du réseau ─────────────────────────────────── */
+/* ── Résumé du réseau : trois repères sur UNE seule ligne, compacts ─────── */
 .ag-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 520px;
+  margin-bottom: 14px;
   list-style: none;
 }
 
 .ag-stats li {
   display: grid;
   align-content: start;
-  gap: 4px;
-  padding: 14px 18px;
+  gap: 2px;
+  min-width: 0;
+  padding: 10px 14px;
   border-radius: var(--r-md);
   background: color-mix(in oklab, var(--brand) 5%, white);
 }
 
 .ag-stats span {
   color: var(--ink-2);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
+  line-height: 1.25;
 }
 
 .ag-stats strong {
-  font-size: var(--t-xl);
+  font-size: 1.25rem;
   font-stretch: 90%;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -46,39 +50,29 @@ a.person:hover {
   background: color-mix(in oklab, var(--accent) 14%, white);
 }
 
-.ag-stats__funds {
-  grid-column: span 2;
-}
-
-.ag-stats__funds strong {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 18px;
-  font-size: var(--t-lg);
-}
-
-/* ── Cartes d'agences ─────────────────────────────────── */
+/* ── Cartes d'agences : étroites et compactes ───────────── */
 .ag-grid,
 .ag-people {
   display: grid;
-  gap: 14px;
+  justify-content: start;
+  gap: 12px;
   list-style: none;
 }
 
 .ag-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 300px));
 }
 
 .ag-people {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 340px));
 }
 
 .ag-card {
   display: grid;
   align-content: start;
-  gap: 12px;
+  gap: 10px;
   height: 100%;
-  padding: 20px 22px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -95,15 +89,15 @@ a.person:hover {
 .ag-card__head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .ag-card__icon {
   display: grid;
   flex: none;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--r-md);
   background: var(--brand-soft);
   color: var(--brand-deep);
@@ -117,7 +111,7 @@ a.person:hover {
 
 .ag-card__title strong {
   overflow: hidden;
-  font-size: var(--t-lg);
+  font-size: var(--t-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -125,36 +119,47 @@ a.person:hover {
 .ag-card__title span {
   overflow: hidden;
   color: var(--ink-2);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ag-card__manager {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--ink-2);
-  font-size: var(--t-sm);
 }
 
 .ag-card__funds {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 16px;
+  gap: 2px 14px;
   list-style: none;
-  font-size: var(--t-lg);
+  font-size: 1.0625rem;
   font-variant-numeric: tabular-nums;
   font-weight: 650;
 }
 
+/* Pied de carte : responsable, pastilles et nombre d'agents sur UNE seule ligne. */
 .ag-card__foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 10px;
   color: var(--ink-3);
-  font-size: var(--t-sm);
+  font-size: 0.8125rem;
+}
+
+.ag-card__manager {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--ink-2);
+}
+
+.ag-card__manager span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ag-card__count {
+  margin-left: auto;
 }
 
 .ag-hero__icon {
@@ -167,8 +172,8 @@ a.person:hover {
 .ag-person {
   display: grid;
   align-content: start;
-  gap: 14px;
-  padding: 20px 22px;
+  gap: 10px;
+  padding: 16px 18px;
   border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--sh-1);
@@ -177,13 +182,13 @@ a.person:hover {
 .ag-person__head {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
 .ag-person__avatar {
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: 40px;
+  height: 40px;
 }
 
 .ag-person__text {
@@ -224,7 +229,7 @@ a.person:hover {
 
 .ag-person__facts {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   margin: 0;
   font-size: var(--t-sm);
 }
@@ -254,12 +259,12 @@ a.person:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding-top: 14px;
+  padding-top: 12px;
   border-top: 1px solid var(--line-soft);
 }
 
 .ag-person__actions .btn {
-  min-height: 40px;
+  min-height: 38px;
   padding-inline: 14px;
   font-size: var(--t-sm);
 }
@@ -292,8 +297,27 @@ a.person:hover {
   font-weight: 400;
 }
 
-@media (max-width: 520px) {
-  .ag-stats__funds {
-    grid-column: auto;
+@media (max-width: 640px) {
+  /* Mobile : une colonne pleine largeur, cartes plus serrées. */
+  .ag-grid,
+  .ag-people {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .ag-card {
+    padding: 14px 16px;
+  }
+
+  .ag-person {
+    padding: 14px 16px;
+  }
+
+  .ag-stats {
+    max-width: none;
+  }
+
+  .ag-stats li {
+    padding: 9px 12px;
   }
 }

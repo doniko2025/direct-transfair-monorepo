@@ -1,4 +1,4 @@
-// src/pages/companies/companyFields.ts
+// apps/web-admin/src/pages/companies/companyFields.ts
 // Champs éditables de la fiche société, regroupés par carte.
 // Volontairement absents : `country` et `ownerCountry` (le backend en recalcule la devise
 // par défaut de la société à chaque mise à jour — à ne pas toucher sans le vouloir),
@@ -12,17 +12,18 @@ const urlRule = (v: string) => (/^https?:\/\/\S+\.\S+$/i.test(v) ? null : 'Adres
 
 export const IDENTITY_FIELDS: readonly FieldDef[] = [
   { key: 'name', label: 'Nom de la société', required: true, maxLength: 120 },
-  { key: 'activitySector', label: "Secteur d'activité", maxLength: 120 },
+  { key: 'activitySector', label: "Secteur d'activité", maxLength: 120, paired: true },
   {
     key: 'subscriptionType',
     label: "Type d'abonnement",
     kind: 'select',
     required: true,
     options: Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label })),
+    paired: true,
   },
   { key: 'contactEmail', label: 'Email de contact', kind: 'email', validate: emailRule },
-  { key: 'contactPhone', label: 'Téléphone de contact', kind: 'tel', maxLength: 30 },
-  { key: 'city', label: 'Ville', maxLength: 80 },
+  { key: 'contactPhone', label: 'Téléphone de contact', kind: 'tel', maxLength: 30, paired: true },
+  { key: 'city', label: 'Ville', maxLength: 80, paired: true },
   { key: 'website', label: 'Site web', kind: 'url', validate: urlRule, placeholder: 'https://' },
   { key: 'address', label: 'Adresse', wide: true, maxLength: 200 },
 ];
@@ -55,6 +56,7 @@ export const APPEARANCE_FIELDS: readonly FieldDef[] = [
     kind: 'color',
     required: true,
     fallback: '#059669',
+    paired: true,
     validate: (v) => (HEX_COLOR.test(v) ? null : 'Code couleur invalide, exemple : #059669.'),
   },
   {
@@ -63,6 +65,7 @@ export const APPEARANCE_FIELDS: readonly FieldDef[] = [
     kind: 'color',
     required: true,
     fallback: '#10B981',
+    paired: true,
     validate: (v) => (HEX_COLOR.test(v) ? null : 'Code couleur invalide, exemple : #10B981.'),
   },
   { key: 'tagline', label: 'Slogan', maxLength: 140, wide: true },
@@ -74,10 +77,10 @@ export const APPEARANCE_FIELDS: readonly FieldDef[] = [
 export const LEGAL_FIELDS: readonly FieldDef[] = [
   { key: 'legalCompanyName', label: 'Raison sociale', maxLength: 160, wide: true },
   { key: 'regulatorName', label: 'Autorité de contrôle', maxLength: 200, wide: true },
-  { key: 'regulatorAcronym', label: 'Sigle de l’autorité', maxLength: 20 },
-  { key: 'regulatoryFrameworkLabel', label: 'Cadre réglementaire', maxLength: 40, hint: 'Ex. DSP2. Vide : le badge est masqué.' },
-  { key: 'regulatorLicenseType', label: "Type d'agrément", maxLength: 120 },
-  { key: 'regulatorLicenseNumber', label: "Numéro d'agrément", maxLength: 60 },
+  { key: 'regulatorAcronym', label: 'Sigle de l’autorité', maxLength: 20, paired: true },
+  { key: 'regulatoryFrameworkLabel', label: 'Cadre réglementaire', maxLength: 40, hint: 'Ex. DSP2. Vide : le badge est masqué.', paired: true },
+  { key: 'regulatorLicenseType', label: "Type d'agrément", maxLength: 120, paired: true },
+  { key: 'regulatorLicenseNumber', label: "Numéro d'agrément", maxLength: 60, paired: true },
   { key: 'capitalSocial', label: 'Capital social', maxLength: 80 },
   { key: 'supportEmail', label: 'Email d’assistance', kind: 'email', validate: emailRule },
   { key: 'whatsappNumber', label: 'WhatsApp', kind: 'tel', maxLength: 30 },

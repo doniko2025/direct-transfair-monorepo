@@ -1,4 +1,4 @@
-// src/pages/portal-domains/PortalDomainsPage.tsx
+// apps/web-admin/src/pages/portal-domains/PortalDomainsPage.tsx
 // Domaines des portails de sociétés (SUPER_ADMIN) : une carte par société avec l'état d'avancement du domaine
 // (nameservers à pointer, enregistrements DNS à ajouter, validation, actif), recherche et filtres.
 // Le serveur fait avancer chaque domaine tout seul ; l'écran se rafraîchit pendant qu'un domaine est en attente.
@@ -14,6 +14,7 @@ import { Button, Card, Field, Notice, PageHeader, Pill, Spinner } from '../../co
 import { api } from '../../lib/api';
 import { safeColor } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import {
   STATUS_LABEL,
   STATUS_TONE,
@@ -164,6 +165,7 @@ function DomainCard({
 
 // ─── Page ────────────────────────────────────────────────
 export default function PortalDomainsPage() {
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const [params, setParams] = useSearchParams();
   const list = useResource(() => api.portalDomains.list(), []);
   const config = useResource(() => api.portalDomains.config(), []);
@@ -333,14 +335,14 @@ export default function PortalDomainsPage() {
         ) : null}
       </div>
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Rechercher par société, code ou domaine"
+            placeholder={mobile ? 'Rechercher' : 'Rechercher par société, code ou domaine'}
             aria-label="Rechercher une société ou un domaine"
           />
         </div>

@@ -1,4 +1,4 @@
-// src/pages/agents/AgentsPage.tsx
+// apps/web-admin/src/pages/agents/AgentsPage.tsx
 // Les agents de la société : une carte par agent avec son agence, ses fonds et ses actions
 // (changer d'agence, nommer responsable, nouveau mot de passe). La suspension et la suppression
 // restent sur la fiche du compte.
@@ -14,6 +14,7 @@ import { api } from '../../lib/api';
 import { agentMatches } from '../../lib/agencyRules';
 import { formatAmount } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 import { ACCOUNT_LABEL, ACCOUNT_TONE, accountState, formatDateTime, fullName, initialsOf } from '../../lib/userRules';
 import { AssignAgencyDialog, ResetPasswordDialog, SetManagerDialog } from './AgentDialogs';
@@ -91,6 +92,7 @@ function AgentCard({ agent, onOp }: { agent: Agent; onOp: (op: Op) => void }) {
 
 export default function AgentsPage() {
   const navigate = useNavigate();
+  const mobile = useMediaQuery(MOBILE_QUERY);
   const [params, setParams] = useSearchParams();
   const agencyFilter = params.get('agency') ?? '';
 
@@ -165,14 +167,14 @@ export default function AgentsPage() {
         </div>
       ) : null}
 
-      <div className="toolbar">
+      <div className="toolbar toolbar--inline">
         <div className="search">
           <Icon name="search" size={18} />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Nom, email, téléphone ou agence"
+            placeholder={mobile ? 'Rechercher' : 'Nom, email, téléphone ou agence'}
             aria-label="Rechercher un agent"
           />
         </div>
@@ -192,7 +194,6 @@ export default function AgentsPage() {
           <FilterTabs
             id="agents-status"
             label="Filtrer les agents"
-            rowOnDesktop
             value={tab}
             onChange={setTab}
             options={tabs}

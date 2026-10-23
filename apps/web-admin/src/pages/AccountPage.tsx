@@ -1,4 +1,4 @@
-// src/pages/AccountPage.tsx
+// apps/web-admin/src/pages/AccountPage.tsx
 // v1.1 — 🔥 AJOUT : carte « Mot de passe » (ChangePasswordCard). Avant, la page affichait
 //        « la modification du mot de passe arrive avec les prochains modules » : un
 //        utilisateur ne pouvait pas changer son mot de passe depuis le back-office
@@ -27,10 +27,14 @@ export default function AccountPage() {
       <div className="stack">
         <Card>
           <h2 className="card-title">Identité</h2>
-          <dl className="kv">
-            <div className="kv__row">
+          <dl className="kv kv--grid">
+            <div className="kv__row kv__row--half">
               <dt>Nom</dt>
               <dd>{fullName}</dd>
+            </div>
+            <div className="kv__row kv__row--half">
+              <dt>Rôle</dt>
+              <dd>{ROLE_LABEL[role]}</dd>
             </div>
             <div className="kv__row">
               <dt>Adresse email</dt>
@@ -39,10 +43,6 @@ export default function AccountPage() {
             <div className="kv__row">
               <dt>Téléphone</dt>
               <dd>{user.phone || '—'}</dd>
-            </div>
-            <div className="kv__row">
-              <dt>Rôle</dt>
-              <dd>{ROLE_LABEL[role]}</dd>
             </div>
           </dl>
         </Card>

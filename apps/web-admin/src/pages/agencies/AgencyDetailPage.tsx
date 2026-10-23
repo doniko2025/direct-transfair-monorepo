@@ -1,4 +1,4 @@
-// src/pages/agencies/AgencyDetailPage.tsx
+// apps/web-admin/src/pages/agencies/AgencyDetailPage.tsx
 // Fiche d'une agence : informations modifiables (dont le pays : la caisse principale suit sa devise), caisse,
 // équipe et désactivation.
 
@@ -17,9 +17,11 @@ import { useResource } from '../../lib/useResource';
 import { initialsOf } from '../../lib/userRules';
 import { EditableSection, type FieldDef } from '../companies/EditableSection';
 
+// Ordre de la fiche (lecture) : Nom + Ville, Pays + Code agence, Nom du responsable + Type
+// se partagent chacun une ligne ; les autres champs gardent une ligne entière.
 const FIELDS: readonly FieldDef[] = [
-  { key: 'name', label: "Nom de l'agence", required: true, maxLength: 120, wide: true },
-  { key: 'city', label: 'Ville', required: true, maxLength: 80 },
+  { key: 'name', label: "Nom de l'agence", required: true, maxLength: 120, wide: true, paired: true },
+  { key: 'city', label: 'Ville', required: true, maxLength: 80, paired: true },
   {
     key: 'country',
     label: 'Pays',
@@ -27,6 +29,15 @@ const FIELDS: readonly FieldDef[] = [
     required: true,
     options: COUNTRIES.map((c) => ({ value: c.code, label: c.name })),
     hint: 'En changeant de pays, la caisse principale passe dans la devise du nouveau pays. L’ancienne caisse reste visible avec son solde.',
+    paired: true,
+  },
+  {
+    key: 'code',
+    label: 'Code agence',
+    maxLength: 16,
+    hint: 'Majuscules, chiffres et tiret. Exemple : CKY-01.',
+    validate: (v) => (AGENCY_CODE.test(v) ? null : '2 à 16 caractères : majuscules, chiffres, tiret.'),
+    paired: true,
   },
   { key: 'address', label: 'Adresse', required: true, maxLength: 200 },
   {
@@ -38,13 +49,6 @@ const FIELDS: readonly FieldDef[] = [
     validate: (v) => (PHONE.test(v) ? null : 'Numéro de téléphone invalide.'),
   },
   {
-    key: 'code',
-    label: 'Code agence',
-    maxLength: 16,
-    hint: 'Majuscules, chiffres et tiret. Exemple : CKY-01.',
-    validate: (v) => (AGENCY_CODE.test(v) ? null : '2 à 16 caractères : majuscules, chiffres, tiret.'),
-  },
-  {
     key: 'email',
     label: 'Email du responsable',
     kind: 'email',
@@ -53,8 +57,8 @@ const FIELDS: readonly FieldDef[] = [
     hint: 'C’est son identifiant de connexion.',
     validate: (v) => (EMAIL.test(v) ? null : 'Adresse email invalide.'),
   },
-  { key: 'managerName', label: 'Nom du responsable', maxLength: 120, hint: 'Prénom puis nom.' },
-  { key: 'type', label: 'Type', kind: 'select', options: AGENCY_TYPE_OPTIONS },
+  { key: 'managerName', label: 'Nom du responsable', maxLength: 120, hint: 'Prénom puis nom.', paired: true },
+  { key: 'type', label: 'Type', kind: 'select', options: AGENCY_TYPE_OPTIONS, paired: true },
 ];
 
 export default function AgencyDetailPage() {
