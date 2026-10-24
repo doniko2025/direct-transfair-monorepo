@@ -1,4 +1,5 @@
-// src/pages/companies/CompanyDetailPage.tsx
+// apps/web-admin/src/pages/companies/CompanyDetailPage.tsx
+// L'aperçu d'apparence est dans AppearancePreview.tsx (partagé avec la création).
 // Lot C : la section « Portail web » renvoie vers /portal-domains pour la mise en ligne réelle du domaine.
 // Fiche d'une société : identité, portail, apparence, mentions légales (édition par section),
 // équipe, portefeuilles, statut d'abonnement et suppression.
@@ -11,12 +12,10 @@ import { CompanyMark } from '../../components/CompanyMark';
 import { ConfirmDialog } from '../../components/form';
 import { Button, Card, Field, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
-import { readableOn } from '../../lib/colors';
 import {
   formatAmount,
   formatDate,
   isActiveStatus,
-  safeColor,
   statusLabel,
   statusTone,
 } from '../../lib/companyRules';
@@ -25,6 +24,8 @@ import { describeError } from '../../lib/errors';
 import { useResource } from '../../lib/useResource';
 import { ROLE_LABEL } from '../../navigation';
 import { APPEARANCE_FIELDS, IDENTITY_FIELDS, LEGAL_FIELDS, PORTAL_FIELDS } from './companyFields';
+import { AppearancePreview } from './AppearancePreview';
+import { CompanyContracts } from './CompanyContracts';
 import { EditableSection } from './EditableSection';
 
 const PERSON_ROLE: Record<string, string> = {
@@ -35,24 +36,6 @@ const PERSON_ROLE: Record<string, string> = {
 function initials(first: string | null, last: string | null, email: string): string {
   const letters = `${first?.[0] ?? ''}${last?.[0] ?? ''}`.trim();
   return (letters || email[0] || '?').toUpperCase();
-}
-
-function AppearancePreview({ draft }: { draft: Record<string, string> }) {
-  const primary = safeColor(draft.primaryColor, '#059669');
-  const accent = safeColor(draft.secondaryColor, '#10B981');
-  return (
-    <div className="preview" aria-label="Aperçu de la page de connexion">
-      <div className="preview__brand" style={{ background: primary, color: readableOn(primary) }}>
-        <span className="preview__dot" style={{ background: accent }} aria-hidden="true" />
-        <strong>{draft.tagline || 'Votre slogan apparaît ici'}</strong>
-      </div>
-      <div className="preview__form" aria-hidden="true">
-        <span />
-        <span />
-        <i style={{ background: primary }} />
-      </div>
-    </div>
-  );
 }
 
 export default function CompanyDetailPage() {
@@ -265,6 +248,12 @@ export default function CompanyDetailPage() {
             onSave={save}
           />
         </div>
+
+        <CompanyContracts
+          companyId={company.id}
+          defaultKind={company.subscriptionType === 'PURCHASE' ? 'PURCHASE' : 'RENTAL'}
+          defaultEmail={company.email}
+        />
 
         <Card as="section" aria-labelledby="team-title" className="section-card">
           <header className="section-card__head">

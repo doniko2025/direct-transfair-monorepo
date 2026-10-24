@@ -1,7 +1,16 @@
 // apps/backend/src/clients/clients.service.ts
 // =========================================================
 // ✅ v4.13 (phase 7) : la société système protégée contre la suppression est lue dans la configuration plateforme (PLATFORM_TENANT_CODE).
-// CLIENTS SERVICE v4.13
+// CLIENTS SERVICE v4.16
+// ✅ v4.16 : create(dto, issuedById?) émet un contrat de location / d'achat quand `dto.contract` est présent, et joint son lien de
+//   signature en ligne au courriel de bienvenue (identifiants + signature dans un seul e-mail). Retourne aussi `contract` et
+//   `contractError` (la société reste créée même si le contrat échoue). ContractsService est le dernier paramètre du constructeur.
+// ✅ v4.15 : le logo (création et mise à jour) est validé par logo-rules.ts : adresse web ou image importée en data URL
+//   (PNG / JPG / WebP / GIF, 100 000 caractères au plus), vide = logo retiré. Avant, n'importe quelle chaîne était
+//   acceptée (PATCH /clients/:id n'est pas validé). Permet d'importer le logo depuis l'appareil (web-admin).
+// ✅ v4.14 : create() enregistre dès la création la ville, le site web, l'adresse de la société et les mentions légales
+//   (raison sociale, autorité de contrôle, agrément, capital, assistance, médiateur) — tout ce qui n'était modifiable qu'après
+//   coup depuis la fiche société. Aucun autre comportement modifié.
 // ✅ v4.12 : findPublicByHost — un domaine propre est reconnu avec ou sans « www. » (lot C : le portail est servi sur
 //   le domaine nu ET sur www, mais customDomain n'en stocke qu'un). Comportement précédent conservé (correspondance exacte).
 // ✅ v4.10 conservé intégralement
@@ -46,6 +55,9 @@ import * as crypto from 'crypto';
 import { CompanyMailService } from '../mail/channels/company-mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { platform } from '../common/platform.config';
+import { normalizeLogoUrl } from './logo-rules';
+import { ContractsService } from '../contracts/contracts.service';
+import type { ContractTerms } from '../contracts/contract-templates';
 
 // ─── Constantes ──────────────────────────────────────────
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
@@ -160,6 +172,8 @@ export class ClientsService {
   constructor(
     private prisma: PrismaService,
     private readonly companyMailService: CompanyMailService,
+    // ✅ v4.16 : contrats — paramètre ajouté EN DERNIER (les specs construisent le service avec des arguments positionnels).
+    private readonly contractsService?: ContractsService,
   ) {}
 
   // ========================================================
@@ -205,11 +219,12 @@ export class ClientsService {
   // CRÉATION
   // ========================================================
 
-  async create(dto: CreateClientDto) {
+  async create(dto: CreateClientDto, issuedById?: string | null) {
     if (!dto.adminEmail?.trim())     throw new BadRequestException('adminEmail requis');
     if (!dto.adminPassword?.trim())  throw new BadRequestException('adminPassword requis');
     if (!dto.adminFirstName?.trim()) throw new BadRequestException('adminFirstName requis');
     if (!dto.adminLastName?.trim())  throw new BadRequestException('adminLastName requis');
+    const logoUrl = normalizeLogoUrl(dto.logoUrl); // ✅ v4.15
 
     const existingCode = await this.prisma.client.findUnique({
       where: { code: dto.code.toUpperCase() },
@@ -268,7 +283,7 @@ export class ClientsService {
 
           primaryColor:       dto.primaryColor   ?? '#059669',
           secondaryColor:     dto.secondaryColor ?? '#10B981',
-          logoUrl:            dto.logoUrl        ?? null,
+          logoUrl,
           tagline:            dto.tagline        ?? null,
           fontFamily:         dto.fontFamily     ?? null,
           splashBgColor:      dto.splashBgColor  ?? null,
@@ -284,7 +299,11 @@ export class ClientsService {
           country:            ownerCountryCode   ?? null,
           email:              String(dto.adminEmail),
           phone:              dto.contactPhone   ?? null,
-          address:            dto.ownerAddress   ?? null,
+          // ✅ v4.14 : l'adresse de la société (dto.address) prime sur celle du propriétaire ; ville et site web
+          // étaient ignorés à la création.
+          address:            dto.address?.trim() || dto.ownerAddress || null,
+          city:               dto.city?.trim()    || null,
+          website:            dto.website?.trim() || null,
 
           ownerFirstName:     String(dto.adminFirstName),
           ownerLastName:      String(dto.adminLastName),
@@ -296,6 +315,19 @@ export class ClientsService {
           contactEmail:       dto.contactEmail   ?? dto.adminEmail,
           contactPhone:       dto.contactPhone   ?? null,
           activitySector:     dto.activitySector ?? null,
+
+          // ✅ mentions légales saisies dès la création (une valeur vide reste NULL)
+          legalCompanyName:         dto.legalCompanyName?.trim()         || null,
+          regulatorName:            dto.regulatorName?.trim()            || null,
+          regulatorAcronym:         dto.regulatorAcronym?.trim()         || null,
+          regulatoryFrameworkLabel: dto.regulatoryFrameworkLabel?.trim() || null,
+          regulatorLicenseType:     dto.regulatorLicenseType?.trim()     || null,
+          regulatorLicenseNumber:   dto.regulatorLicenseNumber?.trim()   || null,
+          capitalSocial:            dto.capitalSocial?.trim()            || null,
+          supportEmail:             dto.supportEmail?.trim()             || null,
+          whatsappNumber:           dto.whatsappNumber?.trim()           || null,
+          mediatorName:             dto.mediatorName?.trim()             || null,
+          mediatorUrl:              dto.mediatorUrl?.trim()              || null,
 
           allowedCurrencies:         SUPPORTED_CURRENCIES,
           featureScheduledTransfers: true,
@@ -347,6 +379,37 @@ export class ClientsService {
       return { client, admin };
     });
 
+    // ✅ v4.16 : contrat de location / d'achat émis à la création. Le lien de signature est joint au courriel de bienvenue :
+    //   le patron reçoit ses identifiants ET son lien de signature dans le même e-mail. Un échec d'émission ne remet pas en
+    //   cause la société (déjà créée) : il est remonté dans `contractError`, et le Grand Chef peut émettre le contrat ensuite.
+    let signature:
+      | { url: string; contractLabel: string; reference: string; expiresAt: Date }
+      | undefined;
+    let contract: { id: string; reference: string; signUrl: string | null; expiresAt: Date } | null = null;
+    let contractError: string | undefined;
+    if (dto.contract && this.contractsService) {
+      try {
+        const issued = await this.contractsService.issue({
+          clientId: result.client.id,
+          terms: dto.contract as unknown as Partial<ContractTerms>,
+          recipientEmail: String(dto.adminEmail),
+          notify: false,
+          issuedById: issuedById ?? null,
+        });
+        contract = { id: issued.id, reference: issued.reference, signUrl: issued.signUrl, expiresAt: issued.expiresAt };
+        if (issued.signUrl) {
+          signature = { url: issued.signUrl, contractLabel: issued.label, reference: issued.reference, expiresAt: issued.expiresAt };
+        } else {
+          contractError =
+            "Contrat créé, mais l'adresse publique du portail (PLATFORM_APP_URL ou FRONTEND_URL) n'est pas configurée : le lien de signature n'a pas pu être envoyé.";
+        }
+      } catch (err) {
+        contractError = (err as Error)?.message ?? "Le contrat n'a pas pu être créé.";
+        this.logger.warn(`⚠️  Contrat non émis — société ${dto.code} : ${contractError}`);
+      }
+    }
+
+    const contractId = contract?.id;
     void this.companyMailService
       .sendWelcomeCompanyAdmin({
         email:             String(dto.adminEmail),
@@ -356,6 +419,10 @@ export class ClientsService {
         companyCode:       dto.code.toUpperCase(),
         temporaryPassword: plainPassword,
         userId:            result.admin.id,
+        signature,
+      })
+      .then(() => {
+        if (contractId && signature) return this.contractsService?.markSent(contractId);
       })
       .catch((err) => {
         this.logger.warn(
@@ -364,7 +431,7 @@ export class ClientsService {
         );
       });
 
-    return result;
+    return { ...result, contract, contractError };
   }
 
   // ========================================================
@@ -467,6 +534,8 @@ export class ClientsService {
     delete updateData.adminLastName;
     delete updateData.adminPassword;
     delete updateData.id;
+
+    if ('logoUrl' in updateData) updateData.logoUrl = normalizeLogoUrl(updateData.logoUrl); // ✅ v4.15
 
     if (updateData.status) {
       updateData.subscriptionStatus = updateData.status;

@@ -64,6 +64,8 @@ export interface RequestOptions {
   auth?: boolean;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  /** « blob » : renvoie le corps tel quel (PDF…) au lieu de l'interpréter comme du JSON. Défaut : « json ». */
+  responseType?: 'json' | 'blob';
 }
 
 export interface HttpClient {
@@ -153,7 +155,8 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     }
   }
 
-  async function parse<T>(res: Response): Promise<T> {
+  async function parse<T>(res: Response, responseType: 'json' | 'blob' = 'json'): Promise<T> {
+    if (responseType === 'blob' && res.ok) return (await res.blob()) as unknown as T;
     const text = await res.text();
     let body: unknown = undefined;
     if (text) {
@@ -209,12 +212,12 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       res.status === 401 &&
       !NO_REFRESH_PREFIXES.some((prefix) => path.startsWith(prefix));
 
-    if (!canRefresh) return parse<T>(res);
+    if (!canRefresh) return parse<T>(res, opts.responseType);
 
     try {
       const fresh = await refreshOnce();
       const retry = await send(path, opts, fresh);
-      return parse<T>(retry);
+      return parse<T>(retry, opts.responseType);
     } catch (err) {
       // Le refresh a échoué (ou le rejeu est encore refusé en 401) : la session est perdue.
       if (!(err instanceof ApiError) || err.status === 401) {

@@ -12,14 +12,16 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Icon, type IconName } from '../../components/Icon';
 import { ColorField, SelectField, TextAreaField } from '../../components/form';
+import { LogoUploader } from '../../components/LogoUploader';
 import { Button, Card, Field, Notice } from '../../components/ui';
 import { safeColor } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
+import { isImportedLogo } from '../../lib/logoImage';
 
 export interface FieldDef {
   key: string;
   label: string;
-  kind?: 'text' | 'email' | 'tel' | 'url' | 'textarea' | 'color' | 'select';
+  kind?: 'text' | 'email' | 'tel' | 'url' | 'textarea' | 'color' | 'select' | 'image';
   options?: readonly { value: string; label: string }[];
   hint?: string;
   placeholder?: string;
@@ -200,6 +202,14 @@ export function EditableSection({
                     placeholder={f.placeholder}
                     onChange={(e) => set(f.key, e.target.value)}
                   />
+                ) : f.kind === 'image' ? (
+                  <LogoUploader
+                    id={fid}
+                    label={f.label}
+                    value={value}
+                    error={error}
+                    onChange={(v) => set(f.key, v)}
+                  />
                 ) : f.kind === 'color' ? (
                   <ColorField
                     {...common}
@@ -245,14 +255,24 @@ export function EditableSection({
             {fields.map((f) => {
               const raw = values[f.key];
               const text = raw && String(raw).trim() ? String(raw) : null;
-              const shown =
-                f.kind === 'select' ? (f.options?.find((o) => o.value === text)?.label ?? text) : text;
+              // Une image importée est une longue « data URL » : on ne l'affiche jamais en clair.
+              const imported = f.kind === 'image' && isImportedLogo(text);
+              const shown = imported
+                ? 'Image importée'
+                : f.kind === 'select'
+                  ? (f.options?.find((o) => o.value === text)?.label ?? text)
+                  : text;
               return (
                 <div className={(f.paired ?? f.half) ? 'kv__row kv__row--half' : 'kv__row'} key={f.key}>
                   <dt>{f.label}</dt>
                   <dd>
                     {shown ? (
-                      f.kind === 'color' ? (
+                      f.kind === 'image' && text ? (
+                        <span className="logo-thumb">
+                          {imported ? <img src={text} alt="" /> : null}
+                          <span className="logo-thumb__text">{shown}</span>
+                        </span>
+                      ) : f.kind === 'color' ? (
                         <span className="swatch">
                           <i style={{ background: safeColor(text, 'transparent') }} aria-hidden="true" />
                           {shown}

@@ -79,8 +79,8 @@ export class ClientsController {
   @Post()
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Créer une société' })
-  create(@Body() dto: CreateClientDto) {
-    return this.clientsService.create(dto);
+  create(@Body() dto: CreateClientDto, @Req() req: { user?: AuthUserPayload }) {
+    return this.clientsService.create(dto, req.user?.id ?? null);
   }
 
   @Get()

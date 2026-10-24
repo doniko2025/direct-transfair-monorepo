@@ -57,6 +57,7 @@ import { PushModule }     from './push/push.module';
 import { NotificationsModule }      from './notifications/notifications.module';
 import { UsersModule }              from './users/users.module';
 import { ClientsModule }            from './clients/clients.module';
+import { ContractsModule }          from './contracts/contracts.module'; // ✅ contrats : signature électronique
 import { TenantsModule }            from './tenants/tenants.module';
 import { AuthModule }               from './auth/auth.module';
 import { BeneficiariesModule }      from './beneficiaries/beneficiaries.module';
@@ -108,6 +109,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     NotificationsModule,
     UsersModule,
     ClientsModule,
+    ContractsModule,
     TenantsModule,
     AuthModule,
     BeneficiariesModule,
@@ -165,6 +167,7 @@ export class AppModule implements NestModule {
         'admin/tenants/(.*)',
         'locations',
         'locations/(.*)',
+        'contracts/sign/(.*)', // ✅ contrats : page publique de signature (aucun tenant, aucune connexion)
       )
       .forRoutes('*');
   }

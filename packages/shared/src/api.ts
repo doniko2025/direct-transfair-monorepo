@@ -14,6 +14,7 @@ import { createAgentsApi } from './agents';
 import { createCommissionRulesApi } from './commissionRules';
 import { createCommissionsApi } from './commissions';
 import { createCompaniesApi } from './companies';
+import { createContractsApi } from './contracts';
 import { createFeeScheduleApi } from './feeSchedule';
 import { createFeesApi } from './fees';
 import type { HttpClient } from './http';
@@ -46,6 +47,7 @@ const PLATFORM_HEADERS = { 'x-tenant-id': PLATFORM_TENANT } as const;
 export function createApi(http: HttpClient) {
   return {
     companies: createCompaniesApi(http),
+    contracts: createContractsApi(http),
     users: createUsersApi(http),
     transactions: createTransactionsApi(http),
     treasury: createTreasuryApi(http),

@@ -4,6 +4,7 @@ export * from './tenant';
 export * from './http';
 export * from './api';
 export * from './companies';
+export * from './contracts';
 export * from './users';
 export * from './transactions';
 export * from './treasury';

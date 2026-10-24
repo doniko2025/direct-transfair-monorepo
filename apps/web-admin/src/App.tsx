@@ -6,6 +6,7 @@ import { MODULE_ROUTES } from './modules';
 import { BASE_PATH } from './config';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
+import SignaturePage from './pages/signature/SignaturePage';
 import SsoPage from './pages/SsoPage';
 import { AuthProvider } from './providers/AuthProvider';
 import { TenantProvider } from './providers/TenantProvider';
@@ -18,6 +19,8 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/sso" element={<SsoPage />} />
+            {/* Page publique : le patron signe son contrat depuis le lien reçu par e-mail, sans connexion. */}
+            <Route path="/signature/:token" element={<SignaturePage />} />
 
             <Route element={<RequireAuth />}>
               <Route element={<AppShell />}>

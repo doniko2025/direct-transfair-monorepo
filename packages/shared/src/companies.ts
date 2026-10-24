@@ -11,6 +11,7 @@
 //   DELETE /clients/:id          désactivation en cascade (soft delete)
 // =========================================================
 
+import type { ContractTermsInput } from './contracts';
 import type { HttpClient } from './http';
 
 export type SubscriptionStatus = 'ACTIVE' | 'INACTIVE' | 'EXPIRED' | 'SUSPENDED' | 'TRIAL';
@@ -110,6 +111,34 @@ export interface CreateCompanyInput {
   subdomain?: string;
   customDomain?: string;
   contactPhone?: string;
+
+  // Coordonnées de la société (modifiables ensuite depuis la fiche)
+  contactEmail?: string;
+  city?: string;
+  website?: string;
+  address?: string;
+
+  // Apparence
+  logoUrl?: string;
+  tagline?: string;
+  welcomeMessage?: string;
+  fontFamily?: string;
+
+  // Mentions légales
+  legalCompanyName?: string;
+  regulatorName?: string;
+  regulatorAcronym?: string;
+  regulatoryFrameworkLabel?: string;
+  regulatorLicenseType?: string;
+  regulatorLicenseNumber?: string;
+  capitalSocial?: string;
+  supportEmail?: string;
+  whatsappNumber?: string;
+  mediatorName?: string;
+  mediatorUrl?: string;
+
+  /** Conditions du contrat de location / d'achat : si présent, un contrat est émis et son lien de signature part avec les identifiants. */
+  contract?: ContractTermsInput;
 }
 
 /**
@@ -119,6 +148,9 @@ export interface CreateCompanyInput {
 export interface CreateCompanyResult {
   client: Pick<Company, 'id' | 'code' | 'name'> & Partial<Company>;
   admin: { id: number | string; email: string };
+  /** Contrat émis à la création (null si aucun ou en échec — voir contractError). */
+  contract?: { id: string; reference: string; signUrl: string | null; expiresAt: string } | null;
+  contractError?: string;
 }
 
 export type UpdateCompanyInput = Partial<

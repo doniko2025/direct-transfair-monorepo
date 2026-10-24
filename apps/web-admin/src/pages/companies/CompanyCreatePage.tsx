@@ -1,5 +1,8 @@
-// src/pages/companies/CompanyCreatePage.tsx
+// apps/web-admin/src/pages/companies/CompanyCreatePage.tsx
 // Création d'une société de transfert + son administrateur (POST /clients).
+// Le formulaire propose TOUS les champs de la fiche société (coordonnées, portail, apparence avec logo, slogan, message
+// d'accueil et police, mentions légales) : plus besoin de créer la société puis de revenir la compléter. Les champs
+// supplémentaires sont pilotés par companyFields.ts, la même définition que la fiche : un champ ajouté là apparaît ici.
 // Le mot de passe temporaire est généré ici (tirage cryptographique) et n'est affiché
 // qu'une seule fois, à l'écran de confirmation : il n'est ni stocké ni relisible ensuite.
 
@@ -7,7 +10,9 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { CreateCompanyInput, CreateCompanyResult, SubscriptionType } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
-import { ColorField, CopyButton, SelectField } from '../../components/form';
+import { ContractTermsFields } from '../../components/ContractTermsFields';
+import { LogoUploader } from '../../components/LogoUploader';
+import { ColorField, CopyButton, SelectField, TextAreaField } from '../../components/form';
 import { Button, Card, Field, Notice, PageHeader } from '../../components/ui';
 import { api } from '../../lib/api';
 import {
@@ -22,6 +27,10 @@ import {
 import { COUNTRIES } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
 import { generateTempPassword } from '../../lib/password';
+import { initialTermsForm, toTermsInput, validateTerms, type ContractTermsForm } from '../../lib/contractRules';
+import { AppearancePreview } from './AppearancePreview';
+import { APPEARANCE_FIELDS, IDENTITY_FIELDS, LEGAL_FIELDS } from './companyFields';
+import type { FieldDef } from './EditableSection';
 
 interface Form {
   name: string;
@@ -40,7 +49,16 @@ interface Form {
   secondaryColor: string;
 }
 
-type Errors = Partial<Record<keyof Form, string>>;
+type Errors = Partial<Record<keyof Form, string>> & Record<string, string | undefined>;
+
+// Champs de la fiche proposés en plus du formulaire de base. Le nom, le secteur, l'abonnement et les couleurs sont déjà
+// saisis plus haut ; le téléphone de contact est celui de l'administrateur à la création.
+const CONTACT_KEYS = ['contactEmail', 'city', 'website', 'address'];
+const BRAND_KEYS = ['tagline', 'welcomeMessage', 'logoUrl', 'fontFamily'];
+const CONTACT_FIELDS: readonly FieldDef[] = IDENTITY_FIELDS.filter((f) => CONTACT_KEYS.includes(f.key));
+const BRAND_FIELDS: readonly FieldDef[] = APPEARANCE_FIELDS.filter((f) => BRAND_KEYS.includes(f.key));
+const EXTRA_DEFS: readonly FieldDef[] = [...CONTACT_FIELDS, ...BRAND_FIELDS, ...LEGAL_FIELDS];
+type Extra = Record<string, string>;
 
 const COUNTRY_OPTIONS = COUNTRIES.map((c) => ({ value: c.code, label: `${c.name} (${c.currency})` }));
 const TYPE_OPTIONS = Object.entries(TYPE_LABEL).map(([value, label]) => ({ value, label }));
@@ -64,6 +82,19 @@ function initialForm(): Form {
   };
 }
 
+/** Valide les champs supplémentaires : seuls ceux qui sont remplis sont contrôlés (tous sont facultatifs). */
+function validateExtra(x: Extra): Errors {
+  const e: Errors = {};
+  for (const def of EXTRA_DEFS) {
+    const value = (x[def.key] ?? '').trim();
+    if (value && def.validate) {
+      const message = def.validate(def.lowercase ? value.toLowerCase() : value);
+      if (message) e[def.key] = message;
+    }
+  }
+  return e;
+}
+
 function validate(f: Form): Errors {
   const e: Errors = {};
   if (!f.name.trim()) e.name = 'Le nom est obligatoire.';
@@ -82,7 +113,7 @@ function validate(f: Form): Errors {
   return e;
 }
 
-function toInput(f: Form): CreateCompanyInput {
+function toInput(f: Form, x: Extra, contract: ContractTermsForm | null): CreateCompanyInput {
   const input: CreateCompanyInput = {
     code: f.code,
     name: f.name.trim(),
@@ -99,7 +130,15 @@ function toInput(f: Form): CreateCompanyInput {
   if (f.contactPhone.trim()) input.contactPhone = f.contactPhone.trim();
   if (f.subdomain) input.subdomain = f.subdomain;
   if (f.customDomain) input.customDomain = f.customDomain;
-  return input;
+  // Champs supplémentaires : un champ laissé vide n'est pas envoyé (le serveur le laisse vide).
+  const extra: Record<string, string> = {};
+  for (const def of EXTRA_DEFS) {
+    const value = (x[def.key] ?? '').trim();
+    if (value) extra[def.key] = def.lowercase ? value.toLowerCase() : value;
+  }
+  // Conditions du contrat : si elles sont fournies, le serveur émet le contrat et joint le lien de signature aux identifiants.
+  if (contract) input.contract = toTermsInput(contract, f.subscriptionType);
+  return { ...input, ...extra };
 }
 
 interface Created {
@@ -168,8 +207,46 @@ function CreatedView({ created, onAnother }: { created: Created; onAnother: () =
           </Notice>
         </Card>
 
+        {created.result.contract ? (
+          <Card className="credentials">
+            <header className="credentials__head">
+              <span className="section-card__icon">
+                <Icon name="pen" size={20} />
+              </span>
+              <div>
+                <h2>Contrat à signer</h2>
+                <p>
+                  Le contrat {created.result.contract.reference} est dans l'e-mail de bienvenue, avec ses identifiants.
+                  Dès qu'il le signe, il en reçoit un exemplaire signé et vous le retrouvez dans « Contrats ».
+                </p>
+              </div>
+            </header>
+            {created.result.contract.signUrl ? (
+              <dl className="kv">
+                <div className="kv__row">
+                  <dt>Lien de signature</dt>
+                  <dd className="inline-copy">
+                    <span className="mono ct-link__url">{created.result.contract.signUrl}</span>
+                    <CopyButton value={created.result.contract.signUrl} />
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
+            {created.result.contractError ? <Notice tone="error">{created.result.contractError}</Notice> : null}
+          </Card>
+        ) : created.result.contractError ? (
+          <Notice tone="error" title="La société est créée, mais le contrat n'a pas pu l'être">
+            {created.result.contractError} Vous pouvez l'émettre depuis la fiche de la société, rubrique « Contrats ».
+          </Notice>
+        ) : null}
+
         <div className="form-actions form-actions--start">
-          <Button icon="building" onClick={() => navigate(`/companies/${client.id}`)}>
+          {created.result.contract ? (
+            <Button icon="file" onClick={() => navigate(`/contracts/${created.result.contract!.id}`)}>
+              Voir le contrat
+            </Button>
+          ) : null}
+          <Button variant={created.result.contract ? 'secondary' : 'primary'} icon="building" onClick={() => navigate(`/companies/${client.id}`)}>
             Ouvrir la fiche
           </Button>
           <Button variant="secondary" icon="plus" onClick={onAnother}>
@@ -183,6 +260,10 @@ function CreatedView({ created, onAnother }: { created: Created; onAnother: () =
 
 export default function CompanyCreatePage() {
   const [form, setForm] = useState<Form>(initialForm);
+  const [extra, setExtra] = useState<Extra>({});
+  const [contractOn, setContractOn] = useState(true);
+  const [terms, setTerms] = useState<ContractTermsForm>(() => initialTermsForm());
+  const [termErrors, setTermErrors] = useState<Record<string, string | undefined>>({});
   const [codeTouched, setCodeTouched] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -195,6 +276,50 @@ export default function CompanyCreatePage() {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
   }
 
+  function setExtraValue(key: string, value: string) {
+    setExtra((x) => ({ ...x, [key]: value }));
+    if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }));
+  }
+
+  /** Une ligne de formulaire pour un champ de la fiche (texte, e-mail, adresse web, zone de texte). */
+  function extraField(def: FieldDef) {
+    const id = `c-x-${def.key}`;
+    const common = { id, label: def.label, error: errors[def.key], hint: def.hint };
+    const wrap = def.wide || def.kind === 'textarea' ? 'form-grid__wide' : def.half ? 'form-grid__half' : undefined;
+    const value = extra[def.key] ?? '';
+    return (
+      <div key={def.key} className={wrap}>
+        {def.kind === 'image' ? (
+          <LogoUploader
+            id={id}
+            label={def.label}
+            value={value}
+            error={errors[def.key]}
+            onChange={(v) => setExtraValue(def.key, v)}
+          />
+        ) : def.kind === 'textarea' ? (
+          <TextAreaField
+            {...common}
+            value={value}
+            maxLength={def.maxLength}
+            placeholder={def.placeholder}
+            onChange={(e) => setExtraValue(def.key, e.target.value)}
+          />
+        ) : (
+          <Field
+            {...common}
+            type={def.kind === 'color' || def.kind === 'select' ? 'text' : (def.kind ?? 'text')}
+            value={value}
+            maxLength={def.maxLength}
+            placeholder={def.placeholder}
+            autoComplete="off"
+            onChange={(e) => setExtraValue(def.key, def.lowercase ? e.target.value.toLowerCase() : e.target.value)}
+          />
+        )}
+      </div>
+    );
+  }
+
   function onNameChange(name: string) {
     setForm((f) => ({ ...f, name, code: codeTouched ? f.code : suggestCode(name) }));
     if (errors.name) setErrors((e) => ({ ...e, name: undefined }));
@@ -204,9 +329,11 @@ export default function CompanyCreatePage() {
     event.preventDefault();
     if (busy) return;
 
-    const problems = validate(form);
+    const problems: Errors = { ...validate(form), ...validateExtra(extra) };
     setErrors(problems);
-    if (Object.keys(problems).length > 0) {
+    const termProblems = contractOn ? validateTerms(terms, form.subscriptionType) : {};
+    setTermErrors(termProblems);
+    if (Object.values(problems).some(Boolean) || Object.keys(termProblems).length > 0) {
       setFormError('Corrigez les champs signalés avant de continuer.');
       return;
     }
@@ -214,7 +341,7 @@ export default function CompanyCreatePage() {
     setBusy(true);
     setFormError(null);
     try {
-      const result = await api.companies.create(toInput(form));
+      const result = await api.companies.create(toInput(form, extra, contractOn ? terms : null));
       setCreated({
         result,
         email: form.adminEmail.trim(),
@@ -230,6 +357,10 @@ export default function CompanyCreatePage() {
 
   function reset() {
     setForm(initialForm());
+    setExtra({});
+    setContractOn(true);
+    setTerms(initialTermsForm());
+    setTermErrors({});
     setCodeTouched(false);
     setErrors({});
     setFormError(null);
@@ -262,7 +393,7 @@ export default function CompanyCreatePage() {
             </span>
             <div className="section-card__title">
               <h2>La société</h2>
-              <p>Son nom, son code d'identification et son pays d'implantation.</p>
+              <p>Son nom, son code d'identification, son pays d'implantation et ses coordonnées.</p>
             </div>
           </header>
           <div className="form-grid">
@@ -315,6 +446,7 @@ export default function CompanyCreatePage() {
               onChange={(e) => set('subscriptionType', e.target.value as SubscriptionType)}
               options={TYPE_OPTIONS}
             />
+            {CONTACT_FIELDS.map(extraField)}
           </div>
         </Card>
 
@@ -402,11 +534,46 @@ export default function CompanyCreatePage() {
         <Card className="section-card">
           <header className="section-card__head">
             <span className="section-card__icon">
+              <Icon name="file" size={20} />
+            </span>
+            <div className="section-card__title">
+              <h2>Contrat de {form.subscriptionType === 'RENTAL' ? 'location' : "l'achat"}</h2>
+              <p>
+                Le contrat est envoyé au patron avec ses identifiants, dans le même e-mail, avec un lien pour le signer en ligne.
+                Il reçoit ensuite son contrat signé par e-mail.
+              </p>
+            </div>
+          </header>
+          <label className="check-row">
+            <input type="checkbox" checked={contractOn} onChange={(e) => setContractOn(e.target.checked)} />
+            <span>
+              Émettre le contrat de {form.subscriptionType === 'RENTAL' ? 'location' : "l'achat"} et l'envoyer à signer
+            </span>
+          </label>
+          {contractOn ? (
+            <ContractTermsFields
+              idPrefix="c-ct"
+              kind={form.subscriptionType}
+              value={terms}
+              errors={termErrors}
+              onChange={(patch) => {
+                setTerms((t) => ({ ...t, ...patch }));
+                setTermErrors({});
+              }}
+            />
+          ) : (
+            <p className="muted">Aucun contrat ne sera émis : vous pourrez le faire plus tard depuis la fiche de la société.</p>
+          )}
+        </Card>
+
+        <Card className="section-card">
+          <header className="section-card__head">
+            <span className="section-card__icon">
               <Icon name="globe" size={20} />
             </span>
             <div className="section-card__title">
               <h2>Portail et apparence</h2>
-              <p>Facultatif : tout peut être complété plus tard depuis la fiche de la société.</p>
+              <p>Facultatif : domaine du portail, couleurs, logo, slogan, message d'accueil et police.</p>
             </div>
           </header>
           <div className="form-grid">
@@ -446,7 +613,35 @@ export default function CompanyCreatePage() {
               onChange={(v) => set('secondaryColor', v)}
               error={errors.secondaryColor}
             />
+            {BRAND_FIELDS.map(extraField)}
+            <div className="form-grid__wide">
+              <AppearancePreview
+                draft={{
+                  primaryColor: form.primaryColor,
+                  secondaryColor: form.secondaryColor,
+                  tagline: extra.tagline ?? '',
+                  logoUrl: extra.logoUrl ?? '',
+                  fontFamily: extra.fontFamily ?? '',
+                }}
+              />
+            </div>
           </div>
+        </Card>
+
+        <Card className="section-card">
+          <header className="section-card__head">
+            <span className="section-card__icon">
+              <Icon name="shield" size={20} />
+            </span>
+            <div className="section-card__title">
+              <h2>Mentions légales</h2>
+              <p>
+                Facultatif : affichées aux clients dans les conditions d'utilisation et l'assistance. Elles peuvent être
+                complétées plus tard.
+              </p>
+            </div>
+          </header>
+          <div className="form-grid">{LEGAL_FIELDS.map(extraField)}</div>
         </Card>
 
         <div className="form-actions form-actions--start">

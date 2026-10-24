@@ -23,6 +23,8 @@ import CommissionsPage from './pages/commissions/CommissionsPage';
 import CompaniesPage from './pages/companies/CompaniesPage';
 import CompanyCreatePage from './pages/companies/CompanyCreatePage';
 import CompanyDetailPage from './pages/companies/CompanyDetailPage';
+import ContractDetailPage from './pages/contracts/ContractDetailPage';
+import ContractsPage from './pages/contracts/ContractsPage';
 import DashboardPage from './pages/DashboardPage';
 import DepositPage from './pages/desk/DepositPage';
 import RemitPage from './pages/desk/RemitPage';
@@ -66,6 +68,10 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/companies', roles: SUPER, element: <CompaniesPage /> },
   { path: '/companies/new', roles: SUPER, element: <CompanyCreatePage /> },
   { path: '/companies/:id', roles: SUPER, element: <CompanyDetailPage /> },
+
+  // Contrats de location / d'achat signés en ligne (Grand Chef)
+  { path: '/contracts', roles: SUPER, element: <ContractsPage /> },
+  { path: '/contracts/:id', roles: SUPER, element: <ContractDetailPage /> },
 
   // Lot C — domaine du portail de chaque société (super admin)
   { path: '/portal-domains', roles: SUPER, element: <PortalDomainsPage /> },

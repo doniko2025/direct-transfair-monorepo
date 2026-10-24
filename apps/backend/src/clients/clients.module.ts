@@ -5,9 +5,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { ClientsController } from './clients.controller';
 import { ClientsService } from './clients.service';
 import { BrandingController } from './branding.controller'; // ✅ Import manquant
+import { ContractsModule } from '../contracts/contracts.module'; // ✅ v4.16 : contrat émis à la création
 
 @Module({
-  imports: [PrismaModule, AuthModule],
+  imports: [PrismaModule, AuthModule, ContractsModule],
   controllers: [ClientsController, BrandingController], // ✅ Fonctionne maintenant
   providers: [ClientsService],
   exports: [ClientsService],

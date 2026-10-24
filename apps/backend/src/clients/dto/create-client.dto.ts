@@ -1,6 +1,11 @@
 // apps/backend/src/clients/dto/create-client.dto.ts
 // =========================================================
-// CREATE CLIENT DTO v2.2
+// CREATE CLIENT DTO v2.4
+// ✅ v2.4 : `contract` (conditions commerciales) — si présent, un contrat de location / d'achat est émis à la création et son lien
+//   de signature est joint au courriel de bienvenue (voir contracts/).
+// ✅ v2.3 : les mentions légales (raison sociale, autorité de contrôle, agrément, capital, assistance, médiateur) sont
+//   acceptées dès la création, comme tous les autres champs modifiables ensuite depuis la fiche société. Avant, la
+//   ValidationPipe (whitelist) les retirait en silence : il fallait créer la société puis revenir les saisir.
 // ✅ v2.1 conservé intégralement
 // ✅ v2.2 : subdomain + customDomain ajoutés
 //   - subdomain : "flash" → flash.direct-transfer.com
@@ -11,8 +16,10 @@
 
 import {
   IsString, IsOptional, IsEmail, IsEnum,
-  IsNotEmpty, Matches,
+  IsNotEmpty, Matches, MaxLength, ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ContractTermsDto } from '../../contracts/dto/contract.dto';
 import { SubscriptionType, CurrencyCode } from '@prisma/client';
 
 export class CreateClientDto {
@@ -121,6 +128,41 @@ export class CreateClientDto {
   @IsEmail()
   contactEmail?: string;
 
+  // ═══ MENTIONS LÉGALES ✅ v2.3 ═══════════════════════════
+  // Affichées aux clients (conditions d'utilisation, assistance). Toutes facultatives.
+  @IsOptional() @IsString() @MaxLength(160)
+  legalCompanyName?: string;
+
+  @IsOptional() @IsString() @MaxLength(200)
+  regulatorName?: string;
+
+  @IsOptional() @IsString() @MaxLength(20)
+  regulatorAcronym?: string;
+
+  @IsOptional() @IsString() @MaxLength(40)
+  regulatoryFrameworkLabel?: string;
+
+  @IsOptional() @IsString() @MaxLength(120)
+  regulatorLicenseType?: string;
+
+  @IsOptional() @IsString() @MaxLength(60)
+  regulatorLicenseNumber?: string;
+
+  @IsOptional() @IsString() @MaxLength(80)
+  capitalSocial?: string;
+
+  @IsOptional() @IsEmail()
+  supportEmail?: string;
+
+  @IsOptional() @IsString() @MaxLength(30)
+  whatsappNumber?: string;
+
+  @IsOptional() @IsString() @MaxLength(160)
+  mediatorName?: string;
+
+  @IsOptional() @IsString() @MaxLength(300)
+  mediatorUrl?: string;
+
   // ═══ ABONNEMENT ══════════════════════════════════════════
   @IsOptional()
   @IsEnum(SubscriptionType)
@@ -175,4 +217,10 @@ export class CreateClientDto {
   @IsString()
   @IsNotEmpty()
   adminPassword: string;
+
+  // ═══ CONTRAT (facultatif) ════════════════════════════════
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ContractTermsDto)
+  contract?: ContractTermsDto;
 }

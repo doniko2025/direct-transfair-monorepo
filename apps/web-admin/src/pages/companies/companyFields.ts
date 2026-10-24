@@ -4,11 +4,15 @@
 // par défaut de la société à chaque mise à jour — à ne pas toucher sans le vouloir),
 // le code société (identifiant de portail) et les champs du propriétaire légal.
 
+import { isDisplayableLogo } from '../../lib/logoImage';
 import { DOMAIN, EMAIL, HEX_COLOR, SUBDOMAIN, TYPE_LABEL } from '../../lib/companyRules';
 import type { FieldDef } from './EditableSection';
 
 const emailRule = (v: string) => (EMAIL.test(v) ? null : 'Adresse email invalide.');
 const urlRule = (v: string) => (/^https?:\/\/\S+\.\S+$/i.test(v) ? null : 'Adresse web invalide (https://…).');
+
+const logoRule = (v: string) =>
+  isDisplayableLogo(v) ? null : 'Logo invalide : importez une image ou saisissez une adresse web (https://…).';
 
 export const IDENTITY_FIELDS: readonly FieldDef[] = [
   { key: 'name', label: 'Nom de la société', required: true, maxLength: 120 },
@@ -70,7 +74,7 @@ export const APPEARANCE_FIELDS: readonly FieldDef[] = [
   },
   { key: 'tagline', label: 'Slogan', maxLength: 140, wide: true },
   { key: 'welcomeMessage', label: "Message d'accueil", kind: 'textarea', maxLength: 400 },
-  { key: 'logoUrl', label: 'Adresse du logo', kind: 'url', validate: urlRule, placeholder: 'https://', wide: true },
+  { key: 'logoUrl', label: 'Logo', kind: 'image', validate: logoRule, wide: true },
   { key: 'fontFamily', label: 'Police', maxLength: 60, hint: 'Nom d’une police Google Fonts, exemple : Poppins.' },
 ];
 

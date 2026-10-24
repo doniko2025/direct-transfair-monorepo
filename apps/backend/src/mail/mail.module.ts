@@ -6,6 +6,7 @@ import { WalletMailService } from './channels/wallet-mail.service';
 import { CompanyMailService } from './channels/company-mail.service';
 import { AgentMailService } from './channels/agent-mail.service';
 import { AdminMailService } from './channels/admin-mail.service';
+import { ContractMailService } from './channels/contract-mail.service';
 
 import { PrismaModule } from '../prisma/prisma.module';
 
@@ -18,6 +19,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     CompanyMailService,
     AgentMailService,
     AdminMailService,
+    ContractMailService,
   ],
   exports: [
     MailService,
@@ -25,6 +27,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     CompanyMailService,
     AgentMailService,
     AdminMailService,
+    ContractMailService,
   ],
 })
 export class MailModule {}

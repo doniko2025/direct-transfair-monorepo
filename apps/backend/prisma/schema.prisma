@@ -72,6 +72,13 @@ enum SubscriptionType {
   PURCHASE
 }
 
+enum ContractStatus {
+  PENDING    // émis, en attente de la signature du client
+  SIGNED     // signé électroniquement
+  CANCELLED  // annulé par le Grand Chef (le lien de signature ne fonctionne plus)
+  EXPIRED    // lien de signature expiré sans signature
+}
+
 enum SubscriptionStatus {
   ACTIVE
   INACTIVE
@@ -594,6 +601,7 @@ model Client {
   transferLimits       TransferLimit[]
   promotions         Promotion[]
   alerts             Alert[]
+  contracts          Contract[]
   auditLogs          AuditLog[]          @relation("ClientAuditLogs")
   apiKeys            ApiKey[]
   wallets            Wallet[]
@@ -2175,3 +2183,58 @@ model ClientPortalDomain {
 // =========================================================
 // FIN DU SCHÉMA
 // =========================================================
+
+// =========================================================
+// CONTRAT (location / achat de l'application) — signature électronique
+//  ✅ v4.31 : un contrat est émis à la création d'une société (ou à la demande du Grand Chef), envoyé au patron avec un
+//   lien de signature, puis conservé signé (PDF + piste d'audit) et consultable par le SUPER_ADMIN.
+//   • `content` : texte exact du contrat au moment de l'émission (les évolutions futures du modèle ne modifient jamais un
+//     contrat déjà émis) ; `contentHash` : empreinte SHA-256 de ce texte + des conditions.
+//   • `signTokenHash` : SHA-256 du jeton du lien ; le jeton lui-même n'est jamais stocké (il n'existe que dans l'e-mail).
+// ⚠️ Migration requise : 20261024090000_add_contracts
+// =========================================================
+
+model Contract {
+  id        String @id @default(cuid())
+  reference String @unique // ex. CT-2026-000123
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  type    SubscriptionType // RENTAL (location) | PURCHASE (achat)
+  status  ContractStatus @default(PENDING)
+  version String         @default("1.0") // version du modèle de contrat utilisé
+
+  terms       Json   // conditions commerciales saisies (montant, devise, périodicité, durée, date d'effet…)
+  content     Json   // texte rendu : parties, articles
+  contentHash String // SHA-256 (contenu + conditions)
+
+  // Destinataire et lien de signature
+  recipientEmail String
+  recipientName  String?
+  signTokenHash  String   @unique
+  tokenExpiresAt DateTime
+  sentAt         DateTime?
+  reminderCount  Int      @default(0)
+
+  // Signature (piste d'audit)
+  signedAt        DateTime?
+  signerName      String?
+  signatureImage  String?   @db.Text // PNG en data URL (signature dessinée)
+  signerIp        String?
+  signerUserAgent String?
+  signedPdf       Bytes?
+  signedPdfHash   String?
+  signedMailedAt  DateTime? // dernier envoi du contrat signé par e-mail
+
+  issuedById String? // SUPER_ADMIN qui a émis le contrat (null = émis automatiquement à la création de société)
+  cancelledAt DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([status, createdAt])
+  @@map("contracts")
+}

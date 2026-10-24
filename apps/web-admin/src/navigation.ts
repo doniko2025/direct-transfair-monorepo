@@ -32,6 +32,7 @@ export const NAV: readonly NavItem[] = [
 
   // Super admin
   { id: 'companies', label: 'Sociétés', icon: 'building', path: '/companies', roles: SUPER, ready: true },
+  { id: 'contracts', label: 'Contrats', icon: 'file', path: '/contracts', roles: SUPER, ready: true },
   { id: 'portal-domains', label: 'Domaines', icon: 'globe', path: '/portal-domains', roles: SUPER, ready: true },
   { id: 'supervision', label: 'Supervision', icon: 'eye', path: '/supervision', roles: SUPER, ready: true },
 

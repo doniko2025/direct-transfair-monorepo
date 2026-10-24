@@ -273,6 +273,8 @@ async sendWelcomeCompanyAdmin(params: {
   companyCode: string;
   temporaryPassword: string;
   userId?: string;
+  /** ✅ contrats : lien de signature en ligne du contrat de la société (bloc omis si absent). */
+  signature?: { url: string; contractLabel: string; reference: string; expiresAt: Date };
 }) {
   const initial = (params.companyName?.[0] ?? 'C').toUpperCase();
   const year    = new Date().getFullYear();
@@ -343,6 +345,44 @@ async sendWelcomeCompanyAdmin(params: {
             </p>
             <p style="margin:0;font-size:13px;color:#6B7280;line-height:1.8;">
               ${contactLines}
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>` : '';
+
+  // ✅ contrats : bloc « signez votre contrat » — le lien est personnel et à usage unique.
+  const sig = params.signature;
+  const signatureBlock = sig ? `
+  <tr>
+    <td style="background:#ffffff;padding:28px 36px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="background:#FFFBEB;border:1.5px solid #FCD34D;border-radius:20px;">
+        <tr>
+          <td style="padding:28px 28px 26px;text-align:center;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:900;color:#B45309;letter-spacing:2.5px;">
+              ✍️ DERNIÈRE ÉTAPE
+            </p>
+            <p style="margin:0 0 10px;font-size:19px;font-weight:800;color:#0F172A;">
+              Signez votre contrat en ligne
+            </p>
+            <p style="margin:0 0 20px;font-size:14px;color:#4B5563;line-height:1.75;">
+              Votre <strong>${escapeHtml(sig.contractLabel)}</strong> (réf. ${escapeHtml(sig.reference)}) est prêt.
+              Lisez-le puis signez-le directement depuis votre téléphone ou votre ordinateur&nbsp;:
+              cela prend moins de deux minutes. Vous recevrez ensuite un exemplaire signé par e-mail.
+            </p>
+            <a href="${escapeHtml(sig.url)}"
+               style="display:inline-block;background:#0E3B2D;color:#ffffff;text-decoration:none;
+                      border-radius:14px;padding:16px 40px;font-size:15px;font-weight:800;">
+              Lire et signer mon contrat →
+            </a>
+            <p style="margin:16px 0 0;font-size:11px;color:#92400E;line-height:1.7;">
+              Ce lien est personnel et valable jusqu'au ${escapeHtml(sig.expiresAt.toLocaleDateString('fr-FR', { timeZone: 'Europe/Paris', day: 'numeric', month: 'long', year: 'numeric' }))}.
+              Ne le transmettez à personne.
+            </p>
+            <p style="margin:8px 0 0;font-size:11px;color:#94A3B8;font-family:monospace;word-break:break-all;">
+              ${escapeHtml(sig.url)}
             </p>
           </td>
         </tr>
@@ -643,6 +683,9 @@ async sendWelcomeCompanyAdmin(params: {
     </td>
   </tr>
 
+  <!-- ═══ SIGNATURE DU CONTRAT (si un contrat a été émis) ═══ -->
+  ${signatureBlock}
+
   <!-- ═══ TÉLÉCHARGEMENT + ACCÈS WEB (selon la configuration) ═══ -->
   ${downloadBlock}
   ${webBlock}
@@ -689,7 +732,9 @@ async sendWelcomeCompanyAdmin(params: {
   // sendRaw = HTML complet sans le wrapHtml() de base
   await this.mailService.sendRaw(
     params.email,
-    `🎉 Bienvenue chez ${platform.name} — ${params.companyName} est officiellement active !`,
+    sig
+      ? `🎉 Bienvenue chez ${platform.name} — vos identifiants et votre contrat à signer (${params.companyName})`
+      : `🎉 Bienvenue chez ${platform.name} — ${params.companyName} est officiellement active !`,
     html,
   );
 }

@@ -97,6 +97,14 @@ export interface SendEmailOptions {
   transactionId?: string;
   brandColor?: string;
   brandName?: string;
+  /** ✅ v1.x (contrats) : pièces jointes (ex. contrat signé en PDF). */
+  attachments?: MailAttachment[];
+}
+
+export interface MailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType?: string;
 }
 
 type ProviderName = 'http' | 'smtp';
@@ -153,6 +161,7 @@ export class MailService {
     subject: string;
     html: string;
     text?: string;
+    attachments?: MailAttachment[];
   }): Promise<{ messageId: string }> {
     const apiKey = process.env.MAIL_FALLBACK_PASS?.trim();
     const from = (process.env.MAIL_FALLBACK_FROM ?? process.env.MAIL_FALLBACK_USER)?.trim();
@@ -180,6 +189,14 @@ export class MailService {
           subject: mailOptions.subject,
           html: mailOptions.html,
           ...(mailOptions.text ? { text: mailOptions.text } : {}),
+          ...(mailOptions.attachments?.length
+            ? {
+                attachments: mailOptions.attachments.map((a) => ({
+                  filename: a.filename,
+                  content: a.content.toString('base64'),
+                })),
+              }
+            : {}),
         }),
         signal: controller.signal,
       });
@@ -281,7 +298,7 @@ export class MailService {
   // ========================================================
 
   private async sendMail(
-    mailOptions: { to: string; subject: string; html: string; text?: string },
+    mailOptions: { to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] },
     recipientForLog: string,
   ): Promise<{ messageId: string; usedProvider: ProviderName } | null> {
     // ── Tentative 1 : HTTP (Resend) — jamais bloqué par Railway ────
@@ -383,6 +400,7 @@ export class MailService {
           brandColor: opts.brandColor,
           brandName:  opts.brandName,
         }),
+        ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
       },
       opts.to,
     );

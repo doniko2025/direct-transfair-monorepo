@@ -1,3 +1,4 @@
+/* apps/web-admin/src/styles/forms.css */
 /* =========================================================
    FORMULAIRES — compléments de components.css (liste, zone de texte,
    couleur, erreurs, boîte de confirmation, section éditable)
@@ -14,6 +15,7 @@
 }
 
 .field select {
+  font: inherit;
   height: 50px;
   padding: 0 42px 0 15px;
   appearance: none;
@@ -80,9 +82,12 @@
   text-transform: uppercase;
 }
 
-.color-field__picker {
+/* ✅ « .color-field .color-field__picker » : la règle générique « .field input » (largeur 100 %) l'emportait sur
+   la largeur de 50 px, et le sélecteur de couleur débordait de la carte (visible sur mobile). */
+.color-field .color-field__picker {
   flex: none;
   width: 50px;
+  min-width: 50px;
   height: 50px;
   padding: 4px;
   border: 1.5px solid var(--line);
@@ -176,6 +181,7 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px 20px;
+  align-items: start; /* une aide sous un champ ne décale plus son voisin */
   margin-top: 6px;
 }
 
@@ -222,4 +228,71 @@
 /* Un lien stylé en bouton ne se souligne pas */
 a.btn {
   text-decoration: none;
+}
+
+/* ── Choix du logo (import depuis l'appareil) ─────────────── */
+.logo-field__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.logo-field__tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 84px;
+  height: 84px;
+  overflow: hidden;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  color: var(--ink-3);
+}
+
+.logo-field__tile img {
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  object-fit: contain;
+}
+
+.logo-field__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-field__url {
+  margin-top: 10px;
+}
+
+.logo-field__url summary {
+  cursor: pointer;
+  color: var(--brand-deep);
+  font-weight: 600;
+  padding: 6px 0;
+}
+
+.logo-field__url .field {
+  margin-top: 8px;
+}
+
+/* Fiche société : vignette du logo importé */
+.logo-thumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-thumb img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  padding: 4px;
 }
