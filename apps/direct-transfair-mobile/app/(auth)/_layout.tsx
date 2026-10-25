@@ -24,6 +24,12 @@ export default function AuthLayout() {
       <Stack.Screen name="register"        options={{ headerShown: false }} />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
 
+      {/* ✅ v4.1 : changement obligatoire du mot de passe temporaire (pas de retour par geste) */}
+      <Stack.Screen
+        name="change-password-required"
+        options={{ headerShown: false, gestureEnabled: false }}
+      />
+
       {/* ── Vérification obligatoire email + téléphone ── */}
       <Stack.Screen
         name="verify-contact"

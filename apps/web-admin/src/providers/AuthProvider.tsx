@@ -57,6 +57,8 @@ interface AuthContextValue {
   loginWithAssertion(assertion: string): Promise<LoginOutcome>;
   logout(): Promise<void>;
   dismissNotice(): void;
+  /** Mot de passe temporaire remplacé : retire l'obligation de changement de la session en cours. */
+  markPasswordChanged(): void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -196,6 +198,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState((s) => (s.status === 'anonymous' ? { status: 'anonymous', notice: null } : s));
   }, []);
 
+  const markPasswordChanged = useCallback(() => {
+    setState((s) =>
+      s.status === 'authenticated' ? { status: 'authenticated', user: { ...s.user, mustChangePassword: false } } : s,
+    );
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       state,
@@ -204,8 +212,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginWithAssertion,
       logout,
       dismissNotice,
+      markPasswordChanged,
     }),
-    [state, login, loginWithAssertion, logout, dismissNotice],
+    [state, login, loginWithAssertion, logout, dismissNotice, markPasswordChanged],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

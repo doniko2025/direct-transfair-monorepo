@@ -239,6 +239,7 @@ export class UsersController {
         lastName:  body.lastName,
         phone:     body.phone,
         country:   body.country,
+        mustChangePassword: true, // mot de passe choisi par l'administrateur → à changer à la 1re connexion
       },
     );
   }

@@ -143,6 +143,8 @@ function generateReferralCode(firstName?: string, lastName?: string): string {
 // =========================================================
 
 type UserExtraFields = {
+  /** Mot de passe défini par un administrateur : à changer à la 1re connexion. */
+  mustChangePassword?: boolean;
   firstName?: string;
   lastName?: string;
   phone?: string | null; // ✅ v4.5 : nullable pour permettre l'effacement explicite

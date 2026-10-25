@@ -56,6 +56,8 @@ export interface AuthUser {
   lastName?: string | null;
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
+  /** Mot de passe temporaire : le changement est obligatoire avant tout autre usage. */
+  mustChangePassword?: boolean;
   client?: CompanyRef | null;
   agency?: AgencyRef | null;
   [key: string]: unknown;

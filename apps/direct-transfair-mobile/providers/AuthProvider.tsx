@@ -1,7 +1,16 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
 // ✅ phase 7 : le code de la société système est lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
-// AUTH PROVIDER v7.1 — Direct Transf'air
+// AUTH PROVIDER v7.3 — Direct Transf'air
+// ✅ v7.3 : mot de passe temporaire. Si le profil porte `mustChangePassword`, la navigation est bloquée sur
+//   /(auth)/change-password-required jusqu'au changement (le serveur refuse de toute façon le reste de l'API).
+// ✅ v7.2 : 🔒 VERROU AU DÉMARRAGE. Avant, une session enregistrée sur le téléphone était restaurée sans aucune
+//   vérification : « Se connecter » et « Devenir client » menaient droit à l'accueil, et quiconque ouvrait l'app
+//   entrait dans le compte. Désormais, à chaque démarrage de l'app (mobile), la session n'est rouverte qu'après
+//   la biométrie (empreinte / visage / code du téléphone) si l'utilisateur l'a activée ; sinon elle est fermée
+//   et l'écran de connexion s'affiche (le refresh token reste pour la reconnexion biométrique, comme au logout).
+//   L'écran d'accueil (index) d'un utilisateur déjà connecté renvoie directement vers l'accueil de l'app.
+//   Web : inchangé (la session du navigateur survit au rechargement de la page).
 // ✅ v7.1 : 🔥 CORRIGÉ « le chargement tourne sans fin » au démarrage. La restauration de session attendait
 //   GET /auth/me (puis, sur 401, POST /auth/refresh) AVANT d'afficher quoi que ce soit : avec un serveur qui se
 //   réveille (Render gratuit) ou qui ne répond pas, l'écran de chargement restait bloqué 30 à 60 s, voire plus.
@@ -51,7 +60,7 @@ import { api } from "../services/api";
 import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
 import { getCurrencyByCountry } from "../data/countries";
 import { isPlatformCode } from "../services/platformConfig";
-import { promptBiometrics } from "../hooks/useBiometrics"; // ✅ v6.2
+import { promptBiometrics, isBiometricsAvailable, getBiometricsEnabled } from "../hooks/useBiometrics"; // ✅ v6.2 / v7.2
 import type {
   AuthUser, LoginPayload, RegisterPayload, LoginResponse,
 } from "../services/types";
@@ -164,6 +173,19 @@ const INIT_MAX_WAIT_MS = (() => {
   const n = Number(process.env.EXPO_PUBLIC_AUTH_INIT_MAX_WAIT_MS);
   return Number.isFinite(n) && n >= 2000 && n <= 60000 ? n : 8000;
 })();
+
+// ✅ v7.2 : preuve de présence demandée au démarrage avant de rouvrir une session enregistrée.
+//   true  = on peut restaurer la session ; false = on la ferme et on demande une vraie connexion.
+async function unlockStoredSession(): Promise<boolean> {
+  if (Platform.OS === "web") return true;
+  try {
+    if (!(await isBiometricsAvailable())) return false;
+    if (!(await getBiometricsEnabled())) return false;
+    return await promptBiometrics("Déverrouillez l'application");
+  } catch {
+    return false;
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,      setUser]      = useState<AuthUser | null>(null);
@@ -280,6 +302,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
 
+          // ✅ v7.2 : verrou au démarrage. Le garde-fou de chargement est coupé pendant l'invite biométrique
+          // (elle peut durer) ; échec ou annulation ⇒ session fermée localement (le refresh token est conservé :
+          // le bouton « Biométrie » de l'écran de connexion permet de la rouvrir).
+          clearTimeout(capTimer);
+          if (!(await unlockStoredSession())) {
+            api.clearToken();
+            await removeStorage(TOKEN_KEY);
+            await removeStorage(USER_KEY);
+            return;
+          }
+
           const clientCode = (storedUser as any)?.client?.code;
           if (clientCode) await applyTenant(clientCode);
 
@@ -352,7 +385,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (user && inAuthGroup && !isLegalScreen && !isVerifyScreen) {
+    // ✅ v7.3 : mot de passe temporaire → seul l'écran de changement (et les écrans légaux) est accessible.
+    if (user && (user as any).mustChangePassword === true) {
+      if (segments[1] !== "change-password-required" && !isLegalScreen && !isVerifyScreen) {
+        router.replace("/(auth)/change-password-required" as any);
+      }
+      return;
+    }
+
+    // ✅ v7.2 : l'écran d'accueil (racine, aucun segment) n'a pas de sens pour un utilisateur connecté.
+    const onWelcome = segments.length === 0;
+    if (user && (onWelcome || (inAuthGroup && !isLegalScreen && !isVerifyScreen))) {
       router.replace("/(tabs)/home");
     }
   }, [user, isLoading, segments, router]);

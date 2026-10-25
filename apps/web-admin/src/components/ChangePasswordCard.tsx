@@ -1,4 +1,6 @@
 // src/components/ChangePasswordCard.tsx
+// v1.1 — props `forced` (changement obligatoire après un mot de passe temporaire : libellé adapté, pas de message de
+//        succès, `onChanged` appelé) et `onChanged`. Sans ces props : comportement inchangé.
 // v1.0 — Carte « Mot de passe » de la page Mon compte.
 // Trois champs (actuel, nouveau, confirmation), indicateur de robustesse, validation
 // immédiate côté interface puis appel PATCH /auth/change-password. Les erreurs du
@@ -15,7 +17,15 @@ import {
   type PasswordFormErrors,
 } from '../lib/passwordRules';
 
-export function ChangePasswordCard({ email }: { email: string }) {
+export function ChangePasswordCard({
+  email,
+  forced = false,
+  onChanged,
+}: {
+  email: string;
+  forced?: boolean;
+  onChanged?: () => void;
+}) {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -62,7 +72,8 @@ export function ChangePasswordCard({ email }: { email: string }) {
       setConfirm('');
       setErrors({});
       setShowPasswords(false);
-      setDone(true);
+      setDone(!forced);
+      onChanged?.();
     } catch (err) {
       const problem = describeChangePasswordError(err);
       if (problem.field === 'current') {
@@ -130,7 +141,7 @@ export function ChangePasswordCard({ email }: { email: string }) {
           <Field
             ref={currentRef}
             className="form-grid__wide"
-            label="Mot de passe actuel"
+            label={forced ? 'Mot de passe temporaire (reçu par e-mail)' : 'Mot de passe actuel'}
             name="current-password"
             type={inputType}
             autoComplete="current-password"

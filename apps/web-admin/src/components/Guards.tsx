@@ -1,5 +1,6 @@
 // src/components/Guards.tsx
-// RequireAuth : session obligatoire (sinon /login, avec retour à la page demandée).
+// RequireAuth : session obligatoire (sinon /login, avec retour à la page demandée). Mot de passe temporaire encore
+// actif (`mustChangePassword`) : seul l'écran de changement est affiché (le serveur refuse de toute façon le reste).
 // RequireRole : page réservée à certains rôles.
 //
 // ⚠️ Ces gardes améliorent l'expérience, elles ne sécurisent rien : la
@@ -9,6 +10,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { WEB_ROLES, isWebRole, type WebRole } from '@direct-transfair/shared';
 import { useAuth } from '../providers/AuthProvider';
+import { ForcedPasswordChange } from './ForcedPasswordChange';
 import { Button, LoadingScreen, ScreenState } from './ui';
 
 export function RequireAuth() {
@@ -19,6 +21,7 @@ export function RequireAuth() {
   if (state.status === 'anonymous') {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
+  if (state.user.mustChangePassword === true) return <ForcedPasswordChange />;
   return <Outlet />;
 }
 

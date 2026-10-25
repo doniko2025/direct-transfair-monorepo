@@ -816,6 +816,10 @@ model User {
   isPhoneVerified Boolean   @default(false)
   isActive        Boolean   @default(true)
   isSuspended     Boolean   @default(false)
+
+  // Mot de passe défini par un tiers (création / réinitialisation par un administrateur) : l'utilisateur doit en
+  // choisir un nouveau avant tout autre usage de l'API. Remis à false par le changement de mot de passe.
+  mustChangePassword Boolean @default(false)
   suspendedReason String?
   suspendedAt     DateTime?
 

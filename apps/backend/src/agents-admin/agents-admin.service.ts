@@ -203,6 +203,7 @@ export class AgentsAdminService {
             firstName,
             lastName,
             role: Role.AGENT,
+            mustChangePassword: true, // mot de passe temporaire → à changer à la 1re connexion
             clientId,
             agencyId: agency.id,
             primaryCurrency: agency.primaryCurrency,
@@ -302,7 +303,7 @@ export class AgentsAdminService {
     // Passe 2 (phase 6) : les sessions ouvertes avec l'ancien mot de passe sont fermées (sinon elles se renouvellent
     // tant que le refresh token n'expire pas) ; l'agent se reconnecte avec le mot de passe temporaire.
     await this.prisma.$transaction([
-      this.prisma.user.update({ where: { id }, data: { password: hash } }),
+      this.prisma.user.update({ where: { id }, data: { password: hash, mustChangePassword: true } }),
       this.prisma.userSession.deleteMany({ where: { userId: id } }),
     ]);
 

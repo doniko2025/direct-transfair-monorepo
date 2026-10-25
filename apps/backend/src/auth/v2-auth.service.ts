@@ -972,6 +972,7 @@ export class V2AuthService {
       isEmailVerified: user.isEmailVerified,
       isPhoneVerified: user.isPhoneVerified,
       mfaEnabled:      user.mfaEnabled,
+      mustChangePassword: Boolean(user.mustChangePassword),
       country:         user.country,
       city:            user.city,
       client:          user.client,

@@ -355,6 +355,7 @@ export class ClientsService {
           firstName:       String(dto.adminFirstName),
           lastName:        String(dto.adminLastName),
           role:            Role.COMPANY_ADMIN,
+          mustChangePassword: true, // ✅ v4.17 : mot de passe temporaire envoyé par e-mail → à changer à la 1re connexion
           clientId:        client.id,
           country:         ownerCountryCode    ?? null,
           primaryCurrency,

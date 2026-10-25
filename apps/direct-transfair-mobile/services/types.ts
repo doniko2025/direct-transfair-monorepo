@@ -274,6 +274,8 @@ export interface AuthUser {
   kycLevel?: KycLevel;
 
   isEmailVerified?: boolean;
+  /** Mot de passe temporaire : changement obligatoire avant tout autre usage. */
+  mustChangePassword?: boolean;
   isPhoneVerified?: boolean;
   isActive?: boolean;
   isSuspended?: boolean;

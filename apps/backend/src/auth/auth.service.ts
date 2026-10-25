@@ -271,6 +271,15 @@ const OTP_WINDOW_MINUTES     = 15;  // durée de la fenêtre glissante
 // TYPES
 // =========================================================
 
+/** Champs de la fiche que l'utilisateur peut modifier lui-même via PATCH /auth/me (liste blanche). */
+const PROFILE_EDITABLE_FIELDS = [
+  'firstName', 'lastName', 'phone', 'gender', 'jobTitle',
+  'addressStreet', 'postalCode', 'city', 'country',
+  'nationality', 'birthDate', 'birthPlace', 'birthCountry', 'birthCity',
+  'profilePictureUrl', 'preferredLanguage',
+  'ibanNumber', 'bankName', 'bankBic', 'mobileMoneyOperator', 'mobileMoneyNumber',
+] as const;
+
 export type PublicUser = {
   id: string;
   email: string;
@@ -288,6 +297,8 @@ export type PublicUser = {
   isEmailVerified?: boolean;
   isPhoneVerified?: boolean;
   mfaEnabled?: boolean;
+  /** ✅ mot de passe temporaire : le client doit imposer un changement avant tout autre écran. */
+  mustChangePassword?: boolean;
   // ✅ v5.2 : champs manquants ajoutés — voir toPublicUser() ci-dessous
   gender?: string | null;
   jobTitle?: string | null;
@@ -1143,7 +1154,7 @@ export class AuthService {
     if (!otpLog) throw new BadRequestException('Code invalide ou expiré');
 
     const hashedPassword = await bcrypt.hash(newPass, 10);
-    await this.prisma.user.update({ where: { id: userId }, data: { password: hashedPassword } });
+    await this.prisma.user.update({ where: { id: userId }, data: { password: hashedPassword, mustChangePassword: false } });
     await this.prisma.otpLog.update({ where: { id: otpLog.id }, data: { isUsed: true, usedAt: new Date() } });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -1239,10 +1250,15 @@ export class AuthService {
   }
 
   async updateProfile(userId: string, data: any) {
-    const updateData: any = { ...data };
-    ['id','role','password','email','balance','clientId','kycLevel',
-     'loyaltyPoints','loyaltyTier','referralCode','wallets','client','agency']
-      .forEach((k) => delete updateData[k]);
+    // 🔒 Liste blanche : ce point d'accès est appelé par l'utilisateur lui-même. Avant, on retirait seulement quelques
+    // champs sensibles (liste noire) : tout le reste de la fiche (suspension, vérifications, plafonds, agence,
+    // mustChangePassword, secrets MFA…) pouvait être modifié par n'importe quel utilisateur connecté.
+    const raw: Record<string, unknown> =
+      data && typeof data === 'object' && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+    const updateData: any = {};
+    for (const key of PROFILE_EDITABLE_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(raw, key)) updateData[key] = raw[key];
+    }
 
     if (updateData.phone) updateData.phone = normalizePhoneE164(updateData.phone); // ✅ v5.1
     if (updateData.country) {
@@ -1282,7 +1298,7 @@ export class AuthService {
 
     await this.prisma.user.update({
       where: { id: userId },
-      data:  { password: await bcrypt.hash(newPass, 10) },
+      data:  { password: await bcrypt.hash(newPass, 10), mustChangePassword: false },
     });
     await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
 
@@ -1354,6 +1370,7 @@ export class AuthService {
       kycLevel: user.kycLevel, balance: 0,
       isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified,
       mfaEnabled: user.mfaEnabled,
+      mustChangePassword: Boolean(user.mustChangePassword),
       gender: user.gender, jobTitle: user.jobTitle, // ✅ v5.2
       birthDate: user.birthDate,
       birthPlace: user.birthPlace, nationality: user.nationality,

@@ -354,6 +354,7 @@ export class AgenciesService {
           firstName: safeTrim(dto.adminFirstName) || 'Agent',
           lastName: safeTrim(dto.adminLastName) || 'Agence',
           role: Role.AGENT,
+          mustChangePassword: true, // mot de passe défini par l'administrateur → à changer à la 1re connexion
           clientId,
           agencyId: agency.id,
           phone,

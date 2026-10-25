@@ -1,6 +1,9 @@
 // apps/backend/src/auth/jwt-auth.guard.ts
 // =========================================================
-// JWT AUTH GUARD v4.3
+// JWT AUTH GUARD v4.4
+// ✅ v4.4 : mot de passe temporaire. Tant que `mustChangePassword` est vrai, toute route est refusée (403,
+//    code PASSWORD_CHANGE_REQUIRED) sauf GET /auth/me, PATCH /auth/change-password et POST /auth/logout.
+//    Le contrôle est côté serveur : un client modifié ne peut pas contourner l'écran de changement.
 // ✅ v4.1 : Fix "Tenant mismatch" sur Railway :
 //    - tenantClientId=0 (multi-db mode) → bypass le check
 //    - tenantClientId=-1 (non résolu) → bypass le check
@@ -63,6 +66,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -90,6 +94,16 @@ type AuthenticatedRequest = Request & {
   user?: AuthUserPayload;
   tenantContext?: TenantContext;
 };
+
+/** Routes restant ouvertes pendant un changement de mot de passe obligatoire. */
+function isPasswordChangeRoute(req: Request): boolean {
+  const path = String(req.originalUrl ?? req.url ?? '').split('?')[0].replace(/\/+$/, '');
+  const method = String(req.method ?? '').toUpperCase();
+  if (method === 'GET' && /\/auth\/me$/.test(path)) return true;
+  if (method === 'PATCH' && /\/auth\/change-password$/.test(path)) return true;
+  if (method === 'POST' && /\/auth\/logout$/.test(path)) return true;
+  return false;
+}
 
 function extractToken(req: Request): string {
   const rawHeader = req.headers['authorization'];
@@ -163,6 +177,7 @@ export class JwtAuthGuard implements CanActivate {
           isSuspended: true,
           role:        true,
           clientId:    true, // ✅ v4.3
+          mustChangePassword: true, // ✅ v4.4
           client:      { select: { isActive: true } },
         },
       });
@@ -185,6 +200,15 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException(
           'Cette société a été désactivée. Contactez votre administrateur.',
         );
+      }
+
+      // ✅ v4.4 — mot de passe temporaire : seules les routes nécessaires au changement restent ouvertes.
+      if (dbUser.mustChangePassword && !isPasswordChangeRoute(req)) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: 'PASSWORD_CHANGE_REQUIRED',
+          message: 'Vous devez d\'abord remplacer votre mot de passe temporaire.',
+        });
       }
 
       // ✅ v4.3 — rôle et société réels (base), plus ceux du token.
@@ -227,7 +251,7 @@ export class JwtAuthGuard implements CanActivate {
 
       return true;
     } catch (e) {
-      if (e instanceof UnauthorizedException) throw e;
+      if (e instanceof UnauthorizedException || e instanceof ForbiddenException) throw e;
       throw new UnauthorizedException('Invalid token');
     }
   }
