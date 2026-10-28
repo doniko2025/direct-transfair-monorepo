@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// CLIENT DASHBOARD v12.2 — Direct Transf'air
+// CLIENT DASHBOARD v12.3 — Direct Transf'air
+// ✅ v12.3 : BOUTON « ENVOYER » FLOTTANT — la pilule jaune du corps de page est remplacée par un bouton vert (couleur du héros), animé et
+//    clignotant, déplaçable au doigt ; au toucher, une fenêtre demande « Virement wallet » ou « Transfert avec code » puis redirige vers la page dédiée.
 // ✅ v12.2 : CONTACT SÉLECTIONNÉ BIEN VISIBLE — la pastille choisie passe en vert forêt plein, texte blanc gras, coche jaune à la place des initiales.
 // ✅ v12.1 : ACCUEIL ALLÉGÉ ET PLUS SOIGNÉ — montants ramenés à 28 px (plafonnés même si le téléphone agrandit les polices), couloir réduit
 //    (176 → 152 px), calculateur en deux panneaux arrondis (« Tu envoies » encadré, « Montant reçu » teinté) reliés par un bouton d'échange,
@@ -34,6 +36,7 @@ import { useLoader } from "../wallet/useLoader";
 import { currencySymbol, formatMoney, toNum } from "../wallet/walletTheme";
 import { DotGrid, capitalOf } from "../ui/Corridor";
 import { ChoiceSheet } from "../ui/ChoiceSheet";
+import FloatingSendButton, { type SendMode } from "./FloatingSendButton";
 import { SERIF_FONT } from "../ui/theme";
 import {
   Card, EmptyView, ErrorView, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow, UText, useUI,
@@ -249,8 +252,22 @@ export default function ClientDashboard() {
     router.push({ pathname: "/(tabs)/send", params });
   };
 
+  // ✅ Bouton flottant « Envoyer… » : le client choisit d'abord la méthode (code de retrait / virement wallet),
+  //   puis on l'envoie directement sur la page dédiée, avec le montant et le contact déjà sélectionnés.
+  const sendWith = (mode: SendMode) => {
+    const params: Record<string, string> = { mode };
+    if (amount > 0) params.amount = String(amount);
+    if (mode === "CASH" && selected?.beneficiaryId) params.beneficiaryId = String(selected.beneficiaryId);
+    if (mode === "WALLET" && selected?.phone) { params.phone = selected.phone; if (selected.name) params.name = selected.name; }
+    router.push({ pathname: "/(tabs)/send", params });
+  };
+  const sendLabel = amount > 0 ? `Envoyer ${formatMoney(amount, primaryCurrency)} ${sym}` : "Envoyer de l'argent";
+
   const recentTxs = txs.slice(0, 5);
-  const quick: { icon: string; label: string; route: string }[] = [
+  // ✅ « Wallet » : transfert gratuit d'un wallet à un autre, sans code (onglet Wallet de l'écran d'envoi). Ce raccourci
+  //   avait disparu de l'accueil lors de la refonte « Corridor » : sans lui, la fonction n'était plus découvrable.
+  const quick: { icon: string; label: string; route: string; params?: Record<string, string> }[] = [
+    { icon: "phone-portrait-outline", label: "Wallet", route: "/(tabs)/send", params: { mode: "WALLET" } },
     { icon: "add", label: "Recharger", route: "/(tabs)/recharge" },
     { icon: "swap-horizontal", label: "Taux", route: "/(tabs)/rates" },
     { icon: "qr-code-outline", label: "QR Code", route: "/(tabs)/qr" },
@@ -259,6 +276,7 @@ export default function ClientDashboard() {
   const [heroW, setHeroW] = useState(0);
 
   return (
+    <>
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       {/* ── Salutation + notifications ── */}
       <View style={{ flexDirection: "row", alignItems: "flex-start", paddingTop: 10, paddingHorizontal: 2 }}>
@@ -399,31 +417,15 @@ export default function ClientDashboard() {
         </View>
       </View>
 
-      {/* ── Bouton principal ── */}
-      <Pressable
-        onPress={goSend}
-        accessibilityRole="button"
-        style={({ pressed }) => ({
-          marginTop: 16, height: 54, borderRadius: 27, backgroundColor: C.sun, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
-          shadowColor: "#A07800", shadowOpacity: 0.32, shadowRadius: 9, shadowOffset: { width: 0, height: 6 }, elevation: 4,
-          opacity: pressed ? 0.92 : 1, transform: [{ scale: pressed ? 0.99 : 1 }],
-        })}
-      >
-        <Ionicons name="send" size={19} color={C.sunInk} />
-        <Text maxFontSizeMultiplier={1.15} style={{ fontSize: 16.5, fontWeight: "800", color: C.sunInk }}>
-          {amount > 0 ? `Envoyer ${formatMoney(amount, primaryCurrency)} ${sym}` : "Envoyer de l'argent"}
-        </Text>
-      </Pressable>
-
       {/* ── Raccourcis ── */}
       <View style={{ flexDirection: "row", justifyContent: "space-around", marginTop: 18 }}>
         {quick.map((q) => (
           <Pressable
             key={q.label}
-            onPress={() => router.push(q.route as any)}
+            onPress={() => router.push((q.params ? { pathname: q.route, params: q.params } : q.route) as any)}
             accessibilityRole="button"
             accessibilityLabel={q.label}
-            style={({ pressed }) => ({ alignItems: "center", gap: 7, width: 84, opacity: pressed ? 0.7 : 1 })}
+            style={({ pressed }) => ({ alignItems: "center", gap: 7, width: 76, opacity: pressed ? 0.7 : 1 })}
           >
             <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: "center", justifyContent: "center" }}>
               <Ionicons name={q.icon} size={22} color={C.forest} />
@@ -490,5 +492,11 @@ export default function ClientDashboard() {
         searchPlaceholder="Rechercher une devise"
       />
     </Screen>
+    <FloatingSendButton
+      label={sendLabel}
+      summary={amount > 0 ? `Montant : ${formatMoney(amount, primaryCurrency)} ${sym}` : undefined}
+      onChoose={sendWith}
+    />
+    </>
   );
 }
