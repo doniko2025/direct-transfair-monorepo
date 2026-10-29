@@ -21,6 +21,7 @@ export function KpiCard({
   note,
   to,
   tone = 'default',
+  variant,
   loading = false,
 }: {
   icon: IconName;
@@ -29,6 +30,8 @@ export function KpiCard({
   note?: string;
   to?: string;
   tone?: 'default' | 'warn' | 'ok';
+  /** Variante visuelle facultative (ex. « in », « out ») : ajoute la classe `dash-kpi--<variant>`. */
+  variant?: string;
   loading?: boolean;
 }) {
   const body = (
@@ -41,7 +44,7 @@ export function KpiCard({
       {note ? <small className="dash-kpi__note">{loading ? ' ' : note}</small> : null}
     </>
   );
-  const cls = `dash-kpi dash-kpi--${tone}`;
+  const cls = `dash-kpi dash-kpi--${tone}${variant ? ` dash-kpi--${variant}` : ''}`;
   return to ? (
     <Link to={to} className={cls} aria-busy={loading || undefined}>
       {body}
@@ -53,9 +56,9 @@ export function KpiCard({
   );
 }
 
-export function KpiGrid({ children, label }: { children: ReactNode; label: string }) {
+export function KpiGrid({ children, label, className }: { children: ReactNode; label: string; className?: string }) {
   return (
-    <div className="dash-kpis" role="group" aria-label={label}>
+    <div className={className ? `dash-kpis ${className}` : 'dash-kpis'} role="group" aria-label={label}>
       {children}
     </div>
   );

@@ -57,6 +57,45 @@
   gap: 10px;
 }
 
+/* Bandeau compact (agent) : date + salutation, puis la caisse en pleine largeur. */
+.dash-hero--compact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+  align-items: stretch;
+  gap: 14px;
+  padding: 22px 24px;
+}
+
+.dash-hero__body {
+  min-width: 0;
+}
+
+/* ─── Titres de section ────────────────────────────────── */
+.dash-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dash-section__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.dash-section__title {
+  margin: 0;
+  font-size: var(--t-lg);
+}
+
+.dash-section__hint {
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+
 /* ─── Indicateurs ──────────────────────────────────────── */
 .dash-kpis {
   display: grid;
@@ -122,6 +161,40 @@ a.dash-kpi:hover {
   color: var(--ink-3);
   font-size: var(--t-sm);
   overflow-wrap: anywhere;
+}
+
+/* Statistiques de l'agent : quatre cartes pâles, teintées par type, sur une seule ligne.
+   Informatives (non cliquables) : à gauche, sans relief au survol. */
+.dash-kpis--stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dash-kpis--stats .dash-kpi {
+  --kpi-tint: var(--brand);
+  background: color-mix(in oklab, var(--kpi-tint) 8%, white);
+  box-shadow: var(--sh-1);
+}
+
+.dash-kpis--stats .dash-kpi__icon {
+  background: color-mix(in oklab, var(--kpi-tint) 16%, white);
+  color: var(--kpi-tint);
+}
+
+.dash-kpis--stats .dash-kpi--in {
+  --kpi-tint: var(--ok);
+}
+
+.dash-kpis--stats .dash-kpi--out {
+  --kpi-tint: #c76f00;
+}
+
+.dash-kpis--stats .dash-kpi--send {
+  --kpi-tint: var(--brand);
+}
+
+.dash-kpis--stats .dash-kpi--vault {
+  --kpi-tint: var(--ink-2);
 }
 
 /* ─── Raccourcis ───────────────────────────────────────── */
@@ -408,43 +481,70 @@ a.dash-kpi:hover {
 }
 
 /* ─── Opérations du guichet (agent) ────────────────────── */
+/* Boutons d'action : pleins, colorés, centrés — nettement distincts des cartes de statistiques. */
 .dash-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
 .dash-action {
+  --act-bg: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  --act-fg: var(--brand-ink);
   display: grid;
+  justify-items: center;
   align-content: start;
   gap: 2px;
-  padding: 16px 16px 14px;
+  min-width: 0;
+  padding: 18px 14px 16px;
   border-radius: var(--r-md);
-  background: var(--card);
+  background: var(--act-bg);
   box-shadow: var(--sh-1);
-  color: inherit;
+  color: var(--act-fg);
+  text-align: center;
   text-decoration: none;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .dash-action:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   box-shadow: var(--sh-2);
+}
+
+.dash-action--in {
+  --act-bg: linear-gradient(135deg, #1b8a57, var(--ok));
+  --act-fg: #ffffff;
+}
+
+.dash-action--out {
+  --act-bg: linear-gradient(135deg, #ffa83a, var(--accent));
+  --act-fg: var(--accent-ink);
+}
+
+.dash-action--send {
+  --act-bg: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  --act-fg: var(--brand-ink);
+}
+
+.dash-action--vault {
+  --act-bg: linear-gradient(135deg, #2c3d37, var(--ink));
+  --act-fg: #ffffff;
 }
 
 .dash-action__icon {
   display: grid;
   place-items: center;
-  width: 42px;
-  height: 42px;
+  width: 48px;
+  height: 48px;
   margin-bottom: 8px;
-  border-radius: 13px;
-  background: var(--brand);
-  color: var(--brand-ink);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--act-fg) 20%, transparent);
+  color: inherit;
 }
 
 .dash-action small {
-  color: var(--ink-2);
+  color: inherit;
+  opacity: 0.85;
   font-size: var(--t-sm);
   line-height: 1.35;
 }
@@ -496,9 +596,42 @@ a.dash-kpi:hover {
     padding: 16px 16px;
   }
 
+  .dash-hero--compact {
+    gap: 12px;
+    padding: 18px 16px;
+  }
+
+  /* Statistiques : une seule ligne, défilement horizontal si l'écran est trop étroit. */
+  .dash-kpis.dash-kpis--stats {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(148px, 44%);
+    overflow-x: auto;
+    padding: 2px 2px 8px;
+    scroll-snap-type: x proximity;
+  }
+
+  .dash-kpis--stats .dash-kpi {
+    scroll-snap-align: start;
+  }
+
+  /* Opérations : quatre boutons sur une seule ligne, icône + libellé. */
   .dash-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
+  }
+
+  .dash-action {
+    padding: 12px 4px 10px;
+  }
+
+  .dash-action__icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 4px;
+  }
+
+  .dash-action strong {
+    font-size: 0.8125rem;
   }
 
   .dash-action small {
