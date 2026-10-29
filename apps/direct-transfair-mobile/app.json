@@ -75,8 +75,9 @@
         "origin": "https://directtransfair.app"
       },
       "eas": {
-        "projectId": "047c62b4-1687-4935-b8e1-c30aef4548f7"
+        "projectId": "f81aeef1-be76-410b-a59f-57e39130bd53"
       }
-    }
+    },
+    "owner": "keneris-team"
   }
 }
