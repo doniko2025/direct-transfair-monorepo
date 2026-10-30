@@ -1,7 +1,11 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/[id].tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// BENEFICIARY DETAIL v6.0 — Direct Transf'air
+// BENEFICIARY DETAIL v6.1 — Direct Transf'air
+// ✅ v6.1 : INDICATIF UNIQUE (audit) — le numéro enregistré commence par « + » : l'ancienne détection (startsWith sur l'indicatif sans « + ») ne trouvait jamais
+//    le pays, laissait « +224622… » dans le champ, et chaque modification enregistrait « +224+224622… » (indicatif doublé, puis triplé aux modifications
+//    suivantes). Désormais (utils/phone.ts) : le pays est reconnu, le champ ne garde que le numéro national, et l'enregistrement reconstruit
+//    « +<indicatif><numéro national> » (indicatif répété et 0 de tête retirés — les numéros déjà doublés en base sont réparés à la prochaine modification).
 // ✅ v6.0 : REFONTE THÈME CLAIR — fini le hero dégradé sombre : barre de navigation claire
 //    (crayon / croix), avatar centré avec nom, localisation et téléphone, puis « Envoyer de
 //    l'argent » en deux lignes à filet (Vers un wallet / Envoi d'argent), formulaire de
@@ -30,6 +34,7 @@ import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
+import { nationalOf, parseInternational, toE164 } from "../../../utils/phone";
 import { citiesByCountry } from "../../../data/cities";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../../components/wallet/useLoader";
 import {
@@ -76,10 +81,9 @@ export default function BeneficiaireDetailScreen() {
     if (found) { setAddressCountry(found); if (!b.phone) setPhoneCountry(found); }
     setCity(b.city || "");
     if (b.phone) {
-      const sorted = [...countriesList].sort((a, b2) => b2.dialCode.length - a.dialCode.length);
-      const match = sorted.find((c) => b.phone?.startsWith(c.dialCode));
-      if (match) { setPhoneCountry(match); setPhoneNumber(b.phone.replace(match.dialCode, "")); }
-      else setPhoneNumber(b.phone);
+      const intl = parseInternational(`+${String(b.phone).replace(/\D/g, "")}`);
+      if (intl && intl.national) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); }
+      else setPhoneNumber(String(b.phone));
     } else { setPhoneNumber(""); }
   };
 
@@ -107,8 +111,7 @@ export default function BeneficiaireDetailScreen() {
     let fullPhone: string | null = null;
     if (phoneNumber.trim().length > 0) {
       const dial = phoneCountry.dialCode.replace("+", "");
-      const num = phoneNumber.trim().replace(/^0+/, "");
-      fullPhone = `+${dial}${num}`;
+      fullPhone = toE164(dial, nationalOf(phoneNumber, dial));
     }
     try {
       setSaving(true);
@@ -234,7 +237,10 @@ export default function BeneficiaireDetailScreen() {
             </Pressable>
             <Field
               value={phoneNumber}
-              onChangeText={setPhoneNumber}
+              onChangeText={(t) => {
+                const intl = parseInternational(t);
+                if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); } else setPhoneNumber(t);
+              }}
               placeholder="620 000 000"
               keyboardType="phone-pad"
               editable={!saving}

@@ -1,7 +1,13 @@
 // apps/direct-transfair-mobile/app/wallet-transfer.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// WALLET TRANSFER v7.0 — Direct Transf'air
+// WALLET TRANSFER v7.1 — Direct Transf'air
+// ✅ v7.1 : (1) INDICATIF UNIQUE — le champ ne contient que le numéro national ; l'indicatif n'est plus répété (il est dans le
+//    bouton pays). Un numéro collé « +224… » règle le pays tout seul ; un indicatif doublé est retiré ; la recherche envoie
+//    « +<indicatif><numéro> » puis, à défaut, la variante historique à indicatif doublé ; le contact créé est enregistré en E.164
+//    propre (utils/phone.ts). (2) DÉCIMALES — saisie avec virgule, 2 chiffres après la virgule pour EUR/USD/GBP, entiers pour
+//    XOF/GNF (utils/amount.ts) ; plus d'arrondi à l'entier. (3) CARTE DE MONTANT COMPACTE — deux lignes resserrées, aucun texte
+//    tronqué. LOGIQUE D'ENVOI INCHANGÉE.
 // ✅ v7.0 : REFONTE THÈME CLAIR (modale) — fond crème, carte de solde dégradée
 //    (blanc → couleur de la société), destinataire en champ arrondi avec indicatif en
 //    feuille basse, carte « destinataire trouvé » (avatar beige), grande saisie du
@@ -20,6 +26,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from "expo-router";
+import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLegacyDoubled } from "../utils/phone";
+import { decimalsFor, fmtMoney, fmtRate, parseAmount, sanitizeAmountInput } from "../utils/amount";
 import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
@@ -43,6 +51,8 @@ const COUNTRY_CODES = [
   { code: "+1",   flag: "🇺🇸", name: "États-Unis",    country: "US", currency: "USD" },
 ];
 type CountryCode = (typeof COUNTRY_CODES)[number];
+/** « +224 » → « 224 » (format utilisé par utils/phone.ts). */
+const dialOf = (c: CountryCode): string => c.code.replace("+", "");
 
 interface LookupResult {
   found:           boolean;
@@ -57,14 +67,8 @@ interface LookupResult {
   primaryCurrency?:string;
 }
 
-function fmt(n: number, currency = "XOF"): string {
-  const isWhole = currency === "GNF" || currency === "XOF";
-  const value   = isWhole ? Math.round(n) : n;
-  const d       = isWhole ? 0 : 2;
-  try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(value);
-  } catch { return value.toFixed(d); }
-}
+// ✅ v7.1 — formatage centralisé : 2 décimales (EUR, USD, GBP…), entiers pour XOF / GNF.
+const fmt = (n: number, currency = "XOF"): string => fmtMoney(n, currency);
 
 const QUICK_AMOUNTS: Record<string, number[]> = {
   XOF: [5_000,  10_000,  25_000,  50_000, 100_000, 200_000],
@@ -78,10 +82,10 @@ const QUICK_AMOUNTS: Record<string, number[]> = {
 function RecapRow({ label, value, strong, tone }: { label: string; value: React.ReactNode; strong?: boolean; tone?: "pos" | "warn" }) {
   const { C } = useUI();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 12, borderBottomWidth: strong ? 0 : 1, borderBottomColor: C.line }}>
+    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 10, borderBottomWidth: strong ? 0 : 1, borderBottomColor: C.line }}>
       <UText v={strong ? "bodyStrong" : "body"} tone={strong ? "ink" : "muted"}>{label}</UText>
       {typeof value === "string" ? (
-        <UText v="bodyStrong" tone={tone} style={{ flexShrink: 1, textAlign: "right", fontWeight: strong ? "800" : "600" }} numberOfLines={1}>{value}</UText>
+        <UText v="bodyStrong" tone={tone} style={{ flexShrink: 1, textAlign: "right", fontWeight: strong ? "800" : "600" }}>{value}</UText>
       ) : value}
     </View>
   );
@@ -115,7 +119,7 @@ export default function WalletTransferScreen() {
 
   const senderCurrency = wallet.currency;
   const currentBalance = wallet.balance;
-  const insufficient   = (parseFloat(amount) || 0) > currentBalance && (parseFloat(amount) || 0) > 0;
+  const insufficient   = parseAmount(amount) > currentBalance && parseAmount(amount) > 0;
 
   useEffect(() => {
     api.getMyWallets().then((wallets) => {
@@ -129,28 +133,39 @@ export default function WalletTransferScreen() {
     }).catch(() => { setWallet(prev => ({ ...prev, loaded: true })); });
   }, []);
 
-  const numAmount      = parseFloat(amount) || 0;
+  const numAmount      = parseAmount(amount);
   const targetCurrency = lookupResult?.primaryCurrency ?? selectedCode.currency;
   const isSameCurrency = targetCurrency === senderCurrency;
-  const canSend        = phone.trim().length >= 6 && numAmount > 0 && !insufficient && lookupResult?.found === true;
+  const national       = onlyDigits(phone);
+  const canSend        = national.length >= 6 && numAmount > 0 && !insufficient && lookupResult?.found === true;
   const showSummary    = numAmount > 0 && lookupResult?.found === true;
   const quickAmounts   = QUICK_AMOUNTS[senderCurrency] ?? QUICK_AMOUNTS.XOF;
 
   const lookupDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const cleanPhone = onlyDigits(phone);   // ✅ v7.1 — numéro national (l'indicatif n'est jamais dans le champ)
     if (cleanPhone.length < 6) { setLookupResult(null); setLookupLoading(false); return; }
     if (lookupDebounce.current) clearTimeout(lookupDebounce.current);
+    let cancelled = false;
     setLookupLoading(true);
     lookupDebounce.current = setTimeout(async () => {
-      try {
-        const res = await api.http.get("/beneficiaries/lookup", { params: { phone: `${selectedCode.code}${cleanPhone}` } });
-        setLookupResult(res.data ?? { found: false, isPlatformUser: false });
-      } catch {
-        setLookupResult({ found: false, isPlatformUser: false });
-      } finally { setLookupLoading(false); }
+      const dial = dialOf(selectedCode);
+      // E.164 propre d'abord, puis la variante historique (numéros enregistrés avec l'indicatif en double).
+      const candidates = [toE164(dial, cleanPhone), toLegacyDoubled(dial, cleanPhone)];
+      let result: LookupResult = { found: false, isPlatformUser: false };
+      for (const candidate of candidates) {
+        try {
+          const res = await api.http.get("/beneficiaries/lookup", { params: { phone: candidate } });
+          if (cancelled) return;
+          if (res.data?.found) { result = res.data; break; }
+          if (res.data) result = res.data;
+        } catch { /* variante suivante */ }
+      }
+      if (cancelled) return;
+      setLookupResult(result);
+      setLookupLoading(false);
     }, 600);
-    return () => { if (lookupDebounce.current) clearTimeout(lookupDebounce.current); };
+    return () => { cancelled = true; if (lookupDebounce.current) clearTimeout(lookupDebounce.current); };
   }, [phone, selectedCode.code]);
 
   const convertDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,6 +188,22 @@ export default function WalletTransferScreen() {
     convertDebounce.current = setTimeout(() => { void fetchConversion(numAmount, senderCurrency, targetCurrency); }, 500);
     return () => { if (convertDebounce.current) clearTimeout(convertDebounce.current); };
   }, [numAmount, senderCurrency, targetCurrency, lookupResult?.found]);
+
+  // ✅ v7.1 — saisie du numéro : seulement le numéro national. Un « +224… » / « 00224… » collé règle le pays.
+  const handlePhoneChange = (v: string) => {
+    setLookupResult(null);
+    if (!isNumericLike(v)) { setPhone(onlyDigits(v)); return; }
+    const intl = parseInternational(v);
+    if (intl) {
+      const match = COUNTRY_CODES.find((c) => dialOf(c) === intl.country.dialCode);
+      if (match) setSelectedCode(match);
+      setPhone(intl.national);
+      return;
+    }
+    const t = v.trim();
+    if (t.startsWith("+") || t.startsWith("00")) { setPhone(v); return; }   // indicatif en cours de frappe
+    setPhone(stripDial(onlyDigits(v), dialOf(selectedCode)));
+  };
 
   const handleTransfer = () => {
     if (!canSend) return;
@@ -197,7 +228,7 @@ export default function WalletTransferScreen() {
         Alert.alert("Destinataire non enregistré", "Ce numéro n'est pas inscrit sur la plateforme.");
         return;
       }
-      const fullPhone = `${selectedCode.code}${phone.trim().replace(/^0+/, "")}`;
+      const fullPhone = toE164(dialOf(selectedCode), stripDial(onlyDigits(phone), dialOf(selectedCode)));   // ✅ v7.1 — jamais d'indicatif doublé
       let beneficiaryId: string | undefined;
 
       if (lookupResult.beneficiaryId) {
@@ -239,8 +270,8 @@ export default function WalletTransferScreen() {
   };
 
   const foundName =
-    lookupResult?.fullName || `${lookupResult?.firstName ?? ""} ${lookupResult?.lastName ?? ""}`.trim() || `${selectedCode.flag} ${phone.trim()}`;
-  const cleanLen = phone.replace(/[^0-9]/g, "").length;
+    lookupResult?.fullName || `${lookupResult?.firstName ?? ""} ${lookupResult?.lastName ?? ""}`.trim() || `${selectedCode.flag} ${selectedCode.code} ${phone.trim()}`;
+  const cleanLen = onlyDigits(phone).length;
 
   const ctaLabel = insufficient
     ? "Solde insuffisant"
@@ -276,7 +307,7 @@ export default function WalletTransferScreen() {
       )}
 
       {/* Destinataire */}
-      <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>Destinataire</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>Destinataire</UText>
       <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, borderRadius: R.md, backgroundColor: C.field, paddingLeft: 6, paddingRight: 10 }}>
         <Pressable
           onPress={() => setShowPicker(true)}
@@ -294,13 +325,13 @@ export default function WalletTransferScreen() {
             { outlineStyle: "none", outlineWidth: 0 } as any,
           ]}
           value={phone}
-          onChangeText={(v) => { setPhone(v); setLookupResult(null); }}
+          onChangeText={handlePhoneChange}
           placeholder="Numéro de téléphone"
           placeholderTextColor={C.faint}
           keyboardType="phone-pad"
           selectionColor={C.accent}
           underlineColorAndroid="transparent"
-          accessibilityLabel="Numéro du destinataire"
+          accessibilityLabel="Numéro du destinataire, sans l'indicatif"
         />
         {lookupLoading ? (
           <ActivityIndicator size="small" color={C.ink} />
@@ -316,9 +347,9 @@ export default function WalletTransferScreen() {
           <Card pad={14} style={{ marginTop: 12, flexDirection: "row", alignItems: "center", gap: 12 }}>
             <Avatar name={foundName} size={44} incoming={lookupResult.isPlatformUser} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <UText v="bodyStrong" numberOfLines={1}>{foundName}</UText>
+              <UText v="bodyStrong">{foundName}</UText>
               {(lookupResult.city || lookupResult.country) ? (
-                <UText v="caption" tone="muted" numberOfLines={1}>
+                <UText v="caption" tone="muted">
                   {lookupResult.city ? `${lookupResult.city}, ` : ""}{lookupResult.country}
                 </UText>
               ) : null}
@@ -343,53 +374,52 @@ export default function WalletTransferScreen() {
       {/* Montant */}
       {lookupResult?.found && (
         <>
-          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>Montant</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>Montant</UText>
           <Card pad={0} style={{ overflow: "hidden", borderWidth: insufficient ? 1.5 : 0, borderColor: C.warn }}>
-            <View style={{ padding: 20 }}>
+            <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
               <UText v="overline" tone="muted">Tu envoies</UText>
-              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
                 <TextInput
                   style={[
-                    { flex: 1, minWidth: 0, padding: 0, fontFamily: SYSTEM_FONT, fontSize: 40, fontWeight: "800", letterSpacing: -1.2, color: insufficient ? C.warn : C.ink },
+                    { flex: 1, minWidth: 0, padding: 0, height: 40, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", letterSpacing: -0.8, color: insufficient ? C.warn : C.ink },
                     { outlineStyle: "none", outlineWidth: 0, borderWidth: 0 } as any,
                   ]}
                   value={amount}
-                  onChangeText={(t) => setAmount(t.replace(",", ".").replace(/[^0-9.]/g, ""))}
-                  placeholder="0"
+                  onChangeText={(t) => setAmount(sanitizeAmountInput(t, decimalsFor(senderCurrency)))}
+                  placeholder={decimalsFor(senderCurrency) > 0 ? "0,00" : "0"}
                   placeholderTextColor={C.faint}
-                  keyboardType="decimal-pad"
+                  keyboardType={decimalsFor(senderCurrency) > 0 ? "decimal-pad" : "number-pad"}
                   selectionColor={C.accent}
                   underlineColorAndroid="transparent"
                   accessibilityLabel="Montant à envoyer"
                 />
-                <UText v="heading" tone="muted">{senderCurrency}</UText>
+                <UText v="bodyStrong" tone="muted">{senderCurrency}</UText>
               </View>
             </View>
-            <View style={{ padding: 20, backgroundColor: C.sunken }}>
+            <View style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.sunken }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <UText v="overline" tone="muted">{lookupResult.firstName ? `${lookupResult.firstName} reçoit` : "Il·elle reçoit"}</UText>
                 {converting ? <ActivityIndicator size="small" color={C.ink} /> : null}
               </View>
-              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
                 <Text
-                  numberOfLines={1}
-                  style={{ flex: 1, minWidth: 0, fontFamily: SYSTEM_FONT, fontSize: 30, fontWeight: "800", letterSpacing: -0.8, color: convertedAmount !== null ? C.pos : C.faint }}
+                  style={{ flex: 1, minWidth: 0, fontFamily: SYSTEM_FONT, fontSize: 24, fontWeight: "800", letterSpacing: -0.6, color: convertedAmount !== null ? C.pos : C.faint }}
                 >
                   {converting ? "…" : convertedAmount !== null ? fmt(convertedAmount, targetCurrency) : numAmount > 0 ? "?" : "0"}
                 </Text>
-                <UText v="heading" tone="muted">{targetCurrency}</UText>
+                <UText v="bodyStrong" tone="muted">{targetCurrency}</UText>
               </View>
               {convRate !== null && !isSameCurrency && numAmount > 0 && (
-                <UText v="caption" tone="muted" style={{ marginTop: 8 }}>
-                  1 {senderCurrency} = {fmt(convRate, targetCurrency)} {targetCurrency}
+                <UText v="caption" tone="muted" style={{ marginTop: 4 }}>
+                  1 {senderCurrency} = {fmtRate(convRate)} {targetCurrency}
                 </UText>
               )}
             </View>
           </Card>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 14, paddingBottom: 2 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 10, paddingBottom: 2 }}>
             {quickAmounts.map((v) => (
-              <Chip key={v} label={fmt(v, senderCurrency)} active={numAmount === v} onPress={() => setAmount(String(v))} />
+              <Chip key={v} label={fmt(v, senderCurrency)} active={numAmount === v} onPress={() => setAmount(sanitizeAmountInput(String(v), decimalsFor(senderCurrency)))} />
             ))}
           </ScrollView>
         </>
@@ -398,7 +428,7 @@ export default function WalletTransferScreen() {
       {/* Récapitulatif */}
       {showSummary && (
         <>
-          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 4 }}>Récapitulatif</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 2 }}>Récapitulatif</UText>
           <RecapRow label="Destinataire" value={foundName} />
           <RecapRow label="Montant envoyé" value={`${fmt(numAmount, senderCurrency)} ${senderCurrency}`} />
           {!isSameCurrency && convertedAmount !== null && (

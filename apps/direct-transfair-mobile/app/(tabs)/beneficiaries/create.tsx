@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// BENEFICIARY CREATE v7.1 — Direct Transf'air
+// BENEFICIARY CREATE v7.2 — Direct Transf'air
+// ✅ v7.2 : INDICATIF UNIQUE (audit) — un contact importé « +224 622… » mettait « +224622… » dans le champ, puis l'enregistrement ajoutait l'indicatif une
+//    2e fois (« +224+224622… »). Désormais (utils/phone.ts) : le champ ne garde que le numéro national, un numéro collé « + » / « 00 » règle le pays tout seul,
+//    et le numéro enregistré est toujours « +<indicatif><numéro national> » (indicatif répété et 0 de tête retirés).
 // ✅ v7.1 : FIX « Impossible d'accéder aux contacts — Method getContactsAsync … is deprecated » : expo-contacts 56 a une nouvelle API par classes ;
 //    on garde l'API historique (mêmes fonctions) via « expo-contacts/legacy ». Aucune autre modification.
 // ✅ v7.0 : REFONTE THÈME CLAIR — fini le hero dégradé sombre : barre de navigation claire
@@ -36,6 +39,7 @@ import * as Contacts from "expo-contacts/legacy";
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
+import { nationalOf, parseInternational, toE164 } from "../../../utils/phone";
 import { citiesByCountry } from "../../../data/cities";
 import {
   Avatar, Button, Card, EmptyView, Field, ListRow, NavBar, Screen, SearchPill, SectionHeader, SelectRow, Sheet, UText, useUI,
@@ -100,15 +104,18 @@ export default function BeneficiaryCreateScreen() {
     } finally { setLoadingContacts(false); }
   };
 
+  /** Texte saisi / collé / importé → pays (si « + » ou « 00 ») + numéro national seul dans le champ. */
+  const applyPhoneText = (text: string) => {
+    const intl = parseInternational(text);
+    if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); }
+    else setPhoneNumber(text);
+  };
+
   const handleSelectContact = (contact: any) => {
     setFirstName(contact.firstName || "");
     setLastName(contact.lastName || "");
     const rawPhone = contact.phoneNumbers?.[0]?.number ?? "";
-    const cleaned = rawPhone.replace(/[\s\-\(\)]/g, "");
-    const sorted = [...countriesList].sort((a, b) => b.dialCode.length - a.dialCode.length);
-    const match = sorted.find((c) => cleaned.startsWith(c.dialCode));
-    if (match) { setPhoneCountry(match); setPhoneNumber(cleaned.replace(match.dialCode, "")); }
-    else setPhoneNumber(cleaned);
+    applyPhoneText(rawPhone);
     setShowContactsModal(false); setContactSearch("");
   };
 
@@ -126,8 +133,7 @@ export default function BeneficiaryCreateScreen() {
       let fullPhone: string | null = null;
       if (phoneNumber.trim().length > 0) {
         const dial = phoneCountry.dialCode.replace("+", "");
-        const num = phoneNumber.trim().replace(/^0+/, "");
-        fullPhone = `+${dial}${num}`;
+        fullPhone = toE164(dial, nationalOf(phoneNumber, dial));
       }
       const existing = await api.getBeneficiaries();
       const duplicate = existing.find((b) => {
@@ -225,7 +231,7 @@ export default function BeneficiaryCreateScreen() {
         </Pressable>
         <Field
           value={phoneNumber}
-          onChangeText={setPhoneNumber}
+          onChangeText={applyPhoneText}
           placeholder="620 000 000"
           keyboardType="phone-pad"
           editable={!submitting}
