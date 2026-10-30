@@ -1,6 +1,7 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.6
+// SCHEDULED TRANSFERS SERVICE v4.7
+// ✅ v4.7 (audit du code) : le montant reçu est arrondi à la devise de réception (roundToCurrency) avant d'être enregistré.
 // ✅ v4.6 : l'envoi créé à chaque échéance porte son pays de destination (Transaction.receiveCountry) et une échéance de code
 //   de 5 mois (pickupExpiry), comme un envoi manuel. Un virement cash dont le bénéficiaire n'a pas de pays reconnu échoue
 //   avec un message clair (au lieu de partir avec la devise XOF par défaut) ; sa devise de paiement est celle du pays.
@@ -74,6 +75,7 @@ import { TransferLimitsService } from '../transfer-limits/transfer-limits.servic
 import { ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { RatesService } from '../rates/rates.service';
+import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { PushService } from '../push/push.service';
 import { MailService } from '../mail/mail.service';
 
@@ -309,8 +311,12 @@ export class ScheduledTransfersService {
       const targetCurrency = (cashCurrency ?? transfer.targetCurrency ?? currency) as CurrencyCode;
 
       if (targetCurrency !== currency) {
-        receivedAmount = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
-        exchangeRate = receivedAmount / Number(transfer.amount);
+        const rawConverted = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
+        // ✅ audit : arrondi à la devise de réception (XOF / GNF : unités entières, autres : 2 décimales), comme TransactionsService.create().
+        // Avant : 65 595,7 XOF stockés, et la caisse de l'agence payeuse était créditée d'une fraction de franc.
+        receivedAmount = roundToCurrency(rawConverted, targetCurrency);
+        if (!(receivedAmount > 0)) throw new Error('Montant trop faible : le montant reçu serait nul après conversion.');
+        exchangeRate = rawConverted / Number(transfer.amount);
       }
 
       const nextDate = this.calculateNextDate(transfer.nextExecutionAt, transfer.frequency);

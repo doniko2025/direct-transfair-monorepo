@@ -1,5 +1,8 @@
 // apps/backend/src/auth/auth.service.ts
 // =========================================================
+// ✅ audit du code : (1) refreshTokens() tolère le token précédent pendant 60 s (UserSession.previousRefreshToken / refreshRotatedAt,
+//    migration 20261030090000) : une réponse /auth/refresh perdue ne déconnecte plus l'utilisateur ; (2) register() refuse un numéro local
+//    sans indicatif (normalizePhoneStrict).
 // ✅ v5.11 (phase 7) : code de la société système (« DONIKO ») et nom de marque du courriel de bienvenue lus dans la configuration plateforme.
 // AUTH SERVICE v5.11 — Direct Transf'air
 // ✅ v4.7 conservé intégralement
@@ -227,7 +230,7 @@ import { UsersService }  from '../users/users.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService }   from '../mail/mail.service';
 import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
-import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v5.1
+import { normalizePhoneE164, normalizePhoneStrict, PHONE_INVALID_MESSAGE } from '../common/utils/phone.util'; // ✅ v5.1
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
 import { platform } from '../common/platform.config';
@@ -259,6 +262,7 @@ const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
 
 const OTP_EXPIRY_MINUTES  = 10;
 const REFRESH_TOKEN_DAYS  = 30;
+const REFRESH_GRACE_MS    = 60_000; // ✅ audit : durée pendant laquelle le refresh token remplacé reste accepté (réponse perdue)
 const MAX_FAILED_LOGINS   = 5;    // ✅ v5.0 : lock après 5 échecs
 const LOCK_DURATION_MIN   = 30;   // ✅ v5.0 : verrouillage 30 min
 
@@ -869,9 +873,9 @@ export class AuthService {
     // common/utils/phone.util.ts pour le détail du bug de collision
     // de téléphone corrigé (deux comptes stockant le même numéro
     // sous "+33..." et "0033..." respectivement).
-    const phone = normalizePhoneE164(dto.phone);
+    const phone = normalizePhoneStrict(dto.phone);
     if (dto.phone && !phone) {
-      throw new BadRequestException('Numéro de téléphone invalide.');
+      throw new BadRequestException(PHONE_INVALID_MESSAGE);
     }
 
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
@@ -1173,12 +1177,31 @@ export class AuthService {
     // ✅ v5.0 : Le token en DB est hashé → on hash l'input pour le lookup
     const hashedInput = hashRefreshToken(refreshToken);
 
-    const session = await this.prisma.userSession.findUnique({
+    const sessionInclude = {
+      user: { include: { client: true, agency: true, wallets: { where: { isActive: true } } } },
+    } as const;
+
+    let session = await this.prisma.userSession.findUnique({
       where:   { refreshToken: hashedInput },
-      include: {
-        user: { include: { client: true, agency: true, wallets: { where: { isActive: true } } } },
-      },
+      include: sessionInclude,
     });
+
+    // ✅ audit — rotation tolérante : si la réponse d'un précédent /auth/refresh s'est perdue (réseau mobile), l'app
+    // renvoie l'ancien token, déjà remplacé. On l'accepte pendant REFRESH_GRACE_MS après la rotation, au lieu de
+    // déconnecter l'utilisateur. Au-delà, le token remplacé reste refusé (vol / rejeu).
+    if (!session) {
+      const rotated = await this.prisma.userSession.findUnique({
+        where:   { previousRefreshToken: hashedInput },
+        include: sessionInclude,
+      });
+      if (
+        rotated &&
+        rotated.refreshRotatedAt &&
+        Date.now() - rotated.refreshRotatedAt.getTime() <= REFRESH_GRACE_MS
+      ) {
+        session = rotated;
+      }
+    }
 
     if (!session || session.status !== 'ACTIVE') {
       throw new UnauthorizedException('Session invalide');
@@ -1218,6 +1241,9 @@ export class AuthService {
         token:                 tokens.access_token,
         refreshToken:          hashRefreshToken(tokens.refresh_token), // ← hash
         refreshTokenExpiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000),
+        // ✅ audit : l'empreinte remplacée reste acceptée REFRESH_GRACE_MS. Rejeu pendant la tolérance : on garde le même ancien token.
+        previousRefreshToken:  hashedInput,
+        refreshRotatedAt:      new Date(),
       },
     });
 

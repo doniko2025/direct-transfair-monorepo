@@ -23,6 +23,9 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../../providers/AuthProvider";
 import { countriesList, type CountryData } from "../../data/countries";
 import { api } from "../../services/api";
+import { runOnce } from "../../services/idempotency";
+import { useFeeQuote } from "../../hooks/useFeeQuote";
+import { nationalOf, toE164, MIN_FULL_NUMBER } from "../../utils/phone";
 
 const AGENT_BLUE      = "#2563EB";
 const AGENT_BLUE_DARK = "#1D4ED8";
@@ -257,24 +260,67 @@ export default function AgentSendCashScreen() {
     setExchangeRate(agentToEur * eurToTarget);
   }, [allRates, targetCurrency, agentCurrency]);
 
+  // ✅ audit : frais EXACTS du serveur (barème de la société) — avant : tarif plat historique arrondi à l'unité supérieure
+  // (Math.ceil), donc un montant et un reçu différents du débit réel. L'estimation à taux plat ne sert que de repli.
+  const quote = useFeeQuote({
+    amount:         parseFloat(amount) || 0,
+    currency:       agentCurrency,
+    payoutMethod:   "CASH_PICKUP",
+    receiveCountry: receiverCountry.code,
+    enabled:        (parseFloat(amount) || 0) > 0,
+  });
+
   useEffect(() => {
     const val = parseFloat(amount) || 0;
-    const fee = Math.ceil(val * feeRate);
+    const dec = (c: string) => (c === "XOF" || c === "GNF" ? 0 : 2);
+    const roundTo = (n: number, d: number) => { const k = 10 ** d; return Math.round(n * k) / k; };
+    const fee = quote.fees !== null ? roundTo(quote.fees, dec(agentCurrency)) : roundTo(val * feeRate, dec(agentCurrency));
     setFees(fee);
-    setTotal(val + fee);
-    setReceivedAmount(Math.round(val * exchangeRate));
-  }, [amount, feeRate, exchangeRate]);
+    setTotal(roundTo(val + fee, dec(agentCurrency)));
+    setReceivedAmount(roundTo(val * exchangeRate, dec(targetCurrency)));
+  }, [amount, feeRate, exchangeRate, quote.fees, agentCurrency, targetCurrency]);
 
-  const canSubmit = senderFirstName.trim() && senderLastName.trim() && senderPhone.trim() && receiverFirstName.trim() && receiverLastName.trim() && receiverPhone.trim() && parseFloat(amount) > 0;
+  const senderNational   = nationalOf(senderPhone, senderPhoneCode.dialCode);
+  const receiverNational = nationalOf(receiverPhone, receiverCountry.dialCode);
+  const canSubmit = senderFirstName.trim() && senderLastName.trim() && senderNational.length >= MIN_FULL_NUMBER - 1 && receiverFirstName.trim() && receiverLastName.trim() && receiverNational.length >= MIN_FULL_NUMBER - 1 && parseFloat(amount) > 0;
+
+  // Bénéficiaires déjà créés pendant cette saisie : un nouvel essai après une coupure réseau ne recrée pas de doublon.
+  const createdBeneficiaries = useRef<Record<string, string>>({});
 
   const handleSend = async () => {
-    if (!canSubmit) { Alert.alert("Erreur", "Veuillez remplir tous les champs."); return; }
+    if (!canSubmit) { Alert.alert("Erreur", "Veuillez remplir tous les champs (numéros compris)."); return; }
     setLoading(true);
     try {
-      const beneficiary = await api.createBeneficiary({ fullName: `${receiverFirstName.trim()} ${receiverLastName.trim()}`, phone: `${receiverCountry.dialCode}${receiverPhone.trim()}`, country: receiverCountry.name, city: "Inconnue" });
-      const transaction = await api.createTransaction({ amount: parseFloat(amount), currency: agentCurrency, beneficiaryId: String(beneficiary.id), payoutMethod: "CASH_PICKUP", senderFirstName: senderFirstName.trim(), senderLastName: senderLastName.trim(), senderPhone: `${senderPhoneCode.dialCode}${senderPhone.trim()}` });
+      // ✅ audit : numéros construits par utils/phone.ts (indicatif ajouté UNE fois, 0 de tête et indicatif répété retirés).
+      const receiverFull = toE164(receiverCountry.dialCode, receiverNational);
+      const senderFull   = toE164(senderPhoneCode.dialCode, senderNational);
+      const fullName     = `${receiverFirstName.trim()} ${receiverLastName.trim()}`;
+      const benefKey     = `${fullName}|${receiverFull}|${receiverCountry.name}`;
+
+      let beneficiaryId = createdBeneficiaries.current[benefKey];
+      if (!beneficiaryId) {
+        const beneficiary = await api.createBeneficiary({ fullName, phone: receiverFull, country: receiverCountry.name, city: "Inconnue" });
+        beneficiaryId = String(beneficiary.id);
+        createdBeneficiaries.current[benefKey] = beneficiaryId;
+      }
+
+      // ✅ audit : clé d'idempotence — un double appui ou un nouvel essai après coupure ne débite pas deux fois.
+      const payload = {
+        amount: parseFloat(amount), currency: agentCurrency, beneficiaryId, payoutMethod: "CASH_PICKUP" as const,
+        senderFirstName: senderFirstName.trim(), senderLastName: senderLastName.trim(), senderPhone: senderFull,
+      };
+      const transaction: any = await runOnce(JSON.stringify(payload), (idempotencyKey) =>
+        api.createTransaction({ ...payload, idempotencyKey }));
       await refreshUser();
-      const receiptData = { type: "ENVOI" as const, reference: transaction.reference, date: new Date().toISOString(), amount: parseFloat(amount), currency: agentCurrency, fees, totalAmount: total, receivedAmount, targetCurrency, exchangeRate, beneficiaryName: `${receiverFirstName.trim()} ${receiverLastName.trim()}`, beneficiaryPhone: `+${receiverCountry.dialCode}${receiverPhone.trim()}`, beneficiaryCountry: receiverCountry.name, senderName: `${senderFirstName.trim()} ${senderLastName.trim()}`, senderPhone: `+${senderPhoneCode.dialCode}${senderPhone.trim()}`, code: transaction.reference, agencyName: (user as any)?.agency?.name || undefined, agentName: `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined };
+
+      // ✅ audit : le reçu reprend les montants du SERVEUR (frais du barème, montant reçu arrondi), pas un recalcul local.
+      const sFees     = Number.isFinite(Number(transaction?.fees))  ? Number(transaction.fees)  : fees;
+      const sTotal    = Number.isFinite(Number(transaction?.total)) && Number(transaction.total) > 0 ? Number(transaction.total) : total;
+      const sReceived = Number(transaction?.receivedAmount) > 0 ? Number(transaction.receivedAmount) : receivedAmount;
+      const sRate     = Number(transaction?.exchangeRate) > 0 ? Number(transaction.exchangeRate) : exchangeRate;
+      const sTarget   = transaction?.targetCurrency ?? targetCurrency;
+
+      const receiptData = { type: "ENVOI" as const, reference: transaction.reference, date: new Date().toISOString(), amount: parseFloat(amount), currency: agentCurrency, fees: sFees, totalAmount: sTotal, receivedAmount: sReceived, targetCurrency: sTarget, exchangeRate: sRate, beneficiaryName: fullName, beneficiaryPhone: receiverFull, beneficiaryCountry: receiverCountry.name, senderName: `${senderFirstName.trim()} ${senderLastName.trim()}`, senderPhone: senderFull, code: transaction.reference, agencyName: (user as any)?.agency?.name || undefined, agentName: `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined };
       router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Erreur lors de l'envoi.";
@@ -379,7 +425,7 @@ export default function AgentSendCashScreen() {
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(amtNum, agentCurrency)} {agentCurrency}</Text>
                 </View>
                 <View style={s.feesRow}>
-                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais ({feeLabel} %)</Text>
+                  <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais{quote.fees === null ? ` (~${feeLabel} %)` : ""}</Text>
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(fees, agentCurrency)} {agentCurrency}</Text>
                 </View>
                 {receivedAmount > 0 && (

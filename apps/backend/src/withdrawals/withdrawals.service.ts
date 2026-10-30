@@ -1,6 +1,9 @@
 // apps/backend/src/withdrawals/withdrawals.service.ts
 // =========================================================
-// WITHDRAWALS SERVICE v4.15 — Direct Transf'air
+// WITHDRAWALS SERVICE v4.16 — Direct Transf'air
+// ✅ v4.16 (audit du code) : (1) listByAgent() / adminListAll() ne renvoient plus la ligne User complète de l'expéditeur (hash du mot de passe,
+//    OTP, MFA…) : SAFE_USER_SELECT. (2) L'e-mail envoyé à l'expéditeur après le retrait dit « votre envoi a été retiré »
+//    (sendTransferCollected) au lieu de « vous venez de recevoir X ».
 // ✅ v4.15 : (1) PAYS DE PAIEMENT. Un code ne se paie que dans le pays de destination de l'envoi (Transaction.receiveCountry,
 //    repli : pays du bénéficiaire). Une agence d'un autre pays — même si sa devise est la même, le XOF étant partagé par huit
 //    pays — est refusée avec un message qui indique le pays de destination (pickup-rules.ts). Appliqué à la VÉRIFICATION du code
@@ -149,6 +152,7 @@ import { TransactionsService } from '../transactions/transactions.service';
 import { toIso2 } from '../fee-schedule/countries';
 import { assertPayableInCountry, destinationCountryOf, isPickupExpired } from '../transactions/pickup-rules';
 import { RatesService }   from '../rates/rates.service';
+import { SAFE_USER_SELECT } from '../common/utils/safe-user-select'; // ✅ audit
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 import { defaultShares, type Shares } from '../commission-rules/commission-rule-defaults';
 import { splitFees } from '../commission-rules/commission-split';
@@ -576,15 +580,16 @@ export class WithdrawalsService {
         .findUnique({ where: { id: tx.senderId }, select: { email: true, firstName: true } })
         .then((sender) => {
           if (sender?.email) {
-            this.walletMail.sendMoneyReceived({
-              email:              sender.email,
-              recipientFirstName: sender.firstName ?? '',
-              senderName:         `Agence ${agent.agency?.name ?? ''} (${agent.firstName ?? ''})`,
-              amount:             amountPaid,
-              currency:           payoutCurrency,
-              txRef:              cleanCode,
-              userId:             tx.senderId!,
-              transactionId:      tx.id,
+            this.walletMail.sendTransferCollected({
+              email:           sender.email,
+              senderFirstName: sender.firstName ?? '',
+              beneficiaryName,
+              amount:          amountPaid,
+              currency:        payoutCurrency,
+              txRef:           cleanCode,
+              agencyName:      agent.agency?.name ?? undefined,
+              userId:          tx.senderId!,
+              transactionId:   tx.id,
             }).catch((err) => {
               this.logger.warn(`Email confirmation retrait client non envoyé : ${err?.message}`);
             });
@@ -670,7 +675,7 @@ export class WithdrawalsService {
     return this.prisma.withdrawal.findMany({
       where:   { clientId, processedById: agentId },
       include: {
-        transaction: { include: { sender: true, beneficiary: true } },
+        transaction: { include: { sender: { select: SAFE_USER_SELECT }, beneficiary: true } }, // ✅ audit : plus de ligne User complète
       },
       orderBy: { processedAt: 'desc' },
       take:    50,
@@ -682,7 +687,7 @@ export class WithdrawalsService {
       where:   { clientId },
       orderBy: { requestedAt: 'desc' },
       include: {
-        transaction: { include: { sender: true, beneficiary: true } },
+        transaction: { include: { sender: { select: SAFE_USER_SELECT }, beneficiary: true } }, // ✅ audit : plus de ligne User complète
       },
     });
   }

@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/brand/BrandMark.tsx
 // =========================================================
-// MARQUE « t’ » v1.2 — Direct Transf'air
+// MARQUE « t’ » v1.3 — Direct Transf'air
+// ✅ v1.3 : <TenantMark /> — si l'image du logo de la société ne se charge pas (lien cassé, fichier supprimé, hors ligne), on retombe sur la marque de
+//    secours (monogramme « t’ » pour la plateforme, icône neutre sinon) au lieu d'afficher une tuile vide. Se réarme dès que l'adresse du logo change.
 // ✅ v1.2 : FIX web — « Received `false` for a non-boolean attribute `collapsable` » : sur le web, Animated.createAnimatedComponent(Path) transmettait
 //    `collapsable` au DOM. Les tracés du « t » passent par <DrawPath /> : natif = composant animé (inchangé), web = progression lue par écouteur
 //    et appliquée en propriétés ordinaires. Aucun changement visuel.
@@ -243,15 +245,18 @@ export function TenantMark({
 }: TenantMarkProps) {
   const { branding } = useTenant();
   const r = radius ?? Math.round(size * 0.3);
+  // Adresse de logo dont le chargement a échoué : tant qu'elle ne change pas, on affiche la marque de secours.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const logoUrl = branding.logoUrl && branding.logoUrl !== failedUrl ? branding.logoUrl : null;
 
-  if (!branding.logoUrl && isPlatformCode(branding.code)) {
+  if (!logoUrl && isPlatformCode(branding.code)) {
     return <BrandMark size={size} animated={animated} loop={loop} bare={bare} style={style} />;
   }
 
   return (
     <View style={[{ width: size, height: size, borderRadius: r, backgroundColor: background, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, style]}>
-      {branding.logoUrl
-        ? <Image source={{ uri: branding.logoUrl }} style={{ width: `${logoScale * 100}%`, height: `${logoScale * 100}%` }} resizeMode="contain" />
+      {logoUrl
+        ? <Image source={{ uri: logoUrl }} onError={() => setFailedUrl(logoUrl)} style={{ width: `${logoScale * 100}%`, height: `${logoScale * 100}%` }} resizeMode="contain" />
         : <Ionicons name="swap-horizontal" size={Math.round(size * 0.5)} color={iconColor} />}
     </View>
   );

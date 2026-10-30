@@ -13,6 +13,9 @@ function makeDb(wallets: Record<string, any>, rate = 1) {
   const db: any = {
     $executeRaw: jest.fn().mockResolvedValue(1),
     wallet: {
+      // ✅ audit : transferInTx() lit d'abord les devises des deux wallets (avant la prise des verrous)
+      findMany: jest.fn().mockImplementation(async ({ where }: any) =>
+        (where.id.in as string[]).filter((id) => wallets[id]).map((id) => ({ id, currency: wallets[id].currency }))),
       findUnique: jest.fn().mockImplementation(async ({ where }: any) => ({ ...wallets[where.id], balance: D(state[where.id]) })),
       update: jest.fn().mockImplementation(async ({ where, data }: any) => {
         if (data.balance?.increment) state[where.id] += Number(data.balance.increment);
@@ -26,7 +29,8 @@ function makeDb(wallets: Record<string, any>, rate = 1) {
     },
   };
   const prisma: any = { $transaction: jest.fn().mockImplementation((fn: any) => fn(db)) };
-  const rates: any = { getRate: jest.fn().mockResolvedValue(rate) };
+  // ✅ audit : transferInTx() convertit avec RatesService.convert() (taux de la base) et non plus getRate()
+  const rates: any = { convert: jest.fn().mockImplementation(async (amount: number) => amount * rate) };
   return { service: new WalletsService(prisma, rates), state, ledger, db };
 }
 

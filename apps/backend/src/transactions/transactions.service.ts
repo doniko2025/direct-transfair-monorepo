@@ -1,6 +1,10 @@
 // apps/backend/src/transactions/transactions.service.ts
 // =========================================================
-//  TRANSACTIONS SERVICE v4.30 — Direct Transf'air
+//  TRANSACTIONS SERVICE v4.31 — Direct Transf'air
+// =========================================================
+// ✅ v4.31 : audit du code. (1) adminFindAllForAdmin() ne renvoie plus la ligne User complète de l'expéditeur (hash du mot
+// de passe, OTP, secret MFA…) : SAFE_USER_SELECT. (2) Envoi Wallet / Mobile Money vers un numéro sans compte : refus 400 AVANT
+// tout débit. (3) Envoi à soi-même, ou d'un agent vers sa propre agence : refusé. (4) PAID manuel interdit pour un envoi cash.
 // =========================================================
 // ✅ v4.30 : (1) EXPIRATION DES CODES. Un envoi non retiré expire après 5 mois (PICKUP_CODE_VALIDITY_MONTHS) : pickupExpiry est
 //    posé à la création, expireUnclaimed() (cron quotidien, PickupExpiryService) annule les envois échus (statut EXPIRED) et
@@ -284,6 +288,7 @@ import { currencyOfCountry } from '../fee-schedule/country-currency';
 import { RatesService }   from '../rates/rates.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
+import { SAFE_USER_SELECT } from '../common/utils/safe-user-select'; // ✅ v4.31
 import {
   CreateTransactionDto,
   CreateDepositDto,
@@ -1140,6 +1145,25 @@ export class TransactionsService {
       recipientUser = await this.findClientByPhoneTolerant(beneficiary.phone, clientId);
     }
 
+    // ✅ v4.31 — destinataire Wallet / Mobile Money introuvable : refus AVANT tout débit.
+    // Avant : l'envoi était créé en attente avec un code que personne ne pouvait payer (ces modes n'ont pas de
+    // retrait en agence) et l'expéditeur restait débité jusqu'à l'expiration du code, 5 mois plus tard.
+    if (isWalletTransfer && !recipientUser) {
+      throw new BadRequestException(
+        "Aucun compte n'existe avec ce numéro de téléphone : l'envoi vers un portefeuille n'est pas possible. " +
+        "Vérifiez le numéro (indicatif du pays compris) ou choisissez le retrait en agence. Votre compte n'a pas été débité.",
+      );
+    }
+
+    // ✅ v4.31 — pas d'envoi à soi-même, ni d'un agent vers un compte de sa propre agence : le débit part de la
+    // caisse de l'agence (wallet agence) et le crédit arriverait sur un wallet personnel.
+    if (recipientUser && recipientUser.id === senderId) {
+      throw new BadRequestException("Vous ne pouvez pas vous envoyer de l'argent à vous-même. Votre compte n'a pas été débité.");
+    }
+    if (recipientUser && user.agencyId && recipientUser.agencyId && recipientUser.agencyId === user.agencyId) {
+      throw new BadRequestException("Un envoi vers un compte de votre propre agence n'est pas autorisé. Le compte n'a pas été débité.");
+    }
+
     // ✅ v4.19 — FIX (PROBLÈME 3) : priorité à Beneficiary.expectedCurrency
     // (champ dédié du schéma, jamais lu jusqu'ici) sur la déduction
     // texte-vers-devise depuis .country, qui reste le repli si absent.
@@ -1777,13 +1801,13 @@ export class TransactionsService {
       transactions = await this.prisma.transaction.findMany({
         where:   { deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
-        include: { sender: true, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22
+        include: { sender: { select: SAFE_USER_SELECT }, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22 ; v4.31 : plus de ligne User complète (hash, OTP, MFA)
       });
     } else if (admin?.clientId) {
       transactions = await this.prisma.transaction.findMany({
         where:   { clientId: admin.clientId, deletedAt: null }, // ✅ v4.20
         orderBy: { createdAt: 'desc' },
-        include: { sender: true, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22
+        include: { sender: { select: SAFE_USER_SELECT }, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22 ; v4.31 : plus de ligne User complète (hash, OTP, MFA)
       });
     }
 
@@ -1806,6 +1830,18 @@ export class TransactionsService {
     }
 
     assertTxTransition(tx.status, dto.status);
+
+    // ✅ v4.31 — un envoi cash ne passe à « payé » que par l'agent qui remet le cash avec le code (seul chemin qui
+    // crédite la caisse, distribue les commissions et clôt le retrait). Même règle que WithdrawalsService.adminUpdateStatus.
+    if (
+      dto.status === TransactionStatus.PAID &&
+      REFUNDABLE_TYPES.includes(tx.type) &&
+      tx.payoutMethod === PayoutMethod.CASH_PICKUP
+    ) {
+      throw new BadRequestException(
+        "Un envoi cash ne passe à « payé » que lorsqu'un agent remet le cash avec le code. Il ne peut pas être marqué payé à la main.",
+      );
+    }
 
     if (dto.status === TransactionStatus.CANCELLED || dto.status === TransactionStatus.FAILED) {
       // ✅ v4.24 — statut réservé + remboursement atomique, type contrôlé (voir cancelWithRefund).

@@ -165,6 +165,38 @@ describe('TransactionsService.create — atomique', () => {
   });
 });
 
+describe('TransactionsService.create — garde-fous destinataire (v4.31)', () => {
+  const beneficiary = { id: 'b1', userId: 'sender', clientId: 7, phone: '+224699999999', country: 'GN', fullName: 'Inconnu' };
+
+  it('Wallet vers un numéro SANS compte : refusé AVANT tout débit, message explicite', async () => {
+    const { service, state, prisma } = setup();
+    prisma.beneficiary.findFirst.mockResolvedValue(beneficiary);
+    prisma.user.findFirst.mockResolvedValue(null); // aucun compte avec ce numéro
+    await expect(service.create('sender', { ...walletSend, beneficiaryId: 'b1' })).rejects.toThrow(/Aucun compte n'existe avec ce numéro/);
+    await expect(service.create('sender', { ...walletSend, beneficiaryId: 'b1' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(state.rows).toHaveLength(0);
+    expect(state.ledger).toHaveLength(0);
+    expect(state.balances['w-sender']).toBe(1_000_000);
+  });
+
+  it('Mobile Money vers un numéro sans compte : même refus, aucun débit', async () => {
+    const { service, state, prisma } = setup();
+    prisma.beneficiary.findFirst.mockResolvedValue(beneficiary);
+    prisma.user.findFirst.mockResolvedValue(null);
+    await expect(service.create('sender', { ...walletSend, payoutMethod: 'MOBILE_MONEY', beneficiaryId: 'b1' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(state.balances['w-sender']).toBe(1_000_000);
+    expect(state.rows).toHaveLength(0);
+  });
+
+  it('envoi à soi-même refusé, aucun débit', async () => {
+    const { service, state, prisma } = setup();
+    prisma.user.findFirst.mockResolvedValue({ id: 'sender', clientId: 7, role: 'USER', primaryCurrency: 'XOF', firstName: 'A', lastName: 'B', email: null, phone: '+224600', wallets: [] });
+    await expect(service.create('sender', walletSend)).rejects.toThrow(/vous envoyer de l'argent à vous-même/);
+    expect(state.balances['w-sender']).toBe(1_000_000);
+    expect(state.rows).toHaveLength(0);
+  });
+});
+
 describe('TransactionsService.deposit — atomique', () => {
   it('débite la caisse, crédite le client et écrit la transaction ensemble', async () => {
     const { service, state } = setup();

@@ -151,18 +151,14 @@ export class RatesService {
     this.logger.log(`💱 Conversion: ${amount} ${source} → ${target}`);
 
     // ── 1. Taux exact en base (underscore ET slash) ──────
-    const exact = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: pairUnderscore }, { pair: pairSlash }] },
-    });
+    const exact = await this.findRateRow(pairUnderscore, pairSlash);
     if (exact) {
       this.logger.log(`✅ Taux base exact: ${exact.pair} = ${exact.rate}`);
       return amount * Number(exact.rate);
     }
 
     // ── 2. Taux inverse en base (underscore ET slash) ────
-    const reverse = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: revUnderscore }, { pair: revSlash }] },
-    });
+    const reverse = await this.findRateRow(revUnderscore, revSlash);
     if (reverse && Number(reverse.rate) > 0) {
       this.logger.log(`✅ Taux base inverse: ${reverse.pair} = ${reverse.rate}`);
       return amount / Number(reverse.rate);
@@ -217,29 +213,28 @@ export class RatesService {
   // HELPERS PRIVÉS
   // ========================================================
 
+  // ✅ audit : une paire peut exister sous deux formats (« EUR_XOF » canonique, « EUR/XOF » ancien). Un findFirst sans
+  // ordre choisissait l'une ou l'autre au hasard : on prend toujours le format canonique d'abord, puis l'ancien.
+  private async findRateRow(canonical: string, legacy: string) {
+    const rows = await this.prisma.exchangeRate.findMany({ where: { pair: { in: [canonical, legacy] } } });
+    return rows.find((r) => r.pair === canonical) ?? rows.find((r) => r.pair === legacy) ?? null;
+  }
+
   private async getRateToEurFromDb(source: string): Promise<number | null> {
-    const direct = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: `${source}_EUR` }, { pair: `${source}/EUR` }] },
-    });
+    const direct = await this.findRateRow(`${source}_EUR`, `${source}/EUR`);
     if (direct) return Number(direct.rate);
 
-    const inverse = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: `EUR_${source}` }, { pair: `EUR/${source}` }] },
-    });
+    const inverse = await this.findRateRow(`EUR_${source}`, `EUR/${source}`);
     if (inverse && Number(inverse.rate) > 0) return 1 / Number(inverse.rate);
 
     return this.getRateToEurSync(source);
   }
 
   private async getRateFromEurFromDb(target: string): Promise<number | null> {
-    const direct = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: `EUR_${target}` }, { pair: `EUR/${target}` }] },
-    });
+    const direct = await this.findRateRow(`EUR_${target}`, `EUR/${target}`);
     if (direct) return Number(direct.rate);
 
-    const inverse = await this.prisma.exchangeRate.findFirst({
-      where: { OR: [{ pair: `${target}_EUR` }, { pair: `${target}/EUR` }] },
-    });
+    const inverse = await this.findRateRow(`${target}_EUR`, `${target}/EUR`);
     if (inverse && Number(inverse.rate) > 0) return 1 / Number(inverse.rate);
 
     return this.getRateFromEurSync(target);

@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/components/auth/AuthField.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CHAMP DE SAISIE v2.0 — Direct Transf'air
+// CHAMP DE SAISIE v2.1 — Direct Transf'air
+// ✅ v2.1 : prop `dense` — version resserrée (hauteur 48, libellé et marges réduits) pour les cartes compactes (écran de connexion). Sans elle : rendu inchangé.
 // ✅ v2.0 : THÈME CLAIR — champ sable arrondi, contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Libellé toujours visible au-dessus (jamais un placeholder qui disparaît),
@@ -42,6 +43,8 @@ type Props = {
   autoFocus?: boolean;
   /** Pastille valide (coche verte) quand le champ est correct. */
   valid?: boolean;
+  /** Version resserrée (hauteur 48, marges réduites). */
+  dense?: boolean;
   /** Élément à gauche du texte (ex. indicatif téléphonique). */
   leftSlot?: React.ReactNode;
   accent: string;
@@ -51,7 +54,7 @@ type Props = {
 export default function AuthField({
   label, value, onChangeText, icon, placeholder, error, hint, secure, keyboardType,
   autoCapitalize = 'none', autoComplete, textContentType, returnKeyType, onSubmitEditing,
-  onBlur, inputRef, maxLength, editable = true, autoFocus, valid, leftSlot, accent, testID,
+  onBlur, inputRef, maxLength, editable = true, autoFocus, valid, dense = false, leftSlot, accent, testID,
 }: Props) {
   const [focused, setFocused] = useState(false);
   const [reveal, setReveal] = useState(false);
@@ -59,11 +62,12 @@ export default function AuthField({
   const borderColor = hasError ? N.danger : focused ? N.ink : N.border;
 
   return (
-    <View style={s.wrap}>
-      <Text style={[s.label, hasError && { color: N.danger }]}>{label}</Text>
+    <View style={[s.wrap, dense && s.wrapDense]}>
+      <Text style={[s.label, dense && s.labelDense, hasError && { color: N.danger }]}>{label}</Text>
       <View
         style={[
           s.box,
+          dense && s.boxDense,
           { borderColor },
           !editable && { opacity: 0.6 },
         ]}
@@ -75,7 +79,7 @@ export default function AuthField({
         <TextInput
           ref={inputRef}
           testID={testID}
-          style={[s.input, WEB_INPUT_RESET]}
+          style={[s.input, dense && s.inputDense, WEB_INPUT_RESET]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -130,6 +134,10 @@ const s = StyleSheet.create({
     backgroundColor: N.field, borderRadius: RADIUS.md, borderWidth: 1.5,
     paddingHorizontal: 14,
   },
+  wrapDense:  { marginBottom: 12 },
+  labelDense: { fontSize: 12.5, marginBottom: 5 },
+  boxDense:   { minHeight: 48, borderRadius: 14 },
+  inputDense: { fontSize: 15.5, paddingVertical: 9 },
   icon:  { marginRight: 10 },
   input: { flex: 1, fontFamily: FONT.body, fontSize: 16, color: N.ink, fontWeight: '600', paddingVertical: 12 },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },

@@ -1018,6 +1018,11 @@ model UserSession {
   refreshToken          String?  @unique
   refreshTokenExpiresAt DateTime?
 
+  // Rotation tolérante : empreinte du refresh token PRÉCÉDENT, acceptée quelques dizaines de secondes après la rotation.
+  // Sans elle, une réponse /auth/refresh perdue (réseau mobile) laisse l'app avec un token déjà remplacé → déconnexion.
+  previousRefreshToken  String?  @unique
+  refreshRotatedAt      DateTime?
+
   createdAt DateTime @default(now())
 
   @@index([userId, status])

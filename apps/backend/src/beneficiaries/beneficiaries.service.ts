@@ -55,7 +55,7 @@ import {
 } from '@nestjs/common';
 import type { Beneficiary } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizePhoneE164 } from '../common/utils/phone.util';
+import { normalizePhoneE164, normalizePhoneStrict, PHONE_INVALID_MESSAGE } from '../common/utils/phone.util';
 import type { CreateBeneficiaryDto } from './dto/create-beneficiary.dto';
 import type { UpdateBeneficiaryDto } from './dto/update-beneficiary.dto';
 
@@ -97,9 +97,9 @@ export class BeneficiariesService {
     // que silencieusement stocké tel quel.
     let normalizedPhone: string | null = null;
     if (phone) {
-      normalizedPhone = normalizePhoneE164(phone);
+      normalizedPhone = normalizePhoneStrict(phone);
       if (!normalizedPhone) {
-        throw new BadRequestException('Numéro de téléphone invalide.');
+        throw new BadRequestException(PHONE_INVALID_MESSAGE);
       }
     }
 
@@ -151,9 +151,9 @@ export class BeneficiariesService {
       if (!dto.phone) {
         normalizedPhone = null; // effacement explicite autorisé
       } else {
-        normalizedPhone = normalizePhoneE164(dto.phone);
+        normalizedPhone = normalizePhoneStrict(dto.phone);
         if (!normalizedPhone) {
-          throw new BadRequestException('Numéro de téléphone invalide.');
+          throw new BadRequestException(PHONE_INVALID_MESSAGE);
         }
       }
     }

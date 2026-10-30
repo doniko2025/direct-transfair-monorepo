@@ -1,7 +1,11 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.6 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.7 — Direct Transf'air
+// ✅ v2.7 : CARTE PLUS COMPACTE + FOND ANIMÉ (téléphone). Carte blanche resserrée (marges, titre 22, espace sous le titre), logo un peu plus petit,
+//    slogan de la société sous son nom, fond vivant (<AuthBackdrop /> : halos qui dérivent + corridor en pointillés avec étincelles), onde douce qui
+//    pulse autour du logo, entrée en cascade (marque → carte → pied de page). Tout en pilote natif ; « Réduire les animations » = rendu statique.
+//    Mêmes props, même logique ; ordinateur et ancien cadre clair inchangés.
 // ✅ v2.6 : REFONTE DU CADRE TÉLÉPHONE (style « Rainbow ») — plein écran en dégradé aux couleurs de la société avec halos décoratifs,
 //    icône de l'app centrée dans un anneau clair + nom de la marque, puis UNE carte blanche flottante (coins 28, ombre) qui porte le titre et
 //    le sous-titre centrés, le formulaire et le `footer`. Nouvelle prop `below` : contenu placé SOUS la carte, en clair sur le fond (ex. « Pas encore
@@ -29,17 +33,18 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
+  Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '../ui/Icon';
 import { TenantMark } from '../brand/BrandMark';
+import AuthBackdrop, { useReduceMotion } from './AuthBackdrop';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
-import { alpha, buildPalette, darken, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
+import { buildPalette, darken, FONT, MAX_WIDTH, N, type AuthPalette } from './authTheme';
 import { SERIF } from '../ui/fonts';
 import { buildColors } from '../ui/theme';
 
@@ -95,21 +100,45 @@ export default function AuthShell({
   const wide = Platform.OS === 'web' && winW >= 900;
   const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 6;
 
+  // ── Animations de la variante « carte flottante » (hooks toujours appelés, démarrés seulement si la variante est affichée) ──
+  const heroOn = hero && !wide;
+  const reduce = useReduceMotion();
+  const enter = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!heroOn) return;
+    if (reduce) { enter.forEach((v) => v.setValue(1)); pulse.setValue(0); return; }
+    enter.forEach((v) => v.setValue(0));
+    const delays = [60, 220, 520];
+    const durations = [520, 640, 480];
+    const intro = Animated.parallel(enter.map((v, i) => Animated.sequence([
+      Animated.delay(delays[i]),
+      Animated.timing(v, { toValue: 1, duration: durations[i], easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ])));
+    intro.start();
+    pulse.setValue(0);
+    const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2800, easing: Easing.out(Easing.quad), useNativeDriver: true }));
+    loop.start();
+    return () => { intro.stop(); loop.stop(); };
+  }, [heroOn, reduce]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Variante « carte flottante sur dégradé » (téléphone) ──
-  if (hero && !wide) {
+  if (heroOn) {
     const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 8;
     const dark = darken(C.forest, 0.72);
     const mid = darken(C.forest, 0.45);
-    const tile = compact ? 76 : 92;
+    const tile = compact ? 64 : 80;
+    const ringSize = tile + 16;                       // tuile + 2 × 7 de marge + 2 × 1 de liseré
+    const ringRadius = Math.round(tile * 0.34) + 8;
+    const centerY = 44 + (compact ? 0 : 4) + ringSize / 2;   // rangée du haut (44) + marge + moitié de l'anneau
+
     return (
       <KeyboardAvoidingView style={[s.root, { backgroundColor: dark }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <StatusBar barStyle="light-content" backgroundColor={dark} />
         <LinearGradient colors={[mid, dark]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
-        {/* Halos décoratifs (couleurs de la société) */}
-        <View pointerEvents="none" style={[s.bokeh, { width: 260, height: 260, top: -90, right: -90, backgroundColor: alpha(C.leaf, 0.22) }]} />
-        <View pointerEvents="none" style={[s.bokeh, { width: 150, height: 150, top: 150, left: -70, backgroundColor: alpha(C.sun, 0.14) }]} />
-        <View pointerEvents="none" style={[s.bokeh, { width: 220, height: 220, bottom: -80, left: -60, backgroundColor: alpha(C.leaf, 0.16) }]} />
-        <View pointerEvents="none" style={[s.bokeh, { width: 90, height: 90, bottom: 120, right: -30, backgroundColor: alpha('#FFFFFF', 0.07) }]} />
+        {/* Fond vivant : halos qui dérivent + corridor d'étincelles */}
+        <AuthBackdrop top={top} centerY={centerY} drop={compact ? 24 : 32} leaf={C.leaf} sun={C.sun} />
 
         <ScrollView
           style={{ flex: 1 }}
@@ -129,23 +158,58 @@ export default function AuthShell({
               {headerRight}
             </View>
 
-            <View style={[s.heroBrand, compact && { marginTop: 0, gap: 10 }]}>
-              <View style={[s.ring, { borderRadius: Math.round(tile * 0.34) + 8 }]}>
-                <TenantMark size={tile} radius={Math.round(tile * 0.29)} background="#FFFFFF" iconColor={C.dark} logoScale={0.78} animated />
+            <Animated.View
+              style={[
+                s.heroBrand, compact && { marginTop: 0, gap: 8, marginBottom: 14 },
+                { opacity: enter[0], transform: [
+                  { translateY: enter[0].interpolate({ inputRange: [0, 1], outputRange: [-14, 0] }) },
+                  { scale: enter[0].interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+                ] },
+              ]}
+            >
+              <View style={{ width: ringSize, height: ringSize }}>
+                {/* Onde douce qui s'étend autour du logo */}
+                {!reduce ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFill, s.pulse, { borderRadius: ringRadius },
+                      { opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.55, 0] }),
+                        transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }] },
+                    ]}
+                  />
+                ) : null}
+                <View style={[s.ring, { borderRadius: ringRadius }]}>
+                  <TenantMark size={tile} radius={Math.round(tile * 0.29)} background="#FFFFFF" iconColor={C.dark} logoScale={0.78} animated />
+                </View>
               </View>
-              <Text style={s.heroBrandName} numberOfLines={1}>{branding.name}</Text>
-            </View>
+              <View style={s.nameBlock}>
+                <Text style={s.heroBrandName} numberOfLines={1}>{branding.name}</Text>
+                {!compact && branding.tagline ? <Text style={s.heroTagline} numberOfLines={1}>{branding.tagline}</Text> : null}
+              </View>
+            </Animated.View>
 
             {/* Carte flottante */}
-            <View style={[s.floatCard, { backgroundColor: C.surface }]}>
+            <Animated.View
+              style={[
+                s.floatCard, { backgroundColor: C.surface },
+                { opacity: enter[1], transform: [{ translateY: enter[1].interpolate({ inputRange: [0, 1], outputRange: [34, 0] }) }] },
+              ]}
+            >
               {title ? <Text style={[s.cardTitle, { color: C.ink }]} accessibilityRole="header">{title}</Text> : null}
               {subtitle ? <Text style={[s.cardSub, { color: C.muted }]}>{subtitle}</Text> : null}
-              {title || subtitle ? <View style={{ height: 20 }} /> : null}
+              {title || subtitle ? <View style={{ height: 14 }} /> : null}
               {children}
               {footer}
-            </View>
+            </Animated.View>
 
-            {below ? <View style={s.below}>{below}</View> : null}
+            {below ? (
+              <Animated.View
+                style={[s.below, { opacity: enter[2], transform: [{ translateY: enter[2].interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }] }]}
+              >
+                {below}
+              </Animated.View>
+            ) : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -243,15 +307,18 @@ const s = StyleSheet.create({
   // — Variante hero (carte flottante) —
   heroInner: { width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 20 },
   heroBack:  { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.16)' },
-  heroBrand: { alignItems: 'center', gap: 12, marginTop: 4, marginBottom: 22 },
+  heroBrand: { alignItems: 'center', gap: 10, marginTop: 4, marginBottom: 16 },
   ring:      { padding: 7, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.34)' },
+  pulse:     { borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.7)' },
+  nameBlock: { alignItems: 'center', gap: 2, maxWidth: '100%' },
   heroBrandName: { fontFamily: FONT.display, fontSize: 17, fontWeight: '800', letterSpacing: -0.2, color: '#FFFFFF', textAlign: 'center' },
-  bokeh:     { position: 'absolute', borderRadius: 999 },
-  floatCard: { borderRadius: 28, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20,
-               shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 26, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
-  cardTitle: { fontFamily: SERIF, fontSize: 26, lineHeight: 32, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center' },
-  cardSub:   { fontFamily: FONT.body, fontSize: 14.5, lineHeight: 21, marginTop: 6, textAlign: 'center' },
-  below:     { marginTop: 18, alignItems: 'center' },
+  heroTagline: { fontFamily: FONT.body, fontSize: 12.5, lineHeight: 17, color: 'rgba(255,255,255,0.74)', textAlign: 'center' },
+  floatCard: { borderRadius: 26, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 12,
+               borderWidth: 1, borderColor: 'rgba(255,255,255,0.7)',
+               shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 28, shadowOffset: { width: 0, height: 18 }, elevation: 12 },
+  cardTitle: { fontFamily: SERIF, fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, textAlign: 'center' },
+  cardSub:   { fontFamily: FONT.body, fontSize: 13.5, lineHeight: 19, marginTop: 4, textAlign: 'center' },
+  below:     { marginTop: 14, alignItems: 'center' },
 
   trust:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 26 },
   trustTxt: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted },

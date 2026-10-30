@@ -1,6 +1,8 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.8
+// WALLETS SERVICE v5.9
+// ✅ v5.9 (audit du code) : (1) transferInTx() convertit avec RatesService.convert() (taux de la base, repli en dur seulement si absent)
+//    au lieu de getRate() qui ignorait les taux saisis par l'admin ; (2) getLedger() valide page / limit (≤ 100) / dates.
 // ✅ v5.8 : creditInTx accepte { allowFrozen: true } (paramètre ajouté en dernier). Réservé aux commissions versées à des
 //    TIERS lors du paiement d'un code (agence d'envoi, société) : le gel du wallet d'un tiers ne doit pas empêcher un
 //    retrait déjà autorisé d'être payé au bénéficiaire. L'argent arrive sur le wallet gelé (il reste bloqué pour les
@@ -253,15 +255,22 @@ export class WalletsService {
       to?: string;
     },
   ) {
-    const page  = params.page  ?? 1;
-    const limit = params.limit ?? 20;
+    // ✅ audit : paramètres validés — page ≥ 1, limit entre 1 et 100, dates lisibles (avant : NaN, date invalide → erreur 500,
+    // et limit non plafonnée).
+    const page  = Number.isInteger(params.page)  && (params.page  as number) >= 1 ? (params.page  as number) : 1;
+    const limit = Number.isInteger(params.limit) && (params.limit as number) >= 1 ? Math.min(params.limit as number, 100) : 20;
     const skip  = (page - 1) * limit;
 
     const where: any = { walletId };
     if (params.from || params.to) {
+      const from = params.from ? new Date(params.from) : null;
+      const to   = params.to   ? new Date(params.to)   : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        throw new BadRequestException('Date invalide : utilisez le format AAAA-MM-JJ.');
+      }
       where.createdAt = {};
-      if (params.from) where.createdAt.gte = new Date(params.from);
-      if (params.to)   where.createdAt.lte = new Date(params.to);
+      if (from) where.createdAt.gte = from;
+      if (to)   where.createdAt.lte = to;
     }
 
     const [entries, total] = await Promise.all([
@@ -553,6 +562,19 @@ export class WalletsService {
       throw new BadRequestException('Le wallet source et le wallet destination sont identiques.'); // ✅ v5.7
     }
 
+    // ✅ audit : le taux vient de la base (taux saisis par l'admin), pas des taux codés en dur de getRate(). Il est lu AVANT
+    // la prise des verrous (la devise d'un wallet ne change jamais) pour ne pas garder un verrou pendant une requête de taux.
+    const pre = await tx.wallet.findMany({
+      where:  { id: { in: [fromWalletId, toWalletId] } },
+      select: { id: true, currency: true },
+    });
+    const preFrom = pre.find((w) => w.id === fromWalletId);
+    const preTo   = pre.find((w) => w.id === toWalletId);
+    if (!preFrom || !preTo) throw new NotFoundException('Wallet introuvable');
+    const rawConverted = preFrom.currency === preTo.currency
+      ? amount
+      : await this.rates.convert(amount, preFrom.currency, preTo.currency);
+
     const ids = [fromWalletId, toWalletId].sort();
     await this.lockWallet(tx, ids[0]);
     await this.lockWallet(tx, ids[1]);
@@ -571,13 +593,10 @@ export class WalletsService {
       throw new BadRequestException('Solde insuffisant');
     }
 
-    const rate =
-      fromWallet.currency === toWallet.currency
-        ? 1
-        : await this.rates.getRate(fromWallet.currency, toWallet.currency);
+    const rate = amount > 0 ? rawConverted / amount : 1;
 
     // ✅ v5.7 : arrondi à la devise de destination (XOF / GNF : unités entières, autres : 2 décimales).
-    const toAmount = new Prisma.Decimal(roundToCurrency(amount * rate, toWallet.currency));
+    const toAmount = new Prisma.Decimal(roundToCurrency(rawConverted, toWallet.currency));
     if (toAmount.lte(0)) throw new BadRequestException('Montant converti nul : augmentez le montant.');
 
     const updatedFrom = await tx.wallet.update({

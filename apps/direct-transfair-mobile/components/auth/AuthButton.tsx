@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/AuthButton.tsx
 // =========================================================
-// BOUTON v3.1 — Direct Transf'air
+// BOUTON v3.2 — Direct Transf'air
+// ✅ v3.2 : prop `dense` — bouton resserré (hauteur 50, texte 16 ; lien 36) pour les cartes compactes. Sans elle : rendu inchangé.
 // ✅ v3.1 : forme en PILULE (hauteur 56, coins entièrement arrondis) pour l'ensemble des écrans d'authentification.
 // ✅ v3.0 : DESIGN « CORRIDOR » — principal = jaune soleil, texte vert forêt, coins 20 (comme « Envoyer » de l'accueil) ;
 //    secondaire = vert pâle ; contour = filet vert, texte forêt ; lien souligné forêt.
@@ -28,12 +29,14 @@ type Props = {
   disabled?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   iconRight?: boolean;
+  /** Version resserrée (hauteur 50 ; lien 36). */
+  dense?: boolean;
   testID?: string;
 };
 
 export default function AuthButton({
   label, onPress, variant = 'primary', loading = false, disabled = false,
-  icon, iconRight = false, testID,
+  icon, iconRight = false, dense = false, testID,
 }: Props) {
   const { C } = useUI();
   const off = disabled || loading;
@@ -44,7 +47,7 @@ export default function AuthButton({
   ) : (
     <View style={s.row}>
       {icon && !iconRight ? <Ionicons name={icon} size={19} color={fg} /> : null}
-      <Text style={[s.label, variant === 'link' && s.labelLink, { color: fg }]}>{label}</Text>
+      <Text style={[s.label, dense && variant !== 'link' && s.labelDense, variant === 'link' && s.labelLink, { color: fg }]}>{label}</Text>
       {icon && iconRight ? <Ionicons name={icon} size={19} color={fg} /> : null}
     </View>
   );
@@ -63,6 +66,7 @@ export default function AuthButton({
         variant === 'secondary' && { backgroundColor: C.accentSoft },
         variant === 'outline' && { borderWidth: 1.5, borderColor: C.line, backgroundColor: C.surface },
         variant === 'link' && s.link,
+        dense && (variant === 'link' ? s.linkDense : s.baseDense),
         off && !loading && { opacity: 0.45 },
         pressed && !off && { transform: [{ scale: 0.985 }], opacity: 0.9 },
       ]}
@@ -75,6 +79,9 @@ export default function AuthButton({
 const s = StyleSheet.create({
   base: { minHeight: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
   link: { minHeight: 44, paddingHorizontal: 8 },
+  baseDense:  { minHeight: 50, borderRadius: 25 },
+  linkDense:  { minHeight: 36 },
+  labelDense: { fontSize: 16 },
   row:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   label:     { fontFamily: FONT.medium, fontSize: 17, fontWeight: '800', letterSpacing: -0.1 },
   labelLink: { fontSize: 14.5, fontWeight: '700', textDecorationLine: 'underline', color: N.inkSub },

@@ -2,7 +2,9 @@
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // ✅ phase 7 : code plateforme et domaine des portails lus dans services/platformConfig.ts (plus de « DONIKO » ni de domaine en dur).
-// LOGIN v3.5 — Direct Transf'air
+// LOGIN v3.8 — Direct Transf'air
+// ✅ v3.8 : REDESIGN de l'écran principal — carte blanche plus compacte (champs et boutons `dense`, titre plus petit : cadre AuthShell v2.7), fond animé
+//    (halos + corridor d'étincelles), pastille « Connexion chiffrée » sous la carte. Logique, champs, testID et parcours OTP inchangés.
 // ✅ v3.7 : « Code par email » et « Mot de passe oublié ? » sur la MÊME ligne (sous le mot de passe) — carte plus compacte. « Biométrie » passe sous le bouton (si disponible).
 // ✅ v3.6 : adapté au nouveau cadre (carte flottante sur dégradé) — titre « Connexion », « Pas encore de compte ? Créer un compte » et liens légaux placés
 //    SOUS la carte en clair (prop `below`). Logique, champs et testID inchangés (login-register conservé).
@@ -397,6 +399,10 @@ export default function LoginV2Screen() {
           <Text style={s.signupLink}>Créer un compte</Text>
         </TouchableOpacity>
       </View>
+      <View style={s.trust}>
+        <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.86)" />
+        <Text style={s.trustTxt}>Connexion chiffrée · Données protégées</Text>
+      </View>
       {legalFooter}
     </View>
   );
@@ -502,6 +508,7 @@ export default function LoginV2Screen() {
         returnKeyType="next"
         onSubmitEditing={() => passRef.current?.focus()}
         accent={P.accent}
+        dense
         testID="login-email"
       />
       <AuthField
@@ -517,14 +524,16 @@ export default function LoginV2Screen() {
         inputRef={passRef}
         accent={P.accent}
         maxLength={128}
+        dense
         testID="login-password"
       />
 
       <View style={s.forgotRow}>
-        <AuthButton label="Code par email" variant="link" accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
+        <AuthButton label="Code par email" variant="link" dense accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
         <AuthButton
           label="Mot de passe oublié ?"
           variant="link"
+          dense
           accent={P.accent}
           onPress={() => router.push('/(auth)/forgot-password')}
         />
@@ -534,6 +543,7 @@ export default function LoginV2Screen() {
         label="Se connecter"
         icon="arrow-forward"
         iconRight
+        dense
         accent={P.action}
         loading={loading}
         disabled={!canSubmit}
@@ -543,7 +553,7 @@ export default function LoginV2Screen() {
 
       {bioReady ? (
         <View style={s.linksRow}>
-          <AuthButton label="Biométrie" variant="link" accent={P.accent} disabled={loading} onPress={handleBiometric} />
+          <AuthButton label="Biométrie" variant="link" dense accent={P.accent} disabled={loading} onPress={handleBiometric} />
         </View>
       ) : null}
     </AuthShell>
@@ -551,14 +561,17 @@ export default function LoginV2Screen() {
 }
 
 const s = StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -6, marginBottom: 6 },
-  linksRow:  { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 6, marginBottom: 10 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -4, marginBottom: 4 },
+  linksRow:  { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 2, marginBottom: 2 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
   legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: 'rgba(255,255,255,0.78)', fontWeight: '700', paddingVertical: 6 },
   legalDot:  { color: 'rgba(255,255,255,0.5)', fontSize: 12.5 },
+  trust:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999,
+               backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  trustTxt:  { fontFamily: FONT.body, fontSize: 11.5, color: 'rgba(255,255,255,0.86)', fontWeight: '600' },
   signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' },
   signupTxt: { fontFamily: FONT.body, fontSize: 14.5, color: 'rgba(255,255,255,0.8)' },
   signupLink:{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: '800', color: '#FFFFFF', textDecorationLine: 'underline', paddingVertical: 8 },

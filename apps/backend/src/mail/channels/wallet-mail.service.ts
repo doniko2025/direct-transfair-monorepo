@@ -164,6 +164,49 @@ export class WalletMailService {
   }
 
   // ========================================================
+  // ✅ v-audit : ENVOI RETIRÉ EN AGENCE — message pour l'EXPÉDITEUR
+  //   Avant, l'expéditeur recevait « Vous venez de recevoir X » (sendMoneyReceived) alors que c'est son
+  //   bénéficiaire qui avait retiré l'argent.
+  // ========================================================
+
+  async sendTransferCollected(params: {
+    email: string;
+    senderFirstName: string;
+    beneficiaryName: string;
+    amount: number;
+    currency: string;
+    txRef: string;
+    agencyName?: string;
+    userId?: string;
+    transactionId?: string;
+    brandColor?: string;
+    brandName?: string;
+  }) {
+    const amountText = formatAmount(params.amount, params.currency);
+    const where = params.agencyName ? ` à l'agence <strong>${params.agencyName}</strong>` : '';
+
+    const html = `
+      <p>Bonjour <strong>${params.senderFirstName}</strong>,</p>
+      <p style="font-size:18px;">✅ Votre envoi a été retiré.</p>
+      <p><strong>${params.beneficiaryName}</strong> vient de retirer <strong style="font-size:22px;color:#15803D;">${amountText}</strong>${where}.</p>
+      <table cellpadding="8" cellspacing="0" style="width:100%;margin:16px 0;background:#DCFCE7;border-radius:8px;">
+        <tr><td style="color:#166534;">Référence</td><td style="text-align:right;font-family:monospace;color:#166534;">${params.txRef}</td></tr>
+      </table>
+      <p>Aucune autre action n'est nécessaire de votre part.</p>
+    `;
+
+    await this.mailService.sendEmail({
+      to: params.email,
+      subject: `Envoi retiré — ${amountText}`,
+      htmlContent: html,
+      userId: params.userId,
+      transactionId: params.transactionId,
+      brandColor: params.brandColor,
+      brandName: params.brandName,
+    });
+  }
+
+  // ========================================================
   // BIENVENUE
   // ========================================================
 

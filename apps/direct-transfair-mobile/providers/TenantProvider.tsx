@@ -2,7 +2,12 @@
 // =========================================================
 // ✅ v1.4 (phase 7) : DEFAULT_BRANDING, code plateforme (« DONIKO »), hôtes de la plateforme et domaine des portails (buildCompanyPortalUrl)
 //   viennent de services/platformConfig.ts ; mentions légales fictives supprimées (voir DEFAULT_BRANDING).
-// TENANT PROVIDER v1.4 — Direct Transf'air
+// TENANT PROVIDER v1.5 — Direct Transf'air
+// ✅ v1.5 : SYNCHRONISATION DU LOGO / DE L'IDENTITÉ. Avant, la marque d'une société n'était lue qu'UNE fois (à la saisie du code société) puis resservie
+//   depuis le cache du téléphone indéfiniment : un logo ajouté ou changé dans les paramètres de la société n'apparaissait jamais sur les téléphones déjà
+//   configurés. Désormais : (1) après avoir affiché la marque en cache (instantané), l'app la REVALIDE en silence auprès du serveur ;
+//   (2) elle la revalide aussi à chaque retour au premier plan (au plus toutes les 5 min) ; (3) le cache n'est réécrit que si quelque chose a changé ;
+//   (4) hors ligne ou erreur serveur : la marque en cache est conservée telle quelle. Construction de la marque factorisée (brandingFromApi).
 // ✅ v1.3 : Mentions légales publiques dans TenantBranding
 //   PROBLÈME RÉSOLU : terms.tsx / assistance.tsx avaient "Direct
 //   Transf'air SAS", l'agrément ACPR, le capital social, le contact
@@ -22,9 +27,9 @@
 // =========================================================
 
 import React, {
-  createContext, useCallback, useContext, useEffect, useState,
+  createContext, useCallback, useContext, useEffect, useRef, useState,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../services/api";
 import {
@@ -103,6 +108,43 @@ export const DEFAULT_BRANDING: TenantBranding = {
 
 const STORAGE_KEY = "dt_tenant_branding_v1";
 
+/** Délai minimal entre deux revalidations silencieuses au retour au premier plan. */
+const REVALIDATE_MIN_MS = 5 * 60 * 1000;
+
+/** Réponse publique du serveur (/branding/:code ou par hôte) → marque de l'app. `fallbackCode` sert si le serveur n'a pas renvoyé de code / nom. */
+function brandingFromApi(data: any, fallbackCode: string): TenantBranding {
+  return {
+    code:           data.code           ?? fallbackCode,
+    name:           data.name           ?? fallbackCode,
+    logoUrl:        data.logoUrl        ?? null,
+    primaryColor:   data.primaryColor   ?? DEFAULT_BRANDING.primaryColor,
+    secondaryColor: data.secondaryColor ?? DEFAULT_BRANDING.secondaryColor,
+    tagline:        data.tagline        ?? null,
+    fontFamily:     data.fontFamily     ?? null,
+    splashBgColor:  data.splashBgColor  ?? null,
+    welcomeMessage: data.welcomeMessage ?? null,
+    subdomain:      data.subdomain      ?? null,
+    customDomain:   data.customDomain   ?? null,
+    // ✅ v1.3 — mentions légales publiques
+    contactEmail:             data.contactEmail             ?? null,
+    contactPhone:             data.contactPhone             ?? null,
+    address:                  data.address                  ?? null,
+    legalCompanyName:         data.legalCompanyName         ?? null,
+    regulatorName:            data.regulatorName            ?? null,
+    regulatorAcronym:         data.regulatorAcronym         ?? null,
+    regulatoryFrameworkLabel: data.regulatoryFrameworkLabel ?? null,
+    regulatorLicenseNumber:   data.regulatorLicenseNumber   ?? null,
+    regulatorLicenseType:     data.regulatorLicenseType     ?? null,
+    capitalSocial:            data.capitalSocial            ?? null,
+    supportEmail:             data.supportEmail             ?? null,
+    whatsappNumber:           data.whatsappNumber           ?? null,
+    mediatorName:             data.mediatorName             ?? null,
+    mediatorUrl:              data.mediatorUrl              ?? null,
+    termsVersion:             data.termsVersion             ?? null,
+    termsEffectiveDate:       data.termsEffectiveDate       ?? null,
+  };
+}
+
 type TenantContextValue = {
   branding:          TenantBranding;
   isLoadingBranding: boolean;
@@ -162,6 +204,41 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const [isLoadingBranding, setIsLoadingBranding] = useState(true);
   const [isCustomBranding,  setIsCustomBranding]  = useState(false);
 
+  // Société affichée (null = plateforme) et dernière marque rendue : lues par la revalidation silencieuse, qui s'exécute après des `await`.
+  const codeRef      = useRef<string | null>(null);
+  const brandingRef  = useRef<TenantBranding>(DEFAULT_BRANDING);
+  const lastCheckRef = useRef(0);
+  useEffect(() => { brandingRef.current = branding; }, [branding]);
+
+  /**
+   * Relit la marque publique de la société auprès du serveur et met à jour l'écran + le cache si quelque chose a changé
+   * (logo, couleurs, nom, mentions légales). Silencieuse : hors ligne ou erreur serveur, on garde ce qui est affiché.
+   */
+  const revalidate = useCallback(async (code: string) => {
+    lastCheckRef.current = Date.now();
+    try {
+      const data = await api.getClientPublicBranding(code);
+      if (!data) return;
+      // l'utilisateur a changé de société (ou est revenu à la plateforme) pendant la requête : on n'écrase rien
+      if (codeRef.current !== code) return;
+      const next = brandingFromApi(data, code);
+      if (JSON.stringify(next) === JSON.stringify(brandingRef.current)) return;
+      setBranding(next);
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // silencieux : la marque en cache reste affichée
+    }
+  }, []);
+
+  // Retour au premier plan : on revérifie (au plus toutes les 5 min) pour qu'un logo changé côté société arrive sans réinstallation.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      const code = codeRef.current;
+      if (state === "active" && code && Date.now() - lastCheckRef.current > REVALIDATE_MIN_MS) void revalidate(code);
+    });
+    return () => sub.remove();
+  }, [revalidate]);
+
   useEffect(() => {
     const restore = async () => {
       try {
@@ -173,37 +250,10 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
               const data = await (api as any).getBrandingByHost(host);
 
               if (data?.code && !isPlatformCode(data.code)) {
-                const next: TenantBranding = {
-                  code:           data.code,
-                  name:           data.name,
-                  logoUrl:        data.logoUrl        ?? null,
-                  primaryColor:   data.primaryColor   ?? DEFAULT_BRANDING.primaryColor,
-                  secondaryColor: data.secondaryColor ?? DEFAULT_BRANDING.secondaryColor,
-                  tagline:        data.tagline        ?? null,
-                  fontFamily:     data.fontFamily     ?? null,
-                  splashBgColor:  data.splashBgColor  ?? null,
-                  welcomeMessage: data.welcomeMessage ?? null,
-                  subdomain:      data.subdomain      ?? null,
-                  customDomain:   data.customDomain   ?? null,
-                  // ✅ v1.3 (nouveau)
-                  contactEmail:             data.contactEmail             ?? null,
-                  contactPhone:             data.contactPhone             ?? null,
-                  address:                  data.address                  ?? null,
-                  legalCompanyName:         data.legalCompanyName         ?? null,
-                  regulatorName:            data.regulatorName            ?? null,
-                  regulatorAcronym:         data.regulatorAcronym         ?? null,
-                  regulatoryFrameworkLabel: data.regulatoryFrameworkLabel ?? null,
-                  regulatorLicenseNumber:   data.regulatorLicenseNumber   ?? null,
-                  regulatorLicenseType:     data.regulatorLicenseType     ?? null,
-                  capitalSocial:            data.capitalSocial            ?? null,
-                  supportEmail:             data.supportEmail             ?? null,
-                  whatsappNumber:           data.whatsappNumber           ?? null,
-                  mediatorName:             data.mediatorName             ?? null,
-                  mediatorUrl:              data.mediatorUrl              ?? null,
-                  termsVersion:             data.termsVersion             ?? null,
-                  termsEffectiveDate:       data.termsEffectiveDate       ?? null,
-                };
+                const next = brandingFromApi(data, data.code);
 
+                codeRef.current = next.code;
+                lastCheckRef.current = Date.now();
                 setBranding(next);
                 setIsCustomBranding(true);
                 await api.setTenant(next.code);
@@ -230,9 +280,12 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
             subdomain:    parsed.subdomain    ?? null,
             customDomain: parsed.customDomain ?? null,
           };
+          codeRef.current = enriched.code;
           setBranding(enriched);
           setIsCustomBranding(true);
           await api.setTenant(enriched.code);
+          // la marque en cache s'affiche tout de suite ; on la revérifie en arrière-plan (sans bloquer le démarrage)
+          void revalidate(enriched.code);
         }
       } catch {
         // Silencieux — reste sur DEFAULT_BRANDING
@@ -242,7 +295,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     };
 
     void restore();
-  }, []);
+  }, [revalidate]);
 
   const loadBranding = useCallback(async (code: string) => {
     const upper = code.trim().toUpperCase();
@@ -255,37 +308,10 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     try {
       const data = await api.getClientPublicBranding(upper);
 
-      const next: TenantBranding = {
-        code:           data.code           ?? upper,
-        name:           data.name           ?? upper,
-        logoUrl:        data.logoUrl        ?? null,
-        primaryColor:   data.primaryColor   ?? DEFAULT_BRANDING.primaryColor,
-        secondaryColor: data.secondaryColor ?? DEFAULT_BRANDING.secondaryColor,
-        tagline:        data.tagline        ?? null,
-        fontFamily:     data.fontFamily     ?? null,
-        splashBgColor:  data.splashBgColor  ?? null,
-        welcomeMessage: data.welcomeMessage ?? null,
-        subdomain:      data.subdomain      ?? null,
-        customDomain:   data.customDomain   ?? null,
-        // ✅ v1.3 (nouveau)
-        contactEmail:             data.contactEmail             ?? null,
-        contactPhone:             data.contactPhone             ?? null,
-        address:                  data.address                  ?? null,
-        legalCompanyName:         data.legalCompanyName         ?? null,
-        regulatorName:            data.regulatorName            ?? null,
-        regulatorAcronym:         data.regulatorAcronym         ?? null,
-        regulatoryFrameworkLabel: data.regulatoryFrameworkLabel ?? null,
-        regulatorLicenseNumber:   data.regulatorLicenseNumber   ?? null,
-        regulatorLicenseType:     data.regulatorLicenseType     ?? null,
-        capitalSocial:            data.capitalSocial            ?? null,
-        supportEmail:             data.supportEmail             ?? null,
-        whatsappNumber:           data.whatsappNumber           ?? null,
-        mediatorName:             data.mediatorName             ?? null,
-        mediatorUrl:              data.mediatorUrl              ?? null,
-        termsVersion:             data.termsVersion             ?? null,
-        termsEffectiveDate:       data.termsEffectiveDate       ?? null,
-      };
+      const next = brandingFromApi(data, upper);
 
+      codeRef.current = upper;
+      lastCheckRef.current = Date.now();
       setBranding(next);
       setIsCustomBranding(true);
       await api.setTenant(upper);
@@ -298,6 +324,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const clearBranding = useCallback(() => {
+    codeRef.current = null;
     setBranding(DEFAULT_BRANDING);
     setIsCustomBranding(false);
     void AsyncStorage.removeItem(STORAGE_KEY);

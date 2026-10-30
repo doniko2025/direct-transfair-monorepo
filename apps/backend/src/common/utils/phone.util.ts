@@ -97,6 +97,24 @@ export function normalizePhoneE164(raw?: string | null): string | null {
 }
 
 /**
+ * ✅ audit — normalisation STRICTE, pour l'ÉCRITURE (création / modification d'un compte, d'un bénéficiaire).
+ *
+ * Un numéro international ne commence jamais par 0 une fois l'indicatif pays posé : "+0766736226" est un numéro LOCAL
+ * (0766736226) dont l'indicatif manque. normalizePhoneE164() le laisse passer (déterministe, et il faut pouvoir RETROUVER
+ * les anciens comptes stockés ainsi), mais on ne veut plus en ÉCRIRE de nouveaux : il ne correspondra à aucun destinataire
+ * et enverra l'envoi vers un numéro inexistant. Renvoie null dans ce cas, comme pour une entrée invalide.
+ */
+export function normalizePhoneStrict(raw?: string | null): string | null {
+  const normalized = normalizePhoneE164(raw);
+  if (!normalized) return null;
+  if (normalized.startsWith('+0')) return null;
+  return normalized;
+}
+
+export const PHONE_INVALID_MESSAGE =
+  "Numéro de téléphone invalide : saisissez-le avec l'indicatif du pays et sans 0 initial (ex. +224 620 00 00 00).";
+
+/**
  * Compare deux numéros après normalisation. Pratique pour éviter de
  * répéter normalizePhoneE164() des deux côtés d'une comparaison.
  */

@@ -78,7 +78,7 @@ import { CurrencyCode, KycLevel, Prisma, Role, User } from '@prisma/client';
 import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizePhoneE164 } from '../common/utils/phone.util';
+import { normalizePhoneE164, normalizePhoneStrict, PHONE_INVALID_MESSAGE } from '../common/utils/phone.util';
 
 // =========================================================
 // HELPERS (inchangés depuis v4.2)
@@ -331,10 +331,10 @@ export class UsersService {
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(extra.country);
 
     const rawPhone = extra.phone ? String(extra.phone).trim() : '';
-    const normalizedPhone = rawPhone ? normalizePhoneE164(rawPhone) : null;
+    const normalizedPhone = rawPhone ? normalizePhoneStrict(rawPhone) : null;
 
     if (rawPhone && !normalizedPhone) {
-      throw new BadRequestException('Numéro de téléphone invalide.');
+      throw new BadRequestException(PHONE_INVALID_MESSAGE);
     }
 
     if (normalizedPhone) {
@@ -414,9 +414,9 @@ export class UsersService {
       if (!trimmedPhone) {
         data.phone = null; // autorise l'effacement explicite du numéro
       } else {
-        const normalizedPhone = normalizePhoneE164(trimmedPhone);
+        const normalizedPhone = normalizePhoneStrict(trimmedPhone);
         if (!normalizedPhone) {
-          throw new BadRequestException('Numéro de téléphone invalide.');
+          throw new BadRequestException(PHONE_INVALID_MESSAGE);
         }
 
         const existingPhone = await db.user.findFirst({
