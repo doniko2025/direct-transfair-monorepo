@@ -1,0 +1,56 @@
+# .github/workflows/keep-alive.yml
+# =========================================================
+# GARDER LE SERVEUR ÉVEILLÉ — Direct Transf'air
+#
+# Render (plan gratuit) endort le serveur après ~15 min sans requête ; le réveil prend 30 à 60 s (« Le serveur démarre… » dans l'app).
+# Ce workflow appelle GET /api/health toutes les 10 minutes pendant la journée : le serveur (et la base) restent éveillés.
+#
+# RÉGLAGES
+#   • URL du serveur : variable de dépôt API_URL (Settings → Secrets and variables → Actions → Variables) ;
+#     à défaut, l'adresse de production ci-dessous.
+#   • Plage horaire : le cron est en UTC. « 5-22 » = de 05 h à 22 h 59 UTC, soit 06 h–23 h 59 en France (hiver) et 07 h–00 h 59 (été), 05 h–22 h 59 en Guinée.
+#     Pour couvrir 24 h/24, remplacez par  '*/10 * * * *'.
+#   • Lancement manuel : onglet Actions → « Keep API awake » → Run workflow.
+#
+# LIMITES À CONNAÎTRE
+#   • GitHub peut retarder une exécution planifiée de plusieurs minutes quand ses serveurs sont chargés : une pause > 15 min est donc possible de temps en temps.
+#   • Dépôt PRIVÉ : GitHub offre 2 000 minutes/mois ; ce workflow en consomme ≈ 3 300 (1 minute facturée par exécution). Dépôt public : gratuit et illimité.
+#     Si votre dépôt est privé, préférez un service de ping gratuit (cron-job.org, UptimeRobot) sur la même URL, ou réduisez la plage horaire.
+#   • Render gratuit : 750 h d'instance par mois pour TOUS les services gratuits du compte. Un service éveillé 24 h/24 ≈ 744 h : deux services ne tiennent pas.
+# =========================================================
+name: Keep API awake
+
+on:
+  schedule:
+    - cron: '*/10 5-22 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Réveiller / contrôler le serveur
+        env:
+          API_URL: ${{ vars.API_URL || 'https://direct-transfair-backend.onrender.com' }}
+        run: |
+          url="${API_URL%/}/api/health"
+          echo "Contrôle de $url"
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /tmp/body -w '%{http_code}' --max-time 45 "$url" || true)
+            code=${code:-000}
+            echo "Tentative $i → HTTP $code"
+            case "$code" in
+              200) cat /tmp/body; echo; exit 0 ;;
+              404) echo "Serveur éveillé (route /health pas encore déployée)."; exit 0 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::Le serveur ne répond pas correctement (dernier code HTTP $code)."
+          exit 1

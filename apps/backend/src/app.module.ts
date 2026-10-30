@@ -1,5 +1,7 @@
 // apps/backend/src/app.module.ts
 // =========================================================
+// APP MODULE v5.7
+// ✅ v5.7 : GET /api/health (HealthController) — point de contrôle public pour garder le serveur éveillé (workflow keep-alive) et surveiller la base.
 // APP MODULE v5.3
 // ✅ v5.6 : PortalDomainsModule — /portal-domains (domaine du portail de chaque société : Cloudflare + Vercel, suivi de statut).
 // ✅ v5.5 : TransferLimitsModule — /transfer-limits (plafonds d'envoi par niveau KYC et devise, réglés par l'admin société).
@@ -88,6 +90,7 @@ import { TransferLimitsModule } from './transfer-limits/transfer-limits.module';
 import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
 import { ExchangeRatesController } from './exchange-rates/exchange-rates.controller';
+import { HealthController }        from './health/health.controller'; // ✅ v5.7
 import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service';
 
 @Module({
@@ -138,7 +141,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     PortalDomainsModule, // ✅ v5.6 — /portal-domains (domaine du portail de chaque société)
   ],
 
-  controllers: [ExchangeRatesController],
+  controllers: [ExchangeRatesController, HealthController],
 
   providers: [
     ExchangeRatesService,
