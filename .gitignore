@@ -4,6 +4,7 @@ build/
 .env
 .expo/
 .vscode/
+_to_delete/
 
 .vercel
 .pnpm-store

@@ -4,6 +4,7 @@ node_modules/
 # Production
 dist/
 build/
+_to_delete/
 
 # Environnement (TRÈS IMPORTANT pour tes mots de passe)
 .env
