@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function restore() {
-      if (!storage.getAccessToken() && !storage.getRefreshToken()) {
+      if (!storage.getAccessToken() && !storage.getRefreshToken() && !storage.hasSession?.()) {
         setState({ status: 'anonymous', notice: null });
         return;
       }

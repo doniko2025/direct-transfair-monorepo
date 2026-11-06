@@ -8,7 +8,8 @@
 //   GET  /agent-desk/send-preview          frais, taux, montant reçu d'un envoi cash  (?amount&receiveCountry)
 //   POST /transactions/deposit             { amount, userPhone }  → Transaction
 //   POST /withdrawals/agent/check          { code }               → WithdrawalCheck
-//   POST /withdrawals/agent/pay            { code }               → WithdrawalPayResult
+//   POST /withdrawals/agent/pay            { code, phoneDigits? } → WithdrawalPayResult (phoneDigits : derniers chiffres du
+//                                          téléphone du bénéficiaire, exigés si WithdrawalCheck.requiresPhoneCheck)
 //   POST /beneficiaries                    { fullName, country, city, phone? } → Beneficiary (propre à l'agent)
 //   POST /transactions                     { amount, currency, payoutMethod:'CASH_PICKUP', beneficiaryId, sender* } → Transaction
 //   POST /transactions/agency/remit        { amount, note? }      → Transaction (devise = celle de l'agence)
@@ -113,6 +114,10 @@ export interface WithdrawalCheck {
   status: string;
   originCountry?: string;
   reference: string;
+  /** La société exige les derniers chiffres du téléphone du bénéficiaire pour payer (réglage « Codes de retrait »). */
+  requiresPhoneCheck?: boolean;
+  /** Nombre de chiffres à saisir quand requiresPhoneCheck est vrai. */
+  phoneCheckDigits?: number | null;
 }
 
 export interface WithdrawalPayResult {
@@ -173,7 +178,8 @@ export function createAgentDeskApi(http: HttpClient) {
 
     checkWithdrawal: (code: string) => http.post<WithdrawalCheck>('/withdrawals/agent/check', { code }),
 
-    payWithdrawal: (code: string) => http.post<WithdrawalPayResult>('/withdrawals/agent/pay', { code }),
+    payWithdrawal: (code: string, phoneDigits?: string) =>
+      http.post<WithdrawalPayResult>('/withdrawals/agent/pay', phoneDigits ? { code, phoneDigits } : { code }),
 
     createBeneficiary: (input: NewBeneficiary) => http.post<Beneficiary>('/beneficiaries', input),
 

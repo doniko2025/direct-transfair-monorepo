@@ -205,8 +205,9 @@ export default function AgentSendCashScreen() {
   const [fees,    setFees]    = useState(0);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
-  const [feeRate,  setFeeRate]  = useState(0.015);
-  const [feeLabel, setFeeLabel] = useState("1,5");
+  // Estimation le temps que le serveur calcule les frais exacts (useFeeQuote) ; le taux vient de GET /commissions/fees.
+  const [feeRate,  setFeeRate]  = useState(0);
+  const [feeLabel, setFeeLabel] = useState("…");
   const [agentCurrency, setAgentCurrency] = useState("XOF");
   const [allRates,       setAllRates]       = useState<any[]>([]);
   const [targetCurrency, setTargetCurrency] = useState("XOF");
@@ -234,7 +235,7 @@ export default function AgentSendCashScreen() {
     (api.http as any).get("/commissions/fees").then((res: any) => {
       const list: any[] = Array.isArray(res.data) ? res.data : [];
       const r = list.find((c: any) => c.payoutMethod === "CASH_PICKUP");
-      if (r) { const raw = Number(r.feeRate ?? 1.5); setFeeRate(raw / 100); setFeeLabel(raw.toFixed(1).replace(".", ",")); }
+      if (r) { const raw = Number(r.feeRate ?? 0); setFeeRate(raw / 100); setFeeLabel(raw.toFixed(1).replace(".", ",")); }
     }).catch(() => {});
   }, []);
 

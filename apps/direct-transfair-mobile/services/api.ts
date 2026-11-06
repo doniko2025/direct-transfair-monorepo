@@ -67,10 +67,10 @@
 //   au lieu des 30 s communs : un serveur qui ne répond pas ne fige plus la restauration de session pendant 1 minute.
 // =========================================================
 
+import type { UserSession } from "./sessionLabel";
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
-  type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -354,12 +354,6 @@ function isAxios401(err: unknown): boolean {
   );
 }
 
-function shouldFallback(err: unknown): boolean {
-  if (!axios.isAxiosError(err)) return false;
-  const status = err.response?.status;
-  return status === 404 || status === 405 || status === 501;
-}
-
 function extractAxiosErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return String(err);
   const status = err.response?.status;
@@ -375,20 +369,6 @@ function extractAxiosErrorMessage(err: unknown): string {
   }
   const fallback = err.message || "Erreur réseau";
   return status ? `${status} - ${fallback}` : fallback;
-}
-
-async function tryMany<T>(fns: Array<() => Promise<T>>, label: string): Promise<T> {
-  let lastErr: unknown;
-  for (const fn of fns) {
-    try {
-      return await fn();
-    } catch (e) {
-      lastErr = e;
-      if (!shouldFallback(e)) break;
-    }
-  }
-  console.error(`API tryMany failed (${label})`, extractAxiosErrorMessage(lastErr));
-  throw lastErr;
 }
 
 // ============================================================
@@ -854,11 +834,23 @@ class API {
     await this.http.delete(`/auth/devices/${deviceId}`);
   }
 
-  async trustDevice(deviceId: string, otpCode: string): Promise<UserDevice> {
-    const res = await this.http.post<UserDevice>(`/auth/devices/${deviceId}/trust`, {
-      code: otpCode,
-    });
-    return res.data;
+  // ============================================================
+  // SESSIONS ACTIVES — « Appareils connectés » (GET/DELETE /auth/sessions)
+  // ============================================================
+
+  async getSessions(): Promise<UserSession[]> {
+    const res = await this.http.get<unknown>("/auth/sessions");
+    return unwrapArray<UserSession>(res.data);
+  }
+
+  async revokeSession(sessionId: string): Promise<{ success: true; wasCurrent: boolean }> {
+    const res = await this.http.delete(`/auth/sessions/${encodeURIComponent(sessionId)}`);
+    return res.data as { success: true; wasCurrent: boolean };
+  }
+
+  async revokeOtherSessions(): Promise<{ success: true; revoked: number }> {
+    const res = await this.http.post("/auth/sessions/revoke-others");
+    return res.data as { success: true; revoked: number };
   }
 
   // ============================================================
@@ -962,6 +954,19 @@ class API {
   // confirmation admin. Voir recharge.service.ts (backend).
   // ============================================================
 
+  /** Moyens de recharge ouverts par la société du client (réglage « Recharge »). */
+  async getRechargeOptions(): Promise<{ methods: string[]; simulated: boolean; blocked: boolean }> {
+    const res = await this.http.get<{ methods?: string[]; simulated?: boolean; blocked?: boolean }>(
+      "/payments/recharge/options",
+    );
+    const d = res.data ?? {};
+    return {
+      methods: Array.isArray(d.methods) ? d.methods.map(String) : [],
+      simulated: d.simulated !== false,
+      blocked: d.blocked === true,
+    };
+  }
+
   async rechargeByCard(payload: {
     amount: number;
     currency: Currency | string;
@@ -1037,13 +1042,6 @@ class API {
     return res.data;
   }
 
-  async toggleFavoriteBeneficiary(id: string): Promise<Beneficiary> {
-    const res = await this.http.patch<Beneficiary>(
-      `/beneficiaries/${id}/favorite`,
-    );
-    return res.data;
-  }
-
   // ============================================================
   // TRANSACTIONS
   // ============================================================
@@ -1070,24 +1068,10 @@ class API {
     return normalizeTransaction(res.data);
   }
 
+  // PATCH /transactions/:id/cancel
   async cancelTransaction(id: string): Promise<Transaction> {
-    return tryMany<Transaction>(
-      [
-        async () => {
-          const res = await this.http.patch<Transaction>(
-            `/transactions/${id}/cancel`,
-          );
-          return normalizeTransaction(res.data);
-        },
-        async () => {
-          const res = await this.http.post<Transaction>(
-            `/transactions/${id}/cancel`,
-          );
-          return normalizeTransaction(res.data);
-        },
-      ],
-      "cancelTransaction",
-    );
+    const res = await this.http.patch<Transaction>(`/transactions/${id}/cancel`);
+    return normalizeTransaction(res.data);
   }
 
   // ============================================================
@@ -1095,28 +1079,14 @@ class API {
   // ============================================================
 
   async getScheduledTransfers(): Promise<ScheduledTransfer[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/scheduled-transfers"),
-        async () => this.http.get<unknown>("/transactions/scheduled"),
-      ],
-      "getScheduledTransfers",
-    );
-    return unwrapArray<ScheduledTransfer>(data.data);
+    const res = await this.http.get<unknown>("/scheduled-transfers");
+    return unwrapArray<ScheduledTransfer>(res.data);
   }
 
   async createScheduledTransfer(
     data: CreateScheduledTransferPayload,
   ): Promise<ScheduledTransfer> {
-    const res = await tryMany<AxiosResponse<ScheduledTransfer>>(
-      [
-        async () =>
-          this.http.post<ScheduledTransfer>("/scheduled-transfers", data),
-        async () =>
-          this.http.post<ScheduledTransfer>("/transactions/scheduled", data),
-      ],
-      "createScheduledTransfer",
-    );
+    const res = await this.http.post<ScheduledTransfer>("/scheduled-transfers", data);
     return res.data;
   }
 
@@ -1145,239 +1115,67 @@ class API {
   // TAUX DE CHANGE
   // ============================================================
 
+  // GET /exchange-rates (public) — taux publiés par la plateforme. En cas d'échec, taux de secours uniquement si
+  // EXPO_PUBLIC_FALLBACK_RATES est défini (services/platformConfig.ts) ; sinon liste vide.
   async getExchangeRates(): Promise<ExchangeRate[]> {
     try {
-      const data = await tryMany<AxiosResponse<unknown>>(
-        [
-          async () => this.http.get<unknown>("/rates"),
-          async () => this.http.get<unknown>("/exchange-rates"),
-          async () => this.http.get<unknown>("/exchange-rates/all"),
-          async () => this.http.get<unknown>("/rates/all"),
-        ],
-        "getExchangeRates",
-      );
-      const list = unwrapArray<unknown>(data.data).map(normalizeExchangeRate);
+      const res = await this.http.get<unknown>("/exchange-rates");
+      const list = unwrapArray<unknown>(res.data).map(normalizeExchangeRate);
       if (list.length > 0) return list;
       throw new Error("Réponse vide");
     } catch {
       devLog("⚠️ getExchangeRates: API indisponible → taux de secours");
-      // ✅ phase 7 : plus de taux inventés — liste vide sauf si EXPO_PUBLIC_FALLBACK_RATES est défini.
       return getFallbackRates()
         .map((r) => ({ pair: r.pair, rate: r.rate, inverseRate: 1 / r.rate }))
         .map(normalizeExchangeRate);
     }
   }
 
+  // GET /exchange-rates/:pair/history
   async getExchangeRateHistory(
     pair: string,
     params?: { from?: string; to?: string; limit?: number },
   ): Promise<ExchangeRateHistory[]> {
     try {
-      const data = await tryMany<AxiosResponse<unknown>>(
-        [
-          async () => this.http.get<unknown>(`/rates/${pair}/history`, { params }),
-          async () =>
-            this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params }),
-        ],
-        "getExchangeRateHistory",
-      );
-      return unwrapArray<ExchangeRateHistory>(data.data);
+      const res = await this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params });
+      return unwrapArray<ExchangeRateHistory>(res.data);
     } catch {
       return [];
     }
   }
 
+  // POST /exchange-rates/convert — conversion calculée par le serveur avec le taux en vigueur.
+  // Aucun taux n'est écrit dans l'application : si le serveur ne répond pas, l'erreur est remontée à l'écran
+  // (qui affiche « conversion indisponible ») au lieu d'afficher un montant inventé.
   async convertAmount(
     amount: number,
     from: Currency | string,
     to: Currency | string,
   ): Promise<{ amount: number; rate: number; convertedAmount: number }> {
-    try {
-      const res = await this.http.post<{
-        amount: number;
-        rate: number;
-        convertedAmount: number;
-      }>("/rates/convert", { amount, from, to });
-      return res.data;
-    } catch {
-      devLog("⚠️ convertAmount: API indisponible → calcul local");
-      const RATES: Record<string, number> = {
-        "EUR_XOF": 655.957, "EUR_GNF": 9600,   "EUR_USD": 1.08,  "EUR_GBP": 0.85,
-        "USD_XOF": 607.55,  "USD_GNF": 8889,   "GBP_XOF": 771.71,
-        "XOF_EUR": 1 / 655.957, "GNF_EUR": 1 / 9600,
-        "XOF_GNF": 14.63,       "GNF_XOF": 1 / 14.63,
-        "GBP_EUR": 1 / 0.85,    "USD_EUR": 1 / 1.08,
-      };
-      const key = `${String(from).toUpperCase()}_${String(to).toUpperCase()}`;
-      const rate = RATES[key] ?? (String(from) === String(to) ? 1 : 1);
-      const convertedAmount = Math.round(amount * rate * 100) / 100;
-      return { amount, rate, convertedAmount };
-    }
+    const res = await this.http.post<{
+      amount: number;
+      rate: number;
+      convertedAmount: number;
+    }>("/exchange-rates/convert", { amount, from, to });
+    return res.data;
   }
 
   // ============================================================
-  // ALERTES TAUX DE CHANGE
+  // ALERTES TAUX DE CHANGE — /rate-alerts
   // ============================================================
 
   async getRateAlerts(): Promise<RateAlert[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/rate-alerts"),
-        async () => this.http.get<unknown>("/rates/alerts"),
-      ],
-      "getRateAlerts",
-    );
-    return unwrapArray<RateAlert>(data.data);
+    const res = await this.http.get<unknown>("/rate-alerts");
+    return unwrapArray<RateAlert>(res.data);
   }
 
   async createRateAlert(data: CreateRateAlertPayload): Promise<RateAlert> {
-    const res = await tryMany<AxiosResponse<RateAlert>>(
-      [
-        async () => this.http.post<RateAlert>("/rate-alerts", data),
-        async () => this.http.post<RateAlert>("/rates/alerts", data),
-      ],
-      "createRateAlert",
-    );
+    const res = await this.http.post<RateAlert>("/rate-alerts", data);
     return res.data;
   }
 
   async deleteRateAlert(id: string): Promise<void> {
-    await tryMany<void>(
-      [
-        async () => { await this.http.delete(`/rate-alerts/${id}`); },
-        async () => { await this.http.delete(`/rates/alerts/${id}`); },
-      ],
-      "deleteRateAlert",
-    );
-  }
-
-  // ============================================================
-  // KYC
-  // ============================================================
-
-  async getMyKycDocuments(): Promise<KycDocument[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/kyc"),
-        async () => this.http.get<unknown>("/kyc/documents"),
-      ],
-      "getMyKycDocuments",
-    );
-    return unwrapArray<KycDocument>(data.data);
-  }
-
-  async submitKycDocument(data: SubmitKycPayload): Promise<KycDocument> {
-    const res = await tryMany<AxiosResponse<KycDocument>>(
-      [
-        async () => this.http.post<KycDocument>("/kyc", data),
-        async () => this.http.post<KycDocument>("/kyc/documents", data),
-      ],
-      "submitKycDocument",
-    );
-    return res.data;
-  }
-
-  // ============================================================
-  // FIDÉLITÉ
-  // ============================================================
-
-  async getLoyaltyBalance(): Promise<{
-    points: number;
-    tier: string;
-    nextTierPoints: number;
-  }> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/loyalty/balance"),
-        async () => this.http.get<unknown>("/loyalty"),
-      ],
-      "getLoyaltyBalance",
-    );
-    return data.data as { points: number; tier: string; nextTierPoints: number };
-  }
-
-  async getLoyaltyHistory(params?: {
-    page?: number;
-    limit?: number;
-  }): Promise<LoyaltyTransaction[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/loyalty/history", { params }),
-        async () => this.http.get<unknown>("/loyalty/transactions", { params }),
-      ],
-      "getLoyaltyHistory",
-    );
-    return unwrapArray<LoyaltyTransaction>(data.data);
-  }
-
-  async getLoyaltyConfig(): Promise<LoyaltyConfig | null> {
-    try {
-      const res = await this.http.get<LoyaltyConfig>("/loyalty/config");
-      return res.data;
-    } catch {
-      return null;
-    }
-  }
-
-  // ============================================================
-  // COUNTRY CURRENCY MAP
-  // ============================================================
-
-  async getCountryCurrencies(): Promise<CountryCurrency[]> {
-    const data = await tryMany<AxiosResponse<unknown>>(
-      [
-        async () => this.http.get<unknown>("/country-currencies"),
-        async () => this.http.get<unknown>("/rates/countries"),
-      ],
-      "getCountryCurrencies",
-    );
-    return unwrapArray<CountryCurrency>(data.data);
-  }
-
-  async getCurrencyForCountry(countryCode: string): Promise<string> {
-    try {
-      const res = await this.http.get<{ currencyCode: string }>(
-        `/country-currencies/${countryCode.toUpperCase()}`,
-      );
-      return res.data.currencyCode;
-    } catch {
-      const map: Record<string, string> = {
-        FR: "EUR", DE: "EUR", IT: "EUR", ES: "EUR", BE: "EUR", PT: "EUR",
-        NL: "EUR", AT: "EUR", FI: "EUR", IE: "EUR", LU: "EUR", GR: "EUR",
-        GB: "GBP", GG: "GBP", JE: "GBP",
-        US: "USD", SV: "USD", PA: "USD",
-        GN: "GNF",
-        SN: "XOF", CI: "XOF", ML: "XOF", BF: "XOF", BJ: "XOF",
-        TG: "XOF", NE: "XOF", GW: "XOF",
-      };
-      return map[countryCode.toUpperCase()] ?? "XOF";
-    }
-  }
-
-  // ============================================================
-  // PROMOTIONS
-  // ============================================================
-
-  async validatePromoCode(
-    code: string,
-    amount?: number,
-    currency?: string,
-  ): Promise<Promotion | null> {
-    try {
-      const res = await this.http.post<Promotion>("/promotions/validate", {
-        code,
-        amount,
-        currency,
-      });
-      return res.data;
-    } catch {
-      return null;
-    }
-  }
-
-  async getPromotions(): Promise<Promotion[]> {
-    const res = await this.http.get<unknown>("/promotions");
-    return unwrapArray<Promotion>(res.data);
+    await this.http.delete(`/rate-alerts/${id}`);
   }
 
   // ============================================================
@@ -1598,6 +1396,21 @@ class API {
   // GET/POST /commissions (admin société). POST : règle de partage (sourceType/destType/senderShare/payerShare) ou, avec
   // payoutMethod, frais par méthode de paiement (feeRate / fixedFee).
   // ============================================================
+
+  // GET /fees-admin/mine — tarif de la société par mode d'envoi (+ « charged » : faux = mode gratuit selon ses paramètres).
+  async getMyFees(): Promise<{
+    company: { id: number; name: string; code: string };
+    methods: { payoutMethod: string; label: string; charged: boolean; feeRate: number; fixedFee: number }[];
+  }> {
+    const res = await this.http.get("/fees-admin/mine");
+    return res.data as any;
+  }
+
+  // PATCH /fees-admin/:method — COMPANY_ADMIN uniquement.
+  async setFeeMethod(method: string, values: { feeRate: number; fixedFee: number }): Promise<unknown> {
+    const res = await this.http.patch(`/fees-admin/${encodeURIComponent(method)}`, values);
+    return res.data;
+  }
 
   async getCommissionRules(): Promise<CommissionRule[]> {
     const res = await this.http.get<unknown>("/commissions");

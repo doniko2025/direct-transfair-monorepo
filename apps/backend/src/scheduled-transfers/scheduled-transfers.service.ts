@@ -1,6 +1,10 @@
 // apps/backend/src/scheduled-transfers/scheduled-transfers.service.ts
 // =========================================================
-// SCHEDULED TRANSFERS SERVICE v4.7
+// SCHEDULED TRANSFERS SERVICE v4.8
+// ✅ v4.8 : chaque échéance passe par TransactionsService.create() (type SCHEDULED, clé d'idempotence virement + échéance) au lieu
+//   d'une copie du code d'envoi. Conséquences : code de retrait à 9 chiffres (avant « SCHED-… » impossible à saisir par l'agent),
+//   modes gratuits / frais / durée de validité réglés par la société, destinataire wallet et Mobile Money résolus, scoring AML,
+//   plafonds KYC identiques à l'envoi manuel, code transmis dans l'e-mail d'exécution.
 // ✅ v4.7 (audit du code) : le montant reçu est arrondi à la devise de réception (roundToCurrency) avant d'être enregistré.
 // ✅ v4.6 : l'envoi créé à chaque échéance porte son pays de destination (Transaction.receiveCountry) et une échéance de code
 //   de 5 mois (pickupExpiry), comme un envoi manuel. Un virement cash dont le bénéficiaire n'a pas de pays reconnu échoue
@@ -61,21 +65,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { CurrencyCode, Prisma, ScheduledStatus, ScheduledFrequency } from '@prisma/client';
-
-import * as crypto from 'crypto';
+import { CurrencyCode, PayoutMethod, Prisma, ScheduledStatus, ScheduledFrequency, TransactionType } from '@prisma/client';
 
 import type { CreateScheduledTransferDto } from './dto/create-scheduled-transfer.dto';
-import { toIso2 } from '../fee-schedule/countries';
-import { currencyOfCountry } from '../fee-schedule/country-currency';
-import { pickupExpiryFrom } from '../transactions/pickup-rules';
-import { FeeScheduleService } from '../fee-schedule/fee-schedule.service';
+import type { CreateTransactionDto } from '../transactions/dto/create-transaction.dto';
+import { TransactionsService } from '../transactions/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
-import { ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
-import { WalletsService } from '../wallets/wallets.service';
-import { RatesService } from '../rates/rates.service';
-import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { PushService } from '../push/push.service';
 import { MailService } from '../mail/mail.service';
 
@@ -92,13 +87,9 @@ export class ScheduledTransfersService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly wallets: WalletsService,
-    private readonly rates: RatesService,
     private readonly push: PushService,
     private readonly mail: MailService,
-    private readonly feeSchedule: FeeScheduleService,
-    private readonly thresholds: ValidationThresholdsService,
-    private readonly transferLimits: TransferLimitsService,
+    private readonly transactions: TransactionsService,
   ) {}
 
   async create(userId: string, dto: CreateScheduledTransferDto) {
@@ -266,123 +257,62 @@ export class ScheduledTransfersService {
   }
 
   private async executeTransfer(transfer: any): Promise<void> {
+    // Vrai dès que l'envoi existe (argent débité). Une erreur APRÈS ce point n'est pas un échec du virement : l'échéance reste
+    // en l'état et le prochain passage retrouvera l'envoi grâce à la clé d'idempotence, puis avancera l'échéance.
+    let sendCreated = false;
     try {
       const user = transfer.user;
       if (!user) throw new Error('Utilisateur introuvable');
       if (!user.isActive || user.isSuspended || user.deletedAt) throw new Error('Compte expéditeur désactivé ou suspendu');
 
       const currency = transfer.currency as CurrencyCode;
-      const userWallet = user.wallets?.find((w: any) => w.currency === currency && w.isActive);
-      if (!userWallet) throw new Error(`Wallet ${currency} introuvable pour l'utilisateur`);
+      const payoutMethod = (transfer.payoutMethod as PayoutMethod) ?? PayoutMethod.CASH_PICKUP;
 
-      const reference = `SCHED-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
-      const amt = new Prisma.Decimal(transfer.amount);
-      const payoutMethod = (transfer.payoutMethod as any) ?? 'CASH_PICKUP';
+      // v4.8 — l'envoi est créé par TransactionsService.create(), exactement comme un envoi manuel : frais du barème et modes
+      // gratuits de la société, seuil de validation, plafonds KYC, bénéficiaire plateforme (wallet / Mobile Money), pays de
+      // destination, code de retrait à 9 chiffres (avant : « SCHED-… », que l'agent ne pouvait pas saisir), durée de validité
+      // du code, scoring AML. La clé d'idempotence (virement + échéance) empêche tout double débit : si le passage plante
+      // entre la création et l'avancement de l'échéance, le passage suivant retrouve l'envoi au lieu d'en créer un second.
+      const idempotencyKey = `sched:${transfer.id}:${new Date(transfer.nextExecutionAt).getTime()}`;
+      const tx = await this.transactions.create(
+        user.id,
+        {
+          amount: Number(transfer.amount),
+          currency,
+          payoutMethod,
+          beneficiaryId: transfer.beneficiaryId ?? undefined,
+          note: transfer.note ?? undefined,
+        } as CreateTransactionDto,
+        idempotencyKey,
+        { type: TransactionType.SCHEDULED, scheduledTransferId: transfer.id },
+      );
+      sendCreated = true;
 
-      // v4.4 — frais du barème de la société (avant : 0) et statut selon le seuil réglé par la société.
-      const quote = await this.feeSchedule.quote({
-        clientId: transfer.clientId,
-        senderId: user.id,
-        payoutMethod,
-        amount: Number(amt),
-        currency,
-        receiveCountry: toIso2(transfer.beneficiary?.country ?? null),
-      });
-      const fees = new Prisma.Decimal(quote.fees);
-      const total = amt.plus(fees);
-
-      const threshold = new Prisma.Decimal(await this.thresholds.thresholdFor(transfer.clientId, currency));
-      const status = amt.lte(threshold) ? 'VALIDATED' : 'PENDING';
-
-      // v4.6 — pays de destination ; un virement cash se paie dans ce pays, dans sa devise.
-      const receiveCountry = toIso2(transfer.beneficiary?.country ?? null);
-      if (payoutMethod === 'CASH_PICKUP' && !receiveCountry) {
-        throw new Error(
-          `Pays du bénéficiaire non reconnu${transfer.beneficiary?.country ? ` (« ${transfer.beneficiary.country} »)` : ''} : ` +
-          `corrigez le bénéficiaire pour que le code puisse être payé au bon endroit.`,
-        );
-      }
-      const cashCurrency = payoutMethod === 'CASH_PICKUP' && receiveCountry
-        ? ((currencyOfCountry(receiveCountry) as CurrencyCode | null) ?? null)
-        : null;
-
-      let receivedAmount = Number(transfer.amount);
-      let exchangeRate = 1;
-      const targetCurrency = (cashCurrency ?? transfer.targetCurrency ?? currency) as CurrencyCode;
-
-      if (targetCurrency !== currency) {
-        const rawConverted = await this.rates.convert(Number(transfer.amount), currency, targetCurrency);
-        // ✅ audit : arrondi à la devise de réception (XOF / GNF : unités entières, autres : 2 décimales), comme TransactionsService.create().
-        // Avant : 65 595,7 XOF stockés, et la caisse de l'agence payeuse était créditée d'une fraction de franc.
-        receivedAmount = roundToCurrency(rawConverted, targetCurrency);
-        if (!(receivedAmount > 0)) throw new Error('Montant trop faible : le montant reçu serait nul après conversion.');
-        exchangeRate = rawConverted / Number(transfer.amount);
-      }
-
+      // Avancement de l'échéance : un seul passage gagne (statut ACTIVE + échéance lue).
       const nextDate = this.calculateNextDate(transfer.nextExecutionAt, transfer.frequency);
       const newCount = (transfer.executionCount ?? 0) + 1;
       const isDone =
         transfer.frequency === 'ONCE' ||
         (transfer.maxExecutions != null && newCount >= transfer.maxExecutions);
-
-      // v4.4 — UNE transaction SQL : réservation de l'échéance, envoi, débit, plafonds.
-      const tx = await this.prisma.$transaction(async (db) => {
-        const claimed = await db.scheduledTransfer.updateMany({
-          where: { id: transfer.id, status: ScheduledStatus.ACTIVE, nextExecutionAt: transfer.nextExecutionAt },
-          data: {
-            executionCount: newCount,
-            lastExecutedAt: new Date(),
-            failureCount: 0,
-            failureReason: null,
-            nextExecutionAt: nextDate ?? undefined,
-            status: isDone ? ScheduledStatus.COMPLETED : ScheduledStatus.ACTIVE,
-          },
-        });
-        // Déjà exécuté par un autre passage, suspendu ou annulé entre-temps : on ne fait rien.
-        if (claimed.count !== 1) return null;
-
-        const created = await db.transaction.create({
-          data: {
-            reference,
-            type: 'SCHEDULED',
-            amount: amt,
-            fees,
-            total,
-            currency,
-            targetCurrency,
-            exchangeRate,
-            receivedAmount: new Prisma.Decimal(receivedAmount),
-            status,
-            payoutMethod,
-            senderId: user.id,
-            beneficiaryId: transfer.beneficiaryId ?? null,
-            clientId: transfer.clientId,
-            scheduledTransferId: transfer.id,
-            note: transfer.note ?? null,
-            providerRef: reference,
-            receiveCountry,                    // v4.6
-            pickupExpiry: pickupExpiryFrom(),  // v4.6 — code valable 5 mois
-          },
-        });
-
-        await this.wallets.debitInTx(db, userWallet.id, Number(total), `Virement programmé #${reference}`, created.id);
-        await this.transferLimits.assertWithinLimits(db, {
-          clientId: transfer.clientId,
-          userId: user.id,
-          currency,
-          amount: Number(amt),
-          excludeTransactionId: created.id,
-        });
-        return created;
+      const claimed = await this.prisma.scheduledTransfer.updateMany({
+        where: { id: transfer.id, status: ScheduledStatus.ACTIVE, nextExecutionAt: transfer.nextExecutionAt },
+        data: {
+          executionCount: newCount,
+          lastExecutedAt: new Date(),
+          failureCount: 0,
+          failureReason: null,
+          nextExecutionAt: nextDate ?? undefined,
+          status: isDone ? ScheduledStatus.COMPLETED : ScheduledStatus.ACTIVE,
+        },
       });
-
-      if (!tx) {
+      // Déjà avancé par un autre passage, suspendu ou annulé entre-temps : ni double exécution, ni double notification.
+      if (claimed.count !== 1) {
         this.logger.log(`↩️ Virement programmé ${transfer.id} déjà traité par un autre passage : ignoré`);
         return;
       }
       this.logger.log(`✅ Virement programmé exécuté : ${transfer.id} (tx: ${tx.id})`);
 
-      // v4.4 — le virement est exécuté : une notification qui échoue ne doit pas le faire passer pour un échec.
+      // Le virement est exécuté : une notification qui échoue ne doit pas le faire passer pour un échec.
       try {
         await this.push.notifyScheduledTransferExecuted(
           user.id,
@@ -392,11 +322,17 @@ export class ScheduledTransfersService {
         );
 
         if (user.email) {
+          // v4.8 — le code de retrait figure dans l'e-mail : l'expéditeur peut le transmettre au bénéficiaire.
+          const code = payoutMethod === PayoutMethod.CASH_PICKUP ? String(tx.reference) : null;
           await this.mail.sendEmail(
             user.email,
             'Virement programmé exécuté 📅',
             `<p>Votre virement de <strong>${transfer.amount} ${currency}</strong> vers ` +
               `<strong>${transfer.beneficiary?.fullName ?? 'votre bénéficiaire'}</strong> a été exécuté.</p>` +
+              (code
+                ? `<p>Code de retrait à transmettre au bénéficiaire : ` +
+                  `<strong style="font-size:20px;letter-spacing:3px;font-family:monospace;">${code}</strong></p>`
+                : '') +
               (nextDate && !isDone
                 ? `<p>Prochaine exécution : <strong>${nextDate.toLocaleDateString('fr-FR')}</strong></p>`
                 : ''),
@@ -406,7 +342,16 @@ export class ScheduledTransfersService {
         this.logger.warn(`Notification du virement programmé ${transfer.id} non envoyée : ${notifyError?.message ?? notifyError}`);
       }
     } catch (error: any) {
-      const errMsg = error?.message ?? String(error);
+      if (sendCreated) {
+        this.logger.error(
+          `⚠️ Virement programmé ${transfer.id} : envoi créé mais échéance non avancée (${error?.message ?? error}). ` +
+          `Nouvel essai au prochain passage, sans second débit.`,
+        );
+        return;
+      }
+      const errMsg = error?.response?.message
+        ? [].concat(error.response.message).join(' ')
+        : (error?.message ?? String(error));
       this.logger.error(`❌ Échec virement programmé ${transfer.id}: ${errMsg}`);
 
       const newFailureCount = (transfer.failureCount ?? 0) + 1;

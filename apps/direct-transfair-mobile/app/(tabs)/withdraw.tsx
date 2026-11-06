@@ -109,6 +109,8 @@ export default function AgentWithdrawScreen() {
   const [checking,    setChecking]    = useState(false);
   const [paying,      setPaying]      = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
+  // Réglage de la société (Codes de retrait) : derniers chiffres du téléphone du bénéficiaire exigés pour payer.
+  const [phoneDigits, setPhoneDigits] = useState("");
 
   const scaleAnim  = useRef(new Animated.Value(0.95)).current;
   const fadeAnim   = useRef(new Animated.Value(0)).current;
@@ -132,6 +134,7 @@ export default function AgentWithdrawScreen() {
     }
     setChecking(true);
     setTransaction(null);
+    setPhoneDigits("");
     try {
       const res = await api.http.post("/withdrawals/agent/check", { code });
       setTransaction(res.data);
@@ -160,10 +163,15 @@ export default function AgentWithdrawScreen() {
   };
 
   // ✅ v5.2 : capture la réponse backend v4.7 et affiche la commission
+  const needsPhone = transaction?.requiresPhoneCheck === true;
+  const phoneLen   = Number(transaction?.phoneCheckDigits) > 0 ? Number(transaction.phoneCheckDigits) : 4;
+  const phoneOk    = !needsPhone || phoneDigits.length === phoneLen;
+
   const processPayment = async () => {
+    if (!phoneOk) { showAlert("Vérification", `Saisissez les ${phoneLen} derniers chiffres du téléphone du bénéficiaire`); return; }
     setPaying(true);
     try {
-      const res  = await api.http.post("/withdrawals/agent/pay", { code });
+      const res  = await api.http.post("/withdrawals/agent/pay", needsPhone ? { code, phoneDigits } : { code });
       const data = res.data as any;
 
       // Récupération de la commission agence depuis la réponse v4.7
@@ -194,6 +202,7 @@ export default function AgentWithdrawScreen() {
   const resetForm = () => {
     setTransaction(null);
     setCode("");
+    setPhoneDigits("");
     fadeAnim.setValue(0);
     scaleAnim.setValue(0.95);
   };
@@ -393,6 +402,30 @@ export default function AgentWithdrawScreen() {
                 />
               </View>
 
+              {/* Contrôle du bénéficiaire (réglage de la société) */}
+              {needsPhone && (
+                <View style={s.card}>
+                  <View style={s.secRow}>
+                    <View style={[s.secDot, { backgroundColor: C.amber }]} />
+                    <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>CONTRÔLE DU BÉNÉFICIAIRE</Text>
+                  </View>
+                  <Text style={[s.qrHint, { fontFamily: C.font.sans, marginBottom: 10 }]}>
+                    Demandez au client les {phoneLen} derniers chiffres de son numéro de téléphone.
+                  </Text>
+                  <TextInput
+                    style={[s.codeInput, { fontFamily: C.font.mono, borderWidth: 2, borderColor: phoneOk ? C.green : C.cardBorder, borderRadius: C.r.md, paddingVertical: 14 }]}
+                    value={phoneDigits}
+                    onChangeText={(v) => setPhoneDigits(v.replace(/\D/g, "").slice(0, phoneLen))}
+                    placeholder={"• ".repeat(phoneLen).trim()}
+                    placeholderTextColor={C.inkSoft}
+                    keyboardType="number-pad"
+                    maxLength={phoneLen}
+                    textAlign="center"
+                    underlineColorAndroid="transparent"
+                  />
+                </View>
+              )}
+
               {/* Avertissement */}
               <View style={s.warning}>
                 <Ionicons name="warning-outline" size={16} color={C.amber} />
@@ -403,9 +436,9 @@ export default function AgentWithdrawScreen() {
 
               {/* CTA Payer */}
               <TouchableOpacity
-                style={[s.payBtn, paying && { opacity: 0.65 }]}
+                style={[s.payBtn, (paying || !phoneOk) && { opacity: 0.45 }]}
                 onPress={handlePayOut}
-                disabled={paying}
+                disabled={paying || !phoneOk}
                 activeOpacity={0.88}
               >
                 <View style={s.payBtnInner}>

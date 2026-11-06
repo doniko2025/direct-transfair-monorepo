@@ -59,6 +59,8 @@ import { WalletsService } from '../wallets/wallets.service';
 import { OrangeMoneyService } from './orange-money.service';
 import { SendwaveService } from './sendwave.service';
 import { simulatedRechargesBlocked } from './simulation.flags';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
+import { isRechargeEnabled } from '../company-settings/company-settings.logic';
 import {
   InitiateRechargeDto,
   RechargeByCardDto,
@@ -74,6 +76,7 @@ export class RechargeService {
     private readonly walletsService: WalletsService,
     private readonly om: OrangeMoneyService,
     private readonly sendwave: SendwaveService,
+    private readonly settings: CompanySettingsService,
   ) {
     if (process.env.NODE_ENV === 'production' && !simulatedRechargesBlocked()) {
       this.logger.warn(
@@ -94,9 +97,26 @@ export class RechargeService {
     }
   }
 
+  /** Moyens de recharge ouverts pour la société de cet utilisateur (réglage « Recharge » de la société). */
+  async optionsFor(userId: string): Promise<{ methods: string[]; simulated: true; blocked: boolean }> {
+    const user = await this.getActiveUser(userId);
+    const company = await this.settings.forClient(user.clientId!);
+    const blocked = simulatedRechargesBlocked();
+    return { methods: blocked ? [] : company.recharge.enabledMethods, simulated: true, blocked };
+  }
+
+  /** Ce moyen de recharge est-il ouvert par la société ? Sinon 403 explicite. */
+  private async assertMethodEnabled(clientId: number, method: 'CARD' | 'ORANGE_MONEY' | 'SENDWAVE'): Promise<void> {
+    const company = await this.settings.forClient(clientId);
+    if (!isRechargeEnabled(company, method)) {
+      throw new ForbiddenException("Ce moyen de recharge n'est pas ouvert par votre société.");
+    }
+  }
+
   async rechargeByCard(userId: string, dto: RechargeByCardDto): Promise<Transaction> {
     this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
+    await this.assertMethodEnabled(user.clientId!, 'CARD');
 
     const created = await this.prisma.transaction.create({
       data: {
@@ -141,6 +161,7 @@ export class RechargeService {
   async rechargeByOrangeMoney(userId: string, dto: RechargeByMobileMoneyDto) {
     this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
+    await this.assertMethodEnabled(user.clientId!, 'ORANGE_MONEY');
     const created = await this.createPendingDeposit(userId, user.clientId!, dto, {
       note: `Recharge Orange Money depuis ${dto.momoPhone}`,
     });
@@ -159,6 +180,7 @@ export class RechargeService {
   async rechargeBySendwave(userId: string, dto: InitiateRechargeDto) {
     this.assertRechargesOpen();
     const user = await this.getActiveUser(userId);
+    await this.assertMethodEnabled(user.clientId!, 'SENDWAVE');
     const created = await this.createPendingDeposit(userId, user.clientId!, dto);
 
     const providerResult = await this.sendwave.initiate(created);

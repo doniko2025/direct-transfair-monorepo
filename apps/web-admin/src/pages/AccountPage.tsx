@@ -1,4 +1,5 @@
 // apps/web-admin/src/pages/AccountPage.tsx
+// v1.4 — carte « Appareils connectés » (sessions actives, déconnexion à distance).
 // v1.3 — « Votre session » ne répète plus l'e-mail ni le téléphone (déjà dans « Identité ») : société, agence, contacts vérifiés.
 // v1.2 — 🔥 AJOUT : la carte « Votre session » quitte le tableau de bord pour vivre ici, avec la « Connexion technique ».
 // v1.1 — 🔥 AJOUT : carte « Mot de passe » (ChangePasswordCard). Avant, la page affichait
@@ -10,6 +11,7 @@ import type { ReactNode } from 'react';
 import type { WebRole } from '@direct-transfair/shared';
 import { API_URL } from '../config';
 import { ChangePasswordCard } from '../components/ChangePasswordCard';
+import { SessionsCard } from '../components/SessionsCard';
 import { Button, Card, PageHeader, Pill } from '../components/ui';
 import { ROLE_LABEL } from '../navigation';
 import { useAuth, useCurrentUser } from '../providers/AuthProvider';
@@ -102,6 +104,8 @@ export default function AccountPage() {
         </Card>
 
         <ChangePasswordCard email={user.email} />
+
+        <SessionsCard />
 
         <Card tone="flat">
           <h2 className="card-title">Connexion technique</h2>

@@ -7,8 +7,9 @@ import 'reflect-metadata';
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PayoutMethod, TransactionStatus, TransactionType } from '@prisma/client';
 import { WithdrawalsService } from './withdrawals.service';
+import { defaultSettings, mergeSettings } from '../company-settings/company-settings.logic';
 
-function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; convert?: jest.Mock; withdrawalBefore?: any; closeFromWithdrawal?: jest.Mock } = {}) {
+function make(over: { settings?: any; auditFailed?: Date[]; tx?: any; wallets?: any[]; agent?: any; split?: any; convert?: jest.Mock; withdrawalBefore?: any; closeFromWithdrawal?: jest.Mock } = {}) {
   const prisma: any = {
     transaction: {
       findFirst: jest.fn().mockResolvedValue(over.tx === undefined ? null : over.tx),
@@ -25,7 +26,11 @@ function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; conve
     },
     agency: { findFirst: jest.fn().mockResolvedValue({ type: 'SUBSIDIARY' }) },
     commissionConfig: { findFirst: jest.fn().mockResolvedValue(over.split === undefined ? null : over.split) },
-    auditLog: { create: jest.fn().mockResolvedValue({}) },
+    auditLog: {
+      create: jest.fn().mockResolvedValue({}),
+      findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue((over.auditFailed ?? []).map((createdAt) => ({ createdAt }))),
+    },
     withdrawal: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findFirst: jest.fn().mockResolvedValue(over.withdrawalBefore === undefined ? { status: 'PENDING', transactionId: 't1' } : over.withdrawalBefore),
@@ -52,7 +57,8 @@ function make(over: { tx?: any; wallets?: any[]; agent?: any; split?: any; conve
     sendWithdrawalProcessed: jest.fn().mockResolvedValue(undefined),
   };
   const transactions: any = { closeFromWithdrawal: over.closeFromWithdrawal ?? jest.fn().mockResolvedValue({ id: 't1', status: 'CANCELLED' }) };
-  const service = new (WithdrawalsService as any)(prisma, wallets, rates, noop, noop, noop, noop, transactions) as WithdrawalsService;
+  const settings: any = { forClient: jest.fn().mockResolvedValue(over.settings ?? defaultSettings()) };
+  const service = new (WithdrawalsService as any)(prisma, wallets, rates, noop, noop, noop, noop, transactions, settings) as WithdrawalsService;
   return { service, prisma, wallets, rates, credits, transactions };
 }
 
@@ -335,5 +341,101 @@ describe('WithdrawalsService — pays de paiement et expiration (v4.15)', () => 
   it('statut EXPIRED : refusé', async () => {
     const m = make({ tx: tx({ status: TransactionStatus.EXPIRED, receiveCountry: 'SN' }), agent: agentIn('SN') });
     await expect(m.service.agentProcessPayment(5, 'ag', 'REF')).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v4.16 — réglages de la société : anti-devinette par agent, contrôle du téléphone, répartition par défaut, commissions
+// enregistrées, seuil de caisse basse.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('WithdrawalsService — réglages de la société (v4.16)', () => {
+  const agentWallets = [{ id: 'w-agence', currency: 'XOF', balance: 0 }];
+  const baseTx = (over: any = {}) => ({
+    id: 't1', status: TransactionStatus.VALIDATED, currency: 'XOF', targetCurrency: null, payoutMethod: 'CASH_PICKUP',
+    amount: 100_000, receivedAmount: null, fees: 1_000, agencyId: null, senderId: null,
+    sender: { id: 's1', agencyId: null, firstName: 'S', lastName: 'T' }, withdrawal: null,
+    beneficiary: { id: 'b1', fullName: 'Awa', phone: '+224620123456' }, ...over,
+  });
+  const settingsWith = (patch: any) => mergeSettings(patch);
+  const run = (m: ReturnType<typeof make>, opts: any = {}) => {
+    m.prisma.$transaction.mockImplementation(async (fn: any) => fn({ transaction: { updateMany: m.prisma.transaction.updateMany }, withdrawal: m.prisma.withdrawal }));
+    return m.service.agentProcessPayment(5, 'ag', 'REF', opts);
+  };
+  const withUpdate = (m: ReturnType<typeof make>) => { m.prisma.transaction.updateMany = jest.fn().mockResolvedValue({ count: 1 }); return m; };
+
+  it('un code introuvable est enregistré comme essai raté (sans le code saisi)', async () => {
+    const m = make();
+    await expect(m.service.agentCheckCode(5, '111111111', 'ag', { ip: '1.2.3.4' })).rejects.toBeInstanceOf(NotFoundException);
+    const row = m.prisma.auditLog.create.mock.calls[0][0].data;
+    expect(row).toMatchObject({ userId: 'ag', clientId: 5, entity: 'WithdrawalCodeCheck', successful: false, ipAddress: '1.2.3.4' });
+    expect(JSON.stringify(row)).not.toContain('111111111');
+  });
+
+  it('au-delà du maximum réglé par la société, l\'agent est bloqué (429) avant toute recherche de code', async () => {
+    const now = Date.now();
+    const m = make({ auditFailed: [1, 2, 3].map((i) => new Date(now - i * 60_000)), settings: settingsWith({ pickup: { maxFailedChecks: 3, lockMinutes: 10 } }) });
+    await expect(m.service.agentCheckCode(5, '222222222', 'ag')).rejects.toMatchObject({ status: 429 });
+    await expect(m.service.agentProcessPayment(5, 'ag', '222222222')).rejects.toMatchObject({ status: 429 });
+    expect(m.prisma.transaction.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('en dessous du maximum, la recherche a lieu', async () => {
+    const m = make({ auditFailed: [new Date(Date.now() - 60_000)], settings: settingsWith({ pickup: { maxFailedChecks: 3 } }) });
+    await expect(m.service.agentCheckCode(5, '222222222', 'ag')).rejects.toBeInstanceOf(NotFoundException);
+    expect(m.prisma.transaction.findFirst).toHaveBeenCalled();
+  });
+
+  it('contrôle du téléphone exigé : le check annonce les chiffres demandés et ne livre pas le numéro', async () => {
+    const m = make({ tx: baseTx(), settings: settingsWith({ pickup: { requireBeneficiaryPhoneCheck: true, phoneCheckDigits: 4 } }) });
+    const r: any = await m.service.agentCheckCode(5, '123456789', 'ag');
+    expect(r).toMatchObject({ requiresPhoneCheck: true, phoneCheckDigits: 4 });
+    expect(r.beneficiary.phone).toBeNull();
+  });
+
+  it('contrôle du téléphone non exigé (défaut) : le check n\'impose rien', async () => {
+    const m = make({ tx: baseTx() });
+    const r: any = await m.service.agentCheckCode(5, '123456789', 'ag');
+    expect(r).toMatchObject({ requiresPhoneCheck: false, phoneCheckDigits: null });
+  });
+
+  it('paiement refusé si les derniers chiffres sont absents ou faux ; accepté s\'ils sont bons', async () => {
+    const cfg = settingsWith({ pickup: { requireBeneficiaryPhoneCheck: true, phoneCheckDigits: 4 } });
+    const m = withUpdate(make({ tx: baseTx(), wallets: agentWallets, settings: cfg }));
+    await expect(run(m)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(run(m, { phoneDigits: '0000' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+    await expect(run(m, { phoneDigits: '3456' })).resolves.toMatchObject({ success: true });
+  });
+
+  it('un bénéficiaire sans numéro exploitable n\'empêche pas le paiement', async () => {
+    const cfg = settingsWith({ pickup: { requireBeneficiaryPhoneCheck: true } });
+    const m = withUpdate(make({ tx: baseTx({ beneficiary: { id: 'b1', fullName: 'Awa', phone: null } }), wallets: agentWallets, settings: cfg }));
+    await expect(run(m)).resolves.toMatchObject({ success: true });
+  });
+
+  it('la répartition effectivement versée est enregistrée sur l\'envoi', async () => {
+    const m = withUpdate(make({ tx: baseTx(), wallets: agentWallets }));
+    const r: any = await run(m);
+    const data = m.prisma.transaction.updateMany.mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      senderCommission: r.commissions.senderAgency.amount,
+      payerCommission: r.commissions.payerAgency.amount,
+      platformCommission: r.commissions.companyAdmin.amount,
+    });
+  });
+
+  it('sans règle enregistrée, la répartition par défaut est celle de la société', async () => {
+    const cfg = settingsWith({ commissions: { defaultSplit: { payerShare: 70, senderShare: 0 } } });
+    const m = withUpdate(make({ tx: baseTx({ fees: 1_000 }), wallets: agentWallets, settings: cfg }));
+    const r: any = await run(m);
+    expect(r.commissions.payerAgency.amount).toBe(700);
+    expect(r.commissions.companyAdmin.amount).toBe(300);
+  });
+
+  it('paiement réussi : l\'agent repart à zéro (essai réussi consigné)', async () => {
+    const m = withUpdate(make({ tx: baseTx(), wallets: agentWallets }));
+    await run(m);
+    const ok = m.prisma.auditLog.create.mock.calls.map((c: any) => c[0].data).find((d: any) => d.successful === true);
+    expect(ok).toMatchObject({ userId: 'ag', entity: 'WithdrawalCodeCheck' });
   });
 });

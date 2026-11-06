@@ -14,9 +14,9 @@
 //     requêtes concurrentes, puis rejeu de la requête
 //   - si le refresh échoue : tokens effacés + onSessionExpired()
 //
-// Le stockage des tokens est injecté (TokenStorage) : le web-admin
-// fournit aujourd'hui un stockage navigateur ; on pourra le remplacer
-// par des cookies httpOnly sans toucher à ce fichier.
+// Le stockage des tokens est injecté (TokenStorage).
+// Mode `cookieSession` (portail web) : le refresh token vit dans un cookie httpOnly posé par le serveur — jamais lisible
+// par JavaScript. Le client n'envoie alors que `credentials: 'include'` ; le jeton d'accès, lui, reste en mémoire.
 // =========================================================
 
 import type { RefreshResult } from './types';
@@ -26,6 +26,11 @@ export interface TokenStorage {
   getRefreshToken(): string | null;
   setTokens(access: string, refresh?: string | null): void;
   clear(): void;
+  /**
+   * Mode cookie : indique qu'une session a probablement été ouverte dans ce navigateur (le cookie httpOnly, lui, est
+   * invisible). Sert seulement à décider s'il faut tenter de restaurer la session au chargement.
+   */
+  hasSession?(): boolean;
 }
 
 export class ApiError extends Error {
@@ -51,6 +56,11 @@ export interface HttpClientOptions {
   /** Valeur de l'en-tête x-app-client (« web » pour le web-admin). Absent = non envoyé. */
   appClient?: string;
   onSessionExpired?: () => void;
+  /**
+   * Le refresh token est dans un cookie httpOnly (requêtes envoyées avec `credentials: 'include'`, renouvellement sans
+   * corps). Le serveur ne l'accepte que si l'en-tête x-app-client: web est présent. Défaut : false (mobile, tests).
+   */
+  cookieSession?: boolean;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }
@@ -132,6 +142,7 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
         method: opts.method ?? 'GET',
         headers,
         signal: controller.signal,
+        ...(options.cookieSession ? { credentials: 'include' as RequestCredentials } : {}),
       };
       if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
       return await doFetch(`${base}${path}`, init);
@@ -182,12 +193,15 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
     if (refreshInFlight) return refreshInFlight;
 
     const refreshToken = options.storage.getRefreshToken();
-    if (!refreshToken) return Promise.reject(new ApiError('Session expirée', 401, 'NO_REFRESH_TOKEN'));
+    // Mode cookie : pas de jeton à lire ici, le navigateur joint le cookie httpOnly tout seul.
+    if (!refreshToken && !options.cookieSession) {
+      return Promise.reject(new ApiError('Session expirée', 401, 'NO_REFRESH_TOKEN'));
+    }
 
     refreshInFlight = (async () => {
       const res = await send(
         '/auth/refresh',
-        { method: 'POST', body: { refresh_token: refreshToken }, auth: false },
+        { method: 'POST', body: refreshToken ? { refresh_token: refreshToken } : {}, auth: false },
         null,
       );
       const data = await parse<RefreshResult>(res);

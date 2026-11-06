@@ -2,7 +2,8 @@
 // =========================================================
 // RÈGLES DES CODES DE RETRAIT v1.0 — Direct Transf'air
 //
-// 1. EXPIRATION : un code de retrait non utilisé expire après PICKUP_CODE_VALIDITY_MONTHS mois (5 par défaut). Passé ce
+// 1. EXPIRATION : un code de retrait non utilisé expire après la durée réglée par la société (paramètres, 5 mois par défaut ;
+//    PICKUP_CODE_VALIDITY_MONTHS fixe la valeur par défaut du serveur). La date est figée à la création (pickupExpiry). Passé ce
 //    délai l'envoi est annulé (statut EXPIRED) et l'expéditeur remboursé (PickupExpiryService, cron quotidien). Un code
 //    expiré n'est plus vérifiable ni payable, même avant le passage du cron.
 // 2. PAYS DE PAIEMENT : un code ne se paie que dans le pays de destination de l'envoi (Transaction.receiveCountry, ISO-2).
@@ -32,9 +33,12 @@ export function addMonths(date: Date, months: number): Date {
   return d;
 }
 
-/** Date d'expiration d'un code créé à `from`. */
-export function pickupExpiryFrom(from: Date = new Date()): Date {
-  return addMonths(from, pickupValidityMonths());
+/**
+ * Date d'expiration d'un code créé à `from`. `months` = validité réglée par la société (paramètres) ; à défaut, la valeur
+ * par défaut du serveur (PICKUP_CODE_VALIDITY_MONTHS, 5 mois).
+ */
+export function pickupExpiryFrom(from: Date = new Date(), months: number = pickupValidityMonths()): Date {
+  return addMonths(from, months);
 }
 
 /**

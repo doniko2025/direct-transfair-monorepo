@@ -9,8 +9,8 @@
 //   GET   /fees-admin/history       { data: FeeChange[] }         ?clientId (super admin) &limit
 //   PATCH /fees-admin/:method       { feeRate, fixedFee }         COMPANY_ADMIN → FeeMethod
 //
-// Seuls CASH_PICKUP, BANK_DEPOSIT et IBAN_TRANSFER portent des frais. MOBILE_MONEY et WALLET sont gratuits :
-// le serveur n'y prélève jamais rien (charged = false).
+// Les modes gratuits sont ceux que la société a choisis (GET /company-settings › fees.freeMethods ; par défaut : WALLET seul).
+// Sur un mode gratuit le serveur ne prélève rien (charged = false) ; tous les autres modes portent des frais.
 // Le frais fixe est ajouté tel quel, dans la devise de l'envoi.
 // =========================================================
 
@@ -22,7 +22,7 @@ export interface FeeMethod {
   payoutMethod: FeeMethodKey | string;
   label: string;
   charged: boolean;
-  /** Faux : aucune ligne en base, le taux par défaut du serveur (1,5 %) s'applique. */
+  /** Faux : aucune ligne en base, le taux de repli de la société (paramètres › fees.fallbackFeeRatePct) s'applique. */
   configured: boolean;
   /** Pourcentage prélevé sur le montant envoyé (1,5 = 1,5 %). */
   feeRate: number;

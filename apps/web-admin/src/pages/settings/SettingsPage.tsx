@@ -1,6 +1,7 @@
 // src/pages/settings/SettingsPage.tsx
 // Réglages de la société : répartition des frais d'un retrait payé en agence (v1) et seuil de validation
 // d'un envoi cash, par devise (v2, phase 6) et plafonds d'envoi par niveau KYC et par devise (v3, phase 6).
+// v4 : + Paramètres de la société (modes gratuits, répartition par défaut, codes de retrait, alertes de caisse) — tout est réglable.
 // Admin de société : modifie. Super admin : consulte ceux de la société de son choix.
 
 import { useCallback, useState } from 'react';
@@ -17,6 +18,7 @@ import SplitDialog from './SplitDialog';
 import LimitsSection from './LimitsSection';
 import SplitHistory from './SplitHistory';
 import ThresholdSection from './ThresholdSection';
+import CompanySettingsSection from './CompanySettingsSection';
 
 function Bar({ sender, payer, platform }: { sender: number; payer: number; platform: number }) {
   return (
@@ -87,6 +89,9 @@ export default function SettingsPage() {
   const limits = useKeyedResource(scope, async () => (skip ? null : api.transferLimits.get(clientId)), [skip]);
   const limitsLog = useKeyedResource(scope, async () => (skip ? { data: [] } : api.transferLimits.history(clientId, 10)), [skip]);
 
+  const companySettings = useKeyedResource(scope, async () => (skip ? null : api.companySettings.get(clientId)), [skip]);
+  const companySettingsLog = useKeyedResource(scope, async () => (skip ? { data: [] } : api.companySettings.history(clientId, 10)), [skip]);
+
   const [editing, setEditing] = useState<SplitRule | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -124,6 +129,19 @@ export default function SettingsPage() {
     [reloadLimits, reloadLimitsLog],
   );
 
+  const reloadCompanySettings = companySettings.reload;
+  const reloadCompanySettingsLog = companySettingsLog.reload;
+  const companySettingsDone = useCallback(
+    (message: string) => {
+      setFlash(message);
+      reloadCompanySettings();
+      reloadCompanySettingsLog();
+      // Les parts « par défaut » du partage des frais dépendent de ces paramètres.
+      reloadRules();
+    },
+    [reloadCompanySettings, reloadCompanySettingsLog, reloadRules],
+  );
+
   const data = rules.data;
   const list = sortSplitRules(data?.rules ?? []);
   const editable = data?.editable ?? false;
@@ -135,11 +153,11 @@ export default function SettingsPage() {
         title="Réglages"
         description={
           data
-            ? `Frais, seuil de validation et plafonds d’envoi de ${data.company.name}.`
+            ? `Paramètres, frais, seuil de validation et plafonds d’envoi de ${data.company.name}.`
             : 'Frais, seuil de validation et plafonds d’envoi.'
         }
         actions={
-          <Button variant="secondary" onClick={() => { rules.reload(); history.reload(); thresholds.reload(); thresholdLog.reload(); limits.reload(); limitsLog.reload(); }} busy={rules.loading && data !== null}>
+          <Button variant="secondary" onClick={() => { rules.reload(); history.reload(); companySettings.reload(); companySettingsLog.reload(); thresholds.reload(); thresholdLog.reload(); limits.reload(); limitsLog.reload(); }} busy={rules.loading && data !== null}>
             Actualiser
           </Button>
         }
@@ -201,6 +219,8 @@ export default function SettingsPage() {
         </Card>
       ) : (
         <div className="tr-stack">
+          <CompanySettingsSection settings={companySettings} log={companySettingsLog} onChanged={companySettingsDone} />
+
           <section aria-labelledby="split-title" className="tr-section">
             <div className="tr-section__head">
               <h2 id="split-title">Partage des frais</h2>
@@ -220,7 +240,7 @@ export default function SettingsPage() {
               <li><span className="split-dot split-dot--platform" />Société</li>
             </ul>
             <p className="muted">
-              Si l’agence d’envoi est aussi celle qui paie le cash, elle touche les deux parts. Les frais d’un envoi vers Mobile Money ou entre wallets sont nuls : rien à
+              Si l’agence d’envoi est aussi celle qui paie le cash, elle touche les deux parts. Les envois gratuits (par défaut : wallet à wallet, réglable dans les paramètres ci-dessus) n’ont aucun frais à
               partager.
             </p>
           </section>

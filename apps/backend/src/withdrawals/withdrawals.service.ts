@@ -129,12 +129,15 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   NotFoundException,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import {
+  AuditAction,
   Prisma,
   TransactionStatus,
   WithdrawalStatus,
@@ -154,7 +157,8 @@ import { assertPayableInCountry, destinationCountryOf, isPickupExpired } from '.
 import { RatesService }   from '../rates/rates.service';
 import { SAFE_USER_SELECT } from '../common/utils/safe-user-select'; // ✅ audit
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
-import { defaultShares, type Shares } from '../commission-rules/commission-rule-defaults';
+import type { Shares } from '../commission-rules/commission-rule-defaults';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { splitFees } from '../commission-rules/commission-split';
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 
@@ -163,8 +167,22 @@ import { AgentNotifierService }  from '../notifications/channels/agent-notifier.
 import { WalletMailService }     from '../mail/channels/wallet-mail.service';
 import { AgentMailService }      from '../mail/channels/agent-mail.service';
 
-// Seuil d'alerte solde faible agence (en devise payout)
-const LOW_BALANCE_THRESHOLD = 50_000;
+/** Entité du journal d'audit qui sert à compter les essais de code ratés d'un agent (voir guardAttempts). */
+const CHECK_ENTITY = 'WithdrawalCodeCheck';
+
+/** Options d'un contrôle / paiement de code : ce que l'agent a saisi en plus du code, et d'où il vient. */
+export interface AgentCodeOptions {
+  /** Derniers chiffres du téléphone du bénéficiaire, demandés si la société l'exige (paramètres). */
+  phoneDigits?: string;
+  ip?: string | null;
+}
+
+const onlyDigits = (v: unknown): string => String(v ?? '').replace(/\D/g, '');
+const safeEqual = (a: string, b: string): boolean => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
 
 /** Statuts qu'un admin peut poser à la main (jamais PAID : voir adminUpdateStatus). */
 const MANUAL_TARGETS: WithdrawalStatus[] = [
@@ -219,7 +237,62 @@ export class WithdrawalsService {
     private readonly walletMail:     WalletMailService,
     private readonly agentMail:      AgentMailService,
     private readonly transactions:   TransactionsService,
+    private readonly settings:       CompanySettingsService,
   ) {}
+
+  // ── Protection contre la devinette des codes (par agent, réglée par la société) ──────────────
+  //
+  // Un code de retrait a 9 chiffres : le throttler (par IP) ne suffit pas, un agent peut changer d'IP. On compte donc les
+  // essais ratés PAR AGENT dans le journal d'audit (aucune table en plus) sur la fenêtre `lockMinutes`, en repartant à zéro
+  // après son dernier paiement réussi. Au-delà de `maxFailedChecks`, l'agent est bloqué jusqu'à la fin de la fenêtre.
+  // Le code saisi n'est jamais enregistré.
+
+  private async guardAttempts(clientId: number, agentId: string, cfg: { maxFailedChecks: number; lockMinutes: number }): Promise<void> {
+    const windowStart = new Date(Date.now() - cfg.lockMinutes * 60_000);
+    const lastOk = await this.prisma.auditLog.findFirst({
+      where: { userId: agentId, action: AuditAction.WITHDRAWAL_PROCESS, entity: CHECK_ENTITY, successful: true, createdAt: { gte: windowStart } },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    const since = lastOk && lastOk.createdAt > windowStart ? lastOk.createdAt : windowStart;
+    const failed = await this.prisma.auditLog.findMany({
+      where: { userId: agentId, action: AuditAction.WITHDRAWAL_PROCESS, entity: CHECK_ENTITY, successful: false, createdAt: { gt: since } },
+      orderBy: { createdAt: 'asc' },
+      select: { createdAt: true },
+    });
+    if (failed.length >= cfg.maxFailedChecks) {
+      // Débloqué quand l'essai raté le plus ancien de la série sort de la fenêtre.
+      const oldestCounted = failed[failed.length - cfg.maxFailedChecks]!.createdAt;
+      const unlockAt = oldestCounted.getTime() + cfg.lockMinutes * 60_000;
+      const minutes = Math.max(1, Math.ceil((unlockAt - Date.now()) / 60_000));
+      throw new HttpException(
+        `Trop de codes incorrects saisis. Vérification bloquée pour ${minutes} minute${minutes > 1 ? 's' : ''}. ` +
+        `Si le problème persiste, contactez l'administrateur de votre société.`,
+        429,
+      );
+    }
+  }
+
+  private async recordAttempt(clientId: number, agentId: string, ok: boolean, reason: string, ip?: string | null): Promise<void> {
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: agentId, clientId, action: AuditAction.WITHDRAWAL_PROCESS, entity: CHECK_ENTITY,
+          successful: ok, errorMsg: ok ? null : reason, ipAddress: ip ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(`Journal des essais de code non écrit (agent ${agentId}) : ${(err as Error).message}`);
+    }
+  }
+
+  /** Les derniers chiffres du téléphone saisis par l'agent correspondent-ils à ceux du bénéficiaire ? */
+  private phoneMatches(beneficiaryPhone: string | null | undefined, typed: string | undefined, digits: number): boolean {
+    const real = onlyDigits(beneficiaryPhone);
+    const given = onlyDigits(typed);
+    if (given.length !== digits) return false;
+    return safeEqual(real.slice(-digits), given);
+  }
 
   // ── Enrichissement providerRef ────────────────────────────
   private enrichTransaction(tx: any) {
@@ -242,21 +315,27 @@ export class WithdrawalsService {
   // AGENT — Vérifier un code de retrait
   // =========================================================
 
-  async agentCheckCode(clientId: number, code: string, agentId?: string) {
+  async agentCheckCode(clientId: number, code: string, agentId?: string, opts: AgentCodeOptions = {}) {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
+
+    const company = await this.settings.forClient(clientId);
+    if (agentId) await this.guardAttempts(clientId, agentId, company.pickup); // ✅ v4.16 : blocage après N essais ratés
 
     const tx = await this.prisma.transaction.findFirst({
       where: payableCodeWhere(clientId, cleanCode), // ✅ v4.11 : envois cash uniquement
       include: { sender: true, beneficiary: true, withdrawal: { select: { status: true } } },
     });
 
-    if (!tx) throw new NotFoundException('Code invalide ou introuvable.');
+    if (!tx) {
+      if (agentId) await this.recordAttempt(clientId, agentId, false, 'CODE_INTROUVABLE', opts.ip);
+      throw new NotFoundException('Code invalide ou introuvable.');
+    }
     // ✅ v4.14 : un retrait rejeté / annulé / échoué / expiré n'est plus vérifiable comme payable.
     if (tx.withdrawal && !PAYABLE_WITHDRAWAL.includes(tx.withdrawal.status)) {
       throw new ConflictException(`Retrait ${tx.withdrawal.status.toLowerCase()} : ce code ne peut plus être payé.`);
     }
-    // ✅ v4.15 — code expiré (5 mois) : informé dès la vérification.
+    // ✅ v4.15 — code expiré : informé dès la vérification.
     if (tx.status === TransactionStatus.EXPIRED || (PAYABLE_STATUSES.includes(tx.status) && isPickupExpired(tx))) {
       throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
     }
@@ -270,6 +349,13 @@ export class WithdrawalsService {
         payoutCurrency:     tx.targetCurrency ?? tx.currency,
         payerCurrency:      agent.agency.primaryCurrency ?? null,
       });
+    }
+
+    // ✅ v4.16 — contrôle du téléphone du bénéficiaire (réglage de la société) : si l'agent doit saisir les derniers
+    // chiffres, il ne reçoit pas le numéro complet (sinon le contrôle ne servirait à rien).
+    const phoneCheck = this.phoneCheckOf(company.pickup, tx.beneficiary?.phone);
+    if (phoneCheck.required && tx.beneficiary) {
+      (tx as { beneficiary: { phone: string | null } | null }).beneficiary = { ...tx.beneficiary, phone: null };
     }
 
     const richTx = this.enrichTransaction({ ...tx });
@@ -295,16 +381,32 @@ export class WithdrawalsService {
       status:         richTx.status,
       originCountry,
       reference:      richTx.reference,
+      requiresPhoneCheck: phoneCheck.required,
+      phoneCheckDigits:   phoneCheck.required ? phoneCheck.digits : null,
     };
+  }
+
+  /** Le contrôle du téléphone s'applique si la société l'exige ET si le bénéficiaire a un numéro assez long à contrôler. */
+  private phoneCheckOf(
+    pickup: { requireBeneficiaryPhoneCheck: boolean; phoneCheckDigits: number },
+    beneficiaryPhone: string | null | undefined,
+  ): { required: boolean; digits: number } {
+    const digits = pickup.phoneCheckDigits;
+    const required = pickup.requireBeneficiaryPhoneCheck && onlyDigits(beneficiaryPhone).length >= digits;
+    return { required, digits };
   }
 
   // =========================================================
   // AGENT — Valider un paiement (Cash-Out)
   // =========================================================
 
-  async agentProcessPayment(clientId: number, agentId: string, code: string) {
+  async agentProcessPayment(clientId: number, agentId: string, code: string, opts: AgentCodeOptions = {}) {
     const cleanCode = String(code ?? '').trim();
     if (!cleanCode) throw new BadRequestException('Code requis');
+
+    // ✅ v4.16 — réglages de la société (répartition par défaut, contrôle du téléphone, alerte de caisse) + blocage anti-devinette.
+    const company = await this.settings.forClient(clientId);
+    await this.guardAttempts(clientId, agentId, company.pickup);
 
     // ── Récupération transaction ──────────────────────────
     const tx = await this.prisma.transaction.findFirst({
@@ -316,7 +418,10 @@ export class WithdrawalsService {
       },
     });
 
-    if (!tx) throw new NotFoundException('Code introuvable');
+    if (!tx) {
+      await this.recordAttempt(clientId, agentId, false, 'CODE_INTROUVABLE', opts.ip);
+      throw new NotFoundException('Code introuvable');
+    }
 
     if (tx.status === TransactionStatus.PENDING)
       throw new ForbiddenException('Transaction en attente de validation Admin.');
@@ -336,6 +441,17 @@ export class WithdrawalsService {
     // ✅ v4.15 — code expiré (5 mois) : refusé même avant le passage du cron d'expiration.
     if (isPickupExpired(tx)) {
       throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
+    }
+
+    // ✅ v4.16 — contrôle du téléphone du bénéficiaire : l'agent saisit les derniers chiffres que le bénéficiaire lui donne.
+    const phoneCheck = this.phoneCheckOf(company.pickup, tx.beneficiary?.phone);
+    if (phoneCheck.required && !this.phoneMatches(tx.beneficiary?.phone, opts.phoneDigits, phoneCheck.digits)) {
+      await this.recordAttempt(clientId, agentId, false, 'TELEPHONE_NON_CONFORME', opts.ip);
+      throw new ForbiddenException(
+        opts.phoneDigits
+          ? `Les ${phoneCheck.digits} derniers chiffres du téléphone ne correspondent pas à ceux du bénéficiaire.`
+          : `Saisissez les ${phoneCheck.digits} derniers chiffres du téléphone du bénéficiaire pour payer ce retrait.`,
+      );
     }
 
     // ── Agent et agence ───────────────────────────────────
@@ -411,7 +527,10 @@ export class WithdrawalsService {
       : CommissionDestType.SUBSIDIARY;
 
     // ── Règle de répartition (v4.10 : filtrée sur sourceType / destType) ─
-    let shares: Shares = defaultShares();
+    const fallbackSplit = company.commissions.defaultSplit; // ✅ v4.16 : répartition par défaut réglée par la société
+    let shares: Shares = {
+      payerShare: fallbackSplit.payerShare, senderShare: fallbackSplit.senderShare, platformShare: fallbackSplit.platformShare,
+    };
     const splitRule = await this.prisma.commissionConfig.findFirst({
       where:   { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
       orderBy: { updatedAt: 'desc' },
@@ -476,7 +595,11 @@ export class WithdrawalsService {
       // Verrouillage optimiste
       const updated = await prismaTx.transaction.updateMany({
         where: { id: tx.id, clientId, status: TransactionStatus.VALIDATED },
-        data:  { status: TransactionStatus.PAID, paidAt: new Date(), providerStatus: ProviderStatus.SUCCESS },
+        data:  {
+          status: TransactionStatus.PAID, paidAt: new Date(), providerStatus: ProviderStatus.SUCCESS,
+          // ✅ v4.16 : la répartition réellement versée est enregistrée sur l'envoi (avant : colonnes toujours vides).
+          senderCommission: finalSenderCommission, payerCommission: finalPayerCommission, platformCommission: finalPlatformCommission,
+        },
       });
       if (updated.count !== 1) {
         throw new ConflictException('Transaction déjà traitée par un autre agent.');
@@ -547,6 +670,9 @@ export class WithdrawalsService {
         },
       };
     });
+
+    // ✅ v4.16 — paiement réussi : la série d'essais ratés de l'agent repart à zéro.
+    await this.recordAttempt(clientId, agentId, true, '', opts.ip);
 
     // =========================================================
     // ✅ v4.8 — NOTIFICATIONS POST-TRANSACTION (non-bloquant)
@@ -641,9 +767,11 @@ export class WithdrawalsService {
     }
 
     // ── ④ Alerte solde faible agence payeuse ────────────
+    const lowThreshold = company.alerts.lowBalance[payoutCurrency] ?? 0; // ✅ v4.16 : seuil réglé par la société, par devise
     if (
       agencyWalletUpdated &&
-      Number(agencyWalletUpdated.balance) < LOW_BALANCE_THRESHOLD
+      lowThreshold > 0 &&
+      Number(agencyWalletUpdated.balance) < lowThreshold
     ) {
       this.agentNotifier.notifyLowBalance(
         agentId,

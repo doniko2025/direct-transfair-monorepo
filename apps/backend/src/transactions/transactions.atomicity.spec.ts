@@ -4,6 +4,7 @@
 import 'reflect-metadata';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
+import { defaultSettings } from '../company-settings/company-settings.logic';
 
 type Json = Record<string, any>;
 
@@ -102,6 +103,7 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
 
   const service = new (TransactionsService as any)(
     prisma, rates, feeSchedule, wallets, none, none, none, none, none, none, none, none, none, none, none, thresholds, limits,
+    { forClient: jest.fn().mockResolvedValue(defaultSettings()) },
   ) as TransactionsService;
   return { service, state, prisma, wallets, limits };
 }

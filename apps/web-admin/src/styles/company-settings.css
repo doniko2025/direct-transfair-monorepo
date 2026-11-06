@@ -1,0 +1,62 @@
+/* apps/web-admin/src/styles/company-settings.css — Réglages › Paramètres de la société (mobile d'abord) */
+.cs {
+  display: grid;
+  gap: 14px;
+}
+
+.cs-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+}
+
+.cs-card .tr-section__head h3 {
+  font-size: var(--t-lg);
+}
+
+.cs-checks {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px 16px;
+  align-items: start;
+}
+
+.cs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.cs-actions .btn {
+  flex: 1 1 200px;
+}
+
+.cs-log {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cs-log li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+
+@media (min-width: 720px) {
+  .cs-actions .btn {
+    flex: 0 0 auto;
+  }
+}

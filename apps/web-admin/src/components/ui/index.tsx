@@ -45,7 +45,7 @@ export function PageHeader({
 
 // ─── Button ──────────────────────────────────────────────
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   busy?: boolean;
   icon?: IconName;
   block?: boolean;

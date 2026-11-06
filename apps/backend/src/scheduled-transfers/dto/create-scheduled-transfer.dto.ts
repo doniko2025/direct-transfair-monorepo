@@ -3,9 +3,9 @@
 // Corps de POST /scheduled-transfers (v1.0, phase 6) — avant, le contrôleur acceptait `body: any` :
 // montant négatif ou nul, fréquence quelconque, devise inconnue, date illisible…
 //
-// payoutMethod : seul CASH_PICKUP est accepté. Le virement programmé débite l'expéditeur et crée un envoi
-// à retirer en agence avec son code ; les autres modes (wallet, Mobile Money, banque) n'avaient aucun
-// crédit côté destinataire : l'argent partait sans arriver.
+// payoutMethod : CASH_PICKUP (code à retirer en agence), WALLET ou MOBILE_MONEY (crédit direct du bénéficiaire inscrit sur la
+// plateforme). Chaque échéance est créée par TransactionsService.create() qui résout le destinataire et refuse l'envoi,
+// sans débit, si aucun compte ne correspond. Les virements bancaires n'ont pas de circuit de paiement automatique.
 // =========================================================
 
 import { Type } from 'class-transformer';
@@ -27,8 +27,8 @@ export class CreateScheduledTransferDto {
   @IsOptional() @IsIn(SCHEDULED_CURRENCIES)
   targetCurrency?: (typeof SCHEDULED_CURRENCIES)[number];
 
-  @IsOptional() @IsIn(['CASH_PICKUP'], { message: 'Seul le retrait cash (CASH_PICKUP) est disponible pour un virement programmé.' })
-  payoutMethod?: 'CASH_PICKUP';
+  @IsOptional() @IsIn(['CASH_PICKUP', 'WALLET', 'MOBILE_MONEY'], { message: 'Mode disponible pour un virement programmé : CASH_PICKUP, WALLET ou MOBILE_MONEY.' })
+  payoutMethod?: 'CASH_PICKUP' | 'WALLET' | 'MOBILE_MONEY';
 
   @IsOptional() @IsString() @MaxLength(500)
   note?: string;

@@ -3,12 +3,13 @@
 // ✅ phase 7 : PLATFORM_CODE (constante « DONIKO ») remplacé par getPlatformCode(), qui lit la configuration plateforme.
 // Règles des frais d'envoi (par société et par mode de retrait).
 //
-// Ce qui est réellement appliqué par transactions.service.ts (create) :
-//   - CASH_PICKUP, BANK_DEPOSIT, IBAN_TRANSFER : frais = montant × taux % + frais fixe.
-//     Sans configuration, le taux par défaut est 1,5 % et le frais fixe 0.
-//   - MOBILE_MONEY et WALLET : AUCUN frais (isWalletTransfer), quoi qu'une configuration enregistrée dise.
+// Ce qui est réellement appliqué par FeeScheduleService.quote() (appelé par transactions.service.ts :: create) :
+//   - mode listé dans « Modes gratuits » des paramètres de la société (company-settings, par défaut : WALLET seul, c'est-à-dire
+//     wallet → wallet) : AUCUN frais, quoi qu'une configuration enregistrée dise ;
+//   - tous les autres : frais = montant × taux % + frais fixe (règle du barème, sinon tarif plat du mode, sinon taux de repli
+//     des paramètres de la société — 1,5 % tant que l'administrateur n'a rien réglé).
 //
-// Le frais fixe est ajouté tel quel, dans la devise de l'envoi (le code ne le convertit pas).
+// Le frais fixe d'un tarif plat est exprimé dans la devise par défaut de la société et converti dans la devise de l'envoi.
 // =========================================================
 
 import { platform } from '../common/platform.config';
@@ -18,24 +19,19 @@ export type FeeMethodKey = 'CASH_PICKUP' | 'BANK_DEPOSIT' | 'IBAN_TRANSFER' | 'M
 export interface FeeMethodDef {
   key: FeeMethodKey;
   label: string;
-  /** Faux : le serveur ne prélève jamais de frais sur ce mode. */
-  charged: boolean;
 }
 
 export const FEE_METHODS: readonly FeeMethodDef[] = [
-  { key: 'CASH_PICKUP', label: 'Retrait cash', charged: true },
-  { key: 'BANK_DEPOSIT', label: 'Virement bancaire', charged: true },
-  { key: 'IBAN_TRANSFER', label: 'Virement IBAN (Europe)', charged: true },
-  { key: 'MOBILE_MONEY', label: 'Mobile Money', charged: false },
-  { key: 'WALLET', label: 'Wallet vers wallet', charged: false },
+  { key: 'CASH_PICKUP', label: 'Retrait cash' },
+  { key: 'BANK_DEPOSIT', label: 'Virement bancaire' },
+  { key: 'IBAN_TRANSFER', label: 'Virement IBAN (Europe)' },
+  { key: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { key: 'WALLET', label: 'Wallet vers wallet' },
 ];
 
 export const FEE_METHOD_KEYS: readonly string[] = FEE_METHODS.map((m) => m.key);
 
-/** Modes sur lesquels le serveur prélève des frais : les seuls qu'un barème peut viser. */
-export const CHARGED_METHOD_KEYS: readonly string[] = FEE_METHODS.filter((m) => m.charged).map((m) => m.key);
-
-/** Taux appliqué par transactions.service.ts tant que la société n'a rien configuré. */
+/** Taux de repli par défaut (modifiable par l'administrateur de la société : paramètres, fees.fallbackFeeRatePct). */
 export const DEFAULT_FEE_RATE = 1.5;
 
 /** Au-delà, c'est presque sûrement une erreur de saisie (25 % de frais sur un envoi d'argent). */

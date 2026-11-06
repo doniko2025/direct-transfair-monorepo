@@ -96,6 +96,8 @@ export default function AgentWithdrawScreen() {
   const [checking,    setChecking]    = useState(false);
   const [paying,      setPaying]      = useState(false);
   const [transaction, setTransaction] = useState<any>(null);
+  // Réglage de la société (Réglages › Codes de retrait) : derniers chiffres du téléphone du bénéficiaire exigés pour payer.
+  const [phoneDigits, setPhoneDigits] = useState("");
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
 
@@ -113,7 +115,7 @@ export default function AgentWithdrawScreen() {
 
   const handleCheckCode = async () => {
     if (code.trim().length < 6) { showAlert("Erreur", "Le code doit contenir au moins 6 caractères."); return; }
-    setChecking(true); setTransaction(null);
+    setChecking(true); setTransaction(null); setPhoneDigits("");
     try {
       const res = await api.http.post("/withdrawals/agent/check", { code: code.trim() });
       setTransaction(res.data);
@@ -137,10 +139,15 @@ export default function AgentWithdrawScreen() {
     ]);
   };
 
+  const needsPhone = transaction?.requiresPhoneCheck === true;
+  const phoneLen   = Number(transaction?.phoneCheckDigits) > 0 ? Number(transaction.phoneCheckDigits) : 4;
+  const phoneOk    = !needsPhone || phoneDigits.length === phoneLen;
+
   const processPayment = async () => {
+    if (!phoneOk) { showAlert("Vérification", `Saisissez les ${phoneLen} derniers chiffres du téléphone du bénéficiaire.`); return; }
     setPaying(true);
     try {
-      await api.http.post("/withdrawals/agent/pay", { code: code.trim() });
+      await api.http.post("/withdrawals/agent/pay", needsPhone ? { code: code.trim(), phoneDigits } : { code: code.trim() });
       const senderName = (
         transaction?.senderName ||
         `${transaction?.sender?.firstName ?? ""} ${transaction?.sender?.lastName ?? ""}`.trim()
@@ -170,7 +177,7 @@ export default function AgentWithdrawScreen() {
   };
 
   const { val: amtVal, curr: amtCurr } = getAmountData();
-  const resetForm = () => { setTransaction(null); setCode(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
+  const resetForm = () => { setTransaction(null); setCode(""); setPhoneDigits(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
 
   return (
     <SafeAreaView style={s.safe}>
@@ -289,6 +296,25 @@ export default function AgentWithdrawScreen() {
                 <InfoRow label="Référence"      value={transaction.reference || "—"}                                                                                             icon="document-text-outline" color={C.inkSoft} />
               </View>
 
+              {needsPhone && (
+                <View style={s.card}>
+                  <View style={s.secRow}>
+                    <View style={[s.secDot, { backgroundColor: C.amber }]} />
+                    <Text style={[s.secLbl, { fontFamily: C.font.sans }]}>CONTRÔLE DU BÉNÉFICIAIRE</Text>
+                  </View>
+                  <Text style={[s.qrHint, { fontFamily: C.font.sans, marginBottom: 10 }]}>
+                    Demandez au client les {phoneLen} derniers chiffres de son numéro de téléphone.
+                  </Text>
+                  <TextInput
+                    style={[s.codeInput, { fontFamily: C.font.mono, borderWidth: 2, borderColor: phoneOk ? C.green : C.cardBorder, borderRadius: C.r.md, paddingVertical: 14 }]}
+                    value={phoneDigits}
+                    onChangeText={(v) => setPhoneDigits(v.replace(/\D/g, "").slice(0, phoneLen))}
+                    placeholder={"• ".repeat(phoneLen).trim()} placeholderTextColor={C.inkSoft}
+                    keyboardType="number-pad" maxLength={phoneLen} textAlign="center"
+                  />
+                </View>
+              )}
+
               <View style={s.warning}>
                 <Ionicons name="warning-outline" size={16} color={C.amber} />
                 <Text style={[s.warningTxt, { fontFamily: C.font.sans }]}>
@@ -296,7 +322,7 @@ export default function AgentWithdrawScreen() {
                 </Text>
               </View>
 
-              <TouchableOpacity style={[s.payBtn, paying && { opacity: 0.65 }]} onPress={handlePayOut} disabled={paying} activeOpacity={0.88}>
+              <TouchableOpacity style={[s.payBtn, (paying || !phoneOk) && { opacity: 0.45 }]} onPress={handlePayOut} disabled={paying || !phoneOk} activeOpacity={0.88}>
                 <View style={s.payBtnInner}>
                   {paying
                     ? <ActivityIndicator color={C.white} />

@@ -557,7 +557,14 @@ export class ClientsService {
       updateData.customDomain = String(updateData.customDomain).toLowerCase().trim() || null;
     }
 
-    return this.prisma.client.update({ where: { id }, data: updateData });
+    try {
+      return await this.prisma.client.update({ where: { id }, data: updateData });
+    } catch (e: any) {
+      // Sous-domaine / domaine déjà pris par une autre société, ou société introuvable : réponses claires plutôt qu'un 500.
+      if (e?.code === 'P2002') throw new ConflictException('Ce sous-domaine ou ce domaine est déjà utilisé par une autre société.');
+      if (e?.code === 'P2025') throw new NotFoundException('Société introuvable');
+      throw e;
+    }
   }
 
   async updateOwnName(clientId: number, name: string) {

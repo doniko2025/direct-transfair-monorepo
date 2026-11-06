@@ -11,11 +11,14 @@
 //           et AuthService (SMS OTP réel via Twilio)
 // =========================================================
 
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { RefreshCookieInterceptor } from './refresh-cookie.interceptor';
 import { Module, forwardRef, Logger } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { JwtModule }    from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
+import { UserSessionsService } from './user-sessions.service';
 import { AuthService }      from './auth.service';
 import { AuthController }   from './auth.controller';
 import { JwtAuthGuard }     from './jwt-auth.guard';
@@ -99,7 +102,10 @@ function parseExpiresToSeconds(raw: unknown): number {
   ],
 
   providers: [
+    // ✅ refresh token du portail web en cookie httpOnly (voir refresh-cookie.ts)
+    { provide: APP_INTERCEPTOR, useClass: RefreshCookieInterceptor },
     AuthService,
+    UserSessionsService,
     JwtAuthGuard,
     V2AuthService,
     PlatformSsoService,

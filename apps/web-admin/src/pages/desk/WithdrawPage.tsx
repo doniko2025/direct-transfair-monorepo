@@ -1,6 +1,7 @@
 // src/pages/desk/WithdrawPage.tsx
 // Retrait (agent) : le bénéficiaire donne son code, l'agent le vérifie puis remet les espèces.
 // Payer un code CRÉDITE la caisse de l'agence (espèces remboursées + commission de paiement).
+// v2 : si la société l'exige (Réglages › Codes de retrait), l'agent saisit les derniers chiffres du téléphone du bénéficiaire.
 
 import { useState, type FormEvent } from 'react';
 import type { WithdrawalCheck, WithdrawalPayResult } from '@direct-transfair/shared';
@@ -39,6 +40,7 @@ export default function WithdrawPage() {
   const [confirming, setConfirming] = useState(false);
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState<Paid | null>(null);
+  const [phoneDigits, setPhoneDigits] = useState('');
 
   const code = cleanCode(codeRaw);
   const verdict = check ? verdictOf(check.status) : null;
@@ -47,6 +49,8 @@ export default function WithdrawPage() {
   // Sans caisse dans la devise à remettre, le serveur créditerait une autre devise : on ne propose pas de payer.
   const noBox = !!payout && !!desk.data && !box && !!mainWallet(desk.data);
   const frozen = !!box && box.isFrozen;
+  const needDigits = check?.requiresPhoneCheck ? Number(check.phoneCheckDigits ?? 0) : 0;
+  const digitsOk = needDigits === 0 || new RegExp(`^\\d{${needDigits}}$`).test(phoneDigits);
 
   async function verify(e: FormEvent) {
     e.preventDefault();
@@ -54,6 +58,7 @@ export default function WithdrawPage() {
     setChecking(true);
     setError(null);
     setCheck(null);
+    setPhoneDigits('');
     try {
       setCheck(await api.agentDesk.checkWithdrawal(code));
     } catch (err) {
@@ -68,7 +73,7 @@ export default function WithdrawPage() {
     setPaying(true);
     setError(null);
     try {
-      const result = await api.agentDesk.payWithdrawal(check.reference || code);
+      const result = await api.agentDesk.payWithdrawal(check.reference || code, needDigits > 0 ? phoneDigits : undefined);
       setPaid({ check, result, at: new Date().toISOString(), agencyName: desk.data?.agency?.name ?? null });
       setConfirming(false);
       desk.reload();
@@ -84,6 +89,7 @@ export default function WithdrawPage() {
     setPaid(null);
     setCheck(null);
     setCodeRaw('');
+    setPhoneDigits('');
     setError(null);
   }
 
@@ -130,9 +136,9 @@ export default function WithdrawPage() {
             id="withdraw-code"
             label="Code donné par le bénéficiaire"
             autoComplete="off"
-            autoCapitalize="characters"
+            inputMode="numeric"
             spellCheck={false}
-            placeholder="Ex. DT-8F3K2Q"
+            placeholder="Ex. 482 916 375"
             value={codeRaw}
             onChange={(e) => {
               setCodeRaw(e.target.value);
@@ -218,8 +224,24 @@ export default function WithdrawPage() {
             </Notice>
           ) : null}
 
+          {verdict === 'payable' && needDigits > 0 ? (
+            <Field
+              id="withdraw-phone"
+              label={`${needDigits} derniers chiffres du téléphone du bénéficiaire`}
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={needDigits}
+              value={phoneDigits}
+              onChange={(e) => {
+                setPhoneDigits(e.target.value.replace(/\D/g, '').slice(0, needDigits));
+                setError(null);
+              }}
+              hint="Demandez-les au bénéficiaire : le numéro complet ne vous est pas affiché."
+            />
+          ) : null}
+
           {verdict === 'payable' && !noBox && !frozen ? (
-            <Button icon="withdraw" disabled={!desk.data} onClick={() => setConfirming(true)}>
+            <Button icon="withdraw" disabled={!desk.data || !digitsOk} onClick={() => setConfirming(true)}>
               Payer {formatAmount(payout.amount, payout.currency)}
             </Button>
           ) : null}

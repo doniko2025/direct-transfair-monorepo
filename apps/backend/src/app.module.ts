@@ -48,6 +48,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler'; // ✅ v4.5
+import { CompanySettingsModule } from './company-settings/company-settings.module'; // ✅ v5.7
 import { APP_GUARD }    from '@nestjs/core';                          // ✅ v4.5
 
 import { PrismaModule }   from './prisma/prisma.module';
@@ -139,6 +140,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     ValidationThresholdsModule, // ✅ v5.4 — /validation-thresholds (seuil de validation par devise)
     TransferLimitsModule, // ✅ v5.5 — /transfer-limits (plafonds d'envoi par niveau KYC et devise)
     PortalDomainsModule, // ✅ v5.6 — /portal-domains (domaine du portail de chaque société)
+    CompanySettingsModule, // ✅ v5.7 — /company-settings (paramètres métier de chaque société, global)
   ],
 
   controllers: [ExchangeRatesController, HealthController],

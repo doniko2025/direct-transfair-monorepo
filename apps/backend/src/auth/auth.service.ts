@@ -271,6 +271,19 @@ const OTP_MIN_INTERVAL_SEC   = 45;  // délai minimum entre deux envois
 const OTP_MAX_PER_WINDOW     = 5;   // nombre max sur la fenêtre glissante
 const OTP_WINDOW_MINUTES     = 15;  // durée de la fenêtre glissante
 
+// ✅ v5.10 — Essais de saisie d'un code OTP avant invalidation (OTP_MAX_ATTEMPTS, 3 à 20, défaut 5).
+// Sans plafond, un code à 4 chiffres (connexion par téléphone) se devinait en 10 000 essais.
+const OTP_MAX_ATTEMPTS = (() => {
+  const n = Number(process.env.OTP_MAX_ATTEMPTS);
+  return Number.isInteger(n) && n >= 3 && n <= 20 ? n : 5;
+})();
+
+const safeEqual = (a: string, b: string): boolean => {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && crypto.timingSafeEqual(x, y);
+};
+
 // =========================================================
 // TYPES
 // =========================================================
@@ -544,8 +557,9 @@ export class AuthService {
       };
     }
 
-    const tokens = await this.generateTokens(user);
-    await this.createSession(user.id, tokens);
+    const sid = crypto.randomUUID();
+    const tokens = await this.generateTokens(user, sid);
+    await this.createSession(user.id, tokens, null, sid);
     await this.audit(user.id, user.clientId, AuditAction.LOGIN);
     await this.prisma.user.update({
       where: { id: user.id },
@@ -568,32 +582,8 @@ export class AuthService {
     dto: VerifyLoginOtpDto,
     appClient?: string | null,
   ): Promise<LoginStep2Result> {
-    const otpLog = await this.prisma.otpLog.findFirst({
-      where: {
-        userId:    dto.userId,
-        code:      dto.code,
-        purpose:   OtpPurpose.LOGIN,
-        isUsed:    false,
-        expiresAt: { gte: new Date() },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!otpLog) {
-      await this.prisma.otpLog.updateMany({
-        where: {
-          userId: dto.userId, purpose: OtpPurpose.LOGIN,
-          isUsed: false, expiresAt: { gte: new Date() },
-        },
-        data: { attempts: { increment: 1 } },
-      });
-      throw new BadRequestException('Code OTP invalide ou expiré');
-    }
-
-    await this.prisma.otpLog.update({
-      where: { id: otpLog.id },
-      data:  { isUsed: true, usedAt: new Date() },
-    });
+    // ✅ v5.10 : plafond d'essais + comparaison à temps constant + consommation atomique
+    const otpLog = await this.consumeOtp(dto.userId, dto.code, OtpPurpose.LOGIN);
 
     // ✅ v5.0 : Vérification contact automatique lors de la validation OTP
     const verificationUpdate: any = {};
@@ -650,8 +640,9 @@ export class AuthService {
       });
     }
 
-    const tokens = await this.generateTokens(user);
-    await this.createSession(user.id, tokens, dto.deviceId ?? null);
+    const sid = crypto.randomUUID();
+    const tokens = await this.generateTokens(user, sid);
+    await this.createSession(user.id, tokens, dto.deviceId ?? null, sid);
     await this.audit(
       user.id, user.clientId,
       otpLog.channel === CommsType.SMS ? AuditAction.LOGIN_PHONE : AuditAction.LOGIN,
@@ -957,8 +948,9 @@ export class AuthService {
     });
     if (!freshUser) throw new NotFoundException('Utilisateur introuvable après création');
 
-    const tokens = await this.generateTokens(freshUser);
-    await this.createSession(freshUser.id, tokens);
+    const sid = crypto.randomUUID();
+    const tokens = await this.generateTokens(freshUser, sid);
+    await this.createSession(freshUser.id, tokens, null, sid);
     await this.audit(freshUser.id, client.id, AuditAction.LOGIN);
     await this.prisma.user.update({
       where: { id: freshUser.id },
@@ -1116,16 +1108,8 @@ export class AuthService {
 
   async verifyOtp(userId: string, code: string, type?: string) {
     const purpose = type ? ((OtpPurpose as any)[type] ?? null) : null;
-    const where: any = { userId, code, isUsed: false, expiresAt: { gte: new Date() } };
-    if (purpose) where.purpose = purpose;
-
-    const otpLog = await this.prisma.otpLog.findFirst({ where, orderBy: { createdAt: 'desc' } });
-    if (!otpLog) throw new BadRequestException('Code invalide ou expiré');
-
-    await this.prisma.otpLog.update({
-      where: { id: otpLog.id },
-      data:  { isUsed: true, usedAt: new Date() },
-    });
+    // Sans type : tout sauf le code de connexion (un code LOGIN ne se consomme que par /auth/login/verify-otp).
+    const otpLog = await this.consumeOtp(userId, code, purpose, purpose ? undefined : { not: OtpPurpose.LOGIN });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
@@ -1151,20 +1135,80 @@ export class AuthService {
   async resetPassword(userId: string, code: string, newPass: string) {
     if (newPass.length < 6) throw new BadRequestException('Mot de passe trop court');
 
-    const otpLog = await this.prisma.otpLog.findFirst({
-      where: { userId, code, purpose: OtpPurpose.PASSWORD_RESET, isUsed: false, expiresAt: { gte: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!otpLog) throw new BadRequestException('Code invalide ou expiré');
+    // ✅ v5.10 : plafond d'essais + consommation atomique du code (avant : essais illimités, rejouable en parallèle)
+    await this.consumeOtp(userId, code, OtpPurpose.PASSWORD_RESET);
 
     const hashedPassword = await bcrypt.hash(newPass, 10);
-    await this.prisma.user.update({ where: { id: userId }, data: { password: hashedPassword, mustChangePassword: false } });
-    await this.prisma.otpLog.update({ where: { id: otpLog.id }, data: { isUsed: true, usedAt: new Date() } });
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword, mustChangePassword: false, failedLoginAttempts: 0, lockedUntil: null },
+    });
+
+    // ✅ v5.10 : toutes les sessions ouvertes sont fermées — quelqu'un qui aurait volé le compte est déconnecté.
+    await this.prisma.userSession.updateMany({
+      where: { userId, status: 'ACTIVE' },
+      data:  { status: 'REVOKED', revokedAt: new Date() },
+    });
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (user) await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
 
     return { success: true };
+  }
+
+  /**
+   * ✅ v5.10 — Point de passage unique pour valider un code OTP saisi.
+   *  1. prend le code actif le plus récent de l'utilisateur ;
+   *  2. réserve un essai de façon atomique (les devinettes lancées en parallèle comptent toutes) ;
+   *  3. compare à temps constant ; au-delà de OTP_MAX_ATTEMPTS le code est invalidé ;
+   *  4. marque le code utilisé de façon atomique (un seul appel gagne).
+   */
+  private async consumeOtp(
+    userId: string,
+    code: string,
+    purpose: OtpPurpose | null,
+    purposeFilter?: { not: OtpPurpose },
+  ) {
+    const submitted = String(code ?? '').trim();
+    const otpLog = await this.prisma.otpLog.findFirst({
+      where: {
+        userId,
+        isUsed: false,
+        isExpired: false,
+        expiresAt: { gte: new Date() },
+        ...(purpose ? { purpose } : purposeFilter ? { purpose: purposeFilter } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!otpLog) throw new BadRequestException('Code invalide ou expiré');
+
+    const reserved = await this.prisma.otpLog.updateMany({
+      where: { id: otpLog.id, isUsed: false, attempts: { lt: OTP_MAX_ATTEMPTS } },
+      data:  { attempts: { increment: 1 } },
+    });
+    if (reserved.count !== 1) {
+      await this.prisma.otpLog.updateMany({ where: { id: otpLog.id }, data: { isExpired: true } });
+      throw new HttpException('Trop de tentatives incorrectes. Demandez un nouveau code.', 429);
+    }
+
+    if (!submitted || !safeEqual(otpLog.code, submitted)) {
+      const remaining = OTP_MAX_ATTEMPTS - (otpLog.attempts + 1);
+      if (remaining <= 0) {
+        await this.prisma.otpLog.updateMany({ where: { id: otpLog.id }, data: { isExpired: true } });
+      }
+      throw new BadRequestException(
+        remaining > 0
+          ? `Code invalide ou expiré — ${remaining} tentative(s) restante(s).`
+          : 'Code invalide — aucune tentative restante. Demandez un nouveau code.',
+      );
+    }
+
+    const claimed = await this.prisma.otpLog.updateMany({
+      where: { id: otpLog.id, isUsed: false },
+      data:  { isUsed: true, usedAt: new Date() },
+    });
+    if (claimed.count !== 1) throw new BadRequestException('Code invalide ou expiré');
+    return otpLog;
   }
 
   // ========================================================
@@ -1232,7 +1276,7 @@ export class AuthService {
     // web (couvre les anciennes versions du mobile encore connectées).
     assertAppClientAllowed(sessionUser.role, appClient);
 
-    const tokens = await this.generateTokens(session.user as any);
+    const tokens = await this.generateTokens(session.user as any, session.id); // même sid : révoquer la session invalide aussi les jetons déjà émis
 
     // ✅ v5.0 : Stocker le hash du nouveau refresh token
     await this.prisma.userSession.update({
@@ -1254,9 +1298,12 @@ export class AuthService {
   // LOGOUT
   // ========================================================
 
-  async logout(userId: string, accessToken?: string) {
+  async logout(userId: string, accessToken?: string, sid?: string) {
     const where: any = { userId, status: 'ACTIVE' };
-    if (accessToken) where.token = accessToken;
+    // Par identifiant de session quand le jeton en porte un (le jeton stocké change à chaque renouvellement : l'ancien ne
+    // retrouvait plus la session) ; sinon, comme avant, par jeton d'accès.
+    if (sid) where.id = sid;
+    else if (accessToken) where.token = accessToken;
     await this.prisma.userSession.updateMany({ where, data: { status: 'REVOKED', revokedAt: new Date() } });
     await this.audit(userId, null, AuditAction.LOGOUT);
     return { success: true };
@@ -1344,12 +1391,15 @@ export class AuthService {
   // ========================================================
 
   // ✅ v5.0 : TTL 1h (vs 7j en v4.x)
-  private async generateTokens(user: any): Promise<{
+  // ✅ v5.11 : `sid` = identifiant de la session dans le jeton. Le garde vérifie qu'elle est toujours ACTIVE : une déconnexion,
+  // une révocation ou un changement de mot de passe coupent aussi les jetons d'accès déjà émis (avant : valables jusqu'à
+  // leur expiration). Durée de vie réglable : ACCESS_TOKEN_TTL (défaut 1h).
+  private async generateTokens(user: any, sid?: string): Promise<{
     access_token:  string;
     refresh_token: string;
   }> {
-    const payload = { sub: user.id, email: user.email, role: user.role, clientId: user.clientId };
-    const access_token  = this.jwt.sign(payload, { expiresIn: '1h' }); // ✅ 7d → 1h
+    const payload = { sub: user.id, email: user.email, role: user.role, clientId: user.clientId, ...(sid ? { sid } : {}) };
+    const access_token  = this.jwt.sign(payload, { expiresIn: process.env.ACCESS_TOKEN_TTL || '1h' });
     const refresh_token = generateRefreshToken();
     return { access_token, refresh_token };
   }
@@ -1359,11 +1409,13 @@ export class AuthService {
     userId:   string,
     tokens:   { access_token: string; refresh_token: string },
     deviceId?: string | null,
+    sid?:      string,
   ): Promise<void> {
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
     try {
       await this.prisma.userSession.create({
         data: {
+          ...(sid ? { id: sid } : {}),
           userId,
           token:                 tokens.access_token,
           refreshToken:          hashRefreshToken(tokens.refresh_token), // ← hash stocké

@@ -41,6 +41,9 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CommissionsService } from './commissions.service';
 import { UpdateCommissionDto } from './dto/update-commission.dto';
 import { PrismaService } from '../prisma/prisma.service';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
+import { isFreeMethod } from '../company-settings/company-settings.logic';
+import { FEE_METHOD_KEYS } from '../fees-admin/fee-rules';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 
@@ -52,6 +55,7 @@ export class CommissionsController {
   constructor(
     private readonly commissionsService: CommissionsService,
     private readonly prisma: PrismaService,
+    private readonly settings: CompanySettingsService,
   ) {}
 
   // =========================================================
@@ -98,17 +102,25 @@ export class CommissionsController {
     const user = await this.prisma.user.findUnique({ where: { id: req.user!.id } });
     if (!user?.clientId) return [];
 
-    const configs = await this.prisma.commissionConfig.findMany({
-      where: { clientId: user.clientId },
-    });
+    const [configs, company] = await Promise.all([
+      this.prisma.commissionConfig.findMany({ where: { clientId: user.clientId } }),
+      this.settings.forClient(user.clientId),
+    ]);
+    const byMethod = new Map<string, any>();
+    for (const c of configs as any[]) if (c.payoutMethod) byMethod.set(c.payoutMethod as string, c);
 
-    return configs
-      .filter((c: any) => !!c.payoutMethod)
-      .map((c: any) => ({
-        payoutMethod: c.payoutMethod as string,
-        feeRate:      (c.feeRate  ?? c.senderShare ?? 1.5) as number,
-        fixedFee:     (c.fixedFee ?? 0)                    as number,
-      }));
+    // Une ligne par mode d'envoi : le tarif de la société s'il existe, sinon son taux de repli (paramètres de la société,
+    // plus de 1,5 écrit ici). `charged` = faux pour les modes que la société a déclarés gratuits.
+    return FEE_METHOD_KEYS.map((method) => {
+      const c = byMethod.get(method);
+      const charged = !isFreeMethod(company, method);
+      return {
+        payoutMethod: method,
+        charged,
+        feeRate: charged ? ((c?.feeRate ?? company.fees.fallbackFeeRatePct) as number) : 0,
+        fixedFee: charged ? ((c?.fixedFee ?? 0) as number) : 0,
+      };
+    });
   }
 
   // =========================================================

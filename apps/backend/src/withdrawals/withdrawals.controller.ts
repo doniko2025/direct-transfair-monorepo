@@ -1,6 +1,8 @@
 // apps/backend/src/withdrawals/withdrawals.controller.ts
 // =========================================================
-// WITHDRAWALS CONTROLLER v4.8 — Direct Transf'air
+// WITHDRAWALS CONTROLLER v4.9 — Direct Transf'air
+// ✅ v4.9 : corps typés (AgentCheckCodeDto / AgentPayCodeDto) ; agent/pay accepte `phoneDigits` (contrôle du téléphone du
+//   bénéficiaire, réglage de la société) ; l'IP est transmise au journal des essais ratés.
 // ✅ v4.4 : routes agent/check + agent/pay
 // ✅ v4.5 :
 //    - GET /withdrawals       → route manquante ajoutée (causait le 404)
@@ -46,6 +48,7 @@ import type { Request } from 'express';
 
 import { WithdrawalsService }        from './withdrawals.service';
 import { UpdateWithdrawalStatusDto }  from './dto/update-withdrawal-status.dto';
+import { AgentCheckCodeDto, AgentPayCodeDto } from './dto/agent-code.dto';
 
 import { JwtAuthGuard }  from '../auth/jwt-auth.guard';
 import { TenantGuard }   from '../tenants/tenant.guard';
@@ -102,7 +105,7 @@ export class WithdrawalsController {
   // ── AGENT : Vérifier un code de retrait ──────────────────
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('withdrawals/agent/check')
-  async agentCheckCode(@Req() req: ReqWithAuth, @Body('code') code: string) {
+  async agentCheckCode(@Req() req: ReqWithAuth, @Body() body: AgentCheckCodeDto) {
     const clientId = req.tenantContext?.clientId;
     if (!clientId) throw new ForbiddenException('Tenant not resolved');
 
@@ -110,13 +113,13 @@ export class WithdrawalsController {
       throw new ForbiddenException('Réservé aux agents');
     }
 
-    return this.withdrawals.agentCheckCode(clientId, code, req.user!.id); // ✅ v4.15 : l'agent est connu pour contrôler le pays
+    return this.withdrawals.agentCheckCode(clientId, body.code, req.user!.id, { ip: req.ip }); // ✅ v4.15 : l'agent est connu pour contrôler le pays
   }
 
   // ── AGENT : Valider le paiement (Cash-Out) ───────────────
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('withdrawals/agent/pay')
-  async agentProcessPayment(@Req() req: ReqWithAuth, @Body('code') code: string) {
+  async agentProcessPayment(@Req() req: ReqWithAuth, @Body() body: AgentPayCodeDto) {
     const clientId = req.tenantContext?.clientId;
     if (!clientId) throw new ForbiddenException('Tenant not resolved');
 
@@ -124,7 +127,7 @@ export class WithdrawalsController {
       throw new ForbiddenException('Réservé aux agents');
     }
 
-    return this.withdrawals.agentProcessPayment(clientId, req.user!.id, code);
+    return this.withdrawals.agentProcessPayment(clientId, req.user!.id, body.code, { phoneDigits: body.phoneDigits, ip: req.ip });
   }
 
   // ── ADMIN : Lister tout ──────────────────────────────────

@@ -37,7 +37,7 @@ describe('PaymentsService.initiate', () => {
 
 describe('RechargeService — BLOCK_SIMULATED_RECHARGES', () => {
   const prisma: any = { user: { findUnique: jest.fn() }, transaction: { create: jest.fn() } };
-  const service = new RechargeService(prisma, {} as any, {} as any, {} as any);
+  const service = new RechargeService(prisma, {} as any, {} as any, {} as any, {} as any);
   const card: any = { amount: 100, currency: 'EUR', cardholderName: 'A B', cardNumber: '4242424242424242', expiry: '12/30' };
 
   it('ouvertes par défaut (décision : on garde les recharges simulées en phase de test)', async () => {
@@ -53,6 +53,26 @@ describe('RechargeService — BLOCK_SIMULATED_RECHARGES', () => {
     await expect(service.rechargeBySendwave('u1', card)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(prisma.transaction.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('RechargeService — moyens ouverts par la société', () => {
+  const prisma: any = { user: { findUnique: jest.fn().mockResolvedValue({ id: 'u1', clientId: 7 }) }, transaction: { create: jest.fn() } };
+  const settingsFor = (enabledMethods: string[]) => ({ forClient: jest.fn().mockResolvedValue({ recharge: { enabledMethods } }) }) as any;
+  const card: any = { amount: 100, currency: 'EUR', cardholderName: 'A B', cardNumber: '4242424242424242', expiry: '12/30' };
+
+  it('un moyen non ouvert par la société est refusé (403) avant toute écriture', async () => {
+    const service = new RechargeService(prisma, {} as any, {} as any, {} as any, settingsFor(['SENDWAVE']));
+    await expect(service.rechargeByCard('u1', card)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.rechargeByOrangeMoney('u1', { ...card, momoPhone: '+224600000000' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.transaction.create).not.toHaveBeenCalled();
+  });
+
+  it('options : la liste de la société ; vide si l\'interrupteur global ferme les recharges', async () => {
+    const service = new RechargeService(prisma, {} as any, {} as any, {} as any, settingsFor(['CARD', 'SENDWAVE']));
+    await expect(service.optionsFor('u1')).resolves.toEqual({ methods: ['CARD', 'SENDWAVE'], simulated: true, blocked: false });
+    process.env.BLOCK_SIMULATED_RECHARGES = 'true';
+    await expect(service.optionsFor('u1')).resolves.toEqual({ methods: [], simulated: true, blocked: true });
   });
 });
 

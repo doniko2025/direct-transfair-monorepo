@@ -88,6 +88,8 @@ type JwtPayloadLike = {
   clientId?: number;
   agencyId?: string | null;
   primaryCurrency?: string | null;
+  /** Identifiant de la session qui a émis le jeton (UserSession.id). */
+  sid?: string;
 };
 
 type AuthenticatedRequest = Request & {
@@ -165,6 +167,7 @@ export class JwtAuthGuard implements CanActivate {
         clientId,
         agencyId: payload.agencyId ?? null,
         primaryCurrency: payload.primaryCurrency ?? null,
+        sid: payload.sid,
       };
 
       // ✅ v4.2 — FIX (voir changelog en tête de fichier) : révocation
@@ -177,6 +180,7 @@ export class JwtAuthGuard implements CanActivate {
           isSuspended: true,
           role:        true,
           clientId:    true, // ✅ v4.3
+          agencyId:    true, // ✅ v4.5
           mustChangePassword: true, // ✅ v4.4
           client:      { select: { isActive: true } },
         },
@@ -202,6 +206,20 @@ export class JwtAuthGuard implements CanActivate {
         );
       }
 
+      // ✅ v4.6 — session révoquée = jeton refusé tout de suite (déconnexion, « fermer les autres appareils », mot de passe
+      // réinitialisé…), sans attendre l'expiration du jeton. Un jeton sans `sid` (émis avant cette version) ou dont la ligne de
+      // session n'existe pas (création de session non bloquante, nettoyage des anciennes sessions) reste accepté : seule une
+      // session explicitement terminée est refusée.
+      if (payload.sid) {
+        const session = await this.prisma.userSession.findUnique({
+          where:  { id: payload.sid },
+          select: { status: true, userId: true },
+        });
+        if (session && (session.userId !== id || session.status !== 'ACTIVE')) {
+          throw new UnauthorizedException('Session terminée. Reconnectez-vous.');
+        }
+      }
+
       // ✅ v4.4 — mot de passe temporaire : seules les routes nécessaires au changement restent ouvertes.
       if (dbUser.mustChangePassword && !isPasswordChangeRoute(req)) {
         throw new ForbiddenException({
@@ -215,6 +233,8 @@ export class JwtAuthGuard implements CanActivate {
       req.user.role = dbUser.role;
       req.user.clientId =
         typeof dbUser.clientId === 'number' ? dbUser.clientId : undefined;
+      // ✅ v4.5 — agence réelle (base) : un agent déplacé d'agence ne garde pas l'ancienne jusqu'à expiration du token.
+      req.user.agencyId = dbUser.agencyId ?? null;
 
       // ✅ SUPER_ADMIN — bypass total du matching tenant (inchangé).
       // Passe désormais par les vérifications deletedAt/isSuspended

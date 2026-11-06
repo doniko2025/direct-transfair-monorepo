@@ -1,54 +1,48 @@
 // src/lib/tokenStorage.ts
-// Stockage des tokens côté navigateur (localStorage, avec repli mémoire si
-// le navigateur le refuse : navigation privée, stockage bloqué…).
+// Stockage des jetons côté navigateur — version « cookie httpOnly » (étape sécurité).
 //
-// ⚠️ localStorage est lisible par n'importe quel script de la page : c'est
-// le même niveau de protection que le mobile aujourd'hui. Le passage aux
-// cookies httpOnly est prévu à l'étape sécurité ; il suffira de remplacer
-// ce fichier (l'interface TokenStorage est celle de @direct-transfair/shared).
+//   - Refresh token (30 jours) : posé par le serveur dans un cookie httpOnly, donc ILLISIBLE depuis JavaScript. Une faille XSS ne
+//     peut plus le voler. Rien n'en est stocké ici.
+//   - Jeton d'accès (1 heure) : gardé en MÉMOIRE seulement (jamais dans localStorage). Après un rechargement de page, le client
+//     en obtient un nouveau via /auth/refresh (le cookie part tout seul).
+//   - Un simple indicateur « une session existe » (dtw.session = "1", sans aucun secret) évite d'appeler le serveur pour rien
+//     quand personne n'est connecté.
+//
+// L'interface TokenStorage est celle de @direct-transfair/shared.
 
 import type { TokenStorage } from '@direct-transfair/shared';
 
-const ACCESS_KEY = 'dtw.access';
-const REFRESH_KEY = 'dtw.refresh';
+const SESSION_HINT_KEY = 'dtw.session';
+// Anciennes clés (versions précédentes : jetons en clair dans localStorage) : effacées au premier chargement.
+const LEGACY_KEYS = ['dtw.access', 'dtw.refresh'];
 
 export function createBrowserTokenStorage(): TokenStorage {
   let memAccess: string | null = null;
-  let memRefresh: string | null = null;
+  let memHint = false;
 
-  const read = (key: string, fallback: string | null): string | null => {
+  const safe = <T,>(fn: () => T, fallback: T): T => {
     try {
-      return window.localStorage.getItem(key) ?? fallback;
+      return fn();
     } catch {
-      return fallback;
+      return fallback; // stockage indisponible (navigation privée, bloqué…)
     }
   };
 
-  const write = (key: string, value: string | null): void => {
-    try {
-      if (value === null) window.localStorage.removeItem(key);
-      else window.localStorage.setItem(key, value);
-    } catch {
-      /* stockage indisponible : la valeur reste en mémoire */
-    }
-  };
+  safe(() => LEGACY_KEYS.forEach((k) => window.localStorage.removeItem(k)), undefined);
 
   return {
-    getAccessToken: () => read(ACCESS_KEY, memAccess),
-    getRefreshToken: () => read(REFRESH_KEY, memRefresh),
-    setTokens(access, refresh) {
+    getAccessToken: () => memAccess,
+    getRefreshToken: () => null, // jamais lisible : cookie httpOnly
+    setTokens(access) {
       memAccess = access;
-      write(ACCESS_KEY, access);
-      if (refresh) {
-        memRefresh = refresh;
-        write(REFRESH_KEY, refresh);
-      }
+      memHint = true;
+      safe(() => window.localStorage.setItem(SESSION_HINT_KEY, '1'), undefined);
     },
     clear() {
       memAccess = null;
-      memRefresh = null;
-      write(ACCESS_KEY, null);
-      write(REFRESH_KEY, null);
+      memHint = false;
+      safe(() => window.localStorage.removeItem(SESSION_HINT_KEY), undefined);
     },
+    hasSession: () => memHint || safe(() => window.localStorage.getItem(SESSION_HINT_KEY) === '1', false),
   };
 }

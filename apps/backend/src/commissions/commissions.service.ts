@@ -175,29 +175,8 @@ export class CommissionsService {
   // (✅ v4.3, inchangé — utilisé par fees.tsx)
   // ========================================================
 
-  async getFeeRate(
-    clientId: number,
-    payoutMethod: string,
-  ): Promise<{ rate: number; fixedFee: number }> {
-    if (!payoutMethod || payoutMethod === 'WALLET' || payoutMethod === 'MOBILE_MONEY') {
-      return { rate: 0, fixedFee: 0 };
-    }
-    try {
-      const config = await this.prisma.commissionConfig.findFirst({
-        where: { clientId, payoutMethod, isActive: true },
-      });
-      if (config) {
-        return {
-          rate:     (config as any).feeRate   ?? 1.5,
-          fixedFee: (config as any).fixedFee  ?? 0,
-        };
-      }
-    } catch {
-      // Colonne pas encore migrée → fallback
-    }
-    return { rate: 1.5, fixedFee: 0 };
-  }
-
+  // Tarif d'un mode d'envoi. Atomique : verrou de transaction par (société, mode) + index unique partiel
+  // commission_configs_fee_per_method_key (migration 20261106130000) — deux enregistrements simultanés ne créent plus deux lignes.
   async upsertFeeConfig(
     clientId: number,
     payoutMethod: string,
@@ -205,44 +184,32 @@ export class CommissionsService {
     fixedFee: number,
   ) {
     const currency = PAYOUT_CURRENCY_SLOT[payoutMethod] ?? null;
-    const existing = await this.prisma.commissionConfig.findFirst({
-      where: { clientId, payoutMethod },
-    });
-
-    if (existing) {
-      return this.prisma.commissionConfig.update({
-        where: { id: existing.id },
-        data: {
-          isActive:      true,
-          senderShare:   feeRate,
-          platformShare: Math.max(0, 100 - feeRate),
-          description:   `FEE:${payoutMethod}`,
-          ...(Object.fromEntries([
-            ['feeRate',      feeRate],
-            ['fixedFee',     fixedFee],
-            ['payoutMethod', payoutMethod],
-          ])),
-        },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`fee:${clientId}:${payoutMethod}`}))`;
+      const existing = await tx.commissionConfig.findFirst({
+        where: { clientId, payoutMethod },
+        orderBy: { updatedAt: 'desc' },
       });
-    }
-
-    return this.prisma.commissionConfig.create({
-      data: {
+      const values = {
         isActive:      true,
-        clientId,
-        sourceType:    CommissionSourceType.WALLET,
-        destType:      CommissionDestType.SUBSIDIARY,
-        currency:      currency as CurrencyCode | undefined,
         senderShare:   feeRate,
-        payerShare:    0,
         platformShare: Math.max(0, 100 - feeRate),
         description:   `FEE:${payoutMethod}`,
-        ...(Object.fromEntries([
-          ['feeRate',      feeRate],
-          ['fixedFee',     fixedFee],
-          ['payoutMethod', payoutMethod],
-        ])),
-      },
+        feeRate,
+        fixedFee,
+        payoutMethod,
+      };
+      if (existing) return tx.commissionConfig.update({ where: { id: existing.id }, data: values });
+      return tx.commissionConfig.create({
+        data: {
+          ...values,
+          clientId,
+          sourceType: CommissionSourceType.WALLET,
+          destType:   CommissionDestType.SUBSIDIARY,
+          currency:   currency as CurrencyCode | undefined,
+          payerShare: 0,
+        },
+      });
     });
   }
 
@@ -264,17 +231,22 @@ export class CommissionsService {
     if (platformShare < 0) {
       throw new BadRequestException('La somme des parts ne peut pas dépasser 100%');
     }
-    const existing = await this.prisma.commissionConfig.findFirst({
-      where: { clientId, sourceType: dto.sourceType, destType: dto.destType, currency: null, payoutMethod: null }, // ✅ phase 6 : jamais un tarif par mode
-    });
-    if (existing) {
-      return this.prisma.commissionConfig.update({
-        where: { id: existing.id },
-        data:  { senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
+    // Atomique : verrou par (société, expéditeur, agence payeuse) + index unique partiel commission_configs_split_per_pair_key.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`split:${clientId}:${dto.sourceType}:${dto.destType}`}))`;
+      const existing = await tx.commissionConfig.findFirst({
+        where: { clientId, sourceType: dto.sourceType, destType: dto.destType, currency: null, payoutMethod: null }, // ✅ phase 6 : jamais un tarif par mode
+        orderBy: { updatedAt: 'desc' },
       });
-    }
-    return this.prisma.commissionConfig.create({
-      data: { clientId, sourceType: dto.sourceType, destType: dto.destType, senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
+      if (existing) {
+        return tx.commissionConfig.update({
+          where: { id: existing.id },
+          data:  { senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
+        });
+      }
+      return tx.commissionConfig.create({
+        data: { clientId, sourceType: dto.sourceType, destType: dto.destType, senderShare: dto.senderShare, payerShare: dto.payerShare, platformShare },
+      });
     });
   }
 

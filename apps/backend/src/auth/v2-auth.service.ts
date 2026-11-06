@@ -98,6 +98,7 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { SmsService } from '../sms/sms.service'; // ✅ SMS OTP réels (plus de stub dans les logs)
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v2.5
@@ -122,7 +123,7 @@ const OTP_MAX_ATTEMPTS       = 5;
 const OTP_MAX_SENDS_PER_HOUR = 3;
 const LOCK_DURATION_MINUTES  = 30;
 const MAX_FAILED_LOGINS      = 5;
-const ACCESS_TOKEN_TTL       = '1h';
+const ACCESS_TOKEN_TTL       = process.env.ACCESS_TOKEN_TTL || '1h'; // réglable (voir auth.service generateTokens)
 const REFRESH_TOKEN_DAYS     = 30;
 
 // ✅ v2.1 : fenêtre de réutilisation d'un OTP récent (9 min < TTL 10 min)
@@ -221,6 +222,7 @@ export class V2AuthService {
     private readonly prisma: PrismaService,
     private readonly jwt:    JwtService,
     private readonly mail:   MailService,
+    private readonly sms:    SmsService,
   ) {}
 
   // ═══════════════════════════════════════════════════════
@@ -911,9 +913,16 @@ export class V2AuthService {
 
     // ── Envoi SMS ─────────────────────────────────────────
     if (channel === CommsType.SMS) {
-      // TODO: Remplacer le stub par l'appel SmsService réel
-      // await this.smsService.sendOtp(recipient, code, userId);
-      this.logger.log(`[SMS-STUB] → ${recipient} : Code ${code}`);
+      // ✅ SMS réel via SmsService (Twilio si configuré ; sinon mode « stub » qui n'écrit jamais le code dans les logs en
+      // production). Avant : un simple logger.log(`[SMS-STUB] … Code ${code}`) — aucun SMS n'était envoyé et le code se
+      // retrouvait en clair dans les journaux du serveur.
+      // Non bloquant, comme l'e-mail : le code est enregistré, le client peut redemander un envoi.
+      try {
+        const res = await this.sms.sendOtp(recipient, code, userId);
+        if (!res?.success) this.logger.warn(`[OTP SMS] Envoi non confirmé (${res?.provider ?? 'inconnu'}) : ${res?.error ?? 'raison inconnue'}`);
+      } catch (e) {
+        this.logger.error(`[OTP SMS] Échec envoi : ${(e as Error)?.message}`);
+      }
     }
 
     await this.audit(userId, null, AuditAction.OTP_REQUEST, { purpose, channel });
@@ -931,13 +940,15 @@ export class V2AuthService {
       clientId: user.clientId,
     };
 
-    const accessToken  = this.jwt.sign(payload, { expiresIn: ACCESS_TOKEN_TTL });
+    const sid          = crypto.randomUUID(); // identifiant de session dans le jeton (voir JwtAuthGuard)
+    const accessToken  = this.jwt.sign({ ...payload, sid }, { expiresIn: ACCESS_TOKEN_TTL });
     const refreshToken = generateRefreshToken();
     const expiresAt    = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000);
 
     try {
       await this.prisma.userSession.create({
         data: {
+          id:                    sid,
           userId:                user.id,
           token:                 accessToken,
           refreshToken:          hashRefreshToken(refreshToken), // ✅ v2.5 : empreinte, jamais le jeton en clair

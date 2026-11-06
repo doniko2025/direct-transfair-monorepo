@@ -1,7 +1,8 @@
 // apps/backend/src/fees-admin/fees-admin.service.ts
 // =========================================================
 // ✅ phase 7 : le code de la société système est lu via getPlatformCode() (configuration plateforme) au lieu de la constante « DONIKO ».
-// FEES ADMIN v1.0 — frais d'envoi par société
+// FEES ADMIN v1.1 — frais d'envoi par société
+//   ✅ v1.1 : les modes gratuits ne sont plus écrits en dur : ils viennent des paramètres de la société (défaut : wallet → wallet).
 //
 //   mine       : les frais de MA société (admin de société)
 //   companies  : les frais de chaque société (super admin, lecture seule)
@@ -16,9 +17,10 @@ import { BadRequestException, ForbiddenException, Injectable, Logger } from '@ne
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { CommissionsService } from '../commissions/commissions.service';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { FeeHistoryQueryDto, SetFeeDto } from './dto/fees-admin.dto';
-import { DEFAULT_FEE_RATE, FEE_METHOD_KEYS, FEE_METHODS, hasAtMostTwoDecimals, getPlatformCode } from './fee-rules';
+import { FEE_METHOD_KEYS, FEE_METHODS, hasAtMostTwoDecimals, getPlatformCode } from './fee-rules';
 
 interface FeeRow {
   clientId: number;
@@ -43,8 +45,15 @@ export interface FeeMethodView {
 
 const num = (v: unknown, fallback: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
-function viewOf(def: (typeof FEE_METHODS)[number], row: FeeRow | undefined): FeeMethodView {
-  if (!def.charged) {
+interface FeeContext {
+  /** Modes gratuits de la société (paramètres). */
+  free: readonly string[];
+  /** Taux affiché tant qu'aucun tarif n'est enregistré : le taux de repli de la société. */
+  fallbackRate: number;
+}
+
+function viewOf(def: (typeof FEE_METHODS)[number], row: FeeRow | undefined, ctx: FeeContext): FeeMethodView {
+  if (ctx.free.includes(def.key)) {
     const stored = row ? num(row.feeRate, 0) : 0;
     return {
       payoutMethod: def.key,
@@ -62,15 +71,15 @@ function viewOf(def: (typeof FEE_METHODS)[number], row: FeeRow | undefined): Fee
     label: def.label,
     charged: true,
     configured: Boolean(row),
-    feeRate: row ? num(row.feeRate, DEFAULT_FEE_RATE) : DEFAULT_FEE_RATE,
+    feeRate: row ? num(row.feeRate, ctx.fallbackRate) : ctx.fallbackRate,
     fixedFee: row ? num(row.fixedFee, 0) : 0,
     storedFeeRate: null,
     updatedAt: row ? row.updatedAt.toISOString() : null,
   };
 }
 
-function methodsOf(rows: readonly FeeRow[]): FeeMethodView[] {
-  return FEE_METHODS.map((def) => viewOf(def, rows.find((r) => r.payoutMethod === def.key)));
+function methodsOf(rows: readonly FeeRow[], ctx: FeeContext): FeeMethodView[] {
+  return FEE_METHODS.map((def) => viewOf(def, rows.find((r) => r.payoutMethod === def.key), ctx));
 }
 
 const fullName = (u: { firstName: string | null; lastName: string | null; email: string } | null): string | null => {
@@ -86,7 +95,13 @@ export class FeesAdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly commissions: CommissionsService,
+    private readonly settings: CompanySettingsService,
   ) {}
+
+  private async contextOf(clientId: number): Promise<FeeContext> {
+    const s = await this.settings.forClient(clientId);
+    return { free: s.fees.freeMethods, fallbackRate: s.fees.fallbackFeeRatePct };
+  }
 
   private async rowsOf(clientIds: number[]): Promise<FeeRow[]> {
     if (clientIds.length === 0) return [];
@@ -104,7 +119,7 @@ export class FeesAdminService {
     });
     if (!company) throw new ForbiddenException('Société introuvable.');
     const rows = await this.rowsOf([company.id]);
-    return { company, methods: methodsOf(rows) };
+    return { company, methods: methodsOf(rows, await this.contextOf(company.id)) };
   }
 
   async companies() {
@@ -114,9 +129,10 @@ export class FeesAdminService {
       orderBy: { name: 'asc' },
     });
     const rows = await this.rowsOf(clients.map((c) => c.id));
-    return {
-      companies: clients.map((c) => ({ ...c, methods: methodsOf(rows.filter((r) => r.clientId === c.id)) })),
-    };
+    const companies = await Promise.all(
+      clients.map(async (c) => ({ ...c, methods: methodsOf(rows.filter((r) => r.clientId === c.id), await this.contextOf(c.id)) })),
+    );
+    return { companies };
   }
 
   async history(user: AuthUserPayload, query: FeeHistoryQueryDto) {
@@ -157,14 +173,18 @@ export class FeesAdminService {
     const key = String(rawMethod ?? '').toUpperCase().trim();
     const def = FEE_METHODS.find((m) => m.key === key);
     if (!def) throw new BadRequestException(`Mode d'envoi inconnu : « ${rawMethod} ».`);
-    if (!def.charged) {
-      throw new BadRequestException(`${def.label} est gratuit : aucun frais n'est prélevé sur ce mode d'envoi.`);
+    const ctx = await this.contextOf(clientId);
+    if (ctx.free.includes(def.key)) {
+      throw new BadRequestException(
+        `${def.label} est gratuit dans vos paramètres : aucun frais n'est prélevé sur ce mode d'envoi. ` +
+        `Retirez-le des modes gratuits (Paramètres de la société) pour lui appliquer un tarif.`,
+      );
     }
     if (!hasAtMostTwoDecimals(dto.feeRate) || !hasAtMostTwoDecimals(dto.fixedFee)) {
       throw new BadRequestException('Deux décimales au maximum.');
     }
 
-    const before = methodsOf(await this.rowsOf([clientId])).find((m) => m.payoutMethod === key);
+    const before = methodsOf(await this.rowsOf([clientId]), ctx).find((m) => m.payoutMethod === key);
     if (before && before.configured && before.feeRate === dto.feeRate && before.fixedFee === dto.fixedFee) {
       return before;
     }
@@ -193,7 +213,7 @@ export class FeesAdminService {
       this.logger.error(`Journal d'audit non écrit (frais ${key}, société ${clientId}) : ${(err as Error).message}`);
     }
 
-    const after = methodsOf(await this.rowsOf([clientId])).find((m) => m.payoutMethod === key);
+    const after = methodsOf(await this.rowsOf([clientId]), ctx).find((m) => m.payoutMethod === key);
     return after;
   }
 }

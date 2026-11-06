@@ -13,4 +13,6 @@ export interface AuthUserPayload {
   clientId?: number;
   agencyId?: string | null;
   primaryCurrency?: string | null;
+  /** Session (UserSession.id) qui a émis le jeton — absent pour les jetons émis avant l'introduction du sid. */
+  sid?: string;
 }

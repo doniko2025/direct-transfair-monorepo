@@ -912,8 +912,11 @@ export default function SendMoneyScreen() {
   const recvRef = useRef<TextInput>(null);
   const [countrySearch,     setCountrySearch]    = useState("");
 
-  const [cashFeeRate,  setCashFeeRate]  = useState(0.015);
-  const [cashFeeLabel, setCashFeeLabel] = useState("1,5");
+  // Estimation affichée uniquement le temps que le serveur calcule les frais exacts (useFeeQuote). Les taux viennent du
+  // serveur (GET /commissions/fees : tarif de la société + modes gratuits) : aucun taux n'est écrit dans l'application.
+  const [cashFeeRate,  setCashFeeRate]  = useState(0);
+  const [cashFeeLabel, setCashFeeLabel] = useState("…");
+  const [walletFeeRate, setWalletFeeRate] = useState(0);
 
   const headerAnim = useRef(new Animated.Value(0)).current;
   const cardAnim   = useRef(new Animated.Value(0)).current;
@@ -968,10 +971,12 @@ export default function SendMoneyScreen() {
         const list: any[] = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
         const r = list.find((c: any) => c.payoutMethod === "CASH_PICKUP");
         if (r) {
-          const raw = Number(r.feeRate ?? 1.5);
+          const raw = Number(r.feeRate ?? 0);
           setCashFeeRate(raw / 100);
           setCashFeeLabel(raw.toFixed(1).replace(".", ","));
         }
+        const w = list.find((c: any) => c.payoutMethod === "WALLET");
+        if (w) setWalletFeeRate(w.charged === false ? 0 : Number(w.feeRate ?? 0) / 100);
       })
       .catch(() => {});
   }, []);
@@ -1280,7 +1285,7 @@ export default function SendMoneyScreen() {
     receiveCountry: quoteCountryName ? getCountryData(String(quoteCountryName)).code : null,
     enabled:        sendAmount > 0,
   });
-  const feesRate    = mode === "WALLET" ? 0 : cashFeeRate;
+  const feesRate    = mode === "WALLET" ? walletFeeRate : cashFeeRate;
   const feesAmt     = feeQuote.fees !== null ? roundTo(feeQuote.fees, dS) : roundTo(sendAmount * feesRate, dS);
   const totalAmt    = roundTo(sendAmount + feesAmt, dS);
   const insufficient   = totalAmt > roundTo(walletBalance, dS) && sendAmount > 0;

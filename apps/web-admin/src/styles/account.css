@@ -124,3 +124,124 @@
     transition: none;
   }
 }
+
+/* =========================================================
+   MON COMPTE — carte « Appareils connectés » (sessions actives)
+   Une colonne sur téléphone ; boutons pleine largeur sous 560 px.
+   ========================================================= */
+
+.sess-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sess-head .card-title {
+  margin-bottom: 4px;
+}
+
+.sess-head .btn {
+  flex-shrink: 0;
+}
+
+.sess-feedback {
+  margin-top: 14px;
+}
+
+.sess-loading,
+.sess-empty {
+  margin-top: 18px;
+  text-align: center;
+}
+
+.sess-list {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.sess-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+  animation: sess-in 0.28s ease both;
+}
+
+.sess-item--current {
+  border-color: var(--brand-mid);
+  background: var(--brand-soft);
+}
+
+.sess-item__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.sess-item--current .sess-item__icon {
+  background: var(--card);
+}
+
+.sess-item__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sess-item__meta {
+  margin: 4px 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-sm);
+  overflow-wrap: anywhere;
+}
+
+.sess-item__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sess-all {
+  margin-top: 18px;
+}
+
+@keyframes sess-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sess-item { animation: none; }
+}
+
+@media (max-width: 560px) {
+  .sess-head {
+    flex-direction: column;
+  }
+  .sess-head .btn {
+    width: 100%;
+  }
+  .sess-item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .sess-item__actions {
+    grid-column: 1 / -1;
+    flex-direction: column;
+  }
+  .sess-item__actions .btn,
+  .sess-all .btn {
+    width: 100%;
+  }
+}

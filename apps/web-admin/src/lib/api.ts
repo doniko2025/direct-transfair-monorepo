@@ -29,6 +29,8 @@ export const http = createHttpClient({
   // Le backend n'accepte les rôles SUPER_ADMIN / COMPANY_ADMIN / AGENT
   // (login, OTP, refresh) que si la requête s'annonce comme venant du web.
   appClient: 'web',
+  // Refresh token en cookie httpOnly posé par le serveur (voir lib/tokenStorage.ts et backend auth/refresh-cookie.ts).
+  cookieSession: true,
   onSessionExpired: () => expiredHandler?.(),
 });
 

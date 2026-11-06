@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { assertValidRate, parseAnyPair } from '../rates-admin/rate-rules';
+import { RatePairDto } from '../exchange-rates/dto/exchange-rates.dto';
 
 @Controller('rates')
 export class RatesController {
@@ -29,7 +30,7 @@ export class RatesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.SUPER_ADMIN)
   @Post()
-  update(@Body() body: { pair: string; rate: number }) {
-    return this.ratesService.updateRate(parseAnyPair(body?.pair), assertValidRate(body?.rate));
+  update(@Body() body: RatePairDto) {
+    return this.ratesService.updateRate(parseAnyPair(body.pair), assertValidRate(body.rate));
   }
 }

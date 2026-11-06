@@ -1,6 +1,10 @@
 // apps/backend/src/fee-schedule/fee-schedule.service.ts
 // =========================================================
-// FEE SCHEDULE SERVICE v1.1 — barème de frais d'envoi par société
+// FEE SCHEDULE SERVICE v1.2 — barème de frais d'envoi par société
+//   ✅ v1.2 : plus rien n'est écrit en dur. Les modes gratuits (par défaut : seul WALLET, wallet → wallet) et le taux de repli
+//   viennent des paramètres de la société (CompanySettingsService). Le frais fixe d'un tarif plat est exprimé dans la devise par
+//   défaut de la société et converti dans la devise de l'envoi (avant : ajouté tel quel — 200 XOF devenaient 200 EUR).
+//   Une règle du barème ne peut pas viser un mode que la société a déclaré gratuit.
 //   ✅ v1.1 (phase 6) : le tarif plat du mode (étape 3) et le taux par défaut (étape 4) sont arrondis à l'unité
 //   de la devise comme les règles du barème (0 décimale XOF/GNF, 2 sinon) : 12 345 XOF × 1,5 % donnait
 //   185,175 XOF de frais, c'est-à-dire des fractions de franc débitées au client et jamais payables en cash.
@@ -11,17 +15,27 @@
 //                Le super admin consulte (list, history), il ne modifie rien.
 //
 // Ordre de calcul des frais d'un envoi :
-//   1. Mode gratuit (Mobile Money, wallet) .................. 0
+//   1. Mode gratuit (réglé par la société ; défaut : wallet) . 0
 //   2. Règle du barème applicable (montant, corridor, mode) .. règle la plus spécifique
 //   3. Tarif plat du mode de retrait (page Frais) ............ taux % + frais fixe
-//   4. Rien de configuré ..................................... 1,5 %
+//   4. Rien de configuré ..................................... taux de repli de la société (défaut 1,5 %)
 // =========================================================
 
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
-import { CHARGED_METHOD_KEYS, DEFAULT_FEE_RATE, hasAtMostTwoDecimals } from '../fees-admin/fee-rules';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
+import { isFreeMethod } from '../company-settings/company-settings.logic';
+import { hasAtMostTwoDecimals } from '../fees-admin/fee-rules';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { toIso2 } from './countries';
@@ -136,6 +150,7 @@ export class FeeScheduleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly rates: RatesService,
+    private readonly settings: CompanySettingsService,
   ) {}
 
   // ───────────────────────────────────────────────────────
@@ -150,6 +165,16 @@ export class FeeScheduleService {
     });
     // Un agent encaisse en agence : c'est le pays de l'agence qui compte, pas son pays de résidence.
     return toIso2(user?.agency?.country ?? user?.country);
+  }
+
+  /** Devise dans laquelle la société exprime ses frais fixes (sa devise par défaut ; sinon celle de l'envoi : aucune conversion). */
+  private async companyCurrency(clientId: number, fallback: string): Promise<string> {
+    try {
+      const c = await this.prisma.client.findUnique({ where: { id: clientId }, select: { defaultCurrency: true } });
+      return String(c?.defaultCurrency ?? fallback);
+    } catch {
+      return fallback;
+    }
   }
 
   private async activeRules(clientId: number): Promise<RuleRow[]> {
@@ -176,7 +201,9 @@ export class FeeScheduleService {
       ...extra,
     });
 
-    if (!CHARGED_METHOD_KEYS.includes(method)) {
+    // ✅ v1.2 : les modes gratuits sont un réglage de la société.
+    const company = await this.settings.forClient(p.clientId);
+    if (isFreeMethod(company, method)) {
       return done(0, { feeRatePct: 0, fixedFee: 0, fixedFeeOriginal: null, source: 'FREE', rule: null });
     }
 
@@ -203,24 +230,44 @@ export class FeeScheduleService {
     }
 
     // Tarif plat du mode de retrait (même lecture qu'avant le barème).
-    let ratePct = DEFAULT_FEE_RATE;
+    const fallbackRate = company.fees.fallbackFeeRatePct;
+    let ratePct = fallbackRate;
     let fixed = 0;
     let source: FeeSource = 'DEFAULT';
     try {
       const flat = await this.prisma.commissionConfig.findFirst({ where: { clientId: p.clientId, payoutMethod: method } });
       if (flat) {
-        ratePct = (flat as { feeRate?: number }).feeRate ?? DEFAULT_FEE_RATE;
+        ratePct = (flat as { feeRate?: number }).feeRate ?? fallbackRate;
         fixed = (flat as { fixedFee?: number }).fixedFee ?? 0;
         source = 'METHOD';
       }
     } catch {
-      // Colonne pas encore migrée : taux par défaut.
+      // Colonne pas encore migrée : taux de repli.
     }
-    const fees = new Prisma.Decimal(p.amount).mul(new Prisma.Decimal(ratePct / 100)).plus(new Prisma.Decimal(fixed));
+
+    // ✅ v1.2 : le frais fixe du tarif plat est dans la devise par défaut de la société → converti dans la devise de l'envoi.
+    let fixedFee = fixed;
+    let fixedFeeOriginal: FeeQuote['fixedFeeOriginal'] = null;
+    if (fixed > 0) {
+      const flatCurrency = await this.companyCurrency(p.clientId, currency);
+      if (flatCurrency !== currency) {
+        try {
+          fixedFee = roundToCurrency(await convert(fixed, flatCurrency, currency), currency);
+          fixedFeeOriginal = { amount: fixed, currency: flatCurrency };
+        } catch (err) {
+          this.logger.error(`Frais fixe ${flatCurrency}→${currency} non convertible : ${(err as Error).message}`);
+          throw new ServiceUnavailableException(
+            `Taux de change ${flatCurrency} → ${currency} indisponible : les frais ne peuvent pas être calculés pour le moment. Réessayez dans quelques instants.`,
+          );
+        }
+      }
+    }
+
+    const fees = new Prisma.Decimal(p.amount).mul(new Prisma.Decimal(ratePct / 100)).plus(new Prisma.Decimal(fixedFee));
     return done(roundToCurrency(fees.toNumber(), currency), {
       feeRatePct: ratePct,
-      fixedFee: fixed,
-      fixedFeeOriginal: null,
+      fixedFee,
+      fixedFeeOriginal,
       source,
       rule: null,
     });
@@ -257,7 +304,15 @@ export class FeeScheduleService {
     return { company, editable: user.role === 'COMPANY_ADMIN', rules: rows.map(viewOf) };
   }
 
-  private assertBody(dto: FeeRuleBodyDto): void {
+  private async assertBody(clientId: number, dto: FeeRuleBodyDto): Promise<void> {
+    if (dto.payoutMethod) {
+      const company = await this.settings.forClient(clientId);
+      if (isFreeMethod(company, dto.payoutMethod)) {
+        throw new BadRequestException(
+          'Ce mode d\'envoi est gratuit dans vos paramètres : aucun frais n\'y est prélevé. Retirez-le des modes gratuits pour lui appliquer une règle.',
+        );
+      }
+    }
     const max = dto.maxAmount ?? null;
     if (max !== null && max <= dto.minAmount) {
       throw new BadRequestException('Le plafond de la tranche doit être supérieur à son minimum.');
@@ -326,7 +381,7 @@ export class FeeScheduleService {
 
   async create(user: AuthUserPayload, dto: FeeRuleBodyDto): Promise<FeeRuleView> {
     const clientId = this.writeScope(user);
-    this.assertBody(dto);
+    await this.assertBody(clientId, dto);
     const count = await this.prisma.feeRule.count({ where: { clientId } });
     if (count >= MAX_RULES_PER_COMPANY) {
       throw new BadRequestException(`Un barème ne peut pas dépasser ${MAX_RULES_PER_COMPANY} règles.`);
@@ -342,7 +397,7 @@ export class FeeScheduleService {
     const clientId = this.writeScope(user);
     const existing = (await this.prisma.feeRule.findFirst({ where: { id, clientId } })) as unknown as RuleRow | null;
     if (!existing) throw new NotFoundException('Règle introuvable.');
-    this.assertBody(dto);
+    await this.assertBody(clientId, dto);
     await this.assertNoOverlap(clientId, dto, id);
     const row = (await this.prisma.feeRule.update({ where: { id }, data: this.dataOf(dto) })) as unknown as RuleRow;
     const view = viewOf(row);

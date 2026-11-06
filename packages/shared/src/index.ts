@@ -22,3 +22,5 @@ export * from './validationThresholds';
 export * from './transferLimits';
 export * from './portalDomains';
 export * from './idempotency';
+export * from './companySettings';
+export * from './sessions';

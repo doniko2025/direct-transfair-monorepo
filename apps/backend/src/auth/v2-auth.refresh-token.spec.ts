@@ -11,7 +11,7 @@ describe('V2AuthService.buildLoginResponse — refresh token', () => {
     const create = jest.fn().mockResolvedValue({});
     const prisma = { userSession: { create } } as any;
     const jwt = { sign: jest.fn().mockReturnValue('access.jwt.token') } as any;
-    const service = new V2AuthService(prisma, jwt, {} as any);
+    const service = new V2AuthService(prisma, jwt, {} as any, {} as any);
 
     const res = await (service as any).buildLoginResponse({
       id: 'u1', email: 'a@b.c', role: 'USER', clientId: 1, wallets: [],

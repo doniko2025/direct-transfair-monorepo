@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { assertValidRate, parseAnyPair } from '../rates-admin/rate-rules';
+import { ConvertDto, RateValueDto } from './dto/exchange-rates.dto';
 
 @Controller('exchange-rates')
 export class ExchangeRatesController {
@@ -52,7 +53,7 @@ export class ExchangeRatesController {
 
   // POST /exchange-rates/convert  — { amount, from, to }
   @Post('convert')
-  convert(@Body() body: { amount: number; from: string; to: string }) {
+  convert(@Body() body: ConvertDto) {
     return this.exchangeRatesService.convert(body.amount, body.from, body.to);
   }
 
@@ -62,8 +63,8 @@ export class ExchangeRatesController {
   @Patch(':pair')
   update(
     @Param('pair') pair: string,
-    @Body() body: { rate: number },
+    @Body() body: RateValueDto,
   ) {
-    return this.exchangeRatesService.upsert(parseAnyPair(pair), assertValidRate(body?.rate));
+    return this.exchangeRatesService.upsert(parseAnyPair(pair), assertValidRate(body.rate));
   }
 }

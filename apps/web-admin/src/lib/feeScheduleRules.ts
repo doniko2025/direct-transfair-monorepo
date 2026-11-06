@@ -9,21 +9,27 @@ import { countryName } from './countries';
 
 export const MAX_RULE_AMOUNT = 1_000_000_000_000;
 
-/** Les seuls modes sur lesquels le serveur prélève des frais. */
-export const CHARGED_METHODS: readonly { value: string; label: string }[] = [
+/**
+ * Tous les modes d'envoi connus. Lesquels sont gratuits n'est PAS décidé ici : c'est un réglage de la société
+ * (Réglages › Paramètres de la société › Envois gratuits), appliqué par le serveur. Les écrans filtrent avec `withoutFree`.
+ */
+export const ALL_METHODS: readonly { value: string; label: string }[] = [
   { value: 'CASH_PICKUP', label: 'Retrait cash' },
   { value: 'BANK_DEPOSIT', label: 'Virement bancaire' },
   { value: 'IBAN_TRANSFER', label: 'Virement IBAN (Europe)' },
+  { value: 'MOBILE_MONEY', label: 'Mobile Money' },
+  { value: 'WALLET', label: 'Wallet vers wallet' },
 ];
 
-export const METHOD_NAME: Record<string, string> = Object.fromEntries(CHARGED_METHODS.map((m) => [m.value, m.label]));
+export const METHOD_NAME: Record<string, string> = Object.fromEntries(ALL_METHODS.map((m) => [m.value, m.label]));
 
-/** Pour simuler un envoi : les modes gratuits aussi, pour montrer qu'ils ne coûtent rien. */
-export const SIMULATOR_METHODS: readonly { value: string; label: string }[] = [
-  ...CHARGED_METHODS,
-  { value: 'MOBILE_MONEY', label: 'Mobile Money (gratuit)' },
-  { value: 'WALLET', label: 'Wallet vers wallet (gratuit)' },
-];
+/** Modes sur lesquels des frais peuvent être définis, d'après la liste des modes gratuits de la société. */
+export function withoutFree(free: readonly string[]): { value: string; label: string }[] {
+  return ALL_METHODS.filter((m) => !free.includes(m.value));
+}
+
+/** Pour simuler un envoi : tous les modes, les gratuits aussi (le serveur répond « Mode gratuit »). */
+export const SIMULATOR_METHODS = ALL_METHODS;
 
 export const SOURCE_LABEL: Record<FeeQuote['source'], string> = {
   RULE: 'Règle du barème',

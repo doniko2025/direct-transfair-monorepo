@@ -101,6 +101,14 @@ export class PaymentsController {
   // prête, réutilise OrangeMoneyService/SendwaveService tels quels ;
   // en attente des accords opérateurs pour un vrai callback/webhook.
 
+  // GET /payments/recharge/options — moyens de recharge ouverts par la société du client (réglage « Recharge »).
+  // Déclarée avant « recharge/:transactionId/status » : aucune capture possible.
+  @Get('recharge/options')
+  async rechargeOptions(@Req() req: AuthTenantRequest) {
+    if (!req.user?.id) throw new BadRequestException('Utilisateur non authentifié');
+    return this.recharge.optionsFor(req.user.id);
+  }
+
   @Post('recharge/card')
   async rechargeByCard(
     @Req() req: AuthTenantRequest,

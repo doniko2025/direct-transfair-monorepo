@@ -41,10 +41,11 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Reflector } from '@nestjs/core';
-import { Role, SubscriptionStatus } from '@prisma/client';
+import { Role } from '@prisma/client';
 
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
+import { UpdateClientDto, UpdateClientStatusDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 
@@ -130,7 +131,7 @@ export class ClientsController {
   @Patch(':id')
   @Roles(Role.SUPER_ADMIN)
   @ApiOperation({ summary: 'Mettre à jour les infos' })
-  update(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+  update(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateClientDto) {
     return this.clientsService.update(id, data);
   }
 
@@ -139,9 +140,9 @@ export class ClientsController {
   @ApiOperation({ summary: 'Changer le statut (ACTIVE/SUSPENDED)' })
   updateStatus(
     @Param('id', ParseIntPipe) id: number,
-    @Body('status') status: SubscriptionStatus,
+    @Body() body: UpdateClientStatusDto,
   ) {
-    return this.clientsService.updateStatus(id, status);
+    return this.clientsService.updateStatus(id, body.status);
   }
 
   @Delete(':id')

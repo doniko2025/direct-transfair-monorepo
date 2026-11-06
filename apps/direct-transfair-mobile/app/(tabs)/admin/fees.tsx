@@ -168,7 +168,7 @@ function FeeMethodRow({ method, onChange }: {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[fmS.label, { fontFamily: T.font.sans }]}>{method.label}</Text>
-          <Text style={[fmS.sub, { fontFamily: T.font.sub }]}>Non modifiable</Text>
+          <Text style={[fmS.sub, { fontFamily: T.font.sub }]}>Gratuit selon les paramètres de la société</Text>
         </View>
         <View style={[fmS.freeBadge, { backgroundColor: T.greenLt, borderColor: T.greenMd }]}>
           <Ionicons name="checkmark-circle" size={12} color={T.green} />
@@ -580,11 +580,11 @@ export default function FeesScreen() {
   const { user } = useAuth();
 
   const [methods, setMethods] = useState<FeeMethod[]>([
-    { key: "CASH_PICKUP",   label: "Retrait Cash",           icon: "cash-outline",            color: T.amber,  bg: T.amberLt,  rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "BANK_DEPOSIT",  label: "Virement Bancaire",      icon: "business-outline",        color: T.sky,    bg: T.skyLt,    rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "MOBILE_MONEY",  label: "Mobile Money",           icon: "phone-portrait-outline",  color: T.teal,   bg: T.tealLt,   rate: 1.0, fixedFee: 0, isFree: false },
-    { key: "IBAN_TRANSFER", label: "Virement IBAN (Europe)", icon: "globe-outline",           color: T.indigo, bg: T.indigoLt, rate: 1.5, fixedFee: 0, isFree: false },
-    { key: "WALLET",        label: "Wallet → Wallet",         icon: "swap-horizontal-outline", color: T.green,  bg: T.greenLt,  rate: 0,   fixedFee: 0, isFree: true  },
+    { key: "CASH_PICKUP",   label: "Retrait Cash",           icon: "cash-outline",            color: T.amber,  bg: T.amberLt,  rate: 0, fixedFee: 0, isFree: false },
+    { key: "BANK_DEPOSIT",  label: "Virement Bancaire",      icon: "business-outline",        color: T.sky,    bg: T.skyLt,    rate: 0, fixedFee: 0, isFree: false },
+    { key: "MOBILE_MONEY",  label: "Mobile Money",           icon: "phone-portrait-outline",  color: T.teal,   bg: T.tealLt,   rate: 0, fixedFee: 0, isFree: false },
+    { key: "IBAN_TRANSFER", label: "Virement IBAN (Europe)", icon: "globe-outline",           color: T.indigo, bg: T.indigoLt, rate: 0, fixedFee: 0, isFree: false },
+    { key: "WALLET",        label: "Wallet → Wallet",         icon: "swap-horizontal-outline", color: T.green,  bg: T.greenLt,  rate: 0,   fixedFee: 0, isFree: false },
   ]);
 
   const [tiers,       setTiers]       = useState<FeeTier[]>([]);
@@ -609,33 +609,17 @@ export default function FeesScreen() {
       if (tiersJson) setTiers(JSON.parse(tiersJson));
       if (ovJson)    setOverrides(JSON.parse(ovJson));
 
-      // Backend : taux de frais par méthode
+      // Backend : tarif de la société (GET /fees-admin/mine). Le serveur dit aussi quels modes sont gratuits
+      // (réglage « Envois gratuits » de la société) : rien n'est décidé ici.
       try {
-        const rules = await api.getCommissionRules() as any[];
-        if (Array.isArray(rules)) {
-          // ✅ FIX BUG 2 : setMethods(prev => ...) — pas de stale closure
-          setMethods(prev => {
-            const updated = [...prev];
-            for (const rule of rules) {
-              // ✅ FIX BUG 1 + 3 : identifier les fee configs par payoutMethod
-              //    (sourceType === "WALLET" ET payoutMethod présent)
-              if (rule.payoutMethod && rule.sourceType === "WALLET") {
-                const idx = updated.findIndex((m) => m.key === rule.payoutMethod);
-                if (idx !== -1) {
-                  updated[idx] = {
-                    ...updated[idx],
-                    // ✅ FIX BUG 3 : utiliser feeRate (nouveau champ DB)
-                    //    avec fallback sur senderShare (rétrocompatibilité)
-                    rate:     rule.feeRate    ?? rule.senderShare ?? updated[idx].rate,
-                    fixedFee: rule.fixedFee   ?? updated[idx].fixedFee,
-                  };
-                }
-              }
-            }
-            return updated;
-          });
-        }
-      } catch { /* Taux par défaut utilisés si backend inaccessible */ }
+        const mine = await api.getMyFees();
+        setMethods((prev) =>
+          prev.map((m) => {
+            const srv = mine.methods.find((x) => x.payoutMethod === m.key);
+            return srv ? { ...m, rate: srv.feeRate, fixedFee: srv.fixedFee, isFree: !srv.charged } : m;
+          }),
+        );
+      } catch { /* tarif inchangé si le serveur est injoignable */ }
 
       Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 3 }).start();
     } catch { /* noop */ }
@@ -687,22 +671,11 @@ export default function FeesScreen() {
         AsyncStorage.setItem(STORAGE_KEY_OVERRIDES,  JSON.stringify(overrides)),
       ]);
 
-      // Taux par méthode → backend (CommissionConfig en DB)
+      // Taux par méthode → PATCH /fees-admin/:method (le serveur valide les bornes et trace la modification)
       const results = await Promise.allSettled(
         methods
           .filter((m) => !m.isFree)
-          .map((method) =>
-            api.saveCommissionRule({
-              sourceType:   "WALLET" as any,     // ✅ FIX : WALLET est un enum valide
-              destType:     "SUBSIDIARY" as any,
-              payoutMethod: method.key,           // ✅ FIX : champ requis côté backend
-              feeRate:      method.rate,          // ✅ FIX : nouveau champ DB (% réel)
-              fixedFee:     method.fixedFee,      // ✅ FIX : nouveau champ DB (montant fixe)
-              senderShare:  method.rate,          // rétrocompatibilité
-              payerShare:   0,
-              platformShare: Math.max(0, 100 - method.rate),
-            } as any)
-          )
+          .map((method) => api.setFeeMethod(method.key, { feeRate: method.rate, fixedFee: method.fixedFee })),
       );
 
       const failed = results.filter((r) => r.status === "rejected").length;
@@ -768,9 +741,9 @@ export default function FeesScreen() {
               Principes de tarification
             </Text>
             <Text style={[s.infoText, { color: T.indigo, fontFamily: T.font.sub }]}>
-              Les frais sont prélevés sur le montant envoyé. Le virement Wallet → Wallet est
-              toujours gratuit. Les taux configurés ici s'appliquent immédiatement à toutes
-              les nouvelles transactions.
+              Les frais sont prélevés sur le montant envoyé. Les modes gratuits sont ceux que votre
+              société a choisis dans ses paramètres (par défaut : Wallet → Wallet). Les taux
+              configurés ici s'appliquent immédiatement à toutes les nouvelles transactions.
             </Text>
           </View>
         </View>

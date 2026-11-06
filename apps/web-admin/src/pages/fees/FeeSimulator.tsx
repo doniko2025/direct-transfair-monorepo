@@ -108,7 +108,7 @@ export default function FeeSimulator({ clientId, version }: { clientId?: number;
                   Frais fixe de {money(quote.fixedFeeOriginal.amount, quote.fixedFeeOriginal.currency)} converti en {money(quote.fixedFee, quote.currency)}.
                 </p>
               ) : null}
-              {method !== 'WALLET' && method !== 'MOBILE_MONEY' && (from || to) ? (
+              {quote.source !== 'FREE' && (from || to) ? (
                 <p className="sim-result__note">
                   {countryName(from) ?? 'Pays d’envoi non précisé'} → {countryName(to) ?? 'pays de réception non précisé'}
                   {METHOD_NAME[method] ? ` · ${METHOD_NAME[method]}` : ''}

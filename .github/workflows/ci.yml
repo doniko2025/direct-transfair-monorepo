@@ -1,0 +1,107 @@
+# .github/workflows/ci.yml
+# =========================================================
+# INTÉGRATION CONTINUE — Direct Transf'air
+#
+# À chaque push sur main et à chaque pull request, GitHub vérifie que :
+#   1. tout le code TypeScript compile (backend, package partagé, portail web, application mobile) ;
+#   2. les tests du backend passent ;
+#   3. le portail web se construit ;
+#   4. toutes les migrations Prisma s'appliquent sur une base PostgreSQL vide.
+# Une pull request rouge ne doit pas être fusionnée. Aucun secret n'est nécessaire.
+#
+# Lancement manuel : onglet Actions → « CI » → Run workflow.
+# Durée attendue : 5 à 8 minutes (le cache pnpm accélère les passages suivants).
+# =========================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Un nouveau push annule l'exécution précédente de la même branche (économise les minutes GitHub).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Types, tests et build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      # La version de pnpm vient du champ « packageManager » du package.json racine.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # « postinstall » du backend lance « prisma generate » (client principal + client plateforme).
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      - name: Types — backend
+        run: pnpm --filter direct-transfair-backend exec tsc --noEmit -p tsconfig.json
+
+      # Le package partagé n'a pas toujours son propre TypeScript : on utilise celui du backend.
+      - name: Types — package partagé
+        run: pnpm --filter direct-transfair-backend exec tsc --noEmit -p ../../packages/shared/tsconfig.json
+
+      - name: Types — portail web
+        run: pnpm --filter direct-transfair-web-admin run typecheck
+
+      - name: Types — application mobile
+        run: pnpm --filter direct-transfair-mobile exec tsc --noEmit -p tsconfig.json
+
+      # Jest est configuré sans vérification de types (diagnostics: false) : c'est l'étape « Types — backend » qui les contrôle.
+      - name: Tests — backend
+        run: pnpm --filter direct-transfair-backend run test:ci
+
+      - name: Build — portail web
+        run: pnpm --filter direct-transfair-web-admin run build
+
+  migrations:
+    name: Migrations sur base vide
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci?schema=public
+      DATABASE_URL_PLATFORM: postgresql://ci:ci@localhost:5432/ci?schema=platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      # Rejoue les 33+ migrations dans l'ordre : une migration cassée (ou un index partiel mal écrit) fait échouer la CI
+      # avant d'atteindre la production. Les index uniques partiels de commission_configs n'étant pas décrits dans
+      # schema.prisma, on ne contrôle volontairement PAS la dérive « schéma ↔ migrations » (elle les signalerait à tort).
+      - name: Appliquer les migrations
+        run: pnpm --filter direct-transfair-backend run prisma:deploy

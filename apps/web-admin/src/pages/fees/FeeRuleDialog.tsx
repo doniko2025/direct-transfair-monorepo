@@ -1,14 +1,15 @@
 // src/pages/fees/FeeRuleDialog.tsx
 // Ajouter ou modifier une règle du barème (admin de société).
 
-import { useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import type { CurrencyCode, FeeRule, FeeRuleInput } from '@direct-transfair/shared';
 import { ConfirmDialog, SelectField } from '../../components/form';
 import { Field, Notice } from '../../components/ui';
 import { api } from '../../lib/api';
+import { useResource } from '../../lib/useResource';
 import { COUNTRIES } from '../../lib/countries';
 import { MAX_FEE_RATE, MAX_FIXED_FEE, parseFeeRate, parseFixedFee } from '../../lib/feeRules';
-import { CHARGED_METHODS, CURRENCIES, findOverlap, money, parseBound, ruleFee, ruleTitle, toInput } from '../../lib/feeScheduleRules';
+import { CURRENCIES, findOverlap, money, parseBound, ruleFee, ruleTitle, toInput, withoutFree } from '../../lib/feeScheduleRules';
 import { useDialogAction } from '../treasury/useDialogAction';
 
 interface Props {
@@ -34,6 +35,9 @@ export default function FeeRuleDialog({ rule, rules, onClose, onDone }: Props) {
   const [fixed, setFixed] = useState(rule ? toInput(rule.fixedFee) : '0');
   const [active, setActive] = useState(rule?.isActive ?? true);
   const { busy, error, run, clearError } = useDialogAction(onDone);
+  // Les modes gratuits sont réglés par la société : on ne propose que ceux sur lesquels un frais peut s'appliquer.
+  const company = useResource(() => api.companySettings.get(), []);
+  const methodOptions = useMemo(() => withoutFree(company.data?.settings.fees.freeMethods ?? []), [company.data]);
 
   const minP = parseBound(min);
   const maxP = parseBound(max);
@@ -137,9 +141,9 @@ export default function FeeRuleDialog({ rule, rules, onClose, onDone }: Props) {
             label="Mode de retrait"
             value={method}
             onChange={(e) => touch(setMethod)(e.target.value)}
-            options={CHARGED_METHODS}
+            options={methodOptions}
             placeholder="Tous les modes"
-            hint="Mobile Money et wallet vers wallet sont toujours gratuits."
+            hint="Les modes gratuits (réglables dans les paramètres de la société) n’apparaissent pas ici."
           />
         </fieldset>
 

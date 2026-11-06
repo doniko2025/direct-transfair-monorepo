@@ -15,7 +15,7 @@ import {
 } from 'class-validator';
 import { CurrencyCode } from '@prisma/client';
 
-import { CHARGED_METHOD_KEYS, MAX_FEE_RATE, MAX_FIXED_FEE } from '../../fees-admin/fee-rules';
+import { FEE_METHOD_KEYS, MAX_FEE_RATE, MAX_FIXED_FEE } from '../../fees-admin/fee-rules';
 import { FEE_COUNTRY_CODES } from '../countries';
 
 export const MAX_RULE_AMOUNT = 1_000_000_000_000;
@@ -35,7 +35,7 @@ export class FeeRuleBodyDto {
   @IsOptional() @Transform(emptyToNull) @IsString() @MaxLength(60)
   label?: string | null;
 
-  @IsOptional() @Transform(nullableUpper) @IsIn([...CHARGED_METHOD_KEYS])
+  @IsOptional() @Transform(nullableUpper) @IsIn([...FEE_METHOD_KEYS])
   payoutMethod?: string | null;
 
   @IsOptional() @Transform(nullableUpper) @Matches(/^[A-Z]{2}$/) @IsIn([...FEE_COUNTRY_CODES])
@@ -81,7 +81,7 @@ export class FeeQuoteQueryDto extends FeeRulesQueryDto {
   @Transform(upper) @IsEnum(CurrencyCode)
   currency!: CurrencyCode;
 
-  @Transform(upper) @IsIn([...CHARGED_METHOD_KEYS, 'MOBILE_MONEY', 'WALLET'])
+  @Transform(upper) @IsIn([...FEE_METHOD_KEYS])
   payoutMethod!: string;
 
   @IsOptional() @Transform(nullableUpper) @IsIn([...FEE_COUNTRY_CODES])

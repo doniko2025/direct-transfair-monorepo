@@ -6,8 +6,8 @@
 //   CommissionConfig { clientId, payoutMethod: null, sourceType, destType }
 //     sourceType : d'où part l'argent — WALLET (un client, sans agence), SUBSIDIARY ou PARTNER (agence d'envoi)
 //     destType   : agence qui paie le cash — SUBSIDIARY ou PARTNER
-//   Sans ligne : 40 % agence payeuse, 20 % agence d'envoi, 40 % société (constantes de withdrawals.service.ts,
-//   dupliquées ici — à garder identiques).
+//   Sans ligne : la « répartition par défaut » réglée par la société (company-settings), dont les valeurs d'usine sont les
+//   constantes ci-dessous : 40 % agence payeuse, 20 % agence d'envoi, 40 % société.
 //
 // Au paiement, deux cas modifient la répartition affichée :
 //   - l'expéditeur est un client (WALLET) : il n'a pas d'agence, la part « agence d'envoi » revient à la société ;

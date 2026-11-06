@@ -315,6 +315,7 @@ import { TransferLimitsService } from '../transfer-limits/transfer-limits.servic
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
+import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { assertSelfFundingAllowed } from '../treasury/self-funding';
 import { approxXof, computeRiskScore } from './aml-scoring';
 
@@ -403,6 +404,7 @@ export class TransactionsService {
     private readonly adminNotifier:        AdminNotifierService,
     private readonly thresholds:           ValidationThresholdsService,
     private readonly transferLimits:       TransferLimitsService,
+    private readonly settings:             CompanySettingsService,
   ) {}
 
   // ── Enrichissement ────────────────────────────────────
@@ -1018,11 +1020,21 @@ export class TransactionsService {
   // Création transfert (client / agent → bénéficiaire)
   // ========================================================
 
-  async create(senderId: string, dto: CreateTransactionDto, idempotencyKey: string | null = null): Promise<Transaction> {
+  async create(
+    senderId: string,
+    dto: CreateTransactionDto,
+    idempotencyKey: string | null = null,
+    /**
+     * ✅ v4.32 — envoi créé par le planificateur : même code que l'envoi manuel (frais du barème, seuil de validation, plafonds,
+     * destinataire wallet, code de retrait à 9 chiffres, scoring AML…), mais typé SCHEDULED et rattaché à son échéancier.
+     */
+    options: { type?: TransactionType; scheduledTransferId?: string } = {},
+  ): Promise<Transaction> {
+    const txType = options.type ?? TransactionType.TRANSFER;
     // ✅ v4.29 — nouvel essai avec la même clé : on renvoie l'envoi déjà créé, sans rien débiter.
     if (idempotencyKey) {
       const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, {
-        type: TransactionType.TRANSFER, amount: dto.amount, currency: dto.currency.toUpperCase(),
+        type: txType, amount: dto.amount, currency: dto.currency.toUpperCase(),
       });
       if (replay) return replay;
     }
@@ -1092,9 +1104,17 @@ export class TransactionsService {
       );
     }
 
+    // ✅ v4.32 — mode d'envoi RÉEL. Un envoi « cash » vers un utilisateur déjà inscrit sur la plateforme (beneficiaryId = id
+    // d'utilisateur) n'a pas de retrait en agence : l'argent arrive directement sur son wallet. C'est donc un envoi
+    // wallet → wallet (enregistré WALLET, frais du mode WALLET), plus un « cash » facturé comme un retrait en agence.
+    const requestedMethod: PayoutMethod = dto.payoutMethod ?? PayoutMethod.CASH_PICKUP;
+    const effectiveMethod: PayoutMethod = directRecipientUser ? PayoutMethod.WALLET : requestedMethod;
     const isWalletTransfer =
-      dto.payoutMethod === PayoutMethod.MOBILE_MONEY ||
-      dto.payoutMethod === PayoutMethod.WALLET;
+      effectiveMethod === PayoutMethod.MOBILE_MONEY ||
+      effectiveMethod === PayoutMethod.WALLET;
+
+    // ✅ v4.32 — réglages de la société (modes gratuits, validité des codes…) : rien n'est écrit en dur.
+    const company = await this.settings.forClient(clientId);
 
     // ✅ v4.22 — les frais viennent maintenant du barème de la société (FeeScheduleService) :
     //   mode gratuit → 0 ; sinon règle de barème la plus spécifique (montant, pays d'envoi et de
@@ -1108,7 +1128,7 @@ export class TransactionsService {
 
     // ✅ v4.30 — pays de destination (ISO-2). Un envoi cash l'exige : le code ne se paiera que dans ce pays.
     const receiveCountry = toIso2(beneficiary?.country ?? directRecipientUser?.country ?? null);
-    const isCashSend = !isWalletTransfer && (dto.payoutMethod ?? PayoutMethod.CASH_PICKUP) === PayoutMethod.CASH_PICKUP;
+    const isCashSend = effectiveMethod === PayoutMethod.CASH_PICKUP;
     if (isCashSend && !receiveCountry) {
       throw new BadRequestException(
         `Le pays du bénéficiaire${beneficiary?.country ? ` (« ${beneficiary.country} »)` : ''} n'est pas reconnu : ` +
@@ -1119,7 +1139,7 @@ export class TransactionsService {
     const feeQuote = await this.feeSchedule.quote({
       clientId,
       senderId,
-      payoutMethod:   isWalletTransfer ? 'WALLET' : (dto.payoutMethod ?? PayoutMethod.CASH_PICKUP),
+      payoutMethod:   effectiveMethod, // ✅ v4.32 : le mode réel (Mobile Money n'est plus gratuit d'office : réglage de la société)
       amount:         Number(amount),
       currency,
       receiveCountry,
@@ -1232,12 +1252,14 @@ export class TransactionsService {
         data: {
           reference:      transactionRef,
           idempotencyKey, // ✅ v4.29 — index unique (senderId, idempotencyKey)
+          ...(options.type ? { type: options.type } : {}),
+          scheduledTransferId: options.scheduledTransferId ?? null, // ✅ v4.32
           amount, fees, total,
           currency,
           targetCurrency,
           receivedAmount,
           exchangeRate,
-          payoutMethod:   dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
+          payoutMethod:   effectiveMethod,
           status,
           senderId,
           beneficiaryId:  beneficiary?.id ?? null,
@@ -1248,7 +1270,10 @@ export class TransactionsService {
           providerStatus: recipientUser ? ProviderStatus.SUCCESS : ProviderStatus.PENDING,
           paidAt,
           receiveCountry,                                          // ✅ v4.30
-          pickupExpiry:   recipientUser ? null : pickupExpiryFrom(), // ✅ v4.30 — code valable 5 mois
+          pickupExpiry:   recipientUser ? null : pickupExpiryFrom(new Date(), company.pickup.validityMonths), // ✅ v4.32 — validité réglée par la société
+          // ✅ v4.32 — envoi direct (PAID dès la création) : les frais vont intégralement à la société, il n'y aura pas de retrait
+          // en agence pour les répartir. On l'enregistre (avant : colonnes vides, impossible de rapprocher la comptabilité).
+          ...(recipientUser ? { senderCommission: 0, payerCommission: 0, platformCommission: fees } : {}),
           // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
           note:           (dto as any).note ?? null,
         },
@@ -1291,7 +1316,7 @@ export class TransactionsService {
       // (aucun débit). On renvoie l'envoi de la première.
       if (idempotencyKey && isIdempotencyConflict(e)) {
         const replay = await findIdempotent(this.prisma, senderId, idempotencyKey, {
-          type: TransactionType.TRANSFER, amount: dto.amount, currency: dto.currency.toUpperCase(),
+          type: txType, amount: dto.amount, currency: dto.currency.toUpperCase(),
         });
         if (replay) return replay;
       }
@@ -1300,8 +1325,8 @@ export class TransactionsService {
 
     // ✅ v4.29 (audit point 12) — décision tracée.
     await this.audit(senderId, clientId, 'TRANSACTION_CREATE', transaction.id, {
-      type: 'TRANSFER', amount: Number(amount), fees: Number(fees), currency, targetCurrency,
-      received: convertedAmount, status, payoutMethod: dto.payoutMethod ?? PayoutMethod.CASH_PICKUP,
+      type: txType, amount: Number(amount), fees: Number(fees), currency, targetCurrency,
+      received: convertedAmount, status, payoutMethod: effectiveMethod,
       agencyId: user.agencyId ?? null, idempotent: !!idempotencyKey,
     });
 

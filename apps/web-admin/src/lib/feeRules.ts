@@ -5,7 +5,6 @@
 import type { FeeMethod, FeeValues } from '@direct-transfair/shared';
 import type { IconName } from '../components/Icon';
 
-export const DEFAULT_FEE_RATE = 1.5;
 export const MAX_FEE_RATE = 25;
 export const MAX_FIXED_FEE = 10_000_000;
 

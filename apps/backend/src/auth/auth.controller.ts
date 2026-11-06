@@ -1,6 +1,9 @@
 // apps/backend/src/auth/auth.controller.ts
 // =========================================================
-// AUTH CONTROLLER v4.4
+// AUTH CONTROLLER v4.5
+// ✅ v4.5 : SÉCURITÉ — corps des routes publiques (find-account, send-otp, verify-otp, reset-password, login-by-phone,
+//   refresh, change-password) typés par des DTO (dto/auth-public.dto.ts) : un objet à la place d'une chaîne était
+//   transmis tel quel à Prisma (injection d'opérateur).
 // ✅ v4.4 : SÉCURITÉ — limitation de débit (par IP) sur TOUTES les routes publiques v1, comme déjà fait sur la v2 :
 //   register 10/min, login 5/min, login/verify-otp 10/min, login-by-phone et send-otp 10/h (coût SMS/e-mail),
 //   find-account 10/min, verify-otp 10/min, reset-password 5/min. Avant, elles n'étaient limitées qu'à 100 req/min
@@ -23,21 +26,35 @@ import {
   Post,
   Req,
   BadRequestException,
+  NotFoundException,
   Get,
   Patch,
   Delete,
   UseGuards,
   Headers,
   Param,
+  Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { clearRefreshCookie, isWebClient, readRefreshCookie } from './refresh-cookie';
 import { DevicePlatform } from '@prisma/client';
 
+import { UserSessionsService } from './user-sessions.service';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto } from './dto/login.dto';
+import {
+  ChangePasswordDto,
+  FindAccountDto,
+  LoginByPhoneDto,
+  RefreshTokenDto,
+  ResetPasswordDto,
+  SendOtpDto,
+  VerifyOtpDto,
+} from './dto/auth-public.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import type { AuthUserPayload } from './types/auth-user-payload.type';
 import { Public } from '../common/decorators/public.decorator';
@@ -50,6 +67,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
+    private readonly sessions: UserSessionsService,
   ) {}
 
   // ========================================================
@@ -106,11 +124,11 @@ export class AuthController {
       'Vérifier le code sur POST /auth/login/verify-otp.',
   })
   async loginByPhone(
-    @Body() body: { phone: string },
+    @Body() body: LoginByPhoneDto,
     @Headers('x-tenant-id') tenantId: string | undefined,
     @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
   ) {
-    if (!body.phone?.trim()) {
+    if (!body.phone.trim()) {
       throw new BadRequestException('Numéro de téléphone requis');
     }
     return this.authService.loginByPhone(
@@ -144,12 +162,22 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: "Renouveler le JWT à partir d'un refresh token" })
   async refresh(
-    @Body() body: { refresh_token: string },
+    @Body() body: RefreshTokenDto,
     @Headers(APP_CLIENT_HEADER) appClient: string | undefined,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    if (!body.refresh_token)
-      throw new BadRequestException('refresh_token requis');
-    return this.authService.refreshTokens(body.refresh_token, appClient ?? null);
+    // Portail web : le refresh token vient du cookie httpOnly (jamais lisible par JavaScript). Le cookie n'est pris en compte
+    // que si l'en-tête x-app-client: web est présent — protection CSRF (voir refresh-cookie.ts).
+    const web = isWebClient(req);
+    const token = body.refresh_token || (web ? readRefreshCookie(req) : undefined);
+    if (!token) throw new UnauthorizedException('Session invalide');
+    try {
+      return await this.authService.refreshTokens(token, appClient ?? null);
+    } catch (err) {
+      if (web) clearRefreshCookie(res); // refresh refusé : le cookie ne vaut plus rien
+      throw err;
+    }
   }
 
   // ========================================================
@@ -159,10 +187,14 @@ export class AuthController {
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
-  async logout(@Req() req: Request & { user?: AuthUserPayload }) {
+  async logout(
+    @Req() req: Request & { user?: AuthUserPayload },
+    @Res({ passthrough: true }) res: Response,
+  ) {
     if (!req.user) throw new BadRequestException('User not found');
     const accessToken = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-    return this.authService.logout(req.user.id, accessToken);
+    if (isWebClient(req)) clearRefreshCookie(res);
+    return this.authService.logout(req.user.id, accessToken, req.user.sid);
   }
 
   // ========================================================
@@ -172,42 +204,28 @@ export class AuthController {
   @Public()
   @Post('find-account')
   @Throttle({ auth: { limit: 10, ttl: 60_000 } })
-  async findAccount(@Body('identifier') identifier: string) {
-    if (!identifier) throw new BadRequestException('Identifiant requis');
-    return this.authService.findAccount(identifier);
+  async findAccount(@Body() body: FindAccountDto) {
+    return this.authService.findAccount(body.identifier.trim());
   }
 
   @Public()
   @Post('send-otp')
   @Throttle({ otp: { limit: 10, ttl: 3_600_000 } })
-  async sendOtp(
-    @Body() body: { userId: string; channel: 'EMAIL' | 'PHONE'; purpose?: string },
-  ) {
-    if (!body.userId || !body.channel)
-      throw new BadRequestException('Données incomplètes');
+  async sendOtp(@Body() body: SendOtpDto) {
     return this.authService.sendOtp(body.userId, body.channel, body.purpose);
   }
 
   @Public()
   @Post('verify-otp')
   @Throttle({ auth: { limit: 10, ttl: 60_000 } })
-  async verifyOtp(
-    @Body() body: { userId: string; code: string; type?: string },
-  ) {
-    if (!body.userId || !body.code)
-      throw new BadRequestException('Données incomplètes');
+  async verifyOtp(@Body() body: VerifyOtpDto) {
     return this.authService.verifyOtp(body.userId, body.code, body.type);
   }
 
   @Public()
   @Post('reset-password')
   @Throttle({ auth: { limit: 5, ttl: 60_000 } })
-  async resetPassword(
-    @Body() body: { userId: string; code: string; newPassword: string },
-  ) {
-    if (!body.userId || !body.code || !body.newPassword) {
-      throw new BadRequestException('Données incomplètes');
-    }
+  async resetPassword(@Body() body: ResetPasswordDto) {
     return this.authService.resetPassword(
       body.userId,
       body.code,
@@ -243,11 +261,9 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   async changePassword(
     @Req() req: Request & { user?: AuthUserPayload },
-    @Body() body: { oldPass: string; newPass: string },
+    @Body() body: ChangePasswordDto,
   ) {
     if (!req.user) throw new BadRequestException('Utilisateur non trouvé');
-    if (!body.oldPass || !body.newPass)
-      throw new BadRequestException('Champs manquants');
 
     return this.authService.changePassword(
       req.user.id,
@@ -343,6 +359,11 @@ export class AuthController {
     });
   }
 
+  // Accepte l'identifiant de la fiche appareil (`id`, ce que renvoie GET /auth/devices et qu'envoie l'application) OU
+  // l'identifiant matériel (`deviceId`). Avant, seul `deviceId` était cherché : l'application envoyait `id`, rien
+  // n'était trouvé et la route répondait « succès » sans rien révoquer.
+  // Les sessions ouvertes depuis cet appareil (quand le lien est connu) sont aussi fermées ; la liste complète des
+  // sessions se gère dans GET/DELETE /auth/sessions.
   @Delete('devices/:deviceId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('access-token')
@@ -351,11 +372,26 @@ export class AuthController {
     @Param('deviceId') deviceId: string,
   ) {
     if (!req.user) throw new BadRequestException('User not found');
-    await this.prisma.userDevice.updateMany({
-      where: { userId: req.user.id, deviceId },
-      data: { status: 'REVOKED', revokedAt: new Date(), pushEnabled: false },
+    const device = await this.prisma.userDevice.findFirst({
+      where: { userId: req.user.id, OR: [{ id: deviceId }, { deviceId }] },
+      select: { id: true, deviceId: true },
     });
-    return { success: true };
+    if (!device) throw new NotFoundException('Appareil introuvable.');
+    await this.prisma.userDevice.update({
+      where: { id: device.id },
+      data: { status: 'REVOKED', revokedAt: new Date(), pushEnabled: false, pushToken: null },
+    });
+    const closed = await this.prisma.userSession.updateMany({
+      where: {
+        userId: req.user.id,
+        status: 'ACTIVE',
+        deviceId: { in: [device.id, device.deviceId] },
+        // On ne coupe jamais la session qui fait la demande.
+        ...(req.user.sid ? { id: { not: req.user.sid } } : {}),
+      },
+      data: { status: 'REVOKED', revokedAt: new Date() },
+    });
+    return { success: true, sessionsClosed: closed.count };
   }
 
   // ========================================================
@@ -367,19 +403,16 @@ export class AuthController {
   @ApiBearerAuth('access-token')
   async getSessions(@Req() req: Request & { user?: AuthUserPayload }) {
     if (!req.user) throw new BadRequestException('User not found');
-    return this.prisma.userSession.findMany({
-      where: { userId: req.user.id, status: 'ACTIVE' },
-      select: {
-        id: true,
-        device: true,
-        ipAddress: true,
-        userAgent: true,
-        country: true,
-        createdAt: true,
-        expiresAt: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.sessions.list(req.user.id, req.user.sid);
+  }
+
+  // Déclarée AVANT « sessions/:id » : sinon « revoke-others » serait pris pour un identifiant.
+  @Post('sessions/revoke-others')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  async revokeOtherSessions(@Req() req: Request & { user?: AuthUserPayload }) {
+    if (!req.user) throw new BadRequestException('User not found');
+    return this.sessions.revokeOthers(req.user.id, req.user.sid);
   }
 
   @Delete('sessions/:id')
@@ -390,10 +423,6 @@ export class AuthController {
     @Param('id') id: string,
   ) {
     if (!req.user) throw new BadRequestException('User not found');
-    await this.prisma.userSession.updateMany({
-      where: { id, userId: req.user.id },
-      data: { status: 'REVOKED', revokedAt: new Date() },
-    });
-    return { success: true };
+    return this.sessions.revoke(req.user.id, id, req.user.sid);
   }
 }

@@ -13,6 +13,8 @@ import { createAgentDeskApi } from './agentDesk';
 import { createAgentsApi } from './agents';
 import { createCommissionRulesApi } from './commissionRules';
 import { createCommissionsApi } from './commissions';
+import { createCompanySettingsApi } from './companySettings';
+import { createSessionsApi } from './sessions';
 import { createCompaniesApi } from './companies';
 import { createContractsApi } from './contracts';
 import { createFeeScheduleApi } from './feeSchedule';
@@ -64,6 +66,8 @@ export function createApi(http: HttpClient) {
     validationThresholds: createValidationThresholdsApi(http),
     transferLimits: createTransferLimitsApi(http),
     portalDomains: createPortalDomainsApi(http),
+    companySettings: createCompanySettingsApi(http),
+    sessions: createSessionsApi(http),
 
     branding: {
       byHost: (host: string) =>

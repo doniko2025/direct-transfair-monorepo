@@ -599,6 +599,7 @@ model Client {
   feeRules           FeeRule[]
   validationThresholds ValidationThreshold[]
   transferLimits       TransferLimit[]
+  companySetting       CompanySetting?
   promotions         Promotion[]
   alerts             Alert[]
   contracts          Contract[]
@@ -1836,6 +1837,32 @@ model ValidationThreshold {
 
   @@unique([clientId, currency])
   @@map("validation_thresholds")
+}
+
+// =========================================================
+// COMPANY SETTING — paramètres métier d'une société (v5.7)
+//
+//   Une ligne par société. `data` ne contient QUE les valeurs que l'admin a modifiées : tout le reste vient des valeurs
+//   par défaut du serveur (voir src/company-settings/company-settings.logic.ts). Sans ligne = tous les défauts.
+//   Regroupe ce qui était codé en dur : modes d'envoi gratuits, taux de repli, répartition par défaut des frais, durée de
+//   validité et protection des codes de retrait, seuils d'alerte de caisse.
+//   ⚠️ Migration requise : 20261106120000_add_company_settings
+// =========================================================
+
+model CompanySetting {
+  id String @id @default(cuid())
+
+  clientId Int    @unique
+  client   Client @relation(fields: [clientId], references: [id])
+
+  data Json
+
+  updatedById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("company_settings")
 }
 
 // ✅ v5.5 — Plafonds d'envoi par niveau KYC et par devise, réglés par l'admin de la société.

@@ -444,7 +444,7 @@ function UsersSA() {
       // ✅ GET /users retourne tous les users car le SA a whereClause = {}
       // GET /agencies pour les stats agences
       const [usersRes, agenciesRes] = await Promise.allSettled([
-        api.getUsers({ limit: 500 }),
+        api.getUsers(),
         api.getAgencies(),
       ]);
 

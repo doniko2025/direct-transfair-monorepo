@@ -110,7 +110,7 @@ export default function PlatformFees() {
               <h2 id="fee-companies-title">
                 {all.length} {plural(all.length, 'société', 'sociétés')}
               </h2>
-              <p>Les modes Mobile Money et wallet vers wallet sont gratuits pour toutes les sociétés.</p>
+              <p>Chaque société choisit elle-même ses modes d’envoi gratuits (Réglages › Paramètres de la société). Par défaut, seul le wallet vers wallet est gratuit.</p>
             </div>
             <div className="toolbar">
               <div className="search">
