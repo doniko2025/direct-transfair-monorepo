@@ -7,6 +7,11 @@
 //   effectiveLimits()                     plafonds appliqués : ligne enregistrée, sinon valeurs par défaut du serveur
 //   assertWithinLimits()                  contrôle à l'envoi (TransactionsService.create, virements programmés)
 //
+// ✅ v1.1 (audit argent) — assertDepositWithinLimits() : les MÊMES plafonds (niveau KYC du client, devise) bornent aussi les
+//   DÉPÔTS EN ESPÈCES qu'un agent fait sur son compte : par dépôt, par jour, par mois, par an. Avant, un dépôt en agence n'avait
+//   aucune limite (alors que l'envoi en avait) : on pouvait faire entrer n'importe quelle somme en cash sans vérification.
+//   Seuls comptent les dépôts en espèces payés (pas les recharges par carte / mobile money).
+//
 // Ce qui est contrôlé : les envois (TRANSFER, SCHEDULED) d'un CLIENT (rôle USER), dans la devise de l'envoi, montant
 // hors frais. Comptent les envois en cours ou réussis ; pas les annulés, échoués, remboursés ou expirés.
 // Les périodes (jour, mois, année) sont calculées en UTC. Un envoi fait par un agent pour un client de passage n'est
@@ -14,7 +19,7 @@
 // =========================================================
 
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { CurrencyCode, KycLevel, type Prisma, TransactionStatus, TransactionType } from '@prisma/client';
+import { CurrencyCode, KycLevel, PaymentMethod, type Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { hasAtMostTwoDecimals } from '../fees-admin/fee-rules';
@@ -93,7 +98,14 @@ export function periodStarts(now: Date): { day: Date; month: Date; year: Date } 
 
 const money = (n: number, currency: string): string => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${currency}`;
 
-export function breachMessage(b: Breach, currency: string): string {
+export function breachMessage(b: Breach, currency: string, kind: 'send' | 'deposit' = 'send'): string {
+  if (kind === 'deposit') {
+    const hintD = ' Pour déposer davantage, le client doit faire vérifier son identité (niveau KYC supérieur) auprès de la société.';
+    if (b.limit === 'perTransaction') {
+      return `Montant supérieur au plafond par dépôt : ${money(b.max, currency)} au maximum pour ce client.${hintD}`;
+    }
+    return `Plafond de dépôts ${periodLabel(b.limit)} dépassé pour ce client : il reste ${money(b.remaining, currency)} sur ${money(b.max, currency)}.${hintD}`;
+  }
   const hint = ' Pour envoyer davantage, demandez à votre agence de faire vérifier votre identité (niveau KYC supérieur).';
   if (b.limit === 'perTransaction') {
     return `Montant supérieur au plafond par envoi : ${money(b.max, currency)} au maximum.${hint}`;
@@ -216,6 +228,57 @@ export class TransferLimitsService {
       error: 'Forbidden',
       code: 'LIMIT_EXCEEDED',
       message: breachMessage(breach, p.currency),
+      limit: breach.limit,
+      max: breach.max,
+      used: breach.used,
+      remaining: breach.remaining,
+      currency: p.currency,
+    });
+  }
+
+  /** Dépôts en espèces déjà reçus par ce client dans cette devise, depuis le début du jour / du mois / de l'année (UTC). */
+  async depositUsageOf(db: Db | PrismaService, clientId: number, recipientUserId: string, currency: string, now = new Date(), excludeTransactionId?: string): Promise<Usage> {
+    const start = periodStarts(now);
+    const base = {
+      clientId,
+      recipientId: recipientUserId,
+      currency: currency as CurrencyCode,
+      type: TransactionType.DEPOSIT,
+      paymentMethod: PaymentMethod.CASH,
+      status: TransactionStatus.PAID,
+      ...(excludeTransactionId ? { id: { not: excludeTransactionId } } : {}),
+    };
+    const sum = async (since: Date) => {
+      const r = await db.transaction.aggregate({ where: { ...base, createdAt: { gte: since } }, _sum: { amount: true } });
+      return Number(r._sum.amount ?? 0);
+    };
+    const [daily, monthly, yearly] = await Promise.all([sum(start.day), sum(start.month), sum(start.year)]);
+    return { daily, monthly, yearly };
+  }
+
+  /**
+   * Refuse (403, code DEPOSIT_LIMIT_EXCEEDED) un dépôt en espèces qui dépasse les plafonds du niveau KYC du CLIENT qui le reçoit.
+   * À appeler dans la transaction SQL du dépôt, une fois le wallet du client verrouillé (deux dépôts simultanés ne
+   * contournent pas le plafond) ; `excludeTransactionId` écarte le dépôt qui vient d'être créé du cumul.
+   */
+  async assertDepositWithinLimits(db: Db | PrismaService, p: { clientId: number; recipientUserId: string; currency: string; amount: number; excludeTransactionId?: string }): Promise<void> {
+    const user = await db.user.findFirst({ where: { id: p.recipientUserId, clientId: p.clientId }, select: { role: true, kycLevel: true } });
+    if (!user || user.role !== 'USER') return;
+
+    const level = String(user.kycLevel) as KycLevelName;
+    const limits = await this.effectiveLimits(db, p.clientId, level, p.currency);
+    const needsUsage = limits.daily !== null || limits.monthly !== null || limits.yearly !== null;
+    const usage = needsUsage
+      ? await this.depositUsageOf(db, p.clientId, p.recipientUserId, p.currency, new Date(), p.excludeTransactionId)
+      : { daily: 0, monthly: 0, yearly: 0 };
+
+    const breach = evaluateLimits(limits, usage, p.amount);
+    if (!breach) return;
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: 'DEPOSIT_LIMIT_EXCEEDED',
+      message: breachMessage(breach, p.currency, 'deposit'),
       limit: breach.limit,
       max: breach.max,
       used: breach.used,

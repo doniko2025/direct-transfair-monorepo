@@ -2,9 +2,9 @@
 // =========================================================
 // RATES ADMIN v1.0 — administration des taux de change (globaux à la plateforme)
 //
-//   list     : une ligne par couple de devises, avec le taux appliqué, le taux de secours
-//              intégré au serveur (utilisé tant qu'aucun taux n'est enregistré) et les
-//              incohérences éventuelles entre les deux sens.
+//   list     : une ligne par couple de devises, avec le taux appliqué (null tant qu'aucun taux n'est
+//              enregistré : la conversion est alors REFUSÉE, il n'existe plus de taux de secours en dur)
+//              et les incohérences éventuelles entre les deux sens.
 //   history  : historique d'une paire.
 //   set      : enregistre un taux (super admin) — en une transaction : taux, sens inverse
 //              s'il existe déjà en base, historique et journal d'audit.
@@ -24,8 +24,8 @@ import { CANONICAL_PAIRS, LARGE_CHANGE_PERCENT, normalizePair, parseCanonicalPai
 /** Écart relatif au-delà duquel deux sens enregistrés séparément sont jugés incohérents. */
 const MISMATCH_TOLERANCE = 0.001;
 
-const percent = (next: number, previous: number): number | null =>
-  previous > 0 ? Math.round(((next - previous) / previous) * 10_000) / 100 : null;
+const percent = (next: number, previous: number | null): number | null =>
+  previous !== null && previous > 0 ? Math.round(((next - previous) / previous) * 10_000) / 100 : null;
 
 @Injectable()
 export class RatesAdminService {
@@ -88,8 +88,6 @@ export class RatesAdminService {
         rate,
         /** Le taux vient du sens inverse (1 / taux) : aucun taux n'est enregistré dans ce sens. */
         derived,
-        /** Taux intégré au serveur, appliqué tant qu'aucun taux n'est enregistré. */
-        fallbackRate: this.rates.getRate(base, quote),
         inverseMismatch,
         previousRate: used && !derived ? used.previousRate : null,
         changePercent: used && !derived ? used.changePercent : null,
@@ -137,12 +135,12 @@ export class RatesAdminService {
     const direct = rows.find((r) => r.pair === pair) ?? rows.find((r) => r.pair === `${base}/${quote}`);
     const inverse = rows.find((r) => r.pair === inversePair) ?? rows.find((r) => r.pair === `${quote}/${base}`);
 
-    // Taux effectivement appliqué jusqu'ici : celui de la base, sinon l'inverse, sinon le taux de secours.
-    const current = direct
+    // Taux effectivement appliqué jusqu'ici : celui de la base, sinon l'inverse ; null s'il n'y en a jamais eu (aucun taux en dur).
+    const current: number | null = direct
       ? Number(direct.rate)
       : inverse && Number(inverse.rate) > 0
         ? 1 / Number(inverse.rate)
-        : this.rates.getRate(base, quote);
+        : null;
     const change = percent(rate, current);
 
     if (change !== null && Math.abs(change) > LARGE_CHANGE_PERCENT && !dto.confirmLargeChange) {

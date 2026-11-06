@@ -129,7 +129,7 @@ export default function LimitsSection({ limits, log, onChanged }: Props) {
           <h2 id="limits-title">Plafonds d’envoi</h2>
           <p>
             Ce qu’un client peut envoyer selon son niveau de vérification (KYC), devise par devise : par envoi, par jour, par mois et par an. Un envoi qui dépasse un
-            plafond est refusé. Le niveau d’un client se change depuis sa fiche.
+            plafond est refusé. Les mêmes plafonds encadrent les dépôts en espèces en agence (cumul des dépôts du client, séparé de ses envois). Le niveau d’un client se change depuis sa fiche.
           </p>
         </div>
         {limits.loading && !data ? (

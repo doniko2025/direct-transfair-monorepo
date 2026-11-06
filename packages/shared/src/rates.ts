@@ -4,10 +4,11 @@
 //
 // Contrat : apps/backend/src/rates-admin/ (module créé avec cette phase). Les anciennes routes
 // (POST /rates, PATCH /exchange-rates/:pair) n'ont ni historique ni audit : le web ne les utilise pas.
-//   GET   /rates-admin                       un couple par paire (EUR_XOF…), taux appliqué + taux de secours
+//   GET   /rates-admin                       un couple par paire (EUR_XOF…), taux enregistré (null tant qu'aucun n'est fixé)
 //   GET   /rates-admin/:pair/history?limit   historique, le plus récent d'abord
 //   PATCH /rates-admin/:pair                 { rate, confirmLargeChange? } — le sens inverse se déduit
 //
+// Aucun taux n'est écrit en dur : tant qu'une paire n'est pas fixée, les conversions qui en dépendent sont refusées (503).
 // On ne gère qu'UN sens par couple (la première devise de EUR, GBP, USD, XOF, GNF).
 // Le serveur répond 400 { code: 'LARGE_CHANGE', changePercent } au-delà de 25 % de variation sans confirmation.
 // =========================================================
@@ -22,12 +23,10 @@ export interface RatePair {
   pair: string;
   base: RateCurrency;
   quote: RateCurrency;
-  /** Valeur de 1 base en quote. Null tant qu'aucun taux n'est enregistré (le taux de secours s'applique alors). */
+  /** Valeur de 1 base en quote. Null tant qu'aucun taux n'est enregistré : les conversions de ce couple sont alors refusées par le serveur. */
   rate: number | null;
   /** Le taux vient du sens inverse (1 / taux) : rien n'est enregistré dans ce sens. */
   derived: boolean;
-  /** Taux intégré au serveur, appliqué tant qu'aucun taux n'est enregistré. */
-  fallbackRate: number;
   /** Les deux sens sont enregistrés mais ne sont pas inverses l'un de l'autre. Réenregistrer le taux les aligne. */
   inverseMismatch: boolean;
   previousRate: number | null;

@@ -317,7 +317,7 @@ import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { assertSelfFundingAllowed } from '../treasury/self-funding';
-import { approxXof, computeRiskScore } from './aml-scoring';
+import { computeRiskScore } from './aml-scoring';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -943,22 +943,47 @@ export class TransactionsService {
    * ✅ v4.30 — calcule le score de risque d'un envoi et, au-delà du seuil, lève un signalement pour la conformité.
    * N'empêche jamais l'envoi (appelé sans await) ; une erreur ici est seulement journalisée.
    */
-  async scoreAml(transactionId: string, senderId: string, amount: number, currency: string): Promise<void> {
+  async scoreAml(
+    transactionId: string,
+    subjectUserId: string,
+    amount: number,
+    currency: string,
+    /** SEND : le sujet est l'expéditeur. DEPOSIT : le sujet est le CLIENT qui reçoit le cash (dépôt en agence). */
+    kind: 'SEND' | 'DEPOSIT' = 'SEND',
+  ): Promise<void> {
     const since = new Date(Date.now() - 24 * 3_600_000);
-    const [recent, sender] = await Promise.all([
+    const [recent, subject] = await Promise.all([
       this.prisma.transaction.findMany({
-        where:  { senderId, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } },
+        where: kind === 'DEPOSIT'
+          ? { recipientId: subjectUserId, type: TransactionType.DEPOSIT, id: { not: transactionId }, createdAt: { gte: since }, status: TransactionStatus.PAID }
+          : { senderId: subjectUserId, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } },
         select: { amount: true, currency: true },
         take:   200,
       }),
-      this.prisma.user.findUnique({ where: { id: senderId }, select: { createdAt: true } }),
+      this.prisma.user.findUnique({ where: { id: subjectUserId }, select: { createdAt: true } }),
     ]);
 
+    // ✅ v4.33 — conversion en XOF avec les taux ENREGISTRÉS (plus de table en dur). Taux absent → null : le scoring ne devine
+    // pas, il signale l'opération pour revue manuelle (voir aml-scoring.ts).
+    const toXof = async (value: number, cur: string): Promise<number | null> => {
+      if (cur.toUpperCase() === 'XOF') return value;
+      try { return await this.ratesService.convert(value, cur, 'XOF'); } catch { return null; }
+    };
+    const amountXof = await toXof(amount, currency);
+    const byCurrency = new Map<string, number>();
+    for (const t of recent) byCurrency.set(String(t.currency), (byCurrency.get(String(t.currency)) ?? 0) + Number(t.amount));
+    let recentSumXof24h: number | null = 0;
+    for (const [cur, sum] of byCurrency) {
+      const x = await toXof(sum, cur);
+      if (x === null) { recentSumXof24h = null; break; }
+      recentSumXof24h += x;
+    }
+
     const result = computeRiskScore({
-      amount, currency,
+      amountXof: recentSumXof24h === null ? null : amountXof,
       recentCount24h:  recent.length,
-      recentSumXof24h: recent.reduce((sum, t) => sum + approxXof(Number(t.amount), String(t.currency)), 0),
-      accountCreatedAt: sender?.createdAt ?? null,
+      recentSumXof24h: recentSumXof24h ?? 0,
+      accountCreatedAt: subject?.createdAt ?? null,
     });
 
     await this.prisma.transaction.update({
@@ -968,9 +993,13 @@ export class TransactionsService {
 
     if (result.flagged) {
       await this.prisma.amlFlag.create({
-        data: { userId: senderId, transactionId, reason: result.reasons.join(' ; '), riskScore: result.score },
+        data: {
+          userId: subjectUserId, transactionId,
+          reason: `${kind === 'DEPOSIT' ? 'Dépôt en agence — ' : ''}${result.reasons.join(' ; ')}`,
+          riskScore: result.score,
+        },
       });
-      this.logger.warn(`🚩 AML — envoi ${transactionId} signalé (score ${result.score}) : ${result.reasons.join(' ; ')}`);
+      this.logger.warn(`🚩 AML — ${kind === 'DEPOSIT' ? 'dépôt' : 'envoi'} ${transactionId} signalé (score ${result.score}) : ${result.reasons.join(' ; ')}`);
     }
   }
 
@@ -996,8 +1025,12 @@ export class TransactionsService {
   ): Promise<{ walletId: string; amount: number; label: string } | null> {
     if (REFUNDABLE_TYPES.includes(tx.type)) {
       if (tx.agencyId) {
+        // ✅ v4.33 — sans filtre isActive : le débit a été fait sur la caisse de l'agence ; si l'agence a été désactivée depuis,
+        // le remboursement revient à cette même caisse (creditInTx ne regarde pas isActive) au lieu de partir sur le wallet
+        // personnel d'un agent désactivé, où l'argent serait bloqué.
         const agencyWallet = await this.prisma.wallet.findFirst({
-          where: { agencyId: tx.agencyId, currency: tx.currency, isActive: true },
+          where: { agencyId: tx.agencyId, currency: tx.currency },
+          orderBy: [{ isActive: 'desc' }, { isDefault: 'desc' }],
           select: { id: true },
         });
         if (agencyWallet) {
@@ -1481,6 +1514,13 @@ export class TransactionsService {
 
       await this.walletsService.debitInTx(tx, agencyWallet.id, Number(amountDec), `Dépôt → ${clientUser.phone}`, created.id);
       await this.walletsService.creditInTx(tx, clientWalletRef.id, Number(amountDec), `Dépôt agent`, created.id);
+
+      // ✅ v4.33 (audit argent) — PLAFOND DE DÉPÔT. Les plafonds du niveau KYC du client (par dépôt, jour, mois, an) s'appliquent
+      // aux dépôts en espèces, contrôlés ICI : le wallet du client est verrouillé par le crédit ci-dessus, donc deux dépôts
+      // simultanés (deux agents) ne dépassent pas le plafond ; en cas de dépassement tout est annulé (aucun mouvement).
+      await this.transferLimits.assertDepositWithinLimits(tx, {
+        clientId: depositClientId, recipientUserId: clientUser.id, currency, amount: Number(amountDec), excludeTransactionId: created.id,
+      });
       return created;
     });
     } catch (e) {
@@ -1495,11 +1535,21 @@ export class TransactionsService {
       type: 'DEPOSIT', amount: Number(amountDec), currency, agencyId: agent.agencyId, recipientId: clientUser.id, idempotent: !!idempotencyKey,
     });
 
+    // ✅ v4.33 — contrôle anti-blanchiment du dépôt (même scoring que l'envoi, sujet = le CLIENT qui reçoit le cash) :
+    // jamais bloquant, jamais attendu ; au-dessus du score, un signalement (AmlFlag) est levé pour la conformité.
+    this.fireAndForget('Scoring AML dépôt', () => this.scoreAml(result.id, clientUser.id, Number(amountDec), currency, 'DEPOSIT'));
+
     // ✅ v4.29 (audit point 8) — notifications sans await (voir create()).
     this.fireAndForget('Push dépôt', () => this.push.notifyTransferReceived(clientUser.id, 'Agence', `${dto.amount}`, currency));
 
     const updatedAgencyWallet = await this.prisma.wallet.findUnique({ where: { id: agencyWallet.id } });
-    if (updatedAgencyWallet && Number(updatedAgencyWallet.balance) < 50000) {
+    // ✅ v4.33 (audit argent) — seuil d'alerte réglé par la société, PAR DEVISE (comme le paiement d'un retrait). Avant : 50 000 en dur
+    // pour toutes les devises — 50 000 GNF (≈ 5 €) ou 50 000 EUR n'ont pas la même gravité. Pas de réglage = pas d'alerte.
+    const lowThreshold = await this.settings
+      .forClient(depositClientId)
+      .then((c) => Number(c?.alerts?.lowBalance?.[currency] ?? 0))
+      .catch(() => 0);
+    if (updatedAgencyWallet && lowThreshold > 0 && Number(updatedAgencyWallet.balance) < lowThreshold) {
       this.fireAndForget('Push solde bas', () => this.push.notifyLowBalance(agentId, currency, `${updatedAgencyWallet.balance}`));
       this.agentNotifier.notifyLowBalance(agentId, Number(updatedAgencyWallet.balance)).catch(() => {});
     }
@@ -1587,8 +1637,8 @@ export class TransactionsService {
     this.logger.debug(`refillAgency START | adminId=${adminId} agencyId=${agencyId} amount=${amount} currency=${currency}`);
 
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
-    if (!admin)          throw new NotFoundException('Admin introuvable');
-    if (!admin.clientId) throw new ForbiddenException('Admin sans société associée');
+    if (!admin) throw new NotFoundException('Admin introuvable');
+    if (admin.role !== 'SUPER_ADMIN' && !admin.clientId) throw new ForbiddenException('Admin sans société associée');
 
     const agency = await this.prisma.agency.findUnique({ where: { id: agencyId } });
     if (!agency) throw new NotFoundException(`Agence ${agencyId} introuvable`);
@@ -1597,15 +1647,21 @@ export class TransactionsService {
       throw new ForbiddenException('Cette agence ne vous appartient pas');
     }
 
+    // ✅ v4.33 (audit argent) — la recharge sort du wallet de la société PROPRIÉTAIRE DE L'AGENCE. Avant : toujours la société
+    // de l'admin qui clique ; pour un SUPER_ADMIN, la caisse d'une agence de la société A était donc rechargée avec l'argent de
+    // SA société (et la ligne Transaction rangée dans sa société, invisible pour A). collectFromAgency() faisait déjà ce choix.
+    const companyClientId: number | null = admin.role === 'SUPER_ADMIN' ? agency.clientId : admin.clientId;
+    if (!companyClientId) throw new ForbiddenException("Cette agence n'est rattachée à aucune société");
+
     const currencyCode   = currency.toUpperCase() as CurrencyCode;
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
-      clientId: admin.clientId,
+      clientId: companyClientId,
       currency: currencyCode,
     });
 
     const adminWallet = await this.prisma.wallet.findUnique({ where: { id: adminWalletRef.id } });
     if (!adminWallet) {
-      throw new NotFoundException(`Wallet société (clientId=${admin.clientId}, ${currencyCode}) introuvable`);
+      throw new NotFoundException(`Wallet société (clientId=${companyClientId}, ${currencyCode}) introuvable`);
     }
 
     const available = Number(adminWallet.balance) - Number(adminWallet.reservedBalance ?? 0);
@@ -1640,7 +1696,7 @@ export class TransactionsService {
           payoutMethod:   PayoutMethod.BANK_DEPOSIT,
           paymentMethod:  PaymentMethod.WALLET,
           senderId:       adminId,
-          clientId:       admin.clientId!,
+          clientId:       companyClientId,                 // ✅ v4.33 — société de l'agence
           agencyId,                        // ✅ v4.22 — plus besoin de relire providerRef
           paidAt:         new Date(),
           providerStatus: ProviderStatus.SUCCESS,
@@ -1662,7 +1718,7 @@ export class TransactionsService {
       throw e;
     }
 
-    await this.audit(adminId, admin.clientId, 'TRANSACTION_CREATE', refillTx.id, {
+    await this.audit(adminId, companyClientId, 'TRANSACTION_CREATE', refillTx.id, {
       type: 'AGENCY_REFILL', amount, currency: currencyCode, agencyId, agencyName: agency.name, idempotent: !!idempotencyKey,
     });
 
@@ -1865,6 +1921,25 @@ export class TransactionsService {
     ) {
       throw new BadRequestException(
         "Un envoi cash ne passe à « payé » que lorsqu'un agent remet le cash avec le code. Il ne peut pas être marqué payé à la main.",
+      );
+    }
+
+    // ✅ v4.33 (audit argent) — deux types ont leur PROPRE flux de règlement ; les passer à la main à « validé » / « payé »
+    // ferme la ligne sans que l'argent suive :
+    //   - SERVICE_PAYMENT (virement B2B) : seul le Super Admin le règle (validateBankTransfer, qui crédite la plateforme).
+    //     Marqué « payé » par l'admin de la société, la facture serait soldée alors que la plateforme n'a rien reçu (société
+    //     débitée à la déclaration, plateforme jamais créditée : l'argent disparaît). L'annulation / le rejet restent permis.
+    //   - DEPOSIT (recharge) : seul le prestataire de paiement confirme une recharge ; « payé » à la main déclencherait le
+    //     crédit du wallet (RechargeService.checkAndSettle) sans qu'aucun argent ne soit entré.
+    if (
+      (tx.type === TransactionType.SERVICE_PAYMENT &&
+        (dto.status === TransactionStatus.VALIDATED || dto.status === TransactionStatus.PAID)) ||
+      (tx.type === TransactionType.DEPOSIT && dto.status === TransactionStatus.PAID)
+    ) {
+      throw new BadRequestException(
+        tx.type === TransactionType.SERVICE_PAYMENT
+          ? 'Un virement B2B se règle uniquement par la validation du Super Admin. Vous pouvez l’annuler tant qu’il est en attente.'
+          : 'Une recharge ne passe à « payée » que sur confirmation du prestataire de paiement : changement manuel interdit.',
       );
     }
 

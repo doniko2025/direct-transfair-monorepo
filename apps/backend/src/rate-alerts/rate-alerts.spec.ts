@@ -9,10 +9,15 @@ import { CreateRateAlertDto } from './dto/create-rate-alert.dto';
 import { currentRateOf, MAX_ACTIVE_ALERTS_PER_USER, RateAlertsService } from './rate-alerts.service';
 
 describe('currentRateOf', () => {
-  const rates = new Map([['EUR_XOF', 655.957]]);
-  it('sens direct', () => expect(currentRateOf('EUR_XOF', rates)).toBe(655.957));
-  it('sens inverse = 1 / taux', () => expect(currentRateOf('XOF_EUR', rates)).toBeCloseTo(1 / 655.957, 10));
-  it('paire absente → null', () => expect(currentRateOf('EUR_GNF', rates)).toBeNull());
+  const rows = [{ pair: 'EUR_XOF', rate: 655.957 }];
+  it('sens direct', () => expect(currentRateOf('EUR_XOF', rows)).toBe(655.957));
+  it('sens inverse = 1 / taux', () => expect(currentRateOf('XOF_EUR', rows)).toBeCloseTo(1 / 655.957, 10));
+  it('paire absente → null', () => expect(currentRateOf('EUR_GNF', rows)).toBeNull());
+  it('ancien format « EUR/XOF » lu aussi', () => expect(currentRateOf('EUR_XOF', [{ pair: 'EUR/XOF', rate: 600 }])).toBe(600));
+  it('via l\'euro : XOF_GNF calculé à partir de EUR_XOF et EUR_GNF', () => {
+    const r = currentRateOf('XOF_GNF', [{ pair: 'EUR_XOF', rate: 656 }, { pair: 'EUR_GNF', rate: 9500 }]);
+    expect(r).toBeCloseTo(9500 / 656, 8);
+  });
 });
 
 describe('CreateRateAlertDto', () => {

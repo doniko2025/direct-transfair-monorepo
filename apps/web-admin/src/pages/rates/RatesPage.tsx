@@ -52,8 +52,8 @@ function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean;
         {RATE_CURRENCY_NAME[pair.base]} vers {lowerName(pair.quote)}
       </p>
 
-      <strong className="rate-card__rate">{rateLine(pair.base, pair.quote, current)}</strong>
-      <p className="rate-card__inverse">{rateLine(pair.quote, pair.base, inverseOf(current))}</p>
+      <strong className="rate-card__rate">{current === null ? 'Non configuré' : rateLine(pair.base, pair.quote, current)}</strong>
+      {current !== null ? <p className="rate-card__inverse">{rateLine(pair.quote, pair.base, inverseOf(current))}</p> : null}
 
       {status === 'none' ? <p className="rate-card__hint">{view.hint}</p> : null}
       {status === 'derived' ? <p className="rate-card__hint">{view.hint}</p> : null}
@@ -156,8 +156,9 @@ export default function RatesPage() {
           />
         ) : null}
         {canEdit && unset > 0 ? (
-          <Notice tone="info" title={`${unset} ${plural(unset, 'couple fonctionne', 'couples fonctionnent')} avec le taux de secours`}>
-            Un taux de secours intégré au serveur s’applique tant qu’aucun taux n’est fixé. Fixez-les pour maîtriser vos marges.
+          <Notice tone="error" title={`${unset} ${plural(unset, 'couple sans taux', 'couples sans taux')} : conversions refusées`}>
+            Aucun taux n’est intégré au serveur : tant qu’un couple n’est pas fixé, tout envoi ou dépôt qui en dépend est refusé.
+            Fixez ces taux avant la mise en service.
           </Notice>
         ) : null}
         {canEdit && mismatches > 0 ? (

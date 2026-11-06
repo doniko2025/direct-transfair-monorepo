@@ -149,25 +149,6 @@ export function getLegalFallbacks() {
   };
 }
 
-// ─── Taux de secours ─────────────────────────────────────
-
-/**
- * Taux affichés quand l'API des taux est injoignable. JSON dans EXPO_PUBLIC_FALLBACK_RATES, ex.
- * '{"EUR_XOF":655.957,"EUR_GNF":9500}'. Vide par défaut : mieux vaut « — » qu'un taux inventé sur une app d'argent.
- */
-export function getFallbackRates(): { pair: string; rate: number }[] {
-  const raw = pick(process.env.EXPO_PUBLIC_FALLBACK_RATES, 'fallbackRates', '');
-  if (!raw) return [];
-  try {
-    const obj = JSON.parse(raw) as Record<string, unknown>;
-    return Object.entries(obj)
-      .map(([pair, rate]) => ({ pair: pair.toUpperCase().replace('/', '_'), rate: Number(rate) }))
-      .filter((r) => /^[A-Z]{3}_[A-Z]{3}$/.test(r.pair) && Number.isFinite(r.rate) && r.rate > 0);
-  } catch {
-    return [];
-  }
-}
-
 // ─── Prestataires externes ───────────────────────────────
 
 /** Page du prestataire de paiement externe « Sendwave » (modifiable). */

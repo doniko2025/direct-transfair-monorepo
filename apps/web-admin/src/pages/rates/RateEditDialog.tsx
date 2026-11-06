@@ -34,7 +34,7 @@ export default function RateEditDialog({ pair, onClose, onDone }: Props) {
   const { busy, error, run, clearError } = useDialogAction(onDone);
 
   const parsed = parseRate(raw);
-  const change = parsed.value !== null ? changeBetween(parsed.value, current) : null;
+  const change = parsed.value !== null && current !== null ? changeBetween(parsed.value, current) : null;
   const large = isLargeChange(change) || serverAsksConfirm;
   const unchanged = parsed.value !== null && parsed.value === current && pair.rate !== null && !pair.inverseMismatch;
   const valid = parsed.value !== null && !unchanged && (!large || confirmed);
@@ -78,8 +78,13 @@ export default function RateEditDialog({ pair, onClose, onDone }: Props) {
       >
         <button type="submit" hidden />
         <p className="rate-now">
-          Taux actuel : <strong>{rateLine(pair.base, pair.quote, current)}</strong>
-          {pair.rate === null ? <span className="muted"> (taux de secours)</span> : null}
+          Taux actuel :{' '}
+          {current === null ? (
+            <strong>non configuré</strong>
+          ) : (
+            <strong>{rateLine(pair.base, pair.quote, current)}</strong>
+          )}
+          {pair.rate === null ? <span className="muted"> — les conversions de ce couple sont refusées tant qu’il n’est pas fixé</span> : null}
         </p>
         <Field
           id="rate-value"

@@ -8,7 +8,7 @@ import { defaultSettings } from '../company-settings/company-settings.logic';
 
 type Json = Record<string, any>;
 
-function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolean } = {}) {
+function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolean; depositLimitFail?: boolean } = {}) {
   const state = {
     balances: { 'w-sender': 1_000_000, 'w-recipient': 0, 'w-company': 0, 'w-agency': 500_000, 'w-admin': 0, 'w-client': 0 } as Record<string, number>,
     rows: [] as Json[],
@@ -98,6 +98,10 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
     assertWithinLimits: jest.fn().mockImplementation(async (db: any) => {
       if (opts.limitsFail) throw new ForbiddenException({ code: 'LIMIT_EXCEEDED', message: 'Plafond dépassé' });
       void db;
+    }),
+    // ✅ v4.33 — plafond de dépôt (contrôlé dans la transaction SQL du dépôt).
+    assertDepositWithinLimits: jest.fn().mockImplementation(async () => {
+      if (opts.depositLimitFail) throw new ForbiddenException({ code: 'DEPOSIT_LIMIT_EXCEEDED', message: 'Plafond de dépôt dépassé' });
     }),
   };
 
@@ -207,6 +211,25 @@ describe('TransactionsService.deposit — atomique', () => {
     expect(state.balances['w-recipient']).toBe(50_000);
     expect(state.rows).toHaveLength(1);
     expect(state.ledger.map((l) => l.txId)).toEqual([t.id, t.id]);
+  });
+
+  it('dépassement du plafond de dépôt du client : tout est annulé (caisse intacte, client non crédité, aucune transaction)', async () => {
+    const { service, state, limits } = setup({ depositLimitFail: true });
+    await expect(service.deposit('agent', { amount: 50_000, userPhone: '+224600' } as any)).rejects.toMatchObject({ response: { code: 'DEPOSIT_LIMIT_EXCEEDED' } });
+    expect(limits.assertDepositWithinLimits).toHaveBeenCalledTimes(1);
+    expect(state.balances['w-agency']).toBe(500_000);
+    expect(state.balances['w-recipient'] ?? 0).toBe(0);
+    expect(state.rows).toHaveLength(0);
+    expect(state.ledger).toHaveLength(0);
+  });
+
+  it('le plafond est contrôlé avec le client destinataire, la devise de la caisse et le montant, en excluant le dépôt créé', async () => {
+    const { service, limits } = setup();
+    const t: any = await service.deposit('agent', { amount: 50_000, userPhone: '+224600' } as any);
+    const arg = limits.assertDepositWithinLimits.mock.calls[0][1];
+    expect(arg).toMatchObject({ amount: 50_000, excludeTransactionId: t.id });
+    expect(arg.recipientUserId).toBeDefined();
+    expect(arg.currency).toBeDefined();
   });
 
   it('une panne au crédit du client rend la caisse intacte et ne laisse aucune transaction', async () => {

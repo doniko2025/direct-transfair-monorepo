@@ -314,6 +314,7 @@ import {
 import {
   ceilTo, decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText,
 } from "../../utils/amount";
+import { lookupRate } from "../../utils/rateLookup";
 
 import { Text, TextInput } from '../../components/ui/Text';
 import { SANS, SERIF } from '../../components/ui/fonts';
@@ -898,7 +899,7 @@ export default function SendMoneyScreen() {
   const [selectedCashId,      setSelectedCashId]     = useState<string | null>(null);
   const [targetCurrency,    setTargetCurrency]   = useState("XOF");
   const [targetCountryData, setTargetCountryData]= useState<CountryData>(getCountryData("Sénégal"));
-  const [rate,              setRate]             = useState<number>(1);
+  const [rate,              setRate]             = useState<number | null>(1);
   const [rawAmount,         setRawAmount]        = useState("");
   // ✅ v2.15 — saisie bidirectionnelle du montant : `amountSource` retient le champ que l'utilisateur est en train de
   // saisir. ✅ v5.3 — le champ INACTIF n'est plus synchronisé par des effets : il est CALCULÉ à l'affichage
@@ -1048,15 +1049,8 @@ export default function SendMoneyScreen() {
     setTargetCountryData(cd);
     const tCurr = cd.currency || "XOF";
     setTargetCurrency(tCurr);
-    const getR = (pair: string, fb: number) => {
-      const [a, b] = pair.split("_");
-      const slashPair = `${a}/${b}`;
-      const found = allRates.find((r) => r.pair === pair || r.pair === slashPair);
-      return found?.rate ?? fb;
-    };
-    const toEurUser   = userCurrency === "EUR" ? 1 : getR(`EUR_${userCurrency}`, userCurrency === "XOF" ? 655.95 : userCurrency === "GNF" ? 8600 : 1);
-    const toEurTarget = tCurr === "EUR" ? 1 : getR(`EUR_${tCurr}`, tCurr === "XOF" ? 655.95 : tCurr === "GNF" ? 8600 : 1);
-    setRate(toEurTarget / toEurUser);
+    // Aucun taux en dur : uniquement les taux publiés par la plateforme. Absent → null (pas d'estimation, envoi bloqué).
+    setRate(lookupRate(allRates, userCurrency, tCurr));
   }, [allRates, userCurrency]);
 
   // ✅ v5.3 — le taux est calculé dès l'ouverture avec le pays par défaut (indicatif affiché). Avant, tant qu'aucun
@@ -1238,10 +1232,13 @@ export default function SendMoneyScreen() {
   const parsedSendRaw     = parseAmount(rawAmount);
   const parsedReceivedRaw = parseAmount(rawReceivedAmount);
 
+  // Aucun taux publié pour ce couple de devises : pas d'estimation, envoi bloqué (jamais de taux inventé).
+  const rateMissing = rate === null && targetCurrency !== userCurrency;
+
   const sendAmount = amountSource === "RECEIVED"
-    ? (rate > 0 ? ceilTo(parsedReceivedRaw / rate, dS) : 0)
+    ? (rate !== null && rate > 0 ? ceilTo(parsedReceivedRaw / rate, dS) : 0)
     : roundTo(parsedSendRaw, dS);
-  const receivedAmt = roundTo(sendAmount * rate, dR);
+  const receivedAmt = rate !== null ? roundTo(sendAmount * rate, dR) : 0;
 
   const sendText     = amountSource === "SEND"     ? rawAmount         : toInputText(sendAmount, dS);
   const receivedText = amountSource === "RECEIVED" ? rawReceivedAmount : toInputText(receivedAmt, dR);
@@ -1296,16 +1293,18 @@ export default function SendMoneyScreen() {
   // d'envoyer (avant : l'envoi partait sans destinataire et l'expéditeur était débité pour rien).
   const recipientReady = mode === "WALLET" ? !!detectedBeneficiary : !!selectedCashId;
   const unknownWalletNumber = mode === "WALLET" && !detectedBeneficiary && !lookingUp && !isTextQuery && walletInputDigits.length >= MIN_FULL_NUMBER;
-  const canSend = sendAmount > 0 && !insufficient && recipientReady;
+  const canSend = sendAmount > 0 && !insufficient && recipientReady && !rateMissing;
   const missingHint = !recipientReady
     ? (mode === "WALLET"
         ? (unknownWalletNumber ? "Aucun compte avec ce numéro : rien ne sera débité"
           : lookingUp ? "Recherche du destinataire…" : "Saisissez le numéro du destinataire")
         : "Choisissez un bénéficiaire")
+    : rateMissing ? `Taux ${userCurrency} → ${targetCurrency} indisponible : envoi impossible pour le moment`
     : sendAmount <= 0 ? "Saisissez un montant" : null;
 
   const handleAction = async () => {
     if (insufficient) { setShowFallback(true); return; }
+    if (rateMissing) return Alert.alert("Taux indisponible", `Le taux ${userCurrency} → ${targetCurrency} n'est pas disponible pour le moment. Réessayez plus tard.`);
     if (sendAmount <= 0) return Alert.alert("Montant invalide", "Saisissez un montant valide.");
     setSending(true);
     try {
@@ -1416,7 +1415,7 @@ export default function SendMoneyScreen() {
     ? "Autre moyen de paiement"
     : mode === "WALLET" ? "Confirmer le transfert" : "Générer le code de retrait";
 
-  const rateVisible = rate !== 1 && targetCurrency !== userCurrency;
+  const rateVisible = rate !== null && rate !== 1 && targetCurrency !== userCurrency;
 
   // ── Une ligne de montant (envoi / réception) ──
   const renderAmountRow = (kind: "SEND" | "RECEIVED") => {
@@ -1724,7 +1723,7 @@ export default function SendMoneyScreen() {
                   <View style={s.footLeft}>
                     <Ionicons name="trending-up-outline" size={13} color={C.textMuted} />
                     <Text style={[s.footTxt, { fontFamily: F.body }]}>
-                      1 {userCurrency} = {fmtRate(rate)} {targetCurrency}
+                      1 {userCurrency} = {fmtRate(rate ?? 0)} {targetCurrency}
                     </Text>
                   </View>
                 ) : <View style={{ flex: 1 }} />}

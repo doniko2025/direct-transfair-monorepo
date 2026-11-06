@@ -10,6 +10,9 @@
 //    Un code envoyé en Côte d'Ivoire ne se paie qu'en Côte d'Ivoire ; un code envoyé en Guinée (GNF) ne se paie ni au
 //    Sénégal (XOF) ni ailleurs. Le contrôle compare le PAYS de l'agence qui paie (pas seulement sa devise : le XOF est
 //    partagé par huit pays).
+// 3. SÉPARATION DES TÂCHES (v1.1) : un agent ne paie JAMAIS un code qu'il a lui-même créé. Celui qui encaisse l'argent de
+//    l'expéditeur et celui qui remet le cash au bénéficiaire doivent être deux personnes : sinon un seul agent peut inventer
+//    un envoi, le « payer » et empocher les commissions sans qu'aucun client n'intervienne.
 // Fonctions pures : testées sans base de données.
 // =========================================================
 
@@ -103,5 +106,21 @@ export function assertPayableInCountry(params: {
       `Ce code doit être payé en ${payoutCurrency}. Votre agence travaille en ${payerCurrency} : ` +
       `le bénéficiaire doit se présenter dans une agence du pays de destination.`,
     );
+  }
+}
+
+
+/**
+ * Refuse à un agent de payer un code qu'il a créé (séparation des tâches). Le créateur d'un envoi fait par un agent est
+ * `senderId`. Un envoi de client wallet n'est jamais concerné (son expéditeur n'est pas un agent qui paie).
+ */
+export function assertNotOwnSend(tx: { senderId?: string | null }, agentId: string): void {
+  if (tx.senderId && tx.senderId === agentId) {
+    throw new ForbiddenException({
+      code: 'SELF_PAYOUT_FORBIDDEN',
+      message:
+        "Vous ne pouvez pas payer un code que vous avez vous-même créé : un autre agent doit remettre le cash au bénéficiaire " +
+        "(séparation des tâches).",
+    });
   }
 }

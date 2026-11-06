@@ -1,6 +1,9 @@
 // apps/backend/src/wallets/wallets.service.ts
 // =========================================================
-// WALLETS SERVICE v5.9
+// WALLETS SERVICE v5.10
+// ✅ v5.10 (audit argent) : TOUT montant écrit passe par toMoney() (money.ts) : arrondi unique à 4 décimales (précision des colonnes),
+//    NaN / infini / nul refusés. Avant : un montant à plus de 4 décimales (DTO sans maxDecimalPlaces) était arrondi séparément
+//    sur la ligne débitée et sur la ligne créditée par PostgreSQL → de l'argent créé ou perdu à chaque opération.
 // ✅ v5.9 (audit du code) : (1) transferInTx() convertit avec RatesService.convert() (taux de la base, repli en dur seulement si absent)
 //    au lieu de getRate() qui ignorait les taux saisis par l'admin ; (2) getLedger() valide page / limit (≤ 100) / dates.
 // ✅ v5.8 : creditInTx accepte { allowFrozen: true } (paramètre ajouté en dernier). Réservé aux commissions versées à des
@@ -76,6 +79,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { RatesService } from '../rates/rates.service';
+import { toMoney } from './money';
 
 export const SUPPORTED_CURRENCIES = ['XOF', 'EUR', 'USD', 'GNF', 'GBP'] as const;
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
@@ -346,7 +350,7 @@ export class WalletsService {
     if (!wallet) throw new NotFoundException('Wallet introuvable');
     this.assertNotFrozen(wallet); // ✅ v5.7
 
-    const amt       = new Prisma.Decimal(amount);
+    const amt       = toMoney(amount); // v5.10 : arrondi UNIQUE à 4 décimales (voir money.ts)
     const available = wallet.balance.minus(wallet.reservedBalance);
 
     if (available.lessThan(amt)) {
@@ -407,7 +411,7 @@ export class WalletsService {
     if (!wallet) throw new NotFoundException('Wallet introuvable');
     if (!opts?.allowFrozen) this.assertNotFrozen(wallet); // ✅ v5.7 (v5.8 : sauf commission de tiers)
 
-    const amt = new Prisma.Decimal(amount);
+    const amt = toMoney(amount); // v5.10
 
     const updated = await tx.wallet.update({
       where: { id: walletId },
@@ -469,7 +473,7 @@ export class WalletsService {
       if (!wallet) throw new NotFoundException('Wallet introuvable');
       this.assertNotFrozen(wallet); // ✅ v5.7
 
-      const amt       = new Prisma.Decimal(amount);
+      const amt       = toMoney(amount); // v5.10 : arrondi UNIQUE à 4 décimales (voir money.ts)
       const available = wallet.balance.minus(wallet.reservedBalance);
 
       if (available.lessThan(amt)) {
@@ -509,7 +513,7 @@ export class WalletsService {
       const wallet = await tx.wallet.findUnique({ where: { id: walletId } });
       if (!wallet) throw new NotFoundException('Wallet introuvable');
 
-      const amt = new Prisma.Decimal(amount);
+      const amt = toMoney(amount); // v5.10
 
       if (wallet.reservedBalance.lessThan(amt)) {
         throw new BadRequestException('Montant réservé insuffisant');
@@ -586,7 +590,7 @@ export class WalletsService {
     this.assertNotFrozen(fromWallet); // ✅ v5.7
     this.assertNotFrozen(toWallet);
 
-    const fromAmt   = new Prisma.Decimal(amount);
+    const fromAmt   = toMoney(amount); // v5.10
     const available = fromWallet.balance.minus(fromWallet.reservedBalance);
 
     if (available.lessThan(fromAmt)) {

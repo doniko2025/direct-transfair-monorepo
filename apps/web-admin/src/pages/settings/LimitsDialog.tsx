@@ -94,8 +94,8 @@ export default function LimitsDialog({ limit, onClose, onDone }: Props) {
         {unchanged ? <Notice tone="info">Aucune modification à enregistrer.</Notice> : null}
         {error ? <Notice tone="error">{error}</Notice> : null}
         <p className="muted">
-          S’applique aux prochains envois des clients de ce niveau. Un envoi qui dépasse un plafond est refusé, avec le montant restant disponible. Les envois déjà faits
-          comptent dans les plafonds jour, mois et an.
+          S’applique aux prochains envois et aux dépôts en espèces en agence des clients de ce niveau. Une opération qui dépasse un plafond est refusée, avec le montant restant
+          disponible. Les envois et les dépôts déjà faits comptent chacun dans leurs propres plafonds jour, mois et an.
         </p>
       </form>
     </ConfirmDialog>

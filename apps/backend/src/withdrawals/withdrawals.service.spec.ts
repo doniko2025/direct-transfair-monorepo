@@ -136,6 +136,31 @@ describe('WithdrawalsService.agentProcessPayment — commissions (v4.13)', () =>
     expect(m.credits).toHaveLength(0);
   });
 
+  it('frais convertis au taux ENREGISTRÉ sur l\'envoi, pas au taux du jour (audit argent v4.17)', async () => {
+    // 2 EUR de frais, taux enregistré 655,957 → 1 311,914 → 1 312 XOF. Le taux du jour (700) ne doit pas servir.
+    const convert = jest.fn(async (v: number) => v * 700);
+    const m = make({
+      tx: baseTx({ currency: 'EUR', targetCurrency: 'XOF', amount: 100, receivedAmount: 65_596, fees: 2, exchangeRate: 655.957, agencyId: null, sender: { id: 's1', agencyId: null } }),
+      wallets: agentWallets, convert,
+    });
+    const r: any = await run(m);
+    expect(convert).not.toHaveBeenCalled();
+    expect(r.feesConverted).toBeCloseTo(1311.914, 3);
+    const { payerAgency, senderAgency, companyAdmin } = r.commissions;
+    expect(payerAgency.amount + senderAgency.amount + companyAdmin.amount).toBe(1312);
+  });
+
+  it('sans taux enregistré (anciens envois) : repli sur le taux courant, comme avant', async () => {
+    const convert = jest.fn(async (v: number) => v * 700);
+    const m = make({
+      tx: baseTx({ currency: 'EUR', targetCurrency: 'XOF', amount: 100, receivedAmount: 65_596, fees: 2, exchangeRate: null, agencyId: null, sender: { id: 's1', agencyId: null } }),
+      wallets: agentWallets, convert,
+    });
+    const r: any = await run(m);
+    expect(convert).toHaveBeenCalledWith(2, 'EUR', 'XOF');
+    expect(r.feesConverted).toBe(1400);
+  });
+
   it('expéditeur client (sans agence) : la part d\'envoi va à la société, pas de caisse d\'envoi', async () => {
     const m = make({ tx: baseTx({ agencyId: null, sender: { id: 's1', agencyId: null } }), wallets: agentWallets });
     const r: any = await run(m);
@@ -437,5 +462,38 @@ describe('WithdrawalsService — réglages de la société (v4.16)', () => {
     await run(m);
     const ok = m.prisma.auditLog.create.mock.calls.map((c: any) => c[0].data).find((d: any) => d.successful === true);
     expect(ok).toMatchObject({ userId: 'ag', entity: 'WithdrawalCodeCheck' });
+  });
+});
+
+// Audit argent — un agent ne peut pas encaisser un code qu'il a lui-même créé
+describe('WithdrawalsService — paiement de son propre envoi interdit', () => {
+  const agent = { id: 'ag', agencyId: 'a1', agency: { id: 'a1', type: 'SUBSIDIARY', name: 'Agence', country: 'GN', primaryCurrency: 'GNF' }, email: null, firstName: 'A', lastName: 'B' };
+  const own = (senderId: string | null) => ({
+    id: 't1', status: TransactionStatus.VALIDATED, currency: 'EUR', targetCurrency: 'GNF', payoutMethod: 'CASH_PICKUP',
+    amount: 100, receivedAmount: 1_000_000, fees: 1, agencyId: 'a1', senderId, receiveCountry: 'GN',
+    createdAt: new Date(), pickupExpiry: null, sender: { id: senderId, agencyId: 'a1', firstName: 'S', lastName: 'T' }, withdrawal: null, beneficiary: null,
+  });
+
+  it('agentProcessPayment : refus SELF_PAYOUT_FORBIDDEN, aucune écriture, aucun crédit', async () => {
+    const m = make({ tx: own('ag'), agent });
+    const err: any = await m.service.agentProcessPayment(5, 'ag', 'REF').catch((e: any) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.getResponse()).toMatchObject({ code: 'SELF_PAYOUT_FORBIDDEN' });
+    expect(m.prisma.$transaction).not.toHaveBeenCalled();
+    expect(m.credits).toHaveLength(0);
+  });
+
+  it('agentCheckCode : même refus dès la vérification du code', async () => {
+    const m = make({ tx: own('ag'), agent });
+    m.prisma.user.findUnique.mockResolvedValue(agent);
+    const err: any = await m.service.agentCheckCode(5, 'REF', 'ag').catch((e: any) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.getResponse()).toMatchObject({ code: 'SELF_PAYOUT_FORBIDDEN' });
+  });
+
+  it('un code créé par un autre utilisateur n\'est pas bloqué par cette règle', async () => {
+    const m = make({ tx: own('autre'), agent });
+    const err: any = await m.service.agentProcessPayment(5, 'ag', 'REF').catch((e: any) => e);
+    expect(err?.getResponse?.()?.code).not.toBe('SELF_PAYOUT_FORBIDDEN');
   });
 });

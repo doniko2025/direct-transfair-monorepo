@@ -2,7 +2,7 @@
 // Règles des codes de retrait : validité 5 mois, pays de paiement.
 import 'reflect-metadata';
 import { ForbiddenException } from '@nestjs/common';
-import { addMonths, assertPayableInCountry, destinationCountryOf, isPickupExpired, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
+import { addMonths, assertNotOwnSend, assertPayableInCountry, destinationCountryOf, isPickupExpired, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 
 describe('pickup-rules — expiration', () => {
   afterEach(() => { delete process.env.PICKUP_CODE_VALIDITY_MONTHS; });
@@ -71,5 +71,27 @@ describe('pickup-rules — pays de paiement', () => {
     expect(destinationCountryOf({ receiveCountry: 'GN', beneficiary: { country: 'Sénégal' } })).toBe('GN');
     expect(destinationCountryOf({ receiveCountry: null, beneficiary: { country: 'Guinée' } })).toBe('GN');
     expect(destinationCountryOf({ receiveCountry: null, beneficiary: null })).toBeNull();
+  });
+});
+
+// Audit argent (v1.1) — séparation des tâches : un agent ne paie pas un code qu'il a lui-même créé.
+describe('pickup-rules — assertNotOwnSend', () => {
+  it('l\'agent qui a créé l\'envoi ne peut pas le payer', () => {
+    try {
+      assertNotOwnSend({ senderId: 'ag1' }, 'ag1');
+      fail('devait refuser');
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(ForbiddenException);
+      expect(e.getResponse()).toMatchObject({ code: 'SELF_PAYOUT_FORBIDDEN' });
+    }
+  });
+
+  it('un autre agent peut payer', () => {
+    expect(() => assertNotOwnSend({ senderId: 'ag1' }, 'ag2')).not.toThrow();
+  });
+
+  it('envoi sans expéditeur enregistré : pas de blocage', () => {
+    expect(() => assertNotOwnSend({ senderId: null }, 'ag1')).not.toThrow();
+    expect(() => assertNotOwnSend({}, 'ag1')).not.toThrow();
   });
 });

@@ -6,7 +6,7 @@ import { RatesModule } from '../rates/rates.module';
 import { RatesAdminController } from './rates-admin.controller';
 import { RatesAdminService } from './rates-admin.service';
 
-// PrismaModule est global ; RatesModule exporte RatesService (taux de secours) ;
+// PrismaModule est global ; RatesModule exporte RatesService (taux enregistrés uniquement) ;
 // AuthModule fournit le JwtService utilisé par JwtAuthGuard.
 @Module({
   imports: [AuthModule, RatesModule],

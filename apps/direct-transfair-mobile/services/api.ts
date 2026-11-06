@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/services/api.ts
 // =========================================================
-// ✅ phase 7 : code de la société système et taux de secours lus dans services/platformConfig.ts (plus de « DONIKO » ni de taux écrits en dur).
+// ✅ phase 7 : code de la société système lu dans services/platformConfig.ts (plus de « DONIKO » écrit en dur) ; aucun taux de secours.
 // DIRECT TRANSF'AIR — API Service v6.2
 // ✅ v6.2 : RECONSTRUCTION des méthodes qui manquaient dans ce fichier alors que les écrans les appellent (la copie du
 //    dépôt s'arrêtait à getPromotions : 35 méthodes absentes → erreur de compilation et plantage à l'exécution des écrans
@@ -78,7 +78,7 @@ import * as SecureStore from "expo-secure-store";
 
 import { getApiBaseUrl } from "./serverConfig";
 import { runOnce } from "./idempotency";
-import { getPlatformCode, getFallbackRates } from "./platformConfig";
+import { getPlatformCode } from "./platformConfig";
 
 import type {
   Agency,
@@ -1115,8 +1115,8 @@ class API {
   // TAUX DE CHANGE
   // ============================================================
 
-  // GET /exchange-rates (public) — taux publiés par la plateforme. En cas d'échec, taux de secours uniquement si
-  // EXPO_PUBLIC_FALLBACK_RATES est défini (services/platformConfig.ts) ; sinon liste vide.
+  // GET /exchange-rates (public) — taux publiés par la plateforme. Aucun taux de secours : en cas d'échec la liste est
+  // vide et les écrans n'affichent aucune estimation (jamais un taux inventé sur une app d'argent).
   async getExchangeRates(): Promise<ExchangeRate[]> {
     try {
       const res = await this.http.get<unknown>("/exchange-rates");
@@ -1124,10 +1124,8 @@ class API {
       if (list.length > 0) return list;
       throw new Error("Réponse vide");
     } catch {
-      devLog("⚠️ getExchangeRates: API indisponible → taux de secours");
-      return getFallbackRates()
-        .map((r) => ({ pair: r.pair, rate: r.rate, inverseRate: 1 / r.rate }))
-        .map(normalizeExchangeRate);
+      devLog("⚠️ getExchangeRates: API indisponible → aucun taux affiché");
+      return [];
     }
   }
 

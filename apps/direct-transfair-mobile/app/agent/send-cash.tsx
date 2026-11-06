@@ -26,6 +26,7 @@ import { api } from "../../services/api";
 import { runOnce } from "../../services/idempotency";
 import { useFeeQuote } from "../../hooks/useFeeQuote";
 import { nationalOf, toE164, MIN_FULL_NUMBER } from "../../utils/phone";
+import { lookupRate, type RateRow } from "../../utils/rateLookup";
 
 const AGENT_BLUE      = "#2563EB";
 const AGENT_BLUE_DARK = "#1D4ED8";
@@ -212,7 +213,7 @@ export default function AgentSendCashScreen() {
   const [allRates,       setAllRates]       = useState<any[]>([]);
   const [targetCurrency, setTargetCurrency] = useState("XOF");
   const [receivedAmount, setReceivedAmount] = useState(0);
-  const [exchangeRate,   setExchangeRate]   = useState(1);
+  const [exchangeRate,   setExchangeRate]   = useState<number | null>(1);
   const [showSenderModal,   setShowSenderModal]   = useState(false);
   const [showReceiverModal, setShowReceiverModal] = useState(false);
 
@@ -253,12 +254,8 @@ export default function AgentSendCashScreen() {
   }, [receiverCountry]);
 
   useEffect(() => {
-    if (targetCurrency === agentCurrency) { setExchangeRate(1); return; }
-    const getR = (pair: string, fb: number): number => (allRates as any[]).find((r: any) => r.pair === pair)?.rate ?? fb;
-    const FALLBACKS: Record<string, number> = { EUR_XOF: 655.957, EUR_GNF: 9600, EUR_GBP: 0.85, EUR_USD: 1.08, EUR_MAD: 10.8 };
-    const agentToEur  = agentCurrency === "EUR" ? 1 : 1 / getR(`EUR_${agentCurrency}`, FALLBACKS[`EUR_${agentCurrency}`] ?? 1);
-    const eurToTarget = targetCurrency === "EUR" ? 1 : getR(`EUR_${targetCurrency}`, FALLBACKS[`EUR_${targetCurrency}`] ?? 1);
-    setExchangeRate(agentToEur * eurToTarget);
+    // Aucun taux en dur : seul un taux publié par la plateforme est utilisé. Sinon null → aucune estimation, envoi bloqué.
+    setExchangeRate(lookupRate(allRates as RateRow[], agentCurrency, targetCurrency));
   }, [allRates, targetCurrency, agentCurrency]);
 
   // ✅ audit : frais EXACTS du serveur (barème de la société) — avant : tarif plat historique arrondi à l'unité supérieure
@@ -278,12 +275,14 @@ export default function AgentSendCashScreen() {
     const fee = quote.fees !== null ? roundTo(quote.fees, dec(agentCurrency)) : roundTo(val * feeRate, dec(agentCurrency));
     setFees(fee);
     setTotal(roundTo(val + fee, dec(agentCurrency)));
-    setReceivedAmount(roundTo(val * exchangeRate, dec(targetCurrency)));
+    setReceivedAmount(exchangeRate !== null ? roundTo(val * exchangeRate, dec(targetCurrency)) : 0);
   }, [amount, feeRate, exchangeRate, quote.fees, agentCurrency, targetCurrency]);
 
   const senderNational   = nationalOf(senderPhone, senderPhoneCode.dialCode);
   const receiverNational = nationalOf(receiverPhone, receiverCountry.dialCode);
-  const canSubmit = senderFirstName.trim() && senderLastName.trim() && senderNational.length >= MIN_FULL_NUMBER - 1 && receiverFirstName.trim() && receiverLastName.trim() && receiverNational.length >= MIN_FULL_NUMBER - 1 && parseFloat(amount) > 0;
+  // Taux publié absent pour cette destination : pas d'estimation, pas d'envoi (le serveur refuserait de toute façon).
+  const rateMissing = exchangeRate === null;
+  const canSubmit = senderFirstName.trim() && senderLastName.trim() && senderNational.length >= MIN_FULL_NUMBER - 1 && receiverFirstName.trim() && receiverLastName.trim() && receiverNational.length >= MIN_FULL_NUMBER - 1 && parseFloat(amount) > 0 && !rateMissing;
 
   // Bénéficiaires déjà créés pendant cette saisie : un nouvel essai après une coupure réseau ne recrée pas de doublon.
   const createdBeneficiaries = useRef<Record<string, string>>({});
@@ -318,7 +317,7 @@ export default function AgentSendCashScreen() {
       const sFees     = Number.isFinite(Number(transaction?.fees))  ? Number(transaction.fees)  : fees;
       const sTotal    = Number.isFinite(Number(transaction?.total)) && Number(transaction.total) > 0 ? Number(transaction.total) : total;
       const sReceived = Number(transaction?.receivedAmount) > 0 ? Number(transaction.receivedAmount) : receivedAmount;
-      const sRate     = Number(transaction?.exchangeRate) > 0 ? Number(transaction.exchangeRate) : exchangeRate;
+      const sRate     = Number(transaction?.exchangeRate) > 0 ? Number(transaction.exchangeRate) : (exchangeRate ?? 1);
       const sTarget   = transaction?.targetCurrency ?? targetCurrency;
 
       const receiptData = { type: "ENVOI" as const, reference: transaction.reference, date: new Date().toISOString(), amount: parseFloat(amount), currency: agentCurrency, fees: sFees, totalAmount: sTotal, receivedAmount: sReceived, targetCurrency: sTarget, exchangeRate: sRate, beneficiaryName: fullName, beneficiaryPhone: receiverFull, beneficiaryCountry: receiverCountry.name, senderName: `${senderFirstName.trim()} ${senderLastName.trim()}`, senderPhone: senderFull, code: transaction.reference, agencyName: (user as any)?.agency?.name || undefined, agentName: `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined };
@@ -330,7 +329,7 @@ export default function AgentSendCashScreen() {
   };
 
   const amtNum     = parseFloat(amount) || 0;
-  const rateDisplay = exchangeRate.toFixed(rateDecimals(exchangeRate));
+  const rateDisplay = exchangeRate !== null ? exchangeRate.toFixed(rateDecimals(exchangeRate)) : "—";
 
   return (
     <SafeAreaView style={s.safe}>
@@ -429,6 +428,14 @@ export default function AgentSendCashScreen() {
                   <Text style={[s.feesLbl, { fontFamily: C.font.sans }]}>Frais{quote.fees === null ? ` (~${feeLabel} %)` : ""}</Text>
                   <Text style={[s.feesVal, { fontFamily: C.font.mono }]}>{fmt(fees, agentCurrency)} {agentCurrency}</Text>
                 </View>
+                {rateMissing && amtNum > 0 && (
+                  <>
+                    <View style={s.feesRowDivider} />
+                    <Text style={[s.feesLbl, { fontFamily: C.font.sans, color: C.red ?? "#DC2626" }]}>
+                      Taux de change {agentCurrency} → {targetCurrency} indisponible : envoi impossible pour le moment. Contactez l'administrateur.
+                    </Text>
+                  </>
+                )}
                 {receivedAmount > 0 && (
                   <>
                     <View style={s.feesRowDivider} />

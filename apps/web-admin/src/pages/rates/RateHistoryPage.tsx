@@ -92,7 +92,7 @@ export default function RateHistoryPage() {
             <Icon name="list" size={26} />
           </span>
           <h2>Aucun enregistrement</h2>
-          <p>Le taux n’a pas encore été fixé : le taux de secours du serveur s’applique.</p>
+          <p>Le taux n’a pas encore été fixé : les conversions de ce couple sont refusées tant qu’il ne l’est pas.</p>
         </Card>
       ) : (
         <>

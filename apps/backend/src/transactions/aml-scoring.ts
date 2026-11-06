@@ -13,17 +13,10 @@
 //   - cumul (24 h)           : cumul ≥ 2 × seuil → +20
 //   - compte récent          : créé il y a moins de 7 jours → +15
 // Seuil : AML_THRESHOLD_XOF (défaut 2 000 000 XOF). Signalement à partir de AML_FLAG_SCORE (défaut 60).
-// Les montants sont ramenés en XOF avec des taux APPROXIMATIFS (suffisants pour un seuil, pas pour un calcul comptable).
+// ✅ v1.1 (audit argent) : les montants sont ramenés en XOF avec les taux ENREGISTRÉS (RatesService), plus avec une table en dur.
+//   Ce fichier reste pur : l'appelant fournit `amountXof`. Si la conversion est impossible (taux absent), `amountXof` vaut null :
+//   le montant n'est PAS deviné, l'opération est signalée pour revue manuelle (jamais bloquée).
 // =========================================================
-
-/** Taux approximatifs vers XOF — uniquement pour comparer à un seuil. */
-const APPROX_TO_XOF: Record<string, number> = {
-  XOF: 1, EUR: 655.957, USD: 600, GBP: 760, GNF: 0.07,
-};
-
-export function approxXof(amount: number, currency: string): number {
-  return amount * (APPROX_TO_XOF[currency.toUpperCase()] ?? 1);
-}
 
 export function amlThresholdXof(): number {
   const raw = Number(process.env.AML_THRESHOLD_XOF);
@@ -36,11 +29,11 @@ export function amlFlagScore(): number {
 }
 
 export interface AmlInput {
-  amount: number;
-  currency: string;
-  /** Envois du même expéditeur sur les dernières 24 h, sans compter celui-ci. */
+  /** Montant de l'opération converti en XOF avec les taux enregistrés ; null = conversion impossible (taux absent). */
+  amountXof: number | null;
+  /** Opérations du même client sur les dernières 24 h, sans compter celle-ci. */
   recentCount24h: number;
-  /** Cumul approximatif en XOF de ces envois, sans compter celui-ci. */
+  /** Cumul en XOF de ces opérations, sans compter celle-ci. */
   recentSumXof24h: number;
   accountCreatedAt?: Date | null;
   now?: Date;
@@ -54,9 +47,17 @@ export interface AmlResult {
 
 export function computeRiskScore(input: AmlInput): AmlResult {
   const threshold = amlThresholdXof();
-  const amountXof = approxXof(input.amount, input.currency);
   const reasons: string[] = [];
   let score = 0;
+
+  // Taux absent : on ne devine pas. Les critères de montant sont sautés et l'opération est signalée pour revue.
+  if (input.amountXof === null) {
+    reasons.push('Taux de change indisponible : montant non évalué, revue manuelle requise');
+    const vel = input.recentCount24h >= 5 ? 20 : 0;
+    if (vel) reasons.push(`${input.recentCount24h + 1} opérations en 24 h`);
+    return { score: Math.max(amlFlagScore(), vel), flagged: true, reasons };
+  }
+  const amountXof = input.amountXof;
 
   if (amountXof >= threshold) {
     score += 40; reasons.push(`Montant élevé (≈ ${Math.round(amountXof).toLocaleString('fr-FR')} XOF)`);

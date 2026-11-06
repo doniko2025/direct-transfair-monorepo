@@ -153,7 +153,7 @@ import { PrismaService }  from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { toIso2 } from '../fee-schedule/countries';
-import { assertPayableInCountry, destinationCountryOf, isPickupExpired } from '../transactions/pickup-rules';
+import { assertNotOwnSend, assertPayableInCountry, destinationCountryOf, isPickupExpired } from '../transactions/pickup-rules';
 import { RatesService }   from '../rates/rates.service';
 import { SAFE_USER_SELECT } from '../common/utils/safe-user-select'; // ✅ audit
 import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
@@ -339,6 +339,9 @@ export class WithdrawalsService {
     if (tx.status === TransactionStatus.EXPIRED || (PAYABLE_STATUSES.includes(tx.status) && isPickupExpired(tx))) {
       throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
     }
+    // ✅ v4.18 — séparation des tâches, signalée dès la vérification (même règle qu'au paiement).
+    if (agentId) assertNotOwnSend(tx, agentId);
+
     // ✅ v4.15 — pays de paiement : l'agent est informé dès la vérification que ce code se paie dans un autre pays.
     if (agentId) {
       const agent = await this.prisma.user.findUnique({ where: { id: agentId }, include: { agency: true } });
@@ -443,6 +446,9 @@ export class WithdrawalsService {
       throw new ConflictException('Ce code a expiré : l\'envoi est annulé et l\'expéditeur est remboursé automatiquement.');
     }
 
+    // ✅ v4.18 (audit argent) — séparation des tâches : l'agent qui a créé l'envoi ne peut pas le payer.
+    assertNotOwnSend(tx, agentId);
+
     // ✅ v4.16 — contrôle du téléphone du bénéficiaire : l'agent saisit les derniers chiffres que le bénéficiaire lui donne.
     const phoneCheck = this.phoneCheckOf(company.pickup, tx.beneficiary?.phone);
     if (phoneCheck.required && !this.phoneMatches(tx.beneficiary?.phone, opts.phoneDigits, phoneCheck.digits)) {
@@ -494,7 +500,14 @@ export class WithdrawalsService {
     const rawFees = Number(tx.fees ?? 0);
     let feesInPayoutCurrency = rawFees;
 
-    if (rawFees > 0 && tx.currency !== payoutCurrency) {
+    // ✅ v4.17 (audit argent) — les frais se convertissent au taux ENREGISTRÉ sur l'envoi (celui qui a servi à calculer le montant
+    // reçu), pas au taux du jour. Un code reste payable jusqu'à 5 mois : au taux du jour, le montant remis au bénéficiaire et les
+    // commissions versées aux agences / à la société partaient de deux taux différents, et l'écart (positif ou négatif) tombait
+    // dans la caisse de la société sans trace. Sans taux enregistré (anciens envois), repli sur le taux courant comme avant.
+    const storedRate = Number(tx.exchangeRate ?? 0);
+    if (rawFees > 0 && tx.currency !== payoutCurrency && storedRate > 0 && payoutCurrency === tx.targetCurrency) {
+      feesInPayoutCurrency = rawFees * storedRate;
+    } else if (rawFees > 0 && tx.currency !== payoutCurrency) {
       try {
         feesInPayoutCurrency = await this.ratesService.convert(rawFees, tx.currency, payoutCurrency);
       } catch (e) {

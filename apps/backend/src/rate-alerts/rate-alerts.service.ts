@@ -1,6 +1,9 @@
 // apps/backend/src/rate-alerts/rate-alerts.service.ts
 // =========================================================
-// RATE ALERTS SERVICE v4.1
+// RATE ALERTS SERVICE v4.2
+// ✅ v4.2 (audit argent) : le taux courant est résolu comme pour les conversions (rates/rate-resolver.ts) : direct,
+//   inverse, pivot EUR, formats « EUR_XOF » et « EUR/XOF ». Avant, une alerte XOF_GNF ou sur une ligne ancien format
+//   ne se déclenchait jamais.
 // ✅ v4.1 (phase 6, passe 3) :
 //   (1) Corps de POST /rate-alerts validé (CreateRateAlertDto) : paire connue, direction, seuil, canaux. Avant,
 //       `body: any` : une paire non textuelle, une direction inconnue ou un seuil texte donnaient une erreur 500
@@ -27,6 +30,7 @@ import { Cron } from '@nestjs/schedule';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePair, RATE_CURRENCIES } from '../rates-admin/rate-rules';
+import { candidatePairs, resolveRate, type RateRowLike } from '../rates/rate-resolver';
 import { PushService } from '../push/push.service';
 import { SmsService } from '../sms/sms.service';
 import { MailService } from '../mail/mail.service';
@@ -42,15 +46,15 @@ export type { CreateRateAlertDto };
 export const MAX_ACTIVE_ALERTS_PER_USER = 20;
 
 /**
- * Taux courant d'une paire « BASE_QUOTE » à partir des lignes enregistrées : le sens direct s'il existe,
- * sinon l'inverse (1 / taux). null si aucun des deux n'est enregistré.
+ * Taux courant d'une paire « BASE_QUOTE » à partir des lignes enregistrées, avec la MÊME règle que les conversions
+ * (rates/rate-resolver.ts) : sens direct, sinon inverse (1 / taux), sinon via l'euro ; formats « EUR_XOF » et
+ * « EUR/XOF » lus. null si rien ne permet de le calculer — jamais un taux inventé.
  */
-export function currentRateOf(pair: string, rates: ReadonlyMap<string, number>): number | null {
-  const direct = rates.get(pair);
-  if (direct !== undefined && direct > 0) return direct;
+export function currentRateOf(pair: string, rows: readonly RateRowLike[]): number | null {
   const [base, quote] = pair.split('_');
-  const inverse = rates.get(`${quote}_${base}`);
-  return inverse !== undefined && inverse > 0 ? 1 / inverse : null;
+  if (!base || !quote) return null;
+  const r = resolveRate(rows, base, quote);
+  return r.ok ? r.rate : null;
 }
 
 // =========================================================
@@ -185,20 +189,18 @@ export class RateAlertsService {
 
     if (activeAlerts.length === 0) return;
 
-    // Charge tous les taux utiles (sens direct et inverse) en une seule requête
+    // Charge tous les taux utiles (direct, inverse, pivot EUR ; deux formats d'écriture) en une seule requête
     const wanted = new Set<string>();
     for (const a of activeAlerts) {
-      wanted.add(a.pair);
       const [base, quote] = a.pair.split('_');
-      wanted.add(`${quote}_${base}`);
+      for (const p of candidatePairs(base, quote)) wanted.add(p);
     }
-    const rates = await this.prisma.exchangeRate.findMany({
+    const rows = await this.prisma.exchangeRate.findMany({
       where: { pair: { in: [...wanted] } },
     });
-    const rateMap = new Map<string, number>(rates.map((r) => [r.pair, Number(r.rate)]));
 
     for (const alert of activeAlerts) {
-      const currentRate = currentRateOf(alert.pair, rateMap);
+      const currentRate = currentRateOf(alert.pair, rows);
       if (currentRate === null) continue;
 
       const triggered =

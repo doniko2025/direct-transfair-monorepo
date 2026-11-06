@@ -1,6 +1,9 @@
 // apps/backend/src/payments/recharge.service.ts
 // =========================================================
-// RECHARGE SERVICE v1.4 — Direct Transf'air
+// RECHARGE SERVICE v1.5 — Direct Transf'air
+// ✅ v1.5 (audit argent, CRITIQUE) : checkAndSettle() ne règle plus que les vraies recharges (direction INBOUND, expéditeur = destinataire).
+//   Avant, un agent pouvait se faire créditer une 2e fois le montant d'un dépôt en agence qu'il avait lui-même fait (voir le commentaire
+//   dans checkAndSettle).
 // ✅ v1.4 (audit point 7) : au démarrage, si NODE_ENV=production et que BLOCK_SIMULATED_RECHARGES n'est pas à « true »,
 //   un avertissement bien visible est écrit dans les logs : les recharges carte / Orange Money / Sendwave créditent
 //   alors le wallet SANS paiement réel. Le comportement par défaut ne change pas (recharges simulées ouvertes pour la
@@ -195,8 +198,21 @@ export class RechargeService {
   // ========================================================
 
   async checkAndSettle(userId: string, transactionId: string): Promise<Transaction> {
+    // ✅ v1.5 (audit argent — FAILLE CRITIQUE) : seule une VRAIE recharge de son propre wallet se règle ici.
+    // Avant : le filtre était { senderId: userId, type: DEPOSIT }. Or un DÉPÔT EN AGENCE (TransactionsService.deposit) est
+    // lui aussi de type DEPOSIT, PAYÉ, avec senderId = l'AGENT. N'importe quel agent pouvait donc appeler
+    // GET /payments/recharge/<id de son dépôt>/status et se faire créditer, sur son wallet personnel, une seconde fois le
+    // montant d'un dépôt déjà remis au client (creditOnce contrôle « déjà crédité ? » par wallet : celui de l'agent était vide).
+    // Une recharge a direction INBOUND et l'utilisateur est à la fois expéditeur ET destinataire ; un dépôt agent est
+    // OUTBOUND (défaut) avec un autre destinataire.
     const tx = await this.prisma.transaction.findFirst({
-      where: { id: transactionId, senderId: userId, type: TransactionType.DEPOSIT },
+      where: {
+        id: transactionId,
+        senderId: userId,
+        recipientId: userId,
+        type: TransactionType.DEPOSIT,
+        direction: TransactionDirection.INBOUND,
+      },
     });
     if (!tx) throw new NotFoundException('Recharge introuvable');
 

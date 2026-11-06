@@ -260,7 +260,7 @@ export class CommissionsService {
     const { page, limit } = normalizePaging(pageRaw, limitRaw);
 
     const agencyWallets = await this.prisma.wallet.findMany({
-      where: { agencyId, isActive: true },
+      where: { agencyId, clientId },
       select: { id: true },
     });
     const walletIds = agencyWallets.map((w) => w.id);
@@ -307,14 +307,14 @@ export class CommissionsService {
     const { page, limit } = normalizePaging(pageRaw, limitRaw);
 
     const [companyWallets, agencies] = await Promise.all([
-      this.prisma.wallet.findMany({ where: { clientId, isActive: true }, select: { id: true } }),
+      this.prisma.wallet.findMany({ where: { clientId }, select: { id: true } }),
       this.prisma.agency.findMany({ where: { clientId }, select: { id: true, name: true } }),
     ]);
 
     const agencyIds = agencies.map((a) => a.id);
     const agencyWallets = agencyIds.length > 0
       ? await this.prisma.wallet.findMany({
-          where: { agencyId: { in: agencyIds }, isActive: true },
+          where: { agencyId: { in: agencyIds } },
           select: { id: true, agencyId: true },
         })
       : [];

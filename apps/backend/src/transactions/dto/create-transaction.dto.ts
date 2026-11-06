@@ -99,8 +99,12 @@ export class CreateDepositDto {
 
 // ✅ DTOs TRÉSORERIE
 export class FundSelfDto {
-  @IsNumber()
+  // ✅ v1.3 (audit argent) : borné et à 4 décimales au plus (précision des colonnes Decimal(18,4)). Avant : @IsNumber() seul,
+  // donc 1e30 (erreur 500 en base) ou 0.00005 (arrondis différents sur les deux lignes d'un mouvement) passaient la validation.
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
   @IsPositive()
+  @Min(0.01)
+  @Max(MAX_AMOUNT)
   amount: number;
 }
 
@@ -109,14 +113,22 @@ export class RefillAgencyDto {
   @IsNotEmpty()
   agencyId: string;
 
-  @IsNumber()
+  // ✅ v1.3 (audit argent) : borné et à 4 décimales au plus (précision des colonnes Decimal(18,4)). Avant : @IsNumber() seul,
+  // donc 1e30 (erreur 500 en base) ou 0.00005 (arrondis différents sur les deux lignes d'un mouvement) passaient la validation.
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
   @IsPositive()
+  @Min(0.01)
+  @Max(MAX_AMOUNT)
   amount: number;
 }
 
 export class DeclareB2BDto {
-  @IsNumber()
+  // ✅ v1.3 (audit argent) : borné et à 4 décimales au plus (précision des colonnes Decimal(18,4)). Avant : @IsNumber() seul,
+  // donc 1e30 (erreur 500 en base) ou 0.00005 (arrondis différents sur les deux lignes d'un mouvement) passaient la validation.
+  @IsNumber({ allowNaN: false, allowInfinity: false, maxDecimalPlaces: 4 })
   @IsPositive()
+  @Min(0.01)
+  @Max(MAX_AMOUNT)
   amount: number;
 
   @IsString()

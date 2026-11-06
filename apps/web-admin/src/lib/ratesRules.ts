@@ -38,9 +38,9 @@ export function inverseOf(rate: number | null | undefined): number | null {
   return typeof rate === 'number' && Number.isFinite(rate) && rate > 0 ? 1 / rate : null;
 }
 
-/** Taux réellement appliqué par le serveur pour ce couple. */
-export function appliedRate(p: Pick<RatePair, 'rate' | 'fallbackRate'>): number {
-  return p.rate ?? p.fallbackRate;
+/** Taux réellement appliqué par le serveur pour ce couple. Null = non configuré : aucune conversion possible (pas de taux de secours). */
+export function appliedRate(p: Pick<RatePair, 'rate'>): number | null {
+  return p.rate;
 }
 
 export type RateStatus = 'set' | 'derived' | 'none';
@@ -58,9 +58,9 @@ export const STATUS_VIEW: Record<RateStatus, { label: string; tone: Tone; hint: 
     hint: 'Seul le sens inverse est enregistré : ce taux en est déduit (1 ÷ taux).',
   },
   none: {
-    label: 'Taux de secours',
-    tone: 'warn',
-    hint: 'Aucun taux enregistré : le serveur applique son taux intégré tant que vous n’en fixez pas un.',
+    label: 'Non configuré',
+    tone: 'danger',
+    hint: 'Aucun taux enregistré : le serveur refuse toute conversion qui dépend de ce couple tant que vous n’en fixez pas un.',
   },
 };
 
