@@ -1,73 +1,36 @@
 // src/pages/settings/SettingsPage.tsx
-// Réglages de la société : répartition des frais d'un retrait payé en agence (v1) et seuil de validation
-// d'un envoi cash, par devise (v2, phase 6) et plafonds d'envoi par niveau KYC et par devise (v3, phase 6).
-// v4 : + Paramètres de la société (modes gratuits, répartition par défaut, codes de retrait, alertes de caisse) — tout est réglable.
+// Réglages de la société, rangés en 4 onglets :
+//   Paramètres (modes gratuits, recharge, marchands, codes de retrait, caisse) · Frais (partage entre agences)
+//   Seuils (validation d'un envoi cash, par devise) · Plafonds (envoi par niveau KYC et par devise).
+// Chaque onglet a son historique compact. Les 4 panneaux restent montés (masqués) : changer d'onglet ne fait pas perdre une saisie.
 // Admin de société : modifie. Super admin : consulte ceux de la société de son choix.
 
-import { useCallback, useState } from 'react';
-import type { SplitRule } from '@direct-transfair/shared';
+import { useCallback, useState, type KeyboardEvent } from 'react';
 import { Icon } from '../../components/Icon';
 import { SelectField } from '../../components/form';
-import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
+import { Button, Card, Notice, PageHeader, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { describeError } from '../../lib/errors';
-import { DEST_LABEL, pct, SOURCE_LABEL, sortSplitRules } from '../../lib/splitRules';
 import { useKeyedResource, useResource } from '../../lib/useResource';
 import { useCurrentUser } from '../../providers/AuthProvider';
-import SplitDialog from './SplitDialog';
-import LimitsSection from './LimitsSection';
-import SplitHistory from './SplitHistory';
-import ThresholdSection from './ThresholdSection';
 import CompanySettingsSection from './CompanySettingsSection';
+import LimitsSection from './LimitsSection';
+import SplitSection from './SplitSection';
+import ThresholdSection from './ThresholdSection';
 
-function Bar({ sender, payer, platform }: { sender: number; payer: number; platform: number }) {
-  return (
-    <div className="split-bar" role="img" aria-label={`Agence d’envoi ${pct(sender)}, agence payeuse ${pct(payer)}, société ${pct(platform)}`}>
-      <span className="split-bar__seg split-bar__seg--sender" style={{ flexGrow: sender }} />
-      <span className="split-bar__seg split-bar__seg--payer" style={{ flexGrow: payer }} />
-      <span className="split-bar__seg split-bar__seg--platform" style={{ flexGrow: platform }} />
-    </div>
-  );
-}
+const TABS = [
+  { id: 'params', label: 'Paramètres' },
+  { id: 'frais', label: 'Frais' },
+  { id: 'seuils', label: 'Seuils' },
+  { id: 'plafonds', label: 'Plafonds' },
+] as const;
 
-function RuleCard({ rule, editable, onEdit }: { rule: SplitRule; editable: boolean; onEdit: () => void }) {
-  const s = rule.effective;
-  const fromWallet = rule.sourceType === 'WALLET';
-  return (
-    <li className="split-card" data-split={`${rule.sourceType}-${rule.destType}`}>
-      <div className="split-card__head">
-        <h3>{SOURCE_LABEL[rule.sourceType]}</h3>
-        {rule.configured ? <Pill tone="ok">Configuré</Pill> : <Pill tone="warn">Par défaut</Pill>}
-      </div>
-      <p className="split-card__dest">{DEST_LABEL[rule.destType]}</p>
-      <Bar sender={s.senderShare} payer={s.payerShare} platform={s.platformShare} />
-      <dl className="split-card__shares">
-        {fromWallet ? null : (
-          <div>
-            <dt>Agence d’envoi</dt>
-            <dd data-part="sender">{pct(s.senderShare)}</dd>
-          </div>
-        )}
-        <div>
-          <dt>Agence payeuse</dt>
-          <dd data-part="payer">{pct(s.payerShare)}</dd>
-        </div>
-        <div>
-          <dt>Société</dt>
-          <dd data-part="platform">{pct(s.platformShare)}</dd>
-        </div>
-      </dl>
-      {fromWallet ? <p className="split-card__hint">Un client n’a pas d’agence d’envoi : cette part revient à la société.</p> : null}
-      {!rule.configured ? <p className="split-card__hint">Rien n’est enregistré : la répartition par défaut s’applique.</p> : null}
-      {editable ? (
-        <div className="split-card__actions">
-          <Button variant="secondary" icon="edit" onClick={onEdit}>
-            Modifier
-          </Button>
-        </div>
-      ) : null}
-    </li>
-  );
+type TabId = (typeof TABS)[number]['id'];
+
+/** L'onglet ouvert se retrouve dans l'adresse (#frais…) : on revient où l'on était après un rechargement. */
+function initialTab(): TabId {
+  const hash = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
+  return TABS.find((t) => t.id === hash)?.id ?? 'params';
 }
 
 export default function SettingsPage() {
@@ -92,14 +55,32 @@ export default function SettingsPage() {
   const companySettings = useKeyedResource(scope, async () => (skip ? null : api.companySettings.get(clientId)), [skip]);
   const companySettingsLog = useKeyedResource(scope, async () => (skip ? { data: [] } : api.companySettings.history(clientId, 10)), [skip]);
 
-  const [editing, setEditing] = useState<SplitRule | null>(null);
+  const [tab, setTabState] = useState<TabId>(initialTab);
+  const [paramsDirty, setParamsDirty] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+
+  const setTab = useCallback((id: TabId) => {
+    setTabState(id);
+    try {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${id}`);
+    } catch {
+      /* adresse non modifiable : l'onglet reste choisi, sans lien direct */
+    }
+  }, []);
+
+  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next = TABS[(i + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    if (!next) return;
+    setTab(next.id);
+    document.getElementById(`set-tab-${next.id}`)?.focus();
+  };
 
   const reloadRules = rules.reload;
   const reloadHistory = history.reload;
   const done = useCallback(
     (message: string) => {
-      setEditing(null);
       setFlash(message);
       reloadRules();
       reloadHistory();
@@ -143,21 +124,29 @@ export default function SettingsPage() {
   );
 
   const data = rules.data;
-  const list = sortSplitRules(data?.rules ?? []);
-  const editable = data?.editable ?? false;
   const companyOptions = (companies.data ?? []).map((c) => ({ value: String(c.id), label: c.name }));
 
   return (
     <>
       <PageHeader
         title="Réglages"
-        description={
-          data
-            ? `Paramètres, frais, seuil de validation et plafonds d’envoi de ${data.company.name}.`
-            : 'Frais, seuil de validation et plafonds d’envoi.'
-        }
+        description={data ? `Paramètres, frais, seuils et plafonds de ${data.company.name}.` : 'Paramètres, frais, seuils et plafonds.'}
         actions={
-          <Button variant="secondary" onClick={() => { rules.reload(); history.reload(); companySettings.reload(); companySettingsLog.reload(); thresholds.reload(); thresholdLog.reload(); limits.reload(); limitsLog.reload(); }} busy={rules.loading && data !== null}>
+          <Button
+            variant="secondary"
+            icon="refresh"
+            onClick={() => {
+              rules.reload();
+              history.reload();
+              companySettings.reload();
+              companySettingsLog.reload();
+              thresholds.reload();
+              thresholdLog.reload();
+              limits.reload();
+              limitsLog.reload();
+            }}
+            busy={rules.loading && data !== null}
+          >
             Actualiser
           </Button>
         }
@@ -178,7 +167,7 @@ export default function SettingsPage() {
       ) : null}
 
       {isSuper ? (
-        <div className="toolbar">
+        <div className="toolbar toolbar--inline">
           <SelectField
             id="set-company"
             label="Société"
@@ -218,42 +207,45 @@ export default function SettingsPage() {
           <p>Les réglages d’une société apparaîtront ici dès qu’elle existe.</p>
         </Card>
       ) : (
-        <div className="tr-stack">
-          <CompanySettingsSection settings={companySettings} log={companySettingsLog} onChanged={companySettingsDone} />
+        <div className="set-page">
+          <div className="set-tabs" role="tablist" aria-label="Rubriques des réglages" onKeyDown={onTabKey}>
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                id={`set-tab-${t.id}`}
+                type="button"
+                role="tab"
+                className="set-tab"
+                aria-selected={tab === t.id}
+                aria-controls={`set-panel-${t.id}`}
+                tabIndex={tab === t.id ? 0 : -1}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+                {t.id === 'params' && paramsDirty ? <span className="set-tab__dot" role="img" aria-label="Modifications non enregistrées" /> : null}
+              </button>
+            ))}
+          </div>
 
-          <section aria-labelledby="split-title" className="tr-section">
-            <div className="tr-section__head">
-              <h2 id="split-title">Partage des frais</h2>
-              <p>
-                Quand un retrait est payé en agence, les frais de l’envoi sont partagés entre l’agence d’envoi, l’agence qui paie le cash et la société. Chaque
-                combinaison a sa propre répartition.
-              </p>
-            </div>
-            <ul className="split-grid">
-              {list.map((r) => (
-                <RuleCard key={`${r.sourceType}-${r.destType}`} rule={r} editable={editable} onEdit={() => setEditing(r)} />
-              ))}
-            </ul>
-            <ul className="split-legend" aria-label="Légende">
-              <li><span className="split-dot split-dot--sender" />Agence d’envoi</li>
-              <li><span className="split-dot split-dot--payer" />Agence payeuse</li>
-              <li><span className="split-dot split-dot--platform" />Société</li>
-            </ul>
-            <p className="muted">
-              Si l’agence d’envoi est aussi celle qui paie le cash, elle touche les deux parts. Les envois gratuits (par défaut : wallet à wallet, réglable dans les paramètres ci-dessus) n’ont aucun frais à
-              partager.
-            </p>
-          </section>
-
-          <SplitHistory resource={history} />
-
-          <ThresholdSection thresholds={thresholds} log={thresholdLog} onChanged={thresholdDone} />
-
-          <LimitsSection limits={limits} log={limitsLog} onChanged={limitsDone} />
+          <div id="set-panel-params" role="tabpanel" aria-labelledby="set-tab-params" hidden={tab !== 'params'}>
+            <CompanySettingsSection
+              settings={companySettings}
+              log={companySettingsLog}
+              onChanged={companySettingsDone}
+              onDirtyChange={setParamsDirty}
+            />
+          </div>
+          <div id="set-panel-frais" role="tabpanel" aria-labelledby="set-tab-frais" hidden={tab !== 'frais'}>
+            <SplitSection rules={rules} history={history} onChanged={done} />
+          </div>
+          <div id="set-panel-seuils" role="tabpanel" aria-labelledby="set-tab-seuils" hidden={tab !== 'seuils'}>
+            <ThresholdSection thresholds={thresholds} log={thresholdLog} onChanged={thresholdDone} />
+          </div>
+          <div id="set-panel-plafonds" role="tabpanel" aria-labelledby="set-tab-plafonds" hidden={tab !== 'plafonds'}>
+            <LimitsSection limits={limits} log={limitsLog} onChanged={limitsDone} />
+          </div>
         </div>
       )}
-
-      {editing ? <SplitDialog rule={editing} onClose={() => setEditing(null)} onDone={done} /> : null}
     </>
   );
 }

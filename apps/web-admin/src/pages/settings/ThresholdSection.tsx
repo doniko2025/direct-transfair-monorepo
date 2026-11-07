@@ -1,21 +1,20 @@
 // src/pages/settings/ThresholdSection.tsx
-// Réglages › Seuil de validation d'un envoi cash : une carte par devise + dernières modifications.
+// Réglages › Seuils : une ligne par devise (devise · seuil · modifier / rétablir) + historique compact.
 // Admin de société : modifie ou rétablit la valeur par défaut. Super admin : consulte (lecture seule).
 
 import { useState } from 'react';
 import type { ThresholdChange, ValidationThreshold, ValidationThresholds } from '@direct-transfair/shared';
-import { Icon } from '../../components/Icon';
 import { ConfirmDialog } from '../../components/form';
-import { Button, Card, Notice, Pill, Spinner } from '../../components/ui';
+import { Notice } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatAmount } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
-import { fullDate, when } from '../../lib/supervisionRules';
 import { changeTitle, currencyLabel, sortThresholds, stateLine } from '../../lib/thresholdRules';
 import type { Resource } from '../../lib/useResource';
+import { ChangeLog, IconBtn, SectionState, type LogItem } from './SettingsKit';
 import ThresholdDialog from './ThresholdDialog';
 
-function ThresholdCard({
+function ThresholdRow({
   threshold,
   editable,
   onEdit,
@@ -26,61 +25,36 @@ function ThresholdCard({
   onEdit: () => void;
   onReset: () => void;
 }) {
+  const label = currencyLabel(threshold.currency);
   return (
-    <li className="split-card" data-threshold={threshold.currency}>
-      <div className="split-card__head">
-        <h3>{currencyLabel(threshold.currency)}</h3>
-        {threshold.configured ? <Pill tone="ok">Configuré</Pill> : <Pill tone="warn">Par défaut</Pill>}
+    <li className="set-line" data-threshold={threshold.currency}>
+      <div className="set-line__main">
+        <strong>{label}</strong>
+        <small className={threshold.configured ? 'set-state set-state--ok' : 'set-state set-state--warn'}>
+          {threshold.configured ? 'Configuré' : 'Par défaut'}
+        </small>
       </div>
-      <dl className="split-card__shares">
-        <div>
-          <dt>Validation requise au-delà de</dt>
-          <dd data-part="threshold">{formatAmount(threshold.amount, threshold.currency)}</dd>
-        </div>
-      </dl>
-      {!threshold.configured ? <p className="split-card__hint">Rien n’est enregistré : le seuil par défaut s’applique.</p> : null}
+      <span className="set-line__val" data-part="threshold">
+        {formatAmount(threshold.amount, threshold.currency)}
+      </span>
       {editable ? (
-        <div className="split-card__actions">
-          <Button variant="secondary" icon="edit" onClick={onEdit}>
-            Modifier
-          </Button>{' '}
-          {threshold.configured ? (
-            <Button variant="secondary" onClick={onReset}>
-              Rétablir le défaut
-            </Button>
-          ) : null}
+        <div className="set-line__acts">
+          <IconBtn icon="edit" label={`Modifier le seuil en ${threshold.currency}`} onClick={onEdit} />
+          {threshold.configured ? <IconBtn icon="refresh" label={`Rétablir le seuil par défaut en ${threshold.currency}`} onClick={onReset} /> : null}
         </div>
       ) : null}
     </li>
   );
 }
 
-function Entry({ c }: { c: ThresholdChange }) {
-  return (
-    <li className="fee-log">
-      <div className="fee-log__main">
-        <div className="fee-log__head">
-          <Pill tone="brand">Seuil modifié</Pill>
-          <strong>{changeTitle(c)}</strong>
-        </div>
-        <p className="fee-log__change">
-          {c.from ? (
-            <>
-              <span className="muted">{stateLine(c.from, c.currency)}</span>
-              <Icon name="chevronRight" size={16} />
-            </>
-          ) : null}
-          <strong>{stateLine(c.to, c.currency)}</strong>
-        </p>
-        <span className="muted fee-log__by">
-          Par {c.user ?? 'un administrateur'} ·{' '}
-          <time dateTime={c.createdAt} title={fullDate(c.createdAt)}>
-            {when(c.createdAt)}
-          </time>
-        </span>
-      </div>
-    </li>
-  );
+function toItem(c: ThresholdChange): LogItem {
+  return {
+    id: c.id,
+    title: changeTitle(c),
+    createdAt: c.createdAt,
+    user: c.user,
+    lines: [{ from: c.from ? stateLine(c.from, c.currency) : null, to: stateLine(c.to, c.currency) }],
+  };
 }
 
 interface Props {
@@ -99,7 +73,6 @@ export default function ThresholdSection({ thresholds, log, onChanged }: Props) 
   const data = thresholds.data;
   const editable = data?.editable ?? false;
   const list = sortThresholds(data?.thresholds ?? []);
-  const entries = log.data?.data ?? [];
 
   async function confirmReset() {
     if (!resetting) return;
@@ -118,37 +91,18 @@ export default function ThresholdSection({ thresholds, log, onChanged }: Props) 
   }
 
   return (
-    <>
-      <section aria-labelledby="threshold-title" className="tr-section">
-        <div className="tr-section__head">
-          <h2 id="threshold-title">Seuil de validation</h2>
-          <p>
-            Un envoi cash jusqu’au seuil est validé d’office. Au-delà, il attend la validation d’un administrateur avant de pouvoir être retiré. Le seuil se règle devise
-            par devise.
-          </p>
-        </div>
-        {thresholds.loading && !data ? (
-          <div className="center-block">
-            <Spinner label="Chargement des seuils" />
-          </div>
-        ) : thresholds.error && !data ? (
-          <Card>
-            <Notice
-              tone="error"
-              title="Impossible de charger les seuils"
-              action={
-                <button type="button" className="link-btn" onClick={thresholds.reload}>
-                  Réessayer
-                </button>
-              }
-            >
-              {describeError(thresholds.error).message}
-            </Notice>
-          </Card>
-        ) : (
-          <ul className="split-grid">
+    <div className="set-panel">
+      <p className="set-intro">
+        Un envoi cash jusqu’au seuil est validé d’office. Au-delà, il attend la validation d’un administrateur avant de pouvoir être retiré. Le seuil se règle devise
+        par devise.
+      </p>
+      <SectionState resource={thresholds} loadingLabel="Chargement des seuils" errorTitle="Impossible de charger les seuils" />
+      {data ? (
+        <section className="set-card" aria-label="Seuils de validation par devise">
+          <p className="set-card__cap">Validation requise au-delà de</p>
+          <ul className="set-lines">
             {list.map((t) => (
-              <ThresholdCard
+              <ThresholdRow
                 key={t.currency}
                 threshold={t}
                 editable={editable}
@@ -160,48 +114,10 @@ export default function ThresholdSection({ thresholds, log, onChanged }: Props) 
               />
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      ) : null}
 
-      <section aria-labelledby="threshold-log-title" className="tr-section">
-        <div className="tr-section__head">
-          <h2 id="threshold-log-title">Dernières modifications du seuil</h2>
-          <p>Qui a changé un seuil, et quand.</p>
-        </div>
-        {log.loading && !log.data ? (
-          <div className="center-block">
-            <Spinner label="Chargement du journal" />
-          </div>
-        ) : log.error && !log.data ? (
-          <Card>
-            <Notice
-              tone="error"
-              title="Impossible de charger le journal"
-              action={
-                <button type="button" className="link-btn" onClick={log.reload}>
-                  Réessayer
-                </button>
-              }
-            >
-              {describeError(log.error).message}
-            </Notice>
-          </Card>
-        ) : entries.length === 0 ? (
-          <Card className="empty empty--compact">
-            <span className="empty__icon">
-              <Icon name="list" size={26} />
-            </span>
-            <h3>Aucune modification enregistrée</h3>
-            <p>Les changements de seuil apparaîtront ici.</p>
-          </Card>
-        ) : (
-          <ul className="fee-log-list">
-            {entries.map((c) => (
-              <Entry key={c.id} c={c} />
-            ))}
-          </ul>
-        )}
-      </section>
+      <ChangeLog resource={log} toItem={toItem} emptyText="Les changements de seuil apparaîtront ici." />
 
       {editing ? (
         <ThresholdDialog
@@ -232,6 +148,6 @@ export default function ThresholdSection({ thresholds, log, onChanged }: Props) 
           </>
         ) : null}
       </ConfirmDialog>
-    </>
+    </div>
   );
 }
