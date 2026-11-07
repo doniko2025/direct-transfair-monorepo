@@ -112,5 +112,5 @@ export interface MerchantProfileInput {
   category?: string;
   address?: string;
   city?: string;
-  orangeMoneyPhone: string;
+  orangeMoneyPhone?: string;
 }
