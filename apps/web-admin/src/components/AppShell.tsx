@@ -9,9 +9,12 @@ import { ROLE_LABEL, navFor } from '../navigation';
 import { useKycPending } from '../lib/useKycPending';
 import { useCurrentUser, useAuth } from '../providers/AuthProvider';
 import { UnreadProvider, useUnread } from '../providers/UnreadProvider';
+import { UrgentProvider, useUrgent } from '../providers/UrgentProvider';
 import { useTenant } from '../providers/TenantProvider';
 import { BrandMark } from './BrandMark';
 import { Icon } from './Icon';
+import { NotificationBell } from './NotificationBell';
+import { UserMenu } from './UserMenu';
 
 function displayName(first?: string | null, last?: string | null, email?: string): string {
   const full = [first, last].filter(Boolean).join(' ').trim();
@@ -28,6 +31,7 @@ function initials(name: string): string {
 function ShellFrame() {
   const user = useCurrentUser();
   const { unread } = useUnread();
+  const { fresh } = useUrgent();
   const { logout } = useAuth();
   const { branding } = useTenant();
   const location = useLocation();
@@ -49,12 +53,27 @@ function ShellFrame() {
   const kycPending = useKycPending(role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN' || can(user, 'KYC_REVIEW'));
   const name = displayName(user.firstName, user.lastName, user.email);
 
+  // Titre de la section courante (barre du haut) : l'entrée de menu dont le chemin est le plus proche.
+  const current = items
+    .filter((i) => (i.path === '/' ? location.pathname === '/' : location.pathname === i.path || location.pathname.startsWith(`${i.path}/`)))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  const sectionTitle = current?.label ?? branding.name;
+
+  // Les demandes urgentes se voient aussi dans l'onglet : « (3) Espace de gestion — … ».
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\)\s*/, '');
+    document.title = fresh > 0 ? `(${fresh}) ${base}` : base;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\)\s*/, '');
+    };
+  }, [fresh]);
+
   return (
     <div className="shell">
       <header className="topbar">
         <button
           type="button"
-          className="icon-btn"
+          className="icon-btn topbar__menu"
           onClick={() => setOpen(true)}
           aria-label="Ouvrir le menu"
           aria-expanded={open}
@@ -64,7 +83,12 @@ function ShellFrame() {
         </button>
         <div className="topbar__brand">
           <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={30} />
-          <span>{branding.name}</span>
+          <span className="topbar__name">{branding.name}</span>
+        </div>
+        <p className="topbar__title">{sectionTitle}</p>
+        <div className="topbar__actions">
+          <NotificationBell />
+          <UserMenu />
         </div>
       </header>
 
@@ -153,7 +177,9 @@ function ShellFrame() {
 export function AppShell() {
   return (
     <UnreadProvider>
-      <ShellFrame />
+      <UrgentProvider>
+        <ShellFrame />
+      </UrgentProvider>
     </UnreadProvider>
   );
 }

@@ -1,0 +1,20 @@
+{
+  "name": "Espace de gestion",
+  "short_name": "Gestion",
+  "description": "Back-office : agences, agents, clients, vérifications et trésorerie.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "id": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#F2F5F3",
+  "theme_color": "#F2F5F3",
+  "icons": [
+    { "src": "brand/logo-mark.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "brand/logo-mark.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "favicon.png", "sizes": "256x256", "type": "image/png", "purpose": "any" }
+  ]
+}

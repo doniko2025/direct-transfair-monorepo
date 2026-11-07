@@ -1,0 +1,544 @@
+/* apps/web-admin/src/styles/topbar.css */
+/* =========================================================
+   BARRE DU HAUT (toutes tailles) · CLOCHE · MENU COMPTE · DEMANDES URGENTES
+   Importé après shell.css et mobile-layout.css : ces règles ont le dernier mot.
+   ========================================================= */
+
+/* ─── Cadre : le panneau latéral occupe toute la hauteur, la barre du haut surmonte le contenu ─── */
+.shell {
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'side top'
+    'side main';
+  align-content: start;
+  column-gap: 14px;
+  row-gap: 0;
+}
+
+.sidebar {
+  grid-area: side;
+}
+
+.main {
+  grid-area: main;
+}
+
+/* ─── Barre du haut ──────────────────────────────────────── */
+.topbar {
+  grid-area: top;
+  position: sticky;
+  top: 14px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  margin-bottom: 4px;
+  padding: 8px 10px 8px 22px;
+  border: 1px solid color-mix(in oklab, var(--line) 60%, white);
+  border-radius: var(--r-lg);
+  background: color-mix(in oklab, var(--card) 82%, transparent);
+  box-shadow: var(--sh-1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+
+.topbar__menu,
+.topbar__brand {
+  display: none;
+}
+
+.topbar__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--t-lg);
+  font-stretch: 90%;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+@media (max-width: 960px) {
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'top'
+      'main';
+    column-gap: 0;
+  }
+
+  .topbar {
+    top: 0;
+    min-height: 58px;
+    margin: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-bottom: 1px solid var(--line-soft);
+    border-radius: 0;
+    background: color-mix(in oklab, var(--paper) 78%, transparent);
+    box-shadow: none;
+  }
+
+  .topbar__menu {
+    display: inline-grid;
+  }
+
+  .topbar__brand {
+    display: flex;
+    flex: none;
+    align-items: center;
+  }
+
+  /* Sur mobile le nom de la société est déjà dans le menu : la barre montre le logo puis la section en cours. */
+  .topbar__name {
+    display: none;
+  }
+
+  .topbar__title {
+    font-size: var(--t-md);
+  }
+}
+
+/* ─── Cloche ─────────────────────────────────────────────── */
+.bell {
+  position: relative;
+}
+
+.bell__btn {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+}
+
+.bell__badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border: 2px solid var(--card);
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-sizing: content-box;
+}
+
+.bell__dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--accent);
+  box-sizing: content-box;
+}
+
+.bell__btn.is-ringing svg {
+  transform-origin: 50% 0;
+  animation: bell-ring 2.4s ease-in-out 0.4s 2;
+}
+
+@keyframes bell-ring {
+  0%, 60%, 100% { transform: rotate(0); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-12deg); }
+  30% { transform: rotate(9deg); }
+  40% { transform: rotate(-6deg); }
+  50% { transform: rotate(3deg); }
+}
+
+.bell__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: -6px;
+  z-index: 60;
+  width: min(380px, 92vw);
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-2);
+  animation: pop-in 0.16s ease-out;
+}
+
+.bell__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px 10px;
+}
+
+.bell__list {
+  max-height: min(60dvh, 420px);
+  overflow-y: auto;
+  list-style: none;
+}
+
+.bell__item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bell__item:hover {
+  background: var(--brand-soft);
+}
+
+.bell__item.is-unread {
+  background: color-mix(in oklab, var(--brand) 5%, white);
+}
+
+.bell__dotmark {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.is-unread .bell__dotmark {
+  background: var(--brand);
+}
+
+.bell__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.bell__text strong {
+  overflow: hidden;
+  font-size: var(--t-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bell__text span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.bell__item small {
+  color: var(--ink-3);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.bell__empty {
+  padding: 18px 16px;
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+}
+
+.bell__all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--brand-deep);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.bell__all:hover {
+  background: var(--brand-soft);
+}
+
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 640px) {
+  /* Volet pleine largeur, accroché sous la barre. */
+  .bell {
+    position: static;
+  }
+
+  .bell__panel {
+    position: fixed;
+    top: 66px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+/* ─── Menu du compte ─────────────────────────────────────── */
+.umenu {
+  position: relative;
+}
+
+.umenu__btn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.avatar--sm {
+  width: 36px;
+  height: 36px;
+  font-size: 0.8125rem;
+  transition: box-shadow 0.15s ease;
+}
+
+.umenu__btn:hover .avatar--sm,
+.umenu__btn[aria-expanded='true'] .avatar--sm {
+  box-shadow: 0 0 0 3px var(--brand-mid);
+}
+
+.umenu__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 60;
+  display: grid;
+  gap: 2px;
+  width: min(280px, 90vw);
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+  background: var(--card);
+  box-shadow: var(--sh-2);
+  animation: pop-in 0.16s ease-out;
+}
+
+.umenu__who {
+  display: grid;
+  gap: 1px;
+  padding: 8px 10px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 4px;
+}
+
+.umenu__who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.umenu__who span {
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+
+.umenu__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 550;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.umenu__item:hover {
+  background: var(--brand-soft);
+}
+
+.umenu__item--danger {
+  color: var(--danger);
+}
+
+.umenu__item--danger:hover {
+  background: color-mix(in oklab, var(--danger) 8%, white);
+}
+
+/* ─── Demandes urgentes (accueil) ────────────────────────── */
+.urgent {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.urgent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.urgent__head h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--t-md);
+  font-stretch: 90%;
+}
+
+.urgent__pulse {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.urgent__pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--danger);
+  animation: urgent-pulse 1.8s ease-out infinite;
+}
+
+@keyframes urgent-pulse {
+  from { opacity: 0.55; transform: scale(1); }
+  to { opacity: 0; transform: scale(3); }
+}
+
+.urgent__list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.urgent__item {
+  --u: var(--accent);
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--u) 30%, white);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--u) 8%, white);
+  animation: urgent-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.urgent__item:nth-child(2) { animation-delay: 0.06s; }
+.urgent__item:nth-child(3) { animation-delay: 0.12s; }
+.urgent__item:nth-child(n + 4) { animation-delay: 0.18s; }
+
+.urgent__item--danger { --u: #c0392b; }
+.urgent__item--warn { --u: var(--accent); }
+.urgent__item--info { --u: var(--brand); }
+
+.urgent__item::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--u);
+}
+
+@keyframes urgent-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.urgent__link {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px 6px 12px 16px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.urgent__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--u) 18%, white);
+  color: color-mix(in oklab, var(--u) 80%, black);
+}
+
+.urgent__text {
+  display: grid;
+  flex: 1;
+  gap: 1px;
+  min-width: 0;
+}
+
+.urgent__text strong {
+  font-size: var(--t-sm);
+  line-height: 1.3;
+}
+
+.urgent__text small {
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.urgent__close {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.urgent__close:hover {
+  background: color-mix(in oklab, var(--u) 12%, white);
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .urgent__item,
+  .urgent__pulse::after,
+  .bell__btn.is-ringing svg,
+  .bell__panel,
+  .umenu__panel {
+    animation: none;
+  }
+}

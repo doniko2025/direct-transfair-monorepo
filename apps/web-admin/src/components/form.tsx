@@ -109,13 +109,14 @@ interface ColorFieldProps {
   onChange: (value: string) => void;
   hint?: string;
   error?: string | null;
+  className?: string;
 }
 
-export function ColorField({ id, label, value, fallback, onChange, hint, error }: ColorFieldProps) {
+export function ColorField({ id, label, value, fallback, onChange, hint, error, className }: ColorFieldProps) {
   const noteId = `${id}-note`;
   const swatch = HEX_COLOR.test(value) ? value : fallback;
   return (
-    <div className="field">
+    <div className={['field', className].filter(Boolean).join(' ')}>
       <label htmlFor={id}>{label}</label>
       <div className="field__control color-field">
         <input

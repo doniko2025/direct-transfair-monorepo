@@ -154,6 +154,7 @@ export default function AgencyCreatePage() {
             </div>
             <Field
               id="ag-city"
+              className="form-grid__half"
               label="Ville"
               value={form.city}
               onChange={(e) => set('city', e.target.value)}
@@ -163,6 +164,7 @@ export default function AgencyCreatePage() {
             />
             <SelectField
               id="ag-country"
+              className="form-grid__half"
               label="Pays"
               value={form.country}
               onChange={(e) => set('country', e.target.value)}
@@ -184,6 +186,7 @@ export default function AgencyCreatePage() {
             </div>
             <SelectField
               id="ag-type"
+              className="form-grid__half"
               label="Type"
               value={form.type}
               onChange={(e) => set('type', e.target.value as AgencyForm['type'])}
@@ -192,6 +195,7 @@ export default function AgencyCreatePage() {
             />
             <Field
               id="ag-code"
+              className="form-grid__half"
               label="Code agence"
               value={form.code}
               onChange={(e) => set('code', e.target.value.toUpperCase())}

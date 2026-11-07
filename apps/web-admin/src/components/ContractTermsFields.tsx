@@ -35,6 +35,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
     <div className="form-grid">
       <Field
         id={`${idPrefix}-amount`}
+        className="form-grid__half"
         label={rental ? 'Redevance (hors taxes)' : "Prix d'achat (hors taxes)"}
         inputMode="decimal"
         value={value.amount}
@@ -45,6 +46,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
       />
       <SelectField
         id={`${idPrefix}-currency`}
+        className="form-grid__half"
         label="Devise"
         value={value.currency}
         onChange={(e) => onChange({ currency: e.target.value as CurrencyCode })}
@@ -55,6 +57,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
         <>
           <SelectField
             id={`${idPrefix}-period`}
+            className="form-grid__half"
             label="Facturation"
             value={value.billingPeriod}
             onChange={(e) => onChange({ billingPeriod: e.target.value as ContractTermsForm['billingPeriod'] })}
@@ -62,6 +65,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
           />
           <Field
             id={`${idPrefix}-commitment`}
+            className="form-grid__half"
             label="Engagement initial (mois)"
             inputMode="numeric"
             value={value.commitmentMonths}
@@ -88,6 +92,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
 
       <Field
         id={`${idPrefix}-days`}
+        className="form-grid__half"
         label="Délai de paiement (jours)"
         inputMode="numeric"
         value={value.paymentDays}
@@ -97,6 +102,7 @@ export function ContractTermsFields({ idPrefix, kind, value, errors, onChange }:
       />
       <Field
         id={`${idPrefix}-date`}
+        className="form-grid__half"
         type="date"
         label="Date d'effet"
         value={value.effectiveDate}

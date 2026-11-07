@@ -399,6 +399,7 @@ export default function CompanyCreatePage() {
           <div className="form-grid">
             <Field
               id="c-name"
+              className="form-grid__half"
               label="Nom de la société"
               value={form.name}
               onChange={(e) => onNameChange(e.target.value)}
@@ -409,6 +410,7 @@ export default function CompanyCreatePage() {
             />
             <Field
               id="c-code"
+              className="form-grid__half"
               label="Code société"
               value={form.code}
               onChange={(e) => {
@@ -423,6 +425,7 @@ export default function CompanyCreatePage() {
             />
             <SelectField
               id="c-country"
+              className="form-grid__half"
               label="Pays du propriétaire"
               value={form.ownerCountry}
               onChange={(e) => set('ownerCountry', e.target.value)}
@@ -433,6 +436,7 @@ export default function CompanyCreatePage() {
             />
             <Field
               id="c-sector"
+              className="form-grid__half"
               label="Secteur d'activité"
               value={form.activitySector}
               onChange={(e) => set('activitySector', e.target.value)}
@@ -599,6 +603,7 @@ export default function CompanyCreatePage() {
             />
             <ColorField
               id="c-primary"
+              className="form-grid__half"
               label="Couleur principale"
               value={form.primaryColor}
               fallback="#059669"
@@ -607,6 +612,7 @@ export default function CompanyCreatePage() {
             />
             <ColorField
               id="c-secondary"
+              className="form-grid__half"
               label="Couleur d'accent"
               value={form.secondaryColor}
               fallback="#10B981"

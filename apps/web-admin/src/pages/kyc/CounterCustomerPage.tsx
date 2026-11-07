@@ -114,11 +114,11 @@ export default function CounterCustomerPage() {
             </Notice>
           )}
           <dl className="kv kv--grid">
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Numéro</dt>
               <dd>{c.idNumber}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Expire le</dt>
               <dd>{formatDay(c.idExpiry)}</dd>
             </div>
@@ -142,19 +142,19 @@ export default function CounterCustomerPage() {
             <h3>Identité déclarée</h3>
           </header>
           <dl className="kv kv--grid">
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Prénom</dt>
               <dd>{c.firstName}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Nom</dt>
               <dd>{c.lastName}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Né(e) le</dt>
               <dd>{formatDay(c.birthDate)}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Téléphone</dt>
               <dd>{c.phone}</dd>
             </div>

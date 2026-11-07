@@ -36,7 +36,7 @@ export default function MerchantsPage() {
         title="Marchands"
         description="Les commerçants de votre société qui encaissent par téléphone ou par QR code. La commission, les durées et les plafonds se règlent dans Réglages › Comptes marchands."
         actions={
-          <Link to="/merchants/payouts" className="btn btn--secondary">
+          <Link to="/merchants/payouts" className="btn btn--secondary only-desktop">
             <Icon name="withdraw" size={18} />
             <span>Retraits à traiter</span>
           </Link>
@@ -56,6 +56,10 @@ export default function MerchantsPage() {
           <Icon name="search" size={18} />
           <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={mobile ? 'Rechercher' : 'Commerce, nom, ville ou téléphone'} aria-label="Rechercher un marchand" />
         </div>
+        <Link to="/merchants/payouts" className="btn btn--secondary toolbar__icon only-mobile" aria-label={toProcess > 0 ? `Retraits à traiter : ${toProcess}` : 'Retraits à traiter'}>
+          <Icon name="withdraw" size={19} />
+          {toProcess > 0 ? <b className="toolbar__icon-badge">{toProcess}</b> : null}
+        </Link>
         <div className="toolbar__filters">
           <FilterTabs<Tab>
             id="mc-status"

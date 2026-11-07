@@ -1,0 +1,213 @@
+/* apps/web-admin/src/styles/compact-layout.css */
+/* =========================================================
+   MISE EN PAGE COMPACTE — « sur la même ligne dès que c'est possible »
+   Importé en dernier. Sur grand écran rien ne change (sauf utilitaires) ; sur mobile :
+     • les boutons d'un en-tête de page se partagent UNE ligne (Clients de passage + Actualiser…) ;
+     • les statistiques se rangent sur une ligne (4 repères côte à côte) ;
+     • les barres d'outils tiennent sur une ligne (recherche + filtres) ;
+     • les fiches (avatar + nom + badges) se rangent en ligne au lieu de s'empiler ;
+     • les champs courts se couplent (voir `form-grid__half`, `kv__row--half`).
+   ========================================================= */
+
+/* ─── Utilitaires d'affichage ────────────────────────────── */
+.only-mobile {
+  display: none !important;
+}
+
+@media (max-width: 640px) {
+  .only-mobile {
+    display: inline-flex !important;
+  }
+
+  .only-desktop {
+    display: none !important;
+  }
+}
+
+/* ─── Boutons d'en-tête de page ──────────────────────────── */
+.page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .page-header__actions {
+    width: 100%;
+    gap: 8px;
+  }
+
+  /* Un en-tête dont les seuls boutons sont réservés au grand écran ne laisse pas de vide. */
+  .page-header__actions:has(> .only-desktop:only-child) {
+    display: none;
+  }
+
+  .page-header__actions .btn {
+    min-height: 44px;
+    padding: 0 14px;
+    gap: 7px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+
+  /* Deux boutons ou plus : ils se partagent la ligne. Un seul : il garde sa largeur naturelle. */
+  .page-header__actions:has(> .btn ~ .btn) > .btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ─── Bandeau d'accueil : les deux boutons restent sur une ligne, sans retour à la ligne dans le libellé ─── */
+@media (max-width: 640px) {
+  .dash-hero__actions {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .dash-hero__actions .btn {
+    min-width: 0;
+    padding: 0 10px;
+    gap: 6px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+}
+
+/* ─── Statistiques : repères sur une seule ligne ─────────── */
+@media (max-width: 640px) {
+  .kyc-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .kyc-stats li,
+  .ag-stats li {
+    padding: 8px 10px;
+  }
+
+  .kyc-stats span {
+    font-size: 0.6875rem;
+    line-height: 1.2;
+  }
+
+  .kyc-stats strong {
+    font-size: 1.125rem;
+  }
+}
+
+/* ─── Barres d'outils ────────────────────────────────────── */
+.toolbar__icon,
+.toolbar__back {
+  position: relative;
+  flex: none;
+}
+
+.toolbar__icon-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 2px solid var(--paper);
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: content-box;
+}
+
+@media (max-width: 640px) {
+  .toolbar__icon {
+    width: 44px;
+    min-height: 44px;
+    height: 44px;
+    padding: 0;
+  }
+
+  .toolbar__back {
+    min-height: 44px;
+    height: 44px;
+    padding: 0 14px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+
+  /* Un bouton (retour, icône) + une liste : la liste prend le reste de la ligne. */
+  .toolbar--inline > .toolbar__back ~ .toolbar__select {
+    flex: 1 1 0;
+  }
+
+  /* Deux listes + la recherche sur la même ligne : listes plus étroites, recherche gardée lisible. */
+  .toolbar--inline .toolbar__filters:has(> .toolbar__select ~ .toolbar__select) > .toolbar__select {
+    flex: 0 1 94px;
+  }
+
+  .toolbar--inline:has(.toolbar__filters > .toolbar__select ~ .toolbar__select) .search {
+    flex: 1 1 100px;
+    min-width: 96px;
+  }
+
+  .toolbar--inline .toolbar__select select {
+    padding: 0 24px 0 11px;
+    font-size: 0.8125rem;
+  }
+}
+
+/* ─── Fiches : avatar + nom/badges en ligne, boutons dessous sur une ligne ─── */
+@media (max-width: 640px) {
+  .company-hero {
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .company-hero .user-hero__avatar {
+    width: 54px;
+    height: 54px;
+    font-size: var(--t-lg);
+  }
+
+  .company-hero__main {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 4px;
+  }
+
+  .company-hero__line {
+    gap: 6px;
+  }
+
+  .company-hero__meta {
+    font-size: var(--t-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .company-hero__actions {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .company-hero__actions .btn {
+    flex: 1 1 auto;
+    width: auto;
+    min-height: 44px;
+    padding: 0 14px;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+}
+
+/* ─── Cartes de section : l'en-tête garde l'icône et le titre sur une ligne ─── */
+@media (max-width: 640px) {
+  .section-card__title p {
+    font-size: 0.8125rem;
+  }
+}

@@ -117,7 +117,7 @@ export default function MerchantPayoutsPage() {
         title="Retraits des marchands"
         description="Le montant est déjà débité du portefeuille du marchand. Envoyez l’argent à la destination indiquée, puis confirmez ; ou refusez pour le recréditer."
         actions={
-          <Link to="/merchants" className="btn btn--secondary">
+          <Link to="/merchants" className="btn btn--secondary only-desktop">
             <Icon name="arrowLeft" size={18} />
             <span>Marchands</span>
           </Link>
@@ -130,6 +130,10 @@ export default function MerchantPayoutsPage() {
       ) : null}
 
       <div className="toolbar toolbar--inline">
+        <Link to="/merchants" className="btn btn--secondary toolbar__back only-mobile">
+          <Icon name="arrowLeft" size={18} />
+          <span>Marchands</span>
+        </Link>
         <FilterTabs<Tab>
           id="mc-payout-tab"
           label="Filtrer les retraits"

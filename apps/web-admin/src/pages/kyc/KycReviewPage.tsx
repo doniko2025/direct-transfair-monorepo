@@ -40,13 +40,13 @@ function DocCard({ doc, onApprove, onReject }: { doc: KycDocumentView; onApprove
 
       <dl className="kv kv--grid">
         {doc.documentNumber ? (
-          <div className="kv__row">
+          <div className="kv__row kv__row--half">
             <dt>Numéro</dt>
             <dd>{doc.documentNumber}</dd>
           </div>
         ) : null}
         {doc.expiryDate ? (
-          <div className="kv__row">
+          <div className="kv__row kv__row--half">
             <dt>Expire le</dt>
             <dd>
               {formatDay(doc.expiryDate)} {warnExpiry ? <Pill tone="warn">Bientôt</Pill> : null}
@@ -54,17 +54,17 @@ function DocCard({ doc, onApprove, onReject }: { doc: KycDocumentView; onApprove
           </div>
         ) : null}
         {doc.issuedCountry ? (
-          <div className="kv__row">
+          <div className="kv__row kv__row--half">
             <dt>Pays émetteur</dt>
             <dd>{countryName(doc.issuedCountry) ?? doc.issuedCountry}</dd>
           </div>
         ) : null}
-        <div className="kv__row">
+        <div className="kv__row kv__row--half">
           <dt>Envoyée le</dt>
           <dd>{formatDateTime(doc.createdAt)}</dd>
         </div>
         {doc.reviewedAt ? (
-          <div className="kv__row">
+          <div className="kv__row kv__row--half">
             <dt>Traitée le</dt>
             <dd>{formatDateTime(doc.reviewedAt)}</dd>
           </div>
@@ -255,25 +255,25 @@ export default function KycReviewPage() {
               <dt>Nom complet</dt>
               <dd>{u.name ?? <span className="muted">Non renseigné</span>}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Date de naissance</dt>
               <dd>{formatDay(u.birthDate) ?? <span className="muted">Non renseignée</span>}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Lieu de naissance</dt>
               <dd>{u.birthPlace ?? <span className="muted">Non renseigné</span>}</dd>
             </div>
-            <div className="kv__row">
+            <div className="kv__row kv__row--half">
               <dt>Nationalité</dt>
               <dd>{u.nationality ? (countryName(u.nationality) ?? u.nationality) : <span className="muted">Non renseignée</span>}</dd>
+            </div>
+            <div className="kv__row kv__row--half">
+              <dt>Inscription</dt>
+              <dd>{formatDateTime(u.createdAt)}</dd>
             </div>
             <div className="kv__row">
               <dt>Adresse</dt>
               <dd>{[u.address, u.city, countryName(u.country)].filter(Boolean).join(', ') || <span className="muted">Non renseignée</span>}</dd>
-            </div>
-            <div className="kv__row">
-              <dt>Inscription</dt>
-              <dd>{formatDateTime(u.createdAt)}</dd>
             </div>
             {!d.verified ? (
               <div className="kv__row">
