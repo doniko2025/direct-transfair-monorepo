@@ -11,6 +11,7 @@ import { RatesModule } from '../rates/rates.module';
 import { PushModule } from '../push/push.module';
 import { MailModule } from '../mail/mail.module';
 import { TransactionsModule } from '../transactions/transactions.module';
+import { KycModule } from '../kyc/kyc.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { TransactionsModule } from '../transactions/transactions.module';
     AuthModule,
     PushModule,
     MailModule,
+    KycModule,                  // lot 7 — garde KYC à la création d'un virement programmé
     TransactionsModule,         // TransactionsService.create() : tout l'envoi (frais, seuil, plafonds, code, AML)
   ],
   controllers: [ScheduledTransfersController],

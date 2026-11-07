@@ -32,7 +32,7 @@ export function hasIcon(name: string): boolean {
   return !!LUCIDE[name] || !!LUCIDE[ION_TO_LUCIDE[name]];
 }
 
-export function Icon({ name, size = 24, color = '#10231B', strokeWidth = ICON_STROKE, fill, style }: IconProps) {
+export function Icon({ name, size = 24, color = '#111111', strokeWidth = ICON_STROKE, fill, style }: IconProps) {
   const nodes = LUCIDE[name] ?? LUCIDE[ION_TO_LUCIDE[name]];
   if (!nodes) return <RealIonicons name={name as any} size={size} color={color} style={style as any} />;
   return (

@@ -213,7 +213,7 @@ function TxActionModal({ visible, onClose, tx, isSA, accent, accentLt, onRefresh
           try {
             if (isB2B) await api.rejectBankTransfer(tx.id);
             else await api.adminUpdateTransactionStatus(tx.id, "CANCELLED");
-            Alert.alert("❌ Rejetée", "Transaction rejetée.");
+            Alert.alert("Rejetée", "Transaction rejetée.");
             handleClose(); onRefresh();
           } catch (e: any) {
             Alert.alert("Erreur", e?.response?.data?.message ?? "Impossible de rejeter.");
@@ -491,7 +491,7 @@ export default function AdminTransactionsScreen() {
         />
         {!!q && (
           <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-            <Ionicons name="close" size={13} color={T.inkMuted} />
+            <Ionicons name="remove-circle" size={13} color={T.inkMuted} />
           </TouchableOpacity>
         )}
       </View>

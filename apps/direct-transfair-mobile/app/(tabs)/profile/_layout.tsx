@@ -15,11 +15,15 @@ export default function ProfileLayout() {
       <Stack.Screen name="personal-info" />
       <Stack.Screen name="payment-methods" />
       <Stack.Screen name="limits" />
+      <Stack.Screen name="kyc" />
+      <Stack.Screen name="kyc-submit" />
       <Stack.Screen name="locations" />
       <Stack.Screen name="devices" />
       <Stack.Screen name="security" />
       {/* ✅ AJOUT : écran préférences de notifications */}
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="support" />
+      <Stack.Screen name="support-ticket" />
     </Stack>
   );
 }

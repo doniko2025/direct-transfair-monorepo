@@ -1,34 +1,28 @@
 // apps/direct-transfair-mobile/components/ui/fonts.ts
 // =========================================================
-// POLICES v1.0 — Direct Transf'air (design « Corridor »)
-// Manrope  : interface, chiffres, montants (400 → 800).
-// Fraunces : salutation, titres d'écran, noms de villes (700, 600 italique).
-// Les TTF sont embarqués dans assets/fonts (aucune dépendance réseau, aucun nouveau paquet).
-// Sur Android et le web, une famille = un poids : on choisit donc la bonne famille
-// d'après le `fontWeight` demandé et on retire `fontWeight` du style (sinon faux gras).
+// POLICES v2.0 — Direct Transf'air (Lot 12)
+// Une seule police partout : Inter (celle de la maquette « Envoyer de l'argent »), 400 → 800.
+// Les TTF (sous-ensemble latin, ≈ 55 Ko chacun) sont embarqués dans assets/fonts : aucune dépendance réseau.
+// Sur Android et le web, une famille = un poids : on choisit donc la bonne famille d'après le `fontWeight`
+// demandé et on retire `fontWeight` du style (sinon faux gras).
+// Les anciennes polices (Manrope, Fraunces) ne sont plus chargées : tout nom de police « serif », Georgia, Fraunces ou
+// Manrope demandé par un écran est résolu vers Inter, sans changer ces écrans.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
 import { StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 
 /** Noms « logiques » utilisables dans les styles (résolus vers la vraie famille par resolveFont). */
-export const SANS = 'Manrope';
-export const SERIF = 'Fraunces';
+export const SANS = 'Inter';
+export const SERIF = 'Inter';
 
 export const FONT_FILES = {
-  Manrope_400Regular: require('../../assets/fonts/Manrope_400Regular.ttf'),
-  Manrope_500Medium: require('../../assets/fonts/Manrope_500Medium.ttf'),
-  Manrope_600SemiBold: require('../../assets/fonts/Manrope_600SemiBold.ttf'),
-  Manrope_700Bold: require('../../assets/fonts/Manrope_700Bold.ttf'),
-  Manrope_800ExtraBold: require('../../assets/fonts/Manrope_800ExtraBold.ttf'),
-  Fraunces_600SemiBold: require('../../assets/fonts/Fraunces_600SemiBold.ttf'),
-  Fraunces_600SemiBold_Italic: require('../../assets/fonts/Fraunces_600SemiBold_Italic.ttf'),
-  Fraunces_700Bold: require('../../assets/fonts/Fraunces_700Bold.ttf'),
-  Fraunces_700Bold_Italic: require('../../assets/fonts/Fraunces_700Bold_Italic.ttf'),
+  Inter_400Regular: require('../../assets/fonts/Inter_400Regular.ttf'),
+  Inter_500Medium: require('../../assets/fonts/Inter_500Medium.ttf'),
+  Inter_600SemiBold: require('../../assets/fonts/Inter_600SemiBold.ttf'),
+  Inter_700Bold: require('../../assets/fonts/Inter_700Bold.ttf'),
+  Inter_800ExtraBold: require('../../assets/fonts/Inter_800ExtraBold.ttf'),
 } as const;
-
-const SERIF_NAMES = /fraunces|georgia|playfair|times/i;
-const isSerif = (f?: string) => !!f && (SERIF_NAMES.test(f) || (/\bserif\b/i.test(f) && !/sans-serif/i.test(f)));
 
 function weightOf(w: TextStyle['fontWeight']): number {
   if (w === 'bold') return 700;
@@ -37,25 +31,19 @@ function weightOf(w: TextStyle['fontWeight']): number {
   return Number.isFinite(n) ? n : 400;
 }
 
-/** Famille réelle pour une famille « logique » + poids + italique. */
-export function resolveFont(family: string | undefined, weight: TextStyle['fontWeight'], italic: boolean): string {
+/** Famille réelle pour un poids (l'italique n'existe pas dans le design : le texte reste droit). */
+export function resolveFont(_family: string | undefined, weight: TextStyle['fontWeight'], _italic = false): string {
   const w = weightOf(weight);
-  const wantsSerif = isSerif(family);
-  if (wantsSerif) {
-    if (w >= 700) return italic ? 'Fraunces_700Bold_Italic' : 'Fraunces_700Bold';
-    return italic ? 'Fraunces_600SemiBold_Italic' : 'Fraunces_600SemiBold';
-  }
-  if (w >= 800) return 'Manrope_800ExtraBold';
-  if (w >= 700) return 'Manrope_700Bold';
-  if (w >= 600) return 'Manrope_600SemiBold';
-  if (w >= 500) return 'Manrope_500Medium';
-  return 'Manrope_400Regular';
+  if (w >= 800) return 'Inter_800ExtraBold';
+  if (w >= 700) return 'Inter_700Bold';
+  if (w >= 600) return 'Inter_600SemiBold';
+  if (w >= 500) return 'Inter_500Medium';
+  return 'Inter_400Regular';
 }
 
 /** Aplatit le style, choisit la bonne police, retire fontWeight/fontStyle (déjà portés par la famille). */
 export function withFont(style: StyleProp<TextStyle>): TextStyle {
   const flat = (StyleSheet.flatten(style) || {}) as TextStyle;
-  const italic = flat.fontStyle === 'italic';
   const { fontWeight, fontStyle, ...rest } = flat;
-  return { ...rest, fontFamily: resolveFont(flat.fontFamily, fontWeight, italic) };
+  return { ...rest, fontFamily: resolveFont(flat.fontFamily, fontWeight) };
 }

@@ -34,6 +34,7 @@ export const USE_WEB_PORTAL_MESSAGE =
   'connectez-vous depuis le portail web de votre société.';
 
 const WEB_ONLY_ROLES: ReadonlySet<string> = new Set<string>([
+  Role.SUPPORT, // lot 9 — service client : portail web uniquement
   Role.SUPER_ADMIN,
   Role.COMPANY_ADMIN,
   Role.AGENT,

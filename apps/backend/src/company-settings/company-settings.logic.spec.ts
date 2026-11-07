@@ -82,3 +82,44 @@ describe('recharge — moyens ouverts', () => {
     expect(isRechargeEnabled(mergeSettings({ recharge: { enabledMethods: [] } }), 'CARD')).toBe(false);
   });
 });
+
+describe('merchant — comptes marchands', () => {
+  it('défauts : ouvert, commission 1 %, QR 5 min, retrait manuel, délai 24 h', () => {
+    const m = defaultSettings().merchant;
+    expect(m.enabled).toBe(true);
+    expect(m.paymentFeePct).toBe(1);
+    expect(m.qrValidityMinutes).toBe(5);
+    expect(m.payoutMode).toBe('MANUAL');
+    expect(m.payoutCooldownHours).toBe(24);
+    expect(m.payoutMethods).toEqual(['ORANGE_MONEY', 'BANK_TRANSFER']);
+  });
+
+  it('applyPatch accepte des valeurs valides et fusionne les montants par devise', () => {
+    const a = applyPatch({}, { merchant: { paymentFeePct: 1.5, qrValidityMinutes: 10, minPayment: { xof: 200 } } });
+    expect(a.merchant).toEqual({ paymentFeePct: 1.5, qrValidityMinutes: 10, minPayment: { XOF: 200 } });
+    const b = applyPatch(a, { merchant: { minPayment: { GNF: 5000 } } });
+    expect(b.merchant?.minPayment).toEqual({ XOF: 200, GNF: 5000 });
+    const c = applyPatch(b, { merchant: { minPayment: { XOF: null } } });
+    expect(c.merchant?.minPayment).toEqual({ GNF: 5000 });
+  });
+
+  it('applyPatch refuse les valeurs hors bornes, les moyens inconnus et min > max', () => {
+    expect(() => applyPatch({}, { merchant: { paymentFeePct: 11 } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { paymentFeePct: 1.234 } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { qrValidityMinutes: 0 } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { payoutCooldownHours: 200 } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { payoutMethods: ['PAYPAL'] } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { payoutMode: 'AUTO' } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { minPayment: { XXX: 1 } } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { merchant: { minPayment: { XOF: 5_000_000 } } })).toThrow(SettingsValidationError);
+  });
+
+  it('mergeSettings ignore silencieusement les valeurs invalides stockées', () => {
+    const m = mergeSettings({ merchant: { paymentFeePct: 99, qrValidityMinutes: 'x', payoutMode: 'AUTO', minPayment: { XOF: 300, ZZZ: 1 } } }).merchant;
+    expect(m.paymentFeePct).toBe(1);
+    expect(m.qrValidityMinutes).toBe(5);
+    expect(m.payoutMode).toBe('MANUAL');
+    expect(m.minPayment.XOF).toBe(300);
+    expect(m.minPayment.ZZZ).toBeUndefined();
+  });
+});

@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
+// PROFILE INDEX v7.1 — + « Vérification d'identité » (clients wallet, lot 7)
 // PROFILE INDEX v7.0 — Direct Transf'air
 // ✅ v7.0 : 🔥 REFONTE TOTALE en thème clair : identité centrée (avatar, nom, e-mail, ID), jauge de
 //    sécurité, menus en groupes blancs arrondis (icône sur pastille beige, intitulé, sous-titre),
@@ -24,6 +25,8 @@ import {
 import { useTenant } from "../../../providers/TenantProvider";
 import Constants from "expo-constants";
 import { Avatar, Button, Card, Group, ListRow, Pill, Screen, SectionHeader, Toggle, UText, useUI } from "../../../components/ui";
+import { useKycStatus } from "../../../hooks/useKycStatus";
+import { KYC_STATUS_LABEL } from "../../../services/kyc";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -31,6 +34,7 @@ export default function ProfileScreen() {
   const { C } = useUI();
   const { branding } = useTenant();
   const appVersion = Constants.expoConfig?.version ?? "";
+  const { status: kyc } = useKycStatus();
 
   // ─── Biométrie (logique inchangée) ─────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
@@ -127,10 +131,29 @@ export default function ProfileScreen() {
       {/* ── Mon compte ── */}
       <SectionHeader title="Mon compte" />
       <Group>
+        {user?.role === "USER" ? (
+          <ListRow
+            icon="shield-checkmark-outline"
+            title="Vérification d'identité"
+            subtitle={kyc?.verified ? "Envois et retraits ouverts" : "Obligatoire pour envoyer de l'argent"}
+            onPress={() => router.push("/(tabs)/profile/kyc" as any)}
+            right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
+          />
+        ) : null}
+        {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. */}
+        {user?.role === "USER" ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
+        {user?.role === "USER" ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
+        {user?.role === "USER" ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
+        {user?.role === "USER" ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
+        {user?.role === "USER" ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
+        {user?.role === "USER" && user?.accountType === "MERCHANT" ? menu("receipt-outline", "Paiements encaissés", "Historique de vos encaissements", "/merchant/payments") : null}
+        {user?.role === "USER" && user?.accountType === "MERCHANT" ? menu("storefront-outline", "Réglages du commerce", "Fiche du commerce, destination des retraits", "/merchant/settings") : null}
+        {user?.role === "USER" && user?.accountType !== "MERCHANT" ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
         {menu("person-outline", "Informations personnelles", "Identité, coordonnées", "/(tabs)/profile/personal-info")}
         {menu("card-outline", "Moyens de paiement", "Cartes et comptes enregistrés", "/(tabs)/profile/payment-methods")}
         {menu("speedometer-outline", "Mes plafonds de transfert", "Limites d'envoi", "/(tabs)/profile/limits")}
-        {menu("location-outline", `Points ${branding.name}`, "Où déposer et retirer", "/(tabs)/profile/locations", true)}
+        {menu("location-outline", `Points ${branding.name}`, "Où déposer et retirer", "/(tabs)/profile/locations", user?.role !== "USER")}
+        {user?.role === "USER" ? menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true) : null}
       </Group>
 
       {/* ── Sécurité & appareils ── */}

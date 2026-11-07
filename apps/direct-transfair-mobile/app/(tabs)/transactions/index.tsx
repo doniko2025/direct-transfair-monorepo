@@ -87,7 +87,7 @@ export default function TransactionsScreen() {
 
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
-      <PageTitle title="Activité" subtitle={subtitle} />
+      <PageTitle title={user?.accountType === "MERCHANT" ? "Paiements" : "Activité"} subtitle={subtitle} />
       <SearchPill value={q} onChangeText={setQ} placeholder="Nom, téléphone, référence…" />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 14 }}>

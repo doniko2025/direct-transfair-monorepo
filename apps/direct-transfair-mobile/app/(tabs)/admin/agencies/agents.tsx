@@ -396,7 +396,7 @@ export default function AgencyAgentsScreen() {
             />
             {!!q && (
               <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-                <Ionicons name="close" size={14} color={T.dim} />
+                <Ionicons name="remove-circle" size={14} color={T.dim} />
               </TouchableOpacity>
             )}
           </View>

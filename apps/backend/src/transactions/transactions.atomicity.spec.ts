@@ -5,10 +5,12 @@ import 'reflect-metadata';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { defaultSettings } from '../company-settings/company-settings.logic';
+import { KycGuardService } from '../kyc/kyc-guard.service';
+import { CounterCustomersService } from '../kyc/counter-customers.service';
 
 type Json = Record<string, any>;
 
-function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolean; depositLimitFail?: boolean } = {}) {
+function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolean; depositLimitFail?: boolean; counterLimitFail?: boolean; agencyWallet?: boolean } = {}) {
   const state = {
     balances: { 'w-sender': 1_000_000, 'w-recipient': 0, 'w-company': 0, 'w-agency': 500_000, 'w-admin': 0, 'w-client': 0 } as Record<string, number>,
     rows: [] as Json[],
@@ -36,7 +38,7 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
     },
     user: {
       findUnique: jest.fn().mockImplementation(async ({ where }: Json) => {
-        if (where.id === 'sender') return opts.sender ?? { id: 'sender', clientId: 7, role: 'USER', agencyId: null, firstName: 'A', lastName: 'B', email: null, wallets: [{ id: 'w-sender', currency: 'XOF', balance: 1_000_000, reservedBalance: 0 }] };
+        if (where.id === 'sender') return opts.sender ?? { id: 'sender', clientId: 7, role: 'USER', kycLevel: 'LEVEL_1', agencyId: null, firstName: 'A', lastName: 'B', email: null, wallets: [{ id: 'w-sender', currency: 'XOF', balance: 1_000_000, reservedBalance: 0 }] };
         if (where.id === 'admin') return { id: 'admin', role: 'COMPANY_ADMIN', clientId: 7 };
         if (where.id === 'agent') return { id: 'agent', clientId: 7, agencyId: 'ag1', email: null, firstName: 'G', lastName: 'H', wallets: [] };
         return null;
@@ -45,8 +47,18 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
       findMany: jest.fn().mockResolvedValue([]),
     },
     beneficiary: { findFirst: jest.fn().mockResolvedValue(null) },
-    wallet: {
+    kycDocument: { findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: {
+      store: [] as Json[],
+      findUnique: jest.fn().mockImplementation(async ({ where }: Json) => prisma.counterCustomer.store.find((c: Json) => c.idNumber === where.clientId_idNumber.idNumber) ?? null),
       findFirst: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockImplementation(async () => prisma.counterCustomer.store.map((c: Json) => ({ id: c.id }))),
+      create: jest.fn().mockImplementation(async ({ data }: Json) => { const row = { id: `cc${prisma.counterCustomer.store.length + 1}`, createdAt: new Date(), ...data }; prisma.counterCustomer.store.push(row); return row; }),
+      update: jest.fn().mockImplementation(async ({ where, data }: Json) => Object.assign(prisma.counterCustomer.store.find((c: Json) => c.id === where.id), data)),
+    },
+    counterIdFile: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn().mockResolvedValue({}) },
+    wallet: {
+      findFirst: jest.fn().mockResolvedValue(opts.agencyWallet ? { id: 'w-agency', currency: 'XOF', balance: 500_000, reservedBalance: 0, agencyId: 'ag1' } : null),
       findMany: jest.fn().mockResolvedValue([{ id: 'w-agency', currency: 'XOF', balance: 500_000, reservedBalance: 0, isDefault: true }]),
       findUnique: jest.fn().mockImplementation(async ({ where }: Json) => ({ id: where.id, currency: 'XOF', balance: state.balances[where.id] ?? 0, reservedBalance: 0 })),
     },
@@ -103,11 +115,17 @@ function setup(opts: { sender?: Json; failCreditOn?: string; limitsFail?: boolea
     assertDepositWithinLimits: jest.fn().mockImplementation(async () => {
       if (opts.depositLimitFail) throw new ForbiddenException({ code: 'DEPOSIT_LIMIT_EXCEEDED', message: 'Plafond de dépôt dépassé' });
     }),
+    // lot 7 — plafond des envois au comptoir (par personne)
+    assertCounterWithinLimits: jest.fn().mockImplementation(async () => {
+      if (opts.counterLimitFail) throw new ForbiddenException({ code: 'COUNTER_LIMIT_EXCEEDED', message: 'Plafond comptoir dépassé' });
+    }),
   };
 
   const service = new (TransactionsService as any)(
     prisma, rates, feeSchedule, wallets, none, none, none, none, none, none, none, none, none, none, none, thresholds, limits,
     { forClient: jest.fn().mockResolvedValue(defaultSettings()) },
+    new KycGuardService(prisma as any),
+    new CounterCustomersService(prisma as any),
   ) as TransactionsService;
   return { service, state, prisma, wallets, limits };
 }
@@ -259,5 +277,86 @@ describe('TransactionsService.refillAgency — atomique', () => {
     expect(state.balances['w-company']).toBe(800_000);
     expect(state.balances['w-agency']).toBe(500_000);
     expect(state.rows).toHaveLength(0);
+  });
+});
+
+
+// ✅ lot 7 — identité vérifiée exigée pour un client ; pièce d'identité exigée pour un envoi au comptoir
+describe('TransactionsService.create — KYC (lot 7)', () => {
+  const unverified = { id: 'sender', clientId: 7, role: 'USER', kycLevel: 'LEVEL_0', agencyId: null, firstName: 'A', lastName: 'B', email: null, wallets: [{ id: 'w-sender', currency: 'XOF', balance: 1_000_000, reservedBalance: 0 }] };
+
+  it('client non vérifié : 403 KYC_REQUIRED, rien n\'est débité ni écrit', async () => {
+    const { service, state } = setup({ sender: unverified });
+    const err: any = await service.create('sender', walletSend).catch((e) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err.getResponse()).toMatchObject({ code: 'KYC_REQUIRED', kycStatus: 'NOT_SUBMITTED' });
+    expect(state.rows).toHaveLength(0);
+    expect(state.balances['w-sender']).toBe(1_000_000);
+  });
+
+  it('dossier déposé mais pas encore validé : le message l\'indique (PENDING)', async () => {
+    const { service, prisma } = setup({ sender: unverified });
+    prisma.kycDocument.findMany.mockResolvedValue([{ type: 'NATIONAL_ID', status: 'PENDING', expiryDate: null }]);
+    const err: any = await service.create('sender', walletSend).catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ code: 'KYC_REQUIRED', kycStatus: 'PENDING' });
+    expect(err.getResponse().message).toMatch(/en cours de vérification/);
+  });
+
+  it('KYC_ENFORCEMENT=off : le blocage est levé (recette)', async () => {
+    process.env.KYC_ENFORCEMENT = 'off';
+    try {
+      const { service, state } = setup({ sender: unverified });
+      await service.create('sender', walletSend);
+      expect(state.rows).toHaveLength(1);
+    } finally { delete process.env.KYC_ENFORCEMENT; }
+  });
+
+  const agent = { id: 'sender', clientId: 7, role: 'AGENT', kycLevel: 'LEVEL_1', agencyId: 'ag1', firstName: 'G', lastName: 'H', email: null, wallets: [] };
+  const photo = (extra = 0) => `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(9000 + extra, 7)]).toString('base64')}`;
+  const counterSend = { amount: 100_000, currency: 'XOF', payoutMethod: 'WALLET', beneficiaryId: 'recipient' } as any;
+  const idFields = {
+    senderFirstName: 'Awa', senderLastName: 'Diop', senderPhone: '+33612345678', senderBirthDate: '1990-05-12',
+    senderIdType: 'NATIONAL_ID', senderIdNumber: 'ab 123-456', senderIdExpiry: '2099-01-01',
+    senderIdFront: photo(), senderIdBack: photo(1),
+  };
+
+  it('envoi au comptoir SANS pièce d\'identité : 400 COUNTER_ID_REQUIRED, rien n\'est débité', async () => {
+    const { service, state } = setup({ sender: agent, agencyWallet: true });
+    const err: any = await service.create('sender', { ...counterSend, senderFirstName: 'Awa', senderLastName: 'Diop', senderPhone: '+33612345678' }).catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ code: 'COUNTER_ID_REQUIRED' });
+    expect(state.rows).toHaveLength(0);
+    expect(state.balances['w-agency']).toBe(500_000);
+  });
+
+  it('envoi au comptoir avec pièce valide : fiche créée, transaction rattachée, plafond contrôlé sous verrou', async () => {
+    const { service, state, prisma, limits } = setup({ sender: agent, agencyWallet: true });
+    await service.create('sender', { ...counterSend, ...idFields });
+    expect(prisma.counterCustomer.store).toHaveLength(1);
+    expect(prisma.counterCustomer.store[0]).toMatchObject({ idNumber: 'AB123456', lastName: 'Diop', clientId: 7, createdById: 'sender' });
+    expect(state.rows[0].counterCustomerId).toBe('cc1');
+    const calls = limits.assertCounterWithinLimits.mock.calls;
+    expect(calls).toHaveLength(2); // avant, puis sous verrou dans la transaction SQL
+    expect(calls[1][1]).toMatchObject({ lock: true, excludeTransactionId: state.rows[0].id });
+  });
+
+  it('plafond du comptoir dépassé : rien n\'est débité ni écrit', async () => {
+    const { service, state } = setup({ sender: agent, agencyWallet: true, counterLimitFail: true });
+    await expect(service.create('sender', { ...counterSend, ...idFields })).rejects.toMatchObject({ response: { code: 'COUNTER_LIMIT_EXCEEDED' } });
+    expect(state.rows).toHaveLength(0);
+    expect(state.balances['w-agency']).toBe(500_000);
+  });
+
+  it('même pièce sous un autre nom / une autre date de naissance : 403 COUNTER_ID_MISMATCH', async () => {
+    const { service, prisma } = setup({ sender: agent, agencyWallet: true });
+    await service.create('sender', { ...counterSend, ...idFields });
+    const err: any = await service.create('sender', { ...counterSend, ...idFields, senderLastName: 'Sow', senderIdNumber: 'AB123456' }).catch((e) => e);
+    expect(err.getResponse()).toMatchObject({ code: 'COUNTER_ID_MISMATCH' });
+    expect(prisma.counterCustomer.store).toHaveLength(1);
+  });
+
+  it('pièce expirée ou expéditeur mineur : refusé', async () => {
+    const { service } = setup({ sender: agent, agencyWallet: true });
+    await expect(service.create('sender', { ...counterSend, ...idFields, senderIdExpiry: '2020-01-01' })).rejects.toMatchObject({ response: { code: 'COUNTER_ID_REQUIRED' } });
+    await expect(service.create('sender', { ...counterSend, ...idFields, senderBirthDate: '2015-01-01' })).rejects.toMatchObject({ response: { code: 'COUNTER_ID_REQUIRED' } });
   });
 });

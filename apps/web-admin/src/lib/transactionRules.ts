@@ -76,6 +76,8 @@ export const TYPE_LABEL: Record<TransactionType, string> = {
   REFUND: 'Remboursement',
   LOYALTY_CREDIT: 'Points fidélité',
   SCHEDULED: 'Virement programmé',
+  MERCHANT_PAYMENT: 'Paiement marchand',
+  MERCHANT_PAYOUT: 'Retrait marchand',
 };
 
 const TYPE_ICON: Record<TransactionType, IconName> = {
@@ -92,6 +94,8 @@ const TYPE_ICON: Record<TransactionType, IconName> = {
   REFUND: 'wallet',
   LOYALTY_CREDIT: 'wallet',
   SCHEDULED: 'list',
+  MERCHANT_PAYMENT: 'wallet',
+  MERCHANT_PAYOUT: 'withdraw',
 };
 
 export function typeLabel(type: string): string {

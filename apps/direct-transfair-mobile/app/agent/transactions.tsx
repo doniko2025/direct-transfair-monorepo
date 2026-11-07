@@ -336,7 +336,7 @@ export default function AgentHistoryScreen() {
           />
           {!!q && (
             <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={15} color="rgba(255,255,255,0.65)" />
+              <Ionicons name="remove-circle" size={15} color="rgba(255,255,255,0.65)" />
             </TouchableOpacity>
           )}
         </View>

@@ -130,6 +130,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [tenant.code]);
 
+  // ── Délégations du service client (lot 9) ─────────────
+  // L'administrateur active ou coupe des interrupteurs : le serveur applique le changement dès la requête suivante, et le menu
+  // suit ici — relecture du profil toutes les 30 s et au retour sur l'onglet. Une panne réseau laisse l'état tel quel.
+  const supportUserId = state.status === 'authenticated' && state.user.role === 'SUPPORT' ? state.user.id : null;
+  useEffect(() => {
+    if (!supportUserId) return;
+    let cancelled = false;
+    const refresh = () => {
+      api.auth
+        .me()
+        .then((me) => {
+          if (cancelled) return;
+          setState((s) => {
+            if (s.status !== 'authenticated' || s.user.id !== supportUserId) return s;
+            const next = me.supportPermissions ?? [];
+            const prev = s.user.supportPermissions ?? [];
+            if (next.length === prev.length && next.every((p, i) => p === prev[i])) return s;
+            return { status: 'authenticated', user: { ...s.user, supportPermissions: next } };
+          });
+        })
+        .catch(() => undefined);
+    };
+    const timer = setInterval(refresh, 30_000);
+    const onVisible = () => document.visibilityState === 'visible' && refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [supportUserId]);
+
   // ── Session perdue (refresh refusé) ───────────────────
   useEffect(
     () =>

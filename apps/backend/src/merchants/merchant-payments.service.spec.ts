@@ -1,0 +1,323 @@
+// apps/backend/src/merchants/merchant-payments.service.spec.ts
+// Encaissements marchands : l'argent est conservé (débit = crédit marchand + commission), un QR ne se paie qu'une fois,
+// un solde insuffisant ne débite rien, le code secret et l'identité sont contrôlés AVANT tout mouvement.
+import 'reflect-metadata';
+import { BadRequestException, ConflictException, ForbiddenException, GoneException, NotFoundException } from '@nestjs/common';
+
+import { buildQrPayload } from './merchant-rules';
+import { MerchantPaymentsService } from './merchant-payments.service';
+
+type J = Record<string, any>;
+
+const NOW = () => new Date();
+const inFuture = (min = 5) => new Date(Date.now() + min * 60_000);
+const inPast = (min = 5) => new Date(Date.now() - min * 60_000);
+
+const settings = {
+  enabled: true, paymentFeePct: 1, qrValidityMinutes: 5, phoneRequestValidityMinutes: 30, payoutFeePct: 0,
+  payoutMethods: ['ORANGE_MONEY'], payoutMode: 'MANUAL', payoutCooldownHours: 24,
+  minPayment: { XOF: 100 }, maxPayment: { XOF: 2_000_000 }, minPayout: { XOF: 1000 },
+};
+
+const users: J = {
+  mer: { id: 'mer', email: 'm@x.fr', firstName: 'Awa', lastName: 'Diallo', phone: '+224620000001', role: 'USER', kycLevel: 'LEVEL_2', clientId: 7, isActive: true, isSuspended: false, deletedAt: null, primaryCurrency: 'XOF' },
+  cli: { id: 'cli', email: 'c@x.fr', firstName: 'Mamadou', lastName: 'Barry', phone: '+224620000002', role: 'USER', kycLevel: 'LEVEL_2', clientId: 7, isActive: true, isSuspended: false, deletedAt: null, primaryCurrency: 'XOF' },
+  cli2: { id: 'cli2', email: 'c2@x.fr', firstName: 'Fanta', lastName: 'Sow', phone: '+224620000003', role: 'USER', kycLevel: 'LEVEL_2', clientId: 7, isActive: true, isSuspended: false, deletedAt: null, primaryCurrency: 'XOF' },
+  mer2: { id: 'mer2', email: 'm2@x.fr', firstName: 'Ibrahima', lastName: 'Bah', phone: '+224620000004', role: 'USER', kycLevel: 'LEVEL_2', clientId: 7, isActive: true, isSuspended: false, deletedAt: null, primaryCurrency: 'XOF' },
+};
+const profiles: J = {
+  mer: { businessName: 'Boutique Awa', city: 'Conakry', category: 'Boutique', status: 'ACTIVE' },
+  mer2: { businessName: 'Pharmacie Bah', city: 'Conakry', category: 'Santé', status: 'ACTIVE' },
+};
+
+function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Promise<void>; seed?: J[] } = {}) {
+  const db = {
+    requests: [...(over.seed ?? [])] as J[],
+    balances: { 'w:cli': 50_000, 'w:cli2': 50_000, 'w:mer': 0, 'w:mer2': 0, 'w:company': 0, ...(over.balances ?? {}) } as Record<string, number>,
+    transactions: [] as J[],
+    seq: 0,
+  };
+  let queue: Promise<unknown> = Promise.resolve();
+  const snapshot = () => JSON.stringify({ r: db.requests, b: db.balances, t: db.transactions });
+  const restore = (s: string) => {
+    const o = JSON.parse(s, (k, v) => (typeof v === 'string' && /^\d{4}-\d\d-\d\dT/.test(v) ? new Date(v) : v));
+    db.requests = o.r; db.balances = o.b; db.transactions = o.t;
+  };
+  const withParties = (r: J | undefined) =>
+    r && { ...r, payee: { ...users[r.payeeId], merchantProfile: profiles[r.payeeId] ?? null }, payer: r.payerId ? users[r.payerId] : null };
+  const match = (r: J, w: J = {}): boolean =>
+    Object.entries(w).every(([k, v]) => {
+      if (k === 'OR') return (v as J[]).some((c) => match(r, c));
+      if (v && typeof v === 'object' && !(v instanceof Date)) {
+        const x = v as J;
+        if ('gt' in x) return r[k] > x.gt;
+        if ('lte' in x) return r[k] <= x.lte;
+        if ('in' in x) return x.in.includes(r[k]);
+        return true;
+      }
+      return r[k] === v;
+    });
+
+  const prisma: J = {
+    user: { findUnique: jest.fn(async ({ where }: J) => users[where.id] ?? null), findFirst: jest.fn(async ({ where }: J) => Object.values(users).find((u: J) => u.phone === where.phone && u.clientId === where.clientId) ?? null) },
+    paymentRequest: {
+      count: jest.fn(async ({ where }: J) => db.requests.filter((r) => match(r, where)).length),
+      create: jest.fn(async ({ data }: J) => { const r = { id: `r${++db.seq}`, status: 'PENDING', createdAt: NOW(), paidAt: null, failureReason: null, payerId: null, payerPhone: null, qrToken: null, note: null, ...data }; db.requests.push(r); return withParties(r); }),
+      findFirst: jest.fn(async ({ where }: J) => withParties(db.requests.find((r) => match(r, where)))),
+      findMany: jest.fn(async ({ where }: J) => db.requests.filter((r) => match(r, where)).map(withParties)),
+      updateMany: jest.fn(async ({ where, data }: J) => { const rows = db.requests.filter((r) => match(r, where)); rows.forEach((r) => Object.assign(r, data)); return { count: rows.length }; }),
+      update: jest.fn(async ({ where, data }: J) => { const r = db.requests.find((x) => x.id === where.id)!; Object.assign(r, data); return r; }),
+    },
+    transaction: { create: jest.fn(async ({ data }: J) => { const t = { id: `t${db.transactions.length + 1}`, ...data }; db.transactions.push(t); return t; }) },
+    auditLog: { create: jest.fn(async () => ({})) },
+    // Les transactions SQL sont isolées : la file d'attente reproduit ce qu'imposent le verrou de portefeuille et la prise atomique.
+    $transaction: jest.fn((fn: (tx: J) => Promise<any>) => {
+      const run = queue.then(async () => {
+        const snap = snapshot();
+        try { return await fn(prisma); } catch (e) { restore(snap); throw e; }
+      });
+      queue = run.catch(() => undefined);
+      return run;
+    }),
+  };
+  const wallets = {
+    getOrCreateWallet: jest.fn(async ({ userId, clientId }: J) => ({ id: userId ? `w:${userId}` : 'w:company', currency: 'XOF', _c: clientId })),
+    debitInTx: jest.fn(async (_tx: J, id: string, amount: number) => {
+      if ((db.balances[id] ?? 0) < amount) throw new BadRequestException(`Solde insuffisant: ${db.balances[id] ?? 0} XOF`);
+      db.balances[id] -= amount;
+    }),
+    creditInTx: jest.fn(async (_tx: J, id: string, amount: number) => { db.balances[id] = (db.balances[id] ?? 0) + amount; }),
+  };
+  const kyc = { assertVerified: jest.fn(over.kyc ?? (async () => undefined)) };
+  const pins = { assertPin: jest.fn(over.pin ?? (async () => undefined)) };
+  const merchants = {
+    assertActiveMerchant: jest.fn(async (id: string) => {
+      if (!profiles[id]) throw new ForbiddenException({ code: 'MERCHANT_REQUIRED' });
+      return { profile: profiles[id], settings };
+    }),
+  };
+  const notifier = { notifyUser: jest.fn(async () => undefined) };
+  const service = new MerchantPaymentsService(prisma as any, wallets as any, kyc as any, pins as any, merchants as any, notifier as any);
+  return { service, db, prisma, wallets, kyc, pins, merchants, notifier };
+}
+
+const asUser = (id: string) => ({ id, sub: id, role: 'USER', clientId: 7 }) as any;
+const total = (b: Record<string, number>) => Object.values(b).reduce((a, x) => a + x, 0);
+
+describe('création — téléphone', () => {
+  it('fige montant, commission et net ; prévient le client ; renvoie un nom abrégé', async () => {
+    const { service, db, notifier } = setup();
+    const v = await service.createPhoneRequest(asUser('mer'), { amount: 10_000, payerPhone: '+224 620 00 00 02' });
+    expect(v).toMatchObject({ method: 'PHONE', status: 'PENDING', amount: 10_000, fee: 100, netAmount: 9_900, currency: 'XOF' });
+    expect(v.payer).toEqual({ id: 'cli', name: 'Mamadou B.' });
+    expect(db.requests[0]).toMatchObject({ payeeId: 'mer', payerId: 'cli', payerPhone: '+224620000002' });
+    expect(notifier.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'cli' }), expect.objectContaining({ kind: 'PAYMENT_REQUEST' }));
+  });
+
+  it('numéro inconnu : 404 ; soi-même : 400 ; numéro invalide : 400 ; hors plafonds : 400', async () => {
+    const { service } = setup();
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 1000, payerPhone: '+224699999999' })).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 1000, payerPhone: '+224620000001' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 1000, payerPhone: '0620000002' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 50, payerPhone: '+224620000002' })).rejects.toThrow(/minimum/);
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 3_000_000, payerPhone: '+224620000002' })).rejects.toThrow(/maximum/);
+    await expect(service.createPhoneRequest(asUser('mer'), { amount: 10.5, payerPhone: '+224620000002' })).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('double appui : la même demande ouverte est renvoyée, pas une seconde', async () => {
+    const { service, db } = setup();
+    const a = await service.createPhoneRequest(asUser('mer'), { amount: 5000, payerPhone: '+224620000002' });
+    const b = await service.createPhoneRequest(asUser('mer'), { amount: 5000, payerPhone: '+224620000002' });
+    expect(b.id).toBe(a.id);
+    expect(db.requests).toHaveLength(1);
+  });
+
+  it("un compte qui n'est pas marchand ne peut pas créer", async () => {
+    const { service } = setup();
+    await expect(service.createPhoneRequest(asUser('cli'), { amount: 1000, payerPhone: '+224620000003' })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.createQrRequest(asUser('cli'), { amount: 1000 })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('création — QR', () => {
+  it('jeton unique, lien dans la réponse du marchand, validité 5 min', async () => {
+    const { service, db } = setup();
+    const v = await service.createQrRequest(asUser('mer'), { amount: 2500 });
+    expect(v.method).toBe('QR');
+    expect(v.qrPayload).toBe(buildQrPayload(db.requests[0].qrToken));
+    expect(v.secondsLeft).toBeGreaterThan(290);
+    expect(v.secondsLeft).toBeLessThanOrEqual(300);
+  });
+});
+
+describe('paiement — règlement', () => {
+  const seedPhone = (over: J = {}) => ({ id: 'rp', reference: 'MP-1', clientId: 7, payeeId: 'mer', payerId: 'cli', payerPhone: '+224620000002', method: 'PHONE', status: 'PENDING', amount: 10_000, fee: 100, netAmount: 9_900, currency: 'XOF', note: null, qrToken: null, expiresAt: inFuture(), createdAt: NOW(), paidAt: null, failureReason: null, ...over });
+  const seedQr = (over: J = {}) => seedPhone({ id: 'rq', reference: 'MP-2', method: 'QR', payerId: null, payerPhone: null, qrToken: 'A'.repeat(32), ...over });
+
+  it("PHONE : débite le client, crédite le marchand du net et la société de la commission — l'argent est conservé", async () => {
+    const { service, db, notifier } = setup({ seed: [seedPhone()] });
+    const before = total(db.balances);
+    const out = await service.payRequest(asUser('cli'), 'rp', '486213');
+    expect(out.status).toBe('PAID');
+    expect(db.balances).toMatchObject({ 'w:cli': 40_000, 'w:mer': 9_900, 'w:company': 100 });
+    expect(total(db.balances)).toBe(before);
+    expect(db.transactions[0]).toMatchObject({ type: 'MERCHANT_PAYMENT', status: 'PAID', senderId: 'cli', recipientId: 'mer', amount: 10_000, platformCommission: 100, reference: 'MP-1' });
+    expect(db.requests[0]).toMatchObject({ status: 'PAID', transactionId: 't1' });
+    const kinds = notifier.notifyUser.mock.calls.map((c: any[]) => c[1].kind);
+    expect(kinds).toEqual(expect.arrayContaining(['PAYMENT_RECEIVED', 'PAYMENT_SENT']));
+  });
+
+  it('QR : payé par n’importe quel client de la société', async () => {
+    const { service, db } = setup({ seed: [seedQr()] });
+    const out = await service.payQr(asUser('cli2'), buildQrPayload('A'.repeat(32)), '486213');
+    expect(out.status).toBe('PAID');
+    expect(db.requests[0].payerId).toBe('cli2');
+    expect(db.balances['w:cli2']).toBe(40_000);
+  });
+
+  it('marchand → marchand, par QR et par téléphone', async () => {
+    const q = setup({ seed: [seedQr()], balances: { 'w:mer2': 20_000 } });
+    await q.service.payQr(asUser('mer2'), 'A'.repeat(32), '486213');
+    expect(q.db.balances).toMatchObject({ 'w:mer2': 10_000, 'w:mer': 9_900 });
+    const p = setup({ seed: [seedPhone({ payerId: 'mer2', payerPhone: '+224620000004' })], balances: { 'w:mer2': 20_000 } });
+    await p.service.payRequest(asUser('mer2'), 'rp', '486213');
+    expect(p.db.balances).toMatchObject({ 'w:mer2': 10_000, 'w:mer': 9_900 });
+  });
+
+  it('deux clients scannent le même QR : un seul paie, l’autre reçoit 409 et n’est pas débité', async () => {
+    const { service, db } = setup({ seed: [seedQr()] });
+    const [a, b] = await Promise.allSettled([service.payQr(asUser('cli'), 'A'.repeat(32), '486213'), service.payQr(asUser('cli2'), 'A'.repeat(32), '486213')]);
+    const ok = [a, b].filter((x) => x.status === 'fulfilled');
+    const ko = [a, b].filter((x) => x.status === 'rejected') as PromiseRejectedResult[];
+    expect(ok).toHaveLength(1);
+    expect(ko).toHaveLength(1);
+    expect(ko[0].reason).toBeInstanceOf(ConflictException);
+    expect(db.transactions).toHaveLength(1);
+    expect(db.balances['w:cli'] + db.balances['w:cli2']).toBe(90_000);
+    expect(db.balances['w:mer']).toBe(9_900);
+  });
+
+  it('double envoi par le même client : un seul débit', async () => {
+    const { service, db } = setup({ seed: [seedPhone()] });
+    await service.payRequest(asUser('cli'), 'rp', '486213');
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toBeInstanceOf(ConflictException);
+    expect(db.balances['w:cli']).toBe(40_000);
+    expect(db.transactions).toHaveLength(1);
+  });
+
+  it('solde insuffisant : rien n’est débité ni crédité, la demande reste ouverte, le client et le marchand sont prévenus', async () => {
+    const { service, db, notifier } = setup({ seed: [seedPhone()], balances: { 'w:cli': 5_000 } });
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toThrow(/Solde insuffisant/);
+    expect(db.balances).toMatchObject({ 'w:cli': 5_000, 'w:mer': 0, 'w:company': 0 });
+    expect(db.transactions).toHaveLength(0);
+    expect(db.requests[0].status).toBe('PENDING');
+    expect(db.requests[0].failureReason).toBe('Solde insuffisant du client');
+    const kinds = notifier.notifyUser.mock.calls.map((c: any[]) => c[1].kind);
+    expect(kinds).toEqual(['PAYMENT_FAILED', 'PAYMENT_FAILED']);
+    // une fois rechargé, le même paiement passe
+    db.balances['w:cli'] = 20_000;
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).resolves.toMatchObject({ status: 'PAID' });
+  });
+
+  it('commission 0 : pas de crédit société', async () => {
+    const { service, db, wallets } = setup({ seed: [seedPhone({ fee: 0, netAmount: 10_000 })] });
+    await service.payRequest(asUser('cli'), 'rp', '486213');
+    expect(db.balances['w:mer']).toBe(10_000);
+    expect(wallets.creditInTx).toHaveBeenCalledTimes(1);
+  });
+
+  it('code secret faux : aucun mouvement, aucun accès aux portefeuilles', async () => {
+    const { service, db, wallets } = setup({ seed: [seedPhone()], pin: async () => { throw new ForbiddenException({ code: 'PIN_INVALID' }); } });
+    await expect(service.payRequest(asUser('cli'), 'rp', '000000')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(wallets.debitInTx).not.toHaveBeenCalled();
+    expect(db.requests[0].status).toBe('PENDING');
+  });
+
+  it("identité non vérifiée : refusé avant même de demander le code secret", async () => {
+    const { service, pins } = setup({ seed: [seedPhone()], kyc: async () => { throw new ForbiddenException({ code: 'KYC_REQUIRED' }); } });
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(pins.assertPin).not.toHaveBeenCalled();
+  });
+
+  it('demande expirée : 410, rien débité, statut EXPIRED, marchand prévenu', async () => {
+    const { service, db, notifier } = setup({ seed: [seedPhone({ expiresAt: inPast() })] });
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toBeInstanceOf(GoneException);
+    expect(db.requests[0].status).toBe('EXPIRED');
+    expect(db.balances['w:cli']).toBe(50_000);
+    expect(notifier.notifyUser.mock.calls.some((c: any[]) => c[1].kind === 'PAYMENT_EXPIRED')).toBe(true);
+  });
+
+  it('refusé : se payer soi-même, payer la demande d’un autre client (PHONE), autre société, demande annulée', async () => {
+    const own = setup({ seed: [seedQr({ payeeId: 'mer' })] });
+    await expect(own.service.payQr(asUser('mer'), 'A'.repeat(32), '486213')).rejects.toBeInstanceOf(BadRequestException);
+    const other = setup({ seed: [seedPhone()] });
+    await expect(other.service.payRequest(asUser('cli2'), 'rp', '486213')).rejects.toBeInstanceOf(NotFoundException);
+    const foreign = setup({ seed: [seedQr()] });
+    await expect(foreign.service.payQr({ id: 'cli', clientId: 99, role: 'USER' } as any, 'A'.repeat(32), '486213')).rejects.toBeInstanceOf(NotFoundException);
+    const cancelled = setup({ seed: [seedPhone({ status: 'CANCELLED' })] });
+    await expect(cancelled.service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("un QR étranger (autre lien) est rejeté sans consulter la base", async () => {
+    const { service, prisma } = setup();
+    await expect(service.payQr(asUser('cli'), 'https://evil.example/x', '486213')).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.paymentRequest.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('marchand suspendu entre-temps : paiement refusé', async () => {
+    const { service } = setup({ seed: [seedQr()] });
+    profiles.mer.status = 'SUSPENDED';
+    try {
+      await expect(service.payQr(asUser('cli'), 'A'.repeat(32), '486213')).rejects.toBeInstanceOf(ConflictException);
+    } finally {
+      profiles.mer.status = 'ACTIVE';
+    }
+  });
+});
+
+describe('refus, annulation, aperçu, balayage', () => {
+  const seed = (over: J = {}) => ({ id: 'rp', reference: 'MP-1', clientId: 7, payeeId: 'mer', payerId: 'cli', payerPhone: '+224620000002', method: 'PHONE', status: 'PENDING', amount: 10_000, fee: 100, netAmount: 9_900, currency: 'XOF', note: null, qrToken: null, expiresAt: inFuture(), createdAt: NOW(), paidAt: null, failureReason: null, ...over });
+
+  it('le client refuse : le marchand est prévenu, plus payable', async () => {
+    const { service, db, notifier } = setup({ seed: [seed()] });
+    const v = await service.decline(asUser('cli'), 'rp');
+    expect(v.status).toBe('DECLINED');
+    expect(notifier.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'mer' }), expect.objectContaining({ kind: 'PAYMENT_DECLINED' }));
+    await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toBeInstanceOf(ConflictException);
+    expect(db.balances['w:cli']).toBe(50_000);
+  });
+
+  it('seul le marchand annule, une seule fois', async () => {
+    const { service } = setup({ seed: [seed()] });
+    await expect(service.cancel(asUser('cli'), 'rp')).rejects.toBeInstanceOf(NotFoundException);
+    expect((await service.cancel(asUser('mer'), 'rp')).status).toBe('CANCELLED');
+    await expect(service.cancel(asUser('mer'), 'rp')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("aperçu d'un QR : montant et commerce, jamais la commission ni le net", async () => {
+    const { service } = setup({ seed: [seed({ id: 'rq', method: 'QR', payerId: null, qrToken: 'B'.repeat(32) })] });
+    const v = await service.previewQr(asUser('cli'), buildQrPayload('B'.repeat(32)));
+    expect(v).toMatchObject({ amount: 10_000, currency: 'XOF', merchant: { businessName: 'Boutique Awa' } });
+    expect(v.fee).toBeUndefined();
+    expect(v.netAmount).toBeUndefined();
+    expect(v.qrPayload).toBeUndefined();
+    expect(v.payerPhone).toBeUndefined();
+  });
+
+  it('le balayage ferme les demandes échues (une seule fois) et prévient', async () => {
+    const { service, db, notifier } = setup({ seed: [seed({ expiresAt: inPast() }), seed({ id: 'rok' })] });
+    expect(await service.sweepExpired()).toBe(1);
+    expect(db.requests.find((r) => r.id === 'rp')!.status).toBe('EXPIRED');
+    expect(db.requests.find((r) => r.id === 'rok')!.status).toBe('PENDING');
+    notifier.notifyUser.mockClear();
+    expect(await service.sweepExpired()).toBe(0);
+    expect(notifier.notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('les demandes à payer : seulement les miennes, ouvertes', async () => {
+    const { service } = setup({ seed: [seed(), seed({ id: 'r2', payerId: 'cli2' }), seed({ id: 'r3', expiresAt: inPast() })] });
+    const list = await service.incoming(asUser('cli'));
+    expect(list.data.map((r: any) => r.id)).toEqual(['rp']);
+    expect(list.data[0].fee).toBeUndefined();
+  });
+});

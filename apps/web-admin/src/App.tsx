@@ -28,7 +28,7 @@ export default function App() {
                   <Route
                     key={route.path}
                     path={route.path}
-                    element={<RequireRole roles={route.roles}>{route.element}</RequireRole>}
+                    element={<RequireRole roles={route.roles} permission={route.permission}>{route.element}</RequireRole>}
                   />
                 ))}
                 <Route path="*" element={<NotFoundPage />} />

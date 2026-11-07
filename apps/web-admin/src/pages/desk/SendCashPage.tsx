@@ -4,19 +4,21 @@
 // Le code de retrait à communiquer au bénéficiaire est la référence de l'opération.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SendPreview, Transaction } from '@direct-transfair/shared';
+import { ApiError, COUNTER_ID_TYPES, type CounterIdType, type SendPreview, type Transaction } from '@direct-transfair/shared';
 import { ConfirmDialog, SelectField } from '../../components/form';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Field, Notice, PageHeader, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { formatAmount } from '../../lib/companyRules';
 import { COUNTRIES } from '../../lib/countries';
+import { birthDateError, idExpiryError, idNeedsBack, idNumberError, parseDay, todayIso } from '../../lib/counterSenderRules';
 import { defaultDial, mainWallet, parsePhone } from '../../lib/deskRules';
 import { dialOf } from '../../lib/dialCodes';
 import { describeError } from '../../lib/errors';
 import { statusLabel } from '../../lib/transactionRules';
 import { parseAmount } from '../../lib/treasuryRules';
 import { CashBox } from './CashBox';
+import { IdPhotoField } from './IdPhotoField';
 import { PhoneField } from './PhoneField';
 import { Receipt } from './Receipt';
 import { useDesk } from './useDesk';
@@ -58,6 +60,16 @@ export default function SendCashPage() {
   const [senderLast, setSenderLast] = useState('');
   const [sendDialPick, setSendDialPick] = useState<string | null>(null);
   const [senderPhoneRaw, setSenderPhoneRaw] = useState('');
+  const [senderBirth, setSenderBirth] = useState('');
+  const [senderIdType, setSenderIdType] = useState<CounterIdType | ''>('');
+  const [senderIdNumber, setSenderIdNumber] = useState('');
+  const [senderIdExpiry, setSenderIdExpiry] = useState('');
+  const [senderIdCountry, setSenderIdCountry] = useState('');
+  // Photos de la pièce (data-URL JPEG réduites). Obligatoires au 1er envoi de ce client : le serveur le dit (COUNTER_ID_PHOTO_REQUIRED),
+  // l'écran les exige alors avant de renvoyer.
+  const [idFront, setIdFront] = useState<string | null>(null);
+  const [idBack, setIdBack] = useState<string | null>(null);
+  const [photoRequired, setPhotoRequired] = useState(false);
   const [note, setNote] = useState('');
 
   const [preview, setPreview] = useState<PreviewState>({ state: 'idle' });
@@ -105,9 +117,23 @@ export default function SendCashPage() {
   const blockedBox = !wallet || wallet.isFrozen || desk.data?.agency?.isActive === false;
   const nameOk = fullName.trim().length >= 2;
   const cityOk = city.trim().length >= 2;
-  const senderOk = senderFirst.trim().length >= 1 && senderLast.trim().length >= 1;
+  const birthErr = birthDateError(senderBirth);
+  const expiryErr = idExpiryError(senderIdExpiry);
+  const numberErr = idNumberError(senderIdNumber);
+  const senderNameOk = senderFirst.trim().length >= 2 && senderLast.trim().length >= 2;
+  const senderIdOk =
+    !!senderIdType &&
+    parseDay(senderBirth) !== null &&
+    !birthErr &&
+    parseDay(senderIdExpiry) !== null &&
+    !expiryErr &&
+    senderIdNumber.replace(/[^A-Za-z0-9]/g, '').length >= 4;
+  // Le téléphone du client est obligatoire (au moins 8 chiffres) : il permet de retrouver la personne en cas de contrôle.
+  const senderOk = senderNameOk && !!senderPhone.value && senderIdOk;
+  const needsBack = !!senderIdType && idNeedsBack(senderIdType);
+  const photosOk = !photoRequired || (!!idFront && (!needsBack || !!idBack));
   const canSubmit =
-    nameOk && cityOk && senderOk && !!country && !benPhone.error && !senderPhone.error && !!quote && quote.enough && !blockedBox;
+    nameOk && cityOk && senderOk && photosOk && !!country && !benPhone.error && !senderPhone.error && !!quote && quote.enough && !blockedBox;
 
   async function send() {
     if (!quote || !country || amount.value === null) return;
@@ -133,7 +159,14 @@ export default function SendCashPage() {
         beneficiaryId,
         senderFirstName: senderFirst.trim(),
         senderLastName: senderLast.trim(),
-        ...(senderPhone.value ? { senderPhone: senderPhone.value } : {}),
+        senderPhone: senderPhone.value as string,
+        senderBirthDate: senderBirth.trim(),
+        senderIdType: senderIdType as CounterIdType,
+        senderIdNumber: senderIdNumber.trim(),
+        senderIdExpiry: senderIdExpiry.trim(),
+        ...(senderIdCountry ? { senderIdCountry } : {}),
+        ...(idFront ? { senderIdFront: idFront } : {}),
+        ...(idBack && needsBack ? { senderIdBack: idBack } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       created.current = null;
@@ -149,6 +182,7 @@ export default function SendCashPage() {
       setConfirming(false);
       desk.reload();
     } catch (err) {
+      if (err instanceof ApiError && (err.code === 'COUNTER_ID_PHOTO_REQUIRED' || err.code === 'COUNTER_ID_PHOTO_INVALID')) setPhotoRequired(true);
       setError(describeError(err).message);
       setConfirming(false);
     } finally {
@@ -167,6 +201,14 @@ export default function SendCashPage() {
     setSenderFirst('');
     setSenderLast('');
     setSenderPhoneRaw('');
+    setSenderBirth('');
+    setSenderIdType('');
+    setSenderIdNumber('');
+    setSenderIdExpiry('');
+    setSenderIdCountry('');
+    setIdFront(null);
+    setIdBack(null);
+    setPhotoRequired(false);
     setNote('');
     setError(null);
     created.current = null;
@@ -331,12 +373,71 @@ export default function SendCashPage() {
           </div>
           <PhoneField
             id="send-sender-phone"
-            label="Téléphone du client (facultatif)"
+            label="Téléphone du client"
             dial={sendDial}
             value={senderPhoneRaw}
             onDial={setSendDialPick}
             onValue={setSenderPhoneRaw}
             error={senderPhone.error}
+          />
+          <Notice tone="info" title="Contrôle d’identité obligatoire">
+            Demandez une pièce d’identité en cours de validité, recopiez ses références et photographiez-la. Sans ces informations, l’envoi est refusé : elles servent aux plafonds et à la lutte contre le blanchiment.
+          </Notice>
+          <div className="desk-form__pair">
+            <Field
+              id="send-sender-birth"
+              label="Date de naissance"
+              type="date"
+              max={todayIso()}
+              value={senderBirth}
+              onChange={(e) => setSenderBirth(e.target.value)}
+              error={birthErr}
+            />
+            <SelectField
+              id="send-sender-idtype"
+              label="Pièce présentée"
+              placeholder="Choisir"
+              options={COUNTER_ID_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+              value={senderIdType}
+              onChange={(e) => setSenderIdType(e.target.value as CounterIdType | '')}
+            />
+          </div>
+          <div className="desk-form__pair">
+            <Field
+              id="send-sender-idnumber"
+              label="Numéro de la pièce"
+              autoComplete="off"
+              autoCapitalize="characters"
+              value={senderIdNumber}
+              onChange={(e) => setSenderIdNumber(e.target.value)}
+              error={numberErr}
+            />
+            <Field
+              id="send-sender-idexpiry"
+              label="Expire le"
+              type="date"
+              min={todayIso()}
+              value={senderIdExpiry}
+              onChange={(e) => setSenderIdExpiry(e.target.value)}
+              error={expiryErr}
+            />
+          </div>
+          <div className="id-photos">
+            <IdPhotoField label={needsBack ? 'Photo de la pièce — recto' : 'Photo de la pièce'} value={idFront} onChange={setIdFront} required={photoRequired} invalid={photoRequired} />
+            {needsBack ? <IdPhotoField label="Photo de la pièce — verso" value={idBack} onChange={setIdBack} required={photoRequired} invalid={photoRequired} /> : null}
+          </div>
+          <p className="desk-form__help">
+            {photoRequired
+              ? 'Cette personne n’a pas encore de photo de pièce enregistrée : photographiez-la avant d’envoyer.'
+              : 'Photographiez la pièce (lisible, sans reflet). Obligatoire au premier envoi d’un client ; ensuite la photo enregistrée est réutilisée.'}
+          </p>
+          <SelectField
+            id="send-sender-idcountry"
+            label="Pays émetteur de la pièce (facultatif)"
+            placeholder="Non précisé"
+            options={COUNTRY_OPTIONS}
+            value={senderIdCountry}
+            onChange={(e) => setSenderIdCountry(e.target.value)}
           />
           <Field
             id="send-note"
@@ -355,9 +456,13 @@ export default function SendCashPage() {
                 ? 'Complétez le bénéficiaire (nom, pays, ville).'
                 : !quote
                   ? 'Saisissez le montant pour calculer les frais.'
-                  : !senderOk
-                    ? 'Indiquez le nom du client qui remet l’argent.'
-                    : ''}
+                  : !senderNameOk || !senderPhone.value
+                    ? 'Indiquez le nom et le téléphone du client qui remet l’argent.'
+                    : !senderIdOk
+                      ? 'Complétez la pièce d’identité du client (type, numéro, dates).'
+                      : !photosOk
+                        ? 'Photographiez la pièce d’identité du client (recto et verso si nécessaire).'
+                        : ''}
             </p>
           ) : null}
         </div>
@@ -374,6 +479,12 @@ export default function SendCashPage() {
         {quote ? (
           <>
             <dl className="kv kv--compact">
+              <div className="kv__row">
+                <dt>Client au guichet</dt>
+                <dd>
+                  {senderFirst.trim()} {senderLast.trim()} — {COUNTER_ID_TYPES.find((t) => t.value === senderIdType)?.label.toLowerCase()} n° {senderIdNumber.trim()}
+                </dd>
+              </div>
               <div className="kv__row">
                 <dt>Bénéficiaire</dt>
                 <dd>
@@ -393,7 +504,7 @@ export default function SendCashPage() {
                 </dd>
               </div>
             </dl>
-            <p>Avez-vous bien encaissé cette somme en espèces ? Votre caisse sera débitée.</p>
+            <p>Avez-vous contrôlé la pièce d’identité et bien encaissé cette somme en espèces ? Votre caisse sera débitée.</p>
           </>
         ) : null}
       </ConfirmDialog>

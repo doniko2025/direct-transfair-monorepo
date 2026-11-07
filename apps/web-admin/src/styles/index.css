@@ -17,6 +17,9 @@
 @import './notifications.css';
 @import './agencies.css';
 @import './wallet-clients.css';
+@import './support.css';
+@import './merchants.css';
+@import './kyc.css';
 @import './fee-schedule.css';
 @import './commissions.css';
 @import './company-settings.css';

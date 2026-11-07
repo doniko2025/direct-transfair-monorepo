@@ -81,7 +81,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
           />
           {query ? (
             <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close-circle" size={18} color={N.muted} />
+              <Ionicons name="remove-circle" size={18} color={N.muted} />
             </TouchableOpacity>
           ) : null}
         </View>

@@ -1,4 +1,8 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v4.0 (lot 13) : connexion PAR DÉFAUT = numéro de téléphone (indicatif + numéro) + code secret à 6 chiffres (connexion automatique au 6e chiffre).
+//    « Email et mot de passe » devient une OPTION (lien sous le bouton) ; « Empreinte digitale » est une OPTION visible dès qu'elle est activée sur l'appareil,
+//    et l'appli propose de l'activer après une première connexion réussie. Le dernier numéro et le dernier indicatif sont mémorisés sur l'appareil.
+//    Appels API, portails société, vérification de contact et connexion par code reçu : inchangés.
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // ✅ phase 7 : code plateforme et domaine des portails lus dans services/platformConfig.ts (plus de « DONIKO » ni de domaine en dur).
@@ -93,7 +97,8 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '../../components/ui/Icon';
 
@@ -108,10 +113,15 @@ import {
   hasStoredRefreshToken,
   isBiometricsAvailable,
   getBiometricsEnabled,
+  setBiometricsEnabled,
 } from '../../hooks/useBiometrics';
 
 import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
 import AuthField        from '../../components/auth/AuthField';
+import PinInput from '../../components/auth/PinInput';
+import PhoneField, { normalizeNationalNumber, validatePhone } from '../../components/auth/PhoneField';
+import { AUTH_COUNTRIES, findCountry, type AuthCountry } from '../../components/auth/authCountries';
+import { PIN_LENGTH } from '../../components/auth/pinRules';
 import AuthButton       from '../../components/auth/AuthButton';
 import AuthNotice       from '../../components/auth/AuthNotice';
 import OtpCodeInput     from '../../components/auth/OtpCodeInput';
@@ -121,6 +131,11 @@ import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
 import { Text, TextInput } from '../../components/ui/Text';
 type View_ = 'PASSWORD' | 'OTP_REQUEST' | 'OTP_VERIFY';
+type Method = 'PHONE' | 'EMAIL';
+
+const LAST_PHONE_KEY   = 'dt_last_login_phone';
+const LAST_COUNTRY_KEY = 'dt_last_login_country';
+const BIO_ASKED_KEY    = 'dt_bio_proposal_done';
 type NoticeState = { kind: 'error' | 'info' | 'success' | 'warning'; title?: string; message: string } | null;
 
 const RESEND_SECONDS = 45;           // aligné sur l'intervalle minimal imposé par le serveur
@@ -139,11 +154,27 @@ export default function LoginV2Screen() {
   const [notice, setNotice]   = useState<NoticeState>(null);
   const [bioReady, setBioReady] = useState(false);
 
-  // ── Mot de passe ──────────────────────────────────────
-  const [email, setEmail]       = useState('');
-  const [password, setPassword] = useState('');
-  const [emailErr, setEmailErr] = useState<string | null>(null);
+  // ── Méthode de connexion : téléphone + code (défaut) ou email + mot de passe (option) ──
+  const [method, setMethod]       = useState<Method>('PHONE');
+  const [country, setCountry]     = useState<AuthCountry>(findCountry('France') ?? AUTH_COUNTRIES[0]!);
+  const [phone, setPhone]         = useState('');
+  const [phoneErr, setPhoneErr]   = useState<string | null>(null);
+  const [pin, setPin]             = useState('');
+  const [email, setEmail]         = useState('');
+  const [password, setPassword]   = useState('');
+  const [emailErr, setEmailErr]   = useState<string | null>(null);
   const passRef = useRef<TextInput | null>(null);
+
+  // Dernier numéro et dernier indicatif utilisés sur cet appareil
+  useEffect(() => {
+    (async () => {
+      try {
+        const [p, c] = await Promise.all([AsyncStorage.getItem(LAST_PHONE_KEY), AsyncStorage.getItem(LAST_COUNTRY_KEY)]);
+        if (c) { const found = findCountry(c); if (found) setCountry(found); }
+        if (p) setPhone(p);
+      } catch { /* mémoire locale indisponible : on part d'un formulaire vide */ }
+    })();
+  }, []);
 
   // ── Code par email ────────────────────────────────────
   const [otpEmail, setOtpEmail]     = useState('');
@@ -227,6 +258,25 @@ export default function LoginV2Screen() {
   const handleLoginSuccess = async (result: any) => {
     await applyLoginResult(result.access_token, result.refresh_token, result.user);
     router.replace('/(tabs)/home');
+    void proposeBiometrics();
+  };
+
+  // Lot 13 : après une connexion réussie, propose UNE fois d'activer l'empreinte digitale (option, refusable).
+  const proposeBiometrics = async () => {
+    try {
+      if (Platform.OS === 'web') return;
+      if ((await AsyncStorage.getItem(BIO_ASKED_KEY)) === '1') return;
+      if (!(await isBiometricsAvailable()) || (await getBiometricsEnabled())) return;
+      await AsyncStorage.setItem(BIO_ASKED_KEY, '1');
+      Alert.alert(
+        'Connexion plus rapide ?',
+        `Voulez-vous vous connecter avec ${bioLabel.toLowerCase()} la prochaine fois ? Vous pourrez le changer dans Profil.`,
+        [
+          { text: 'Plus tard', style: 'cancel' },
+          { text: 'Activer', onPress: () => { void setBiometricsEnabled(true); } },
+        ],
+      );
+    } catch { /* proposition facultative */ }
   };
 
   const onServerRetry = (attempt: number) =>
@@ -271,27 +321,47 @@ export default function LoginV2Screen() {
   };
 
   // ─────────────────────────────────────────────────────
-  // Connexion par mot de passe
+  // Connexion : téléphone + code (défaut) ou email + mot de passe (option)
   // ─────────────────────────────────────────────────────
-  const canSubmit = EMAIL_RE.test(email.trim()) && password.length > 0;
+  const fullPhone = `${country.dial}${normalizeNationalNumber(phone)}`;
+  const canSubmit = method === 'PHONE'
+    ? validatePhone(phone) === null && pin.length === PIN_LENGTH
+    : EMAIL_RE.test(email.trim()) && password.length > 0;
 
-  const handlePasswordLogin = async (isRetry = false) => {
-    if (!EMAIL_RE.test(email.trim())) { setEmailErr('Saisissez une adresse email valide.'); return; }
-    if (!password) return;
-    setEmailErr(null);
+  // `secret` : le code qui vient d'être complété (le state n'est pas encore à jour à cet instant).
+  const handleLogin = async (isRetry = false, secret?: string) => {
+    const value = secret ?? (method === 'PHONE' ? pin : password);
+    if (method === 'PHONE') {
+      const problem = validatePhone(phone);
+      if (problem) { setPhoneErr(problem); return; }
+      setPhoneErr(null);
+    } else if (!EMAIL_RE.test(email.trim())) {
+      setEmailErr('Saisissez une adresse email valide.');
+      return;
+    } else {
+      setEmailErr(null);
+    }
+    if (!value) return;
     setLoading(true);
     if (!isRetry) setNotice(null);
     try {
-      const result = await authRequest(() => v2Auth.loginPassword(email.trim(), password), { onRetry: onServerRetry });
+      const result = await authRequest(
+        () => (method === 'PHONE' ? v2Auth.loginPhone(fullPhone, value) : v2Auth.loginPassword(email.trim(), value)),
+        { onRetry: onServerRetry },
+      );
       if ('requiresVerification' in result && result.requiresVerification) {
         setNotice(null);
         goToVerification(result);
         return;
       }
       setNotice(null);
+      if (method === 'PHONE') {
+        void AsyncStorage.multiSet([[LAST_PHONE_KEY, phone], [LAST_COUNTRY_KEY, country.name]]).catch(() => undefined);
+      }
       await handleLoginSuccess(result);
     } catch (e: any) {
-      if (!isRetry && (await handlePortalError(e, () => handlePasswordLogin(true)))) return;
+      if (method === 'PHONE') setPin('');
+      if (!isRetry && (await handlePortalError(e, () => handleLogin(true, value)))) return;
       showError(describeAuthError(e, 'login'));
     } finally {
       setLoading(false);
@@ -363,6 +433,7 @@ export default function LoginV2Screen() {
   const switchView = (next: View_) => {
     setNotice(null);
     setEmailErr(null);
+    setPhoneErr(null);
     setOtpCode('');
     setOtpWrong(false);
     if (next === 'OTP_REQUEST' && !otpEmail) setOtpEmail(email);
@@ -395,12 +466,12 @@ export default function LoginV2Screen() {
     <View style={{ alignItems: 'center' }}>
       <View style={s.signup}>
         <Text style={s.signupTxt}>Pas encore de compte ? </Text>
-        <TouchableOpacity onPress={() => router.push('/(auth)/register')} accessibilityRole="button" accessibilityLabel="Créer un compte" testID="login-register">
+        <TouchableOpacity onPress={() => router.push('/(auth)/account-type')} accessibilityRole="button" accessibilityLabel="Créer un compte" testID="login-register">
           <Text style={s.signupLink}>Créer un compte</Text>
         </TouchableOpacity>
       </View>
       <View style={s.trust}>
-        <Ionicons name="lock-closed" size={11} color="rgba(255,255,255,0.86)" />
+        <Ionicons name="lock-closed" size={11} color="#6B6B6B" />
         <Text style={s.trustTxt}>Connexion chiffrée · Données protégées</Text>
       </View>
       {legalFooter}
@@ -487,7 +558,16 @@ export default function LoginV2Screen() {
     );
   }
 
-  // ── Écran principal : email + mot de passe ────────────
+  // ── Écran principal : téléphone + code secret (défaut) — email + mot de passe en option ──
+  const switchMethod = (next: Method) => {
+    setNotice(null);
+    setEmailErr(null);
+    setPhoneErr(null);
+    setPin('');
+    setPassword('');
+    setMethod(next);
+  };
+
   return (
     <AuthShell
       title="Connexion"
@@ -496,42 +576,66 @@ export default function LoginV2Screen() {
     >
       {notice ? <AuthNotice {...notice} /> : null}
 
-      <AuthField
-        label="Adresse email"
-        icon="mail-outline"
-        value={email}
-        onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
-        error={emailErr}
-        keyboardType="email-address"
-        autoComplete="email"
-        textContentType="emailAddress"
-        returnKeyType="next"
-        onSubmitEditing={() => passRef.current?.focus()}
-        accent={P.accent}
-        dense
-        testID="login-email"
-      />
-      <AuthField
-        label="Mot de passe"
-        icon="lock-closed-outline"
-        value={password}
-        onChangeText={setPassword}
-        secure
-        autoComplete="current-password"
-        textContentType="password"
-        returnKeyType="go"
-        onSubmitEditing={canSubmit ? () => handlePasswordLogin() : undefined}
-        inputRef={passRef}
-        accent={P.accent}
-        maxLength={128}
-        dense
-        testID="login-password"
-      />
+      {method === 'PHONE' ? (
+        <>
+          <PhoneField
+            country={country}
+            onCountryChange={setCountry}
+            value={phone}
+            onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
+            error={phoneErr}
+            accent={P.accent}
+          />
+          <PinInput
+            label="Code secret"
+            value={pin}
+            onChange={setPin}
+            onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else setPhoneErr(validatePhone(phone)); }}
+            accent={P.accent}
+            disabled={loading}
+            testID="login-pin"
+          />
+        </>
+      ) : (
+        <>
+          <AuthField
+            label="Adresse email"
+            icon="mail-outline"
+            value={email}
+            onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
+            error={emailErr}
+            keyboardType="email-address"
+            autoComplete="email"
+            textContentType="emailAddress"
+            returnKeyType="next"
+            onSubmitEditing={() => passRef.current?.focus()}
+            accent={P.accent}
+            dense
+            testID="login-email"
+          />
+          <AuthField
+            label="Mot de passe"
+            icon="lock-closed-outline"
+            value={password}
+            onChangeText={setPassword}
+            secure
+            autoComplete="current-password"
+            textContentType="password"
+            returnKeyType="go"
+            onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
+            inputRef={passRef}
+            accent={P.accent}
+            maxLength={128}
+            dense
+            testID="login-password"
+          />
+        </>
+      )}
 
       <View style={s.forgotRow}>
         <AuthButton label="Code par email" variant="link" dense accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
         <AuthButton
-          label="Mot de passe oublié ?"
+          label="Code oublié ?"
           variant="link"
           dense
           accent={P.accent}
@@ -547,32 +651,56 @@ export default function LoginV2Screen() {
         accent={P.action}
         loading={loading}
         disabled={!canSubmit}
-        onPress={() => handlePasswordLogin()}
+        onPress={() => handleLogin()}
         testID="login-submit"
       />
 
-      {bioReady ? (
-        <View style={s.linksRow}>
-          <AuthButton label="Biométrie" variant="link" dense accent={P.accent} disabled={loading} onPress={handleBiometric} />
-        </View>
-      ) : null}
+      {/* Options de connexion : empreinte digitale (si activée) et email + mot de passe / retour au téléphone */}
+      <View style={s.optionsBox}>
+        {bioReady ? (
+          <TouchableOpacity
+            style={s.optionBtn}
+            onPress={handleBiometric}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel={`Se connecter avec ${bioLabel}`}
+            testID="login-biometric"
+          >
+            <Ionicons name="finger-print-outline" size={22} color={N.ink} />
+            <Text style={s.optionTxt}>{bioLabel}</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          style={s.optionBtn}
+          onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
+          disabled={loading}
+          accessibilityRole="button"
+          testID="login-switch-method"
+        >
+          <Ionicons name={method === 'PHONE' ? 'mail-outline' : 'call-outline'} size={22} color={N.ink} />
+          <Text style={s.optionTxt}>{method === 'PHONE' ? 'Email et mot de passe' : 'Téléphone et code secret'}</Text>
+        </TouchableOpacity>
+      </View>
     </AuthShell>
   );
 }
 
 const s = StyleSheet.create({
   forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -4, marginBottom: 4 },
-  linksRow:  { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 18, marginTop: 2, marginBottom: 2 },
+  optionsBox:{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 14 },
+  optionBtn: { flexGrow: 1, flexBasis: '45%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+               paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: '#E8E8E8', backgroundColor: '#F2F2F2' },
+  optionTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '600', color: '#111111', textAlign: 'center', flexShrink: 1 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: 'rgba(255,255,255,0.78)', fontWeight: '700', paddingVertical: 6 },
-  legalDot:  { color: 'rgba(255,255,255,0.5)', fontSize: 12.5 },
+  legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: '#6B6B6B', fontWeight: '700', paddingVertical: 6 },
+  legalDot:  { color: '#B5B5B5', fontSize: 12.5 },
   trust:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999,
-               backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  trustTxt:  { fontFamily: FONT.body, fontSize: 11.5, color: 'rgba(255,255,255,0.86)', fontWeight: '600' },
+               backgroundColor: '#F2F2F2', borderWidth: 1, borderColor: '#E8E8E8' },
+  trustTxt:  { fontFamily: FONT.body, fontSize: 11.5, color: '#6B6B6B', fontWeight: '600' },
   signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' },
-  signupTxt: { fontFamily: FONT.body, fontSize: 14.5, color: 'rgba(255,255,255,0.8)' },
-  signupLink:{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: '800', color: '#FFFFFF', textDecorationLine: 'underline', paddingVertical: 8 },
+  signupTxt: { fontFamily: FONT.body, fontSize: 14.5, color: '#6B6B6B' },
+  signupLink:{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: '800', color: '#111111', textDecorationLine: 'underline', paddingVertical: 8 },
 });

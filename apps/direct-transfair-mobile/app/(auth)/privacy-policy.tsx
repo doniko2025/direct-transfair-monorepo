@@ -20,16 +20,16 @@ import { Text } from '../../components/ui/Text';
 import { useTenant } from '../../providers/TenantProvider';
 import { getDpoEmail, getDataAuthority } from '../../services/platformConfig';
 const T = {
-  bg:         "#E8F0EA",
+  bg:         "#FFFFFF",
   surface:    "#FFFFFF",
-  accent:     "#0E3B2D",
+  accent:     "#111111",
   accentSoft: "#DDEBE2",
-  accentText: "#0E3B2D",
-  text:       "#10231B",
+  accentText: "#111111",
+  text:       "#111111",
   textSub:    "#2F463A",
-  textDim:    "#5E7468",
-  border:     "#D3E0D7",
-  borderGreen:"#D3E0D7",
+  textDim:    "#6B6B6B",
+  border:     "#E0E0E0",
+  borderGreen:"#E0E0E0",
   blue:       "#1D4ED8",
   blueSoft:   "#DBEAFE",
   amber:      "#D97706",

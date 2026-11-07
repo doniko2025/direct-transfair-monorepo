@@ -19,6 +19,9 @@ import { createCompaniesApi } from './companies';
 import { createContractsApi } from './contracts';
 import { createFeeScheduleApi } from './feeSchedule';
 import { createFeesApi } from './fees';
+import { createKycApi } from './kyc';
+import { createSupportApi } from './support';
+import { createMerchantApi } from './merchants';
 import type { HttpClient } from './http';
 import { createNotificationsApi } from './notifications';
 import { createPortalDomainsApi } from './portalDomains';
@@ -68,6 +71,9 @@ export function createApi(http: HttpClient) {
     portalDomains: createPortalDomainsApi(http),
     companySettings: createCompanySettingsApi(http),
     sessions: createSessionsApi(http),
+    kyc: createKycApi(http),
+    support: createSupportApi(http),
+    merchants: createMerchantApi(http),
 
     branding: {
       byHost: (host: string) =>

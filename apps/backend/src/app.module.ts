@@ -75,12 +75,15 @@ import { WalletsModule }            from './wallets/wallets.module';
 import { TreasuryModule }           from './treasury/treasury.module';
 import { ScheduledTransfersModule } from './scheduled-transfers/scheduled-transfers.module';
 import { RateAlertsModule }         from './rate-alerts/rate-alerts.module';
+import { KycModule }                from './kyc/kyc.module'; // lot 7 — vérification d'identité
 import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
 import { SupervisionModule }        from './supervision/supervision.module'; // ✅ v4.8
 import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // ✅ v4.9
 import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // ✅ v5.0
 import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
+import { SupportModule }            from './support/support.module'; // lot 9 — service client
+import { MerchantsModule }          from './merchants/merchants.module'; // lot 11 — comptes marchands
 import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
 import { PortalDomainsModule }      from './portal-domains/portal-domains.module'; // ✅ v5.6
 import { CommissionRulesModule }    from './commission-rules/commission-rules.module'; // ✅ v5.2
@@ -128,12 +131,15 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     TreasuryModule,
     ScheduledTransfersModule,
     RateAlertsModule,
+    KycModule,
     LimitsModule,
     LocationsModule,
     SupervisionModule, // ✅ v4.8 — /supervision/* (audit, alertes, santé)
     RatesAdminModule,  // ✅ v4.9 — /rates-admin/* (administration des taux)
     FeesAdminModule,   // ✅ v5.0 — /fees-admin/* (frais d'envoi par société)
     AgentsAdminModule, // ✅ v5.1 — /agents-admin/* (agents rattachés à une agence)
+    SupportModule,     // lot 9 — /support-staff, /support-desk, /support/tickets
+    MerchantsModule,   // lot 11 — /merchants, /merchant-payments, /merchants-admin
     FeeScheduleModule, // ✅ v5.2 — /fees-admin/rules, /fees-admin/quote (barème de frais)
     CommissionRulesModule, // ✅ v5.2 — /commission-rules (répartition des frais)
     AgentDeskModule,   // ✅ v5.3 — /agent-desk/* (guichet de l'agent)

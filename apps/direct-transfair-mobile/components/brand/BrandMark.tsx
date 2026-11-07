@@ -29,9 +29,9 @@ import { useTenant } from '../../providers/TenantProvider';
 
 // Palette du monogramme (identité graphique de la plateforme).
 export const BRAND_MARK_COLORS = {
-  tile: '#0E3B2D',   // forêt
+  tile: '#111111',   // forêt
   line: '#46C58C',   // feuille (liseré de la tuile)
-  ink: '#E8F0EA',    // brume (le « t »)
+  ink: '#FFFFFF',    // brume (le « t »)
   spark: '#F5C32C',  // soleil (l'apostrophe)
 } as const;
 

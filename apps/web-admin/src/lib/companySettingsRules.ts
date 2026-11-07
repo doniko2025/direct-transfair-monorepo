@@ -16,6 +16,18 @@ export interface SettingsForm {
   phoneCheckDigits: string;
   lowBalance: Record<string, string>;
   rechargeMethods: string[];
+  // Lot 11 — comptes marchands
+  merchantEnabled: boolean;
+  merchantPaymentFeePct: string;
+  merchantQrMinutes: string;
+  merchantPhoneMinutes: string;
+  merchantPayoutFeePct: string;
+  merchantPayoutMethods: string[];
+  merchantPayoutMode: string;
+  merchantCooldownHours: string;
+  merchantMinPayment: Record<string, string>;
+  merchantMaxPayment: Record<string, string>;
+  merchantMinPayout: Record<string, string>;
 }
 
 export interface Limits {
@@ -24,6 +36,11 @@ export interface Limits {
   lockMinutes: { min: number; max: number };
   phoneCheckDigits: { min: number; max: number };
   lowBalance: { min: number; max: number };
+  merchantFeePct: { min: number; max: number };
+  qrValidityMinutes: { min: number; max: number };
+  phoneRequestValidityMinutes: { min: number; max: number };
+  payoutCooldownHours: { min: number; max: number };
+  merchantAmount: { min: number; max: number };
 }
 
 export const FALLBACK_LIMITS: Limits = {
@@ -32,11 +49,17 @@ export const FALLBACK_LIMITS: Limits = {
   lockMinutes: { min: 1, max: 1440 },
   phoneCheckDigits: { min: 3, max: 8 },
   lowBalance: { min: 0, max: 1_000_000_000_000 },
+  merchantFeePct: { min: 0, max: 10 },
+  qrValidityMinutes: { min: 1, max: 60 },
+  phoneRequestValidityMinutes: { min: 1, max: 1440 },
+  payoutCooldownHours: { min: 0, max: 168 },
+  merchantAmount: { min: 0, max: 1_000_000_000_000 },
 };
 
 export const MAX_FEE_RATE = 25;
 
 const text = (n: number): string => String(n).replace('.', ',');
+const mapText = (m: Record<string, number>): Record<string, string> => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, text(v)]));
 
 export function toForm(s: CompanySettings): SettingsForm {
   return {
@@ -51,6 +74,17 @@ export function toForm(s: CompanySettings): SettingsForm {
     phoneCheckDigits: String(s.pickup.phoneCheckDigits),
     lowBalance: Object.fromEntries(Object.entries(s.alerts.lowBalance).map(([k, v]) => [k, text(v)])),
     rechargeMethods: [...s.recharge.enabledMethods],
+    merchantEnabled: s.merchant.enabled,
+    merchantPaymentFeePct: text(s.merchant.paymentFeePct),
+    merchantQrMinutes: String(s.merchant.qrValidityMinutes),
+    merchantPhoneMinutes: String(s.merchant.phoneRequestValidityMinutes),
+    merchantPayoutFeePct: text(s.merchant.payoutFeePct),
+    merchantPayoutMethods: [...s.merchant.payoutMethods],
+    merchantPayoutMode: s.merchant.payoutMode,
+    merchantCooldownHours: String(s.merchant.payoutCooldownHours),
+    merchantMinPayment: mapText(s.merchant.minPayment),
+    merchantMaxPayment: mapText(s.merchant.maxPayment),
+    merchantMinPayout: mapText(s.merchant.minPayout),
   };
 }
 
@@ -65,7 +99,7 @@ export function parseNumber(raw: string): number | null {
 const twoDecimals = (n: number): boolean => Math.round(n * 100) / 100 === n;
 const round2 = (n: number): number => Math.round(n * 100) / 100;
 
-export type FormErrors = Partial<Record<keyof SettingsForm | `lowBalance.${string}`, string>>;
+export type FormErrors = Partial<Record<keyof SettingsForm | `lowBalance.${string}` | `merchantMinPayment.${string}` | `merchantMaxPayment.${string}` | `merchantMinPayout.${string}`, string>>;
 
 function intIn(raw: string, r: { min: number; max: number }, label: string): string | undefined {
   const n = parseNumber(raw);
@@ -104,6 +138,31 @@ export function validate(f: SettingsForm, limits: Limits = FALLBACK_LIMITS): For
     if (n === null || n < limits.lowBalance.min || n > limits.lowBalance.max) e[`lowBalance.${cur}`] = 'Montant positif (0 = pas d’alerte).';
     else if (!twoDecimals(n)) e[`lowBalance.${cur}`] = 'Deux décimales au maximum.';
   }
+
+  // Lot 11 — comptes marchands
+  for (const [key, label] of [['merchantPaymentFeePct', 'Commission d’encaissement'], ['merchantPayoutFeePct', 'Commission de retrait']] as const) {
+    const n = parseNumber(f[key]);
+    if (n === null || n < limits.merchantFeePct.min || n > limits.merchantFeePct.max) e[key] = `${label} : entre ${limits.merchantFeePct.min} et ${limits.merchantFeePct.max} %.`;
+    else if (!twoDecimals(n)) e[key] = 'Deux décimales au maximum.';
+  }
+  const qr = intIn(f.merchantQrMinutes, limits.qrValidityMinutes, 'Validité du QR code');
+  if (qr) e.merchantQrMinutes = qr;
+  const ph = intIn(f.merchantPhoneMinutes, limits.phoneRequestValidityMinutes, 'Validité de la demande');
+  if (ph) e.merchantPhoneMinutes = ph;
+  const cd = intIn(f.merchantCooldownHours, limits.payoutCooldownHours, 'Délai de sécurité');
+  if (cd) e.merchantCooldownHours = cd;
+  for (const [field, errKey] of [['merchantMinPayment', 'merchantMinPayment'], ['merchantMaxPayment', 'merchantMaxPayment'], ['merchantMinPayout', 'merchantMinPayout']] as const) {
+    for (const [cur, raw] of Object.entries(f[field])) {
+      const n = parseNumber(raw);
+      if (n === null || n < limits.merchantAmount.min || n > limits.merchantAmount.max) e[`${errKey}.${cur}` as const] = 'Montant positif.';
+      else if (!twoDecimals(n)) e[`${errKey}.${cur}` as const] = 'Deux décimales au maximum.';
+    }
+  }
+  for (const cur of Object.keys(f.merchantMinPayment)) {
+    const lo = parseNumber(f.merchantMinPayment[cur] ?? '');
+    const hi = parseNumber(f.merchantMaxPayment[cur] ?? '');
+    if (lo !== null && hi !== null && lo > hi && !e[`merchantMinPayment.${cur}`]) e[`merchantMinPayment.${cur}`] = 'Le minimum dépasse le maximum.';
+  }
   return e;
 }
 
@@ -131,11 +190,25 @@ export function toPatch(f: SettingsForm): CompanySettingsPatch {
     },
     alerts: { lowBalance: Object.fromEntries(Object.entries(f.lowBalance).map(([k, raw]) => [k, n(raw)])) },
     recharge: { enabledMethods: f.rechargeMethods },
+    merchant: {
+      enabled: f.merchantEnabled,
+      paymentFeePct: n(f.merchantPaymentFeePct),
+      payoutFeePct: n(f.merchantPayoutFeePct),
+      qrValidityMinutes: n(f.merchantQrMinutes),
+      phoneRequestValidityMinutes: n(f.merchantPhoneMinutes),
+      payoutCooldownHours: n(f.merchantCooldownHours),
+      payoutMethods: f.merchantPayoutMethods,
+      payoutMode: f.merchantPayoutMode,
+      minPayment: Object.fromEntries(Object.entries(f.merchantMinPayment).map(([k, raw]) => [k, n(raw)])),
+      maxPayment: Object.fromEntries(Object.entries(f.merchantMaxPayment).map(([k, raw]) => [k, n(raw)])),
+      minPayout: Object.fromEntries(Object.entries(f.merchantMinPayout).map(([k, raw]) => [k, n(raw)])),
+    },
   };
 }
 
 export function sameForm(a: SettingsForm, b: SettingsForm): boolean {
-  const norm = (f: SettingsForm) => JSON.stringify({ ...f, freeMethods: [...f.freeMethods].sort(), rechargeMethods: [...f.rechargeMethods].sort() });
+  const norm = (f: SettingsForm) =>
+    JSON.stringify({ ...f, freeMethods: [...f.freeMethods].sort(), rechargeMethods: [...f.rechargeMethods].sort(), merchantPayoutMethods: [...f.merchantPayoutMethods].sort() });
   return norm(a) === norm(b);
 }
 

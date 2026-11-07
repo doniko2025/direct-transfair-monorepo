@@ -1,6 +1,7 @@
 // apps/web-admin/src/pages/wallet-clients/WalletClientDetailPage.tsx
 // Fiche d'un client wallet : portefeuilles, vérification d'identité et dernières opérations
 // (envois et réceptions). Le profil, la suspension et la suppression restent sur la fiche du compte.
+// v3 (lot 7) : lien vers le dossier d'identité (pièces à valider).
 // v2 (phase 6) : l'admin de société change le niveau KYC du client (qui décide de ses plafonds d'envoi).
 
 import { useMemo, useState } from 'react';
@@ -204,7 +205,10 @@ export default function WalletClientDetailPage() {
             <div className="kv__row">
               <dt>Vérification d'identité</dt>
               <dd>
-                {user.kycLevel ? KYC_LABEL[user.kycLevel] : <span className="muted">Inconnue</span>}
+                {user.kycLevel ? KYC_LABEL[user.kycLevel] : <span className="muted">Inconnue</span>}{' '}
+                <Link to={`/kyc/${encodeURIComponent(user.id)}`} className="link-btn">
+                  Voir le dossier d'identité
+                </Link>
                 {me.role === 'COMPANY_ADMIN' ? (
                   <>
                     {' '}

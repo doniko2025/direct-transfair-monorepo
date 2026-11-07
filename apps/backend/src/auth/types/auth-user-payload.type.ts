@@ -15,4 +15,6 @@ export interface AuthUserPayload {
   primaryCurrency?: string | null;
   /** Session (UserSession.id) qui a émis le jeton — absent pour les jetons émis avant l'introduction du sid. */
   sid?: string;
+  /** Lot 9 — délégations effectives du service client (rôle SUPPORT), lues en base à chaque requête. */
+  permissions?: string[];
 }

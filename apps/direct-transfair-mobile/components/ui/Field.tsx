@@ -163,7 +163,7 @@ export function SearchPill({
       />
       {!!value && (
         <Pressable onPress={() => onChangeText('')} hitSlop={10} accessibilityLabel="Effacer">
-          <Ionicons name="close-circle" size={18} color={C.muted} />
+          <Ionicons name="remove-circle" size={18} color={C.muted} />
         </Pressable>
       )}
     </View>

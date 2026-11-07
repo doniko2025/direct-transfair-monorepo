@@ -1,13 +1,15 @@
 // apps/direct-transfair-mobile/app/(auth)/change-password-required.tsx
 // =========================================================
-// CHANGEMENT DE MOT DE PASSE OBLIGATOIRE v1.0 — Direct Transf'air
+// CHANGEMENT DE MOT DE PASSE OBLIGATOIRE v2.0 — Direct Transf'air
+// ✅ v2.0 (lot 10) : le nouveau secret est un CODE À 6 CHIFFRES robuste (cases masquées, jauge, règle identique au serveur). Cet écran sert
+//   aussi à la migration des clients qui avaient un ancien mot de passe : ils saisissent l'ancien, puis choisissent leur code.
 // Affiché tant que le compte utilise un mot de passe défini par un administrateur (mot de passe temporaire reçu par
-// e-mail). Le serveur refuse tout le reste de l'API tant que ce changement n'est pas fait : cet écran n'est donc pas
+// e-mail) ou un ancien mot de passe à remplacer par le code à 6 chiffres. Le serveur refuse tout le reste de l'API tant que ce changement n'est pas fait : cet écran n'est donc pas
 // contournable en modifiant l'application. Après succès, le profil est relu et le garde de navigation ouvre l'accueil.
 // =========================================================
 
-import React, { useState } from 'react';
-import { View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { TextInput as RNTextInput, View } from 'react-native';
 
 import { useAuth } from '../../providers/AuthProvider';
 import { api } from '../../services/api';
@@ -16,12 +18,15 @@ import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
 import AuthField from '../../components/auth/AuthField';
 import AuthButton from '../../components/auth/AuthButton';
 import AuthNotice from '../../components/auth/AuthNotice';
-import PasswordGuide from '../../components/auth/PasswordGuide';
-import { isPasswordAcceptable, PASSWORD_MAX, PASSWORD_MIN } from '../../components/auth/passwordRules';
+import PinGuide from '../../components/auth/PinGuide';
+import PinInput from '../../components/auth/PinInput';
+import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 
 export default function ChangePasswordRequiredScreen() {
   const P = useAuthPalette();
-  const { refreshUser, logout } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
+  const confirmRef = useRef<RNTextInput | null>(null);
+  const pinContext = { birthDate: (user as any)?.birthDate ?? null, phone: user?.phone ?? null };
 
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
@@ -33,10 +38,14 @@ export default function ChangePasswordRequiredScreen() {
   const submit = async () => {
     if (loading) return;
     const found: typeof errors = {};
-    if (!current) found.current = 'Saisissez le mot de passe temporaire reçu par e-mail.';
-    if (!isPasswordAcceptable(next)) found.next = `Entre ${PASSWORD_MIN} et ${PASSWORD_MAX} caractères.`;
-    else if (next === current) found.next = "Le nouveau mot de passe doit être différent du mot de passe temporaire.";
-    if (confirm !== next) found.confirm = 'Les deux mots de passe ne sont pas identiques.';
+    if (!current) found.current = 'Saisissez votre mot de passe actuel (ou le mot de passe temporaire reçu).';
+    if (next.length !== PIN_LENGTH) found.next = `Le code doit contenir exactement ${PIN_LENGTH} chiffres.`;
+    else if (next === current) found.next = 'Le nouveau code doit être différent de l’ancien.';
+    else {
+      const weak = pinProblem(next, pinContext);
+      if (weak) found.next = weak;
+    }
+    if (confirm !== next) found.confirm = 'Les deux codes ne sont pas identiques.';
     setErrors(found);
     setFailure(null);
     if (Object.keys(found).length > 0) return;
@@ -47,9 +56,10 @@ export default function ChangePasswordRequiredScreen() {
       // Relit le profil : mustChangePassword passe à false, le garde de navigation ouvre alors l'accueil.
       await refreshUser();
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? 'Impossible de modifier le mot de passe.';
+      const raw = e?.response?.data?.message ?? e?.message ?? 'Impossible de modifier le code secret.';
       const msg = Array.isArray(raw) ? String(raw[0]) : String(raw);
-      if (/ancien|actuel|incorrect/i.test(msg)) setErrors({ current: 'Mot de passe temporaire incorrect.' });
+      if (e?.response?.data?.code === 'PIN_WEAK') setErrors({ next: msg });
+      else if (/ancien|actuel|incorrect/i.test(msg)) setErrors({ current: 'Mot de passe actuel incorrect.' });
       else setFailure(msg);
     } finally {
       setLoading(false);
@@ -59,13 +69,13 @@ export default function ChangePasswordRequiredScreen() {
   return (
     <AuthShell
       compact
-      title="Choisissez votre mot de passe"
-      subtitle="Remplacez le mot de passe temporaire reçu par e-mail par un mot de passe que vous seul connaissez."
+      title="Choisissez votre code secret"
+      subtitle="Remplacez votre ancien mot de passe par un code à 6 chiffres que vous seul connaissez. Il protège votre portefeuille."
     >
       {failure ? <AuthNotice kind="error" message={failure} /> : null}
 
       <AuthField
-        label="Mot de passe temporaire"
+        label="Mot de passe actuel ou temporaire"
         icon="key-outline"
         value={current}
         onChangeText={(t) => { setCurrent(t); if (errors.current) setErrors((e) => ({ ...e, current: undefined })); }}
@@ -77,33 +87,25 @@ export default function ChangePasswordRequiredScreen() {
         accent={P.accent}
         maxLength={128}
       />
-      <AuthField
-        label="Nouveau mot de passe"
-        icon="lock-closed-outline"
+      <PinInput
+        label="Nouveau code secret (6 chiffres)"
         value={next}
-        onChangeText={(t) => { setNext(t); if (errors.next) setErrors((e) => ({ ...e, next: undefined })); }}
+        onChange={(v) => { setNext(v); if (errors.next) setErrors((e) => ({ ...e, next: undefined })); }}
+        onComplete={() => confirmRef.current?.focus()}
+        accent={P.accent}
         error={errors.next}
-        secure
-        autoComplete="new-password"
-        textContentType="newPassword"
-        returnKeyType="next"
-        accent={P.accent}
-        maxLength={PASSWORD_MAX}
+        disabled={loading}
       />
-      <PasswordGuide password={next} />
-      <AuthField
-        label="Confirmer le nouveau mot de passe"
-        icon="lock-closed-outline"
+      <PinGuide pin={next} context={pinContext} />
+      <PinInput
+        label="Confirmer le code secret"
         value={confirm}
-        onChangeText={(t) => { setConfirm(t); if (errors.confirm) setErrors((e) => ({ ...e, confirm: undefined })); }}
-        error={errors.confirm}
-        secure
-        autoComplete="new-password"
-        textContentType="newPassword"
-        returnKeyType="go"
-        onSubmitEditing={() => void submit()}
+        onChange={(v) => { setConfirm(v); if (errors.confirm) setErrors((e) => ({ ...e, confirm: undefined })); }}
         accent={P.accent}
-        maxLength={PASSWORD_MAX}
+        error={errors.confirm}
+        disabled={loading}
+        noReveal
+        inputRef={confirmRef}
       />
 
       <View style={{ gap: 8, marginTop: 8 }}>

@@ -1,5 +1,5 @@
 // apps/direct-transfair-mobile/components/auth/authTheme.ts
-// ✅ v3.0 : DESIGN « CORRIDOR » — neutres vert brume (fond #E8F0EA, champs blancs cassés, encre verte, filets vert pâle),
+// ✅ v3.0 : DESIGN « CORRIDOR » — neutres vert brume (fond #FFFFFF, champs blancs cassés, encre verte, filets vert pâle),
 //    palette dérivée du thème (forêt / feuille), polices Manrope. Noms d'exports inchangés.
 // ✅ v2.1 : (web) texte d'exemple des champs plus foncé que prévu — voir WEB_INPUT_RESET.
 // =========================================================
@@ -64,39 +64,39 @@ export type AuthPalette = {
   tintBorder: string;
 };
 
-export function buildPalette(primary?: string | null): AuthPalette {
-  const p = primary && /^#[0-9A-Fa-f]{6}$/.test(primary) ? primary : DEFAULT_BRAND;
-  const C = buildColors(p);
+export function buildPalette(primary?: string | null, secondary?: string | null): AuthPalette {
+  // Lot 12 : couleur principale (bouton) et d'accent (liens) de l'administrateur, orange par défaut.
+  const C = buildColors(primary, secondary);
   return {
-    bg1: C.forest,
-    bg2: darken(C.forest, 0.1),
-    bg3: C.leaf,
-    action: C.forest,
-    accent: C.leaf,
-    tint: C.accentSoft,
-    tintBorder: C.accentLine,
+    bg1: C.dark,
+    bg2: darken(C.dark, 0.1),
+    bg3: C.sun,
+    action: C.sun,
+    accent: C.accentDeep,
+    tint: C.sunSoft,
+    tintBorder: C.sunLine,
   };
 }
 
 // ─── Couleurs neutres et sémantiques ─────────────────────
 export const N = {
-  page:      '#E8F0EA',
+  page:      '#FFFFFF',
   surface:   '#FFFFFF',
-  field:     '#F3F8F4',
-  ink:       '#10231B',
-  inkSub:    '#2F463A',
-  muted:     '#5E7468',
-  faint:     '#98ABA0',
-  border:    '#D3E0D7',
+  field:     '#F2F2F2',
+  ink:       '#111111',
+  inkSub:    '#333333',
+  muted:     '#6B6B6B',
+  faint:     '#9A9A9A',
+  border:    '#E0E0E0',
   danger:    '#C62828',
   dangerBg:  '#FDECEA',
   dangerBd:  '#F5C6C2',
   warn:      '#A86400',
   warnBg:    '#FFF4DB',
   warnBd:    '#F1D79A',
-  ok:        '#1F8A5B',
-  okBg:      '#DDEFE5',
-  okBd:      '#BFE0CD',
+  ok:        '#1B8A4B',
+  okBg:      '#E8F5ED',
+  okBd:      '#BFE3CD',
   white:     '#FFFFFF',
 } as const;
 
@@ -111,14 +111,14 @@ export const MAX_WIDTH = 520;
 
 export const SHADOW = {
   card: {
-    shadowColor: '#0E3B2D',
+    shadowColor: '#000000',
     shadowOpacity: 0.07,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
   button: {
-    shadowColor: '#0E3B2D',
+    shadowColor: '#000000',
     shadowOpacity: 0.10,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
@@ -133,5 +133,5 @@ export const SHADOW = {
  */
 export const WEB_INPUT_RESET: any =
   Platform.OS === 'web'
-    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F3F8F4 inset' }
+    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2F2F2 inset' }
     : {};

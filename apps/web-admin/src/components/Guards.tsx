@@ -8,7 +8,7 @@
 
 import type { ReactNode } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { WEB_ROLES, isWebRole, type WebRole } from '@direct-transfair/shared';
+import { WEB_ROLES, can, isWebRole, type SupportPermission, type WebRole } from '@direct-transfair/shared';
 import { useAuth } from '../providers/AuthProvider';
 import { ForcedPasswordChange } from './ForcedPasswordChange';
 import { Button, LoadingScreen, ScreenState } from './ui';
@@ -27,14 +27,28 @@ export function RequireAuth() {
 
 export function RequireRole({
   roles = WEB_ROLES,
+  permission,
   children,
 }: {
   roles?: readonly WebRole[];
+  /** Lot 9 — délégation(s) du service client (une seule suffit). Les administrateurs passent toujours. */
+  permission?: readonly SupportPermission[];
   children: ReactNode;
 }) {
   const { user, logout } = useAuth();
 
-  if (!user || !isWebRole(user.role) || !roles.includes(user.role)) {
+  const roleOk = !!user && isWebRole(user.role) && roles.includes(user.role);
+  const delegated = !permission || permission.length === 0 || (user ? can(user, ...permission) : false);
+
+  if (roleOk && !delegated) {
+    return (
+      <ScreenState title="Action non déléguée" icon="shield">
+        <p>Votre administrateur n'a pas activé cette fonction pour votre compte. Contactez-le pour en obtenir l'accès.</p>
+      </ScreenState>
+    );
+  }
+
+  if (!roleOk) {
     return (
       <ScreenState
         title="Accès non autorisé"

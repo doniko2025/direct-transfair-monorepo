@@ -13,13 +13,13 @@
 // mobile d'un coup).
 // =========================================================
 
-export type Role = 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'AGENT' | 'USER';
+export type Role = 'SUPER_ADMIN' | 'COMPANY_ADMIN' | 'AGENT' | 'SUPPORT' | 'USER';
 
 /**
  * Rôles autorisés sur le web. Le rôle USER (client wallet) reste
  * exclusivement sur l'application mobile.
  */
-export const WEB_ROLES = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'AGENT'] as const;
+export const WEB_ROLES = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'AGENT', 'SUPPORT'] as const;
 export type WebRole = (typeof WEB_ROLES)[number];
 
 export function isWebRole(role: unknown): role is WebRole {
@@ -58,6 +58,8 @@ export interface AuthUser {
   isPhoneVerified?: boolean;
   /** Mot de passe temporaire : le changement est obligatoire avant tout autre usage. */
   mustChangePassword?: boolean;
+  /** Lot 9 — délégations effectives du service client (rôle SUPPORT) ; vide pour les autres rôles. */
+  supportPermissions?: string[];
   client?: CompanyRef | null;
   agency?: AgencyRef | null;
   [key: string]: unknown;

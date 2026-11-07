@@ -8,6 +8,7 @@ export const ROLE_NAME: Record<string, string> = {
   SUPER_ADMIN: 'Super administrateur',
   COMPANY_ADMIN: 'Administrateur de société',
   AGENT: 'Agent',
+  SUPPORT: 'Service client',
   USER: 'Client wallet',
 };
 
@@ -78,7 +79,7 @@ export const COMPLIANCE_TONE: Record<ComplianceStatus, StatusTone> = {
 export function canManage(actor: Pick<AuthUser, 'id' | 'role'>, target: { id: string; role: string }): boolean {
   if (String(actor.id) === target.id) return false;
   if (actor.role === 'SUPER_ADMIN') return true;
-  if (actor.role === 'COMPANY_ADMIN') return target.role === 'AGENT' || target.role === 'USER';
+  if (actor.role === 'COMPANY_ADMIN') return target.role === 'AGENT' || target.role === 'USER' || target.role === 'SUPPORT';
   return false;
 }
 

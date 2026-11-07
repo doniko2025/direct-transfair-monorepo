@@ -1,6 +1,7 @@
 // apps/backend/src/auth/dto/register.dto.ts
 import {
   IsEmail,
+  IsIn,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -81,4 +82,32 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   birthPlace?: string;
+
+  /**
+   * Lot 11 — type de compte choisi à l'inscription : PERSONAL (client, défaut) ou MERCHANT (commerçant).
+   * Un compte MERCHANT exige le nom du commerce et le numéro Orange Money qui recevra les retraits.
+   */
+  @IsIn(['PERSONAL', 'MERCHANT'])
+  @IsOptional()
+  accountType?: 'PERSONAL' | 'MERCHANT';
+
+  @IsString()
+  @IsOptional()
+  businessName?: string;
+
+  @IsString()
+  @IsOptional()
+  businessCategory?: string;
+
+  @IsString()
+  @IsOptional()
+  businessAddress?: string;
+
+  @IsString()
+  @IsOptional()
+  businessCity?: string;
+
+  @IsString()
+  @IsOptional()
+  orangeMoneyPhone?: string;
 }

@@ -74,9 +74,9 @@ export function Button({
       onPress={off ? undefined : onPress}
       style={({ pressed }) => [
         {
-          height: small ? 42 : 56,
+          height: small ? 42 : 58,
           paddingHorizontal: small ? 18 : 24,
-          borderRadius: small ? R.pill : R.md,
+          borderRadius: R.pill,
           backgroundColor: p.bg,
           borderWidth: p.bd ? 1.5 : 0,
           borderColor: p.bd,

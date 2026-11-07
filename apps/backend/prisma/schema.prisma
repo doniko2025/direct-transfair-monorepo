@@ -59,6 +59,7 @@ enum Role {
   COMPANY_ADMIN  // Admin de la société cliente
   AGENT          // Agent en agence
   USER           // Client final
+  SUPPORT        // Service client (lot 9) — web uniquement ; ne fait que ce que l'admin lui délègue (User.supportPermissions)
 }
 
 enum ComplianceStatus {
@@ -123,6 +124,8 @@ enum TransactionType {
   REFUND
   LOYALTY_CREDIT  // Crédit points fidélité
   SCHEDULED       // Virement programmé
+  MERCHANT_PAYMENT // lot 11 — paiement d'un client à un marchand (téléphone ou QR code)
+  MERCHANT_PAYOUT  // lot 11 — retrait du solde d'un marchand vers Orange Money ou son compte bancaire
 }
 
 enum PayoutMethod {
@@ -285,15 +288,31 @@ enum AuditAction {
   KYC_SUBMIT
   KYC_APPROVE
   KYC_REJECT
+  KYC_VIEW               // lot 8 — un administrateur a consulté un dossier ou une pièce d'identité
+  KYC_REMIND             // lot 8 — relance manuelle d'un client par un administrateur
+  KYC_COUNTER_ID         // lot 8 — pièce d'identité d'un client de passage photographiée par un agent
   DEVICE_REGISTER
   DEVICE_REVOKE
   SCHEDULED_TRANSFER_CREATE
   SCHEDULED_TRANSFER_CANCEL
   SUPPORT_TICKET_CREATE
+  SUPPORT_TICKET_REPLY      // lot 9 — réponse du service client à une demande
+  SUPPORT_TICKET_RESOLVE    // lot 9 — litige réglé / demande clôturée
+  SUPPORT_STAFF_CREATE      // lot 9 — compte service client créé par l'administrateur
+  SUPPORT_PERMISSIONS_UPDATE // lot 9 — délégations du service client modifiées (toggles)
+  REFUND_REQUEST            // lot 9 — demande de remboursement ouverte
+  REFUND_DECIDE             // lot 9 — remboursement accepté ou refusé
   COMPLIANCE_CASE_CREATE
   COMPLIANCE_CASE_RESOLVE
   PORTAL_DOMAIN_SET     // Domaine de portail d'une société défini / modifié (console)
   PORTAL_DOMAIN_REMOVE  // Domaine de portail d'une société retiré
+  MERCHANT_CREATE              // lot 11 — compte marchand ouvert
+  MERCHANT_UPDATE              // lot 11 — fiche du commerce modifiée
+  MERCHANT_DESTINATION_CHANGE  // lot 11 — numéro Orange Money / compte bancaire de retrait modifié (code secret exigé)
+  MERCHANT_SUSPEND             // lot 11 — marchand suspendu ou réactivé par l'administrateur
+  MERCHANT_PAYMENT             // lot 11 — encaissement accepté par le client
+  MERCHANT_PAYOUT_REQUEST      // lot 11 — retrait demandé par le marchand
+  MERCHANT_PAYOUT_PROCESS      // lot 11 — retrait payé ou refusé par l'administrateur
 }
 
 enum AlertType {
@@ -599,6 +618,7 @@ model Client {
   feeRules           FeeRule[]
   validationThresholds ValidationThreshold[]
   transferLimits       TransferLimit[]
+  counterCustomers     CounterCustomer[]
   companySetting       CompanySetting?
   promotions         Promotion[]
   alerts             Alert[]
@@ -767,6 +787,18 @@ model User {
   password String
   role     Role    @default(USER)
 
+  // Lot 9 — délégations du service client (rôle SUPPORT) : clés du catalogue src/support/support-permissions.ts, activées une à
+  // une par l'administrateur de la société. Vide = ne voit aucun bouton d'action. Sans effet pour les autres rôles.
+  supportPermissions String[] @default([])
+
+  // Lot 10 — date à laquelle le client a choisi son code secret à 6 chiffres (règle src/common/pin-policy.ts). Nul = ancien mot de passe,
+  // à remplacer à la prochaine connexion (mustChangePassword est alors positionné par la migration). Sans objet pour les rôles web.
+  pinSetAt DateTime?
+
+  // Lot 11 — type de compte choisi à l'inscription. PERSONAL = client du portefeuille ; MERCHANT = commerçant (fiche MerchantProfile).
+  // Un marchand reste un utilisateur du portefeuille (rôle USER) : il peut aussi payer, envoyer, scanner.
+  accountType AccountType @default(PERSONAL)
+
   // Identité
   firstName String?
   lastName  String?
@@ -811,6 +843,10 @@ model User {
   // Compliance
   complianceStatus ComplianceStatus @default(CLEAR)
   kycLevel         KycLevel         @default(LEVEL_0)
+  // ✅ lot 7 — rappels de vérification d'identité (compare-and-set sur kycLastReminderAt : un seul envoi même avec plusieurs instances)
+  kycReminderCount  Int       @default(0)
+  kycLastReminderAt DateTime?
+  kycVerifiedAt     DateTime? // date de la dernière validation des pièces par un administrateur
 
   // Vérifications
   isEmailVerified Boolean   @default(false)
@@ -892,6 +928,12 @@ model User {
 
   // Support
   supportTickets SupportTicket[]
+
+  // Lot 11 — commerçant
+  merchantProfile  MerchantProfile?
+  paymentsReceived PaymentRequest[]  @relation("PaymentPayee")
+  paymentsMade     PaymentRequest[]  @relation("PaymentPayer")
+  merchantPayouts  MerchantPayout[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1111,11 +1153,94 @@ model KycDocument {
   reviewedAt      DateTime?
   reviewedById    String?
 
+  // lot 8 — dernier seuil d'alerte d'expiration déjà envoyé au client (30 puis 7 jours avant la date) ; null = aucun
+  expiryNoticeDays Int?
+
+  files KycFile[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, status])
+  @@index([status, createdAt])
   @@map("kyc_documents")
+}
+
+// ✅ lot 7 — contenu des pièces d'identité (recto, verso, selfie). Stocké en base, jamais servi sans authentification :
+// seul le propriétaire et les administrateurs de sa société (ou le super administrateur) peuvent le lire.
+model KycFile {
+  id String @id @default(cuid())
+
+  documentId String
+  document   KycDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  kind      String // FRONT | BACK
+  mimeType  String
+  sizeBytes Int
+  sha256    String
+  data      Bytes
+
+  createdAt DateTime @default(now())
+
+  @@unique([documentId, kind])
+  @@map("kyc_files")
+}
+
+// ✅ lot 7 — client de passage : l'expéditeur d'un envoi fait au comptoir par un agent (il n'a pas de compte). Sa pièce
+// d'identité est contrôlée et enregistrée par l'agent ; les plafonds s'appliquent à CE client, quel que soit l'agent.
+model CounterCustomer {
+  id String @id @default(cuid())
+
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  phone     String // dernier numéro utilisé (peut changer d'un envoi à l'autre)
+  firstName String
+  lastName  String
+  birthDate DateTime
+
+  idType    KycDocumentType
+  idNumber  String
+  idCountry String?
+  idExpiry  DateTime
+
+  createdById String // agent qui a enregistré la pièce la première fois
+  updatedById String?
+
+  // lot 8 — photo de la pièce prise par l'agent au comptoir (recto, verso) ; date de la dernière photo
+  idPhotoAt DateTime?
+  files     CounterIdFile[]
+
+  transactions Transaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([clientId, idNumber]) // numéro de pièce normalisé (majuscules, sans espaces) : une personne = une fiche
+  @@index([clientId, phone])
+  @@map("counter_customers")
+}
+
+// ✅ lot 8 — photo de la pièce d'identité d'un client de passage, prise par l'agent. Même régime que KycFile : stockée en base,
+// lue uniquement par les administrateurs de la société (ou le super administrateur), chaque consultation est journalisée.
+model CounterIdFile {
+  id String @id @default(cuid())
+
+  counterCustomerId String
+  counterCustomer   CounterCustomer @relation(fields: [counterCustomerId], references: [id], onDelete: Cascade)
+
+  kind      String // FRONT | BACK
+  mimeType  String
+  sizeBytes Int
+  sha256    String
+  data      Bytes
+
+  capturedById String // agent qui a pris la photo
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([counterCustomerId, kind])
+  @@map("counter_id_files")
 }
 
 model AmlFlag {
@@ -1267,6 +1392,10 @@ model Transaction {
   scheduledTransferId String?
   scheduledTransfer   ScheduledTransfer? @relation(fields: [scheduledTransferId], references: [id])
 
+  // ✅ lot 7 — expéditeur de passage (envoi fait au comptoir par un agent)
+  counterCustomerId String?
+  counterCustomer   CounterCustomer? @relation(fields: [counterCustomerId], references: [id])
+
   senderId String
   sender   User   @relation("Sender", fields: [senderId], references: [id])
 
@@ -1345,6 +1474,7 @@ model Transaction {
   @@index([clientId, status])
   @@index([agencyId, createdAt])
   @@index([senderId])
+  @@index([counterCustomerId, createdAt])
   @@index([createdAt])
   @@index([reference])
   @@index([currency, targetCurrency])
@@ -2126,6 +2256,13 @@ model SupportTicket {
   resolvedAt DateTime?
   closedAt   DateTime?
 
+  // Lot 9 — litiges : transaction contestée, décision et auteur
+  transactionId  String?
+  outcome        String?   // ACCEPTED (en faveur du client) | REJECTED | INFO (simple réponse)
+  resolutionNote String?
+  resolvedById   String?
+  refundRequests RefundRequest[]
+
   // Métadonnées (transactionId concernée, etc.)
   metadata Json?
 
@@ -2137,7 +2274,47 @@ model SupportTicket {
   @@index([status])
   @@index([clientId])
   @@index([userId])
+  @@index([transactionId])
   @@map("support_tickets")
+}
+
+// =========================================================
+// Lot 9 — DEMANDES DE REMBOURSEMENT
+// Ouvertes par le service client (ou l'administrateur) sur un envoi encore remboursable (non payé), décidées par une AUTRE personne
+// (séparation des tâches). L'acceptation exécute le remboursement atomique existant (annulation + crédit du wallet débité).
+// =========================================================
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FAILED   // acceptée mais impossible à exécuter (l'envoi a été payé entre-temps) : à traiter hors plateforme
+}
+
+model RefundRequest {
+  id String @id @default(cuid())
+
+  clientId      Int
+  transactionId String
+  ticketId      String?
+  ticket        SupportTicket? @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  amount   Decimal @db.Decimal(18, 4)
+  currency String
+  reason   String
+
+  status RefundRequestStatus @default(PENDING)
+
+  requestedById String
+  decidedById   String?
+  decisionNote  String?
+  decidedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId, status])
+  @@index([transactionId])
+  @@map("refund_requests")
 }
 
 model SupportTicketReply {
@@ -2273,4 +2450,156 @@ model Contract {
   @@index([clientId])
   @@index([status, createdAt])
   @@map("contracts")
+}
+
+
+// =========================================================
+// LOT 11 — COMPTE MARCHAND
+// =========================================================
+
+enum AccountType {
+  PERSONAL
+  MERCHANT
+}
+
+enum MerchantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+/// Fiche du commerce d'un marchand. Le numéro Orange Money de retrait est choisi à l'inscription ; le modifier exige le code secret
+/// (et ouvre un délai de sécurité avant le prochain retrait, réglable par l'administrateur).
+model MerchantProfile {
+  id       String @id @default(cuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId Int
+
+  businessName String
+  category     String?
+  address      String?
+  city         String?
+
+  /// Numéro Orange Money qui reçoit les retraits (E.164).
+  orangeMoneyPhone String?
+  /// Compte bancaire pour les virements (facultatif).
+  bankHolderName String?
+  bankIban       String?
+  bankBic        String?
+  /// Dernière modification d'une destination de retrait (hors création) : point de départ du délai de sécurité.
+  destinationChangedAt DateTime?
+
+  status          MerchantStatus @default(ACTIVE)
+  suspendedReason String?
+  suspendedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId, status])
+  @@map("merchant_profiles")
+}
+
+enum PaymentRequestMethod {
+  PHONE
+  QR
+}
+
+enum PaymentRequestStatus {
+  PENDING
+  PAID
+  DECLINED
+  EXPIRED
+  CANCELLED
+}
+
+/// Demande d'encaissement créée par un marchand. PHONE : adressée à un client par son numéro de téléphone. QR : affichée en QR code,
+/// payée par le premier client qui la scanne et valide avec son code secret. Les montants sont figés à la création.
+model PaymentRequest {
+  id        String @id @default(cuid())
+  reference String @unique
+  clientId  Int
+
+  payeeId String
+  payee   User   @relation("PaymentPayee", fields: [payeeId], references: [id])
+  payerId String?
+  payer   User?  @relation("PaymentPayer", fields: [payerId], references: [id])
+  /// Numéro du client visé (méthode PHONE), E.164.
+  payerPhone String?
+
+  method PaymentRequestMethod
+  status PaymentRequestStatus @default(PENDING)
+
+  amount    Decimal      @db.Decimal(18, 4)
+  fee       Decimal      @default(0) @db.Decimal(18, 4)
+  netAmount Decimal      @db.Decimal(18, 4)
+  currency  CurrencyCode
+  note      String?
+
+  /// Jeton du QR code (aléatoire, à usage unique). Nul pour la méthode PHONE.
+  qrToken String? @unique
+
+  expiresAt     DateTime
+  paidAt        DateTime?
+  declinedAt    DateTime?
+  cancelledAt   DateTime?
+  failureReason String?
+  /// Opération (Transaction MERCHANT_PAYMENT) créée quand le client paie.
+  transactionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([payeeId, createdAt])
+  @@index([payerId, status])
+  @@index([clientId, status, expiresAt])
+  @@index([payerPhone, status])
+  @@map("payment_requests")
+}
+
+enum MerchantPayoutMethod {
+  ORANGE_MONEY
+  BANK_TRANSFER
+}
+
+enum MerchantPayoutStatus {
+  PENDING
+  PAID
+  REJECTED
+  FAILED
+}
+
+/// Retrait du solde d'un marchand. Le montant est débité du portefeuille à la demande ; en cas de refus ou d'échec il est recrédité.
+model MerchantPayout {
+  id        String @id @default(cuid())
+  reference String @unique
+  clientId  Int
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  method MerchantPayoutMethod
+  status MerchantPayoutStatus @default(PENDING)
+
+  amount    Decimal      @db.Decimal(18, 4)
+  fee       Decimal      @default(0) @db.Decimal(18, 4)
+  netAmount Decimal      @db.Decimal(18, 4)
+  currency  CurrencyCode
+
+  /// Destination figée au moment de la demande (téléphone Orange Money ou IBAN).
+  destination      String
+  destinationLabel String?
+
+  transactionId String?
+  providerRef   String?
+  processedById String?
+  processedAt   DateTime?
+  failureReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([clientId, status, createdAt])
+  @@map("merchant_payouts")
 }

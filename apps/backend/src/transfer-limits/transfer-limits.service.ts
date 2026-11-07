@@ -12,19 +12,26 @@
 //   aucune limite (alors que l'envoi en avait) : on pouvait faire entrer n'importe quelle somme en cash sans vérification.
 //   Seuls comptent les dépôts en espèces payés (pas les recharges par carte / mobile money).
 //
+// ✅ v1.2 (lot 7) — assertCounterWithinLimits() : un envoi fait AU COMPTOIR par un agent pour un client de passage est borné par les
+//   plafonds du niveau LEVEL_1 (identité contrôlée sur pièce) cumulés par PERSONNE (toutes ses fiches), quel que soit l'agent ou
+//   l'agence. Avant, ces envois n'avaient aucune limite. Verrou par personne : deux agents simultanés ne contournent pas le plafond.
+// ✅ v1.2 (lot 7) — setUserKycLevel() : un client ne passe à un niveau supérieur que si ses pièces VALIDÉES le permettent
+//   (voir kyc/kyc-rules.ts levelFromDocs). Baisser un niveau reste toujours possible.
+//
 // Ce qui est contrôlé : les envois (TRANSFER, SCHEDULED) d'un CLIENT (rôle USER), dans la devise de l'envoi, montant
 // hors frais. Comptent les envois en cours ou réussis ; pas les annulés, échoués, remboursés ou expirés.
 // Les périodes (jour, mois, année) sont calculées en UTC. Un envoi fait par un agent pour un client de passage n'est
 // pas contrôlé ici : l'expéditeur n'a pas de compte, donc pas de niveau KYC.
 // =========================================================
 
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CurrencyCode, KycLevel, PaymentMethod, type Prisma, TransactionStatus, TransactionType } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { hasAtMostTwoDecimals } from '../fees-admin/fee-rules';
 import { PrismaService } from '../prisma/prisma.service';
 import { MAX_LIMIT, type SetLimitsDto } from './dto/transfer-limit.dto';
+import { levelFromDocs, levelRank } from '../kyc/kyc-rules';
 import {
   checkLimitOrder,
   defaultLimits,
@@ -98,7 +105,12 @@ export function periodStarts(now: Date): { day: Date; month: Date; year: Date } 
 
 const money = (n: number, currency: string): string => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${currency}`;
 
-export function breachMessage(b: Breach, currency: string, kind: 'send' | 'deposit' = 'send'): string {
+export function breachMessage(b: Breach, currency: string, kind: 'send' | 'deposit' | 'counter' = 'send'): string {
+  if (kind === 'counter') {
+    const hintC = ' Cet expéditeur ne peut pas envoyer davantage au comptoir pour le moment : il peut ouvrir un compte et faire vérifier son identité.';
+    if (b.limit === 'perTransaction') return `Montant supérieur au plafond par envoi au comptoir : ${money(b.max, currency)} au maximum.${hintC}`;
+    return `Plafond d'envois au comptoir ${periodLabel(b.limit)} atteint pour cet expéditeur : il reste ${money(b.remaining, currency)} sur ${money(b.max, currency)}.${hintC}`;
+  }
   if (kind === 'deposit') {
     const hintD = ' Pour déposer davantage, le client doit faire vérifier son identité (niveau KYC supérieur) auprès de la société.';
     if (b.limit === 'perTransaction') {
@@ -287,6 +299,60 @@ export class TransferLimitsService {
     });
   }
 
+  /** Envois au comptoir déjà faits pour ces fiches (une même personne), dans cette devise, depuis le début du jour / mois / année (UTC). */
+  async counterUsageOf(db: Db | PrismaService, clientId: number, customerIds: string[], currency: string, now = new Date(), excludeTransactionId?: string): Promise<Usage> {
+    const start = periodStarts(now);
+    const base = {
+      clientId,
+      counterCustomerId: { in: customerIds },
+      currency: currency as CurrencyCode,
+      type: { in: COUNTED_TYPES },
+      status: { in: COUNTED_STATUSES },
+      ...(excludeTransactionId ? { id: { not: excludeTransactionId } } : {}),
+    };
+    const sum = async (since: Date) => {
+      const r = await db.transaction.aggregate({ where: { ...base, createdAt: { gte: since } }, _sum: { amount: true } });
+      return Number(r._sum.amount ?? 0);
+    };
+    const [daily, monthly, yearly] = await Promise.all([sum(start.day), sum(start.month), sum(start.year)]);
+    return { daily, monthly, yearly };
+  }
+
+  /**
+   * Refuse (403, code COUNTER_LIMIT_EXCEEDED) un envoi au comptoir qui dépasse les plafonds du niveau LEVEL_1 pour cette PERSONNE.
+   * `lock` : prend un verrou par personne (à utiliser dans la transaction SQL de l'envoi) pour que deux envois simultanés
+   * ne contournent pas le plafond.
+   */
+  async assertCounterWithinLimits(
+    db: Db | PrismaService,
+    p: { clientId: number; customerIds: string[]; currency: string; amount: number; excludeTransactionId?: string; lock?: boolean },
+  ): Promise<void> {
+    if (p.customerIds.length === 0) return;
+    if (p.lock) {
+      const key = `counter:${[...p.customerIds].sort()[0]}`;
+      await (db as Db).$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key})::bigint)`;
+    }
+    const limits = await this.effectiveLimits(db, p.clientId, 'LEVEL_1', p.currency);
+    const needsUsage = limits.daily !== null || limits.monthly !== null || limits.yearly !== null;
+    const usage = needsUsage
+      ? await this.counterUsageOf(db, p.clientId, p.customerIds, p.currency, new Date(), p.excludeTransactionId)
+      : { daily: 0, monthly: 0, yearly: 0 };
+
+    const breach = evaluateLimits(limits, usage, p.amount);
+    if (!breach) return;
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: 'COUNTER_LIMIT_EXCEEDED',
+      message: breachMessage(breach, p.currency, 'counter'),
+      limit: breach.limit,
+      max: breach.max,
+      used: breach.used,
+      remaining: breach.remaining,
+      currency: p.currency,
+    });
+  }
+
   // ── Écriture (admin de société) ───────────────────────
   async set(user: AuthUserPayload, rawLevel: string, rawCurrency: string, dto: SetLimitsDto): Promise<LimitView> {
     const clientId = this.requireCompanyAdmin(user);
@@ -351,6 +417,25 @@ export class TransferLimitsService {
     });
     if (!target) throw new NotFoundException('Client introuvable.');
     if (String(target.kycLevel) === level) return { userId: target.id, kycLevel: level, changed: false };
+
+    // ✅ lot 7 — monter de niveau exige des pièces VALIDÉES : niveau 1 = pièce d'identité + selfie, niveau 2 = + justificatif de
+    // domicile, niveau 3 = les mêmes pièces que le niveau 2 (accordé à la main). Baisser un niveau est toujours possible.
+    if (levelRank(level) > levelRank(String(target.kycLevel))) {
+      const docs = await this.prisma.kycDocument.findMany({ where: { userId: target.id }, select: { type: true, status: true, expiryDate: true } });
+      const provable = levelFromDocs(docs, new Date());
+      const needed = levelRank(level) >= 2 ? 'LEVEL_2' : 'LEVEL_1';
+      if (levelRank(provable) < levelRank(needed)) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          code: 'KYC_DOCUMENTS_REQUIRED',
+          message:
+            needed === 'LEVEL_1'
+              ? "Ce client n'a pas de pièce d'identité et de selfie validés : validez ses pièces (Vérifications KYC) avant de relever son niveau."
+              : "Ce niveau exige aussi un justificatif de domicile validé : validez-le (Vérifications KYC) avant de relever le niveau.",
+        });
+      }
+    }
 
     await this.prisma.user.update({ where: { id: target.id }, data: { kycLevel: level as KycLevel } });
     await this.audit(user, clientId, KYC_ENTITY, target.id, { userId: target.id, from: String(target.kycLevel), to: level }, 'USER_UPDATE');

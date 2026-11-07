@@ -27,6 +27,7 @@ import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
+import { resolveActionUrl } from "../../services/notificationRouting";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
   Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, SkeletonRows, SlowNote, UText, alpha, useUI,
@@ -35,6 +36,7 @@ import {
 interface NotificationItem {
   id: string; title: string; message: string;
   type: string; createdAt: string; isRead: boolean;
+  actionUrl?: string | null; actionLabel?: string | null;
 }
 
 function fmtDate(iso: string): string {
@@ -49,7 +51,7 @@ function fmtDate(iso: string): string {
 const TYPE_ICON: Record<string, string> = {
   SUCCESS: "checkmark-circle",
   WARNING: "alert-circle",
-  ERROR: "close-circle",
+  ERROR: "alert-circle",
   INFO: "information-circle",
   TRANSACTION: "swap-horizontal",
   SECURITY: "shield-checkmark",
@@ -192,7 +194,7 @@ export default function NotificationsScreen() {
           onBack={selectMode ? exitSelectMode : () => router.back()}
           right={
             selectMode ? (
-              <IconButton icon="close" label="Annuler la sélection" onPress={exitSelectMode} />
+              <IconButton icon="arrow-undo-outline" label="Annuler la sélection" onPress={exitSelectMode} />
             ) : (
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {notifs.length > 0 && <IconButton icon="trash-outline" label="Supprimer des notifications" onPress={() => startSelecting()} />}
@@ -266,7 +268,12 @@ export default function NotificationsScreen() {
           return (
             <Pressable
               key={item.id}
-              onPress={() => (selectMode ? toggleSelected(item.id) : handleMarkAsRead(item.id, item.isRead))}
+              onPress={() => {
+                if (selectMode) { toggleSelected(item.id); return; }
+                void handleMarkAsRead(item.id, item.isRead);
+                const target = resolveActionUrl(item.actionUrl);   // Lot 11 : ouvre l'écran lié (paiement, retrait…)
+                if (target) router.push(target as any);
+              }}
               onLongPress={() => { if (!selectMode) startSelecting(item.id); }}
               delayLongPress={350}
               accessibilityRole={selectMode ? "checkbox" : "button"}

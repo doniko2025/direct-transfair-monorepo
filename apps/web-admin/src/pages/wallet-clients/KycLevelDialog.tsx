@@ -3,6 +3,7 @@
 // Réservé à l'admin de la société.
 
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import type { KycLevel } from '@direct-transfair/shared';
 import { ConfirmDialog, SelectField } from '../../components/form';
 import { Notice } from '../../components/ui';
@@ -55,7 +56,12 @@ export default function KycLevelDialog({ userId, current, onClose, onDone }: Pro
         />
         {error ? <Notice tone="error">{error}</Notice> : null}
         <p className="muted">
-          Ne changez le niveau qu’après avoir contrôlé les pièces du client. Ses plafonds d’envoi suivent immédiatement le niveau choisi (Réglages › Plafonds d’envoi).
+          Le niveau monte normalement tout seul quand vous validez les pièces du client (Vérifications KYC). Le fixer à la main n’est possible que si ses pièces sont déjà validées : niveau 1 = pièce d’identité + selfie, niveau 2 et 3 = en plus un justificatif de domicile. Baisser le niveau est toujours possible. Ses plafonds d’envoi suivent immédiatement le niveau choisi (Réglages › Plafonds d’envoi).
+        </p>
+        <p className="muted">
+          <Link to={`/kyc/${encodeURIComponent(userId)}`} className="link-btn">
+            Ouvrir son dossier d’identité
+          </Link>
         </p>
       </div>
     </ConfirmDialog>

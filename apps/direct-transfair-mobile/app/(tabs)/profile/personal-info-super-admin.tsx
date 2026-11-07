@@ -162,7 +162,7 @@ export default function PersonalInfoSuperAdmin() {
           style={[s.editBtn, isEditing && s.editBtnActive]}
           onPress={() => isEditing ? cancelEdit() : setIsEditing(true)}
         >
-          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
+          <Ionicons name={isEditing ? "arrow-undo-outline" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
         </TouchableOpacity>
       </View>
 

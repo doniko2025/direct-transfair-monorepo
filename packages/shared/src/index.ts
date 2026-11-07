@@ -24,3 +24,6 @@ export * from './portalDomains';
 export * from './idempotency';
 export * from './companySettings';
 export * from './sessions';
+export * from './kyc';
+export * from './support';
+export * from './merchants';

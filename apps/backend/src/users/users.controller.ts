@@ -121,7 +121,7 @@ class RolesGuard implements CanActivate {
 type ManageAction = 'update' | 'suspend' | 'reactivate' | 'delete';
 
 /** Rôles qu'un administrateur de société peut créer et gérer. */
-const COMPANY_MANAGED_ROLES: readonly string[] = [Role.AGENT, Role.USER];
+const COMPANY_MANAGED_ROLES: readonly string[] = [Role.AGENT, Role.USER, Role.SUPPORT];
 
 /**
  * Vérifie que `admin` peut effectuer `action` sur `target`, ou lève l'exception adaptée.
@@ -210,6 +210,10 @@ export class UsersController {
     const isSuper = currentUser?.role === 'SUPER_ADMIN';
 
     const role = body.role ?? Role.AGENT;
+    // Lot 9 — un compte du service client se crée depuis « Service client » (mot de passe temporaire, délégations réglées par interrupteurs).
+    if (role === Role.SUPPORT) {
+      throw new ForbiddenException('Créez un compte service client depuis la rubrique « Service client » (délégations incluses).');
+    }
     if (!isSuper && !COMPANY_MANAGED_ROLES.includes(role)) {
       throw new ForbiddenException(
         'Un administrateur de société ne peut créer que des agents et des clients.',

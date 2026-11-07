@@ -290,7 +290,7 @@ function CountryPickerModal({ visible, onClose, onSelect, title }: {
             />
             {!!q && (
               <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-                <Ionicons name="close-circle" size={14} color={T.textDim} />
+                <Ionicons name="remove-circle" size={14} color={T.textDim} />
               </TouchableOpacity>
             )}
           </View>
@@ -392,7 +392,7 @@ function CitySelector({ label, value, onSelect, cities, editable = true }: {
               />
               {!!q && (
                 <TouchableOpacity onPress={() => setQ("")} hitSlop={8}>
-                  <Ionicons name="close-circle" size={14} color={T.textDim} />
+                  <Ionicons name="remove-circle" size={14} color={T.textDim} />
                 </TouchableOpacity>
               )}
             </View>
@@ -563,7 +563,7 @@ export default function PersonalInfoAdmin() {
           style={[s.editBtn, isEditing && s.editBtnCancel]}
           onPress={() => isEditing ? cancelEdit() : setIsEditing(true)}
         >
-          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
+          <Ionicons name={isEditing ? "arrow-undo-outline" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
         </TouchableOpacity>
       </View>
 

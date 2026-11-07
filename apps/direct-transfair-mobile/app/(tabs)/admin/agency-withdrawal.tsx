@@ -337,7 +337,7 @@ export default function AgencyWithdrawalScreen() {
               />
               {!!agencySearch && (
                 <TouchableOpacity onPress={() => setAgencySearch("")}>
-                  <Ionicons name="close" size={13} color={C.inkSoft} />
+                  <Ionicons name="remove-circle" size={13} color={C.inkSoft} />
                 </TouchableOpacity>
               )}
             </View>

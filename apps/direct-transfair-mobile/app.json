@@ -20,7 +20,7 @@
       "bundleIdentifier": "com.doniko.directtransfair",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement."
+        "NSCameraUsageDescription": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement et photographier votre pièce d'identité."
       }
     },
     "android": {
@@ -51,13 +51,19 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-image-picker",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Direct Transf'air a besoin de la caméra pour photographier votre pièce d'identité et votre selfie.",
+          "photosPermission": "Direct Transf'air a besoin d'accéder à vos photos pour choisir une photo de votre pièce d'identité."
+        }
+      ],
       "expo-status-bar",
       "expo-sharing",
       [
         "expo-camera",
         {
-          "cameraPermission": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement."
+          "cameraPermission": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement et photographier votre pièce d'identité."
         }
       ],
       [

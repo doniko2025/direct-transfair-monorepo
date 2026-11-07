@@ -68,6 +68,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory }    from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet'; // ✅ v2.0 — npm install helmet
+import { json, urlencoded, type NextFunction, type Request, type Response } from 'express'; // ✅ lot 7 — limite de corps propre à l'envoi des pièces KYC
 
 import { AppModule }     from './app.module';
 import { TenantGuard }   from './tenants/tenant.guard';
@@ -143,7 +144,16 @@ async function refreshCustomDomains(prisma: PrismaService): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  // ✅ lot 7 — l'envoi d'une pièce d'identité (photos en base64) dépasse les 100 Ko par défaut : limite relevée sur cette SEULE route
+  // (/api/kyc/documents, 2 photos de 6 Mo au plus), le reste de l'API garde la limite d'origine de 100 Ko.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use('/api/kyc/documents', json({ limit: '18mb' }));
+  // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
+  app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
+    req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),
+  );
+  app.use(json({ limit: '100kb' }));
+  app.use(urlencoded({ extended: true, limit: '100kb' }));
 
   // ✅ v2.2 : adresse IP réelle du client (rate limiting, journaux de connexion)
   const configuredHops = process.env.TRUST_PROXY_HOPS;

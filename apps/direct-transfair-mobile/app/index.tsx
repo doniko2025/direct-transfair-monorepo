@@ -96,7 +96,7 @@ export default function Index() {
         {/* ── Actions ── */}
         <Animated.View style={{ gap: 12, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           <Button label="Se connecter" iconRight="arrow-forward" onPress={() => router.replace("/(auth)/login")} />
-          <Button label="Devenir client" kind="outline" onPress={() => router.replace("/(auth)/register")} />
+          <Button label="Devenir client" kind="outline" onPress={() => router.replace("/(auth)/account-type")} />
 
           <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11.5, color: C.muted, lineHeight: 17, marginTop: 6 }}>
             En continuant, vous acceptez nos{" "}

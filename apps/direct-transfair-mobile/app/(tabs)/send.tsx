@@ -297,6 +297,7 @@ import {
 } from 'react-native';
 import * as Clipboard from "expo-clipboard";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { handleKycRequired } from "../../utils/kycGate";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
@@ -1395,6 +1396,8 @@ export default function SendMoneyScreen() {
       void fetchWalletBalance();
       setShowReceipt(true);
     } catch (e: any) {
+      // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
+      if (handleKycRequired(e, router)) return;
       const msg = e.response?.data?.message || "Une erreur est survenue.";
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
     } finally { setSending(false); }
@@ -1555,7 +1558,7 @@ export default function SendMoneyScreen() {
                       <ActivityIndicator size="small" color={C.g4} style={{ marginRight: 12 }} />
                     ) : walletInput.length > 0 ? (
                       <TouchableOpacity style={s.clearInputBtn} onPress={() => { setWalletInput(""); setPickedId(null); }} accessibilityLabel="Effacer">
-                        <Ionicons name="close-circle" size={18} color={C.textFaint} />
+                        <Ionicons name="remove-circle" size={18} color={C.textFaint} />
                       </TouchableOpacity>
                     ) : null}
                   </View>
@@ -1764,7 +1767,7 @@ export default function SendMoneyScreen() {
                     style={s.motifClear}
                     accessibilityLabel="Retirer le motif"
                   >
-                    <Ionicons name="close-circle" size={16} color={C.textFaint} />
+                    <Ionicons name="remove-circle" size={16} color={C.textFaint} />
                   </TouchableOpacity>
                 )}
               </View>

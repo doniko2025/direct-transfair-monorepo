@@ -134,7 +134,7 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
   }
   if (status === 401) {
     return ctx === 'login'
-      ? { kind: 'credentials', title: 'Identifiants incorrects', message: srv && !/unauthorized/i.test(srv) ? srv : 'Email ou mot de passe incorrect.', status }
+      ? { kind: 'credentials', title: 'Identifiants incorrects', message: srv && !/unauthorized/i.test(srv) ? srv : 'Numéro, email ou code incorrect.', status }
       : { kind: 'forbidden', title: 'Session expirée', message: 'Veuillez vous reconnecter.', status };
   }
   if (status === 409) {

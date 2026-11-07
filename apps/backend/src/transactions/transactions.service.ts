@@ -312,12 +312,14 @@ import { CompanyNotifierService } from '../notifications/channels/company-notifi
 import { AdminNotifierService }   from '../notifications/channels/admin-notifier.service';
 import { ValidationThresholdsService } from '../validation-thresholds/validation-thresholds.service';
 import { TransferLimitsService } from '../transfer-limits/transfer-limits.service';
+import { KycGuardService } from '../kyc/kyc-guard.service'; // lot 7 — pas d'opération sortante sans identité vérifiée
+import { CounterCustomersService, type ResolvedCounterCustomer } from '../kyc/counter-customers.service'; // lot 7 — expéditeur de passage
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { assertSelfFundingAllowed } from '../treasury/self-funding';
-import { computeRiskScore } from './aml-scoring';
+import { amlFlagScore, computeRiskScore } from './aml-scoring';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -405,6 +407,8 @@ export class TransactionsService {
     private readonly thresholds:           ValidationThresholdsService,
     private readonly transferLimits:       TransferLimitsService,
     private readonly settings:             CompanySettingsService,
+    private readonly kycGuard:             KycGuardService,         // lot 7
+    private readonly counterCustomers:     CounterCustomersService, // lot 7
   ) {}
 
   // ── Enrichissement ────────────────────────────────────
@@ -865,6 +869,32 @@ export class TransactionsService {
   }
 
   /**
+   * Lot 9 — exécute un remboursement décidé par le service client / l'admin (voir RefundsService, règle des quatre yeux).
+   * Mêmes garde-fous que l'annulation par le client : seul un envoi (TRANSFER / SCHEDULED) encore non payé se rembourse ; l'annulation et
+   * le crédit du wallet débité sont atomiques (cancelWithRefund). Un envoi déjà payé, déjà clos ou d'un autre type est refusé (409) :
+   * l'argent a quitté le circuit, le dossier se règle hors plateforme.
+   */
+  async refundOnSupportDecision(clientId: number, deciderId: string, transactionId: string, requestId: string): Promise<Transaction> {
+    const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+    if (!REFUNDABLE_TYPES.includes(tx.type)) {
+      throw new ConflictException('Ce type d\'opération ne se rembourse pas depuis la plateforme.');
+    }
+    if (!CANCELLABLE_TX.includes(tx.status)) {
+      throw new ConflictException(
+        tx.status === TransactionStatus.PAID
+          ? 'Le bénéficiaire a déjà retiré l\'argent : ce remboursement doit être traité hors plateforme.'
+          : `Cette opération est déjà « ${tx.status} » : rien à rembourser.`,
+      );
+    }
+    const closed = await this.cancelWithRefund(tx);
+    await this.audit(deciderId, clientId, 'TRANSACTION_CANCEL', tx.id, {
+      from: tx.status, to: TransactionStatus.CANCELLED, via: 'remboursement service client', refundRequestId: requestId, refunded: Number(tx.total),
+    });
+    return closed;
+  }
+
+  /**
    * ✅ v4.30 — expire les codes de retrait non utilisés depuis plus de PICKUP_CODE_VALIDITY_MONTHS (5) mois : envoi passé en
    * EXPIRED + expéditeur remboursé (montant + frais), dans la même transaction SQL. Appelé chaque nuit par PickupExpiryService.
    *   - envois (TRANSFER / SCHEDULED) encore PENDING ou VALIDATED ; jamais un envoi déjà payé ou en cours (PROCESSING) ;
@@ -949,18 +979,24 @@ export class TransactionsService {
     amount: number,
     currency: string,
     /** SEND : le sujet est l'expéditeur. DEPOSIT : le sujet est le CLIENT qui reçoit le cash (dépôt en agence). */
-    kind: 'SEND' | 'DEPOSIT' = 'SEND',
+    kind: 'SEND' | 'DEPOSIT' | 'COUNTER' = 'SEND',
+    /** COUNTER : fiche du client de passage — l'historique évalué est celui de CETTE PERSONNE (toutes ses fiches), pas celui de l'agent. */
+    counter?: { relatedIds: string[]; notes: string[]; firstSeenAt: Date; firstName?: string; lastName?: string },
   ): Promise<void> {
     const since = new Date(Date.now() - 24 * 3_600_000);
     const [recent, subject] = await Promise.all([
       this.prisma.transaction.findMany({
         where: kind === 'DEPOSIT'
           ? { recipientId: subjectUserId, type: TransactionType.DEPOSIT, id: { not: transactionId }, createdAt: { gte: since }, status: TransactionStatus.PAID }
-          : { senderId: subjectUserId, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } },
+          : kind === 'COUNTER' && counter
+            ? { counterCustomerId: { in: counter.relatedIds }, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } }
+            : { senderId: subjectUserId, id: { not: transactionId }, createdAt: { gte: since }, status: { not: TransactionStatus.CANCELLED } },
         select: { amount: true, currency: true },
         take:   200,
       }),
-      this.prisma.user.findUnique({ where: { id: subjectUserId }, select: { createdAt: true } }),
+      kind === 'COUNTER' && counter
+        ? Promise.resolve({ createdAt: counter.firstSeenAt })
+        : this.prisma.user.findUnique({ where: { id: subjectUserId }, select: { createdAt: true } }),
     ]);
 
     // ✅ v4.33 — conversion en XOF avec les taux ENREGISTRÉS (plus de table en dur). Taux absent → null : le scoring ne devine
@@ -985,6 +1021,13 @@ export class TransactionsService {
       recentSumXof24h: recentSumXof24h ?? 0,
       accountCreatedAt: subject?.createdAt ?? null,
     });
+    // Anomalies d'identité relevées à l'enregistrement du client de passage : toujours signalées à la conformité.
+    const notes = kind === 'COUNTER' ? (counter?.notes ?? []) : [];
+    if (notes.length) {
+      result.reasons.push(...notes);
+      result.flagged = true;
+      result.score = Math.max(result.score, amlFlagScore());
+    }
 
     await this.prisma.transaction.update({
       where: { id: transactionId },
@@ -995,7 +1038,7 @@ export class TransactionsService {
       await this.prisma.amlFlag.create({
         data: {
           userId: subjectUserId, transactionId,
-          reason: `${kind === 'DEPOSIT' ? 'Dépôt en agence — ' : ''}${result.reasons.join(' ; ')}`,
+          reason: `${kind === 'DEPOSIT' ? 'Dépôt en agence — ' : kind === 'COUNTER' ? `Envoi au comptoir (${[counter?.firstName, counter?.lastName].filter(Boolean).join(' ') || 'client de passage'}) — ` : ''}${result.reasons.join(' ; ')}`,
           riskScore: result.score,
         },
       });
@@ -1137,6 +1180,18 @@ export class TransactionsService {
       );
     }
 
+    // ✅ lot 7 — deux régimes selon qui paie :
+    //   • CAISSE D'AGENCE (envoi au comptoir par un agent) : l'expéditeur n'a pas de compte → sa pièce d'identité est obligatoire
+    //     et enregistrée ; les plafonds s'appliquent à cette personne, quel que soit l'agent.
+    //   • WALLET d'un client : identité vérifiée par un administrateur exigée (403 KYC_REQUIRED sinon).
+    const isCounterSend = !!walletToDebit.agencyId;
+    let counter: ResolvedCounterCustomer | null = null;
+    if (isCounterSend) {
+      counter = await this.counterCustomers.resolve(clientId, senderId, dto);
+    } else {
+      await this.kycGuard.assertVerified({ id: user.id, role: String(user.role), kycLevel: String(user.kycLevel) });
+    }
+
     // ✅ v4.32 — mode d'envoi RÉEL. Un envoi « cash » vers un utilisateur déjà inscrit sur la plateforme (beneficiaryId = id
     // d'utilisateur) n'a pas de retrait en agence : l'argent arrive directement sur son wallet. C'est donc un envoi
     // wallet → wallet (enregistré WALLET, frais du mode WALLET), plus un « cash » facturé comme un retrait en agence.
@@ -1158,6 +1213,7 @@ export class TransactionsService {
 
     // v4.26 — plafonds du client (sans effet pour un agent : l'expéditeur de passage n'a pas de niveau KYC).
     await this.transferLimits.assertWithinLimits(this.prisma, { clientId, userId: senderId, currency, amount: Number(amount) });
+    if (counter) await this.transferLimits.assertCounterWithinLimits(this.prisma, { clientId, customerIds: counter.relatedIds, currency, amount: Number(amount) });
 
     // ✅ v4.30 — pays de destination (ISO-2). Un envoi cash l'exige : le code ne se paiera que dans ce pays.
     const receiveCountry = toIso2(beneficiary?.country ?? directRecipientUser?.country ?? null);
@@ -1287,6 +1343,7 @@ export class TransactionsService {
           idempotencyKey, // ✅ v4.29 — index unique (senderId, idempotencyKey)
           ...(options.type ? { type: options.type } : {}),
           scheduledTransferId: options.scheduledTransferId ?? null, // ✅ v4.32
+          counterCustomerId: counter?.id ?? null, // ✅ lot 7 — expéditeur de passage (plafonds, traçabilité)
           amount, fees, total,
           currency,
           targetCurrency,
@@ -1321,6 +1378,11 @@ export class TransactionsService {
       await this.transferLimits.assertWithinLimits(tx, {
         clientId, userId: senderId, currency, amount: Number(amount), excludeTransactionId: created.id,
       });
+      if (counter) {
+        await this.transferLimits.assertCounterWithinLimits(tx, {
+          clientId, customerIds: counter.relatedIds, currency, amount: Number(amount), excludeTransactionId: created.id, lock: true,
+        });
+      }
 
       if (recipientUser && recipientWalletRef) {
         await this.walletsService.creditInTx(
@@ -1360,11 +1422,11 @@ export class TransactionsService {
     await this.audit(senderId, clientId, 'TRANSACTION_CREATE', transaction.id, {
       type: txType, amount: Number(amount), fees: Number(fees), currency, targetCurrency,
       received: convertedAmount, status, payoutMethod: effectiveMethod,
-      agencyId: user.agencyId ?? null, idempotent: !!idempotencyKey,
+      agencyId: user.agencyId ?? null, idempotent: !!idempotencyKey, counterCustomerId: counter?.id ?? null,
     });
 
     // ✅ v4.30 — scoring AML : jamais bloquant, jamais attendu.
-    this.fireAndForget('Scoring AML', () => this.scoreAml(transaction.id, senderId, Number(amount), currency));
+    this.fireAndForget('Scoring AML', () => this.scoreAml(transaction.id, senderId, Number(amount), currency, counter ? 'COUNTER' : 'SEND', counter ?? undefined));
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName

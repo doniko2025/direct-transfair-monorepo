@@ -62,7 +62,7 @@ type Props = {
   below?: React.ReactNode;
   /** Élément à droite de la rangée du haut (ex. pastille d'état serveur). */
   headerRight?: React.ReactNode;
-  /** Bandeau avec la marque centrée + feuille blanche (téléphone). Actif par défaut ; false = ancien cadre clair. */
+  /** Bandeau sombre avec la marque + carte flottante (ancien style). Lot 12 : désactivé par défaut — fond blanc pur. */
   hero?: boolean;
   children: React.ReactNode;
 };
@@ -87,14 +87,14 @@ function useBrowserWidth(): number {
 
 export function useAuthPalette(): AuthPalette {
   const { branding } = useTenant();
-  return React.useMemo(() => buildPalette(branding.primaryColor), [branding.primaryColor]);
+  return React.useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
 }
 
 export default function AuthShell({
-  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = true, children,
+  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, children,
 }: Props) {
   const { branding } = useTenant();
-  const C = React.useMemo(() => buildColors(branding.primaryColor), [branding.primaryColor]);
+  const C = React.useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
   const insets = useSafeAreaInsets();
   const winW = useBrowserWidth();
   const wide = Platform.OS === 'web' && winW >= 900;
@@ -274,6 +274,7 @@ export default function AuthShell({
             <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
           </View>
           {footer}
+          {below ? <View style={s.below}>{below}</View> : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

@@ -130,6 +130,15 @@ import type {
   WebhookEndpoint,
   Withdrawal,
 } from "./types";
+import type {
+  MerchantMe,
+  MerchantProfileInput,
+  MerchantSummary,
+  Paged,
+  PaymentRequestView,
+  PayoutMethod,
+  PayoutView,
+} from "./merchantTypes";
 
 // ============================================================
 // TYPE HELPERS
@@ -422,6 +431,29 @@ async function secureDelete(key: string): Promise<void> {
 // ============================================================
 // API CLASS
 // ============================================================
+
+// ── Assistance : demandes et litiges du client ────────────────────────
+export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "WAITING_USER" | "RESOLVED" | "CLOSED";
+export interface SupportTicketItem {
+  id: string;
+  subject: string;
+  message: string;
+  category: string | null;
+  status: SupportTicketStatus;
+  isDispute: boolean;
+  transactionId: string | null;
+  outcome: "ACCEPTED" | "REJECTED" | "INFO" | null;
+  resolutionNote: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SupportTicketReplyItem {
+  id: string;
+  message: string;
+  createdAt: string;
+  fromMe: boolean;
+  author: { name: string; isStaff: boolean };
+}
 
 class API {
   public http: AxiosInstance;
@@ -1063,6 +1095,27 @@ class API {
     return unwrapArray<unknown>(res.data).map(normalizeTransaction);
   }
 
+  // ── Assistance (demandes et litiges du client) ──────────────────────
+  async getMyTickets(): Promise<SupportTicketItem[]> {
+    const res = await this.http.get<{ items?: SupportTicketItem[] }>("/support/tickets");
+    return Array.isArray(res.data?.items) ? res.data.items : [];
+  }
+
+  async getMyTicket(id: string): Promise<{ ticket: SupportTicketItem; replies: SupportTicketReplyItem[] }> {
+    const res = await this.http.get<{ ticket: SupportTicketItem; replies: SupportTicketReplyItem[] }>(`/support/tickets/${encodeURIComponent(id)}`);
+    return res.data;
+  }
+
+  async openTicket(input: { subject: string; message: string; category?: string; transactionId?: string }): Promise<SupportTicketItem> {
+    const res = await this.http.post<SupportTicketItem>("/support/tickets", input);
+    return res.data;
+  }
+
+  async replyMyTicket(id: string, message: string): Promise<{ ticket: SupportTicketItem; replies: SupportTicketReplyItem[] }> {
+    const res = await this.http.post<{ ticket: SupportTicketItem; replies: SupportTicketReplyItem[] }>(`/support/tickets/${encodeURIComponent(id)}/reply`, { message });
+    return res.data;
+  }
+
   async getTransaction(id: string): Promise<Transaction> {
     const res = await this.http.get<Transaction>(`/transactions/${id}`);
     return normalizeTransaction(res.data);
@@ -1439,6 +1492,85 @@ class API {
   async updateMyCompanyName(name: string): Promise<unknown> {
     const res = await this.http.patch<unknown>("/clients/me/company-name", { name });
     return res.data;
+  }
+  // ============================================================
+  // MARCHAND (lot 11) — compte marchand, encaissements par téléphone / QR code, retraits.
+  // Le code secret (6 chiffres) est envoyé dans le corps de la requête, jamais dans l'URL, et n'est jamais stocké.
+  // ============================================================
+
+  async getMerchantMe(): Promise<MerchantMe> {
+    return (await this.http.get<MerchantMe>("/merchants/me")).data;
+  }
+
+  async activateMerchant(input: MerchantProfileInput & { pin: string }): Promise<MerchantMe> {
+    return (await this.http.post<MerchantMe>("/merchants/activate", input)).data;
+  }
+
+  async updateMerchantProfile(input: { businessName?: string; category?: string; address?: string; city?: string }): Promise<MerchantMe> {
+    return (await this.http.patch<MerchantMe>("/merchants/me", input)).data;
+  }
+
+  async changeMerchantDestination(input: { pin: string; orangeMoneyPhone?: string; bankHolderName?: string; bankIban?: string; bankBic?: string }): Promise<MerchantMe> {
+    return (await this.http.put<MerchantMe>("/merchants/me/destination", input)).data;
+  }
+
+  async getMerchantSummary(): Promise<MerchantSummary> {
+    return (await this.http.get<MerchantSummary>("/merchants/me/summary")).data;
+  }
+
+  async requestMerchantPayout(input: { pin: string; amount: number; method: PayoutMethod; currency?: string }): Promise<PayoutView> {
+    return (await this.http.post<PayoutView>("/merchants/payouts", input)).data;
+  }
+
+  async listMerchantPayouts(page = 1): Promise<Paged<PayoutView>> {
+    return (await this.http.get<Paged<PayoutView>>(`/merchants/payouts?page=${page}`)).data;
+  }
+
+  // ── Encaissements (marchand) ──
+  async createPhonePayment(input: { amount: number; payerPhone: string; currency?: string; note?: string }): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>("/merchant-payments/phone", input)).data;
+  }
+
+  async createQrPayment(input: { amount: number; currency?: string; note?: string }): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>("/merchant-payments/qr", input)).data;
+  }
+
+  async listMerchantPayments(params: { status?: string; page?: number } = {}): Promise<Paged<PaymentRequestView>> {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.page) q.set("page", String(params.page));
+    const qs = q.toString();
+    return (await this.http.get<Paged<PaymentRequestView>>(`/merchant-payments${qs ? `?${qs}` : ""}`)).data;
+  }
+
+  async getPaymentRequest(id: string): Promise<PaymentRequestView> {
+    return (await this.http.get<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}`)).data;
+  }
+
+  async cancelPaymentRequest(id: string): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/cancel`, {})).data;
+  }
+
+  // ── Paiement (client, ou marchand qui paie un autre marchand) ──
+  async getIncomingPayments(): Promise<PaymentRequestView[]> {
+    const res = await this.http.get<{ data?: PaymentRequestView[] }>("/merchant-payments/incoming");
+    return Array.isArray(res.data?.data) ? res.data.data : [];
+  }
+
+  async previewQrPayment(payload: string): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>("/merchant-payments/qr/preview", { payload })).data;
+  }
+
+  async payQr(payload: string, pin: string): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>("/merchant-payments/qr/pay", { payload, pin })).data;
+  }
+
+  async payPaymentRequest(id: string, pin: string): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/pay`, { pin })).data;
+  }
+
+  async declinePaymentRequest(id: string): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/decline`, {})).data;
   }
 }
 

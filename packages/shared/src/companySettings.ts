@@ -35,6 +35,26 @@ export interface CompanySettings {
   alerts: { lowBalance: Record<string, number> };
   /** Moyens de recharge du wallet ouverts aux clients (CARD, ORANGE_MONEY, SENDWAVE). Liste vide = recharge fermée. */
   recharge: { enabledMethods: string[] };
+  /** Comptes marchands : encaissements par téléphone / QR code et retraits. */
+  merchant: CompanyMerchantSettings;
+}
+
+export interface CompanyMerchantSettings {
+  enabled: boolean;
+  /** Commission (%) retenue sur chaque encaissement, à la charge du marchand. */
+  paymentFeePct: number;
+  qrValidityMinutes: number;
+  phoneRequestValidityMinutes: number;
+  /** Commission (%) retenue sur chaque retrait. */
+  payoutFeePct: number;
+  /** ORANGE_MONEY, BANK_TRANSFER. */
+  payoutMethods: string[];
+  /** MANUAL : l'administrateur confirme chaque retrait. SANDBOX : essai uniquement (refusé en production). */
+  payoutMode: string;
+  payoutCooldownHours: number;
+  minPayment: Record<string, number>;
+  maxPayment: Record<string, number>;
+  minPayout: Record<string, number>;
 }
 
 export interface CompanySettingsPatch {
@@ -44,6 +64,20 @@ export interface CompanySettingsPatch {
   /** `null` retire la surcharge de la devise (retour au défaut). */
   alerts?: { lowBalance?: Record<string, number | null> };
   recharge?: { enabledMethods?: string[] };
+  merchant?: {
+    enabled?: boolean;
+    paymentFeePct?: number;
+    qrValidityMinutes?: number;
+    phoneRequestValidityMinutes?: number;
+    payoutFeePct?: number;
+    payoutMethods?: string[];
+    payoutMode?: string;
+    payoutCooldownHours?: number;
+    /** `null` retire la surcharge de la devise (retour au défaut). */
+    minPayment?: Record<string, number | null>;
+    maxPayment?: Record<string, number | null>;
+    minPayout?: Record<string, number | null>;
+  };
 }
 
 export interface CompanySettingsView {

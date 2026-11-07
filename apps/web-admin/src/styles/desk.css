@@ -535,3 +535,74 @@
   justify-items: start;
   text-align: left;
 }
+
+/* ── Photo de la pièce du client de passage (lot 8) ──────────────── */
+.id-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.id-photo {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.id-photo__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.id-photo__box {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  max-height: 240px;
+  overflow: hidden;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--brand) 4%, white);
+}
+
+.id-photo--invalid .id-photo__box {
+  border-color: var(--danger, #c0392b);
+}
+
+.id-photo__box img {
+  width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+}
+
+.id-photo__empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  color: var(--ink-3, #6b7a75);
+}
+
+.id-photo__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.id-photo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.id-photo__actions > * {
+  flex: 1 1 120px;
+}
+
+.id-photo__error {
+  margin: 0;
+  color: var(--danger, #c0392b);
+  font-size: 0.8125rem;
+}

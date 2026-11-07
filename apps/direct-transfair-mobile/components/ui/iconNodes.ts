@@ -117,7 +117,8 @@ export const LUCIDE: Record<string, IconNode> = {
   "users": [["path",{"d":"M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"}],["path",{"d":"M16 3.128a4 4 0 0 1 0 7.744"}],["path",{"d":"M22 21v-2a4 4 0 0 0-3-3.87"}],["circle",{"cx":"9","cy":"7","r":"4"}]],
   "wallet": [["path",{"d":"M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"}],["path",{"d":"M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"}]],
   "wifi": [["path",{"d":"M12 20h.01"}],["path",{"d":"M2 8.82a15 15 0 0 1 20 0"}],["path",{"d":"M5 12.859a10 10 0 0 1 14 0"}],["path",{"d":"M8.5 16.429a5 5 0 0 1 7 0"}]],
-  "x": [["path",{"d":"M18 6 6 18"}],["path",{"d":"m6 6 12 12"}]],
+  "x": [["path",{"d":"m6 9 6 6 6-6"}]], // Lot 12 : pas de croix — même tracé que chevron-down
+  "circle-minus": [["circle",{"cx":"12","cy":"12","r":"10"}],["path",{"d":"M8 12h8"}]],
   "zap": [["path",{"d":"M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"}]],
 };
 
@@ -160,9 +161,14 @@ export const ION_TO_LUCIDE: Record<string, string> = {
   "chevron-down": "chevron-down",
   "chevron-forward": "chevron-right",
   "chevron-up": "chevron-up",
-  "close": "x",
-  "close-circle": "circle-x",
-  "close-circle-outline": "circle-x",
+  // Lot 12 : plus aucune croix dans l'application — « fermer » = flèche vers le bas, « erreur » = point d'exclamation,
+  //   « effacer la saisie » = cercle barré d'un trait (remove-circle).
+  "close": "chevron-down",
+  "close-outline": "chevron-down",
+  "close-circle": "circle-alert",
+  "close-circle-outline": "circle-alert",
+  "remove-circle": "circle-minus",
+  "remove-circle-outline": "circle-minus",
   "cloud-offline-outline": "cloud-off",
   "code": "code",
   "copy-outline": "copy",

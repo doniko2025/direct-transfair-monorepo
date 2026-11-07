@@ -1,5 +1,5 @@
 // apps/backend/src/transfer-limits/transfer-limits.spec.ts
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 
 import { checkLimitOrder, defaultLimits, evaluateLimits, KYC_LEVELS, type Limits } from './transfer-limit-defaults';
 import { breachMessage, periodStarts, TransferLimitsService } from './transfer-limits.service';
@@ -84,7 +84,7 @@ describe('periodStarts / breachMessage', () => {
 // ── Service ──────────────────────────────────────────────
 type Row = { clientId: number; kycLevel: string; currency: string; perTransaction: number | null; daily: number | null; monthly: number | null; yearly: number | null; updatedAt: Date };
 
-function setup(opts: { rows?: Row[]; user?: any; sent?: number } = {}) {
+function setup(opts: { rows?: Row[]; user?: any; sent?: number; docs?: any[] } = {}) {
   const rows: Row[] = [...(opts.rows ?? [])];
   const audits: any[] = [];
   const aggregates: any[] = [];
@@ -105,6 +105,8 @@ function setup(opts: { rows?: Row[]; user?: any; sent?: number } = {}) {
       update: jest.fn().mockImplementation(async ({ where, data }: any) => { Object.assign(users[where.id], data); }),
     },
     client: { findUnique: jest.fn().mockResolvedValue({ id: 7, name: 'Flash', code: 'F' }) },
+    // lot 7 — pièces validées du client (monter de niveau exige des pièces)
+    kycDocument: { findMany: jest.fn().mockResolvedValue(opts.docs ?? []) },
     transferLimit: {
       findMany: jest.fn().mockImplementation(async ({ where }: any) => rows.filter((r) => r.clientId === where.clientId)),
       findUnique: jest.fn().mockImplementation(async ({ where }: any) => {
@@ -246,12 +248,41 @@ describe('TransferLimitsService.set / reset', () => {
   });
 });
 
+const approvedDoc = (type: string) => ({ type, status: 'APPROVED', expiryDate: null });
+const FULL_DOCS = [approvedDoc('NATIONAL_ID'), approvedDoc('SELFIE'), approvedDoc('PROOF_OF_ADDRESS')];
+
 describe('TransferLimitsService.setUserKycLevel', () => {
-  it('change le niveau d\'un client de la société et journalise', async () => {
-    const { service, users, audits } = setup();
+  it('change le niveau d\'un client de la société et journalise (pièces validées présentes)', async () => {
+    const { service, users, audits } = setup({ docs: FULL_DOCS });
     await expect(service.setUserKycLevel(admin, 'c1', 'LEVEL_3')).resolves.toMatchObject({ kycLevel: 'LEVEL_3', changed: true });
     expect(users.c1.kycLevel).toBe('LEVEL_3');
     expect(audits[0]).toMatchObject({ entity: 'UserKycLevel', action: 'USER_UPDATE', clientId: 7 });
+  });
+
+  it('monter de niveau SANS pièces validées : refusé (409 KYC_DOCUMENTS_REQUIRED), niveau inchangé', async () => {
+    const { service, users, prisma } = setup({ docs: [] });
+    const err: any = await service.setUserKycLevel(admin, 'c1', 'LEVEL_2').catch((e) => e);
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err.getResponse()).toMatchObject({ code: 'KYC_DOCUMENTS_REQUIRED' });
+    expect(users.c1.kycLevel).toBe('LEVEL_1');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it('niveau 2 : la pièce d\'identité + selfie ne suffisent pas, il faut aussi le justificatif de domicile', async () => {
+    const { service } = setup({ docs: [approvedDoc('NATIONAL_ID'), approvedDoc('SELFIE')] });
+    await expect(service.setUserKycLevel(admin, 'c1', 'LEVEL_2')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('une pièce validée mais EXPIRÉE ne compte pas', async () => {
+    const expired = { ...approvedDoc('NATIONAL_ID'), expiryDate: new Date('2020-01-01') };
+    const { service } = setup({ docs: [expired, approvedDoc('SELFIE'), approvedDoc('PROOF_OF_ADDRESS')], user: { id: 'z', clientId: 7, role: 'USER', kycLevel: 'LEVEL_0', deletedAt: null } });
+    await expect(service.setUserKycLevel(admin, 'z', 'LEVEL_1')).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('baisser un niveau reste toujours possible, sans pièces', async () => {
+    const { service, users } = setup({ docs: [] });
+    await expect(service.setUserKycLevel(admin, 'c1', 'LEVEL_0')).resolves.toMatchObject({ kycLevel: 'LEVEL_0', changed: true });
+    expect(users.c1.kycLevel).toBe('LEVEL_0');
   });
 
   it('refuse un agent ou un utilisateur d\'une autre société, et le super admin', async () => {

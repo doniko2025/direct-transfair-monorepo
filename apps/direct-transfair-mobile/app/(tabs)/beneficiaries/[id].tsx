@@ -186,7 +186,7 @@ export default function BeneficiaireDetailScreen() {
           onBack={() => router.back()}
           right={
             <IconButton
-              icon={editing ? "close" : "pencil"}
+              icon={editing ? "arrow-undo-outline" : "pencil"}
               label={editing ? "Annuler la modification" : "Modifier le bénéficiaire"}
               onPress={() => (editing ? onCancelEdit() : setEditing(true))}
             />

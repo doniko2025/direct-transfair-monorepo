@@ -28,7 +28,7 @@ const ROLE_THEMES = {
 const NOTIF_TYPES = {
   SUCCESS: { icon: "checkmark-circle",   color: "#059669", bg: "rgba(5,150,105,0.10)" },
   WARNING: { icon: "alert-circle",       color: "#D97706", bg: "rgba(217,119,6,0.10)" },
-  ERROR:   { icon: "close-circle",       color: "#DC2626", bg: "rgba(220,38,38,0.10)" },
+  ERROR:   { icon: "alert-circle",       color: "#DC2626", bg: "rgba(220,38,38,0.10)" },
   INFO:    { icon: "information-circle", color: "#2563EB", bg: "rgba(37,99,235,0.10)" },
 } as const;
 

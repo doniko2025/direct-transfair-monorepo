@@ -1,95 +1,68 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/security.tsx
 // =========================================================
-// SECURITY v6.0 — Direct Transf'air
-// ✅ v6.0 : REFONTE THÈME CLAIR — grand titre, champs arrondis avec œil, jauge de force
-//    fine, indicateur de correspondance, message de résultat en bandeau (remplace le toast
-//    animé plein écran) et bouton pilule collé en bas. Couleurs = palette du design system
-//    et marque du tenant (plus de vert/ambre par rôle codés en dur). Le journal de débogage
-//    (console.log des longueurs de saisie) et les compteurs « 0/0/0 » dans le message
-//    d'erreur sont retirés.
-//    LOGIQUE INCHANGÉE (mêmes validations : champs requis, 6 caractères minimum, deux codes
-//    identiques, différent de l'ancien ; même appel api.changePassword ; retour automatique
-//    après succès).
-//    Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
-// ✅ v5.2 : WHITE-LABEL — couleurs vertes suivent la couleur de marque du tenant.
-// ✅ Fix web : outlineStyle inline + underlineColorAndroid · trim() sur valeurs state.
+// SECURITY v7.0 — Direct Transf'air
+// ✅ v7.0 (lot 10) : le code secret est désormais un CODE À 6 CHIFFRES robuste. Trois saisies à cases masquées (ancien code, nouveau code,
+//    confirmation), jauge qui explique pourquoi un code est refusé (suite, date de naissance, répétition, morceau du téléphone…) — même
+//    règle que le serveur (components/auth/pinRules.ts). Mêmes appels (api.changePassword), même retour automatique après succès.
+// ✅ v6.0 : refonte thème clair (bandeau de résultat, bouton pilule collé en bas).
+// Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
 import React, { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { TextInput as RNTextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
-import { Button, Field, NavBar, Notice, Screen, UText, useUI } from "../../../components/ui";
+import { useAuth } from "../../../providers/AuthProvider";
+import PinGuide from "../../../components/auth/PinGuide";
+import PinInput from "../../../components/auth/PinInput";
+import { PIN_LENGTH, pinProblem } from "../../../components/auth/pinRules";
+import { Button, NavBar, Notice, Screen, UText, useUI } from "../../../components/ui";
 
 export default function SecurityScreen() {
   const { C } = useUI();
   const router = useRouter();
+  const { user } = useAuth();
 
-  const [oldPass, setOldPass] = useState("");
-  const [newPass, setNewPass] = useState("");
-  const [confirmPass, setConfirmPass] = useState("");
+  const [oldPin, setOldPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
   const [loading, setLoading] = useState(false);
+  const [serverWeak, setServerWeak] = useState<string | null>(null);
   const [result, setResult] = useState<null | { type: "pos" | "danger"; title: string; message: string }>(null);
+  const newRef = useRef<RNTextInput | null>(null);
+  const confirmRef = useRef<RNTextInput | null>(null);
   const backTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (backTimer.current) clearTimeout(backTimer.current); }, []);
 
+  // La date de naissance et le téléphone du client servent à refuser les codes évidents.
+  const pinContext = { birthDate: (user as any)?.birthDate ?? null, phone: user?.phone ?? null };
+
+  const weak = newPin.length === PIN_LENGTH ? pinProblem(newPin, pinContext) : null;
+  const same = newPin.length === PIN_LENGTH && newPin === oldPin;
+  const mismatch = confirmPin.length === PIN_LENGTH && newPin.length === PIN_LENGTH && confirmPin !== newPin;
+  const canSave =
+    oldPin.length === PIN_LENGTH && newPin.length === PIN_LENGTH && confirmPin.length === PIN_LENGTH && !weak && !same && !mismatch;
+
   const handleSave = async () => {
-    // Trim uniquement ici, au moment de la validation
-    const oldTrimmed = oldPass.trim();
-    const newTrimmed = newPass.trim();
-    const confirmTrimmed = confirmPass.trim();
-
-    if (!oldTrimmed || !newTrimmed || !confirmTrimmed) {
-      setResult({ type: "danger", title: "Champs manquants", message: "Remplis tous les champs." });
-      return;
-    }
-    if (newTrimmed.length < 6) {
-      setResult({ type: "danger", title: "Sécurité", message: "Le nouveau code doit contenir au moins 6 caractères." });
-      return;
-    }
-    if (newTrimmed !== confirmTrimmed) {
-      setResult({ type: "danger", title: "Erreur", message: "Les deux nouveaux codes ne correspondent pas." });
-      return;
-    }
-    if (newTrimmed === oldTrimmed) {
-      setResult({ type: "danger", title: "Erreur", message: "Le nouveau code doit être différent de l'ancien." });
-      return;
-    }
-
+    if (!canSave || loading) return;
     setLoading(true);
     setResult(null);
+    setServerWeak(null);
     try {
-      await api.changePassword({
-        oldPassword: oldTrimmed,
-        currentPassword: oldTrimmed,
-        newPassword: newTrimmed,
-        password: newTrimmed,
-      });
-      setOldPass(""); setNewPass(""); setConfirmPass("");
+      await api.changePassword({ oldPassword: oldPin, newPassword: newPin });
+      setOldPin(""); setNewPin(""); setConfirmPin("");
       setResult({ type: "pos", title: "Code mis à jour", message: "Ton code secret a bien été modifié." });
       backTimer.current = setTimeout(() => router.back(), 1800);
     } catch (e: any) {
       const raw = e?.response?.data?.message || e?.message || "Impossible de modifier le code.";
-      const msg = Array.isArray(raw) ? raw[0] : String(raw);
-      setResult({ type: "danger", title: "Erreur", message: msg });
+      const msg = Array.isArray(raw) ? String(raw[0]) : String(raw);
+      if (e?.response?.data?.code === "PIN_WEAK") setServerWeak(msg);
+      else setResult({ type: "danger", title: "Erreur", message: msg });
     } finally {
       setLoading(false);
     }
   };
-
-  const strengthLevel =
-    newPass.length === 0 ? null
-    : newPass.length < 6 ? "weak"
-    : newPass.length < 10 ? "medium"
-    : "strong";
-  const strengthColor = strengthLevel === "weak" ? C.danger : strengthLevel === "medium" ? C.warn : C.pos;
-  const strengthLabel = strengthLevel === "weak" ? "Trop court" : strengthLevel === "medium" ? "Acceptable" : "Fort ✓";
-
-  const mismatch = confirmPass.length > 0 && newPass.length > 0 && newPass !== confirmPass;
-  const match = confirmPass.length > 0 && newPass.length > 0 && newPass === confirmPass;
-
-  const canSave = oldPass.trim().length > 0 && newPass.trim().length >= 6 && confirmPass.trim().length > 0;
 
   return (
     <Screen
@@ -98,7 +71,7 @@ export default function SecurityScreen() {
     >
       <UText v="hero">Code secret</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 24 }}>
-        Renforce la sécurité de ton compte en modifiant régulièrement ton code secret.
+        Ton code à 6 chiffres protège ton portefeuille. Change-le régulièrement et ne le partage jamais, même avec nous.
       </UText>
 
       {result && (
@@ -107,49 +80,34 @@ export default function SecurityScreen() {
         </Notice>
       )}
 
-      <Field
-        label="Ancien code secret"
-        icon="lock-closed-outline"
-        value={oldPass}
-        onChangeText={setOldPass}
-        secure
-        autoCapitalize="none"
+      <PinInput
+        label="Code actuel"
+        value={oldPin}
+        onChange={setOldPin}
+        onComplete={() => newRef.current?.focus()}
+        accent={C.accent}
+        disabled={loading}
       />
-      <Field
-        label="Nouveau code secret"
-        icon="lock-closed-outline"
-        value={newPass}
-        onChangeText={setNewPass}
-        placeholder="Minimum 6 caractères"
-        secure
-        autoCapitalize="none"
+      <PinInput
+        label="Nouveau code"
+        value={newPin}
+        onChange={(v) => { setNewPin(v); setServerWeak(null); }}
+        onComplete={() => confirmRef.current?.focus()}
+        accent={C.accent}
+        error={serverWeak ?? (same ? "Le nouveau code doit être différent de l'ancien." : null)}
+        disabled={loading}
+        inputRef={newRef}
       />
-
-      {strengthLevel && (
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: -6, marginBottom: 18 }}>
-          <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: C.line, overflow: "hidden" }}>
-            <View
-              style={{
-                height: 5, borderRadius: 3, backgroundColor: strengthColor,
-                width: strengthLevel === "weak" ? "30%" : strengthLevel === "medium" ? "65%" : "100%",
-              }}
-            />
-          </View>
-          <UText v="label" color={strengthColor}>{strengthLabel}</UText>
-        </View>
-      )}
-
-      <Field
+      <PinGuide pin={newPin} context={pinContext} />
+      <PinInput
         label="Confirmer le nouveau code"
-        icon="lock-closed-outline"
-        value={confirmPass}
-        onChangeText={setConfirmPass}
-        placeholder="Répète le nouveau code"
-        secure
-        autoCapitalize="none"
-        error={mismatch ? "Les codes ne correspondent pas" : null}
-        valid={match}
-        hint={match ? "Les codes correspondent" : undefined}
+        value={confirmPin}
+        onChange={setConfirmPin}
+        accent={C.accent}
+        error={mismatch ? "Les deux codes ne correspondent pas." : null}
+        disabled={loading}
+        noReveal
+        inputRef={confirmRef}
       />
     </Screen>
   );

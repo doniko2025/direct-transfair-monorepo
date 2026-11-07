@@ -306,6 +306,14 @@ export default function TransactionDetailScreen() {
       <View style={{ marginTop: 22, gap: 12 }}>
         {showShareReceipt && <Button label="Voir le reçu" icon="document-text-outline" onPress={handleShare} />}
         {showUserCancel && <Button label="Annuler la transaction" kind="danger" loading={processing} onPress={handleCancel} />}
+        {!isIncoming && (
+          <Button
+            label="Signaler un problème"
+            icon="alert-circle-outline"
+            kind="ghost"
+            onPress={() => router.push({ pathname: "/(tabs)/profile/support", params: { transactionId: String(transaction.id), reference: transaction.reference ?? "" } } as any)}
+          />
+        )}
       </View>
     </Screen>
   );

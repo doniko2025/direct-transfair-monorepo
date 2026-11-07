@@ -70,6 +70,7 @@ import { CurrencyCode, PayoutMethod, Prisma, ScheduledStatus, ScheduledFrequency
 import type { CreateScheduledTransferDto } from './dto/create-scheduled-transfer.dto';
 import type { CreateTransactionDto } from '../transactions/dto/create-transaction.dto';
 import { TransactionsService } from '../transactions/transactions.service';
+import { KycGuardService } from '../kyc/kyc-guard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PushService } from '../push/push.service';
 import { MailService } from '../mail/mail.service';
@@ -90,6 +91,7 @@ export class ScheduledTransfersService {
     private readonly push: PushService,
     private readonly mail: MailService,
     private readonly transactions: TransactionsService,
+    private readonly kycGuard: KycGuardService, // lot 7
   ) {}
 
   async create(userId: string, dto: CreateScheduledTransferDto) {
@@ -98,6 +100,8 @@ export class ScheduledTransfersService {
       include: { client: true },
     });
     if (!user || !user.clientId) throw new ForbiddenException('Utilisateur invalide');
+    // ✅ lot 7 — pas de virement programmé sans identité vérifiée (l'exécution serait refusée de toute façon).
+    await this.kycGuard.assertVerified({ id: user.id, role: String(user.role), kycLevel: String(user.kycLevel) });
 
     const client = await this.prisma.client.findUnique({ where: { id: user.clientId } });
     if (!client?.featureScheduledTransfers) {

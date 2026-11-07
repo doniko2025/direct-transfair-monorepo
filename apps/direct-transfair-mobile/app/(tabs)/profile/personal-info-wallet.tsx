@@ -202,7 +202,7 @@ export default function PersonalInfoWallet() {
           onBack={() => router.back()}
           right={
             <IconButton
-              icon={isEditing ? "close" : "pencil"}
+              icon={isEditing ? "arrow-undo-outline" : "pencil"}
               label={isEditing ? "Annuler la modification" : "Modifier mes informations"}
               onPress={() => (isEditing ? cancelEdit() : setIsEditing(true))}
             />

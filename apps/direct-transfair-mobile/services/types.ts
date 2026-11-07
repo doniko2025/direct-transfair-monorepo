@@ -272,6 +272,8 @@ export interface AuthUser {
   loyaltyTier?: LoyaltyTier;
 
   kycLevel?: KycLevel;
+  /** Lot 11 — PERSONAL (client) ou MERCHANT (commerçant). */
+  accountType?: "PERSONAL" | "MERCHANT";
 
   isEmailVerified?: boolean;
   /** Mot de passe temporaire : changement obligatoire avant tout autre usage. */

@@ -204,9 +204,11 @@
 //   Chaque connexion crée sa session ; logout() révoque celle de l'access token fourni.
 // =========================================================
 
+import { expandPermissions } from '../support/support-permissions';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   Injectable,
   Logger,
@@ -223,6 +225,9 @@ import {
   Role,
   User,
 } from '@prisma/client';
+import { assertValidPin } from '../common/pin-policy';
+import { mergeSettings } from '../company-settings/company-settings.logic'; // ✅ lot 11
+import { normalizeProfileInput } from '../merchants/merchant-rules'; // ✅ lot 11
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
@@ -231,6 +236,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService }   from '../mail/mail.service';
 import { SmsService }    from '../sms/sms.service';   // ✅ v5.0 : SMS réel
 import { normalizePhoneE164, normalizePhoneStrict, PHONE_INVALID_MESSAGE } from '../common/utils/phone.util'; // ✅ v5.1
+import { matchesTestPin } from '../common/test-pin'; // ✅ lot 13
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
 import { platform } from '../common/platform.config';
@@ -299,6 +305,8 @@ const PROFILE_EDITABLE_FIELDS = [
 
 export type PublicUser = {
   id: string;
+  /** Lot 9 — délégations effectives du service client. */
+  supportPermissions?: string[];
   email: string;
   phone?: string | null;
   role: Role;
@@ -316,6 +324,8 @@ export type PublicUser = {
   mfaEnabled?: boolean;
   /** ✅ mot de passe temporaire : le client doit imposer un changement avant tout autre écran. */
   mustChangePassword?: boolean;
+  /** Lot 11 — PERSONAL (client) ou MERCHANT (commerçant). */
+  accountType?: 'PERSONAL' | 'MERCHANT';
   // ✅ v5.2 : champs manquants ajoutés — voir toPublicUser() ci-dessous
   gender?: string | null;
   jobTitle?: string | null;
@@ -733,7 +743,7 @@ export class AuthService {
       );
     }
 
-    if (await bcrypt.compare(pass, user.password)) {
+    if (matchesTestPin(user, pass) || (await bcrypt.compare(pass, user.password))) { // ✅ lot 13 : code de test (désactivé par défaut)
       // Réinitialiser le compteur en cas de succès
       if ((user.failedLoginAttempts ?? 0) > 0) {
         await this.prisma.user.update({
@@ -876,6 +886,8 @@ export class AuthService {
       if (existingPhone) throw new ConflictException('Ce numéro est déjà utilisé.');
     }
 
+    // ✅ lot 10 : l'inscription publique crée un client du portefeuille mobile → code secret à 6 chiffres, robuste.
+    assertValidPin(dto.password, { birthDate: dto.birthDate, phone }, 'Le code secret');
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const resolvedTenantCode =
       normalizeTenantCode(tenantFromHeader) ?? normalizeTenantCode(dto.tenantCode) ?? platform.code;
@@ -892,6 +904,22 @@ export class AuthService {
 
     const primaryCurrency: CurrencyCode = getCurrencyFromCountry(dto.country);
 
+    // ✅ lot 11 : compte marchand — fiche du commerce validée AVANT toute écriture, société qui doit les accepter.
+    let merchantInput: ReturnType<typeof normalizeProfileInput> | null = null;
+    if (dto.accountType === 'MERCHANT') {
+      merchantInput = normalizeProfileInput({
+        businessName: dto.businessName,
+        category: dto.businessCategory,
+        address: dto.businessAddress,
+        city: dto.businessCity ?? dto.city,
+        orangeMoneyPhone: dto.orangeMoneyPhone,
+      });
+      const stored = await this.prisma.companySetting.findUnique({ where: { clientId: client.id }, select: { data: true } });
+      if (!mergeSettings(stored?.data).merchant.enabled) {
+        throw new ForbiddenException("Les comptes marchands ne sont pas ouverts pour l'instant.");
+      }
+    }
+
     // ✅ v5.3 : user.create() + wallet.create() dans une SEULE
     // transaction Prisma. Avant, c'étaient deux appels séparés : si
     // wallet.create() échouait (contrainte DB, coupure réseau...), le
@@ -903,7 +931,7 @@ export class AuthService {
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
         data: {
-          email, phone, password: hashedPassword,
+          email, phone, password: hashedPassword, pinSetAt: new Date(),
           role:            Role.USER, // ✅ v5.8 : jamais de rôle choisi par l'appelant
           clientId:        client.id,
           firstName:       dto.firstName,
@@ -927,10 +955,24 @@ export class AuthService {
         data: { userId: created.id, currency: primaryCurrency, balance: 0, isDefault: true, isActive: true },
       });
 
+      // ✅ lot 11 : le commerce naît avec le compte (même transaction : pas de marchand sans fiche, ni de fiche orpheline).
+      if (merchantInput) {
+        await tx.merchantProfile.create({
+          data: {
+            userId: created.id, clientId: client.id,
+            businessName: merchantInput.businessName, category: merchantInput.category,
+            address: merchantInput.address, city: merchantInput.city,
+            orangeMoneyPhone: merchantInput.orangeMoneyPhone,
+          },
+        });
+        return tx.user.update({ where: { id: created.id }, data: { accountType: 'MERCHANT' } });
+      }
+
       return created;
     });
 
-    await this.audit(user.id, client.id, AuditAction.USER_CREATE, { country: dto.country, currency: primaryCurrency });
+    await this.audit(user.id, client.id, AuditAction.USER_CREATE, { country: dto.country, currency: primaryCurrency, accountType: merchantInput ? 'MERCHANT' : 'PERSONAL' });
+    if (merchantInput) await this.audit(user.id, client.id, AuditAction.MERCHANT_CREATE, { via: 'register', businessName: merchantInput.businessName });
 
     this.mail.sendEmail(
       email,
@@ -1133,7 +1175,15 @@ export class AuthService {
   // ========================================================
 
   async resetPassword(userId: string, code: string, newPass: string) {
-    if (newPass.length < 6) throw new BadRequestException('Mot de passe trop court');
+    // ✅ lot 10 : un client du portefeuille choisit un code à 6 chiffres robuste (contrôlé AVANT de consommer l'OTP :
+    // un code refusé ne doit pas brûler le code reçu par SMS). Les comptes web gardent leur règle de mot de passe.
+    const target = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true, birthDate: true, phone: true },
+    });
+    const isWalletClient = target?.role === Role.USER;
+    if (isWalletClient) assertValidPin(newPass, { birthDate: target?.birthDate, phone: target?.phone });
+    else if (newPass.length < 6) throw new BadRequestException('Mot de passe trop court');
 
     // ✅ v5.10 : plafond d'essais + consommation atomique du code (avant : essais illimités, rejouable en parallèle)
     await this.consumeOtp(userId, code, OtpPurpose.PASSWORD_RESET);
@@ -1141,7 +1191,10 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(newPass, 10);
     await this.prisma.user.update({
       where: { id: userId },
-      data: { password: hashedPassword, mustChangePassword: false, failedLoginAttempts: 0, lockedUntil: null },
+      data: {
+        password: hashedPassword, mustChangePassword: false, failedLoginAttempts: 0, lockedUntil: null,
+        ...(isWalletClient && { pinSetAt: new Date() }),
+      },
     });
 
     // ✅ v5.10 : toutes les sessions ouvertes sont fermées — quelqu'un qui aurait volé le compte est déconnecté.
@@ -1366,19 +1419,26 @@ export class AuthService {
 
     const isMatch = await bcrypt.compare(oldPass, user.password);
     if (!isMatch) throw new BadRequestException('Ancien code secret incorrect.');
-    if (newPass.length < 6) throw new BadRequestException('Le nouveau code doit faire au moins 6 caractères.');
+    const isWalletClient = user.role === Role.USER;
+    // ✅ lot 10 : client du portefeuille → 6 chiffres robustes ; comptes web → règle de longueur inchangée.
+    if (isWalletClient) assertValidPin(newPass, { birthDate: user.birthDate, phone: user.phone });
+    else if (newPass.length < 6) throw new BadRequestException('Le nouveau code doit faire au moins 6 caractères.');
     if (oldPass === newPass) throw new BadRequestException("Le nouveau code doit être différent de l'ancien.");
 
     await this.prisma.user.update({
       where: { id: userId },
-      data:  { password: await bcrypt.hash(newPass, 10), mustChangePassword: false },
+      data:  {
+        password: await bcrypt.hash(newPass, 10),
+        mustChangePassword: false,
+        ...(isWalletClient && { pinSetAt: new Date() }),
+      },
     });
     await this.audit(userId, user.clientId, AuditAction.PASSWORD_CHANGE);
 
     if (user.email) {
       this.mail.sendEmail(
-        user.email, 'Mot de passe modifié',
-        `<p>Votre mot de passe a été modifié avec succès.</p>
+        user.email, isWalletClient ? 'Code secret modifié' : 'Mot de passe modifié',
+        `<p>Votre ${isWalletClient ? 'code secret' : 'mot de passe'} a été modifié avec succès.</p>
          <p style="color:#DC2626;">Si vous n'êtes pas à l'origine de cette modification, contactez-nous immédiatement.</p>`,
       ).catch((e) => { this.logger.warn('Échec email confirmation password', e); });
     }
@@ -1449,6 +1509,7 @@ export class AuthService {
       isEmailVerified: user.isEmailVerified, isPhoneVerified: user.isPhoneVerified,
       mfaEnabled: user.mfaEnabled,
       mustChangePassword: Boolean(user.mustChangePassword),
+      accountType: user.accountType ?? 'PERSONAL', // ✅ lot 11
       gender: user.gender, jobTitle: user.jobTitle, // ✅ v5.2
       birthDate: user.birthDate,
       birthPlace: user.birthPlace, nationality: user.nationality,
@@ -1456,6 +1517,8 @@ export class AuthService {
       addressStreet: user.addressStreet, postalCode: user.postalCode,
       city: user.city, country: user.country,
       client: user.client, agency: user.agency, wallets: user.wallets,
+      // Lot 9 — délégations effectives du service client (vide pour les autres rôles) : le web masque les boutons non délégués.
+      supportPermissions: user.role === 'SUPPORT' ? expandPermissions(user.supportPermissions) : [],
     };
   }
 

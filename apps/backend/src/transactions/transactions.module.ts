@@ -23,6 +23,7 @@ import { MailModule }             from '../mail/mail.module';
 import { NotificationsModule }    from '../notifications/notifications.module'; // ✅ v4.1
 import { ValidationThresholdsModule } from '../validation-thresholds/validation-thresholds.module'; // ✅ v4.2 (phase 6)
 import { TransferLimitsModule } from '../transfer-limits/transfer-limits.module'; // phase 6 — plafonds d'envoi
+import { KycModule } from '../kyc/kyc.module'; // lot 7 — identité vérifiée / client de passage
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TransferLimitsModule } from '../transfer-limits/transfer-limits.module'
     NotificationsModule, // ✅ v4.1 — WalletNotifier / AgentNotifier / etc.
     ValidationThresholdsModule, // seuil de validation réglé par l'admin société
     TransferLimitsModule, // plafonds d'envoi par niveau KYC
+    KycModule,            // lot 7 — garde KYC + fiche du client de passage
   ],
   controllers: [TransactionsController],
   providers:   [TransactionsService, PickupExpiryService],

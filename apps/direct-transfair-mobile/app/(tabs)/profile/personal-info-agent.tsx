@@ -122,7 +122,7 @@ function PickerField({ label, value, onSelect, options, editable = true, style, 
             <View style={pk.searchRow}>
               <Ionicons name="search" size={14} color={T.textDim} />
               <TextInput style={[pk.searchInput, { fontFamily: T.font.sans }]} value={q} onChangeText={setQ} placeholder="Rechercher…" placeholderTextColor={T.textDim} autoFocus />
-              {!!q && <TouchableOpacity onPress={() => setQ("")} hitSlop={8}><Ionicons name="close-circle" size={14} color={T.textDim} /></TouchableOpacity>}
+              {!!q && <TouchableOpacity onPress={() => setQ("")} hitSlop={8}><Ionicons name="remove-circle" size={14} color={T.textDim} /></TouchableOpacity>}
             </View>
             <FlatList
               data={filtered} keyExtractor={(item) => item.value}
@@ -298,7 +298,7 @@ export default function PersonalInfoAgent() {
           style={[s.editBtn, isEditing && s.editBtnCancel]}
           onPress={() => isEditing ? cancelEdit() : setIsEditing(true)}
         >
-          <Ionicons name={isEditing ? "close" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
+          <Ionicons name={isEditing ? "arrow-undo-outline" : "pencil"} size={16} color={isEditing ? T.red : T.accentText} />
         </TouchableOpacity>
       </View>
 

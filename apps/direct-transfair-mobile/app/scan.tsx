@@ -25,6 +25,7 @@ import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { useTenant } from "../providers/TenantProvider";
 import { api } from "../services/api";
+import { parseMerchantQr } from "../components/merchant/merchantUi";
 import { Avatar, Button, IconButton, Screen, NavBar, UText, useUI } from "../components/ui";
 
 const { width: SW } = Dimensions.get("window");
@@ -80,6 +81,13 @@ export default function ScanScreen() {
     if (lockRef.current) return;
     lockRef.current = true;
 
+    // Lot 11 : QR de paiement marchand → écran de confirmation du paiement.
+    const merchantPayload = parseMerchantQr(data);
+    if (merchantPayload) {
+      router.replace({ pathname: "/pay/confirm", params: { payload: merchantPayload } } as any);
+      return;
+    }
+
     const scannedId = extractUserId(data);
     if (!scannedId) {
       setState({ kind: "invalid" });
@@ -101,7 +109,7 @@ export default function ScanScreen() {
       else if (status === 403) setState({ kind: "forbidden" });
       else setState({ kind: "invalid" });
     }
-  }, [user?.id]);
+  }, [user?.id, router]);
 
   const reset = () => {
     lockRef.current = false;

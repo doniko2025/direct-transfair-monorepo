@@ -133,7 +133,7 @@ function SearchBar({
         />
         {!!value && (
           <TouchableOpacity onPress={() => onChange("")}>
-            <Ionicons name="close-circle" size={15} color={T.inkMuted} />
+            <Ionicons name="remove-circle" size={15} color={T.inkMuted} />
           </TouchableOpacity>
         )}
       </View>

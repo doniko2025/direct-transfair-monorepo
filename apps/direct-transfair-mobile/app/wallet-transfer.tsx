@@ -26,6 +26,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from "expo-router";
+import { handleKycRequired } from "../utils/kycGate";
 import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLegacyDoubled } from "../utils/phone";
 import { decimalsFor, fmtMoney, fmtRate, parseAmount, sanitizeAmountInput } from "../utils/amount";
 import { Ionicons } from '../components/ui/Icon';
@@ -264,6 +265,8 @@ export default function WalletTransferScreen() {
         [{ text: "Super !", onPress: () => router.back() }],
       );
     } catch (e: any) {
+      // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
+      if (handleKycRequired(e, router)) return;
       const msg = e?.response?.data?.message ?? "Le transfert a échoué. Réessayez.";
       Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
     } finally { setLoading(false); }
@@ -337,7 +340,7 @@ export default function WalletTransferScreen() {
           <ActivityIndicator size="small" color={C.ink} />
         ) : phone.length > 0 ? (
           <Pressable onPress={() => { setPhone(""); setLookupResult(null); }} hitSlop={10} accessibilityLabel="Effacer">
-            <Ionicons name="close-circle" size={18} color={C.muted} />
+            <Ionicons name="remove-circle" size={18} color={C.muted} />
           </Pressable>
         ) : null}
       </View>

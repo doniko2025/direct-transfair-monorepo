@@ -146,22 +146,56 @@ export interface Beneficiary extends NewBeneficiary {
   id: string;
 }
 
+export type CounterIdType = 'NATIONAL_ID' | 'PASSPORT' | 'DRIVER_LICENSE' | 'RESIDENCE_PERMIT';
+
+export const COUNTER_ID_TYPES: readonly { value: CounterIdType; label: string }[] = [
+  { value: 'NATIONAL_ID', label: "Carte nationale d'identité" },
+  { value: 'PASSPORT', label: 'Passeport' },
+  { value: 'DRIVER_LICENSE', label: 'Permis de conduire' },
+  { value: 'RESIDENCE_PERMIT', label: 'Titre de séjour' },
+];
+
+/** Codes d'erreur propres à l'envoi au comptoir (champ `code` de la réponse). */
+export const COUNTER_ERROR_CODES = ['COUNTER_ID_REQUIRED', 'COUNTER_ID_PHOTO_REQUIRED', 'COUNTER_ID_PHOTO_INVALID', 'COUNTER_ID_MISMATCH', 'COUNTER_LIMIT_EXCEEDED'] as const;
+
 export interface CashSendInput {
   amount: number;
   currency: string;
   beneficiaryId: string;
-  /** Le client qui remet l'argent au guichet (facultatif, conservé avec l'opération). */
+  /**
+   * Le client de passage qui remet l'argent au guichet. Depuis le lot 7 le serveur EXIGE son identité : prénom, nom,
+   * téléphone, date de naissance (18 ans révolus) et références d'une pièce en cours de validité. Sans quoi : 400
+   * COUNTER_ID_REQUIRED. La même pièce déclarée avec un autre nom/une autre date de naissance : 403 COUNTER_ID_MISMATCH.
+   * Plafonds cumulés par personne : 403 COUNTER_LIMIT_EXCEEDED.
+   */
   senderFirstName?: string;
   senderLastName?: string;
   senderPhone?: string;
+  /** AAAA-MM-JJ */
+  senderBirthDate?: string;
+  senderIdType?: CounterIdType;
+  senderIdNumber?: string;
+  /** AAAA-MM-JJ */
+  senderIdExpiry?: string;
+  senderIdCountry?: string;
+  /**
+   * Lot 8 — photo de la pièce (data-URL ou base64, JPEG/PNG/WEBP, 6 Mo au plus). Obligatoire au 1er envoi de cette personne (et si
+   * la pièce a été renouvelée) ; le verso l'est pour une carte d'identité, un permis ou un titre de séjour. Sans quoi : 400
+   * COUNTER_ID_PHOTO_REQUIRED. Les envois suivants avec la même pièce n'ont plus à la rephotographier.
+   */
+  senderIdFront?: string;
+  senderIdBack?: string;
   note?: string;
 }
 
 export function createAgentDeskApi(http: HttpClient) {
   // ✅ audit point 3 : un double-tap ou un nouvel essai après coupure ne crée pas un second débit (voir idempotency.ts).
   const tracker = createIdempotencyTracker();
+  // La clé d'idempotence ne retient que l'empreinte (taille + extrémités) des photos : pas 16 Mo de base64 gardés en mémoire.
+  const fingerprint = (v: unknown): unknown =>
+    typeof v === 'string' && v.length > 256 ? `#${v.length}:${v.slice(0, 48)}:${v.slice(-48)}` : v;
   const postOnce = <T>(path: string, body: object) =>
-    withIdempotency(tracker, `${path}|${JSON.stringify(body)}`, (key) =>
+    withIdempotency(tracker, `${path}|${JSON.stringify(body, (_k, v) => fingerprint(v))}`, (key) =>
       http.post<T>(path, body, { headers: { [IDEMPOTENCY_HEADER]: key } }));
 
   const enc = encodeURIComponent;

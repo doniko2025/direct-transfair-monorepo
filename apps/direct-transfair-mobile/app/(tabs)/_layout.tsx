@@ -39,18 +39,25 @@ type BottomTabBarProps = {
 
 // Chemins pour lesquels la barre d'onglets est visible (écrans racines)
 const ROOT_PATHS = new Set(["", "/", "/home", "/transactions", "/beneficiaries", "/profile"]);
+// Lot 12 : trois onglets seulement (Accueil, Activité / Paiements, Profil). Les bénéficiaires restent une page, ouverte depuis le profil.
 
 type TabDef = { name: string; label: string; icon: string };
 
 const USER_TABS: TabDef[] = [
   { name: "home",          label: "Accueil",  icon: "home" },
   { name: "transactions",  label: "Activité", icon: "time" },
-  { name: "beneficiaries", label: "Contacts", icon: "people" },
-  { name: "profile",       label: "Compte",   icon: "person" },
+  { name: "profile",       label: "Profil",   icon: "person" },
+];
+const MERCHANT_TABS: TabDef[] = [
+  { name: "home",          label: "Accueil",   icon: "home" },
+  { name: "transactions",  label: "Paiements", icon: "time" },
+  { name: "profile",       label: "Profil",    icon: "person" },
 ];
 
 function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]; navigation: BottomTabBarProps["navigation"] }) {
   const { C } = useUI();
+  const { user } = useAuth();
+  const tabs = user?.accountType === "MERCHANT" ? MERCHANT_TABS : USER_TABS;
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();
@@ -72,7 +79,7 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
         flexDirection: "row", alignItems: "flex-start", paddingTop: 10, paddingBottom: bottom, paddingHorizontal: 8,
       }}
     >
-      {USER_TABS.map((tab) => {
+      {tabs.map((tab) => {
         const isActive = tab.name === "home"
           ? clean === "" || clean === "/" || clean === "/home"
           : clean.startsWith(`/${tab.name}`);

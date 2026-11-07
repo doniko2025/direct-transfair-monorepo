@@ -33,10 +33,11 @@ import AuthField        from '../../components/auth/AuthField';
 import AuthButton       from '../../components/auth/AuthButton';
 import AuthNotice       from '../../components/auth/AuthNotice';
 import OtpCodeInput     from '../../components/auth/OtpCodeInput';
-import PasswordGuide    from '../../components/auth/PasswordGuide';
+import PinGuide         from '../../components/auth/PinGuide';
+import PinInput         from '../../components/auth/PinInput';
 import ServerStatusPill from '../../components/auth/ServerStatusPill';
 import { describeAuthError } from '../../components/auth/authErrors';
-import { isPasswordAcceptable, PASSWORD_MAX, PASSWORD_MIN } from '../../components/auth/passwordRules';
+import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
 import { Text, TextInput } from '../../components/ui/Text';
@@ -127,8 +128,12 @@ export default function ForgotPasswordScreen() {
   };
 
   // ── 3. Code + nouveau mot de passe, validés ensemble ──
-  const pwdError = !isPasswordAcceptable(password) ? `Entre ${PASSWORD_MIN} et ${PASSWORD_MAX} caractères.` : null;
-  const confirmError = !confirm ? 'Confirmez votre mot de passe.' : confirm !== password ? 'Les deux mots de passe ne correspondent pas.' : null;
+  // Lot 10 : nouveau CODE SECRET à 6 chiffres. Le serveur connaît en plus la date de naissance et le téléphone du compte : il peut refuser
+  // un code que ce contrôle local accepte (réponse PIN_WEAK) — le motif est alors affiché sous le champ.
+  const [serverPinError, setServerPinError] = useState<string | null>(null);
+  const pwdError = serverPinError
+    ?? (password.length !== PIN_LENGTH ? `Le code doit contenir exactement ${PIN_LENGTH} chiffres.` : pinProblem(password));
+  const confirmError = !confirm ? 'Confirmez votre code secret.' : confirm !== password ? 'Les deux codes ne correspondent pas.' : null;
 
   const resetPassword = async () => {
     setShowErrors(true);
@@ -140,6 +145,10 @@ export default function ForgotPasswordScreen() {
       await api.resetPassword(userId, code, password);
       router.replace({ pathname: '/(auth)/login-v2', params: { reset: '1' } } as any);
     } catch (e: any) {
+      if (e?.response?.data?.code === 'PIN_WEAK') {
+        setServerPinError(String(e.response.data.message ?? 'Ce code est trop prévisible.'));
+        return;
+      }
       const info = describeAuthError(e, 'otp');
       if (info.kind === 'validation' || info.kind === 'unknown') {
         // Code faux / expiré (400) : on vide le code, on garde le mot de passe saisi.
@@ -259,8 +268,8 @@ export default function ForgotPasswordScreen() {
   return (
     <AuthShell
       compact
-      title="Nouveau mot de passe"
-      subtitle={channel === 'PHONE' ? 'Saisissez le code reçu par SMS, puis choisissez votre nouveau mot de passe.' : 'Saisissez le code reçu par email, puis choisissez votre nouveau mot de passe.'}
+      title="Nouveau code secret"
+      subtitle={channel === 'PHONE' ? 'Saisissez le code reçu par SMS, puis choisissez votre nouveau code secret à 6 chiffres.' : 'Saisissez le code reçu par email, puis choisissez votre nouveau code secret à 6 chiffres.'}
       onBack={back}
       headerRight={pill}
     >
@@ -282,39 +291,28 @@ export default function ForgotPasswordScreen() {
         )}
       </View>
 
-      <AuthField
-        label="Nouveau mot de passe"
-        icon="lock-closed-outline"
+      <PinInput
+        label="Nouveau code secret (6 chiffres)"
         value={password}
-        onChangeText={setPassword}
+        onChange={(v) => { setPassword(v); if (serverPinError) setServerPinError(null); }}
+        onComplete={() => confirmRef.current?.focus()}
+        accent={P.accent}
         error={showErrors ? pwdError : null}
-        secure
-        autoComplete="new-password"
-        textContentType="newPassword"
-        returnKeyType="next"
-        onSubmitEditing={() => confirmRef.current?.focus()}
-        accent={P.accent}
-        maxLength={PASSWORD_MAX}
+        disabled={loading}
       />
-      <PasswordGuide password={password} />
-      <AuthField
-        label="Confirmer le mot de passe"
-        icon="shield-checkmark-outline"
+      <PinGuide pin={password} />
+      <PinInput
+        label="Confirmer le code secret"
         value={confirm}
-        onChangeText={setConfirm}
-        error={showErrors ? confirmError : null}
-        secure
-        autoComplete="new-password"
-        textContentType="newPassword"
-        returnKeyType="done"
-        onSubmitEditing={resetPassword}
-        inputRef={confirmRef}
+        onChange={setConfirm}
         accent={P.accent}
-        maxLength={PASSWORD_MAX}
-        valid={confirm.length > 0 && confirm === password}
+        error={showErrors ? confirmError : null}
+        disabled={loading}
+        noReveal
+        inputRef={confirmRef}
       />
 
-      <AuthButton label="Modifier mon mot de passe" icon="checkmark-circle" iconRight accent={P.action} loading={loading} onPress={resetPassword} />
+      <AuthButton label="Enregistrer mon code secret" icon="checkmark-circle" iconRight accent={P.action} loading={loading} onPress={resetPassword} />
     </AuthShell>
   );
 }

@@ -178,6 +178,11 @@ export default function LimitsScreen() {
             <UText v="caption" tone="muted" style={{ marginTop: 10 }}>
               Complète ta vérification pour augmenter tes plafonds.
             </UText>
+            {data.kycLevel !== "LEVEL_3" ? (
+              <View style={{ marginTop: 12 }}>
+                <Button label="Voir ma vérification d'identité" icon="shield-checkmark-outline" kind="soft" small onPress={() => router.push("/(tabs)/profile/kyc" as any)} />
+              </View>
+            ) : null}
           </Card>
 
           <SectionHeader title="Plafonds actifs" style={{ marginTop: 26, marginBottom: 12 }} />

@@ -109,7 +109,7 @@ export function SearchBar({ value, onChangeText, placeholder }: { value: string;
       />
       {!!value && (
         <TouchableOpacity onPress={() => onChangeText('')} hitSlop={10}>
-          <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.75)" />
+          <Ionicons name="remove-circle" size={18} color="rgba(255,255,255,0.75)" />
         </TouchableOpacity>
       )}
     </View>

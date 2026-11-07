@@ -23,6 +23,15 @@ import { AuthProvider }       from '../providers/AuthProvider';
 import { InactivityProvider } from '../providers/InactivityProvider'; // ✅ v6.0
 import { FONT_FILES } from '../components/ui/fonts';                    // ✅ v7.0
 import { buildColors } from '../components/ui/theme';
+import { useAuth } from '../providers/AuthProvider';
+import { usePushNavigation } from '../hooks/usePushNavigation';
+
+/** Ouvre l'écran lié à une notification touchée (Lot 11) — placé sous AuthProvider pour connaître la session. */
+function PushNavigation() {
+  const { user } = useAuth();
+  usePushNavigation(!!user);
+  return null;
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(FONT_FILES);
@@ -35,6 +44,7 @@ export default function RootLayout() {
             → accède à useAuth() et englobe toute l'interface */}
         <InactivityProvider>
           <StatusBar style="dark" />
+          <PushNavigation />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />

@@ -19,10 +19,17 @@ import {
 
 // ── 1. Connexion par mot de passe ─────────────────────────
 export class LoginPasswordV2Dto {
-  @ApiProperty({ example: 'user@example.com' })
+  // ✅ lot 13 : email OU téléphone (au moins un des deux, contrôlé par le service). Le web-admin continue d'envoyer `email`.
+  @ApiPropertyOptional({ example: 'user@example.com' })
+  @IsOptional()
   @IsEmail({}, { message: 'Adresse email invalide' })
-  @IsNotEmpty()
-  email!: string;
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+224622000000', description: 'Format international' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+?[\d\s\-().]{7,20}$/, { message: 'Numéro de téléphone invalide (format international requis)' })
+  phone?: string;
 
   @ApiProperty({ minLength: 6 })
   @IsString()

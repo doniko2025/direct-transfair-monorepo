@@ -84,7 +84,7 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '../../components/ui/Icon';
 
 import { useAuth }   from '../../providers/AuthProvider';
@@ -99,25 +99,34 @@ import AuthNotice  from '../../components/auth/AuthNotice';
 import SelectField from '../../components/auth/SelectField';
 import PhoneField, { normalizeNationalNumber, validatePhone } from '../../components/auth/PhoneField';
 import DateOfBirthField, { formatBirthDate, validateBirthDate, type Dob } from '../../components/auth/DateOfBirthField';
-import PasswordGuide from '../../components/auth/PasswordGuide';
+import PinGuide from '../../components/auth/PinGuide';
+import PinInput from '../../components/auth/PinInput';
 import CountryPickerSheet from '../../components/auth/CountryPickerSheet';
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from '../../components/auth/authCountries';
 import { describeAuthError } from '../../components/auth/authErrors';
-import { isPasswordAcceptable, PASSWORD_MAX, PASSWORD_MIN } from '../../components/auth/passwordRules';
+import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
+import { MERCHANT_CATEGORIES } from '../../components/merchant/merchantUi';
 
 import { Text, TextInput } from '../../components/ui/Text';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const STEPS = [
-  { title: 'Faisons connaissance',   subtitle: 'Vos informations d’identité, telles qu’elles figurent sur votre pièce d’identité.' },
-  { title: 'Où résidez-vous ?',      subtitle: 'Votre pays de résidence détermine la devise de votre portefeuille.' },
-  { title: 'Comment vous joindre ?', subtitle: 'Nous vous envoyons un code pour confirmer votre adresse email.' },
-  { title: 'Sécurisez votre compte', subtitle: 'Choisissez un mot de passe solide, que vous seul connaissez.' },
-] as const;
+type StepKey = 'identity' | 'residence' | 'contact' | 'shop' | 'pin';
+
+const STEP_META: Record<StepKey, { title: string; subtitle: string }> = {
+  identity:  { title: 'Faisons connaissance',   subtitle: 'Vos informations d’identité, telles qu’elles figurent sur votre pièce d’identité.' },
+  residence: { title: 'Où résidez-vous ?',      subtitle: 'Votre pays de résidence détermine la devise de votre portefeuille.' },
+  contact:   { title: 'Comment vous joindre ?', subtitle: 'Nous vous envoyons un code pour confirmer votre adresse email.' },
+  shop:      { title: 'Votre commerce',         subtitle: 'Ces informations s’affichent à vos clients quand ils vous paient.' },
+  pin:       { title: 'Votre code secret',      subtitle: 'Choisissez 6 chiffres que vous seul connaissez. Ils protègent votre portefeuille.' },
+};
+
+const CLIENT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'pin'];
+const MERCHANT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'shop', 'pin'];
 
 type Errors = Partial<Record<
-  'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms',
+  'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms'
+  | 'businessName' | 'category' | 'orangePhone',
   string
 >>;
 
@@ -128,6 +137,10 @@ export default function RegisterScreen() {
   const router = useRouter();
   const P = useAuthPalette();
   const minAge = useMemo(() => getMinimumAge(), []);
+  const params = useLocalSearchParams<{ type?: string }>();
+  const isMerchant = params.type === 'merchant';
+  const steps = isMerchant ? MERCHANT_STEPS : CLIENT_STEPS;
+  const stepIndex = (k: StepKey) => Math.max(0, steps.indexOf(k));
 
   const [step, setStep] = useState(0);
   const [showErrors, setShowErrors] = useState(false);
@@ -152,6 +165,14 @@ export default function RegisterScreen() {
   const [terms, setTerms] = useState(false);
   const [picker, setPicker] = useState<null | 'country' | 'nationality'>(null);
 
+  // ── Commerce (marchands) ──────────────────────────────
+  const [businessName, setBusinessName] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [sameOrange, setSameOrange] = useState(true);
+  const [orangeCountry, setOrangeCountry] = useState<AuthCountry>(findCountry('Guinée') ?? AUTH_COUNTRIES[0]!);
+  const [orangeNational, setOrangeNational] = useState('');
+
   // ── Succès ────────────────────────────────────────────
   const [done, setDone] = useState(false);
   const [pending, setPending] = useState<Session | null>(null);
@@ -161,34 +182,48 @@ export default function RegisterScreen() {
   const cityRef = useRef<TextInput>(null);
   const phoneRef = useRef<TextInput>(null);
   const confirmRef = useRef<TextInput>(null);
-  const passRef = useRef<TextInput>(null);
+
+  // Contexte de la règle du code secret : on refuse la date de naissance et un morceau du téléphone saisis juste avant.
+  const pinContext = { birthDate: formatBirthDate(dob), phone: `${dialCountry.dial}${normalizeNationalNumber(phone)}` };
 
   // ── Validation par étape ──────────────────────────────
-  const validate = (s: number): Errors => {
+  const validate = (key: StepKey): Errors => {
     const e: Errors = {};
-    if (s === 0) {
+    if (key === 'identity') {
       if (!firstName.trim()) e.firstName = 'Saisissez votre prénom.';
       if (!lastName.trim()) e.lastName = 'Saisissez votre nom de famille.';
       const d = validateBirthDate(dob, minAge);
       if (d) e.dob = d;
       if (!nationality) e.nationality = 'Choisissez votre nationalité.';
-    } else if (s === 1) {
+    } else if (key === 'residence') {
       if (!country) e.country = 'Choisissez votre pays de résidence.';
       if (!city.trim()) e.city = 'Saisissez votre ville.';
-    } else if (s === 2) {
+    } else if (key === 'contact') {
       if (!EMAIL_RE.test(email.trim())) e.email = 'Saisissez une adresse email valide.';
       const p = validatePhone(phone);
       if (p) e.phone = p;
-    } else if (s === 3) {
-      if (!isPasswordAcceptable(password)) e.password = `Entre ${PASSWORD_MIN} et ${PASSWORD_MAX} caractères.`;
-      if (!confirm) e.confirm = 'Confirmez votre mot de passe.';
-      else if (confirm !== password) e.confirm = 'Les deux mots de passe ne correspondent pas.';
+    } else if (key === 'shop') {
+      if (businessName.trim().length < 2) e.businessName = 'Saisissez le nom de votre commerce (2 caractères minimum).';
+      if (!category) e.category = 'Choisissez une catégorie.';
+      if (!sameOrange) {
+        const o = validatePhone(orangeNational);
+        if (o) e.orangePhone = o;
+      }
+    } else if (key === 'pin') {
+      if (password.length !== PIN_LENGTH) e.password = `Le code doit contenir exactement ${PIN_LENGTH} chiffres.`;
+      else {
+        const weak = pinProblem(password, pinContext);
+        if (weak) e.password = weak;
+      }
+      if (!confirm) e.confirm = 'Confirmez votre code secret.';
+      else if (confirm !== password) e.confirm = 'Les deux codes ne correspondent pas.';
       if (!terms) e.terms = 'Vous devez accepter les conditions pour continuer.';
     }
     return e;
   };
 
-  const errors: Errors = showErrors ? { ...validate(step), ...serverErrors } : serverErrors;
+  const stepKey: StepKey = steps[step] ?? 'identity';
+  const errors: Errors = showErrors ? { ...validate(stepKey), ...serverErrors } : serverErrors;
   const clearServer = (k: keyof Errors) => setServerErrors((s) => (s[k] ? { ...s, [k]: undefined } : s));
 
   const goBack = () => {
@@ -204,9 +239,9 @@ export default function RegisterScreen() {
 
   const goNext = () => {
     setFormError(null);
-    if (Object.keys(validate(step)).length > 0) { setShowErrors(true); return; }
+    if (Object.keys(validate(stepKey)).length > 0) { setShowErrors(true); return; }
     setShowErrors(false);
-    if (step < STEPS.length - 1) setStep(step + 1);
+    if (step < steps.length - 1) setStep(step + 1);
     else void submit();
   };
 
@@ -241,6 +276,18 @@ export default function RegisterScreen() {
         city: city.trim(),
         nationality: nationality ?? '',
         birthDate: formatBirthDate(dob),
+        ...(isMerchant
+          ? {
+              accountType: 'MERCHANT' as const,
+              businessName: businessName.trim(),
+              businessCategory: category ?? undefined,
+              businessAddress: businessAddress.trim() || undefined,
+              businessCity: city.trim(),
+              orangeMoneyPhone: sameOrange
+                ? `${dialCountry.dial}${normalizeNationalNumber(phone)}`
+                : `${orangeCountry.dial}${normalizeNationalNumber(orangeNational)}`,
+            }
+          : {}),
       };
 
       const res: any = await api.register(payload as any);
@@ -256,15 +303,15 @@ export default function RegisterScreen() {
       const msg = info.message.toLowerCase();
       if (info.kind === 'conflict' && msg.includes('email')) {
         setServerErrors({ email: info.message });
-        setStep(2);
+        setStep(stepIndex('contact'));
         setFormError({ title: info.title, message: 'Cette adresse est déjà associée à un compte. Connectez-vous, ou utilisez une autre adresse.', action: 'login' });
       } else if (info.kind === 'conflict' && (msg.includes('numéro') || msg.includes('téléphone'))) {
         setServerErrors({ phone: info.message });
-        setStep(2);
+        setStep(stepIndex('contact'));
         setFormError({ title: info.title, message: 'Ce numéro est déjà associé à un compte. Connectez-vous, ou utilisez un autre numéro.', action: 'login' });
       } else if (msg.includes('numéro de téléphone invalide')) {
         setServerErrors({ phone: 'Ce numéro n’est pas reconnu. Vérifiez l’indicatif et le numéro.' });
-        setStep(2);
+        setStep(stepIndex('contact'));
         setShowErrors(true);
       } else {
         setFormError({ title: info.title, message: info.message });
@@ -302,7 +349,7 @@ export default function RegisterScreen() {
   // ═══════════════════════════════════════════════════════
   if (done) {
     return (
-      <AuthShell title="Compte créé" subtitle="Bienvenue ! Votre espace est prêt.">
+      <AuthShell title={isMerchant ? "Compte marchand créé" : "Compte créé"} subtitle={isMerchant ? "Bienvenue ! Votre commerce est prêt à encaisser." : "Bienvenue ! Votre espace est prêt."}>
         <View style={s.successIcon}>
           <View style={[s.successRing, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
             <Ionicons name="checkmark" size={44} color={P.action} />
@@ -321,18 +368,18 @@ export default function RegisterScreen() {
   // ═══════════════════════════════════════════════════════
   // FORMULAIRE
   // ═══════════════════════════════════════════════════════
-  const meta = STEPS[step]!;
-  const isLast = step === STEPS.length - 1;
+  const meta = STEP_META[stepKey];
+  const isLast = step === steps.length - 1;
 
   return (
     <AuthShell compact title={meta.title} subtitle={meta.subtitle} onBack={goBack}>
       {/* ── Progression ── */}
-      <View style={s.progress} accessibilityLabel={`Étape ${step + 1} sur ${STEPS.length}`}>
-        {STEPS.map((_, i) => (
-          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : '#E3EBE8' }]} />
+      <View style={s.progress} accessibilityLabel={`Étape ${step + 1} sur ${steps.length}`}>
+        {steps.map((_, i) => (
+          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : '#E8E8E8' }]} />
         ))}
       </View>
-      <Text style={s.progTxt}>Étape {step + 1} sur {STEPS.length}</Text>
+      <Text style={s.progTxt}>Étape {step + 1} sur {steps.length}</Text>
 
       {formError ? (
         <AuthNotice
@@ -345,7 +392,7 @@ export default function RegisterScreen() {
       ) : null}
       {waking ? <AuthNotice kind="info" title="Le serveur démarre" message="Quelques secondes après une période d’inactivité, merci de patienter…" /> : null}
 
-      {step === 0 && (
+      {stepKey === 'identity' && (
         <>
           <AuthField
             label="Prénom" icon="person-outline" value={firstName} onChangeText={setFirstName}
@@ -366,7 +413,7 @@ export default function RegisterScreen() {
         </>
       )}
 
-      {step === 1 && (
+      {stepKey === 'residence' && (
         <>
           <SelectField
             label="Pays de résidence" icon="location-outline" placeholder="Choisir votre pays"
@@ -381,7 +428,7 @@ export default function RegisterScreen() {
         </>
       )}
 
-      {step === 2 && (
+      {stepKey === 'contact' && (
         <>
           <AuthField
             label="Adresse email" icon="mail-outline" value={email}
@@ -404,20 +451,84 @@ export default function RegisterScreen() {
         </>
       )}
 
-      {step === 3 && (
+      {stepKey === 'shop' && (
         <>
           <AuthField
-            label="Mot de passe" icon="lock-closed-outline" value={password} onChangeText={setPassword}
-            error={errors.password} secure autoComplete="new-password" textContentType="newPassword"
-            returnKeyType="next" onSubmitEditing={() => confirmRef.current?.focus()} inputRef={passRef}
-            accent={P.accent} maxLength={PASSWORD_MAX} autoFocus
+            label="Nom du commerce" icon="storefront-outline" value={businessName}
+            onChangeText={setBusinessName} error={errors.businessName} autoCapitalize="words"
+            returnKeyType="next" accent={P.accent} autoFocus maxLength={80}
           />
-          <PasswordGuide password={password} />
+          <Text style={s.chipsLabel}>Catégorie</Text>
+          <View style={s.chips}>
+            {MERCHANT_CATEGORIES.map((c) => {
+              const on = category === c;
+              return (
+                <TouchableOpacity
+                  key={c}
+                  onPress={() => setCategory(c)}
+                  activeOpacity={0.8}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  style={[s.chip, on && { backgroundColor: P.action, borderColor: P.action }]}
+                >
+                  <Text style={[s.chipTxt, on && { color: '#FFFFFF' }]}>{c}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {errors.category ? (
+            <View style={s.termsErr}>
+              <Ionicons name="alert-circle" size={14} color={N.danger} />
+              <Text style={s.termsErrTxt}>{errors.category}</Text>
+            </View>
+          ) : null}
+          <View style={{ height: 14 }} />
           <AuthField
-            label="Confirmer le mot de passe" icon="shield-checkmark-outline" value={confirm} onChangeText={setConfirm}
-            error={errors.confirm} secure autoComplete="new-password" textContentType="newPassword"
-            returnKeyType="done" inputRef={confirmRef} accent={P.accent} maxLength={PASSWORD_MAX}
-            valid={confirm.length > 0 && confirm === password}
+            label="Adresse du commerce (facultatif)" icon="location-outline" value={businessAddress}
+            onChangeText={setBusinessAddress} autoCapitalize="sentences" accent={P.accent} maxLength={160}
+          />
+
+          <Text style={s.chipsLabel}>Numéro Orange Money de retrait</Text>
+          <Text style={s.helpTxt}>Vos gains seront versés sur ce numéro. Pour le modifier plus tard, votre code secret sera demandé.</Text>
+          <TouchableOpacity
+            style={s.termsRow}
+            onPress={() => setSameOrange((v) => !v)}
+            activeOpacity={0.8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: sameOrange }}
+          >
+            <View style={[s.check, sameOrange && { backgroundColor: P.action, borderColor: P.action }]}>
+              {sameOrange ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
+            </View>
+            <Text style={s.termsTxt}>C’est le même numéro que mon téléphone (+{dialCountry.dial.replace('+', '')} {normalizeNationalNumber(phone)})</Text>
+          </TouchableOpacity>
+          {!sameOrange ? (
+            <View style={{ marginTop: 14 }}>
+              <PhoneField
+                country={orangeCountry}
+                onCountryChange={setOrangeCountry}
+                value={orangeNational}
+                onChangeText={(t) => { setOrangeNational(t); clearServer('orangePhone'); }}
+                error={errors.orangePhone}
+                hint="Numéro Orange Money, sans le 0 de tête."
+                accent={P.accent}
+                onSubmitEditing={goNext}
+              />
+            </View>
+          ) : null}
+        </>
+      )}
+
+      {stepKey === 'pin' && (
+        <>
+          <PinInput
+            label="Code secret (6 chiffres)" value={password} onChange={(v) => { setPassword(v); clearServer('password'); }}
+            onComplete={() => confirmRef.current?.focus()} accent={P.accent} error={errors.password} autoFocus testID="register-pin"
+          />
+          <PinGuide pin={password} context={pinContext} />
+          <PinInput
+            label="Confirmer le code secret" value={confirm} onChange={setConfirm} accent={P.accent}
+            error={errors.confirm} noReveal inputRef={confirmRef} testID="register-pin-confirm"
           />
 
           <TouchableOpacity
@@ -501,6 +612,12 @@ const s = StyleSheet.create({
 
   loginRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' },
   loginTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
+
+  chipsLabel: { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '700', color: N.muted, marginBottom: 8, marginTop: 6, letterSpacing: 0.2 },
+  helpTxt: { fontFamily: FONT.body, fontSize: 13, lineHeight: 19, color: N.inkSub, marginBottom: 12 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: N.border, backgroundColor: N.surface, alignItems: 'center', justifyContent: 'center' },
+  chipTxt: { fontFamily: FONT.medium, fontSize: 13.5, fontWeight: '700', color: N.ink },
 
   successIcon: { alignItems: 'center', marginVertical: 14 },
   successRing: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

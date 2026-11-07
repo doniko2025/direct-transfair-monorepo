@@ -10,6 +10,7 @@ import { useCurrentUser } from '../providers/AuthProvider';
 import { AdminDashboard } from './dashboard/AdminDashboard';
 import { AgentDashboard } from './dashboard/AgentDashboard';
 import { PlatformDashboard } from './dashboard/PlatformDashboard';
+import { SupportDashboard } from './dashboard/SupportDashboard';
 
 export default function DashboardPage() {
   const user = useCurrentUser();
@@ -22,5 +23,7 @@ export default function DashboardPage() {
       return <AdminDashboard />;
     case 'AGENT':
       return <AgentDashboard />;
+    case 'SUPPORT':
+      return <SupportDashboard />;
   }
 }

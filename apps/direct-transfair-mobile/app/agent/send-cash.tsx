@@ -133,7 +133,7 @@ function PickerModal({ visible, onClose, title, data, onSelect }: {
           <View style={pm.search}>
             <Ionicons name="search" size={14} color={C.inkSoft} />
             <TextInput style={[pm.searchInput, { fontFamily: C.font.sans }]} value={q} onChangeText={setQ} placeholder="Rechercher…" placeholderTextColor={C.inkSoft} autoFocus />
-            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close" size={13} color={C.inkSoft} /></TouchableOpacity>}
+            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="remove-circle" size={13} color={C.inkSoft} /></TouchableOpacity>}
           </View>
           <FlatList
             data={filtered} keyExtractor={(c) => c.code}

@@ -308,7 +308,7 @@ function SelectDropdown<T extends string>({ label, value, options, onChange, pla
               />
               {search.length > 0 && (
                 <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-                  <Ionicons name="close-circle" size={14} color={T.inkMuted} />
+                  <Ionicons name="remove-circle" size={14} color={T.inkMuted} />
                 </TouchableOpacity>
               )}
             </View>

@@ -445,7 +445,7 @@ export default function WalletClientsScreen() {
         />
         {!!q && (
           <TouchableOpacity onPress={() => setQ("")} style={s.clearBtn}>
-            <Ionicons name="close" size={13} color={T.inkMuted} />
+            <Ionicons name="remove-circle" size={13} color={T.inkMuted} />
           </TouchableOpacity>
         )}
       </View>

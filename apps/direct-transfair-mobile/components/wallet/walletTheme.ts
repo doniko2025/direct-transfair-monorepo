@@ -27,7 +27,7 @@ export function useWalletTheme() {
   const { branding } = useTenant();
   // v1.1 — synchronise la marque pour les écrans « themed()/brand() »
   setBrandPrimary(branding.primaryColor);
-  const P = useMemo(() => buildPalette(branding.primaryColor), [branding.primaryColor]);
+  const P = useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
   return { P, N, FONT, RADIUS, SHADOW, brandName: branding.name, logoUrl: branding.logoUrl };
 }
 
@@ -122,7 +122,14 @@ export type TxView = {
 export function describeTx(tx: any, userId?: string): TxView {
   const type = String(tx?.type ?? '').toUpperCase();
   const isDeposit = type === 'DEPOSIT' || type === 'TOP_UP';
-  const incoming = isDeposit || tx?.recipientId === userId || (tx?.senderId !== userId && !tx?.beneficiaryId);
+  // Lot 11 : paiement marchand (QR / téléphone) et retrait marchand — le sens se lit sur l'expéditeur / le destinataire.
+  const isMerchantPayment = type === 'MERCHANT_PAYMENT';
+  const isMerchantPayout = type === 'MERCHANT_PAYOUT';
+  const incoming = isMerchantPayout
+    ? false
+    : isMerchantPayment
+      ? tx?.recipientId === userId
+      : isDeposit || tx?.recipientId === userId || (tx?.senderId !== userId && !tx?.beneficiaryId);
 
   const hasConversion =
     !!tx?.targetCurrency && tx.targetCurrency !== tx.currency && toNum(tx.receivedAmount) > 0;
@@ -133,20 +140,26 @@ export function describeTx(tx: any, userId?: string): TxView {
   const sender = tx?.sender?.firstName
     ? `${tx.sender.firstName} ${tx.sender.lastName ?? ''}`.trim()
     : tx?.senderFirstName ? `${tx.senderFirstName} ${tx.senderLastName ?? ''}`.trim() : '';
-  const counterpart = incoming
-    ? sender
-    : (tx?.beneficiary?.fullName ?? tx?.recipient?.firstName ?? tx?.beneficiary?.phone ?? '');
+  const counterpart = isMerchantPayout
+    ? 'Retrait marchand'
+    : incoming
+      ? sender
+      : (tx?.beneficiary?.fullName ?? tx?.recipient?.firstName ?? tx?.beneficiary?.phone ?? '');
 
   const status = statusOf(String(tx?.status ?? ''));
   return {
     incoming,
-    title: incoming ? (isDeposit ? 'Dépôt' : 'Argent reçu') : "Envoi d'argent",
+    title: isMerchantPayout
+      ? 'Retrait marchand'
+      : isMerchantPayment
+        ? (incoming ? 'Paiement reçu' : 'Paiement marchand')
+        : incoming ? (isDeposit ? 'Dépôt' : 'Argent reçu') : "Envoi d'argent",
     counterpart,
     amount,
     currency,
     converted: !incoming && hasConversion ? { amount: toNum(tx.receivedAmount), currency: String(tx.targetCurrency) } : null,
     status,
     statusLabel: incoming ? status.labelIncoming : status.label,
-    icon: incoming ? 'arrow-down' : 'arrow-up',
+    icon: isMerchantPayout ? 'cash-outline' : isMerchantPayment ? 'storefront-outline' : incoming ? 'arrow-down' : 'arrow-up',
   };
 }

@@ -1,6 +1,13 @@
 // apps/direct-transfair-mobile/components/ui/theme.ts
 // =========================================================
-// DESIGN SYSTEM « CORRIDOR » v3.0 — Direct Transf'air (white-label)
+// DESIGN SYSTEM v4.0 — Direct Transf'air (white-label) — Lot 12
+// ✅ v4.0 : FOND BLANC PUR (#FFFFFF, écrit en dur : aucune couleur de société ne le teinte), police Inter, noir doux pour
+//    le texte, champs gris clair. Les couleurs de l'administrateur PILOTENT l'interface :
+//      • « Couleur principale »  → bouton principal, onglet actif, barre de progression, éléments de marque ;
+//      • « Couleur d'accent »    → liens, interrupteurs, icônes et pastilles d'accent.
+//    Tant que l'administrateur n'a pas choisi une couleur différente du vert par défaut de la plateforme
+//    (#059669 / #10B981), l'orange par défaut (#D9650E) s'applique. Les clés de palette existantes sont conservées.
+// (historique) DESIGN SYSTEM « CORRIDOR » v3.0
 // ✅ v3.0 : refonte visuelle « Corridor » — fond brume, vert forêt, feuille, jaune soleil ;
 //    polices Manrope (interface, montants) + Fraunces (salutation, titres) ; coins 28 / 20 / pilule ;
 //    ombres teintées vert forêt ; CTA principal jaune. Les clés de palette existantes sont conservées :
@@ -22,8 +29,13 @@ import { useTenant } from '../../providers/TenantProvider';
 import { setBrandPrimary } from '../wallet/brand';
 import { SANS, SERIF } from './fonts';
 
+/** Couleurs par défaut de la plateforme (celles qu'une société reçoit tant qu'elle n'a rien choisi). */
 export const DEFAULT_ACCENT = '#059669';
 export const DEFAULT_SECONDARY = '#10B981';
+/** Couleur de marque appliquée quand l'administrateur n'a pas choisi la sienne (bouton principal de la maquette). */
+export const DEFAULT_BRAND_COLOR = '#D9650E';
+/** Fond de toutes les pages : blanc pur, jamais dérivé d'une couleur de société. */
+export const PAGE_BG = '#FFFFFF';
 export { SANS, SERIF } from './fonts';
 
 // ─── utilitaires couleur ─────────────────────────────────
@@ -52,100 +64,92 @@ export function luminance(hex: string): number {
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-/** Texte lisible posé sur `bg` : noir sur fond clair, blanc sur fond foncé. */
-export function inkOn(bg: string, dark = '#111214', light = '#FFFFFF'): string {
-  return luminance(bg) > 0.38 ? dark : light;
+/** Texte lisible posé sur `bg` : celui des deux (sombre / clair) qui offre le meilleur contraste. */
+export function inkOn(bg: string, dark = '#111111', light = '#FFFFFF'): string {
+  const L = luminance(bg);
+  const darkRatio = (L + 0.05) / (luminance(dark) + 0.05);
+  const lightRatio = (luminance(light) + 0.05) / (L + 0.05);
+  return darkRatio >= lightRatio ? dark : light;
 }
 
 // ─── Palette ─────────────────────────────────────────────
-export type UIColors = ReturnType<typeof buildColors>;
-
 const isHex = (v?: string | null): v is string => /^#[0-9a-f]{6}$/i.test(v || '');
 
-/** Les 7 teintes Corridor (palette de la maquette validée). */
-const CORRIDOR = {
-  brume: '#E8F0EA', forest: '#0E3B2D', leaf: '#1F8A5B', sun: '#F5C32C',
-  ink: '#10231B', soft: '#5E7468', fil: '#D3E0D7',
-};
-
-function baseTints(primary?: string | null) {
-  const p = isHex(primary) ? primary.toUpperCase() : DEFAULT_ACCENT;
-  if (p === DEFAULT_ACCENT) return CORRIDOR;
-  const forest = mix(p, '#000000', 0.62);
-  return {
-    brume: mix(p, '#FFFFFF', 0.91),
-    forest,
-    leaf: luminance(p) > 0.3 ? mix(p, '#000000', 0.32) : p,
-    sun: CORRIDOR.sun,
-    ink: mix(p, '#000000', 0.84),
-    soft: mix(forest, '#FFFFFF', 0.3),
-    fil: mix(p, '#FFFFFF', 0.8),
-  };
+/** Couleur principale effective : celle de l'administrateur si elle diffère du vert par défaut, sinon l'orange par défaut. */
+export function effectivePrimary(primary?: string | null): string {
+  return isHex(primary) && primary.toUpperCase() !== DEFAULT_ACCENT ? primary.toUpperCase() : DEFAULT_BRAND_COLOR;
+}
+/** Couleur d'accent effective : celle de l'administrateur si elle diffère du vert par défaut, sinon la couleur principale. */
+export function effectiveAccent(primary?: string | null, secondary?: string | null): string {
+  return isHex(secondary) && secondary.toUpperCase() !== DEFAULT_SECONDARY ? secondary.toUpperCase() : effectivePrimary(primary);
 }
 
 export function buildColors(primary?: string | null, secondary?: string | null) {
-  const t = baseTints(primary);
-  const custom = (isHex(primary) ? primary.toUpperCase() : DEFAULT_ACCENT) !== DEFAULT_ACCENT;
-  // Bouton principal : jaune soleil, ou la couleur secondaire de la société si elle en a une propre.
-  const sun = custom && isHex(secondary) && secondary.toUpperCase() !== DEFAULT_SECONDARY ? secondary.toUpperCase() : t.sun;
-  const leaf = t.leaf;
+  const brand = effectivePrimary(primary);
+  const accent = effectiveAccent(primary, secondary);
+  // Texte / icônes d'accent posés sur blanc : on fonce la couleur si elle est trop claire pour rester lisible.
+  const accentText = luminance(accent) > 0.3 ? mix(accent, '#000000', 0.42) : mix(accent, '#000000', 0.12);
+  const ink = '#111111';
+  const POS = '#1B8A4B';
   return {
-    // marque Corridor
-    brume: t.brume, forest: t.forest, leaf, sun,
-    sunInk: inkOn(sun, t.forest, '#FFFFFF'),
-    sunSoft: mix(sun, '#FFFFFF', 0.86),
-    sunLine: mix(sun, '#FFFFFF', 0.4),
-    // surfaces
-    bg: t.brume,
+    // couleur de marque
+    brume: PAGE_BG, forest: ink, leaf: accent, sun: brand,
+    sunInk: inkOn(brand),
+    sunSoft: mix(brand, '#FFFFFF', 0.88),
+    sunLine: mix(brand, '#FFFFFF', 0.5),
+    // surfaces : blanc pur partout
+    bg: PAGE_BG,
     surface: '#FFFFFF',
-    field: mix(t.brume, '#FFFFFF', 0.55),
-    sunken: mix(t.brume, '#FFFFFF', 0.35),
-    beige: mix(t.brume, t.forest, 0.07),
+    field: '#F2F2F2',
+    sunken: '#F7F7F7',
+    beige: '#F3F3F3',
     // texte
-    ink: t.ink,
-    text: mix(t.ink, '#FFFFFF', 0.12),
-    muted: t.soft,
-    faint: mix(t.soft, '#FFFFFF', 0.45),
+    ink,
+    text: '#222222',
+    muted: '#6B6B6B',
+    faint: '#9A9A9A',
     // traits
-    line: t.fil,
-    lineStrong: mix(t.fil, t.forest, 0.14),
-    // accent de la société (texte, icônes, liens, interrupteurs) = feuille
-    accent: leaf,
-    accentInk: inkOn(leaf, t.ink, '#FFFFFF'),
-    accentSoft: mix(leaf, '#FFFFFF', 0.88),
-    accentLine: mix(leaf, '#FFFFFF', 0.62),
-    accentDeep: t.forest,
-    // sélection (chips actives, onglet actif) = forêt
-    dark: t.forest,
+    line: '#E8E8E8',
+    lineStrong: '#D6D6D6',
+    // accent de la société (liens, icônes, interrupteurs)
+    accent,
+    accentInk: inkOn(accent),
+    accentSoft: mix(accent, '#FFFFFF', 0.9),
+    accentLine: mix(accent, '#FFFFFF', 0.65),
+    accentDeep: accentText,
+    // sélection (chips actives, boutons sombres) = noir doux
+    dark: ink,
     darkInk: '#FFFFFF',
     // sémantique
-    pos: leaf, posBg: mix(leaf, '#FFFFFF', 0.86),
+    pos: POS, posBg: '#E8F5ED',
     danger: '#C62828', dangerBg: '#FDECEA', dangerLine: '#F5C6C2',
     warn: '#A86400', warnBg: '#FFF4DB', warnLine: '#F1D79A',
     info: '#1D5FD1', infoBg: '#E8F0FE', infoLine: '#C3D6FA',
     violet: '#6941C6', violetBg: '#F4EDFF',
     white: '#FFFFFF',
-    scrim: alpha(t.forest, 0.5),
+    scrim: 'rgba(17,17,17,0.5)',
   };
 }
 
-/** Rayons Corridor : cartes 28 (lg), bouton principal 20 (md), pastilles = pilule. */
-export const R = { xs: 10, sm: 14, md: 20, lg: 28, xl: 32, pill: 999 } as const;
+export type UIColors = ReturnType<typeof buildColors>;
 
-const SHADOW_RGB = '14,59,45';
+/** Rayons : champs 14 (md), cartes 20 (lg), boutons et pastilles = pilule. */
+export const R = { xs: 8, sm: 12, md: 14, lg: 20, xl: 28, pill: 999 } as const;
+
+const SHADOW_RGB = '0,0,0';
 export const S: Record<'none' | 'sm' | 'md' | 'lg', ViewStyle> = {
   none: {},
   sm: Platform.select<ViewStyle>({
-    web: { boxShadow: `0 1px 2px rgba(${SHADOW_RGB},0.06)` } as any,
-    default: { shadowColor: '#0E3B2D', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 },
+    web: { boxShadow: `0 1px 2px rgba(${SHADOW_RGB},0.05)` } as any,
+    default: { shadowColor: '#000000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3, elevation: 1 },
   }) as ViewStyle,
   md: Platform.select<ViewStyle>({
-    web: { boxShadow: `0 8px 24px rgba(${SHADOW_RGB},0.08)` } as any,
-    default: { shadowColor: '#0E3B2D', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 24, elevation: 4 },
+    web: { boxShadow: `0 8px 24px rgba(${SHADOW_RGB},0.07)` } as any,
+    default: { shadowColor: '#000000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 24, elevation: 4 },
   }) as ViewStyle,
   lg: Platform.select<ViewStyle>({
-    web: { boxShadow: `0 16px 40px rgba(${SHADOW_RGB},0.16)` } as any,
-    default: { shadowColor: '#0E3B2D', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.16, shadowRadius: 40, elevation: 10 },
+    web: { boxShadow: `0 16px 40px rgba(${SHADOW_RGB},0.12)` } as any,
+    default: { shadowColor: '#000000', shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.16, shadowRadius: 40, elevation: 10 },
   }) as ViewStyle,
 };
 
@@ -158,18 +162,19 @@ export type TextVariant =
   | 'display' | 'hero' | 'title' | 'heading' | 'subheading' | 'body' | 'bodyStrong'
   | 'caption' | 'label' | 'overline' | 'button';
 
+/** Échelle de la maquette « Envoyer de l'argent » : titre 28 gras, libellé 16 normal, valeur 24 gras, bouton 18 semi-gras. */
 export const T: Record<TextVariant, TextStyle> = {
-  display:    { fontFamily: SANS,  fontSize: 40, lineHeight: 46, fontWeight: '800', letterSpacing: -1.2 },
-  hero:       { fontFamily: SERIF, fontSize: 31, lineHeight: 37, fontWeight: '700', letterSpacing: -0.4 },
-  title:      { fontFamily: SERIF, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.2 },
-  heading:    { fontFamily: SANS,  fontSize: 18, lineHeight: 24, fontWeight: '800', letterSpacing: -0.2 },
-  subheading: { fontFamily: SANS,  fontSize: 16, lineHeight: 22, fontWeight: '700', letterSpacing: -0.1 },
-  body:       { fontFamily: SANS,  fontSize: 15, lineHeight: 22, fontWeight: '500' },
-  bodyStrong: { fontFamily: SANS,  fontSize: 15, lineHeight: 22, fontWeight: '700' },
-  caption:    { fontFamily: SANS,  fontSize: 13, lineHeight: 18, fontWeight: '500' },
-  label:      { fontFamily: SANS,  fontSize: 12, lineHeight: 16, fontWeight: '700', letterSpacing: 0.1 },
-  overline:   { fontFamily: SANS,  fontSize: 13, lineHeight: 18, fontWeight: '700', letterSpacing: 0 },
-  button:     { fontFamily: SANS,  fontSize: 17, lineHeight: 22, fontWeight: '800', letterSpacing: -0.1 },
+  display:    { fontFamily: SANS, fontSize: 46, lineHeight: 52, fontWeight: '800', letterSpacing: -1.5 },
+  hero:       { fontFamily: SANS, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.6 },
+  title:      { fontFamily: SANS, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4 },
+  heading:    { fontFamily: SANS, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.2 },
+  subheading: { fontFamily: SANS, fontSize: 17, lineHeight: 23, fontWeight: '600', letterSpacing: -0.1 },
+  body:       { fontFamily: SANS, fontSize: 16, lineHeight: 23, fontWeight: '400' },
+  bodyStrong: { fontFamily: SANS, fontSize: 16, lineHeight: 23, fontWeight: '600' },
+  caption:    { fontFamily: SANS, fontSize: 14, lineHeight: 19, fontWeight: '400' },
+  label:      { fontFamily: SANS, fontSize: 13, lineHeight: 17, fontWeight: '600', letterSpacing: 0 },
+  overline:   { fontFamily: SANS, fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0 },
+  button:     { fontFamily: SANS, fontSize: 18, lineHeight: 23, fontWeight: '600', letterSpacing: -0.1 },
 };
 
 /** Espace à réserver en bas des écrans pour la barre d'onglets (80 + marge). */
@@ -178,7 +183,7 @@ export const TAB_SPACE = 104;
 export function useUI() {
   const { branding } = useTenant();
   // garde les anciens écrans (brand()/themed()) synchronisés pendant la migration
-  setBrandPrimary(branding.primaryColor);
+  setBrandPrimary(effectivePrimary(branding.primaryColor));
   const C = useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
   return {
     C, R, S, T,

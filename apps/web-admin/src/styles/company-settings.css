@@ -60,3 +60,16 @@
     flex: 0 0 auto;
   }
 }
+
+/* Lot 11 — comptes marchands */
+.cs-sub {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: var(--ink-2, inherit);
+}
+.cs-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}

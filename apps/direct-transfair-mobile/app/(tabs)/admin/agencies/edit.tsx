@@ -215,7 +215,7 @@ function PickerModal({ visible, onClose, title, data, onSelect, renderItem }: {
               value={q} onChangeText={setQ}
               placeholder="Rechercher…" placeholderTextColor={T.inkMuted} autoFocus
             />
-            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="close" size={14} color={T.inkMuted} /></TouchableOpacity>}
+            {!!q && <TouchableOpacity onPress={() => setQ("")}><Ionicons name="remove-circle" size={14} color={T.inkMuted} /></TouchableOpacity>}
           </View>
           <FlatList
             data={filtered}

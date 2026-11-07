@@ -3,9 +3,10 @@
 
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import type { WebRole } from '@direct-transfair/shared';
+import { can, type WebRole } from '@direct-transfair/shared';
 import { CONSOLE_EMBEDDED, CONSOLE_NAME, CONSOLE_URL } from '../config';
 import { ROLE_LABEL, navFor } from '../navigation';
+import { useKycPending } from '../lib/useKycPending';
 import { useCurrentUser, useAuth } from '../providers/AuthProvider';
 import { UnreadProvider, useUnread } from '../providers/UnreadProvider';
 import { useTenant } from '../providers/TenantProvider';
@@ -44,7 +45,8 @@ function ShellFrame() {
   }, [open]);
 
   const role = user.role as WebRole;
-  const items = navFor(role);
+  const items = navFor(role, user);
+  const kycPending = useKycPending(role === 'SUPER_ADMIN' || role === 'COMPANY_ADMIN' || can(user, 'KYC_REVIEW'));
   const name = displayName(user.firstName, user.lastName, user.email);
 
   return (
@@ -107,6 +109,11 @@ function ShellFrame() {
                     {item.id === 'notifications' && unread > 0 ? (
                       <b className="nav-badge" title={`${unread} non lue${unread > 1 ? 's' : ''}`}>
                         {unread > 99 ? '99+' : unread}
+                      </b>
+                    ) : null}
+                    {item.id === 'kyc' && kycPending > 0 ? (
+                      <b className="nav-badge" title={`${kycPending} dossier${kycPending > 1 ? 's' : ''} à valider`}>
+                        {kycPending > 99 ? '99+' : kycPending}
                       </b>
                     ) : null}
                   </NavLink>

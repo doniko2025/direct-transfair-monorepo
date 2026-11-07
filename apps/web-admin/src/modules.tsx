@@ -11,7 +11,7 @@
 // =========================================================
 
 import type { ReactElement } from 'react';
-import { WEB_ROLES, type WebRole } from '@direct-transfair/shared';
+import { WEB_ROLES, type SupportPermission, type WebRole } from '@direct-transfair/shared';
 import AccountPage from './pages/AccountPage';
 import AgenciesPage from './pages/agencies/AgenciesPage';
 import AgencyCreatePage from './pages/agencies/AgencyCreatePage';
@@ -32,6 +32,10 @@ import SendCashPage from './pages/desk/SendCashPage';
 import WithdrawPage from './pages/desk/WithdrawPage';
 import FeeSchedulePage from './pages/fees/FeeSchedulePage';
 import FeesPage from './pages/fees/FeesPage';
+import CounterCustomerPage from './pages/kyc/CounterCustomerPage';
+import CounterCustomersPage from './pages/kyc/CounterCustomersPage';
+import KycQueuePage from './pages/kyc/KycQueuePage';
+import KycReviewPage from './pages/kyc/KycReviewPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import PortalDomainsPage from './pages/portal-domains/PortalDomainsPage';
 import RateHistoryPage from './pages/rates/RateHistoryPage';
@@ -42,6 +46,17 @@ import TransactionDetailPage from './pages/transactions/TransactionDetailPage';
 import TransactionsPage from './pages/transactions/TransactionsPage';
 import TreasuryPage from './pages/treasury/TreasuryPage';
 import WalletLedgerPage from './pages/treasury/WalletLedgerPage';
+import MerchantPage from './pages/merchants/MerchantPage';
+import MerchantPayoutsPage from './pages/merchants/MerchantPayoutsPage';
+import MerchantsPage from './pages/merchants/MerchantsPage';
+import SupportClientPage from './pages/support/SupportClientPage';
+import SupportClientsPage from './pages/support/SupportClientsPage';
+import SupportRefundsPage from './pages/support/SupportRefundsPage';
+import SupportStaffPage from './pages/support/SupportStaffPage';
+import SupportTicketPage from './pages/support/SupportTicketPage';
+import SupportTicketsPage from './pages/support/SupportTicketsPage';
+import SupportTransactionPage from './pages/support/SupportTransactionPage';
+import SupportTransactionsPage from './pages/support/SupportTransactionsPage';
 import UserCreatePage from './pages/users/UserCreatePage';
 import UserDetailPage from './pages/users/UserDetailPage';
 import UsersPage from './pages/users/UsersPage';
@@ -53,10 +68,16 @@ const COMPANY: readonly WebRole[] = ['COMPANY_ADMIN'];
 const AGENT: readonly WebRole[] = ['AGENT'];
 const COMPANY_AGENT: readonly WebRole[] = ['COMPANY_ADMIN', 'AGENT'];
 const ADMINS: readonly WebRole[] = ['SUPER_ADMIN', 'COMPANY_ADMIN'];
+const OPS: readonly WebRole[] = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'AGENT'];
+const SUPPORT: readonly WebRole[] = ['SUPPORT'];
+const COMPANY_SUPPORT: readonly WebRole[] = ['COMPANY_ADMIN', 'SUPPORT'];
+const ADMINS_SUPPORT: readonly WebRole[] = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'SUPPORT'];
 
 export interface ModuleRoute {
   path: string;
   roles: readonly WebRole[];
+  /** Lot 9 — délégation(s) requise(s) pour le service client (une seule suffit) ; les administrateurs passent toujours. */
+  permission?: readonly SupportPermission[];
   element: ReactElement;
 }
 
@@ -82,8 +103,8 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/users/:id', roles: ADMINS, element: <UserDetailPage /> },
 
   // Phase 2c — Transactions (super admin : tout ; admin de société : sa société ; agent : ses opérations)
-  { path: '/transactions', roles: WEB_ROLES, element: <TransactionsPage /> },
-  { path: '/transactions/:id', roles: WEB_ROLES, element: <TransactionDetailPage /> },
+  { path: '/transactions', roles: OPS, element: <TransactionsPage /> },
+  { path: '/transactions/:id', roles: OPS, element: <TransactionDetailPage /> },
 
   // Phase 2d — Trésorerie (super admin : ses soldes et les virements à valider ; admin de société : sa société)
   { path: '/treasury', roles: ADMINS, element: <TreasuryPage /> },
@@ -116,6 +137,26 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/wallet-clients', roles: COMPANY, element: <WalletClientsPage /> },
   { path: '/wallet-clients/:id', roles: COMPANY, element: <WalletClientDetailPage /> },
   { path: '/agency-withdrawals', roles: COMPANY, element: <AgencyWithdrawalsPage /> },
+
+  // Lot 7 — Vérification d'identité des clients wallet (file de validation + dossier)
+  // Lot 9 — ouverte au service client selon les délégations KYC_REVIEW (dossiers) et KYC_COUNTER (clients de passage)
+  { path: '/kyc', roles: ADMINS_SUPPORT, permission: ['KYC_REVIEW'], element: <KycQueuePage /> },
+  { path: '/kyc/passage', roles: ADMINS_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomersPage /> },
+  { path: '/kyc/passage/:id', roles: ADMINS_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomerPage /> },
+  { path: '/kyc/:userId', roles: ADMINS_SUPPORT, permission: ['KYC_REVIEW'], element: <KycReviewPage /> },
+
+  // Lot 9 — Service client : comptes et délégations (admin de société), puis l'espace du support
+  { path: '/merchants', roles: COMPANY, element: <MerchantsPage /> },
+  { path: '/merchants/payouts', roles: COMPANY, element: <MerchantPayoutsPage /> },
+  { path: '/merchants/:userId', roles: COMPANY, element: <MerchantPage /> },
+  { path: '/support-staff', roles: COMPANY, element: <SupportStaffPage /> },
+  { path: '/support/clients', roles: SUPPORT, permission: ['CLIENTS_VIEW'], element: <SupportClientsPage /> },
+  { path: '/support/clients/:id', roles: SUPPORT, permission: ['CLIENTS_VIEW'], element: <SupportClientPage /> },
+  { path: '/support/transactions', roles: SUPPORT, permission: ['TRANSACTIONS_VIEW'], element: <SupportTransactionsPage /> },
+  { path: '/support/transactions/:id', roles: COMPANY_SUPPORT, permission: ['TRANSACTIONS_VIEW'], element: <SupportTransactionPage /> },
+  { path: '/support/tickets', roles: COMPANY_SUPPORT, permission: ['TICKETS_HANDLE'], element: <SupportTicketsPage /> },
+  { path: '/support/tickets/:id', roles: COMPANY_SUPPORT, permission: ['TICKETS_HANDLE'], element: <SupportTicketPage /> },
+  { path: '/support/refunds', roles: COMPANY_SUPPORT, permission: ['REFUNDS_DECIDE', 'DISPUTES_RESOLVE'], element: <SupportRefundsPage /> },
 
   // Phase 3e — Commissions (admin de société : société et agences ; agent : les siennes) et Réglages (répartition des frais)
   { path: '/commissions', roles: COMPANY_AGENT, element: <CommissionsPage /> },

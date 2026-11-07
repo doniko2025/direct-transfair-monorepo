@@ -832,7 +832,7 @@ export default function SuperAdminDashboard() {
                     style={s.clearBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="close" size={12} color={T.inkMuted} />
+                    <Ionicons name="remove-circle" size={12} color={T.inkMuted} />
                   </TouchableOpacity>
                 )}
               </View>

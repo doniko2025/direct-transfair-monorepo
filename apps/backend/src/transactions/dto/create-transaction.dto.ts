@@ -23,6 +23,7 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { PayoutMethod } from '@prisma/client';
@@ -64,6 +65,46 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   senderPhone?: string;
+
+  // ✅ lot 7 — envoi au comptoir : pièce d'identité de l'expéditeur de passage, contrôlée par l'agent (obligatoire côté service
+  // quand l'envoi est payé depuis la caisse d'une agence — voir kyc/counter-rules.ts).
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  senderBirthDate?: string; // AAAA-MM-JJ
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(30)
+  senderIdType?: string; // NATIONAL_ID | PASSPORT | DRIVER_LICENSE | RESIDENCE_PERMIT
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  senderIdNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  senderIdExpiry?: string; // AAAA-MM-JJ
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  senderIdCountry?: string;
+
+  // ✅ lot 8 — photo de la pièce du client de passage (base64, JPEG/PNG/WEBP, 6 Mo au plus une fois décodée).
+  // Obligatoire au 1er envoi de cette personne (et quand la pièce est renouvelée) ; le verso l'est pour une carte d'identité,
+  // un permis ou un titre de séjour. Les envois suivants avec la même pièce n'ont pas à la rephotographier.
+  @IsOptional()
+  @IsString()
+  @MaxLength(8_400_000)
+  senderIdFront?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8_400_000)
+  senderIdBack?: string;
 
   // ✅ v1.1 — FIX : motif du transfert (voir changelog en tête de fichier)
   @IsOptional()

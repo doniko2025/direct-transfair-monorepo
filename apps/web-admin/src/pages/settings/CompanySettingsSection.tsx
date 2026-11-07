@@ -73,6 +73,11 @@ export default function CompanySettingsSection({ settings, log, onChanged }: Pro
     patch({ rechargeMethods: form.rechargeMethods.includes(key) ? form.rechargeMethods.filter((k) => k !== key) : [...form.rechargeMethods, key] });
   };
 
+  const toggleMerchantPayout = (key: string) => {
+    patch({ merchantPayoutMethods: form.merchantPayoutMethods.includes(key) ? form.merchantPayoutMethods.filter((k) => k !== key) : [...form.merchantPayoutMethods, key] });
+  };
+  const currencies = Object.keys(form.merchantMinPayment);
+
   async function save() {
     if (!form || hasErrors || !dirty) return;
     setBusy(true);
@@ -174,6 +179,145 @@ export default function CompanySettingsSection({ settings, log, onChanged }: Pro
           Aucun prestataire de paiement réel n’est encore raccordé : les recharges sont des simulations. Avant l’ouverture au public, fermez-les ici ou
           sur le serveur (BLOCK_SIMULATED_RECHARGES=true).
         </Notice>
+      </Card>
+
+      <Card className="cs-card">
+        {sectionTitle('cs-merchant', 'Comptes marchands', 'Encaissement des commerçants par numéro de téléphone ou par QR code, et retrait de leur solde.')}
+        <label className="check-row">
+          <input type="checkbox" checked={form.merchantEnabled} disabled={!editable || busy} onChange={(e) => patch({ merchantEnabled: e.target.checked })} />
+          <span>
+            Comptes marchands ouverts
+            <small>{form.merchantEnabled ? 'Les clients peuvent s’inscrire en marchand ou le devenir, et encaisser.' : 'Fermé : plus d’inscription marchand ni de nouvel encaissement.'}</small>
+          </span>
+        </label>
+        <div className="cs-grid">
+          <Field
+            id="cs-m-fee"
+            label="Commission d’encaissement (%)"
+            inputMode="decimal"
+            autoComplete="off"
+            value={form.merchantPaymentFeePct}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantPaymentFeePct: e.target.value })}
+            error={errors.merchantPaymentFeePct}
+            hint="Retenue sur le marchand à chaque paiement reçu, versée à la société."
+          />
+          <Field
+            id="cs-m-qr"
+            label="Validité d’un QR code (minutes)"
+            inputMode="numeric"
+            autoComplete="off"
+            value={form.merchantQrMinutes}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantQrMinutes: e.target.value })}
+            error={errors.merchantQrMinutes}
+          />
+          <Field
+            id="cs-m-phone"
+            label="Validité d’une demande par téléphone (minutes)"
+            inputMode="numeric"
+            autoComplete="off"
+            value={form.merchantPhoneMinutes}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantPhoneMinutes: e.target.value })}
+            error={errors.merchantPhoneMinutes}
+          />
+        </div>
+
+        <h4 className="cs-sub">Plafonds par paiement</h4>
+        <div className="cs-grid">
+          {currencies.map((cur) => (
+            <div key={`pay-${cur}`} className="cs-pair">
+              <Field
+                id={`cs-m-min-${cur}`}
+                label={`Minimum ${cur}`}
+                inputMode="decimal"
+                autoComplete="off"
+                value={form.merchantMinPayment[cur] ?? ''}
+                disabled={!editable || busy}
+                onChange={(e) => patch({ merchantMinPayment: { ...form.merchantMinPayment, [cur]: e.target.value } })}
+                error={errors[`merchantMinPayment.${cur}`]}
+              />
+              <Field
+                id={`cs-m-max-${cur}`}
+                label={`Maximum ${cur}`}
+                inputMode="decimal"
+                autoComplete="off"
+                value={form.merchantMaxPayment[cur] ?? ''}
+                disabled={!editable || busy}
+                onChange={(e) => patch({ merchantMaxPayment: { ...form.merchantMaxPayment, [cur]: e.target.value } })}
+                error={errors[`merchantMaxPayment.${cur}`]}
+              />
+            </div>
+          ))}
+        </div>
+
+        <h4 className="cs-sub">Retraits des marchands</h4>
+        <ul className="cs-checks" aria-label="Moyens de retrait ouverts">
+          {[
+            { key: 'ORANGE_MONEY', label: 'Orange Money', hint: 'Vers le numéro choisi à l’inscription' },
+            { key: 'BANK_TRANSFER', label: 'Virement bancaire', hint: 'Vers le compte bancaire (IBAN) du marchand' },
+          ].map((m) => (
+            <li key={m.key}>
+              <label className="check-row">
+                <input type="checkbox" checked={form.merchantPayoutMethods.includes(m.key)} disabled={!editable || busy} onChange={() => toggleMerchantPayout(m.key)} />
+                <span>
+                  {m.label}
+                  <small>{form.merchantPayoutMethods.includes(m.key) ? m.hint : 'Fermé'}</small>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        <div className="cs-grid">
+          <Field
+            id="cs-m-payfee"
+            label="Commission de retrait (%)"
+            inputMode="decimal"
+            autoComplete="off"
+            value={form.merchantPayoutFeePct}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantPayoutFeePct: e.target.value })}
+            error={errors.merchantPayoutFeePct}
+            hint="Prélevée seulement si le retrait est payé."
+          />
+          <Field
+            id="cs-m-cool"
+            label="Délai de sécurité (heures)"
+            inputMode="numeric"
+            autoComplete="off"
+            value={form.merchantCooldownHours}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantCooldownHours: e.target.value })}
+            error={errors.merchantCooldownHours}
+            hint="Aucun retrait pendant ce délai après un changement de numéro Orange Money ou de compte bancaire. 0 = aucun délai."
+          />
+          {currencies.map((cur) => (
+            <Field
+              key={`payout-${cur}`}
+              id={`cs-m-minpayout-${cur}`}
+              label={`Retrait minimum ${cur}`}
+              inputMode="decimal"
+              autoComplete="off"
+              value={form.merchantMinPayout[cur] ?? ''}
+              disabled={!editable || busy}
+              onChange={(e) => patch({ merchantMinPayout: { ...form.merchantMinPayout, [cur]: e.target.value } })}
+              error={errors[`merchantMinPayout.${cur}`]}
+            />
+          ))}
+        </div>
+        <label className="check-row">
+          <input
+            type="checkbox"
+            checked={form.merchantPayoutMode === 'SANDBOX'}
+            disabled={!editable || busy}
+            onChange={(e) => patch({ merchantPayoutMode: e.target.checked ? 'SANDBOX' : 'MANUAL' })}
+          />
+          <span>
+            Mode essai : retraits payés automatiquement
+            <small>Pour tester sans argent réel. Sans effet en production : les retraits y restent à confirmer à la main (Marchands › Retraits).</small>
+          </span>
+        </label>
       </Card>
 
       <Card className="cs-card">

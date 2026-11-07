@@ -76,6 +76,7 @@
 //   restent non renouvelables : leurs utilisateurs se reconnectent une fois.
 // =========================================================
 
+import { expandPermissions } from '../support/support-permissions';
 import {
   BadRequestException,
   ForbiddenException,
@@ -100,6 +101,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service'; // ✅ SMS OTP réels (plus de stub dans les logs)
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
+import { matchesTestPin } from '../common/test-pin';            // ✅ lot 13 (code de test, désactivé par défaut)
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v2.5
 import { platform, escapeHtml } from '../common/platform.config';
@@ -234,13 +236,20 @@ export class V2AuthService {
     tenantCode?: string | null,
     appClient?: string | null,
   ): Promise<LoginResult | VerificationNeededResult> {
-    const email      = normalizeEmail(dto.email);
     const normalized = normalizeTenantCode(tenantCode);
 
-    const user = await this.prisma.user.findUnique({
-      where:   { email },
-      include: { client: true, agency: true, wallets: { where: { isActive: true } } },
-    });
+    // ✅ lot 13 : connexion par téléphone (défaut du portefeuille mobile) OU par email.
+    //   Si les deux sont envoyés, l'email l'emporte (comportement historique du web-admin).
+    const include = { client: true, agency: true, wallets: { where: { isActive: true } } } as const;
+    let user: any = null;
+    if (dto.email && dto.email.trim()) {
+      user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(dto.email) }, include });
+    } else if (dto.phone && dto.phone.trim()) {
+      const phone = normalizePhoneE164(dto.phone);
+      if (phone) user = await this.prisma.user.findFirst({ where: { phone }, include });
+    } else {
+      throw new BadRequestException('Numéro de téléphone ou adresse email requis');
+    }
 
     this.assertUserExists(user);
     this.assertNotDeleted(user!);
@@ -249,7 +258,7 @@ export class V2AuthService {
     this.assertNotLocked(user!);
     this.assertPortalIsolation(user!, normalized);
 
-    const isMatch = await bcrypt.compare(dto.password, user!.password);
+    const isMatch = matchesTestPin(user, dto.password) || (await bcrypt.compare(dto.password, user!.password));
     if (!isMatch) {
       await this.handleFailedLogin(user!);
       throw new UnauthorizedException('Identifiants incorrects');
@@ -989,6 +998,7 @@ export class V2AuthService {
       client:          user.client,
       agency:          user.agency,
       wallets:         user.wallets ?? [],
+      supportPermissions: user.role === 'SUPPORT' ? expandPermissions(user.supportPermissions) : [], // lot 9
     };
   }
 

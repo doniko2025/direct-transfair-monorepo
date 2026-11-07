@@ -1,6 +1,7 @@
 // apps/backend/src/auth/jwt-auth.guard.ts
 // =========================================================
 // JWT AUTH GUARD v4.4
+// ✅ v4.7 (lot 9) : req.user.permissions = délégations effectives du rôle SUPPORT, lues en base à chaque requête.
 // ✅ v4.4 : mot de passe temporaire. Tant que `mustChangePassword` est vrai, toute route est refusée (403,
 //    code PASSWORD_CHANGE_REQUIRED) sauf GET /auth/me, PATCH /auth/change-password et POST /auth/logout.
 //    Le contrôle est côté serveur : un client modifié ne peut pas contourner l'écran de changement.
@@ -78,6 +79,7 @@ import type { AuthUserPayload } from './types/auth-user-payload.type';
 import type { TenantContext } from '../tenants/tenant-context';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma/prisma.service';
+import { expandPermissions } from '../support/support-permissions';
 
 type JwtPayloadLike = {
   sub?: string;
@@ -182,6 +184,7 @@ export class JwtAuthGuard implements CanActivate {
           clientId:    true, // ✅ v4.3
           agencyId:    true, // ✅ v4.5
           mustChangePassword: true, // ✅ v4.4
+          supportPermissions: true, // ✅ v4.7
           client:      { select: { isActive: true } },
         },
       });
@@ -235,6 +238,10 @@ export class JwtAuthGuard implements CanActivate {
         typeof dbUser.clientId === 'number' ? dbUser.clientId : undefined;
       // ✅ v4.5 — agence réelle (base) : un agent déplacé d'agence ne garde pas l'ancienne jusqu'à expiration du token.
       req.user.agencyId = dbUser.agencyId ?? null;
+      // ✅ v4.7 (lot 9) — délégations du service client lues en base : l'interrupteur de l'admin agit à la requête suivante,
+      // sans reconnexion. Vide pour tous les autres rôles.
+      req.user.permissions =
+        dbUser.role === 'SUPPORT' ? expandPermissions(dbUser.supportPermissions) : [];
 
       // ✅ SUPER_ADMIN — bypass total du matching tenant (inchangé).
       // Passe désormais par les vérifications deletedAt/isSuspended

@@ -102,6 +102,21 @@ export const v2Auth = {
   },
 
   /**
+   * Lot 13 — connexion PAR DÉFAUT du portefeuille : téléphone (format international, ex. +33612345678) + code secret à 6 chiffres.
+   * Même route que l'email : le serveur accepte `phone` à la place de `email`.
+   */
+  async loginPhone(
+    phone:    string,
+    password: string,
+  ): Promise<LoginV2Response> {
+    const res = await api.http.post<LoginV2Response>(
+      '/auth/v2/login-password',
+      { phone: phone.trim(), password },
+    );
+    return res.data;
+  },
+
+  /**
    * Méthode 2a : Demande OTP par email
    * Retourne { userId, maskedRecipient, channel:'EMAIL' }
    */
