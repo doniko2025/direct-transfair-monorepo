@@ -2,6 +2,7 @@
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TRANSACTIONS HISTORY v8.1 — Direct Transf'air
+// ✅ v8.2 : séparation garantie aussi sur l'appareil (services/accountSpace.ts) ; état vide marchand → « Encaisser un paiement ».
 // ✅ v8.1 : COMPTES SÉPARÉS — l'écran suit le compte actif (client / marchand) : il demande au serveur uniquement les opérations de ce compte
 //    (space=client|merchant) et se recrée à chaque bascule, donc jamais de données de l'autre compte (ni en cache à l'écran).
 // ✅ v8.0 : 🔥 REFONTE TOTALE en thème clair (maquette « Flash Transfert / Activité ») : gros titre,
@@ -20,6 +21,7 @@ import React, { useMemo, useState } from "react";
 import { View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
+import { filterBySpace } from "../../../services/accountSpace";
 import { useAuth } from "../../../providers/AuthProvider";
 import { useAccountSpace, type AccountSpace } from "../../../hooks/useAccountSpace";
 import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
@@ -55,7 +57,8 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
   // Chargement borné (20 s) : squelettes → erreur claire + « Réessayer »
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
     const res = await api.getTransactions({ limit: 200, space });
-    const list: any[] = Array.isArray(res) ? res : [];
+    // Double sécurité : même si le serveur renvoyait tout (ancienne version), on ne garde que les opérations du compte affiché.
+    const list: any[] = filterBySpace(Array.isArray(res) ? res : [], space, user?.id);
     return [...list].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   });
   const transactions = data ?? [];
@@ -137,8 +140,8 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
               icon="receipt-outline"
               title={q || filter !== "ALL" ? "Aucun résultat" : "Aucune transaction"}
               message={q || filter !== "ALL" ? "Modifie ta recherche ou ton filtre." : isMerchant ? "Les paiements encaissés par ta boutique apparaîtront ici." : "Tes envois et réceptions apparaîtront ici."}
-              actionLabel={q || filter !== "ALL" || isMerchant ? undefined : "Envoyer de l'argent"}
-              onAction={() => router.push("/(tabs)/send")}
+              actionLabel={q || filter !== "ALL" ? undefined : isMerchant ? "Encaisser un paiement" : "Envoyer de l'argent"}
+              onAction={() => router.push(isMerchant ? "/merchant/payment" : "/(tabs)/send")}
             />
           )}
         </View>

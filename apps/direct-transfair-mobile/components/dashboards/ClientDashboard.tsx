@@ -16,6 +16,7 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
+import { filterBySpace } from "../../services/accountSpace";
 import { useLoader } from "../wallet/useLoader";
 import { toNum } from "../wallet/walletTheme";
 import { useKycStatus } from "../../hooks/useKycStatus";
@@ -51,7 +52,8 @@ export default function ClientDashboard() {
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
     const [, rawTxs] = await Promise.allSettled([refreshUser(), api.getTransactions({ limit: 10, space: "client" })]);
     if (rawTxs.status === "rejected") throw rawTxs.reason;
-    const safe = Array.isArray(rawTxs.value) ? rawTxs.value : [];
+    // Double sécurité : uniquement les opérations du compte client, même si le serveur renvoyait tout.
+    const safe = filterBySpace(Array.isArray(rawTxs.value) ? rawTxs.value : [], "client", user?.id);
     return [...safe].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 2);
   });
   const recent = data ?? [];

@@ -260,6 +260,7 @@
 //   champ dans le code actuel.
 // =========================================================
 
+import { parseSpace, spaceWhere } from './transactions.space';
 import {
   BadRequestException,
   ConflictException,
@@ -1908,16 +1909,8 @@ export class TransactionsService {
     // Comptes séparés : un client qui a aussi un compte marchand a DEUX historiques. « merchant » = encaissements reçus et retraits du
     // commerce ; « client » = tout le reste (ses envois, recharges, et ses propres paiements chez d'autres marchands).
     // Sans `space` : comportement d'origine (tout), pour ne rien casser côté portail et anciennes versions de l'application.
-    let where: Prisma.TransactionWhereInput = baseWhere;
-    if (user.role === 'USER' && (opts.space === 'merchant' || opts.space === 'client')) {
-      const merchantSide: Prisma.TransactionWhereInput = {
-        OR: [
-          { type: TransactionType.MERCHANT_PAYMENT, recipientId: userId },
-          { type: TransactionType.MERCHANT_PAYOUT, senderId: userId },
-        ],
-      };
-      where = { AND: [baseWhere, opts.space === 'merchant' ? merchantSide : { NOT: merchantSide }] };
-    }
+    const spaceCond = user.role === 'USER' ? spaceWhere(parseSpace(opts.space), userId) : null;
+    const where: Prisma.TransactionWhereInput = spaceCond ? { AND: [baseWhere, spaceCond] } : baseWhere;
     // ✅ v4.28 : pagination bornée (défaut 200, max 500)
     const limit = Math.min(Math.max(Math.floor(opts.limit ?? 200) || 200, 1), 500);
     const page = Math.max(Math.floor(opts.page ?? 1) || 1, 1);
