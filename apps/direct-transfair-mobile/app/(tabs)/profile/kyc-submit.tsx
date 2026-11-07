@@ -6,9 +6,11 @@
 //   address  : justificatif de domicile ou relevé bancaire
 // Les photos sont compressées par l'appareil (qualité 0,5) et envoyées en base64 ; le serveur contrôle le format réel
 // (JPEG, PNG, WebP, PDF), la taille et le nombre d'envois. Une page à la fois, rien n'est envoyé avant « Envoyer ».
+// ✅ v1.1 : si la pièce demandée est déjà VALIDÉE (et pas à renouveler), on n'ouvre plus le formulaire : message clair et retour
+//    au dossier (avant, le client pouvait rouvrir le selfie déjà validé et se heurter à un refus du serveur).
 // =========================================================
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Image, Platform, Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -17,7 +19,7 @@ import { serverMessage } from "../../../components/auth/authErrors";
 import { Button, Card, Field, NavBar, Notice, Screen, UText, useUI } from "../../../components/ui";
 import {
   KYC_ADDRESS_TYPES, KYC_DOC_LABEL, KYC_IDENTITY_TYPES, KYC_NEEDS_BACK, KYC_NEEDS_EXPIRY, isFutureOrToday, kycApi, maskFrenchDate, parseFrenchDate,
-  type KycDocType,
+  type KycDocType, type KycStatusView,
 } from "../../../services/kyc";
 
 type Kind = "identity" | "selfie" | "address";
@@ -157,6 +159,18 @@ export default function KycSubmitScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Pièce déjà validée ? (on ne laisse pas renvoyer ce que le serveur refuserait)
+  const [known, setKnown] = useState<KycStatusView | null>(null);
+  useEffect(() => {
+    let alive = true;
+    kycApi.me().then((d) => { if (alive) setKnown(d); }).catch(() => { /* sans incidence : le serveur reste juge */ });
+    return () => { alive = false; };
+  }, []);
+  const types: readonly string[] = kind === "selfie" ? ["SELFIE"] : kind === "address" ? KYC_ADDRESS_TYPES : KYC_IDENTITY_TYPES;
+  const approved = known?.documents.find((d) => types.includes(d.type) && d.status === "APPROVED") ?? null;
+  const renewable = kind === "identity" && !!known?.expiry && !known.expiry.expired; // pièce qui expire bientôt : renouvellement permis
+  const alreadyValid = !!approved && !renewable && !(approved.expiryDate && !isFutureOrToday(approved.expiryDate));
+
   const needsBack = !!type && KYC_NEEDS_BACK.includes(type);
   const needsExpiry = !!type && KYC_NEEDS_EXPIRY.includes(type);
   const needsNumber = kind === "identity";
@@ -194,6 +208,19 @@ export default function KycSubmitScreen() {
   };
 
   const canSubmit = problems.length === 0;
+
+  if (alreadyValid) {
+    return (
+      <Screen header={<NavBar title={title} subtitle="Étape de vérification" onBack={() => router.back()} />}>
+        <Notice tone="pos" icon="checkmark-circle" title="Déjà validé">
+          {kind === "selfie" ? "Votre selfie est déjà validé." : kind === "address" ? "Votre justificatif de domicile est déjà validé." : "Votre pièce d'identité est déjà validée."} Il n'y a rien à renvoyer.
+        </Notice>
+        <View style={{ marginTop: 16 }}>
+          <Button label="Retour à mon dossier" kind="soft" onPress={() => router.replace("/(tabs)/profile/kyc" as any)} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen

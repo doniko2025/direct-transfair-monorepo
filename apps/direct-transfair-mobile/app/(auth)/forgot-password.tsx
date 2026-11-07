@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/app/(auth)/forgot-password.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// FORGOT PASSWORD v2.0 — Direct Transf'air
+// FORGOT PASSWORD v2.2 — Direct Transf'air
+// ✅ v2.2 : paramètre `channel` (EMAIL | PHONE) venu de la fenêtre « Code oublié ? » de la connexion : l'envoi se fait directement sur ce canal.
 // ✅ v2.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; aucune logique modifiée.
 // ✅ v2.0 : REFONTE COMPLÈTE de la réinitialisation — Thierno Doniko (Grand Chef).
 //   🔥 CAUSE RACINE (lecture du code, auth.service.ts) : l'ancien écran appelait d'abord
@@ -22,7 +23,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '../../components/ui/Icon';
 
 import { api } from '../../services/api';
@@ -49,6 +50,9 @@ const RESEND_SECONDS = 45;   // aligné sur l'intervalle minimal imposé par le 
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
+  // Canal choisi dans la fenêtre « Code oublié ? » de la connexion (EMAIL | PHONE) : envoi direct sur ce canal si le compte le permet.
+  const { channel: wanted } = useLocalSearchParams<{ channel?: string }>();
+  const preset: Channel | null = wanted === 'EMAIL' || wanted === 'PHONE' ? wanted : null;
   const P = useAuthPalette();
   const { status: serverStatus, retry: retryServer } = useServerStatus();
 
@@ -93,7 +97,9 @@ export default function ForgotPasswordScreen() {
       setUserId(res.userId);
       setChannels(list);
       setChannel(list[0]!);
-      if (list.length > 1) {
+      if (preset && list.includes(preset)) {
+        await sendCode(res.userId, preset);
+      } else if (list.length > 1) {
         setNotice(null);
         setStep('CHANNEL');
       } else {

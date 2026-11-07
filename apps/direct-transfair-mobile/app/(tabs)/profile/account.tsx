@@ -18,11 +18,13 @@ import { Alert, Platform, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import { useAuth } from "../../../providers/AuthProvider";
+import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
 import { Avatar, Button, Group, ListRow, NavBar, Pill, Screen, UText } from "../../../components/ui";
 
 export default function AccountMenuScreen() {
   const router = useRouter();
   const { user, logout } = useAuth();
+  const photo = useProfilePhoto();
 
   const handleLogout = async () => {
     if (Platform.OS === "web") {
@@ -52,7 +54,7 @@ export default function AccountMenuScreen() {
     >
       {/* Identité */}
       <View style={{ alignItems: "center", paddingVertical: 10, gap: 10 }}>
-        <Avatar name={fullName} size={84} />
+        <Avatar name={fullName} size={84} uri={photo} />
         <UText v="title" align="center" numberOfLines={1}>{fullName}</UText>
         <Pill label={`#${user?.id?.slice(0, 10).toUpperCase() ?? "—"}`} tone="neutral" style={{ alignSelf: "center" }} />
       </View>

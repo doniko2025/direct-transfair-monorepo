@@ -1,7 +1,7 @@
 // apps/direct-transfair-mobile/components/home/HomeParts.tsx
 // =========================================================
 // ACCUEIL CLIENT / MARCHAND — briques communes (Lot 12)
-// Fond blanc pur, solde en grand avec le drapeau de la devise, « Masquer / Afficher le solde » (mémorisé),
+// Fond blanc pur, solde en grand ; la devise (drapeau) et « Masquer / Afficher » sont en face du montant (mémorisé),
 // barre du haut (salutation, scan QR, notifications). Police Inter, tailles de la maquette.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
@@ -14,6 +14,7 @@ import { Text } from "../ui/Text";
 import { Bone, UText, useUI } from "../ui";
 import { countriesList } from "../../data/countries";
 import { formatMoney } from "../wallet/walletTheme";
+import { useUnreadNotifications } from "../../hooks/useUnreadNotifications";
 
 // ─── Solde masqué (mémorisé sur l'appareil) ──────────────
 const HIDE_KEY = "dt.balanceHidden";
@@ -58,26 +59,39 @@ export function CurrencyFlag({ currency, countryName, size = 28 }: { currency: s
 }
 
 // ─── Barre du haut ───────────────────────────────────────
-function RoundButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: boolean }) {
+/** `badge` : nombre (pastille avec le chiffre, « 99+ » au-delà) ou `true` (simple point). 0 / faux : rien. */
+function RoundButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: boolean | number }) {
   const { C } = useUI();
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={typeof badge === "number" && badge > 0 ? `${label} : ${badge} non lue${badge > 1 ? "s" : ""}` : label}
       hitSlop={6}
       style={({ pressed }) => ({ width: 42, height: 42, borderRadius: 21, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}
     >
       <Ionicons name={icon as any} size={21} color={C.ink} />
-      {badge ? <View style={{ position: "absolute", top: 9, right: 10, width: 9, height: 9, borderRadius: 5, backgroundColor: C.danger, borderWidth: 1.5, borderColor: C.beige }} /> : null}
+      {typeof badge === "number" && badge > 0 ? (
+        <View
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={{ position: "absolute", top: -3, right: -3, minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, backgroundColor: C.danger, borderWidth: 2, borderColor: C.surface, alignItems: "center", justifyContent: "center" }}
+        >
+          <Text allowFontScaling={false} numberOfLines={1} style={{ fontSize: 11, lineHeight: 14, fontWeight: "800", color: "#FFFFFF", includeFontPadding: false }}>{badge > 99 ? "99+" : String(badge)}</Text>
+        </View>
+      ) : badge === true ? (
+        <View style={{ position: "absolute", top: 9, right: 10, width: 9, height: 9, borderRadius: 5, backgroundColor: C.danger, borderWidth: 1.5, borderColor: C.beige }} />
+      ) : null}
     </Pressable>
   );
 }
 
 export function HomeTopBar({
   greeting, name, onScan, onBell, unread,
-}: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean }) {
+}: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean | number }) {
   const { C } = useUI();
+  // Nombre de notifications non lues, lu auprès du serveur (une valeur passée en `unread` reste prioritaire).
+  const unreadCount = useUnreadNotifications();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 12, gap: 10 }}>
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -86,12 +100,17 @@ export function HomeTopBar({
         </Text>
       </View>
       <RoundButton icon="scan-outline" label="Payer avec un QR code" onPress={onScan} />
-      <RoundButton icon="notifications-outline" label="Notifications" onPress={onBell} badge={unread} />
+      <RoundButton icon="notifications-outline" label="Notifications" onPress={onBell} badge={unread ?? unreadCount} />
     </View>
   );
 }
 
 // ─── Solde en grand ──────────────────────────────────────
+/**
+ * Montant à gauche ; à droite, EN FACE du montant : la devise (drapeau + code) et le bouton « Masquer / Afficher ».
+ * Le montant rétrécit tout seul (adjustsFontSizeToFit) pour que la colonne de droite reste toujours visible,
+ * quelle que soit la largeur de l'écran ou la taille du solde.
+ */
 export function BalanceBlock({
   label, amount, currency, countryName, hidden, onToggle, loading, children,
 }: {
@@ -102,32 +121,43 @@ export function BalanceBlock({
   return (
     <View style={{ paddingTop: 56 }}>
       <UText v="body" color={C.muted}>{label}</UText>
-      {loading ? (
-        <Bone width={230} height={50} radius={12} style={{ marginTop: 10 }} />
-      ) : (
-        <Text
-          accessibilityLabel={hidden ? "Solde masqué" : `Solde ${formatMoney(amount, currency)} ${currency}`}
-          adjustsFontSizeToFit
-          numberOfLines={1}
-          style={{ fontSize: 46, lineHeight: 54, fontWeight: "800", letterSpacing: -1.5, color: C.ink, marginTop: 6 }}
-        >
-          {hidden ? "••••••" : formatMoney(amount, currency)}
-        </Text>
-      )}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 6 }}>
-        <CurrencyFlag currency={currency} countryName={countryName} />
-        <Text style={{ fontSize: 22, fontWeight: "700", color: "#444444" }}>{currency}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          {loading ? (
+            <Bone width={200} height={50} radius={12} />
+          ) : (
+            <Text
+              accessibilityLabel={hidden ? "Solde masqué" : `Solde ${formatMoney(amount, currency)} ${currency}`}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
+              numberOfLines={1}
+              style={{ fontSize: 44, lineHeight: 54, fontWeight: "800", letterSpacing: -1.5, color: C.ink }}
+            >
+              {hidden ? "••••••" : formatMoney(amount, currency)}
+            </Text>
+          )}
+        </View>
+
+        <View style={{ alignItems: "center", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <CurrencyFlag currency={currency} countryName={countryName} size={26} />
+            <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "700", color: "#444444" }}>{currency}</Text>
+          </View>
+          <Pressable
+            onPress={onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={hidden ? "Afficher le solde" : "Masquer le solde"}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 17,
+              backgroundColor: C.beige, opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={18} color="#444444" />
+            <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "600", color: "#444444" }}>{hidden ? "Afficher" : "Masquer"}</Text>
+          </Pressable>
+        </View>
       </View>
-      <Pressable
-        onPress={onToggle}
-        accessibilityRole="button"
-        accessibilityLabel={hidden ? "Afficher le solde" : "Masquer le solde"}
-        hitSlop={10}
-        style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 16, alignSelf: "flex-start" }}
-      >
-        <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={22} color="#444444" />
-        <Text style={{ fontSize: 16, fontWeight: "600", color: "#444444" }}>{hidden ? "Afficher le solde" : "Masquer le solde"}</Text>
-      </Pressable>
       {children}
     </View>
   );

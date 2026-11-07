@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// ACCUEIL CLIENT v13.0 — Lot 12 : « le plus simple possible »
+// ACCUEIL CLIENT v13.1 — Lot 12 : « le plus simple possible »
+// ✅ v13.1 : COMPTES SÉPARÉS — « Activité récente » ne liste que les opérations du compte client (space=client) ; bascule
+//    « Compte client | Compte marchand » affichée sous la barre du haut quand la personne a aussi un compte marchand.
 // Fond blanc pur. Salutation + scan QR + notifications, solde en grand avec le drapeau de la devise et
 // « Masquer / Afficher le solde », deux boutons seulement (Envoyer de l'argent / Recharger) et les deux dernières
 // opérations. Le calculateur « couloir », les raccourcis (taux, QR…) et le bouton flottant ont quitté l'accueil :
@@ -18,6 +20,7 @@ import { useLoader } from "../wallet/useLoader";
 import { toNum } from "../wallet/walletTheme";
 import { useKycStatus } from "../../hooks/useKycStatus";
 import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
+import { SpaceSwitch } from "../home/SpaceSwitch";
 import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow } from "../ui";
 
 const COUNTRY_CURRENCY: Record<string, string> = {
@@ -46,7 +49,7 @@ export default function ClientDashboard() {
   const available = balance - reserved;
 
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
-    const [, rawTxs] = await Promise.allSettled([refreshUser(), api.getTransactions({ limit: 10 })]);
+    const [, rawTxs] = await Promise.allSettled([refreshUser(), api.getTransactions({ limit: 10, space: "client" })]);
     if (rawTxs.status === "rejected") throw rawTxs.reason;
     const safe = Array.isArray(rawTxs.value) ? rawTxs.value : [];
     return [...safe].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 2);
@@ -61,6 +64,8 @@ export default function ClientDashboard() {
         onScan={() => router.push("/pay/scan" as any)}
         onBell={() => router.push("/(tabs)/notifications")}
       />
+
+      <SpaceSwitch style={{ marginTop: 4 }} />
 
       <BalanceBlock
         label="Solde disponible"
@@ -80,12 +85,14 @@ export default function ClientDashboard() {
         <Notice
           tone={kyc.status === "PENDING" ? "info" : "warn"}
           style={{ marginTop: 22 }}
-          action={kyc.status === "PENDING" ? undefined : "Vérifier mon identité"}
+          action={kyc.status === "PENDING" ? undefined : kyc.status === "PARTIAL" ? "Compléter mon dossier" : "Vérifier mon identité"}
           onAction={kyc.status === "PENDING" ? undefined : () => router.push("/(tabs)/profile/kyc" as any)}
         >
           {kyc.status === "PENDING"
-            ? "Votre pièce d'identité est en cours de vérification."
-            : "Vérifiez votre identité pour envoyer de l'argent."}
+            ? "Votre dossier d'identité est en cours de vérification."
+            : kyc.status === "PARTIAL"
+              ? "Il reste une pièce à envoyer pour finaliser la vérification de votre identité."
+              : "Vérifiez votre identité pour envoyer de l'argent."}
         </Notice>
       ) : null}
 

@@ -77,12 +77,12 @@ const ACTOR_SELECT = {
 type Actor = Prisma.UserGetPayload<{ select: typeof ACTOR_SELECT }>;
 
 type RequestWithParties = PaymentRequest & {
-  payee: { id: string; firstName: string | null; lastName: string | null; email: string; merchantProfile: { businessName: string; city: string | null; category: string | null; status: string } | null };
+  payee: { id: string; firstName: string | null; lastName: string | null; email: string; merchantProfile: { id: string; businessName: string; city: string | null; category: string | null; status: string } | null };
   payer: { id: string; firstName: string | null; lastName: string | null; email: string } | null;
 };
 
 const INCLUDE = {
-  payee: { select: { id: true, firstName: true, lastName: true, email: true, merchantProfile: { select: { businessName: true, city: true, category: true, status: true } } } },
+  payee: { select: { id: true, firstName: true, lastName: true, email: true, merchantProfile: { select: { id: true, businessName: true, city: true, category: true, status: true } } } },
   payer: { select: { id: true, firstName: true, lastName: true, email: true } },
 } satisfies Prisma.PaymentRequestInclude;
 
@@ -393,9 +393,13 @@ export class MerchantPaymentsService {
 
     const currency = r.currency;
     const amount = Number(r.amount);
+    // Le payeur paie avec son portefeuille PERSONNEL ; l'encaissement va sur le portefeuille PROPRE du commerce (jamais sur celui
+    // du client, même si c'est la même personne).
+    const merchantProfileId = r.payee.merchantProfile?.id;
+    if (!merchantProfileId) throw new ConflictException('Ce marchand ne peut plus encaisser pour le moment.');
     const [payerWallet, merchantWallet, companyWallet] = await Promise.all([
       this.wallets.getOrCreateWallet({ userId: payer.id, currency }),
-      this.wallets.getOrCreateWallet({ userId: r.payeeId, currency }),
+      this.wallets.getOrCreateWallet({ merchantId: merchantProfileId, currency }),
       Number(r.fee) > 0 ? this.wallets.getOrCreateWallet({ clientId: r.clientId, currency }) : Promise.resolve(null),
     ]);
 

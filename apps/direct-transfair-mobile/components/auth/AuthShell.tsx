@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.7 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.8 — Direct Transf'air
+// ✅ v2.8 : LOGO DE LA SOCIÉTÉ — quand la société (ou la plateforme) a un logo, il est affiché en grand, centré, sans tuile ni nom (comme une
+//    maquette « logo + retour ») ; sans logo ou si l'image ne charge pas : ancienne marque (tuile + nom). Nouvelle prop `trust` (défaut vrai) :
+//    `trust={false}` masque la ligne « Connexion chiffrée · Vos données restent protégées » (écran de connexion).
 // ✅ v2.7 : CARTE PLUS COMPACTE + FOND ANIMÉ (téléphone). Carte blanche resserrée (marges, titre 22, espace sous le titre), logo un peu plus petit,
 //    slogan de la société sous son nom, fond vivant (<AuthBackdrop /> : halos qui dérivent + corridor en pointillés avec étincelles), onde douce qui
 //    pulse autour du logo, entrée en cascade (marque → carte → pied de page). Tout en pilote natif ; « Réduire les animations » = rendu statique.
@@ -35,7 +38,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated, Easing, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
+  Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '../ui/Icon';
@@ -64,6 +67,8 @@ type Props = {
   headerRight?: React.ReactNode;
   /** Bandeau sombre avec la marque + carte flottante (ancien style). Lot 12 : désactivé par défaut — fond blanc pur. */
   hero?: boolean;
+  /** Ligne rassurante « Connexion chiffrée · Vos données restent protégées » sous le formulaire (défaut : affichée). */
+  trust?: boolean;
   children: React.ReactNode;
 };
 
@@ -91,9 +96,12 @@ export function useAuthPalette(): AuthPalette {
 }
 
 export default function AuthShell({
-  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, children,
+  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, trust = true, children,
 }: Props) {
   const { branding } = useTenant();
+  // Logo de la société : si l'image ne charge pas, on retombe sur la marque (tuile + nom) tant que l'adresse ne change pas.
+  const [logoFailed, setLogoFailed] = useState<string | null>(null);
+  const logo = branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) && branding.logoUrl !== logoFailed ? branding.logoUrl : null;
   const C = React.useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
   const insets = useSafeAreaInsets();
   const winW = useBrowserWidth();
@@ -258,10 +266,22 @@ export default function AuthShell({
 
           {/* ── Marque du tenant ── */}
           {wide && !onBack && headerRight ? <View style={s.floatRight}>{headerRight}</View> : null}
-          <View style={[s.brand, compact && { marginTop: 10 }, wide && !onBack && { marginTop: 0 }]}>
-            <TenantMark size={34} radius={11} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
-            <Text style={[s.brandName, { color: C.ink }]} numberOfLines={1}>{branding.name}</Text>
-          </View>
+          {logo ? (
+            <View style={[s.logoWrap, compact && { marginTop: 6 }, wide && !onBack && { marginTop: 0 }]}>
+              <Image
+                source={{ uri: logo }}
+                onError={() => setLogoFailed(logo)}
+                style={{ width: '100%', maxWidth: 240, height: compact ? 44 : 58 }}
+                resizeMode="contain"
+                accessibilityLabel={branding.name}
+              />
+            </View>
+          ) : (
+            <View style={[s.brand, compact && { marginTop: 10 }, wide && !onBack && { marginTop: 0 }]}>
+              <TenantMark size={34} radius={11} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
+              <Text style={[s.brandName, { color: C.ink }]} numberOfLines={1}>{branding.name}</Text>
+            </View>
+          )}
 
           {/* ── Titre ── */}
           <Text style={[s.title, { color: C.ink }, wide && { fontSize: 30, lineHeight: 36, marginTop: 18 }]} accessibilityRole="header">{title}</Text>
@@ -269,10 +289,12 @@ export default function AuthShell({
 
           <View style={[s.body, wide && { marginTop: 22, flexGrow: 0 }]}>{children}</View>
 
-          <View style={s.trust}>
-            <Ionicons name="lock-closed" size={12} color={N.muted} />
-            <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
-          </View>
+          {trust ? (
+            <View style={s.trust}>
+              <Ionicons name="lock-closed" size={12} color={N.muted} />
+              <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
+            </View>
+          ) : null}
           {footer}
           {below ? <View style={s.below}>{below}</View> : null}
         </View>
@@ -298,6 +320,7 @@ const s = StyleSheet.create({
   backBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
   backSpacer: { width: 44, height: 44 },
 
+  logoWrap: { alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22 },
   brandName: { fontFamily: FONT.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
 

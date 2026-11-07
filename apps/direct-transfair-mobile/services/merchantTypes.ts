@@ -43,9 +43,17 @@ export interface MerchantMe {
   availablePayoutMethods: PayoutMethod[];
   settings: MerchantSettingsPublic;
   categories: string[];
+  /** Devise du compte (GNF, XOF, EUR…). Détermine si Orange Money est proposé. */
+  currency?: string;
+  /** Orange Money n'existe que pour les comptes GNF / XOF. */
+  orangeMoneyAllowed?: boolean;
+  /** Le numéro Orange enregistré ne correspond plus à la devise du compte : il faut le corriger. */
+  orangeNeedsUpdate?: boolean;
 }
 
 export interface MerchantSummary {
+  /** Solde du COMMERCE (portefeuille propre, distinct de celui du client). Vide = rien encaissé = 0. */
+  wallets: { currency: string; balance: number; reserved: number; available: number }[];
   today: { currency: string; count: number; gross: number; net: number }[];
   total: { currency: string; count: number; net: number }[];
   pendingRequests: number;

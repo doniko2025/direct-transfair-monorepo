@@ -20,6 +20,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="locations" />
       <Stack.Screen name="devices" />
       <Stack.Screen name="security" />
+      <Stack.Screen name="delete-account" />
       {/* ✅ AJOUT : écran préférences de notifications */}
       <Stack.Screen name="notifications" />
       <Stack.Screen name="support" />

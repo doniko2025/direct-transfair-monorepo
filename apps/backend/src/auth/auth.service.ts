@@ -913,7 +913,7 @@ export class AuthService {
         address: dto.businessAddress,
         city: dto.businessCity ?? dto.city,
         orangeMoneyPhone: dto.orangeMoneyPhone,
-      });
+      }, primaryCurrency); // le numéro Orange Money doit correspondre à la devise du compte (GNF → Guinée ; EUR → pas d'Orange Money)
       const stored = await this.prisma.companySetting.findUnique({ where: { clientId: client.id }, select: { data: true } });
       if (!mergeSettings(stored?.data).merchant.enabled) {
         throw new ForbiddenException("Les comptes marchands ne sont pas ouverts pour l'instant.");

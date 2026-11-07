@@ -4,6 +4,10 @@ import {
   assertBic,
   assertIban,
   assertOrangePhone,
+  assertOrangePhoneForCurrency,
+  availablePayoutMethods as availableMethodsFor,
+  isOrangePhoneConsistent,
+  normalizeProfileInput as normalizeInput,
   assertValidAmount,
   assertWithinBounds,
   availablePayoutMethods,
@@ -125,6 +129,39 @@ describe('merchant-rules', () => {
       expect(() => assertOrangePhone('0620000000')).toThrow(BadRequestException);
       expect(() => assertOrangePhone('')).toThrow(BadRequestException);
       expect(() => assertOrangePhone(undefined)).toThrow(BadRequestException);
+    });
+    it('numéro Orange ↔ devise : GNF = mobile guinéen, XOF = zone CFA, EUR = jamais d\'Orange Money', () => {
+      expect(assertOrangePhoneForCurrency('+224 620 00 00 00', 'GNF')).toBe('+224620000000');
+      // un compte guinéen n'accepte ni un numéro étranger, ni un fixe guinéen
+      expect(() => assertOrangePhoneForCurrency('+33 7 51 24 47 22', 'GNF')).toThrow(/guinéen/);
+      expect(() => assertOrangePhoneForCurrency('+224 320 00 00 00', 'GNF')).toThrow(/guinéen/);
+      expect(() => assertOrangePhoneForCurrency('+221 77 000 00 01', 'GNF')).toThrow(/guinéen/);
+      // XOF : zone CFA seulement (pas la Guinée)
+      expect(assertOrangePhoneForCurrency('+221 77 000 00 01', 'XOF')).toBe('+221770000001');
+      expect(() => assertOrangePhoneForCurrency('+224 620 00 00 00', 'XOF')).toThrow(/zone CFA/);
+      // EUR : le blocage demandé — un compte en euros ne peut pas enregistrer un numéro Orange guinéen
+      try { assertOrangePhoneForCurrency('+224 620 00 00 00', 'EUR'); fail('doit refuser'); } catch (e: any) {
+        expect(e).toBeInstanceOf(BadRequestException);
+        expect(e.getResponse()).toMatchObject({ code: 'ORANGE_NOT_AVAILABLE' });
+      }
+      expect(() => assertOrangePhoneForCurrency('+33 7 51 24 47 22', 'EUR')).toThrow(BadRequestException);
+    });
+    it('fiche du commerce : numéro exigé en GNF / XOF, refusé en EUR (la fiche naît alors sans Orange Money)', () => {
+      expect(normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+224 620 00 00 01' }, 'GNF').orangeMoneyPhone).toBe('+224620000001');
+      expect(() => normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+33751244722' }, 'GNF')).toThrow(/guinéen/);
+      expect(() => normalizeInput({ businessName: 'Chez Awa' }, 'GNF')).toThrow(BadRequestException);
+      expect(() => normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' }, 'EUR')).toThrow(/n'est pas disponible/);
+      expect(normalizeInput({ businessName: 'Chez Awa' }, 'EUR').orangeMoneyPhone).toBeNull();
+      expect(normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '   ' }, 'EUR').orangeMoneyPhone).toBeNull();
+    });
+    it('anciens comptes : un numéro incohérent avec la devise n\'est plus proposé comme moyen de retrait', () => {
+      expect(isOrangePhoneConsistent('+224620000001', 'EUR')).toBe(false);
+      expect(isOrangePhoneConsistent('+224620000001', 'GNF')).toBe(true);
+      expect(isOrangePhoneConsistent(null, 'EUR')).toBe(true);
+      const profile = { orangeMoneyPhone: '+224620000001', bankIban: 'FR1420041010050500013M02606' };
+      expect(availableMethodsFor(['ORANGE_MONEY', 'BANK_TRANSFER'], profile, 'EUR')).toEqual(['BANK_TRANSFER']);
+      expect(availableMethodsFor(['ORANGE_MONEY', 'BANK_TRANSFER'], profile, 'GNF')).toEqual(['ORANGE_MONEY', 'BANK_TRANSFER']);
+      expect(availableMethodsFor(['ORANGE_MONEY'], profile)).toEqual(['ORANGE_MONEY']);
     });
     it('IBAN : clé de contrôle et longueur', () => {
       expect(assertIban('FR14 2004 1010 0505 0001 3M02 606')).toBe('FR1420041010050500013M02606');

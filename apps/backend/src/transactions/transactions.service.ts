@@ -28,6 +28,8 @@
 //         ne renvoie plus un 500 alors que l'argent a bougé (le client réessayait → double envoi) ;
 //    (9)  le montant reçu est arrondi à la devise de réception (65 595,7 XOF → 65 596) avant d'être stocké et crédité ;
 //    (12) journal d'audit : création d'envoi, dépôt, recharge d'agence, déclaration B2B, changement de statut (audit()).
+// ✅ v4.32 (comptes séparés) : findForUser(userId, { space: 'client' | 'merchant' }) — l'historique du compte marchand ne reprend plus les
+//    opérations du compte client, et inversement (GET /transactions?space=…).
 // ✅ v4.28 (audit sécurité) : findForUser() est PAGINÉ (take/skip). Avant, GET /transactions renvoyait tout l'historique
 //    d'un utilisateur en une seule requête (mémoire/latence croissantes, vecteur de déni de service). Défaut 200 lignes,
 //    plafond 500 ; la réponse reste un tableau (rétro-compatible mobile + web-admin). Auteur : Thierno Doniko (Grand Chef).
@@ -1900,9 +1902,22 @@ export class TransactionsService {
 
   async findForUser(
     userId: string,
-    opts: { page?: number; limit?: number } = {},
+    opts: { page?: number; limit?: number; space?: string } = {},
   ): Promise<any[]> {
-    const { where } = await this.buildUserTransactionFilter(userId);
+    const { where: baseWhere, user } = await this.buildUserTransactionFilter(userId);
+    // Comptes séparés : un client qui a aussi un compte marchand a DEUX historiques. « merchant » = encaissements reçus et retraits du
+    // commerce ; « client » = tout le reste (ses envois, recharges, et ses propres paiements chez d'autres marchands).
+    // Sans `space` : comportement d'origine (tout), pour ne rien casser côté portail et anciennes versions de l'application.
+    let where: Prisma.TransactionWhereInput = baseWhere;
+    if (user.role === 'USER' && (opts.space === 'merchant' || opts.space === 'client')) {
+      const merchantSide: Prisma.TransactionWhereInput = {
+        OR: [
+          { type: TransactionType.MERCHANT_PAYMENT, recipientId: userId },
+          { type: TransactionType.MERCHANT_PAYOUT, senderId: userId },
+        ],
+      };
+      where = { AND: [baseWhere, opts.space === 'merchant' ? merchantSide : { NOT: merchantSide }] };
+    }
     // ✅ v4.28 : pagination bornée (défaut 200, max 500)
     const limit = Math.min(Math.max(Math.floor(opts.limit ?? 200) || 200, 1), 500);
     const page = Math.max(Math.floor(opts.page ?? 1) || 1, 1);

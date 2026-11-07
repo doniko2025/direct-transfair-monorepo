@@ -18,6 +18,7 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
 import { Text } from "../../components/ui/Text";
+import { fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 function CategoryChips({ value, onChange, options }: { value: string | null; onChange: (v: string) => void; options: readonly string[] }) {
   const { C, R } = useUI();
@@ -97,9 +98,14 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "pos" | "danger"; text: string } | null>(null);
 
-  const wantsPhone = phone.trim().length > 0;
+  const currency = me.currency ?? "XOF";
+  const orangeAllowed = me.orangeMoneyAllowed ?? isOrangeMoneyCurrency(currency);
+  const dialCountry = currency === "GNF" ? findCountry("Guinée") ?? country : country;
+  const fullPhone = `${dialCountry.dial}${normalizeNationalNumber(phone)}`;
+  const wantsPhone = orangeAllowed && phone.trim().length > 0;
   const wantsBank = bankEnabled && iban.trim().length > 0;
-  const phoneError = showErrors && wantsPhone ? validatePhone(phone) : null;
+  const phoneProblem = (): string | null => (wantsPhone ? validatePhone(phone) ?? validateOrangeFor(fullPhone, currency) : null);
+  const phoneError = showErrors ? phoneProblem() : null;
   const holderError = showErrors && wantsBank && holder.trim().length < 2 ? "Saisissez le titulaire du compte." : null;
   const nothing = !wantsPhone && !wantsBank;
 
@@ -107,12 +113,12 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
     setShowErrors(true);
     setMsg(null);
     if (nothing || pin.length !== 6) return;
-    if ((wantsPhone && validatePhone(phone)) || (wantsBank && holder.trim().length < 2)) return;
+    if (phoneProblem() || (wantsBank && holder.trim().length < 2)) return;
     setBusy(true);
     try {
       await api.changeMerchantDestination({
         pin,
-        ...(wantsPhone ? { orangeMoneyPhone: `${country.dial}${normalizeNationalNumber(phone)}` } : {}),
+        ...(wantsPhone ? { orangeMoneyPhone: fullPhone } : {}),
         ...(wantsBank ? { bankHolderName: holder.trim(), bankIban: iban.replace(/\s+/g, ""), ...(bic.trim() ? { bankBic: bic.trim() } : {}) } : {}),
       });
       setOpen(false);
@@ -132,8 +138,19 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
   return (
     <Card pad={20}>
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
-      <UText v="caption" tone="muted">Orange Money</UText>
-      <UText v="bodyStrong" style={{ marginBottom: 12 }}>{profile.orangeMoneyMasked}</UText>
+      {me.orangeNeedsUpdate && (
+        <Notice tone="warn" style={{ marginBottom: 14 }}>
+          Votre numéro Orange Money ne correspond pas à la devise de votre compte ({currency}). Enregistrez un numéro valide pour pouvoir retirer vos gains{orangeAllowed ? "" : " — ou utilisez un compte bancaire (IBAN)"}.
+        </Notice>
+      )}
+      {orangeAllowed ? (
+        <>
+          <UText v="caption" tone="muted">Orange Money</UText>
+          <UText v="bodyStrong" style={{ marginBottom: 12 }}>{profile.orangeMoneyMasked}</UText>
+        </>
+      ) : (
+        <Notice tone="info" style={{ marginBottom: 14 }}>{ORANGE_NOT_AVAILABLE_TEXT(currency)}</Notice>
+      )}
       {bankEnabled && (
         <>
           <UText v="caption" tone="muted">Compte bancaire (virement)</UText>
@@ -151,15 +168,17 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
           <Notice tone="warn" style={{ marginBottom: 16 }}>
             Pour votre sécurité, votre code secret est demandé et les retraits sont suspendus {me.settings.payoutCooldownHours} h après le changement.
           </Notice>
-          <PhoneField
-            country={country}
-            onCountryChange={setCountry}
-            value={phone}
-            onChangeText={setPhone}
-            error={phoneError}
-            hint="Nouveau numéro Orange Money (laisser vide pour le conserver)."
-            accent={C.accent}
-          />
+          {orangeAllowed && (
+            <PhoneField
+              country={dialCountry}
+              onCountryChange={(c) => { if (!fixedDialFor(currency) || c.dial === fixedDialFor(currency)) setCountry(c); }}
+              value={phone}
+              onChangeText={setPhone}
+              error={phoneError}
+              hint={`Nouveau numéro Orange Money (laisser vide pour le conserver). ${orangeHintFor(currency)}`}
+              accent={C.accent}
+            />
+          )}
           {bankEnabled && (
             <>
               <Field label="Titulaire du compte bancaire" icon="person-outline" value={holder} onChangeText={setHolder} autoCapitalize="words" error={holderError} />
@@ -167,7 +186,7 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
               <Field label="BIC (facultatif)" icon="card-outline" value={bic} onChangeText={(t) => setBic(t.toUpperCase())} autoCapitalize="characters" maxLength={11} />
             </>
           )}
-          <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && nothing ? "Renseignez au moins un nouveau numéro ou un IBAN." : null)} label="Code secret pour confirmer" />
+          <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && nothing ? (orangeAllowed ? "Renseignez au moins un nouveau numéro ou un IBAN." : "Renseignez votre IBAN.") : null)} label="Code secret pour confirmer" />
           <View style={{ gap: 10 }}>
             <Button label="Confirmer le changement" loading={busy} disabled={pin.length !== 6} onPress={submit} />
             <Button label="Annuler" kind="ghost" onPress={() => { setOpen(false); setPin(""); setShowErrors(false); }} />

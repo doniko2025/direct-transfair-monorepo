@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/components/dashboards/MerchantDashboard.tsx
 // =========================================================
-// ACCUEIL MARCHAND v1.0 — Lot 12
+// ACCUEIL MARCHAND v2.0 — compte SÉPARÉ du compte client
+// ✅ v2.0 : le solde affiché est celui du COMMERCE (portefeuille marchand propre, renvoyé par le résumé marchand) — plus jamais le solde du
+//    compte client. Un commerce neuf affiche 0 et aucun paiement. Bascule « Compte client | Compte marchand » sous la barre du haut.
+// (v1.0 — Lot 12)
 // Même mise en page que l'accueil client : fond blanc, solde marchand en grand avec le drapeau de la devise et
 // « Masquer / Afficher le solde », une ligne « Aujourd'hui », deux boutons (Encaisser / Retirer mes gains) et les
 // deux derniers paiements. Encaisser ouvre l'écran QR / téléphone Orange Money ; réglages et historique complet
@@ -18,6 +21,7 @@ import { useLoader } from "../wallet/useLoader";
 import { toNum } from "../wallet/walletTheme";
 import { Text } from "../ui/Text";
 import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
+import { SpaceSwitch } from "../home/SpaceSwitch";
 import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, UText, initials, useUI } from "../ui";
 import { PAYMENT_STATUS_LABEL, money, shortDateTime } from "../merchant/merchantUi";
 
@@ -53,19 +57,20 @@ export default function MerchantDashboard() {
   const [hidden, toggleHidden] = useBalanceHidden();
 
   const { data, status, error, refreshing, reload, refresh } = useLoader(async () => {
-    const [me, summary, wallets, payments] = await Promise.all([
+    const [me, summary, payments] = await Promise.all([
       api.getMerchantMe(),
       api.getMerchantSummary().catch(() => null),
-      api.getMyWallets().catch(() => []),
       api.listMerchantPayments({ page: 1 }).catch(() => null),
     ]);
     refreshUser().catch(() => { /* sans incidence */ });
-    return { me, summary, wallets, payments: (payments?.data ?? []).filter((p) => p.isMine === "PAYEE").slice(0, 2) };
+    return { me, summary, payments: (payments?.data ?? []).filter((p) => p.isMine === "PAYEE").slice(0, 2) };
   });
 
-  const currency = user?.primaryCurrency ?? data?.summary?.total[0]?.currency ?? data?.wallets[0]?.currency ?? "XOF";
-  const wallet = data?.wallets.find((w) => w.currency === currency) ?? data?.wallets[0];
-  const balance = toNum(wallet?.balance ?? 0) - toNum(wallet?.reservedBalance ?? 0);
+  // Solde du COMMERCE uniquement (portefeuille marchand). Aucun portefeuille = rien encaissé = 0.
+  const shopWallets = data?.summary?.wallets ?? [];
+  const currency = user?.primaryCurrency ?? shopWallets[0]?.currency ?? data?.summary?.total[0]?.currency ?? "XOF";
+  const wallet = shopWallets.find((w) => w.currency === currency) ?? shopWallets[0];
+  const balance = toNum(wallet?.available ?? 0);
   const today = data?.summary?.today.find((t) => t.currency === currency) ?? data?.summary?.today[0];
   const profile = data?.me.profile ?? null;
   const suspended = profile?.status === "SUSPENDED";
@@ -86,6 +91,8 @@ export default function MerchantDashboard() {
         onScan={() => router.push("/pay/scan" as any)}
         onBell={() => router.push("/(tabs)/notifications")}
       />
+
+      <SpaceSwitch style={{ marginTop: 4 }} />
 
       <BalanceBlock
         label="Solde marchand"

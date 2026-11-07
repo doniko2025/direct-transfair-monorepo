@@ -274,11 +274,13 @@ export class TransactionsController {
     @Req() req: AuthedRequest,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('space') space?: string,
   ) {
     const userId = this.getUserId(req);
     return this.transactionsService.findForUser(userId, {
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      space: space === 'merchant' || space === 'client' ? space : undefined,
     });
   }
 

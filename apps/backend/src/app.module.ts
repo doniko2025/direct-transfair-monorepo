@@ -84,6 +84,8 @@ import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // 
 import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
 import { SupportModule }            from './support/support.module'; // lot 9 — service client
 import { MerchantsModule }          from './merchants/merchants.module'; // lot 11 — comptes marchands
+import { ProfilePhotoModule }       from './profile-photo/profile-photo.module'; // photo de profil du client
+import { AccountDeletionModule }    from './account-deletion/account-deletion.module'; // suppression de son propre compte
 import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
 import { PortalDomainsModule }      from './portal-domains/portal-domains.module'; // ✅ v5.6
 import { CommissionRulesModule }    from './commission-rules/commission-rules.module'; // ✅ v5.2
@@ -140,6 +142,8 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     AgentsAdminModule, // ✅ v5.1 — /agents-admin/* (agents rattachés à une agence)
     SupportModule,     // lot 9 — /support-staff, /support-desk, /support/tickets
     MerchantsModule,   // lot 11 — /merchants, /merchant-payments, /merchants-admin
+    ProfilePhotoModule, // photo de profil — /profile-photo
+    AccountDeletionModule, // « Supprimer mon compte » — POST /account/delete
     FeeScheduleModule, // ✅ v5.2 — /fees-admin/rules, /fees-admin/quote (barème de frais)
     CommissionRulesModule, // ✅ v5.2 — /commission-rules (répartition des frais)
     AgentDeskModule,   // ✅ v5.3 — /agent-desk/* (guichet de l'agent)

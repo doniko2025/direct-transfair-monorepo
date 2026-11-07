@@ -33,7 +33,7 @@ import { AppState, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { api } from "../services/api";
 import {
-  getPlatformCode, isPlatformCode, getPlatformName, getPlatformTagline, getPlatformColors,
+  getPlatformCode, isPlatformCode, getPlatformName, getPlatformTagline, getPlatformColors, getPlatformLogoUrl,
   getFallbackSupportEmail, getFallbackSupportPhone, getLegalFallbacks, getPlatformHosts, getPortalBaseDomain,
 } from "../services/platformConfig";
 
@@ -79,7 +79,7 @@ const PF_LEGAL  = getLegalFallbacks();
 export const DEFAULT_BRANDING: TenantBranding = {
   code:           getPlatformCode(),
   name:           getPlatformName(),
-  logoUrl:        null,
+  logoUrl:        getPlatformLogoUrl(),
   primaryColor:   PF_COLORS.primary,
   secondaryColor: PF_COLORS.secondary,
   tagline:        getPlatformTagline(),
@@ -107,6 +107,8 @@ export const DEFAULT_BRANDING: TenantBranding = {
 };
 
 const STORAGE_KEY = "dt_tenant_branding_v1";
+/** Logo de la plateforme (société système), gardé sur l'appareil pour s'afficher dès l'ouverture, même hors ligne. */
+const PLATFORM_LOGO_KEY = "dt_platform_logo_v1";
 
 /** Délai minimal entre deux revalidations silencieuses au retour au premier plan. */
 const REVALIDATE_MIN_MS = 5 * 60 * 1000;
@@ -208,7 +210,32 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const codeRef      = useRef<string | null>(null);
   const brandingRef  = useRef<TenantBranding>(DEFAULT_BRANDING);
   const lastCheckRef = useRef(0);
+  const platformLogoRef = useRef<string | null>(getPlatformLogoUrl());
   useEffect(() => { brandingRef.current = branding; }, [branding]);
+
+  /**
+   * Logo de la plateforme : repris du cache puis relu auprès du serveur (fiche de la société système). N'agit que tant qu'aucune
+   * société n'est affichée ; ne touche ni au nom ni aux couleurs. Silencieux en cas d'échec (le monogramme de secours reste).
+   */
+  const loadPlatformLogo = useCallback(async () => {
+    const apply = (url: string | null) => {
+      if (!url || url === platformLogoRef.current && brandingRef.current.logoUrl === url) return;
+      platformLogoRef.current = url;
+      if (codeRef.current === null) setBranding((b) => ({ ...b, logoUrl: url }));
+    };
+    try {
+      const cached = await AsyncStorage.getItem(PLATFORM_LOGO_KEY);
+      if (cached && /^https?:\/\//i.test(cached)) apply(cached);
+    } catch { /* sans incidence */ }
+    try {
+      const data = await api.getClientPublicBranding(getPlatformCode());
+      const url = typeof data?.logoUrl === "string" && /^https?:\/\//i.test(data.logoUrl) ? data.logoUrl : null;
+      if (url) {
+        apply(url);
+        await AsyncStorage.setItem(PLATFORM_LOGO_KEY, url);
+      }
+    } catch { /* hors ligne ou société système sans logo : on garde l'affichage actuel */ }
+  }, []);
 
   /**
    * Relit la marque publique de la société auprès du serveur et met à jour l'écran + le cache si quelque chose a changé
@@ -268,7 +295,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
         }
 
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
+        if (!raw) { void loadPlatformLogo(); return; }
 
         const parsed = JSON.parse(raw) as TenantBranding;
         if (parsed?.code && !isPlatformCode(parsed.code)) {
@@ -286,6 +313,8 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
           await api.setTenant(enriched.code);
           // la marque en cache s'affiche tout de suite ; on la revérifie en arrière-plan (sans bloquer le démarrage)
           void revalidate(enriched.code);
+        } else {
+          void loadPlatformLogo();
         }
       } catch {
         // Silencieux — reste sur DEFAULT_BRANDING
@@ -295,7 +324,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     };
 
     void restore();
-  }, [revalidate]);
+  }, [revalidate, loadPlatformLogo]);
 
   const loadBranding = useCallback(async (code: string) => {
     const upper = code.trim().toUpperCase();
@@ -325,7 +354,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
   const clearBranding = useCallback(() => {
     codeRef.current = null;
-    setBranding(DEFAULT_BRANDING);
+    setBranding({ ...DEFAULT_BRANDING, logoUrl: platformLogoRef.current });
     setIsCustomBranding(false);
     void AsyncStorage.removeItem(STORAGE_KEY);
     void api.setTenant(getPlatformCode());

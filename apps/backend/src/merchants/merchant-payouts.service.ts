@@ -32,6 +32,8 @@ import {
   maskIban,
   maskPhone,
   payoutCooldown,
+  isOrangePhoneConsistent,
+  ORANGE_COUNTRY_MISMATCH_CODE,
 } from './merchant-rules';
 import { MerchantsService } from './merchants.service';
 import { PinVerifierService } from './pin-verifier.service';
@@ -94,7 +96,7 @@ export class MerchantPayoutsService {
     await this.pins.assertPin(user.id, dto.pin);
 
     const now = new Date();
-    const methods = availablePayoutMethods(settings.payoutMethods, profile);
+    const methods = availablePayoutMethods(settings.payoutMethods, profile, String(me.primaryCurrency));
     if (!methods.includes(dto.method)) {
       throw new BadRequestException(
         settings.payoutMethods.includes(dto.method) ? 'Renseignez cette destination (numéro Orange Money ou compte bancaire) dans vos réglages marchand.' : "Ce moyen de retrait n'est pas ouvert.",
@@ -119,9 +121,18 @@ export class MerchantPayoutsService {
     const pending = await this.prisma.merchantPayout.count({ where: { userId: user.id, status: 'PENDING' } });
     if (pending >= MAX_PENDING_PAYOUTS) throw new BadRequestException('Vous avez déjà plusieurs retraits en cours de traitement. Attendez leur confirmation.');
 
+    // Anciens comptes : un numéro Orange Money d'un autre pays que la devise (ex. numéro guinéen sur un compte en euros) ne reçoit plus de retrait.
+    if (dto.method === 'ORANGE_MONEY' && !isOrangePhoneConsistent(profile.orangeMoneyPhone, currency)) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: ORANGE_COUNTRY_MISMATCH_CODE,
+        message: `Le numéro Orange Money enregistré ne correspond pas à la devise de votre compte (${currency}). Modifiez la destination de vos retraits dans les réglages du commerce.`,
+      });
+    }
     const destination = dto.method === 'ORANGE_MONEY' ? profile.orangeMoneyPhone! : profile.bankIban!;
     const label = dto.method === 'ORANGE_MONEY' ? 'Orange Money' : (profile.bankHolderName ?? 'Compte bancaire');
-    const wallet = await this.wallets.getOrCreateWallet({ userId: user.id, currency });
+    // Le retrait se prend sur le portefeuille PROPRE du commerce (et non sur le portefeuille personnel du client).
+    const wallet = await this.wallets.getOrCreateWallet({ merchantId: profile.id, currency });
     const reference = generateReference('PAYOUT', now);
 
     const payout = await this.prisma.$transaction(async (tx) => {
@@ -288,7 +299,9 @@ export class MerchantPayoutsService {
     const before = await this.prisma.merchantPayout.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('Retrait introuvable.');
     if (before.status !== 'PENDING') throw new ConflictException('Ce retrait a déjà été traité.');
-    const wallet = await this.wallets.getOrCreateWallet({ userId: before.userId, currency: before.currency });
+    const merchant = await this.prisma.merchantProfile.findUnique({ where: { userId: before.userId }, select: { id: true } });
+    if (!merchant) throw new NotFoundException('Compte marchand introuvable.');
+    const wallet = await this.wallets.getOrCreateWallet({ merchantId: merchant.id, currency: before.currency });
     const payout = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.merchantPayout.updateMany({
         where: { id, status: 'PENDING' },

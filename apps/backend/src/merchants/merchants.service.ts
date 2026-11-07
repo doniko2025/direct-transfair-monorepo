@@ -1,7 +1,8 @@
 // apps/backend/src/merchants/merchants.service.ts
 // =========================================================
 // COMPTE MARCHAND (lot 11) — fiche du commerce, activation, destination des retraits, suivi côté administrateur.
-//   • Un marchand est un compte USER (accountType = MERCHANT) avec une fiche MerchantProfile et son portefeuille habituel.
+//   • Un marchand est un compte USER (accountType = MERCHANT) avec une fiche MerchantProfile et son portefeuille PROPRE (Wallet.merchantId),
+//     séparé du portefeuille personnel du client : l'espace marchand démarre à 0 et ne reprend ni le solde ni les opérations du client.
 //   • On devient marchand à l'inscription (choix « Je suis marchand ») ou plus tard (activation, avec le code secret).
 //   • Changer le numéro Orange Money ou le compte bancaire : code secret obligatoire, notification, délai de sécurité avant le prochain retrait.
 //   • L'administrateur de la société voit ses marchands, peut les suspendre (plus d'encaissement ni de retrait) et les réactiver.
@@ -21,6 +22,9 @@ import {
   assertBic,
   assertIban,
   assertOrangePhone,
+  assertOrangePhoneForCurrency,
+  isOrangeMoneyCurrency,
+  isOrangePhoneConsistent,
   availablePayoutMethods,
   DEFAULT_CATEGORIES,
   maskIban,
@@ -94,8 +98,8 @@ export class MerchantsService {
   // ── Création de la fiche ───────────────────────────────
 
   /** À appeler dans la transaction d'inscription (ou d'activation) : pose accountType = MERCHANT et crée la fiche. */
-  async createProfileInTx(tx: Prisma.TransactionClient, owner: { userId: string; clientId: number }, input: MerchantProfileInput) {
-    const data = normalizeProfileInput(input);
+  async createProfileInTx(tx: Prisma.TransactionClient, owner: { userId: string; clientId: number }, input: MerchantProfileInput, currency?: string) {
+    const data = normalizeProfileInput(input, currency);
     await tx.user.update({ where: { id: owner.userId }, data: { accountType: 'MERCHANT' } });
     return tx.merchantProfile.create({
       data: {
@@ -124,8 +128,11 @@ export class MerchantsService {
     if (existing) throw new ConflictException('Votre compte marchand existe déjà.');
 
     await this.pins.assertPin(user.id, dto.pin);
+    // Devise du compte : le numéro Orange Money doit être celui du pays de cette devise (un compte en euros n'a pas d'Orange Money).
+    const owner = await this.prisma.user.findUnique({ where: { id: user.id }, select: { primaryCurrency: true } });
+    const currency = String(owner?.primaryCurrency ?? '');
     try {
-      await this.prisma.$transaction((tx) => this.createProfileInTx(tx, { userId: user.id, clientId }, dto));
+      await this.prisma.$transaction((tx) => this.createProfileInTx(tx, { userId: user.id, clientId }, dto, currency || undefined));
     } catch (err) {
       if ((err as { code?: string })?.code === 'P2002') throw new ConflictException('Votre compte marchand existe déjà.');
       throw err;
@@ -188,7 +195,7 @@ export class MerchantsService {
   }
 
   async getMine(user: AuthUserPayload) {
-    const me = await this.prisma.user.findUnique({ where: { id: user.id }, select: { accountType: true, clientId: true } });
+    const me = await this.prisma.user.findUnique({ where: { id: user.id }, select: { accountType: true, clientId: true, primaryCurrency: true } });
     if (!me) throw new NotFoundException('Compte introuvable.');
     const profile = await this.prisma.merchantProfile.findUnique({ where: { userId: user.id } });
     const settings = await this.settingsFor(me.clientId ?? this.companyOf(user));
@@ -198,17 +205,22 @@ export class MerchantsService {
       accountType: me.accountType,
       canActivate: !profile && settings.enabled,
       profile: profile ? this.profileView(profile, settings, now) : null,
-      availablePayoutMethods: profile ? availablePayoutMethods(settings.payoutMethods, profile) : [],
+      availablePayoutMethods: profile ? availablePayoutMethods(settings.payoutMethods, profile, me.primaryCurrency ? String(me.primaryCurrency) : null) : [],
+      /** Devise du compte et règle du numéro Orange Money : l'application adapte ses formulaires (pas d'Orange Money en euros, numéro guinéen en GNF). */
+      currency: me.primaryCurrency ? String(me.primaryCurrency) : null,
+      orangeMoneyAllowed: me.primaryCurrency ? isOrangeMoneyCurrency(String(me.primaryCurrency)) : true,
+      /** Vrai si le numéro Orange Money enregistré ne correspond plus à la devise du compte (ancien compte) : il faut le changer. */
+      orangeNeedsUpdate: !!profile?.orangeMoneyPhone && !!me.primaryCurrency && !isOrangePhoneConsistent(profile.orangeMoneyPhone, String(me.primaryCurrency)),
       settings: this.publicSettings(settings),
       categories: [...DEFAULT_CATEGORIES],
     };
   }
 
   async summary(user: AuthUserPayload) {
-    await this.assertActiveMerchant(user.id);
+    const { profile } = await this.assertActiveMerchant(user.id);
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const [today, pending, byCurrency, payoutsPending] = await Promise.all([
+    const [today, pending, byCurrency, payoutsPending, merchantWallets] = await Promise.all([
       this.prisma.paymentRequest.groupBy({
         by: ['currency'],
         where: { payeeId: user.id, status: 'PAID', paidAt: { gte: startOfDay } },
@@ -218,8 +230,11 @@ export class MerchantsService {
       this.prisma.paymentRequest.count({ where: { payeeId: user.id, status: 'PENDING', expiresAt: { gt: new Date() } } }),
       this.prisma.paymentRequest.groupBy({ by: ['currency'], where: { payeeId: user.id, status: 'PAID' }, _sum: { netAmount: true }, _count: { _all: true } }),
       this.prisma.merchantPayout.count({ where: { userId: user.id, status: 'PENDING' } }),
+      // Solde du COMMERCE (jamais celui du portefeuille personnel du client). Aucune ligne = rien encaissé = 0.
+      this.prisma.wallet.findMany({ where: { merchantId: profile.id, isActive: true }, orderBy: { currency: 'asc' }, select: { currency: true, balance: true, reservedBalance: true } }),
     ]);
     return {
+      wallets: merchantWallets.map((w) => ({ currency: w.currency, balance: Number(w.balance), reserved: Number(w.reservedBalance), available: Number(w.balance) - Number(w.reservedBalance) })),
       today: today.map((r) => ({ currency: r.currency, count: r._count._all, gross: Number(r._sum.amount ?? 0), net: Number(r._sum.netAmount ?? 0) })),
       total: byCurrency.map((r) => ({ currency: r.currency, count: r._count._all, net: Number(r._sum.netAmount ?? 0) })),
       pendingRequests: pending,
@@ -257,7 +272,10 @@ export class MerchantsService {
     const data: Prisma.MerchantProfileUpdateInput = {};
     const changed: string[] = [];
     if (dto.orangeMoneyPhone !== undefined) {
-      const phone = assertOrangePhone(dto.orangeMoneyPhone);
+      const owner = await this.prisma.user.findUnique({ where: { id: user.id }, select: { primaryCurrency: true } });
+      const phone = owner?.primaryCurrency
+        ? assertOrangePhoneForCurrency(dto.orangeMoneyPhone, String(owner.primaryCurrency))
+        : assertOrangePhone(dto.orangeMoneyPhone);
       if (phone !== profile.orangeMoneyPhone) {
         data.orangeMoneyPhone = phone;
         changed.push('ORANGE_MONEY');

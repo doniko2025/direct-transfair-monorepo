@@ -1090,6 +1090,8 @@ class API {
     currency?: Currency | string;
     from?: string;
     to?: string;
+    /** Comptes séparés : « client » = opérations du compte client, « merchant » = encaissements et retraits du commerce. Sans valeur : tout. */
+    space?: "client" | "merchant";
   }): Promise<Transaction[]> {
     const res = await this.http.get<unknown>("/transactions", { params });
     return unwrapArray<unknown>(res.data).map(normalizeTransaction);

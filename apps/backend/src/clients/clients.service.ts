@@ -632,7 +632,8 @@ export class ClientsService {
 
     if (userIds.length > 0) {
       const userWallets = await this.prisma.wallet.findMany({
-        where: { userId: { in: userIds }, isActive: true },
+        // + portefeuilles des commerces (compte marchand) de ces utilisateurs
+        where: { OR: [{ userId: { in: userIds } }, { merchant: { userId: { in: userIds } } }], isActive: true },
         select: { balance: true },
       });
       const usersBalance = userWallets.reduce((sum, w) => sum + Number(w.balance), 0);

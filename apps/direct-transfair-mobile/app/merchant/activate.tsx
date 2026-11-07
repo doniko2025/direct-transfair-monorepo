@@ -16,6 +16,7 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
 import { Text } from "../../components/ui/Text";
+import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 export default function ActivateMerchantScreen() {
   const router = useRouter();
@@ -52,19 +53,25 @@ export default function ActivateMerchantScreen() {
   const categories = me.categories.length ? me.categories : MERCHANT_CATEGORIES;
   const nameError = showErrors && name.trim().length < 2 ? "Saisissez le nom de votre commerce." : null;
   const catError = showErrors && !category ? "Choisissez une catégorie." : null;
-  const phoneError = showErrors ? validatePhone(phone) : null;
+  // Devise du compte : décide si Orange Money existe et quel numéro est exigé (GNF → guinéen, XOF → zone CFA, EUR… → aucun).
+  const currency = me.currency ?? accountCurrencyForCountry(user?.country);
+  const orangeAllowed = me.orangeMoneyAllowed ?? isOrangeMoneyCurrency(currency);
+  const dialCountry = currency === "GNF" ? findCountry("Guinée") ?? country : country;
+  const fullPhone = `${dialCountry.dial}${normalizeNationalNumber(phone)}`;
+  const phoneProblem = (): string | null => (orangeAllowed ? validatePhone(phone) ?? validateOrangeFor(fullPhone, currency) : null);
+  const phoneError = showErrors ? phoneProblem() : null;
 
   const submit = async () => {
     setShowErrors(true);
     setProblem(null);
-    if (name.trim().length < 2 || !category || validatePhone(phone) || pin.length !== 6) return;
+    if (name.trim().length < 2 || !category || phoneProblem() || pin.length !== 6) return;
     setBusy(true);
     try {
       await api.activateMerchant({
         businessName: name.trim(),
         category,
         city: city.trim() || undefined,
-        orangeMoneyPhone: `${country.dial}${normalizeNationalNumber(phone)}`,
+        ...(orangeAllowed ? { orangeMoneyPhone: fullPhone } : {}),
         pin,
       });
       try { await refreshUser?.(); } catch { /* sans incidence */ }
@@ -110,15 +117,19 @@ export default function ActivateMerchantScreen() {
         </View>
         {!!catError && <UText v="caption" tone="danger" style={{ marginBottom: 14 }}>{catError}</UText>}
         <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
-        <PhoneField
-          country={country}
-          onCountryChange={setCountry}
-          value={phone}
-          onChangeText={setPhone}
-          error={phoneError}
-          hint="Numéro Orange Money où seront versés vos retraits. Sans le 0 de tête."
-          accent={C.accent}
-        />
+        {orangeAllowed ? (
+          <PhoneField
+            country={dialCountry}
+            onCountryChange={(c) => { if (!fixedDialFor(currency) || c.dial === fixedDialFor(currency)) setCountry(c); }}
+            value={phone}
+            onChangeText={setPhone}
+            error={phoneError}
+            hint={`Numéro où seront versés vos retraits. ${orangeHintFor(currency)}`}
+            accent={C.accent}
+          />
+        ) : (
+          <Notice tone="warn" style={{ marginBottom: 14 }}>{ORANGE_NOT_AVAILABLE_TEXT(currency)}</Notice>
+        )}
         <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && pin.length !== 6 ? "Saisissez votre code secret à 6 chiffres." : null)} label="Code secret pour confirmer" />
       </Rise>
     </Screen>

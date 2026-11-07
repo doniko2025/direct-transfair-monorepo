@@ -11,7 +11,7 @@
 
 import React from 'react';
 import {
-  ActivityIndicator, Pressable, StyleSheet, Switch, View, type StyleProp, type TextProps, type TextStyle, type ViewStyle,
+  ActivityIndicator, Image, Pressable, StyleSheet, Switch, View, type StyleProp, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { Ionicons } from './Icon';
 import { useUI, type TextVariant, SYSTEM_FONT } from './theme';
@@ -235,7 +235,22 @@ export function Avatar({
   const tone = AV[((name || '?').charCodeAt(0) || 0) % AV.length];
   const bg = incoming ? C.posBg : tone.bg;
   const fg = incoming ? C.pos : tone.fg;
-  void uri;
+  // Photo : si elle ne se charge pas (réseau, fichier illisible), on retombe sur les initiales.
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [uri]);
+  if (uri && !failed) {
+    return (
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, overflow: 'hidden' }}>
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size }}
+          resizeMode="cover"
+          accessibilityLabel={name ? `Photo de ${name}` : 'Photo'}
+          onError={() => setFailed(true)}
+        />
+      </View>
+    );
+  }
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }}>
       {icon ? (

@@ -82,12 +82,13 @@
 //   aussi.
 // =========================================================
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '../../components/ui/Icon';
 
 import { useAuth }   from '../../providers/AuthProvider';
+import { accountCurrencyForCountry, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from '../../services/orangeRules';
 import { api }       from '../../services/api';
 import { getMinimumAge } from '../../services/serverConfig';
 import { warmUpServer } from '../../services/serverWarmup';
@@ -172,6 +173,12 @@ export default function RegisterScreen() {
   const [sameOrange, setSameOrange] = useState(true);
   const [orangeCountry, setOrangeCountry] = useState<AuthCountry>(findCountry('Guinée') ?? AUTH_COUNTRIES[0]!);
   const [orangeNational, setOrangeNational] = useState('');
+  // Devise du compte = celle du pays de résidence. Elle décide si Orange Money existe et quel numéro est exigé.
+  const accountCurrency = accountCurrencyForCountry(country);
+  const orangeAllowed = isOrangeMoneyCurrency(accountCurrency);
+  useEffect(() => {
+    if (accountCurrency === 'GNF') setOrangeCountry(findCountry('Guinée') ?? AUTH_COUNTRIES[0]!);
+  }, [accountCurrency]);
 
   // ── Succès ────────────────────────────────────────────
   const [done, setDone] = useState(false);
@@ -205,9 +212,16 @@ export default function RegisterScreen() {
     } else if (key === 'shop') {
       if (businessName.trim().length < 2) e.businessName = 'Saisissez le nom de votre commerce (2 caractères minimum).';
       if (!category) e.category = 'Choisissez une catégorie.';
-      if (!sameOrange) {
-        const o = validatePhone(orangeNational);
+      if (orangeAllowed) {
+        const o = sameOrange ? null : validatePhone(orangeNational);
         if (o) e.orangePhone = o;
+        else {
+          const full = sameOrange
+            ? `${dialCountry.dial}${normalizeNationalNumber(phone)}`
+            : `${orangeCountry.dial}${normalizeNationalNumber(orangeNational)}`;
+          const mismatch = validateOrangeFor(full, accountCurrency);
+          if (mismatch) e.orangePhone = mismatch;
+        }
       }
     } else if (key === 'pin') {
       if (password.length !== PIN_LENGTH) e.password = `Le code doit contenir exactement ${PIN_LENGTH} chiffres.`;
@@ -283,9 +297,13 @@ export default function RegisterScreen() {
               businessCategory: category ?? undefined,
               businessAddress: businessAddress.trim() || undefined,
               businessCity: city.trim(),
-              orangeMoneyPhone: sameOrange
-                ? `${dialCountry.dial}${normalizeNationalNumber(phone)}`
-                : `${orangeCountry.dial}${normalizeNationalNumber(orangeNational)}`,
+              ...(orangeAllowed
+                ? {
+                    orangeMoneyPhone: sameOrange
+                      ? `${dialCountry.dial}${normalizeNationalNumber(phone)}`
+                      : `${orangeCountry.dial}${normalizeNationalNumber(orangeNational)}`,
+                  }
+                : {}),
             }
           : {}),
       };
@@ -489,6 +507,13 @@ export default function RegisterScreen() {
           />
 
           <Text style={s.chipsLabel}>Numéro Orange Money de retrait</Text>
+          {!orangeAllowed ? (
+            <View style={s.termsErr}>
+              <Ionicons name="information-circle" size={16} color={N.danger} />
+              <Text style={[s.helpTxt, { flex: 1, marginBottom: 0 }]}>{ORANGE_NOT_AVAILABLE_TEXT(accountCurrency)}</Text>
+            </View>
+          ) : (
+          <>
           <Text style={s.helpTxt}>Vos gains seront versés sur ce numéro. Pour le modifier plus tard, votre code secret sera demandé.</Text>
           <TouchableOpacity
             style={s.termsRow}
@@ -510,12 +535,20 @@ export default function RegisterScreen() {
                 value={orangeNational}
                 onChangeText={(t) => { setOrangeNational(t); clearServer('orangePhone'); }}
                 error={errors.orangePhone}
-                hint="Numéro Orange Money, sans le 0 de tête."
+                hint={orangeHintFor(accountCurrency)}
                 accent={P.accent}
                 onSubmitEditing={goNext}
               />
             </View>
           ) : null}
+          {sameOrange && errors.orangePhone ? (
+            <View style={s.termsErr}>
+              <Ionicons name="alert-circle" size={14} color={N.danger} />
+              <Text style={s.termsErrTxt}>{errors.orangePhone}</Text>
+            </View>
+          ) : null}
+          </>
+          )}
         </>
       )}
 

@@ -670,6 +670,10 @@ model Wallet {
   clientId Int?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
+  // Compte marchand : portefeuille PROPRE au commerce, distinct du portefeuille personnel du client (userId reste nul).
+  merchantId String?
+  merchant   MerchantProfile? @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
   ledgerEntries LedgerEntry[]
 
   createdAt DateTime @default(now())
@@ -678,6 +682,7 @@ model Wallet {
   @@unique([userId, currency])
   @@unique([agencyId, currency])
   @@unique([clientId, currency])
+  @@unique([merchantId, currency])
   @@index([currency])
   @@map("wallets")
 }
@@ -931,6 +936,7 @@ model User {
 
   // Lot 11 — commerçant
   merchantProfile  MerchantProfile?
+  photo            UserPhoto?
   paymentsReceived PaymentRequest[]  @relation("PaymentPayee")
   paymentsMade     PaymentRequest[]  @relation("PaymentPayer")
   merchantPayouts  MerchantPayout[]
@@ -1168,6 +1174,21 @@ model KycDocument {
 
 // ✅ lot 7 — contenu des pièces d'identité (recto, verso, selfie). Stocké en base, jamais servi sans authentification :
 // seul le propriétaire et les administrateurs de sa société (ou le super administrateur) peuvent le lire.
+// Photo de profil choisie par le client (une seule, remplacée à chaque nouvel envoi). Stockée à part pour ne jamais alourdir
+// ni exposer les réponses qui renvoient la fiche utilisateur ; servie uniquement à son propriétaire (GET /api/profile-photo).
+model UserPhoto {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mimeType  String
+  sizeBytes Int
+  sha256    String
+  data      Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_photos")
+}
+
 model KycFile {
   id String @id @default(cuid())
 
@@ -2492,6 +2513,9 @@ model MerchantProfile {
   status          MerchantStatus @default(ACTIVE)
   suspendedReason String?
   suspendedAt     DateTime?
+
+  /// Portefeuilles du commerce (un par devise) : séparés de ceux du client, même quand c'est la même personne.
+  wallets Wallet[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

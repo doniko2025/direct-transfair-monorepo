@@ -22,6 +22,7 @@ import QRCode from "react-native-qrcode-svg";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from '../../components/ui/Icon';
 import { useAuth } from "../../providers/AuthProvider";
+import { useProfilePhoto } from "../../hooks/useProfilePhoto";
 import { useTenant } from "../../providers/TenantProvider";
 import { Avatar, Button, Card, IconButton, NavBar, Pill, Screen, UText, useUI } from "../../components/ui";
 
@@ -57,6 +58,7 @@ export default function QRCodeScreen() {
   const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
+  const photo = useProfilePhoto();
 
   const [copied, setCopied] = useState(false);
 
@@ -113,7 +115,7 @@ export default function QRCodeScreen() {
       <Card pad={0} style={{ overflow: "hidden" }}>
         {/* Identité */}
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 20 }}>
-          <Avatar name={displayName} size={52} />
+          <Avatar name={displayName} size={52} uri={photo} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <UText v="subheading" numberOfLines={1}>{displayName}</UText>
             <UText v="caption" tone="muted" numberOfLines={1} style={{ marginTop: 2 }}>

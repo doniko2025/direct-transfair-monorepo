@@ -1,4 +1,8 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v4.1 : ÉCRAN ÉPURÉ — plus de mention « Connexion chiffrée » (ni dans la carte ni sous elle) ; « Code oublié ? » est le seul lien sous le code
+//    (il ouvre une fenêtre : réception du code par email ou par SMS) ; les deux boutons « Empreinte digitale » / « Email et mot de passe » sont
+//    remplacés par un seul lien « Autres options de connexion » (fenêtre : empreinte, code reçu par email, email + mot de passe ↔ téléphone + code).
+//    Le logo de la société s'affiche en tête (AuthShell v2.8). Logique de connexion inchangée.
 // ✅ v4.0 (lot 13) : connexion PAR DÉFAUT = numéro de téléphone (indicatif + numéro) + code secret à 6 chiffres (connexion automatique au 6e chiffre).
 //    « Email et mot de passe » devient une OPTION (lien sous le bouton) ; « Empreinte digitale » est une OPTION visible dès qu'elle est activée sur l'appareil,
 //    et l'appli propose de l'activer après une première connexion réussie. Le dernier numéro et le dernier indicatif sont mémorisés sur l'appareil.
@@ -128,6 +132,7 @@ import OtpCodeInput     from '../../components/auth/OtpCodeInput';
 import ServerStatusPill from '../../components/auth/ServerStatusPill';
 import { describeAuthError, type AuthErrorInfo } from '../../components/auth/authErrors';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
+import { ForgotCodeModal, LoginOptionsModal } from '../../components/auth/LoginModals';
 
 import { Text, TextInput } from '../../components/ui/Text';
 type View_ = 'PASSWORD' | 'OTP_REQUEST' | 'OTP_VERIFY';
@@ -153,6 +158,8 @@ export default function LoginV2Screen() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice]   = useState<NoticeState>(null);
   const [bioReady, setBioReady] = useState(false);
+  const [forgotOpen, setForgotOpen]   = useState(false);   // fenêtre « Code oublié ? »
+  const [optionsOpen, setOptionsOpen] = useState(false);   // fenêtre « Autres options de connexion »
 
   // ── Méthode de connexion : téléphone + code (défaut) ou email + mot de passe (option) ──
   const [method, setMethod]       = useState<Method>('PHONE');
@@ -470,10 +477,6 @@ export default function LoginV2Screen() {
           <Text style={s.signupLink}>Créer un compte</Text>
         </TouchableOpacity>
       </View>
-      <View style={s.trust}>
-        <Ionicons name="lock-closed" size={11} color="#6B6B6B" />
-        <Text style={s.trustTxt}>Connexion chiffrée · Données protégées</Text>
-      </View>
       {legalFooter}
     </View>
   );
@@ -573,6 +576,7 @@ export default function LoginV2Screen() {
       title="Connexion"
       headerRight={pill}
       below={signupBelow}
+      trust={false}
     >
       {notice ? <AuthNotice {...notice} /> : null}
 
@@ -633,14 +637,7 @@ export default function LoginV2Screen() {
       )}
 
       <View style={s.forgotRow}>
-        <AuthButton label="Code par email" variant="link" dense accent={P.accent} disabled={loading} onPress={() => switchView('OTP_REQUEST')} />
-        <AuthButton
-          label="Code oublié ?"
-          variant="link"
-          dense
-          accent={P.accent}
-          onPress={() => router.push('/(auth)/forgot-password')}
-        />
+        <AuthButton label="Code oublié ?" variant="link" dense accent={P.accent} disabled={loading} onPress={() => setForgotOpen(true)} testID="login-forgot" />
       </View>
 
       <AuthButton
@@ -655,39 +652,32 @@ export default function LoginV2Screen() {
         testID="login-submit"
       />
 
-      {/* Options de connexion : empreinte digitale (si activée) et email + mot de passe / retour au téléphone */}
+      {/* Un seul lien : le détail des autres façons de se connecter s'ouvre dans une fenêtre. */}
       <View style={s.optionsBox}>
-        {bioReady ? (
-          <TouchableOpacity
-            style={s.optionBtn}
-            onPress={handleBiometric}
-            disabled={loading}
-            accessibilityRole="button"
-            accessibilityLabel={`Se connecter avec ${bioLabel}`}
-            testID="login-biometric"
-          >
-            <Ionicons name="finger-print-outline" size={22} color={N.ink} />
-            <Text style={s.optionTxt}>{bioLabel}</Text>
-          </TouchableOpacity>
-        ) : null}
-        <TouchableOpacity
-          style={s.optionBtn}
-          onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
-          disabled={loading}
-          accessibilityRole="button"
-          testID="login-switch-method"
-        >
-          <Ionicons name={method === 'PHONE' ? 'mail-outline' : 'call-outline'} size={22} color={N.ink} />
-          <Text style={s.optionTxt}>{method === 'PHONE' ? 'Email et mot de passe' : 'Téléphone et code secret'}</Text>
-        </TouchableOpacity>
+        <AuthButton label="Autres options de connexion" variant="link" dense accent={P.accent} disabled={loading} onPress={() => setOptionsOpen(true)} testID="login-other-options" />
       </View>
+
+      <ForgotCodeModal
+        visible={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        onPick={(channel) => { setForgotOpen(false); router.push({ pathname: '/(auth)/forgot-password', params: { channel } } as any); }}
+      />
+      <LoginOptionsModal
+        visible={optionsOpen}
+        onClose={() => setOptionsOpen(false)}
+        method={method}
+        biometricLabel={bioReady ? bioLabel : null}
+        onBiometric={() => { setOptionsOpen(false); void handleBiometric(); }}
+        onEmailCode={() => { setOptionsOpen(false); switchView('OTP_REQUEST'); }}
+        onSwitchMethod={() => { setOptionsOpen(false); switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE'); }}
+      />
     </AuthShell>
   );
 }
 
 const s = StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: -4, marginBottom: 4 },
-  optionsBox:{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, marginTop: 14 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: -4, marginBottom: 4 },
+  optionsBox:{ alignItems: 'center', marginTop: 10 },
   optionBtn: { flexGrow: 1, flexBasis: '45%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: '#E8E8E8', backgroundColor: '#F2F2F2' },
   optionTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '600', color: '#111111', textAlign: 'center', flexShrink: 1 },

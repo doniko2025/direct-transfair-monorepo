@@ -1,5 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
+// PROFILE INDEX v8.1 — « Supprimer mon compte » ouvre l'écran de suppression (téléphone + code secret)
+// PROFILE INDEX v8.0 — COMPTES SÉPARÉS + vrai choix de photo
+// ✅ v8.0 : bascule « Compte client | Compte marchand » ; les entrées du menu suivent le compte actif (opérations client d'un côté,
+//    encaisser / retirer / réglages du commerce de l'autre) ; l'avatar est cliquable : caméra, galerie ou retrait de la photo.
+// PROFILE INDEX v7.2 — la photo du client (selfie validé) remplace les initiales de l'avatar
 // PROFILE INDEX v7.1 — + « Vérification d'identité » (clients wallet, lot 7)
 // PROFILE INDEX v7.0 — Direct Transf'air
 // ✅ v7.0 : 🔥 REFONTE TOTALE en thème clair : identité centrée (avatar, nom, e-mail, ID), jauge de
@@ -26,6 +31,11 @@ import { useTenant } from "../../../providers/TenantProvider";
 import Constants from "expo-constants";
 import { Avatar, Button, Card, Group, ListRow, Pill, Screen, SectionHeader, Toggle, UText, useUI } from "../../../components/ui";
 import { useKycStatus } from "../../../hooks/useKycStatus";
+import { useAccountSpace } from "../../../hooks/useAccountSpace";
+import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
+import { ProfilePhotoSheet } from "../../../components/profile/ProfilePhotoSheet";
+import { Ionicons } from "../../../components/ui/Icon";
+import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
 import { KYC_STATUS_LABEL } from "../../../services/kyc";
 
 export default function ProfileScreen() {
@@ -35,6 +45,12 @@ export default function ProfileScreen() {
   const { branding } = useTenant();
   const appVersion = Constants.expoConfig?.version ?? "";
   const { status: kyc } = useKycStatus();
+  const photo = useProfilePhoto(user?.role === "USER" ? kyc : null);
+  const { isMerchant, canSwitch } = useAccountSpace();
+  const [photoSheet, setPhotoSheet] = useState(false);
+  const isUser = user?.role === "USER";
+  const clientSpace = isUser && !isMerchant;
+  const merchantSpace = isUser && isMerchant;
 
   // ─── Biométrie (logique inchangée) ─────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
@@ -106,11 +122,26 @@ export default function ProfileScreen() {
     <Screen tabSpace>
       {/* ── Identité ── */}
       <View style={{ alignItems: "center", paddingTop: 16, paddingBottom: 22, gap: 6 }}>
-        <Avatar name={displayName} size={88} />
+        <Pressable onPress={() => setPhotoSheet(true)} accessibilityRole="button" accessibilityLabel="Changer ma photo de profil" hitSlop={8}>
+          <Avatar name={displayName} size={88} uri={photo} />
+          <View style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: C.ink, borderWidth: 2, borderColor: C.bg, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name="camera-outline" size={15} color={C.surface} />
+          </View>
+        </Pressable>
         <UText v="title" style={{ marginTop: 10 }} numberOfLines={1}>{displayName}</UText>
         {!!user?.email && <UText v="body" tone="muted" numberOfLines={1}>{user.email}</UText>}
         <Pill label={`ID ${user?.id?.slice(0, 8).toUpperCase() ?? "—"}`} tone="neutral" icon="finger-print-outline" style={{ marginTop: 6 }} />
       </View>
+
+      {/* ── Compte actif : deux comptes séparés (solde, opérations, menus) ── */}
+      {canSwitch ? (
+        <View style={{ marginBottom: 18 }}>
+          <SpaceSwitch />
+          <UText v="caption" tone="muted" align="center" style={{ marginTop: 8 }}>
+            {isMerchant ? "Compte marchand : solde et paiements de votre commerce, séparés de votre compte client." : "Compte client : vos envois, votre solde et vos opérations personnelles."}
+          </UText>
+        </View>
+      ) : null}
 
       {/* ── Sécurité du compte ── */}
       <Card tone="accent">
@@ -140,15 +171,17 @@ export default function ProfileScreen() {
             right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
           />
         ) : null}
-        {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. */}
-        {user?.role === "USER" ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
-        {user?.role === "USER" ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
-        {user?.role === "USER" ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
-        {user?.role === "USER" ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
-        {user?.role === "USER" ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
-        {user?.role === "USER" && user?.accountType === "MERCHANT" ? menu("receipt-outline", "Paiements encaissés", "Historique de vos encaissements", "/merchant/payments") : null}
-        {user?.role === "USER" && user?.accountType === "MERCHANT" ? menu("storefront-outline", "Réglages du commerce", "Fiche du commerce, destination des retraits", "/merchant/settings") : null}
-        {user?.role === "USER" && user?.accountType !== "MERCHANT" ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
+        {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. Les entrées suivent le compte actif. */}
+        {clientSpace ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
+        {clientSpace ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
+        {clientSpace ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
+        {clientSpace ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
+        {clientSpace ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
+        {merchantSpace ? menu("qr-code-outline", "Encaisser", "QR code ou téléphone Orange Money", "/merchant/collect") : null}
+        {merchantSpace ? menu("cash-outline", "Retirer mes gains", "Solde de votre commerce", "/merchant/payouts") : null}
+        {merchantSpace ? menu("receipt-outline", "Paiements encaissés", "Historique de vos encaissements", "/merchant/payments") : null}
+        {merchantSpace ? menu("storefront-outline", "Réglages du commerce", "Fiche du commerce, destination des retraits", "/merchant/settings") : null}
+        {clientSpace && !canSwitch ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
         {menu("person-outline", "Informations personnelles", "Identité, coordonnées", "/(tabs)/profile/personal-info")}
         {menu("card-outline", "Moyens de paiement", "Cartes et comptes enregistrés", "/(tabs)/profile/payment-methods")}
         {menu("speedometer-outline", "Mes plafonds de transfert", "Limites d'envoi", "/(tabs)/profile/limits")}
@@ -171,10 +204,17 @@ export default function ProfileScreen() {
         />
       </Group>
 
+      <ProfilePhotoSheet visible={photoSheet} onClose={() => setPhotoSheet(false)} />
+
       {/* ── Session ── */}
       <Button label="Fermer la session" icon="log-out-outline" kind="danger" onPress={handleLogout} style={{ marginTop: 28 }} />
 
-      <Pressable style={{ alignItems: "center", paddingVertical: 16 }} accessibilityRole="button">
+      <Pressable
+        style={{ alignItems: "center", paddingVertical: 16 }}
+        accessibilityRole="button"
+        onPress={() => router.push("/(tabs)/profile/delete-account" as any)}
+        testID="profile-delete-account"
+      >
         <UText v="caption" tone="muted" style={{ textDecorationLine: "underline" }}>Supprimer mon compte</UText>
       </Pressable>
 

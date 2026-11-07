@@ -65,6 +65,12 @@ export function getPlatformName(): string {
   return pick(process.env.EXPO_PUBLIC_PLATFORM_NAME, 'platformName', "Direct Transf'air");
 }
 
+/** Adresse (https) du logo de la plateforme, si elle est fixée au build (EXPO_PUBLIC_PLATFORM_LOGO_URL). Sinon l'app lit le logo de la société système sur le serveur. */
+export function getPlatformLogoUrl(): string | null {
+  const v = pick(process.env.EXPO_PUBLIC_PLATFORM_LOGO_URL, 'platformLogoUrl', null);
+  return v && /^https?:\/\//i.test(v) ? v : null;
+}
+
 export function getPlatformTagline(): string | null {
   return pick(process.env.EXPO_PUBLIC_PLATFORM_TAGLINE, 'platformTagline', 'Transferts internationaux sécurisés');
 }

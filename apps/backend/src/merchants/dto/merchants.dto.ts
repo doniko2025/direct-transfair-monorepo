@@ -32,10 +32,11 @@ export class MerchantProfileInputDto {
   @MaxLength(80)
   city?: string;
 
-  /** Numéro Orange Money qui recevra les retraits (avec l'indicatif du pays). */
+  /** Numéro Orange Money qui recevra les retraits (avec l'indicatif du pays). Obligatoire en GNF / XOF, refusé pour les autres devises. */
+  @IsOptional()
   @IsString()
   @MaxLength(25)
-  orangeMoneyPhone!: string;
+  orangeMoneyPhone?: string;
 }
 
 export class ActivateMerchantDto extends MerchantProfileInputDto {

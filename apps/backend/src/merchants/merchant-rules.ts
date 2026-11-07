@@ -122,6 +122,67 @@ export function assertOrangePhone(raw: unknown): string {
   return phone;
 }
 
+// ── Numéro Orange Money ↔ devise du compte ─────────────
+// Le numéro qui reçoit les retraits doit être du pays où la devise du compte circule :
+//   • GNF (franc guinéen)    → numéro mobile GUINÉEN obligatoire (+224 suivi de 9 chiffres, commençant par 6) ;
+//   • XOF (franc CFA)        → numéro d'un pays de la zone UEMOA (Sénégal, Mali, Côte d'Ivoire, Burkina, Niger, Togo, Bénin, Guinée-Bissau) ;
+//   • toute autre devise (EUR, USD, GBP…) → Orange Money n'est pas proposé : retraits par compte bancaire (IBAN) uniquement.
+// Un compte en euros ne peut donc jamais enregistrer un numéro Orange guinéen, et un compte guinéen ne peut pas enregistrer un numéro étranger.
+// (Le préfixe de l'opérateur n'est pas contrôlé : les plages changent et les numéros sont portables.)
+
+export const ORANGE_COUNTRY_MISMATCH_CODE = 'ORANGE_COUNTRY_MISMATCH';
+export const ORANGE_NOT_AVAILABLE_CODE = 'ORANGE_NOT_AVAILABLE';
+
+/** Indicatifs (sans « + ») de la zone UEMOA, où circule le franc CFA (XOF). */
+const UEMOA_DIAL_CODES = ['221', '223', '225', '226', '227', '228', '229', '245'];
+
+/** Orange Money est-il proposé pour les retraits d'un compte dans cette devise ? */
+export const isOrangeMoneyCurrency = (currency: string | null | undefined): boolean => currency === 'GNF' || currency === 'XOF';
+
+/** Numéro mobile guinéen : +224 puis 9 chiffres commençant par 6 (le fixe commence par 3). */
+export const isGuineanMobile = (e164: string): boolean => /^\+2246\d{8}$/.test(e164);
+
+/**
+ * Numéro Orange Money accepté pour un compte dans cette devise (E.164) — ou erreur 400 explicite (avec un `code`).
+ * Fonction pure.
+ */
+export function assertOrangePhoneForCurrency(raw: unknown, currency: string): string {
+  if (!isOrangeMoneyCurrency(currency)) {
+    throw new BadRequestException({
+      statusCode: 400,
+      code: ORANGE_NOT_AVAILABLE_CODE,
+      message: `Orange Money n'est pas disponible pour un compte en ${currency}. Les retraits d'un compte en ${currency} se font par compte bancaire (IBAN).`,
+    });
+  }
+  const phone = assertOrangePhone(raw);
+  if (currency === 'GNF' && !isGuineanMobile(phone)) {
+    throw new BadRequestException({
+      statusCode: 400,
+      code: ORANGE_COUNTRY_MISMATCH_CODE,
+      message: 'Un compte en franc guinéen (GNF) exige un numéro Orange Money guinéen : +224 suivi de 9 chiffres commençant par 6 (ex. +224 620 00 00 00).',
+    });
+  }
+  if (currency === 'XOF' && !UEMOA_DIAL_CODES.some((d) => phone.startsWith(`+${d}`))) {
+    throw new BadRequestException({
+      statusCode: 400,
+      code: ORANGE_COUNTRY_MISMATCH_CODE,
+      message: 'Un compte en franc CFA (XOF) exige un numéro Orange Money d\'un pays de la zone CFA (Sénégal, Mali, Côte d\'Ivoire, Burkina Faso, Niger, Togo, Bénin, Guinée-Bissau).',
+    });
+  }
+  return phone;
+}
+
+/** Vrai si un numéro déjà enregistré est incompatible avec la devise (anciens comptes créés avant cette règle). */
+export function isOrangePhoneConsistent(phone: string | null | undefined, currency: string): boolean {
+  if (!phone) return true;
+  try {
+    assertOrangePhoneForCurrency(phone, currency);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const IBAN_LENGTHS: Record<string, number> = { FR: 27, BE: 16, DE: 22, ES: 24, IT: 27, GB: 22, PT: 25, NL: 18, LU: 20, CH: 21, SN: 28, CI: 28, ML: 28, BF: 28, BJ: 28, TG: 28, NE: 28, MA: 28 };
 
 /** Clé de contrôle ISO 7064 (mod 97). Retourne l'IBAN compacté en majuscules ou lève une erreur. */
@@ -176,8 +237,14 @@ export function payoutCooldown(changedAt: Date | null | undefined, hours: number
 export function availablePayoutMethods(
   enabled: string[],
   profile: { orangeMoneyPhone?: string | null; bankIban?: string | null },
+  /** Devise du compte : un numéro Orange Money d'un autre pays (ancien compte) n'est plus proposé. */
+  currency?: string | null,
 ): string[] {
-  return enabled.filter((m) => (m === 'ORANGE_MONEY' ? !!profile.orangeMoneyPhone : m === 'BANK_TRANSFER' ? !!profile.bankIban : false));
+  return enabled.filter((m) => {
+    if (m === 'ORANGE_MONEY') return !!profile.orangeMoneyPhone && (!currency || isOrangePhoneConsistent(profile.orangeMoneyPhone, currency));
+    if (m === 'BANK_TRANSFER') return !!profile.bankIban;
+    return false;
+  });
 }
 
 /** Le mode SANDBOX (retraits payés automatiquement, sans argent réel) n'est jamais appliqué en production. */
@@ -195,7 +262,8 @@ export interface MerchantProfileInput {
   category?: string | null;
   address?: string | null;
   city?: string | null;
-  orangeMoneyPhone: string;
+  /** Obligatoire pour un compte GNF / XOF ; refusé pour les autres devises (retraits par IBAN). */
+  orangeMoneyPhone?: string | null;
 }
 
 const cleanText = (v: unknown): string | null => {
@@ -203,21 +271,32 @@ const cleanText = (v: unknown): string | null => {
   return s ? s : null;
 };
 
-/** Valide et normalise la fiche saisie à l'inscription ou à l'activation. Fonction pure. */
-export function normalizeProfileInput(raw: Partial<MerchantProfileInput>): {
+/**
+ * Valide et normalise la fiche saisie à l'inscription ou à l'activation. Fonction pure.
+ * `currency` = devise du compte : le numéro Orange Money doit alors correspondre à cette devise (voir ci-dessus) ; pour une devise sans
+ * Orange Money (EUR…), aucun numéro n'est accepté et la fiche naît sans destination (l'IBAN se renseigne ensuite dans les réglages).
+ * Sans `currency`, comportement historique : numéro valide obligatoire.
+ */
+export function normalizeProfileInput(raw: Partial<MerchantProfileInput>, currency?: string): {
   businessName: string;
-  orangeMoneyPhone: string;
+  orangeMoneyPhone: string | null;
   category: string | null;
   address: string | null;
   city: string | null;
 } {
   const businessName = cleanText(raw.businessName);
   if (!businessName || businessName.length < 2) throw new BadRequestException('Indiquez le nom de votre commerce (2 caractères minimum).');
+  let orangeMoneyPhone: string | null;
+  if (!currency) orangeMoneyPhone = assertOrangePhone(raw.orangeMoneyPhone);
+  else if (!isOrangeMoneyCurrency(currency)) {
+    if (cleanText(raw.orangeMoneyPhone)) assertOrangePhoneForCurrency(raw.orangeMoneyPhone, currency); // lève ORANGE_NOT_AVAILABLE
+    orangeMoneyPhone = null;
+  } else orangeMoneyPhone = assertOrangePhoneForCurrency(raw.orangeMoneyPhone, currency);
   return {
     businessName: businessName.slice(0, 80),
     category: cleanText(raw.category)?.slice(0, 60) ?? null,
     address: cleanText(raw.address)?.slice(0, 160) ?? null,
     city: cleanText(raw.city)?.slice(0, 80) ?? null,
-    orangeMoneyPhone: assertOrangePhone(raw.orangeMoneyPhone),
+    orangeMoneyPhone,
   };
 }

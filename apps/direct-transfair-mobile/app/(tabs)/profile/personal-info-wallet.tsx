@@ -24,6 +24,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../../providers/AuthProvider";
+import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
 import { api } from "../../../services/api";
 import { COUNTRIES } from "../../../utils/countries";
 import { citiesByCountry } from "../../../data/cities";
@@ -90,6 +91,7 @@ export default function PersonalInfoWallet() {
   const router = useRouter();
   const { C } = useUI();
   const { user, refreshUser } = useAuth();
+  const photo = useProfilePhoto();
 
   const [loading, setLoading] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -213,7 +215,7 @@ export default function PersonalInfoWallet() {
     >
       {/* Identité visuelle */}
       <View style={{ alignItems: "center", paddingTop: 4, paddingBottom: 18 }}>
-        <Avatar name={fullName || "Client"} size={72} />
+        <Avatar name={fullName || "Client"} size={72} uri={photo} />
         <UText v="title" align="center" style={{ marginTop: 12 }} numberOfLines={1}>{fullName || "—"}</UText>
         {!!email && <UText v="caption" tone="muted" align="center" style={{ marginTop: 2 }} numberOfLines={1}>{email}</UText>}
         <Pill label="Client" tone="neutral" icon="wallet-outline" style={{ marginTop: 10 }} />

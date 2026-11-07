@@ -1,7 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// TRANSACTIONS HISTORY v8.0 — Direct Transf'air
+// TRANSACTIONS HISTORY v8.1 — Direct Transf'air
+// ✅ v8.1 : COMPTES SÉPARÉS — l'écran suit le compte actif (client / marchand) : il demande au serveur uniquement les opérations de ce compte
+//    (space=client|merchant) et se recrée à chaque bascule, donc jamais de données de l'autre compte (ni en cache à l'écran).
 // ✅ v8.0 : 🔥 REFONTE TOTALE en thème clair (maquette « Flash Transfert / Activité ») : gros titre,
 //    recherche en pilule, filtres en puces (noire quand sélectionnée), opérations regroupées par jour en
 //    lignes à filets (avatar, statut avec point de couleur, montant signé vert/noir). Design system
@@ -19,6 +21,8 @@ import { View, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
 import { useAuth } from "../../../providers/AuthProvider";
+import { useAccountSpace, type AccountSpace } from "../../../hooks/useAccountSpace";
+import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
 import { useLoader } from "../../../components/wallet/useLoader";
 import { formatDay } from "../../../components/wallet/walletTheme";
 import {
@@ -34,15 +38,23 @@ const FILTERS = Object.keys(FILTER_LABELS) as FilterKey[];
 type DayGroup = { key: string; title: string; items: any[] };
 
 export default function TransactionsScreen() {
+  const { space, ready } = useAccountSpace();
+  if (!ready) return null;
+  // key = compte actif : à la bascule l'écran repart de zéro (état, filtres, données).
+  return <TransactionsContent key={space} space={space} />;
+}
+
+function TransactionsContent({ space }: { space: AccountSpace }) {
   const router   = useRouter();
   const { user } = useAuth();
+  const isMerchant = space === "merchant";
 
   const [filter, setFilter] = useState<FilterKey>("ALL");
   const [q, setQ]           = useState("");
 
   // Chargement borné (20 s) : squelettes → erreur claire + « Réessayer »
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
-    const res = await api.getTransactions({ limit: 200 });
+    const res = await api.getTransactions({ limit: 200, space });
     const list: any[] = Array.isArray(res) ? res : [];
     return [...list].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   });
@@ -83,11 +95,12 @@ export default function TransactionsScreen() {
 
   const subtitle = status === "ready"
     ? `${filtered.length} opération${filtered.length !== 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""}`
-    : "Tes envois et réceptions";
+    : isMerchant ? "Encaissements et retraits de ta boutique" : "Tes envois et réceptions";
 
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
-      <PageTitle title={user?.accountType === "MERCHANT" ? "Paiements" : "Activité"} subtitle={subtitle} />
+      <PageTitle title={isMerchant ? "Paiements" : "Activité"} subtitle={subtitle} />
+      <SpaceSwitch style={{ marginBottom: 12 }} />
       <SearchPill value={q} onChangeText={setQ} placeholder="Nom, téléphone, référence…" />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 14 }}>
@@ -123,8 +136,8 @@ export default function TransactionsScreen() {
             <EmptyView
               icon="receipt-outline"
               title={q || filter !== "ALL" ? "Aucun résultat" : "Aucune transaction"}
-              message={q || filter !== "ALL" ? "Modifie ta recherche ou ton filtre." : "Tes envois et réceptions apparaîtront ici."}
-              actionLabel={q || filter !== "ALL" ? undefined : "Envoyer de l'argent"}
+              message={q || filter !== "ALL" ? "Modifie ta recherche ou ton filtre." : isMerchant ? "Les paiements encaissés par ta boutique apparaîtront ici." : "Tes envois et réceptions apparaîtront ici."}
+              actionLabel={q || filter !== "ALL" || isMerchant ? undefined : "Envoyer de l'argent"}
               onAction={() => router.push("/(tabs)/send")}
             />
           )}

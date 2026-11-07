@@ -52,6 +52,29 @@ describe('register — compte marchand', () => {
     }
   });
 
+  it("BARRAGE : un compte ouvert en euros ne peut pas enregistrer un numéro Orange guinéen — refusé avant toute écriture", async () => {
+    const { self, userCreate, prisma } = ctx();
+    const fr = { ...base, country: 'France', phone: '+33751244722' };
+    const err: any = await register.call(self, { ...fr, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+224 620 00 00 01' }, null).catch((e: any) => e);
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect(err.getResponse()).toMatchObject({ code: 'ORANGE_NOT_AVAILABLE' });
+    expect(userCreate).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('compte en euros : le commerce naît sans Orange Money (retraits par IBAN plus tard)', async () => {
+    const { self, merchantCreate } = ctx();
+    await register.call(self, { ...base, country: 'France', phone: '+33751244722', accountType: 'MERCHANT', businessName: 'Chez Awa' }, null);
+    expect(merchantCreate.mock.calls[0][0].data).toMatchObject({ businessName: 'Chez Awa', orangeMoneyPhone: null });
+  });
+
+  it('compte guinéen (GNF) : numéro Orange guinéen obligatoire — un numéro étranger est refusé avant toute écriture', async () => {
+    const { self, userCreate } = ctx();
+    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+33 7 51 24 47 22' }, null)).rejects.toMatchObject({ response: { code: 'ORANGE_COUNTRY_MISMATCH' } });
+    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa' }, null)).rejects.toBeInstanceOf(BadRequestException);
+    expect(userCreate).not.toHaveBeenCalled();
+  });
+
   it('société qui ferme les comptes marchands : 403, rien créé', async () => {
     const { self, userCreate } = ctx({ merchantEnabled: false });
     await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' }, null)).rejects.toBeInstanceOf(ForbiddenException);

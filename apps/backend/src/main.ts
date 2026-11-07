@@ -148,6 +148,8 @@ async function bootstrap(): Promise<void> {
   // (/api/kyc/documents, 2 photos de 6 Mo au plus), le reste de l'API garde la limite d'origine de 100 Ko.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.use('/api/kyc/documents', json({ limit: '18mb' }));
+  // Photo de profil (image en base64, 2 Mo au plus une fois décodée ≈ 2,8 Mo en base64) : limite relevée sur cette seule route.
+  app.use('/api/profile-photo', json({ limit: '4mb' }));
   // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
   app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
     req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),

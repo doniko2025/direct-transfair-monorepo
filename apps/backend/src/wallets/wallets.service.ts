@@ -55,6 +55,9 @@
 //   le comportement le plus cohérent (et la seule alternative valide,
 //   la création d'un doublon étant de toute façon impossible).
 //
+// ✅ v5.8 (compte marchand) : getOrCreateWallet({ merchantId, currency }) — portefeuille PROPRE au commerce (Wallet.merchantId), séparé
+//   du portefeuille personnel du client (userId). Avant, un client devenu marchand encaissait sur son portefeuille de client.
+//
 // ✅ v5.5 (phase 6) : creditInTx() / debitInTx() / creditOnce()
 //   debit() et credit() ouvrent leur propre $transaction : impossible de les
 //   rendre atomiques avec un changement de statut de Transaction (annulation,
@@ -116,15 +119,17 @@ export class WalletsService {
     userId?: string;
     agencyId?: string;
     clientId?: number;
+    /** Compte marchand (MerchantProfile.id) : portefeuille propre au commerce, distinct de celui du client. */
+    merchantId?: string;
     currency: string;
   }): Promise<{ id: string; currency: string }> {
     assertCurrency(params.currency);
 
-    const { userId, agencyId, clientId, currency } = params;
+    const { userId, agencyId, clientId, merchantId, currency } = params;
 
-    if (!userId && !agencyId && clientId === undefined) {
+    if (!userId && !agencyId && !merchantId && clientId === undefined) {
       throw new BadRequestException(
-        'Un identifiant (userId, agencyId ou clientId) est requis.',
+        'Un identifiant (userId, agencyId, merchantId ou clientId) est requis.',
       );
     }
 
@@ -134,7 +139,11 @@ export class WalletsService {
     // Une contrainte @@unique existe sur chacune de ces clés ; la
     // création ci-dessous échouerait avec P2002 si un wallet
     // (actif ou non) existe déjà pour la même clé.
-    if (agencyId) {
+    if (merchantId) {
+      existing = await this.prisma.wallet.findFirst({
+        where: { merchantId, currency },
+      });
+    } else if (agencyId) {
       existing = await this.prisma.wallet.findFirst({
         where: { agencyId, currency },
       });
@@ -167,7 +176,9 @@ export class WalletsService {
       isDefault: false,
     };
 
-    if (agencyId) {
+    if (merchantId) {
+      createData.merchantId = merchantId;
+    } else if (agencyId) {
       createData.agencyId = agencyId;
     } else if (clientId !== undefined) {
       createData.clientId = clientId;

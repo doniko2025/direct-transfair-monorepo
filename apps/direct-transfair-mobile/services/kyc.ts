@@ -149,13 +149,28 @@ export interface KycDossier extends KycStatusView {
   };
 }
 
+// ─── Normalisation du statut ─────────────────────────────
+/**
+ * Le serveur nomme « APPROVED » le dossier validé (kyc-rules.ts → overallStatus) alors que l'application dit « VERIFIED ».
+ * Sans cette traduction, un dossier entièrement validé retombait sur « Identité à vérifier » et l'écran renvoyait le client
+ * vers le selfie. On traduit ici, une seule fois, pour tous les écrans (accueil, profil, vérification).
+ * « PARTIAL » (dossier incomplet) : une des deux pièces (identité, selfie) est déjà déposée ou validée, il manque l'autre.
+ */
+export function normalizeKycStatus<T extends { status: string; documents?: KycDocumentView[]; missing?: KycDocType[] }>(raw: T): T & { status: KycOverall } {
+  let status = String(raw.status).toUpperCase();
+  if (status === "APPROVED") status = "VERIFIED";
+  const missing = raw.missing?.length ?? 0;
+  if ((status === "NOT_SUBMITTED" || status === "PENDING") && missing === 1 && (raw.documents?.length ?? 0) > 0) status = "PARTIAL";
+  return { ...raw, status: status as KycOverall };
+}
+
 // ─── Appels ──────────────────────────────────────────────
 export const kycApi = {
-  me: async (): Promise<KycStatusView> => (await api.http.get<KycStatusView>("/kyc/me")).data,
+  me: async (): Promise<KycStatusView> => normalizeKycStatus((await api.http.get<KycStatusView>("/kyc/me")).data),
 
   /** Les photos pèsent plusieurs Mo : délai long, et une seule requête à la fois côté écran. */
   submit: async (input: SubmitKycInput): Promise<KycStatusView & { document: KycDocumentView }> =>
-    (await api.http.post("/kyc/documents", input, { timeout: 90_000 })).data,
+    normalizeKycStatus((await api.http.post("/kyc/documents", input, { timeout: 90_000 })).data),
 
   adminStats: async (): Promise<KycAdminStats> => (await api.http.get<KycAdminStats>("/kyc/admin/stats")).data,
 
@@ -165,17 +180,18 @@ export const kycApi = {
     if (p.search?.trim()) params.search = p.search.trim();
     if (p.page) params.page = p.page;
     if (p.limit) params.limit = p.limit;
-    return (await api.http.get<KycQueuePage>("/kyc/admin/queue", { params })).data;
+    const page = (await api.http.get<KycQueuePage>("/kyc/admin/queue", { params })).data;
+    return { ...page, items: page.items.map((i) => ({ ...i, status: normalizeKycStatus({ status: i.status }).status })) };
   },
 
   adminDossier: async (userId: string): Promise<KycDossier> =>
-    (await api.http.get<KycDossier>(`/kyc/admin/users/${encodeURIComponent(userId)}`)).data,
+    normalizeKycStatus((await api.http.get<KycDossier>(`/kyc/admin/users/${encodeURIComponent(userId)}`)).data),
 
   approve: async (documentId: string, note?: string): Promise<KycDossier> =>
-    (await api.http.post<KycDossier>(`/kyc/admin/documents/${encodeURIComponent(documentId)}/approve`, note?.trim() ? { note: note.trim() } : {})).data,
+    normalizeKycStatus((await api.http.post<KycDossier>(`/kyc/admin/documents/${encodeURIComponent(documentId)}/approve`, note?.trim() ? { note: note.trim() } : {})).data),
 
   reject: async (documentId: string, reason: string): Promise<KycDossier> =>
-    (await api.http.post<KycDossier>(`/kyc/admin/documents/${encodeURIComponent(documentId)}/reject`, { reason })).data,
+    normalizeKycStatus((await api.http.post<KycDossier>(`/kyc/admin/documents/${encodeURIComponent(documentId)}/reject`, { reason })).data),
 
   remind: async (userId: string): Promise<{ sent: boolean }> =>
     (await api.http.post<{ sent: boolean }>(`/kyc/admin/users/${encodeURIComponent(userId)}/remind`, {})).data,
@@ -216,6 +232,13 @@ export function bytesToBase64(buffer: ArrayBuffer): string {
     parts.push(out);
   }
   return parts.join("");
+}
+
+/** Numéro de pièce masqué à l'écran : seuls les 4 derniers caractères restent visibles (« •••• 3954 »). */
+export function maskDocNumber(num: string | null | undefined): string {
+  const n = (num ?? "").replace(/\s+/g, "");
+  if (n.length <= 4) return n;
+  return `•••• ${n.slice(-4)}`;
 }
 
 /** « 12 mars 2031 » à partir de AAAA-MM-JJ (sans décalage de fuseau). */

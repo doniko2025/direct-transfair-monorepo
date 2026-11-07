@@ -28,6 +28,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
 import { resolveActionUrl } from "../../services/notificationRouting";
+import { refreshUnreadCount } from "../../hooks/useUnreadNotifications";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
   Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, SkeletonRows, SlowNote, UText, alpha, useUI,
@@ -138,6 +139,9 @@ export default function NotificationsScreen() {
 
   const filtered = filter === "ALL" ? notifs : notifs.filter((n) => !n.isRead);
   const unreadCount = notifs.filter((n) => !n.isRead).length;
+
+  // La pastille de la cloche (accueil) suit : relue auprès du serveur dès que le nombre de non lues change ici.
+  useEffect(() => { if (!loading) void refreshUnreadCount(); }, [unreadCount, loading]);
 
   // Ne garde que les notifications qui existent encore (après un rechargement ou une suppression).
   const selectedIds = selected.filter((id) => notifs.some((n) => n.id === id));

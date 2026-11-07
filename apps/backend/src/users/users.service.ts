@@ -534,8 +534,9 @@ export class UsersService {
     // conservant la traçabilité forensique. phone (@unique, nullable)
     // vidé directement.
     const deleted = await this.prisma.$transaction(async (tx) => {
+      // Portefeuille personnel ET portefeuille du commerce (compte marchand) : les deux comptent.
       const wallets = await tx.wallet.findMany({
-        where:  { userId: id },
+        where:  { OR: [{ userId: id }, { merchant: { userId: id } }] },
         select: { currency: true, balance: true, reservedBalance: true },
       });
       const funded = wallets

@@ -28,6 +28,7 @@ import { Ionicons } from '../../components/ui/Icon';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "../../providers/AuthProvider";
 import { useUI, SYSTEM_FONT } from "../../components/ui/theme";
+import { useAccountSpace } from "../../hooks/useAccountSpace";
 
 import { Text } from '../../components/ui/Text';
 // Type local — évite l'incompatibilité de version avec expo-router
@@ -56,8 +57,8 @@ const MERCHANT_TABS: TabDef[] = [
 
 function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]; navigation: BottomTabBarProps["navigation"] }) {
   const { C } = useUI();
-  const { user } = useAuth();
-  const tabs = user?.accountType === "MERCHANT" ? MERCHANT_TABS : USER_TABS;
+  const { isMerchant } = useAccountSpace();
+  const tabs = isMerchant ? MERCHANT_TABS : USER_TABS;
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const pathname = usePathname();

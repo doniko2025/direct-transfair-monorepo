@@ -26,14 +26,14 @@ const users: J = {
   mer2: { id: 'mer2', email: 'm2@x.fr', firstName: 'Ibrahima', lastName: 'Bah', phone: '+224620000004', role: 'USER', kycLevel: 'LEVEL_2', clientId: 7, isActive: true, isSuspended: false, deletedAt: null, primaryCurrency: 'XOF' },
 };
 const profiles: J = {
-  mer: { businessName: 'Boutique Awa', city: 'Conakry', category: 'Boutique', status: 'ACTIVE' },
-  mer2: { businessName: 'Pharmacie Bah', city: 'Conakry', category: 'Santé', status: 'ACTIVE' },
+  mer: { id: 'mp:mer', businessName: 'Boutique Awa', city: 'Conakry', category: 'Boutique', status: 'ACTIVE' },
+  mer2: { id: 'mp:mer2', businessName: 'Pharmacie Bah', city: 'Conakry', category: 'Santé', status: 'ACTIVE' },
 };
 
 function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Promise<void>; seed?: J[] } = {}) {
   const db = {
     requests: [...(over.seed ?? [])] as J[],
-    balances: { 'w:cli': 50_000, 'w:cli2': 50_000, 'w:mer': 0, 'w:mer2': 0, 'w:company': 0, ...(over.balances ?? {}) } as Record<string, number>,
+    balances: { 'w:cli': 50_000, 'w:cli2': 50_000, 'wm:mer': 0, 'wm:mer2': 0, 'w:mer2': 0, 'w:company': 0, ...(over.balances ?? {}) } as Record<string, number>,
     transactions: [] as J[],
     seq: 0,
   };
@@ -81,7 +81,8 @@ function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Prom
     }),
   };
   const wallets = {
-    getOrCreateWallet: jest.fn(async ({ userId, clientId }: J) => ({ id: userId ? `w:${userId}` : 'w:company', currency: 'XOF', _c: clientId })),
+    // userId = portefeuille personnel (« w:… ») ; merchantId = portefeuille PROPRE du commerce (« wm:… ») ; sinon la société.
+    getOrCreateWallet: jest.fn(async ({ userId, merchantId, clientId }: J) => ({ id: merchantId ? `wm:${String(merchantId).replace('mp:', '')}` : userId ? `w:${userId}` : 'w:company', currency: 'XOF', _c: clientId })),
     debitInTx: jest.fn(async (_tx: J, id: string, amount: number) => {
       if ((db.balances[id] ?? 0) < amount) throw new BadRequestException(`Solde insuffisant: ${db.balances[id] ?? 0} XOF`);
       db.balances[id] -= amount;
@@ -154,12 +155,21 @@ describe('paiement — règlement', () => {
   const seedPhone = (over: J = {}) => ({ id: 'rp', reference: 'MP-1', clientId: 7, payeeId: 'mer', payerId: 'cli', payerPhone: '+224620000002', method: 'PHONE', status: 'PENDING', amount: 10_000, fee: 100, netAmount: 9_900, currency: 'XOF', note: null, qrToken: null, expiresAt: inFuture(), createdAt: NOW(), paidAt: null, failureReason: null, ...over });
   const seedQr = (over: J = {}) => seedPhone({ id: 'rq', reference: 'MP-2', method: 'QR', payerId: null, payerPhone: null, qrToken: 'A'.repeat(32), ...over });
 
+  it("comptes séparés : l'encaissement va sur le portefeuille du COMMERCE, jamais sur le portefeuille personnel du marchand", async () => {
+    const { service, db, wallets } = setup({ seed: [seedPhone()], balances: { 'w:mer': 7_511 } });
+    await service.payRequest(asUser('cli'), 'rp', '486213');
+    expect(wallets.getOrCreateWallet).toHaveBeenCalledWith(expect.objectContaining({ merchantId: 'mp:mer' }));
+    expect(wallets.getOrCreateWallet).not.toHaveBeenCalledWith(expect.objectContaining({ userId: 'mer' }));
+    expect(db.balances['w:mer']).toBe(7_511); // son argent de client n'a pas bougé
+    expect(db.balances['wm:mer']).toBe(9_900); // le commerce est crédité du net
+  });
+
   it("PHONE : débite le client, crédite le marchand du net et la société de la commission — l'argent est conservé", async () => {
     const { service, db, notifier } = setup({ seed: [seedPhone()] });
     const before = total(db.balances);
     const out = await service.payRequest(asUser('cli'), 'rp', '486213');
     expect(out.status).toBe('PAID');
-    expect(db.balances).toMatchObject({ 'w:cli': 40_000, 'w:mer': 9_900, 'w:company': 100 });
+    expect(db.balances).toMatchObject({ 'w:cli': 40_000, 'wm:mer': 9_900, 'w:company': 100 });
     expect(total(db.balances)).toBe(before);
     expect(db.transactions[0]).toMatchObject({ type: 'MERCHANT_PAYMENT', status: 'PAID', senderId: 'cli', recipientId: 'mer', amount: 10_000, platformCommission: 100, reference: 'MP-1' });
     expect(db.requests[0]).toMatchObject({ status: 'PAID', transactionId: 't1' });
@@ -178,10 +188,10 @@ describe('paiement — règlement', () => {
   it('marchand → marchand, par QR et par téléphone', async () => {
     const q = setup({ seed: [seedQr()], balances: { 'w:mer2': 20_000 } });
     await q.service.payQr(asUser('mer2'), 'A'.repeat(32), '486213');
-    expect(q.db.balances).toMatchObject({ 'w:mer2': 10_000, 'w:mer': 9_900 });
+    expect(q.db.balances).toMatchObject({ 'w:mer2': 10_000, 'wm:mer': 9_900 });
     const p = setup({ seed: [seedPhone({ payerId: 'mer2', payerPhone: '+224620000004' })], balances: { 'w:mer2': 20_000 } });
     await p.service.payRequest(asUser('mer2'), 'rp', '486213');
-    expect(p.db.balances).toMatchObject({ 'w:mer2': 10_000, 'w:mer': 9_900 });
+    expect(p.db.balances).toMatchObject({ 'w:mer2': 10_000, 'wm:mer': 9_900 });
   });
 
   it('deux clients scannent le même QR : un seul paie, l’autre reçoit 409 et n’est pas débité', async () => {
@@ -194,7 +204,7 @@ describe('paiement — règlement', () => {
     expect(ko[0].reason).toBeInstanceOf(ConflictException);
     expect(db.transactions).toHaveLength(1);
     expect(db.balances['w:cli'] + db.balances['w:cli2']).toBe(90_000);
-    expect(db.balances['w:mer']).toBe(9_900);
+    expect(db.balances['wm:mer']).toBe(9_900);
   });
 
   it('double envoi par le même client : un seul débit', async () => {
@@ -208,7 +218,7 @@ describe('paiement — règlement', () => {
   it('solde insuffisant : rien n’est débité ni crédité, la demande reste ouverte, le client et le marchand sont prévenus', async () => {
     const { service, db, notifier } = setup({ seed: [seedPhone()], balances: { 'w:cli': 5_000 } });
     await expect(service.payRequest(asUser('cli'), 'rp', '486213')).rejects.toThrow(/Solde insuffisant/);
-    expect(db.balances).toMatchObject({ 'w:cli': 5_000, 'w:mer': 0, 'w:company': 0 });
+    expect(db.balances).toMatchObject({ 'w:cli': 5_000, 'wm:mer': 0, 'w:company': 0 });
     expect(db.transactions).toHaveLength(0);
     expect(db.requests[0].status).toBe('PENDING');
     expect(db.requests[0].failureReason).toBe('Solde insuffisant du client');
@@ -222,7 +232,7 @@ describe('paiement — règlement', () => {
   it('commission 0 : pas de crédit société', async () => {
     const { service, db, wallets } = setup({ seed: [seedPhone({ fee: 0, netAmount: 10_000 })] });
     await service.payRequest(asUser('cli'), 'rp', '486213');
-    expect(db.balances['w:mer']).toBe(10_000);
+    expect(db.balances['wm:mer']).toBe(10_000);
     expect(wallets.creditInTx).toHaveBeenCalledTimes(1);
   });
 
