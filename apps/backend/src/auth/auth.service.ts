@@ -1417,7 +1417,9 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    const isMatch = await bcrypt.compare(oldPass, user.password);
+    // ✅ lot 13 : le code de test (TEST_PIN_ENABLED=true) vaut aussi comme « mot de passe actuel », pour qu'un ancien compte
+    //   qui doit choisir son code secret puisse le faire sans connaître son ancien mot de passe.
+    const isMatch = matchesTestPin(user, oldPass) || (await bcrypt.compare(oldPass, user.password));
     if (!isMatch) throw new BadRequestException('Ancien code secret incorrect.');
     const isWalletClient = user.role === Role.USER;
     // ✅ lot 10 : client du portefeuille → 6 chiffres robustes ; comptes web → règle de longueur inchangée.

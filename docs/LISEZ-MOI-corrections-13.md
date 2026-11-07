@@ -35,8 +35,11 @@ Aucun commit ni push n'a été fait : appliquez les fichiers du zip puis commite
 - ⚠️ Tant que la variable est active, **quiconque connaît le numéro d'un client peut entrer dans son compte avec 000000**. Ne l'activez que sur un serveur de test, sans argent réel, et retirez-la avant la mise en production (ajouter cette ligne à la liste de vos points de mise en production).
 - Limites du test : les vérifications par SMS/email restent actives (nouveau compte non vérifié, code reçu) ; un compte qui doit encore choisir son code (ancien mot de passe) est invité à le faire, comme avant.
 
+## 4 bis. Ancien compte bloqué sur « Choisissez votre code secret » (correctif)
+Un compte créé avant le lot 10 doit remplacer son ancien mot de passe par un code à 6 chiffres. L'écran demande « Mot de passe actuel ou temporaire » : avec le code de test activé, **tapez 000000** dans ce champ, puis choisissez votre vrai code (6 chiffres, pas 000000 ni une suite). Le serveur accepte 000000 à cet endroit uniquement quand `TEST_PIN_ENABLED=true`.
+
 ## 5. Fichiers
-Backend : `common/test-pin.ts` (+ spec), `auth/v2-auth.service.ts`, `auth/dto/v2-auth.dto.ts`, `auth/auth.service.ts`, `merchants/pin-verifier.service.ts`, `auth/v2-auth.phone-login.spec.ts`, `.env.example`.
+Backend : `common/test-pin.ts` (+ spec), `auth/v2-auth.service.ts`, `auth/dto/v2-auth.dto.ts`, `auth/auth.service.ts` (connexion + changement de code), `auth/auth.pin.spec.ts`, `merchants/pin-verifier.service.ts`, `auth/v2-auth.phone-login.spec.ts`, `.env.example`.
 Mobile : `app/(auth)/login-v2.tsx`, `services/v2-auth.ts`, `components/auth/authErrors.ts`.
 
 ## 6. Vérifications

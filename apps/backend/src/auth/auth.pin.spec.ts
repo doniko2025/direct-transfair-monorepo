@@ -43,6 +43,22 @@ describe('changePassword — client du portefeuille', () => {
     await expect(svc('changePassword').call(self, 'u1', '739204', '234567')).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('lot 13 : avec TEST_PIN_ENABLED=true, 000000 vaut « mot de passe actuel » ; sinon il est refusé', async () => {
+    const saved = process.env.TEST_PIN_ENABLED;
+    try {
+      delete process.env.TEST_PIN_ENABLED;
+      const off = await changeCtx({ role: 'USER', password: await hashed('Temporaire1'), mustChangePassword: true });
+      await expect(svc('changePassword').call(off.self, 'u1', '000000', '486213')).rejects.toBeInstanceOf(BadRequestException);
+
+      process.env.TEST_PIN_ENABLED = 'true';
+      const on = await changeCtx({ role: 'USER', password: await hashed('Temporaire1'), mustChangePassword: true });
+      await svc('changePassword').call(on.self, 'u1', '000000', '486213');
+      expect(on.update.mock.calls[0][0].data).toMatchObject({ mustChangePassword: false });
+    } finally {
+      if (saved === undefined) delete process.env.TEST_PIN_ENABLED; else process.env.TEST_PIN_ENABLED = saved;
+    }
+  });
+
   it('accepte un bon code, enregistre pinSetAt et lève le drapeau mustChangePassword', async () => {
     const { self, update } = await changeCtx({ role: 'USER', password: await hashed('Temporaire1'), mustChangePassword: true });
     await svc('changePassword').call(self, 'u1', 'Temporaire1', '486213');
