@@ -520,7 +520,7 @@ export class MerchantsService {
     const clientId = this.adminScope(actor, clientIdParam);
     const p = await this.prisma.merchantProfile.findFirst({
       where: { userId, clientId },
-      include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, kycLevel: true, isSuspended: true } } },
+      include: { ...WITH_LOGO, user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, kycLevel: true, isSuspended: true } } },
     });
     if (!p) throw new NotFoundException('Marchand introuvable.');
     const settings = await this.settingsFor(clientId);

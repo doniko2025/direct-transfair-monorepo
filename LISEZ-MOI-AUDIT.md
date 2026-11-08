@@ -6,3 +6,4 @@
 - mobile `admin/transactions.tsx` : retrait du bouton « Modifier le montant » (route PATCH /transactions/:id inexistante, et modifier un montant après coup n'est pas souhaitable) ;
   « Supprimer » renommé « Annuler la transaction » (c'est ce que fait réellement le serveur : annulation + remboursement).
 - `.env.example` : RATE_MAX_AGE_HOURS et MERCHANT_EXPIRY_CRON documentés.
+- backend `merchants.service.ts` : `getAdmin` charge maintenant le logo (`...WITH_LOGO`) — erreur TS2345 vue au `pnpm run build`.
