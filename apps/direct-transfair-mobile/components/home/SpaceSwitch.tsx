@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/home/SpaceSwitch.tsx
 // =========================================================
 // BASCULE DE COMPTE v1.0 — « Compte client | Compte marchand » (deux comptes séparés : solde, opérations et menus propres).
+// Un point signale des notifications non lues dans l'AUTRE compte (chaque compte a sa propre boîte de réception).
 // Affichée seulement quand la personne a les deux comptes. Segments larges (zone de toucher confortable sur mobile).
 // =========================================================
 
@@ -10,6 +11,7 @@ import { Ionicons } from "../ui/Icon";
 import { Text } from "../ui/Text";
 import { useUI } from "../ui";
 import { useAccountSpace, type AccountSpace } from "../../hooks/useAccountSpace";
+import { useUnreadOtherSpace } from "../../hooks/useUnreadNotifications";
 
 const ITEMS: Array<{ key: AccountSpace; label: string; icon: string }> = [
   { key: "client", label: "Compte client", icon: "person-outline" },
@@ -19,6 +21,7 @@ const ITEMS: Array<{ key: AccountSpace; label: string; icon: string }> = [
 export function SpaceSwitch({ style }: { style?: StyleProp<ViewStyle> }) {
   const { C } = useUI();
   const { space, canSwitch, switchTo } = useAccountSpace();
+  const otherUnread = useUnreadOtherSpace();
   if (!canSwitch) return null;
   return (
     <View
@@ -33,7 +36,7 @@ export function SpaceSwitch({ style }: { style?: StyleProp<ViewStyle> }) {
             onPress={() => switchTo(it.key)}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
-            accessibilityLabel={it.label}
+            accessibilityLabel={!on && otherUnread > 0 ? `${it.label}, ${otherUnread} notification${otherUnread > 1 ? "s" : ""} non lue${otherUnread > 1 ? "s" : ""}` : it.label}
             style={({ pressed }) => ({
               flex: 1, minWidth: 0, height: 40, borderRadius: 999, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
               paddingHorizontal: 8, backgroundColor: on ? C.surface : "transparent", opacity: pressed ? 0.8 : 1,
@@ -42,6 +45,7 @@ export function SpaceSwitch({ style }: { style?: StyleProp<ViewStyle> }) {
           >
             <Ionicons name={it.icon as any} size={16} color={on ? C.ink : C.muted} />
             <Text numberOfLines={1} allowFontScaling={false} style={{ fontSize: 13, fontWeight: on ? "700" : "600", color: on ? C.ink : C.muted }}>{it.label}</Text>
+            {!on && otherUnread > 0 ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.danger }} /> : null}
           </Pressable>
         );
       })}

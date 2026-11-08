@@ -2,7 +2,8 @@
 // =========================================================
 // COMPTES SÉPARÉS — à quel compte (client / marchand) appartient une opération ?
 // Même règle que le serveur (apps/backend/src/transactions/transactions.service.ts › findForUser) :
-//   • compte MARCHAND = paiements encaissés (MERCHANT_PAYMENT dont on est le destinataire) + retraits du commerce (MERCHANT_PAYOUT dont on est l'expéditeur) ;
+//   • compte MARCHAND = paiements encaissés (MERCHANT_PAYMENT dont on est le destinataire) + retraits du commerce (MERCHANT_PAYOUT dont on est l'expéditeur)
+//                       + remboursements faits aux clients (MERCHANT_REFUND dont on est l'expéditeur) ;
 //   • compte CLIENT   = tout le reste (envois, réceptions, recharges, et ses propres paiements chez d'autres marchands).
 // Le serveur filtre déjà (?space=…). Ce second filtrage, fait sur l'appareil, garantit la séparation même si la réponse vient d'une
 // ancienne version du serveur qui ignore ce paramètre : un écran ne montre JAMAIS les opérations de l'autre compte.
@@ -16,6 +17,7 @@ export function isMerchantSide(tx: TxLike, userId: string): boolean {
   const type = String(tx?.type ?? "").toUpperCase();
   if (type === "MERCHANT_PAYMENT") return tx?.recipientId === userId;
   if (type === "MERCHANT_PAYOUT") return tx?.senderId === userId;
+  if (type === "MERCHANT_REFUND") return tx?.senderId === userId; // le commerce rembourse un client ; le client, lui, le reçoit dans son compte client
   return false;
 }
 

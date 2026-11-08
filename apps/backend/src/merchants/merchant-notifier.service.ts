@@ -1,6 +1,7 @@
 // apps/backend/src/merchants/merchant-notifier.service.ts
 // =========================================================
-// Messages du compte marchand : paiement reçu / effectué / refusé / expiré, retrait traité, destination modifiée.
+// Messages du compte marchand : paiement reçu / effectué / refusé / expiré / remboursé, retrait traité, destination modifiée, solde bas,
+// échecs de paiement répétés, caissier ajouté ou retiré, journée clôturée.
 // Trois canaux (notification dans l'application, push, e-mail). Un canal en panne ne bloque ni les autres ni l'opération : ne lève jamais.
 // =========================================================
 
@@ -8,6 +9,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { spaceOfAction } from '../notifications/notification-space';
 import { PushService } from '../push/push.service';
 
 export type MerchantMessageKind =
@@ -26,7 +28,15 @@ export type MerchantMessageKind =
   | 'DESTINATION_CHANGED'
   | 'MERCHANT_ACTIVATED'
   | 'MERCHANT_SUSPENDED'
-  | 'MERCHANT_REACTIVATED';
+  | 'MERCHANT_REACTIVATED'
+  | 'PAYMENT_REFUNDED'
+  | 'PAYMENT_REFUND_SENT'
+  | 'LOW_BALANCE'
+  | 'PAYMENT_FAILURES'
+  | 'STAFF_ADDED'
+  | 'STAFF_REMOVED'
+  | 'DAY_CLOSED'
+  | 'QR_ROTATED';
 
 export interface MerchantMessage {
   kind: MerchantMessageKind;
@@ -90,11 +100,13 @@ export class MerchantNotifierService {
           actionUrl: m.actionUrl ?? null,
           actionLabel: m.actionLabel ?? null,
           groupKey: 'merchant',
+          // Boîte de réception : un message qui ouvre un écran du compte marchand va dans « marchand », sinon dans « client ».
+          space: spaceOfAction(m.actionUrl),
           metadata: { kind: m.kind },
         },
       }),
     );
-    await safe('push', () => this.push.sendToUser(user.id, { title: m.title, body: m.body, data: { type: 'MERCHANT', kind: m.kind, actionUrl: m.actionUrl ?? '' } }));
+    await safe('push', () => this.push.sendToUser(user.id, { title: m.title, body: m.body, data: { type: 'MERCHANT', kind: m.kind, space: spaceOfAction(m.actionUrl), actionUrl: m.actionUrl ?? '' } }));
     if (wantEmail) {
       await safe('e-mail', () => this.mail.sendEmail({ to: user.email!, subject: m.title, htmlContent: merchantEmailHtml(user.firstName ?? '', m), userId: user.id }));
     }

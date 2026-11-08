@@ -5,6 +5,7 @@ import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'cl
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export const TICKET_CATEGORIES = ['transaction', 'kyc', 'account', 'technical', 'other'] as const;
+export const TICKET_SPACES = ['client', 'merchant'] as const;
 export const DISPUTE_OUTCOMES = ['ACCEPTED', 'REJECTED', 'INFO'] as const;
 
 export class CreateTicketDto {
@@ -23,6 +24,11 @@ export class CreateTicketDto {
   @IsOptional()
   @IsIn(TICKET_CATEGORIES as unknown as string[])
   category?: (typeof TICKET_CATEGORIES)[number];
+
+  /** Compte depuis lequel la demande est ouverte (défaut : client). Un litige sur une opération du commerce passe toujours en « merchant ». */
+  @IsOptional()
+  @IsIn(TICKET_SPACES as unknown as string[])
+  space?: (typeof TICKET_SPACES)[number];
 
   /** Opération contestée : le ticket devient un litige. */
   @IsOptional()

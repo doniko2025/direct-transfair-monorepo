@@ -126,6 +126,7 @@ enum TransactionType {
   SCHEDULED       // Virement programmé
   MERCHANT_PAYMENT // lot 11 — paiement d'un client à un marchand (téléphone ou QR code)
   MERCHANT_PAYOUT  // lot 11 — retrait du solde d'un marchand vers Orange Money ou son compte bancaire
+  MERCHANT_REFUND  // lot 13 — remboursement d'un paiement par le marchand (le client est recrédité)
 }
 
 enum PayoutMethod {
@@ -313,6 +314,10 @@ enum AuditAction {
   MERCHANT_PAYMENT             // lot 11 — encaissement accepté par le client
   MERCHANT_PAYOUT_REQUEST      // lot 11 — retrait demandé par le marchand
   MERCHANT_PAYOUT_PROCESS      // lot 11 — retrait payé ou refusé par l'administrateur
+  MERCHANT_REFUND              // lot 13 — paiement remboursé au client
+  MERCHANT_STAFF               // lot 13 — caissier ajouté, modifié ou retiré
+  MERCHANT_CLOSING             // lot 13 — journée de caisse clôturée
+  MERCHANT_QR_ROTATE           // lot 13 — QR permanent du commerce renouvelé
 }
 
 enum AlertType {
@@ -940,6 +945,7 @@ model User {
   paymentsReceived PaymentRequest[]  @relation("PaymentPayee")
   paymentsMade     PaymentRequest[]  @relation("PaymentPayer")
   merchantPayouts  MerchantPayout[]
+  merchantStaffOf  MerchantStaff[]   @relation("MerchantStaffUser")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1757,6 +1763,9 @@ model Notification {
   // Regroupement (ex: "transactions", "kyc")
   groupKey String?
 
+  // Comptes séparés : « client » (par défaut) ou « merchant » — un même utilisateur a deux boîtes de réception distinctes.
+  space String @default("client")
+
   // Expiration automatique
   expiresAt DateTime?
 
@@ -1764,6 +1773,7 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([userId, createdAt])
+  @@index([userId, space, isRead])
   @@index([groupKey])
   @@map("notifications")
 }
@@ -2284,6 +2294,9 @@ model SupportTicket {
   resolvedById   String?
   refundRequests RefundRequest[]
 
+  // Comptes séparés : « client » (défaut) ou « merchant » — chaque compte voit uniquement ses propres demandes.
+  space String @default("client")
+
   // Métadonnées (transactionId concernée, etc.)
   metadata Json?
 
@@ -2296,6 +2309,7 @@ model SupportTicket {
   @@index([clientId])
   @@index([userId])
   @@index([transactionId])
+  @@index([userId, space])
   @@map("support_tickets")
 }
 
@@ -2514,6 +2528,19 @@ model MerchantProfile {
   suspendedReason String?
   suspendedAt     DateTime?
 
+  /// Lot 13 — QR code PERMANENT du commerce (affiché en caisse, le client saisit le montant). Renouvelable avec le code secret.
+  staticQrToken String? @unique
+  /// Lot 13 — alerte « solde bas » : seuil (devise du compte) ; `lowBalanceNotifiedAt` évite de répéter l'alerte tant que le solde reste bas.
+  lowBalanceThreshold  Decimal?  @db.Decimal(18, 4)
+  lowBalanceNotifiedAt DateTime?
+  /// Lot 13 — alerte « plusieurs paiements échoués » (au plus une fois toutes les 6 h).
+  failureAlertsEnabled Boolean   @default(true)
+  failureAlertedAt     DateTime?
+
+  logo     MerchantLogo?
+  staff    MerchantStaff[]
+  closings MerchantClosing[]
+
   /// Portefeuilles du commerce (un par devise) : séparés de ceux du client, même quand c'est la même personne.
   wallets Wallet[]
 
@@ -2571,6 +2598,18 @@ model PaymentRequest {
   /// Opération (Transaction MERCHANT_PAYMENT) créée quand le client paie.
   transactionId String?
 
+  /// Lot 13 — caissier qui a créé la demande (nul = le propriétaire lui-même).
+  createdById String?
+  /// Lot 13 — demande née d'un scan du QR permanent (le client a saisi le montant).
+  viaStaticQr Boolean @default(false)
+  /// Lot 13 — nombre de tentatives de règlement échouées (solde insuffisant, portefeuille gelé…) : alimente l'alerte « échecs de paiement ».
+  failedAttempts Int @default(0)
+  /// Lot 13 — remboursement (la demande reste PAID ; ces champs disent qu'elle a été rendue au client).
+  refundedAt          DateTime?
+  refundedById        String?
+  refundReason        String?
+  refundTransactionId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2578,6 +2617,9 @@ model PaymentRequest {
   @@index([payerId, status])
   @@index([clientId, status, expiresAt])
   @@index([payerPhone, status])
+  @@index([payeeId, status, paidAt])
+  @@index([payeeId, refundedAt])
+  @@index([createdById, createdAt])
   @@map("payment_requests")
 }
 
@@ -2626,4 +2668,68 @@ model MerchantPayout {
   @@index([userId, createdAt])
   @@index([clientId, status, createdAt])
   @@map("merchant_payouts")
+}
+
+/// Lot 13 — logo du commerce (octets en base, comme la photo de profil). Montré au client qui paie.
+model MerchantLogo {
+  merchantId String          @id
+  merchant   MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  mimeType   String
+  sizeBytes  Int
+  sha256     String
+  data       Bytes
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@map("merchant_logos")
+}
+
+/// Lot 13 — caissier d'un commerce : un client qui peut encaisser POUR le commerce (jamais retirer, ni voir le solde, ni exporter).
+model MerchantStaff {
+  id         String          @id @default(cuid())
+  merchantId String
+  merchant   MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User            @relation("MerchantStaffUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  active    Boolean  @default(true)
+  /// Droit de rembourser un paiement (code secret du caissier exigé). Désactivé par défaut.
+  canRefund Boolean  @default(false)
+  /// Plafond par encaissement (devise du compte) ; nul = les plafonds de la société seulement.
+  maxAmount Decimal? @db.Decimal(18, 4)
+
+  addedById String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([merchantId, userId])
+  @@index([userId, active])
+  @@map("merchant_staff")
+}
+
+/// Lot 13 — clôture de caisse d'une journée, par devise : photo figée des totaux au moment de la clôture.
+model MerchantClosing {
+  id         String          @id @default(cuid())
+  merchantId String
+  merchant   MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  /// Jour local « AAAA-MM-JJ » (selon le fuseau de l'appareil au moment de la clôture).
+  day         String
+  tzOffsetMin Int          @default(0)
+  currency    CurrencyCode
+
+  paymentsCount Int
+  gross         Decimal @db.Decimal(18, 4)
+  fees          Decimal @db.Decimal(18, 4)
+  net           Decimal @db.Decimal(18, 4)
+  refundsCount  Int     @default(0)
+  refundsTotal  Decimal @default(0) @db.Decimal(18, 4)
+  /// Détail par moyen (QR / téléphone / QR permanent) et par caissier.
+  details       Json?
+
+  closedById String
+  closedAt   DateTime @default(now())
+
+  @@unique([merchantId, day, currency])
+  @@index([merchantId, day])
+  @@map("merchant_closings")
 }

@@ -18,6 +18,11 @@
 // ✅ v1.2 (lot 7) — setUserKycLevel() : un client ne passe à un niveau supérieur que si ses pièces VALIDÉES le permettent
 //   (voir kyc/kyc-rules.ts levelFromDocs). Baisser un niveau reste toujours possible.
 //
+// ✅ v1.3 (lot 14) — les PAIEMENTS MARCHAND d'un client (QR, demande par téléphone) comptent dans les mêmes plafonds que ses envois :
+//   avant, payer un commerce n'était borné par rien. Un paiement remboursé par le marchand ne compte plus. Le contrôle se fait au
+//   règlement, SOUS le verrou du portefeuille (assertMerchantPaymentWithinLimits), et usageOf() additionne envois + paiements : un
+//   client qui a atteint son plafond d'envoi ne peut plus contourner en payant un commerce, et inversement.
+//
 // Ce qui est contrôlé : les envois (TRANSFER, SCHEDULED) d'un CLIENT (rôle USER), dans la devise de l'envoi, montant
 // hors frais. Comptent les envois en cours ou réussis ; pas les annulés, échoués, remboursés ou expirés.
 // Les périodes (jour, mois, année) sont calculées en UTC. Un envoi fait par un agent pour un client de passage n'est
@@ -105,7 +110,12 @@ export function periodStarts(now: Date): { day: Date; month: Date; year: Date } 
 
 const money = (n: number, currency: string): string => `${n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} ${currency}`;
 
-export function breachMessage(b: Breach, currency: string, kind: 'send' | 'deposit' | 'counter' = 'send'): string {
+export function breachMessage(b: Breach, currency: string, kind: 'send' | 'deposit' | 'counter' | 'payment' = 'send'): string {
+  if (kind === 'payment') {
+    const hintP = ' Vos envois et vos paiements chez les commerçants comptent ensemble. Pour dépenser davantage, faites vérifier votre identité (niveau KYC supérieur).';
+    if (b.limit === 'perTransaction') return `Montant supérieur au plafond par opération : ${money(b.max, currency)} au maximum.${hintP}`;
+    return `Plafond ${periodLabel(b.limit)} dépassé : il vous reste ${money(b.remaining, currency)} sur ${money(b.max, currency)}.${hintP}`;
+  }
   if (kind === 'counter') {
     const hintC = ' Cet expéditeur ne peut pas envoyer davantage au comptoir pour le moment : il peut ouvrir un compte et faire vérifier son identité.';
     if (b.limit === 'perTransaction') return `Montant supérieur au plafond par envoi au comptoir : ${money(b.max, currency)} au maximum.${hintC}`;
@@ -201,8 +211,9 @@ export class TransferLimitsService {
   }
 
   /** Montants déjà envoyés par ce client dans cette devise, depuis le début du jour / du mois / de l'année (UTC). */
-  async usageOf(db: Db | PrismaService, clientId: number, userId: string, currency: string, now = new Date(), excludeTransactionId?: string): Promise<Usage> {
+  async usageOf(db: Db | PrismaService, clientId: number, userId: string, currency: string, now = new Date(), excludeTransactionId?: string, excludeRequestId?: string): Promise<Usage> {
     const start = periodStarts(now);
+    const merchant = await this.merchantUsageOf(db, clientId, userId, currency, now, excludeRequestId);
     const base = {
       clientId,
       senderId: userId,
@@ -216,7 +227,53 @@ export class TransferLimitsService {
       return Number(r._sum.amount ?? 0);
     };
     const [daily, monthly, yearly] = await Promise.all([sum(start.day), sum(start.month), sum(start.year)]);
+    return { daily: daily + merchant.daily, monthly: monthly + merchant.monthly, yearly: yearly + merchant.yearly };
+  }
+
+  /** Paiements marchand déjà réglés par ce client (non remboursés), dans cette devise, depuis le début du jour / du mois / de l'année (UTC). */
+  async merchantUsageOf(db: Db | PrismaService, clientId: number, payerId: string, currency: string, now = new Date(), excludeRequestId?: string): Promise<Usage> {
+    const start = periodStarts(now);
+    const base = {
+      clientId,
+      payerId,
+      currency: currency as CurrencyCode,
+      status: 'PAID' as const,
+      refundedAt: null,
+      ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+    };
+    const sum = async (since: Date) => {
+      const r = await db.paymentRequest.aggregate({ where: { ...base, paidAt: { gte: since } }, _sum: { amount: true } });
+      return Number(r._sum.amount ?? 0);
+    };
+    const [daily, monthly, yearly] = await Promise.all([sum(start.day), sum(start.month), sum(start.year)]);
     return { daily, monthly, yearly };
+  }
+
+  /**
+   * Plafonds appliqués à un PAIEMENT MARCHAND (lot 14), à appeler dans la transaction SQL du règlement, APRÈS le débit du portefeuille
+   * (qui prend le verrou) : deux paiements simultanés ne contournent pas le plafond. `excludeRequestId` écarte la demande en cours de règlement.
+   * 403 LIMIT_EXCEEDED si dépassé. Ne fait rien pour un compte qui n'est pas un client.
+   */
+  async assertMerchantPaymentWithinLimits(db: Db | PrismaService, p: { clientId: number; userId: string; currency: string; amount: number; excludeRequestId: string }): Promise<void> {
+    const user = await db.user.findFirst({ where: { id: p.userId, clientId: p.clientId }, select: { role: true, kycLevel: true } });
+    if (!user || user.role !== 'USER') return;
+    const level = String(user.kycLevel) as KycLevelName;
+    const limits = await this.effectiveLimits(db, p.clientId, level, p.currency);
+    const needsUsage = limits.daily !== null || limits.monthly !== null || limits.yearly !== null;
+    const usage = needsUsage ? await this.usageOf(db, p.clientId, p.userId, p.currency, new Date(), undefined, p.excludeRequestId) : { daily: 0, monthly: 0, yearly: 0 };
+    const breach = evaluateLimits(limits, usage, p.amount);
+    if (!breach) return;
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: 'LIMIT_EXCEEDED',
+      message: breachMessage(breach, p.currency, 'payment'),
+      limit: breach.limit,
+      max: breach.max,
+      used: breach.used,
+      remaining: breach.remaining,
+      currency: p.currency,
+    });
   }
 
   /**

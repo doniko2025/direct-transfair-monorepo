@@ -125,6 +125,8 @@ export function describeTx(tx: any, userId?: string): TxView {
   // Lot 11 : paiement marchand (QR / téléphone) et retrait marchand — le sens se lit sur l'expéditeur / le destinataire.
   const isMerchantPayment = type === 'MERCHANT_PAYMENT';
   const isMerchantPayout = type === 'MERCHANT_PAYOUT';
+  // Lot 13 : remboursement d'un paiement — reçu par le client, versé par le commerce.
+  const isMerchantRefund = type === 'MERCHANT_REFUND';
   const incoming = isMerchantPayout
     ? false
     : isMerchantPayment
@@ -151,7 +153,9 @@ export function describeTx(tx: any, userId?: string): TxView {
     incoming,
     title: isMerchantPayout
       ? 'Retrait marchand'
-      : isMerchantPayment
+      : isMerchantRefund
+        ? (incoming ? 'Remboursement reçu' : 'Remboursement client')
+        : isMerchantPayment
         ? (incoming ? 'Paiement reçu' : 'Paiement marchand')
         : incoming ? (isDeposit ? 'Dépôt' : 'Argent reçu') : "Envoi d'argent",
     counterpart,
@@ -160,6 +164,6 @@ export function describeTx(tx: any, userId?: string): TxView {
     converted: !incoming && hasConversion ? { amount: toNum(tx.receivedAmount), currency: String(tx.targetCurrency) } : null,
     status,
     statusLabel: incoming ? status.labelIncoming : status.label,
-    icon: isMerchantPayout ? 'cash-outline' : isMerchantPayment ? 'storefront-outline' : incoming ? 'arrow-down' : 'arrow-up',
+    icon: isMerchantPayout ? 'cash-outline' : isMerchantRefund ? 'return-down-back-outline' : isMerchantPayment ? 'storefront-outline' : incoming ? 'arrow-down' : 'arrow-up',
   };
 }

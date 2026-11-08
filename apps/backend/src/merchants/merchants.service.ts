@@ -9,13 +9,14 @@
 // =========================================================
 
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type MerchantStaff } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import type { MerchantSettings } from '../company-settings/company-settings.logic';
 import { PrismaService } from '../prisma/prisma.service';
-import type { ActivateMerchantDto, ChangeDestinationDto, MerchantListQueryDto, UpdateMerchantProfileDto } from './dto/merchants.dto';
+import type { ActivateMerchantDto, ChangeDestinationDto, MerchantListQueryDto, UpdateAlertsDto, UpdateMerchantProfileDto } from './dto/merchants.dto';
+import { dayBounds, localDay, parseTzOffset } from './merchant-extras';
 import { MerchantNotifierService } from './merchant-notifier.service';
 import {
   type MerchantProfileInput,
@@ -23,6 +24,9 @@ import {
   assertIban,
   assertOrangePhone,
   assertOrangePhoneForCurrency,
+  assertValidAmount,
+  buildQrPayload,
+  generateQrToken,
   isOrangeMoneyCurrency,
   isOrangePhoneConsistent,
   availablePayoutMethods,
@@ -43,7 +47,19 @@ const clean = (v: unknown): string | null => {
   return s ? s : null;
 };
 
-type ProfileRow = Prisma.MerchantProfileGetPayload<object>;
+type ProfileRow = Prisma.MerchantProfileGetPayload<{ include: { logo: { select: { sha256: true } } } }>;
+const WITH_LOGO = { logo: { select: { sha256: true } } } as const;
+
+/** Pour qui une personne agit-elle : son propre commerce (propriétaire) ou le commerce où elle est caissier. */
+export interface Acting {
+  /** Propriétaire du commerce (c'est lui qui est encaissé et dont le portefeuille de commerce est utilisé). */
+  ownerId: string;
+  profile: ProfileRow;
+  settings: MerchantSettings;
+  staff: MerchantStaff | null;
+  isOwner: boolean;
+}
+export const NOT_STAFF_CODE = 'NOT_STAFF';
 
 @Injectable()
 export class MerchantsService {
@@ -77,7 +93,7 @@ export class MerchantsService {
 
   /** Refuse (403 + code) si l'utilisateur n'est pas un marchand actif dans une société qui ouvre les comptes marchands. */
   async assertActiveMerchant(userId: string): Promise<{ profile: ProfileRow; settings: MerchantSettings }> {
-    const profile = await this.prisma.merchantProfile.findUnique({ where: { userId } });
+    const profile = await this.prisma.merchantProfile.findUnique({ where: { userId }, include: WITH_LOGO });
     if (!profile) {
       throw new ForbiddenException({ statusCode: 403, code: MERCHANT_REQUIRED_CODE, message: "Ce compte n'est pas un compte marchand." });
     }
@@ -93,6 +109,27 @@ export class MerchantsService {
       throw new ForbiddenException({ statusCode: 403, code: MERCHANT_DISABLED_CODE, message: 'Les comptes marchands sont temporairement fermés.' });
     }
     return { profile, settings };
+  }
+
+  /**
+   * Résout « pour quel commerce j'agis ». Sans `merchantId` : mon propre commerce. Avec `merchantId` : mon commerce si j'en suis le propriétaire,
+   * sinon le commerce où je suis caissier actif — sinon 403. Le commerce doit être actif (ni suspendu, ni fermé par la société).
+   */
+  async resolveActing(user: AuthUserPayload, merchantId?: string): Promise<Acting> {
+    if (!merchantId) {
+      const { profile, settings } = await this.assertActiveMerchant(user.id);
+      return { ownerId: user.id, profile, settings, staff: null, isOwner: true };
+    }
+    const shop = await this.prisma.merchantProfile.findUnique({ where: { id: merchantId }, select: { userId: true, clientId: true } });
+    if (!shop || !user.clientId || shop.clientId !== user.clientId) throw new NotFoundException('Commerce introuvable.');
+    if (shop.userId === user.id) {
+      const { profile, settings } = await this.assertActiveMerchant(user.id);
+      return { ownerId: user.id, profile, settings, staff: null, isOwner: true };
+    }
+    const staff = await this.prisma.merchantStaff.findFirst({ where: { merchantId, userId: user.id, active: true } });
+    if (!staff) throw new ForbiddenException({ statusCode: 403, code: NOT_STAFF_CODE, message: "Vous n'êtes pas caissier de ce commerce." });
+    const { profile, settings } = await this.assertActiveMerchant(shop.userId);
+    return { ownerId: shop.userId, profile, settings, staff, isOwner: false };
   }
 
   // ── Création de la fiche ───────────────────────────────
@@ -169,6 +206,15 @@ export class MerchantsService {
       destinationChangedAt: p.destinationChangedAt ? p.destinationChangedAt.toISOString() : null,
       payoutLockedUntil: cooldown.until ? cooldown.until.toISOString() : null,
       createdAt: p.createdAt.toISOString(),
+      /** Identifiant public du commerce (logo, QR permanent, caissiers). */
+      shopId: p.id,
+      /** Empreinte du logo (nulle = pas de logo) : l'application ne retélécharge que si elle change. */
+      logoVersion: p.logo?.sha256 ?? null,
+      hasStaticQr: !!p.staticQrToken,
+      alerts: {
+        lowBalanceThreshold: p.lowBalanceThreshold === null || p.lowBalanceThreshold === undefined ? null : Number(p.lowBalanceThreshold),
+        failureAlertsEnabled: p.failureAlertsEnabled ?? true,
+      },
     };
   }
 
@@ -197,7 +243,7 @@ export class MerchantsService {
   async getMine(user: AuthUserPayload) {
     const me = await this.prisma.user.findUnique({ where: { id: user.id }, select: { accountType: true, clientId: true, primaryCurrency: true } });
     if (!me) throw new NotFoundException('Compte introuvable.');
-    const profile = await this.prisma.merchantProfile.findUnique({ where: { userId: user.id } });
+    const profile = await this.prisma.merchantProfile.findUnique({ where: { userId: user.id }, include: WITH_LOGO });
     const settings = await this.settingsFor(me.clientId ?? this.companyOf(user));
     const now = new Date();
     return {
@@ -216,27 +262,34 @@ export class MerchantsService {
     };
   }
 
-  async summary(user: AuthUserPayload) {
+  /**
+   * Résumé du commerce. `today` et `total` : paiements reçus, MOINS les remboursements faits sur la période (c'est la vraie variation du solde).
+   * `tz` : décalage de fuseau de l'appareil en minutes (Paris hiver : 60) pour que « aujourd'hui » soit le jour de l'appareil.
+   */
+  async summary(user: AuthUserPayload, tz?: unknown) {
     const { profile } = await this.assertActiveMerchant(user.id);
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const [today, pending, byCurrency, payoutsPending, merchantWallets] = await Promise.all([
-      this.prisma.paymentRequest.groupBy({
-        by: ['currency'],
-        where: { payeeId: user.id, status: 'PAID', paidAt: { gte: startOfDay } },
-        _sum: { netAmount: true, amount: true },
-        _count: { _all: true },
-      }),
-      this.prisma.paymentRequest.count({ where: { payeeId: user.id, status: 'PENDING', expiresAt: { gt: new Date() } } }),
+    const offset = parseTzOffset(tz);
+    const startOfDay = dayBounds(localDay(new Date(), offset), offset).from;
+    const [todaySales, todayRefunds, pending, totalSales, totalRefunds, payoutsPending, merchantWallets] = await Promise.all([
+      this.prisma.paymentRequest.groupBy({ by: ['currency'], where: { payeeId: user.id, status: 'PAID', paidAt: { gte: startOfDay } }, _sum: { netAmount: true, amount: true }, _count: { _all: true } }),
+      this.prisma.paymentRequest.groupBy({ by: ['currency'], where: { payeeId: user.id, refundedAt: { gte: startOfDay } }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.paymentRequest.count({ where: { payeeId: user.id, status: 'PENDING', viaStaticQr: false, expiresAt: { gt: new Date() } } }),
       this.prisma.paymentRequest.groupBy({ by: ['currency'], where: { payeeId: user.id, status: 'PAID' }, _sum: { netAmount: true }, _count: { _all: true } }),
+      this.prisma.paymentRequest.groupBy({ by: ['currency'], where: { payeeId: user.id, refundedAt: { not: null } }, _sum: { amount: true } }),
       this.prisma.merchantPayout.count({ where: { userId: user.id, status: 'PENDING' } }),
       // Solde du COMMERCE (jamais celui du portefeuille personnel du client). Aucune ligne = rien encaissé = 0.
       this.prisma.wallet.findMany({ where: { merchantId: profile.id, isActive: true }, orderBy: { currency: 'asc' }, select: { currency: true, balance: true, reservedBalance: true } }),
     ]);
+    const refundOf = (rows: { currency: string; _sum: { amount: Prisma.Decimal | null } }[], c: string) => Number(rows.find((r) => r.currency === c)?._sum.amount ?? 0);
+    const currenciesToday = [...new Set([...todaySales.map((r) => r.currency), ...todayRefunds.map((r) => r.currency)])].sort();
     return {
       wallets: merchantWallets.map((w) => ({ currency: w.currency, balance: Number(w.balance), reserved: Number(w.reservedBalance), available: Number(w.balance) - Number(w.reservedBalance) })),
-      today: today.map((r) => ({ currency: r.currency, count: r._count._all, gross: Number(r._sum.amount ?? 0), net: Number(r._sum.netAmount ?? 0) })),
-      total: byCurrency.map((r) => ({ currency: r.currency, count: r._count._all, net: Number(r._sum.netAmount ?? 0) })),
+      today: currenciesToday.map((c) => {
+        const sales = todaySales.find((r) => r.currency === c);
+        const refunds = refundOf(todayRefunds, c);
+        return { currency: c, count: sales?._count._all ?? 0, gross: Number(sales?._sum.amount ?? 0), net: Number(sales?._sum.netAmount ?? 0) - refunds, refundsTotal: refunds, refundsCount: todayRefunds.find((r) => r.currency === c)?._count._all ?? 0 };
+      }),
+      total: totalSales.map((r) => ({ currency: r.currency, count: r._count._all, net: Number(r._sum.netAmount ?? 0) - refundOf(totalRefunds, r.currency) })),
       pendingRequests: pending,
       pendingPayouts: payoutsPending,
     };
@@ -331,6 +384,77 @@ export class MerchantsService {
     return this.getMine(user);
   }
 
+  // ── Alertes du marchand ────────────────────────────────
+
+  /** Seuil de « solde bas » (devise du compte ; vide = pas d'alerte) et alerte « échecs de paiement » (activée par défaut). */
+  async updateAlerts(user: AuthUserPayload, dto: UpdateAlertsDto) {
+    const { profile } = await this.assertActiveMerchant(user.id);
+    const data: Prisma.MerchantProfileUpdateInput = {};
+    if (dto.lowBalanceThreshold !== undefined) {
+      if (dto.lowBalanceThreshold === null) {
+        data.lowBalanceThreshold = null;
+        data.lowBalanceNotifiedAt = null;
+      } else {
+        const owner = await this.prisma.user.findUnique({ where: { id: user.id }, select: { primaryCurrency: true } });
+        data.lowBalanceThreshold = assertValidAmount(dto.lowBalanceThreshold, String(owner?.primaryCurrency ?? 'XOF'));
+        data.lowBalanceNotifiedAt = null; // le nouveau seuil est évalué à neuf au prochain mouvement
+      }
+    }
+    if (dto.failureAlertsEnabled !== undefined) data.failureAlertsEnabled = !!dto.failureAlertsEnabled;
+    if (Object.keys(data).length === 0) return this.getMine(user);
+    await this.prisma.merchantProfile.update({ where: { id: profile.id }, data });
+    await this.audit(user.id, profile.clientId, 'MERCHANT_UPDATE', user.id, { fields: Object.keys(data) });
+    return this.getMine(user);
+  }
+
+  // ── QR permanent du commerce ───────────────────────────
+
+  private async qrView(profile: ProfileRow, token: string, ownerId: string) {
+    const owner = await this.prisma.user.findUnique({ where: { id: ownerId }, select: { primaryCurrency: true } });
+    return {
+      payload: buildQrPayload(token),
+      shopId: profile.id,
+      businessName: profile.businessName,
+      city: profile.city,
+      currency: owner?.primaryCurrency ? String(owner.primaryCurrency) : null,
+      logoVersion: profile.logo?.sha256 ?? null,
+    };
+  }
+
+  /** QR permanent à afficher ou imprimer en caisse (créé à la première demande). Le propriétaire et ses caissiers peuvent l'afficher. */
+  async getStaticQr(user: AuthUserPayload, merchantId?: string) {
+    const a = await this.resolveActing(user, merchantId);
+    let token = a.profile.staticQrToken;
+    if (!token) {
+      const fresh = generateQrToken();
+      const claimed = await this.prisma.merchantProfile.updateMany({ where: { id: a.profile.id, staticQrToken: null }, data: { staticQrToken: fresh } });
+      token = fresh;
+      if (claimed.count === 0) token = (await this.prisma.merchantProfile.findUnique({ where: { id: a.profile.id }, select: { staticQrToken: true } }))?.staticQrToken ?? fresh;
+    }
+    return this.qrView(a.profile, token, a.ownerId);
+  }
+
+  /** Remplace le QR permanent (affiche volée, photo partagée…) : l'ancien cesse immédiatement de fonctionner. Code secret exigé. */
+  async rotateStaticQr(user: AuthUserPayload, pin: string) {
+    const { profile } = await this.assertActiveMerchant(user.id);
+    await this.pins.assertPin(user.id, pin);
+    const token = generateQrToken();
+    await this.prisma.merchantProfile.update({ where: { id: profile.id }, data: { staticQrToken: token } });
+    await this.audit(user.id, profile.clientId, 'MERCHANT_QR_ROTATE', user.id, {});
+    const u = await this.prisma.user.findUnique({ where: { id: user.id }, select: { id: true, email: true, firstName: true } });
+    if (u) {
+      await this.notifier.notifyUser(u, {
+        kind: 'QR_ROTATED',
+        title: 'QR code de caisse renouvelé',
+        body: "L'ancien QR code ne fonctionne plus. Imprimez ou affichez le nouveau. Ce n'était pas vous ? Contactez le service client.",
+        actionUrl: '/merchant/qr',
+        actionLabel: 'QR de caisse',
+        type: 'WARNING',
+      });
+    }
+    return this.qrView({ ...profile, staticQrToken: token }, token, user.id);
+  }
+
   // ── Administrateur de la société ───────────────────────
 
   private adminScope(actor: AuthUserPayload, clientId?: number): number {
@@ -371,7 +495,7 @@ export class MerchantsService {
     ]);
     const ids = rows.map((r) => r.userId);
     const [sales, pendingPayouts] = await Promise.all([
-      this.prisma.paymentRequest.groupBy({ by: ['payeeId', 'currency'], where: { payeeId: { in: ids }, status: 'PAID' }, _sum: { amount: true }, _count: { _all: true } }),
+      this.prisma.paymentRequest.groupBy({ by: ['payeeId', 'currency'], where: { payeeId: { in: ids }, status: 'PAID', refundedAt: null }, _sum: { amount: true }, _count: { _all: true } }),
       this.prisma.merchantPayout.groupBy({ by: ['userId'], where: { userId: { in: ids }, status: 'PENDING' }, _count: { _all: true } }),
     ]);
     return {
@@ -408,7 +532,7 @@ export class MerchantsService {
       ...this.profileView(p, settings),
       userId,
       owner: p.user,
-      recentPayments: recent.map((r) => ({ id: r.id, reference: r.reference, method: r.method, status: r.status, amount: Number(r.amount), fee: Number(r.fee), currency: r.currency, createdAt: r.createdAt.toISOString() })),
+      recentPayments: recent.map((r) => ({ id: r.id, reference: r.reference, method: r.method, status: r.status, amount: Number(r.amount), fee: Number(r.fee), currency: r.currency, refunded: !!r.refundedAt, createdAt: r.createdAt.toISOString() })),
       recentPayouts: payouts.map((r) => ({ id: r.id, reference: r.reference, method: r.method, status: r.status, amount: Number(r.amount), currency: r.currency, createdAt: r.createdAt.toISOString() })),
     };
   }

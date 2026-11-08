@@ -82,6 +82,27 @@ describe('TicketsService — client', () => {
     expect(r).toMatchObject({ isDispute: true, priority: 'HIGH', transactionId: 'tx1' });
   });
 
+  it('comptes séparés : le compte marchand a sa liste et son quota, et un litige du commerce y reste', async () => {
+    const m = setup();
+    await m.service.create(client, { subject: 'Question', message: 'Une question sur mon commerce', space: 'merchant' });
+    expect(m.prisma.supportTicket.count.mock.calls[0][0].where).toMatchObject({ userId: 'u1', space: 'merchant' });
+    expect(m.prisma.supportTicket.create.mock.calls[0][0].data).toMatchObject({ space: 'merchant' });
+
+    const d = setup(ticket(), { tx: { id: 'tx9', type: 'MERCHANT_PAYMENT', senderId: 'u8', recipientId: 'u1' } });
+    const r = await d.service.create(client, { subject: 'Litige', message: 'Paiement contesté par un client', transactionId: 'tx9' });
+    expect(r).toMatchObject({ space: 'merchant', isDispute: true });
+
+    const own = setup(ticket(), { tx: { id: 'tx2', type: 'MERCHANT_PAYMENT', senderId: 'u1', recipientId: 'u8' } });
+    expect(await own.service.create(client, { subject: 'Litige', message: 'Mon paiement chez un commerçant', transactionId: 'tx2', space: 'merchant' })).toMatchObject({ space: 'merchant' });
+    expect(await setup().service.create(client, { subject: 'Question', message: 'Comment changer mon numéro ?' })).toMatchObject({ space: 'client' });
+
+    const l = setup();
+    await l.service.listMine(client, 'merchant');
+    expect(l.prisma.supportTicket.findMany.mock.calls[0][0].where).toEqual({ userId: 'u1', space: 'merchant' });
+    await l.service.listMine(client);
+    expect(l.prisma.supportTicket.findMany.mock.calls[1][0].where).toEqual({ userId: 'u1' });
+  });
+
   it("le client ne voit que ses demandes, jamais les notes internes", async () => {
     const { service, prisma } = setup();
     await service.getMine(client, 't1');

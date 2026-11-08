@@ -6,7 +6,8 @@
 //   POST  /merchants/activate        devenir marchand (code secret)
 //   PATCH /merchants/me              nom, catégorie, adresse, ville
 //   PUT   /merchants/me/destination  numéro Orange Money / compte bancaire des retraits (code secret)
-//   GET   /merchants/me/summary      encaissements du jour et totaux
+//   GET   /merchants/me/summary      encaissements du jour et totaux (?tz= décalage de fuseau de l'appareil, en minutes)
+//   (QR permanent, logo, alertes, caissiers, rapports, clôture : voir merchants-extras.controller.ts)
 //   POST  /merchants/payouts         demander un retrait (code secret)
 //   GET   /merchants/payouts         mes retraits
 // =========================================================
@@ -71,8 +72,8 @@ export class MerchantsController {
   }
 
   @Get('me/summary')
-  summary(@Req() req: AuthRequest) {
-    return this.merchants.summary(me(req));
+  summary(@Req() req: AuthRequest, @Query('tz') tz?: string) {
+    return this.merchants.summary(me(req), tz);
   }
 
   @Post('payouts')

@@ -58,7 +58,8 @@ function setup(over: { settings?: J; profile?: J; balance?: number; pin?: () => 
   const pins = { assertPin: jest.fn(over.pin ?? (async () => undefined)) };
   const merchants = { assertActiveMerchant: jest.fn(async () => ({ profile, settings })) };
   const notifier = { notifyUser: jest.fn(async () => undefined) };
-  const service = new MerchantPayoutsService(prisma as any, wallets as any, kyc as any, pins as any, merchants as any, notifier as any);
+  const alerts = { onBalanceChanged: jest.fn(async () => undefined) };
+  const service = new MerchantPayoutsService(prisma as any, wallets as any, kyc as any, pins as any, merchants as any, notifier as any, alerts as any);
   return { service, db, wallets, kyc, pins, notifier };
 }
 

@@ -1,6 +1,6 @@
 // apps/backend/src/notifications/dto/delete-notifications.dto.ts
 // Corps de POST /notifications/delete : soit une sélection (ids), soit tout (all: true).
-import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 export class DeleteNotificationsDto {
   /** Identifiants à supprimer (sélection partielle). 200 au plus par appel. */
@@ -15,4 +15,9 @@ export class DeleteNotificationsDto {
   @IsOptional()
   @IsBoolean()
   all?: boolean;
+
+  /** Comptes séparés : limite « tout supprimer » au compte indiqué. */
+  @IsOptional()
+  @IsIn(['client', 'merchant'])
+  space?: 'client' | 'merchant';
 }

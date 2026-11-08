@@ -84,8 +84,9 @@ describe('periodStarts / breachMessage', () => {
 // ── Service ──────────────────────────────────────────────
 type Row = { clientId: number; kycLevel: string; currency: string; perTransaction: number | null; daily: number | null; monthly: number | null; yearly: number | null; updatedAt: Date };
 
-function setup(opts: { rows?: Row[]; user?: any; sent?: number; docs?: any[] } = {}) {
+function setup(opts: { rows?: Row[]; user?: any; sent?: number; docs?: any[]; merchant?: number } = {}) {
   const rows: Row[] = [...(opts.rows ?? [])];
+  const merchantAggs: any[] = [];
   const audits: any[] = [];
   const aggregates: any[] = [];
   const users: Record<string, any> = {
@@ -125,9 +126,12 @@ function setup(opts: { rows?: Row[]; user?: any; sent?: number; docs?: any[] } =
     transaction: {
       aggregate: jest.fn().mockImplementation(async (args: any) => { aggregates.push(args); return { _sum: { amount: opts.sent ?? 0 } }; }),
     },
+    paymentRequest: {
+      aggregate: jest.fn().mockImplementation(async (args: any) => { merchantAggs.push(args); return { _sum: { amount: opts.merchant ?? 0 } }; }),
+    },
     auditLog: { create: jest.fn().mockImplementation(async ({ data }: any) => { audits.push(data); }), findMany: jest.fn().mockResolvedValue([]) },
   };
-  return { service: new TransferLimitsService(prisma), prisma, rows, audits, aggregates, users };
+  return { service: new TransferLimitsService(prisma), prisma, rows, audits, aggregates, users, merchantAggs };
 }
 
 const admin: any = { id: 'a1', role: 'COMPANY_ADMIN', clientId: 7 };
@@ -319,5 +323,45 @@ describe('SetLimitsDto', () => {
     expect(await errs({ perTransaction: -1, daily: null, monthly: null, yearly: null })).toBeGreaterThan(0);
     expect(await errs({ perTransaction: 'abc', daily: null, monthly: null, yearly: null })).toBeGreaterThan(0);
     expect(await errs({ perTransaction: 1e15, daily: null, monthly: null, yearly: null })).toBeGreaterThan(0);
+  });
+});
+
+
+describe('TransferLimitsService — paiements marchand (lot 14)', () => {
+  it("les paiements chez les commerçants s'ajoutent aux envois dans les plafonds (envoi refusé si le total dépasse)", async () => {
+    // défaut LEVEL_1 EUR : 1000 par jour. 600 envoyés + 350 payés chez des commerçants = 950 → un envoi de 100 dépasse.
+    const { service, prisma } = setup({ sent: 600, merchant: 350 });
+    await expect(service.assertWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 100 })).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(service.assertWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 50 })).resolves.toBeUndefined();
+  });
+
+  it('un paiement marchand est refusé au plafond (LIMIT_EXCEEDED, message « paiements et envois comptent ensemble »)', async () => {
+    const { service, prisma } = setup({ sent: 900, merchant: 0 });
+    try {
+      await service.assertMerchantPaymentWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 200, excludeRequestId: 'req1' });
+      throw new Error('aurait dû refuser');
+    } catch (e: any) {
+      expect(e).toBeInstanceOf(ForbiddenException);
+      expect(e.getResponse()).toMatchObject({ code: 'LIMIT_EXCEEDED', limit: 'daily', remaining: 100 });
+      expect(String(e.getResponse().message)).toMatch(/comptent ensemble/);
+    }
+  });
+
+  it('plafond par opération appliqué aux paiements (500 € au niveau 1)', async () => {
+    const { service, prisma } = setup();
+    await expect(service.assertMerchantPaymentWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 500, excludeRequestId: 'r' })).resolves.toBeUndefined();
+    await expect(service.assertMerchantPaymentWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 501, excludeRequestId: 'r' })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('ne compte que les paiements réglés et NON remboursés du client, hors la demande en cours', async () => {
+    const { service, prisma, merchantAggs } = setup();
+    await service.assertMerchantPaymentWithinLimits(prisma, { clientId: 7, userId: 'c1', currency: 'EUR', amount: 10, excludeRequestId: 'req9' });
+    expect(merchantAggs).toHaveLength(3);
+    expect(merchantAggs[0].where).toMatchObject({ clientId: 7, payerId: 'c1', currency: 'EUR', status: 'PAID', refundedAt: null, id: { not: 'req9' } });
+  });
+
+  it('ne contrôle pas un compte qui n’est pas un client', async () => {
+    const { service, prisma } = setup();
+    await expect(service.assertMerchantPaymentWithinLimits(prisma, { clientId: 7, userId: 'ag', currency: 'EUR', amount: 1e9, excludeRequestId: 'r' })).resolves.toBeUndefined();
   });
 });

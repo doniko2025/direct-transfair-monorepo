@@ -378,8 +378,8 @@ function SupervisionSA() {
     if (mode === "refresh") setRefreshing(true); else setLoading(true);
     try {
       const [logsRes, alertsRes] = await Promise.allSettled([
-        api.http.get("/audit-logs?limit=20"),
-        api.http.get("/alerts?limit=10"),
+        api.http.get("/supervision/audit-logs?limit=20"),
+        api.http.get("/supervision/alerts?limit=10"),
       ]);
       if (logsRes.status   === "fulfilled") setAuditLogs(logsRes.value.data?.data ?? logsRes.value.data ?? []);
       if (alertsRes.status === "fulfilled") setAlerts(alertsRes.value.data?.data  ?? alertsRes.value.data ?? []);
@@ -510,8 +510,8 @@ function SupervisionCA() {
     try {
       const [agRes, logsRes, alertsRes] = await Promise.allSettled([
         api.getAgencies(),
-        api.http.get("/audit-logs?limit=20&mine=true"),
-        api.http.get("/alerts?limit=10&mine=true"),
+        api.http.get("/supervision/audit-logs?limit=20&mine=true"),
+        api.http.get("/supervision/alerts?limit=10&mine=true"),
       ]);
       if (agRes.status     === "fulfilled") setAgencies(Array.isArray(agRes.value) ? agRes.value : []);
       if (logsRes.status   === "fulfilled") setAuditLogs(logsRes.value.data?.data ?? logsRes.value.data ?? []);

@@ -3,15 +3,17 @@
 // ASSISTANCE v1.0 — Direct Transf'air
 // Le client voit ses demandes, en ouvre une nouvelle, ou conteste une opération (litige) en arrivant avec ?transactionId=….
 // Le service client lui répond depuis la version web ; il est prévenu par notification et par email.
-// Maximum 5 demandes ouvertes à la fois (règle du serveur).
+// Maximum 5 demandes ouvertes à la fois par compte (règle du serveur).
+// Comptes séparés : le compte client et le compte marchand ont chacun leurs demandes (filtre `space`).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, type SupportTicketItem, type SupportTicketStatus } from "../../../services/api";
 import { useLoader } from "../../../components/wallet/useLoader";
+import { useAccountSpace } from "../../../hooks/useAccountSpace";
 import {
   Button, Card, EmptyView, ErrorView, Field, NavBar, Notice, Pill, Screen, SectionHeader, SkeletonRows, UText,
 } from "../../../components/ui";
@@ -40,8 +42,15 @@ export default function SupportScreen() {
   const [sending, setSending] = useState(false);
   const [feedback, setFeedback] = useState<{ tone: "pos" | "danger"; text: string } | null>(null);
 
-  const { data, status, error, refreshing, reload, refresh } = useLoader<SupportTicketItem[]>(() => api.getMyTickets());
+  const { space, isMerchant } = useAccountSpace();
+  const { data, status, error, refreshing, reload, refresh } = useLoader<SupportTicketItem[]>(() => api.getMyTickets(space));
   const tickets = data ?? [];
+
+  // Changement de compte pendant que l'écran est ouvert : on recharge la liste du bon compte.
+  const lastSpace = useRef(space);
+  useEffect(() => {
+    if (lastSpace.current !== space) { lastSpace.current = space; reload(); }
+  }, [space, reload]);
 
   const canSend = subject.trim().length >= 3 && message.trim().length >= 10 && !sending;
 
@@ -52,6 +61,7 @@ export default function SupportScreen() {
       const t = await api.openTicket({
         subject: subject.trim(),
         message: message.trim(),
+        space,
         ...(transactionId ? { transactionId } : {}),
       });
       setComposing(false);
@@ -76,7 +86,11 @@ export default function SupportScreen() {
     >
       <UText v="hero">Assistance</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 20 }}>
-        {transactionId ? "Expliquez le problème rencontré avec cette opération. Notre équipe l'examine." : "Une question, un souci avec une opération ? Écrivez-nous."}
+        {transactionId
+          ? "Expliquez le problème rencontré avec cette opération. Notre équipe l'examine."
+          : isMerchant
+            ? "Une question sur votre commerce, un encaissement ou un retrait ? Écrivez-nous."
+            : "Une question, un souci avec une opération ? Écrivez-nous."}
       </UText>
 
       {feedback ? <Notice tone={feedback.tone} style={{ marginBottom: 16 }}>{feedback.text}</Notice> : null}
@@ -100,13 +114,13 @@ export default function SupportScreen() {
         </Card>
       ) : null}
 
-      <SectionHeader title="Mes demandes" />
+      <SectionHeader title={isMerchant ? "Demandes de mon commerce" : "Mes demandes"} />
       {status === "loading" ? (
         <SkeletonRows rows={3} />
       ) : status === "error" ? (
         <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? ""} onRetry={reload} />
       ) : tickets.length === 0 ? (
-        <EmptyView icon="chatbubbles-outline" title="Aucune demande" message="Vos échanges avec le service client apparaîtront ici." />
+        <EmptyView icon="chatbubbles-outline" title="Aucune demande" message={isMerchant ? "Les échanges concernant votre commerce apparaîtront ici." : "Vos échanges avec le service client apparaîtront ici."} />
       ) : (
         <View style={{ gap: 10 }}>
           {tickets.map((t) => (

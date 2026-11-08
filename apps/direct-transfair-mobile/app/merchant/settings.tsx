@@ -4,6 +4,7 @@
 // • Fiche du commerce (nom, catégorie, adresse, ville) : modifiable librement.
 // • Destination des retraits (Orange Money, IBAN) : modifiable UNIQUEMENT avec le code secret ; après un changement,
 //   les retraits sont suspendus quelques heures (réglage de la société) pour bloquer un détournement de compte.
+// • Lot 13 : logo du commerce, alertes (solde bas, échecs de paiement répétés), raccourcis QR de caisse / équipe / clôture.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -13,7 +14,10 @@ import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { MerchantMe } from "../../services/merchantTypes";
 import { useLoader } from "../../components/wallet/useLoader";
-import { Button, Card, ErrorView, Field, NavBar, Notice, Screen, SectionHeader, SkeletonRows, UText, useUI } from "../../components/ui";
+import { Button, Card, ErrorView, Field, NavBar, Notice, Screen, SectionHeader, SkeletonRows, Toggle, UText, useUI } from "../../components/ui";
+import { Group, ListRow } from "../../components/ui/Layout";
+import { ShopAvatar } from "../../components/merchant/ShopAvatar";
+import { ShopLogoSheet } from "../../components/merchant/ShopLogoSheet";
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
@@ -78,6 +82,66 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
       <Field label="Adresse" icon="location-outline" value={address} onChangeText={setAddress} autoCapitalize="sentences" maxLength={160} />
       <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
       <Button label="Enregistrer" disabled={!dirty || name.trim().length < 2} loading={busy} onPress={save} />
+    </Card>
+  );
+}
+
+function LogoCard({ me, onChanged }: { me: MerchantMe; onChanged: () => void }) {
+  const profile = me.profile!;
+  const [open, setOpen] = useState(false);
+  return (
+    <Card pad={18}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <ShopAvatar shopId={profile.shopId} version={profile.logoVersion} name={profile.businessName} size={64} />
+        <View style={{ flex: 1 }}>
+          <UText v="bodyStrong">{profile.logoVersion ? "Logo du commerce" : "Aucun logo"}</UText>
+          <UText v="caption" tone="muted">Visible par vos clients au moment de payer, sur les reçus et sur l'affiche du QR de caisse.</UText>
+        </View>
+      </View>
+      <Button label={profile.logoVersion ? "Changer le logo" : "Ajouter un logo"} icon="image-outline" kind="outline" small full={false} onPress={() => setOpen(true)} style={{ marginTop: 14 }} />
+      <ShopLogoSheet visible={open} onClose={() => setOpen(false)} shopId={profile.shopId} hasLogo={!!profile.logoVersion} onChanged={onChanged} />
+    </Card>
+  );
+}
+
+function AlertsCard({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
+  const profile = me.profile!;
+  const currency = me.currency ?? "XOF";
+  const [threshold, setThreshold] = useState(profile.alerts?.lowBalanceThreshold ? String(profile.alerts.lowBalanceThreshold) : "");
+  const [failures, setFailures] = useState(profile.alerts?.failureAlertsEnabled ?? true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ tone: "pos" | "danger"; text: string } | null>(null);
+
+  const current = profile.alerts?.lowBalanceThreshold ? String(profile.alerts.lowBalanceThreshold) : "";
+  const dirty = threshold !== current || failures !== (profile.alerts?.failureAlertsEnabled ?? true);
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    try {
+      const n = Number(threshold);
+      await api.updateMerchantAlerts({ lowBalanceThreshold: threshold.trim() && n > 0 ? n : null, failureAlertsEnabled: failures });
+      setMsg({ tone: "pos", text: "Alertes enregistrées." });
+      onSaved();
+    } catch (e) { setMsg({ tone: "danger", text: apiProblem(e).message }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card pad={20}>
+      {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
+      <Field
+        label={`Prévenez-moi si le solde disponible passe sous (${currency})`}
+        icon="notifications-outline" value={threshold} keyboardType="number-pad"
+        onChangeText={(t) => setThreshold(t.replace(/[^0-9]/g, ""))}
+        hint="Laissez vide pour désactiver. Une seule alerte, réarmée quand le solde remonte."
+      />
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 4, marginBottom: 14 }}>
+        <View style={{ flex: 1 }}>
+          <UText v="bodyStrong">Échecs de paiement répétés</UText>
+          <UText v="caption" tone="muted">Alerte si plusieurs paiements échouent en peu de temps (solde client insuffisant, code erroné…).</UText>
+        </View>
+        <Toggle value={failures} onValueChange={setFailures} />
+      </View>
+      <Button label="Enregistrer les alertes" disabled={!dirty} loading={busy} onPress={save} />
     </Card>
   );
 }
@@ -200,6 +264,7 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
 export default function MerchantSettingsScreen() {
   const router = useRouter();
   const { data: me, status, error, refreshing, reload, refresh } = useLoader(() => api.getMerchantMe());
+  const go = (path: string) => router.push(path as any);
   // Un rechargement conserve les saisies : on ne remonte les formulaires qu'au changement de fiche.
   const [version, setVersion] = useState(0);
 
@@ -216,6 +281,22 @@ export default function MerchantSettingsScreen() {
       <Rise>
         <SectionHeader title="Mon commerce" style={{ marginTop: 4 }} />
         <ProfileForm key={`p-${me.profile.businessName}-${version}`} me={me} onSaved={() => { reload(); }} />
+      </Rise>
+      <Rise delay={60}>
+        <SectionHeader title="Logo" />
+        <LogoCard me={me} onChanged={reload} />
+      </Rise>
+      <Rise delay={80}>
+        <SectionHeader title="Outils de caisse" />
+        <Group>
+          <ListRow icon="qr-code-outline" title="QR de caisse permanent" subtitle="À afficher ou imprimer au comptoir" onPress={() => go("/merchant/qr")} />
+          <ListRow icon="people-outline" title="Équipe de caisse" subtitle="Caissiers et droits (remboursement, plafond)" onPress={() => go("/merchant/staff")} />
+          <ListRow icon="lock-closed-outline" title="Clôture & exports" subtitle="Fin de journée, PDF et CSV" onPress={() => go("/merchant/closing")} last />
+        </Group>
+      </Rise>
+      <Rise delay={90}>
+        <SectionHeader title="Alertes" />
+        <AlertsCard key={`a-${me.profile.alerts?.lowBalanceThreshold ?? "x"}-${me.profile.alerts?.failureAlertsEnabled ?? "y"}`} me={me} onSaved={reload} />
       </Rise>
       <Rise delay={100}>
         <SectionHeader title="Destination des retraits" />

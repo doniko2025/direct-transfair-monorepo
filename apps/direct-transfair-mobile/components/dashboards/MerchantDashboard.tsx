@@ -88,7 +88,9 @@ export default function MerchantDashboard() {
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       <HomeTopBar
         name={profile?.businessName ?? user?.firstName ?? "Mon commerce"}
-        onScan={() => router.push("/pay/scan" as any)}
+        onScan={() => router.push("/merchant/collect" as any)}
+        scanIcon="qr-code-outline"
+        scanLabel="Encaisser"
         onBell={() => router.push("/(tabs)/notifications")}
       />
 
@@ -107,6 +109,7 @@ export default function MerchantDashboard() {
           <UText v="body" tone="muted" style={{ marginTop: 18 }}>
             Aujourd'hui : <Text style={{ color: C.ink, fontWeight: "700" }}>{hidden ? "••••" : money(today?.net ?? 0, today?.currency ?? currency)}</Text>
             {` · ${today?.count ?? 0} paiement${(today?.count ?? 0) > 1 ? "s" : ""}`}
+            {(today?.refundsCount ?? 0) > 0 ? ` · ${hidden ? "••" : today?.refundsCount} remboursé${(today?.refundsCount ?? 0) > 1 ? "s" : ""}` : ""}
           </UText>
         )}
       </BalanceBlock>
@@ -120,6 +123,10 @@ export default function MerchantDashboard() {
       <View style={{ gap: 12, marginTop: 30 }}>
         <Button label="Encaisser" disabled={suspended} onPress={() => router.push("/merchant/collect" as any)} testID="home-collect" />
         <Button label="Retirer mes gains" kind="outline" onPress={() => router.push("/merchant/payouts" as any)} testID="home-payout" />
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <View style={{ flex: 1 }}><Button label="QR de caisse" icon="qr-code-outline" kind="soft" small disabled={suspended} onPress={() => router.push("/merchant/qr" as any)} testID="home-static-qr" /></View>
+          <View style={{ flex: 1 }}><Button label="Clôture" icon="lock-closed-outline" kind="soft" small onPress={() => router.push("/merchant/closing" as any)} testID="home-closing" /></View>
+        </View>
       </View>
 
       <SectionHeader title="Derniers paiements" action={data?.payments.length ? "Voir tout" : undefined} onAction={() => router.push("/merchant/payments" as any)} />

@@ -4,6 +4,8 @@
 export type MerchantStatus = "ACTIVE" | "SUSPENDED";
 export type PaymentMethod = "PHONE" | "QR";
 export type PaymentStatus = "PENDING" | "PAID" | "DECLINED" | "EXPIRED" | "CANCELLED";
+/** Moyen d'encaissement tel que rangé dans les rapports : le QR de caisse permanent a sa propre ligne. */
+export type SaleMethod = "PHONE" | "QR" | "STATIC_QR";
 export type PayoutMethod = "ORANGE_MONEY" | "BANK_TRANSFER";
 export type PayoutStatus = "PENDING" | "PAID" | "REJECTED" | "FAILED";
 
@@ -33,6 +35,12 @@ export interface MerchantProfileView {
   destinationChangedAt: string | null;
   payoutLockedUntil: string | null;
   createdAt: string;
+  /** Lot 13 — identifiant public du commerce (logo, QR de caisse, équipe). */
+  shopId?: string;
+  /** Empreinte du logo : nulle = pas de logo. Ne retélécharger que si elle change. */
+  logoVersion?: string | null;
+  hasStaticQr?: boolean;
+  alerts?: { lowBalanceThreshold: number | null; failureAlertsEnabled: boolean };
 }
 
 export interface MerchantMe {
@@ -54,7 +62,8 @@ export interface MerchantMe {
 export interface MerchantSummary {
   /** Solde du COMMERCE (portefeuille propre, distinct de celui du client). Vide = rien encaissé = 0. */
   wallets: { currency: string; balance: number; reserved: number; available: number }[];
-  today: { currency: string; count: number; gross: number; net: number }[];
+  /** `net` = encaissé après commission, MOINS les remboursements du jour (refundsTotal). */
+  today: { currency: string; count: number; gross: number; net: number; refundsTotal?: number; refundsCount?: number }[];
   total: { currency: string; count: number; net: number }[];
   pendingRequests: number;
   pendingPayouts: number;
@@ -71,7 +80,7 @@ export interface PaymentRequestView {
   netAmount?: number;
   currency: string;
   note: string | null;
-  merchant: { id: string; businessName: string; city: string | null; category: string | null };
+  merchant: { id: string; businessName: string; city: string | null; category: string | null; shopId?: string; address?: string | null; logoVersion?: string | null };
   payer: { id: string; name: string } | null;
   payerPhone?: string | null;
   /** Lien à encoder dans le QR code (marchand, demande QR encore ouverte). */
@@ -83,6 +92,19 @@ export interface PaymentRequestView {
   failureReason: string | null;
   isMine: "PAYEE" | "PAYER";
   transactionId?: string;
+  /** Lot 13 */
+  viaStaticQr?: boolean;
+  refunded?: boolean;
+  refundedAt?: string | null;
+  refundReason?: string | null;
+  /** Le demandeur connecté a le droit de rembourser ce paiement (propriétaire, ou caissier autorisé). */
+  canRefund?: boolean;
+  /** Lot 14 — code signé du reçu (paiements payés) : encodé en QR sur le PDF pour que le serveur confirme les vraies données. */
+  verifyCode?: string;
+  /** Aperçu d'un QR de caisse : le client choisit lui-même le montant. */
+  staticQr?: boolean;
+  minAmount?: number | null;
+  maxAmount?: number | null;
 }
 
 export interface PayoutView {
@@ -114,3 +136,140 @@ export interface MerchantProfileInput {
   city?: string;
   orangeMoneyPhone?: string;
 }
+
+
+// ── Lot 13 : QR de caisse, logo, caissiers, clôture, alertes ─────────────────────────────────────────
+
+export interface StaticQrView {
+  payload: string;
+  shopId: string;
+  businessName: string;
+  city: string | null;
+  currency: string | null;
+  logoVersion: string | null;
+}
+
+export interface StaffMember {
+  id: string;
+  userId: string;
+  name: string;
+  phoneMasked: string;
+  active: boolean;
+  canRefund: boolean;
+  maxAmount: number | null;
+  createdAt: string;
+}
+
+export interface StaffList {
+  data: StaffMember[];
+  max: number;
+}
+
+/** Un commerce où la personne connectée est caissier. */
+export interface StaffMembership {
+  shopId: string;
+  businessName: string;
+  city: string | null;
+  logoVersion: string | null;
+  available: boolean;
+  canRefund: boolean;
+  maxAmount: number | null;
+  currency: string;
+  minPayment: number | null;
+  maxPayment: number | null;
+  qrValidityMinutes: number;
+}
+
+export interface StaffDay {
+  day: string;
+  totals: { currency: string; count: number; gross: number }[];
+}
+
+export interface CurrencyTotalsView {
+  currency: string;
+  count: number;
+  gross: number;
+  fees: number;
+  net: number;
+  refundsCount: number;
+  refundsTotal: number;
+  balanceChange: number;
+  byMethod: Record<SaleMethod, number>;
+  byCashier: { userId: string | null; count: number; gross: number }[];
+  byCashierNamed: { userId: string | null; name: string; count: number; gross: number }[];
+}
+
+export interface ReportPayment {
+  id: string;
+  reference: string;
+  at: string | null;
+  currency: string;
+  amount: number;
+  fee: number;
+  net: number;
+  method: SaleMethod;
+  payer: string | null;
+  cashier: string | null;
+  note: string | null;
+  refunded: boolean;
+}
+
+export interface ReportRefund {
+  id: string;
+  reference: string;
+  at: string | null;
+  currency: string;
+  amount: number;
+  payer: string | null;
+  reason: string | null;
+}
+
+export interface MerchantReport {
+  shop: { id: string; businessName: string; city: string | null };
+  period: { from: string; to: string; tz: number };
+  totals: CurrencyTotalsView[];
+  truncated: boolean;
+  payments: ReportPayment[];
+  refunds: ReportRefund[];
+}
+
+export interface ClosingView {
+  id: string;
+  day: string;
+  currency: string;
+  count: number;
+  gross: number;
+  fees: number;
+  net: number;
+  refundsCount: number;
+  refundsTotal: number;
+  balanceChange: number;
+  details: { byMethod?: Record<SaleMethod, number>; byCashier?: { name: string; count: number; gross: number }[] } | null;
+  closedAt: string;
+}
+
+export interface DayView {
+  shop: { id: string; businessName: string };
+  day: string;
+  tz: number;
+  live: CurrencyTotalsView[];
+  closings: ClosingView[];
+  /** Un paiement ou remboursement est arrivé APRÈS la clôture. */
+  drift: boolean;
+}
+
+/** Réponse de la page publique de vérification d'un reçu (lot 14). */
+export type ReceiptCheck =
+  | {
+      valid: true;
+      reference: string;
+      businessName: string;
+      city: string | null;
+      amount: number;
+      currency: string;
+      paidAt: string;
+      method: SaleMethod;
+      status: "PAID" | "REFUNDED";
+      refundedAt: string | null;
+    }
+  | { valid: false };

@@ -10,6 +10,7 @@ import { Animated, Easing, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { Ionicons } from "../ui/Icon";
 import { Card, Pill, UText, useUI } from "../ui";
+import { ShopAvatar } from "./ShopAvatar";
 import PinInput from "../auth/PinInput";
 import { formatMoney } from "../wallet/walletTheme";
 import type { PaymentRequestView, PaymentStatus, PayoutStatus } from "../../services/merchantTypes";
@@ -181,18 +182,22 @@ export function PaymentRow({ p, onPress }: { p: PaymentRequestView; onPress: () 
   return (
     <Card onPress={onPress} pad={16} style={{ marginBottom: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-        <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name={(p.method === "QR" ? "qr-code-outline" : "phone-portrait-outline") as any} size={21} color={C.ink} />
-        </View>
+        {asPayee ? (
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: p.refunded ? C.infoBg : C.beige, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={(p.refunded ? "return-down-back-outline" : p.method === "QR" ? "qr-code-outline" : "phone-portrait-outline") as any} size={21} color={p.refunded ? C.info : C.ink} />
+          </View>
+        ) : (
+          <ShopAvatar shopId={p.merchant.shopId} version={p.merchant.logoVersion} name={p.merchant.businessName} size={44} />
+        )}
         <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
           <UText v="bodyStrong" numberOfLines={1}>{who}</UText>
           <UText v="caption" tone="muted" numberOfLines={1}>{shortDateTime(p.createdAt)}</UText>
         </View>
         <View style={{ alignItems: "flex-end", gap: 6 }}>
-          <UText v="bodyStrong" tone={asPayee && p.status === "PAID" ? "pos" : "ink"}>
+          <UText v="bodyStrong" tone={asPayee && p.status === "PAID" && !p.refunded ? "pos" : "ink"} style={p.refunded ? { textDecorationLine: "line-through" } : undefined}>
             {asPayee ? "+" : "−"}{money(asPayee ? (p.netAmount ?? p.amount) : p.amount, p.currency)}
           </UText>
-          <Pill label={PAYMENT_STATUS_LABEL[p.status]} tone={PAYMENT_STATUS_TONE[p.status]} />
+          <Pill label={p.refunded ? "Remboursé" : PAYMENT_STATUS_LABEL[p.status]} tone={p.refunded ? "info" : PAYMENT_STATUS_TONE[p.status]} />
         </View>
       </View>
     </Card>

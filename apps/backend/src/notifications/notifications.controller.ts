@@ -1,6 +1,7 @@
 // apps/backend/src/notifications/notifications.controller.ts
 // =========================================================
 // NOTIFICATIONS CONTROLLER v4.3 — Direct Transf'air
+// ✅ v4.4 : comptes séparés — ?space=client|merchant sur la liste, le compteur et « tout lu » ; `space` dans le corps de la suppression.
 // ✅ v4.3 : POST /notifications/delete { ids?: string[], all?: boolean } → { deleted } (suppression partielle ou totale,
 //   limitée aux notifications de l'utilisateur connecté).
 // ✅ v4.2 : GET /notifications accepte ?limit (1-100) et ?unreadOnly=true ;
@@ -16,6 +17,7 @@ import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ListNotificationsQueryDto } from './dto/list-notifications.dto';
 import { DeleteNotificationsDto } from './dto/delete-notifications.dto';
+import { parseNotificationSpace } from './notification-space';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -28,21 +30,22 @@ export class NotificationsController {
     return this.notificationsService.findAll(req.user.id, {
       limit: query.limit,
       unreadOnly: query.unreadOnly,
+      space: parseNotificationSpace(query.space),
     });
   }
 
   // Route exacte, sans conflit avec les routes dynamiques ci-dessous
   @Get('unread-count')
-  async unreadCount(@Req() req) {
-    return this.notificationsService.unreadCount(req.user.id);
+  async unreadCount(@Req() req, @Query('space') space?: string) {
+    return this.notificationsService.unreadCount(req.user.id, parseNotificationSpace(space));
   }
 
   // ✅ FIX v4.1 : route EXACTE déclarée AVANT la route dynamique
   // Avant : @Patch(':id/read') en premier → "read-all" capté comme id
   // Maintenant : NestJS match "read-all" avant de tomber sur ":id"
   @Patch('read-all')
-  async markAllAsRead(@Req() req) {
-    return this.notificationsService.markAllAsRead(req.user.id);
+  async markAllAsRead(@Req() req, @Query('space') space?: string) {
+    return this.notificationsService.markAllAsRead(req.user.id, parseNotificationSpace(space));
   }
 
   // Suppression : une sélection (ids) ou tout (all: true). Route exacte, sans conflit avec ':id'.
@@ -52,7 +55,7 @@ export class NotificationsController {
     if (!body.all && !body.ids?.length) {
       throw new BadRequestException('Indiquez les notifications à supprimer (ids) ou all: true.');
     }
-    return this.notificationsService.deleteMany(req.user.id, { ids: body.ids, all: body.all === true });
+    return this.notificationsService.deleteMany(req.user.id, { ids: body.ids, all: body.all === true, space: parseNotificationSpace(body.space) });
   }
 
   // Route dynamique toujours APRÈS la route exacte

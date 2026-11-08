@@ -5,6 +5,7 @@
 // le client vérifie le montant et le commerce, saisit son code secret, valide. Le débit du client et le crédit
 // du marchand se font en une seule opération côté serveur ; les deux reçoivent une notification (et un email).
 // Gère : code secret faux / bloqué, identité non vérifiée, solde insuffisant, demande expirée ou déjà réglée.
+// Lot 13 : logo du commerce, reçu PDF après paiement.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -14,9 +15,11 @@ import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { PaymentRequestView } from "../../services/merchantTypes";
 import { isKycRequired, kycRequiredMessage, KYC_SCREEN } from "../../utils/kycGate";
-import { Ionicons } from "../ui/Icon";
-import { Button, Card, Divider, Notice, Pill, UText, useUI } from "../ui";
+import { Button, Card, Divider, Notice, Pill, UText } from "../ui";
 import { PinPrompt, Rise, StatusHero, apiProblem, mmss, money, shortDateTime, useCountdown } from "./merchantUi";
+import { ShopAvatar } from "./ShopAvatar";
+import { useMerchantLogo } from "../../hooks/useMerchantLogo";
+import { useReceiptSharer } from "./ReceiptQr";
 
 type Props = {
   view: PaymentRequestView;
@@ -38,7 +41,6 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
 
 export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props) {
   const router = useRouter();
-  const { C } = useUI();
   const [current, setCurrent] = useState(view);
   const [pin, setPin] = useState("");
   const [pinError, setPinError] = useState<string | null>(null);
@@ -47,8 +49,16 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
   const [balance, setBalance] = useState<number | null>(null);
   const [finished, setFinished] = useState<"paid" | "declined" | null>(null);
   const submitting = useRef(false);
+  const [sharing, setSharing] = useState(false);
+  const logo = useMerchantLogo(view.merchant.shopId, view.merchant.logoVersion);
 
   useEffect(() => { setCurrent(view); }, [view]);
+
+  const sharer = useReceiptSharer(current, "payer", logo);
+  const receipt = async () => {
+    setSharing(true);
+    try { await sharer.share(); } finally { setSharing(false); }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -104,6 +114,7 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
   if (finished === "paid" || current.status === "PAID") {
     return (
       <View>
+        {sharer.qrNode}
         <StatusHero tone="pos" icon="checkmark-circle" title="Paiement effectué" message={`${money(current.amount, current.currency)} payés à ${current.merchant.businessName}.`} />
         <Card pad={18}>
           <Line label="Commerce" value={current.merchant.businessName} />
@@ -112,7 +123,8 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
           <Line label="Référence" value={current.reference} />
           <Line label="Date" value={shortDateTime(current.paidAt ?? current.createdAt)} />
         </Card>
-        <Button label="Terminer" onPress={onFinish} style={{ marginTop: 18 }} />
+        <Button label="Reçu (PDF)" icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} style={{ marginTop: 18 }} />
+        <Button label="Terminer" onPress={onFinish} style={{ marginTop: 10 }} />
       </View>
     );
   }
@@ -130,8 +142,8 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
   return (
     <Rise>
       <Card pad={22} style={{ alignItems: "center", gap: 6 }}>
-        <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
-          <Ionicons name="storefront-outline" size={28} color={C.ink} />
+        <View style={{ marginBottom: 4 }}>
+          <ShopAvatar shopId={current.merchant.shopId} version={current.merchant.logoVersion} name={current.merchant.businessName} size={64} />
         </View>
         <UText v="heading" align="center" numberOfLines={2}>{current.merchant.businessName}</UText>
         {!!(current.merchant.category || current.merchant.city) && (

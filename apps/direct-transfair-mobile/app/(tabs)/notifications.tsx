@@ -27,8 +27,10 @@ import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { api } from "../../services/api";
-import { resolveActionUrl } from "../../services/notificationRouting";
+import { notificationSpace, resolveActionUrl } from "../../services/notificationRouting";
 import { refreshUnreadCount } from "../../hooks/useUnreadNotifications";
+import { useAccountSpace } from "../../hooks/useAccountSpace";
+import { SpaceSwitch } from "../../components/home/SpaceSwitch";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
   Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, SkeletonRows, SlowNote, UText, alpha, useUI,
@@ -38,6 +40,8 @@ interface NotificationItem {
   id: string; title: string; message: string;
   type: string; createdAt: string; isRead: boolean;
   actionUrl?: string | null; actionLabel?: string | null;
+  /** Comptes séparés : « client » ou « merchant » (absent sur un ancien serveur). */
+  space?: string | null;
 }
 
 function fmtDate(iso: string): string {
@@ -63,6 +67,8 @@ const TYPE_ICON: Record<string, string> = {
 export default function NotificationsScreen() {
   const { C } = useUI();
   const router = useRouter();
+  // Comptes séparés : chaque compte a sa propre boîte de réception ; on recharge à chaque bascule.
+  const { space } = useAccountSpace();
 
   const [notifs, setNotifs] = useState<NotificationItem[]>([]);
   const [filter, setFilter] = useState<"ALL" | "UNREAD">("ALL");
@@ -104,18 +110,20 @@ export default function NotificationsScreen() {
   const fetchNotifs = useCallback(async () => {
     try {
       setLoadError(null);
-      const res = await withTimeout(api.http.get("/notifications"), defaultTimeoutMs());
+      const res = await withTimeout(api.http.get("/notifications", { params: { space } }), defaultTimeoutMs());
       let list: NotificationItem[] = [];
       if (Array.isArray(res.data)) list = res.data;
       else if (Array.isArray(res.data?.data)) list = res.data.data;
       else if (Array.isArray(res.data?.notifications)) list = res.data.notifications;
       else if (Array.isArray(res.data?.items)) list = res.data.items;
-      setNotifs(list);
+      // Double sécurité : jamais de notification de l'autre compte, même si le serveur renvoyait tout.
+      // Un ancien serveur n'indique pas le compte : on le déduit de l'écran ouvert par la notification.
+      setNotifs(list.filter((n) => notificationSpace(n) === space));
     } catch (e) { setLoadError(explainLoadError(e)); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [space]);
 
-  useEffect(() => { void fetchNotifs(); }, [fetchNotifs]);
+  useEffect(() => { setLoading(true); setNotifs([]); setSelected([]); setSelectMode(false); void fetchNotifs(); }, [fetchNotifs]);
 
   useEffect(() => {
     if (!loading) { setSlow(false); return; }
@@ -133,7 +141,7 @@ export default function NotificationsScreen() {
   const handleMarkAllAsRead = async () => {
     if (!notifs.some((n) => !n.isRead)) return;
     setNotifs((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    try { await api.http.patch("/notifications/read-all"); }
+    try { await api.http.patch("/notifications/read-all", undefined, { params: { space } }); }
     catch { void fetchNotifs(); }
   };
 
@@ -211,6 +219,7 @@ export default function NotificationsScreen() {
       refreshing={refreshing}
       onRefresh={() => { setRefreshing(true); void fetchNotifs(); }}
     >
+      <SpaceSwitch style={{ marginBottom: 10 }} />
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
         <Chip label="Toutes" active={filter === "ALL"} count={notifs.length} onPress={() => setFilter("ALL")} />
         <Chip label="Non lues" active={filter === "UNREAD"} count={unreadCount} onPress={() => setFilter("UNREAD")} />

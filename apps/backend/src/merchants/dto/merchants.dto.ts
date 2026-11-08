@@ -1,5 +1,5 @@
 // apps/backend/src/merchants/dto/merchants.dto.ts
-import { IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 
 /** Code secret à 6 chiffres — confirmation d'une opération sensible. */
@@ -140,6 +140,12 @@ export class CreatePhonePaymentDto {
   @MaxLength(25)
   payerPhone!: string;
 
+  /** Caissier : commerce pour lequel il encaisse (absent = mon propre commerce). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  merchantId?: string;
+
   @IsOptional()
   @IsIn(['XOF', 'EUR', 'USD', 'GNF', 'GBP'])
   currency?: string;
@@ -154,6 +160,12 @@ export class CreateQrPaymentDto {
   @Type(() => Number)
   @IsNumber({ allowNaN: false, allowInfinity: false })
   amount!: number;
+
+  /** Caissier : commerce pour lequel il encaisse (absent = mon propre commerce). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  merchantId?: string;
 
   @IsOptional()
   @IsIn(['XOF', 'EUR', 'USD', 'GNF', 'GBP'])
@@ -195,4 +207,99 @@ export class MarkPayoutPaidDto {
   @IsString()
   @MaxLength(80)
   providerRef?: string;
+}
+
+// ── Lot 13 ─────────────────────────────────────────────
+
+export class RefundPaymentDto {
+  @IsString()
+  @Matches(/^\d{6}$/, { message: PIN_MESSAGE })
+  pin!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  reason?: string;
+}
+
+export class UpdateAlertsDto {
+  /** Seuil de solde bas (devise du compte) ; `null` supprime l'alerte. */
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  @Min(0)
+  lowBalanceThreshold?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  failureAlertsEnabled?: boolean;
+}
+
+export class AddStaffDto {
+  @IsString()
+  @Matches(/^\d{6}$/, { message: PIN_MESSAGE })
+  pin!: string;
+
+  /** Numéro (avec indicatif) du compte client de la personne à ajouter. */
+  @IsString()
+  @MaxLength(25)
+  phone!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  canRefund?: boolean;
+
+  /** Plafond par encaissement ; absent ou null = pas de plafond propre. */
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  maxAmount?: number | null;
+}
+
+export class UpdateStaffDto {
+  /** Exigé pour accorder le droit de rembourser. */
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/, { message: PIN_MESSAGE })
+  pin?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  canRefund?: boolean;
+
+  @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  maxAmount?: number | null;
+}
+
+export class SaveLogoDto {
+  /** Image en base64, avec ou sans préfixe « data:image/...;base64, ». */
+  @IsString()
+  @MinLength(100, { message: 'Logo manquant.' })
+  image!: string;
+}
+
+export class CloseDayDto {
+  @IsString()
+  @Matches(/^\d{6}$/, { message: PIN_MESSAGE })
+  pin!: string;
+
+  /** Jour à clôturer, AAAA-MM-JJ (jour de l'appareil). */
+  @IsString()
+  @MaxLength(10)
+  day!: string;
+
+  /** Décalage de fuseau de l'appareil en minutes en plus de l'UTC (Paris hiver : 60). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  tz?: number;
 }

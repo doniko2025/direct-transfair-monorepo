@@ -21,6 +21,7 @@ import { KycGuardService } from '../kyc/kyc-guard.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletsService } from '../wallets/wallets.service';
 import type { MarkPayoutPaidDto, RejectPayoutDto, RequestPayoutDto } from './dto/merchants.dto';
+import { MerchantAlertsService } from './merchant-alerts.service';
 import { formatMoney, MerchantNotifierService } from './merchant-notifier.service';
 import {
   assertValidAmount,
@@ -55,6 +56,7 @@ export class MerchantPayoutsService {
     private readonly pins: PinVerifierService,
     private readonly merchants: MerchantsService,
     private readonly notifier: MerchantNotifierService,
+    private readonly alerts: MerchantAlertsService,
   ) {}
 
   private async audit(userId: string, clientId: number, action: 'MERCHANT_PAYOUT_REQUEST' | 'MERCHANT_PAYOUT_PROCESS', entityId: string, details: Record<string, unknown>) {
@@ -174,6 +176,8 @@ export class MerchantPayoutsService {
       });
     });
     await this.audit(user.id, me.clientId, 'MERCHANT_PAYOUT_REQUEST', payout.id, { amount, fee, currency, method: dto.method });
+    // Le retrait vient de baisser le solde du commerce : alerte « solde bas » si le seuil choisi est franchi.
+    await this.alerts.onBalanceChanged(profile.id, currency);
 
     const money = formatMoney(amount, currency);
     const mode = effectivePayoutMode(settings.payoutMode);
@@ -315,6 +319,7 @@ export class MerchantPayoutsService {
       return p;
     });
     await this.audit(processedById ?? payout.userId, payout.clientId, 'MERCHANT_PAYOUT_PROCESS', payout.id, { outcome, reason });
+    await this.alerts.onBalanceChanged(merchant.id, payout.currency); // le recrédit remonte le solde : réarme l'alerte « solde bas »
     const user = await this.prisma.user.findUnique({ where: { id: payout.userId }, select: { id: true, email: true, firstName: true } });
     if (user) {
       await this.notifier.notifyUser(user, {

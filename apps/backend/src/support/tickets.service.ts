@@ -38,6 +38,17 @@ export function statusAfterClientReply(current: string): string | null {
   return current === 'IN_PROGRESS' ? current : 'OPEN';
 }
 
+export type TicketSpace = 'client' | 'merchant';
+export const parseTicketSpace = (v: unknown): TicketSpace | undefined => (v === 'merchant' || v === 'client' ? v : undefined);
+
+/** Une opération appartient au compte marchand de l'utilisateur (paiement encaissé, retrait, remboursement fait à un client). */
+export function isMerchantSideTx(tx: { type?: unknown; senderId?: string | null; recipientId?: string | null }, userId: string): boolean {
+  return (
+    (tx.type === 'MERCHANT_PAYMENT' && tx.recipientId === userId) ||
+    ((tx.type === 'MERCHANT_PAYOUT' || tx.type === 'MERCHANT_REFUND') && tx.senderId === userId)
+  );
+}
+
 export const isDispute = (t: { transactionId?: string | null }): boolean => !!t.transactionId;
 
 function ticketView(t: any, opts: { staff: boolean }) {
@@ -46,6 +57,7 @@ function ticketView(t: any, opts: { staff: boolean }) {
     subject: t.subject,
     message: t.message,
     category: t.category ?? null,
+    space: t.space === 'merchant' ? 'merchant' : 'client',
     status: t.status,
     priority: t.priority,
     isDispute: isDispute(t),
@@ -107,7 +119,9 @@ export class TicketsService {
   // ═══════════════════════════════════════════════════════
   async create(user: AuthUserPayload, dto: CreateTicketDto) {
     if (!user.clientId) throw new ForbiddenException('Compte non rattaché à une société.');
-    const open = await this.prisma.supportTicket.count({ where: { userId: user.id, status: { in: [...OPEN_STATUSES] } } });
+    let space: TicketSpace = dto.space === 'merchant' ? 'merchant' : 'client';
+    // Chaque compte a son propre quota : un commerçant ne perd pas ses demandes « client » en ouvrant une demande « marchand ».
+    const open = await this.prisma.supportTicket.count({ where: { userId: user.id, space, status: { in: [...OPEN_STATUSES] } } });
     if (open >= MAX_OPEN_PER_USER) {
       throw new ConflictException(`Vous avez déjà ${MAX_OPEN_PER_USER} demandes en cours. Attendez une réponse avant d'en ouvrir une nouvelle.`);
     }
@@ -116,9 +130,11 @@ export class TicketsService {
     if (dto.transactionId) {
       const tx = await this.prisma.transaction.findFirst({
         where: { id: dto.transactionId, clientId: user.clientId, OR: [{ senderId: user.id }, { recipientId: user.id }] },
-        select: { id: true },
+        select: { id: true, type: true, senderId: true, recipientId: true },
       });
       if (!tx) throw new NotFoundException('Opération introuvable.');
+      // Une opération du commerce se conteste toujours depuis le compte marchand, quel que soit l'écran d'où part la demande.
+      if (isMerchantSideTx(tx, user.id)) space = 'merchant';
       const dup = await this.prisma.supportTicket.count({ where: { userId: user.id, transactionId: tx.id, status: { in: [...OPEN_STATUSES] } } });
       if (dup) throw new ConflictException('Un litige est déjà en cours sur cette opération.');
       transactionId = tx.id;
@@ -130,6 +146,7 @@ export class TicketsService {
         clientId: user.clientId,
         subject: dto.subject.trim(),
         message: dto.message.trim(),
+        space,
         category: transactionId ? 'transaction' : dto.category ?? 'other',
         priority: transactionId ? 'HIGH' : 'MEDIUM',
         transactionId,
@@ -151,8 +168,9 @@ export class TicketsService {
     return ticketView(ticket, { staff: false });
   }
 
-  async listMine(user: AuthUserPayload) {
-    const rows = await this.prisma.supportTicket.findMany({ where: { userId: user.id }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 100 });
+  /** `space` : « client » ou « merchant » ; sans valeur (anciennes versions de l'application) : toutes les demandes, comme avant. */
+  async listMine(user: AuthUserPayload, space?: TicketSpace) {
+    const rows = await this.prisma.supportTicket.findMany({ where: { userId: user.id, ...(space ? { space } : {}) }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], take: 100 });
     return { items: rows.map((t) => ticketView(t, { staff: false })) };
   }
 

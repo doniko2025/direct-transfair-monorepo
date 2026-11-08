@@ -1,4 +1,5 @@
 //apps/backend/src/notifications/notifications.service.ts
+// ✅ v1.3 : comptes séparés — liste, compteur, « tout lu » et suppression acceptent `space` (client | merchant) ; sans valeur : tout, comme avant.
 // ✅ v1.2 : deleteMany(userId, {ids|all}) — suppression d'une sélection ou de toutes les notifications de l'utilisateur (jamais celles d'un autre).
 // ✅ v1.1 : les notifications expirées (expiresAt) ne sont plus renvoyées, la date de lecture (readAt)
 //   est enregistrée, la liste accepte limit / unreadOnly et le nombre de non lues est disponible.
@@ -6,6 +7,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
+import type { NotificationSpace } from './notification-space';
 
 @Injectable()
 export class NotificationsService {
@@ -30,19 +32,23 @@ export class NotificationsService {
   }
 
   // Récupérer les notifs d'un user
-  async findAll(userId: string, opts: { limit?: number; unreadOnly?: boolean } = {}) {
+  async findAll(userId: string, opts: { limit?: number; unreadOnly?: boolean; space?: NotificationSpace } = {}) {
     return this.prisma.notification.findMany({
-      where: { userId, ...(opts.unreadOnly ? { isRead: false } : {}), ...this.alive() },
+      where: { userId, ...(opts.space ? { space: opts.space } : {}), ...(opts.unreadOnly ? { isRead: false } : {}), ...this.alive() },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: opts.limit ?? 50, // 50 par défaut pour la perf
     });
   }
 
-  async unreadCount(userId: string) {
-    const count = await this.prisma.notification.count({
-      where: { userId, isRead: false, ...this.alive() },
-    });
-    return { count };
+  /** `count` = non lues du compte demandé (ou de tous si aucun) ; `bySpace` = détail, pour signaler l'autre compte sur le sélecteur. */
+  async unreadCount(userId: string, space?: NotificationSpace) {
+    const base = { userId, isRead: false, ...this.alive() };
+    const [client, merchant] = await Promise.all([
+      this.prisma.notification.count({ where: { ...base, space: 'client' } }),
+      this.prisma.notification.count({ where: { ...base, space: 'merchant' } }),
+    ]);
+    const count = space === 'client' ? client : space === 'merchant' ? merchant : client + merchant;
+    return { count, bySpace: { client, merchant } };
   }
 
   // Marquer comme lue
@@ -54,16 +60,17 @@ export class NotificationsService {
   }
 
   // Tout marquer comme lu
-  async markAllAsRead(userId: string) {
+  async markAllAsRead(userId: string, space?: NotificationSpace) {
     return this.prisma.notification.updateMany({
-      where: { userId, isRead: false },
+      where: { userId, isRead: false, ...(space ? { space } : {}) },
       data: { isRead: true, readAt: new Date() },
     });
   }
 
   /** Supprime les notifications de CET utilisateur : celles listées dans `ids`, ou toutes si `all`. */
-  async deleteMany(userId: string, opts: { ids?: string[]; all?: boolean }) {
-    const where = opts.all ? { userId } : { userId, id: { in: opts.ids ?? [] } };
+  async deleteMany(userId: string, opts: { ids?: string[]; all?: boolean; space?: NotificationSpace }) {
+    const scope = opts.space ? { userId, space: opts.space } : { userId };
+    const where = opts.all ? scope : { ...scope, id: { in: opts.ids ?? [] } };
     const res = await this.prisma.notification.deleteMany({ where });
     return { deleted: res.count };
   }

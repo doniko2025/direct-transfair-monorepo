@@ -1,5 +1,8 @@
 // apps/direct-transfair-mobile/app/(tabs)/profile/index.tsx
 // =========================================================
+// PROFILE INDEX v8.2 — SÉPARATION RENFORCÉE : en compte marchand, l'identité affichée est celle du COMMERCE (nom, catégorie, statut) et le menu ne garde
+//    que ce qui sert au commerce (pas de plafonds d'envoi, moyens de paiement, points de dépôt, QR personnel, bénéficiaires) ; en compte client,
+//    aucune information du commerce n'apparaît.
 // PROFILE INDEX v8.1 — « Supprimer mon compte » ouvre l'écran de suppression (téléphone + code secret)
 // PROFILE INDEX v8.0 — COMPTES SÉPARÉS + vrai choix de photo
 // ✅ v8.0 : bascule « Compte client | Compte marchand » ; les entrées du menu suivent le compte actif (opérations client d'un côté,
@@ -36,7 +39,10 @@ import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
 import { ProfilePhotoSheet } from "../../../components/profile/ProfilePhotoSheet";
 import { Ionicons } from "../../../components/ui/Icon";
 import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
+import { useIsCashier } from "../../../hooks/useIsCashier";
 import { KYC_STATUS_LABEL } from "../../../services/kyc";
+import { api } from "../../../services/api";
+import type { MerchantProfileView } from "../../../services/merchantTypes";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -51,6 +57,16 @@ export default function ProfileScreen() {
   const isUser = user?.role === "USER";
   const clientSpace = isUser && !isMerchant;
   const merchantSpace = isUser && isMerchant;
+  const isCashier = useIsCashier(clientSpace, user?.id);
+
+  // Fiche du commerce (nom, catégorie, statut) — chargée seulement en compte marchand.
+  const [shop, setShop] = useState<MerchantProfileView | null>(null);
+  useEffect(() => {
+    if (!merchantSpace) { setShop(null); return; }
+    let alive = true;
+    api.getMerchantMe().then((m) => { if (alive) setShop(m.profile); }).catch(() => { /* le nom de la personne reste affiché */ });
+    return () => { alive = false; };
+  }, [merchantSpace, user?.id]);
 
   // ─── Biométrie (logique inchangée) ─────────────────────
   const [bioEnabled,   setBioEnabledState]   = useState(false);
@@ -88,7 +104,9 @@ export default function ProfileScreen() {
     }
   };
 
-  const displayName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Utilisateur";
+  const personName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Utilisateur";
+  // Compte marchand : c'est le COMMERCE qui est présenté ; la personne n'apparaît que comme titulaire.
+  const displayName = merchantSpace && shop?.businessName ? shop.businessName : personName;
 
   const handleLogout = () => {
     if (Platform.OS === "web") {
@@ -120,17 +138,35 @@ export default function ProfileScreen() {
 
   return (
     <Screen tabSpace>
-      {/* ── Identité ── */}
+      {/* ── Identité : la personne (compte client) ou le commerce (compte marchand) ── */}
       <View style={{ alignItems: "center", paddingTop: 16, paddingBottom: 22, gap: 6 }}>
-        <Pressable onPress={() => setPhotoSheet(true)} accessibilityRole="button" accessibilityLabel="Changer ma photo de profil" hitSlop={8}>
-          <Avatar name={displayName} size={88} uri={photo} />
-          <View style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: C.ink, borderWidth: 2, borderColor: C.bg, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name="camera-outline" size={15} color={C.surface} />
-          </View>
-        </Pressable>
+        {merchantSpace ? (
+          <Avatar name={displayName} size={88} />
+        ) : (
+          <Pressable onPress={() => setPhotoSheet(true)} accessibilityRole="button" accessibilityLabel="Changer ma photo de profil" hitSlop={8}>
+            <Avatar name={displayName} size={88} uri={photo} />
+            <View style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: C.ink, borderWidth: 2, borderColor: C.bg, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name="camera-outline" size={15} color={C.surface} />
+            </View>
+          </Pressable>
+        )}
         <UText v="title" style={{ marginTop: 10 }} numberOfLines={1}>{displayName}</UText>
-        {!!user?.email && <UText v="body" tone="muted" numberOfLines={1}>{user.email}</UText>}
-        <Pill label={`ID ${user?.id?.slice(0, 8).toUpperCase() ?? "—"}`} tone="neutral" icon="finger-print-outline" style={{ marginTop: 6 }} />
+        {merchantSpace ? (
+          <>
+            <UText v="body" tone="muted" numberOfLines={1}>{[shop?.category, shop?.city].filter(Boolean).join(" · ") || `Titulaire : ${personName}`}</UText>
+            <Pill
+              label={shop?.status === "SUSPENDED" ? "Commerce suspendu" : "Commerce actif"}
+              tone={shop?.status === "SUSPENDED" ? "warn" : "pos"}
+              icon="storefront-outline"
+              style={{ marginTop: 6 }}
+            />
+          </>
+        ) : (
+          <>
+            {!!user?.email && <UText v="body" tone="muted" numberOfLines={1}>{user.email}</UText>}
+            <Pill label={`ID ${user?.id?.slice(0, 8).toUpperCase() ?? "—"}`} tone="neutral" icon="finger-print-outline" style={{ marginTop: 6 }} />
+          </>
+        )}
       </View>
 
       {/* ── Compte actif : deux comptes séparés (solde, opérations, menus) ── */}
@@ -159,35 +195,64 @@ export default function ProfileScreen() {
         </View>
       </Card>
 
-      {/* ── Mon compte ── */}
-      <SectionHeader title="Mon compte" />
-      <Group>
-        {user?.role === "USER" ? (
-          <ListRow
-            icon="shield-checkmark-outline"
-            title="Vérification d'identité"
-            subtitle={kyc?.verified ? "Envois et retraits ouverts" : "Obligatoire pour envoyer de l'argent"}
-            onPress={() => router.push("/(tabs)/profile/kyc" as any)}
-            right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
-          />
-        ) : null}
-        {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. Les entrées suivent le compte actif. */}
-        {clientSpace ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
-        {clientSpace ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
-        {clientSpace ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
-        {clientSpace ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
-        {clientSpace ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
-        {merchantSpace ? menu("qr-code-outline", "Encaisser", "QR code ou téléphone Orange Money", "/merchant/collect") : null}
-        {merchantSpace ? menu("cash-outline", "Retirer mes gains", "Solde de votre commerce", "/merchant/payouts") : null}
-        {merchantSpace ? menu("receipt-outline", "Paiements encaissés", "Historique de vos encaissements", "/merchant/payments") : null}
-        {merchantSpace ? menu("storefront-outline", "Réglages du commerce", "Fiche du commerce, destination des retraits", "/merchant/settings") : null}
-        {clientSpace && !canSwitch ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
-        {menu("person-outline", "Informations personnelles", "Identité, coordonnées", "/(tabs)/profile/personal-info")}
-        {menu("card-outline", "Moyens de paiement", "Cartes et comptes enregistrés", "/(tabs)/profile/payment-methods")}
-        {menu("speedometer-outline", "Mes plafonds de transfert", "Limites d'envoi", "/(tabs)/profile/limits")}
-        {menu("location-outline", `Points ${branding.name}`, "Où déposer et retirer", "/(tabs)/profile/locations", user?.role !== "USER")}
-        {user?.role === "USER" ? menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true) : null}
-      </Group>
+      {/* ── Mon commerce (compte marchand) ── */}
+      {merchantSpace ? (
+        <>
+          <SectionHeader title="Mon commerce" />
+          <Group>
+            {menu("qr-code-outline", "Encaisser", "QR code ou téléphone Orange Money", "/merchant/collect")}
+            {menu("cash-outline", "Retirer mes gains", "Solde de votre commerce", "/merchant/payouts")}
+            {menu("receipt-outline", "Paiements encaissés", "Historique, remboursements, reçus", "/merchant/payments")}
+            {menu("qr-code-outline", "QR de caisse", "QR permanent à afficher ou imprimer", "/merchant/qr")}
+            {menu("people-outline", "Équipe de caisse", "Caissiers et droits", "/merchant/staff")}
+            {menu("lock-closed-outline", "Clôture & exports", "Fin de journée, PDF et CSV", "/merchant/closing")}
+            {menu("shield-checkmark-outline", "Vérifier un reçu", "Scanner le QR d'un reçu PDF", "/pay/verify")}
+            {menu("storefront-outline", "Réglages du commerce", "Fiche, logo, alertes, destination des retraits", "/merchant/settings", true)}
+          </Group>
+          <SectionHeader title="Titulaire du compte" />
+          <Group>
+            <ListRow
+              icon="shield-checkmark-outline"
+              title="Vérification d'identité"
+              subtitle={kyc?.verified ? "Identité du titulaire vérifiée" : "Identité du titulaire du compte"}
+              onPress={() => router.push("/(tabs)/profile/kyc" as any)}
+              right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
+            />
+            {menu("person-outline", "Informations personnelles", "Identité et coordonnées du titulaire", "/(tabs)/profile/personal-info")}
+            {menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true)}
+          </Group>
+        </>
+      ) : (
+        <>
+          {/* ── Mon compte (compte client) ── */}
+          <SectionHeader title="Mon compte" />
+          <Group>
+            {isUser ? (
+              <ListRow
+                icon="shield-checkmark-outline"
+                title="Vérification d'identité"
+                subtitle={kyc?.verified ? "Envois et retraits ouverts" : "Obligatoire pour envoyer de l'argent"}
+                onPress={() => router.push("/(tabs)/profile/kyc" as any)}
+                right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
+              />
+            ) : null}
+            {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. */}
+            {clientSpace ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
+            {clientSpace ? menu("shield-checkmark-outline", "Vérifier un reçu", "Scanner le QR d'un reçu PDF", "/pay/verify") : null}
+            {clientSpace ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
+            {clientSpace ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
+            {clientSpace ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
+            {clientSpace ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
+            {clientSpace && isCashier ? menu("storefront-outline", "Caisse", "Encaisser pour un commerce dont vous êtes caissier", "/cashier") : null}
+            {clientSpace && !canSwitch ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
+            {menu("person-outline", "Informations personnelles", "Identité, coordonnées", "/(tabs)/profile/personal-info")}
+            {menu("card-outline", "Moyens de paiement", "Cartes et comptes enregistrés", "/(tabs)/profile/payment-methods")}
+            {menu("speedometer-outline", "Mes plafonds de transfert", "Limites d'envoi", "/(tabs)/profile/limits")}
+            {menu("location-outline", `Points ${branding.name}`, "Où déposer et retirer", "/(tabs)/profile/locations", !isUser)}
+            {isUser ? menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true) : null}
+          </Group>
+        </>
+      )}
 
       {/* ── Sécurité & appareils ── */}
       <SectionHeader title="Sécurité et appareils" />

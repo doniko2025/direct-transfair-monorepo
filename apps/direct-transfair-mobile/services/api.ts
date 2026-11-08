@@ -131,13 +131,22 @@ import type {
   Withdrawal,
 } from "./types";
 import type {
+  ClosingView,
+  DayView,
   MerchantMe,
   MerchantProfileInput,
+  MerchantReport,
   MerchantSummary,
   Paged,
   PaymentRequestView,
   PayoutMethod,
   PayoutView,
+  StaffDay,
+  StaffList,
+  StaffMember,
+  StaffMembership,
+  ReceiptCheck,
+  StaticQrView,
 } from "./merchantTypes";
 
 // ============================================================
@@ -439,6 +448,8 @@ export interface SupportTicketItem {
   subject: string;
   message: string;
   category: string | null;
+  /** Compte auquel appartient la demande (absent sur un ancien serveur → « client »). */
+  space?: "client" | "merchant";
   status: SupportTicketStatus;
   isDispute: boolean;
   transactionId: string | null;
@@ -1098,9 +1109,11 @@ class API {
   }
 
   // ── Assistance (demandes et litiges du client) ──────────────────────
-  async getMyTickets(): Promise<SupportTicketItem[]> {
-    const res = await this.http.get<{ items?: SupportTicketItem[] }>("/support/tickets");
-    return Array.isArray(res.data?.items) ? res.data.items : [];
+  /** Demandes d'un compte. Un ancien serveur ignore `space` et renvoie tout : on filtre alors ici (sans `space` = client). */
+  async getMyTickets(space?: "client" | "merchant"): Promise<SupportTicketItem[]> {
+    const res = await this.http.get<{ items?: SupportTicketItem[] }>("/support/tickets", { params: space ? { space } : undefined });
+    const items = Array.isArray(res.data?.items) ? res.data.items : [];
+    return space ? items.filter((t) => (t.space ?? "client") === space) : items;
   }
 
   async getMyTicket(id: string): Promise<{ ticket: SupportTicketItem; replies: SupportTicketReplyItem[] }> {
@@ -1108,7 +1121,7 @@ class API {
     return res.data;
   }
 
-  async openTicket(input: { subject: string; message: string; category?: string; transactionId?: string }): Promise<SupportTicketItem> {
+  async openTicket(input: { subject: string; message: string; category?: string; transactionId?: string; space?: "client" | "merchant" }): Promise<SupportTicketItem> {
     const res = await this.http.post<SupportTicketItem>("/support/tickets", input);
     return res.data;
   }
@@ -1517,7 +1530,7 @@ class API {
   }
 
   async getMerchantSummary(): Promise<MerchantSummary> {
-    return (await this.http.get<MerchantSummary>("/merchants/me/summary")).data;
+    return (await this.http.get<MerchantSummary>(`/merchants/me/summary?tz=${deviceTzOffset()}`)).data;
   }
 
   async requestMerchantPayout(input: { pin: string; amount: number; method: PayoutMethod; currency?: string }): Promise<PayoutView> {
@@ -1529,16 +1542,17 @@ class API {
   }
 
   // ── Encaissements (marchand) ──
-  async createPhonePayment(input: { amount: number; payerPhone: string; currency?: string; note?: string }): Promise<PaymentRequestView> {
+  async createPhonePayment(input: { amount: number; payerPhone: string; currency?: string; note?: string; merchantId?: string }): Promise<PaymentRequestView> {
     return (await this.http.post<PaymentRequestView>("/merchant-payments/phone", input)).data;
   }
 
-  async createQrPayment(input: { amount: number; currency?: string; note?: string }): Promise<PaymentRequestView> {
+  async createQrPayment(input: { amount: number; currency?: string; note?: string; merchantId?: string }): Promise<PaymentRequestView> {
     return (await this.http.post<PaymentRequestView>("/merchant-payments/qr", input)).data;
   }
 
-  async listMerchantPayments(params: { status?: string; page?: number } = {}): Promise<Paged<PaymentRequestView>> {
+  async listMerchantPayments(params: { status?: string; page?: number; merchantId?: string } = {}): Promise<Paged<PaymentRequestView>> {
     const q = new URLSearchParams();
+    if (params.merchantId) q.set("merchantId", params.merchantId);
     if (params.status) q.set("status", params.status);
     if (params.page) q.set("page", String(params.page));
     const qs = q.toString();
@@ -1563,8 +1577,9 @@ class API {
     return (await this.http.post<PaymentRequestView>("/merchant-payments/qr/preview", { payload })).data;
   }
 
-  async payQr(payload: string, pin: string): Promise<PaymentRequestView> {
-    return (await this.http.post<PaymentRequestView>("/merchant-payments/qr/pay", { payload, pin })).data;
+  /** `amount` : obligatoire pour un QR de caisse permanent (le client saisit le montant), ignoré pour un QR à usage unique. */
+  async payQr(payload: string, pin: string, amount?: number): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>("/merchant-payments/qr/pay", amount !== undefined ? { payload, pin, amount } : { payload, pin })).data;
   }
 
   async payPaymentRequest(id: string, pin: string): Promise<PaymentRequestView> {
@@ -1574,6 +1589,102 @@ class API {
   async declinePaymentRequest(id: string): Promise<PaymentRequestView> {
     return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/decline`, {})).data;
   }
+
+  // ============================================================
+  // MARCHAND (lot 13) — remboursement, QR de caisse, logo, alertes, caissiers, clôture et exports.
+  // ============================================================
+
+  /** Rembourse le client (montant intégral ; la commission reste acquise à la plateforme). */
+  async refundPayment(id: string, input: { pin: string; reason?: string }): Promise<PaymentRequestView> {
+    return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/refund`, input)).data;
+  }
+
+  async getStaticQr(merchantId?: string): Promise<StaticQrView> {
+    const qs = merchantId ? `?merchantId=${encodeURIComponent(merchantId)}` : "";
+    return (await this.http.get<StaticQrView>(`/merchants/me/qr${qs}`)).data;
+  }
+
+  async rotateStaticQr(pin: string): Promise<StaticQrView> {
+    return (await this.http.post<StaticQrView>("/merchants/me/qr/rotate", { pin })).data;
+  }
+
+  async updateMerchantAlerts(input: { lowBalanceThreshold?: number | null; failureAlertsEnabled?: boolean }): Promise<MerchantMe> {
+    return (await this.http.patch<MerchantMe>("/merchants/me/alerts", input)).data;
+  }
+
+  async saveMerchantLogo(base64: string): Promise<{ version: string }> {
+    return (await this.http.put<{ version: string }>("/merchants/me/logo", { image: base64 }, { timeout: 60_000 })).data;
+  }
+
+  async removeMerchantLogo(): Promise<{ removed: boolean }> {
+    return (await this.http.delete<{ removed: boolean }>("/merchants/me/logo")).data;
+  }
+
+  async getMerchantReport(from: string, to: string): Promise<MerchantReport> {
+    return (await this.http.get<MerchantReport>(`/merchants/me/report?from=${from}&to=${to}&tz=${deviceTzOffset()}`)).data;
+  }
+
+  /** Texte CSV prêt à partager (BOM + « ; » : s'ouvre directement dans Excel). */
+  async getMerchantReportCsv(from: string, to: string): Promise<{ filename: string; body: string }> {
+    const res = await this.http.get<string>(`/merchants/me/report.csv?from=${from}&to=${to}&tz=${deviceTzOffset()}`, { responseType: "text", transformResponse: (d: unknown) => d });
+    const cd = String(res.headers?.["content-disposition"] ?? "");
+    const filename = /filename="?([^";]+)"?/i.exec(cd)?.[1] ?? `encaissements_${from}_${to}.csv`;
+    return { filename, body: String(res.data ?? "") };
+  }
+
+  async getMerchantDay(day?: string): Promise<DayView> {
+    const q = `tz=${deviceTzOffset()}${day ? `&day=${day}` : ""}`;
+    return (await this.http.get<DayView>(`/merchants/me/closing?${q}`)).data;
+  }
+
+  async closeMerchantDay(input: { day: string; pin: string }): Promise<DayView> {
+    return (await this.http.post<DayView>("/merchants/me/closing", { ...input, tz: deviceTzOffset() })).data;
+  }
+
+  async listMerchantClosings(): Promise<ClosingView[]> {
+    const res = await this.http.get<{ data?: ClosingView[] }>("/merchants/me/closings");
+    return Array.isArray(res.data?.data) ? res.data.data : [];
+  }
+
+  async listStaff(): Promise<StaffList> {
+    return (await this.http.get<StaffList>("/merchants/staff")).data;
+  }
+
+  async addStaff(input: { pin: string; phone: string; canRefund?: boolean; maxAmount?: number | null }): Promise<StaffMember> {
+    return (await this.http.post<StaffMember>("/merchants/staff", input)).data;
+  }
+
+  async updateStaff(id: string, input: { pin?: string; active?: boolean; canRefund?: boolean; maxAmount?: number | null }): Promise<StaffMember> {
+    return (await this.http.patch<StaffMember>(`/merchants/staff/${encodeURIComponent(id)}`, input)).data;
+  }
+
+  async removeStaff(id: string): Promise<{ removed: boolean }> {
+    return (await this.http.delete<{ removed: boolean }>(`/merchants/staff/${encodeURIComponent(id)}`)).data;
+  }
+
+  /** Commerces où la personne est caissier (vide pour la plupart des clients). */
+  async getStaffMemberships(): Promise<StaffMembership[]> {
+    const res = await this.http.get<{ data?: StaffMembership[] }>("/merchants/staff/memberships");
+    return Array.isArray(res.data?.data) ? res.data.data : [];
+  }
+
+  /** Contrôle d'un reçu à partir de son code (public côté serveur : fonctionne aussi pour un reçu d'un autre commerce). */
+  async verifyReceipt(code: string): Promise<ReceiptCheck> {
+    const res = await this.http.get<ReceiptCheck>(`/verify/receipt/${encodeURIComponent(code)}`, {
+      headers: { Accept: "application/json" },
+      validateStatus: (s: number) => s === 200 || s === 404,
+    });
+    return res.data && (res.data as ReceiptCheck).valid ? res.data : { valid: false };
+  }
+
+  async getStaffDay(merchantId: string): Promise<StaffDay> {
+    return (await this.http.get<StaffDay>(`/merchants/staff/day?merchantId=${encodeURIComponent(merchantId)}&tz=${deviceTzOffset()}`)).data;
+  }
+}
+
+/** Décalage de l'appareil par rapport à UTC, en minutes vers l'est (Paris l'été : 120). Sert à définir « aujourd'hui » côté serveur. */
+export function deviceTzOffset(): number {
+  return -new Date().getTimezoneOffset();
 }
 
 export const api = new API();

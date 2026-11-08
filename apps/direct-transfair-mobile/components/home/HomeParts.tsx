@@ -87,8 +87,8 @@ function RoundButton({ icon, label, onPress, badge }: { icon: string; label: str
 }
 
 export function HomeTopBar({
-  greeting, name, onScan, onBell, unread,
-}: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean | number }) {
+  greeting, name, onScan, onBell, unread, scanIcon = "scan-outline", scanLabel = "Payer avec un QR code",
+}: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean | number; scanIcon?: string; scanLabel?: string }) {
   const { C } = useUI();
   // Nombre de notifications non lues, lu auprès du serveur (une valeur passée en `unread` reste prioritaire).
   const unreadCount = useUnreadNotifications();
@@ -99,7 +99,7 @@ export function HomeTopBar({
           {greeting ? `${greeting} ` : ""}<Text style={{ color: C.ink, fontWeight: "700" }}>{name}</Text>
         </Text>
       </View>
-      <RoundButton icon="scan-outline" label="Payer avec un QR code" onPress={onScan} />
+      <RoundButton icon={scanIcon} label={scanLabel} onPress={onScan} />
       <RoundButton icon="notifications-outline" label="Notifications" onPress={onBell} badge={unread ?? unreadCount} />
     </View>
   );

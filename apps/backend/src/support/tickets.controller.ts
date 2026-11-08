@@ -2,12 +2,12 @@
 // =========================================================
 // CÔTÉ CLIENT (application mobile) — mes demandes d'assistance et mes litiges.
 //   POST /support/tickets             ouvre une demande (transactionId optionnel → litige)
-//   GET  /support/tickets             mes demandes
+//   GET  /support/tickets             mes demandes (?space=client|merchant pour ne voir que celles d'un compte)
 //   GET  /support/tickets/:id         une demande + réponses (sans notes internes)
 //   POST /support/tickets/:id/reply   je réponds
 // =========================================================
 
-import { Body, Controller, ForbiddenException, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import type { Request } from 'express';
@@ -17,7 +17,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateTicketDto, TicketReplyDto } from './dto/tickets.dto';
-import { TicketsService } from './tickets.service';
+import { parseTicketSpace, TicketsService } from './tickets.service';
 
 type AuthRequest = Request & { user?: AuthUserPayload };
 const me = (req: AuthRequest): AuthUserPayload => {
@@ -39,8 +39,8 @@ export class TicketsController {
   }
 
   @Get()
-  list(@Req() req: AuthRequest) {
-    return this.tickets.listMine(me(req));
+  list(@Req() req: AuthRequest, @Query('space') space?: string) {
+    return this.tickets.listMine(me(req), parseTicketSpace(space));
   }
 
   @Get(':id')

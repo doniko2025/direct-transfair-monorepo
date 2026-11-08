@@ -178,11 +178,8 @@ function TxActionModal({ visible, onClose, tx, isSA, accent, accentLt, onRefresh
   accent: string; accentLt: string; onRefresh: () => void;
 }) {
   const [loading,   setLoading]   = useState(false);
-  const [editMode,  setEditMode]  = useState(false);
-  const [newAmount, setNewAmount] = useState("");
 
-  const reset = () => { setEditMode(false); setNewAmount(""); };
-  const handleClose = () => { reset(); onClose(); };
+  const handleClose = () => { onClose(); };
   if (!tx) return null;
 
   const amount    = toNum(tx.amount);
@@ -224,35 +221,22 @@ function TxActionModal({ visible, onClose, tx, isSA, accent, accentLt, onRefresh
   };
 
   const handleDelete = () => {
-    Alert.alert("Supprimer la transaction", "Cette action est irréversible. Confirmer ?", [
+    Alert.alert("Annuler la transaction", "La transaction sera annulée et, si elle a été débitée, remboursée. Cette action est irréversible. Confirmer ?", [
       { text: "Annuler", style: "cancel" },
       {
-        text: "Supprimer", style: "destructive",
+        text: "Annuler la transaction", style: "destructive",
         onPress: async () => {
           setLoading(true);
           try {
             await api.adminUpdateTransactionStatus(tx.id, "CANCELLED");
-            Alert.alert("🗑️ Supprimée", "Transaction annulée.");
+            Alert.alert("Transaction annulée", "Le statut a été mis à jour.");
             handleClose(); onRefresh();
           } catch (e: any) {
-            Alert.alert("Erreur", e?.response?.data?.message ?? "Impossible de supprimer.");
+            Alert.alert("Erreur", e?.response?.data?.message ?? "Annulation impossible.");
           } finally { setLoading(false); }
         },
       },
     ]);
-  };
-
-  const handleEditAmount = async () => {
-    const parsed = Number(newAmount.replace(/\s/g, "").replace(",", "."));
-    if (!parsed || parsed <= 0) { Alert.alert("Montant invalide", "Saisissez un montant supérieur à 0."); return; }
-    setLoading(true);
-    try {
-      await api.http.patch(`/transactions/${tx.id}`, { amount: parsed });
-      Alert.alert("✅ Modifiée", `Nouveau montant : ${fmt(parsed, tx.currency)} ${tx.currency}`);
-      reset(); handleClose(); onRefresh();
-    } catch (e: any) {
-      Alert.alert("Erreur", e?.response?.data?.message ?? "Modification impossible.");
-    } finally { setLoading(false); }
   };
 
   return (
@@ -331,44 +315,14 @@ function TxActionModal({ visible, onClose, tx, isSA, accent, accentLt, onRefresh
                   <Ionicons name="business-outline" size={14} color={T.sky} />
                   <Text style={[maS.roleBannerTxt, { color: T.sky, fontFamily: T.font.sans }]}>Admin Société · Gestion de vos transactions</Text>
                 </View>
-                {!editMode ? (
-                  <View style={maS.actionsCol}>
-                    <TouchableOpacity style={[maS.actionBtn, { backgroundColor: T.skyLt, borderColor: T.skyMd }]} onPress={() => { setNewAmount(String(amount)); setEditMode(true); }} disabled={loading}>
-                      <Ionicons name="pencil-outline" size={20} color={T.sky} />
-                      <Text style={[maS.actionTxt, { color: T.sky, fontFamily: T.font.sans }]}>Modifier le montant</Text>
-                    </TouchableOpacity>
+                <View style={maS.actionsCol}>
                     <TouchableOpacity style={[maS.actionBtn, { backgroundColor: T.redLt, borderColor: `${T.red}35` }]} onPress={handleDelete} disabled={loading}>
                       {loading ? <ActivityIndicator color={T.red} size="small" /> : <>
                         <Ionicons name="trash-outline" size={20} color={T.red} />
-                        <Text style={[maS.actionTxt, { color: T.red, fontFamily: T.font.sans }]}>Supprimer la transaction</Text>
+                        <Text style={[maS.actionTxt, { color: T.red, fontFamily: T.font.sans }]}>Annuler la transaction</Text>
                       </>}
                     </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={maS.editBlock}>
-                    <Text style={[maS.editLabel, { fontFamily: T.font.sans }]}>NOUVEAU MONTANT</Text>
-                    <View style={maS.editRow}>
-                      <TextInput
-                        style={[maS.editInput, { fontFamily: T.font.mono }]}
-                        value={newAmount} onChangeText={setNewAmount}
-                        keyboardType="numeric" placeholder={fmt(amount, tx.currency)}
-                        placeholderTextColor={T.inkMuted} autoFocus
-                      />
-                      <View style={maS.editCurrTag}>
-                        <Text style={[maS.editCurrTxt, { fontFamily: T.font.sans }]}>{tx.currency}</Text>
-                      </View>
-                    </View>
-                    <View style={maS.editActions}>
-                      <TouchableOpacity style={maS.editCancelBtn} onPress={() => { setEditMode(false); setNewAmount(""); }} disabled={loading}>
-                        <Text style={[maS.editCancelTxt, { fontFamily: T.font.sans }]}>Annuler</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[maS.editConfirmBtn, { backgroundColor: T.sky }]} onPress={handleEditAmount} disabled={loading}>
-                        {loading ? <ActivityIndicator color={T.white} size="small" /> :
-                          <Text style={[maS.editConfirmTxt, { fontFamily: T.font.sans }]}>Confirmer</Text>}
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
+                </View>
               </>
             )}
           </ScrollView>

@@ -1,6 +1,6 @@
 // apps/backend/src/notifications/dto/list-notifications.dto.ts
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class ListNotificationsQueryDto {
   /** Nombre de notifications renvoyées, les plus récentes d'abord. 50 par défaut, comme avant. */
@@ -16,4 +16,9 @@ export class ListNotificationsQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   unreadOnly?: boolean;
+
+  /** Comptes séparés : « client » ou « merchant ». Sans valeur : toutes les notifications. */
+  @IsOptional()
+  @IsIn(['client', 'merchant'])
+  space?: 'client' | 'merchant';
 }

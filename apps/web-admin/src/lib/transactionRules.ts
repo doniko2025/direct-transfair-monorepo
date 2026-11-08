@@ -78,6 +78,7 @@ export const TYPE_LABEL: Record<TransactionType, string> = {
   SCHEDULED: 'Virement programmé',
   MERCHANT_PAYMENT: 'Paiement marchand',
   MERCHANT_PAYOUT: 'Retrait marchand',
+  MERCHANT_REFUND: 'Remboursement marchand',
 };
 
 const TYPE_ICON: Record<TransactionType, IconName> = {
@@ -96,6 +97,7 @@ const TYPE_ICON: Record<TransactionType, IconName> = {
   SCHEDULED: 'list',
   MERCHANT_PAYMENT: 'wallet',
   MERCHANT_PAYOUT: 'withdraw',
+  MERCHANT_REFUND: 'wallet',
 };
 
 export function typeLabel(type: string): string {

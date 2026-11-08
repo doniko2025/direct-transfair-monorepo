@@ -4,6 +4,8 @@
 // QR : grand QR code avec compte à rebours. Téléphone : attente de la validation du client.
 // L'écran interroge le serveur toutes les 2 s tant que la demande est en attente et bascule tout seul
 // sur « Payé » (ou refusé / expiré / annulé). Le marchand et le client reçoivent aussi une notification.
+// Lot 13 : reçu PDF, remboursement intégral (propriétaire ou caissier autorisé, code secret), retour vers l'espace « Caisse »
+// quand l'encaissement vient d'un caissier.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -13,10 +15,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { PaymentRequestView } from "../../services/merchantTypes";
 import { Ionicons } from "../../components/ui/Icon";
-import { Button, Card, Divider, ErrorView, NavBar, Notice, Screen, SkeletonRows, UText, useUI } from "../../components/ui";
+import { Button, Card, Divider, ErrorView, Field, NavBar, Notice, Screen, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
 import {
-  MerchantQrCard, PAYMENT_STATUS_LABEL, Rise, StatusHero, apiProblem, mmss, money, shortDateTime, useCountdown,
+  MerchantQrCard, PAYMENT_STATUS_LABEL, PinPrompt, Rise, StatusHero, apiProblem, mmss, money, shortDateTime, useCountdown,
 } from "../../components/merchant/merchantUi";
+import { ShopAvatar } from "../../components/merchant/ShopAvatar";
+import { useMerchantLogo } from "../../hooks/useMerchantLogo";
+import { useReceiptSharer } from "../../components/merchant/ReceiptQr";
 
 const POLL_MS = 2000;
 
@@ -32,11 +37,18 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
 export default function MerchantPaymentScreen() {
   const router = useRouter();
   const { C } = useUI();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, from, merchantId } = useLocalSearchParams<{ id?: string; from?: string; merchantId?: string }>();
+  const asCashier = from === "cashier";
   const [p, setP] = useState<PaymentRequestView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [pin, setPin] = useState("");
+  const [refunding, setRefunding] = useState(false);
+  const [refundProblem, setRefundProblem] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
   const alive = useRef(true);
   const terminal = useRef(false);
 
@@ -66,6 +78,8 @@ export default function MerchantPaymentScreen() {
     if (p && p.isMine === "PAYER") router.replace({ pathname: "/pay/request", params: { id: p.id } } as any);
   }, [p, router]);
 
+  const logo = useMerchantLogo(p?.merchant.shopId, p?.merchant.logoVersion);
+  const sharer = useReceiptSharer(p, "merchant", logo);
   const left = useCountdown(p?.secondsLeft, p?.id);
   useEffect(() => {
     // Le compte à rebours local atteint 0 : on demande tout de suite l'état définitif au serveur.
@@ -88,6 +102,29 @@ export default function MerchantPaymentScreen() {
     }
   };
 
+  const refund = async (code: string) => {
+    if (!p || refunding || code.length !== 6) return;
+    setRefunding(true);
+    setRefundProblem(null);
+    try {
+      const v = await api.refundPayment(p.id, { pin: code, reason: reason.trim() || undefined });
+      setP(v);
+      setRefundOpen(false);
+      setPin("");
+      setReason("");
+    } catch (e) {
+      setRefundProblem(apiProblem(e).message);
+      setPin("");
+    } finally {
+      setRefunding(false);
+    }
+  };
+
+  const receipt = async () => {
+    setSharing(true);
+    try { await sharer.share(); } finally { setSharing(false); }
+  };
+
   if (!p) {
     return (
       <Screen header={<NavBar onBack={() => router.back()} title="Encaissement" />}>
@@ -98,7 +135,8 @@ export default function MerchantPaymentScreen() {
 
   const total = Math.max(1, Math.round((new Date(p.expiresAt).getTime() - new Date(p.createdAt).getTime()) / 1000));
   const done = p.status !== "PENDING";
-  const goHome = () => router.replace("/merchant" as any);
+  const goHome = () => router.replace((asCashier ? "/cashier" : "/merchant") as any);
+  const canRefund = p.status === "PAID" && !p.refunded && !!p.canRefund;
 
   return (
     <Screen
@@ -106,7 +144,9 @@ export default function MerchantPaymentScreen() {
       footer={
         done ? (
           <View style={{ gap: 10 }}>
-            <Button label="Nouvel encaissement" icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone" } } as any)} />
+            <Button label="Nouvel encaissement" icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone", ...(merchantId ? { merchantId: String(merchantId), from: "cashier" } : {}) } } as any)} />
+            {p.status === "PAID" && <Button label="Reçu (PDF)" icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} />}
+            {canRefund && <Button label="Rembourser le client" icon="return-down-back-outline" kind="danger" onPress={() => { setRefundProblem(null); setPin(""); setRefundOpen(true); }} />}
             <Button label="Terminer" kind="ghost" onPress={goHome} />
           </View>
         ) : (
@@ -114,6 +154,7 @@ export default function MerchantPaymentScreen() {
         )
       }
     >
+      {sharer.qrNode}
       {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
 
       {p.status === "PENDING" && p.method === "QR" && p.qrPayload ? (
@@ -140,15 +181,24 @@ export default function MerchantPaymentScreen() {
         </Rise>
       ) : null}
 
-      {p.status === "PAID" ? (
-        <StatusHero tone="pos" icon="checkmark-circle" title="Paiement reçu" message={`${money(p.netAmount ?? p.amount, p.currency)} ajoutés à votre solde.`} />
+      {p.status === "PAID" && !p.refunded ? (
+        <StatusHero tone="pos" icon="checkmark-circle" title="Paiement reçu" message={`${money(p.netAmount ?? p.amount, p.currency)} ajoutés au solde du commerce.`} />
+      ) : null}
+      {p.status === "PAID" && p.refunded ? (
+        <StatusHero tone="info" icon="return-down-back-outline" title="Paiement remboursé" message={`${money(p.amount, p.currency)} rendus au client${p.refundedAt ? ` le ${shortDateTime(p.refundedAt)}` : ""}.`} />
       ) : null}
       {p.status === "DECLINED" ? <StatusHero tone="danger" icon="close-circle" title="Paiement refusé" message={p.failureReason ?? "Votre client a refusé la demande."} /> : null}
       {p.status === "EXPIRED" ? <StatusHero tone="warn" icon="time-outline" title="Demande expirée" message="Le délai est dépassé. Créez un nouvel encaissement." /> : null}
       {p.status === "CANCELLED" ? <StatusHero tone="info" icon="ban-outline" title="Encaissement annulé" /> : null}
 
       <Card pad={18} style={{ marginTop: 16 }}>
-        <Detail label="Statut" value={PAYMENT_STATUS_LABEL[p.status]} strong />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 6 }}>
+          <ShopAvatar shopId={p.merchant.shopId} version={p.merchant.logoVersion} name={p.merchant.businessName} size={40} />
+          <UText v="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{p.merchant.businessName}</UText>
+        </View>
+        <Divider />
+        <Detail label="Statut" value={p.refunded ? "Remboursé" : PAYMENT_STATUS_LABEL[p.status]} strong />
+        {p.viaStaticQr && <Detail label="Moyen" value="QR de caisse" />}
         <Divider />
         <Detail label="Montant payé par le client" value={money(p.amount, p.currency)} />
         {p.fee !== undefined && <Detail label="Frais de service" value={money(p.fee, p.currency)} />}
@@ -160,7 +210,19 @@ export default function MerchantPaymentScreen() {
         <Detail label="Créé le" value={shortDateTime(p.createdAt)} />
         {p.paidAt && <Detail label="Payé le" value={shortDateTime(p.paidAt)} />}
         {!!p.note && <Detail label="Libellé" value={p.note} />}
+        {p.refunded && !!p.refundReason && <Detail label="Motif du remboursement" value={p.refundReason} />}
       </Card>
+
+      <Sheet visible={refundOpen} onClose={() => setRefundOpen(false)} title="Rembourser le client">
+        <Notice tone="warn" style={{ marginBottom: 12 }}>
+          Le client récupère {money(p.amount, p.currency)} (montant intégral) et ce montant est retiré du solde du commerce. La commission de {money(p.fee ?? 0, p.currency)} n'est pas remboursée.
+        </Notice>
+        {!!refundProblem && <Notice tone="danger" style={{ marginBottom: 12 }}>{refundProblem}</Notice>}
+        <Field label="Motif (facultatif)" icon="create-outline" value={reason} onChangeText={setReason} maxLength={140} autoCapitalize="sentences" />
+        <PinPrompt value={pin} onChange={setPin} onComplete={refund} />
+        <View style={{ height: 12 }} />
+        <Button label="Confirmer le remboursement" kind="danger" loading={refunding} disabled={pin.length !== 6} onPress={() => refund(pin)} />
+      </Sheet>
     </Screen>
   );
 }

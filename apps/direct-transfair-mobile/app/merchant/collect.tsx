@@ -5,6 +5,8 @@
 //  • QR : un QR code à usage unique s'affiche, le client le scanne avec la caméra de son application.
 //  • Téléphone : une demande arrive dans l'application du client (numéro du compte), qui valide avec son code secret.
 // Les deux mènent à l'écran de suivi /merchant/payment (mise à jour en direct).
+// Lot 13 : avec ?merchantId=… (espace « Caisse »), un caissier encaisse au nom du commerce — devise, minimum, maximum et plafond
+// personnel viennent de son affiliation ; l'argent va au commerce, jamais à son portefeuille.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -12,6 +14,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../services/api";
+import type { MerchantMe, StaffMembership } from "../../services/merchantTypes";
 import { useAuth } from "../../providers/AuthProvider";
 import { useLoader } from "../../components/wallet/useLoader";
 import { Ionicons } from "../../components/ui/Icon";
@@ -25,7 +28,8 @@ export default function CollectScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { C } = useUI();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; merchantId?: string; from?: string }>();
+  const shopId = params.merchantId ? String(params.merchantId) : undefined;
   const [mode, setMode] = useState<"qr" | "phone">(params.mode === "phone" ? "phone" : "qr");
   const [amountText, setAmountText] = useState("");
   const [note, setNote] = useState("");
@@ -36,13 +40,23 @@ export default function CollectScreen() {
   const [showErrors, setShowErrors] = useState(false);
   const phoneRef = useRef<any>(null);
 
-  const { data: me, status, error, reload } = useLoader(() => api.getMerchantMe());
-  const currency = user?.primaryCurrency ?? "XOF";
+  // Propriétaire : sa fiche marchand. Caissier : son affiliation à ce commerce.
+  const { data: ctx, status, error, reload } = useLoader(async () => {
+    if (!shopId) return { me: await api.getMerchantMe(), staff: null as StaffMembership | null };
+    const list = await api.getStaffMemberships();
+    return { me: null as MerchantMe | null, staff: list.find((m) => m.shopId === shopId) ?? null };
+  });
+  const me = ctx?.me ?? null;
+  const staff = ctx?.staff ?? null;
+  const currency = staff?.currency ?? user?.primaryCurrency ?? "XOF";
 
   const amount = useMemo(() => roundTo(parseAmount(amountText), decimalsFor(currency)), [amountText, currency]);
   const s = me?.settings;
-  const min = s?.minPayment?.[currency];
-  const max = s?.maxPayment?.[currency];
+  const min = staff ? staff.minPayment ?? undefined : s?.minPayment?.[currency];
+  const serverMax = staff ? staff.maxPayment ?? undefined : s?.maxPayment?.[currency];
+  const max = staff?.maxAmount ? Math.min(staff.maxAmount, serverMax ?? staff.maxAmount) : serverMax;
+  const shopName = staff?.businessName ?? me?.profile?.businessName;
+  const validity = staff?.qrValidityMinutes ?? s?.qrValidityMinutes ?? 5;
 
   const amountError = (() => {
     if (!showErrors) return null;
@@ -54,14 +68,16 @@ export default function CollectScreen() {
   const phoneError = showErrors && mode === "phone" ? validatePhone(phone) : null;
 
   if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}><SkeletonRows rows={3} /></Screen>;
-  if (status === "error" || !me) {
+  if (status === "error" || !ctx) {
     return <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
   }
-  if (!me.isMerchant || me.profile?.status !== "ACTIVE") {
+  if (shopId ? !staff || !staff.available : !me || !me.isMerchant || me.profile?.status !== "ACTIVE") {
     return (
       <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}>
         <Notice tone="warn" title="Encaissement indisponible">
-          {me.profile?.status === "SUSPENDED" ? "Votre espace marchand est suspendu." : "Activez d'abord votre espace marchand."}
+          {shopId
+            ? staff ? "Ce commerce ne peut pas encaisser pour le moment." : "Vous n'êtes plus caissier de ce commerce."
+            : me?.profile?.status === "SUSPENDED" ? "Votre espace marchand est suspendu." : "Activez d'abord votre espace marchand."}
         </Notice>
       </Screen>
     );
@@ -75,9 +91,9 @@ export default function CollectScreen() {
     setBusy(true);
     try {
       const payment = mode === "qr"
-        ? await api.createQrPayment({ amount, currency, note: note.trim() || undefined })
-        : await api.createPhonePayment({ amount, currency, payerPhone: `${country.dial}${normalizeNationalNumber(phone)}`, note: note.trim() || undefined });
-      router.replace({ pathname: "/merchant/payment", params: { id: payment.id } } as any);
+        ? await api.createQrPayment({ amount, currency, note: note.trim() || undefined, merchantId: shopId })
+        : await api.createPhonePayment({ amount, currency, payerPhone: `${country.dial}${normalizeNationalNumber(phone)}`, note: note.trim() || undefined, merchantId: shopId });
+      router.replace({ pathname: "/merchant/payment", params: { id: payment.id, ...(shopId ? { merchantId: shopId, from: "cashier" } : {}) } } as any);
     } catch (e) {
       setProblem(apiProblem(e).message);
     } finally {
@@ -85,11 +101,11 @@ export default function CollectScreen() {
     }
   };
 
-  const fee = s ? roundTo((amount * (s.paymentFeePct ?? 0)) / 100, decimalsFor(currency)) : 0;
+  const fee = s && !staff ? roundTo((amount * (s.paymentFeePct ?? 0)) / 100, decimalsFor(currency)) : 0;
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title="Encaisser" subtitle={me.profile.businessName} />}
+      header={<NavBar onBack={() => router.back()} title="Encaisser" subtitle={shopName} />}
       footer={<Button label="Envoyer" icon="paper-plane-outline" loading={busy} onPress={submit} testID="collect-send" />}
     >
       <Rise>
@@ -128,7 +144,7 @@ export default function CollectScreen() {
           <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
             <Ionicons name="qr-code-outline" size={26} color={C.accentDeep} />
             <UText v="caption" style={{ flex: 1 }}>
-              Un QR code à usage unique s'affiche pendant {s?.qrValidityMinutes ?? 5} min. Votre client le scanne, vérifie le montant sur son téléphone et valide avec son code secret.
+              Un QR code à usage unique s'affiche pendant {validity} min. Votre client le scanne, vérifie le montant sur son téléphone et valide avec son code secret.
             </UText>
           </View>
         </Card>

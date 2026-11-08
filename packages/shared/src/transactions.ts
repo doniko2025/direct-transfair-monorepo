@@ -43,7 +43,8 @@ export type TransactionType =
   | 'LOYALTY_CREDIT'
   | 'SCHEDULED'
   | 'MERCHANT_PAYMENT'
-  | 'MERCHANT_PAYOUT';
+  | 'MERCHANT_PAYOUT'
+  | 'MERCHANT_REFUND';
 
 export type PayoutMethod = 'CASH_PICKUP' | 'BANK_DEPOSIT' | 'MOBILE_MONEY' | 'WALLET' | 'IBAN_TRANSFER' | 'CRYPTO';
 

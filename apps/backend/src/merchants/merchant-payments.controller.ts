@@ -1,16 +1,17 @@
 // apps/backend/src/merchants/merchant-payments.controller.ts
 // =========================================================
 // ENCAISSEMENTS — marchand : crée et suit ; client (ou marchand-payeur) : voit, paie, refuse.
-//   POST /merchant-payments/phone            crée une demande adressée à un numéro        (marchand)
-//   POST /merchant-payments/qr               crée un QR code d'encaissement               (marchand)
-//   GET  /merchant-payments                  mes encaissements                            (marchand)
+//   POST /merchant-payments/phone            crée une demande adressée à un numéro        (marchand ou caissier : { merchantId })
+//   POST /merchant-payments/qr               crée un QR code d'encaissement               (marchand ou caissier : { merchantId })
+//   GET  /merchant-payments                  mes encaissements (?status=…|REFUNDED, ?merchantId= pour un caissier)
 //   GET  /merchant-payments/incoming         les demandes qui attendent mon paiement      (client)
 //   POST /merchant-payments/qr/preview       { payload }  aperçu d'un QR scanné           (client)
-//   POST /merchant-payments/qr/pay           { payload, pin }  payer un QR scanné         (client)
+//   POST /merchant-payments/qr/pay           { payload, pin, amount? }  payer un QR scanné (client) — `amount` : QR de caisse permanent
 //   GET  /merchant-payments/:id              suivi d'une demande (marchand ou payeur)
 //   POST /merchant-payments/:id/pay          { pin }  payer une demande reçue par téléphone
 //   POST /merchant-payments/:id/decline      refuser une demande reçue
-//   POST /merchant-payments/:id/cancel       annuler une demande (marchand)
+//   POST /merchant-payments/:id/cancel       annuler une demande (marchand ou caissier qui l'a créée)
+//   POST /merchant-payments/:id/refund       { pin, reason? }  rembourser un paiement reçu (marchand ou caissier autorisé)
 // Les routes fixes (qr/*, incoming) sont déclarées avant « :id ».
 // =========================================================
 
@@ -18,14 +19,15 @@ import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Req, Use
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
-import { IsString, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsNumber, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import type { Request } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { Roles } from '../common/decorators/roles.decorator';
-import { CreatePhonePaymentDto, CreateQrPaymentDto, PinDto } from './dto/merchants.dto';
+import { CreatePhonePaymentDto, CreateQrPaymentDto, PinDto, RefundPaymentDto } from './dto/merchants.dto';
 import { MerchantPaymentsService } from './merchant-payments.service';
 
 type AuthRequest = Request & { user?: AuthUserPayload };
@@ -46,6 +48,12 @@ class QrPayDto extends QrPayloadDto {
   @IsString()
   @Matches(/^\d{6}$/, { message: 'Code secret : 6 chiffres.' })
   pin!: string;
+
+  /** Montant saisi par le client — uniquement pour le QR de caisse permanent (le QR d'une demande porte déjà son montant). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ allowNaN: false, allowInfinity: false })
+  amount?: number;
 }
 
 @ApiTags('Encaissements marchand')
@@ -70,8 +78,8 @@ export class MerchantPaymentsController {
   }
 
   @Get()
-  list(@Req() req: AuthRequest, @Query('status') status?: string, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.payments.listMine(me(req), { status, page: num(page), limit: num(limit) });
+  list(@Req() req: AuthRequest, @Query('status') status?: string, @Query('page') page?: string, @Query('limit') limit?: string, @Query('merchantId') merchantId?: string) {
+    return this.payments.listMine(me(req), { status, page: num(page), limit: num(limit), merchantId: merchantId?.slice(0, 40) || undefined });
   }
 
   @Get('incoming')
@@ -88,7 +96,7 @@ export class MerchantPaymentsController {
   @Post('qr/pay')
   @Throttle({ default: { limit: 15, ttl: 60_000 } })
   payQr(@Req() req: AuthRequest, @Body() body: QrPayDto) {
-    return this.payments.payQr(me(req), body.payload, body.pin);
+    return this.payments.payQr(me(req), body.payload, body.pin, { amount: body.amount });
   }
 
   @Get(':id')
@@ -110,5 +118,11 @@ export class MerchantPaymentsController {
   @Post(':id/cancel')
   cancel(@Req() req: AuthRequest, @Param('id') id: string) {
     return this.payments.cancel(me(req), id);
+  }
+
+  @Post(':id/refund')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  refund(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: RefundPaymentDto) {
+    return this.payments.refund(me(req), id, body);
   }
 }
