@@ -1,0 +1,19 @@
+LOT 14d — Écrans « Transfert » (Wallet) et « Envoi d'argent » (Cash Pickup)  — mobile uniquement, aucun changement backend
+
+Fichiers (à copier à la même place dans le dépôt) :
+  apps/direct-transfair-mobile/app/(tabs)/send.tsx                      (remplacé en entier)
+  apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx      (pré-remplissage nom / téléphone)
+  apps/direct-transfair-mobile/components/ui/CurrencyBadge.tsx          (NOUVEAU : pastille drapeau de devise)
+
+Ce qui change :
+  - Même allure que les autres pages (barre de titre, onglets Wallet | Cash Pickup, cartes, boutons, feuilles basses).
+  - Pastille drapeau (🇪🇺, 🇸🇳…) devant les montants à la place du texte « EUR » / « XOF ».
+  - Liste « destinataires récents » supprimée. Un seul bouton « Choisir un destinataire » ouvre une feuille :
+      • Mes bénéficiaires (liste + recherche)
+      • Importer depuis mes contacts (répertoire du téléphone)
+      • Nouveau bénéficiaire
+    La saisie directe du numéro ou du nom reste possible, avec suggestions pendant la frappe.
+  - Textes retirés : « Transfert sécurisé · Crypté de bout en bout », « Choisissez un bénéficiaire »,
+    « Saisissez le numéro du destinataire » (restent seulement les avertissements utiles : aucun compte, taux indisponible).
+  - Le bouton du bas ne colle plus à la barre de navigation du téléphone (marge de sécurité).
+  - Logique d'envoi inchangée (frais serveur, idempotence, KYC, reçu, solde insuffisant).

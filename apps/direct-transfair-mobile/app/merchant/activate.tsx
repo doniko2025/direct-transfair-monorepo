@@ -6,7 +6,7 @@
 // =========================================================
 
 import React, { useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
@@ -14,14 +14,14 @@ import { useLoader } from "../../components/wallet/useLoader";
 import { Button, ErrorView, Field, NavBar, Notice, Screen, SkeletonRows, UText, useUI } from "../../components/ui";
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
+import { OptionPicker } from "../../components/ui/OptionPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
-import { Text } from "../../components/ui/Text";
 import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 export default function ActivateMerchantScreen() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
-  const { C, R } = useUI();
+  const { C } = useUI();
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [city, setCity] = useState(user?.city ?? "");
@@ -97,25 +97,7 @@ export default function ActivateMerchantScreen() {
         </UText>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 14 }}>{problem}</Notice>}
         <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} error={nameError} />
-        <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>Catégorie</UText>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: catError ? 6 : 18 }}>
-          {categories.map((c) => {
-            const on = category === c;
-            return (
-              <TouchableOpacity
-                key={c}
-                onPress={() => setCategory(c)}
-                activeOpacity={0.8}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: on }}
-                style={{ paddingHorizontal: 14, height: 38, borderRadius: R.pill, borderWidth: 1.5, borderColor: on ? C.dark : C.line, backgroundColor: on ? C.dark : C.surface, alignItems: "center", justifyContent: "center" }}
-              >
-                <Text style={{ fontSize: 13.5, fontWeight: "700", color: on ? C.darkInk : C.dark }}>{c}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-        {!!catError && <UText v="caption" tone="danger" style={{ marginBottom: 14 }}>{catError}</UText>}
+        <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" error={catError} />
         <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
         {orangeAllowed ? (
           <PhoneField

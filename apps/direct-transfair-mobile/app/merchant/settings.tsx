@@ -9,7 +9,7 @@
 // =========================================================
 
 import React, { useState } from "react";
-import { TouchableOpacity, View } from "react-native";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { MerchantMe } from "../../services/merchantTypes";
@@ -20,32 +20,9 @@ import { ShopAvatar } from "../../components/merchant/ShopAvatar";
 import { ShopLogoSheet } from "../../components/merchant/ShopLogoSheet";
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
+import { OptionPicker } from "../../components/ui/OptionPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
-import { Text } from "../../components/ui/Text";
 import { fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
-
-function CategoryChips({ value, onChange, options }: { value: string | null; onChange: (v: string) => void; options: readonly string[] }) {
-  const { C, R } = useUI();
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-      {options.map((c) => {
-        const on = value === c;
-        return (
-          <TouchableOpacity
-            key={c}
-            onPress={() => onChange(c)}
-            activeOpacity={0.8}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: on }}
-            style={{ paddingHorizontal: 14, height: 38, borderRadius: R.pill, borderWidth: 1.5, borderColor: on ? C.dark : C.line, backgroundColor: on ? C.dark : C.surface, alignItems: "center", justifyContent: "center" }}
-          >
-            <Text style={{ fontSize: 13.5, fontWeight: "700", color: on ? C.darkInk : C.dark }}>{c}</Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
 
 function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
   const profile = me.profile!;
@@ -76,9 +53,7 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
     <Card pad={20}>
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
       <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
-      <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>Catégorie</UText>
-      <CategoryChips value={category} onChange={setCategory} options={categories} />
-      <View style={{ height: 16 }} />
+      <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" />
       <Field label="Adresse" icon="location-outline" value={address} onChangeText={setAddress} autoCapitalize="sentences" maxLength={160} />
       <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
       <Button label="Enregistrer" disabled={!dirty || name.trim().length < 2} loading={busy} onPress={save} />

@@ -150,6 +150,10 @@ async function bootstrap(): Promise<void> {
   app.use('/api/kyc/documents', json({ limit: '18mb' }));
   // Photo de profil (image en base64, 2 Mo au plus une fois décodée ≈ 2,8 Mo en base64) : limite relevée sur cette seule route.
   app.use('/api/profile-photo', json({ limit: '4mb' }));
+  // ✅ lot 13 — logo du commerce (image ≤ 1 Mo une fois décodée ≈ 1,4 Mo en base64) : sans cette limite relevée, la limite d'origine
+  // de 100 Ko faisait répondre « request entity too large » avant même que le serveur ne lise le logo. Le service rend ensuite
+  // un message clair si l'image dépasse 1 Mo.
+  app.use('/api/merchants/me/logo', json({ limit: '3mb' }));
   // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
   app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
     req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),

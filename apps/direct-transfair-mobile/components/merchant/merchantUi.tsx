@@ -25,6 +25,11 @@ export function apiProblem(e: any): ApiProblem {
   const code = typeof data?.code === "string" ? data.code : undefined;
   const status = typeof e?.response?.status === "number" ? e.response.status : undefined;
   if (!e?.response) return { message: "Impossible de joindre le serveur. Vérifiez votre connexion puis réessayez.", code, status };
+  // Route absente (serveur pas encore à jour) ou fichier refusé pour sa taille : un message clair plutôt que le texte brut d'Express.
+  if (status === 404 && /^Cannot (GET|POST|PUT|PATCH|DELETE) \//i.test(message)) {
+    return { message: "Cette fonction n'est pas encore activée sur le serveur. Elle sera disponible après sa mise à jour.", code, status };
+  }
+  if (status === 413) return { message: "Le fichier envoyé est trop volumineux. Choisissez une image plus petite.", code, status };
   return { message, code, status };
 }
 

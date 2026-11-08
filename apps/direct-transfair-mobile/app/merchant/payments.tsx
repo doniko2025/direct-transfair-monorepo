@@ -6,15 +6,15 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { PaymentRequestView } from "../../services/merchantTypes";
-import { Button, Chip, EmptyView, ErrorView, NavBar, Screen, SkeletonRows } from "../../components/ui";
+import { Button, EmptyView, ErrorView, NavBar, Screen, SkeletonRows } from "../../components/ui";
+import { OptionPicker } from "../../components/ui/OptionPicker";
 import { PaymentRow, apiProblem } from "../../components/merchant/merchantUi";
 
 const FILTERS = [
-  { key: "", label: "Tous" },
+  { key: "", label: "Tous les paiements" },
   { key: "PENDING", label: "En attente" },
   { key: "PAID", label: "Payés" },
   { key: "REFUNDED", label: "Remboursés" },
@@ -61,9 +61,7 @@ export default function MerchantPaymentsScreen() {
 
   return (
     <Screen header={<NavBar onBack={() => router.back()} title={shop ? "Mes encaissements" : "Paiements encaissés"} />} refreshing={refreshing} onRefresh={() => load(filter, 1, "pull")}>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-        {FILTERS.map((f) => <Chip key={f.key} label={f.label} active={filter === f.key} onPress={() => setFilter(f.key)} />)}
-      </View>
+      <OptionPicker label="Filtrer par statut" title="Statut des paiements" value={filter} options={FILTERS} onChange={setFilter} />
 
       {loading ? <SkeletonRows rows={5} /> : error && items.length === 0 ? (
         <ErrorView title="Chargement impossible" message={error} onRetry={() => load(filter, 1, "reset")} />

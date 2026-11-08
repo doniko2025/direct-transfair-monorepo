@@ -58,6 +58,8 @@ export function isTransientError(err: unknown): boolean {
 }
 
 const FALLBACK_TITLE = 'Une erreur est survenue';
+/** Message d'Express/Nest quand aucune route ne correspond. */
+const NO_ROUTE_RE = /^Cannot (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \//i;
 
 export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp' | 'reset' | 'generic' = 'generic'): AuthErrorInfo {
   const e = asRecord(err);
@@ -93,6 +95,20 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
       title: 'Connexion impossible',
       message: 'Impossible de joindre le serveur. Vérifiez votre connexion internet puis réessayez.',
     };
+  }
+
+  // Route inconnue du serveur (« Cannot GET /api/… ») : le serveur n'a pas encore la version qui apporte cette fonction.
+  if (status === 404 && NO_ROUTE_RE.test(srv ?? '')) {
+    return {
+      kind: 'config',
+      title: 'Fonction pas encore disponible',
+      message: 'Cette fonction n’est pas encore activée sur le serveur. Elle sera disponible après sa mise à jour.',
+      status,
+    };
+  }
+  // Fichier ou image refusé pour sa taille avant même d'atteindre l'application serveur.
+  if (status === 413) {
+    return { kind: 'validation', title: 'Fichier trop lourd', message: 'Le fichier envoyé est trop volumineux. Choisissez une image plus petite.', status };
   }
 
   // Réponse qui n'est pas celle de notre API (page d'hébergeur, HTML…).

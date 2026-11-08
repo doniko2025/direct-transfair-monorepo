@@ -2,6 +2,7 @@
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // BENEFICIARY CREATE v7.2 — Direct Transf'air
+// ✅ v7.3 : pré-remplissage via les paramètres de route `name` et `phone` (écran d'envoi : contact importé, numéro introuvable, membre à enregistrer).
 // ✅ v7.2 : INDICATIF UNIQUE (audit) — un contact importé « +224 622… » mettait « +224622… » dans le champ, puis l'enregistrement ajoutait l'indicatif une
 //    2e fois (« +224+224622… »). Désormais (utils/phone.ts) : le champ ne garde que le numéro national, un numéro collé « + » / « 00 » règle le pays tout seul,
 //    et le numéro enregistré est toujours « +<indicatif><numéro national> » (indicatif répété et 0 de tête retirés).
@@ -31,9 +32,9 @@
 // ✅ v6.2 : anti-doublon, fix cadre bleu focus web.
 // =========================================================
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import * as Contacts from "expo-contacts/legacy";
 import { api } from "../../../services/api";
@@ -56,6 +57,7 @@ function normalizePhone(phone: string): string {
 export default function BeneficiaryCreateScreen() {
   const { C, R } = useUI();
   const router = useRouter();
+  const routeParams = useLocalSearchParams<{ name?: string; phone?: string }>();
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -110,6 +112,20 @@ export default function BeneficiaryCreateScreen() {
     if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); }
     else setPhoneNumber(text);
   };
+
+  // ✅ Pré-remplissage depuis l'écran d'envoi (contact importé, numéro introuvable, membre à enregistrer) :
+  //    `name` (« Prénom Nom ») et `phone` (international ou local). Appliqué une seule fois par valeur reçue.
+  const pName  = Array.isArray(routeParams.name)  ? routeParams.name[0]  : routeParams.name;
+  const pPhone = Array.isArray(routeParams.phone) ? routeParams.phone[0] : routeParams.phone;
+  useEffect(() => {
+    if (pName) {
+      const parts = pName.trim().split(/\s+/);
+      setFirstName(parts[0] ?? "");
+      setLastName(parts.slice(1).join(" "));
+    }
+    if (pPhone) applyPhoneText(pPhone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pName, pPhone]);
 
   const handleSelectContact = (contact: any) => {
     setFirstName(contact.firstName || "");
