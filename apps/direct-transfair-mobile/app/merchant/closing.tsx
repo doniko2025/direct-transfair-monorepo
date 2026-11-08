@@ -17,7 +17,7 @@ import type { ClosingView, CurrencyTotalsView, DayView } from "../../services/me
 import { useLoader } from "../../components/wallet/useLoader";
 import { useMerchantLogo } from "../../hooks/useMerchantLogo";
 import { Ionicons } from "../../components/ui/Icon";
-import { Button, Card, Chip, Divider, EmptyView, ErrorView, IconButton, NavBar, Notice, Pill, Screen, SectionHeader, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
+import { Button, Card, Divider, EmptyView, ErrorView, IconButton, NavBar, Notice, Pill, Screen, Segmented, SectionHeader, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem, money, shortDateTime } from "../../components/merchant/merchantUi";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -176,9 +176,7 @@ export default function ClosingScreen() {
 
       <SectionHeader title="Exporter une période" />
       <Card pad={16}>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-          {RANGES.map((r) => <Chip key={r.key} label={r.label} active={range === r.key} onPress={() => setRange(r.key)} />)}
-        </View>
+        <Segmented<Range> items={RANGES} value={range} onChange={setRange} style={{ marginBottom: 14 }} />
         <View style={{ flexDirection: "row", gap: 10 }}>
           <View style={{ flex: 1 }}><Button label="PDF" icon="document-text-outline" small loading={busy === "pdf"} onPress={exportPdf} /></View>
           <View style={{ flex: 1 }}><Button label="CSV (Excel)" icon="download-outline" kind="outline" small loading={busy === "csv"} onPress={exportCsv} /></View>

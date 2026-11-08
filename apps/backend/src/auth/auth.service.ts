@@ -912,12 +912,16 @@ export class AuthService {
         category: dto.businessCategory,
         address: dto.businessAddress,
         city: dto.businessCity ?? dto.city,
+        rccm: dto.businessRccm,
         orangeMoneyPhone: dto.orangeMoneyPhone,
       }, primaryCurrency); // le numéro Orange Money doit correspondre à la devise du compte (GNF → Guinée ; EUR → pas d'Orange Money)
       const stored = await this.prisma.companySetting.findUnique({ where: { clientId: client.id }, select: { data: true } });
       if (!mergeSettings(stored?.data).merchant.enabled) {
         throw new ForbiddenException("Les comptes marchands ne sont pas ouverts pour l'instant.");
       }
+      // Un RCCM ne peut servir qu'à un seul compte marchand.
+      const sameRccm = await this.prisma.merchantProfile.findFirst({ where: { rccm: merchantInput.rccm }, select: { id: true } });
+      if (sameRccm) throw new ConflictException('Ce RCCM est déjà associé à un autre compte marchand. Vérifiez-le ou contactez le support.');
     }
 
     // ✅ v5.3 : user.create() + wallet.create() dans une SEULE
@@ -961,7 +965,7 @@ export class AuthService {
           data: {
             userId: created.id, clientId: client.id,
             businessName: merchantInput.businessName, category: merchantInput.category,
-            address: merchantInput.address, city: merchantInput.city,
+            address: merchantInput.address, city: merchantInput.city, rccm: merchantInput.rccm,
             orangeMoneyPhone: merchantInput.orangeMoneyPhone,
           },
         });

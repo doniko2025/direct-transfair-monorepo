@@ -15,6 +15,7 @@ import { Button, ErrorView, Field, NavBar, Notice, Screen, SkeletonRows, UText, 
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { OptionPicker } from "../../components/ui/OptionPicker";
+import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
 import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
@@ -23,6 +24,7 @@ export default function ActivateMerchantScreen() {
   const { user, refreshUser } = useAuth();
   const { C } = useUI();
   const [name, setName] = useState("");
+  const [rccm, setRccm] = useState("");
   const [category, setCategory] = useState<string | null>(null);
   const [city, setCity] = useState(user?.city ?? "");
   const [country, setCountry] = useState<AuthCountry>(findCountry(user?.country ?? "Guinée") ?? AUTH_COUNTRIES[0]!);
@@ -52,6 +54,7 @@ export default function ActivateMerchantScreen() {
 
   const categories = me.categories.length ? me.categories : MERCHANT_CATEGORIES;
   const nameError = showErrors && name.trim().length < 2 ? "Saisissez le nom de votre commerce." : null;
+  const rccmError = showErrors ? validateRccm(rccm) : null;
   const catError = showErrors && !category ? "Choisissez une catégorie." : null;
   // Devise du compte : décide si Orange Money existe et quel numéro est exigé (GNF → guinéen, XOF → zone CFA, EUR… → aucun).
   const currency = me.currency ?? accountCurrencyForCountry(user?.country);
@@ -64,11 +67,12 @@ export default function ActivateMerchantScreen() {
   const submit = async () => {
     setShowErrors(true);
     setProblem(null);
-    if (name.trim().length < 2 || !category || phoneProblem() || pin.length !== 6) return;
+    if (name.trim().length < 2 || validateRccm(rccm) || !category || phoneProblem() || pin.length !== 6) return;
     setBusy(true);
     try {
       await api.activateMerchant({
         businessName: name.trim(),
+        rccm: normalizeRccm(rccm),
         category,
         city: city.trim() || undefined,
         ...(orangeAllowed ? { orangeMoneyPhone: fullPhone } : {}),
@@ -80,7 +84,7 @@ export default function ActivateMerchantScreen() {
       const pr = apiProblem(e);
       setPin("");
       if (pr.code === "PIN_INVALID" || pr.code === "PIN_LOCKED") setPinError(pr.message);
-      else setProblem(pr.message);
+      else setProblem(pr.message); // inclut « RCCM obligatoire / invalide / déjà utilisé » renvoyés par le serveur
     } finally {
       setBusy(false);
     }
@@ -97,6 +101,11 @@ export default function ActivateMerchantScreen() {
         </UText>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 14 }}>{problem}</Notice>}
         <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} error={nameError} />
+        <Field
+          label="Numéro RCCM" icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
+          placeholder={RCCM_EXAMPLE} error={rccmError}
+          hint="Registre du Commerce et du Crédit Mobilier : obligatoire pour ouvrir un compte marchand."
+        />
         <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" error={catError} />
         <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
         {orangeAllowed ? (

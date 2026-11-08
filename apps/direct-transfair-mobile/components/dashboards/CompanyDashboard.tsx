@@ -412,7 +412,7 @@ function ModalSheet({ visible, onClose, title, subtitle, gradColors, children }:
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={mo.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
+        <KeyboardAvoidingView behavior="padding" style={{ width: "100%" }}>
           <View style={mo.sheet}>
             <View style={mo.handle} />
             <LinearGradient colors={gradColors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={mo.head}>

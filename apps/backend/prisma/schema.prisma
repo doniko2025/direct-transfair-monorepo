@@ -2514,6 +2514,9 @@ model MerchantProfile {
   category     String?
   address      String?
   city         String?
+  /// Numéro RCCM (Registre du Commerce et du Crédit Mobilier) : obligatoire pour ouvrir un compte marchand
+  /// (nul seulement pour les comptes créés avant cette règle ; l'application demande alors de le renseigner).
+  rccm         String?
 
   /// Numéro Orange Money qui reçoit les retraits (E.164).
   orangeMoneyPhone String?
@@ -2548,6 +2551,7 @@ model MerchantProfile {
   updatedAt DateTime @updatedAt
 
   @@index([clientId, status])
+  @@index([rccm])
   @@map("merchant_profiles")
 }
 

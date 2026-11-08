@@ -356,7 +356,7 @@ export default function AgentSendCashScreen() {
       </LinearGradient>
       {/* ✅ v7.5 : HeroConcave supprimé */}
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
           {/* ── ÉTAPE 1 : Expéditeur ── */}

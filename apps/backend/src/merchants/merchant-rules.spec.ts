@@ -8,6 +8,7 @@ import {
   availablePayoutMethods as availableMethodsFor,
   isOrangePhoneConsistent,
   normalizeProfileInput as normalizeInput,
+  normalizeRccm,
   assertValidAmount,
   assertWithinBounds,
   availablePayoutMethods,
@@ -147,12 +148,24 @@ describe('merchant-rules', () => {
       expect(() => assertOrangePhoneForCurrency('+33 7 51 24 47 22', 'EUR')).toThrow(BadRequestException);
     });
     it('fiche du commerce : numéro exigé en GNF / XOF, refusé en EUR (la fiche naît alors sans Orange Money)', () => {
-      expect(normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+224 620 00 00 01' }, 'GNF').orangeMoneyPhone).toBe('+224620000001');
-      expect(() => normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+33751244722' }, 'GNF')).toThrow(/guinéen/);
-      expect(() => normalizeInput({ businessName: 'Chez Awa' }, 'GNF')).toThrow(BadRequestException);
-      expect(() => normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' }, 'EUR')).toThrow(/n'est pas disponible/);
-      expect(normalizeInput({ businessName: 'Chez Awa' }, 'EUR').orangeMoneyPhone).toBeNull();
-      expect(normalizeInput({ businessName: 'Chez Awa', orangeMoneyPhone: '   ' }, 'EUR').orangeMoneyPhone).toBeNull();
+      expect(normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224 620 00 00 01' }, 'GNF').orangeMoneyPhone).toBe('+224620000001');
+      expect(() => normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+33751244722' }, 'GNF')).toThrow(/guinéen/);
+      expect(() => normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345' }, 'GNF')).toThrow(BadRequestException);
+      expect(() => normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' }, 'EUR')).toThrow(/n'est pas disponible/);
+      expect(normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345' }, 'EUR').orangeMoneyPhone).toBeNull();
+      expect(normalizeInput({ businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '   ' }, 'EUR').orangeMoneyPhone).toBeNull();
+    });
+    it('RCCM : obligatoire, normalisé en majuscules, formats variables acceptés, forme absurde refusée', () => {
+      expect(normalizeRccm('  gn.tcc.2019.b.12345 ')).toBe('GN.TCC.2019.B.12345');
+      expect(normalizeRccm('SN DKR 2015  B 1234')).toBe('SN DKR 2015 B 1234');
+      expect(normalizeRccm('CI-ABJ-2018-B-12345')).toBe('CI-ABJ-2018-B-12345');
+      for (const bad of [undefined, null, '', '   ', 'GN', 'ABCDE', '<script>1</script>', 'A'.repeat(41) + '1']) {
+        expect(() => normalizeRccm(bad)).toThrow(BadRequestException);
+      }
+      expect(() => normalizeRccm(undefined)).toThrow(/obligatoire/);
+      // la fiche entière est refusée sans RCCM, même si le reste est valide
+      expect(() => normalizeInput({ businessName: 'Chez Awa' }, 'EUR')).toThrow(/RCCM/);
+      expect(normalizeInput({ businessName: 'Chez Awa', rccm: 'sn dkr 2015 b 1234' }, 'EUR').rccm).toBe('SN DKR 2015 B 1234');
     });
     it('anciens comptes : un numéro incohérent avec la devise n\'est plus proposé comme moyen de retrait', () => {
       expect(isOrangePhoneConsistent('+224620000001', 'EUR')).toBe(false);

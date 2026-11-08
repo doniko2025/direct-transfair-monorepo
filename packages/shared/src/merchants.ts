@@ -45,6 +45,8 @@ export interface MerchantListItem {
   businessName: string;
   category: string | null;
   city: string | null;
+  /** Numéro RCCM (nul pour un compte antérieur à la règle « RCCM obligatoire »). */
+  rccm?: string | null;
   status: MerchantStatus;
   owner: { firstName: string | null; lastName: string | null; email: string; phone: string | null; kycLevel: string };
   orangeMoneyMasked: string;
@@ -60,6 +62,8 @@ export interface MerchantAdminDetail {
   category: string | null;
   address: string | null;
   city: string | null;
+  /** Numéro RCCM (nul pour un compte antérieur à la règle « RCCM obligatoire »). */
+  rccm?: string | null;
   status: MerchantStatus;
   suspendedReason: string | null;
   orangeMoneyMasked: string;

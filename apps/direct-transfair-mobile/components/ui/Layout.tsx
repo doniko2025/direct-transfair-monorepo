@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/components/ui/Layout.tsx
 // =========================================================
-// MISE EN PAGE v3.1 — Direct Transf'air (design « Corridor », white-label)
+// MISE EN PAGE v3.2 — Direct Transf'air (design « Corridor », white-label)
+// ✅ v3.2 : CLAVIER — Screen et Sheet s'adaptent au clavier sur Android comme sur iOS (avant : Android ne faisait rien, le clavier
+//    recouvrait les champs et le bouton du bas, ou bien tout l'écran « montait » à cause du mode « pan »).
+//    • KeyboardAvoidingView « padding » partout : l'en-tête reste en place, le pied de page (bouton) se pose AU-DESSUS du clavier ;
+//    • champ sélectionné toujours visible : le défilement l'amène au-dessus du clavier (useKeepFocusedInputVisible) ;
+//    • clavier ouvert : marges de sécurité du bas retirées (le bouton ne flotte plus loin au-dessus du clavier) ;
+//    • Sheet (feuille basse, ex. code secret) : même comportement.
 // ✅ v3.1 : ListRow cliquable avec un élément interactif à droite (ex. bouton « Envoyer ») — sur le web, la ligne n'est plus
 //    rendue en <button> (un <button> dans un <button> est invalide en HTML : erreur d'hydratation, clics instables).
 //    Mobile natif inchangé ; la ligne reste cliquable et focalisable au clavier.
@@ -12,9 +18,10 @@
 // TxRow (lignes séparées par un filet, sans cartes lourdes), Sheet (feuille basse).
 // =========================================================
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, View, type StyleProp, type ViewStyle,
+  Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, RefreshControl, ScrollView, StatusBar, StyleSheet, TextInput as RNTextInput, View,
+  type NativeScrollEvent, type NativeSyntheticEvent, type StyleProp, type ViewStyle,
 } from 'react-native';
 import { Ionicons } from './Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,6 +30,47 @@ import { Avatar, IconButton, UText } from './Primitives';
 import { describeTx, formatMoney, formatShortDate, currencySymbol } from '../wallet/walletTheme';
 
 import { Text } from './Text';
+// ─── Clavier ─────────────────────────────────────────────
+/** true tant que le clavier est affiché (événements « will » sur iOS, « did » sur Android). */
+export function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setOpen(true));
+    const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setOpen(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
+  return open;
+}
+
+/**
+ * Quand le clavier s'ouvre, fait défiler le ScrollView pour que le champ sélectionné reste visible au-dessus du clavier
+ * (RN ne le fait pas tout seul sur Android). Sans effet si le champ est déjà visible ou si la mesure échoue.
+ */
+function useKeepFocusedInputVisible(scrollRef: React.RefObject<ScrollView | null>) {
+  const offset = useRef(0);
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => {
+      setTimeout(() => {
+        try {
+          const input: any = (RNTextInput as any).State?.currentlyFocusedInput?.();
+          const sv: any = scrollRef.current;
+          if (!input?.measureInWindow || !sv?.measureInWindow) return;
+          input.measureInWindow((_x: number, iy: number, _w: number, ih: number) => {
+            sv.measureInWindow((_sx: number, sy: number, _sw: number, sh: number) => {
+              const hidden = iy + ih + 24 - (sy + sh);       // part du champ (+ marge) sous le bord bas visible
+              const above = sy + 8 - iy;                       // champ remonté trop haut
+              if (hidden > 0) scrollRef.current?.scrollTo({ y: offset.current + hidden, animated: true });
+              else if (above > 0) scrollRef.current?.scrollTo({ y: Math.max(0, offset.current - above), animated: true });
+            });
+          });
+        } catch { /* mesure impossible : on ne fait rien */ }
+      }, 280);
+    });
+    return () => sub.remove();
+  }, [scrollRef]);
+  return (e: NativeSyntheticEvent<NativeScrollEvent>) => { offset.current = e.nativeEvent.contentOffset.y; };
+}
+
 // ─── Écran ───────────────────────────────────────────────
 type ScreenProps = {
   children: React.ReactNode;
@@ -44,10 +92,17 @@ export function Screen({
   const { C } = useUI();
   const insets = useSafeAreaInsets();
   const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12);
-  const bottom = tabSpace ? TAB_SPACE + insets.bottom : Math.max(insets.bottom, 12) + 16;
+  const kbOpen = useKeyboardOpen();
+  const scrollRef = useRef<ScrollView>(null);
+  const onScroll = useKeepFocusedInputVisible(scrollRef);
+  // Clavier ouvert : plus de marge pour la barre de navigation du téléphone ni pour la barre d'onglets (le clavier les recouvre).
+  const bottom = kbOpen ? 16 : tabSpace ? TAB_SPACE + insets.bottom : Math.max(insets.bottom, 12) + 16;
 
   const body = scroll ? (
     <ScrollView
+      ref={scrollRef}
+      onScroll={onScroll}
+      scrollEventThrottle={32}
       style={{ flex: 1 }}
       contentContainerStyle={[{ paddingBottom: footer ? 24 : bottom, flexGrow: 1 }, contentStyle]}
       keyboardShouldPersistTaps="handled"
@@ -66,7 +121,7 @@ export function Screen({
       {header}
       {body}
       {footer ? (
-        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: Math.max(insets.bottom, 12) + 8, backgroundColor: C.bg, width: '100%', maxWidth, alignSelf: 'center' }}>
+        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: kbOpen ? 10 : Math.max(insets.bottom, 12) + 8, backgroundColor: C.bg, width: '100%', maxWidth, alignSelf: 'center' }}>
           {footer}
         </View>
       ) : null}
@@ -74,7 +129,7 @@ export function Screen({
   );
   if (!keyboard) return content;
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior="padding">
       {content}
     </KeyboardAvoidingView>
   );
@@ -238,11 +293,12 @@ export function Sheet({
 }: { visible: boolean; onClose: () => void; title?: string; children: React.ReactNode; footer?: React.ReactNode }) {
   const { C, R } = useUI();
   const insets = useSafeAreaInsets();
+  const kbOpen = useKeyboardOpen();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]} onPress={onClose} accessibilityLabel="Fermer" />
-        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, maxHeight: '88%', paddingBottom: Math.max(insets.bottom, 12) + 8, width: '100%', maxWidth: 640, alignSelf: 'center' }}>
+        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, maxHeight: '88%', paddingBottom: kbOpen ? 12 : Math.max(insets.bottom, 12) + 8, width: '100%', maxWidth: 640, alignSelf: 'center' }}>
           <View style={{ alignItems: 'center', paddingTop: 10 }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.lineStrong }} />
           </View>
@@ -255,7 +311,7 @@ export function Sheet({
           </ScrollView>
           {footer ? <View style={{ paddingHorizontal: 20, paddingTop: 8 }}>{footer}</View> : null}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -142,7 +142,7 @@ export default function AuthShell({
     const centerY = 44 + (compact ? 0 : 4) + ringSize / 2;   // rangée du haut (44) + marge + moitié de l'anneau
 
     return (
-      <KeyboardAvoidingView style={[s.root, { backgroundColor: dark }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={[s.root, { backgroundColor: dark }]} behavior="padding">
         <StatusBar barStyle="light-content" backgroundColor={dark} />
         <LinearGradient colors={[mid, dark]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
         {/* Fond vivant : halos qui dérivent + corridor d'étincelles */}
@@ -225,7 +225,7 @@ export default function AuthShell({
   }
 
   return (
-    <KeyboardAvoidingView style={[s.root, { backgroundColor: C.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={[s.root, { backgroundColor: C.bg }]} behavior="padding">
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <ScrollView

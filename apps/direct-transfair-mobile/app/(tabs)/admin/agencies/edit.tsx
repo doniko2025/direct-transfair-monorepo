@@ -496,7 +496,7 @@ export default function EditAgencyScreen() {
       </View>
 
       <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
           <ScrollView
             contentContainerStyle={s.scroll}
             showsVerticalScrollIndicator={false}

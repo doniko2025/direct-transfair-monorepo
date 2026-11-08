@@ -32,6 +32,12 @@ export class MerchantProfileInputDto {
   @MaxLength(80)
   city?: string;
 
+  /** Numéro RCCM — obligatoire (contrôlé et normalisé par normalizeRccm, qui renvoie le message d'erreur en français). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  rccm?: string;
+
   /** Numéro Orange Money qui recevra les retraits (avec l'indicatif du pays). Obligatoire en GNF / XOF, refusé pour les autres devises. */
   @IsOptional()
   @IsString()
@@ -66,6 +72,12 @@ export class UpdateMerchantProfileDto {
   @IsString()
   @MaxLength(80)
   city?: string;
+
+  /** Numéro RCCM : modifiable seulement tant qu'il n'est pas renseigné (comptes antérieurs à la règle) ; ensuite, via le support. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  rccm?: string;
 }
 
 export class ChangeDestinationDto {

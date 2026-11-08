@@ -108,6 +108,7 @@ import { describeAuthError } from '../../components/auth/authErrors';
 import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 import { MERCHANT_CATEGORIES } from '../../components/merchant/merchantUi';
+import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from '../../utils/rccm';
 
 import { Text, TextInput } from '../../components/ui/Text';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -127,7 +128,7 @@ const MERCHANT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'shop', '
 
 type Errors = Partial<Record<
   'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms'
-  | 'businessName' | 'category' | 'orangePhone',
+  | 'businessName' | 'rccm' | 'category' | 'orangePhone',
   string
 >>;
 
@@ -168,6 +169,7 @@ export default function RegisterScreen() {
 
   // ── Commerce (marchands) ──────────────────────────────
   const [businessName, setBusinessName] = useState('');
+  const [rccm, setRccm] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [businessAddress, setBusinessAddress] = useState('');
   const [sameOrange, setSameOrange] = useState(true);
@@ -211,6 +213,8 @@ export default function RegisterScreen() {
       if (p) e.phone = p;
     } else if (key === 'shop') {
       if (businessName.trim().length < 2) e.businessName = 'Saisissez le nom de votre commerce (2 caractères minimum).';
+      const rc = validateRccm(rccm);
+      if (rc) e.rccm = rc;
       if (!category) e.category = 'Choisissez une catégorie.';
       if (orangeAllowed) {
         const o = sameOrange ? null : validatePhone(orangeNational);
@@ -294,6 +298,7 @@ export default function RegisterScreen() {
           ? {
               accountType: 'MERCHANT' as const,
               businessName: businessName.trim(),
+              businessRccm: normalizeRccm(rccm),
               businessCategory: category ?? undefined,
               businessAddress: businessAddress.trim() || undefined,
               businessCity: city.trim(),
@@ -323,6 +328,10 @@ export default function RegisterScreen() {
         setServerErrors({ email: info.message });
         setStep(stepIndex('contact'));
         setFormError({ title: info.title, message: 'Cette adresse est déjà associée à un compte. Connectez-vous, ou utilisez une autre adresse.', action: 'login' });
+      } else if (msg.includes('rccm')) {
+        setServerErrors({ rccm: info.message });
+        setStep(stepIndex('shop'));
+        setShowErrors(true);
       } else if (info.kind === 'conflict' && (msg.includes('numéro') || msg.includes('téléphone'))) {
         setServerErrors({ phone: info.message });
         setStep(stepIndex('contact'));
@@ -475,6 +484,12 @@ export default function RegisterScreen() {
             label="Nom du commerce" icon="storefront-outline" value={businessName}
             onChangeText={setBusinessName} error={errors.businessName} autoCapitalize="words"
             returnKeyType="next" accent={P.accent} autoFocus maxLength={80}
+          />
+          <AuthField
+            label="Numéro RCCM" icon="document-text-outline" value={rccm}
+            onChangeText={(t) => { setRccm(t); clearServer('rccm'); }} error={errors.rccm} autoCapitalize="characters"
+            returnKeyType="next" accent={P.accent} maxLength={40} placeholder={RCCM_EXAMPLE}
+            hint="Registre du Commerce et du Crédit Mobilier : obligatoire."
           />
           <Text style={s.chipsLabel}>Catégorie</Text>
           <View style={s.chips}>

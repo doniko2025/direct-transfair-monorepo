@@ -569,7 +569,7 @@ export default function PersonalInfoAdmin() {
 
       {/* ✅ v5.7 — Android : behavior "height" au lieu de undefined
           (ajustement complémentaire, voir changelog en tête de fichier) */}
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
           showsVerticalScrollIndicator={false}

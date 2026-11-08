@@ -262,6 +262,8 @@ export interface MerchantProfileInput {
   category?: string | null;
   address?: string | null;
   city?: string | null;
+  /** Numéro RCCM : OBLIGATOIRE à l'ouverture d'un compte marchand. */
+  rccm?: string | null;
   /** Obligatoire pour un compte GNF / XOF ; refusé pour les autres devises (retraits par IBAN). */
   orangeMoneyPhone?: string | null;
 }
@@ -270,6 +272,22 @@ const cleanText = (v: unknown): string | null => {
   const s = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '';
   return s ? s : null;
 };
+
+/**
+ * Numéro RCCM (Registre du Commerce et du Crédit Mobilier) : obligatoire. Formats variables selon le pays
+ * (« GN.TCC.2019.B.12345 », « SN DKR 2015 B 1234 », « CI-ABJ-2018-B-12345 »…) : on contrôle seulement l'allure
+ * (5 à 40 caractères : lettres, chiffres, espaces, points, tirets, barres obliques ; au moins un chiffre) et on normalise
+ * (espaces simplifiés, majuscules). Fonction pure.
+ */
+export function normalizeRccm(raw: unknown): string {
+  const v = cleanText(raw);
+  if (!v) throw new BadRequestException('Le numéro RCCM est obligatoire pour ouvrir un compte marchand.');
+  const rccm = v.toUpperCase();
+  if (rccm.length < 5 || rccm.length > 40 || !/^[A-Z0-9][A-Z0-9 ./\-]*$/.test(rccm) || !/\d/.test(rccm)) {
+    throw new BadRequestException('Numéro RCCM invalide : 5 à 40 caractères (lettres, chiffres, points ou tirets), avec au moins un chiffre. Exemple : GN.TCC.2019.B.12345.');
+  }
+  return rccm;
+}
 
 /**
  * Valide et normalise la fiche saisie à l'inscription ou à l'activation. Fonction pure.
@@ -283,9 +301,11 @@ export function normalizeProfileInput(raw: Partial<MerchantProfileInput>, curren
   category: string | null;
   address: string | null;
   city: string | null;
+  rccm: string;
 } {
   const businessName = cleanText(raw.businessName);
   if (!businessName || businessName.length < 2) throw new BadRequestException('Indiquez le nom de votre commerce (2 caractères minimum).');
+  const rccm = normalizeRccm(raw.rccm);
   let orangeMoneyPhone: string | null;
   if (!currency) orangeMoneyPhone = assertOrangePhone(raw.orangeMoneyPhone);
   else if (!isOrangeMoneyCurrency(currency)) {
@@ -297,6 +317,7 @@ export function normalizeProfileInput(raw: Partial<MerchantProfileInput>, curren
     category: cleanText(raw.category)?.slice(0, 60) ?? null,
     address: cleanText(raw.address)?.slice(0, 160) ?? null,
     city: cleanText(raw.city)?.slice(0, 80) ?? null,
+    rccm,
     orangeMoneyPhone,
   };
 }

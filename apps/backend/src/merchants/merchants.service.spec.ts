@@ -39,14 +39,16 @@ function setup(profile: J | null = { id: 'p1', userId: 'mer', clientId: 7, busin
 
 describe('normalizeProfileInput', () => {
   it('nettoie les champs et valide le numéro Orange Money', () => {
-    expect(normalizeProfileInput({ businessName: '  Chez   Awa ', city: ' Conakry ', orangeMoneyPhone: '+224 620 00 00 01' })).toEqual({
-      businessName: 'Chez Awa', category: null, address: null, city: 'Conakry', orangeMoneyPhone: '+224620000001',
+    expect(normalizeProfileInput({ businessName: '  Chez   Awa ', city: ' Conakry ', rccm: ' gn.tcc.2019.b.12345 ', orangeMoneyPhone: '+224 620 00 00 01' })).toEqual({
+      businessName: 'Chez Awa', category: null, address: null, city: 'Conakry', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001',
     });
   });
   it('refuse nom absent ou trop court, numéro sans indicatif', () => {
-    expect(() => normalizeProfileInput({ orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
-    expect(() => normalizeProfileInput({ businessName: 'A', orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
-    expect(() => normalizeProfileInput({ businessName: 'Awa', orangeMoneyPhone: '0620000001' })).toThrow(BadRequestException);
+    const rccm = 'GN.TCC.2019.B.12345';
+    expect(() => normalizeProfileInput({ rccm, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'A', rccm, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'Awa', rccm, orangeMoneyPhone: '0620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'Awa', orangeMoneyPhone: '+224620000001' })).toThrow(/RCCM/);
   });
 });
 
@@ -64,14 +66,14 @@ describe('accès marchand', () => {
 });
 
 describe('activation', () => {
-  const input = { pin: '486213', businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' };
+  const input = { pin: '486213', businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
   it('code secret vérifié, fiche créée, utilisateur passé MERCHANT, journal et notification', async () => {
     const { service, pins, prisma, audits, notifier } = setup(null);
     prisma.merchantProfile.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ userId: 'mer', businessName: 'Chez Awa', status: 'ACTIVE', orangeMoneyPhone: '+224620000001', createdAt: new Date(), destinationChangedAt: null });
     await service.activate(me, input);
     expect(pins.assertPin).toHaveBeenCalledWith('mer', '486213');
     expect(prisma.user.update).toHaveBeenCalledWith({ where: { id: 'mer' }, data: { accountType: 'MERCHANT' } });
-    expect(prisma.merchantProfile.create.mock.calls[0][0].data).toMatchObject({ userId: 'mer', clientId: 7, businessName: 'Chez Awa' });
+    expect(prisma.merchantProfile.create.mock.calls[0][0].data).toMatchObject({ userId: 'mer', clientId: 7, businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345' });
     expect(audits[0]).toMatchObject({ action: 'MERCHANT_CREATE' });
     expect(notifier.notifyUser).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: 'MERCHANT_ACTIVATED' }));
   });
@@ -81,6 +83,41 @@ describe('activation', () => {
     expect(a.pins.assertPin).not.toHaveBeenCalled();
     await expect(setup(null, false).service.activate(me, input)).rejects.toBeInstanceOf(ForbiddenException);
     await expect(setup(null).service.activate({ ...me, role: 'AGENT' }, input)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('RCCM obligatoire', () => {
+  const full = { pin: '486213', businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
+  it('activation sans RCCM (ou invalide) : 400, le code secret n\'est même pas demandé, rien n\'est créé', async () => {
+    const { pin: _pin, ...noPin } = full;
+    for (const bad of [undefined, '', 'AB', '<b>x</b>']) {
+      const t = setup(null);
+      await expect(t.service.activate(me, { ...full, rccm: bad } as any)).rejects.toBeInstanceOf(BadRequestException);
+      expect(t.pins.assertPin).not.toHaveBeenCalled();
+      expect(t.prisma.merchantProfile.create).not.toHaveBeenCalled();
+    }
+    expect(noPin.rccm).toBeDefined();
+  });
+  it('activation : un RCCM déjà utilisé par un autre commerce est refusé (409), rien n\'est créé', async () => {
+    const t = setup(null);
+    t.prisma.merchantProfile.findFirst.mockResolvedValueOnce({ id: 'autre' });
+    await expect(t.service.activate(me, full)).rejects.toBeInstanceOf(ConflictException);
+    expect(t.prisma.merchantProfile.findFirst.mock.calls[0][0].where).toMatchObject({ rccm: 'GN.TCC.2019.B.12345' });
+    expect(t.prisma.merchantProfile.create).not.toHaveBeenCalled();
+  });
+  it('ancien compte sans RCCM : il peut le renseigner (normalisé, unicité vérifiée, journalisé)', async () => {
+    const t = setup({ id: 'p1', userId: 'mer', clientId: 7, businessName: 'Boutique', rccm: null, orangeMoneyPhone: '+224620000001', bankIban: null, bankBic: null, bankHolderName: null, destinationChangedAt: null, status: 'ACTIVE', suspendedReason: null, category: null, address: null, city: null, createdAt: new Date() });
+    t.prisma.merchantProfile.findFirst.mockResolvedValueOnce(null);
+    await t.service.updateProfile(me, { rccm: ' gn.tcc.2019.b.12345 ' });
+    expect(t.row!.rccm).toBe('GN.TCC.2019.B.12345');
+    expect(t.audits[0]).toMatchObject({ action: 'MERCHANT_UPDATE' });
+  });
+  it('RCCM déjà renseigné : le changer passe par le support (403) ; le renvoyer identique ne change rien', async () => {
+    const t = setup({ id: 'p1', userId: 'mer', clientId: 7, businessName: 'Boutique', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001', bankIban: null, bankBic: null, bankHolderName: null, destinationChangedAt: null, status: 'ACTIVE', suspendedReason: null, category: null, address: null, city: null, createdAt: new Date() });
+    await expect(t.service.updateProfile(me, { rccm: 'SN DKR 2015 B 1234' })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(t.row!.rccm).toBe('GN.TCC.2019.B.12345');
+    await t.service.updateProfile(me, { rccm: 'gn.tcc.2019.b.12345' });
+    expect(t.prisma.merchantProfile.update).not.toHaveBeenCalled();
   });
 });
 

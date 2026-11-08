@@ -1,19 +1,15 @@
-LOT 14d — Écrans « Transfert » (Wallet) et « Envoi d'argent » (Cash Pickup)  — mobile uniquement, aucun changement backend
+LOT 14e — Clavier, filtres sur une ligne, RCCM obligatoire
+(Ordre : lot 14 -> audit-corrections -> 14c -> 14d -> 14e. Aucun commit/push fait.)
 
-Fichiers (à copier à la même place dans le dépôt) :
-  apps/direct-transfair-mobile/app/(tabs)/send.tsx                      (remplacé en entier)
-  apps/direct-transfair-mobile/app/(tabs)/beneficiaries/create.tsx      (pré-remplissage nom / téléphone)
-  apps/direct-transfair-mobile/components/ui/CurrencyBadge.tsx          (NOUVEAU : pastille drapeau de devise)
+1) CLAVIER (mobile)
+ - components/ui/Layout.tsx : Screen et Sheet s'adaptent au clavier (padding), le champ actif reste visible, le bouton du bas se pose au-dessus du clavier.
+ - Tous les KeyboardAvoidingView passent en behavior="padding" (Android inclus).
+ - app.json : softwareKeyboardLayoutMode "pan" -> "resize"  => NOUVEAU BUILD NATIF requis (eas build), pas de simple reload.
 
-Ce qui change :
-  - Même allure que les autres pages (barre de titre, onglets Wallet | Cash Pickup, cartes, boutons, feuilles basses).
-  - Pastille drapeau (🇪🇺, 🇸🇳…) devant les montants à la place du texte « EUR » / « XOF ».
-  - Liste « destinataires récents » supprimée. Un seul bouton « Choisir un destinataire » ouvre une feuille :
-      • Mes bénéficiaires (liste + recherche)
-      • Importer depuis mes contacts (répertoire du téléphone)
-      • Nouveau bénéficiaire
-    La saisie directe du numéro ou du nom reste possible, avec suggestions pendant la frappe.
-  - Textes retirés : « Transfert sécurisé · Crypté de bout en bout », « Choisissez un bénéficiaire »,
-    « Saisissez le numéro du destinataire » (restent seulement les avertissements utiles : aucun compte, taux indisponible).
-  - Le bouton du bas ne colle plus à la barre de navigation du téléphone (marge de sécurité).
-  - Logique d'envoi inchangée (frais serveur, idempotence, KYC, reçu, solde insuffisant).
+2) FILTRES D'UNE LIGNE
+ - components/ui/Segmented.tsx (nouveau, exporté dans index.ts) ; app/merchant/closing.tsx l'utilise.
+
+3) RCCM OBLIGATOIRE (compte marchand)
+ Backend : migration 20261116090000_merchant_rccm  =>  npx prisma migrate deploy && npx prisma generate && build && redeploiement.
+ Inscription marchand, activation, Réglages marchand (verrouillé une fois saisi), fiche admin web (RCCM affiché + recherche).
+ Les marchands existants sans RCCM ne sont pas bloqués : rappel dans Réglages.

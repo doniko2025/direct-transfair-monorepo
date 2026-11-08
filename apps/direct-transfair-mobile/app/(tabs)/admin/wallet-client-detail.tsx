@@ -329,7 +329,7 @@ function EditModal({ visible, client, onClose, onSaved }: {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={em.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ width: "100%" }}>
+        <KeyboardAvoidingView behavior="padding" style={{ width: "100%" }}>
           <View style={em.sheet}>
             <View style={em.handle} />
             <View style={em.header}>

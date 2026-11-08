@@ -27,6 +27,8 @@ export interface MerchantProfileView {
   category: string | null;
   address: string | null;
   city: string | null;
+  /** Numéro RCCM — nul pour un compte créé avant que ce numéro soit obligatoire (à renseigner dans les réglages). */
+  rccm?: string | null;
   status: MerchantStatus;
   suspendedReason: string | null;
   orangeMoneyPhone: string | null;
@@ -134,6 +136,8 @@ export interface MerchantProfileInput {
   category?: string;
   address?: string;
   city?: string;
+  /** Obligatoire à l'activation d'un compte marchand. */
+  rccm?: string;
   orangeMoneyPhone?: string;
 }
 

@@ -289,7 +289,7 @@ export default function EditClientScreen() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <Animated.ScrollView
           style={{ opacity: fadeAnim }}
           contentContainerStyle={s.content}

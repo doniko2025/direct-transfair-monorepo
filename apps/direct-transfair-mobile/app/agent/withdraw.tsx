@@ -212,7 +212,7 @@ export default function AgentWithdrawScreen() {
       </LinearGradient>
       {/* ✅ v7.1 : HeroConcave supprimé */}
 
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
           {!transaction ? (

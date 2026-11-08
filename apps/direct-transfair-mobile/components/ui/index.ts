@@ -4,5 +4,6 @@ export * from './theme';
 export * from './Primitives';
 export * from './Field';
 export * from './Layout';
+export * from './Segmented';
 export * from './Feedback';
 export { default as BalanceCard } from './BalanceCard';

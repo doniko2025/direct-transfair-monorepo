@@ -107,6 +107,11 @@ export class RegisterDto {
   @IsOptional()
   businessCity?: string;
 
+  /** Numéro RCCM du commerce — obligatoire pour un compte MERCHANT (validé par normalizeProfileInput). */
+  @IsString()
+  @IsOptional()
+  businessRccm?: string;
+
   @IsString()
   @IsOptional()
   orangeMoneyPhone?: string;

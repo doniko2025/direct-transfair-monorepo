@@ -22,6 +22,7 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { OptionPicker } from "../../components/ui/OptionPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
+import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
 import { fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
@@ -30,16 +31,25 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
   const [category, setCategory] = useState<string | null>(profile.category);
   const [address, setAddress] = useState(profile.address ?? "");
   const [city, setCity] = useState(profile.city ?? "");
+  // RCCM : obligatoire à l'ouverture d'un compte. Un compte plus ancien peut ne pas l'avoir : on le demande ici. Une fois
+  // renseigné, il n'est plus modifiable depuis l'application (changement via le support).
+  const rccmLocked = !!profile.rccm;
+  const [rccm, setRccm] = useState(profile.rccm ?? "");
+  const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "pos" | "danger"; text: string } | null>(null);
   const categories = me.categories.length ? me.categories : MERCHANT_CATEGORIES;
 
-  const dirty = name.trim() !== profile.businessName || category !== profile.category || address.trim() !== (profile.address ?? "") || city.trim() !== (profile.city ?? "");
+  const rccmError = showErrors && !rccmLocked ? validateRccm(rccm) : null;
+  const rccmToSave = !rccmLocked && rccm.trim().length > 0;
+  const dirty = name.trim() !== profile.businessName || category !== profile.category || address.trim() !== (profile.address ?? "") || city.trim() !== (profile.city ?? "") || rccmToSave;
   const save = async () => {
+    setShowErrors(true);
+    if (rccmToSave && validateRccm(rccm)) return;
     setBusy(true);
     setMsg(null);
     try {
-      await api.updateMerchantProfile({ businessName: name.trim(), category: category ?? undefined, address: address.trim(), city: city.trim() });
+      await api.updateMerchantProfile({ businessName: name.trim(), category: category ?? undefined, address: address.trim(), city: city.trim(), ...(rccmToSave ? { rccm: normalizeRccm(rccm) } : {}) });
       setMsg({ tone: "pos", text: "Informations du commerce enregistrées." });
       onSaved();
     } catch (e) {
@@ -52,7 +62,17 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
   return (
     <Card pad={20}>
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
+      {!rccmLocked && (
+        <Notice tone="warn" icon="document-text-outline" style={{ marginBottom: 14 }}>
+          Le numéro RCCM est désormais obligatoire pour les comptes marchands. Renseignez-le pour mettre votre fiche en règle.
+        </Notice>
+      )}
       <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
+      <Field
+        label="Numéro RCCM" icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
+        editable={!rccmLocked} placeholder={RCCM_EXAMPLE} error={rccmError}
+        hint={rccmLocked ? "Pour modifier ce numéro, contactez le support." : "Registre du Commerce et du Crédit Mobilier."}
+      />
       <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" />
       <Field label="Adresse" icon="location-outline" value={address} onChangeText={setAddress} autoCapitalize="sentences" maxLength={160} />
       <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />

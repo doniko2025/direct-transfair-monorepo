@@ -34,6 +34,7 @@ import {
   maskIban,
   maskPhone,
   normalizeProfileInput,
+  normalizeRccm,
   payoutCooldown,
 } from './merchant-rules';
 import { PinVerifierService } from './pin-verifier.service';
@@ -146,9 +147,19 @@ export class MerchantsService {
         category: data.category,
         address: data.address,
         city: data.city,
+        rccm: data.rccm,
         orangeMoneyPhone: data.orangeMoneyPhone,
       },
     });
+  }
+
+  /** Un numéro RCCM ne peut appartenir qu'à un seul compte marchand (hors `exceptUserId`, le propriétaire lui-même). */
+  async assertRccmFree(rccm: string, exceptUserId?: string): Promise<void> {
+    const other = await this.prisma.merchantProfile.findFirst({
+      where: { rccm, ...(exceptUserId ? { NOT: { userId: exceptUserId } } : {}) },
+      select: { id: true },
+    });
+    if (other) throw new ConflictException('Ce RCCM est déjà associé à un autre compte marchand. Vérifiez-le ou contactez le support.');
   }
 
   /** Vérifie que la société accepte de nouveaux marchands (à l'inscription et à l'activation). */
@@ -164,6 +175,9 @@ export class MerchantsService {
     const existing = await this.prisma.merchantProfile.findUnique({ where: { userId: user.id }, select: { id: true } });
     if (existing) throw new ConflictException('Votre compte marchand existe déjà.');
 
+    // Valide aussi le RCCM (obligatoire) avant de demander quoi que ce soit d'autre à la base.
+    const rccm = normalizeRccm(dto.rccm);
+    await this.assertRccmFree(rccm);
     await this.pins.assertPin(user.id, dto.pin);
     // Devise du compte : le numéro Orange Money doit être celui du pays de cette devise (un compte en euros n'a pas d'Orange Money).
     const owner = await this.prisma.user.findUnique({ where: { id: user.id }, select: { primaryCurrency: true } });
@@ -198,6 +212,8 @@ export class MerchantsService {
       category: p.category,
       address: p.address,
       city: p.city,
+      /** Numéro RCCM (nul pour un compte créé avant que ce numéro soit obligatoire). */
+      rccm: p.rccm,
       status: p.status,
       suspendedReason: p.status === 'SUSPENDED' ? p.suspendedReason : null,
       orangeMoneyPhone: p.orangeMoneyPhone,
@@ -308,6 +324,16 @@ export class MerchantsService {
     if (dto.category !== undefined) data.category = clean(dto.category)?.slice(0, 60) ?? null;
     if (dto.address !== undefined) data.address = clean(dto.address)?.slice(0, 160) ?? null;
     if (dto.city !== undefined) data.city = clean(dto.city)?.slice(0, 80) ?? null;
+    if (dto.rccm !== undefined) {
+      const rccm = normalizeRccm(dto.rccm);
+      if (profile.rccm && profile.rccm !== rccm) {
+        throw new ForbiddenException('Le numéro RCCM ne peut pas être modifié ici. Contactez le support pour le changer.');
+      }
+      if (!profile.rccm) {
+        await this.assertRccmFree(rccm, user.id);
+        data.rccm = rccm;
+      }
+    }
     if (Object.keys(data).length === 0) return this.getMine(user);
     await this.prisma.merchantProfile.update({ where: { id: profile.id }, data });
     await this.audit(user.id, profile.clientId, 'MERCHANT_UPDATE', user.id, { fields: Object.keys(data) });
@@ -478,6 +504,7 @@ export class MerchantsService {
             OR: [
               { businessName: { contains: search, mode: 'insensitive' } },
               { city: { contains: search, mode: 'insensitive' } },
+              { rccm: { contains: search, mode: 'insensitive' } },
               { user: { OR: [{ firstName: { contains: search, mode: 'insensitive' } }, { lastName: { contains: search, mode: 'insensitive' } }, { phone: { contains: search } }, { email: { contains: search, mode: 'insensitive' } }] } },
             ],
           }
@@ -504,6 +531,7 @@ export class MerchantsService {
         businessName: r.businessName,
         category: r.category,
         city: r.city,
+        rccm: r.rccm,
         status: r.status,
         owner: { firstName: r.user.firstName, lastName: r.user.lastName, email: r.user.email, phone: r.user.phone, kycLevel: r.user.kycLevel },
         orangeMoneyMasked: maskPhone(r.orangeMoneyPhone),

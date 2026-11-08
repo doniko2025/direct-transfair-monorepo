@@ -1521,7 +1521,7 @@ class API {
     return (await this.http.post<MerchantMe>("/merchants/activate", input)).data;
   }
 
-  async updateMerchantProfile(input: { businessName?: string; category?: string; address?: string; city?: string }): Promise<MerchantMe> {
+  async updateMerchantProfile(input: { businessName?: string; category?: string; address?: string; city?: string; rccm?: string }): Promise<MerchantMe> {
     return (await this.http.patch<MerchantMe>("/merchants/me", input)).data;
   }
 

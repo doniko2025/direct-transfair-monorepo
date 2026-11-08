@@ -109,6 +109,7 @@ export default function MerchantsPage() {
                         {ownerName(m.owner)}
                         {m.city ? ` · ${m.city}` : ''}
                       </span>
+                      {m.rccm ? <span>RCCM {m.rccm}</span> : <span>RCCM non renseigné</span>}
                     </div>
                     <Icon name="chevronRight" size={18} />
                   </div>

@@ -1,12 +1,12 @@
 // Lot 11 — inscription « Je suis marchand » : la fiche du commerce naît avec le compte, dans la même transaction.
 import 'reflect-metadata';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 
 import { AuthService } from './auth.service';
 
 const register = (AuthService.prototype as any).register as (...a: any[]) => Promise<any>;
 
-function ctx(opts: { merchantEnabled?: boolean } = {}) {
+function ctx(opts: { merchantEnabled?: boolean; rccmTaken?: boolean } = {}) {
   const merchantCreate = jest.fn(async () => ({}));
   const userUpdate = jest.fn(async ({ data }: any) => ({ id: 'u1', email: 'a@x.fr', role: 'USER', clientId: 7, ...data }));
   const userCreate = jest.fn(async () => ({ id: 'u1', email: 'a@x.fr', role: 'USER', clientId: 7, accountType: 'PERSONAL' }));
@@ -14,6 +14,7 @@ function ctx(opts: { merchantEnabled?: boolean } = {}) {
   const prisma: any = {
     user: { findUnique: jest.fn(async ({ where }: any) => (where.email ? null : { id: 'u1', email: 'a@x.fr', role: 'USER', clientId: 7, accountType: 'MERCHANT', wallets: [] })), findFirst: jest.fn(async () => null), update: jest.fn(async () => ({})) },
     client: { findUnique: jest.fn(async () => ({ id: 7, isActive: true, code: 'DT' })) },
+    merchantProfile: { findFirst: jest.fn(async () => (opts.rccmTaken ? { id: 'autre' } : null)) },
     companySetting: { findUnique: jest.fn(async () => (opts.merchantEnabled === false ? { data: { merchant: { enabled: false } } } : null)) },
     $transaction: jest.fn(async (fn: any) => fn(tx)),
     userSession: { create: jest.fn(async () => ({})) },
@@ -36,16 +37,29 @@ const base = { firstName: 'Awa', lastName: 'Diallo', email: 'a@x.fr', password: 
 describe('register — compte marchand', () => {
   it('crée la fiche et passe le compte en MERCHANT dans la même transaction', async () => {
     const { self, merchantCreate, userUpdate } = ctx();
-    await register.call(self, { ...base, accountType: 'MERCHANT', businessName: ' Chez  Awa ', businessCategory: 'Boutique', businessCity: 'Conakry', orangeMoneyPhone: '+224 620 00 00 01' }, null);
-    expect(merchantCreate.mock.calls[0][0].data).toMatchObject({ userId: 'u1', clientId: 7, businessName: 'Chez Awa', category: 'Boutique', city: 'Conakry', orangeMoneyPhone: '+224620000001' });
+    await register.call(self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: ' Chez  Awa ', businessCategory: 'Boutique', businessCity: 'Conakry', orangeMoneyPhone: '+224 620 00 00 01' }, null);
+    expect(merchantCreate.mock.calls[0][0].data).toMatchObject({ userId: 'u1', clientId: 7, businessName: 'Chez Awa', category: 'Boutique', city: 'Conakry', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' });
     expect(userUpdate).toHaveBeenCalledWith({ where: { id: 'u1' }, data: { accountType: 'MERCHANT' } });
+  });
+
+  it('RCCM obligatoire : absent ou invalide → 400 AVANT toute écriture ; déjà utilisé → 409', async () => {
+    const ok = { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' };
+    for (const bad of [undefined, '', '  ', 'AB']) {
+      const c = ctx();
+      await expect(register.call(c.self, { ...ok, businessRccm: bad }, null)).rejects.toBeInstanceOf(BadRequestException);
+      expect(c.userCreate).not.toHaveBeenCalled();
+    }
+    const taken = ctx({ rccmTaken: true });
+    await expect(register.call(taken.self, { ...ok, businessRccm: 'GN.TCC.2019.B.12345' }, null)).rejects.toBeInstanceOf(ConflictException);
+    expect(taken.userCreate).not.toHaveBeenCalled();
+    expect(taken.prisma.merchantProfile.findFirst.mock.calls[0][0].where).toEqual({ rccm: 'GN.TCC.2019.B.12345' });
   });
 
   it('fiche incomplète ou numéro sans indicatif : refusé AVANT toute écriture', async () => {
     const a = ctx();
-    await expect(register.call(a.self, { ...base, accountType: 'MERCHANT', orangeMoneyPhone: '+224620000001' }, null)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(register.call(a.self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' }, null)).rejects.toBeInstanceOf(BadRequestException);
     const b = ctx();
-    await expect(register.call(b.self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '0620000001' }, null)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(register.call(b.self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa', orangeMoneyPhone: '0620000001' }, null)).rejects.toBeInstanceOf(BadRequestException);
     for (const c of [a, b]) {
       expect(c.userCreate).not.toHaveBeenCalled();
       expect(c.prisma.$transaction).not.toHaveBeenCalled();
@@ -55,7 +69,7 @@ describe('register — compte marchand', () => {
   it("BARRAGE : un compte ouvert en euros ne peut pas enregistrer un numéro Orange guinéen — refusé avant toute écriture", async () => {
     const { self, userCreate, prisma } = ctx();
     const fr = { ...base, country: 'France', phone: '+33751244722' };
-    const err: any = await register.call(self, { ...fr, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+224 620 00 00 01' }, null).catch((e: any) => e);
+    const err: any = await register.call(self, { ...fr, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa', orangeMoneyPhone: '+224 620 00 00 01' }, null).catch((e: any) => e);
     expect(err).toBeInstanceOf(BadRequestException);
     expect(err.getResponse()).toMatchObject({ code: 'ORANGE_NOT_AVAILABLE' });
     expect(userCreate).not.toHaveBeenCalled();
@@ -64,20 +78,20 @@ describe('register — compte marchand', () => {
 
   it('compte en euros : le commerce naît sans Orange Money (retraits par IBAN plus tard)', async () => {
     const { self, merchantCreate } = ctx();
-    await register.call(self, { ...base, country: 'France', phone: '+33751244722', accountType: 'MERCHANT', businessName: 'Chez Awa' }, null);
+    await register.call(self, { ...base, country: 'France', phone: '+33751244722', accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa' }, null);
     expect(merchantCreate.mock.calls[0][0].data).toMatchObject({ businessName: 'Chez Awa', orangeMoneyPhone: null });
   });
 
   it('compte guinéen (GNF) : numéro Orange guinéen obligatoire — un numéro étranger est refusé avant toute écriture', async () => {
     const { self, userCreate } = ctx();
-    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+33 7 51 24 47 22' }, null)).rejects.toMatchObject({ response: { code: 'ORANGE_COUNTRY_MISMATCH' } });
-    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa' }, null)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa', orangeMoneyPhone: '+33 7 51 24 47 22' }, null)).rejects.toMatchObject({ response: { code: 'ORANGE_COUNTRY_MISMATCH' } });
+    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa' }, null)).rejects.toBeInstanceOf(BadRequestException);
     expect(userCreate).not.toHaveBeenCalled();
   });
 
   it('société qui ferme les comptes marchands : 403, rien créé', async () => {
     const { self, userCreate } = ctx({ merchantEnabled: false });
-    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' }, null)).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(register.call(self, { ...base, accountType: 'MERCHANT', businessRccm: 'GN.TCC.2019.B.12345', businessName: 'Chez Awa', orangeMoneyPhone: '+224620000001' }, null)).rejects.toBeInstanceOf(ForbiddenException);
     expect(userCreate).not.toHaveBeenCalled();
   });
 

@@ -113,6 +113,7 @@ export default function MerchantPage() {
               <div className="kv__row"><dt>Téléphone</dt><dd>{m.owner.phone ?? '—'}</dd></div>
               <div className="kv__row"><dt>E-mail</dt><dd>{m.owner.email}</dd></div>
               <div className="kv__row"><dt>Catégorie</dt><dd>{m.category ?? '—'}</dd></div>
+              <div className="kv__row"><dt>RCCM</dt><dd>{m.rccm ?? 'Non renseigné'}</dd></div>
               <div className="kv__row"><dt>Adresse</dt><dd>{[m.address, m.city].filter(Boolean).join(', ') || '—'}</dd></div>
               <div className="kv__row"><dt>Orange Money de retrait</dt><dd>{m.orangeMoneyMasked || '—'}</dd></div>
               <div className="kv__row"><dt>Compte bancaire</dt><dd>{m.bank ? `${m.bank.holderName ?? ''} · ${m.bank.ibanMasked}` : '—'}</dd></div>

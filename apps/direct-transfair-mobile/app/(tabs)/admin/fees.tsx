@@ -394,7 +394,7 @@ function AddTierModal({ visible, onClose, onSave }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={mdS.overlay}>
           <View style={mdS.sheet}>
             <View style={mdS.handle} />
@@ -484,7 +484,7 @@ function AddOverrideModal({ visible, onClose, onSave }: {
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
         <View style={mdS.overlay}>
           <View style={mdS.sheet}>
             <View style={mdS.handle} />
