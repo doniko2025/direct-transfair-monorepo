@@ -260,8 +260,20 @@ export function effectivePayoutMode(configured: string, env: NodeJS.ProcessEnv =
 export interface MerchantProfileInput {
   businessName: string;
   category?: string | null;
+  /** Adresse du commerce (rue, repère…) : OBLIGATOIRE à l'ouverture d'un compte marchand. */
   address?: string | null;
+  /** Ville du commerce : OBLIGATOIRE à l'ouverture (jamais reprise de la ville personnelle du client). */
   city?: string | null;
+  /** Quartier / commune (facultatif). */
+  district?: string | null;
+  /** Code postal (facultatif). */
+  postalCode?: string | null;
+  /** Pays du commerce (facultatif). */
+  country?: string | null;
+  /** Téléphone du commerce, avec indicatif (facultatif) : distinct du téléphone personnel du client. */
+  businessPhone?: string | null;
+  /** Numéro d'identification fiscale — NIF / IFU (facultatif). */
+  taxId?: string | null;
   /** Numéro RCCM : OBLIGATOIRE à l'ouverture d'un compte marchand. */
   rccm?: string | null;
   /** Obligatoire pour un compte GNF / XOF ; refusé pour les autres devises (retraits par IBAN). */
@@ -272,6 +284,60 @@ const cleanText = (v: unknown): string | null => {
   const s = typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '';
   return s ? s : null;
 };
+
+// ── Coordonnées du commerce ────────────────────────────
+// Ces données appartiennent au COMMERCE : elles ne sont jamais reprises de l'adresse ou du téléphone personnels du client
+// (compte client et compte marchand restent isolés l'un de l'autre, même pour la même personne).
+
+/** Adresse du commerce : 5 à 160 caractères, avec au moins une lettre ou un chiffre. Obligatoire. */
+export function normalizeBusinessAddress(raw: unknown): string {
+  const v = cleanText(raw);
+  if (!v || v.length < 5 || !/[\p{L}\p{N}]/u.test(v)) {
+    throw new BadRequestException("Indiquez l'adresse de votre commerce (5 caractères minimum : rue, quartier, repère…).");
+  }
+  return v.slice(0, 160);
+}
+
+/** Ville du commerce : 2 à 80 caractères. Obligatoire. */
+export function normalizeBusinessCity(raw: unknown): string {
+  const v = cleanText(raw);
+  if (!v || v.length < 2) throw new BadRequestException('Indiquez la ville de votre commerce.');
+  return v.slice(0, 80);
+}
+
+/** Code postal : facultatif (vide = aucun). 3 à 10 caractères : lettres, chiffres, espace ou tiret. */
+export function normalizePostalCode(raw: unknown): string | null {
+  const v = cleanText(raw);
+  if (!v) return null;
+  const code = v.toUpperCase();
+  if (code.length < 3 || code.length > 10 || !/^[A-Z0-9][A-Z0-9 -]*$/.test(code)) {
+    throw new BadRequestException('Code postal invalide : 3 à 10 caractères (lettres, chiffres, espace ou tiret). Laissez vide si vous n\'en avez pas.');
+  }
+  return code;
+}
+
+/** Téléphone du commerce : facultatif, avec indicatif du pays (même règle que les autres numéros). */
+export function normalizeBusinessPhone(raw: unknown): string | null {
+  const v = cleanText(raw);
+  if (!v) return null;
+  const phone = normalizePhoneStrict(v);
+  if (!phone) throw new BadRequestException(PHONE_INVALID_MESSAGE);
+  return phone;
+}
+
+/** NIF / IFU : facultatif. 3 à 30 caractères (lettres, chiffres, points, tirets, barres obliques, espaces), au moins un chiffre. */
+export function normalizeTaxId(raw: unknown): string | null {
+  const v = cleanText(raw);
+  if (!v) return null;
+  const id = v.toUpperCase();
+  if (id.length < 3 || id.length > 30 || !/^[A-Z0-9][A-Z0-9 ./-]*$/.test(id) || !/\d/.test(id)) {
+    throw new BadRequestException('Numéro fiscal (NIF / IFU) invalide : 3 à 30 caractères (lettres, chiffres, points ou tirets), avec au moins un chiffre.');
+  }
+  return id;
+}
+
+/** Quartier, pays : texte libre court, facultatif. */
+export const normalizeShortText = (raw: unknown, max: number): string | null => cleanText(raw)?.slice(0, max) ?? null;
 
 /**
  * Numéro RCCM (Registre du Commerce et du Crédit Mobilier) : obligatoire. Formats variables selon le pays
@@ -299,8 +365,13 @@ export function normalizeProfileInput(raw: Partial<MerchantProfileInput>, curren
   businessName: string;
   orangeMoneyPhone: string | null;
   category: string | null;
-  address: string | null;
-  city: string | null;
+  address: string;
+  city: string;
+  district: string | null;
+  postalCode: string | null;
+  country: string | null;
+  businessPhone: string | null;
+  taxId: string | null;
   rccm: string;
 } {
   const businessName = cleanText(raw.businessName);
@@ -315,8 +386,13 @@ export function normalizeProfileInput(raw: Partial<MerchantProfileInput>, curren
   return {
     businessName: businessName.slice(0, 80),
     category: cleanText(raw.category)?.slice(0, 60) ?? null,
-    address: cleanText(raw.address)?.slice(0, 160) ?? null,
-    city: cleanText(raw.city)?.slice(0, 80) ?? null,
+    address: normalizeBusinessAddress(raw.address),
+    city: normalizeBusinessCity(raw.city),
+    district: normalizeShortText(raw.district, 80),
+    postalCode: normalizePostalCode(raw.postalCode),
+    country: normalizeShortText(raw.country, 60),
+    businessPhone: normalizeBusinessPhone(raw.businessPhone),
+    taxId: normalizeTaxId(raw.taxId),
     rccm,
     orangeMoneyPhone,
   };

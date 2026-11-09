@@ -108,6 +108,9 @@ import { describeAuthError } from '../../components/auth/authErrors';
 import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 import { MERCHANT_CATEGORIES } from '../../components/merchant/merchantUi';
+import {
+  cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
+} from '../../utils/businessInfo';
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from '../../utils/rccm';
 
 import { Text, TextInput } from '../../components/ui/Text';
@@ -128,7 +131,8 @@ const MERCHANT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'shop', '
 
 type Errors = Partial<Record<
   'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms'
-  | 'businessName' | 'rccm' | 'category' | 'orangePhone',
+  | 'businessName' | 'rccm' | 'category' | 'orangePhone'
+  | 'businessAddress' | 'businessCity' | 'businessPostalCode' | 'businessPhone' | 'businessTaxId',
   string
 >>;
 
@@ -172,6 +176,12 @@ export default function RegisterScreen() {
   const [rccm, setRccm] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [businessAddress, setBusinessAddress] = useState('');
+  // Coordonnées du COMMERCE : saisies à part, jamais reprises de la ville / de l'adresse / du téléphone personnels.
+  const [businessDistrict, setBusinessDistrict] = useState('');
+  const [businessCity, setBusinessCity] = useState('');
+  const [businessPostalCode, setBusinessPostalCode] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessTaxId, setBusinessTaxId] = useState('');
   const [sameOrange, setSameOrange] = useState(true);
   const [orangeCountry, setOrangeCountry] = useState<AuthCountry>(findCountry('Guinée') ?? AUTH_COUNTRIES[0]!);
   const [orangeNational, setOrangeNational] = useState('');
@@ -216,6 +226,11 @@ export default function RegisterScreen() {
       const rc = validateRccm(rccm);
       if (rc) e.rccm = rc;
       if (!category) e.category = 'Choisissez une catégorie.';
+      const ba = validateBusinessAddress(businessAddress); if (ba) e.businessAddress = ba;
+      const bc = validateBusinessCity(businessCity); if (bc) e.businessCity = bc;
+      const bp = validatePostalCode(businessPostalCode); if (bp) e.businessPostalCode = bp;
+      const bt = validateBusinessPhone(businessPhone); if (bt) e.businessPhone = bt;
+      const bx = validateTaxId(businessTaxId); if (bx) e.businessTaxId = bx;
       if (orangeAllowed) {
         const o = sameOrange ? null : validatePhone(orangeNational);
         if (o) e.orangePhone = o;
@@ -300,8 +315,12 @@ export default function RegisterScreen() {
               businessName: businessName.trim(),
               businessRccm: normalizeRccm(rccm),
               businessCategory: category ?? undefined,
-              businessAddress: businessAddress.trim() || undefined,
-              businessCity: city.trim(),
+              businessAddress: cleanText(businessAddress),
+              businessCity: cleanText(businessCity),
+              businessDistrict: cleanText(businessDistrict) || undefined,
+              businessPostalCode: cleanText(businessPostalCode).toUpperCase() || undefined,
+              businessPhone: cleanText(businessPhone) ? normalizeBusinessPhone(businessPhone) : undefined,
+              businessTaxId: cleanText(businessTaxId).toUpperCase() || undefined,
               ...(orangeAllowed
                 ? {
                     orangeMoneyPhone: sameOrange
@@ -330,6 +349,22 @@ export default function RegisterScreen() {
         setFormError({ title: info.title, message: 'Cette adresse est déjà associée à un compte. Connectez-vous, ou utilisez une autre adresse.', action: 'login' });
       } else if (msg.includes('rccm')) {
         setServerErrors({ rccm: info.message });
+        setStep(stepIndex('shop'));
+        setShowErrors(true);
+      } else if (msg.includes('adresse de votre commerce')) {
+        setServerErrors({ businessAddress: info.message });
+        setStep(stepIndex('shop'));
+        setShowErrors(true);
+      } else if (msg.includes('ville de votre commerce')) {
+        setServerErrors({ businessCity: info.message });
+        setStep(stepIndex('shop'));
+        setShowErrors(true);
+      } else if (msg.includes('code postal')) {
+        setServerErrors({ businessPostalCode: info.message });
+        setStep(stepIndex('shop'));
+        setShowErrors(true);
+      } else if (msg.includes('nif / ifu')) {
+        setServerErrors({ businessTaxId: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
       } else if (info.kind === 'conflict' && (msg.includes('numéro') || msg.includes('téléphone'))) {
@@ -517,8 +552,35 @@ export default function RegisterScreen() {
           ) : null}
           <View style={{ height: 14 }} />
           <AuthField
-            label="Adresse du commerce (facultatif)" icon="location-outline" value={businessAddress}
-            onChangeText={setBusinessAddress} autoCapitalize="sentences" accent={P.accent} maxLength={160}
+            label="Adresse du commerce" icon="location-outline" value={businessAddress}
+            onChangeText={(t) => { setBusinessAddress(t); clearServer('businessAddress'); }} error={errors.businessAddress}
+            autoCapitalize="sentences" accent={P.accent} maxLength={160} returnKeyType="next"
+            hint="Rue, numéro, repère connu… tel que vos clients peuvent vous trouver."
+          />
+          <AuthField
+            label="Quartier / commune (facultatif)" icon="map-outline" value={businessDistrict}
+            onChangeText={setBusinessDistrict} autoCapitalize="words" accent={P.accent} maxLength={80} returnKeyType="next"
+          />
+          <AuthField
+            label="Ville du commerce" icon="business-outline" value={businessCity}
+            onChangeText={(t) => { setBusinessCity(t); clearServer('businessCity'); }} error={errors.businessCity}
+            autoCapitalize="words" accent={P.accent} maxLength={80} returnKeyType="next"
+          />
+          <AuthField
+            label="Code postal (facultatif)" icon="mail-outline" value={businessPostalCode}
+            onChangeText={(t) => { setBusinessPostalCode(t.toUpperCase()); clearServer('businessPostalCode'); }} error={errors.businessPostalCode}
+            autoCapitalize="characters" accent={P.accent} maxLength={10} returnKeyType="next"
+          />
+          <AuthField
+            label="Téléphone du commerce (facultatif)" icon="call-outline" value={businessPhone}
+            onChangeText={(t) => setBusinessPhone(t.replace(/[^\d+\s.-]/g, ''))} error={errors.businessPhone}
+            keyboardType="phone-pad" accent={P.accent} maxLength={22} returnKeyType="next" placeholder="+224 620 00 00 00"
+            hint="Avec l’indicatif du pays. Distinct de votre téléphone personnel."
+          />
+          <AuthField
+            label="NIF / IFU (facultatif)" icon="receipt-outline" value={businessTaxId}
+            onChangeText={(t) => { setBusinessTaxId(t.toUpperCase()); clearServer('businessTaxId'); }} error={errors.businessTaxId}
+            autoCapitalize="characters" accent={P.accent} maxLength={30} returnKeyType="next"
           />
 
           <Text style={s.chipsLabel}>Numéro Orange Money de retrait</Text>

@@ -107,6 +107,27 @@ export class RegisterDto {
   @IsOptional()
   businessCity?: string;
 
+  /** Coordonnées complètes du commerce (facultatives, jamais reprises des données personnelles). */
+  @IsString()
+  @IsOptional()
+  businessDistrict?: string;
+
+  @IsString()
+  @IsOptional()
+  businessPostalCode?: string;
+
+  @IsString()
+  @IsOptional()
+  businessCountry?: string;
+
+  @IsString()
+  @IsOptional()
+  businessPhone?: string;
+
+  @IsString()
+  @IsOptional()
+  businessTaxId?: string;
+
   /** Numéro RCCM du commerce — obligatoire pour un compte MERCHANT (validé par normalizeProfileInput). */
   @IsString()
   @IsOptional()

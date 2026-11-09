@@ -27,6 +27,12 @@ export interface MerchantProfileView {
   category: string | null;
   address: string | null;
   city: string | null;
+  /** Coordonnées du COMMERCE (jamais celles du client) : quartier, code postal (facultatif), pays, téléphone du commerce, NIF / IFU. */
+  district?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  businessPhone?: string | null;
+  taxId?: string | null;
   /** Numéro RCCM — nul pour un compte créé avant que ce numéro soit obligatoire (à renseigner dans les réglages). */
   rccm?: string | null;
   status: MerchantStatus;
@@ -134,8 +140,16 @@ export interface Paged<T> {
 export interface MerchantProfileInput {
   businessName: string;
   category?: string;
+  /** Adresse et ville du commerce : obligatoires à l'activation. */
   address?: string;
   city?: string;
+  /** Facultatifs : une chaîne vide retire la valeur (modification de la fiche). */
+  district?: string;
+  postalCode?: string;
+  country?: string;
+  /** Téléphone du commerce, avec indicatif (+224…). */
+  businessPhone?: string;
+  taxId?: string;
   /** Obligatoire à l'activation d'un compte marchand. */
   rccm?: string;
   orangeMoneyPhone?: string;

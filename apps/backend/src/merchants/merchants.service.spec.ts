@@ -38,17 +38,36 @@ function setup(profile: J | null = { id: 'p1', userId: 'mer', clientId: 7, busin
 }
 
 describe('normalizeProfileInput', () => {
+  const shop = { address: ' Rue KA-023, Kaloum ', city: ' Conakry ' };
   it('nettoie les champs et valide le numéro Orange Money', () => {
-    expect(normalizeProfileInput({ businessName: '  Chez   Awa ', city: ' Conakry ', rccm: ' gn.tcc.2019.b.12345 ', orangeMoneyPhone: '+224 620 00 00 01' })).toEqual({
-      businessName: 'Chez Awa', category: null, address: null, city: 'Conakry', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001',
+    expect(normalizeProfileInput({ businessName: '  Chez   Awa ', ...shop, rccm: ' gn.tcc.2019.b.12345 ', orangeMoneyPhone: '+224 620 00 00 01' })).toEqual({
+      businessName: 'Chez Awa', category: null, address: 'Rue KA-023, Kaloum', city: 'Conakry', district: null, postalCode: null, country: null, businessPhone: null, taxId: null,
+      rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001',
     });
+  });
+  it('coordonnées facultatives : code postal, quartier, pays, téléphone du commerce et NIF sont normalisés', () => {
+    expect(normalizeProfileInput({
+      businessName: 'Chez Awa', ...shop, rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001',
+      postalCode: ' 1001 ', district: ' Kaloum ', country: 'Guinée', businessPhone: '+224 621 11 11 11', taxId: ' nif 123.456 ',
+    })).toMatchObject({ postalCode: '1001', district: 'Kaloum', country: 'Guinée', businessPhone: '+224621111111', taxId: 'NIF 123.456' });
+  });
+  it('adresse et ville du commerce obligatoires ; code postal, téléphone et NIF invalides refusés', () => {
+    const ok = { businessName: 'Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001', ...shop };
+    expect(() => normalizeProfileInput({ ...ok, address: undefined })).toThrow(/adresse/i);
+    expect(() => normalizeProfileInput({ ...ok, address: 'abc' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ ...ok, city: '' })).toThrow(/ville/i);
+    expect(() => normalizeProfileInput({ ...ok, postalCode: '1' })).toThrow(/code postal/i);
+    expect(() => normalizeProfileInput({ ...ok, postalCode: '<b>' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ ...ok, businessPhone: '0621111111' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ ...ok, taxId: 'ABC' })).toThrow(/NIF/);
+    expect(normalizeProfileInput({ ...ok, postalCode: '   ', businessPhone: '', taxId: '' })).toMatchObject({ postalCode: null, businessPhone: null, taxId: null });
   });
   it('refuse nom absent ou trop court, numéro sans indicatif', () => {
     const rccm = 'GN.TCC.2019.B.12345';
-    expect(() => normalizeProfileInput({ rccm, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
-    expect(() => normalizeProfileInput({ businessName: 'A', rccm, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
-    expect(() => normalizeProfileInput({ businessName: 'Awa', rccm, orangeMoneyPhone: '0620000001' })).toThrow(BadRequestException);
-    expect(() => normalizeProfileInput({ businessName: 'Awa', orangeMoneyPhone: '+224620000001' })).toThrow(/RCCM/);
+    expect(() => normalizeProfileInput({ rccm, ...shop, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'A', rccm, ...shop, orangeMoneyPhone: '+224620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'Awa', rccm, ...shop, orangeMoneyPhone: '0620000001' })).toThrow(BadRequestException);
+    expect(() => normalizeProfileInput({ businessName: 'Awa', ...shop, orangeMoneyPhone: '+224620000001' })).toThrow(/RCCM/);
   });
 });
 
@@ -66,7 +85,7 @@ describe('accès marchand', () => {
 });
 
 describe('activation', () => {
-  const input = { pin: '486213', businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
+  const input = { pin: '486213', businessName: 'Chez Awa', address: 'Rue KA-023, Kaloum', city: 'Conakry', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
   it('code secret vérifié, fiche créée, utilisateur passé MERCHANT, journal et notification', async () => {
     const { service, pins, prisma, audits, notifier } = setup(null);
     prisma.merchantProfile.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ userId: 'mer', businessName: 'Chez Awa', status: 'ACTIVE', orangeMoneyPhone: '+224620000001', createdAt: new Date(), destinationChangedAt: null });
@@ -87,7 +106,7 @@ describe('activation', () => {
 });
 
 describe('RCCM obligatoire', () => {
-  const full = { pin: '486213', businessName: 'Chez Awa', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
+  const full = { pin: '486213', businessName: 'Chez Awa', address: 'Rue KA-023, Kaloum', city: 'Conakry', rccm: 'GN.TCC.2019.B.12345', orangeMoneyPhone: '+224620000001' };
   it('activation sans RCCM (ou invalide) : 400, le code secret n\'est même pas demandé, rien n\'est créé', async () => {
     const { pin: _pin, ...noPin } = full;
     for (const bad of [undefined, '', 'AB', '<b>x</b>']) {
@@ -117,6 +136,34 @@ describe('RCCM obligatoire', () => {
     await expect(t.service.updateProfile(me, { rccm: 'SN DKR 2015 B 1234' })).rejects.toBeInstanceOf(ForbiddenException);
     expect(t.row!.rccm).toBe('GN.TCC.2019.B.12345');
     await t.service.updateProfile(me, { rccm: 'gn.tcc.2019.b.12345' });
+    expect(t.prisma.merchantProfile.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('fiche du commerce — coordonnées', () => {
+  it('modification : adresse, ville, code postal, quartier, pays, téléphone et NIF enregistrés (normalisés) et journalisés', async () => {
+    const t = setup();
+    await t.service.updateProfile(me, { address: ' Av. de la République ', city: 'Conakry', postalCode: ' 1001 ', district: 'Kaloum', country: 'Guinée', businessPhone: '+224 621 11 11 11', taxId: 'nif 123' });
+    expect(t.row).toMatchObject({ address: 'Av. de la République', city: 'Conakry', postalCode: '1001', district: 'Kaloum', country: 'Guinée', businessPhone: '+224621111111', taxId: 'NIF 123' });
+    expect(t.audits[0]).toMatchObject({ action: 'MERCHANT_UPDATE' });
+  });
+  it('le code postal (facultatif) peut être retiré ; l\'adresse et la ville ne peuvent pas être vidées', async () => {
+    const t = setup({ id: 'p1', userId: 'mer', clientId: 7, businessName: 'Boutique', orangeMoneyPhone: '+224620000001', bankIban: null, bankBic: null, bankHolderName: null, destinationChangedAt: null, status: 'ACTIVE', suspendedReason: null, category: null, address: 'Rue KA-023', city: 'Conakry', postalCode: '1001', createdAt: new Date() });
+    await t.service.updateProfile(me, { postalCode: '' });
+    expect(t.row!.postalCode).toBeNull();
+    await expect(t.service.updateProfile(me, { address: '' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(t.service.updateProfile(me, { city: '  ' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(t.row!.address).toBe('Rue KA-023');
+  });
+  it('compte ancien sans adresse : il peut encore modifier son nom sans fournir d\'adresse', async () => {
+    const t = setup();
+    await t.service.updateProfile(me, { businessName: 'Chez Awa 2' });
+    expect(t.row!.businessName).toBe('Chez Awa 2');
+  });
+  it('code postal ou téléphone invalide : 400, rien n\'est modifié', async () => {
+    const t = setup();
+    await expect(t.service.updateProfile(me, { postalCode: '!' })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(t.service.updateProfile(me, { businessPhone: '0621' })).rejects.toBeInstanceOf(BadRequestException);
     expect(t.prisma.merchantProfile.update).not.toHaveBeenCalled();
   });
 });

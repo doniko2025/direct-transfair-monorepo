@@ -911,7 +911,13 @@ export class AuthService {
         businessName: dto.businessName,
         category: dto.businessCategory,
         address: dto.businessAddress,
-        city: dto.businessCity ?? dto.city,
+        // Compte marchand ≠ compte client : la ville du COMMERCE est saisie à part, jamais reprise de la ville personnelle.
+        city: dto.businessCity,
+        district: dto.businessDistrict,
+        postalCode: dto.businessPostalCode,
+        country: dto.businessCountry,
+        businessPhone: dto.businessPhone,
+        taxId: dto.businessTaxId,
         rccm: dto.businessRccm,
         orangeMoneyPhone: dto.orangeMoneyPhone,
       }, primaryCurrency); // le numéro Orange Money doit correspondre à la devise du compte (GNF → Guinée ; EUR → pas d'Orange Money)
@@ -966,6 +972,8 @@ export class AuthService {
             userId: created.id, clientId: client.id,
             businessName: merchantInput.businessName, category: merchantInput.category,
             address: merchantInput.address, city: merchantInput.city, rccm: merchantInput.rccm,
+            district: merchantInput.district, postalCode: merchantInput.postalCode, country: merchantInput.country,
+            businessPhone: merchantInput.businessPhone, taxId: merchantInput.taxId,
             orangeMoneyPhone: merchantInput.orangeMoneyPhone,
           },
         });

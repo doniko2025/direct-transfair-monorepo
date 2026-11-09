@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/app/merchant/settings.tsx
 // =========================================================
 // RÉGLAGES DU COMMERCE v1.0 — Lot 11
-// • Fiche du commerce (nom, catégorie, adresse, ville) : modifiable librement.
+// • Fiche du commerce (nom, catégorie, adresse, quartier, ville, code postal facultatif, pays, téléphone du commerce, NIF / IFU) : modifiable librement.
+//   Ces coordonnées sont celles du COMMERCE, indépendantes de l'adresse personnelle du client (comptes client et marchand isolés).
 // • Destination des retraits (Orange Money, IBAN) : modifiable UNIQUEMENT avec le code secret ; après un changement,
 //   les retraits sont suspendus quelques heures (réglage de la société) pour bloquer un détournement de compte.
 // • Lot 13 : logo du commerce, alertes (solde bas, échecs de paiement répétés), raccourcis QR de caisse / équipe / clôture.
@@ -23,14 +24,27 @@ import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/
 import { OptionPicker } from "../../components/ui/OptionPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
+import { BusinessInfoFields, type BusinessInfoValue } from "../../components/merchant/BusinessInfoFields";
+import {
+  cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
+} from "../../utils/businessInfo";
 import { fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
   const profile = me.profile!;
   const [name, setName] = useState(profile.businessName);
   const [category, setCategory] = useState<string | null>(profile.category);
-  const [address, setAddress] = useState(profile.address ?? "");
-  const [city, setCity] = useState(profile.city ?? "");
+  const initialInfo: BusinessInfoValue = {
+    address: profile.address ?? "",
+    district: profile.district ?? "",
+    city: profile.city ?? "",
+    postalCode: profile.postalCode ?? "",
+    country: profile.country ?? null,
+    phone: profile.businessPhone ?? "",
+    taxId: profile.taxId ?? "",
+  };
+  const [info, setInfo] = useState<BusinessInfoValue>(initialInfo);
+  const patchInfo = (patch: Partial<BusinessInfoValue>) => setInfo((v) => ({ ...v, ...patch }));
   // RCCM : obligatoire à l'ouverture d'un compte. Un compte plus ancien peut ne pas l'avoir : on le demande ici. Une fois
   // renseigné, il n'est plus modifiable depuis l'application (changement via le support).
   const rccmLocked = !!profile.rccm;
@@ -40,16 +54,44 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
   const [msg, setMsg] = useState<{ tone: "pos" | "danger"; text: string } | null>(null);
   const categories = me.categories.length ? me.categories : MERCHANT_CATEGORIES;
 
+  // Comptes créés avant que l'adresse ne soit demandée : on les invite à compléter leur fiche (sans les bloquer).
+  const addressMissing = !profile.address || !profile.city;
   const rccmError = showErrors && !rccmLocked ? validateRccm(rccm) : null;
   const rccmToSave = !rccmLocked && rccm.trim().length > 0;
-  const dirty = name.trim() !== profile.businessName || category !== profile.category || address.trim() !== (profile.address ?? "") || city.trim() !== (profile.city ?? "") || rccmToSave;
+
+  // Champs modifiés (seuls ceux-là sont envoyés : un ancien compte sans adresse peut ainsi changer son nom librement).
+  const changed: Record<string, string> = {};
+  if (name.trim() !== profile.businessName) changed.businessName = name.trim();
+  if ((category ?? "") !== (profile.category ?? "") && category) changed.category = category;
+  if (cleanText(info.address) !== (profile.address ?? "")) changed.address = cleanText(info.address);
+  if (cleanText(info.city) !== (profile.city ?? "")) changed.city = cleanText(info.city);
+  if (cleanText(info.district) !== (profile.district ?? "")) changed.district = cleanText(info.district);
+  if (cleanText(info.postalCode).toUpperCase() !== (profile.postalCode ?? "")) changed.postalCode = cleanText(info.postalCode).toUpperCase();
+  if ((info.country ?? "") !== (profile.country ?? "")) changed.country = info.country ?? "";
+  if (normalizeBusinessPhone(info.phone) !== (profile.businessPhone ?? "")) changed.businessPhone = normalizeBusinessPhone(info.phone);
+  if (cleanText(info.taxId).toUpperCase() !== (profile.taxId ?? "")) changed.taxId = cleanText(info.taxId).toUpperCase();
+  if (rccmToSave) changed.rccm = normalizeRccm(rccm);
+  const dirty = Object.keys(changed).length > 0;
+
+  const infoErrors = showErrors
+    ? {
+        // L'adresse et la ville ne se vident pas : on ne les contrôle que si elles ont été touchées (ou déjà renseignées).
+        address: "address" in changed || profile.address ? validateBusinessAddress(info.address) : null,
+        city: "city" in changed || profile.city ? validateBusinessCity(info.city) : null,
+        postalCode: validatePostalCode(info.postalCode), phone: validateBusinessPhone(info.phone), taxId: validateTaxId(info.taxId),
+      }
+    : {};
+
   const save = async () => {
     setShowErrors(true);
     if (rccmToSave && validateRccm(rccm)) return;
+    if (("address" in changed || profile.address) && validateBusinessAddress(info.address)) return;
+    if (("city" in changed || profile.city) && validateBusinessCity(info.city)) return;
+    if (validatePostalCode(info.postalCode) || validateBusinessPhone(info.phone) || validateTaxId(info.taxId)) return;
     setBusy(true);
     setMsg(null);
     try {
-      await api.updateMerchantProfile({ businessName: name.trim(), category: category ?? undefined, address: address.trim(), city: city.trim(), ...(rccmToSave ? { rccm: normalizeRccm(rccm) } : {}) });
+      await api.updateMerchantProfile(changed);
       setMsg({ tone: "pos", text: "Informations du commerce enregistrées." });
       onSaved();
     } catch (e) {
@@ -67,6 +109,11 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
           Le numéro RCCM est désormais obligatoire pour les comptes marchands. Renseignez-le pour mettre votre fiche en règle.
         </Notice>
       )}
+      {addressMissing && (
+        <Notice tone="warn" icon="location-outline" style={{ marginBottom: 14 }}>
+          Complétez l'adresse et la ville de votre commerce pour mettre votre fiche en règle.
+        </Notice>
+      )}
       <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
       <Field
         label="Numéro RCCM" icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
@@ -74,8 +121,7 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
         hint={rccmLocked ? "Pour modifier ce numéro, contactez le support." : "Registre du Commerce et du Crédit Mobilier."}
       />
       <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" />
-      <Field label="Adresse" icon="location-outline" value={address} onChangeText={setAddress} autoCapitalize="sentences" maxLength={160} />
-      <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
+      <BusinessInfoFields value={info} onChange={patchInfo} errors={infoErrors} />
       <Button label="Enregistrer" disabled={!dirty || name.trim().length < 2} loading={busy} onPress={save} />
     </Card>
   );

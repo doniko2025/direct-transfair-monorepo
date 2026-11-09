@@ -62,6 +62,12 @@ export interface MerchantAdminDetail {
   category: string | null;
   address: string | null;
   city: string | null;
+  /** Coordonnées du COMMERCE (distinctes de celles du client) : quartier, code postal (facultatif), pays, téléphone, NIF / IFU. */
+  district?: string | null;
+  postalCode?: string | null;
+  country?: string | null;
+  businessPhone?: string | null;
+  taxId?: string | null;
   /** Numéro RCCM (nul pour un compte antérieur à la règle « RCCM obligatoire »). */
   rccm?: string | null;
   status: MerchantStatus;

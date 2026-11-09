@@ -32,6 +32,34 @@ export class MerchantProfileInputDto {
   @MaxLength(80)
   city?: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  district?: string;
+
+  /** Code postal du commerce — facultatif. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  country?: string;
+
+  /** Téléphone du commerce (avec indicatif) — facultatif, distinct du téléphone personnel. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  businessPhone?: string;
+
+  /** NIF / IFU — facultatif. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  taxId?: string;
+
   /** Numéro RCCM — obligatoire (contrôlé et normalisé par normalizeRccm, qui renvoie le message d'erreur en français). */
   @IsOptional()
   @IsString()
@@ -72,6 +100,34 @@ export class UpdateMerchantProfileDto {
   @IsString()
   @MaxLength(80)
   city?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  district?: string;
+
+  /** Code postal du commerce — facultatif. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  postalCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  country?: string;
+
+  /** Téléphone du commerce (avec indicatif) — facultatif, distinct du téléphone personnel. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(25)
+  businessPhone?: string;
+
+  /** NIF / IFU — facultatif. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  taxId?: string;
 
   /** Numéro RCCM : modifiable seulement tant qu'il n'est pas renseigné (comptes antérieurs à la règle) ; ensuite, via le support. */
   @IsOptional()

@@ -2514,6 +2514,13 @@ model MerchantProfile {
   category     String?
   address      String?
   city         String?
+  /// Adresse DU COMMERCE (distincte de l'adresse personnelle du client, stockée sur User) : quartier / commune, code postal
+  /// (facultatif), pays, téléphone du commerce et numéro d'identification fiscale (NIF / IFU, facultatif).
+  district     String?
+  postalCode   String?
+  country      String?
+  businessPhone String?
+  taxId        String?
   /// Numéro RCCM (Registre du Commerce et du Crédit Mobilier) : obligatoire pour ouvrir un compte marchand
   /// (nul seulement pour les comptes créés avant cette règle ; l'application demande alors de le renseigner).
   rccm         String?

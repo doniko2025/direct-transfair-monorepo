@@ -45,7 +45,7 @@ import {
   ceilTo, decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText,
 } from "../../utils/amount";
 import { lookupRate } from "../../utils/rateLookup";
-import { TextInput } from "../../components/ui/Text";
+import { Text, TextInput } from "../../components/ui/Text";
 import { SANS } from "../../components/ui/fonts";
 
 // Animation de l'échange des deux champs (Android : à activer explicitement ; sans effet si déjà géré par le système).
@@ -1016,23 +1016,33 @@ export default function SendMoneyScreen() {
         <CurrencyBadge currency={cur} country={isSend ? userCountry : targetCountryData.name} size={42} />
         <View style={{ flex: 1, minWidth: 0 }}>
           <UText v="label" tone="muted" numberOfLines={1}>{isSend ? "Vous envoyez" : `${beneficiaryLabel} reçoit`}</UText>
-          <TextInput
-            ref={isSend ? sendRef : recvRef}
-            style={{
-              minWidth: 0, height: 38, padding: 0, fontFamily: SANS, fontWeight: "800", letterSpacing: -0.6,
-              fontSize: amountFontSize(text, 28), color: derived ? C.muted : C.ink,
-            }}
-            value={text}
-            onChangeText={isSend ? onSendChange : onRecvChange}
-            onFocus={() => setFocusedField(kind)}
-            onBlur={() => setFocusedField((f) => (f === kind ? null : f))}
-            keyboardType={dec > 0 ? "decimal-pad" : "number-pad"}
-            placeholder={dec > 0 ? "0,00" : "0"}
-            placeholderTextColor={C.faint}
-            underlineColorAndroid="transparent"
-            selectTextOnFocus
-            accessibilityLabel={isSend ? `Montant à envoyer en ${cur}` : `Montant à recevoir en ${cur}`}
-          />
+          {/* Code de la devise (GNF, XOF, EUR…) devant le montant */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 }}>
+            <Text
+              style={{ fontFamily: SANS, fontWeight: "800", fontSize: 18, letterSpacing: 0.2, color: derived ? C.muted : C.accent }}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            >
+              {cur}
+            </Text>
+            <TextInput
+              ref={isSend ? sendRef : recvRef}
+              style={{
+                flex: 1, minWidth: 0, height: 38, padding: 0, fontFamily: SANS, fontWeight: "800", letterSpacing: -0.6,
+                fontSize: amountFontSize(text, 28), color: derived ? C.muted : C.ink,
+              }}
+              value={text}
+              onChangeText={isSend ? onSendChange : onRecvChange}
+              onFocus={() => setFocusedField(kind)}
+              onBlur={() => setFocusedField((f) => (f === kind ? null : f))}
+              keyboardType={dec > 0 ? "decimal-pad" : "number-pad"}
+              placeholder={dec > 0 ? "0,00" : "0"}
+              placeholderTextColor={C.faint}
+              underlineColorAndroid="transparent"
+              selectTextOnFocus
+              accessibilityLabel={isSend ? `Montant à envoyer en ${cur}` : `Montant à recevoir en ${cur}`}
+            />
+          </View>
         </View>
       </View>
     );

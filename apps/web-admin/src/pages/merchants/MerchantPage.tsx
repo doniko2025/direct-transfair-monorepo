@@ -110,11 +110,13 @@ export default function MerchantPage() {
             </div>
             <dl className="kv">
               <div className="kv__row"><dt>Responsable</dt><dd>{ownerName(m.owner)}</dd></div>
-              <div className="kv__row"><dt>Téléphone</dt><dd>{m.owner.phone ?? '—'}</dd></div>
-              <div className="kv__row"><dt>E-mail</dt><dd>{m.owner.email}</dd></div>
+              <div className="kv__row"><dt>Téléphone du responsable</dt><dd>{m.owner.phone ?? '—'}</dd></div>
+              <div className="kv__row"><dt>E-mail du responsable</dt><dd>{m.owner.email}</dd></div>
               <div className="kv__row"><dt>Catégorie</dt><dd>{m.category ?? '—'}</dd></div>
               <div className="kv__row"><dt>RCCM</dt><dd>{m.rccm ?? 'Non renseigné'}</dd></div>
-              <div className="kv__row"><dt>Adresse</dt><dd>{[m.address, m.city].filter(Boolean).join(', ') || '—'}</dd></div>
+              <div className="kv__row"><dt>NIF / IFU</dt><dd>{m.taxId ?? '—'}</dd></div>
+              <div className="kv__row"><dt>Adresse du commerce</dt><dd>{[m.address, m.district, [m.postalCode, m.city].filter(Boolean).join(' '), m.country].filter(Boolean).join(', ') || 'Non renseignée'}</dd></div>
+              <div className="kv__row"><dt>Téléphone du commerce</dt><dd>{m.businessPhone ?? '—'}</dd></div>
               <div className="kv__row"><dt>Orange Money de retrait</dt><dd>{m.orangeMoneyMasked || '—'}</dd></div>
               <div className="kv__row"><dt>Compte bancaire</dt><dd>{m.bank ? `${m.bank.holderName ?? ''} · ${m.bank.ibanMasked}` : '—'}</dd></div>
               <div className="kv__row"><dt>Destination modifiée</dt><dd>{formatDateTime(m.destinationChangedAt) ?? 'Jamais'}</dd></div>

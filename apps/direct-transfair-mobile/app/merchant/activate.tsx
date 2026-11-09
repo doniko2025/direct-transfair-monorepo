@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/merchant/activate.tsx
 // =========================================================
 // ACTIVER L'ESPACE MARCHAND v1.0 — Lot 11
-// Pour un client qui a déjà un compte : nom du commerce, catégorie, numéro Orange Money de retrait, puis code secret.
+// Pour un client qui a déjà un compte : nom du commerce, catégorie, adresse du commerce (code postal facultatif), numéro Orange Money de
+// retrait, puis code secret.
+// ✅ Compte marchand ≠ compte client : l'adresse, la ville et le téléphone du commerce sont saisis ici et ne sont JAMAIS repris
+//    (ni préremplis) depuis l'adresse ou la ville personnelles du client.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -16,6 +19,10 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { OptionPicker } from "../../components/ui/OptionPicker";
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
+import { BusinessInfoFields, EMPTY_BUSINESS_INFO, type BusinessInfoValue } from "../../components/merchant/BusinessInfoFields";
+import {
+  cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
+} from "../../utils/businessInfo";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
 import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
@@ -26,7 +33,9 @@ export default function ActivateMerchantScreen() {
   const [name, setName] = useState("");
   const [rccm, setRccm] = useState("");
   const [category, setCategory] = useState<string | null>(null);
-  const [city, setCity] = useState(user?.city ?? "");
+  // Coordonnées du COMMERCE : volontairement vides au départ (pas de reprise de la ville ou de l'adresse personnelles du client).
+  const [info, setInfo] = useState<BusinessInfoValue>(EMPTY_BUSINESS_INFO);
+  const patchInfo = (patch: Partial<BusinessInfoValue>) => setInfo((v) => ({ ...v, ...patch }));
   const [country, setCountry] = useState<AuthCountry>(findCountry(user?.country ?? "Guinée") ?? AUTH_COUNTRIES[0]!);
   const [phone, setPhone] = useState("");
   const [pin, setPin] = useState("");
@@ -63,18 +72,31 @@ export default function ActivateMerchantScreen() {
   const fullPhone = `${dialCountry.dial}${normalizeNationalNumber(phone)}`;
   const phoneProblem = (): string | null => (orangeAllowed ? validatePhone(phone) ?? validateOrangeFor(fullPhone, currency) : null);
   const phoneError = showErrors ? phoneProblem() : null;
+  const infoErrors = showErrors
+    ? {
+        address: validateBusinessAddress(info.address), city: validateBusinessCity(info.city), postalCode: validatePostalCode(info.postalCode),
+        phone: validateBusinessPhone(info.phone), taxId: validateTaxId(info.taxId),
+      }
+    : {};
+  const infoInvalid = !!(validateBusinessAddress(info.address) || validateBusinessCity(info.city) || validatePostalCode(info.postalCode) || validateBusinessPhone(info.phone) || validateTaxId(info.taxId));
 
   const submit = async () => {
     setShowErrors(true);
     setProblem(null);
-    if (name.trim().length < 2 || validateRccm(rccm) || !category || phoneProblem() || pin.length !== 6) return;
+    if (name.trim().length < 2 || validateRccm(rccm) || !category || infoInvalid || phoneProblem() || pin.length !== 6) return;
     setBusy(true);
     try {
       await api.activateMerchant({
         businessName: name.trim(),
         rccm: normalizeRccm(rccm),
         category,
-        city: city.trim() || undefined,
+        address: cleanText(info.address),
+        city: cleanText(info.city),
+        ...(cleanText(info.district) ? { district: cleanText(info.district) } : {}),
+        ...(cleanText(info.postalCode) ? { postalCode: cleanText(info.postalCode).toUpperCase() } : {}),
+        ...(info.country ? { country: info.country } : {}),
+        ...(cleanText(info.phone) ? { businessPhone: normalizeBusinessPhone(info.phone) } : {}),
+        ...(cleanText(info.taxId) ? { taxId: cleanText(info.taxId).toUpperCase() } : {}),
         ...(orangeAllowed ? { orangeMoneyPhone: fullPhone } : {}),
         pin,
       });
@@ -107,7 +129,7 @@ export default function ActivateMerchantScreen() {
           hint="Registre du Commerce et du Crédit Mobilier : obligatoire pour ouvrir un compte marchand."
         />
         <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" error={catError} />
-        <Field label="Ville" icon="business-outline" value={city} onChangeText={setCity} autoCapitalize="words" maxLength={80} />
+        <BusinessInfoFields value={info} onChange={patchInfo} errors={infoErrors} />
         {orangeAllowed ? (
           <PhoneField
             country={dialCountry}

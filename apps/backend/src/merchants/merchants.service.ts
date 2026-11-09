@@ -33,8 +33,14 @@ import {
   DEFAULT_CATEGORIES,
   maskIban,
   maskPhone,
+  normalizeBusinessAddress,
+  normalizeBusinessCity,
+  normalizeBusinessPhone,
+  normalizePostalCode,
   normalizeProfileInput,
   normalizeRccm,
+  normalizeShortText,
+  normalizeTaxId,
   payoutCooldown,
 } from './merchant-rules';
 import { PinVerifierService } from './pin-verifier.service';
@@ -147,6 +153,11 @@ export class MerchantsService {
         category: data.category,
         address: data.address,
         city: data.city,
+        district: data.district,
+        postalCode: data.postalCode,
+        country: data.country,
+        businessPhone: data.businessPhone,
+        taxId: data.taxId,
         rccm: data.rccm,
         orangeMoneyPhone: data.orangeMoneyPhone,
       },
@@ -212,6 +223,11 @@ export class MerchantsService {
       category: p.category,
       address: p.address,
       city: p.city,
+      district: p.district,
+      postalCode: p.postalCode,
+      country: p.country,
+      businessPhone: p.businessPhone,
+      taxId: p.taxId,
       /** Numéro RCCM (nul pour un compte créé avant que ce numéro soit obligatoire). */
       rccm: p.rccm,
       status: p.status,
@@ -322,8 +338,16 @@ export class MerchantsService {
       data.businessName = name.slice(0, 80);
     }
     if (dto.category !== undefined) data.category = clean(dto.category)?.slice(0, 60) ?? null;
-    if (dto.address !== undefined) data.address = clean(dto.address)?.slice(0, 160) ?? null;
-    if (dto.city !== undefined) data.city = clean(dto.city)?.slice(0, 80) ?? null;
+    // Adresse et ville : obligatoires dès qu'elles sont envoyées (on ne peut pas les effacer). Les comptes plus anciens, sans adresse,
+    // peuvent modifier leur nom sans que l'application ne les envoie : seul l'envoi d'une valeur vide est refusé.
+    if (dto.address !== undefined) data.address = normalizeBusinessAddress(dto.address);
+    if (dto.city !== undefined) data.city = normalizeBusinessCity(dto.city);
+    // Champs facultatifs : une valeur vide les retire.
+    if (dto.district !== undefined) data.district = normalizeShortText(dto.district, 80);
+    if (dto.postalCode !== undefined) data.postalCode = normalizePostalCode(dto.postalCode);
+    if (dto.country !== undefined) data.country = normalizeShortText(dto.country, 60);
+    if (dto.businessPhone !== undefined) data.businessPhone = normalizeBusinessPhone(dto.businessPhone);
+    if (dto.taxId !== undefined) data.taxId = normalizeTaxId(dto.taxId);
     if (dto.rccm !== undefined) {
       const rccm = normalizeRccm(dto.rccm);
       if (profile.rccm && profile.rccm !== rccm) {
