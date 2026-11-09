@@ -37,6 +37,17 @@ export interface CompanySettings {
   recharge: { enabledMethods: string[] };
   /** Comptes marchands : encaissements par téléphone / QR code et retraits. */
   merchant: CompanyMerchantSettings;
+  /** Remboursements et rappels d'envois. */
+  refunds: CompanyRefundSettings;
+}
+
+export interface CompanyRefundSettings {
+  /** Remboursement d'un paiement marchand : la commission d'encaissement est rendue au marchand (prélevée sur le wallet de la société). */
+  returnMerchantCommission: boolean;
+  /** Rappel d'un envoi wallet → wallet : les frais sont rendus à l'expéditeur. */
+  returnFeesOnRecall: boolean;
+  /** Délai (jours) pendant lequel un envoi wallet → wallet déjà crédité peut être rappelé. 0 = rappel fermé. */
+  recallWindowDays: number;
 }
 
 export interface CompanyMerchantSettings {
@@ -78,6 +89,7 @@ export interface CompanySettingsPatch {
     maxPayment?: Record<string, number | null>;
     minPayout?: Record<string, number | null>;
   };
+  refunds?: Partial<CompanyRefundSettings>;
 }
 
 export interface CompanySettingsView {

@@ -57,6 +57,16 @@ export interface MerchantSettings {
   minPayout: Record<string, number>;
 }
 
+/** Remboursements : ce que la société rend, ou non, quand une opération est annulée ou rappelée. */
+export interface RefundSettings {
+  /** Remboursement d'un paiement marchand : la commission d'encaissement est rendue au marchand (prélevée sur le wallet de la société). */
+  returnMerchantCommission: boolean;
+  /** Rappel d'un envoi wallet → wallet décidé par le service client : les frais sont rendus à l'expéditeur. */
+  returnFeesOnRecall: boolean;
+  /** Délai (jours) pendant lequel un envoi wallet → wallet déjà crédité peut être rappelé. 0 = rappel fermé. */
+  recallWindowDays: number;
+}
+
 export interface CompanySettings {
   fees: {
     /** Modes d'envoi sans frais (clés de FEE_METHOD_KEYS). Par défaut : uniquement WALLET (wallet → wallet). */
@@ -90,6 +100,8 @@ export interface CompanySettings {
   };
   /** Lot 11 — comptes marchands. */
   merchant: MerchantSettings;
+  /** Remboursements et rappels. */
+  refunds: RefundSettings;
 }
 
 /** Surcharges enregistrées : même forme, tout est optionnel. */
@@ -120,6 +132,7 @@ export interface CompanySettingsPatch {
     maxPayment?: Record<string, number | null>;
     minPayout?: Record<string, number | null>;
   };
+  refunds?: { returnMerchantCommission?: boolean; returnFeesOnRecall?: boolean; recallWindowDays?: number };
 }
 
 // ─── Bornes ─────────────────────────────────────────────
@@ -135,6 +148,7 @@ export const LIMITS = {
   phoneRequestValidityMinutes: { min: 1, max: 1440 },
   payoutCooldownHours: { min: 0, max: 168 },
   merchantAmount: { min: 0, max: 1_000_000_000_000 },
+  recallWindowDays: { min: 0, max: 365 },
 } as const;
 
 export const CURRENCIES = Object.values(CurrencyCode) as string[];
@@ -178,6 +192,9 @@ export function defaultSettings(): CompanySettings {
       maxPayment: { XOF: 2_000_000, GNF: 20_000_000, EUR: 3_000, USD: 3_000, GBP: 3_000 },
       minPayout: { XOF: 1_000, GNF: 10_000, EUR: 10, USD: 10, GBP: 10 },
     },
+    // Comportement actuel conservé pour la commission marchand (non rendue). Le rappel d'un envoi wallet est ouvert 30 jours,
+    // frais rendus : il n'a lieu que sur décision d'un deuxième membre du service client (règle des quatre yeux).
+    refunds: { returnMerchantCommission: false, returnFeesOnRecall: true, recallWindowDays: 30 },
   };
 }
 
@@ -260,6 +277,13 @@ export function mergeSettings(raw: unknown): CompanySettings {
         if (CURRENCIES.includes(cur) && isNum(v) && v >= LIMITS.merchantAmount.min && v <= LIMITS.merchantAmount.max) out.merchant[key][cur] = v;
       }
     }
+  }
+
+  if (isRecord(raw.refunds)) {
+    const r = raw.refunds;
+    if (typeof r.returnMerchantCommission === 'boolean') out.refunds.returnMerchantCommission = r.returnMerchantCommission;
+    if (typeof r.returnFeesOnRecall === 'boolean') out.refunds.returnFeesOnRecall = r.returnFeesOnRecall;
+    if (isIntIn(r.recallWindowDays, LIMITS.recallWindowDays)) out.refunds.recallWindowDays = r.recallWindowDays;
   }
   return out;
 }
@@ -462,6 +486,27 @@ export function applyPatch(stored: unknown, patch: unknown): CompanySettingsPatc
       }
     }
     next.merchant = cur;
+  }
+
+  if (patch.refunds !== undefined) {
+    if (!isRecord(patch.refunds)) throw new SettingsValidationError('« refunds » invalide.');
+    const r = patch.refunds;
+    const cur: NonNullable<CompanySettingsPatch['refunds']> = { ...(next.refunds ?? {}) };
+    if (r.returnMerchantCommission !== undefined) {
+      if (typeof r.returnMerchantCommission !== 'boolean') throw new SettingsValidationError('Commission marchand rendue : oui ou non.');
+      cur.returnMerchantCommission = r.returnMerchantCommission;
+    }
+    if (r.returnFeesOnRecall !== undefined) {
+      if (typeof r.returnFeesOnRecall !== 'boolean') throw new SettingsValidationError('Frais rendus lors d\'un rappel : oui ou non.');
+      cur.returnFeesOnRecall = r.returnFeesOnRecall;
+    }
+    if (r.recallWindowDays !== undefined) {
+      if (!isIntIn(r.recallWindowDays, LIMITS.recallWindowDays)) {
+        throw new SettingsValidationError(`Délai de rappel : entre ${LIMITS.recallWindowDays.min} et ${LIMITS.recallWindowDays.max} jours (0 = rappel fermé).`);
+      }
+      cur.recallWindowDays = r.recallWindowDays;
+    }
+    next.refunds = cur;
   }
 
   return next;

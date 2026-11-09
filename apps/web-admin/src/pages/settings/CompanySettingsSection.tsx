@@ -330,6 +330,52 @@ export default function CompanySettingsSection({ settings, log, onChanged, onDir
       </SetGroup>
 
       <SetGroup
+        id="cs-refunds"
+        icon="wallet"
+        title="Remboursements et rappels"
+        summary={`Commission marchand ${form.refundMerchantCommission ? 'rendue' : 'conservée'} · rappel ${Number(form.recallWindowDays) > 0 ? `${form.recallWindowDays} j` : 'fermé'}`}
+        alert={bad('recallWindowDays')}
+        forceOpen={bad('recallWindowDays')}
+      >
+        <p className="set-note">
+          Un envoi encore à retirer en agence est toujours remboursé en entier (montant + frais) quand il est annulé. Ces réglages précisent les autres cas.
+        </p>
+        <SwitchRow
+          label="Rendre la commission lors d’un remboursement marchand"
+          hint={form.refundMerchantCommission
+            ? 'Le marchand récupère aussi la commission d’encaissement (prélevée sur le portefeuille de la société)'
+            : 'La commission reste acquise : le marchand rend le montant payé par le client sans la récupérer'}
+          checked={form.refundMerchantCommission}
+          disabled={off}
+          onChange={(v) => patch({ refundMerchantCommission: v })}
+        />
+        <SwitchRow
+          label="Rendre les frais lors d’un rappel d’envoi wallet"
+          hint={form.refundFeesOnRecall
+            ? 'L’expéditeur est remboursé du montant et des frais'
+            : 'L’expéditeur est remboursé du montant seulement, les frais restent acquis'}
+          checked={form.refundFeesOnRecall}
+          disabled={off}
+          onChange={(v) => patch({ refundFeesOnRecall: v })}
+        />
+        <div className="set-grid">
+          <Field
+            id="cs-recall-days"
+            label="Rappel d’un envoi wallet : délai (jours)"
+            inputMode="numeric"
+            value={form.recallWindowDays}
+            disabled={off}
+            onChange={(e) => patch({ recallWindowDays: e.target.value })}
+            error={errors.recallWindowDays}
+            hint={`0 = rappel fermé · maximum ${limits.recallWindowDays.max} jours`}
+          />
+        </div>
+        <p className="set-note">
+          Un rappel est une demande de remboursement du service client, validée par une autre personne. Il n’aboutit que si le destinataire a encore la somme sur son portefeuille.
+        </p>
+      </SetGroup>
+
+      <SetGroup
         id="cs-split"
         icon="percent"
         title="Partage des frais par défaut"

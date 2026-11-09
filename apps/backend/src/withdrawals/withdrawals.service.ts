@@ -160,6 +160,7 @@ import { UpdateWithdrawalStatusDto } from './dto/update-withdrawal-status.dto';
 import type { Shares } from '../commission-rules/commission-rule-defaults';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { splitFees } from '../commission-rules/commission-split';
+import { sharesFromSnapshot } from '../commission-rules/commission-snapshot';
 import { roundToCurrency } from '../fee-schedule/fee-engine';
 
 import { WalletNotifierService } from '../notifications/channels/wallet-notifier.service';
@@ -544,21 +545,28 @@ export class WithdrawalsService {
     let shares: Shares = {
       payerShare: fallbackSplit.payerShare, senderShare: fallbackSplit.senderShare, platformShare: fallbackSplit.platformShare,
     };
-    const splitRule = await this.prisma.commissionConfig.findFirst({
-      where:   { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (splitRule) {
-      shares = {
-        payerShare:    splitRule.payerShare,
-        senderShare:   splitRule.senderShare,
-        platformShare: splitRule.platformShare,
-      };
+    // ✅ v4.34 — répartition FIGÉE à l'envoi (colonne transactions.commissionSplit) : le client a été facturé, et l'agence d'envoi informée,
+    // selon les règles de CE jour-là. Les règles actuelles ne servent plus que pour les envois sans snapshot (antérieurs à la v4.34).
+    const frozen = sharesFromSnapshot((tx as any).commissionSplit, sourceT, destT);
+    if (frozen) {
+      shares = frozen;
     } else {
-      this.logger.warn(
-        `Aucune règle de répartition pour clientId=${clientId} ${sourceT} → ${destT} ` +
-        `— valeurs par défaut (${shares.payerShare}/${shares.senderShare}/${shares.platformShare}).`,
-      );
+      const splitRule = await this.prisma.commissionConfig.findFirst({
+        where:   { clientId, payoutMethod: null, sourceType: sourceT, destType: destT },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (splitRule) {
+        shares = {
+          payerShare:    splitRule.payerShare,
+          senderShare:   splitRule.senderShare,
+          platformShare: splitRule.platformShare,
+        };
+      } else {
+        this.logger.warn(
+          `Aucune règle de répartition pour clientId=${clientId} ${sourceT} → ${destT} ` +
+          `— valeurs par défaut (${shares.payerShare}/${shares.senderShare}/${shares.platformShare}).`,
+        );
+      }
     }
     const payerSharePct    = shares.payerShare;
     const senderSharePct   = shares.senderShare;

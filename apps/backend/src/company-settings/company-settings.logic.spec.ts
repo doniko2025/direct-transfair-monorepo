@@ -123,3 +123,28 @@ describe('merchant — comptes marchands', () => {
     expect(m.minPayment.ZZZ).toBeUndefined();
   });
 });
+
+describe('remboursements et rappels', () => {
+  it('défauts : commission marchand conservée (comportement actuel), rappel ouvert 30 jours avec frais rendus', () => {
+    expect(defaultSettings().refunds).toEqual({ returnMerchantCommission: false, returnFeesOnRecall: true, recallWindowDays: 30 });
+  });
+
+  it('applyPatch accepte des valeurs valides, mergeSettings les applique', () => {
+    const stored = applyPatch({}, { refunds: { returnMerchantCommission: true, recallWindowDays: 0 } });
+    expect(mergeSettings(stored).refunds).toEqual({ returnMerchantCommission: true, returnFeesOnRecall: true, recallWindowDays: 0 });
+    // fusion avec l'existant : champs absents inchangés
+    const next = applyPatch(stored, { refunds: { returnFeesOnRecall: false } });
+    expect(mergeSettings(next).refunds).toEqual({ returnMerchantCommission: true, returnFeesOnRecall: false, recallWindowDays: 0 });
+  });
+
+  it('applyPatch refuse les valeurs invalides avec un message clair', () => {
+    expect(() => applyPatch({}, { refunds: { returnMerchantCommission: 'oui' } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { refunds: { recallWindowDays: -1 } })).toThrow(/rappel/i);
+    expect(() => applyPatch({}, { refunds: { recallWindowDays: 400 } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { refunds: { recallWindowDays: 2.5 } })).toThrow(SettingsValidationError);
+  });
+
+  it('mergeSettings ignore silencieusement les valeurs invalides stockées', () => {
+    expect(mergeSettings({ refunds: { returnMerchantCommission: 'x', recallWindowDays: 999 } }).refunds).toEqual(defaultSettings().refunds);
+  });
+});

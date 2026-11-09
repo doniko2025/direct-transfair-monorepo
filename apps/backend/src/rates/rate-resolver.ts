@@ -86,3 +86,21 @@ export function resolveRate(rows: readonly RateRowLike[], from: string, to: stri
 
   return { ok: false, reason: sawStale ? 'STALE' : 'MISSING' };
 }
+
+/** Âge maximal par défaut d'un taux en production quand RATE_MAX_AGE_HOURS n'est pas posé (heures). */
+export const DEFAULT_PROD_RATE_MAX_AGE_HOURS = 48;
+
+/**
+ * Âge maximal toléré d'un taux enregistré, en millisecondes (undefined = aucun contrôle).
+ *  - RATE_MAX_AGE_HOURS > 0 : cette limite ;
+ *  - RATE_MAX_AGE_HOURS = 0 (ou « off ») : contrôle désactivé volontairement ;
+ *  - non posé : 48 h en production (un taux oublié ne doit jamais servir indéfiniment), aucun contrôle ailleurs (dev, tests).
+ */
+export function resolveMaxAgeMs(env: { RATE_MAX_AGE_HOURS?: string; NODE_ENV?: string } = process.env): number | undefined {
+  const raw = (env.RATE_MAX_AGE_HOURS ?? '').trim();
+  if (raw !== '') {
+    const hours = Number(raw);
+    return Number.isFinite(hours) && hours > 0 ? hours * 3_600_000 : undefined;
+  }
+  return env.NODE_ENV === 'production' ? DEFAULT_PROD_RATE_MAX_AGE_HOURS * 3_600_000 : undefined;
+}

@@ -59,11 +59,15 @@ export function assertRefundable(r: RefundCandidate, now: Date, windowDays = REF
 
 /**
  * Remboursement TOTAL : le client récupère tout ce qu'il a payé ; le commerce rend ce montant à son tour (net reçu + commission).
- * La commission n'est pas restituée par la plateforme : elle a rémunéré un service rendu. Le marchand le voit avant de confirmer.
+ * Par défaut la commission n'est pas restituée par la plateforme : elle a rémunéré un service rendu. Si la société a activé « rendre la
+ * commission » (`returnsFee`), la société la rend au marchand : sa perte nette est alors le net qu'il avait reçu. Le marchand le voit avant de confirmer.
  */
-export function refundAmounts(amount: number, fee: number, currency: string): { payerCredit: number; merchantDebit: number; feeLost: number } {
+export function refundAmounts(amount: number, fee: number, currency: string, returnsFee = false): { payerCredit: number; merchantDebit: number; feeLost: number } {
   const total = roundForCurrency(amount, currency);
-  return { payerCredit: total, merchantDebit: total, feeLost: roundForCurrency(fee, currency) };
+  const f = roundForCurrency(fee, currency);
+  return returnsFee
+    ? { payerCredit: total, merchantDebit: roundForCurrency(total - f, currency), feeLost: 0 }
+    : { payerCredit: total, merchantDebit: total, feeLost: f };
 }
 
 // ── Caissiers ──────────────────────────────────────────

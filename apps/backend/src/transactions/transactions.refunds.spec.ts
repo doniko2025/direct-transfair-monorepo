@@ -28,6 +28,9 @@ function setup(row: Row, opts: { agencyWallet?: boolean; superAdminClientId?: nu
   };
 
   const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
     transaction: {
       findUnique: jest.fn().mockImplementation(async () => ({ ...state.tx, sender: { id: state.tx.senderId } })),
     },

@@ -27,6 +27,9 @@ function setup(row: Row) {
   };
 
   const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
     transaction: {
       findUnique: jest.fn().mockImplementation(async () => ({ ...state.tx })),
       findFirst: jest.fn().mockImplementation(async ({ where }: any) =>
@@ -139,6 +142,9 @@ describe('audit point 5 — declareBankTransfer passe par WalletsService.debitIn
     const created = { id: 'b1', reference: 'BILL-1' };
     const txClient: any = { transaction: { create: jest.fn().mockResolvedValue(created) }, $executeRawUnsafe: jest.fn() };
     const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'adm', clientId: 5, email: null, firstName: 'A', lastName: 'B' }), findFirst: jest.fn().mockResolvedValue(null) },
       wallet: { findUnique: jest.fn().mockResolvedValue({ id: 'cw', balance: new Prisma.Decimal(1000), reservedBalance: new Prisma.Decimal(0) }) },
       auditLog: { create: jest.fn().mockResolvedValue({}) },
@@ -160,6 +166,9 @@ describe('audit point 5 — declareBankTransfer passe par WalletsService.debitIn
   it('solde insuffisant détecté sous verrou → 403 (comme avant), jamais un solde négatif', async () => {
     const txClient: any = { transaction: { create: jest.fn().mockResolvedValue({ id: 'b1' }) } };
     const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'adm', clientId: 5, email: null }) },
       wallet: { findUnique: jest.fn().mockResolvedValue({ id: 'cw', balance: new Prisma.Decimal(1000), reservedBalance: new Prisma.Decimal(0) }) },
       $transaction: jest.fn().mockImplementation((fn: any) => fn(txClient)),
@@ -174,6 +183,9 @@ describe('audit point 5 — declareBankTransfer passe par WalletsService.debitIn
 
   it('pré-contrôle : solde disponible insuffisant → 403 sans ouvrir de transaction', async () => {
     const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
       user: { findUnique: jest.fn().mockResolvedValue({ id: 'adm', clientId: 5 }) },
       wallet: { findUnique: jest.fn().mockResolvedValue({ id: 'cw', balance: new Prisma.Decimal(100), reservedBalance: new Prisma.Decimal(40) }) },
       $transaction: jest.fn(),

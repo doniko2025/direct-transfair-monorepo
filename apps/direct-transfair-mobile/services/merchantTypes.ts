@@ -105,6 +105,8 @@ export interface PaymentRequestView {
   refunded?: boolean;
   refundedAt?: string | null;
   refundReason?: string | null;
+  /** Visible du marchand seulement : un remboursement lui rend-il aussi la commission ? (réglage de la société) */
+  refundReturnsFee?: boolean;
   /** Le demandeur connecté a le droit de rembourser ce paiement (propriétaire, ou caissier autorisé). */
   canRefund?: boolean;
   /** Lot 14 — code signé du reçu (paiements payés) : encodé en QR sur le PDF pour que le serveur confirme les vraies données. */

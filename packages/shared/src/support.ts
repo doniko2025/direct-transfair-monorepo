@@ -293,7 +293,7 @@ export function createSupportApi(http: HttpClient) {
 
     transactions: (q: { search?: string; status?: string; page?: number; limit?: number } = {}) => http.get<Paged<SupportTransaction>>(`/support-desk/transactions${qs(q)}`),
     transaction: (id: string) =>
-      http.get<{ transaction: SupportTransaction; refundable: boolean; refundRequests: RefundRequestLite[] }>(`/support-desk/transactions/${enc(id)}`),
+      http.get<{ transaction: SupportTransaction; refundable: boolean; recall?: { refundAmount: number; refundsFees: boolean }; notRefundableReason?: string; refundRequests: RefundRequestLite[] }>(`/support-desk/transactions/${enc(id)}`),
 
     tickets: (q: { status?: string; kind?: 'DISPUTE' | 'REQUEST'; search?: string; mine?: boolean; page?: number; limit?: number } = {}) =>
       http.get<TicketList>(`/support-desk/tickets${qs(q)}`),

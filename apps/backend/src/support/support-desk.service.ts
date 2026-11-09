@@ -11,6 +11,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
+import { TransactionsService } from '../transactions/transactions.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupportNotifierService } from './support-notifier.service';
 import { hasPermission } from './support-permissions';
@@ -83,6 +84,7 @@ export const TX_SELECT = {
   targetCurrency: true,
   receivedAmount: true,
   payoutMethod: true,
+  recipientId: true,
   createdAt: true,
   paidAt: true,
   cancelledAt: true,
@@ -99,6 +101,7 @@ export class SupportDeskService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifier: SupportNotifierService,
+    private readonly transactions: TransactionsService,
   ) {}
 
   /** Société de travail : celle du compte ; le super administrateur n'a pas de société et passe `clientId` s'il en cible une. */
@@ -243,9 +246,14 @@ export class SupportDeskService {
     const t = await this.prisma.transaction.findFirst({ where: { id, ...(clientId ? { clientId } : {}) }, select: TX_SELECT });
     if (!t) throw new NotFoundException('Opération introuvable.');
     const refunds = await this.prisma.refundRequest.findMany({ where: { transactionId: id }, orderBy: { createdAt: 'desc' }, take: 10 });
+    const open = ['TRANSFER', 'SCHEDULED'].includes(t.type) && ['PENDING', 'VALIDATED', 'PROCESSING'].includes(t.status);
+    // Envoi wallet déjà crédité : remboursable par RAPPEL tant que le réglage de la société l'autorise (délai, type).
+    const recall = !open && t.status === 'PAID' && t.clientId != null ? await this.transactions.assessRecallFor(t.clientId, t as any) : null;
     return {
       transaction: transactionView(t),
-      refundable: ['TRANSFER', 'SCHEDULED'].includes(t.type) && ['PENDING', 'VALIDATED', 'PROCESSING'].includes(t.status),
+      refundable: open || recall?.ok === true,
+      ...(recall?.ok ? { recall: { refundAmount: recall.refundAmount, refundsFees: recall.refundsFees } } : {}),
+      ...(recall && !recall.ok ? { notRefundableReason: recall.reason } : {}),
       refundRequests: refunds.map((r) => ({ id: r.id, status: r.status, amount: Number(r.amount), currency: r.currency, createdAt: r.createdAt.toISOString() })),
     };
   }

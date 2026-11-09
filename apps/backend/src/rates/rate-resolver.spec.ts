@@ -2,7 +2,7 @@
 // Audit argent (v4.0) — aucun taux en dur : tout vient des taux enregistrés, et un taux absent REFUSE la conversion.
 import 'reflect-metadata';
 import { ServiceUnavailableException } from '@nestjs/common';
-import { candidatePairs, resolveRate } from './rate-resolver';
+import { candidatePairs, resolveMaxAgeMs, resolveRate } from './rate-resolver';
 import { RatesService } from './rates.service';
 
 const row = (pair: string, rate: number, updatedAt?: Date) => ({ pair, rate, updatedAt });
@@ -102,4 +102,16 @@ describe('RatesService — taux enregistrés uniquement', () => {
     expect(missing).toContain('EUR_USD');
     expect(missing).toContain('GBP_USD');
   });
+});
+
+describe('resolveMaxAgeMs', () => {
+  const H = 3_600_000;
+  it('production sans variable : 48 h par défaut', () => expect(resolveMaxAgeMs({ NODE_ENV: 'production' })).toBe(48 * H));
+  it('hors production sans variable : aucun contrôle', () => {
+    expect(resolveMaxAgeMs({ NODE_ENV: 'development' })).toBeUndefined();
+    expect(resolveMaxAgeMs({})).toBeUndefined();
+  });
+  it('valeur explicite > 0 : respectée, même en production', () => expect(resolveMaxAgeMs({ NODE_ENV: 'production', RATE_MAX_AGE_HOURS: '12' })).toBe(12 * H));
+  it('« 0 » désactive volontairement le contrôle, même en production', () => expect(resolveMaxAgeMs({ NODE_ENV: 'production', RATE_MAX_AGE_HOURS: '0' })).toBeUndefined());
+  it('valeur illisible : pas de contrôle silencieux ailleurs qu\'explicite (aucune limite)', () => expect(resolveMaxAgeMs({ NODE_ENV: 'production', RATE_MAX_AGE_HOURS: 'abc' })).toBeUndefined());
 });

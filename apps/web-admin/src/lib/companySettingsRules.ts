@@ -28,6 +28,10 @@ export interface SettingsForm {
   merchantMinPayment: Record<string, string>;
   merchantMaxPayment: Record<string, string>;
   merchantMinPayout: Record<string, string>;
+  // Remboursements et rappels
+  refundMerchantCommission: boolean;
+  refundFeesOnRecall: boolean;
+  recallWindowDays: string;
 }
 
 export interface Limits {
@@ -41,6 +45,7 @@ export interface Limits {
   phoneRequestValidityMinutes: { min: number; max: number };
   payoutCooldownHours: { min: number; max: number };
   merchantAmount: { min: number; max: number };
+  recallWindowDays: { min: number; max: number };
 }
 
 export const FALLBACK_LIMITS: Limits = {
@@ -54,6 +59,7 @@ export const FALLBACK_LIMITS: Limits = {
   phoneRequestValidityMinutes: { min: 1, max: 1440 },
   payoutCooldownHours: { min: 0, max: 168 },
   merchantAmount: { min: 0, max: 1_000_000_000_000 },
+  recallWindowDays: { min: 0, max: 365 },
 };
 
 export const MAX_FEE_RATE = 25;
@@ -85,6 +91,9 @@ export function toForm(s: CompanySettings): SettingsForm {
     merchantMinPayment: mapText(s.merchant.minPayment),
     merchantMaxPayment: mapText(s.merchant.maxPayment),
     merchantMinPayout: mapText(s.merchant.minPayout),
+    refundMerchantCommission: s.refunds.returnMerchantCommission,
+    refundFeesOnRecall: s.refunds.returnFeesOnRecall,
+    recallWindowDays: String(s.refunds.recallWindowDays),
   };
 }
 
@@ -163,6 +172,8 @@ export function validate(f: SettingsForm, limits: Limits = FALLBACK_LIMITS): For
     const hi = parseNumber(f.merchantMaxPayment[cur] ?? '');
     if (lo !== null && hi !== null && lo > hi && !e[`merchantMinPayment.${cur}`]) e[`merchantMinPayment.${cur}`] = 'Le minimum dépasse le maximum.';
   }
+  const rw = intIn(f.recallWindowDays, limits.recallWindowDays, 'Délai de rappel');
+  if (rw) e.recallWindowDays = rw;
   return e;
 }
 
@@ -202,6 +213,11 @@ export function toPatch(f: SettingsForm): CompanySettingsPatch {
       minPayment: Object.fromEntries(Object.entries(f.merchantMinPayment).map(([k, raw]) => [k, n(raw)])),
       maxPayment: Object.fromEntries(Object.entries(f.merchantMaxPayment).map(([k, raw]) => [k, n(raw)])),
       minPayout: Object.fromEntries(Object.entries(f.merchantMinPayout).map(([k, raw]) => [k, n(raw)])),
+    },
+    refunds: {
+      returnMerchantCommission: f.refundMerchantCommission,
+      returnFeesOnRecall: f.refundFeesOnRecall,
+      recallWindowDays: n(f.recallWindowDays),
     },
   };
 }

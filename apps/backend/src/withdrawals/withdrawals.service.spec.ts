@@ -199,6 +199,38 @@ describe('WithdrawalsService.agentProcessPayment — commissions (v4.13)', () =>
     expect(r.commissions.senderAgency.amount).toBe(100);
     expect(r.commissions.companyAdmin.amount).toBe(400);
   });
+
+  describe('répartition figée à l\'envoi (v4.34)', () => {
+    const snapshot = (over: any = {}) => ({
+      v: 1, source: 'SUBSIDIARY', frozenAt: '2026-11-01T00:00:00.000Z',
+      shares: { SUBSIDIARY: { payerShare: 30, senderShare: 10, platformShare: 60 }, PARTNER: { payerShare: 30, senderShare: 10, platformShare: 60 } },
+      ...over,
+    });
+
+    it('le snapshot prime sur les règles actuelles, qui ne sont même pas relues', async () => {
+      const m = make({
+        tx: baseTx({ fees: 1000, commissionSplit: snapshot() }), wallets: [...agentWallets, { id: 'w-envoi', currency: 'XOF' }],
+        split: { payerShare: 90, senderShare: 5, platformShare: 5 }, // règle modifiée depuis l'envoi
+      });
+      const r: any = await run(m);
+      expect(r.commissions.payerAgency.amount).toBe(300);
+      expect(r.commissions.senderAgency.amount).toBe(100);
+      expect(r.commissions.companyAdmin.amount).toBe(600);
+      expect(m.prisma.commissionConfig.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('envoi sans snapshot (antérieur) ou snapshot pris pour un autre type d\'envoi : règles actuelles, comme avant', async () => {
+      for (const commissionSplit of [undefined, null, snapshot({ source: 'PARTNER' }), { v: 9 }]) {
+        const m = make({
+          tx: baseTx({ fees: 1000, commissionSplit }), wallets: [...agentWallets, { id: 'w-envoi', currency: 'XOF' }],
+          split: { payerShare: 50, senderShare: 10, platformShare: 40 },
+        });
+        const r: any = await run(m);
+        expect(r.commissions.payerAgency.amount).toBe(500);
+        expect(m.prisma.commissionConfig.findFirst).toHaveBeenCalledTimes(1);
+      }
+    });
+  });
 });
 
 describe('WithdrawalsService.adminUpdateStatus — société de l\'appelant et statuts (v4.13)', () => {

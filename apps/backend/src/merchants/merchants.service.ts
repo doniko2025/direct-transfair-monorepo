@@ -13,7 +13,7 @@ import { Prisma, type MerchantStaff } from '@prisma/client';
 
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
-import type { MerchantSettings } from '../company-settings/company-settings.logic';
+import type { MerchantSettings, RefundSettings } from '../company-settings/company-settings.logic';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ActivateMerchantDto, ChangeDestinationDto, MerchantListQueryDto, UpdateAlertsDto, UpdateMerchantProfileDto } from './dto/merchants.dto';
 import { dayBounds, localDay, parseTzOffset } from './merchant-extras';
@@ -96,6 +96,11 @@ export class MerchantsService {
 
   async settingsFor(clientId: number): Promise<MerchantSettings> {
     return (await this.companySettings.forClient(clientId)).merchant;
+  }
+
+  /** Réglages de remboursement de la société (commission rendue, délai de rappel…). */
+  async refundSettingsFor(clientId: number): Promise<RefundSettings> {
+    return (await this.companySettings.forClient(clientId)).refunds;
   }
 
   /** Refuse (403 + code) si l'utilisateur n'est pas un marchand actif dans une société qui ouvre les comptes marchands. */

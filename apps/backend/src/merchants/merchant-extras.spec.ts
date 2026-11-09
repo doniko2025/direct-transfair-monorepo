@@ -46,6 +46,8 @@ describe('remboursement', () => {
   it('le client récupère tout, le commerce rend le montant payé, la commission reste à la société', () => {
     expect(refundAmounts(10_000, 100, 'XOF')).toEqual({ payerCredit: 10_000, merchantDebit: 10_000, feeLost: 100 });
     expect(refundAmounts(12.5, 0.13, 'EUR')).toEqual({ payerCredit: 12.5, merchantDebit: 12.5, feeLost: 0.13 });
+    // commission rendue par la société : le commerce ne perd que le net reçu
+    expect(refundAmounts(10_000, 100, 'XOF', true)).toEqual({ payerCredit: 10_000, merchantDebit: 9_900, feeLost: 0 });
   });
 
   it('références MF- uniques', () => {

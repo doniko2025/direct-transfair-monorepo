@@ -1,4 +1,5 @@
 //apps/backend/src/payments/sendwave.service.ts
+import { randomBytes } from 'crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -14,7 +15,8 @@ export class SendwaveService {
   constructor(private readonly prisma: PrismaService) {}
 
   async initiate(tx: Transaction) {
-    const providerRef = 'SW_' + Math.floor(100000 + Math.random() * 900000);
+    // Référence de paiement : CSPRNG (96 bits) et non Math.random() — 6 chiffres se devinaient et se recoupaient entre deux envois.
+    const providerRef = 'SW_' + randomBytes(6).toString('hex').toUpperCase();
 
     const upd = await this.prisma.transaction.updateMany({
       where: {

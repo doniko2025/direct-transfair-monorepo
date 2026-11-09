@@ -40,6 +40,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { toIso2 } from './countries';
 import type { FeeRuleBodyDto } from './dto/fee-rule.dto';
+import { fallbackNotice } from './fallback-coverage';
 import { feeFromRule, pickRule, rangesOverlap, roundToCurrency, type FeeRuleLike } from './fee-engine';
 
 export const MAX_RULES_PER_COMPANY = 100;
@@ -187,6 +188,17 @@ export class FeeScheduleService {
     }
   }
 
+  private readonly fallbackWarned = new Map<string, number>();
+
+  /** Un seul avertissement par société et par mode toutes les 6 h : le taux de repli s'applique sans que personne l'ait choisi. */
+  private warnFallbackOnce(clientId: number, method: string, ratePct: number): void {
+    const key = `${clientId}:${method}`;
+    const last = this.fallbackWarned.get(key) ?? 0;
+    if (Date.now() - last < 6 * 3_600_000) return;
+    this.fallbackWarned.set(key, Date.now());
+    this.logger.warn(`Société ${clientId} : aucun tarif configuré pour « ${method} » — taux de repli ${ratePct} % appliqué. Ajoutez une règle de barème ou un tarif plat.`);
+  }
+
   async quote(p: QuoteParams): Promise<FeeQuote> {
     const currency = p.currency.toUpperCase();
     const method = p.payoutMethod;
@@ -263,6 +275,7 @@ export class FeeScheduleService {
       }
     }
 
+    if (source === 'DEFAULT') this.warnFallbackOnce(p.clientId, method, ratePct);
     const fees = new Prisma.Decimal(p.amount).mul(new Prisma.Decimal(ratePct / 100)).plus(new Prisma.Decimal(fixedFee));
     return done(roundToCurrency(fees.toNumber(), currency), {
       feeRatePct: ratePct,
@@ -301,7 +314,17 @@ export class FeeScheduleService {
       where: { clientId: scope },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     })) as unknown as RuleRow[];
-    return { company, editable: user.role === 'COMPANY_ADMIN', rules: rows.map(viewOf) };
+    // ✅ v4.34 — signale les modes sans aucun tarif : ils sont facturés au taux de repli sans que l'administrateur l'ait décidé.
+    const settings = await this.settings.forClient(scope);
+    let flatMethods: Array<string | null> = [];
+    try {
+      const flats = await this.prisma.commissionConfig.findMany({ where: { clientId: scope, payoutMethod: { not: null } }, select: { payoutMethod: true } });
+      flatMethods = flats.map((f: { payoutMethod: string | null }) => f.payoutMethod);
+    } catch {
+      // Colonne pas encore migrée : pas de tarif plat connu.
+    }
+    const fallback = fallbackNotice({ fallbackFeeRatePct: settings.fees.fallbackFeeRatePct, freeMethods: settings.fees.freeMethods, rules: rows, flatMethods });
+    return { company, editable: user.role === 'COMPANY_ADMIN', rules: rows.map(viewOf), fallback };
   }
 
   private async assertBody(clientId: number, dto: FeeRuleBodyDto): Promise<void> {

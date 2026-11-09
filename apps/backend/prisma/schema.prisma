@@ -1393,6 +1393,10 @@ model Transaction {
   payerCommission    Decimal? @db.Decimal(18, 4)
   platformCommission Decimal? @db.Decimal(18, 4)
 
+  // Répartition des frais FIGÉE à l'envoi (parts % par type d'agence payeuse) — voir commission-rules/commission-snapshot.ts.
+  // Null pour les envois antérieurs : le paiement retombe alors sur les règles en vigueur.
+  commissionSplit Json?
+
   status        TransactionStatus @default(PENDING)
   payoutMethod  PayoutMethod      @default(CASH_PICKUP)
   paymentMethod PaymentMethod     @default(WALLET)

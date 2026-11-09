@@ -135,7 +135,7 @@ export default function SupportRefundsPage() {
                   <span>{formatDateTime(r.createdAt)}</span>
                 </div>
                 {r.decisionNote ? <p className="sp-note">{r.decidedBy ? `${r.decidedBy} : ` : ''}{r.decisionNote}</p> : null}
-                {r.status === 'FAILED' ? <p className="muted">L'envoi n'était plus remboursable depuis la plateforme (déjà payé ou clos) : à régler hors plateforme.</p> : null}
+                {r.status === 'FAILED' ? <p className="muted">Le remboursement n'a pas pu être exécuté (bénéficiaire ayant déjà dépensé la somme, envoi clos…) : voir le motif dans la décision, à régler hors plateforme si besoin.</p> : null}
                 {r.status === 'PENDING' ? (
                   r.canDecide ? (
                     <div className="sp-actions">

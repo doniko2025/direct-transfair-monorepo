@@ -122,7 +122,7 @@ function desk(over: { target?: J | null } = {}) {
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   };
   const notifier = { notifyUser: jest.fn(async () => undefined) };
-  return { service: new SupportDeskService(prisma as any, notifier as any), prisma, notifier, audits };
+  return { service: new SupportDeskService(prisma as any, notifier as any, { assessRecallFor: jest.fn(async () => ({ ok: false, reason: 'x' })) } as any), prisma, notifier, audits };
 }
 
 describe('SupportDeskService', () => {

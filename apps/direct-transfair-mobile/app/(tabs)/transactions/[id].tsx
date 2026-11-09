@@ -133,8 +133,15 @@ export default function TransactionDetailScreen() {
     if (!transaction) return;
     setProcessing(true);
     try {
-      await api.cancelTransaction(transaction.id);
-      Alert.alert("🚫 Annulé", "Transaction annulée.");
+      const closed = (await api.cancelTransaction(transaction.id)) as { cashToReturn?: { amount: number; currency: string; customer?: string | null } };
+      // Envoi encaissé au comptoir : le client de passage a payé en espèces, la plateforme ne peut pas le lui rendre — on rappelle à l'agent la somme à remettre.
+      const cash = closed.cashToReturn;
+      Alert.alert(
+        "🚫 Annulé",
+        cash
+          ? `Transaction annulée.\n\nRemettez ${cash.amount.toLocaleString("fr-FR")} ${cash.currency} en espèces${cash.customer ? ` à ${cash.customer}` : " au client"}.`
+          : "Transaction annulée.",
+      );
       void loadTransaction();
     } catch (e: any) {
       Alert.alert("Erreur", e?.response?.data?.message || "Action impossible.");

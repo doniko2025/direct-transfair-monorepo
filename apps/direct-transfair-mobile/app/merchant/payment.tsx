@@ -215,7 +215,10 @@ export default function MerchantPaymentScreen() {
 
       <Sheet visible={refundOpen} onClose={() => setRefundOpen(false)} title="Rembourser le client">
         <Notice tone="warn" style={{ marginBottom: 12 }}>
-          Le client récupère {money(p.amount, p.currency)} (montant intégral) et ce montant est retiré du solde du commerce. La commission de {money(p.fee ?? 0, p.currency)} n'est pas remboursée.
+          Le client récupère {money(p.amount, p.currency)} (montant intégral).{" "}
+          {p.refundReturnsFee
+            ? `La commission de ${money(p.fee ?? 0, p.currency)} vous est rendue : votre solde baisse de ${money(p.netAmount ?? p.amount, p.currency)}.`
+            : `Ce montant est retiré du solde du commerce et la commission de ${money(p.fee ?? 0, p.currency)} n'est pas remboursée.`}
         </Notice>
         {!!refundProblem && <Notice tone="danger" style={{ marginBottom: 12 }}>{refundProblem}</Notice>}
         <Field label="Motif (facultatif)" icon="create-outline" value={reason} onChangeText={setReason} maxLength={140} autoCapitalize="sentences" />

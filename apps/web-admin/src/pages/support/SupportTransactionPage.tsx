@@ -41,7 +41,7 @@ export default function SupportTransactionPage() {
     );
   }
 
-  const { transaction: t, refundable, refundRequests } = res.data;
+  const { transaction: t, refundable, recall, notRefundableReason, refundRequests } = res.data;
   const pending = refundRequests.some((r) => r.status === 'PENDING');
   const canAsk = refundable && !pending && can(me, 'REFUNDS_DECIDE', 'DISPUTES_RESOLVE');
 
@@ -113,11 +113,17 @@ export default function SupportTransactionPage() {
           {canAsk ? (
             <div className="sp-actions">
               <Button variant="secondary" icon="swap" onClick={() => setAsking(true)}>
-                Demander un remboursement
+                {recall ? 'Demander le rappel de l\'envoi' : 'Demander un remboursement'}
               </Button>
             </div>
           ) : null}
-          {!refundable ? <p className="muted">Cette opération n'est plus remboursable depuis la plateforme (déjà payée, close ou d'un autre type).</p> : null}
+          {recall ? (
+            <p className="muted">
+              Envoi déjà crédité sur le portefeuille du bénéficiaire : le rappel reprend la somme à son portefeuille (s'il l'a encore) et rend {recall.refundAmount} {t.currency} à l'expéditeur
+              {recall.refundsFees ? ', frais compris' : ', hors frais'}.
+            </p>
+          ) : null}
+          {!refundable ? <p className="muted">{notRefundableReason ?? 'Cette opération n\'est plus remboursable depuis la plateforme (close ou d\'un autre type).'}</p> : null}
         </Card>
 
         {refundRequests.length > 0 ? (

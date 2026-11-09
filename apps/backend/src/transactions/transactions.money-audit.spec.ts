@@ -21,6 +21,9 @@ function build(over: { admin?: Row; agency?: Row; tx?: Row } = {}) {
   const admin = { id: 'admin1', role: 'COMPANY_ADMIN', clientId: 5, email: null, ...(over.admin ?? {}) };
   const agency = { id: 'ag1', name: 'Agence Test', clientId: 7, ...(over.agency ?? {}) };
   const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
     user: { findUnique: jest.fn().mockResolvedValue(admin), findMany: jest.fn().mockResolvedValue([]) },
     agency: { findUnique: jest.fn().mockResolvedValue(agency) },
     wallet: {

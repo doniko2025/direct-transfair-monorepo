@@ -5,7 +5,7 @@
 //    relais en silence dès qu'un taux manquait en base : montants reçus, commissions et seuils de contrôle calculés avec un
 //    taux inventé, sans contrôle d'ancienneté. Maintenant :
 //      - convert() ne lit QUE les taux enregistrés par le super admin (direct, inverse, pivot EUR — voir rate-resolver.ts) ;
-//      - taux introuvable (ou trop ancien si RATE_MAX_AGE_HOURS est posé) → 503 explicite, l'opération est refusée, rien n'est
+//      - taux introuvable (ou trop ancien : 48 h par défaut en production, réglable par RATE_MAX_AGE_HOURS) → 503 explicite, l'opération est refusée, rien n'est
 //        débité ; getRate() synchrone supprimée (elle ne pouvait lire que la table en dur) ;
 //      - au démarrage, les paires sans taux sont listées dans les journaux (missingPairs()).
 // ✅ FIX v3.1 : normalisation du format de paire (slash → underscore), lecture des deux formats pour les anciennes lignes.
@@ -13,14 +13,11 @@
 
 import { Injectable, Logger, OnApplicationBootstrap, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { candidatePairs, resolveRate } from './rate-resolver';
+import { candidatePairs, resolveMaxAgeMs, resolveRate } from './rate-resolver';
 import { CANONICAL_PAIRS } from '../rates-admin/rate-rules';
 
-/** RATE_MAX_AGE_HOURS : si posé (> 0), un taux plus ancien est refusé comme absent. Non posé = pas de contrôle. */
-function maxAgeMs(): number | undefined {
-  const hours = Number(process.env.RATE_MAX_AGE_HOURS);
-  return Number.isFinite(hours) && hours > 0 ? hours * 3_600_000 : undefined;
-}
+/** Âge maximal d'un taux : voir `resolveMaxAgeMs` (48 h par défaut en production, « 0 » pour désactiver). */
+const maxAgeMs = (): number | undefined => resolveMaxAgeMs();
 
 @Injectable()
 export class RatesService implements OnApplicationBootstrap {

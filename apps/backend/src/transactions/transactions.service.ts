@@ -272,8 +272,10 @@ import {
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
+  AgencyType,
   AuditAction,
   CurrencyCode,
+  LedgerEntryType,
   Prisma,
   ProviderStatus,
   Transaction,
@@ -323,6 +325,8 @@ import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rule
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { assertSelfFundingAllowed } from '../treasury/self-funding';
 import { amlFlagScore, computeRiskScore } from './aml-scoring';
+import { buildCommissionSnapshot } from '../commission-rules/commission-snapshot';
+import { assessRecall, type RecallAssessment } from './recall-rules';
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -780,7 +784,37 @@ export class TransactionsService {
       throw new ConflictException('Cette opération ne peut pas être annulée.');
     }
 
-    return this.cancelWithRefund(tx);
+    const closed = await this.cancelWithRefund(tx);
+    await this.audit(userId, tx.clientId, 'TRANSACTION_CANCEL', tx.id, {
+      from: tx.status, to: TransactionStatus.CANCELLED, via: "annulation par l'expéditeur", refunded: Number(tx.total), currency: tx.currency,
+    });
+    const cashToReturn = await this.traceCounterCashReturn(tx, userId, 'annulation');
+    return cashToReturn ? Object.assign(closed, { cashToReturn }) : closed;
+  }
+
+  /**
+   * ✅ v4.34 — envoi fait au COMPTOIR (expéditeur de passage) puis annulé / échoué / expiré : l'agence est recréditée, mais le client de
+   * passage avait remis du CASH. Le montant à lui rendre est tracé au journal d'audit (qui, quand, combien, pour quel client de passage) et
+   * renvoyé à l'agent qui annule, pour qu'il le remette en main propre et le fasse constater. Renvoie null pour un envoi sans client de passage.
+   */
+  private async traceCounterCashReturn(
+    tx: Pick<Transaction, 'id' | 'reference' | 'clientId' | 'counterCustomerId' | 'total' | 'currency' | 'agencyId'>,
+    byUserId: string | null,
+    via: string,
+  ): Promise<{ amount: number; currency: string; reference: string; customer: string | null } | null> {
+    if (!tx.counterCustomerId) return null;
+    let customer: string | null = null;
+    try {
+      const c = await this.prisma.counterCustomer.findUnique({ where: { id: tx.counterCustomerId }, select: { firstName: true, lastName: true } });
+      customer = c ? `${c.firstName} ${c.lastName}`.trim() : null;
+    } catch {
+      customer = null;
+    }
+    const cash = { amount: Number(tx.total), currency: String(tx.currency), reference: tx.reference, customer };
+    await this.audit(byUserId, tx.clientId, 'TRANSACTION_REFUND', tx.id, {
+      decision: 'COUNTER_CASH_TO_RETURN', via, counterCustomerId: tx.counterCustomerId, agencyId: tx.agencyId ?? null, ...cash,
+    });
+    return cash;
   }
 
   // ========================================================
@@ -868,14 +902,15 @@ export class TransactionsService {
     await this.audit(adminId, clientId, target === TransactionStatus.FAILED ? 'TRANSACTION_UPDATE' : 'TRANSACTION_CANCEL', tx.id, {
       from: tx.status, to: target, via: `retrait ${withdrawalStatus}`, refunded: REFUNDABLE_TYPES.includes(tx.type) ? Number(tx.total) : 0,
     });
+    if (REFUNDABLE_TYPES.includes(tx.type)) await this.traceCounterCashReturn(tx, adminId, `retrait ${withdrawalStatus}`);
     return closed;
   }
 
   /**
    * Lot 9 — exécute un remboursement décidé par le service client / l'admin (voir RefundsService, règle des quatre yeux).
-   * Mêmes garde-fous que l'annulation par le client : seul un envoi (TRANSFER / SCHEDULED) encore non payé se rembourse ; l'annulation et
-   * le crédit du wallet débité sont atomiques (cancelWithRefund). Un envoi déjà payé, déjà clos ou d'un autre type est refusé (409) :
-   * l'argent a quitté le circuit, le dossier se règle hors plateforme.
+   * Mêmes garde-fous que l'annulation par le client : un envoi (TRANSFER / SCHEDULED) encore non payé est annulé et le wallet débité recrédité
+   * (cancelWithRefund, atomique). Un envoi déjà crédité sur un PORTEFEUILLE est RAPPELÉ (recallPaidTransfer, v4.34) dans le délai réglé par la
+   * société. Un envoi cash déjà retiré, déjà clos ou d'un autre type est refusé (409) : l'argent a quitté le circuit, dossier hors plateforme.
    */
   async refundOnSupportDecision(clientId: number, deciderId: string, transactionId: string, requestId: string): Promise<Transaction> {
     const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
@@ -883,17 +918,136 @@ export class TransactionsService {
     if (!REFUNDABLE_TYPES.includes(tx.type)) {
       throw new ConflictException('Ce type d\'opération ne se rembourse pas depuis la plateforme.');
     }
+    // ✅ v4.34 — envoi vers un portefeuille déjà crédité : RAPPEL (voir recall-rules.ts) au lieu d'une annulation.
+    if (tx.status === TransactionStatus.PAID) {
+      const assessment = await this.assessRecallFor(clientId, tx);
+      if (!assessment.ok) throw new ConflictException(assessment.reason);
+      return this.recallPaidTransfer(tx, deciderId, requestId);
+    }
     if (!CANCELLABLE_TX.includes(tx.status)) {
-      throw new ConflictException(
-        tx.status === TransactionStatus.PAID
-          ? 'Le bénéficiaire a déjà retiré l\'argent : ce remboursement doit être traité hors plateforme.'
-          : `Cette opération est déjà « ${tx.status} » : rien à rembourser.`,
-      );
+      throw new ConflictException(`Cette opération est déjà « ${tx.status} » : rien à rembourser.`);
     }
     const closed = await this.cancelWithRefund(tx);
     await this.audit(deciderId, clientId, 'TRANSACTION_CANCEL', tx.id, {
       from: tx.status, to: TransactionStatus.CANCELLED, via: 'remboursement service client', refundRequestId: requestId, refunded: Number(tx.total),
     });
+    await this.traceCounterCashReturn(tx, deciderId, 'remboursement service client');
+    return closed;
+  }
+
+  /**
+   * ✅ v4.34 — photographie la répartition des frais qui s'applique À L'INSTANT de l'envoi cash (voir commission-snapshot.ts).
+   * Ne bloque jamais l'envoi : en cas d'erreur de lecture on n'enregistre rien et le paiement utilisera les règles en vigueur
+   * (comportement d'avant).
+   */
+  private async snapshotCommissionSplit(
+    clientId: number,
+    senderAgencyId: string | null,
+    fallback: { payerShare: number; senderShare: number; platformShare: number },
+  ) {
+    try {
+      let source: 'WALLET' | 'SUBSIDIARY' | 'PARTNER' = 'WALLET';
+      if (senderAgencyId) {
+        const agency = await this.prisma.agency.findFirst({ where: { id: senderAgencyId, clientId }, select: { type: true } });
+        source = agency?.type === AgencyType.PARTNER ? 'PARTNER' : 'SUBSIDIARY';
+      }
+      const rules = await this.prisma.commissionConfig.findMany({
+        where: { clientId, payoutMethod: null, sourceType: source as any },
+        orderBy: { updatedAt: 'desc' },
+        select: { destType: true, payerShare: true, senderShare: true, platformShare: true },
+      });
+      return buildCommissionSnapshot({ source, rules, fallback });
+    } catch (e) {
+      this.logger.warn(`Répartition des frais non figée à l'envoi (client ${clientId}) : ${(e as Error).message}`);
+      return undefined;
+    }
+  }
+
+  /**
+   * ✅ v4.34 — un envoi PAID peut-il être rappelé ? Réglages de la société (délai, frais rendus) + règles pures de recall-rules.ts.
+   * Utilisé à l'ouverture de la demande (service client) et à l'exécution : les deux voient la même réponse.
+   */
+  async assessRecallFor(clientId: number, tx: Parameters<typeof assessRecall>[0]): Promise<RecallAssessment> {
+    const { refunds } = await this.settings.forClient(clientId);
+    return assessRecall(tx, { windowDays: refunds.recallWindowDays, returnFees: refunds.returnFeesOnRecall });
+  }
+
+  /**
+   * ✅ v4.34 — RAPPEL d'un envoi wallet → wallet déjà crédité, en UNE transaction SQL :
+   *   1. statut PAID → REFUNDED, réservé par un updateMany (un seul rappel, jamais deux) ;
+   *   2. la somme créditée est reprise au destinataire (dans SA devise, au taux de l'envoi : aucun écart de change) — s'il ne l'a plus ou si
+   *      son wallet est gelé, 409 et rien ne bouge (dossier hors plateforme) ;
+   *   3. l'expéditeur est recrédité sur le wallet qui a été débité (écriture DEBIT du journal), frais compris si la société les rend et si son
+   *      portefeuille peut les couvrir (sinon les frais restent acquis, tracé).
+   * Les wallets sont lus dans le journal de l'envoi : aucun calcul de devise ni de taux n'est refait.
+   */
+  private async recallPaidTransfer(tx: Transaction, deciderId: string, requestId: string): Promise<Transaction> {
+    const { refunds } = await this.settings.forClient(tx.clientId);
+    const entries = await this.prisma.ledgerEntry.findMany({
+      where:   { transactionId: tx.id },
+      orderBy: { createdAt: 'asc' },
+      include: { wallet: { select: { userId: true, clientId: true, agencyId: true, merchantId: true } } },
+    });
+    const debit = entries.find((e) => e.type === LedgerEntryType.DEBIT);
+    const recipientCredit = entries.find((e) => e.type === LedgerEntryType.CREDIT && !!e.wallet.userId && e.wallet.userId === tx.recipientId);
+    const feeCredit = entries.find(
+      (e) => e.type === LedgerEntryType.CREDIT && !e.wallet.userId && !e.wallet.agencyId && !e.wallet.merchantId && e.wallet.clientId === tx.clientId,
+    );
+    if (!debit || !recipientCredit) {
+      throw new ConflictException('Le journal de cet envoi est incomplet : le rappel automatique est impossible, le dossier se traite à la main.');
+    }
+
+    // Frais rendus ? Seulement si le réglage le demande ET si le portefeuille de la société peut les couvrir (le rappel ne dépend jamais d'elle).
+    let feesBack = 0;
+    if (refunds.returnFeesOnRecall && feeCredit && Number(feeCredit.amount) > 0) {
+      const cw = await this.prisma.wallet.findUnique({ where: { id: feeCredit.walletId }, select: { balance: true, reservedBalance: true, isFrozen: true } });
+      if (cw && !cw.isFrozen && Number(cw.balance) - Number(cw.reservedBalance) >= Number(feeCredit.amount)) feesBack = Number(feeCredit.amount);
+      else this.logger.warn(`Rappel ${tx.reference} : frais ${Number(feeCredit.amount)} ${tx.currency} conservés (portefeuille de la société insuffisant ou gelé).`);
+    }
+    const senderRefund = Number(tx.amount) + feesBack;
+
+    const closed = await this.prisma.$transaction(async (prismaTx) => {
+      const claimed = await prismaTx.transaction.updateMany({
+        where: { id: tx.id, status: TransactionStatus.PAID, type: { in: REFUNDABLE_TYPES } },
+        data:  { status: TransactionStatus.REFUNDED, providerStatus: ProviderStatus.CANCELLED, cancelledAt: new Date() },
+      });
+      if (claimed.count !== 1) throw new ConflictException('Cet envoi vient d\'être traité par quelqu\'un d\'autre.');
+
+      try {
+        await this.walletsService.debitInTx(prismaTx, recipientCredit.walletId, Number(recipientCredit.amount), `Rappel envoi ${tx.reference}`, tx.id);
+      } catch (e) {
+        if (e instanceof BadRequestException || e instanceof ForbiddenException) {
+          throw new ConflictException(
+            "Le destinataire n'a plus cette somme sur son portefeuille (ou son portefeuille est gelé) : le rappel est impossible, le dossier se traite hors plateforme.",
+          );
+        }
+        throw e;
+      }
+      if (feesBack > 0 && feeCredit) {
+        await this.walletsService.debitInTx(prismaTx, feeCredit.walletId, feesBack, `Frais rendus (rappel ${tx.reference})`, tx.id);
+      }
+      await this.walletsService.creditInTx(
+        prismaTx, debit.walletId, senderRefund, `Rappel envoi ${tx.reference} — remboursement`, tx.id, { allowFrozen: true },
+      );
+      return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
+    });
+
+    await this.audit(deciderId, tx.clientId, 'TRANSACTION_REFUND', tx.id, {
+      decision: 'TRANSFER_RECALLED', from: TransactionStatus.PAID, to: TransactionStatus.REFUNDED, refundRequestId: requestId,
+      senderRefunded: senderRefund, feesReturned: feesBack, currency: tx.currency,
+      takenFromRecipient: Number(recipientCredit.amount), recipientCurrency: tx.targetCurrency ?? tx.currency,
+    });
+    await this.traceCounterCashReturn(tx, deciderId, 'rappel service client');
+    if (tx.recipientId) {
+      const recipientId = tx.recipientId;
+      this.fireAndForget('Notification rappel destinataire', () => this.notificationsService.create(
+        recipientId,
+        'Envoi annulé par le service client',
+        `L'envoi ${tx.reference} (${Number(recipientCredit.amount).toLocaleString('fr-FR')} ${tx.targetCurrency ?? tx.currency}) a été annulé : la somme a été reprise sur votre portefeuille.`,
+        'WARNING',
+        { transactionId: tx.id },
+      ));
+    }
     return closed;
   }
 
@@ -938,10 +1092,14 @@ export class TransactionsService {
         refunded: Number(tx.total), currency: tx.currency, validityMonths: pickupValidityMonths(),
       });
 
+      const cashBack = await this.traceCounterCashReturn(tx, null, 'code expiré').catch(() => null);
       this.fireAndForget('Notification code expiré', () => this.notificationsService.create(
         tx.senderId,
         'Envoi expiré — remboursé',
-        `Le code ${tx.reference} n'a pas été retiré à temps : ${Number(tx.total).toLocaleString('fr-FR')} ${tx.currency} ont été remboursés sur votre compte.`,
+        cashBack
+          ? `Le code ${tx.reference} n'a pas été retiré à temps : ${Number(tx.total).toLocaleString('fr-FR')} ${tx.currency} ont été recrédités sur la caisse de l'agence. ` +
+            `Remettez ce montant en espèces au client de passage${cashBack.customer ? ` (${cashBack.customer})` : ''}.`
+          : `Le code ${tx.reference} n'a pas été retiré à temps : ${Number(tx.total).toLocaleString('fr-FR')} ${tx.currency} ont été remboursés sur votre compte.`,
         'INFO',
         { transactionId: tx.id },
       ));
@@ -1067,8 +1225,23 @@ export class TransactionsService {
    *   - tout le reste (recharge en attente, mouvements de caisse…) : rien n'a été débité.
    */
   private async refundTargetFor(
-    tx: Pick<Transaction, 'type' | 'senderId' | 'agencyId' | 'clientId' | 'currency' | 'total' | 'amount'>,
+    tx: Pick<Transaction, 'id' | 'type' | 'senderId' | 'agencyId' | 'clientId' | 'currency' | 'total' | 'amount'>,
   ): Promise<{ walletId: string; amount: number; label: string } | null> {
+    // ✅ v4.34 (audit argent) — le remboursement revient sur le wallet RÉELLEMENT débité : celui de l'écriture DEBIT du journal de
+    // cette opération. Les règles ci-dessous (caisse d'agence / wallet de l'agent / wallet de la société) ne servent plus que de repli
+    // pour une opération sans écriture au journal (anciennes données) : elles pouvaient désigner un autre wallet que celui du débit
+    // (agent débité sur son wallet perso alors que la caisse de son agence existe, mais inactive).
+    const debited = await this.prisma.ledgerEntry.findFirst({
+      where:   { transactionId: tx.id, type: LedgerEntryType.DEBIT },
+      orderBy: { createdAt: 'asc' },
+      select:  { walletId: true },
+    });
+    if (debited && (REFUNDABLE_TYPES.includes(tx.type) || tx.type === TransactionType.SERVICE_PAYMENT)) {
+      return REFUNDABLE_TYPES.includes(tx.type)
+        ? { walletId: debited.walletId, amount: Number(tx.total), label: 'Remboursement annulation' }
+        : { walletId: debited.walletId, amount: Number(tx.amount), label: 'Remboursement annulation B2B' };
+    }
+
     if (REFUNDABLE_TYPES.includes(tx.type)) {
       if (tx.agencyId) {
         // ✅ v4.33 — sans filtre isActive : le débit a été fait sur la caisse de l'agence ; si l'agence a été désactivée depuis,
@@ -1321,6 +1494,11 @@ export class TransactionsService {
       }
     }
 
+    // ✅ v4.34 — répartition des frais FIGÉE à l'envoi (envoi cash seulement : un envoi wallet → wallet verse ses frais à la société tout de suite).
+    const commissionSplit = !recipientUser && Number(fees) > 0
+      ? await this.snapshotCommissionSplit(clientId, user.agencyId ?? null, company.commissions.defaultSplit)
+      : undefined;
+
     // ✅ v4.27 (phase 6) — ATOMICITÉ. Les wallets annexes sont retrouvés/créés AVANT la transaction SQL
     // (création idempotente) ; ensuite la ligne Transaction, le débit de l'expéditeur, le crédit du
     // destinataire, la commission plateforme et le contrôle des plafonds sont écrits dans UNE SEULE
@@ -1367,6 +1545,7 @@ export class TransactionsService {
           // ✅ v4.32 — envoi direct (PAID dès la création) : les frais vont intégralement à la société, il n'y aura pas de retrait
           // en agence pour les répartir. On l'enregistre (avant : colonnes vides, impossible de rapprocher la comptabilité).
           ...(recipientUser ? { senderCommission: 0, payerCommission: 0, platformCommission: fees } : {}),
+          ...(commissionSplit ? { commissionSplit: commissionSplit as unknown as Prisma.InputJsonValue } : {}), // ✅ v4.34
           // ✅ v4.19 — FIX (PROBLÈME 4) : motif du transfert enfin persisté.
           note:           (dto as any).note ?? null,
         },
@@ -2020,6 +2199,7 @@ export class TransactionsService {
       await this.audit(adminId, tx.clientId, dto.status === TransactionStatus.CANCELLED ? 'TRANSACTION_CANCEL' : 'TRANSACTION_UPDATE', tx.id, {
         from: tx.status, to: dto.status, refunded: REFUNDABLE_TYPES.includes(tx.type) ? Number(tx.total) : 0,
       });
+      if (REFUNDABLE_TYPES.includes(tx.type)) await this.traceCounterCashReturn(tx, adminId, `statut ${dto.status} par un administrateur`);
       return closed;
     }
 

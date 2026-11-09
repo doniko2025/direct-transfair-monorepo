@@ -11,7 +11,7 @@ const sup1 = { id: 'sup1', role: 'SUPPORT', clientId: 7, permissions: ['REFUNDS_
 const sup2 = { id: 'sup2', role: 'SUPPORT', clientId: 7, permissions: ['REFUNDS_DECIDE'] } as any;
 const admin = { id: 'adm', role: 'COMPANY_ADMIN', clientId: 7 } as any;
 
-function setup(over: { tx?: J | null; reqRow?: J | null; claim?: number; refund?: () => Promise<any>; pendingExists?: number } = {}) {
+function setup(over: { tx?: J | null; reqRow?: J | null; claim?: number; refund?: () => Promise<any>; recall?: () => Promise<any>; pendingExists?: number } = {}) {
   const audits: J[] = [];
   const tx = over.tx === undefined ? { id: 'tx1', reference: 'TR-1', type: 'TRANSFER', status: 'PENDING', total: 105, currency: 'EUR', sender: { id: 'cust', email: 'c@x.fr', firstName: 'Awa' } } : over.tx;
   const reqRow = over.reqRow === undefined ? { id: 'r1', clientId: 7, transactionId: 'tx1', ticketId: null, amount: 105, currency: 'EUR', reason: 'Doublon', status: 'PENDING', requestedById: 'sup1', createdAt: new Date() } : over.reqRow;
@@ -29,10 +29,29 @@ function setup(over: { tx?: J | null; reqRow?: J | null; claim?: number; refund?
     user: { findUnique: jest.fn(async () => ({ id: 'sup1', email: 's@x.fr', firstName: 'Sup' })), findMany: jest.fn(async () => []) },
     auditLog: { create: jest.fn(async ({ data }: J) => { audits.push(data); return data; }) },
   };
-  const transactions = { refundOnSupportDecision: jest.fn(over.refund ?? (async () => ({ id: 'tx1' }))) };
+  const transactions = { refundOnSupportDecision: jest.fn(over.refund ?? (async () => ({ id: 'tx1' }))), assessRecallFor: jest.fn(over.recall ?? (async () => ({ ok: false, reason: 'Le bénéficiaire a déjà retiré l\'argent : ce remboursement se traite hors plateforme.' }))) };
   const notifier = { notifyUser: jest.fn(async () => undefined), notifyDeciders: jest.fn(async () => 1) };
   return { service: new RefundsService(prisma as any, transactions as any, notifier as any), prisma, transactions, notifier, audits };
 }
+
+describe('RefundsService.create — rappel d\'un envoi déjà payé', () => {
+  const paid = { id: 'tx1', reference: 'TR-1', type: 'TRANSFER', status: 'PAID', total: 105, amount: 100, fees: 5, currency: 'EUR', payoutMethod: 'WALLET', recipientId: 'u2' };
+
+  it('rappel autorisé par la société : la demande s\'ouvre pour le montant calculé (frais rendus ou non)', async () => {
+    const { service, prisma, transactions, audits } = setup({ tx: paid, recall: async () => ({ ok: true, refundAmount: 100, refundsFees: false }) });
+    const r = await service.create(sup1, { transactionId: 'tx1', reason: 'Erreur de destinataire' });
+    expect(transactions.assessRecallFor).toHaveBeenCalledWith(7, expect.objectContaining({ id: 'tx1' }));
+    expect(prisma.refundRequest.create.mock.calls[0][0].data.amount).toBe(100);
+    expect(r.amount).toBe(100);
+    expect(audits[0].details).toMatchObject({ recall: true, amount: 100 });
+  });
+
+  it('rappel refusé (délai dépassé, rappel fermé, retrait cash) : 409 avec la raison', async () => {
+    const { service, prisma } = setup({ tx: paid, recall: async () => ({ ok: false, reason: 'Délai de rappel dépassé (30 jours).' }) });
+    await expect(service.create(sup1, { transactionId: 'tx1', reason: 'motif ok' })).rejects.toThrow(/30 jours/);
+    expect(prisma.refundRequest.create).not.toHaveBeenCalled();
+  });
+});
 
 describe('RefundsService.create', () => {
   it('ouvre la demande pour le TOTAL débité, prévient les décideurs (sauf le demandeur) et trace', async () => {

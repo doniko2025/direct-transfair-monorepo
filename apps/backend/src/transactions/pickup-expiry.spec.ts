@@ -19,6 +19,9 @@ function setup(rows: any[]) {
     withdrawal: { updateMany: jest.fn(async ({ data }: any) => { state.wd.push(data.status); return { count: 1 }; }) },
   };
   const prisma: any = {
+    // v4.34 : le wallet remboursé est lu dans le journal (DEBIT) ; sans écriture, repli sur les règles (anciennes données). Client de passage : aucun.
+    ledgerEntry: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]) },
+    counterCustomer: { findUnique: jest.fn().mockResolvedValue(null) },
     transaction: { findMany: jest.fn(async () => state.rows.filter((r) => r.status === S.VALIDATED || r.status === S.PENDING).map((r) => ({ ...r }))) },
     wallet: { findFirst: jest.fn().mockResolvedValue(null) },
     auditLog: { create: jest.fn().mockResolvedValue({}) },

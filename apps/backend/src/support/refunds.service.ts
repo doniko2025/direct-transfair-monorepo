@@ -73,14 +73,19 @@ export class RefundsService {
     const clientId = this.companyOf(user);
     const tx = await this.prisma.transaction.findFirst({
       where: { id: dto.transactionId, clientId },
-      select: { id: true, reference: true, type: true, status: true, total: true, currency: true },
+      select: { id: true, reference: true, type: true, status: true, total: true, currency: true, amount: true, fees: true, payoutMethod: true, recipientId: true, paidAt: true, createdAt: true },
     });
     if (!tx) throw new NotFoundException('Opération introuvable.');
     if (!REFUNDABLE.includes(tx.type)) throw new ConflictException('Ce type d\'opération ne se rembourse pas depuis la plateforme.');
-    if (!REFUNDABLE_STATUSES.includes(tx.status)) {
-      throw new ConflictException(
-        tx.status === 'PAID' ? 'Le bénéficiaire a déjà retiré l\'argent : ce remboursement se traite hors plateforme.' : `Cette opération est déjà « ${tx.status} » : rien à rembourser.`,
-      );
+    // Montant à rendre : le total payé pour une opération en cours ; pour un envoi wallet déjà PAYÉ, le rappel
+    // (réglage de la société) reprend la somme au bénéficiaire et rend montant (+ frais selon le réglage).
+    let refundAmount = Number(tx.total);
+    if (tx.status === 'PAID') {
+      const recall = await this.transactions.assessRecallFor(clientId, tx as any);
+      if (!recall.ok) throw new ConflictException(recall.reason);
+      refundAmount = recall.refundAmount;
+    } else if (!REFUNDABLE_STATUSES.includes(tx.status)) {
+      throw new ConflictException(`Cette opération est déjà « ${tx.status} » : rien à rembourser.`);
     }
     if (await this.prisma.refundRequest.count({ where: { transactionId: tx.id, status: 'PENDING' } })) {
       throw new ConflictException('Une demande de remboursement est déjà en attente pour cette opération.');
@@ -95,20 +100,20 @@ export class RefundsService {
         clientId,
         transactionId: tx.id,
         ticketId: dto.ticketId ?? null,
-        amount: tx.total,
+        amount: refundAmount,
         currency: tx.currency,
         reason: dto.reason.trim(),
         requestedById: user.id,
       },
     });
-    await this.audit(user, clientId, 'REFUND_REQUEST', created.id, { transactionId: tx.id, reference: tx.reference, amount: Number(tx.total), currency: tx.currency });
+    await this.audit(user, clientId, 'REFUND_REQUEST', created.id, { transactionId: tx.id, reference: tx.reference, amount: refundAmount, currency: tx.currency, ...(tx.status === 'PAID' ? { recall: true } : {}) });
     await this.notifier.notifyDeciders(
       clientId,
       {
         kind: 'STAFF_REFUND_PENDING',
         type: 'WARNING',
         title: 'Remboursement à valider',
-        body: `${tx.reference} — ${Number(tx.total)} ${tx.currency}`,
+        body: `${tx.reference} — ${refundAmount} ${tx.currency}${tx.status === 'PAID' ? ' (rappel d\'un envoi déjà crédité)' : ''}`,
         actionUrl: '/support/refunds',
         actionLabel: 'Remboursements',
       },
@@ -178,7 +183,7 @@ export class RefundsService {
     });
     if (claimed.count !== 1) throw new ConflictException('Cette demande vient d\'être traitée par quelqu\'un d\'autre.');
 
-    const tx = await this.prisma.transaction.findUnique({ where: { id: req.transactionId }, select: { reference: true, sender: { select: { id: true, email: true, firstName: true } } } });
+    const tx = await this.prisma.transaction.findUnique({ where: { id: req.transactionId }, select: { reference: true, status: true, sender: { select: { id: true, email: true, firstName: true } } } });
     let finalStatus: 'APPROVED' | 'REJECTED' | 'FAILED' = dto.approve ? 'APPROVED' : 'REJECTED';
     let failure: string | null = null;
 
@@ -219,7 +224,7 @@ export class RefundsService {
         kind: 'REFUND_APPROVED',
         type: 'SUCCESS',
         title: 'Remboursement effectué',
-        body: `${Number(req.amount)} ${req.currency} ont été recrédités sur votre portefeuille (envoi ${ref} annulé).`,
+        body: `${Number(req.amount)} ${req.currency} ont été recrédités sur votre portefeuille (envoi ${ref} ${tx.status === 'PAID' ? 'rappelé' : 'annulé'}).`,
         actionUrl: '/wallet',
         actionLabel: 'Portefeuille',
       });

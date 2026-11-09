@@ -139,7 +139,7 @@ export class MerchantPaymentsService {
    * Vue renvoyée à l'application. Le numéro et l'identité du payeur ne sont montrés qu'au côté « marchand » : le propriétaire et le caissier
    * qui a créé la demande. `extra.canRefund` : le demandeur peut rembourser CE paiement (droit + paiement encore remboursable).
    */
-  private view(r: RequestWithParties, viewerId: string, now = new Date(), extra: { canRefund?: boolean } = {}) {
+  private view(r: RequestWithParties, viewerId: string, now = new Date(), extra: { canRefund?: boolean; returnsFee?: boolean } = {}) {
     const isPayee = r.payeeId === viewerId || r.createdById === viewerId;
     const pending = r.status === 'PENDING';
     const shop = r.payee.merchantProfile;
@@ -168,6 +168,8 @@ export class MerchantPaymentsService {
       refundedAt: r.refundedAt ? r.refundedAt.toISOString() : null,
       refundReason: r.refundReason ?? null,
       canRefund: !!extra.canRefund && isRefundable(r, now),
+      /** Un remboursement rend-il aussi la commission d'encaissement au marchand ? (réglage de la société, affiché avant de confirmer) */
+      refundReturnsFee: isPayee ? !!extra.returnsFee : undefined,
       /** Code imprimé en QR sur le reçu : permet de contrôler le document auprès du serveur (lot 14). */
       verifyCode: r.status === 'PAID' && r.paidAt ? receiptCode({ id: r.id, reference: r.reference, amount: r.amount, currency: String(r.currency), paidAt: r.paidAt }) : undefined,
     };
@@ -345,7 +347,8 @@ export class MerchantPaymentsService {
     if (r.status === 'PENDING' && isExpired(r.expiresAt, new Date())) await this.expireOne(r);
     const fresh = (await this.load({ id })) ?? r;
     const mayRefund = fresh.status === 'PAID' && !fresh.refundedAt && (fresh.payeeId === user.id || fresh.createdById === user.id) ? await this.canRefundFor(fresh, user.id) : false;
-    return this.view(fresh, user.id, new Date(), { canRefund: mayRefund });
+    const returnsFee = (await this.merchants.refundSettingsFor(fresh.clientId)).returnMerchantCommission;
+    return this.view(fresh, user.id, new Date(), { canRefund: mayRefund, returnsFee });
   }
 
   /** Commerce dont le QR PERMANENT porte ce jeton (dans la société du demandeur), ou null. */
@@ -450,7 +453,8 @@ export class MerchantPaymentsService {
       this.prisma.paymentRequest.count({ where }),
     ]);
     const mayRefund = a.isOwner || !!a.staff?.canRefund;
-    return { data: (rows as RequestWithParties[]).map((r) => this.view(r, user.id, now, { canRefund: mayRefund })), meta: { total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) } };
+    const returnsFee = (await this.merchants.refundSettingsFor(user.clientId as number)).returnMerchantCommission;
+    return { data: (rows as RequestWithParties[]).map((r) => this.view(r, user.id, now, { canRefund: mayRefund, returnsFee })), meta: { total, page, limit, pages: Math.max(1, Math.ceil(total / limit)) } };
   }
 
   // ── Paiement (client ou marchand-payeur) ───────────────
@@ -744,7 +748,10 @@ export class MerchantPaymentsService {
   /**
    * Rembourse TOTALEMENT un paiement reçu. Propriétaire, ou caissier auquel le droit a été accordé (avec SON code secret).
    * Une seule transaction SQL : prise du remboursement (une seule fois), opération MERCHANT_REFUND, débit du portefeuille du commerce,
-   * crédit du portefeuille du client. Solde du commerce insuffisant : rien n'est écrit. La commission de service n'est pas restituée.
+   * crédit du portefeuille du client. Solde du commerce insuffisant : rien n'est écrit.
+   * COMMISSION : par défaut elle n'est pas restituée (elle a rémunéré un service rendu). Si la société a activé « rendre la commission »
+   * (Réglages › Remboursements), elle est reprise sur le portefeuille de la société et rendue au marchand dans la MÊME transaction SQL.
+   * Portefeuille de la société insuffisant ou gelé : le remboursement du client aboutit quand même et la commission reste acquise (tracé).
    */
   async refund(user: AuthUserPayload, id: string, dto: RefundPaymentDto) {
     const r = await this.load({ id, clientId: user.clientId });
@@ -774,6 +781,16 @@ export class MerchantPaymentsService {
       this.wallets.getOrCreateWallet({ userId: r.payerId, currency }),
     ]);
 
+    // Commission rendue au marchand ? Décidée AVANT la transaction SQL : le remboursement du client ne dépend jamais du portefeuille de la société.
+    const fee = Number(r.fee);
+    let commissionBackFrom: string | null = null;
+    if (fee > 0 && (await this.merchants.refundSettingsFor(r.clientId)).returnMerchantCommission) {
+      const company = await this.wallets.getOrCreateWallet({ clientId: r.clientId, currency });
+      const cw = await this.prisma.wallet.findUnique({ where: { id: company.id }, select: { balance: true, reservedBalance: true, isFrozen: true } });
+      if (cw && !cw.isFrozen && Number(cw.balance) - Number(cw.reservedBalance) >= fee) commissionBackFrom = company.id;
+      else this.logger.warn(`Commission ${fee} ${currency} non rendue pour ${r.reference} : portefeuille de la société insuffisant ou gelé.`);
+    }
+
     let refundTxId: string;
     const reference = generateRefundReference(now);
     try {
@@ -793,7 +810,8 @@ export class MerchantPaymentsService {
             total: r.amount,
             currency,
             receivedAmount: r.amount,
-            platformCommission: 0,
+            // Négatif quand la commission est rendue : le total des commissions de la société reste exact.
+            platformCommission: commissionBackFrom ? -fee : 0,
             status: 'PAID',
             payoutMethod: 'WALLET',
             paymentMethod: 'WALLET',
@@ -804,6 +822,11 @@ export class MerchantPaymentsService {
             paidAt: now,
           },
         });
+        // La commission est rendue AVANT le débit du commerce : il n'a besoin d'avoir en solde que le net qu'il avait reçu.
+        if (commissionBackFrom) {
+          await this.wallets.debitInTx(tx, commissionBackFrom, fee, `Commission rendue au marchand ${r.reference}`, created.id);
+          await this.wallets.creditInTx(tx, merchantWallet.id, fee, `Commission rendue ${r.reference}`, created.id, { allowFrozen: true });
+        }
         await this.wallets.debitInTx(tx, merchantWallet.id, amount, `Remboursement ${r.reference}`, created.id);
         // allowFrozen : un portefeuille client gelé entre-temps ne doit pas empêcher de lui rendre son argent.
         await this.wallets.creditInTx(tx, payerWallet.id, amount, `Remboursement ${this.businessOf(r)} ${r.reference}`, created.id, { allowFrozen: true });
@@ -818,7 +841,7 @@ export class MerchantPaymentsService {
       throw err;
     }
 
-    await this.audit(user.id, r.clientId, 'MERCHANT_REFUND', r.id, { amount, currency, reference, refundTransactionId: refundTxId, byStaff, reason });
+    await this.audit(user.id, r.clientId, 'MERCHANT_REFUND', r.id, { amount, currency, reference, refundTransactionId: refundTxId, byStaff, reason, commissionReturned: commissionBackFrom ? fee : 0 });
     const money = formatMoney(amount, currency);
     await Promise.all([
       this.notifier.notifyUser(payerAccount, {

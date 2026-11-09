@@ -10,7 +10,7 @@ import { ConfirmDialog, SelectField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
 import { describeError } from '../../lib/errors';
-import { rangeLabel, ruleCriteria, ruleFee, ruleTitle, sortRules } from '../../lib/feeScheduleRules';
+import { METHOD_NAME, rangeLabel, ruleCriteria, ruleFee, ruleTitle, sortRules } from '../../lib/feeScheduleRules';
 import { useKeyedResource, useResource } from '../../lib/useResource';
 import { useCurrentUser } from '../../providers/AuthProvider';
 import { useDialogAction } from '../treasury/useDialogAction';
@@ -221,6 +221,15 @@ export default function FeeSchedulePage() {
         </Card>
       ) : (
         <div className="tr-stack">
+          {data?.fallback && data.fallback.uncoveredMethods.length > 0 ? (
+            <Notice tone="info" title={`⚠ Taux de repli de ${data.fallback.feeRatePct} % appliqué`}>
+              {data.fallback.noActiveRules ? 'Aucune règle active : ' : ''}
+              {data.fallback.uncoveredMethods.map((m) => METHOD_NAME[m] ?? m).join(', ')}{' '}
+              {data.fallback.uncoveredMethods.length > 1 ? 'n’ont' : 'n’a'} aucun tarif configuré et {data.fallback.uncoveredMethods.length > 1 ? 'sont facturés' : 'est facturé'} au
+              taux de repli de {data.fallback.feeRatePct} %, que vous n’avez peut-être pas choisi.{' '}
+              {editable ? 'Ajoutez une règle, ou réglez ce taux dans Réglages › Paramètres de la société › Frais.' : null}
+            </Notice>
+          ) : null}
           <FeeSimulator clientId={clientId} version={version} />
 
           <section aria-labelledby="rules-title" className="tr-section">

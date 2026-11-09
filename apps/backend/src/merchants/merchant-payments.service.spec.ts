@@ -31,7 +31,7 @@ const profiles: J = {
   mer2: { id: 'mp:mer2', businessName: 'Pharmacie Bah', city: 'Conakry', category: 'Santé', status: 'ACTIVE' },
 };
 
-function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Promise<void>; seed?: J[]; staff?: J[] } = {}) {
+function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Promise<void>; seed?: J[]; staff?: J[]; returnCommission?: boolean } = {}) {
   const db = {
     requests: [...(over.seed ?? [])] as J[],
     balances: { 'w:cli': 50_000, 'w:cli2': 50_000, 'wm:mer': 0, 'wm:mer2': 0, 'w:mer2': 0, 'w:company': 0, ...(over.balances ?? {}) } as Record<string, number>,
@@ -72,6 +72,8 @@ function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Prom
     },
     transaction: { create: jest.fn(async ({ data }: J) => { const t = { id: `t${db.transactions.length + 1}`, ...data }; db.transactions.push(t); return t; }) },
     auditLog: { create: jest.fn(async () => ({})) },
+    // Lecture du solde du portefeuille de la société (contrôle avant de lui reprendre la commission).
+    wallet: { findUnique: jest.fn(async ({ where }: J) => ({ balance: db.balances[where.id] ?? 0, reservedBalance: 0, isFrozen: false })) },
     merchantProfile: {
       // Commerce dont le QR de caisse permanent porte ce jeton (même société).
       findFirst: jest.fn(async ({ where }: J) => {
@@ -107,6 +109,7 @@ function setup(over: { balances?: J; pin?: () => Promise<void>; kyc?: () => Prom
       return { profile: profiles[id], settings };
     }),
     settingsFor: jest.fn(async () => settings),
+    refundSettingsFor: jest.fn(async () => ({ returnMerchantCommission: !!over.returnCommission, returnFeesOnRecall: true, recallWindowDays: 30 })),
     // Pour qui j'agis : mon commerce, ou celui où je suis caissier actif.
     resolveActing: jest.fn(async (user: J, merchantId?: string) => {
       if (!merchantId || profiles[user.id]?.id === merchantId) {
@@ -529,6 +532,42 @@ describe('remboursement', () => {
     expect(db.requests[0]).toMatchObject({ refundedById: 'mer', refundReason: 'Article rendu', refundTransactionId: 't1' });
     expect(notifier.notifyUser).toHaveBeenCalledWith(expect.objectContaining({ id: 'cli' }), expect.objectContaining({ kind: 'PAYMENT_REFUNDED', email: true }));
     expect(alerts.onBalanceChanged).toHaveBeenCalledWith('mp:mer', 'XOF');
+  });
+
+  describe('commission rendue (réglage de la société)', () => {
+    it('réglage ouvert : le client récupère tout, le commerce ne perd que le NET, la société rend la commission', async () => {
+      const { service, db, wallets } = setup({ seed: [paid()], balances: { 'wm:mer': 9_900, 'w:company': 500 }, returnCommission: true });
+      const before = total(db.balances);
+      const out: any = await service.refund(asUser('mer'), 'rp', { pin: '486213' });
+      expect(out).toMatchObject({ refunded: true });
+      // commerce : 9 900 + 100 (commission rendue) − 10 000 = 0 ; société : 500 − 100 ; client : +10 000.
+      expect(db.balances).toMatchObject({ 'wm:mer': 0, 'w:company': 400, 'w:cli': 60_000 });
+      expect(total(db.balances)).toBe(before);
+      expect(db.transactions[0]).toMatchObject({ type: 'MERCHANT_REFUND', platformCommission: -100 });
+      expect(wallets.debitInTx).toHaveBeenCalledWith(expect.anything(), 'w:company', 100, expect.stringContaining('Commission rendue'), 't1');
+    });
+
+    it('réglage fermé (défaut) : la commission reste acquise, le commerce rend le montant intégral', async () => {
+      const { service, db } = setup({ seed: [paid()], balances: { 'wm:mer': 10_000, 'w:company': 500 } });
+      await service.refund(asUser('mer'), 'rp', { pin: '486213' });
+      expect(db.balances).toMatchObject({ 'wm:mer': 0, 'w:company': 500 });
+      expect(db.transactions[0].platformCommission).toBe(0);
+    });
+
+    it("portefeuille de la société insuffisant : le client est remboursé quand même, la commission reste acquise", async () => {
+      const { service, db } = setup({ seed: [paid()], balances: { 'wm:mer': 10_000, 'w:company': 50 }, returnCommission: true });
+      await expect(service.refund(asUser('mer'), 'rp', { pin: '486213' })).resolves.toMatchObject({ refunded: true });
+      expect(db.balances).toMatchObject({ 'wm:mer': 0, 'w:company': 50, 'w:cli': 60_000 });
+      expect(db.transactions[0].platformCommission).toBe(0);
+    });
+
+    it("la vue indique au marchand si la commission lui sera rendue (affiché avant de confirmer)", async () => {
+      const on = setup({ seed: [paid()], returnCommission: true });
+      expect(await on.service.getOne(asUser('mer'), 'rp')).toMatchObject({ refundReturnsFee: true });
+      const off = setup({ seed: [paid()] });
+      expect(await off.service.getOne(asUser('mer'), 'rp')).toMatchObject({ refundReturnsFee: false });
+      expect(await off.service.getOne(asUser('cli'), 'rp')).toMatchObject({ refundReturnsFee: undefined });
+    });
   });
 
   it('une seule fois : le deuxième remboursement (ou deux simultanés) ne rend rien de plus', async () => {

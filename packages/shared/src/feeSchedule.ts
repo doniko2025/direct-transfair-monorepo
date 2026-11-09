@@ -52,10 +52,19 @@ export interface FeeRuleInput {
   isActive: boolean;
 }
 
+/** Modes de retrait sans aucun tarif configuré : ils sont facturés au taux de repli de la société, sans que personne l'ait choisi. */
+export interface FeeFallbackNotice {
+  /** Taux de repli appliqué (en %). */
+  feeRatePct: number;
+  noActiveRules: boolean;
+  uncoveredMethods: string[];
+}
+
 export interface FeeRules {
   company: { id: number; name: string; code: string };
   editable: boolean;
   rules: FeeRule[];
+  fallback?: FeeFallbackNotice;
 }
 
 export interface FeeRuleChange {
