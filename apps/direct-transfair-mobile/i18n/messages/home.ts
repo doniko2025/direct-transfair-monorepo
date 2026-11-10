@@ -19,6 +19,7 @@ export const home = {
   'home.evening':   { fr: 'Bonsoir,', en: 'Good evening,', pt: 'Boa noite,' },
   'home.defaultName': { fr: 'Client', en: 'Customer', pt: 'Cliente' },
   'home.scanPay':   { fr: 'Payer avec un QR code', en: 'Pay with a QR code', pt: 'Pagar com um código QR' },
+  'home.myProfile': { fr: 'Mon profil', en: 'My profile', pt: 'O meu perfil' },
   'home.notifications': { fr: 'Notifications', en: 'Notifications', pt: 'Notificações' },
   'home.notifUnread': { fr: '{label} : {count} non lue|{label} : {count} non lues', en: '{label}: {count} unread|{label}: {count} unread', pt: '{label}: {count} não lida|{label}: {count} não lidas' },
   'home.balance':   { fr: 'Solde disponible', en: 'Available balance', pt: 'Saldo disponível' },

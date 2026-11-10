@@ -76,7 +76,7 @@ export default function ClientDashboard() {
         onToggle={toggleHidden}
       />
 
-      <View style={{ gap: 12, marginTop: 40 }}>
+      <View style={{ gap: 12, marginTop: 60 }}>
         <Button label={t("home.send")} onPress={() => router.push("/(tabs)/send")} testID="home-send" />
         <Button label={t("home.topup")} kind="outline" onPress={() => router.push("/(tabs)/recharge")} testID="home-topup" />
       </View>

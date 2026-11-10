@@ -11,7 +11,10 @@ import { Pressable, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "../ui/Icon";
 import { Text } from "../ui/Text";
-import { Bone, UText, useUI } from "../ui";
+import { Avatar, Bone, UText, useUI } from "../ui";
+import { useRouter } from "expo-router";
+import { useAuth } from "../../providers/AuthProvider";
+import { useProfilePhoto } from "../../hooks/useProfilePhoto";
 import { countriesList } from "../../data/countries";
 import { formatMoney } from "../wallet/walletTheme";
 import { useUnreadNotifications } from "../../hooks/useUnreadNotifications";
@@ -88,6 +91,27 @@ function RoundButton({ icon, label, onPress, badge }: { icon: string; label: str
   );
 }
 
+/** Photo de profil de la personne (initiales à défaut) ; touche → onglet Profil. Même photo en espace client et marchand. */
+function ProfileHero({ size = 46 }: { size?: number }) {
+  const { C } = useUI();
+  const t = useT();
+  const router = useRouter();
+  const { user } = useAuth();
+  const photo = useProfilePhoto();
+  const full = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim();
+  return (
+    <Pressable
+      onPress={() => router.push("/(tabs)/profile" as any)}
+      accessibilityRole="button"
+      accessibilityLabel={t("home.myProfile")}
+      hitSlop={6}
+      style={({ pressed }) => ({ width: size + 4, height: size + 4, borderRadius: (size + 4) / 2, borderWidth: 2, borderColor: C.line, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.75 : 1 })}
+    >
+      <Avatar name={full || user?.firstName || "?"} size={size} uri={photo} />
+    </Pressable>
+  );
+}
+
 export function HomeTopBar({
   greeting, name, onScan, onBell, unread, scanIcon = "scan-outline", scanLabel,
 }: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean | number; scanIcon?: string; scanLabel?: string }) {
@@ -97,6 +121,7 @@ export function HomeTopBar({
   const unreadCount = useUnreadNotifications();
   return (
     <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 12, gap: 10 }}>
+      <ProfileHero />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text numberOfLines={1} style={{ fontSize: 18, color: C.muted, fontWeight: "400" }}>
           {greeting ? `${greeting} ` : ""}<Text style={{ color: C.ink, fontWeight: "700" }}>{name}</Text>

@@ -298,14 +298,26 @@ export function Sheet({
   const t = useT();
   const insets = useSafeAreaInsets();
   const kbOpen = useKeyboardOpen();
+  // Web (navigateur, aperçu mobile compris) : fenêtre CENTRÉE à l'écran, coins arrondis partout, largeur limitée.
+  // Téléphone (iOS / Android) : feuille qui monte du bas, comme avant.
+  const centered = Platform.OS === 'web';
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
-      <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
+    <Modal visible={visible} transparent animationType={centered ? 'fade' : 'slide'} onRequestClose={onClose} statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={centered ? { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 16 } : { flex: 1, justifyContent: 'flex-end' }}
+        behavior="padding"
+      >
         <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]} onPress={onClose} accessibilityLabel={t('common.close')} />
-        <View style={{ backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, maxHeight: '88%', paddingBottom: kbOpen ? 12 : Math.max(insets.bottom, 12) + 8, width: '100%', maxWidth: 640, alignSelf: 'center' }}>
-          <View style={{ alignItems: 'center', paddingTop: 10 }}>
-            <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.lineStrong }} />
-          </View>
+        <View
+          style={centered
+            ? { backgroundColor: C.bg, borderRadius: R.xl, maxHeight: '88%', paddingBottom: 12, width: '100%', maxWidth: 480, alignSelf: 'center', overflow: 'hidden' }
+            : { backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, maxHeight: '88%', paddingBottom: kbOpen ? 12 : Math.max(insets.bottom, 12) + 8, width: '100%', maxWidth: 640, alignSelf: 'center' }}
+        >
+          {centered ? <View style={{ height: 8 }} /> : (
+            <View style={{ alignItems: 'center', paddingTop: 10 }}>
+              <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.lineStrong }} />
+            </View>
+          )}
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 }}>
             <UText v="title" style={{ flex: 1 }} numberOfLines={1}>{title ?? ''}</UText>
             <IconButton icon="close" onPress={onClose} label={t('common.close')} size={40} />

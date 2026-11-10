@@ -60,8 +60,10 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
   const close = () => { setQuery(''); onClose(); };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={close} transparent={false}>
-      <View style={[s.root, { paddingTop: Math.max(insets.top, 16) }]}>
+    <Modal visible={visible} animationType={WEB ? 'fade' : 'slide'} onRequestClose={close} transparent={WEB}>
+      {WEB ? <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.5)' }]} /> : null}
+      <View style={WEB ? { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 16 } : { flex: 1 }} pointerEvents="box-none">
+      <View style={[s.root, WEB ? { flex: 0, height: '88%', width: '100%', maxWidth: 480, borderRadius: 24, overflow: 'hidden', paddingTop: 16 } : { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={s.head}>
           <Text style={s.title}>{title}</Text>
           <TouchableOpacity onPress={close} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel={t('common.close')}>
@@ -114,9 +116,12 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
           }
         />
       </View>
+      </View>
     </Modal>
   );
 }
+
+const WEB = Platform.OS === 'web';
 
 const s = themed(() => StyleSheet.create({
   root:  { flex: 1, backgroundColor: N.surface },
