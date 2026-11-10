@@ -13,8 +13,13 @@ import { Text } from '../ui/Text';
 import { FONT, N } from './authTheme';
 import { pinStrength, type PinContext } from './pinRules';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
+import { getScheme } from '../ui/themeMode';
 
-const COLORS = [N.border, N.danger, '#D97706', '#2E8B57'];
+// themed() : recalculé au changement de thème clair / sombre.
+const COLORS = themed(() => (getScheme() === 'dark'
+  ? [N.border, N.danger, '#F2B24C', '#46D483']
+  : [N.border, N.danger, '#D97706', '#2E8B57']));
 
 export default function PinGuide({ pin, context }: { pin: string; context?: PinContext }) {
   const t = useT();   // abonne le composant au changement de langue (pinStrength lit la langue courante)
@@ -42,7 +47,7 @@ export default function PinGuide({ pin, context }: { pin: string; context?: PinC
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:     { marginTop: -4, marginBottom: 16, gap: 8 },
   meterRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   meter:    { flex: 1, flexDirection: 'row', gap: 5 },
@@ -51,4 +56,4 @@ const s = StyleSheet.create({
   rule:     { flexDirection: 'row', alignItems: 'center', gap: 7 },
   txt:      { fontFamily: FONT.body, fontSize: 12.5, flex: 1 },
   hint:     { fontFamily: FONT.body, fontSize: 12.5, color: N.muted },
-});
+}));

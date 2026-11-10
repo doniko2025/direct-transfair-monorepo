@@ -16,6 +16,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 import AuthShell from "../../components/auth/AuthShell";
+import { useTheme } from "../../providers/ThemeProvider";
 import AuthButton from "../../components/auth/AuthButton";
 import { Field, OtpInput } from "../../components/ui";
 import { FONT, N } from "../../components/auth/authTheme";
@@ -27,6 +28,7 @@ const RESEND_DELAY_SECONDS = 60;
 
 // ─── Écran principal ─────────────────────────────────────
 export default function OtpPhoneScreen() {
+  useTheme();   // se redessine au changement de thème (couleurs N)
   const { loginWithPhoneOtp, isLoading } = useAuth();
   const router                           = useRouter();
   const t                                = useT();

@@ -14,16 +14,21 @@ import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '../ui/Icon';
 
 import { FONT, N, RADIUS } from './authTheme';
+import { getScheme } from '../ui/themeMode';
 
 import { Text } from '../ui/Text';
+import { themed } from '../wallet/brand';
 type Kind = 'error' | 'info' | 'success' | 'warning';
 
-const LOOK: Record<Kind, { bg: string; bd: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> = {
+// themed() : recalculé au changement de thème clair / sombre.
+const LOOK = themed((): Record<Kind, { bg: string; bd: string; fg: string; icon: keyof typeof Ionicons.glyphMap }> => ({
   error:   { bg: N.dangerBg, bd: N.dangerBd, fg: N.danger, icon: 'alert-circle' },
-  info:    { bg: '#E8F0FE',  bd: '#C3D6FA',  fg: '#1D5FD1', icon: 'information-circle' },
+  info:    getScheme() === 'dark'
+    ? { bg: '#14233F', bd: '#2A4A80', fg: '#6AA2FF', icon: 'information-circle' }
+    : { bg: '#E8F0FE', bd: '#C3D6FA', fg: '#1D5FD1', icon: 'information-circle' },
   success: { bg: N.okBg,     bd: N.okBd,     fg: N.ok,     icon: 'checkmark-circle' },
   warning: { bg: N.warnBg,   bd: N.warnBd,   fg: N.warn,   icon: 'time' },
-};
+}));
 
 type Props = {
   kind?: Kind;
@@ -55,10 +60,10 @@ export default function AuthNotice({ kind = 'error', title, message, actionLabel
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   box:   { flexDirection: 'row', gap: 10, padding: 13, borderRadius: RADIUS.md, borderWidth: 1, marginBottom: 16 },
   title: { fontFamily: FONT.medium, fontSize: 14, fontWeight: '800', marginBottom: 2 },
   msg:   { fontFamily: FONT.body, fontSize: 13.5, lineHeight: 19 },
   action:    { marginTop: 8, alignSelf: 'flex-start' },
   actionTxt: { fontFamily: FONT.medium, fontSize: 13.5, fontWeight: '800', textDecorationLine: 'underline' },
-});
+}));

@@ -11,6 +11,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import { FONT, N, RADIUS, useWalletTheme } from './walletTheme';
 import { useT } from "../../providers/I18nProvider";
+import { themed } from './brand';
 
 export function EmptyState({
   icon = 'file-tray-outline', title, message, actionLabel, onAction,
@@ -65,7 +66,7 @@ export function SlowHint({ visible }: { visible: boolean }) {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   box: { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 24, gap: 8 },
   iconWrap: { width: 72, height: 72, borderRadius: 36, borderWidth: 1, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
   title: { fontFamily: FONT.display, fontSize: 18, fontWeight: '700', color: N.ink, textAlign: 'center' },
@@ -80,4 +81,4 @@ const s = StyleSheet.create({
     borderRadius: RADIUS.md, paddingHorizontal: 14, paddingVertical: 10,
   },
   hintTxt: { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '600', flexShrink: 1 },
-});
+}));

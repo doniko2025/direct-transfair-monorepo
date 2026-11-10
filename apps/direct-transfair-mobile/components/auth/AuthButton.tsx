@@ -20,6 +20,7 @@ import { FONT, N } from './authTheme';
 import { useUI } from '../ui/theme';
 
 import { Text } from '../ui/Text';
+import { themed } from '../wallet/brand';
 type Props = {
   label: string;
   onPress: () => void;
@@ -76,7 +77,7 @@ export default function AuthButton({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   base: { minHeight: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 22 },
   link: { minHeight: 44, paddingHorizontal: 8 },
   baseDense:  { minHeight: 50, borderRadius: 25 },
@@ -85,4 +86,4 @@ const s = StyleSheet.create({
   row:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
   label:     { fontFamily: FONT.medium, fontSize: 17, fontWeight: '800', letterSpacing: -0.1 },
   labelLink: { fontSize: 14.5, fontWeight: '700', textDecorationLine: 'underline', color: N.inkSub },
-});
+}));

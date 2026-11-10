@@ -40,7 +40,9 @@
 // =========================================================
 
 import { LanguagePill } from '../i18n/LanguageSwitcher';
+import { ThemePill } from '../theme/ThemeSwitcher';
 import { useT } from '../../providers/I18nProvider';
+import { useTheme } from '../../providers/ThemeProvider';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
@@ -58,6 +60,7 @@ import { SERIF } from '../ui/fonts';
 import { buildColors } from '../ui/theme';
 
 import { Text } from '../ui/Text';
+import { themed } from '../wallet/brand';
 type Props = {
   title: string;
   subtitle?: string;
@@ -102,7 +105,8 @@ function useBrowserWidth(): number {
 
 export function useAuthPalette(): AuthPalette {
   const { branding } = useTenant();
-  return React.useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
+  const { scheme } = useTheme();   // se redessine au changement de thème
+  return React.useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor, scheme), [branding.primaryColor, branding.secondaryColor, scheme]);
 }
 
 export default function AuthShell({
@@ -113,7 +117,8 @@ export default function AuthShell({
   // Logo de la société : si l'image ne charge pas, on retombe sur la marque (tuile + nom) tant que l'adresse ne change pas.
   const [logoFailed, setLogoFailed] = useState<string | null>(null);
   const logo = branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) && branding.logoUrl !== logoFailed ? branding.logoUrl : null;
-  const C = React.useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
+  const { isDark, scheme } = useTheme();   // thème clair / sombre : l'écran se redessine au changement
+  const C = React.useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor, scheme), [branding.primaryColor, branding.secondaryColor, scheme]);
   const insets = useSafeAreaInsets();
   const winW = useBrowserWidth();
   const wide = Platform.OS === 'web' && winW >= 900;
@@ -147,8 +152,8 @@ export default function AuthShell({
   // ── Variante « carte flottante sur dégradé » (téléphone) ──
   if (heroOn) {
     const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 8;
-    const dark = darken(C.forest, 0.72);
-    const mid = darken(C.forest, 0.45);
+    const dark = darken('#111111', 0.72);   // en-tête toujours très sombre (texte blanc dessus), quel que soit le thème
+    const mid = darken('#111111', 0.45);
     const tile = compact ? 64 : 80;
     const ringSize = tile + 16;                       // tuile + 2 × 7 de marge + 2 × 1 de liseré
     const ringRadius = Math.round(tile * 0.34) + 8;
@@ -177,6 +182,7 @@ export default function AuthShell({
               ) : <View style={s.backSpacer} />}
               <View style={{ flex: 1 }} />
               {headerRight}
+              {showLang ? <ThemePill style={{ marginLeft: 8 }} /> : null}
               {showLang ? <LanguagePill style={{ marginLeft: 8 }} /> : null}
             </View>
 
@@ -202,7 +208,7 @@ export default function AuthShell({
                   />
                 ) : null}
                 <View style={[s.ring, { borderRadius: ringRadius }]}>
-                  <TenantMark size={tile} radius={Math.round(tile * 0.29)} background="#FFFFFF" iconColor={C.dark} logoScale={0.78} animated />
+                  <TenantMark size={tile} radius={Math.round(tile * 0.29)} background="#FFFFFF" iconColor="#111111" logoScale={0.78} animated />
                 </View>
               </View>
               <View style={s.nameBlock}>
@@ -242,12 +248,13 @@ export default function AuthShell({
   if (seaOn) {
     const tile = 60;
     const ringSize = tile + 24;
-    const ink = darken(C.forest, 0.72);
+    const markBg = darken('#111111', 0.72);       // tuile de la marque : sombre dans les deux thèmes
+    const ink = isDark ? C.ink : markBg;          // texte posé sur la carte
     return (
-      <KeyboardAvoidingView style={[s.root, { backgroundColor: '#D3ECF4' }]} behavior="padding">
-        <StatusBar barStyle="dark-content" backgroundColor="#EEF9FB" />
+      <KeyboardAvoidingView style={[s.root, { backgroundColor: isDark ? '#0A2231' : '#D3ECF4' }]} behavior="padding">
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={isDark ? '#071722' : '#EEF9FB'} />
         <SeaBackdrop />
-        {showLang !== false ? <View style={[s.seaLang, { top: topPad - 4 }]} pointerEvents="box-none"><LanguagePill /></View> : null}
+        {showLang !== false ? <View style={[s.seaLang, { top: topPad - 4 }]} pointerEvents="box-none"><ThemePill /><LanguagePill /></View> : null}
 
         <ScrollView
           style={{ flex: 1 }}
@@ -257,7 +264,7 @@ export default function AuthShell({
           automaticallyAdjustKeyboardInsets
         >
           {onBack ? (
-            <Pressable onPress={onBack} style={s.seaBack} accessibilityRole="button" accessibilityLabel={t('common.back')} hitSlop={8}>
+            <Pressable onPress={onBack} style={[s.seaBack, isDark && { backgroundColor: 'rgba(22,25,30,0.8)' }]} accessibilityRole="button" accessibilityLabel={t('common.back')} hitSlop={8}>
               <Ionicons name="chevron-back" size={22} color={ink} />
             </Pressable>
           ) : null}
@@ -272,9 +279,9 @@ export default function AuthShell({
               ] },
             ]}
           >
-            <View style={[s.seaHalo, { width: ringSize + 22, height: ringSize + 22, borderRadius: (ringSize + 22) / 2 }]}>
-              <View style={[s.seaRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}>
-                <TenantMark size={tile} radius={Math.round(tile * 0.3)} background={ink} iconColor="#FFFFFF" logoScale={0.78} animated />
+            <View style={[s.seaHalo, { width: ringSize + 22, height: ringSize + 22, borderRadius: (ringSize + 22) / 2 }, isDark && { backgroundColor: 'rgba(160,210,235,0.10)' }]}>
+              <View style={[s.seaRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }, isDark && { backgroundColor: 'rgba(160,210,235,0.22)' }]}>
+                <TenantMark size={tile} radius={Math.round(tile * 0.3)} background={markBg} iconColor="#FFFFFF" logoScale={0.78} animated />
               </View>
             </View>
           </Animated.View>
@@ -307,7 +314,7 @@ export default function AuthShell({
 
   return (
     <KeyboardAvoidingView style={[s.root, { backgroundColor: C.bg }]} behavior="padding">
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={C.bg} />
 
       <ScrollView
         style={{ flex: 1 }}
@@ -342,7 +349,8 @@ export default function AuthShell({
             )}
             <View style={{ flex: 1 }} />
             {headerRight}
-            {showLang ? <LanguagePill style={{ marginLeft: 8 }} /> : null}
+            {showLang ? <ThemePill style={{ marginLeft: 8 }} /> : null}
+              {showLang ? <LanguagePill style={{ marginLeft: 8 }} /> : null}
           </View>
           )}
 
@@ -385,7 +393,7 @@ export default function AuthShell({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root:   { flex: 1 },
   scroll: { flexGrow: 1 },
   column: { flexGrow: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center', paddingHorizontal: 22, paddingBottom: 28 },
@@ -438,7 +446,7 @@ const s = StyleSheet.create({
   seaCard:   { width: '76%', minWidth: 286, maxWidth: 360, borderRadius: 28, paddingHorizontal: 16, paddingTop: 22, paddingBottom: 12,
                shadowColor: '#14466A', shadowOpacity: 0.26, shadowRadius: 26, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
   seaPill:   { alignItems: 'center', marginBottom: 8 },
-  seaLang:   { position: 'absolute', right: 16, zIndex: 6 },
+  seaLang:   { position: 'absolute', right: 16, zIndex: 6, flexDirection: 'row', alignItems: 'center', gap: 8 },
   seaBrand:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   seaBrandName: { fontFamily: FONT.display, fontSize: 14, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
   seaTitle:  { fontFamily: SERIF, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center', marginTop: 6 },
@@ -446,4 +454,4 @@ const s = StyleSheet.create({
 
   trust:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 26 },
   trustTxt: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted },
-});
+}));

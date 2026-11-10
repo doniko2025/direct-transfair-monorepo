@@ -145,7 +145,7 @@ export function BalanceBlock({
         <View style={{ alignItems: "center", gap: 10 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <CurrencyFlag currency={currency} countryName={countryName} size={26} />
-            <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "700", color: "#444444" }}>{currency}</Text>
+            <Text allowFontScaling={false} style={{ fontSize: 20, fontWeight: "700", color: C.text }}>{currency}</Text>
           </View>
           <Pressable
             onPress={onToggle}
@@ -157,8 +157,8 @@ export function BalanceBlock({
               backgroundColor: C.beige, opacity: pressed ? 0.7 : 1,
             })}
           >
-            <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={18} color="#444444" />
-            <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "600", color: "#444444" }}>{hidden ? t("home.show") : t("home.hide")}</Text>
+            <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={18} color={C.text} />
+            <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "600", color: C.text }}>{hidden ? t("home.show") : t("home.hide")}</Text>
           </Pressable>
         </View>
       </View>

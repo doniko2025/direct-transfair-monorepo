@@ -177,7 +177,7 @@ export default function PayoutsScreen() {
                     style={[st.dest, { borderRadius: R.md, borderColor: on ? C.accent : C.line, backgroundColor: on ? C.accentSoft : C.surface }]}
                   >
                     <View style={[st.destIcon, { backgroundColor: on ? C.accent : C.beige }]}>
-                      <Ionicons name={(m === "ORANGE_MONEY" ? "phone-portrait-outline" : "business-outline") as any} size={20} color={on ? "#FFFFFF" : C.ink} />
+                      <Ionicons name={(m === "ORANGE_MONEY" ? "phone-portrait-outline" : "business-outline") as any} size={20} color={on ? C.accentInk : C.ink} />
                     </View>
                     <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                       <UText v="bodyStrong" numberOfLines={1}>{PAYOUT_METHOD_LABEL[m] ?? m}</UText>

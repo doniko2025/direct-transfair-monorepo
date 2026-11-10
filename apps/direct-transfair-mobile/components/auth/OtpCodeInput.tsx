@@ -18,6 +18,7 @@ import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../ui/Text';
+import { themed } from '../wallet/brand';
 type Props = {
   value: string;
   onChange: (code: string) => void;
@@ -96,7 +97,7 @@ export default function OtpCodeInput({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:   { width: '100%' },
   row:    { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   box: {
@@ -107,4 +108,4 @@ const s = StyleSheet.create({
   digit:  { fontFamily: FONT.display, fontSize: 26, fontWeight: '800', color: N.ink },
   // Le vrai champ couvre toute la zone, invisible mais touchable / collable.
   hidden: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01, color: 'transparent' },
-});
+}));

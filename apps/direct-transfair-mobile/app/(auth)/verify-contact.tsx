@@ -88,6 +88,7 @@ import { FONT, N } from '../../components/auth/authTheme';
 
 import { Text } from '../../components/ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../../components/wallet/brand';
 // ─── Constantes ──────────────────────────────────────────
 const OTP_LENGTH          = 6;
 const RESEND_COOLDOWN_SEC = 60;
@@ -386,7 +387,7 @@ export default function VerifyContactScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   counter:    { fontFamily: FONT.medium, fontSize: 12.5, fontWeight: '700', color: N.muted },
   sending:    { alignItems: 'center', paddingVertical: 28, gap: 12 },
   sendingTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
@@ -396,4 +397,4 @@ const s = StyleSheet.create({
   doneWrap:   { alignItems: 'center', paddingVertical: 18 },
   doneRing:   { width: 100, height: 100, borderRadius: 50, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   doneTxt:    { fontFamily: FONT.body, fontSize: 15, color: N.inkSub, marginTop: 18 },
-});
+}));

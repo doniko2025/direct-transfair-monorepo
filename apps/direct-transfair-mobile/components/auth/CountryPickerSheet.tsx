@@ -21,6 +21,7 @@ import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
 import { Text, TextInput } from '../ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
 type Props = {
   visible: boolean;
   title: string;
@@ -117,7 +118,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   root:  { flex: 1, backgroundColor: N.surface },
   head:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12 },
   title: { fontFamily: FONT.display, fontSize: 22, fontWeight: '800', color: N.ink },
@@ -133,4 +134,4 @@ const s = StyleSheet.create({
   name:  { flex: 1, fontFamily: FONT.body, fontSize: 16, fontWeight: '600', color: N.ink },
   dial:  { fontFamily: FONT.body, fontSize: 14, color: N.muted, fontWeight: '600' },
   empty: { fontFamily: FONT.body, textAlign: 'center', color: N.muted, marginTop: 40, paddingHorizontal: 30 },
-});
+}));

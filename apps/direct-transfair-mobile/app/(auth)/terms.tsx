@@ -40,29 +40,35 @@ import { getLang, getLocale } from "../../i18n/runtime";
 import { rich } from "../../utils/richText";
 
 import { Text } from '../../components/ui/Text';
-const T = {
-  bg:         "#FFFFFF",
-  surface:    "#FFFFFF",
-  accent:     "#111111",
-  accentSoft: "#DDEBE2",
-  accentText: "#111111",
-  text:       "#111111",
-  textSub:    "#2F463A",
-  textDim:    "#6B6B6B",
-  border:     "#E0E0E0",
-  green:      "#1B8A4B",
-  greenSoft:  "#E8F5ED",
-  red:        "#DC2626",
-  redSoft:    "#FEF2F2",
-  amber:      "#D97706",
-  amberSoft:  "#FEF3C7",
+import { getScheme } from '../../components/ui/themeMode';
+import { N } from '../../components/auth/authTheme';
+import { useTheme } from '../../providers/ThemeProvider';
+import { themed } from '../../components/wallet/brand';
+// themed() : palette recalculée au changement de thème clair / sombre.
+const dk = (light: string, dark: string) => (getScheme() === "dark" ? dark : light);
+const T = themed(() => ({
+  bg:         dk("#FFFFFF", "#0D0F12"),
+  surface:    dk("#FFFFFF", "#16191E"),
+  accent:     dk("#111111", "#F4F5F7"),
+  accentSoft: dk("#DDEBE2", "#1F2A24"),
+  accentText: dk("#111111", "#F4F5F7"),
+  text:       dk("#111111", "#F4F5F7"),
+  textSub:    dk("#2F463A", "#C9D1CC"),
+  textDim:    dk("#6B6B6B", "#9CA3AF"),
+  border:     dk("#E0E0E0", "#2B3038"),
+  green:      dk("#1B8A4B", "#46D483"),
+  greenSoft:  dk("#E8F5ED", "#12301F"),
+  red:        dk("#DC2626", "#FF7A7A"),
+  redSoft:    dk("#FEF2F2", "#3B1D1F"),
+  amber:      dk("#D97706", "#F2B24C"),
+  amberSoft:  dk("#FEF3C7", "#3A2D12"),
   radius: { sm: 10, md: 14, lg: 18, xl: 24 },
   font: {
     display: Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     sans:    Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ─── Helpers de date ✅ v1.1 (nouveau) ─────────────────────
 function formatTermsDateLong(iso: string | null): string {
@@ -99,20 +105,20 @@ function Section({ icon, title, color, bgColor, children }: {
     </View>
   );
 }
-const sS = StyleSheet.create({
+const sS = themed(() => StyleSheet.create({
   wrap:   { marginBottom: 16, backgroundColor: T.surface, borderRadius: T.radius.lg, borderWidth: 1, borderColor: T.border, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
   header: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14, borderLeftWidth: 4 },
   iconBox:{ width: 28, height: 28, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   title:  { fontSize: 13, fontWeight: "800", flex: 1 },
   body:   { paddingHorizontal: 16, paddingBottom: 14, paddingTop: 4 },
-});
+}));
 
 function Para({ children }: { children: React.ReactNode }) {
   return <Text style={[pS.t, { fontFamily: T.font.sans }]}>{children}</Text>;
 }
-const pS = StyleSheet.create({
+const pS = themed(() => StyleSheet.create({
   t: { fontSize: 13, color: T.textSub, lineHeight: 21, marginBottom: 10 },
-});
+}));
 
 function Bullet({ children }: { children: React.ReactNode }) {
   return (
@@ -122,11 +128,11 @@ function Bullet({ children }: { children: React.ReactNode }) {
     </View>
   );
 }
-const bS = StyleSheet.create({
+const bS = themed(() => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 6 },
   dot: { width: 5, height: 5, borderRadius: 99, marginTop: 8, flexShrink: 0, backgroundColor: T.accent },
   t:   { flex: 1, fontSize: 13, color: T.textSub, lineHeight: 20 },
-});
+}));
 
 // ─── Info Box ─────────────────────────────────────────────
 function InfoBox({ icon, color, bgColor, children }: {
@@ -139,14 +145,15 @@ function InfoBox({ icon, color, bgColor, children }: {
     </View>
   );
 }
-const ibS = StyleSheet.create({
+const ibS = themed(() => StyleSheet.create({
   box: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: T.radius.sm, padding: 12, borderWidth: 1, marginBottom: 10 },
   t:   { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
-});
+}));
 
 // ─── Main ─────────────────────────────────────────────────
 export default function TermsScreen() {
   const t = useT();
+  const { isDark } = useTheme();   // se redessine au changement de thème
   const router = useRouter();
   const { branding } = useTenant(); // ✅ v1.1 (nouveau)
 
@@ -163,7 +170,7 @@ export default function TermsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={T.bg} />
 
         {/* Header */}
         <View style={s.header}>
@@ -228,7 +235,7 @@ export default function TermsScreen() {
           </Section>
 
           {/* 3. Conditions d'accès */}
-          <Section icon="person-outline" title={t("tm.s3")} color="#7C3AED" bgColor="#F5F3FF">
+          <Section icon="person-outline" title={t("tm.s3")} color={dk("#7C3AED", "#A78BFA")} bgColor={dk("#F5F3FF", "#241B3D")}>
             <Para>{t("tm.s3intro", { app: branding.name })}</Para>
             <Bullet>{t("tm.s3b1")}</Bullet>
             <Bullet>{t("tm.s3b2")}</Bullet>
@@ -255,7 +262,7 @@ export default function TermsScreen() {
           </Section>
 
           {/* 5. Annulation & remboursement */}
-          <Section icon="arrow-undo-outline" title={t("tm.s5")} color="#0284C7" bgColor="#E0F2FE">
+          <Section icon="arrow-undo-outline" title={t("tm.s5")} color={dk("#0284C7", "#5CC2F2")} bgColor={dk("#E0F2FE", "#10283A")}>
             <Para>{rich(t("tm.s5p1"))}</Para>
             <Bullet>{t("tm.s5b1")}</Bullet>
             <Bullet>{t("tm.s5b2")}</Bullet>
@@ -366,7 +373,7 @@ export default function TermsScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", gap: 12,
     paddingHorizontal: 20,
@@ -375,7 +382,7 @@ const s = StyleSheet.create({
     backgroundColor: T.surface,
     borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  closeBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
+  closeBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: N.field, justifyContent: "center", alignItems: "center" },
   headerTitle: { color: T.text, fontSize: 16, fontWeight: "700" },
   headerSub:   { color: T.textDim, fontSize: 11, marginTop: 1 },
   dsp2Badge:   { backgroundColor: T.accentSoft, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: T.accent + "40" },
@@ -403,4 +410,4 @@ const s = StyleSheet.create({
   legalLink:  { color: T.accent, textDecorationLine: "underline" },
 
   version: { textAlign: "center", color: T.textDim, fontSize: 10, letterSpacing: 0.5 },
-});
+}));

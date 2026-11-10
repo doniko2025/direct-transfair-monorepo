@@ -25,6 +25,8 @@ export default function ProfileLayout() {
       <Stack.Screen name="notifications" />
       <Stack.Screen name="support" />
       <Stack.Screen name="support-ticket" />
+      {/* ✅ Préférences : thème clair / sombre + langue */}
+      <Stack.Screen name="preferences" />
     </Stack>
   );
 }

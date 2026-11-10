@@ -94,6 +94,9 @@ export function brandRgba(value: string): string {
   return m[4] === undefined ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${m[4]})`;
 }
 
+/** Invalide les styles `themed()` (changement de thème clair / sombre — voir ui/themeMode.ts). */
+export function bumpThemeVersion(): void { version++; }
+
 /** Appelé par useWalletTheme() : synchronise la marque courante. */
 export function setBrandPrimary(next?: string | null): void {
   const v = next && /^#[0-9A-Fa-f]{6}$/.test(next) ? next.toLowerCase() : DEFAULT_BRAND;

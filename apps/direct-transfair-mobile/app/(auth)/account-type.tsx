@@ -18,6 +18,7 @@ import { FONT, N } from '../../components/auth/authTheme';
 import { Text } from '../../components/ui/Text';
 import { useT } from '../../providers/I18nProvider';
 import type { MessageKey } from '../../i18n/catalog';
+import { themed } from '../../components/wallet/brand';
 
 type Kind = 'client' | 'merchant';
 
@@ -63,7 +64,7 @@ function ChoiceCard({
           <Text style={s.title}>{t(option.title)}</Text>
           <Text style={s.text}>{t(option.text)}</Text>
         </View>
-        <View style={[s.radio, { borderColor: selected ? accent : '#B8C7C2', backgroundColor: selected ? accent : 'transparent' }]}>
+        <View style={[s.radio, { borderColor: selected ? accent : N.border, backgroundColor: selected ? accent : 'transparent' }]}>
           {selected ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
         </View>
       </Pressable>
@@ -108,7 +109,7 @@ export default function AccountTypeScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   step: { fontFamily: FONT.medium, fontSize: 12, fontWeight: '700', color: N.muted, marginBottom: 14 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18, borderRadius: 22, borderWidth: 2 },
   iconWrap: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center' },
@@ -117,4 +118,4 @@ const s = StyleSheet.create({
   radio: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   loginRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' },
   loginTxt: { fontFamily: FONT.body, fontSize: 14, color: N.inkSub },
-});
+}));

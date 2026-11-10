@@ -21,6 +21,7 @@ import { tr } from '../../i18n/runtime';
 import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../ui/Text';
+import { themed } from '../wallet/brand';
 /** Garde les chiffres et retire les « 0 » de tête (préfixe national). */
 export function normalizeNationalNumber(raw: string): string {
   return raw.replace(/\D/g, '').replace(/^0+/, '');
@@ -112,7 +113,7 @@ export default function PhoneField({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 16 },
   label: { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.inkSub, marginBottom: 7 },
   box: {
@@ -128,4 +129,4 @@ const s = StyleSheet.create({
   input: { flex: 1, fontFamily: FONT.body, fontSize: 16, fontWeight: '600', color: N.ink, paddingVertical: 12 },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, lineHeight: 17, flexShrink: 1 },
-});
+}));

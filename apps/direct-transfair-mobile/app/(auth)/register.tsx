@@ -117,6 +117,7 @@ import { RccmDocumentPicker, type RccmPick } from '../../components/merchant/Rcc
 import { Text, TextInput } from '../../components/ui/Text';
 import { useT } from '../../providers/I18nProvider';
 import type { MessageKey } from '../../i18n/catalog';
+import { themed } from '../../components/wallet/brand';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type StepKey = 'identity' | 'residence' | 'contact' | 'shop' | 'pin';
@@ -450,7 +451,7 @@ export default function RegisterScreen() {
       {/* ── Progression ── */}
       <View style={s.progress} accessibilityLabel={t('reg.progress', { n: step + 1, total: steps.length })}>
         {steps.map((_, i) => (
-          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : '#E8E8E8' }]} />
+          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : N.border }]} />
         ))}
       </View>
       <Text style={s.progTxt}>{t('reg.progress', { n: step + 1, total: steps.length })}</Text>
@@ -718,14 +719,14 @@ export default function RegisterScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   progress: { flexDirection: 'row', gap: 6, marginBottom: 8 },
   progSeg:  { flex: 1, height: 5, borderRadius: 99 },
   progTxt:  { fontFamily: FONT.medium, fontSize: 12, fontWeight: '700', color: N.muted, marginBottom: 18 },
 
   termsRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 4 },
   check: {
-    width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: '#B8C7C2',
+    width: 24, height: 24, borderRadius: 7, borderWidth: 1.5, borderColor: N.border,
     alignItems: 'center', justifyContent: 'center', marginTop: 1, backgroundColor: N.surface,
   },
   termsTxt:  { flex: 1, fontFamily: FONT.body, fontSize: 13.5, lineHeight: 20, color: N.inkSub },
@@ -745,4 +746,4 @@ const s = StyleSheet.create({
   successIcon: { alignItems: 'center', marginVertical: 14 },
   successRing: { width: 96, height: 96, borderRadius: 48, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   successText: { fontFamily: FONT.body, fontSize: 15, lineHeight: 23, color: N.inkSub, textAlign: 'center' },
-});
+}));

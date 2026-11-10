@@ -8,7 +8,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Animated, DimensionValue, StyleSheet, View, ViewStyle } from 'react-native';
-import { RADIUS } from './walletTheme';
+import { RADIUS, N } from './walletTheme';
 
 export function Skeleton({
   width = '100%', height = 14, radius = 8, style,
@@ -26,7 +26,7 @@ export function Skeleton({
   }, [v]);
   return (
     <Animated.View
-      style={[{ width, height, borderRadius: radius, backgroundColor: '#E3EAE7', opacity: v }, style]}
+      style={[{ width, height, borderRadius: radius, backgroundColor: N.border, opacity: v }, style]}
     />
   );
 }

@@ -43,6 +43,7 @@ import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
 import { Text, TextInput } from '../../components/ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../../components/wallet/brand';
 type Step = 'IDENTIFIER' | 'CHANNEL' | 'RESET';
 type Channel = 'EMAIL' | 'PHONE';
 type NoticeState = { kind: 'error' | 'info' | 'success' | 'warning'; title?: string; message: string } | null;
@@ -253,7 +254,7 @@ export default function ForgotPasswordScreen() {
                 accessibilityRole="radio"
                 accessibilityState={{ selected: on }}
               >
-                <View style={[s.choiceIcon, { backgroundColor: on ? P.action : '#E7EEEC' }]}>
+                <View style={[s.choiceIcon, { backgroundColor: on ? P.action : N.field }]}>
                   <Ionicons name={o.icon} size={20} color={on ? '#fff' : N.inkSub} />
                 </View>
                 <View style={{ flex: 1 }}>
@@ -327,7 +328,7 @@ export default function ForgotPasswordScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   centerRow: { alignItems: 'center', marginTop: 14 },
   label:     { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.inkSub, marginBottom: 10 },
   resendRow: { alignItems: 'center', marginTop: 6, marginBottom: 20 },
@@ -340,4 +341,4 @@ const s = StyleSheet.create({
   choiceIcon:  { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   choiceTitle: { fontFamily: FONT.medium, fontSize: 15.5, fontWeight: '800', color: N.ink },
   choiceSub:   { fontFamily: FONT.body, fontSize: 13, color: N.inkSub, marginTop: 1 },
-});
+}));

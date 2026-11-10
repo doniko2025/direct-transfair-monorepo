@@ -118,7 +118,7 @@ export function Screen({
 
   const content = (
     <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: top }}>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle={C.isDark ? 'light-content' : 'dark-content'} backgroundColor={C.bg} />
       {header}
       {body}
       {footer ? (

@@ -32,31 +32,37 @@ import { getFallbackSupportEmail, getFallbackSupportPhone } from "../../services
 import { useT } from "../../providers/I18nProvider";
 
 import { Text } from '../../components/ui/Text';
-const T = {
-  bg:         "#FFFFFF",
-  surface:    "#FFFFFF",
-  accent:     "#111111",
-  accentSoft: "#DDEBE2",
-  accentText: "#111111",
-  text:       "#111111",
-  textSub:    "#2F463A",
-  textDim:    "#6B6B6B",
-  border:     "#E0E0E0",
-  borderAmber:"#E0E0E0",
-  green:      "#1B8A4B",
-  greenSoft:  "#E8F5ED",
-  blue:       "#1D4ED8",
-  blueSoft:   "#DBEAFE",
-  purple:     "#7C3AED",
-  purpleSoft: "#F5F3FF",
-  red:        "#DC2626",
+import { getScheme } from '../../components/ui/themeMode';
+import { N } from '../../components/auth/authTheme';
+import { useTheme } from '../../providers/ThemeProvider';
+import { themed } from '../../components/wallet/brand';
+// themed() : palette recalculée au changement de thème clair / sombre.
+const dk = (light: string, dark: string) => (getScheme() === "dark" ? dark : light);
+const T = themed(() => ({
+  bg:         dk("#FFFFFF", "#0D0F12"),
+  surface:    dk("#FFFFFF", "#16191E"),
+  accent:     dk("#111111", "#F4F5F7"),
+  accentSoft: dk("#DDEBE2", "#1F2A24"),
+  accentText: dk("#111111", "#F4F5F7"),
+  text:       dk("#111111", "#F4F5F7"),
+  textSub:    dk("#2F463A", "#C9D1CC"),
+  textDim:    dk("#6B6B6B", "#9CA3AF"),
+  border:     dk("#E0E0E0", "#2B3038"),
+  borderAmber:dk("#E0E0E0", "#2B3038"),
+  green:      dk("#1B8A4B", "#46D483"),
+  greenSoft:  dk("#E8F5ED", "#12301F"),
+  blue:       dk("#1D4ED8", "#6AA2FF"),
+  blueSoft:   dk("#DBEAFE", "#14233F"),
+  purple:     dk("#7C3AED", "#A78BFA"),
+  purpleSoft: dk("#F5F3FF", "#241B3D"),
+  red:        dk("#DC2626", "#FF7A7A"),
   radius: { sm: 10, md: 14, lg: 18 },
   font: {
     display: Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     sans:    Platform.select({ ios: "System", android: "sans-serif", default: "system-ui, sans-serif" }),
     mono:    Platform.select({ ios: "Courier New", android: "monospace",         default: "monospace"  }),
   },
-};
+}));
 
 // ✅ v1.1 (nouveau) — filet de sécurité uniquement, jamais utilisé pour
 // DONIKO (DEFAULT_BRANDING fournit déjà de vraies valeurs).
@@ -94,13 +100,13 @@ function FaqItem({ q, a }: { q: string; a: string }) {
     </TouchableOpacity>
   );
 }
-const faqS = StyleSheet.create({
+const faqS = themed(() => StyleSheet.create({
   wrap:     { backgroundColor: T.surface, borderRadius: T.radius.md, borderWidth: 1, borderColor: T.border, padding: 16, marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  wrapOpen: { borderColor: T.borderAmber, backgroundColor: "#FFFFFF" },
+  wrapOpen: { borderColor: T.borderAmber, backgroundColor: N.surface },
   row:      { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   q:        { flex: 1, fontSize: 13, fontWeight: "700", color: T.text, lineHeight: 20 },
   a:        { marginTop: 12, fontSize: 13, color: T.textSub, lineHeight: 21, fontWeight: "500" },
-});
+}));
 
 // ─── Contact Card ─────────────────────────────────────────
 function ContactCard({ icon, title, subtitle, action, actionLabel, color, bgColor }: {
@@ -127,14 +133,14 @@ function ContactCard({ icon, title, subtitle, action, actionLabel, color, bgColo
     </View>
   );
 }
-const ccS = StyleSheet.create({
+const ccS = themed(() => StyleSheet.create({
   card:   { flexDirection: "row", alignItems: "center", gap: 14, backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 16, borderWidth: 1, marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.04, shadowRadius: 4, elevation: 1 },
   iconBox:{ width: 44, height: 44, borderRadius: 13, justifyContent: "center", alignItems: "center" },
   title:  { fontSize: 14, fontWeight: "700", color: T.text, marginBottom: 2 },
   sub:    { fontSize: 11, color: T.textDim, lineHeight: 16 },
   btn:    { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, borderWidth: 1 },
   btnTxt: { fontSize: 11, fontWeight: "800" },
-});
+}));
 
 // ─── Cookie Toggle ────────────────────────────────────────
 function CookieToggle({ title, desc, value, onChange, required = false, color }: {
@@ -159,20 +165,20 @@ function CookieToggle({ title, desc, value, onChange, required = false, color }:
         value={value}
         onValueChange={required ? undefined : onChange}
         disabled={required}
-        trackColor={{ false: "#E2E8F0", true: color }}
+        trackColor={{ false: N.border, true: color }}
         thumbColor={T.surface}
         style={{ marginLeft: 8 }}
       />
     </View>
   );
 }
-const ctS = StyleSheet.create({
-  wrap:     { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: "#F3F4F6" },
+const ctS = themed(() => StyleSheet.create({
+  wrap:     { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: N.border },
   title:    { fontSize: 13, fontWeight: "700", color: T.text },
   desc:     { fontSize: 11, color: T.textDim, lineHeight: 17 },
-  reqBadge: { backgroundColor: "#F3F4F6", borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  reqBadge: { backgroundColor: N.field, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
   reqTxt:   { fontSize: 9, fontWeight: "800", color: T.textDim, letterSpacing: 0.5 },
-});
+}));
 
 // ─── Section Header ───────────────────────────────────────
 function SectionLabel({ label }: { label: string }) {
@@ -183,14 +189,15 @@ function SectionLabel({ label }: { label: string }) {
     </View>
   );
 }
-const slS = StyleSheet.create({
+const slS = themed(() => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 10, marginTop: 4 },
   dot: { width: 5, height: 5, borderRadius: 99, backgroundColor: T.accent },
   t:   { fontSize: 10, fontWeight: "900", color: T.textDim, letterSpacing: 1.5, textTransform: "uppercase" },
-});
+}));
 
 // ─── Main ─────────────────────────────────────────────────
 export default function AssistanceScreen() {
+  const { isDark } = useTheme();   // se redessine au changement de thème
   const t = useT();
   const router = useRouter();
   const { branding } = useTenant(); // ✅ v1.1 (nouveau)
@@ -212,7 +219,7 @@ export default function AssistanceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: T.bg }}>
       <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+        <StatusBar barStyle={isDark ? "light-content" : "dark-content"} backgroundColor={T.bg} />
 
         {/* Header */}
         <View style={s.header}>
@@ -349,7 +356,7 @@ export default function AssistanceScreen() {
                 action={() => Linking.openURL(`https://wa.me/${whatsappRaw}`)}
                 actionLabel={t("as.open")}
                 color="#25D366"
-                bgColor="#F0FDF4"
+                bgColor={dk("#F0FDF4", "#12301F")}
               />}
               <ContactCard
                 icon="chatbubbles-outline"
@@ -484,7 +491,7 @@ export default function AssistanceScreen() {
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   header: {
     flexDirection: "row", alignItems: "center", justifyContent: "space-between",
     paddingHorizontal: 20,
@@ -493,7 +500,7 @@ const s = StyleSheet.create({
     backgroundColor: T.surface,
     borderBottomWidth: 1, borderBottomColor: T.border,
   },
-  closeBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: "#F1F5F9", justifyContent: "center", alignItems: "center" },
+  closeBtn:    { width: 36, height: 36, borderRadius: 10, backgroundColor: N.field, justifyContent: "center", alignItems: "center" },
   headerTitle: { fontSize: 17, fontWeight: "700", color: T.text },
 
   tabBar: {
@@ -555,4 +562,4 @@ const s = StyleSheet.create({
   saveTxt: { color: T.surface, fontWeight: "800", fontSize: 14 },
 
   cookieFooter: { fontSize: 11, color: T.textDim, textAlign: "center", lineHeight: 17, marginBottom: 8 },
-});
+}));

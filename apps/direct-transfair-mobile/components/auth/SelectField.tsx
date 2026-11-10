@@ -16,6 +16,7 @@ import { FONT, N, RADIUS } from './authTheme';
 
 import { Text } from '../ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
 type Props = {
   label: string;
   value?: string;
@@ -60,7 +61,7 @@ export default function SelectField({ label, value, prefix, placeholder, icon, e
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 16 },
   label: { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.inkSub, marginBottom: 7 },
   box: {
@@ -71,4 +72,4 @@ const s = StyleSheet.create({
   value:  { flex: 1, fontFamily: FONT.body, fontSize: 16, fontWeight: '600', color: N.ink },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, lineHeight: 17, flexShrink: 1 },
-});
+}));

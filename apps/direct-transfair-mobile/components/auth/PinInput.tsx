@@ -14,6 +14,7 @@ import { Text, TextInput } from '../ui/Text';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 import { PIN_LENGTH, sanitizePin } from './pinRules';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
 
 type Props = {
   value: string;
@@ -137,7 +138,7 @@ export default function PinInput({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:     { width: '100%', marginBottom: 14 },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   label:    { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.muted },
@@ -152,4 +153,4 @@ const s = StyleSheet.create({
   hidden:   { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01, color: 'transparent' },
   errRow:   { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   err:      { fontFamily: FONT.body, fontSize: 12.5, color: N.danger, flex: 1 },
-});
+}));

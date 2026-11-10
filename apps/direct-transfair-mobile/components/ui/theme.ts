@@ -27,6 +27,8 @@ import { useMemo } from 'react';
 import { Platform, type TextStyle, type ViewStyle } from 'react-native';
 import { useTenant } from '../../providers/TenantProvider';
 import { setBrandPrimary } from '../wallet/brand';
+import { useTheme } from '../../providers/ThemeProvider';
+import type { Scheme } from './themeMode';
 import { SANS, SERIF } from './fonts';
 
 /** Couleurs par défaut de la plateforme (celles qu'une société reçoit tant qu'elle n'a rien choisi). */
@@ -84,7 +86,58 @@ export function effectiveAccent(primary?: string | null, secondary?: string | nu
   return isHex(secondary) && secondary.toUpperCase() !== DEFAULT_SECONDARY ? secondary.toUpperCase() : effectivePrimary(primary);
 }
 
-export function buildColors(primary?: string | null, secondary?: string | null) {
+export function buildColors(primary?: string | null, secondary?: string | null, scheme: Scheme = 'light') {
+  if (scheme === 'dark') return buildDarkColors(primary, secondary);
+  return buildLightColors(primary, secondary);
+}
+
+/** Thème sombre : mêmes clés que le thème clair (aucun écran n'a besoin de le savoir). Les teintes de marque se mélangent à la surface sombre. */
+function buildDarkColors(primary?: string | null, secondary?: string | null) {
+  const brand = effectivePrimary(primary);
+  const accent = effectiveAccent(primary, secondary);
+  const BG = '#0D0F12';
+  const SURFACE = '#16191E';
+  const ink = '#F4F5F7';
+  // Texte / icônes d'accent posés sur fond sombre : on éclaircit la couleur jusqu'à un contraste lisible (≥ 4,8 : 1) avec la surface.
+  const ratio = (a: string, b: string) => { const x = luminance(a), y = luminance(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+  let accentText = accent;
+  for (const k of [0.2, 0.38, 0.55, 0.7, 0.85]) { if (ratio(accentText, SURFACE) >= 4.8) break; accentText = mix(accent, '#FFFFFF', k); }
+  return {
+    brume: BG, forest: ink, leaf: accent, sun: brand,
+    sunInk: inkOn(brand),
+    sunSoft: mix(brand, SURFACE, 0.86),
+    sunLine: mix(brand, SURFACE, 0.6),
+    bg: BG,
+    surface: SURFACE,
+    field: '#1F232A',
+    sunken: '#12151A',
+    beige: '#1A1D23',
+    ink,
+    text: '#E4E6EA',
+    muted: '#9CA3AF',
+    faint: '#8A93A1',
+    line: '#262B33',
+    lineStrong: '#343A45',
+    accent,
+    accentInk: inkOn(accent),
+    accentSoft: mix(accent, SURFACE, 0.88),
+    accentLine: mix(accent, SURFACE, 0.62),
+    accentDeep: accentText,
+    // sélection (chips actives, boutons « sombres ») = clair en thème sombre : texte foncé posé dessus
+    dark: ink,
+    darkInk: '#111111',
+    pos: '#46D483', posBg: '#12301F', posLine: '#1F5A38',
+    danger: '#FF7A7A', dangerBg: '#3B1D1F', dangerLine: '#6B2F33',
+    warn: '#F2B24C', warnBg: '#3A2D12', warnLine: '#6B5320',
+    info: '#6AA2FF', infoBg: '#14233F', infoLine: '#2A4A80',
+    violet: '#A78BFA', violetBg: '#241B3D',
+    white: '#FFFFFF',
+    scrim: 'rgba(0,0,0,0.65)',
+    isDark: true as boolean,
+  };
+}
+
+function buildLightColors(primary?: string | null, secondary?: string | null) {
   const brand = effectivePrimary(primary);
   const accent = effectiveAccent(primary, secondary);
   // Texte / icônes d'accent posés sur blanc : on fonce la couleur si elle est trop claire pour rester lisible.
@@ -121,17 +174,18 @@ export function buildColors(primary?: string | null, secondary?: string | null) 
     dark: ink,
     darkInk: '#FFFFFF',
     // sémantique
-    pos: POS, posBg: '#E8F5ED',
+    pos: POS, posBg: '#E8F5ED', posLine: '#BFE5CD',
     danger: '#C62828', dangerBg: '#FDECEA', dangerLine: '#F5C6C2',
     warn: '#A86400', warnBg: '#FFF4DB', warnLine: '#F1D79A',
     info: '#1D5FD1', infoBg: '#E8F0FE', infoLine: '#C3D6FA',
     violet: '#6941C6', violetBg: '#F4EDFF',
     white: '#FFFFFF',
     scrim: 'rgba(17,17,17,0.5)',
+    isDark: false as boolean,
   };
 }
 
-export type UIColors = ReturnType<typeof buildColors>;
+export type UIColors = ReturnType<typeof buildLightColors>;
 
 /** Rayons : champs 14 (md), cartes 20 (lg), boutons et pastilles = pilule. */
 export const R = { xs: 8, sm: 12, md: 14, lg: 20, xl: 28, pill: 999 } as const;
@@ -184,9 +238,11 @@ export function useUI() {
   const { branding } = useTenant();
   // garde les anciens écrans (brand()/themed()) synchronisés pendant la migration
   setBrandPrimary(effectivePrimary(branding.primaryColor));
-  const C = useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
+  // useTheme() : le composant se redessine au changement de thème clair / sombre.
+  const { scheme } = useTheme();
+  const C = useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor, scheme), [branding.primaryColor, branding.secondaryColor, scheme]);
   return {
-    C, R, S, T,
+    C, R, S, T, scheme, isDark: scheme === 'dark',
     accent: C.accent,
     accentInk: C.accentInk,
     brandName: branding.name,

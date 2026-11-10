@@ -18,6 +18,7 @@ import { FONT, N } from './authTheme';
 import { useT } from '../../providers/I18nProvider';
 
 import { Text } from '../ui/Text';
+import { themed } from '../wallet/brand';
 export default function ServerStatusPill({ status, onRetry }: { status: ServerStatus; onRetry: () => void }) {
   const t = useT();
   if (status === 'ready') return null;
@@ -39,7 +40,7 @@ export default function ServerStatusPill({ status, onRetry }: { status: ServerSt
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   pill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 11, paddingVertical: 6, borderRadius: 99,
@@ -47,4 +48,4 @@ const s = StyleSheet.create({
   },
   down: { backgroundColor: N.dangerBg, borderColor: N.dangerBd },
   txt:  { fontFamily: FONT.medium, fontSize: 12, fontWeight: '700', color: N.ink },
-});
+}));

@@ -33,8 +33,8 @@ import {
 import { useTenant } from "../../../providers/TenantProvider";
 import Constants from "expo-constants";
 import { Avatar, Button, Card, Group, ListRow, Pill, Screen, SectionHeader, Toggle, UText, useUI } from "../../../components/ui";
-import { LanguageRow } from "../../../components/i18n/LanguageSwitcher";
-import { useT } from "../../../providers/I18nProvider";
+import { useThemeLabel } from "../../../components/theme/ThemeSwitcher";
+import { useI18n, useT } from "../../../providers/I18nProvider";
 import { useKycStatus } from "../../../hooks/useKycStatus";
 import { useAccountSpace } from "../../../hooks/useAccountSpace";
 import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
@@ -48,6 +48,8 @@ import type { MerchantProfileView } from "../../../services/merchantTypes";
 
 export default function ProfileScreen() {
   const t = useT();
+  const { info } = useI18n();
+  const themeLabel = useThemeLabel();   // abonne aussi l'écran au changement de thème
   const router = useRouter();
   const { user, logout } = useAuth();
   const { C } = useUI();
@@ -257,10 +259,10 @@ export default function ProfileScreen() {
         </>
       )}
 
-      {/* ── Langue (FR / EN / PT) ── */}
-      <SectionHeader title={t('lang.title')} />
+      {/* ── Préférences : thème clair / sombre + langue (FR / EN / PT) ── */}
+      <SectionHeader title={t("th.title")} />
       <Group>
-        <LanguageRow last />
+        {menu("palette", t("th.title"), t("th.rowSub", { theme: themeLabel, lang: `${info.flag} ${info.label}` }), "/(tabs)/profile/preferences", true)}
       </Group>
 
       {/* ── Sécurité & appareils ── */}

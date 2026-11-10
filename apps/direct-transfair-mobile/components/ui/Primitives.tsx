@@ -323,7 +323,7 @@ export function Notice({
     info: { bg: C.infoBg, bd: C.infoLine, fg: C.info, ic: 'information-circle' },
     warn: { bg: C.warnBg, bd: C.warnLine, fg: C.warn, ic: 'alert-circle' },
     danger: { bg: C.dangerBg, bd: C.dangerLine, fg: C.danger, ic: 'close-circle' },
-    pos: { bg: C.posBg, bd: '#BFE5CD', fg: C.pos, ic: 'checkmark-circle' },
+    pos: { bg: C.posBg, bd: C.posLine, fg: C.pos, ic: 'checkmark-circle' },
     accent: { bg: C.accentSoft, bd: C.accentLine, fg: C.accentDeep, ic: 'sparkles' },
   }[tone];
   return (

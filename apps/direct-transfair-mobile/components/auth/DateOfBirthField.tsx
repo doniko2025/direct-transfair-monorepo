@@ -22,6 +22,7 @@ import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 import { Text, TextInput } from '../ui/Text';
 import { tr } from '../../i18n/runtime';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
 export type Dob = { day: string; month: string; year: string };
 
 /** Retourne un message d'erreur, ou null si la date est valide et l'âge suffisant. */
@@ -143,7 +144,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 16 },
   label: { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.inkSub, marginBottom: 7 },
   row:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -154,4 +155,4 @@ const s = StyleSheet.create({
   sep:   { fontSize: 20, color: N.muted, fontWeight: '600' },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, color: N.danger, flexShrink: 1 },
-});
+}));

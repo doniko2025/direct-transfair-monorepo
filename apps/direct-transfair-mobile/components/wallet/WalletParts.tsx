@@ -10,6 +10,7 @@ import {
   StyleSheet, Text, TextInput, TouchableOpacity, View, ScrollView, ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { themed } from './brand';
 import {
   FONT, N, RADIUS, avatarTone, describeTx, formatMoney, formatShortDate, initialsOf, useWalletTheme,
 } from './walletTheme';
@@ -68,7 +69,7 @@ export function TransactionRow({ tx, userId, onPress, last }: { tx: any; userId?
       disabled={!onPress}
       activeOpacity={0.7}
     >
-      <View style={[s.txIcon, { backgroundColor: v.incoming ? N.okBg : '#F2F4F7' }]}>
+      <View style={[s.txIcon, { backgroundColor: v.incoming ? N.okBg : N.field }]}>
         <Ionicons name={v.icon as any} size={20} color={v.incoming ? N.ok : N.inkSub} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -130,7 +131,7 @@ export function FilterChips<T extends string>({
             key={o.key}
             onPress={() => onChange(o.key)}
             activeOpacity={0.8}
-            style={[s.chip, active ? { backgroundColor: P.action, borderColor: P.action } : { backgroundColor: '#fff', borderColor: N.border }]}
+            style={[s.chip, active ? { backgroundColor: P.action, borderColor: P.action } : { backgroundColor: N.surface, borderColor: N.border }]}
           >
             <Text style={[s.chipTxt, { color: active ? '#fff' : N.inkSub }]}>
               {o.label}{o.count ? `  ${o.count}` : ''}
@@ -142,9 +143,10 @@ export function FilterChips<T extends string>({
   );
 }
 
-const s = StyleSheet.create({
+// themed() : la feuille de style se recalcule au changement de thème clair / sombre.
+const s = themed(() => StyleSheet.create({
   card: {
-    backgroundColor: '#fff', borderRadius: RADIUS.lg + 2, borderWidth: 1, borderColor: '#E8EEEC',
+    backgroundColor: N.surface, borderRadius: RADIUS.lg + 2, borderWidth: 1, borderColor: N.border,
     shadowColor: '#06231C', shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: { width: 0, height: 6 }, elevation: 3,
   },
   secRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
@@ -156,7 +158,7 @@ const s = StyleSheet.create({
   qaLabel: { fontFamily: FONT.medium, fontSize: 12, fontWeight: '600', color: N.inkSub },
 
   txRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 13 },
-  txDivider: { borderBottomWidth: 1, borderBottomColor: '#EEF2F0' },
+  txDivider: { borderBottomWidth: 1, borderBottomColor: N.border },
   txIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   txName: { fontFamily: FONT.medium, fontSize: 14.5, fontWeight: '700', color: N.ink },
   txMeta: { flexDirection: 'row', marginTop: 3 },
@@ -173,4 +175,4 @@ const s = StyleSheet.create({
 
   chip: { height: 36, paddingHorizontal: 14, borderRadius: 99, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   chipTxt: { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700' },
-});
+}));

@@ -73,7 +73,7 @@ export function KycStatusCard({
     warn: { bg: C.warnBg, line: C.warnLine, fg: C.warn },
     danger: { bg: C.dangerBg, line: C.dangerLine, fg: C.danger },
     info: { bg: C.infoBg, line: C.infoLine, fg: C.info },
-    pos: { bg: C.posBg, line: "#BFE5CD", fg: C.pos },
+    pos: { bg: C.posBg, line: C.posLine, fg: C.pos },
   }[look.tone];
 
   const ring = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] });

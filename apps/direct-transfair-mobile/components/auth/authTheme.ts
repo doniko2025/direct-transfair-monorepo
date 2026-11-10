@@ -18,6 +18,7 @@
 import { Platform } from 'react-native';
 import { buildColors } from '../ui/theme';
 import { SANS } from '../ui/fonts';
+import { getScheme, neutralsOf, type Neutrals, type Scheme } from '../ui/themeMode';
 
 export const DEFAULT_BRAND = '#059669';
 
@@ -64,12 +65,13 @@ export type AuthPalette = {
   tintBorder: string;
 };
 
-export function buildPalette(primary?: string | null, secondary?: string | null): AuthPalette {
+export function buildPalette(primary?: string | null, secondary?: string | null, scheme: Scheme = getScheme()): AuthPalette {
   // Lot 12 : couleur principale (bouton) et d'accent (liens) de l'administrateur, orange par défaut.
-  const C = buildColors(primary, secondary);
+  const C = buildColors(primary, secondary, scheme);
   return {
-    bg1: C.dark,
-    bg2: darken(C.dark, 0.1),
+    // En-têtes dégradés : toujours sombres, quel que soit le thème (le texte posé dessus est blanc).
+    bg1: '#111111',
+    bg2: darken('#111111', 0.1),
     bg3: C.sun,
     action: C.sun,
     accent: C.accentDeep,
@@ -79,26 +81,15 @@ export function buildPalette(primary?: string | null, secondary?: string | null)
 }
 
 // ─── Couleurs neutres et sémantiques ─────────────────────
-export const N = {
-  page:      '#FFFFFF',
-  surface:   '#FFFFFF',
-  field:     '#F2F2F2',
-  ink:       '#111111',
-  inkSub:    '#333333',
-  muted:     '#6B6B6B',
-  faint:     '#9A9A9A',
-  border:    '#E0E0E0',
-  danger:    '#C62828',
-  dangerBg:  '#FDECEA',
-  dangerBd:  '#F5C6C2',
-  warn:      '#A86400',
-  warnBg:    '#FFF4DB',
-  warnBd:    '#F1D79A',
-  ok:        '#1B8A4B',
-  okBg:      '#E8F5ED',
-  okBd:      '#BFE3CD',
-  white:     '#FFFFFF',
-} as const;
+// ✅ Thème clair / sombre : `N` est « vivant » — chaque lecture (N.ink, N.surface…) renvoie la valeur du thème courant
+//    (voir ui/themeMode.ts). Dans une feuille de style créée au chargement du module, envelopper avec `themed(() => StyleSheet.create({…}))`
+//    (wallet/brand.ts) pour qu'elle se recalcule au changement de thème.
+export const N: Neutrals = new Proxy({} as Neutrals, {
+  get: (_t, k) => (neutralsOf() as any)[k],
+  has: (_t, k) => k in neutralsOf(),
+  ownKeys: () => Reflect.ownKeys(neutralsOf()),
+  getOwnPropertyDescriptor: (_t, k) => ({ enumerable: true, configurable: true, value: (neutralsOf() as any)[k] }),
+});
 
 // ─── Typographie ─────────────────────────────────────────
 // Nom logique « Manrope » : le composant Text choisit le fichier de police d'après le poids (voir ui/fonts.ts).
@@ -133,5 +124,9 @@ export const SHADOW = {
  */
 export const WEB_INPUT_RESET: any =
   Platform.OS === 'web'
-    ? { outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: '0 0 0px 1000px #F2F2F2 inset' }
+    ? new Proxy({} as any, {   // thème clair / sombre : la couleur de remplissage suit le thème courant
+        get: (_t, k) => (({ outlineStyle: 'none', outlineWidth: 0, WebkitBoxShadow: `0 0 0px 1000px ${neutralsOf().field} inset` }) as any)[k],
+        ownKeys: () => ['outlineStyle', 'outlineWidth', 'WebkitBoxShadow'],
+        getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+      })
     : {};

@@ -22,6 +22,7 @@ import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
 import { Text, TextInput } from '../ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { themed } from '../wallet/brand';
 type Props = {
   label: string;
   value: string;
@@ -128,7 +129,7 @@ export default function AuthField({
   );
 }
 
-const s = StyleSheet.create({
+const s = themed(() => StyleSheet.create({
   wrap:  { marginBottom: 16 },
   label: { fontFamily: FONT.medium, fontSize: 13, fontWeight: '700', color: N.inkSub, marginBottom: 7, letterSpacing: 0.1 },
   box: {
@@ -144,4 +145,4 @@ const s = StyleSheet.create({
   input: { flex: 1, fontFamily: FONT.body, fontSize: 16, color: N.ink, fontWeight: '600', paddingVertical: 12 },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg:    { fontFamily: FONT.body, fontSize: 12.5, lineHeight: 17, flexShrink: 1 },
-});
+}));

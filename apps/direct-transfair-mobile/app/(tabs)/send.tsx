@@ -1033,7 +1033,7 @@ export default function SendMoneyScreen() {
           {/* Pastille de devise : drapeau + code en gris très foncé (toujours lisible, même quand le montant est calculé) */}
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }} accessible accessibilityLabel={t("send.a11yCur", { cur })}>
             <CurrencyFlag currency={cur} countryName={isSend ? userCountry : targetCountryData.name} size={26} />
-            <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 20, fontWeight: "700", color: "#444444" }}>{cur}</Text>
+            <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 20, fontWeight: "700", color: C.text }}>{cur}</Text>
           </View>
         </View>
       </View>

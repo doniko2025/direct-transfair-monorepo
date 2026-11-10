@@ -27,7 +27,7 @@ export default function BalanceCard({
   const t = useT();
   const soft = alpha('#FFFFFF', 0.7);
   return (
-    <View style={[{ borderRadius: R.lg, backgroundColor: C.forest, overflow: 'hidden', padding: 22 }, S.md]}>
+    <View style={[{ borderRadius: R.lg, backgroundColor: C.isDark ? '#1D2229' : '#111111', borderWidth: C.isDark ? 1 : 0, borderColor: C.line, overflow: 'hidden', padding: 22 }, S.md]}>
       <DotGrid />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <UText v="caption" color={soft}>{label ?? t('home.balance')}</UText>
@@ -61,7 +61,7 @@ export default function BalanceCard({
             style={{ height: 34, paddingLeft: 10, paddingRight: 14, borderRadius: 17, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', gap: 7 }}
           >
             <Ionicons name="swap-horizontal" size={16} color={C.leaf} />
-            <Text style={{ fontSize: 13, fontWeight: '800', color: C.forest }} numberOfLines={1}>{rateLabel}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: '#111111' }} numberOfLines={1}>{rateLabel}</Text>
           </Pressable>
         )}
       </View>

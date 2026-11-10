@@ -14,6 +14,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Ellipse, Path, Polygon } from 'react-native-svg';
 
 import { useReduceMotion } from './AuthBackdrop';
+import { useTheme } from '../../providers/ThemeProvider';
+import { mix } from '../ui/theme';
 
 type FishSpec = { x: number; y: number; w: number; body: string; tail: string; flip?: boolean; stripe?: boolean; amp: number; dur: number };
 
@@ -84,43 +86,45 @@ function Floating({ left, top, amp, dur, delay, still, children }: {
 }
 
 export default function SeaBackdrop() {
+  const { isDark } = useTheme();   // thème sombre : mer de nuit (eau profonde, poissons plus discrets, sable sombre)
   const { width: W, height: H } = useWindowDimensions();
   const still = useReduceMotion();
   const sandH = Math.round(Math.min(150, H * 0.17));
 
   const rays = useMemo(() => (
     <Svg width={W} height={H * 0.7} viewBox={`0 0 ${W} ${H * 0.7}`} style={StyleSheet.absoluteFill}>
-      <Polygon points={`${W * 0.08},0 ${W * 0.22},0 ${W * 0.5},${H * 0.7} ${W * 0.2},${H * 0.7}`} fill="#FFFFFF" opacity={0.2} />
-      <Polygon points={`${W * 0.38},0 ${W * 0.46},0 ${W * 0.8},${H * 0.7} ${W * 0.62},${H * 0.7}`} fill="#FFFFFF" opacity={0.14} />
-      <Polygon points={`${W * 0.7},0 ${W * 0.8},0 ${W * 1.05},${H * 0.7} ${W * 0.9},${H * 0.7}`} fill="#FFFFFF" opacity={0.16} />
+      <Polygon points={`${W * 0.08},0 ${W * 0.22},0 ${W * 0.5},${H * 0.7} ${W * 0.2},${H * 0.7}`} fill="#FFFFFF" opacity={isDark ? 0.05 : 0.2} />
+      <Polygon points={`${W * 0.38},0 ${W * 0.46},0 ${W * 0.8},${H * 0.7} ${W * 0.62},${H * 0.7}`} fill="#FFFFFF" opacity={isDark ? 0.035 : 0.14} />
+      <Polygon points={`${W * 0.7},0 ${W * 0.8},0 ${W * 1.05},${H * 0.7} ${W * 0.9},${H * 0.7}`} fill="#FFFFFF" opacity={isDark ? 0.04 : 0.16} />
     </Svg>
-  ), [W, H]);
+  ), [W, H, isDark]);
+  const deep = (c: string) => (isDark ? mix(c, '#0B1F2C', 0.55) : c);
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
       {/* Eau claire et transparente : du bleu à peine teinté en haut, un peu plus d'eau vers le bas. */}
-      <LinearGradient colors={['#EEF9FB', '#D3ECF4', '#B2DBEA']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={isDark ? ['#071722', '#0A2231', '#0D2E40'] : ['#EEF9FB', '#D3ECF4', '#B2DBEA']} start={{ x: 0.2, y: 0 }} end={{ x: 0.8, y: 1 }} style={StyleSheet.absoluteFill} />
       {rays}
 
       {BUBBLES.map((b, i) => (
         <Floating key={`b${i}`} left={b.x * W} top={b.y * H} amp={4} dur={3600 + i * 350} delay={i * 220} still={still}>
-          <View style={{ width: b.r * 2, height: b.r * 2, borderRadius: b.r, borderWidth: 1.2, borderColor: 'rgba(255,255,255,0.8)', backgroundColor: 'rgba(255,255,255,0.22)' }} />
+          <View style={{ width: b.r * 2, height: b.r * 2, borderRadius: b.r, borderWidth: 1.2, borderColor: isDark ? 'rgba(160,210,235,0.35)' : 'rgba(255,255,255,0.8)', backgroundColor: isDark ? 'rgba(160,210,235,0.08)' : 'rgba(255,255,255,0.22)' }} />
         </Floating>
       ))}
 
       {FISH.map((f, i) => (
         <Floating key={`f${i}`} left={f.x * W} top={f.y * H} amp={f.amp} dur={f.dur} delay={i * 300} still={still}>
-          <View style={{ opacity: 0.82 }}><Fish w={f.w} body={f.body} tail={f.tail} flip={f.flip} stripe={f.stripe} /></View>
+          <View style={{ opacity: 0.82 }}><Fish w={f.w} body={deep(f.body)} tail={deep(f.tail)} flip={f.flip} stripe={f.stripe} /></View>
         </Floating>
       ))}
 
       {/* Fond marin : sable pâle et algues */}
       <Svg width={W} height={sandH} viewBox="0 0 390 120" preserveAspectRatio="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
-        <Path d="M0 50 Q60 20 130 46 T260 40 T390 30 V120 H0Z" fill="#E6E3C6" opacity={0.7} />
-        <Path d="M0 80 Q80 56 160 76 T320 70 T390 66 V120 H0Z" fill="#F1EBCB" opacity={0.95} />
-        <Path d="M40 72 q-4 -26 4 -40 q4 18 2 40z" fill="#5FBFA6" opacity={0.85} />
-        <Path d="M52 74 q2 -22 12 -34 q-2 20 -6 34z" fill="#4AAF96" opacity={0.85} />
-        <Path d="M340 76 q-6 -30 4 -46 q6 22 2 46z" fill="#5FBFA6" opacity={0.85} />
+        <Path d="M0 50 Q60 20 130 46 T260 40 T390 30 V120 H0Z" fill={isDark ? '#26434A' : '#E6E3C6'} opacity={0.7} />
+        <Path d="M0 80 Q80 56 160 76 T320 70 T390 66 V120 H0Z" fill={isDark ? '#1D3640' : '#F1EBCB'} opacity={0.95} />
+        <Path d="M40 72 q-4 -26 4 -40 q4 18 2 40z" fill={deep('#5FBFA6')} opacity={0.85} />
+        <Path d="M52 74 q2 -22 12 -34 q-2 20 -6 34z" fill={deep('#4AAF96')} opacity={0.85} />
+        <Path d="M340 76 q-6 -30 4 -46 q6 22 2 46z" fill={deep('#5FBFA6')} opacity={0.85} />
       </Svg>
     </View>
   );

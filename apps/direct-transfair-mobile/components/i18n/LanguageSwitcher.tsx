@@ -15,6 +15,7 @@ import { ListRow, Sheet, UText, useUI } from '../ui';
 import { Text } from '../ui/Text';
 import { LANGS, type Lang } from '../../i18n/core';
 import { useI18n } from '../../providers/I18nProvider';
+import { useTheme } from '../../providers/ThemeProvider';
 
 export function LanguageSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const { lang, setLang, t } = useI18n();
@@ -51,7 +52,9 @@ export function LanguageSheet({ visible, onClose }: { visible: boolean; onClose:
 /** Pastille « drapeau + sigle + flèche » (écrans de connexion). */
 export function LanguagePill({ style }: { style?: object }) {
   const { info, t } = useI18n();
+  const { isDark } = useTheme();
   const [open, setOpen] = useState(false);
+  const fg = isDark ? '#F4F5F7' : '#0F3A4D';
   return (
     <>
       <Pressable
@@ -60,11 +63,11 @@ export function LanguagePill({ style }: { style?: object }) {
         accessibilityLabel={`${t('lang.change')} — ${t('lang.current', { name: info.label })}`}
         hitSlop={8}
         testID="language-pill"
-        style={({ pressed }) => [s.pill, pressed && { opacity: 0.75 }, style]}
+        style={({ pressed }) => [s.pill, isDark && s.pillDark, pressed && { opacity: 0.75 }, style]}
       >
         <Text style={s.pillFlag}>{info.flag}</Text>
-        <Text style={s.pillTxt}>{info.short}</Text>
-        <Ionicons name="chevron-down" size={14} color="#0F3A4D" />
+        <Text style={[s.pillTxt, { color: fg }]}>{info.short}</Text>
+        <Ionicons name="chevron-down" size={14} color={fg} />
       </Pressable>
       <LanguageSheet visible={open} onClose={() => setOpen(false)} />
     </>
@@ -100,6 +103,7 @@ const s = StyleSheet.create({
     shadowColor: '#0F3A4D', shadowOpacity: 0.14, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
     elevation: Platform.OS === 'android' ? 3 : 0,
   },
+  pillDark: { backgroundColor: 'rgba(22,25,30,0.85)', borderColor: 'rgba(255,255,255,0.14)' },
   pillFlag: { fontSize: 16 },
   pillTxt:  { fontSize: 13, fontWeight: '800', color: '#0F3A4D', letterSpacing: 0.3 },
 });

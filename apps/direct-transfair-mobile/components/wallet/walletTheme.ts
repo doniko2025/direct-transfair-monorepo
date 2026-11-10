@@ -14,7 +14,9 @@ import { useMemo } from 'react';
 import { fmtDate, fmtTime, getLocale, tr } from '../../i18n/runtime';
 import type { MessageKey } from '../../i18n/catalog';
 import { useTenant } from '../../providers/TenantProvider';
-import { setBrandPrimary } from './brand';
+import { setBrandPrimary, themed } from './brand';
+import { getScheme } from '../ui/themeMode';
+import { useTheme } from '../../providers/ThemeProvider';
 import {
   buildPalette, N, FONT, RADIUS, SHADOW, alpha, darken, lighten, type AuthPalette,
 } from '../auth/authTheme';
@@ -29,7 +31,8 @@ export function useWalletTheme() {
   const { branding } = useTenant();
   // v1.1 — synchronise la marque pour les écrans « themed()/brand() »
   setBrandPrimary(branding.primaryColor);
-  const P = useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor), [branding.primaryColor, branding.secondaryColor]);
+  const { scheme } = useTheme();   // se redessine au changement de thème
+  const P = useMemo(() => buildPalette(branding.primaryColor, branding.secondaryColor, scheme), [branding.primaryColor, branding.secondaryColor, scheme]);
   return { P, N, FONT, RADIUS, SHADOW, brandName: branding.name, logoUrl: branding.logoUrl };
 }
 
@@ -85,32 +88,39 @@ export function initialsOf(name: string): string {
 // ─── Statuts de transaction ──────────────────────────────
 export type StatusTone = { fg: string; bg: string; bd: string; label: string; labelIncoming: string; icon: string };
 
-const TONE = {
-  ok:      { fg: N.ok,       bg: N.okBg,    bd: N.okBd },
-  warn:    { fg: N.warn,     bg: N.warnBg,  bd: N.warnBd },
-  danger:  { fg: N.danger,   bg: N.dangerBg, bd: N.dangerBd },
-  info:    { fg: '#175CD3',  bg: '#EFF8FF', bd: '#B2DDFF' },
-  neutral: { fg: '#475467',  bg: '#F2F4F7', bd: '#E4E7EC' },
-  violet:  { fg: '#6941C6',  bg: '#F9F5FF', bd: '#E9D7FE' },
-};
+// themed() : teintes recalculées au changement de thème clair / sombre.
+const TONE = themed(() => {
+  const dark = getScheme() === 'dark';
+  return {
+    ok:      { fg: N.ok,       bg: N.okBg,    bd: N.okBd },
+    warn:    { fg: N.warn,     bg: N.warnBg,  bd: N.warnBd },
+    danger:  { fg: N.danger,   bg: N.dangerBg, bd: N.dangerBd },
+    info:    dark ? { fg: '#6AA2FF', bg: '#14233F', bd: '#2A4A80' } : { fg: '#175CD3', bg: '#EFF8FF', bd: '#B2DDFF' },
+    neutral: dark ? { fg: '#B4BCC8', bg: '#1F232A', bd: '#2B3038' } : { fg: '#475467', bg: '#F2F4F7', bd: '#E4E7EC' },
+    violet:  dark ? { fg: '#A78BFA', bg: '#241B3D', bd: '#3F2F6B' } : { fg: '#6941C6', bg: '#F9F5FF', bd: '#E9D7FE' },
+  };
+});
+type ToneKey = 'ok' | 'warn' | 'danger' | 'info' | 'neutral' | 'violet';
 
-/** Teinte + icône + libellés (lus dans la langue COURANTE à chaque accès : `label` et `labelIncoming` sont des accesseurs). */
-const statusTone = (tone: { fg: string; bg: string; bd: string }, out: MessageKey, inc: MessageKey, icon: string): StatusTone => ({
-  ...tone,
+/** Teinte + icône + libellés (lus dans la langue COURANTE et le thème COURANT à chaque accès : `fg`, `bg`, `bd`, `label` et `labelIncoming` sont des accesseurs). */
+const statusTone = (tone: ToneKey, out: MessageKey, inc: MessageKey, icon: string): StatusTone => ({
+  get fg() { return TONE[tone].fg; },
+  get bg() { return TONE[tone].bg; },
+  get bd() { return TONE[tone].bd; },
   get label() { return tr(out); },
   get labelIncoming() { return tr(inc); },
   icon,
 });
 
 export const TX_STATUS: Record<string, StatusTone> = {
-  PENDING:    statusTone(TONE.warn,    'txs.pending',   'txs.pending',   'time-outline'),
-  VALIDATED:  statusTone(TONE.info,    'txs.validated', 'txs.available', 'shield-checkmark-outline'),
-  PAID:       statusTone(TONE.ok,      'txs.paid',      'txs.received',  'checkmark-circle-outline'),
-  PROCESSING: statusTone(TONE.violet,  'txs.processing', 'txs.processing', 'sync-outline'),
-  CANCELLED:  statusTone(TONE.neutral, 'txs.cancelled', 'txs.cancelled', 'close-circle-outline'),
-  FAILED:     statusTone(TONE.danger,  'txs.failed',    'txs.failed',    'alert-circle-outline'),
-  REFUNDED:   statusTone(TONE.violet,  'txs.refunded',  'txs.refunded',  'return-down-back-outline'),
-  EXPIRED:    statusTone(TONE.neutral, 'txs.expiredRefunded', 'txs.expired', 'timer-outline'),
+  PENDING:    statusTone('warn',    'txs.pending',   'txs.pending',   'time-outline'),
+  VALIDATED:  statusTone('info',    'txs.validated', 'txs.available', 'shield-checkmark-outline'),
+  PAID:       statusTone('ok',      'txs.paid',      'txs.received',  'checkmark-circle-outline'),
+  PROCESSING: statusTone('violet',  'txs.processing', 'txs.processing', 'sync-outline'),
+  CANCELLED:  statusTone('neutral', 'txs.cancelled', 'txs.cancelled', 'close-circle-outline'),
+  FAILED:     statusTone('danger',  'txs.failed',    'txs.failed',    'alert-circle-outline'),
+  REFUNDED:   statusTone('violet',  'txs.refunded',  'txs.refunded',  'return-down-back-outline'),
+  EXPIRED:    statusTone('neutral', 'txs.expiredRefunded', 'txs.expired', 'timer-outline'),
 };
 export function statusOf(status: string): StatusTone {
   return TX_STATUS[status] ?? { ...TONE.neutral, label: status || '—', labelIncoming: status || '—', icon: 'help-circle-outline' };
