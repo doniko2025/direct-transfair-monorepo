@@ -7,6 +7,7 @@
 //          GET   /merchants-admin/payouts[?status&page]         retraits (PENDING = à traiter)
 //          POST  /merchants-admin/payouts/:id/paid              { providerRef? } l'argent a été envoyé
 //          POST  /merchants-admin/payouts/:id/reject            { reason } le marchand est recrédité
+//          GET   /merchants-admin/:userId/rccm-document         pièce justificative du RCCM (image ou PDF)
 //          GET   /merchants-admin/:userId                       fiche + derniers encaissements / retraits
 //          PATCH /merchants-admin/:userId/suspend | reactivate
 //   Les réglages (commission, durées, plafonds, retraits) se règlent dans /company-settings → section « merchant ».
@@ -47,6 +48,8 @@ export interface MerchantListItem {
   city: string | null;
   /** Numéro RCCM (nul pour un compte antérieur à la règle « RCCM obligatoire »). */
   rccm?: string | null;
+  /** Le marchand a joint la pièce justificative du RCCM. */
+  hasRccmDocument?: boolean;
   status: MerchantStatus;
   owner: { firstName: string | null; lastName: string | null; email: string; phone: string | null; kycLevel: string };
   orangeMoneyMasked: string;
@@ -70,6 +73,8 @@ export interface MerchantAdminDetail {
   taxId?: string | null;
   /** Numéro RCCM (nul pour un compte antérieur à la règle « RCCM obligatoire »). */
   rccm?: string | null;
+  /** Pièce justificative du RCCM envoyée par le marchand (nulle = aucune). */
+  rccmDocument?: { mimeType: string; sizeBytes: number; version: string; uploadedAt: string } | null;
   status: MerchantStatus;
   suspendedReason: string | null;
   orangeMoneyMasked: string;
@@ -119,6 +124,9 @@ export function createMerchantApi(http: HttpClient) {
     list: (q: { search?: string; status?: MerchantStatus; page?: number; limit?: number; clientId?: number } = {}) =>
       http.get<MerchantPaged<MerchantListItem>>(`/merchants-admin${qs(q)}`),
     get: (userId: string, clientId?: number) => http.get<MerchantAdminDetail>(`/merchants-admin/${enc(userId)}${qs({ clientId })}`),
+    /** Pièce justificative du RCCM : octets (image ou PDF), demandés avec le jeton de l'administrateur. */
+    fetchRccmDocument: (userId: string, clientId?: number) =>
+      http.get<Blob>(`/merchants-admin/${enc(userId)}/rccm-document${qs({ clientId })}`, { responseType: 'blob' }),
     suspend: (userId: string, reason: string, clientId?: number) => http.patch<MerchantAdminDetail>(`/merchants-admin/${enc(userId)}/suspend${qs({ clientId })}`, { reason }),
     reactivate: (userId: string, clientId?: number) => http.patch<MerchantAdminDetail>(`/merchants-admin/${enc(userId)}/reactivate${qs({ clientId })}`, {}),
 

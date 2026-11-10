@@ -47,6 +47,8 @@ export interface MerchantProfileView {
   shopId?: string;
   /** Empreinte du logo : nulle = pas de logo. Ne retélécharger que si elle change. */
   logoVersion?: string | null;
+  /** Pièce justificative du RCCM envoyée par le marchand (nulle = aucune). */
+  rccmDocument?: { mimeType: string; sizeBytes: number; version: string; uploadedAt: string } | null;
   hasStaticQr?: boolean;
   alerts?: { lowBalanceThreshold: number | null; failureAlertsEnabled: boolean };
 }

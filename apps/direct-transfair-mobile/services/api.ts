@@ -1616,6 +1616,11 @@ class API {
     return (await this.http.put<{ version: string }>("/merchants/me/logo", { image: base64 }, { timeout: 60_000 })).data;
   }
 
+  /** Pièce justificative du RCCM (photo en base64) : envoi ou remplacement. */
+  async saveMerchantRccmDocument(base64: string): Promise<{ version: string; uploadedAt: string }> {
+    return (await this.http.put<{ version: string; uploadedAt: string }>("/merchants/me/rccm-document", { file: base64 }, { timeout: 90_000 })).data;
+  }
+
   async removeMerchantLogo(): Promise<{ removed: boolean }> {
     return (await this.http.delete<{ removed: boolean }>("/merchants/me/logo")).data;
   }

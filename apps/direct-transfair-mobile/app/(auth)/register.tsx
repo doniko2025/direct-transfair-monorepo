@@ -112,6 +112,7 @@ import {
   cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
 } from '../../utils/businessInfo';
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from '../../utils/rccm';
+import { RccmDocumentPicker, type RccmPick } from '../../components/merchant/RccmDocumentPicker';
 
 import { Text, TextInput } from '../../components/ui/Text';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -174,6 +175,7 @@ export default function RegisterScreen() {
   // ── Commerce (marchands) ──────────────────────────────
   const [businessName, setBusinessName] = useState('');
   const [rccm, setRccm] = useState('');
+  const [rccmDoc, setRccmDoc] = useState<RccmPick | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [businessAddress, setBusinessAddress] = useState('');
   // Coordonnées du COMMERCE : saisies à part, jamais reprises de la ville / de l'adresse / du téléphone personnels.
@@ -391,6 +393,11 @@ export default function RegisterScreen() {
     } catch {
       // Le compte existe : l'échec de la connexion automatique ne doit pas bloquer la suite.
     }
+    // Pièce justificative du RCCM : envoyée maintenant que la session est ouverte. Un échec est sans gravité
+    // (le marchand peut la renvoyer depuis les réglages de son commerce ; l'administrateur voit « document manquant »).
+    if (isMerchant && rccmDoc) {
+      try { await api.saveMerchantRccmDocument(rccmDoc.base64); } catch { /* renvoi possible dans les réglages */ }
+    }
     if (registeredUser) {
       router.replace({
         pathname: '/(auth)/verify-contact',
@@ -526,6 +533,7 @@ export default function RegisterScreen() {
             returnKeyType="next" accent={P.accent} maxLength={40} placeholder={RCCM_EXAMPLE}
             hint="Registre du Commerce et du Crédit Mobilier : obligatoire."
           />
+          <RccmDocumentPicker value={rccmDoc} onChange={setRccmDoc} disabled={submitting} />
           <Text style={s.chipsLabel}>Catégorie</Text>
           <View style={s.chips}>
             {MERCHANT_CATEGORIES.map((c) => {

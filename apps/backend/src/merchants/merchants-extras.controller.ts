@@ -35,8 +35,9 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { Roles } from '../common/decorators/roles.decorator';
-import { AddStaffDto, CloseDayDto, PinDto, SaveLogoDto, UpdateAlertsDto, UpdateStaffDto } from './dto/merchants.dto';
+import { AddStaffDto, CloseDayDto, PinDto, SaveLogoDto, SaveRccmDocumentDto, UpdateAlertsDto, UpdateStaffDto } from './dto/merchants.dto';
 import { MerchantLogoService } from './merchant-logo.service';
+import { MerchantRccmDocumentService } from './merchant-rccm-document.service';
 import { MerchantReportsService } from './merchant-reports.service';
 import { MerchantStaffService } from './merchant-staff.service';
 import { MerchantsService } from './merchants.service';
@@ -46,6 +47,16 @@ const me = (req: AuthRequest): AuthUserPayload => {
   if (!req.user) throw new ForbiddenException('Non authentifié');
   return req.user;
 };
+/** Document privé : jamais mis en cache partagé, affiché dans le navigateur/l'application (image ou PDF), jamais interprété comme autre chose. */
+export function sendDocument(res: Response, f: { buffer: Buffer; mimeType: string; sha256: string }): void {
+  res.setHeader('Content-Type', f.mimeType);
+  res.setHeader('Content-Length', String(f.buffer.length));
+  res.setHeader('ETag', `"${f.sha256}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('Content-Disposition', `inline; filename="rccm.${f.mimeType === 'application/pdf' ? 'pdf' : f.mimeType.split('/')[1] ?? 'bin'}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.end(f.buffer);
+}
 const shortId = (v?: string): string | undefined => (v ? v.slice(0, 40) : undefined);
 
 @ApiTags('Marchand — caisse')
@@ -57,6 +68,7 @@ export class MerchantsExtrasController {
   constructor(
     private readonly merchants: MerchantsService,
     private readonly logos: MerchantLogoService,
+    private readonly rccmDocs: MerchantRccmDocumentService,
     private readonly staff: MerchantStaffService,
     private readonly reports: MerchantReportsService,
   ) {}
@@ -98,6 +110,19 @@ export class MerchantsExtrasController {
   async myLogo(@Req() req: AuthRequest, @Res() res: Response) {
     const user = me(req);
     return this.sendLogo(req, res, await this.logos.shopIdOf(user.id), user.clientId);
+  }
+
+  // ── Pièce justificative du RCCM ────────────────────────
+
+  @Put('me/rccm-document')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  saveRccmDocument(@Req() req: AuthRequest, @Body() body: SaveRccmDocumentDto) {
+    return this.rccmDocs.save(me(req).id, body.file);
+  }
+
+  @Get('me/rccm-document')
+  async myRccmDocument(@Req() req: AuthRequest, @Res() res: Response) {
+    return sendDocument(res, await this.rccmDocs.readMine(me(req).id));
   }
 
   // ── Rapports et clôture ────────────────────────────────

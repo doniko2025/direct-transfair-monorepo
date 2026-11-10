@@ -116,6 +116,11 @@ export default function TransactionDetailScreen() {
       recipientPhone:      transaction.beneficiary?.phone ?? undefined,
       recipientCountry:    transaction.beneficiary?.country ?? undefined,
     };
+    // Reçu complet construit par le serveur (logo, infos, QR) ; l'ancien reçu n'est plus qu'un secours.
+    if (transaction.id) {
+      router.push(`/receipt/${encodeURIComponent(String(transaction.id))}`);
+      return;
+    }
     router.push({
       pathname: "/(tabs)/transactions/client-receipt",
       params:   { data: encodeURIComponent(JSON.stringify(receiptData)) },

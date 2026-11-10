@@ -36,7 +36,7 @@ import {
   Avatar, Button, Card, IconButton, ListRow, NavBar, Notice, Pill, Screen, SearchPill, Sheet, Tabs, UText, useUI,
 } from "../../components/ui";
 import { ChoiceSheet } from "../../components/ui/ChoiceSheet";
-import { CurrencyBadge } from "../../components/ui/CurrencyBadge";
+import { CurrencyFlag } from "../../components/home/HomeParts";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
   MIN_FULL_NUMBER, countryOfPhone, formatPhone, isNumericLike, nationalOf, onlyDigits, parseInternational, stripDial, toE164, toLegacyDoubled,
@@ -996,7 +996,7 @@ export default function SendMoneyScreen() {
     (isTextQuery ? walletInput.trim().length >= 3 : walletInputDigits.length >= MIN_FULL_NUMBER);
   const userCountry = String((user as any)?.country ?? "");
 
-  // ── Une ligne de montant (envoi / réception) : pastille de devise (drapeau) + montant ──
+  // ── Une ligne de montant (envoi / réception) : le montant, puis le drapeau + le code de la devise À DROITE (comme le solde de l'accueil) ──
   const renderAmountRow = (kind: "SEND" | "RECEIVED") => {
     const isSend  = kind === "SEND";
     const text    = isSend ? sendText : receivedText;
@@ -1008,40 +1008,34 @@ export default function SendMoneyScreen() {
       <View
         key={kind}
         style={{
-          flexDirection: "row", alignItems: "center", gap: 14, paddingHorizontal: 14, paddingVertical: 10,
+          paddingHorizontal: 14, paddingVertical: 10,
           borderRadius: R.lg, borderWidth: 1.5, borderColor: focused ? C.accent : "transparent",
           backgroundColor: focused ? C.surface : "transparent",
         }}
       >
-        <CurrencyBadge currency={cur} country={isSend ? userCountry : targetCountryData.name} size={42} />
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <UText v="label" tone="muted" numberOfLines={1}>{isSend ? "Vous envoyez" : `${beneficiaryLabel} reçoit`}</UText>
-          {/* Code de la devise (GNF, XOF, EUR…) devant le montant */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minWidth: 0 }}>
-            <Text
-              style={{ fontFamily: SANS, fontWeight: "800", fontSize: 18, letterSpacing: 0.2, color: derived ? C.muted : C.accent }}
-              accessibilityElementsHidden
-              importantForAccessibility="no"
-            >
-              {cur}
-            </Text>
-            <TextInput
-              ref={isSend ? sendRef : recvRef}
-              style={{
-                flex: 1, minWidth: 0, height: 38, padding: 0, fontFamily: SANS, fontWeight: "800", letterSpacing: -0.6,
-                fontSize: amountFontSize(text, 28), color: derived ? C.muted : C.ink,
-              }}
-              value={text}
-              onChangeText={isSend ? onSendChange : onRecvChange}
-              onFocus={() => setFocusedField(kind)}
-              onBlur={() => setFocusedField((f) => (f === kind ? null : f))}
-              keyboardType={dec > 0 ? "decimal-pad" : "number-pad"}
-              placeholder={dec > 0 ? "0,00" : "0"}
-              placeholderTextColor={C.faint}
-              underlineColorAndroid="transparent"
-              selectTextOnFocus
-              accessibilityLabel={isSend ? `Montant à envoyer en ${cur}` : `Montant à recevoir en ${cur}`}
-            />
+        <UText v="label" tone="muted" numberOfLines={1}>{isSend ? "Vous envoyez" : `${beneficiaryLabel} reçoit`}</UText>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, marginTop: 2 }}>
+          <TextInput
+            ref={isSend ? sendRef : recvRef}
+            style={{
+              flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SANS, fontWeight: "800", letterSpacing: -0.6,
+              fontSize: amountFontSize(text, 30), color: derived ? C.muted : C.ink,
+            }}
+            value={text}
+            onChangeText={isSend ? onSendChange : onRecvChange}
+            onFocus={() => setFocusedField(kind)}
+            onBlur={() => setFocusedField((f) => (f === kind ? null : f))}
+            keyboardType={dec > 0 ? "decimal-pad" : "number-pad"}
+            placeholder={dec > 0 ? "0,00" : "0"}
+            placeholderTextColor={C.faint}
+            underlineColorAndroid="transparent"
+            selectTextOnFocus
+            accessibilityLabel={isSend ? `Montant à envoyer en ${cur}` : `Montant à recevoir en ${cur}`}
+          />
+          {/* Pastille de devise : drapeau + code en gris très foncé (toujours lisible, même quand le montant est calculé) */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }} accessible accessibilityLabel={`Devise ${cur}`}>
+            <CurrencyFlag currency={cur} countryName={isSend ? userCountry : targetCountryData.name} size={26} />
+            <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 20, fontWeight: "700", color: "#444444" }}>{cur}</Text>
           </View>
         </View>
       </View>

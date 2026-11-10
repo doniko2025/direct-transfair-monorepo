@@ -54,8 +54,11 @@ const clean = (v: unknown): string | null => {
   return s ? s : null;
 };
 
-type ProfileRow = Prisma.MerchantProfileGetPayload<{ include: { logo: { select: { sha256: true } } } }>;
-const WITH_LOGO = { logo: { select: { sha256: true } } } as const;
+type ProfileRow = Prisma.MerchantProfileGetPayload<{ include: typeof WITH_LOGO }>;
+const WITH_LOGO = {
+  logo: { select: { sha256: true } },
+  rccmDocument: { select: { sha256: true, mimeType: true, sizeBytes: true, updatedAt: true } },
+} as const;
 
 /** Pour qui une personne agit-elle : son propre commerce (propriétaire) ou le commerce où elle est caissier. */
 export interface Acting {
@@ -247,6 +250,10 @@ export class MerchantsService {
       shopId: p.id,
       /** Empreinte du logo (nulle = pas de logo) : l'application ne retélécharge que si elle change. */
       logoVersion: p.logo?.sha256 ?? null,
+      /** Pièce justificative du RCCM envoyée par le marchand (nulle = aucune). */
+      rccmDocument: p.rccmDocument
+        ? { mimeType: p.rccmDocument.mimeType, sizeBytes: p.rccmDocument.sizeBytes, version: p.rccmDocument.sha256, uploadedAt: p.rccmDocument.updatedAt.toISOString() }
+        : null,
       hasStaticQr: !!p.staticQrToken,
       alerts: {
         lowBalanceThreshold: p.lowBalanceThreshold === null || p.lowBalanceThreshold === undefined ? null : Number(p.lowBalanceThreshold),
@@ -512,6 +519,11 @@ export class MerchantsService {
 
   // ── Administrateur de la société ───────────────────────
 
+  /** Société visée par un administrateur (super-admin : `clientId` obligatoire). Public pour les services voisins (pièce RCCM…). */
+  scopeForAdmin(actor: AuthUserPayload, clientId?: number): number {
+    return this.adminScope(actor, clientId);
+  }
+
   private adminScope(actor: AuthUserPayload, clientId?: number): number {
     if (actor.role === 'SUPER_ADMIN') {
       if (!clientId) throw new BadRequestException('Précisez la société (clientId).');
@@ -545,7 +557,7 @@ export class MerchantsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, kycLevel: true } } },
+        include: { user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true, kycLevel: true } }, rccmDocument: { select: { sha256: true } } },
       }),
       this.prisma.merchantProfile.count({ where }),
     ]);
@@ -561,6 +573,7 @@ export class MerchantsService {
         category: r.category,
         city: r.city,
         rccm: r.rccm,
+        hasRccmDocument: !!r.rccmDocument,
         status: r.status,
         owner: { firstName: r.user.firstName, lastName: r.user.lastName, email: r.user.email, phone: r.user.phone, kycLevel: r.user.kycLevel },
         orangeMoneyMasked: maskPhone(r.orangeMoneyPhone),

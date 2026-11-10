@@ -156,3 +156,17 @@
     flex-basis: 100%;
   }
 }
+
+/* Pièce justificative du RCCM : vignette cliquable sous la fiche, pleine largeur sur mobile. */
+.mc-rccm {
+  margin-top: 14px;
+  max-width: 420px;
+}
+.mc-rccm .kyc-file {
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .mc-rccm {
+    max-width: none;
+  }
+}

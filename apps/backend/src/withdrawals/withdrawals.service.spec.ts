@@ -8,6 +8,7 @@ import { BadRequestException, ConflictException, ForbiddenException, NotFoundExc
 import { PayoutMethod, TransactionStatus, TransactionType } from '@prisma/client';
 import { WithdrawalsService } from './withdrawals.service';
 import { defaultSettings, mergeSettings } from '../company-settings/company-settings.logic';
+import { transferReceiptCode } from '../transactions/transfer-receipt-seal';
 
 function make(over: { settings?: any; auditFailed?: Date[]; tx?: any; wallets?: any[]; agent?: any; split?: any; convert?: jest.Mock; withdrawalBefore?: any; closeFromWithdrawal?: jest.Mock } = {}) {
   const prisma: any = {
@@ -527,5 +528,46 @@ describe('WithdrawalsService — paiement de son propre envoi interdit', () => {
     const m = make({ tx: own('autre'), agent });
     const err: any = await m.service.agentProcessPayment(5, 'ag', 'REF').catch((e: any) => e);
     expect(err?.getResponse?.()?.code).not.toBe('SELF_PAYOUT_FORBIDDEN');
+  });
+});
+
+describe('WithdrawalsService — paiement par scan du reçu (QR signé)', () => {
+  const seal = { id: 'tx-9', reference: '482915370', amount: 150000, currency: 'GNF', createdAt: new Date('2026-11-01T10:00:00.000Z') };
+
+  it('un QR signé valide est converti en référence : la recherche du paiement se fait sur le code de retrait', async () => {
+    const { service, prisma } = make();
+    prisma.transaction.findFirst.mockResolvedValueOnce(seal).mockResolvedValueOnce(null);
+    const scanned = `https://api.exemple.test/api/verify/transfer/${transferReceiptCode(seal)}`;
+    await expect(service.agentProcessPayment(5, 'ag', scanned)).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.transaction.findFirst.mock.calls[0][0].where).toEqual({ clientId: 5, reference: '482915370' });
+    expect(prisma.transaction.findFirst.mock.calls[1][0].where.OR).toEqual(expect.arrayContaining([{ reference: '482915370' }]));
+  });
+
+  it('la vérification (agent/check) accepte aussi le code signé seul, tel que tapé par une scanette', async () => {
+    const { service, prisma } = make();
+    prisma.transaction.findFirst.mockResolvedValueOnce(seal).mockResolvedValueOnce(null);
+    await expect(service.agentCheckCode(5, transferReceiptCode(seal) + '\n', 'ag')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.transaction.findFirst.mock.calls[1][0].where.OR).toEqual(expect.arrayContaining([{ reference: '482915370' }]));
+  });
+
+  it('reçu truqué (montant retouché) : refusé, et compté comme essai raté', async () => {
+    const { service, prisma } = make();
+    const forged = transferReceiptCode({ ...seal, amount: 15000 }); // signature d'un autre montant
+    prisma.transaction.findFirst.mockResolvedValueOnce(seal);
+    await expect(service.agentProcessPayment(5, 'ag', forged)).rejects.toThrow(/Reçu non reconnu/);
+    expect(prisma.transaction.findFirst).toHaveBeenCalledTimes(1); // jamais d'accès au paiement
+    expect(JSON.stringify(prisma.auditLog.create.mock.calls)).toContain('RECU_FALSIFIE');
+  });
+
+  it('référence inconnue de la société : refusé', async () => {
+    const { service, prisma } = make();
+    prisma.transaction.findFirst.mockResolvedValueOnce(null);
+    await expect(service.agentCheckCode(5, transferReceiptCode(seal), 'ag')).rejects.toThrow(/Reçu non reconnu/);
+  });
+
+  it('un code tapé à la main (9 chiffres) suit le chemin d\'origine, sans recherche supplémentaire', async () => {
+    const { service, prisma } = make();
+    await expect(service.agentCheckCode(5, '482915370', 'ag')).rejects.toBeInstanceOf(NotFoundException);
+    expect(prisma.transaction.findFirst).toHaveBeenCalledTimes(1);
   });
 });

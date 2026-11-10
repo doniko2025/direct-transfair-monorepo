@@ -5,23 +5,26 @@
 //   GET   /merchants-admin/payouts[?status]        retraits (PENDING d'abord à traiter)
 //   POST  /merchants-admin/payouts/:id/paid        { providerRef? }  l'argent a été envoyé
 //   POST  /merchants-admin/payouts/:id/reject      { reason }        refus, le marchand est recrédité
+//   GET   /merchants-admin/:userId/rccm-document   pièce justificative du RCCM (image ou PDF)
 //   GET   /merchants-admin/:userId                 fiche + derniers encaissements / retraits
 //   PATCH /merchants-admin/:userId/suspend         { reason }
 //   PATCH /merchants-admin/:userId/reactivate
 // Super admin : ?clientId=… obligatoire. Les réglages (commission, durées, plafonds) sont dans /company-settings.
 // =========================================================
 
-import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { Roles } from '../common/decorators/roles.decorator';
 import { MarkPayoutPaidDto, MerchantListQueryDto, RejectPayoutDto, SuspendMerchantDto } from './dto/merchants.dto';
+import { sendDocument } from './merchants-extras.controller';
 import { MerchantPayoutsService } from './merchant-payouts.service';
+import { MerchantRccmDocumentService } from './merchant-rccm-document.service';
 import { MerchantsService } from './merchants.service';
 
 type AuthRequest = Request & { user?: AuthUserPayload };
@@ -40,6 +43,7 @@ export class MerchantsAdminController {
   constructor(
     private readonly merchants: MerchantsService,
     private readonly payouts: MerchantPayoutsService,
+    private readonly rccmDocs: MerchantRccmDocumentService,
   ) {}
 
   @Get()
@@ -60,6 +64,12 @@ export class MerchantsAdminController {
   @Post('payouts/:id/reject')
   reject(@Req() req: AuthRequest, @Param('id') id: string, @Body() body: RejectPayoutDto, @Query('clientId') clientId?: string) {
     return this.payouts.reject(me(req), id, body, num(clientId));
+  }
+
+  /** Pièce justificative du RCCM (image ou PDF) — déclarée avant « :userId » seul. */
+  @Get(':userId/rccm-document')
+  async rccmDocument(@Req() req: AuthRequest, @Param('userId') userId: string, @Res() res: Response, @Query('clientId') clientId?: string) {
+    return sendDocument(res, await this.rccmDocs.readForAdmin(me(req), userId.slice(0, 40), num(clientId)));
   }
 
   @Get(':userId')

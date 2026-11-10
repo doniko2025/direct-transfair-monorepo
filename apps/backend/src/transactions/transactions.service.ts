@@ -2123,6 +2123,34 @@ export class TransactionsService {
     return this.enrichTransaction(tx);
   }
 
+  /**
+   * Données brutes d'un reçu d'envoi, avec la MÊME règle de visibilité que le détail d'une opération (buildUserTransactionFilter) :
+   * un client ne lit que ses opérations, un agent les siennes (envoyées, reçues, payées par lui), un admin celles de sa société.
+   * Le service des reçus (transaction-receipts.service.ts) en fait le document ; rien de confidentiel n'est sélectionné ici.
+   */
+  async receiptSourceFor(id: string, userId: string) {
+    const { where, user } = await this.buildUserTransactionFilter(userId);
+    const person = { select: { firstName: true, lastName: true, phone: true, country: true, city: true } };
+    const tx = await this.prisma.transaction.findFirst({
+      where: { ...where, id },
+      include: {
+        sender: person,
+        recipient: person,
+        beneficiary: { select: { fullName: true, phone: true, country: true, city: true } },
+        counterCustomer: { select: { firstName: true, lastName: true, phone: true } },
+        agency: { select: { name: true, city: true } },
+        withdrawal: {
+          select: {
+            status: true, expiresAt: true, processedAt: true,
+            processedBy: { select: { firstName: true, lastName: true, agency: { select: { name: true, city: true } } } },
+          },
+        },
+      },
+    });
+    if (!tx) throw new NotFoundException('Transaction not found');
+    return { tx, viewer: { id: user.id, role: user.role, clientId: user.clientId } };
+  }
+
   async adminFindAllForAdmin(adminId: string): Promise<any[]> {
     const admin = await this.prisma.user.findUnique({ where: { id: adminId } });
     let transactions: any[] = [];

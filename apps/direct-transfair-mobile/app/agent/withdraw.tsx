@@ -10,17 +10,19 @@
 //   - cardBorder : gris neutre (était violet pâle)
 // =========================================================
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
   ActivityIndicator, Alert, SafeAreaView, KeyboardAvoidingView,
   Platform, ScrollView, StatusBar, Animated, Dimensions,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
+import { ReceiptScannerModal } from "../../components/receipt/ReceiptScannerModal";
+import { looksLikeSignedReceipt } from "../../services/transferReceipt";
 
 const AGENT_BLUE      = "#2563EB";
 const AGENT_BLUE_DARK = "#1D4ED8";
@@ -98,6 +100,10 @@ export default function AgentWithdrawScreen() {
   const [transaction, setTransaction] = useState<any>(null);
   // Réglage de la société (Réglages › Codes de retrait) : derniers chiffres du téléphone du bénéficiaire exigés pour payer.
   const [phoneDigits, setPhoneDigits] = useState("");
+  // Reçu scanné (QR de l'application ou scanette) : le contenu signé est renvoyé tel quel au serveur, qui contrôle la signature.
+  const [scanOpen, setScanOpen] = useState(false);
+  const scannedRaw = useRef<string | null>(null);
+  const { code: linkedCode } = useLocalSearchParams<{ code?: string }>(); // lien ouvert depuis la page de vérification du QR
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
 
@@ -113,11 +119,16 @@ export default function AgentWithdrawScreen() {
     return { val: fmt(toNum(transaction.amount), transaction.currency), curr: transaction.currency ?? "XOF" };
   };
 
-  const handleCheckCode = async () => {
-    if (code.trim().length < 6) { showAlert("Erreur", "Le code doit contenir au moins 6 caractères."); return; }
+  /** `raw` : contenu d'un QR / d'une scanette (code signé ou adresse du QR) ; sinon le code saisi. */
+  const handleCheckCode = async (raw?: string) => {
+    const sent = (raw ?? code).trim();
+    const signed = looksLikeSignedReceipt(sent);
+    if (!signed && sent.length < 6) { showAlert("Erreur", "Le code doit contenir au moins 6 caractères."); return; }
     setChecking(true); setTransaction(null); setPhoneDigits("");
     try {
-      const res = await api.http.post("/withdrawals/agent/check", { code: code.trim() });
+      const res = await api.http.post("/withdrawals/agent/check", { code: sent });
+      scannedRaw.current = signed ? sent : null;
+      if (signed && res.data?.reference) setCode(String(res.data.reference));
       setTransaction(res.data);
       Animated.parallel([
         Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 6 }),
@@ -125,9 +136,26 @@ export default function AgentWithdrawScreen() {
       ]).start();
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Code invalide ou introuvable.";
-      showAlert("Code invalide", Array.isArray(msg) ? msg[0] : msg);
+      showAlert(signed ? "Reçu refusé" : "Code invalide", Array.isArray(msg) ? msg[0] : msg);
     } finally { setChecking(false); }
   };
+
+  // Scan par la caméra : contrôle immédiat (pas de saisie, pas de second bouton).
+  const onReceiptScanned = (raw: string) => {
+    setScanOpen(false);
+    setCode(looksLikeSignedReceipt(raw) ? "" : raw.trim());
+    void handleCheckCode(raw);
+  };
+
+  // Ouverture depuis la page web du QR (directtransfair://agent/withdraw?code=TF…) : contrôle automatique, une seule fois.
+  const linkedDone = useRef(false);
+  useEffect(() => {
+    if (linkedCode && !linkedDone.current && looksLikeSignedReceipt(String(linkedCode))) {
+      linkedDone.current = true;
+      void handleCheckCode(String(linkedCode));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedCode]);
 
   const handlePayOut = () => {
     const { val, curr } = getAmountData();
@@ -147,7 +175,8 @@ export default function AgentWithdrawScreen() {
     if (!phoneOk) { showAlert("Vérification", `Saisissez les ${phoneLen} derniers chiffres du téléphone du bénéficiaire.`); return; }
     setPaying(true);
     try {
-      await api.http.post("/withdrawals/agent/pay", needsPhone ? { code: code.trim(), phoneDigits } : { code: code.trim() });
+      const payCode = scannedRaw.current ?? code.trim(); // reçu scanné : le serveur re-contrôle la signature au paiement
+      await api.http.post("/withdrawals/agent/pay", needsPhone ? { code: payCode, phoneDigits } : { code: payCode });
       const senderName = (
         transaction?.senderName ||
         `${transaction?.sender?.firstName ?? ""} ${transaction?.sender?.lastName ?? ""}`.trim()
@@ -169,7 +198,10 @@ export default function AgentWithdrawScreen() {
         agencyName:       (user as any)?.agency?.name || undefined,
         agentName:        `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined,
       };
-      router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
+      scannedRaw.current = null;
+      // Reçu complet côté serveur (logo, infos, QR) ; l'ancien reçu ne sert plus que si l'identifiant de l'opération manque.
+      if (transaction?.transactionId) router.replace(`/receipt/${encodeURIComponent(String(transaction.transactionId))}`);
+      else router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Échec de la validation.";
       showAlert("Erreur", Array.isArray(msg) ? msg[0] : msg);
@@ -177,7 +209,7 @@ export default function AgentWithdrawScreen() {
   };
 
   const { val: amtVal, curr: amtCurr } = getAmountData();
-  const resetForm = () => { setTransaction(null); setCode(""); setPhoneDigits(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
+  const resetForm = () => { scannedRaw.current = null; setTransaction(null); setCode(""); setPhoneDigits(""); fadeAnim.setValue(0); scaleAnim.setValue(0.95); };
 
   return (
     <SafeAreaView style={s.safe}>
@@ -222,14 +254,20 @@ export default function AgentWithdrawScreen() {
                 <Ionicons name="qr-code-outline" size={48} color={C.violet} />
               </View>
               <Text style={[s.qrHint, { fontFamily: C.font.sans }]}>
-                Demandez le code de retrait au client et saisissez-le ci-dessous
+                Scannez le QR code du reçu du client, ou saisissez son code de retrait ci-dessous
               </Text>
+              <TouchableOpacity style={s.scanBtn} onPress={() => setScanOpen(true)} activeOpacity={0.88} disabled={checking}>
+                <Ionicons name="scan-outline" size={20} color={C.white} />
+                <Text style={[s.ctaTxt, { fontFamily: C.font.sans }]}>SCANNER LE REÇU</Text>
+              </TouchableOpacity>
+              <Text style={[s.qrHint, { fontFamily: C.font.sans, marginTop: 4 }]}>ou, avec une scanette, scannez dans le champ ci-dessous</Text>
               <View style={[s.codeWrap, code.trim().length >= 6 && { borderColor: C.violet }]}>
                 <TextInput
                   style={[s.codeInput, { fontFamily: C.font.mono }]}
                   value={code} onChangeText={setCode}
                   placeholder="• • • • • •" placeholderTextColor={C.inkSoft}
-                  keyboardType="default" autoCapitalize="characters" maxLength={20} textAlign="center"
+                  keyboardType="default" autoCapitalize="characters" maxLength={300} textAlign="center"
+                  returnKeyType="search" onSubmitEditing={() => void handleCheckCode()}
                 />
               </View>
               <TouchableOpacity
@@ -343,6 +381,7 @@ export default function AgentWithdrawScreen() {
           <View style={{ height: 80 }} />
         </ScrollView>
       </KeyboardAvoidingView>
+      <ReceiptScannerModal visible={scanOpen} onClose={() => setScanOpen(false)} onScanned={onReceiptScanned} />
     </SafeAreaView>
   );
 }
@@ -384,6 +423,7 @@ const s = StyleSheet.create({
   codeInput: { paddingVertical: 22, paddingHorizontal: 20, fontSize: 30, color: C.ink, fontWeight: "900", letterSpacing: 8 },
   cta:       { width: "100%", borderRadius: C.r.md, overflow: "hidden", shadowColor: C.violet, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 12, elevation: 5 },
   ctaInner:  { backgroundColor: C.violet, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 18, gap: 8, borderRadius: C.r.md },
+  scanBtn:   { width: "100%", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, backgroundColor: AGENT_BLUE, borderRadius: C.r.md, paddingVertical: 16, marginBottom: 14 },
   ctaTxt:    { color: C.white, fontWeight: "900", fontSize: 13, letterSpacing: 1 },
 
   // Résultat

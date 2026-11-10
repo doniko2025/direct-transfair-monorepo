@@ -355,6 +355,13 @@ export class SaveLogoDto {
   image!: string;
 }
 
+export class SaveRccmDocumentDto {
+  /** Photo (JPEG, PNG, WebP) ou PDF du RCCM, en base64, avec ou sans préfixe « data:...;base64, ». */
+  @IsString()
+  @MinLength(100, { message: 'Document manquant.' })
+  file!: string;
+}
+
 export class CloseDayDto {
   @IsString()
   @Matches(/^\d{6}$/, { message: PIN_MESSAGE })

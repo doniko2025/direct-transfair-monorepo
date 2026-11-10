@@ -2552,6 +2552,8 @@ model MerchantProfile {
   failureAlertedAt     DateTime?
 
   logo     MerchantLogo?
+  /// Pièce justificative du RCCM (photo ou PDF) envoyée par le marchand, consultable par l'administrateur de la société.
+  rccmDocument MerchantRccmDocument?
   staff    MerchantStaff[]
   closings MerchantClosing[]
 
@@ -2697,6 +2699,21 @@ model MerchantLogo {
   updatedAt  DateTime        @updatedAt
 
   @@map("merchant_logos")
+}
+
+/// Pièce justificative du RCCM d'un commerce (image JPEG/PNG/WebP ou PDF), stockée comme le logo (octets en base).
+/// Remplaçable par le marchand ; jamais supprimée par lui (traçabilité) ; lue par l'administrateur de la société.
+model MerchantRccmDocument {
+  merchantId String          @id
+  merchant   MerchantProfile @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  mimeType   String
+  sizeBytes  Int
+  sha256     String
+  data       Bytes
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@map("merchant_rccm_documents")
 }
 
 /// Lot 13 — caissier d'un commerce : un client qui peut encaisser POUR le commerce (jamais retirer, ni voir le solde, ni exporter).

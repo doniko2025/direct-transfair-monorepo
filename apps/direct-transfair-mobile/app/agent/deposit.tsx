@@ -491,7 +491,8 @@ export default function AgentDepositScreen() {
         agencyName:       (user as any)?.agency?.name || undefined,
         agentName:        `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined,
       };
-      router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
+      if (result?.data?.id) router.replace(`/receipt/${encodeURIComponent(String(result.data.id))}`);
+      else router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
     } catch (e: any) {
       setShowConfirm(false);
       const msg = e?.response?.data?.message || "Le dépôt a échoué.";

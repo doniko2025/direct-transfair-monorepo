@@ -150,6 +150,7 @@ import {
 } from '@prisma/client';
 
 import { PrismaService }  from '../prisma/prisma.service';
+import { extractTransferReceiptCode, verifyTransferSeal } from '../transactions/transfer-receipt-seal'; // paiement par scan du reçu
 import { WalletsService } from '../wallets/wallets.service';
 import { TransactionsService } from '../transactions/transactions.service';
 import { toIso2 } from '../fee-schedule/countries';
@@ -312,16 +313,42 @@ export class WithdrawalsService {
     return tx;
   }
 
+  // ── Paiement par scan du reçu ────────────────────────────────────────────────────────────────
+  //
+  // Le QR d'un reçu d'envoi porte un code SIGNÉ (`TF<référence>.<signature>`, voir transactions/transfer-receipt-seal.ts) ou
+  // l'adresse de vérification qui le contient. L'agent peut le scanner (caméra, scanette qui « tape » le contenu) au lieu de saisir
+  // le code de retrait à 9 chiffres. Ici on transforme ce qui a été saisi/scanné en référence ; le reste du flux (contrôles,
+  // téléphone du bénéficiaire, séparation des tâches, caisse, commissions) est STRICTEMENT le même qu'avec le code tapé.
+  //  • texte sans code signé → traité comme un code de retrait ordinaire (comportement d'origine) ;
+  //  • code signé dont la signature ne correspond pas (reçu truqué, montant retouché, autre société) → refus + essai raté compté
+  //    dans la protection anti-devinette de l'agent.
+  private async resolveScannedCode(clientId: number, agentId: string | undefined, raw: string, ip?: string | null): Promise<string> {
+    const text = String(raw ?? '').trim();
+    const signed = extractTransferReceiptCode(text);
+    if (!signed) return text;
+
+    const tx = await this.prisma.transaction.findFirst({
+      where:  { clientId, reference: signed.reference },
+      select: { id: true, reference: true, amount: true, currency: true, createdAt: true },
+    });
+    if (!tx || !verifyTransferSeal(tx, signed.signature)) {
+      if (agentId) await this.recordAttempt(clientId, agentId, false, 'RECU_FALSIFIE', ip);
+      throw new NotFoundException('Reçu non reconnu : le QR code ne correspond à aucun envoi de cette société. Ne payez pas.');
+    }
+    return tx.reference;
+  }
+
   // =========================================================
   // AGENT — Vérifier un code de retrait
   // =========================================================
 
   async agentCheckCode(clientId: number, code: string, agentId?: string, opts: AgentCodeOptions = {}) {
-    const cleanCode = String(code ?? '').trim();
-    if (!cleanCode) throw new BadRequestException('Code requis');
+    const typed = String(code ?? '').trim();
+    if (!typed) throw new BadRequestException('Code requis');
 
     const company = await this.settings.forClient(clientId);
     if (agentId) await this.guardAttempts(clientId, agentId, company.pickup); // ✅ v4.16 : blocage après N essais ratés
+    const cleanCode = await this.resolveScannedCode(clientId, agentId, typed, opts.ip); // QR du reçu ou code tapé
 
     const tx = await this.prisma.transaction.findFirst({
       where: payableCodeWhere(clientId, cleanCode), // ✅ v4.11 : envois cash uniquement
@@ -405,12 +432,13 @@ export class WithdrawalsService {
   // =========================================================
 
   async agentProcessPayment(clientId: number, agentId: string, code: string, opts: AgentCodeOptions = {}) {
-    const cleanCode = String(code ?? '').trim();
-    if (!cleanCode) throw new BadRequestException('Code requis');
+    const typed = String(code ?? '').trim();
+    if (!typed) throw new BadRequestException('Code requis');
 
     // ✅ v4.16 — réglages de la société (répartition par défaut, contrôle du téléphone, alerte de caisse) + blocage anti-devinette.
     const company = await this.settings.forClient(clientId);
     await this.guardAttempts(clientId, agentId, company.pickup);
+    const cleanCode = await this.resolveScannedCode(clientId, agentId, typed, opts.ip); // QR du reçu ou code tapé
 
     // ── Récupération transaction ──────────────────────────
     const tx = await this.prisma.transaction.findFirst({

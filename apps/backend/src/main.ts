@@ -154,6 +154,8 @@ async function bootstrap(): Promise<void> {
   // de 100 Ko faisait répondre « request entity too large » avant même que le serveur ne lise le logo. Le service rend ensuite
   // un message clair si l'image dépasse 1 Mo.
   app.use('/api/merchants/me/logo', json({ limit: '3mb' }));
+  // Pièce justificative du RCCM (photo ou PDF ≤ 6 Mo une fois décodée ≈ 8,1 Mo en base64).
+  app.use('/api/merchants/me/rccm-document', json({ limit: '9mb' }));
   // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
   app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
     req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),

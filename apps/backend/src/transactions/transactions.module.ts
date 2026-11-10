@@ -11,6 +11,8 @@
 import { Module } from '@nestjs/common';
 import { TransactionsService }    from './transactions.service';
 import { TransactionsController } from './transactions.controller';
+import { TransactionReceiptsService } from './transaction-receipts.service';
+import { TransactionReceiptsController, TransferVerifyController } from './transaction-receipts.controller';
 import { PickupExpiryService }    from './pickup-expiry.service'; // ✅ v4.2 — expiration des codes (5 mois)
 import { PrismaModule }           from '../prisma/prisma.module';
 import { AuthModule }             from '../auth/auth.module';
@@ -40,8 +42,8 @@ import { KycModule } from '../kyc/kyc.module'; // lot 7 — identité vérifiée
     TransferLimitsModule, // plafonds d'envoi par niveau KYC
     KycModule,            // lot 7 — garde KYC + fiche du client de passage
   ],
-  controllers: [TransactionsController],
-  providers:   [TransactionsService, PickupExpiryService],
+  controllers: [TransactionsController, TransactionReceiptsController, TransferVerifyController],
+  providers:   [TransactionsService, PickupExpiryService, TransactionReceiptsService],
   exports:     [TransactionsService],
 })
 export class TransactionsModule {} 

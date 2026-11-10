@@ -24,6 +24,7 @@ import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/
 import { OptionPicker } from "../../components/ui/OptionPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
+import { RccmDocumentCard } from "../../components/merchant/RccmDocumentPicker";
 import { BusinessInfoFields, type BusinessInfoValue } from "../../components/merchant/BusinessInfoFields";
 import {
   cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
@@ -322,6 +323,10 @@ export default function MerchantSettingsScreen() {
       <Rise>
         <SectionHeader title="Mon commerce" style={{ marginTop: 4 }} />
         <ProfileForm key={`p-${me.profile.businessName}-${version}`} me={me} onSaved={() => { reload(); }} />
+      </Rise>
+      <Rise delay={40}>
+        <SectionHeader title="Pièce justificative" />
+        <RccmDocumentCard me={me} onChanged={reload} />
       </Rise>
       <Rise delay={60}>
         <SectionHeader title="Logo" />

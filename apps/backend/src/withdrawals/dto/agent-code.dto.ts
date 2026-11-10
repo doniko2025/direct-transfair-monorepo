@@ -5,8 +5,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class AgentCheckCodeDto {
-  @ApiProperty({ description: 'Code de retrait (9 chiffres)' })
-  @IsString({ message: 'Code invalide' }) @IsNotEmpty({ message: 'Code requis' }) @MaxLength(40)
+  @ApiProperty({ description: 'Code de retrait (9 chiffres) — ou contenu du QR du reçu (code signé TF…, ou adresse de vérification qui le contient)' })
+  @IsString({ message: 'Code invalide' }) @IsNotEmpty({ message: 'Code requis' }) @MaxLength(300)
   code!: string;
 }
 

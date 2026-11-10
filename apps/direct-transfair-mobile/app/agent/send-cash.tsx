@@ -321,7 +321,8 @@ export default function AgentSendCashScreen() {
       const sTarget   = transaction?.targetCurrency ?? targetCurrency;
 
       const receiptData = { type: "ENVOI" as const, reference: transaction.reference, date: new Date().toISOString(), amount: parseFloat(amount), currency: agentCurrency, fees: sFees, totalAmount: sTotal, receivedAmount: sReceived, targetCurrency: sTarget, exchangeRate: sRate, beneficiaryName: fullName, beneficiaryPhone: receiverFull, beneficiaryCountry: receiverCountry.name, senderName: `${senderFirstName.trim()} ${senderLastName.trim()}`, senderPhone: senderFull, code: transaction.reference, agencyName: (user as any)?.agency?.name || undefined, agentName: `${(user as any)?.firstName ?? ""} ${(user as any)?.lastName ?? ""}`.trim() || undefined };
-      router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
+      if (transaction?.id) router.replace(`/receipt/${encodeURIComponent(String(transaction.id))}`);
+      else router.push(`/agent/receipt?data=${encodeURIComponent(JSON.stringify(receiptData))}`);
     } catch (e: any) {
       const msg = e?.response?.data?.message || "Erreur lors de l'envoi.";
       Alert.alert("Échec", Array.isArray(msg) ? msg[0] : msg);

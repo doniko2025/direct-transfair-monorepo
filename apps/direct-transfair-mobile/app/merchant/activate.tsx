@@ -9,7 +9,7 @@
 // =========================================================
 
 import React, { useState } from "react";
-import { View } from "react-native";
+import { Alert, View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
@@ -23,6 +23,7 @@ import { BusinessInfoFields, EMPTY_BUSINESS_INFO, type BusinessInfoValue } from 
 import {
   cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
 } from "../../utils/businessInfo";
+import { RccmDocumentPicker, type RccmPick } from "../../components/merchant/RccmDocumentPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
 import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
@@ -32,6 +33,7 @@ export default function ActivateMerchantScreen() {
   const { C } = useUI();
   const [name, setName] = useState("");
   const [rccm, setRccm] = useState("");
+  const [rccmDoc, setRccmDoc] = useState<RccmPick | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   // Coordonnées du COMMERCE : volontairement vides au départ (pas de reprise de la ville ou de l'adresse personnelles du client).
   const [info, setInfo] = useState<BusinessInfoValue>(EMPTY_BUSINESS_INFO);
@@ -100,6 +102,11 @@ export default function ActivateMerchantScreen() {
         ...(orangeAllowed ? { orangeMoneyPhone: fullPhone } : {}),
         pin,
       });
+      // Pièce justificative : envoyée une fois le compte créé. Un échec ne bloque pas l'activation (renvoi possible dans les réglages).
+      if (rccmDoc) {
+        try { await api.saveMerchantRccmDocument(rccmDoc.base64); }
+        catch { Alert.alert("Document non envoyé", "Votre espace marchand est activé, mais le document RCCM n'a pas pu être envoyé. Vous pourrez le renvoyer depuis les réglages du commerce."); }
+      }
       try { await refreshUser?.(); } catch { /* sans incidence */ }
       router.replace("/merchant" as any);
     } catch (e) {
@@ -128,6 +135,7 @@ export default function ActivateMerchantScreen() {
           placeholder={RCCM_EXAMPLE} error={rccmError}
           hint="Registre du Commerce et du Crédit Mobilier : obligatoire pour ouvrir un compte marchand."
         />
+        <RccmDocumentPicker value={rccmDoc} onChange={setRccmDoc} disabled={busy} />
         <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" error={catError} />
         <BusinessInfoFields value={info} onChange={patchInfo} errors={infoErrors} />
         {orangeAllowed ? (

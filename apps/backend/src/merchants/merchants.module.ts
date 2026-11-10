@@ -13,6 +13,7 @@ import { MerchantAlertsService } from './merchant-alerts.service';
 import { MerchantComplianceService } from './merchant-compliance.service';
 import { MerchantExpiryService } from './merchant-expiry.service';
 import { MerchantLogoService } from './merchant-logo.service';
+import { MerchantRccmDocumentService } from './merchant-rccm-document.service';
 import { MerchantNotifierService } from './merchant-notifier.service';
 import { MerchantPaymentsController } from './merchant-payments.controller';
 import { MerchantPaymentsService } from './merchant-payments.service';
@@ -38,6 +39,7 @@ import { PinVerifierService } from './pin-verifier.service';
     MerchantComplianceService,
     MerchantsService,
     MerchantLogoService,
+    MerchantRccmDocumentService,
     MerchantStaffService,
     MerchantReportsService,
     MerchantReceiptsService,

@@ -17,6 +17,8 @@ interface Props {
   label: string;
   /** 'counter' : photo de la pièce d'un client de passage prise au comptoir (consultation journalisée côté serveur). */
   source?: 'document' | 'counter';
+  /** Chargeur fourni par l'appelant (ex. pièce RCCM d'un marchand) : remplace la lecture d'une pièce KYC. `documentId` sert alors de clé. */
+  load?: () => Promise<Blob>;
 }
 
 interface Loaded {
@@ -75,7 +77,9 @@ function Lightbox({ url, label, onClose }: { url: string; label: string; onClose
   );
 }
 
-export function KycFileView({ documentId, kind, label, source = 'document' }: Props) {
+export function KycFileView({ documentId, kind, label, source = 'document', load }: Props) {
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -86,7 +90,7 @@ export function KycFileView({ documentId, kind, label, source = 'document' }: Pr
     let created: string | null = null;
     setLoaded(null);
     setError(null);
-    (source === 'counter' ? api.kyc.fetchCounterFile(documentId, kind) : api.kyc.fetchFile(documentId, kind))
+    (loadRef.current ? loadRef.current() : source === 'counter' ? api.kyc.fetchCounterFile(documentId, kind) : api.kyc.fetchFile(documentId, kind))
       .then((blob) => {
         if (cancelled) return;
         created = URL.createObjectURL(blob);

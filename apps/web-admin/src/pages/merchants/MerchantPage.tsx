@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { MERCHANT_STATUS_LABEL, PAYMENT_STATUS_LABEL, PAYOUT_METHOD_LABEL, PAYOUT_STATUS_LABEL } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
+import { KycFileView } from '../kyc/KycFileView';
 import { ConfirmDialog, TextAreaField } from '../../components/form';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -114,6 +115,16 @@ export default function MerchantPage() {
               <div className="kv__row"><dt>E-mail du responsable</dt><dd>{m.owner.email}</dd></div>
               <div className="kv__row"><dt>Catégorie</dt><dd>{m.category ?? '—'}</dd></div>
               <div className="kv__row"><dt>RCCM</dt><dd>{m.rccm ?? 'Non renseigné'}</dd></div>
+              <div className="kv__row">
+                <dt>Document RCCM</dt>
+                <dd>
+                  {m.rccmDocument ? (
+                    <span>Envoyé le {formatDateTime(m.rccmDocument.uploadedAt)} · {Math.max(1, Math.round(m.rccmDocument.sizeBytes / 1024))} Ko</span>
+                  ) : (
+                    <Pill tone="warn">Aucun document joint</Pill>
+                  )}
+                </dd>
+              </div>
               <div className="kv__row"><dt>NIF / IFU</dt><dd>{m.taxId ?? '—'}</dd></div>
               <div className="kv__row"><dt>Adresse du commerce</dt><dd>{[m.address, m.district, [m.postalCode, m.city].filter(Boolean).join(' '), m.country].filter(Boolean).join(', ') || 'Non renseignée'}</dd></div>
               <div className="kv__row"><dt>Téléphone du commerce</dt><dd>{m.businessPhone ?? '—'}</dd></div>
@@ -123,6 +134,16 @@ export default function MerchantPage() {
               <div className="kv__row"><dt>Marchand depuis</dt><dd>{formatDateTime(m.createdAt) ?? '—'}</dd></div>
               {m.status === 'SUSPENDED' && m.suspendedReason ? <div className="kv__row"><dt>Motif de suspension</dt><dd>{m.suspendedReason}</dd></div> : null}
             </dl>
+            {m.rccmDocument ? (
+              <div className="mc-rccm">
+                <KycFileView
+                  documentId={`${m.userId}:${m.rccmDocument.version}`}
+                  kind="front"
+                  label={`Document RCCM — ${m.businessName}`}
+                  load={() => api.merchants.fetchRccmDocument(m.userId)}
+                />
+              </div>
+            ) : null}
             <div className="mc-actions">
               {m.status === 'ACTIVE' ? (
                 <Button variant="danger" onClick={() => setDialog('suspend')}>Suspendre le marchand</Button>
