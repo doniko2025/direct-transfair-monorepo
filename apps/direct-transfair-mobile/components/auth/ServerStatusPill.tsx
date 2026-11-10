@@ -15,16 +15,18 @@ import { Ionicons } from '../ui/Icon';
 
 import type { ServerStatus } from '../../services/serverWarmup';
 import { FONT, N } from './authTheme';
+import { useT } from '../../providers/I18nProvider';
 
 import { Text } from '../ui/Text';
 export default function ServerStatusPill({ status, onRetry }: { status: ServerStatus; onRetry: () => void }) {
+  const t = useT();
   if (status === 'ready') return null;
 
   if (status === 'down') {
     return (
-      <TouchableOpacity onPress={onRetry} style={[s.pill, s.down]} accessibilityRole="button" accessibilityLabel="Réessayer la connexion au serveur">
+      <TouchableOpacity onPress={onRetry} style={[s.pill, s.down]} accessibilityRole="button" accessibilityLabel={t('server.retryA11y')}>
         <Ionicons name="cloud-offline-outline" size={14} color={N.danger} />
-        <Text style={[s.txt, { color: N.danger }]}>Hors ligne · Réessayer</Text>
+        <Text style={[s.txt, { color: N.danger }]}>{t('server.offline')}</Text>
       </TouchableOpacity>
     );
   }
@@ -32,7 +34,7 @@ export default function ServerStatusPill({ status, onRetry }: { status: ServerSt
   return (
     <View style={s.pill} accessibilityLiveRegion="polite">
       <ActivityIndicator size="small" color={N.ink} style={{ transform: [{ scale: 0.7 }] }} />
-      <Text style={s.txt}>{status === 'waking' ? 'Le serveur démarre…' : 'Connexion…'}</Text>
+      <Text style={s.txt}>{status === 'waking' ? t('server.waking') : t('server.connecting')}</Text>
     </View>
   );
 }

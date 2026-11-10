@@ -16,17 +16,20 @@ import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
 import AuthButton from '../../components/auth/AuthButton';
 import { FONT, N } from '../../components/auth/authTheme';
 import { Text } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
+import type { MessageKey } from '../../i18n/catalog';
 
 type Kind = 'client' | 'merchant';
 
-const OPTIONS: { kind: Kind; icon: string; title: string; text: string }[] = [
-  { kind: 'client', icon: 'person-outline', title: 'Je suis client', text: 'J’envoie de l’argent, je paie mes achats par QR code et je garde mon portefeuille en sécurité.' },
-  { kind: 'merchant', icon: 'storefront-outline', title: 'Je suis marchand', text: 'J’encaisse mes clients par QR code ou par téléphone, et je retire mes gains vers mon Orange Money.' },
+const OPTIONS: { kind: Kind; icon: string; title: MessageKey; text: MessageKey }[] = [
+  { kind: 'client', icon: 'person-outline', title: 'acct.client.title', text: 'acct.client.text' },
+  { kind: 'merchant', icon: 'storefront-outline', title: 'acct.merchant.title', text: 'acct.merchant.text' },
 ];
 
 function ChoiceCard({
   option, selected, onPress, delay, accent, tint,
 }: { option: (typeof OPTIONS)[number]; selected: boolean; onPress: () => void; delay: number; accent: string; tint: string }) {
+  const t = useT();
   const enter = useRef(new Animated.Value(0)).current;
   const pick = useRef(new Animated.Value(selected ? 1 : 0)).current;
   useEffect(() => {
@@ -49,7 +52,7 @@ function ChoiceCard({
         onPress={onPress}
         accessibilityRole="radio"
         accessibilityState={{ selected }}
-        accessibilityLabel={option.title}
+        accessibilityLabel={t(option.title)}
         testID={`account-type-${option.kind}`}
         style={[s.card, { borderColor: selected ? accent : N.border, backgroundColor: selected ? tint : N.surface }]}
       >
@@ -57,8 +60,8 @@ function ChoiceCard({
           <Ionicons name={option.icon as any} size={26} color={selected ? '#FFFFFF' : accent} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.title}>{option.title}</Text>
-          <Text style={s.text}>{option.text}</Text>
+          <Text style={s.title}>{t(option.title)}</Text>
+          <Text style={s.text}>{t(option.text)}</Text>
         </View>
         <View style={[s.radio, { borderColor: selected ? accent : '#B8C7C2', backgroundColor: selected ? accent : 'transparent' }]}>
           {selected ? <Ionicons name="checkmark" size={15} color="#FFFFFF" /> : null}
@@ -70,6 +73,7 @@ function ChoiceCard({
 
 export default function AccountTypeScreen() {
   const router = useRouter();
+  const t = useT();
   const P = useAuthPalette();
   const [kind, setKind] = useState<Kind | null>(null);
 
@@ -79,8 +83,8 @@ export default function AccountTypeScreen() {
   };
 
   return (
-    <AuthShell compact title="Créer votre compte" subtitle="Quel type de compte souhaitez-vous ouvrir ?" onBack={back}>
-      <Text style={s.step}>Étape 1 : votre profil</Text>
+    <AuthShell compact showLang title={t('acct.title')} subtitle={t('acct.subtitle')} onBack={back}>
+      <Text style={s.step}>{t('acct.step')}</Text>
       <View style={{ gap: 14 }}>
         {OPTIONS.map((o, i) => (
           <ChoiceCard key={o.kind} option={o} selected={kind === o.kind} onPress={() => setKind(o.kind)} delay={80 + i * 140} accent={P.action} tint={P.tint} />
@@ -88,7 +92,7 @@ export default function AccountTypeScreen() {
       </View>
       <View style={{ height: 22 }} />
       <AuthButton
-        label="Continuer"
+        label={t('common.continue')}
         icon="arrow-forward"
         iconRight
         accent={P.action}
@@ -97,8 +101,8 @@ export default function AccountTypeScreen() {
         testID="account-type-next"
       />
       <View style={s.loginRow}>
-        <Text style={s.loginTxt}>Vous avez déjà un compte ?</Text>
-        <AuthButton label="Se connecter" variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
+        <Text style={s.loginTxt}>{t('acct.haveAccount')}</Text>
+        <AuthButton label={t('login.submit')} variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
       </View>
     </AuthShell>
   );

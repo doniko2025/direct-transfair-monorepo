@@ -87,6 +87,7 @@ import { describeAuthError } from '../../components/auth/authErrors';
 import { FONT, N } from '../../components/auth/authTheme';
 
 import { Text } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
 // ─── Constantes ──────────────────────────────────────────
 const OTP_LENGTH          = 6;
 const RESEND_COOLDOWN_SEC = 60;
@@ -96,6 +97,7 @@ type Step = 'email' | 'phone';
 export default function VerifyContactScreen() {
   const { token, refreshUser, logout } = useAuth();
   const router = useRouter();
+  const t = useT();
   const P = useAuthPalette();
 
   const params = useLocalSearchParams<{
@@ -175,7 +177,8 @@ export default function VerifyContactScreen() {
       const msg = v2Auth.extractMessage(e);
       const low = msg.toLowerCase();
       const isRateLimit =
-        low.includes('rate') || low.includes('heure') || low.includes('patienter') || msg.includes('3');
+        (e as any)?.response?.status === 429 ||
+        ['rate', 'heure', 'patienter', 'hour', 'wait', 'hora', 'aguard', 'espere'].some((k) => low.includes(k)) || msg.includes('3');
 
       if (isRateLimit) {
         // Un code valide existe déjà (envoi précédent) : on affiche la saisie.
@@ -237,7 +240,7 @@ export default function VerifyContactScreen() {
     } catch (e: any) {
       const info = describeAuthError(e, 'otp');
       setVerifyError(info.kind === 'validation' || info.kind === 'unknown'
-        ? 'Code incorrect ou expiré. Vérifiez le code reçu ou demandez-en un nouveau.'
+        ? t('verify.codeWrong')
         : info.message);
       setWrong(true);
       setCode('');
@@ -263,7 +266,7 @@ export default function VerifyContactScreen() {
     if (currentStep !== 'done' || hasNavigatedRef.current) return;
     hasNavigatedRef.current = true;
 
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       if (token) {
         await refreshUser().catch((refreshErr) => {
           console.error('[verify-contact] refreshUser a échoué après vérification', refreshErr);
@@ -274,7 +277,7 @@ export default function VerifyContactScreen() {
       }
     }, 400);
 
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
 
@@ -284,9 +287,9 @@ export default function VerifyContactScreen() {
   // ── Accès sans identifiant (lien ouvert à froid) ─────────
   if (!userId && currentStep !== 'done') {
     return (
-      <AuthShell compact title="Vérification impossible" subtitle="Nous ne retrouvons pas le compte à vérifier.">
-        <AuthNotice kind="warning" message="Reconnectez-vous : la vérification reprendra là où vous l'avez laissée." />
-        <AuthButton label="Aller à la connexion" accent={P.action} onPress={() => router.replace('/(auth)/login-v2')} />
+      <AuthShell compact showLang title={t('verify.impossibleTitle')} subtitle={t('verify.impossibleSub')}>
+        <AuthNotice kind="warning" message={t('verify.impossibleMsg')} />
+        <AuthButton label={t('verify.goLogin')} accent={P.action} onPress={() => router.replace('/(auth)/login-v2')} />
       </AuthShell>
     );
   }
@@ -294,14 +297,14 @@ export default function VerifyContactScreen() {
   // ── Tout est vérifié ─────────────────────────────────────
   if (currentStep === 'done') {
     return (
-      <AuthShell compact title="Compte activé" subtitle="Toutes vos coordonnées sont vérifiées.">
+      <AuthShell compact showLang title={t('verify.doneTitle')} subtitle={t('verify.doneSub')}>
         <View style={s.doneWrap}>
           <Animated.View style={{ transform: [{ scale: checkScale.interpolate({ inputRange: [0, 1], outputRange: [1, 1] }) }] }}>
             <View style={[s.doneRing, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
               <Ionicons name="checkmark" size={46} color={P.action} />
             </View>
           </Animated.View>
-          <Text style={s.doneTxt}>Connexion en cours…</Text>
+          <Text style={s.doneTxt}>{t('verify.signingIn')}</Text>
           <ActivityIndicator color={P.accent} style={{ marginTop: 14 }} />
         </View>
       </AuthShell>
@@ -310,36 +313,37 @@ export default function VerifyContactScreen() {
 
   // ── Saisie du code ───────────────────────────────────────
   const isEmail = currentStep === 'email';
-  const title = isEmail ? 'Vérifiez votre email' : 'Vérifiez votre téléphone';
+  const title = isEmail ? t('verify.titleEmail') : t('verify.titlePhone');
   const subtitle = maskedInfo
-    ? `Un code à ${OTP_LENGTH} chiffres a été envoyé ${isEmail ? 'à' : 'au'} ${maskedInfo}.`
-    : isEmail ? 'Envoi du code à votre adresse email…' : 'Envoi du code par SMS…';
+    ? t(isEmail ? 'verify.sentEmail' : 'verify.sentPhone', { n: OTP_LENGTH, to: maskedInfo })
+    : isEmail ? t('verify.sendingEmail') : t('verify.sendingSms');
 
   return (
     <AuthShell
       compact
+      showLang
       title={title}
       subtitle={subtitle}
-      headerRight={totalSteps > 1 ? <Text style={s.counter}>Étape {stepNumber}/{totalSteps}</Text> : undefined}
+      headerRight={totalSteps > 1 ? <Text style={s.counter}>{t('verify.step', { n: stepNumber, total: totalSteps })}</Text> : undefined}
       footer={
         <View style={s.otherRow}>
-          <AuthButton label="Utiliser un autre compte" variant="link" accent={P.accent} onPress={() => void logout()} />
+          <AuthButton label={t('verify.otherAccount')} variant="link" accent={P.accent} onPress={() => void logout()} />
         </View>
       }
     >
       {isSending && !codeSent && !sendError ? (
         <View style={s.sending}>
           <ActivityIndicator color={P.accent} />
-          <Text style={s.sendingTxt}>Envoi du code…</Text>
+          <Text style={s.sendingTxt}>{t('verify.sending')}</Text>
         </View>
       ) : null}
 
       {!isSending && !codeSent && sendError ? (
         <AuthNotice
           kind="error"
-          title="Code non envoyé"
+          title={t('verify.notSent')}
           message={sendError}
-          actionLabel="Réessayer"
+          actionLabel={t('common.retry')}
           onAction={() => void sendCode(currentStep)}
         />
       ) : null}
@@ -347,13 +351,13 @@ export default function VerifyContactScreen() {
       {codeSent ? (
         <>
           {rateLimited ? (
-            <AuthNotice kind="info" message="Un code vous a déjà été envoyé il y a un instant. Utilisez-le, ou patientez avant d'en demander un nouveau." />
+            <AuthNotice kind="info" message={t('verify.rateLimited')} />
           ) : null}
           {verifyError ? <AuthNotice kind="error" message={verifyError} /> : null}
 
           <OtpCodeInput
             value={code}
-            onChange={(c) => { setCode(c); if (wrong) { setWrong(false); setVerifyError(null); } }}
+            onChange={(v) => { setCode(v); if (wrong) { setWrong(false); setVerifyError(null); } }}
             onComplete={(c) => void handleVerify(c)}
             accent={P.accent}
             error={wrong}
@@ -361,7 +365,7 @@ export default function VerifyContactScreen() {
           />
           <View style={{ height: 22 }} />
           <AuthButton
-            label="Vérifier"
+            label={t('verify.verify')}
             icon="checkmark"
             iconRight
             accent={P.action}
@@ -371,9 +375,9 @@ export default function VerifyContactScreen() {
           />
           <View style={s.resend}>
             {countdown > 0 ? (
-              <Text style={s.hint}>Renvoyer le code dans {countdown} s</Text>
+              <Text style={s.hint}>{t('otp.resendIn', { seconds: countdown })}</Text>
             ) : (
-              <AuthButton label="Renvoyer le code" variant="link" accent={P.accent} loading={isSending} onPress={() => void handleResend()} />
+              <AuthButton label={t('otp.resend')} variant="link" accent={P.accent} loading={isSending} onPress={() => void handleResend()} />
             )}
           </View>
         </>

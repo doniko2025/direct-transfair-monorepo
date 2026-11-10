@@ -107,7 +107,7 @@ import { AUTH_COUNTRIES, findCountry, type AuthCountry } from '../../components/
 import { describeAuthError } from '../../components/auth/authErrors';
 import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
-import { MERCHANT_CATEGORIES } from '../../components/merchant/merchantUi';
+import { MERCHANT_CATEGORIES, categoryLabel } from '../../components/merchant/merchantUi';
 import {
   cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
 } from '../../utils/businessInfo';
@@ -115,16 +115,18 @@ import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from '../../utils/rccm';
 import { RccmDocumentPicker, type RccmPick } from '../../components/merchant/RccmDocumentPicker';
 
 import { Text, TextInput } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
+import type { MessageKey } from '../../i18n/catalog';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type StepKey = 'identity' | 'residence' | 'contact' | 'shop' | 'pin';
 
-const STEP_META: Record<StepKey, { title: string; subtitle: string }> = {
-  identity:  { title: 'Faisons connaissance',   subtitle: 'Vos informations d’identité, telles qu’elles figurent sur votre pièce d’identité.' },
-  residence: { title: 'Où résidez-vous ?',      subtitle: 'Votre pays de résidence détermine la devise de votre portefeuille.' },
-  contact:   { title: 'Comment vous joindre ?', subtitle: 'Nous vous envoyons un code pour confirmer votre adresse email.' },
-  shop:      { title: 'Votre commerce',         subtitle: 'Ces informations s’affichent à vos clients quand ils vous paient.' },
-  pin:       { title: 'Votre code secret',      subtitle: 'Choisissez 6 chiffres que vous seul connaissez. Ils protègent votre portefeuille.' },
+const STEP_META: Record<StepKey, { title: MessageKey; subtitle: MessageKey }> = {
+  identity:  { title: 'reg.step.identity.title',  subtitle: 'reg.step.identity.sub' },
+  residence: { title: 'reg.step.residence.title', subtitle: 'reg.step.residence.sub' },
+  contact:   { title: 'reg.step.contact.title',   subtitle: 'reg.step.contact.sub' },
+  shop:      { title: 'reg.step.shop.title',      subtitle: 'reg.step.shop.sub' },
+  pin:       { title: 'reg.step.pin.title',       subtitle: 'reg.step.pin.sub' },
 };
 
 const CLIENT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'pin'];
@@ -142,6 +144,7 @@ type Session = { accessToken: string; refreshToken: string | null; user: any };
 export default function RegisterScreen() {
   const { login, applyLoginResult } = useAuth();
   const router = useRouter();
+  const t = useT();
   const P = useAuthPalette();
   const minAge = useMemo(() => getMinimumAge(), []);
   const params = useLocalSearchParams<{ type?: string }>();
@@ -211,23 +214,23 @@ export default function RegisterScreen() {
   const validate = (key: StepKey): Errors => {
     const e: Errors = {};
     if (key === 'identity') {
-      if (!firstName.trim()) e.firstName = 'Saisissez votre prénom.';
-      if (!lastName.trim()) e.lastName = 'Saisissez votre nom de famille.';
+      if (!firstName.trim()) e.firstName = t('reg.err.firstName');
+      if (!lastName.trim()) e.lastName = t('reg.err.lastName');
       const d = validateBirthDate(dob, minAge);
       if (d) e.dob = d;
-      if (!nationality) e.nationality = 'Choisissez votre nationalité.';
+      if (!nationality) e.nationality = t('reg.err.nationality');
     } else if (key === 'residence') {
-      if (!country) e.country = 'Choisissez votre pays de résidence.';
-      if (!city.trim()) e.city = 'Saisissez votre ville.';
+      if (!country) e.country = t('reg.err.country');
+      if (!city.trim()) e.city = t('reg.err.city');
     } else if (key === 'contact') {
-      if (!EMAIL_RE.test(email.trim())) e.email = 'Saisissez une adresse email valide.';
+      if (!EMAIL_RE.test(email.trim())) e.email = t('reg.err.email');
       const p = validatePhone(phone);
       if (p) e.phone = p;
     } else if (key === 'shop') {
-      if (businessName.trim().length < 2) e.businessName = 'Saisissez le nom de votre commerce (2 caractères minimum).';
+      if (businessName.trim().length < 2) e.businessName = t('reg.err.businessName');
       const rc = validateRccm(rccm);
       if (rc) e.rccm = rc;
-      if (!category) e.category = 'Choisissez une catégorie.';
+      if (!category) e.category = t('reg.err.category');
       const ba = validateBusinessAddress(businessAddress); if (ba) e.businessAddress = ba;
       const bc = validateBusinessCity(businessCity); if (bc) e.businessCity = bc;
       const bp = validatePostalCode(businessPostalCode); if (bp) e.businessPostalCode = bp;
@@ -245,14 +248,14 @@ export default function RegisterScreen() {
         }
       }
     } else if (key === 'pin') {
-      if (password.length !== PIN_LENGTH) e.password = `Le code doit contenir exactement ${PIN_LENGTH} chiffres.`;
+      if (password.length !== PIN_LENGTH) e.password = t('pinx.exactLen', { n: PIN_LENGTH });
       else {
         const weak = pinProblem(password, pinContext);
         if (weak) e.password = weak;
       }
-      if (!confirm) e.confirm = 'Confirmez votre code secret.';
-      else if (confirm !== password) e.confirm = 'Les deux codes ne correspondent pas.';
-      if (!terms) e.terms = 'Vous devez accepter les conditions pour continuer.';
+      if (!confirm) e.confirm = t('pinx.confirmRequired');
+      else if (confirm !== password) e.confirm = t('pinx.mismatch');
+      if (!terms) e.terms = t('reg.err.terms');
     }
     return e;
   };
@@ -297,7 +300,7 @@ export default function RegisterScreen() {
       const alive = await warmUpServer();
       setWaking(false);
       if (!alive) {
-        setFormError({ title: 'Serveur injoignable', message: 'Nous n’arrivons pas à joindre le serveur. Vérifiez votre connexion puis réessayez dans un instant.' });
+        setFormError({ title: t('reg.err.serverDown'), message: t('reg.err.serverDownMsg') });
         return;
       }
 
@@ -345,36 +348,38 @@ export default function RegisterScreen() {
       setWaking(false);
       const info = describeAuthError(e, 'register');
       const msg = info.message.toLowerCase();
-      if (info.kind === 'conflict' && msg.includes('email')) {
+      // Le serveur répond dans la langue de l'app : on reconnaît le sujet du message en FR, EN et PT.
+      const has = (...words: string[]) => words.some((w) => msg.includes(w));
+      if (info.kind === 'conflict' && has('email')) {
         setServerErrors({ email: info.message });
         setStep(stepIndex('contact'));
-        setFormError({ title: info.title, message: 'Cette adresse est déjà associée à un compte. Connectez-vous, ou utilisez une autre adresse.', action: 'login' });
-      } else if (msg.includes('rccm')) {
+        setFormError({ title: info.title, message: t('reg.err.emailTaken'), action: 'login' });
+      } else if (has('rccm')) {
         setServerErrors({ rccm: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
-      } else if (msg.includes('adresse de votre commerce')) {
+      } else if (has('adresse de votre commerce', 'business address', 'morada do seu comércio')) {
         setServerErrors({ businessAddress: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
-      } else if (msg.includes('ville de votre commerce')) {
+      } else if (has('ville de votre commerce', 'business city', 'cidade do seu comércio')) {
         setServerErrors({ businessCity: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
-      } else if (msg.includes('code postal')) {
+      } else if (has('code postal', 'postal code', 'código postal')) {
         setServerErrors({ businessPostalCode: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
-      } else if (msg.includes('nif / ifu')) {
+      } else if (has('nif / ifu')) {
         setServerErrors({ businessTaxId: info.message });
         setStep(stepIndex('shop'));
         setShowErrors(true);
-      } else if (info.kind === 'conflict' && (msg.includes('numéro') || msg.includes('téléphone'))) {
+      } else if (info.kind === 'conflict' && has('numéro', 'téléphone', 'number', 'phone', 'número', 'telemóvel')) {
         setServerErrors({ phone: info.message });
         setStep(stepIndex('contact'));
-        setFormError({ title: info.title, message: 'Ce numéro est déjà associé à un compte. Connectez-vous, ou utilisez un autre numéro.', action: 'login' });
-      } else if (msg.includes('numéro de téléphone invalide')) {
-        setServerErrors({ phone: 'Ce numéro n’est pas reconnu. Vérifiez l’indicatif et le numéro.' });
+        setFormError({ title: info.title, message: t('reg.err.phoneTaken'), action: 'login' });
+      } else if (has('numéro de téléphone invalide', 'invalid phone number', 'número de telemóvel inválido')) {
+        setServerErrors({ phone: t('reg.err.phoneUnknown') });
         setStep(stepIndex('contact'));
         setShowErrors(true);
       } else {
@@ -418,18 +423,18 @@ export default function RegisterScreen() {
   // ═══════════════════════════════════════════════════════
   if (done) {
     return (
-      <AuthShell title={isMerchant ? "Compte marchand créé" : "Compte créé"} subtitle={isMerchant ? "Bienvenue ! Votre commerce est prêt à encaisser." : "Bienvenue ! Votre espace est prêt."}>
+      <AuthShell showLang title={isMerchant ? t('reg.successMerchant') : t('reg.successClient')} subtitle={isMerchant ? t('reg.welcomeMerchant') : t('reg.welcomeClient')}>
         <View style={s.successIcon}>
           <View style={[s.successRing, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
             <Ionicons name="checkmark" size={44} color={P.action} />
           </View>
         </View>
         <Text style={s.successText}>
-          Dernière étape : confirmez votre adresse email.{'\n'}Nous venons de vous envoyer un code à 6 chiffres à{' '}
+          {t('reg.lastStep')}
           <Text style={{ fontWeight: '800', color: N.ink }}>{email.trim().toLowerCase()}</Text>.
         </Text>
         <View style={{ height: 22 }} />
-        <AuthButton label="Vérifier mon email" icon="arrow-forward" iconRight accent={P.action} onPress={continueToVerification} />
+        <AuthButton label={t('reg.verifyEmail')} icon="arrow-forward" iconRight accent={P.action} onPress={continueToVerification} />
       </AuthShell>
     );
   }
@@ -441,41 +446,41 @@ export default function RegisterScreen() {
   const isLast = step === steps.length - 1;
 
   return (
-    <AuthShell compact title={meta.title} subtitle={meta.subtitle} onBack={goBack}>
+    <AuthShell compact showLang title={t(meta.title)} subtitle={t(meta.subtitle)} onBack={goBack}>
       {/* ── Progression ── */}
-      <View style={s.progress} accessibilityLabel={`Étape ${step + 1} sur ${steps.length}`}>
+      <View style={s.progress} accessibilityLabel={t('reg.progress', { n: step + 1, total: steps.length })}>
         {steps.map((_, i) => (
           <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : '#E8E8E8' }]} />
         ))}
       </View>
-      <Text style={s.progTxt}>Étape {step + 1} sur {steps.length}</Text>
+      <Text style={s.progTxt}>{t('reg.progress', { n: step + 1, total: steps.length })}</Text>
 
       {formError ? (
         <AuthNotice
           kind="error"
           title={formError.title}
           message={formError.message}
-          actionLabel={formError.action === 'login' ? 'Aller à la connexion' : undefined}
+          actionLabel={formError.action === 'login' ? t('reg.goLogin') : undefined}
           onAction={formError.action === 'login' ? () => router.replace('/(auth)/login-v2') : undefined}
         />
       ) : null}
-      {waking ? <AuthNotice kind="info" title="Le serveur démarre" message="Quelques secondes après une période d’inactivité, merci de patienter…" /> : null}
+      {waking ? <AuthNotice kind="info" title={t('reg.waking')} message={t('reg.wakingMsg')} /> : null}
 
       {stepKey === 'identity' && (
         <>
           <AuthField
-            label="Prénom" icon="person-outline" value={firstName} onChangeText={setFirstName}
+            label={t('reg.firstName')} icon="person-outline" value={firstName} onChangeText={setFirstName}
             error={errors.firstName} autoCapitalize="words" autoComplete="given-name" textContentType="givenName"
             returnKeyType="next" onSubmitEditing={() => lastNameRef.current?.focus()} accent={P.accent} autoFocus
           />
           <AuthField
-            label="Nom de famille" icon="person-circle-outline" value={lastName} onChangeText={setLastName}
+            label={t('reg.lastName')} icon="person-circle-outline" value={lastName} onChangeText={setLastName}
             error={errors.lastName} autoCapitalize="characters" autoComplete="family-name" textContentType="familyName"
             returnKeyType="next" inputRef={lastNameRef} accent={P.accent}
           />
           <DateOfBirthField value={dob} onChange={setDob} error={errors.dob} accent={P.accent} />
           <SelectField
-            label="Nationalité" icon="flag-outline" placeholder="Choisir une nationalité"
+            label={t('reg.nationality')} icon="flag-outline" placeholder={t('reg.nationalityPh')}
             value={nationality ?? undefined} prefix={nationality ? findCountry(nationality)?.flag : undefined}
             error={errors.nationality} onPress={() => setPicker('nationality')}
           />
@@ -485,12 +490,12 @@ export default function RegisterScreen() {
       {stepKey === 'residence' && (
         <>
           <SelectField
-            label="Pays de résidence" icon="location-outline" placeholder="Choisir votre pays"
+            label={t('reg.country')} icon="location-outline" placeholder={t('reg.countryPh')}
             value={country ?? undefined} prefix={country ? findCountry(country)?.flag : undefined}
             error={errors.country} onPress={() => setPicker('country')}
           />
           <AuthField
-            label="Ville" icon="business-outline" value={city} onChangeText={setCity}
+            label={t('reg.city')} icon="business-outline" value={city} onChangeText={setCity}
             error={errors.city} autoCapitalize="words" autoComplete="postal-address-locality"
             returnKeyType="next" onSubmitEditing={goNext} inputRef={cityRef} accent={P.accent}
           />
@@ -500,19 +505,19 @@ export default function RegisterScreen() {
       {stepKey === 'contact' && (
         <>
           <AuthField
-            label="Adresse email" icon="mail-outline" value={email}
-            onChangeText={(t) => { setEmail(t); clearServer('email'); }}
+            label={t('reg.email')} icon="mail-outline" value={email}
+            onChangeText={(v) => { setEmail(v); clearServer('email'); }}
             error={errors.email} keyboardType="email-address" autoComplete="email" textContentType="emailAddress"
             returnKeyType="next" onSubmitEditing={() => phoneRef.current?.focus()} accent={P.accent} autoFocus
-            hint="Elle vous servira à vous connecter et à recevoir vos confirmations."
+            hint={t('reg.emailHint')}
           />
           <PhoneField
             country={dialCountry}
             onCountryChange={(c) => { setDialCountry(c); setDialTouched(true); }}
             value={phone}
-            onChangeText={(t) => { setPhone(t); clearServer('phone'); }}
+            onChangeText={(v) => { setPhone(v); clearServer('phone'); }}
             error={errors.phone}
-            hint="Sans le 0 de tête. Utilisé pour sécuriser votre compte."
+            hint={t('reg.phoneHint')}
             accent={P.accent}
             inputRef={phoneRef}
             onSubmitEditing={goNext}
@@ -523,18 +528,18 @@ export default function RegisterScreen() {
       {stepKey === 'shop' && (
         <>
           <AuthField
-            label="Nom du commerce" icon="storefront-outline" value={businessName}
+            label={t('reg.businessName')} icon="storefront-outline" value={businessName}
             onChangeText={setBusinessName} error={errors.businessName} autoCapitalize="words"
             returnKeyType="next" accent={P.accent} autoFocus maxLength={80}
           />
           <AuthField
-            label="Numéro RCCM" icon="document-text-outline" value={rccm}
-            onChangeText={(t) => { setRccm(t); clearServer('rccm'); }} error={errors.rccm} autoCapitalize="characters"
+            label={t('reg.rccm')} icon="document-text-outline" value={rccm}
+            onChangeText={(v) => { setRccm(v); clearServer('rccm'); }} error={errors.rccm} autoCapitalize="characters"
             returnKeyType="next" accent={P.accent} maxLength={40} placeholder={RCCM_EXAMPLE}
-            hint="Registre du Commerce et du Crédit Mobilier : obligatoire."
+            hint={t('reg.rccmHint')}
           />
           <RccmDocumentPicker value={rccmDoc} onChange={setRccmDoc} disabled={submitting} />
-          <Text style={s.chipsLabel}>Catégorie</Text>
+          <Text style={s.chipsLabel}>{t('reg.category')}</Text>
           <View style={s.chips}>
             {MERCHANT_CATEGORIES.map((c) => {
               const on = category === c;
@@ -547,7 +552,7 @@ export default function RegisterScreen() {
                   accessibilityState={{ selected: on }}
                   style={[s.chip, on && { backgroundColor: P.action, borderColor: P.action }]}
                 >
-                  <Text style={[s.chipTxt, on && { color: '#FFFFFF' }]}>{c}</Text>
+                  <Text style={[s.chipTxt, on && { color: '#FFFFFF' }]}>{categoryLabel(c)}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -560,38 +565,38 @@ export default function RegisterScreen() {
           ) : null}
           <View style={{ height: 14 }} />
           <AuthField
-            label="Adresse du commerce" icon="location-outline" value={businessAddress}
-            onChangeText={(t) => { setBusinessAddress(t); clearServer('businessAddress'); }} error={errors.businessAddress}
+            label={t('reg.businessAddress')} icon="location-outline" value={businessAddress}
+            onChangeText={(v) => { setBusinessAddress(v); clearServer('businessAddress'); }} error={errors.businessAddress}
             autoCapitalize="sentences" accent={P.accent} maxLength={160} returnKeyType="next"
-            hint="Rue, numéro, repère connu… tel que vos clients peuvent vous trouver."
+            hint={t('reg.businessAddressHint')}
           />
           <AuthField
-            label="Quartier / commune (facultatif)" icon="map-outline" value={businessDistrict}
+            label={t('reg.businessDistrict')} icon="map-outline" value={businessDistrict}
             onChangeText={setBusinessDistrict} autoCapitalize="words" accent={P.accent} maxLength={80} returnKeyType="next"
           />
           <AuthField
-            label="Ville du commerce" icon="business-outline" value={businessCity}
-            onChangeText={(t) => { setBusinessCity(t); clearServer('businessCity'); }} error={errors.businessCity}
+            label={t('reg.businessCity')} icon="business-outline" value={businessCity}
+            onChangeText={(v) => { setBusinessCity(v); clearServer('businessCity'); }} error={errors.businessCity}
             autoCapitalize="words" accent={P.accent} maxLength={80} returnKeyType="next"
           />
           <AuthField
-            label="Code postal (facultatif)" icon="mail-outline" value={businessPostalCode}
-            onChangeText={(t) => { setBusinessPostalCode(t.toUpperCase()); clearServer('businessPostalCode'); }} error={errors.businessPostalCode}
+            label={t('reg.businessPostal')} icon="mail-outline" value={businessPostalCode}
+            onChangeText={(v) => { setBusinessPostalCode(v.toUpperCase()); clearServer('businessPostalCode'); }} error={errors.businessPostalCode}
             autoCapitalize="characters" accent={P.accent} maxLength={10} returnKeyType="next"
           />
           <AuthField
-            label="Téléphone du commerce (facultatif)" icon="call-outline" value={businessPhone}
-            onChangeText={(t) => setBusinessPhone(t.replace(/[^\d+\s.-]/g, ''))} error={errors.businessPhone}
+            label={t('reg.businessPhone')} icon="call-outline" value={businessPhone}
+            onChangeText={(v) => setBusinessPhone(v.replace(/[^\d+\s.-]/g, ''))} error={errors.businessPhone}
             keyboardType="phone-pad" accent={P.accent} maxLength={22} returnKeyType="next" placeholder="+224 620 00 00 00"
-            hint="Avec l’indicatif du pays. Distinct de votre téléphone personnel."
+            hint={t('reg.businessPhoneHint')}
           />
           <AuthField
-            label="NIF / IFU (facultatif)" icon="receipt-outline" value={businessTaxId}
-            onChangeText={(t) => { setBusinessTaxId(t.toUpperCase()); clearServer('businessTaxId'); }} error={errors.businessTaxId}
+            label={t('reg.taxId')} icon="receipt-outline" value={businessTaxId}
+            onChangeText={(v) => { setBusinessTaxId(v.toUpperCase()); clearServer('businessTaxId'); }} error={errors.businessTaxId}
             autoCapitalize="characters" accent={P.accent} maxLength={30} returnKeyType="next"
           />
 
-          <Text style={s.chipsLabel}>Numéro Orange Money de retrait</Text>
+          <Text style={s.chipsLabel}>{t('reg.orangeTitle')}</Text>
           {!orangeAllowed ? (
             <View style={s.termsErr}>
               <Ionicons name="information-circle" size={16} color={N.danger} />
@@ -599,7 +604,7 @@ export default function RegisterScreen() {
             </View>
           ) : (
           <>
-          <Text style={s.helpTxt}>Vos gains seront versés sur ce numéro. Pour le modifier plus tard, votre code secret sera demandé.</Text>
+          <Text style={s.helpTxt}>{t('reg.orangeHelp')}</Text>
           <TouchableOpacity
             style={s.termsRow}
             onPress={() => setSameOrange((v) => !v)}
@@ -610,7 +615,7 @@ export default function RegisterScreen() {
             <View style={[s.check, sameOrange && { backgroundColor: P.action, borderColor: P.action }]}>
               {sameOrange ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
             </View>
-            <Text style={s.termsTxt}>C’est le même numéro que mon téléphone (+{dialCountry.dial.replace('+', '')} {normalizeNationalNumber(phone)})</Text>
+            <Text style={s.termsTxt}>{t('reg.orangeSame', { phone: `+${dialCountry.dial.replace('+', '')} ${normalizeNationalNumber(phone)}` })}</Text>
           </TouchableOpacity>
           {!sameOrange ? (
             <View style={{ marginTop: 14 }}>
@@ -618,7 +623,7 @@ export default function RegisterScreen() {
                 country={orangeCountry}
                 onCountryChange={setOrangeCountry}
                 value={orangeNational}
-                onChangeText={(t) => { setOrangeNational(t); clearServer('orangePhone'); }}
+                onChangeText={(v) => { setOrangeNational(v); clearServer('orangePhone'); }}
                 error={errors.orangePhone}
                 hint={orangeHintFor(accountCurrency)}
                 accent={P.accent}
@@ -640,12 +645,12 @@ export default function RegisterScreen() {
       {stepKey === 'pin' && (
         <>
           <PinInput
-            label="Code secret (6 chiffres)" value={password} onChange={(v) => { setPassword(v); clearServer('password'); }}
+            label={t('pinx.label')} value={password} onChange={(v) => { setPassword(v); clearServer('password'); }}
             onComplete={() => confirmRef.current?.focus()} accent={P.accent} error={errors.password} autoFocus testID="register-pin"
           />
           <PinGuide pin={password} context={pinContext} />
           <PinInput
-            label="Confirmer le code secret" value={confirm} onChange={setConfirm} accent={P.accent}
+            label={t('pinx.confirmLabel')} value={confirm} onChange={setConfirm} accent={P.accent}
             error={errors.confirm} noReveal inputRef={confirmRef} testID="register-pin-confirm"
           />
 
@@ -655,16 +660,16 @@ export default function RegisterScreen() {
             activeOpacity={0.8}
             accessibilityRole="checkbox"
             accessibilityState={{ checked: terms }}
-            accessibilityLabel="J'accepte les conditions générales et la politique de confidentialité"
+            accessibilityLabel={t('reg.acceptA11y')}
           >
             <View style={[s.check, terms && { backgroundColor: P.action, borderColor: P.action }, errors.terms ? { borderColor: N.danger } : null]}>
               {terms ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
             </View>
             <Text style={s.termsTxt}>
-              J’accepte les{' '}
-              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/terms')}>conditions générales</Text>
-              {' '}et la{' '}
-              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/privacy-policy')}>politique de confidentialité</Text>.
+              {t('reg.accept1')}
+              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/terms')}>{t('reg.terms')}</Text>
+              {t('reg.accept2')}
+              <Text style={[s.termsLink, { color: P.accent }]} onPress={() => router.push('/(auth)/privacy-policy')}>{t('reg.privacy')}</Text>.
             </Text>
           </TouchableOpacity>
           {errors.terms ? (
@@ -678,7 +683,7 @@ export default function RegisterScreen() {
 
       <View style={{ height: 8 }} />
       <AuthButton
-        label={isLast ? 'Créer mon compte' : 'Continuer'}
+        label={isLast ? t('reg.create') : t('common.continue')}
         icon={isLast ? 'checkmark-circle' : 'arrow-forward'}
         iconRight
         accent={P.action}
@@ -688,14 +693,14 @@ export default function RegisterScreen() {
       />
       {step === 0 ? (
         <View style={s.loginRow}>
-          <Text style={s.loginTxt}>Vous avez déjà un compte ?</Text>
-          <AuthButton label="Se connecter" variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
+          <Text style={s.loginTxt}>{t('acct.haveAccount')}</Text>
+          <AuthButton label={t('login.submit')} variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
         </View>
       ) : null}
 
       <CountryPickerSheet
         visible={picker === 'country'}
-        title="Pays de résidence"
+        title={t('reg.pickCountry')}
         selected={country ?? undefined}
         accent={P.accent}
         onSelect={pickResidence}
@@ -703,7 +708,7 @@ export default function RegisterScreen() {
       />
       <CountryPickerSheet
         visible={picker === 'nationality'}
-        title="Nationalité"
+        title={t('reg.pickNationality')}
         selected={nationality ?? undefined}
         accent={P.accent}
         onSelect={(c) => { setNationality(c.name); setPicker(null); }}

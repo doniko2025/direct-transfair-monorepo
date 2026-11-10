@@ -12,6 +12,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { TextInput as RNTextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
 import { useAuth } from "../../../providers/AuthProvider";
 import PinGuide from "../../../components/auth/PinGuide";
 import PinInput from "../../../components/auth/PinInput";
@@ -20,6 +21,7 @@ import { Button, NavBar, Notice, Screen, UText, useUI } from "../../../component
 
 export default function SecurityScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
   const { user } = useAuth();
 
@@ -52,13 +54,13 @@ export default function SecurityScreen() {
     try {
       await api.changePassword({ oldPassword: oldPin, newPassword: newPin });
       setOldPin(""); setNewPin(""); setConfirmPin("");
-      setResult({ type: "pos", title: "Code mis à jour", message: "Ton code secret a bien été modifié." });
+      setResult({ type: "pos", title: t("sec.updatedTitle"), message: t("sec.updatedMsg") });
       backTimer.current = setTimeout(() => router.back(), 1800);
     } catch (e: any) {
-      const raw = e?.response?.data?.message || e?.message || "Impossible de modifier le code.";
+      const raw = e?.response?.data?.message || e?.message || t("sec.failMsg");
       const msg = Array.isArray(raw) ? String(raw[0]) : String(raw);
       if (e?.response?.data?.code === "PIN_WEAK") setServerWeak(msg);
-      else setResult({ type: "danger", title: "Erreur", message: msg });
+      else setResult({ type: "danger", title: t("common.error"), message: msg });
     } finally {
       setLoading(false);
     }
@@ -67,11 +69,11 @@ export default function SecurityScreen() {
   return (
     <Screen
       header={<NavBar onBack={() => router.back()} />}
-      footer={<Button label="Mettre à jour le code" onPress={handleSave} loading={loading} disabled={!canSave || loading} />}
+      footer={<Button label={t("sec.update")} onPress={handleSave} loading={loading} disabled={!canSave || loading} />}
     >
-      <UText v="hero">Code secret</UText>
+      <UText v="hero">{t("sec.title")}</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 24 }}>
-        Ton code à 6 chiffres protège ton portefeuille. Change-le régulièrement et ne le partage jamais, même avec nous.
+        {t("sec.intro")}
       </UText>
 
       {result && (
@@ -81,7 +83,7 @@ export default function SecurityScreen() {
       )}
 
       <PinInput
-        label="Code actuel"
+        label={t("sec.current")}
         value={oldPin}
         onChange={setOldPin}
         onComplete={() => newRef.current?.focus()}
@@ -89,22 +91,22 @@ export default function SecurityScreen() {
         disabled={loading}
       />
       <PinInput
-        label="Nouveau code"
+        label={t("sec.new")}
         value={newPin}
         onChange={(v) => { setNewPin(v); setServerWeak(null); }}
         onComplete={() => confirmRef.current?.focus()}
         accent={C.accent}
-        error={serverWeak ?? (same ? "Le nouveau code doit être différent de l'ancien." : null)}
+        error={serverWeak ?? (same ? t("sec.same") : null)}
         disabled={loading}
         inputRef={newRef}
       />
       <PinGuide pin={newPin} context={pinContext} />
       <PinInput
-        label="Confirmer le nouveau code"
+        label={t("sec.confirm")}
         value={confirmPin}
         onChange={setConfirmPin}
         accent={C.accent}
-        error={mismatch ? "Les deux codes ne correspondent pas." : null}
+        error={mismatch ? t("sec.mismatch") : null}
         disabled={loading}
         noReveal
         inputRef={confirmRef}

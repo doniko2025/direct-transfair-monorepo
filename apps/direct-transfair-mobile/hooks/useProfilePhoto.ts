@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 import { bytesToBase64, kycApi, type KycStatusView } from "../services/kyc";
+import { tr } from "../i18n/runtime";
 
 type Own = { userId: string | null; uri: string | null; etag: string | null; checked: boolean };
 
@@ -79,10 +80,10 @@ function explain(e: any): string {
   const status = e?.response?.status;
   const msg = e?.response?.data?.message;
   const text = Array.isArray(msg) ? msg[0] : msg;
-  if (status === 413) return "Photo trop lourde. Choisissez une photo moins grande.";
+  if (status === 413) return tr("photo.tooBig");
   if (typeof text === "string" && text.trim()) return text;
-  if (e?.code === "ECONNABORTED" || !e?.response) return "Envoi impossible : vérifiez votre connexion et réessayez.";
-  return "Impossible d'enregistrer la photo pour le moment.";
+  if (e?.code === "ECONNABORTED" || !e?.response) return tr("photo.offline");
+  return tr("photo.saveFailed");
 }
 
 /** Actions : enregistrer (base64 issu du sélecteur) / retirer la photo. */

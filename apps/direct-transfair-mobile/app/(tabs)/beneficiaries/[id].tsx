@@ -41,6 +41,8 @@ import {
   Avatar, Button, EmptyView, ErrorView, Field, IconButton, ListRow, NavBar, Pill, Screen, SectionHeader, SelectRow, SkeletonRows, UText, useUI,
 } from "../../../components/ui";
 import { ChoiceSheet } from "../../../components/ui/ChoiceSheet";
+import { useT } from "../../../providers/I18nProvider";
+import { localizeCountry, countryName } from "../../../utils/countryNames";
 
 function getIdParam(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.id;
@@ -51,6 +53,7 @@ function getIdParam(params: Record<string, string | string[] | undefined>): stri
 
 export default function BeneficiaireDetailScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const router = useRouter();
   const params = useLocalSearchParams();
   const id = useMemo(() => getIdParam(params as any), [params]);
@@ -117,18 +120,18 @@ export default function BeneficiaireDetailScreen() {
       setSaving(true);
       const updated = await api.updateBeneficiary(id, { fullName, country: addressCountry.name, city: city.trim(), phone: fullPhone } as Partial<CreateBeneficiaryPayload>);
       setItem(updated); hydrateForm(updated); setEditing(false);
-    } catch { showAlert("Erreur", "Impossible de mettre à jour."); }
+    } catch { showAlert(t("common.error"), t("bn.d.updateFail")); }
     finally { setSaving(false); }
   };
 
   const onDelete = () => {
     if (!id) return;
-    showConfirm("Supprimer le bénéficiaire", "Cette action est irréversible. Confirmer ?", async () => {
+    showConfirm(t("bn.d.delTitle"), t("bn.d.delMsg"), async () => {
       try {
         setDeleting(true);
         await api.deleteBeneficiary(id);
-        showAlert("Supprimé", "Bénéficiaire supprimé.", () => router.back());
-      } catch { showAlert("Erreur", "Impossible de supprimer (lié à une transaction ?)."); }
+        showAlert(t("bn.d.deleted"), t("bn.d.deletedMsg"), () => router.back());
+      } catch { showAlert(t("common.error"), t("bn.d.deleteFail")); }
       finally { setDeleting(false); }
     });
   };
@@ -136,7 +139,7 @@ export default function BeneficiaireDetailScreen() {
   const onCancelEdit = () => { if (item) hydrateForm(item); setEditing(false); };
 
   const goSendWallet = () => {
-    if (!item?.phone) { showAlert("Info", "Ce bénéficiaire n'a pas de numéro enregistré."); return; }
+    if (!item?.phone) { showAlert(t("bn.d.info"), t("bn.d.noPhone")); return; }
     router.push({ pathname: "/(tabs)/send", params: { mode: "WALLET", phone: item.phone } });
   };
   const goSendCash = () => {
@@ -154,24 +157,24 @@ export default function BeneficiaireDetailScreen() {
   // ── États de secours ───────────────────────────────────
   if (loading) {
     return (
-      <Screen header={<NavBar title="Bénéficiaire" onBack={() => router.back()} />}>
+      <Screen header={<NavBar title={t("bn.d.title")} onBack={() => router.back()} />}>
         <SkeletonRows rows={3} />
       </Screen>
     );
   }
   if (!item && loadError) {
     return (
-      <Screen header={<NavBar title="Bénéficiaire" onBack={() => router.back()} />}>
+      <Screen header={<NavBar title={t("bn.d.title")} onBack={() => router.back()} />}>
         <ErrorView title={loadError.title} message={loadError.message} onRetry={() => { setLoading(true); void load(); }} />
       </Screen>
     );
   }
   if (!item) {
     return (
-      <Screen header={<NavBar title="Bénéficiaire" onBack={() => router.back()} />}>
-        <EmptyView icon="person-outline" title="Bénéficiaire introuvable" message="Ce contact n'existe plus ou a été supprimé." />
+      <Screen header={<NavBar title={t("bn.d.title")} onBack={() => router.back()} />}>
+        <EmptyView icon="person-outline" title={t("bn.d.notFound")} message={t("bn.d.notFoundMsg")} />
         <View style={{ marginTop: 16 }}>
-          <Button label="Retour" kind="outline" onPress={() => router.back()} />
+          <Button label={t("common.back")} kind="outline" onPress={() => router.back()} />
         </View>
       </Screen>
     );
@@ -182,18 +185,18 @@ export default function BeneficiaireDetailScreen() {
       keyboard
       header={
         <NavBar
-          title="Bénéficiaire"
+          title={t("bn.d.title")}
           onBack={() => router.back()}
           right={
             <IconButton
               icon={editing ? "arrow-undo-outline" : "pencil"}
-              label={editing ? "Annuler la modification" : "Modifier le bénéficiaire"}
+              label={editing ? t("bn.d.cancelEdit") : t("bn.d.edit")}
               onPress={() => (editing ? onCancelEdit() : setEditing(true))}
             />
           }
         />
       }
-      footer={editing ? <Button label="Enregistrer" icon="save-outline" onPress={onSave} loading={saving} disabled={!canSave || saving} /> : undefined}
+      footer={editing ? <Button label={t("common.save")} icon="save-outline" onPress={onSave} loading={saving} disabled={!canSave || saving} /> : undefined}
     >
       {/* Identité */}
       <View style={{ alignItems: "center", paddingTop: 4, paddingBottom: 18 }}>
@@ -201,7 +204,7 @@ export default function BeneficiaireDetailScreen() {
         <UText v="title" align="center" style={{ marginTop: 12 }} numberOfLines={2}>{item.fullName}</UText>
         {!!(item.city || item.country) && (
           <UText v="caption" tone="muted" align="center" style={{ marginTop: 2 }}>
-            {item.city}{item.country ? `${item.city ? ", " : ""}${item.country}` : ""}
+            {item.city}{item.country ? `${item.city ? ", " : ""}${localizeCountry(item.country)}` : ""}
           </UText>
         )}
         {!!item.phone && <Pill label={item.phone} tone="neutral" icon="call-outline" style={{ marginTop: 10 }} />}
@@ -209,26 +212,26 @@ export default function BeneficiaireDetailScreen() {
 
       {!editing ? (
         <>
-          <SectionHeader title="Envoyer de l'argent" />
-          <ListRow icon="wallet-outline" title="Vers un wallet" subtitle="Transfert direct Mobile Money" onPress={goSendWallet} />
-          <ListRow icon="cash-outline" title="Envoi d'argent" subtitle="Retrait en agence" onPress={goSendCash} last />
+          <SectionHeader title={t("home.send")} />
+          <ListRow icon="wallet-outline" title={t("bn.d.toWallet")} subtitle={t("bn.d.toWalletSub")} onPress={goSendWallet} />
+          <ListRow icon="cash-outline" title={t("send.titleCash")} subtitle={t("bn.d.cashSub")} onPress={goSendCash} last />
         </>
       ) : (
         <>
-          <SectionHeader title="Modifier les informations" style={{ marginBottom: 14 }} />
+          <SectionHeader title={t("bn.d.editInfo")} style={{ marginBottom: 14 }} />
           <View style={{ flexDirection: "row", gap: 12 }}>
-            <Field label="Prénom" value={firstName} onChangeText={setFirstName} placeholder="Mamadou" autoCapitalize="words" editable={!saving} style={{ flex: 1 }} />
-            <Field label="Nom" value={lastName} onChangeText={setLastName} placeholder="Diallo" autoCapitalize="words" editable={!saving} style={{ flex: 1 }} />
+            <Field label={t("bn.d.first")} value={firstName} onChangeText={setFirstName} placeholder="Mamadou" autoCapitalize="words" editable={!saving} style={{ flex: 1 }} />
+            <Field label={t("bn.d.last")} value={lastName} onChangeText={setLastName} placeholder="Diallo" autoCapitalize="words" editable={!saving} style={{ flex: 1 }} />
           </View>
-          <SelectRow label="Pays de résidence" value={addressCountry.name} prefix={addressCountry.flag} placeholder="Sélectionner…" onPress={() => setShowCountryModal(true)} />
-          <SelectRow label="Ville" value={city} placeholder="Sélectionner…" icon="location-outline" onPress={() => setShowCityModal(true)} />
+          <SelectRow label={t("bn.d.country")} value={countryName(addressCountry.code, addressCountry.name)} prefix={addressCountry.flag} placeholder={t("bn.c.select")} onPress={() => setShowCountryModal(true)} />
+          <SelectRow label={t("bn.d.city")} value={city === "Autre" ? t("bn.c.other") : city} placeholder={t("bn.c.select")} icon="location-outline" onPress={() => setShowCityModal(true)} />
 
-          <UText v="overline" tone="muted" style={{ marginBottom: 8, marginTop: 2 }}>Téléphone (Mobile Money)</UText>
+          <UText v="overline" tone="muted" style={{ marginBottom: 8, marginTop: 2 }}>{t("bn.d.phoneMm")}</UText>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <Pressable
               onPress={() => setShowPhoneCodeModal(true)}
               accessibilityRole="button"
-              accessibilityLabel={`Indicatif ${phoneCountry.dialCode}`}
+              accessibilityLabel={t("bn.c.dialA11y", { dial: phoneCountry.dialCode })}
               style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 56, paddingHorizontal: 14, borderRadius: R.md, backgroundColor: C.field }}
             >
               <UText v="subheading">{phoneCountry.flag}</UText>
@@ -237,9 +240,9 @@ export default function BeneficiaireDetailScreen() {
             </Pressable>
             <Field
               value={phoneNumber}
-              onChangeText={(t) => {
-                const intl = parseInternational(t);
-                if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); } else setPhoneNumber(t);
+              onChangeText={(v) => {
+                const intl = parseInternational(v);
+                if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); } else setPhoneNumber(v);
               }}
               placeholder="620 000 000"
               keyboardType="phone-pad"
@@ -251,11 +254,11 @@ export default function BeneficiaireDetailScreen() {
       )}
 
       {/* Zone dangereuse */}
-      <SectionHeader title="Zone dangereuse" style={{ marginTop: 28 }} />
+      <SectionHeader title={t("bn.d.danger")} style={{ marginTop: 28 }} />
       <ListRow
         icon="trash-outline"
-        title={deleting ? "Suppression…" : "Supprimer le bénéficiaire"}
-        subtitle="Action irréversible"
+        title={deleting ? t("bn.d.deleting") : t("bn.d.delTitle")}
+        subtitle={t("bn.d.irreversible")}
         danger
         chevron={false}
         last
@@ -267,10 +270,10 @@ export default function BeneficiaireDetailScreen() {
       <ChoiceSheet<CountryData>
         visible={showCountryModal}
         onClose={() => setShowCountryModal(false)}
-        title="Pays de résidence"
+        title={t("bn.c.countrySheet")}
         items={countriesList}
         getKey={(c) => c.code}
-        getLabel={(c) => c.name}
+        getLabel={(c) => countryName(c.code, c.name)}
         getLeft={(c) => flagBubble(c.flag)}
         isSelected={(c) => addressCountry.code === c.code}
         onPick={(c) => { setAddressCountry(c); setPhoneCountry(c); setCity(""); }}
@@ -278,20 +281,20 @@ export default function BeneficiaireDetailScreen() {
       <ChoiceSheet<string>
         visible={showCityModal}
         onClose={() => setShowCityModal(false)}
-        title={`Villes · ${addressCountry.name}`}
+        title={t("bn.c.cities", { country: countryName(addressCountry.code, addressCountry.name) })}
         items={availableCities.length > 0 ? availableCities : ["Autre"]}
         getKey={(c) => c}
-        getLabel={(c) => c}
+        getLabel={(c) => (c === "Autre" ? t("bn.c.other") : c)}
         isSelected={(c) => city === c}
         onPick={(c) => setCity(c)}
       />
       <ChoiceSheet<CountryData>
         visible={showPhoneCodeModal}
         onClose={() => setShowPhoneCodeModal(false)}
-        title="Indicatif téléphonique"
+        title={t("bn.c.dialSheet")}
         items={countriesList}
         getKey={(c) => c.code}
-        getLabel={(c) => c.name}
+        getLabel={(c) => countryName(c.code, c.name)}
         getLeft={(c) => flagBubble(c.flag)}
         getRight={(c) => c.dialCode}
         isSelected={(c) => phoneCountry.code === c.code}

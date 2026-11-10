@@ -33,6 +33,8 @@ import {
 import { useTenant } from "../../../providers/TenantProvider";
 import Constants from "expo-constants";
 import { Avatar, Button, Card, Group, ListRow, Pill, Screen, SectionHeader, Toggle, UText, useUI } from "../../../components/ui";
+import { LanguageRow } from "../../../components/i18n/LanguageSwitcher";
+import { useT } from "../../../providers/I18nProvider";
 import { useKycStatus } from "../../../hooks/useKycStatus";
 import { useAccountSpace } from "../../../hooks/useAccountSpace";
 import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
@@ -45,6 +47,7 @@ import { api } from "../../../services/api";
 import type { MerchantProfileView } from "../../../services/merchantTypes";
 
 export default function ProfileScreen() {
+  const t = useT();
   const router = useRouter();
   const { user, logout } = useAuth();
   const { C } = useUI();
@@ -83,43 +86,43 @@ export default function ProfileScreen() {
 
   const handleToggleBio = async () => {
     if (!bioAvailable) {
-      Alert.alert("Biométrie indisponible", "Votre appareil ne supporte pas la biométrie ou aucune empreinte n'est enregistrée.");
+      Alert.alert(t("prof.bioUnavailTitle"), t("prof.bioUnavailMsg"));
       return;
     }
     if (!bioEnabled) {
-      const ok = await promptBiometrics("Activez la connexion biométrique");
+      const ok = await promptBiometrics(t("prof.bioPrompt"));
       if (!ok) return;
       await setBiometricsEnabled(true);
       setBioEnabledState(true);
-      Alert.alert("✅ Activé", "La connexion biométrique est maintenant activée.");
+      Alert.alert(t("prof.bioOnTitle"), t("prof.bioOnMsg"));
     } else {
       Alert.alert(
-        "Désactiver la biométrie",
-        "Vous devrez utiliser votre mot de passe pour vous reconnecter.",
+        t("prof.bioOffTitle"),
+        t("prof.bioOffMsg"),
         [
-          { text: "Annuler", style: "cancel" },
-          { text: "Désactiver", style: "destructive", onPress: async () => { await setBiometricsEnabled(false); setBioEnabledState(false); } },
+          { text: t("common.cancel"), style: "cancel" },
+          { text: t("prof.disable"), style: "destructive", onPress: async () => { await setBiometricsEnabled(false); setBioEnabledState(false); } },
         ],
       );
     }
   };
 
-  const personName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Utilisateur";
+  const personName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : t("prof.user");
   // Compte marchand : c'est le COMMERCE qui est présenté ; la personne n'apparaît que comme titulaire.
   const displayName = merchantSpace && shop?.businessName ? shop.businessName : personName;
 
   const handleLogout = () => {
     if (Platform.OS === "web") {
-      if (window.confirm(`Fermer votre session ${branding.name} ?`)) void logout();
+      if (window.confirm(t("prof.logoutWeb", { brand: branding.name }))) void logout();
       return;
     }
     Alert.alert(
-      "Déconnexion sécurisée",
-      "Êtes-vous sûr de vouloir fermer votre session ?",
+      t("prof.logoutTitle"),
+      t("prof.logoutMsg"),
       [
-        { text: "Annuler", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Me déconnecter", style: "destructive",
+          text: t("prof.logoutConfirm"), style: "destructive",
           onPress: async () => {
             await logout();
             if (router.canDismiss()) router.dismissAll();
@@ -143,7 +146,7 @@ export default function ProfileScreen() {
         {merchantSpace ? (
           <Avatar name={displayName} size={88} />
         ) : (
-          <Pressable onPress={() => setPhotoSheet(true)} accessibilityRole="button" accessibilityLabel="Changer ma photo de profil" hitSlop={8}>
+          <Pressable onPress={() => setPhotoSheet(true)} accessibilityRole="button" accessibilityLabel={t("prof.changePhoto")} hitSlop={8}>
             <Avatar name={displayName} size={88} uri={photo} />
             <View style={{ position: "absolute", right: -2, bottom: -2, width: 30, height: 30, borderRadius: 15, backgroundColor: C.ink, borderWidth: 2, borderColor: C.bg, alignItems: "center", justifyContent: "center" }}>
               <Ionicons name="camera-outline" size={15} color={C.surface} />
@@ -153,9 +156,9 @@ export default function ProfileScreen() {
         <UText v="title" style={{ marginTop: 10 }} numberOfLines={1}>{displayName}</UText>
         {merchantSpace ? (
           <>
-            <UText v="body" tone="muted" numberOfLines={1}>{[shop?.category, shop?.city].filter(Boolean).join(" · ") || `Titulaire : ${personName}`}</UText>
+            <UText v="body" tone="muted" numberOfLines={1}>{[shop?.category, shop?.city].filter(Boolean).join(" · ") || t("prof.holder", { name: personName })}</UText>
             <Pill
-              label={shop?.status === "SUSPENDED" ? "Commerce suspendu" : "Commerce actif"}
+              label={shop?.status === "SUSPENDED" ? t("prof.shopSuspended") : t("prof.shopActive")}
               tone={shop?.status === "SUSPENDED" ? "warn" : "pos"}
               icon="storefront-outline"
               style={{ marginTop: 6 }}
@@ -174,7 +177,7 @@ export default function ProfileScreen() {
         <View style={{ marginBottom: 18 }}>
           <SpaceSwitch />
           <UText v="caption" tone="muted" align="center" style={{ marginTop: 8 }}>
-            {isMerchant ? "Compte marchand : solde et paiements de votre commerce, séparés de votre compte client." : "Compte client : vos envois, votre solde et vos opérations personnelles."}
+            {isMerchant ? t("prof.spaceMerchant") : t("prof.spaceClient")}
           </UText>
         </View>
       ) : null}
@@ -183,9 +186,9 @@ export default function ProfileScreen() {
       <Card tone="accent">
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <View style={{ flex: 1 }}>
-            <UText v="subheading">Sécurité du compte</UText>
+            <UText v="subheading">{t("prof.security")}</UText>
             <UText v="caption" tone="muted" style={{ marginTop: 2 }}>
-              {bioEnabled ? "Compte entièrement sécurisé" : "Active la biométrie pour 100 %"}
+              {bioEnabled ? t("prof.secFull") : t("prof.secHint")}
             </UText>
           </View>
           <UText v="title">{score}%</UText>
@@ -198,71 +201,77 @@ export default function ProfileScreen() {
       {/* ── Mon commerce (compte marchand) ── */}
       {merchantSpace ? (
         <>
-          <SectionHeader title="Mon commerce" />
+          <SectionHeader title={t("prof.myShop")} />
           <Group>
-            {menu("qr-code-outline", "Encaisser", "QR code ou téléphone Orange Money", "/merchant/collect")}
-            {menu("cash-outline", "Retirer mes gains", "Solde de votre commerce", "/merchant/payouts")}
-            {menu("receipt-outline", "Paiements encaissés", "Historique, remboursements, reçus", "/merchant/payments")}
-            {menu("qr-code-outline", "QR de caisse", "QR permanent à afficher ou imprimer", "/merchant/qr")}
-            {menu("people-outline", "Équipe de caisse", "Caissiers et droits", "/merchant/staff")}
-            {menu("lock-closed-outline", "Clôture & exports", "Fin de journée, PDF et CSV", "/merchant/closing")}
-            {menu("shield-checkmark-outline", "Vérifier un reçu", "Scanner le QR d'un reçu PDF", "/pay/verify")}
-            {menu("storefront-outline", "Réglages du commerce", "Fiche, logo, alertes, destination des retraits", "/merchant/settings", true)}
+            {menu("qr-code-outline", t("prof.collect"), t("prof.collectSub"), "/merchant/collect")}
+            {menu("cash-outline", t("prof.withdraw"), t("prof.withdrawSub"), "/merchant/payouts")}
+            {menu("receipt-outline", t("prof.payments"), t("prof.paymentsSub"), "/merchant/payments")}
+            {menu("qr-code-outline", t("prof.shopQr"), t("prof.shopQrSub"), "/merchant/qr")}
+            {menu("people-outline", t("prof.staff"), t("prof.staffSub"), "/merchant/staff")}
+            {menu("lock-closed-outline", t("prof.closing"), t("prof.closingSub"), "/merchant/closing")}
+            {menu("shield-checkmark-outline", t("prof.verifyReceipt"), t("prof.verifyReceiptSub"), "/pay/verify")}
+            {menu("storefront-outline", t("prof.shopSettings"), t("prof.shopSettingsSub"), "/merchant/settings", true)}
           </Group>
-          <SectionHeader title="Titulaire du compte" />
+          <SectionHeader title={t("prof.holderTitle")} />
           <Group>
             <ListRow
               icon="shield-checkmark-outline"
-              title="Vérification d'identité"
-              subtitle={kyc?.verified ? "Identité du titulaire vérifiée" : "Identité du titulaire du compte"}
+              title={t("prof.kyc")}
+              subtitle={kyc?.verified ? t("prof.kycHolderOk") : t("prof.kycHolder")}
               onPress={() => router.push("/(tabs)/profile/kyc" as any)}
               right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
             />
-            {menu("person-outline", "Informations personnelles", "Identité et coordonnées du titulaire", "/(tabs)/profile/personal-info")}
-            {menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true)}
+            {menu("person-outline", t("prof.personal"), t("prof.personalHolder"), "/(tabs)/profile/personal-info")}
+            {menu("chatbubbles-outline", t("prof.support"), t("prof.supportSub"), "/(tabs)/profile/support", true)}
           </Group>
         </>
       ) : (
         <>
           {/* ── Mon compte (compte client) ── */}
-          <SectionHeader title="Mon compte" />
+          <SectionHeader title={t("prof.myAccount")} />
           <Group>
             {isUser ? (
               <ListRow
                 icon="shield-checkmark-outline"
-                title="Vérification d'identité"
-                subtitle={kyc?.verified ? "Envois et retraits ouverts" : "Obligatoire pour envoyer de l'argent"}
+                title={t("prof.kyc")}
+                subtitle={kyc?.verified ? t("prof.kycOk") : t("prof.kycRequired")}
                 onPress={() => router.push("/(tabs)/profile/kyc" as any)}
                 right={kyc ? <Pill label={KYC_STATUS_LABEL[kyc.status]} tone={kyc.status === "VERIFIED" ? "pos" : kyc.status === "PENDING" ? "info" : "warn"} /> : undefined}
               />
             ) : null}
             {/* Lot 12 : l'accueil ne garde que l'essentiel — tout le reste est ici. */}
-            {clientSpace ? menu("scan-outline", "Payer avec un QR code", "Scanner le QR d'un commerce", "/pay/scan") : null}
-            {clientSpace ? menu("shield-checkmark-outline", "Vérifier un reçu", "Scanner le QR d'un reçu PDF", "/pay/verify") : null}
-            {clientSpace ? menu("notifications-outline", "Demandes à payer", "Paiements demandés par des marchands", "/pay/requests") : null}
-            {clientSpace ? menu("qr-code-outline", "Mon QR code", "Recevoir de l'argent d'un proche", "/(tabs)/qr") : null}
-            {clientSpace ? menu("people-outline", "Mes bénéficiaires", "Contacts et destinataires", "/(tabs)/beneficiaries") : null}
-            {clientSpace ? menu("swap-horizontal", "Taux de change", "Taux du jour", "/(tabs)/rates") : null}
-            {clientSpace && isCashier ? menu("storefront-outline", "Caisse", "Encaisser pour un commerce dont vous êtes caissier", "/cashier") : null}
-            {clientSpace && !canSwitch ? menu("storefront-outline", "Devenir marchand", "Encaissez par QR code ou par téléphone", "/merchant/activate") : null}
-            {menu("person-outline", "Informations personnelles", "Identité, coordonnées", "/(tabs)/profile/personal-info")}
-            {menu("card-outline", "Moyens de paiement", "Cartes et comptes enregistrés", "/(tabs)/profile/payment-methods")}
-            {menu("speedometer-outline", "Mes plafonds de transfert", "Limites d'envoi", "/(tabs)/profile/limits")}
-            {menu("location-outline", `Points ${branding.name}`, "Où déposer et retirer", "/(tabs)/profile/locations", !isUser)}
-            {isUser ? menu("chatbubbles-outline", "Assistance", "Questions, litiges, suivi de vos demandes", "/(tabs)/profile/support", true) : null}
+            {clientSpace ? menu("scan-outline", t("prof.payQr"), t("prof.payQrSub"), "/pay/scan") : null}
+            {clientSpace ? menu("shield-checkmark-outline", t("prof.verifyReceipt"), t("prof.verifyReceiptSub"), "/pay/verify") : null}
+            {clientSpace ? menu("notifications-outline", t("prof.requests"), t("prof.requestsSub"), "/pay/requests") : null}
+            {clientSpace ? menu("qr-code-outline", t("prof.myQr"), t("prof.myQrSub"), "/(tabs)/qr") : null}
+            {clientSpace ? menu("people-outline", t("prof.beneficiaries"), t("prof.beneficiariesSub"), "/(tabs)/beneficiaries") : null}
+            {clientSpace ? menu("swap-horizontal", t("prof.rates"), t("prof.ratesSub"), "/(tabs)/rates") : null}
+            {clientSpace && isCashier ? menu("storefront-outline", t("prof.cashier"), t("prof.cashierSub"), "/cashier") : null}
+            {clientSpace && !canSwitch ? menu("storefront-outline", t("prof.becomeMerchant"), t("prof.becomeMerchantSub"), "/merchant/activate") : null}
+            {menu("person-outline", t("prof.personal"), t("prof.personalSub"), "/(tabs)/profile/personal-info")}
+            {menu("card-outline", t("prof.payMethods"), t("prof.payMethodsSub"), "/(tabs)/profile/payment-methods")}
+            {menu("speedometer-outline", t("prof.limits"), t("prof.limitsSub"), "/(tabs)/profile/limits")}
+            {menu("location-outline", t("prof.points", { brand: branding.name }), t("prof.pointsSub"), "/(tabs)/profile/locations", !isUser)}
+            {isUser ? menu("chatbubbles-outline", t("prof.support"), t("prof.supportSub"), "/(tabs)/profile/support", true) : null}
           </Group>
         </>
       )}
 
-      {/* ── Sécurité & appareils ── */}
-      <SectionHeader title="Sécurité et appareils" />
+      {/* ── Langue (FR / EN / PT) ── */}
+      <SectionHeader title={t('lang.title')} />
       <Group>
-        {menu("phone-portrait-outline", "Appareils connectés", "Gérer les appareils de confiance", "/(tabs)/profile/devices")}
-        {menu("keypad-outline", "Modifier mon code secret", undefined, "/(tabs)/profile/security")}
+        <LanguageRow last />
+      </Group>
+
+      {/* ── Sécurité & appareils ── */}
+      <SectionHeader title={t("prof.secDevices")} />
+      <Group>
+        {menu("phone-portrait-outline", t("prof.devices"), t("prof.devicesSub"), "/(tabs)/profile/devices")}
+        {menu("keypad-outline", t("prof.changePin"), undefined, "/(tabs)/profile/security")}
         <ListRow
           icon="finger-print-outline"
-          title={bioAvailable ? "Connexion biométrique" : "Biométrie non disponible"}
-          subtitle={bioAvailable ? "Face ID / empreinte" : "Aucune empreinte enregistrée sur cet appareil"}
+          title={bioAvailable ? t("prof.bio") : t("prof.bioNone")}
+          subtitle={bioAvailable ? t("prof.bioSub") : t("prof.bioNoneSub")}
           onPress={bioAvailable ? handleToggleBio : undefined}
           right={<Toggle value={bioEnabled} onValueChange={handleToggleBio} disabled={!bioAvailable} />}
           last
@@ -272,7 +281,7 @@ export default function ProfileScreen() {
       <ProfilePhotoSheet visible={photoSheet} onClose={() => setPhotoSheet(false)} />
 
       {/* ── Session ── */}
-      <Button label="Fermer la session" icon="log-out-outline" kind="danger" onPress={handleLogout} style={{ marginTop: 28 }} />
+      <Button label={t("prof.logout")} icon="log-out-outline" kind="danger" onPress={handleLogout} style={{ marginTop: 28 }} />
 
       <Pressable
         style={{ alignItems: "center", paddingVertical: 16 }}
@@ -280,7 +289,7 @@ export default function ProfileScreen() {
         onPress={() => router.push("/(tabs)/profile/delete-account" as any)}
         testID="profile-delete-account"
       >
-        <UText v="caption" tone="muted" style={{ textDecorationLine: "underline" }}>Supprimer mon compte</UText>
+        <UText v="caption" tone="muted" style={{ textDecorationLine: "underline" }}>{t("prof.deleteAccount")}</UText>
       </Pressable>
 
       <UText v="label" tone="faint" align="center">{branding.name}{appVersion ? ` · v${appVersion}` : ""}</UText>

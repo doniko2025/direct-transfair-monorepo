@@ -29,6 +29,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { useTenant } from "../../providers/TenantProvider";
 import { getFallbackSupportEmail, getFallbackSupportPhone } from "../../services/platformConfig";
+import { useT } from "../../providers/I18nProvider";
 
 import { Text } from '../../components/ui/Text';
 const T = {
@@ -65,9 +66,9 @@ const FALLBACK_PHONE = getFallbackSupportPhone();
 
 // ─── Tab bar ──────────────────────────────────────────────
 const TABS = [
-  { key: "faq",     label: "FAQ",     icon: "help-circle-outline"  },
-  { key: "contact", label: "Contact", icon: "chatbubble-outline"   },
-  { key: "cookies", label: "Cookies", icon: "settings-outline"     },
+  { key: "faq",     label: "as.tabFaq",     icon: "help-circle-outline"  },
+  { key: "contact", label: "as.tabContact", icon: "chatbubble-outline"   },
+  { key: "cookies", label: "as.tabCookies", icon: "settings-outline"     },
 ] as const;
 type TabKey = typeof TABS[number]["key"];
 
@@ -140,6 +141,7 @@ function CookieToggle({ title, desc, value, onChange, required = false, color }:
   title: string; desc: string; value: boolean;
   onChange: (v: boolean) => void; required?: boolean; color: string;
 }) {
+  const t = useT();
   return (
     <View style={ctS.wrap}>
       <View style={{ flex: 1, gap: 3 }}>
@@ -147,7 +149,7 @@ function CookieToggle({ title, desc, value, onChange, required = false, color }:
           <Text style={[ctS.title, { fontFamily: T.font.sans }]}>{title}</Text>
           {required && (
             <View style={ctS.reqBadge}>
-              <Text style={[ctS.reqTxt, { fontFamily: T.font.sans }]}>Requis</Text>
+              <Text style={[ctS.reqTxt, { fontFamily: T.font.sans }]}>{t("as.required")}</Text>
             </View>
           )}
         </View>
@@ -189,6 +191,7 @@ const slS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function AssistanceScreen() {
+  const t = useT();
   const router = useRouter();
   const { branding } = useTenant(); // ✅ v1.1 (nouveau)
   const [activeTab, setActiveTab] = useState<TabKey>("faq");
@@ -217,7 +220,7 @@ export default function AssistanceScreen() {
             <Ionicons name="close" size={20} color={T.text} />
           </TouchableOpacity>
           <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>
-            Assistance & Cookies
+            {t("as.title")}
           </Text>
           <View style={{ width: 36 }} />
         </View>
@@ -242,7 +245,7 @@ export default function AssistanceScreen() {
                   s.tabTxt, { fontFamily: T.font.sans },
                   active && s.tabTxtActive,
                 ]}>
-                  {tab.label}
+                  {t(tab.label)}
                 </Text>
               </TouchableOpacity>
             );
@@ -258,54 +261,54 @@ export default function AssistanceScreen() {
           {/* ── FAQ ── */}
           {activeTab === "faq" && (
             <View>
-              <SectionLabel label="Transferts" />
+              <SectionLabel label={t("as.secTransfers")} />
               <FaqItem
-                q="Combien de temps prend un transfert ?"
-                a="La plupart des transferts sont exécutés en quelques minutes. Les virements bancaires peuvent prendre 1 à 3 jours ouvrés selon la banque destinataire et le pays. En cas de vérification de sécurité, un délai supplémentaire peut s'appliquer."
+                q={t("as.q1")}
+                a={t("as.a1")}
               />
               <FaqItem
-                q="Quels sont les frais de transfert ?"
-                a="Les frais sont calculés et affichés clairement avant chaque confirmation de transfert. Ils varient selon le montant, la devise, le pays destinataire et le mode de paiement. Vous n'êtes jamais débité de frais cachés."
+                q={t("as.q2")}
+                a={t("as.a2")}
               />
               <FaqItem
-                q="Quels pays peut-on atteindre ?"
-                a={`${branding.name} couvre principalement l'Afrique de l'Ouest (Guinée, Sénégal, Mali, Côte d'Ivoire, Burkina Faso, etc.) et l'Europe. La liste complète des destinations est disponible lors de la saisie de votre transfert.`}
+                q={t("as.q3")}
+                a={t("as.a3", { app: branding.name })}
               />
               <FaqItem
-                q="Comment le bénéficiaire reçoit l'argent ?"
-                a="Selon la destination, le bénéficiaire peut recevoir l'argent : en espèces dans une agence partenaire (cash pickup), via virement bancaire sur son compte, ou via mobile money (Orange Money, Wave, MTN, etc.)."
+                q={t("as.q4")}
+                a={t("as.a4")}
               />
               <FaqItem
-                q="Que faire si mon transfert est bloqué ?"
-                a="Un transfert peut être mis en attente pour des raisons de sécurité ou de conformité réglementaire. Notre équipe vous contactera par email ou dans l'app si des informations supplémentaires sont nécessaires. Vous pouvez aussi nous contacter via le support."
-              />
-
-              <SectionLabel label="Compte & Vérification" />
-              <FaqItem
-                q="Pourquoi dois-je vérifier mon identité ?"
-                a="La vérification d'identité (KYC) est une obligation légale pour tout établissement de paiement, conformément à la directive européenne LCB-FT. Elle nous permet aussi de protéger votre compte contre toute utilisation frauduleuse."
-              />
-              <FaqItem
-                q="Quels documents sont acceptés pour le KYC ?"
-                a="Nous acceptons les documents d'identité en cours de validité : carte nationale d'identité, passeport biométrique, titre de séjour. Un justificatif de domicile récent (moins de 3 mois) peut être demandé pour les niveaux supérieurs."
-              />
-              <FaqItem
-                q="Comment augmenter mes plafonds de transfert ?"
-                a="Complétez votre vérification d'identité pour passer aux niveaux KYC supérieurs. Plus votre niveau est élevé, plus vos plafonds journaliers et mensuels augmentent. Accédez à 'Mes plafonds' dans votre profil pour voir votre niveau actuel."
-              />
-              <FaqItem
-                q="Comment supprimer mon compte ?"
-                a="Vous pouvez demander la suppression de votre compte depuis 'Mon compte → Supprimer mon compte'. Conformément à nos obligations légales, certaines données de transaction sont conservées 10 ans (LCB-FT). Les autres données sont supprimées sous 30 jours."
+                q={t("as.q5")}
+                a={t("as.a5")}
               />
 
-              <SectionLabel label="Sécurité" />
+              <SectionLabel label={t("as.secAccount")} />
               <FaqItem
-                q="Comment protéger mon compte ?"
-                a="Activez la biométrie (Face ID / Touch ID) dans vos paramètres de sécurité, utilisez un mot de passe fort et unique, et ne partagez jamais vos identifiants. En cas de perte ou vol de votre téléphone, révoquez l'appareil dans 'Appareils connectés'."
+                q={t("as.q6")}
+                a={t("as.a6")}
               />
               <FaqItem
-                q="Que faire si je suspecte une activité frauduleuse ?"
-                a="Contactez immédiatement notre support via email ou téléphone. Changez votre mot de passe et révoquez tous les appareils inconnus depuis votre profil. Si votre compte est compromis, nous le bloquerons en urgence pour votre protection."
+                q={t("as.q7")}
+                a={t("as.a7")}
+              />
+              <FaqItem
+                q={t("as.q8")}
+                a={t("as.a8")}
+              />
+              <FaqItem
+                q={t("as.q9")}
+                a={t("as.a9")}
+              />
+
+              <SectionLabel label={t("as.secSecurity")} />
+              <FaqItem
+                q={t("as.q10")}
+                a={t("as.a10")}
+              />
+              <FaqItem
+                q={t("as.q11")}
+                a={t("as.a11")}
               />
             </View>
           )}
@@ -316,44 +319,44 @@ export default function AssistanceScreen() {
               <View style={s.contactBanner}>
                 <Ionicons name="headset-outline" size={20} color={T.accent} />
                 <Text style={[s.contactBannerTxt, { fontFamily: T.font.sans }]}>
-                  Notre équipe est disponible du lundi au vendredi de 9h à 18h (heure de Paris) et le samedi de 9h à 13h.
+                  {t("as.hours")}
                 </Text>
               </View>
 
-              <SectionLabel label="Nous contacter" />
+              <SectionLabel label={t("as.contactUs")} />
               {!!supportEmail && <ContactCard
                 icon="mail-outline"
-                title="Email"
-                subtitle="Réponse sous 24h ouvrées"
+                title={t("as.email")}
+                subtitle={t("as.emailSub")}
                 action={() => Linking.openURL(`mailto:${supportEmail}`)}
-                actionLabel="Écrire"
+                actionLabel={t("as.write")}
                 color={T.blue}
                 bgColor={T.blueSoft}
               />}
               {!!supportPhone && <ContactCard
                 icon="call-outline"
-                title="Téléphone"
-                subtitle="Lun–Ven 9h–18h · Sam 9h–13h"
+                title={t("as.phone")}
+                subtitle={t("as.phoneSub")}
                 action={() => Linking.openURL(`tel:${supportPhone}`)}
-                actionLabel="Appeler"
+                actionLabel={t("as.call")}
                 color={T.green}
                 bgColor={T.greenSoft}
               />}
               {!!whatsappRaw && <ContactCard
                 icon="logo-whatsapp"
                 title="WhatsApp"
-                subtitle="Réponse rapide, 7j/7 de 8h à 20h"
+                subtitle={t("as.whatsappSub")}
                 action={() => Linking.openURL(`https://wa.me/${whatsappRaw}`)}
-                actionLabel="Ouvrir"
+                actionLabel={t("as.open")}
                 color="#25D366"
                 bgColor="#F0FDF4"
               />}
               <ContactCard
                 icon="chatbubbles-outline"
-                title="Chat en direct"
-                subtitle="Disponible depuis l'application"
+                title={t("as.chat")}
+                subtitle={t("as.chatSub")}
                 action={() => {}}
-                actionLabel="Bientôt"
+                actionLabel={t("as.soon")}
                 color={T.purple}
                 bgColor={T.purpleSoft}
               />
@@ -361,7 +364,7 @@ export default function AssistanceScreen() {
               {/* ✅ v1.1 — carte masquée si aucun médiateur configuré */}
               {!!(branding.mediatorName && branding.mediatorUrl) && (
                 <>
-                  <SectionLabel label="Médiation" />
+                  <SectionLabel label={t("as.mediation")} />
                   <View style={s.mediationCard}>
                     <View style={s.mediationIconBox}>
                       <Ionicons name="scale-outline" size={18} color={T.accent} />
@@ -371,7 +374,7 @@ export default function AssistanceScreen() {
                         {branding.mediatorName}
                       </Text>
                       <Text style={[s.mediationDesc, { fontFamily: T.font.sans }]}>
-                        Si votre réclamation n'est pas résolue sous 60 jours, vous pouvez saisir gratuitement le {branding.mediatorName}.
+                        {t("as.mediationDesc", { name: branding.mediatorName ?? "" })}
                       </Text>
                       <TouchableOpacity
                         onPress={() => Linking.openURL(branding.mediatorUrl as string)}
@@ -393,52 +396,52 @@ export default function AssistanceScreen() {
               <View style={s.cookieBanner}>
                 <Ionicons name="information-circle-outline" size={20} color={T.blue} />
                 <Text style={[s.cookieBannerTxt, { fontFamily: T.font.sans }]}>
-                  Nous utilisons des cookies pour faire fonctionner notre service et, avec votre accord, pour analyser notre trafic et personnaliser votre expérience.
+                  {t("as.cookieIntro")}
                 </Text>
               </View>
 
-              <SectionLabel label="Préférences des cookies" />
+              <SectionLabel label={t("as.cookiePrefs")} />
 
               <View style={s.cookieCard}>
                 <CookieToggle
-                  title="Cookies essentiels"
-                  desc="Authentification, session, sécurité. Indispensables au fonctionnement de l'application."
+                  title={t("as.ckEssential")}
+                  desc={t("as.ckEssentialD")}
                   value={true}
                   onChange={() => {}}
                   required
                   color={T.green}
                 />
                 <CookieToggle
-                  title="Cookies analytiques"
-                  desc="Mesure d'audience anonymisée pour améliorer nos services (Amplitude, Mixpanel)."
+                  title={t("as.ckAnalytics")}
+                  desc={t("as.ckAnalyticsD")}
                   value={analyticsEnabled}
                   onChange={setAnalyticsEnabled}
                   color={T.blue}
                 />
                 <CookieToggle
-                  title="Cookies marketing"
-                  desc="Affichage de publicités ciblées sur nos partenaires externes."
+                  title={t("as.ckMarketing")}
+                  desc={t("as.ckMarketingD")}
                   value={marketingEnabled}
                   onChange={setMarketingEnabled}
                   color={T.accent}
                 />
                 <CookieToggle
-                  title="Personnalisation"
-                  desc="Adaptation du contenu et des offres à votre profil d'utilisation."
+                  title={t("as.ckPerso")}
+                  desc={t("as.ckPersoD")}
                   value={personalisationEnabled}
                   onChange={setPersonalisationEnabled}
                   color={T.purple}
                 />
               </View>
 
-              <SectionLabel label="Détail des cookies utilisés" />
+              <SectionLabel label={t("as.cookieDetail")} />
 
               {[
-                { name: "dt_session",    type: "Essentiel",    duree: "Session",  desc: "Maintien de votre connexion sécurisée" },
-                { name: "dt_token",      type: "Essentiel",    duree: "30 jours", desc: "Token d'authentification chiffré" },
-                { name: "dt_tenant",     type: "Essentiel",    duree: "365 jours",desc: "Identification de votre espace société" },
-                { name: "_amplitude",    type: "Analytique",   duree: "13 mois",  desc: "Analyse anonymisée des parcours utilisateurs" },
-                { name: "_fbp",          type: "Marketing",    duree: "90 jours", desc: "Suivi des conversions publicitaires Facebook" },
+                { name: "dt_session",    type: t("as.typeEssential"),  duree: t("as.durSession"), desc: t("as.ck1") },
+                { name: "dt_token",      type: t("as.typeEssential"),  duree: t("as.dur30d"),     desc: t("as.ck2") },
+                { name: "dt_tenant",     type: t("as.typeEssential"),  duree: t("as.dur365d"),    desc: t("as.ck3") },
+                { name: "_amplitude",    type: t("as.typeAnalytics"),  duree: t("as.dur13m"),     desc: t("as.ck4") },
+                { name: "_fbp",          type: t("as.typeMarketing"),  duree: t("as.dur90d"),     desc: t("as.ck5") },
               ].map((cookie) => (
                 <View key={cookie.name} style={s.cookieRow}>
                   <Text style={[s.cookieName, { fontFamily: T.font.mono }]}>{cookie.name}</Text>
@@ -458,17 +461,17 @@ export default function AssistanceScreen() {
               >
                 <Ionicons name="checkmark-circle-outline" size={16} color={T.surface} />
                 <Text style={[s.saveTxt, { fontFamily: T.font.sans }]}>
-                  Enregistrer mes préférences
+                  {t("as.savePrefs")}
                 </Text>
               </TouchableOpacity>
 
               <Text style={[s.cookieFooter, { fontFamily: T.font.sans }]}>
-                Pour en savoir plus sur la façon dont nous utilisons vos données, consultez notre{" "}
+                {t("as.moreInfo")}
                 <Text
                   style={{ color: T.blue, textDecorationLine: "underline" }}
                   onPress={() => router.push("/(auth)/privacy-policy")}
                 >
-                  Politique de confidentialité
+                  {t("as.privacy")}
                 </Text>.
               </Text>
             </View>

@@ -20,6 +20,8 @@ import { useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "../../../components/ui/Icon";
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
+import { fmtDate, fmtDateTime, tr } from "../../../i18n/runtime";
 import { describeSession, type UserSession } from "../../../services/sessionLabel";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {
@@ -41,20 +43,20 @@ function errText(e: any, fallback: string): string {
 
 // ─── Formatage date relative ──────────────────────────────
 function relativeTime(isoDate?: string | null): string {
-  if (!isoDate) return "Date inconnue";
+  if (!isoDate) return tr("dev.unknownDate");
   try {
     const diff = Date.now() - new Date(isoDate).getTime();
-    if (diff < 60_000) return "En ligne maintenant";
-    if (diff < 3_600_000) return `Il y a ${Math.floor(diff / 60_000)} min`;
-    if (diff < 86_400_000) return `Il y a ${Math.floor(diff / 3_600_000)} h`;
-    if (diff < 604_800_000) return `Il y a ${Math.floor(diff / 86_400_000)} jour${Math.floor(diff / 86_400_000) > 1 ? "s" : ""}`;
-    return new Date(isoDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-  } catch { return "Date inconnue"; }
+    if (diff < 60_000) return tr("dev.onlineNow");
+    if (diff < 3_600_000) return tr("dev.minAgo", { count: Math.floor(diff / 60_000) });
+    if (diff < 86_400_000) return tr("dev.hoursAgo", { count: Math.floor(diff / 3_600_000) });
+    if (diff < 604_800_000) return tr("dev.daysAgo", { count: Math.floor(diff / 86_400_000) });
+    return fmtDate(isoDate, { day: "2-digit", month: "short", year: "numeric" });
+  } catch { return tr("dev.unknownDate"); }
 }
 
 function sinceText(isoDate: string): string {
   try {
-    return new Date(isoDate).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    return fmtDateTime(isoDate, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
   } catch { return ""; }
 }
 
@@ -63,6 +65,7 @@ function SessionCard({
   session, index, busy, onRevoke,
 }: { session: UserSession; index: number; busy: boolean; onRevoke: (s: UserSession) => void }) {
   const { C, R } = useUI();
+  const t = useT();
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(anim, {
@@ -71,7 +74,7 @@ function SessionCard({
   }, [anim, index]);
 
   const label = describeSession(session);
-  const meta = [`Connecté ${sinceText(session.createdAt)}`, session.ipAddress, session.country].filter(Boolean).join(" · ");
+  const meta = [t("dev.connectedAt", { date: sinceText(session.createdAt) }), session.ipAddress, session.country].filter(Boolean).join(" · ");
 
   return (
     <Animated.View
@@ -101,7 +104,7 @@ function SessionCard({
           <UText v="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>{meta}</UText>
           {session.current && (
             <View style={{ marginTop: 6, alignSelf: "flex-start" }}>
-              <StatusDot color={C.pos} label="Cet appareil" />
+              <StatusDot color={C.pos} label={t("dev.thisDevice")} />
             </View>
           )}
         </View>
@@ -110,13 +113,13 @@ function SessionCard({
             onPress={() => onRevoke(session)}
             disabled={busy}
             accessibilityRole="button"
-            accessibilityLabel={`Déconnecter ${label.title}`}
+            accessibilityLabel={t("dev.signOutA11y", { name: label.title })}
             style={({ pressed }) => ({
               minWidth: 104, height: 38, paddingHorizontal: 12, borderRadius: 19, alignItems: "center", justifyContent: "center",
               backgroundColor: C.dangerBg, opacity: pressed ? 0.7 : 1,
             })}
           >
-            {busy ? <ActivityIndicator size="small" color={C.danger} /> : <UText v="label" color={C.danger}>Déconnecter</UText>}
+            {busy ? <ActivityIndicator size="small" color={C.danger} /> : <UText v="label" color={C.danger}>{t("dev.signOut")}</UText>}
           </Pressable>
         )}
       </View>
@@ -126,6 +129,7 @@ function SessionCard({
 
 export default function DevicesScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
 
   const sessionsLoader = useLoader<UserSession[]>(async () => {
@@ -156,10 +160,10 @@ export default function DevicesScreen() {
   // ── Sessions ────────────────────────────────────────────
   const handleRevokeSession = (s: UserSession) => {
     const name = describeSession(s).title;
-    Alert.alert("Déconnecter cet appareil", `Voulez-vous fermer la session « ${name} » ?`, [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("dev.revokeTitle"), t("dev.revokeMsg", { name }), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Déconnecter",
+        text: t("dev.signOut"),
         style: "destructive",
         onPress: async () => {
           setRevoking((p) => ({ ...p, [s.id]: true }));
@@ -167,7 +171,7 @@ export default function DevicesScreen() {
             await api.revokeSession(s.id);
             await sessionsLoader.refresh();
           } catch (e: any) {
-            Alert.alert("Erreur", errText(e, "Erreur lors de la déconnexion"));
+            Alert.alert(t("common.error"), errText(e, t("dev.signOutFail")));
           } finally {
             setRevoking((p) => ({ ...p, [s.id]: false }));
           }
@@ -180,21 +184,21 @@ export default function DevicesScreen() {
 
   const handleRevokeOthers = () => {
     Alert.alert(
-      "Déconnecter les autres appareils",
-      `${others.length} session${others.length > 1 ? "s seront fermées" : " sera fermée"}. Cet appareil reste connecté.`,
+      t("dev.othersTitle"),
+      t("dev.othersMsg", { count: others.length }),
       [
-        { text: "Annuler", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Tout déconnecter",
+          text: t("dev.signOutAll"),
           style: "destructive",
           onPress: async () => {
             setRevokingAll(true);
             try {
               const r = await api.revokeOtherSessions();
               await sessionsLoader.refresh();
-              Alert.alert("C'est fait", r.revoked > 0 ? `${r.revoked} appareil${r.revoked > 1 ? "s déconnectés" : " déconnecté"}.` : "Aucun autre appareil connecté.");
+              Alert.alert(t("dev.done"), r.revoked > 0 ? t("dev.revokedCount", { count: r.revoked }) : t("dev.noOthers"));
             } catch (e: any) {
-              Alert.alert("Erreur", errText(e, "Erreur lors de la déconnexion"));
+              Alert.alert(t("common.error"), errText(e, t("dev.signOutFail")));
             } finally {
               setRevokingAll(false);
             }
@@ -206,14 +210,14 @@ export default function DevicesScreen() {
 
   // ── Appareils de notifications ──────────────────────────
   const handleRevokeDevice = (device: any) => {
-    const name = device.deviceName ?? device.deviceModel ?? "cet appareil";
+    const name = device.deviceName ?? device.deviceModel ?? t("dev.thisDeviceLc");
     Alert.alert(
-      "Retirer cet appareil",
-      `Plus aucune notification ne sera envoyée à "${name}", et ses sessions liées seront fermées.`,
+      t("dev.removeTitle"),
+      t("dev.removeMsg", { name }),
       [
-        { text: "Annuler", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Retirer",
+          text: t("dev.remove"),
           style: "destructive",
           onPress: async () => {
             setRevoking((prev) => ({ ...prev, [device.id]: true }));
@@ -221,7 +225,7 @@ export default function DevicesScreen() {
               await api.revokeDevice(device.id);
               await refreshAll();
             } catch (e: any) {
-              Alert.alert("Erreur", errText(e, "Erreur lors de la déconnexion"));
+              Alert.alert(t("common.error"), errText(e, t("dev.signOutFail")));
             } finally {
               setRevoking((prev) => ({ ...prev, [device.id]: false }));
             }
@@ -243,13 +247,13 @@ export default function DevicesScreen() {
   const failed = sessionsLoader.status === "error";
 
   const subtitle = loading
-    ? "Chargement…"
-    : `${sessions.length} session${sessions.length > 1 ? "s" : ""} ouverte${sessions.length > 1 ? "s" : ""}`;
+    ? t("common.loading")
+    : t("dev.sessionsCount", { count: sessions.length });
 
   const deviceRow = (device: any, isCurrent: boolean, last: boolean) => {
     const st = String(device.status ?? "").toUpperCase();
     const revoked = st === "REVOKED";
-    const label = device.deviceName ?? device.deviceModel ?? `Appareil ${device.platform ?? "inconnu"}`;
+    const label = device.deviceName ?? device.deviceModel ?? t("dev.unknownPlatform", { platform: device.platform ?? t("dev.unknown") });
     const detail = [device.osVersion, device.ipAddress, relativeTime(device.lastUsedAt)].filter(Boolean).join(" · ");
     return (
       <ListRow
@@ -261,13 +265,13 @@ export default function DevicesScreen() {
         style={revoked ? { opacity: 0.5 } : undefined}
         right={
           isCurrent ? (
-            <StatusDot color={C.pos} label="Cet appareil" />
+            <StatusDot color={C.pos} label={t("dev.thisDevice")} />
           ) : (
             <Pressable
               onPress={() => handleRevokeDevice(device)}
               disabled={!!revoking[device.id] || revoked}
               accessibilityRole="button"
-              accessibilityLabel={`Retirer ${label}`}
+              accessibilityLabel={t("dev.removeA11y", { name: label })}
               style={({ pressed }) => ({
                 minWidth: 96, height: 36, paddingHorizontal: 12, borderRadius: 18, alignItems: "center", justifyContent: "center",
                 backgroundColor: C.dangerBg, opacity: pressed ? 0.7 : 1,
@@ -276,7 +280,7 @@ export default function DevicesScreen() {
               {revoking[device.id] ? (
                 <ActivityIndicator size="small" color={C.danger} />
               ) : (
-                <UText v="label" color={C.danger}>{revoked ? "Retiré" : "Retirer"}</UText>
+                <UText v="label" color={C.danger}>{revoked ? t("dev.removed") : t("dev.remove")}</UText>
               )}
             </Pressable>
           )
@@ -287,7 +291,7 @@ export default function DevicesScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Appareils connectés" subtitle={subtitle} onBack={() => router.back()} />}
+      header={<NavBar title={t("dev.title")} subtitle={subtitle} onBack={() => router.back()} />}
       refreshing={sessionsLoader.refreshing || devicesLoader.refreshing}
       onRefresh={() => void refreshAll()}
     >
@@ -298,19 +302,19 @@ export default function DevicesScreen() {
         </>
       ) : failed ? (
         <ErrorView
-          title={sessionsLoader.error?.title ?? "Chargement impossible"}
-          message={sessionsLoader.error?.message ?? "Réessaie dans un instant."}
+          title={sessionsLoader.error?.title ?? t("kycs.loadFail")}
+          message={sessionsLoader.error?.message ?? t("kycs.retryLater")}
           onRetry={() => void refreshAll()}
         />
       ) : (
         <>
           <Notice tone="info" icon="shield-outline">
-            Voici les appareils où ton compte est ouvert. Déconnecte ceux que tu ne reconnais pas, puis change ton code secret.
+            {t("dev.info")}
           </Notice>
 
-          <SectionHeader title="Sessions ouvertes" />
+          <SectionHeader title={t("dev.openSessions")} />
           {sessions.length === 0 ? (
-            <EmptyView icon="phone-portrait-outline" title="Aucune session ouverte" />
+            <EmptyView icon="phone-portrait-outline" title={t("dev.noSession")} />
           ) : (
             sessions.map((s, i) => (
               <SessionCard key={s.id} session={s} index={i} busy={!!revoking[s.id]} onRevoke={handleRevokeSession} />
@@ -320,7 +324,7 @@ export default function DevicesScreen() {
           {others.length > 0 && (
             <View style={{ marginTop: 16 }}>
               <Button
-                label="Déconnecter tous les autres appareils"
+                label={t("dev.signOutOthers")}
                 icon="log-out-outline"
                 kind="danger"
                 onPress={handleRevokeOthers}
@@ -332,7 +336,7 @@ export default function DevicesScreen() {
 
           {devicesLoader.status === "ready" && sortedDevices.length > 0 && (
             <>
-              <SectionHeader title="Appareils (notifications)" />
+              <SectionHeader title={t("dev.pushDevices")} />
               {currentDevice && deviceRow(currentDevice, true, otherDevices.length === 0)}
               {otherDevices.map((d, i) => deviceRow(d, false, i === otherDevices.length - 1))}
             </>

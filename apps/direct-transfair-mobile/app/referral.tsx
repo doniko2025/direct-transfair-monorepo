@@ -23,6 +23,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useTenant, buildCompanyPortalUrl } from "../providers/TenantProvider";
 import { showAlert } from "../utils/alert";
 import { Button, Card, NavBar, Screen, UText, alpha, useUI } from "../components/ui";
+import { useT } from "../providers/I18nProvider";
 
 // Couleurs de marque des canaux de partage (identité de WhatsApp, etc. — pas du tenant)
 const CHANNELS = { whatsapp: "#25D366", sms: "#2563EB", email: "#64748B" } as const;
@@ -60,13 +61,14 @@ function Channel({ icon, label, color, onPress }: { icon: React.ReactNode; label
 }
 
 export default function ReferralScreen() {
+  const t = useT();
   const router = useRouter();
   const { user } = useAuth();
   const { branding } = useTenant();
   const { C, R } = useUI();
 
-  const brandName = branding?.name || "notre application";
-  const bonus = ((branding as any)?.referralBonusLabel as string | undefined)?.trim() || "une récompense";
+  const brandName = branding?.name || t("ref.thisApp");
+  const bonus = ((branding as any)?.referralBonusLabel as string | undefined)?.trim() || t("ref.aReward");
 
   const referralCode = user
     ? `${user.firstName?.toUpperCase().substring(0, 3)}${user.id.substring(0, 4)}`
@@ -75,17 +77,17 @@ export default function ReferralScreen() {
   const portal = buildCompanyPortalUrl(branding as any) || process.env.EXPO_PUBLIC_PORTAL_URL || "";
   const referralLink = portal ? `${portal.replace(/\/$/, "")}/register?ref=${referralCode}` : "";
   const message =
-    `Salut ! 👋\n\nUtilise mon code parrainage *${referralCode}* sur ${brandName}.` +
-    (referralLink ? `\n\nInscris-toi ici pour envoyer de l'argent sans frais : ${referralLink}` : "");
+    t("ref.shareText", { code: referralCode, app: brandName }) +
+    (referralLink ? t("ref.shareLink", { link: referralLink }) : "");
 
   const handleCopy = async () => {
     await Clipboard.setStringAsync(referralCode);
-    showAlert("Copié ✓", "Code copié dans le presse-papier !");
+    showAlert(t("ref.copiedTitle"), t("ref.copiedMsg"));
   };
 
   const handleSystemShare = async () => {
     try {
-      await Share.share({ message, url: referralLink || undefined, title: `Invitation ${brandName}` });
+      await Share.share({ message, url: referralLink || undefined, title: t("ref.invite", { app: brandName }) });
     } catch { /* noop */ }
   };
 
@@ -103,39 +105,38 @@ export default function ReferralScreen() {
 
   const handleEmail = async () => {
     await Linking.openURL(
-      `mailto:?subject=${encodeURIComponent(`Invitation ${brandName}`)}&body=${encodeURIComponent(message)}`
+      `mailto:?subject=${encodeURIComponent(t("ref.invite", { app: brandName }))}&body=${encodeURIComponent(message)}`
     );
   };
 
   return (
     <Screen
       header={<NavBar onBack={() => router.back()} />}
-      footer={<Button label="Partager mon code" icon="share-social-outline" onPress={handleSystemShare} />}
+      footer={<Button label={t("ref.shareBtn")} icon="share-social-outline" onPress={handleSystemShare} />}
     >
-      <UText v="hero">Parrainage</UText>
+      <UText v="hero">{t("ref.title")}</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 22 }}>
-        Invite tes proches sur {brandName} : vous gagnez{" "}
-        <UText v="bodyStrong">{bonus}</UText> dès leur premier transfert réussi.
+        {t("ref.intro", { app: brandName, bonus })}
       </UText>
 
       {/* Code */}
-      <Pressable onPress={handleCopy} accessibilityRole="button" accessibilityLabel="Copier le code de parrainage">
+      <Pressable onPress={handleCopy} accessibilityRole="button" accessibilityLabel={t("ref.copyCode")}>
         <View style={{ backgroundColor: C.accent, borderRadius: R.lg, padding: 22 }}>
-          <UText v="overline" color={C.accentInk} style={{ opacity: 0.7 }}>Ton code de parrainage</UText>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.7 }}>{t("ref.yourCode")}</UText>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
             <UText v="display" color={C.accentInk} style={{ letterSpacing: 3, fontSize: 36 }} numberOfLines={1} adjustsFontSizeToFit>
               {referralCode}
             </UText>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, height: 38, borderRadius: R.pill, backgroundColor: C.accentInk }}>
               <Ionicons name="copy-outline" size={15} color={C.accent} />
-              <UText v="label" color={C.accent}>Copier</UText>
+              <UText v="label" color={C.accent}>{t("ref.copy")}</UText>
             </View>
           </View>
         </View>
       </Pressable>
 
       {/* Canaux */}
-      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 16 }}>Partager via</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 16 }}>{t("ref.shareVia")}</UText>
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Channel icon={<FontAwesome name="whatsapp" size={28} color={CHANNELS.whatsapp} />} label="WhatsApp" color={CHANNELS.whatsapp} onPress={handleWhatsApp} />
         <Channel icon={<Ionicons name="chatbubble-ellipses" size={26} color={CHANNELS.sms} />} label="SMS" color={CHANNELS.sms} onPress={handleSMS} />
@@ -143,11 +144,11 @@ export default function ReferralScreen() {
       </View>
 
       {/* Étapes */}
-      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 4 }}>Comment ça marche ?</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 4 }}>{t("ref.how")}</UText>
       <Card pad={0} tone="outline" style={{ paddingHorizontal: 16, borderWidth: 0, backgroundColor: "transparent" }}>
-        <Step n="1" title="Envoie une invitation" desc="Partage ton code avec tes proches via WhatsApp, SMS ou email." />
-        <Step n="2" title="Ils s'inscrivent" desc={`Ils saisissent ton code lors de leur inscription sur ${brandName}.`} />
-        <Step n="3" title="Vous gagnez tous les deux" desc={`Vous recevez ${bonus} après leur premier transfert réussi.`} last />
+        <Step n="1" title={t("ref.s1")} desc={t("ref.s1d")} />
+        <Step n="2" title={t("ref.s2")} desc={t("ref.s2d", { app: brandName })} />
+        <Step n="3" title={t("ref.s3")} desc={t("ref.s3d", { bonus })} last />
       </Card>
     </Screen>
   );

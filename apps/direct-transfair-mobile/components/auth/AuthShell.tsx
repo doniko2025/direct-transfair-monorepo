@@ -39,6 +39,8 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
+import { LanguagePill } from '../i18n/LanguageSwitcher';
+import { useT } from '../../providers/I18nProvider';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
@@ -75,6 +77,8 @@ type Props = {
   sea?: boolean;
   /** Ligne rassurante « Connexion chiffrée · Vos données restent protégées » sous le formulaire (défaut : affichée). */
   trust?: boolean;
+  /** Pastille de langue FR/EN/PT en haut à droite (défaut : affichée sur la variante `sea`, masquée ailleurs). */
+  showLang?: boolean;
   children: React.ReactNode;
 };
 
@@ -102,9 +106,10 @@ export function useAuthPalette(): AuthPalette {
 }
 
 export default function AuthShell({
-  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, sea = false, trust = true, children,
+  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, sea = false, trust = true, showLang, children,
 }: Props) {
   const { branding } = useTenant();
+  const t = useT();
   // Logo de la société : si l'image ne charge pas, on retombe sur la marque (tuile + nom) tant que l'adresse ne change pas.
   const [logoFailed, setLogoFailed] = useState<string | null>(null);
   const logo = branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) && branding.logoUrl !== logoFailed ? branding.logoUrl : null;
@@ -166,12 +171,13 @@ export default function AuthShell({
           <View style={s.heroInner}>
             <View style={s.topRow}>
               {onBack ? (
-                <Pressable onPress={onBack} style={s.heroBack} accessibilityRole="button" accessibilityLabel="Retour" hitSlop={8}>
+                <Pressable onPress={onBack} style={s.heroBack} accessibilityRole="button" accessibilityLabel={t('common.back')} hitSlop={8}>
                   <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
                 </Pressable>
               ) : <View style={s.backSpacer} />}
               <View style={{ flex: 1 }} />
               {headerRight}
+              {showLang ? <LanguagePill style={{ marginLeft: 8 }} /> : null}
             </View>
 
             <Animated.View
@@ -241,6 +247,7 @@ export default function AuthShell({
       <KeyboardAvoidingView style={[s.root, { backgroundColor: '#D3ECF4' }]} behavior="padding">
         <StatusBar barStyle="dark-content" backgroundColor="#EEF9FB" />
         <SeaBackdrop />
+        {showLang !== false ? <View style={[s.seaLang, { top: topPad - 4 }]} pointerEvents="box-none"><LanguagePill /></View> : null}
 
         <ScrollView
           style={{ flex: 1 }}
@@ -250,7 +257,7 @@ export default function AuthShell({
           automaticallyAdjustKeyboardInsets
         >
           {onBack ? (
-            <Pressable onPress={onBack} style={s.seaBack} accessibilityRole="button" accessibilityLabel="Retour" hitSlop={8}>
+            <Pressable onPress={onBack} style={s.seaBack} accessibilityRole="button" accessibilityLabel={t('common.back')} hitSlop={8}>
               <Ionicons name="chevron-back" size={22} color={ink} />
             </Pressable>
           ) : null}
@@ -325,7 +332,7 @@ export default function AuthShell({
                 onPress={onBack}
                 style={[s.backBtn, { backgroundColor: C.surface, borderColor: C.line }]}
                 accessibilityRole="button"
-                accessibilityLabel="Retour"
+                accessibilityLabel={t('common.back')}
                 hitSlop={8}
               >
                 <Ionicons name="chevron-back" size={22} color={C.ink} />
@@ -335,6 +342,7 @@ export default function AuthShell({
             )}
             <View style={{ flex: 1 }} />
             {headerRight}
+            {showLang ? <LanguagePill style={{ marginLeft: 8 }} /> : null}
           </View>
           )}
 
@@ -366,7 +374,7 @@ export default function AuthShell({
           {trust ? (
             <View style={s.trust}>
               <Ionicons name="lock-closed" size={12} color={N.muted} />
-              <Text style={s.trustTxt}>Connexion chiffrée · Vos données restent protégées</Text>
+              <Text style={s.trustTxt}>{t('shell.trust')}</Text>
             </View>
           ) : null}
           {footer}
@@ -430,6 +438,7 @@ const s = StyleSheet.create({
   seaCard:   { width: '76%', minWidth: 286, maxWidth: 360, borderRadius: 28, paddingHorizontal: 16, paddingTop: 22, paddingBottom: 12,
                shadowColor: '#14466A', shadowOpacity: 0.26, shadowRadius: 26, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
   seaPill:   { alignItems: 'center', marginBottom: 8 },
+  seaLang:   { position: 'absolute', right: 16, zIndex: 6 },
   seaBrand:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
   seaBrandName: { fontFamily: FONT.display, fontSize: 14, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
   seaTitle:  { fontFamily: SERIF, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center', marginTop: 6 },

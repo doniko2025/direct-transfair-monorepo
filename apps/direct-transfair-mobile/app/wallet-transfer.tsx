@@ -31,6 +31,8 @@ import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLeg
 import { decimalsFor, fmtMoney, fmtRate, parseAmount, sanitizeAmountInput } from "../utils/amount";
 import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
+import { useT } from "../providers/I18nProvider";
+import { countryName, localizeCountry } from "../utils/countryNames";
 import { api } from "../services/api";
 import {
   Avatar, BalanceCard, Button, Card, Chip, IconButton, ListRow, Notice, Pill, Screen, Sheet, UText, SYSTEM_FONT, useUI,
@@ -95,6 +97,7 @@ function RecapRow({ label, value, strong, tone }: { label: string; value: React.
 // ─── Écran ───────────────────────────────────────────────
 export default function WalletTransferScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const router = useRouter();
   const { user, refreshUser } = useAuth();
 
@@ -201,8 +204,8 @@ export default function WalletTransferScreen() {
       setPhone(intl.national);
       return;
     }
-    const t = v.trim();
-    if (t.startsWith("+") || t.startsWith("00")) { setPhone(v); return; }   // indicatif en cours de frappe
+    const trimmed = v.trim();
+    if (trimmed.startsWith("+") || trimmed.startsWith("00")) { setPhone(v); return; }   // indicatif en cours de frappe
     setPhone(stripDial(onlyDigits(v), dialOf(selectedCode)));
   };
 
@@ -213,11 +216,11 @@ export default function WalletTransferScreen() {
       ? `${fmt(numAmount, senderCurrency)} ${senderCurrency}`
       : `${convertedAmount !== null ? fmt(convertedAmount, targetCurrency) : "…"} ${targetCurrency}`;
     Alert.alert(
-      "Confirmation",
-      `Envoyer ${fmt(numAmount, senderCurrency)} ${senderCurrency} à ${recipientName}\nDestinataire reçoit : ${receivedDisplay}\nFrais : GRATUIT`,
+      t("wt.confirmTitle"),
+      t("wt.confirmMsg", { amount: `${fmt(numAmount, senderCurrency)} ${senderCurrency}`, name: recipientName, received: receivedDisplay }),
       [
-        { text: "Annuler", style: "cancel" },
-        { text: "CONFIRMER", onPress: () => void processTransfer() },
+        { text: t("common.cancel"), style: "cancel" },
+        { text: t("wt.confirmBtn"), onPress: () => void processTransfer() },
       ],
     );
   };
@@ -226,7 +229,7 @@ export default function WalletTransferScreen() {
     setLoading(true);
     try {
       if (!lookupResult?.found) {
-        Alert.alert("Destinataire non enregistré", "Ce numéro n'est pas inscrit sur la plateforme.");
+        Alert.alert(t("wt.notRegisteredTitle"), t("wt.notRegisteredMsg"));
         return;
       }
       const fullPhone = toE164(dialOf(selectedCode), stripDial(onlyDigits(phone), dialOf(selectedCode)));   // ✅ v7.1 — jamais d'indicatif doublé
@@ -242,8 +245,8 @@ export default function WalletTransferScreen() {
           const newBenef = await api.createBeneficiary({ fullName: name, phone: fullPhone, country, city });
           beneficiaryId = String(newBenef.id);
         } catch (createErr: any) {
-          const msg = createErr?.response?.data?.message ?? "Erreur lors de l'enregistrement du contact.";
-          Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+          const msg = createErr?.response?.data?.message ?? t("wt.saveFail");
+          Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
           return;
         }
       }
@@ -259,16 +262,16 @@ export default function WalletTransferScreen() {
 
       const recipientName = lookupResult.fullName || `${lookupResult.firstName ?? ""} ${lookupResult.lastName ?? ""}`.trim() || phone.trim();
       Alert.alert(
-        "✅ Transfert réussi !",
-        `${fmt(numAmount, senderCurrency)} ${senderCurrency} envoyé à ${recipientName}.` +
-        (!isSameCurrency && convertedAmount !== null ? `\nMontant reçu : ${fmt(convertedAmount, targetCurrency)} ${targetCurrency}` : ""),
-        [{ text: "Super !", onPress: () => router.back() }],
+        t("wt.doneTitle"),
+        t("wt.doneMsg", { amount: `${fmt(numAmount, senderCurrency)} ${senderCurrency}`, name: recipientName }) +
+        (!isSameCurrency && convertedAmount !== null ? t("wt.doneReceived", { amount: `${fmt(convertedAmount, targetCurrency)} ${targetCurrency}` }) : ""),
+        [{ text: t("wt.great"), onPress: () => router.back() }],
       );
     } catch (e: any) {
       // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
       if (handleKycRequired(e, router)) return;
-      const msg = e?.response?.data?.message ?? "Le transfert a échoué. Réessayez.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      const msg = e?.response?.data?.message ?? t("wt.failed");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
     } finally { setLoading(false); }
   };
 
@@ -277,19 +280,19 @@ export default function WalletTransferScreen() {
   const cleanLen = onlyDigits(phone).length;
 
   const ctaLabel = insufficient
-    ? "Solde insuffisant"
+    ? t("send.insufTitle")
     : !lookupResult?.found
-      ? "Entre un numéro enregistré"
-      : "Envoyer sans frais";
+      ? t("wt.ctaEnter")
+      : t("wt.ctaSend");
 
   return (
     <Screen
       header={
         <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, minHeight: 64, gap: 12 }}>
-          <IconButton icon="chevron-back" label="Retour" onPress={() => router.back()} />
+          <IconButton icon="chevron-back" label={t("common.back")} onPress={() => router.back()} />
           <View style={{ flex: 1 }}>
-            <UText v="heading">Transfert wallet</UText>
-            <UText v="caption" tone="muted">Wallet → Wallet · 0 frais</UText>
+            <UText v="heading">{t("wt.title")}</UText>
+            <UText v="caption" tone="muted">{t("wt.subtitle")}</UText>
           </View>
         </View>
       }
@@ -305,17 +308,17 @@ export default function WalletTransferScreen() {
       />
       {insufficient && (
         <Notice tone="warn" icon="warning-outline" style={{ marginTop: 12 }}>
-          Le montant dépasse ton solde disponible.
+          {t("wt.exceeds")}
         </Notice>
       )}
 
       {/* Destinataire */}
-      <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>Destinataire</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>{t("send.recipient")}</UText>
       <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, borderRadius: R.md, backgroundColor: C.field, paddingLeft: 6, paddingRight: 10 }}>
         <Pressable
           onPress={() => setShowPicker(true)}
           accessibilityRole="button"
-          accessibilityLabel={`Indicatif ${selectedCode.code}`}
+          accessibilityLabel={t("bn.c.dialA11y", { dial: selectedCode.code })}
           style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 6, height: 44, paddingHorizontal: 12, borderRadius: R.pill, backgroundColor: C.surface, opacity: pressed ? 0.7 : 1 })}
         >
           <Text style={{ fontSize: 20 }}>{selectedCode.flag}</Text>
@@ -329,17 +332,17 @@ export default function WalletTransferScreen() {
           ]}
           value={phone}
           onChangeText={handlePhoneChange}
-          placeholder="Numéro de téléphone"
+          placeholder={t("wt.phonePh")}
           placeholderTextColor={C.faint}
           keyboardType="phone-pad"
           selectionColor={C.accent}
           underlineColorAndroid="transparent"
-          accessibilityLabel="Numéro du destinataire, sans l'indicatif"
+          accessibilityLabel={t("wt.phoneA11y")}
         />
         {lookupLoading ? (
           <ActivityIndicator size="small" color={C.ink} />
         ) : phone.length > 0 ? (
-          <Pressable onPress={() => { setPhone(""); setLookupResult(null); }} hitSlop={10} accessibilityLabel="Effacer">
+          <Pressable onPress={() => { setPhone(""); setLookupResult(null); }} hitSlop={10} accessibilityLabel={t("send.clear")}>
             <Ionicons name="remove-circle" size={18} color={C.muted} />
           </Pressable>
         ) : null}
@@ -353,19 +356,19 @@ export default function WalletTransferScreen() {
               <UText v="bodyStrong">{foundName}</UText>
               {(lookupResult.city || lookupResult.country) ? (
                 <UText v="caption" tone="muted">
-                  {lookupResult.city ? `${lookupResult.city}, ` : ""}{lookupResult.country}
+                  {lookupResult.city ? `${lookupResult.city}, ` : ""}{localizeCountry(lookupResult.country ?? "")}
                 </UText>
               ) : null}
             </View>
-            <Pill label={lookupResult.isPlatformUser ? "Enregistré" : "Contact"} tone={lookupResult.isPlatformUser ? "pos" : "warn"} icon={lookupResult.isPlatformUser ? "checkmark-circle" : "person-outline"} />
+            <Pill label={lookupResult.isPlatformUser ? t("wt.registered") : t("wt.contact")} tone={lookupResult.isPlatformUser ? "pos" : "warn"} icon={lookupResult.isPlatformUser ? "checkmark-circle" : "person-outline"} />
           </Card>
         ) : (
           cleanLen >= 6 && (
             <View style={{ marginTop: 12 }}>
               <ListRow
                 icon="person-add-outline"
-                title="Contact non trouvé"
-                subtitle="Ajouter comme nouveau contact"
+                title={t("wt.notFound")}
+                subtitle={t("wt.addNew")}
                 onPress={() => router.push("/(tabs)/beneficiaries/create" as any)}
                 last
               />
@@ -377,10 +380,10 @@ export default function WalletTransferScreen() {
       {/* Montant */}
       {lookupResult?.found && (
         <>
-          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>Montant</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>{t("send.amount")}</UText>
           <Card pad={0} style={{ overflow: "hidden", borderWidth: insufficient ? 1.5 : 0, borderColor: C.warn }}>
             <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-              <UText v="overline" tone="muted">Tu envoies</UText>
+              <UText v="overline" tone="muted">{t("wt.youSend")}</UText>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
                 <TextInput
                   style={[
@@ -388,20 +391,20 @@ export default function WalletTransferScreen() {
                     { outlineStyle: "none", outlineWidth: 0, borderWidth: 0 } as any,
                   ]}
                   value={amount}
-                  onChangeText={(t) => setAmount(sanitizeAmountInput(t, decimalsFor(senderCurrency)))}
+                  onChangeText={(v) => setAmount(sanitizeAmountInput(v, decimalsFor(senderCurrency)))}
                   placeholder={decimalsFor(senderCurrency) > 0 ? "0,00" : "0"}
                   placeholderTextColor={C.faint}
                   keyboardType={decimalsFor(senderCurrency) > 0 ? "decimal-pad" : "number-pad"}
                   selectionColor={C.accent}
                   underlineColorAndroid="transparent"
-                  accessibilityLabel="Montant à envoyer"
+                  accessibilityLabel={t("wt.amountA11y")}
                 />
                 <UText v="bodyStrong" tone="muted">{senderCurrency}</UText>
               </View>
             </View>
             <View style={{ paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.sunken }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <UText v="overline" tone="muted">{lookupResult.firstName ? `${lookupResult.firstName} reçoit` : "Il·elle reçoit"}</UText>
+                <UText v="overline" tone="muted">{lookupResult.firstName ? t("wt.recvName", { name: lookupResult.firstName }) : t("wt.recvAnon")}</UText>
                 {converting ? <ActivityIndicator size="small" color={C.ink} /> : null}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
@@ -431,27 +434,27 @@ export default function WalletTransferScreen() {
       {/* Récapitulatif */}
       {showSummary && (
         <>
-          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 2 }}>Récapitulatif</UText>
-          <RecapRow label="Destinataire" value={foundName} />
-          <RecapRow label="Montant envoyé" value={`${fmt(numAmount, senderCurrency)} ${senderCurrency}`} />
+          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 2 }}>{t("send.summary")}</UText>
+          <RecapRow label={t("send.recipient")} value={foundName} />
+          <RecapRow label={t("send.l.sent")} value={`${fmt(numAmount, senderCurrency)} ${senderCurrency}`} />
           {!isSameCurrency && convertedAmount !== null && (
-            <RecapRow label="Montant reçu" value={`${fmt(convertedAmount, targetCurrency)} ${targetCurrency}`} tone="pos" />
+            <RecapRow label={t("wt.recvAmt")} value={`${fmt(convertedAmount, targetCurrency)} ${targetCurrency}`} tone="pos" />
           )}
-          <RecapRow label="Frais" value={<Pill label="Offerts" tone="pos" icon="checkmark-circle" />} />
-          <RecapRow label="Total débité" strong tone={insufficient ? "warn" : undefined} value={`${fmt(numAmount, senderCurrency)} ${senderCurrency}`} />
+          <RecapRow label={t("send.l.fees")} value={<Pill label={t("send.offered")} tone="pos" icon="checkmark-circle" />} />
+          <RecapRow label={t("txd.totalDebited")} strong tone={insufficient ? "warn" : undefined} value={`${fmt(numAmount, senderCurrency)} ${senderCurrency}`} />
         </>
       )}
 
       <UText v="caption" tone="muted" align="center" style={{ marginTop: 22 }}>
-        🔒 Transfert sécurisé · uniquement entre membres enregistrés
+        {t("wt.secure")}
       </UText>
 
       {/* Indicatifs pays */}
-      <Sheet visible={showPicker} onClose={() => setShowPicker(false)} title="Indicatif du pays">
+      <Sheet visible={showPicker} onClose={() => setShowPicker(false)} title={t("wt.dialSheet")}>
         {COUNTRY_CODES.map((c, i) => (
           <ListRow
             key={c.country}
-            title={c.name}
+            title={countryName(c.country, c.name)}
             subtitle={c.code}
             last={i === COUNTRY_CODES.length - 1}
             left={

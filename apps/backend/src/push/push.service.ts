@@ -12,6 +12,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { langOfUser, type Lang } from '../i18n/lang';
+import { translatePhrase } from '../i18n/phrase-book';
+import '../i18n/phrases';
 
 // =========================================================
 // TYPES
@@ -149,6 +152,16 @@ export class PushService {
   // ENVOI À TOUS LES APPAREILS D'UN UTILISATEUR
   // ========================================================
 
+  /** Langue du compte (User.preferredLanguage) ; français si inconnue. Ne lève jamais. */
+  private async userLang(userId: string): Promise<Lang> {
+    try {
+      const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { preferredLanguage: true } });
+      return langOfUser(u);
+    } catch {
+      return 'fr';
+    }
+  }
+
   async sendToUser(
     userId: string,
     payload: PushPayload,
@@ -168,6 +181,10 @@ export class PushService {
       );
       return { successCount: 0, failureCount: 0, provider: 'none' };
     }
+
+    // ✅ langues FR / EN / PT : le texte part dans la langue du compte (le français reste inchangé).
+    const lang = await this.userLang(userId);
+    if (lang !== 'fr') payload = { ...payload, title: translatePhrase(payload.title, lang), body: translatePhrase(payload.body, lang) };
 
     let successCount = 0;
     let failureCount = 0;

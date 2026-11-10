@@ -79,6 +79,7 @@ import * as SecureStore from "expo-secure-store";
 import { getApiBaseUrl } from "./serverConfig";
 import { runOnce } from "./idempotency";
 import { getPlatformCode } from "./platformConfig";
+import { getLang, tr } from "../i18n/runtime";
 
 import type {
   Agency,
@@ -385,7 +386,7 @@ function extractAxiosErrorMessage(err: unknown): string {
     const errTxt = data.error;
     if (typeof errTxt === "string") return status ? `${status} - ${errTxt}` : errTxt;
   }
-  const fallback = err.message || "Erreur réseau";
+  const fallback = err.message || tr("err.network.title");
   return status ? `${status} - ${fallback}` : fallback;
 }
 
@@ -530,6 +531,9 @@ class API {
       devLog("------------------------------------------");
 
       headers.set("x-tenant-id", this.tenant);
+      // Langue choisie dans l'app (fr / en / pt) : le serveur traduit erreurs et notifications (en-tête dédié : Accept-Language est
+      // rempli automatiquement par les navigateurs et ne reflète pas le choix de l'utilisateur).
+      headers.set("x-app-lang", getLang());
 
       if (this.token && this.token.trim().length > 0) {
         headers.set(
@@ -809,6 +813,11 @@ class API {
   async updateProfile(data: Partial<AuthUser>): Promise<AuthUser> {
     const res = await this.http.patch<AuthUser>("/auth/me", data);
     return res.data;
+  }
+
+  /** Mémorise la langue choisie sur le compte (emails, notifications et SMS suivent). */
+  async setLanguage(language: "fr" | "en" | "pt"): Promise<void> {
+    await this.http.patch("/auth/me", { preferredLanguage: language });
   }
 
   async changePassword(data: ChangePasswordPayload): Promise<void> {

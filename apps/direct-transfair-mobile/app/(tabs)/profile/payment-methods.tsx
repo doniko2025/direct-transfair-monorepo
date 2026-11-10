@@ -24,6 +24,8 @@ import { Alert, Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
+import { tr } from "../../../i18n/runtime";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {
   Button, EmptyView, ErrorView, Field, IconButton, ListRow, NavBar, Pill, Screen, SectionHeader, Sheet, SkeletonRows, SlowNote, StatusDot, UText, useUI,
@@ -70,12 +72,13 @@ function detectBrand(cardNumber: string): string {
   if (/^4/.test(digits)) return "VISA";
   if (/^5[1-5]/.test(digits)) return "MASTERCARD";
   if (/^3[47]/.test(digits)) return "AMEX";
-  return "CARTE";
+  return tr("pm.brandCard");
 }
 
 // ─── Aperçu de carte en temps réel (couleur de la société) ─
 function CardPreview({ number, name, expiry }: { number: string; name: string; expiry: string }) {
   const { C, R } = useUI();
+  const t = useT();
   const digits = number.replace(/\D/g, "");
   const groups = [0, 1, 2, 3].map((i) => {
     const slice = digits.slice(i * 4, i * 4 + 4);
@@ -90,14 +93,14 @@ function CardPreview({ number, name, expiry }: { number: string; name: string; e
       <UText v="subheading" color={C.accentInk} style={{ letterSpacing: 2 }} numberOfLines={1}>{groups.join("  ")}</UText>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>Titulaire</UText>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>{t("pm.holderLabel")}</UText>
           <UText v="label" color={C.accentInk} numberOfLines={1} style={{ marginTop: 3 }}>
-            {name.trim() ? name.trim().toUpperCase() : "VOTRE NOM"}
+            {name.trim() ? name.trim().toUpperCase() : t("pm.yourName")}
           </UText>
         </View>
         <View>
-          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>Exp.</UText>
-          <UText v="label" color={C.accentInk} style={{ marginTop: 3 }}>{expiry || "MM/AA"}</UText>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.6 }}>{t("pm.expShort")}</UText>
+          <UText v="label" color={C.accentInk} style={{ marginTop: 3 }}>{expiry || t("pm.expPh")}</UText>
         </View>
       </View>
     </View>
@@ -106,6 +109,7 @@ function CardPreview({ number, name, expiry }: { number: string; name: string; e
 
 export default function PaymentMethodsScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
 
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<Methods>(async () => {
@@ -136,10 +140,10 @@ export default function PaymentMethodsScreen() {
     const cleanNumber = newCardNumber.replace(/\s/g, "");
     const cleanName = newCardName.trim();
 
-    if (!cleanName) { Alert.alert("Erreur", "Le nom du titulaire est requis."); return; }
-    if (cleanNumber.length < 13) { Alert.alert("Erreur", "Numéro de carte invalide."); return; }
-    if (newCardExpiry.length < 5) { Alert.alert("Erreur", "Date d'expiration invalide."); return; }
-    if (newCardCvv.length < 3) { Alert.alert("Erreur", "Code de sécurité (CVV) invalide."); return; }
+    if (!cleanName) { Alert.alert(t("common.error"), t("pm.errName")); return; }
+    if (cleanNumber.length < 13) { Alert.alert(t("common.error"), t("pm.errNumber")); return; }
+    if (newCardExpiry.length < 5) { Alert.alert(t("common.error"), t("pm.errExpiry")); return; }
+    if (newCardCvv.length < 3) { Alert.alert(t("common.error"), t("pm.errCvv")); return; }
 
     try {
       setSaving(true);
@@ -153,18 +157,18 @@ export default function PaymentMethodsScreen() {
       resetCardForm();
       await refresh();
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? "Erreur lors de l'ajout";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+      const msg = e?.response?.data?.message ?? e?.message ?? t("pm.addFail");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : String(msg));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteCard = async (cardId: string) => {
-    Alert.alert("Supprimer la carte", "Confirmer la suppression ?", [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("pm.delTitle"), t("pm.delMsg"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Supprimer",
+        text: t("pm.delete"),
         style: "destructive",
         onPress: async () => {
           try {
@@ -172,8 +176,8 @@ export default function PaymentMethodsScreen() {
             await api.http.delete(`/payments/cards/${cardId}`);
             await refresh();
           } catch (e: any) {
-            const msg = e?.response?.data?.message ?? e?.message ?? "Erreur";
-            Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+            const msg = e?.response?.data?.message ?? e?.message ?? t("common.error");
+            Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : String(msg));
           } finally {
             setSaving(false);
           }
@@ -183,7 +187,7 @@ export default function PaymentMethodsScreen() {
   };
 
   const handleLinkWallet = async () => {
-    if (newPhone.trim().length < 8) { Alert.alert("Erreur", "Numéro invalide"); return; }
+    if (newPhone.trim().length < 8) { Alert.alert(t("common.error"), t("pm.numInvalid")); return; }
     try {
       setSaving(true);
       await api.http.patch("/payments/mobile-wallet", { provider: selectedProvider, number: newPhone.trim() });
@@ -191,18 +195,18 @@ export default function PaymentMethodsScreen() {
       setNewPhone("");
       await refresh();
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? "Erreur de liaison";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+      const msg = e?.response?.data?.message ?? e?.message ?? t("pm.linkFail");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : String(msg));
     } finally {
       setSaving(false);
     }
   };
 
   const handleUnlinkWallet = async (provider: string) => {
-    Alert.alert("Délier le compte", `Délier ${WALLET_CONFIG[provider]?.label ?? provider} ?`, [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("pm.unlinkTitle"), t("pm.unlinkMsg", { name: WALLET_CONFIG[provider]?.label ?? provider }), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Délier",
+        text: t("pm.unlink"),
         style: "destructive",
         onPress: async () => {
           try {
@@ -210,8 +214,8 @@ export default function PaymentMethodsScreen() {
             await api.http.patch("/payments/mobile-wallet", { provider, number: null });
             await refresh();
           } catch (e: any) {
-            const msg = e?.response?.data?.message ?? e?.message ?? "Erreur";
-            Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+            const msg = e?.response?.data?.message ?? e?.message ?? t("common.error");
+            Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : String(msg));
           } finally {
             setSaving(false);
           }
@@ -222,7 +226,7 @@ export default function PaymentMethodsScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Moyens de paiement" subtitle="Cartes & Mobile Money" onBack={() => router.back()} />}
+      header={<NavBar title={t("pm.title")} subtitle={t("pm.subtitle")} onBack={() => router.back()} />}
       refreshing={refreshing}
       onRefresh={() => void refresh()}
     >
@@ -232,31 +236,31 @@ export default function PaymentMethodsScreen() {
           <SkeletonRows rows={3} />
         </>
       ) : status === "error" ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+        <ErrorView title={error?.title ?? t("kycs.loadFail")} message={error?.message ?? t("kycs.retryLater")} onRetry={() => void reload()} />
       ) : (
         <>
           {/* Cartes bancaires */}
-          <SectionHeader title="Cartes bancaires" style={{ marginTop: 4 }} />
+          <SectionHeader title={t("pm.cards")} style={{ marginTop: 4 }} />
           {cards.map((card) => (
             <ListRow
               key={card.id}
               icon="card-outline"
               // titulaire en ligne principale, repli sur « {brand} ···· {last4} » si absent
               title={card.cardholderName ? card.cardholderName.toUpperCase() : `${card.brand} ···· ${card.last4}`}
-              subtitle={card.cardholderName ? `${card.brand} ···· ${card.last4} · Expire ${card.expiry}` : `Expire ${card.expiry}`}
+              subtitle={card.cardholderName ? `${card.brand} ···· ${card.last4} · ${t("pm.expires", { date: card.expiry })}` : t("pm.expires", { date: card.expiry })}
               right={
-                <IconButton icon="trash-outline" label="Supprimer la carte" kind="plain" onPress={() => handleDeleteCard(card.id)} />
+                <IconButton icon="trash-outline" label={t("pm.delTitle")} kind="plain" onPress={() => handleDeleteCard(card.id)} />
               }
             />
           ))}
           <View style={{ marginTop: 14 }}>
-            <Button label="Ajouter une carte bancaire" kind="outline" icon="add-circle-outline" onPress={() => setShowCardModal(true)} />
+            <Button label={t("pm.addCardBtn")} kind="outline" icon="add-circle-outline" onPress={() => setShowCardModal(true)} />
           </View>
 
           {/* Mobile Money */}
           <SectionHeader title="Mobile Money" />
           {mobileWallets.length === 0 && (
-            <EmptyView icon="phone-portrait-outline" title="Aucun compte Mobile Money configuré" />
+            <EmptyView icon="phone-portrait-outline" title={t("pm.noMobile")} />
           )}
           {mobileWallets.map((wallet, i) => {
             const config = WALLET_CONFIG[wallet.provider] ?? { label: wallet.provider, icon: "wallet-outline" };
@@ -265,7 +269,7 @@ export default function PaymentMethodsScreen() {
                 key={wallet.provider}
                 icon={config.icon}
                 title={config.label}
-                subtitle={wallet.isLinked ? wallet.number ?? "" : "Non lié"}
+                subtitle={wallet.isLinked ? wallet.number ?? "" : t("pm.notLinked")}
                 last={i === mobileWallets.length - 1}
                 right={
                   wallet.isLinked ? (
@@ -273,14 +277,14 @@ export default function PaymentMethodsScreen() {
                       onPress={() => handleUnlinkWallet(wallet.provider)}
                       disabled={saving}
                       accessibilityRole="button"
-                      accessibilityLabel={`Délier ${config.label}`}
+                      accessibilityLabel={t("pm.unlinkA11y", { name: config.label })}
                       style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
                     >
-                      <StatusDot color={C.pos} label="Lié" />
+                      <StatusDot color={C.pos} label={t("pm.linked")} />
                     </Pressable>
                   ) : (
                     <Pill
-                      label="Lier"
+                      label={t("pm.link")}
                       tone="dark"
                       style={{ opacity: saving ? 0.5 : 1 }}
                     />
@@ -297,30 +301,30 @@ export default function PaymentMethodsScreen() {
       <Sheet
         visible={showCardModal}
         onClose={() => { setShowCardModal(false); resetCardForm(); }}
-        title="Ajouter une carte"
-        footer={<Button label="Ajouter la carte" onPress={handleAddCard} loading={saving} disabled={saving} />}
+        title={t("pm.addCard")}
+        footer={<Button label={t("pm.addCardConfirm")} onPress={handleAddCard} loading={saving} disabled={saving} />}
       >
         <View style={{ paddingTop: 8 }}>
           <CardPreview number={newCardNumber} name={newCardName} expiry={newCardExpiry} />
-          <Field label="Titulaire de la carte" value={newCardName} onChangeText={setNewCardName} placeholder="NOM PRÉNOM" autoCapitalize="characters" />
+          <Field label={t("pm.holderField")} value={newCardName} onChangeText={setNewCardName} placeholder={t("pm.holderPh")} autoCapitalize="characters" />
           <Field
-            label="Numéro de carte"
+            label={t("pm.numberField")}
             icon="card-outline"
             value={newCardNumber}
-            onChangeText={(t) => setNewCardNumber(formatCardNumber(t))}
+            onChangeText={(v) => setNewCardNumber(formatCardNumber(v))}
             placeholder="0000 0000 0000 0000"
             keyboardType="numeric"
             maxLength={19}
           />
           <View style={{ flexDirection: "row", gap: 12 }}>
             <View style={{ flex: 1 }}>
-              <Field label="Expiration" value={newCardExpiry} onChangeText={(t) => setNewCardExpiry(formatExpiry(t))} placeholder="MM/AA" keyboardType="numeric" maxLength={5} />
+              <Field label={t("pm.expiryField")} value={newCardExpiry} onChangeText={(v) => setNewCardExpiry(formatExpiry(v))} placeholder={t("pm.expPh")} keyboardType="numeric" maxLength={5} />
             </View>
             <View style={{ flex: 1 }}>
-              <Field label="CVV" value={newCardCvv} onChangeText={(t) => setNewCardCvv(t.replace(/\D/g, "").slice(0, 4))} placeholder="•••" keyboardType="numeric" maxLength={4} secure />
+              <Field label="CVV" value={newCardCvv} onChangeText={(v) => setNewCardCvv(v.replace(/\D/g, "").slice(0, 4))} placeholder="•••" keyboardType="numeric" maxLength={4} secure />
             </View>
           </View>
-          <UText v="caption" tone="muted">🔒 Tes informations sont chiffrées. Le CVV n'est jamais stocké.</UText>
+          <UText v="caption" tone="muted">{t("pm.secure")}</UText>
         </View>
       </Sheet>
 
@@ -328,12 +332,12 @@ export default function PaymentMethodsScreen() {
       <Sheet
         visible={showPhoneModal}
         onClose={() => setShowPhoneModal(false)}
-        title={`Lier ${selectedProvider ? (WALLET_CONFIG[selectedProvider]?.label ?? selectedProvider) : ""}`}
-        footer={<Button label="Lier ce numéro" onPress={handleLinkWallet} loading={saving} disabled={saving} />}
+        title={t("pm.linkTitle", { name: selectedProvider ? (WALLET_CONFIG[selectedProvider]?.label ?? selectedProvider) : "" }).trim()}
+        footer={<Button label={t("pm.linkNumber")} onPress={handleLinkWallet} loading={saving} disabled={saving} />}
       >
         <View style={{ paddingTop: 8 }}>
           <Field
-            label="Numéro Mobile Money"
+            label={t("pm.mmNumber")}
             icon="call-outline"
             value={newPhone}
             onChangeText={setNewPhone}

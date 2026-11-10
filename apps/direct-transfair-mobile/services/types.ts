@@ -239,6 +239,8 @@ export interface ChangePasswordPayload {
 // =========================================================
 
 export interface AuthUser {
+  /** Langue du compte (fr | en | pt) : emails, SMS et notifications. */
+  preferredLanguage?: string | null;
   id: string;
   email: string;
   phone?: string | null;

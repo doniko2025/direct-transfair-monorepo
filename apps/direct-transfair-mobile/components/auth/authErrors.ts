@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/authErrors.ts
 // =========================================================
-// MESSAGES D'ERREUR D'AUTHENTIFICATION v1.1 — Direct Transf'air
+// MESSAGES D'ERREUR D'AUTHENTIFICATION v1.2 — Direct Transf'air
+// ✅ v1.2 : textes FR / EN / PT (i18n/messages/auth.ts) — la langue suit le choix de l'utilisateur ; le message du serveur arrive déjà traduit (Accept-Language).
 // ✅ v1.1 : sur navigateur, « aucune réponse » n'affiche plus « vérifiez votre connexion internet » (trompeur :
 //    serveur en veille/arrêté ou CORS) mais un message exact avec l'adresse de la page. Mobile inchangé.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
@@ -9,6 +10,8 @@
 // avec un type exploitable par l'écran. Plus jamais un « Network
 // Error » ou un « Application not found » brut devant le client.
 // =========================================================
+
+import { tr } from '../../i18n/runtime';
 
 export type AuthErrorKind =
   | 'network'      // serveur injoignable / pas de connexion
@@ -57,7 +60,6 @@ export function isTransientError(err: unknown): boolean {
   return s === 502 || s === 503 || s === 504;
 }
 
-const FALLBACK_TITLE = 'Une erreur est survenue';
 /** Message d'Express/Nest quand aucune route ne correspond. */
 const NO_ROUTE_RE = /^Cannot (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \//i;
 
@@ -72,43 +74,27 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
   if (status === undefined) {
     const isTimeout = e?.code === 'ECONNABORTED' || /timeout/i.test(String(e?.message ?? ''));
     if (isTimeout) {
-      return {
-        kind: 'timeout',
-        title: 'Le serveur met du temps à répondre',
-        message: 'Il démarre peut-être après une période d’inactivité. Patientez quelques secondes puis réessayez.',
-      };
+      return { kind: 'timeout', title: tr('err.timeout.title'), message: tr('err.timeout.msg') };
     }
     // Navigateur : une erreur sans statut HTTP n'est pas forcément une coupure internet — le serveur peut
     // être en veille / en panne (réponse d'hébergeur sans en-têtes CORS) ou refuser cette adresse (CORS).
     if (typeof document !== 'undefined') {
       return {
         kind: 'network',
-        title: 'Le serveur ne répond pas',
-        message:
-          'Le navigateur n’a reçu aucune réponse. Le serveur est peut-être en veille ou arrêté, ou il n’autorise pas cette adresse (' +
-          (typeof window !== 'undefined' ? window.location.host : 'cette page') +
-          '). Réessayez dans une minute ; si cela persiste, contactez l’assistance.',
+        title: tr('err.web.title'),
+        message: tr('err.web.msg', { host: typeof window !== 'undefined' ? window.location.host : tr('err.web.thisPage') }),
       };
     }
-    return {
-      kind: 'network',
-      title: 'Connexion impossible',
-      message: 'Impossible de joindre le serveur. Vérifiez votre connexion internet puis réessayez.',
-    };
+    return { kind: 'network', title: tr('err.network.title'), message: tr('err.network.msg') };
   }
 
   // Route inconnue du serveur (« Cannot GET /api/… ») : le serveur n'a pas encore la version qui apporte cette fonction.
   if (status === 404 && NO_ROUTE_RE.test(srv ?? '')) {
-    return {
-      kind: 'config',
-      title: 'Fonction pas encore disponible',
-      message: 'Cette fonction n’est pas encore activée sur le serveur. Elle sera disponible après sa mise à jour.',
-      status,
-    };
+    return { kind: 'config', title: tr('err.noRoute.title'), message: tr('err.noRoute.msg'), status };
   }
   // Fichier ou image refusé pour sa taille avant même d'atteindre l'application serveur.
   if (status === 413) {
-    return { kind: 'validation', title: 'Fichier trop lourd', message: 'Le fichier envoyé est trop volumineux. Choisissez une image plus petite.', status };
+    return { kind: 'validation', title: tr('err.tooLarge.title'), message: tr('err.tooLarge.msg'), status };
   }
 
   // Réponse qui n'est pas celle de notre API (page d'hébergeur, HTML…).
@@ -118,11 +104,8 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
   if ((status === 404 || status === 502 || status === 503) && looksForeign) {
     return {
       kind: status === 404 ? 'config' : 'server',
-      title: status === 404 ? 'Serveur introuvable' : 'Service momentanément indisponible',
-      message:
-        status === 404
-          ? 'L’application n’arrive pas à joindre le bon serveur. Mettez-la à jour ou contactez l’assistance.'
-          : 'Le service redémarre. Réessayez dans quelques instants.',
+      title: status === 404 ? tr('err.notFoundServer.title') : tr('err.unavailable.title'),
+      message: status === 404 ? tr('err.notFoundServer.msg') : tr('err.unavailable.restarting'),
       status,
     };
   }
@@ -130,41 +113,36 @@ export function describeAuthError(err: unknown, ctx: 'login' | 'register' | 'otp
   if (code === 'USE_WEB_PORTAL' || code === 'USE_COMPANY_PORTAL' || code === 'USE_DEFAULT_PORTAL' || code === 'VERIFICATION_REQUIRED') {
     return {
       kind: 'forbidden',
-      title: code === 'USE_WEB_PORTAL' ? 'Compte réservé au portail web' : 'Accès restreint',
-      message: srv ?? 'Ce compte ne peut pas se connecter ici.',
+      title: code === 'USE_WEB_PORTAL' ? tr('err.webPortal.title') : tr('err.restricted.title'),
+      message: srv ?? tr('err.restricted.msg'),
       code,
       status,
     };
   }
 
   if (status === 429) {
-    return {
-      kind: 'rate_limit',
-      title: 'Trop de tentatives',
-      message: 'Pour votre sécurité, patientez une minute avant de réessayer.',
-      status,
-    };
+    return { kind: 'rate_limit', title: tr('err.rateLimit.title'), message: tr('err.rateLimit.msg'), status };
   }
   if (status >= 500) {
-    return { kind: 'server', title: 'Service momentanément indisponible', message: 'Un incident technique est survenu de notre côté. Réessayez dans quelques instants.', status };
+    return { kind: 'server', title: tr('err.unavailable.title'), message: tr('err.unavailable.incident'), status };
   }
   if (status === 401) {
     return ctx === 'login'
-      ? { kind: 'credentials', title: 'Identifiants incorrects', message: srv && !/unauthorized/i.test(srv) ? srv : 'Numéro, email ou code incorrect.', status }
-      : { kind: 'forbidden', title: 'Session expirée', message: 'Veuillez vous reconnecter.', status };
+      ? { kind: 'credentials', title: tr('err.credentials.title'), message: srv && !/unauthorized/i.test(srv) ? srv : tr('err.credentials.msg'), status }
+      : { kind: 'forbidden', title: tr('err.session.title'), message: tr('err.session.msg'), status };
   }
   if (status === 409) {
-    return { kind: 'conflict', title: 'Compte déjà existant', message: srv ?? 'Un compte existe déjà avec ces informations.', status };
+    return { kind: 'conflict', title: tr('err.conflict.title'), message: srv ?? tr('err.conflict.msg'), status };
   }
   if (status === 403) {
-    return { kind: 'forbidden', title: 'Accès refusé', message: srv ?? 'Votre compte ne peut pas effectuer cette action.', status };
+    return { kind: 'forbidden', title: tr('err.forbidden.title'), message: srv ?? tr('err.forbidden.msg'), status };
   }
   if (status === 404 && ctx === 'reset') {
-    return { kind: 'validation', title: 'Compte introuvable', message: 'Aucun compte ne correspond à cet email ou ce numéro.', status };
+    return { kind: 'validation', title: tr('err.accountNotFound.title'), message: tr('err.accountNotFound.msg'), status };
   }
   if (status === 400 || status === 404 || status === 422) {
-    const title = ctx === 'otp' ? 'Code incorrect' : 'Information à corriger';
-    return { kind: 'validation', title, message: srv ?? 'Les informations saisies sont incorrectes.', status };
+    const title = ctx === 'otp' ? tr('err.otpWrong.title') : tr('err.fix.title');
+    return { kind: 'validation', title, message: srv ?? tr('err.fix.msg'), status };
   }
-  return { kind: 'unknown', title: FALLBACK_TITLE, message: srv ?? 'Réessayez dans quelques instants.', status };
+  return { kind: 'unknown', title: tr('err.fallbackTitle'), message: srv ?? tr('err.fallbackMsg'), status };
 }

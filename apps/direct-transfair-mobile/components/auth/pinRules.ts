@@ -7,6 +7,9 @@
 // identiques : ne modifiez jamais un seul des deux fichiers.
 // =========================================================
 
+import { tr } from '../../i18n/runtime';
+import type { MessageKey } from '../../i18n/catalog';
+
 // ─── BEGIN PIN POLICY ───────────────────────────────────
 export const PIN_LENGTH = 6;
 
@@ -186,10 +189,15 @@ export function isPinAcceptable(pin: string, ctx: PinContext = {}): boolean {
 }
 // ─── END PIN POLICY ─────────────────────────────────────
 
+/** Texte (dans la langue choisie) d'un motif refusé. Le bloc ci-dessus reste identique au backend : la traduction vit ici, hors bloc. */
+export function pinIssueText(issue: PinIssue): string {
+  return tr(`pin.issue.${issue}` as MessageKey);
+}
+
 /** Texte du premier problème trouvé, ou null si le code est accepté. */
 export function pinProblem(pin: string, ctx: PinContext = {}): string | null {
   const issues = pinIssues(pin, ctx);
-  return issues.length === 0 ? null : PIN_ISSUE_MESSAGE[issues[0]!];
+  return issues.length === 0 ? null : pinIssueText(issues[0]!);
 }
 
 /** Garde uniquement les chiffres, au plus 6 (collage, saisie automatique). */
@@ -202,7 +210,7 @@ export type PinStrength = { level: 0 | 1 | 2 | 3; label: string; problem: string
 /** Retour visuel pendant la saisie : 0 = vide, 1 = refusé, 2 = en cours, 3 = accepté. */
 export function pinStrength(pin: string, ctx: PinContext = {}): PinStrength {
   if (pin.length === 0) return { level: 0, label: '', problem: null };
-  if (pin.length < PIN_LENGTH) return { level: 2, label: `${pin.length}/${PIN_LENGTH} chiffres`, problem: null };
+  if (pin.length < PIN_LENGTH) return { level: 2, label: tr('pin.digitsCount', { count: pin.length, length: PIN_LENGTH }), problem: null };
   const problem = pinProblem(pin, ctx);
-  return problem ? { level: 1, label: 'Trop prévisible', problem } : { level: 3, label: 'Code solide', problem: null };
+  return problem ? { level: 1, label: tr('pin.tooPredictable'), problem } : { level: 3, label: tr('pin.strong'), problem: null };
 }

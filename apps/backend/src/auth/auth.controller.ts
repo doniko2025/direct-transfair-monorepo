@@ -83,8 +83,9 @@ export class AuthController {
   async register(
     @Body() dto: RegisterDto,
     @Headers('x-tenant-id') tenantId: string | undefined,
+    @Headers('x-app-lang') appLang: string | undefined,   // ✅ langues FR / EN / PT
   ) {
-    return this.authService.register(dto, tenantId ?? null);
+    return this.authService.register(dto, tenantId ?? null, appLang ?? null);
   }
 
   // ========================================================

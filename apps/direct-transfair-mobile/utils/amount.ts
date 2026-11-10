@@ -13,6 +13,8 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
+import { getLocale } from "../i18n/runtime";
+
 /** Même liste que le backend (fee-engine.ts : ZERO_DECIMAL_CURRENCIES). */
 const ZERO_DECIMAL = ["XOF", "GNF"];
 
@@ -67,7 +69,7 @@ export function toInputText(value: number, decimals: number): string {
 export function fmtMoney(value: number, currency?: string | null): string {
   const d = decimalsFor(currency);
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(value);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(value);
   } catch {
     return value.toFixed(d);
   }
@@ -77,7 +79,7 @@ export function fmtMoney(value: number, currency?: string | null): string {
 export function fmtRate(rate: number): string {
   const max = rate >= 100 ? 3 : rate >= 1 ? 4 : 6;
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: max }).format(rate);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: 0, maximumFractionDigits: max }).format(rate);
   } catch {
     return String(rate);
   }

@@ -32,6 +32,9 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
 import { getSendwaveUrl } from "../../services/platformConfig";
+import { useT } from "../../providers/I18nProvider";
+import { tr, getLocale } from "../../i18n/runtime";
+import type { MessageKey } from "../../i18n/catalog";
 import {
   AmountInput, Button, Card, Chip, Field, NavBar, Notice, Screen, Tabs, UText, useUI,
 } from "../../components/ui";
@@ -41,7 +44,7 @@ const SENDWAVE_URL = getSendwaveUrl(); // ✅ phase 7 : modifiable (EXPO_PUBLIC_
 function fmt(n: number, currency = "XOF"): string {
   const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch {
     return n.toFixed(d);
   }
@@ -67,14 +70,15 @@ function formatExpiry(text: string): string {
 
 type Method = "CARD" | "ORANGE_MONEY" | "SENDWAVE";
 
-const METHODS: Array<{ key: Method; label: string; icon: string }> = [
-  { key: "CARD", label: "Carte", icon: "card-outline" },
-  { key: "ORANGE_MONEY", label: "Orange Money", icon: "phone-portrait-outline" },
-  { key: "SENDWAVE", label: "Sendwave", icon: "swap-horizontal-outline" },
+const METHODS: Array<{ key: Method; label: MessageKey | null; name?: string; icon: string }> = [
+  { key: "CARD", label: "rc.card", icon: "card-outline" },
+  { key: "ORANGE_MONEY", label: null, name: "Orange Money", icon: "phone-portrait-outline" },
+  { key: "SENDWAVE", label: null, name: "Sendwave", icon: "swap-horizontal-outline" },
 ];
 
 export default function RechargeScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
   const { user, refreshUser } = useAuth();
 
@@ -129,8 +133,8 @@ export default function RechargeScreen() {
       const w = wallets.find((x) => x.currency === currency);
       if (w) setBalance(Number(w.balance));
     }).catch(() => {});
-    Alert.alert("✅ Recharge réussie", `${label} a bien été créditée sur votre wallet.`, [
-      { text: "Retour au tableau de bord", onPress: () => router.back() },
+    Alert.alert(tr("rc.successTitle"), tr("rc.successMsg", { amount: label }), [
+      { text: tr("rc.backDash"), onPress: () => router.back() },
     ]);
   }, [refreshUser, currency, router]);
 
@@ -159,10 +163,10 @@ export default function RechargeScreen() {
       if (tx.status === "PAID") {
         await handleSuccess(`${fmt(numAmount, currency)} ${currency}`);
       } else {
-        Alert.alert("En attente", "Ce paiement n'a pas encore été confirmé. Réessayez un peu plus tard.");
+        Alert.alert(t("rc.pendingTitle"), t("rc.pendingMsg"));
       }
     } catch {
-      Alert.alert("Erreur", "Impossible de vérifier le statut pour le moment.");
+      Alert.alert(t("common.error"), t("rc.checkFail"));
     } finally {
       setCheckingStatus(false);
     }
@@ -170,7 +174,7 @@ export default function RechargeScreen() {
 
   const handleOpenSendwave = () => {
     Linking.openURL(SENDWAVE_URL).catch(() => {
-      Alert.alert("Erreur", "Impossible d'ouvrir Sendwave pour le moment.");
+      Alert.alert(tr("common.error"), tr("rc.swOpenFail"));
     });
   };
 
@@ -197,8 +201,8 @@ export default function RechargeScreen() {
         setPending({ transactionId: res.transactionId, method: "SENDWAVE" });
       }
     } catch (e: any) {
-      const msg = e?.response?.data?.message ?? e?.message ?? "La recharge a échoué. Réessayez.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : String(msg));
+      const msg = e?.response?.data?.message ?? e?.message ?? t("rc.failed");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : String(msg));
     } finally {
       setSubmitting(false);
     }
@@ -212,10 +216,10 @@ export default function RechargeScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Recharger mon wallet" onBack={() => router.back()} />}
+      header={<NavBar title={t("rc.title")} onBack={() => router.back()} />}
       footer={
         <Button
-          label="Recharger"
+          label={t("rc.cta")}
           icon="add-circle-outline"
           onPress={handleSubmit}
           loading={submitting}
@@ -224,7 +228,7 @@ export default function RechargeScreen() {
       }
     >
       {/* Solde actuel */}
-      <UText v="overline" tone="muted" style={{ marginTop: 4 }}>Solde actuel</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 4 }}>{t("rc.balance")}</UText>
       <UText v="title" style={{ marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
         {balance === null ? "—" : `${fmt(balance, currency)} ${currency}`}
       </UText>
@@ -232,7 +236,7 @@ export default function RechargeScreen() {
       {/* Méthode */}
       <Tabs
         style={{ marginTop: 22 }}
-        items={METHODS.map((m) => ({ key: m.key, label: m.label }))}
+        items={METHODS.map((m) => ({ key: m.key, label: m.label ? t(m.label) : (m.name ?? "") }))}
         value={method}
         onChange={changeMethod}
       />
@@ -240,17 +244,17 @@ export default function RechargeScreen() {
       {(method === "ORANGE_MONEY" || method === "SENDWAVE") && (
         <Notice tone="warn" style={{ marginTop: 16 }}>
           {method === "ORANGE_MONEY"
-            ? "Intégration Orange Money en cours de finalisation avec l'opérateur. Le paiement est simulé pour le moment."
-            : "Intégration Sendwave en cours de finalisation avec l'opérateur. Après paiement, la confirmation peut prendre un peu de temps."}
+            ? t("rc.omNote")
+            : t("rc.swNote")}
         </Notice>
       )}
 
       {/* Montant */}
       <View style={{ marginTop: 26 }}>
-        <AmountInput label="MONTANT À CRÉDITER" value={amount} onChangeText={setAmount} currency={currency} />
+        <AmountInput label={t("rc.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 4, paddingBottom: 2 }}>
           {quickAmounts.map((v) => (
-            <Chip key={v} label={new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 }).format(v)} active={numAmount === v} onPress={() => setAmount(String(v))} />
+            <Chip key={v} label={new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 0 }).format(v)} active={numAmount === v} onPress={() => setAmount(String(v))} />
           ))}
         </ScrollView>
       </View>
@@ -259,13 +263,13 @@ export default function RechargeScreen() {
       {method === "ORANGE_MONEY" && (
         <View style={{ marginTop: 26 }}>
           <Field
-            label="Numéro Orange Money"
+            label={t("rc.omNumber")}
             icon="call-outline"
             value={momoPhone}
             onChangeText={setMomoPhone}
             placeholder="+224 6XX XX XX XX"
             keyboardType="phone-pad"
-            hint="Le montant sera débité de ce compte Orange Money."
+            hint={t("rc.omHint")}
           />
         </View>
       )}
@@ -273,23 +277,23 @@ export default function RechargeScreen() {
       {/* Sendwave : paiement externe pour le moment */}
       {method === "SENDWAVE" && (
         <View style={{ marginTop: 20 }}>
-          <Button label="Ouvrir Sendwave pour payer" kind="outline" icon="open-outline" onPress={handleOpenSendwave} />
+          <Button label={t("rc.openSw")} kind="outline" icon="open-outline" onPress={handleOpenSendwave} />
         </View>
       )}
 
       {/* Carte bancaire */}
       {method === "CARD" && (
         <View style={{ marginTop: 26 }}>
-          <UText v="overline" tone="muted" style={{ marginBottom: 12 }}>Carte bancaire</UText>
+          <UText v="overline" tone="muted" style={{ marginBottom: 12 }}>{t("send.card")}</UText>
           <Field
-            label="Titulaire"
+            label={t("rc.holder")}
             value={cardName}
             onChangeText={setCardName}
-            placeholder="NOM PRÉNOM"
+            placeholder={t("rc.holderPh")}
             autoCapitalize="characters"
           />
           <Field
-            label="Numéro de carte"
+            label={t("rc.cardNumber")}
             icon="card-outline"
             value={cardNumber}
             onChangeText={(t) => setCardNumber(formatCardNumber(t))}
@@ -300,10 +304,10 @@ export default function RechargeScreen() {
           <View style={{ flexDirection: "row", gap: 12 }}>
             <View style={{ flex: 1 }}>
               <Field
-                label="Expiration"
+                label={t("rc.expiry")}
                 value={cardExpiry}
                 onChangeText={(t) => setCardExpiry(formatExpiry(t))}
-                placeholder="MM/AA"
+                placeholder={t("rc.expiryPh")}
                 keyboardType="numeric"
                 maxLength={5}
               />
@@ -320,7 +324,7 @@ export default function RechargeScreen() {
               />
             </View>
           </View>
-          <UText v="caption" tone="muted">🔒 Le CVV n'est jamais stocké.</UText>
+          <UText v="caption" tone="muted">{t("rc.cvvNote")}</UText>
         </View>
       )}
 
@@ -330,15 +334,15 @@ export default function RechargeScreen() {
           {pending.method === "ORANGE_MONEY" ? (
             <>
               <ActivityIndicator color={C.ink} />
-              <UText v="bodyStrong" align="center">Confirmation Orange Money en cours…</UText>
+              <UText v="bodyStrong" align="center">{t("rc.omWaiting")}</UText>
             </>
           ) : (
             <>
-              <UText v="bodyStrong" align="center">En attente de confirmation Sendwave</UText>
+              <UText v="bodyStrong" align="center">{t("rc.swWaiting")}</UText>
               <UText v="caption" tone="muted" align="center">
-                Référence : {pending.transactionId.slice(0, 8).toUpperCase()}
+                {t("rc.reference", { ref: pending.transactionId.slice(0, 8).toUpperCase() })}
               </UText>
-              <Button label="Vérifier le statut" kind="soft" small full={false} loading={checkingStatus} onPress={handleCheckSendwave} />
+              <Button label={t("rc.checkStatus")} kind="soft" small full={false} loading={checkingStatus} onPress={handleCheckSendwave} />
             </>
           )}
         </Card>

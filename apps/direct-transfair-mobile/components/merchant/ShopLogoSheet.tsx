@@ -13,6 +13,7 @@ import { ListRow, Sheet } from "../ui/Layout";
 import { api } from "../../services/api";
 import { forgetMerchantLogo } from "../../hooks/useMerchantLogo";
 import { apiProblem } from "./merchantUi";
+import { useT } from "../../providers/I18nProvider";
 
 const MAX_BYTES = 950_000; // le serveur refuse au-delà de 1 Mo
 const MIN_BYTES = 8 * 1024;
@@ -20,6 +21,7 @@ const MIN_BYTES = 8 * 1024;
 export function ShopLogoSheet({
   visible, onClose, shopId, hasLogo, onChanged,
 }: { visible: boolean; onClose: () => void; shopId?: string | null; hasLogo: boolean; onChanged: () => void }) {
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -30,10 +32,10 @@ export function ShopLogoSheet({
   const accept = async (res: ImagePicker.ImagePickerResult) => {
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    if (!a.base64) { setProblem("Image illisible, réessayez."); return; }
+    if (!a.base64) { setProblem(t("mlogo.unreadable")); return; }
     const bytes = Math.floor((a.base64.length * 3) / 4);
-    if (bytes > MAX_BYTES) { setProblem("Image trop lourde (1 Mo maximum). Choisissez une image plus petite."); return; }
-    if (bytes < MIN_BYTES) { setProblem("Image trop petite ou vide, réessayez."); return; }
+    if (bytes > MAX_BYTES) { setProblem(t("mlogo.tooBig")); return; }
+    if (bytes < MIN_BYTES) { setProblem(t("mlogo.tooSmall")); return; }
     setBusy(true);
     try { await api.saveMerchantLogo(a.base64); done(); }
     catch (e) { setProblem(apiProblem(e).message); }
@@ -46,15 +48,15 @@ export function ShopLogoSheet({
     setProblem(null);
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { setProblem("Autorisez l'appareil photo dans les réglages de votre téléphone."); return; }
+      if (!perm.granted) { setProblem(t("photo.camDenied")); return; }
       await accept(await ImagePicker.launchCameraAsync(options));
-    } catch { setProblem("Impossible d'ouvrir l'appareil photo."); }
+    } catch { setProblem(t("photo.camFail")); }
   };
 
   const library = async () => {
     setProblem(null);
     try { await accept(await ImagePicker.launchImageLibraryAsync(options)); }
-    catch { setProblem("Impossible d'ouvrir la galerie."); }
+    catch { setProblem(t("photo.libFail")); }
   };
 
   const drop = async () => {
@@ -65,13 +67,13 @@ export function ShopLogoSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={close} title="Logo du commerce">
+    <Sheet visible={visible} onClose={close} title={t("mlogo.title")}>
       <View style={{ paddingBottom: 6 }}>
         {problem ? <Notice tone="danger" style={{ marginBottom: 8 }}>{problem}</Notice> : null}
-        {busy ? <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>Enregistrement en cours…</UText> : null}
-        {Platform.OS !== "web" && <ListRow icon="camera-outline" title="Prendre une photo" onPress={busy ? undefined : camera} chevron={false} />}
-        <ListRow icon="images-outline" title="Choisir dans la galerie" onPress={busy ? undefined : library} chevron={false} last={!hasLogo} />
-        {hasLogo ? <ListRow icon="trash-outline" title="Retirer le logo" danger onPress={busy ? undefined : drop} chevron={false} last /> : null}
+        {busy ? <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>{t("photo.saving")}</UText> : null}
+        {Platform.OS !== "web" && <ListRow icon="camera-outline" title={t("photo.take")} onPress={busy ? undefined : camera} chevron={false} />}
+        <ListRow icon="images-outline" title={t("photo.choose")} onPress={busy ? undefined : library} chevron={false} last={!hasLogo} />
+        {hasLogo ? <ListRow icon="trash-outline" title={t("mlogo.remove")} danger onPress={busy ? undefined : drop} chevron={false} last /> : null}
       </View>
     </Sheet>
   );

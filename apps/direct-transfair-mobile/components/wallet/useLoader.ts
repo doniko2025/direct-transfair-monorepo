@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { describeAuthError } from '../auth/authErrors';
+import { tr } from '../../i18n/runtime';
 
 export type LoadStatus = 'loading' | 'ready' | 'error';
 export type LoadError = { title: string; message: string; timeout: boolean };
@@ -32,8 +33,8 @@ class LoadTimeout extends Error {}
 export function explainLoadError(err: unknown): LoadError {
   if (err instanceof LoadTimeout) {
     return {
-      title: 'Le serveur met du temps à répondre',
-      message: 'Il est peut-être en train de se réveiller. Réessaie dans quelques secondes.',
+      title: tr('state.slowTitle'),
+      message: tr('state.slowMsg'),
       timeout: true,
     };
   }

@@ -36,6 +36,9 @@ import * as Sharing from "expo-sharing";
 import { themed, brand } from "../../../components/wallet/brand";
 import { Button, Card, NavBar, Pill, Screen, UText, useUI } from "../../../components/ui";
 import { useTenant } from "../../../providers/TenantProvider";
+import { useT } from "../../../providers/I18nProvider";
+import { tr, getLang, fmtDate as fmtLocDate, fmtTime as fmtLocTime } from "../../../i18n/runtime";
+import { fmtMoney } from "../../../utils/amount";
 // ─── Type du reçu client ─────────────────────────────────
 // (construit dans [id].tsx > handleShare, passé en param URL)
 export interface ClientReceiptData {
@@ -88,34 +91,29 @@ const T = themed(() => ({
 }));
 
 // ─── Helpers ─────────────────────────────────────────────
-function fmt(n: number, currency = "XOF"): string {
-  const d = currency === "GNF" || currency === "XOF" ? 0 : 2;
-  try { return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n); }
-  catch { return n.toFixed(d); }
-}
+const fmt = (n: number, currency = "XOF"): string => fmtMoney(n, currency);
 
 function fmtDate(iso: string): { day: string; time: string; short: string; full: string } {
   try {
-    const d = new Date(iso);
+    const day  = fmtLocDate(iso, { day: "2-digit", month: "long", year: "numeric" });
+    const time = fmtLocTime(iso);
     return {
-      day:   d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long",    year: "numeric" }),
-      time:  d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      short: d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })
-             + " " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
-      full:  d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long",    year: "numeric" })
-             + " à " + d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }),
+      day,
+      time,
+      short: `${fmtLocDate(iso, { day: "2-digit", month: "2-digit", year: "numeric" })} ${time}`,
+      full:  `${day} ${tr("cr.at")} ${time}`,
     };
   } catch { return { day: iso, time: "", short: iso, full: iso }; }
 }
 
 function statusInfo(status: string, isIncoming: boolean) {
-  if (status === "PAID" && isIncoming)  return { label: "REÇUE ✓",   color: T.green, bg: T.greenBg };
-  if (status === "PAID" && !isIncoming) return { label: "PAYÉE ✓",   color: T.green, bg: T.greenBg };
-  if (status === "VALIDATED")           return { label: "DISPONIBLE", color: T.blue,  bg: T.blueBg  };
-  if (status === "CANCELLED")           return { label: "ANNULÉE",    color: T.red,   bg: T.redBg   };
-  if (status === "FAILED")              return { label: "ÉCHOUÉE",    color: T.red,   bg: T.redBg   };
-  if (status === "EXPIRED")             return { label: "EXPIRÉE",    color: T.red,   bg: T.redBg   };
-  return { label: "EN ATTENTE", color: T.amber, bg: T.amberBg };
+  if (status === "PAID" && isIncoming)  return { label: tr("cr.st.receivedOk"), color: T.green, bg: T.greenBg };
+  if (status === "PAID" && !isIncoming) return { label: tr("cr.st.paidOk"),     color: T.green, bg: T.greenBg };
+  if (status === "VALIDATED")           return { label: tr("cr.st.available"),  color: T.blue,  bg: T.blueBg  };
+  if (status === "CANCELLED")           return { label: tr("cr.st.cancelled"),  color: T.red,   bg: T.redBg   };
+  if (status === "FAILED")              return { label: tr("cr.st.failed"),     color: T.red,   bg: T.redBg   };
+  if (status === "EXPIRED")             return { label: tr("cr.st.expired"),    color: T.red,   bg: T.redBg   };
+  return { label: tr("cr.st.pending"), color: T.amber, bg: T.amberBg };
 }
 
 // ─── PDF builder ─────────────────────────────────────────
@@ -130,24 +128,24 @@ function buildHtml(d: ClientReceiptData, brandName: string, tagline: string): st
 
   const financialHtml = d.isIncoming
     ? `<div class="amt-row">
-         <span class="amt-lbl">Montant crédité</span>
+         <span class="amt-lbl">${tr("cr.credited")}</span>
          <span class="amt-val highlight">${fmt(d.heroDisplayAmount, d.heroDisplayCurrency)} ${d.heroDisplayCurrency}</span>
        </div>`
     : d.fees > 0
       ? `<div class="amt-row">
-           <span class="amt-lbl">Montant envoyé</span>
+           <span class="amt-lbl">${tr("cr.sent")}</span>
            <span class="amt-val">${fmt(d.sentAmount, d.sentCurrency)} ${d.sentCurrency}</span>
          </div>
          <div class="amt-row">
-           <span class="amt-lbl">Frais de service</span>
+           <span class="amt-lbl">${tr("cr.serviceFees")}</span>
            <span class="amt-val">${fmt(d.fees, d.sentCurrency)} ${d.sentCurrency}</span>
          </div>
          <div class="amt-row total">
-           <span class="amt-lbl bold">Total débité</span>
+           <span class="amt-lbl bold">${tr("cr.totalDebited")}</span>
            <span class="amt-val highlight">${fmt(d.total, d.sentCurrency)} ${d.sentCurrency}</span>
          </div>`
       : `<div class="amt-row">
-           <span class="amt-lbl">Montant envoyé</span>
+           <span class="amt-lbl">${tr("cr.sent")}</span>
            <span class="amt-val highlight">${fmt(d.sentAmount, d.sentCurrency)} ${d.sentCurrency}</span>
          </div>`;
 
@@ -155,7 +153,7 @@ function buildHtml(d: ClientReceiptData, brandName: string, tagline: string): st
     <div class="conv-row">
       <span class="conv-icon">⇄</span>
       <div>
-        <div class="conv-lbl">${d.isIncoming ? "Montant envoyé par l'expéditeur" : "Montant reçu par le destinataire"}</div>
+        <div class="conv-lbl">${d.isIncoming ? tr("cr.sentBy") : tr("cr.recvBy")}</div>
         <div class="conv-amt">${d.isIncoming
           ? `${fmt(d.sentAmount, d.sentCurrency)} ${d.sentCurrency}`
           : `${fmt(d.receivedAmount ?? 0, d.receivedCurrency ?? "")} ${d.receivedCurrency ?? ""}`
@@ -165,13 +163,13 @@ function buildHtml(d: ClientReceiptData, brandName: string, tagline: string): st
 
   const rateHtml = hasConv && d.exchangeRate
     ? `<div class="amt-row">
-         <span class="amt-lbl">Taux de change</span>
+         <span class="amt-lbl">${tr("cr.pdf.rate")}</span>
          <span class="amt-val mono">1 ${d.sentCurrency} = ${Number(d.exchangeRate).toFixed(4)} ${d.receivedCurrency ?? ""}</span>
        </div>` : "";
 
-  return `<!DOCTYPE html><html lang="fr"><head>
+  return `<!DOCTYPE html><html lang="${getLang()}"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Reçu — ${d.reference}</title>
+<title>${tr("cr.pdf.title", { ref: d.reference })}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto;background:#fff;color:#0F172A}
@@ -233,7 +231,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
   <div class="logo">${brandHtml}</div>
   <div class="logo-sub">${taglineHtml}</div>
   <div class="type-badge">${d.txLabel.toUpperCase()}</div>
-  <div class="amt-label">${d.isIncoming ? "MONTANT REÇU" : "MONTANT ENVOYÉ"}</div>
+  <div class="amt-label">${d.isIncoming ? tr("cr.pdf.amountIn") : tr("cr.pdf.amountOut")}</div>
   <div style="color:${d.isIncoming ? brand("#059669") : "#DC2626"}">
     <span class="amt-sign">${d.isIncoming ? "+" : "−"}</span>
     <span class="amt-big">${fmt(d.heroDisplayAmount, d.heroDisplayCurrency)}</span>
@@ -243,23 +241,23 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 
 <div class="body">
   <div class="meta-row">
-    <div><div class="meta-lbl">Référence</div><div class="meta-val">${d.reference}</div></div>
-    <div style="text-align:right"><div class="meta-lbl">Date &amp; Heure</div><div class="meta-val sm">${dt.full}</div></div>
+    <div><div class="meta-lbl">${tr("cr.reference")}</div><div class="meta-val">${d.reference}</div></div>
+    <div style="text-align:right"><div class="meta-lbl">${tr("cr.pdf.dateTime")}</div><div class="meta-val sm">${dt.full}</div></div>
   </div>
   <div class="status-row">
     <span class="status-badge" style="background:${st.bg};color:${st.color};">✓ ${st.label}</span>
   </div>
 
   <div class="section">
-    <div class="section-title">Parties</div>
+    <div class="section-title">${tr("cr.pdf.parties")}</div>
     <div class="parties-card">
       <div class="party">
-        <div class="party-role">Expéditeur</div>
+        <div class="party-role">${tr("cr.sender")}</div>
         <div class="party-name">${d.senderName}</div>
       </div>
       <div class="party-sep">→</div>
       <div class="party">
-        <div class="party-role">Destinataire</div>
+        <div class="party-role">${tr("cr.recipient")}</div>
         <div class="party-name">${d.recipientName}</div>
         ${d.recipientPhone ? `<div class="party-phone">${d.recipientPhone}</div>` : ""}
       </div>
@@ -267,7 +265,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
   </div>
 
   <div class="section">
-    <div class="section-title">Détails financiers</div>
+    <div class="section-title">${tr("cr.financial")}</div>
     <div class="amounts-card">
       ${financialHtml}
       ${rateHtml}
@@ -278,8 +276,8 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 
 <div class="footer">
   <div class="f-logo">${brandHtml}</div>
-  <div class="f-legal">Ce reçu constitue une preuve officielle de votre transaction. Pour toute réclamation, contactez le service client dans les 48 heures suivant la transaction.</div>
-  <div class="f-ref">Réf. ${d.reference} · ${dt.short}</div>
+  <div class="f-legal">${tr("cr.pdf.legal")}</div>
+  <div class="f-ref">${tr("cr.refDate", { ref: d.reference, date: dt.short })}</div>
 </div>
 </body></html>`;
 }
@@ -287,6 +285,7 @@ body{font-family:'Helvetica Neue',Arial,sans-serif;max-width:420px;margin:0 auto
 // ─── Écran principal ─────────────────────────────────────
 export default function ClientReceiptScreen() {
   const { C } = useUI(); // synchronise aussi la marque pour buildHtml (brand())
+  const t = useT();
   const { branding } = useTenant();
   const tagline = branding.tagline || "";
   const router = useRouter();
@@ -304,24 +303,24 @@ export default function ClientReceiptScreen() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf" });
       } else {
-        Alert.alert("Non disponible", "Le partage n'est pas disponible sur cet appareil.");
+        Alert.alert(t("cr.unavailable"), t("cr.shareUnavailable"));
       }
-    } catch { Alert.alert("Erreur", "Impossible de générer le PDF."); }
-  }, [data, branding.name, tagline]);
+    } catch { Alert.alert(t("common.error"), t("cr.pdfFail")); }
+  }, [data, branding.name, tagline, t]);
 
   const handlePrint = useCallback(async () => {
     if (!data) return;
     try { await Print.printAsync({ html: buildHtml(data, branding.name, tagline) }); }
-    catch { Alert.alert("Erreur", "Impression impossible."); }
-  }, [data, branding.name, tagline]);
+    catch { Alert.alert(t("common.error"), t("cr.printFail")); }
+  }, [data, branding.name, tagline, t]);
 
   if (!data) {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} title="Reçu" />}>
+      <Screen header={<NavBar onBack={() => router.back()} title={t("cr.title")} />}>
         <View style={{ alignItems: "center", paddingTop: 60, gap: 12 }}>
           <Ionicons name="alert-circle-outline" size={48} color={C.faint} />
-          <UText v="body" tone="muted">Données introuvables</UText>
-          <Button label="Retour" kind="outline" full={false} small onPress={() => router.back()} />
+          <UText v="body" tone="muted">{t("cr.dataMissing")}</UText>
+          <Button label={t("common.back")} kind="outline" full={false} small onPress={() => router.back()} />
         </View>
       </Screen>
     );
@@ -344,11 +343,11 @@ export default function ClientReceiptScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title="Reçu" subtitle={data.reference} />}
+      header={<NavBar onBack={() => router.back()} title={t("cr.title")} subtitle={data.reference} />}
       footer={
         <View style={{ flexDirection: "row", gap: 12 }}>
-          <Button label="Partager PDF" icon="share-outline" onPress={handleShare} style={{ flex: 1 }} />
-          <Button label="Imprimer" icon="print-outline" kind="dark" onPress={handlePrint} style={{ flex: 1 }} />
+          <Button label={t("cr.sharePdf")} icon="share-outline" onPress={handleShare} style={{ flex: 1 }} />
+          <Button label={t("cr.print")} icon="print-outline" kind="dark" onPress={handlePrint} style={{ flex: 1 }} />
         </View>
       }
     >
@@ -366,9 +365,9 @@ export default function ClientReceiptScreen() {
 
       {/* ── Référence & date ── */}
       <Card pad={18} style={{ marginBottom: 14 }}>
-        <Line label="Référence" value={data.reference} />
-        <Line label="Date" value={dt.day} />
-        <Line label="Heure" value={dt.time} last />
+        <Line label={t("cr.reference")} value={data.reference} />
+        <Line label={t("cr.date")} value={dt.day} />
+        <Line label={t("cr.time")} value={dt.time} last />
       </Card>
 
       {/* ── Conversion ── */}
@@ -377,7 +376,7 @@ export default function ClientReceiptScreen() {
           <Ionicons name="swap-horizontal-outline" size={20} color={C.ink} />
           <View style={{ flex: 1 }}>
             <UText v="caption" tone="muted">
-              {data.isIncoming ? "Montant envoyé par l'expéditeur" : "Montant reçu par le destinataire"}
+              {data.isIncoming ? t("cr.sentBy") : t("cr.recvBy")}
             </UText>
             <UText v="heading">
               {data.isIncoming
@@ -396,12 +395,12 @@ export default function ClientReceiptScreen() {
       {/* ── Parties ── */}
       <Card pad={18} style={{ marginBottom: 14, flexDirection: "row", alignItems: "center" }}>
         <View style={{ flex: 1 }}>
-          <UText v="overline" tone="muted">Expéditeur</UText>
+          <UText v="overline" tone="muted">{t("cr.sender")}</UText>
           <UText v="bodyStrong" style={{ marginTop: 4 }}>{data.senderName}</UText>
         </View>
         <Ionicons name="arrow-forward" size={18} color={C.faint} style={{ marginHorizontal: 10 }} />
         <View style={{ flex: 1, alignItems: "flex-end" }}>
-          <UText v="overline" tone="muted">Destinataire</UText>
+          <UText v="overline" tone="muted">{t("cr.recipient")}</UText>
           <UText v="bodyStrong" style={{ marginTop: 4, textAlign: "right" }}>{data.recipientName}</UText>
           {!!data.recipientPhone && <UText v="caption" tone="muted">{data.recipientPhone}</UText>}
         </View>
@@ -409,14 +408,14 @@ export default function ClientReceiptScreen() {
 
       {/* ── Détails financiers ── */}
       <Card tone="sunken" pad={18}>
-        <UText v="overline" tone="muted" style={{ marginBottom: 4 }}>Détails financiers</UText>
+        <UText v="overline" tone="muted" style={{ marginBottom: 4 }}>{t("cr.financial")}</UText>
         {data.isIncoming ? (
-          <Line label="Montant crédité" value={`${fmt(data.heroDisplayAmount, data.heroDisplayCurrency)} ${data.heroDisplayCurrency}`} bold last />
+          <Line label={t("cr.credited")} value={`${fmt(data.heroDisplayAmount, data.heroDisplayCurrency)} ${data.heroDisplayCurrency}`} bold last />
         ) : (
           <>
-            <Line label="Montant envoyé" value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
-            {data.fees > 0 && <Line label="Frais de service" value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} />}
-            <Line label="Total débité" value={`${fmt(data.total, data.sentCurrency)} ${data.sentCurrency}`} bold last />
+            <Line label={t("cr.sent")} value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
+            {data.fees > 0 && <Line label={t("cr.serviceFees")} value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} />}
+            <Line label={t("cr.totalDebited")} value={`${fmt(data.total, data.sentCurrency)} ${data.sentCurrency}`} bold last />
           </>
         )}
       </Card>
@@ -426,9 +425,9 @@ export default function ClientReceiptScreen() {
         <UText v="label" style={{ letterSpacing: 2 }}>{branding.name.toUpperCase()}</UText>
         {!!tagline && <UText v="caption" tone="muted" align="center">{tagline}</UText>}
         <UText v="caption" tone="faint" align="center" style={{ marginTop: 6 }}>
-          Ce reçu constitue une preuve de votre transaction. Pour toute réclamation, contactez le service client dans les 48 heures.
+          {t("cr.legal")}
         </UText>
-        <UText v="label" tone="faint">Réf. {data.reference} · {dt.short}</UText>
+        <UText v="label" tone="faint">{t("cr.refDate", { ref: data.reference, date: dt.short })}</UText>
       </View>
     </Screen>
   );

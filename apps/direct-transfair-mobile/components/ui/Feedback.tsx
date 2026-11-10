@@ -12,6 +12,7 @@ import { ActivityIndicator, Animated, View, type DimensionValue, type StyleProp,
 import { Ionicons } from './Icon';
 import { useUI } from './theme';
 import { Button, UText } from './Primitives';
+import { useT } from "../../providers/I18nProvider";
 
 export function EmptyView({
   icon = 'file-tray-outline', title, message, actionLabel, onAction,
@@ -33,6 +34,7 @@ export function ErrorView({
   title, message, onRetry, compact,
 }: { title: string; message: string; onRetry: () => void; compact?: boolean }) {
   const { C } = useUI();
+  const t = useT();
   return (
     <View style={{ alignItems: 'center', paddingVertical: compact ? 20 : 44, paddingHorizontal: 12, gap: 8 }}>
       <View style={{ width: 76, height: 76, borderRadius: 38, backgroundColor: C.warnBg, alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
@@ -40,7 +42,7 @@ export function ErrorView({
       </View>
       <UText v="heading" align="center">{title}</UText>
       <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>{message}</UText>
-      <Button label="Réessayer" icon="refresh" onPress={onRetry} kind="dark" full={false} small style={{ marginTop: 14 }} />
+      <Button label={t("state.retry")} icon="refresh" onPress={onRetry} kind="dark" full={false} small style={{ marginTop: 14 }} />
     </View>
   );
 }
@@ -48,11 +50,12 @@ export function ErrorView({
 /** Bandeau discret quand le serveur met du temps à répondre (démarrage à froid). */
 export function SlowNote({ visible }: { visible: boolean }) {
   const { C, R } = useUI();
+  const t = useT();
   if (!visible) return null;
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.beige, borderRadius: R.pill, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 12 }}>
       <ActivityIndicator size="small" color={C.ink} />
-      <UText v="caption" style={{ flexShrink: 1 }}>Le serveur démarre, quelques secondes de plus…</UText>
+      <UText v="caption" style={{ flexShrink: 1 }}>{t("state.serverWaking")}</UText>
     </View>
   );
 }

@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "../../../components/ui/Icon";
 import { serverMessage } from "../../../components/auth/authErrors";
+import { useT } from "../../../providers/I18nProvider";
 import { Button, Card, Field, NavBar, Notice, Screen, UText, useUI } from "../../../components/ui";
 import {
   KYC_ADDRESS_TYPES, KYC_DOC_LABEL, KYC_IDENTITY_TYPES, KYC_NEEDS_BACK, KYC_NEEDS_EXPIRY, isFutureOrToday, kycApi, maskFrenchDate, parseFrenchDate,
@@ -36,16 +37,17 @@ function PhotoBox({
   label, hint, photo, onPick, selfie, error,
 }: { label: string; hint: string; photo: Photo | null; onPick: (p: Photo) => void; selfie?: boolean; error?: string | null }) {
   const { C, R } = useUI();
+  const t = useT();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
   const accept = (res: ImagePicker.ImagePickerResult) => {
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    if (!a.base64) { setProblem("Photo illisible, réessayez."); return; }
+    if (!a.base64) { setProblem(t("ksub.unreadable")); return; }
     const bytes = sizeOf(a.base64);
-    if (bytes > MAX_BYTES) { setProblem("Photo trop lourde. Reculez un peu ou choisissez une photo moins grande."); return; }
-    if (bytes < MIN_BYTES) { setProblem("Photo trop petite ou vide, réessayez."); return; }
+    if (bytes > MAX_BYTES) { setProblem(t("ksub.tooBig")); return; }
+    if (bytes < MIN_BYTES) { setProblem(t("ksub.tooSmall")); return; }
     setProblem(null);
     onPick({ uri: a.uri, base64: a.base64 });
   };
@@ -54,19 +56,19 @@ function PhotoBox({
     setBusy(true);
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { setProblem("Autorisez l'appareil photo dans les réglages de votre téléphone pour photographier votre pièce."); return; }
+      if (!perm.granted) { setProblem(t("ksub.camDenied")); return; }
       accept(await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"], quality: 0.5, base64: true, allowsEditing: false, exif: false,
         ...(selfie ? { cameraType: ImagePicker.CameraType.front } : null),
       }));
-    } catch { setProblem("Impossible d'ouvrir l'appareil photo."); } finally { setBusy(false); }
+    } catch { setProblem(t("ksub.camFail")); } finally { setBusy(false); }
   };
 
   const library = async () => {
     setBusy(true);
     try {
       accept(await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.5, base64: true, allowsEditing: false, exif: false }));
-    } catch { setProblem("Impossible d'ouvrir la galerie."); } finally { setBusy(false); }
+    } catch { setProblem(t("ksub.libFail")); } finally { setBusy(false); }
   };
 
   const canCamera = Platform.OS !== "web";
@@ -80,7 +82,7 @@ function PhotoBox({
       <Pressable
         onPress={canCamera ? camera : library}
         accessibilityRole="button"
-        accessibilityLabel={photo ? `Reprendre : ${label}` : `Ajouter : ${label}`}
+        accessibilityLabel={photo ? t("ksub.retake", { label }) : t("ksub.add", { label })}
         style={{
           height: selfie ? 220 : 180, borderRadius: R.md, overflow: "hidden", alignItems: "center", justifyContent: "center",
           backgroundColor: C.field, borderWidth: 1.5, borderStyle: "dashed", borderColor: shown ? C.danger : C.line,
@@ -91,13 +93,13 @@ function PhotoBox({
         ) : (
           <View style={{ alignItems: "center", gap: 6 }}>
             <Ionicons name={selfie ? "person-circle-outline" : "camera-outline"} size={36} color={C.muted} />
-            <UText v="caption" tone="muted">{canCamera ? "Touchez pour photographier" : "Touchez pour choisir une photo"}</UText>
+            <UText v="caption" tone="muted">{canCamera ? t("ksub.tapShoot") : t("ksub.tapChoose")}</UText>
           </View>
         )}
         {photo ? (
           <View style={{ position: "absolute", right: 8, top: 8, flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, height: 26, borderRadius: R.pill, backgroundColor: C.pos }}>
             <Ionicons name="checkmark" size={14} color="#FFFFFF" />
-            <UText v="caption" color="#FFFFFF" style={{ fontWeight: "700" }}>Ajoutée</UText>
+            <UText v="caption" color="#FFFFFF" style={{ fontWeight: "700" }}>{t("ksub.added")}</UText>
           </View>
         ) : null}
       </Pressable>
@@ -105,12 +107,12 @@ function PhotoBox({
       <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
         {canCamera ? (
           <View style={{ flex: 1 }}>
-            <Button label={photo ? "Reprendre" : "Photographier"} icon="camera-outline" kind="soft" small onPress={camera} loading={busy} />
+            <Button label={photo ? t("ksub.retakeBtn") : t("ksub.shoot")} icon="camera-outline" kind="soft" small onPress={camera} loading={busy} />
           </View>
         ) : null}
         {!selfie ? (
           <View style={{ flex: 1 }}>
-            <Button label="Galerie" icon="images-outline" kind="outline" small onPress={library} disabled={busy} />
+            <Button label={t("ksub.gallery")} icon="images-outline" kind="outline" small onPress={library} disabled={busy} />
           </View>
         ) : null}
       </View>
@@ -146,6 +148,7 @@ function TypeChoice({ types, value, onChange }: { types: KycDocType[]; value: Ky
 }
 
 export default function KycSubmitScreen() {
+  const t = useT();
   const router = useRouter();
   const params = useLocalSearchParams<{ kind?: string }>();
   const kind: Kind = params.kind === "selfie" ? "selfie" : params.kind === "address" ? "address" : "identity";
@@ -177,14 +180,14 @@ export default function KycSubmitScreen() {
   const expiryIso = parseFrenchDate(expiry);
 
   const problems: string[] = [];
-  if (!type) problems.push("Choisissez la pièce.");
-  if (needsNumber && number.trim().length < 4) problems.push("Indiquez le numéro de la pièce.");
-  if (needsExpiry && !expiryIso) problems.push("Date d'expiration invalide (JJ/MM/AAAA).");
-  else if (needsExpiry && expiryIso && !isFutureOrToday(expiryIso)) problems.push("Cette pièce est expirée : envoyez-en une en cours de validité.");
-  if (!front) problems.push(needsBack ? "Ajoutez la photo du recto." : "Ajoutez la photo.");
-  if (needsBack && !back) problems.push("Ajoutez la photo du verso.");
+  if (!type) problems.push(t("ksub.pChoose"));
+  if (needsNumber && number.trim().length < 4) problems.push(t("ksub.pNumber"));
+  if (needsExpiry && !expiryIso) problems.push(t("ksub.pExpiryFmt", { fmt: t("ksub.dateFmt") }));
+  else if (needsExpiry && expiryIso && !isFutureOrToday(expiryIso)) problems.push(t("ksub.pExpired"));
+  if (!front) problems.push(needsBack ? t("ksub.pFront") : t("ksub.pPhoto"));
+  if (needsBack && !back) problems.push(t("ksub.pBack"));
 
-  const title = kind === "selfie" ? "Votre selfie" : kind === "address" ? "Justificatif de domicile" : "Pièce d'identité";
+  const title = kind === "selfie" ? t("ksub.titleSelfie") : kind === "address" ? t("kycs.addressTitle") : t("kycs.idTitle");
 
   const submit = async () => {
     setTouched(true);
@@ -201,7 +204,7 @@ export default function KycSubmitScreen() {
       });
       router.replace("/(tabs)/profile/kyc" as any);
     } catch (e) {
-      setError(serverMessage(e) ?? "Envoi impossible pour le moment. Vérifiez votre connexion et réessayez.");
+      setError(serverMessage(e) ?? t("ksub.sendFail"));
     } finally {
       setBusy(false);
     }
@@ -211,12 +214,12 @@ export default function KycSubmitScreen() {
 
   if (alreadyValid) {
     return (
-      <Screen header={<NavBar title={title} subtitle="Étape de vérification" onBack={() => router.back()} />}>
-        <Notice tone="pos" icon="checkmark-circle" title="Déjà validé">
-          {kind === "selfie" ? "Votre selfie est déjà validé." : kind === "address" ? "Votre justificatif de domicile est déjà validé." : "Votre pièce d'identité est déjà validée."} Il n'y a rien à renvoyer.
+      <Screen header={<NavBar title={title} subtitle={t("ksub.step")} onBack={() => router.back()} />}>
+        <Notice tone="pos" icon="checkmark-circle" title={t("ksub.alreadyTitle")}>
+          {kind === "selfie" ? t("ksub.alreadySelfie") : kind === "address" ? t("ksub.alreadyAddress") : t("ksub.alreadyId")}{t("ksub.nothingToResend")}
         </Notice>
         <View style={{ marginTop: 16 }}>
-          <Button label="Retour à mon dossier" kind="soft" onPress={() => router.replace("/(tabs)/profile/kyc" as any)} />
+          <Button label={t("ksub.backToFile")} kind="soft" onPress={() => router.replace("/(tabs)/profile/kyc" as any)} />
         </View>
       </Screen>
     );
@@ -224,22 +227,22 @@ export default function KycSubmitScreen() {
 
   return (
     <Screen
-      header={<NavBar title={title} subtitle="Étape de vérification" onBack={() => router.back()} />}
-      footer={<Button label="Envoyer pour vérification" icon="shield-checkmark-outline" onPress={submit} loading={busy} disabled={busy || (touched && !canSubmit)} />}
+      header={<NavBar title={title} subtitle={t("ksub.step")} onBack={() => router.back()} />}
+      footer={<Button label={t("ksub.submit")} icon="shield-checkmark-outline" onPress={submit} loading={busy} disabled={busy || (touched && !canSubmit)} />}
     >
       {kind === "identity" ? (
         <>
-          <UText v="label" tone="muted" style={{ marginBottom: 8 }}>Quelle pièce présentez-vous ?</UText>
-          <TypeChoice types={KYC_IDENTITY_TYPES} value={type} onChange={(t) => { setType(t); setBack(null); }} />
+          <UText v="label" tone="muted" style={{ marginBottom: 8 }}>{t("ksub.whichId")}</UText>
+          <TypeChoice types={KYC_IDENTITY_TYPES} value={type} onChange={(k) => { setType(k); setBack(null); }} />
         </>
       ) : kind === "address" ? (
         <>
-          <UText v="label" tone="muted" style={{ marginBottom: 8 }}>Quel document envoyez-vous ?</UText>
+          <UText v="label" tone="muted" style={{ marginBottom: 8 }}>{t("ksub.whichDoc")}</UText>
           <TypeChoice types={KYC_ADDRESS_TYPES} value={type} onChange={setType} />
         </>
       ) : (
         <Notice tone="info" style={{ marginBottom: 14 }}>
-          Prenez-vous en photo de face, visage dégagé (sans lunettes de soleil ni masque), dans un endroit bien éclairé.
+          {t("ksub.selfieTip")}
         </Notice>
       )}
 
@@ -247,54 +250,54 @@ export default function KycSubmitScreen() {
         <>
           {needsNumber ? (
             <Field
-              label="Numéro de la pièce"
+              label={t("ksub.numberLabel")}
               value={number}
               onChangeText={setNumber}
               autoCapitalize="characters"
-              placeholder="Tel qu'écrit sur la pièce"
+              placeholder={t("ksub.numberPh")}
               maxLength={40}
-              error={touched && number.trim().length < 4 ? "Indiquez le numéro de la pièce." : null}
+              error={touched && number.trim().length < 4 ? t("ksub.pNumber") : null}
             />
           ) : null}
           {needsExpiry ? (
             <Field
-              label="Date d'expiration"
+              label={t("ksub.expiryLabel")}
               value={expiry}
-              onChangeText={(t) => setExpiry(maskFrenchDate(t))}
+              onChangeText={(v) => setExpiry(maskFrenchDate(v))}
               keyboardType="number-pad"
-              placeholder="JJ/MM/AAAA"
+              placeholder={t("ksub.dateFmt")}
               maxLength={10}
-              hint="Elle est écrite sur la pièce."
-              error={touched && (!expiryIso || !isFutureOrToday(expiryIso)) ? (expiryIso ? "Pièce expirée." : "Date invalide.") : null}
+              hint={t("ksub.expiryHint")}
+              error={touched && (!expiryIso || !isFutureOrToday(expiryIso)) ? (expiryIso ? t("ksub.expiredShort") : t("ksub.invalidDate")) : null}
               style={{ marginTop: needsNumber ? 12 : 0 }}
             />
           ) : null}
 
           <View style={{ marginTop: needsNumber || needsExpiry ? 16 : 0 }}>
             <PhotoBox
-              label={kind === "selfie" ? "Selfie" : needsBack ? "Recto de la pièce" : KYC_DOC_LABEL[type]}
-              hint={kind === "selfie" ? "Visage bien visible, de face." : "Les quatre coins de la pièce doivent être visibles, sans reflet."}
+              label={kind === "selfie" ? KYC_DOC_LABEL.SELFIE : needsBack ? t("ksub.front") : KYC_DOC_LABEL[type]}
+              hint={kind === "selfie" ? t("ksub.selfieHint") : t("ksub.docHint")}
               photo={front}
               onPick={setFront}
               selfie={kind === "selfie"}
-              error={touched && !front ? "Photo manquante." : null}
+              error={touched && !front ? t("ksub.photoMissing") : null}
             />
             {needsBack ? (
               <PhotoBox
-                label="Verso de la pièce"
-                hint="Retournez la pièce et photographiez l'autre face."
+                label={t("ksub.back")}
+                hint={t("ksub.backHint")}
                 photo={back}
                 onPick={setBack}
-                error={touched && !back ? "Photo manquante." : null}
+                error={touched && !back ? t("ksub.photoMissing") : null}
               />
             ) : null}
           </View>
         </>
       ) : null}
 
-      {error ? <Notice tone="danger" title="Envoi non effectué" style={{ marginTop: 4 }}>{error}</Notice> : null}
+      {error ? <Notice tone="danger" title={t("ksub.notSent")} style={{ marginTop: 4 }}>{error}</Notice> : null}
       {touched && problems.length > 0 && !error ? (
-        <Notice tone="warn" title="Il reste à compléter" style={{ marginTop: 4 }}>{problems.join("\n")}</Notice>
+        <Notice tone="warn" title={t("ksub.toComplete")} style={{ marginTop: 4 }}>{problems.join("\n")}</Notice>
       ) : null}
     </Screen>
   );

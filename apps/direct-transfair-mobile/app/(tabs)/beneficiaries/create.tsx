@@ -46,6 +46,9 @@ import {
   Avatar, Button, Card, EmptyView, Field, ListRow, NavBar, Screen, SearchPill, SectionHeader, SelectRow, Sheet, UText, useUI,
 } from "../../../components/ui";
 import { ChoiceSheet } from "../../../components/ui/ChoiceSheet";
+import { useT } from "../../../providers/I18nProvider";
+import { tr } from "../../../i18n/runtime";
+import { countryName } from "../../../utils/countryNames";
 
 const MAX_CONTACT_ROWS = 120;
 
@@ -56,6 +59,7 @@ function normalizePhone(phone: string): string {
 // ─── Écran ───────────────────────────────────────────────
 export default function BeneficiaryCreateScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const router = useRouter();
   const routeParams = useLocalSearchParams<{ name?: string; phone?: string }>();
 
@@ -90,7 +94,7 @@ export default function BeneficiaryCreateScreen() {
     try {
       const { status } = await Contacts.requestPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission refusée", "Autorisez l'accès aux contacts dans les paramètres.", [{ text: "OK" }]);
+        Alert.alert(t("send.permDenied"), t("bn.c.permMsg"), [{ text: t("common.ok") }]);
         return;
       }
       const { data } = await Contacts.getContactsAsync({
@@ -101,8 +105,8 @@ export default function BeneficiaryCreateScreen() {
       setShowContactsModal(true);
     } catch (e: any) {
       console.error("[openPhoneContacts] erreur détaillée :", e);
-      const detail = e?.message ? `\n\nDétail technique : ${e.message}` : "";
-      Alert.alert("Erreur", `Impossible d'accéder aux contacts.${detail}`);
+      const detail = e?.message ? t("bn.c.techDetail", { msg: e.message }) : "";
+      Alert.alert(t("common.error"), `${t("send.contactsErr")}${detail}`);
     } finally { setLoadingContacts(false); }
   };
 
@@ -142,7 +146,7 @@ export default function BeneficiaryCreateScreen() {
   });
 
   const handleCreate = async () => {
-    if (!canSubmit) { showAlert("Validation", "Veuillez remplir le nom, le prénom et la ville."); return; }
+    if (!canSubmit) { showAlert(t("bn.c.validation"), t("bn.c.validationMsg")); return; }
     setSubmitting(true);
     try {
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
@@ -158,14 +162,14 @@ export default function BeneficiaryCreateScreen() {
         return sameName || !!samePhone;
       });
       if (duplicate) {
-        showAlert("Contact déjà existant", `"${duplicate.fullName}" est déjà dans vos contacts${duplicate.phone ? ` (${duplicate.phone})` : ""}.`);
+        showAlert(t("bn.c.dupTitle"), t("bn.c.dupMsg", { name: duplicate.fullName, phone: duplicate.phone ? ` (${duplicate.phone})` : "" }));
         setSubmitting(false); return;
       }
       await api.createBeneficiary({ fullName, country: addressCountry.name, city: city.trim(), phone: fullPhone });
-      showAlert("✅ Ajouté", "Contact ajouté avec succès.", () => router.back());
+      showAlert(t("bn.c.added"), t("bn.c.addedMsg"), () => router.back());
     } catch (e: any) {
-      const msg = e?.response?.data?.message || "Erreur lors de la création.";
-      showAlert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      const msg = e?.response?.data?.message || t("bn.c.createFail");
+      showAlert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
     } finally { setSubmitting(false); }
   };
 
@@ -178,10 +182,10 @@ export default function BeneficiaryCreateScreen() {
   return (
     <Screen
       keyboard
-      header={<NavBar title="Nouveau contact" subtitle={`${doneCount}/3 étapes complétées`} onBack={() => router.back()} />}
+      header={<NavBar title={t("bn.new")} subtitle={t("bn.c.steps", { done: doneCount })} onBack={() => router.back()} />}
       footer={
         <Button
-          label="Ajouter le contact"
+          label={t("bn.c.submit")}
           icon="person-add-outline"
           onPress={handleCreate}
           loading={submitting}
@@ -203,20 +207,20 @@ export default function BeneficiaryCreateScreen() {
             <Ionicons name={loadingContacts ? "hourglass-outline" : "people-outline"} size={21} color={C.ink} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <UText v="bodyStrong">{loadingContacts ? "Ouverture du répertoire…" : "Importer depuis mes contacts"}</UText>
-            <UText v="caption" tone="muted" style={{ marginTop: 2 }}>Accéder au répertoire téléphonique</UText>
+            <UText v="bodyStrong">{loadingContacts ? t("send.opening") : t("send.importContacts")}</UText>
+            <UText v="caption" tone="muted" style={{ marginTop: 2 }}>{t("bn.c.phonebook")}</UText>
           </View>
           <Ionicons name="chevron-forward" size={18} color={C.muted} />
         </View>
       </Card>
 
-      <UText v="overline" tone="muted" align="center" style={{ marginTop: 14 }}>Ou saisir manuellement</UText>
+      <UText v="overline" tone="muted" align="center" style={{ marginTop: 14 }}>{t("bn.c.manual")}</UText>
 
       {/* Identité */}
-      <SectionHeader title="Identité" style={{ marginBottom: 14 }} />
+      <SectionHeader title={t("bn.c.identity")} style={{ marginBottom: 14 }} />
       <View style={{ flexDirection: "row", gap: 12 }}>
-        <Field label="Prénom *" value={firstName} onChangeText={setFirstName} placeholder="Mamadou" autoCapitalize="words" editable={!submitting} style={{ flex: 1 }} />
-        <Field label="Nom *" value={lastName} onChangeText={setLastName} placeholder="Diallo" autoCapitalize="words" editable={!submitting} style={{ flex: 1 }} />
+        <Field label={t("bn.c.first")} value={firstName} onChangeText={setFirstName} placeholder="Mamadou" autoCapitalize="words" editable={!submitting} style={{ flex: 1 }} />
+        <Field label={t("bn.c.last")} value={lastName} onChangeText={setLastName} placeholder="Diallo" autoCapitalize="words" editable={!submitting} style={{ flex: 1 }} />
       </View>
       {firstName.trim().length >= 1 && lastName.trim().length >= 1 && (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderRadius: R.md, backgroundColor: C.sunken, marginBottom: 6 }}>
@@ -227,18 +231,18 @@ export default function BeneficiaryCreateScreen() {
       )}
 
       {/* Localisation */}
-      <SectionHeader title="Localisation" style={{ marginBottom: 14 }} />
-      <SelectRow label="Pays de résidence *" value={addressCountry.name} prefix={addressCountry.flag} placeholder="Sélectionner…" onPress={() => setShowCountryModal(true)} />
-      <SelectRow label="Ville *" value={city} placeholder="Sélectionner…" icon="location-outline" onPress={() => setShowCityModal(true)} />
+      <SectionHeader title={t("bn.c.location")} style={{ marginBottom: 14 }} />
+      <SelectRow label={t("bn.c.country")} value={countryName(addressCountry.code, addressCountry.name)} prefix={addressCountry.flag} placeholder={t("bn.c.select")} onPress={() => setShowCountryModal(true)} />
+      <SelectRow label={t("bn.c.city")} value={city === "Autre" ? t("bn.c.other") : city} placeholder={t("bn.c.select")} icon="location-outline" onPress={() => setShowCityModal(true)} />
 
       {/* Téléphone */}
-      <SectionHeader title="Téléphone (optionnel)" style={{ marginBottom: 14 }} />
+      <SectionHeader title={t("bn.c.phoneOpt")} style={{ marginBottom: 14 }} />
       <UText v="overline" tone="muted" style={{ marginBottom: 8 }}>Mobile Money</UText>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Pressable
           onPress={() => setShowPhoneCodeModal(true)}
           accessibilityRole="button"
-          accessibilityLabel={`Indicatif ${phoneCountry.dialCode}`}
+          accessibilityLabel={t("bn.c.dialA11y", { dial: phoneCountry.dialCode })}
           style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 56, paddingHorizontal: 14, borderRadius: R.md, backgroundColor: C.field }}
         >
           <UText v="subheading">{phoneCountry.flag}</UText>
@@ -254,7 +258,7 @@ export default function BeneficiaryCreateScreen() {
           style={{ flex: 1, marginBottom: 0 }}
         />
       </View>
-      <UText v="caption" tone="muted" style={{ marginTop: 8 }}>Utilisé pour les transferts Mobile Money directs.</UText>
+      <UText v="caption" tone="muted" style={{ marginTop: 8 }}>{t("bn.c.phoneHint")}</UText>
 
       <View style={{ height: 8 }} />
 
@@ -262,23 +266,23 @@ export default function BeneficiaryCreateScreen() {
       <Sheet
         visible={showContactsModal}
         onClose={() => { setShowContactsModal(false); setContactSearch(""); }}
-        title="Mes contacts"
+        title={t("send.myContacts")}
       >
         <View style={{ paddingTop: 8, paddingBottom: 6 }}>
           <UText v="caption" tone="muted" style={{ marginBottom: 10 }}>
-            {filteredContacts.length} contact{filteredContacts.length > 1 ? "s" : ""} avec numéro
+            {t("bn.c.contactsCount", { count: filteredContacts.length })}
           </UText>
-          <SearchPill value={contactSearch} onChangeText={setContactSearch} placeholder="Rechercher un contact" />
+          <SearchPill value={contactSearch} onChangeText={setContactSearch} placeholder={t("send.searchContact")} />
         </View>
         {filteredContacts.length === 0 ? (
-          <EmptyView icon="people-outline" title={contactSearch ? "Aucun contact trouvé" : "Aucun contact avec numéro"} />
+          <EmptyView icon="people-outline" title={contactSearch ? t("bn.c.noneFound") : t("send.noContactNum")} />
         ) : (
           <>
             {filteredContacts.slice(0, MAX_CONTACT_ROWS).map((c, i, arr) => (
               <ListRow
                 key={String(c.id ?? `${c.firstName}-${i}`)}
                 left={<Avatar name={c.firstName || "?"} size={44} />}
-                title={`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || "Sans nom"}
+                title={`${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || t("send.noName")}
                 subtitle={c.phoneNumbers?.[0]?.number}
                 last={i === arr.length - 1}
                 chevron={false}
@@ -288,7 +292,7 @@ export default function BeneficiaryCreateScreen() {
             ))}
             {filteredContacts.length > MAX_CONTACT_ROWS && (
               <UText v="caption" tone="muted" align="center" style={{ marginTop: 12 }}>
-                {filteredContacts.length - MAX_CONTACT_ROWS} autres contacts — affine ta recherche pour les voir.
+                {t("bn.c.more", { count: filteredContacts.length - MAX_CONTACT_ROWS })}
               </UText>
             )}
           </>
@@ -299,10 +303,10 @@ export default function BeneficiaryCreateScreen() {
       <ChoiceSheet<CountryData>
         visible={showCountryModal}
         onClose={() => setShowCountryModal(false)}
-        title="Pays de résidence"
+        title={t("bn.c.countrySheet")}
         items={countriesList}
         getKey={(c) => c.code}
-        getLabel={(c) => c.name}
+        getLabel={(c) => countryName(c.code, c.name)}
         getLeft={(c) => flagBubble(c.flag)}
         isSelected={(c) => addressCountry.code === c.code}
         onPick={(c) => { setAddressCountry(c); setPhoneCountry(c); setCity(""); }}
@@ -312,10 +316,10 @@ export default function BeneficiaryCreateScreen() {
       <ChoiceSheet<string>
         visible={showCityModal}
         onClose={() => setShowCityModal(false)}
-        title={`Villes · ${addressCountry.name}`}
+        title={t("bn.c.cities", { country: countryName(addressCountry.code, addressCountry.name) })}
         items={availableCities.length > 0 ? availableCities : ["Autre"]}
         getKey={(c) => c}
-        getLabel={(c) => c}
+        getLabel={(c) => (c === "Autre" ? t("bn.c.other") : c)}
         isSelected={(c) => city === c}
         onPick={(c) => setCity(c)}
       />
@@ -324,10 +328,10 @@ export default function BeneficiaryCreateScreen() {
       <ChoiceSheet<CountryData>
         visible={showPhoneCodeModal}
         onClose={() => setShowPhoneCodeModal(false)}
-        title="Indicatif téléphonique"
+        title={t("bn.c.dialSheet")}
         items={countriesList}
         getKey={(c) => c.code}
-        getLabel={(c) => c.name}
+        getLabel={(c) => countryName(c.code, c.name)}
         getLeft={(c) => flagBubble(c.flag)}
         getRight={(c) => c.dialCode}
         isSelected={(c) => phoneCountry.code === c.code}

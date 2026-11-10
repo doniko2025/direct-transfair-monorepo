@@ -26,6 +26,7 @@ import CountryPickerSheet from '../auth/CountryPickerSheet';
 import type { AuthCountry } from '../auth/authCountries';
 
 import { Text, TextInput } from './Text';
+import { useT } from "../../providers/I18nProvider";
 export { normalizeNationalNumber, validatePhone } from '../auth/PhoneField';
 
 /** Supprime le halo du navigateur et la teinte d'auto-remplissage (web). */
@@ -142,27 +143,29 @@ export function Field({
 
 // ─── Barre de recherche (pilule beige) ───────────────────
 export function SearchPill({
-  value, onChangeText, placeholder = 'Rechercher', style, autoFocus,
+  value, onChangeText, placeholder, style, autoFocus,
 }: { value: string; onChangeText: (t: string) => void; placeholder?: string; style?: StyleProp<ViewStyle>; autoFocus?: boolean }) {
   const { C, R } = useUI();
+  const t = useT();
+  const ph = placeholder ?? t('common.search');
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 50, borderRadius: R.pill, paddingHorizontal: 18, backgroundColor: C.beige }, style]}>
       <Ionicons name="search" size={18} color={C.muted} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder}
+        placeholder={ph}
         placeholderTextColor={C.muted}
         autoFocus={autoFocus}
         autoCorrect={false}
         autoCapitalize="none"
         style={[{ flex: 1, fontFamily: SYSTEM_FONT, fontSize: 16, color: C.ink, paddingVertical: 10 }, webReset(C.beige, C.ink, C.muted, !value)]}
         underlineColorAndroid="transparent"
-        accessibilityLabel={placeholder}
+        accessibilityLabel={ph}
         selectionColor={C.accent}
       />
       {!!value && (
-        <Pressable onPress={() => onChangeText('')} hitSlop={10} accessibilityLabel="Effacer">
+        <Pressable onPress={() => onChangeText('')} hitSlop={10} accessibilityLabel={t('state.clear')}>
           <Ionicons name="remove-circle" size={18} color={C.muted} />
         </Pressable>
       )}
@@ -172,23 +175,25 @@ export function SearchPill({
 
 // ─── Téléphone : indicatif + numéro national ─────────────
 export function PhoneInput({
-  country, onCountryChange, value, onChangeText, error, hint, onSubmitEditing, inputRef, label = 'Numéro de téléphone',
+  country, onCountryChange, value, onChangeText, error, hint, onSubmitEditing, inputRef, label,
 }: {
   country: AuthCountry; onCountryChange: (c: AuthCountry) => void; value: string; onChangeText: (t: string) => void;
   error?: string | null; hint?: string; onSubmitEditing?: () => void; inputRef?: React.Ref<TextInput>; label?: string;
 }) {
   const { C, R } = useUI();
+  const t = useT();
+  const lbl = label ?? t('field.phone');
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const bad = !!error;
   return (
     <View style={st.wrap}>
-      {!!label && <Text style={[st.label, { color: bad ? C.danger : C.muted }]}>{label}</Text>}
+      {!!lbl && <Text style={[st.label, { color: bad ? C.danger : C.muted }]}>{lbl}</Text>}
       <View style={[st.box, { backgroundColor: C.field, borderRadius: R.md, borderColor: bad ? C.danger : focused ? C.ink : 'transparent', paddingLeft: 6 }]}>
         <Pressable
           onPress={() => setOpen(true)}
           accessibilityRole="button"
-          accessibilityLabel={`Indicatif ${country.name} ${country.dial}. Appuyer pour changer.`}
+          accessibilityLabel={t('field.dialChange', { name: country.name, dial: country.dial })}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, height: 40, borderRightWidth: 1, borderRightColor: C.lineStrong, marginRight: 12 }}
         >
           <Text style={{ fontSize: 22 }}>{country.flag}</Text>
@@ -218,7 +223,7 @@ export function PhoneInput({
       <Message error={error} hint={hint} />
       <CountryPickerSheet
         visible={open}
-        title="Indicatif du pays"
+        title={t('field.dial')}
         selected={country.name}
         showDial
         accent={C.accent}
@@ -234,13 +239,14 @@ export function SelectRow({
   label, value, prefix, placeholder, icon, error, hint, onPress,
 }: { label?: string; value?: string; prefix?: string; placeholder: string; icon?: string; error?: string | null; hint?: string; onPress: () => void }) {
   const { C, R } = useUI();
+  const t = useT();
   return (
     <View style={st.wrap}>
       {!!label && <Text style={[st.label, { color: error ? C.danger : C.muted }]}>{label}</Text>}
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`${label ?? placeholder} : ${value ?? 'non renseigné'}`}
+        accessibilityLabel={`${label ?? placeholder} : ${value ?? t('field.notFilled')}`}
         style={[st.box, { backgroundColor: C.field, borderRadius: R.md, borderColor: error ? C.danger : 'transparent' }]}
       >
         {!!icon && <Ionicons name={icon as any} size={19} color={C.muted} style={{ marginRight: 10 }} />}
@@ -258,6 +264,7 @@ export function OtpInput({
   value, onChange, onComplete, length = 6, error = false, disabled = false, autoFocus = true,
 }: { value: string; onChange: (c: string) => void; onComplete?: (c: string) => void; length?: number; error?: boolean; disabled?: boolean; autoFocus?: boolean }) {
   const { C, R } = useUI();
+  const t = useT();
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
 
@@ -308,7 +315,7 @@ export function OtpInput({
         autoCorrect={false}
         caretHidden
         style={[{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01, color: 'transparent' }, webReset('transparent', 'transparent')]}
-        accessibilityLabel={`Code à ${length} chiffres`}
+        accessibilityLabel={t('field.codeDigits', { n: length })}
         underlineColorAndroid="transparent"
       />
     </Pressable>
@@ -323,6 +330,7 @@ export function AmountInput({
   label?: string; onCurrencyPress?: () => void; editable?: boolean;
 }) {
   const { C } = useUI();
+  const t = useT();
   return (
     <View style={{ gap: 6 }}>
       {!!label && <Text style={[st.label, { color: error ? C.danger : C.muted, marginBottom: 0 }]}>{label}</Text>}
@@ -338,7 +346,7 @@ export function AmountInput({
           style={[{ flexShrink: 1, minWidth: 60, fontFamily: SYSTEM_FONT, fontSize: 48, fontWeight: '800', letterSpacing: -1.5, color: error ? C.danger : C.ink, padding: 0 }, webReset('transparent', C.ink)]}
           underlineColorAndroid="transparent"
           selectionColor={C.accent}
-          accessibilityLabel={label ?? 'Montant'}
+          accessibilityLabel={label ?? t('field.amount')}
         />
         <Pressable disabled={!onCurrencyPress} onPress={onCurrencyPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 20, fontWeight: '800', color: C.muted }}>{currency}</Text>

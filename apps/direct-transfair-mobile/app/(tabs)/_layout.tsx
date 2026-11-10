@@ -31,6 +31,8 @@ import { useUI, SYSTEM_FONT } from "../../components/ui/theme";
 import { useAccountSpace } from "../../hooks/useAccountSpace";
 
 import { Text } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
+import type { MessageKey } from '../../i18n/catalog';
 // Type local — évite l'incompatibilité de version avec expo-router
 type BottomTabBarProps = {
   state: { index: number; routes: Array<{ name: string; key: string }> };
@@ -42,21 +44,22 @@ type BottomTabBarProps = {
 const ROOT_PATHS = new Set(["", "/", "/home", "/transactions", "/beneficiaries", "/profile"]);
 // Lot 12 : trois onglets seulement (Accueil, Activité / Paiements, Profil). Les bénéficiaires restent une page, ouverte depuis le profil.
 
-type TabDef = { name: string; label: string; icon: string };
+type TabDef = { name: string; label: MessageKey; icon: string };
 
 const USER_TABS: TabDef[] = [
-  { name: "home",          label: "Accueil",  icon: "home" },
-  { name: "transactions",  label: "Activité", icon: "time" },
-  { name: "profile",       label: "Profil",   icon: "person" },
+  { name: "home",          label: "tab.home",  icon: "home" },
+  { name: "transactions",  label: "tab.activity", icon: "time" },
+  { name: "profile",       label: "tab.profile",   icon: "person" },
 ];
 const MERCHANT_TABS: TabDef[] = [
-  { name: "home",          label: "Accueil",   icon: "home" },
-  { name: "transactions",  label: "Paiements", icon: "time" },
-  { name: "profile",       label: "Profil",    icon: "person" },
+  { name: "home",          label: "tab.home",   icon: "home" },
+  { name: "transactions",  label: "tab.payments", icon: "time" },
+  { name: "profile",       label: "tab.profile",    icon: "person" },
 ];
 
 function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]; navigation: BottomTabBarProps["navigation"] }) {
   const { C } = useUI();
+  const t = useT();
   const { isMerchant } = useAccountSpace();
   const tabs = isMerchant ? MERCHANT_TABS : USER_TABS;
   const insets = useSafeAreaInsets();
@@ -98,7 +101,7 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
             )}
             <Ionicons name={tab.icon as any} size={22} color={isActive ? C.forest : C.faint} />
             <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "600", color: isActive ? C.forest : C.faint }}>
-              {tab.label}
+              {t(tab.label)}
             </Text>
           </Pressable>
         );

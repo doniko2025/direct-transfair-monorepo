@@ -13,6 +13,8 @@
 //  5) Motif, pays/indicatif, solde insuffisant et reçu passent en feuilles basses du design system.
 //  LOGIQUE MÉTIER INCHANGÉE : modes Wallet / Cash, saisie bidirectionnelle, détection du bénéficiaire, frais du serveur,
 //  idempotence, reçu, solde insuffisant, KYC. Historique détaillé des versions précédentes : voir le dépôt git.
+// ✅ v6.1 : FR / EN / PT — tous les textes passent par i18n/messages/transfer.ts. Le motif envoyé au serveur reste le texte français
+//   (utils/motifs.ts) : seul son affichage est traduit. Montants et dates suivent la langue choisie.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
@@ -47,24 +49,16 @@ import {
 import { lookupRate } from "../../utils/rateLookup";
 import { Text, TextInput } from "../../components/ui/Text";
 import { SANS } from "../../components/ui/fonts";
+import { useT } from "../../providers/I18nProvider";
+import { tr, fmtDateTime } from "../../i18n/runtime";
+import { MOTIFS, motifLabel } from "../../utils/motifs";
 
 // Animation de l'échange des deux champs (Android : à activer explicitement ; sans effet si déjà géré par le système).
 if (Platform.OS === "android") {
   try { UIManager.setLayoutAnimationEnabledExperimental?.(true); } catch { /* ignoré */ }
 }
 
-// ─── Motifs du transfert ──────────────────────────────────
-const MOTIFS = [
-  { icon: "👨‍👩‍👧", label: "Assistance familiale" },
-  { icon: "🪙",    label: "Épargne / Investissements" },
-  { icon: "💗",    label: "Oeuvre caritative / Don" },
-  { icon: "🛒",    label: "Paiement de marchandises" },
-  { icon: "✈️",    label: "Frais de voyage" },
-  { icon: "📚",    label: "Frais scolaires" },
-  { icon: "🏠",    label: "Loyer / Hypothèque" },
-  { icon: "🏥",    label: "Assistance médicale" },
-  { icon: "💳",    label: "Paiement de taxes" },
-] as const;
+// Motifs du transfert : voir utils/motifs.ts (valeur française envoyée au serveur + libellé traduit).
 
 const MAX_LIST_ROWS = 120;
 
@@ -133,24 +127,26 @@ type ReceiptData = {
 };
 
 function buildReceiptText(r: ReceiptData, brandName: string): string {
+  const money = (v: number, c: string) => `${fmt(v, c)} ${c}`;
   const lines = [
-    `🧾 Reçu ${brandName}`,
+    tr("send.rcpt.title", { brand: brandName }),
     "",
-    `Type : ${r.mode === "WALLET" ? "Transfert Wallet" : "Cash Pickup"}`,
-    `Bénéficiaire : ${r.beneficiaryName}`,
-    `Montant envoyé : ${fmt(r.sentAmount, r.sentCurrency)} ${r.sentCurrency}`,
+    tr("send.rcpt.type", { type: r.mode === "WALLET" ? tr("send.typeWallet") : tr("send.cash") }),
+    tr("send.rcpt.beneficiary", { name: r.beneficiaryName }),
+    tr("send.rcpt.sent", { amount: money(r.sentAmount, r.sentCurrency) }),
   ];
-  if (r.fees > 0) lines.push(`Frais : ${fmt(r.fees, r.sentCurrency)} ${r.sentCurrency}`);
-  lines.push(`Total payé : ${fmt(r.total, r.sentCurrency)} ${r.sentCurrency}`);
-  lines.push(`${r.beneficiaryName.split(" ")[0]} reçoit : ${fmt(r.receivedAmount, r.receivedCurrency)} ${r.receivedCurrency}`);
-  if (r.code) lines.push("", `🔐 Code de retrait : ${r.code}`, "Ce code permet de retirer l'argent en agence.");
-  if (r.motif) lines.push("", `Motif : ${r.motif}`);
-  lines.push("", `Réf. : ${r.reference}`, `Date : ${r.date.toLocaleString("fr-FR")}`);
+  if (r.fees > 0) lines.push(tr("send.rcpt.fees", { amount: money(r.fees, r.sentCurrency) }));
+  lines.push(tr("send.rcpt.total", { amount: money(r.total, r.sentCurrency) }));
+  lines.push(tr("send.rcpt.receives", { name: r.beneficiaryName.split(" ")[0], amount: money(r.receivedAmount, r.receivedCurrency) }));
+  if (r.code) lines.push("", tr("send.rcpt.code", { code: r.code }), tr("send.rcpt.codeHelp"));
+  if (r.motif) lines.push("", tr("send.rcpt.motif", { motif: motifLabel(r.motif) }));
+  lines.push("", tr("send.rcpt.ref", { ref: r.reference }), tr("send.rcpt.date", { date: fmtDateTime(r.date) }));
   return lines.join("\n");
 }
 
 function ReceiptSheet({ visible, data, onClose }: { visible: boolean; data: ReceiptData | null; onClose: () => void }) {
   const { C, R } = useUI();
+  const t = useT();
   const { branding } = useTenant();
   const [copied, setCopied] = useState(false);
   if (!data) return null;
@@ -171,11 +167,11 @@ function ReceiptSheet({ visible, data, onClose }: { visible: boolean; data: Rece
     <Sheet
       visible={visible}
       onClose={onClose}
-      title={data.mode === "WALLET" ? "Transfert effectué" : "Code généré"}
+      title={data.mode === "WALLET" ? t("send.doneWallet") : t("send.doneCash")}
       footer={
         <View style={{ gap: 4 }}>
-          <Button label="Partager le reçu" icon="share-social-outline" onPress={handleShare} />
-          <Button label="Terminé" kind="ghost" onPress={onClose} />
+          <Button label={t("send.share")} icon="share-social-outline" onPress={handleShare} />
+          <Button label={t("send.finished")} kind="ghost" onPress={onClose} />
         </View>
       }
     >
@@ -183,17 +179,17 @@ function ReceiptSheet({ visible, data, onClose }: { visible: boolean; data: Rece
         <Ionicons name="checkmark-circle" size={52} color={C.pos} />
         <UText v="caption" tone="muted" align="center" style={{ marginTop: 6 }}>
           {data.mode === "WALLET" && !data.code
-            ? `Envoyé à ${data.beneficiaryName}`
-            : "Le bénéficiaire peut retirer l'argent avec ce code"}
+            ? t("send.sentTo", { name: data.beneficiaryName })
+            : t("send.codeHint")}
         </UText>
       </View>
 
       {!!data.code && (
         <Card tone="accent" style={{ alignItems: "center", marginBottom: 12 }}>
-          <UText v="overline" tone="accent">CODE DE RETRAIT</UText>
+          <UText v="overline" tone="accent">{t("send.codeLabel")}</UText>
           <UText v="display" style={{ fontSize: 32, lineHeight: 40, letterSpacing: 4, marginVertical: 8 }}>{data.code}</UText>
           <Button
-            label={copied ? "Copié !" : "Copier le code"}
+            label={copied ? t("send.copied") : t("send.copyCode")}
             icon={copied ? "checkmark" : "copy-outline"}
             kind="outline" small full={false}
             onPress={handleCopyCode}
@@ -202,18 +198,18 @@ function ReceiptSheet({ visible, data, onClose }: { visible: boolean; data: Rece
       )}
 
       <View style={{ backgroundColor: C.field, borderRadius: R.lg, paddingHorizontal: 16, paddingVertical: 6 }}>
-        <Line label="Bénéficiaire" value={data.beneficiaryName} />
+        <Line label={t("send.l.beneficiary")} value={data.beneficiaryName} />
         <Divider />
-        <Line label="Montant envoyé" value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
-        {data.fees > 0 && (<><Divider /><Line label="Frais" value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} /></>)}
+        <Line label={t("send.l.sent")} value={`${fmt(data.sentAmount, data.sentCurrency)} ${data.sentCurrency}`} />
+        {data.fees > 0 && (<><Divider /><Line label={t("send.l.fees")} value={`${fmt(data.fees, data.sentCurrency)} ${data.sentCurrency}`} /></>)}
         <Divider />
         <Line
-          label={`${data.beneficiaryName.split(" ")[0]} reçoit`}
+          label={t("send.l.receives", { name: data.beneficiaryName.split(" ")[0] })}
           value={`${fmt(data.receivedAmount, data.receivedCurrency)} ${data.receivedCurrency}`}
           tone="info"
         />
         <Divider />
-        <Line label="Référence" value={data.reference} />
+        <Line label={t("send.l.reference")} value={data.reference} />
       </View>
     </Sheet>
   );
@@ -225,18 +221,19 @@ function FallbackSheet({ visible, missing, currency, onClose, onOrangeMoney, onC
   onClose: () => void; onOrangeMoney: () => void; onCard: () => void;
 }) {
   const { C } = useUI();
+  const t = useT();
   return (
-    <Sheet visible={visible} onClose={onClose} title="Solde insuffisant">
+    <Sheet visible={visible} onClose={onClose} title={t("send.insufTitle")}>
       <Notice tone="warn" icon="wallet-outline" style={{ marginTop: 6, marginBottom: 10 }}>
-        {`Il vous manque ${fmt(missing, currency)} ${currency}. Choisissez un moyen de paiement pour recharger.`}
+        {t("send.insufMsg", { amount: `${fmt(missing, currency)} ${currency}` })}
       </Notice>
       <ListRow
         title="Orange Money"
-        subtitle="Payer depuis votre compte Orange"
+        subtitle={t("send.orangeSub")}
         left={<View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}><UText v="subheading">🟠</UText></View>}
         onPress={onOrangeMoney}
       />
-      <ListRow title="Carte bancaire" subtitle="Visa, Mastercard, CB" icon="card-outline" onPress={onCard} last />
+      <ListRow title={t("send.card")} subtitle={t("send.cardSub")} icon="card-outline" onPress={onCard} last />
     </Sheet>
   );
 }
@@ -246,18 +243,19 @@ function MotifSheet({ visible, selected, onSelect, onClose }: {
   visible: boolean; selected: string | null; onSelect: (m: string) => void; onClose: () => void;
 }) {
   const { C } = useUI();
+  const t = useT();
   return (
-    <Sheet visible={visible} onClose={onClose} title="Motif du transfert">
-      <UText v="caption" tone="muted" style={{ marginBottom: 6 }}>Cette information reste confidentielle.</UText>
+    <Sheet visible={visible} onClose={onClose} title={t("send.motifTitle")}>
+      <UText v="caption" tone="muted" style={{ marginBottom: 6 }}>{t("send.motifConf")}</UText>
       {MOTIFS.map((m, i) => (
         <ListRow
-          key={m.label}
-          title={m.label}
+          key={m.value}
+          title={t(m.key)}
           left={<View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}><UText v="subheading">{m.icon}</UText></View>}
-          right={selected === m.label ? <Ionicons name="checkmark" size={20} color={C.accentDeep} /> : undefined}
+          right={selected === m.value ? <Ionicons name="checkmark" size={20} color={C.accentDeep} /> : undefined}
           chevron={false}
           last={i === MOTIFS.length - 1}
-          onPress={() => { onSelect(m.label); onClose(); }}
+          onPress={() => { onSelect(m.value); onClose(); }}
         />
       ))}
     </Sheet>
@@ -280,6 +278,7 @@ function RecipientSheet({
   onAddNew: () => void;
 }) {
   const { C } = useUI();
+  const t = useT();
   const [view, setView] = useState<"menu" | "saved" | "phone">("menu");
   const [q, setQ] = useState("");
   const [contacts, setContacts] = useState<PhoneContactRow[]>([]);
@@ -292,7 +291,7 @@ function RecipientSheet({
     try {
       const { status } = await Contacts.requestPermissionsAsync();
       if (status !== "granted") {
-        Alert.alert("Permission refusée", "Autorisez l'accès aux contacts dans les réglages de votre téléphone.");
+        Alert.alert(t("send.permDenied"), t("send.permMsg"));
         return;
       }
       const { data } = await Contacts.getContactsAsync({
@@ -302,7 +301,7 @@ function RecipientSheet({
       const rows: PhoneContactRow[] = [];
       const seen = new Set<string>();
       for (const c of data as any[]) {
-        const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.name || "Sans nom";
+        const name = `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim() || c.name || t("send.noName");
         for (const p of (c.phoneNumbers ?? []).slice(0, 3)) {
           const number = String(p?.number ?? "").trim();
           const digits = onlyDigits(number);
@@ -317,7 +316,7 @@ function RecipientSheet({
       setQ("");
       setView("phone");
     } catch (e: any) {
-      Alert.alert("Erreur", `Impossible d'accéder aux contacts.${e?.message ? `\n\n${e.message}` : ""}`);
+      Alert.alert(t("common.error"), `${t("send.contactsErr")}${e?.message ? `\n\n${e.message}` : ""}`);
     } finally { setLoading(false); }
   };
 
@@ -329,7 +328,7 @@ function RecipientSheet({
     ? contacts.filter((c) => c.name.toLowerCase().includes(needle) || onlyDigits(c.number).includes(onlyDigits(needle) || "§"))
     : contacts;
 
-  const title = view === "menu" ? "Choisir un destinataire" : view === "saved" ? "Mes bénéficiaires" : "Mes contacts";
+  const title = view === "menu" ? t("send.pickRecipient") : view === "saved" ? t("send.myBenef") : t("send.myContacts");
 
   return (
     <Sheet visible={visible} onClose={onClose} title={title}>
@@ -337,21 +336,21 @@ function RecipientSheet({
         <>
           <ListRow
             icon="people-outline"
-            title="Mes bénéficiaires"
-            subtitle={beneficiaries.length > 0 ? `${beneficiaries.length} enregistré${beneficiaries.length > 1 ? "s" : ""}` : "Aucun pour le moment"}
+            title={t("send.myBenef")}
+            subtitle={beneficiaries.length > 0 ? t("send.savedCount", { count: beneficiaries.length }) : t("send.noneYet")}
             onPress={() => { setQ(""); setView("saved"); }}
           />
           <ListRow
             icon="download-outline"
-            title="Importer depuis mes contacts"
-            subtitle={loading ? "Ouverture du répertoire…" : "Utiliser un numéro de votre téléphone"}
+            title={t("send.importContacts")}
+            subtitle={loading ? t("send.opening") : t("send.useNumber")}
             right={loading ? <ActivityIndicator size="small" color={C.ink} /> : undefined}
             onPress={loading ? undefined : openContacts}
           />
           <ListRow
             icon="person-add-outline"
-            title="Nouveau bénéficiaire"
-            subtitle="Ajouter quelqu'un pour la première fois"
+            title={t("send.newBenef")}
+            subtitle={t("send.newBenefSub")}
             onPress={onAddNew}
             last
           />
@@ -361,20 +360,20 @@ function RecipientSheet({
           <Pressable
             onPress={() => { setQ(""); setView("menu"); }}
             accessibilityRole="button"
-            accessibilityLabel="Retour"
+            accessibilityLabel={t("common.back")}
             style={{ flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", paddingVertical: 6 }}
           >
             <Ionicons name="chevron-back" size={18} color={C.accentDeep} />
-            <UText v="label" tone="accent">Retour</UText>
+            <UText v="label" tone="accent">{t("common.back")}</UText>
           </Pressable>
           <View style={{ paddingTop: 6, paddingBottom: 6 }}>
-            <SearchPill value={q} onChangeText={setQ} placeholder={view === "saved" ? "Rechercher un bénéficiaire" : "Rechercher un contact"} />
+            <SearchPill value={q} onChangeText={setQ} placeholder={view === "saved" ? t("send.searchBenef") : t("send.searchContact")} />
           </View>
 
           {view === "saved" ? (
             savedList.length === 0 ? (
               <UText v="caption" tone="muted" align="center" style={{ paddingVertical: 24 }}>
-                {beneficiaries.length === 0 ? "Aucun bénéficiaire enregistré." : "Aucun résultat."}
+                {beneficiaries.length === 0 ? t("send.noBenefSaved") : t("send.noResult")}
               </UText>
             ) : savedList.slice(0, MAX_LIST_ROWS).map((b, i, arr) => (
               <ListRow
@@ -391,7 +390,7 @@ function RecipientSheet({
           ) : (
             phoneList.length === 0 ? (
               <UText v="caption" tone="muted" align="center" style={{ paddingVertical: 24 }}>
-                {contacts.length === 0 ? "Aucun contact avec numéro." : "Aucun résultat."}
+                {contacts.length === 0 ? t("send.noContactNum") : t("send.noResult")}
               </UText>
             ) : phoneList.slice(0, MAX_LIST_ROWS).map((c, i, arr) => (
               <ListRow
@@ -408,7 +407,7 @@ function RecipientSheet({
           )}
           {(view === "saved" ? savedList.length : phoneList.length) > MAX_LIST_ROWS && (
             <UText v="caption" tone="muted" align="center" style={{ marginTop: 12 }}>
-              Affinez votre recherche pour voir les autres résultats.
+              {t("send.refine")}
             </UText>
           )}
         </>
@@ -420,6 +419,7 @@ function RecipientSheet({
 // ─── Écran ────────────────────────────────────────────────
 export default function SendMoneyScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
@@ -683,7 +683,7 @@ export default function SendMoneyScreen() {
             setDetectedBeneficiary({
               id:         platformUser.id,
               fullName:   [platformUser.firstName, platformUser.lastName]
-                            .filter(Boolean).join(" ") || "Utilisateur",
+                            .filter(Boolean).join(" ") || tr("send.userFallback"),
               phone:      platformUser.phone ?? candidate,
               email:      undefined as any,
               country:    platformUser.country ?? "Sénégal",
@@ -755,18 +755,18 @@ export default function SendMoneyScreen() {
   }, [updateCurrencyContext]);
 
   // ✅ v5.3 — saisie du champ destinataire : jamais d'indicatif dans le champ (déjà dans le bouton pays).
-  const handlePhoneChange = (t: string) => {
+  const handlePhoneChange = (v: string) => {
     setPickedId(null);
-    if (!isNumericLike(t)) { setWalletInput(t); return; }              // nom / e-mail
-    const intl = parseInternational(t);
+    if (!isNumericLike(v)) { setWalletInput(v); return; }              // nom / e-mail
+    const intl = parseInternational(v);
     if (intl) {                                                         // « +224 6… » ou « 00224… » collé / tapé
       if (intl.country.code !== targetCountryData.code) updateCurrencyContext(intl.country.name);
       setWalletInput(intl.national);
       return;
     }
-    const trimmed = t.trim();
-    if (trimmed.startsWith("+") || trimmed.startsWith("00")) { setWalletInput(t); return; } // indicatif en cours de frappe
-    setWalletInput(stripDial(onlyDigits(t), targetCountryData.dialCode));
+    const trimmed = v.trim();
+    if (trimmed.startsWith("+") || trimmed.startsWith("00")) { setWalletInput(v); return; } // indicatif en cours de frappe
+    setWalletInput(stripDial(onlyDigits(v), targetCountryData.dialCode));
   };
 
   // ✅ v5.3 — montants (voir utils/amount.ts) :
@@ -787,8 +787,8 @@ export default function SendMoneyScreen() {
   const sendText     = amountSource === "SEND"     ? rawAmount         : toInputText(sendAmount, dS);
   const receivedText = amountSource === "RECEIVED" ? rawReceivedAmount : toInputText(receivedAmt, dR);
 
-  const onSendChange = (t: string) => { setAmountSource("SEND");     setRawAmount(sanitizeAmountInput(t, dS)); };
-  const onRecvChange = (t: string) => { setAmountSource("RECEIVED"); setRawReceivedAmount(sanitizeAmountInput(t, dR)); };
+  const onSendChange = (v: string) => { setAmountSource("SEND");     setRawAmount(sanitizeAmountInput(v, dS)); };
+  const onRecvChange = (v: string) => { setAmountSource("RECEIVED"); setRawReceivedAmount(sanitizeAmountInput(v, dR)); };
 
   // ✅ v5.3 — flèche d'inversion (auparavant décorative) : le champ « reçoit » passe en haut et devient celui qu'on
   // saisit (clavier ouvert dessus) ; un second appui revient à « vous envoyez ». Les valeurs déjà saisies sont conservées.
@@ -808,11 +808,11 @@ export default function SendMoneyScreen() {
 
   const beneficiaryLabel = useMemo(() => {
     if (mode === "WALLET") {
-      return detectedBeneficiary?.fullName?.split(" ")[0] ?? "Le bénéficiaire";
+      return detectedBeneficiary?.fullName?.split(" ")[0] ?? t("send.theBenef");
     }
     const sel = beneficiaries.find(b => String(b.id) === selectedCashId);
-    return sel?.fullName?.split(" ")[0] ?? "Le bénéficiaire";
-  }, [mode, detectedBeneficiary, beneficiaries, selectedCashId]);
+    return sel?.fullName?.split(" ")[0] ?? t("send.theBenef");
+  }, [mode, detectedBeneficiary, beneficiaries, selectedCashId, t]);
 
   // ✅ audit : frais EXACTS du serveur (barème de la société, GET /fees-admin/quote) — plus le tarif plat historique, qui
   // donnait un montant différent du débit réel. L'estimation à taux plat ne sert que tant que la réponse n'est pas arrivée.
@@ -876,8 +876,8 @@ export default function SendMoneyScreen() {
 
   const handleAction = async () => {
     if (insufficient) { setShowFallback(true); return; }
-    if (rateMissing) return Alert.alert("Taux indisponible", `Le taux ${userCurrency} → ${targetCurrency} n'est pas disponible pour le moment. Réessayez plus tard.`);
-    if (sendAmount <= 0) return Alert.alert("Montant invalide", "Saisissez un montant valide.");
+    if (rateMissing) return Alert.alert(t("send.rateUnavailTitle"), t("send.rateUnavailMsg", { from: userCurrency, to: targetCurrency }));
+    if (sendAmount <= 0) return Alert.alert(t("send.invalidAmount"), t("send.invalidAmountMsg"));
     setSending(true);
     try {
       if (mode === "WALLET") {
@@ -885,10 +885,8 @@ export default function SendMoneyScreen() {
         if (!detectedBeneficiary) {
           setSending(false);
           return Alert.alert(
-            "Destinataire introuvable",
-            walletInputDigits.length >= MIN_FULL_NUMBER
-              ? "Aucun compte n'existe avec ce numéro. Rien n'a été débité. Vérifiez le numéro (indicatif du pays compris) ou choisissez le retrait en agence."
-              : "Numéro trop court ou contact introuvable. Rien n'a été débité.",
+            t("send.notFound"),
+            walletInputDigits.length >= MIN_FULL_NUMBER ? t("send.noAccountMsg") : t("send.shortNumberMsg"),
           );
         }
         const walletPayload = {
@@ -929,7 +927,7 @@ export default function SendMoneyScreen() {
       } else {
         if (!selectedCashId) {
           setSending(false);
-          return Alert.alert("Erreur", "Sélectionnez un bénéficiaire.");
+          return Alert.alert(t("common.error"), t("send.selectBenef"));
         }
         const cashPayload = {
           amount:        sendAmount,
@@ -957,7 +955,7 @@ export default function SendMoneyScreen() {
           total: Number.isFinite(Number(tx?.total)) ? Number(tx.total) : totalAmt,
           receivedAmount: Number(tx?.receivedAmount) > 0 ? Number(tx.receivedAmount) : receivedAmt,
           receivedCurrency: tx?.targetCurrency ?? targetCurrency,
-          beneficiaryName: sel?.fullName ?? "Bénéficiaire",
+          beneficiaryName: sel?.fullName ?? t("send.benefFallback"),
           reference: String(reference),
           code,
           motif,
@@ -969,21 +967,21 @@ export default function SendMoneyScreen() {
     } catch (e: any) {
       // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
       if (handleKycRequired(e, router)) return;
-      const msg = e.response?.data?.message || "Une erreur est survenue.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      const msg = e.response?.data?.message || t("send.genericError");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
     } finally { setSending(false); }
   };
 
 
-  const selectedMotif = MOTIFS.find((m) => m.label === motif);
+  const selectedMotif = MOTIFS.find((m) => m.value === motif);
   // ✅ v2.10 — true si le bénéficiaire détecté est un utilisateur
   // plateforme (non sauvegardé), false/undefined sinon
   const isPlatformOnly = (detectedBeneficiary as any)?.isFavorite === false;
   const detectedCountry = detectedBeneficiary ? (countryOfPhone(detectedBeneficiary.phone) ?? getCountryData(detectedBeneficiary.country)) : null;
 
   const ctaLabel = insufficient
-    ? "Autre moyen de paiement"
-    : mode === "WALLET" ? "Confirmer le transfert" : "Générer le code de retrait";
+    ? t("send.anotherPay")
+    : mode === "WALLET" ? t("send.confirm") : t("send.genCode");
   const rateVisible = rate !== null && rate !== 1 && targetCurrency !== userCurrency;
 
   // Bénéficiaire affiché (Wallet : détecté ; Cash Pickup : choisi dans la liste)
@@ -1013,7 +1011,7 @@ export default function SendMoneyScreen() {
           backgroundColor: focused ? C.surface : "transparent",
         }}
       >
-        <UText v="label" tone="muted" numberOfLines={1}>{isSend ? "Vous envoyez" : `${beneficiaryLabel} reçoit`}</UText>
+        <UText v="label" tone="muted" numberOfLines={1}>{isSend ? t("send.youSend") : t("send.receivesLabel", { name: beneficiaryLabel })}</UText>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, marginTop: 2 }}>
           <TextInput
             ref={isSend ? sendRef : recvRef}
@@ -1030,10 +1028,10 @@ export default function SendMoneyScreen() {
             placeholderTextColor={C.faint}
             underlineColorAndroid="transparent"
             selectTextOnFocus
-            accessibilityLabel={isSend ? `Montant à envoyer en ${cur}` : `Montant à recevoir en ${cur}`}
+            accessibilityLabel={isSend ? t("send.a11ySendAmt", { cur }) : t("send.a11yRecvAmt", { cur })}
           />
           {/* Pastille de devise : drapeau + code en gris très foncé (toujours lisible, même quand le montant est calculé) */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }} accessible accessibilityLabel={`Devise ${cur}`}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }} accessible accessibilityLabel={t("send.a11yCur", { cur })}>
             <CurrencyFlag currency={cur} countryName={isSend ? userCountry : targetCountryData.name} size={26} />
             <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 20, fontWeight: "700", color: "#444444" }}>{cur}</Text>
           </View>
@@ -1048,14 +1046,14 @@ export default function SendMoneyScreen() {
       contentStyle={{ paddingTop: 4 }}
       header={
         <NavBar
-          title={mode === "WALLET" ? "Transfert" : "Envoi d'argent"}
-          subtitle={loadingWallet ? "Solde…" : showBalance ? `Solde : ${fmt(walletBalance, userCurrency)} ${userCurrency}` : "Solde masqué"}
+          title={mode === "WALLET" ? t("send.titleWallet") : t("send.titleCash")}
+          subtitle={loadingWallet ? t("send.balanceLoading") : showBalance ? t("send.balanceLine", { amount: `${fmt(walletBalance, userCurrency)} ${userCurrency}` }) : t("home.balanceHidden")}
           onBack={() => router.back()}
           right={
             <IconButton
               icon={showBalance ? "eye-outline" : "eye-off-outline"}
               onPress={() => setShowBalance(!showBalance)}
-              label={showBalance ? "Masquer le solde" : "Afficher le solde"}
+              label={showBalance ? t("home.hideBalance") : t("home.showBalance")}
             />
           }
         />
@@ -1064,7 +1062,7 @@ export default function SendMoneyScreen() {
         <View>
           {sendAmount > 0 && !insufficient && (
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-              <UText v="caption" tone="muted">Total à payer</UText>
+              <UText v="caption" tone="muted">{t("send.totalToPay")}</UText>
               <UText v="bodyStrong">{fmt(totalAmt, userCurrency)} {userCurrency}</UText>
             </View>
           )}
@@ -1087,18 +1085,18 @@ export default function SendMoneyScreen() {
           value={mode}
           onChange={setMode}
           items={[
-            { key: "WALLET", label: "Wallet", icon: "phone-portrait-outline" },
-            { key: "CASH", label: "Cash Pickup", icon: "cash-outline" },
+            { key: "WALLET", label: t("send.wallet"), icon: "phone-portrait-outline" },
+            { key: "CASH", label: t("send.cash"), icon: "cash-outline" },
           ]}
         />
       )}
 
       {/* Chargement lent / en échec : bandeaux discrets, jamais bloquants */}
       {loadState === "loading" && slowLoad && (
-        <Notice tone="info" icon="cloud-outline" style={{ marginBottom: 12 }}>Le serveur se réveille, quelques secondes de plus…</Notice>
+        <Notice tone="info" icon="cloud-outline" style={{ marginBottom: 12 }}>{t("send.wake")}</Notice>
       )}
       {loadState === "error" && !!loadError && (
-        <Notice tone="warn" icon="cloud-offline-outline" title={loadError.title} action="Réessayer" onAction={() => void loadData()} style={{ marginBottom: 12 }}>
+        <Notice tone="warn" icon="cloud-offline-outline" title={loadError.title} action={t("common.retry")} onAction={() => void loadData()} style={{ marginBottom: 12 }}>
           {loadError.message}
         </Notice>
       )}
@@ -1106,7 +1104,7 @@ export default function SendMoneyScreen() {
       <View style={{ gap: 12 }}>
         {/* ── Destinataire ── */}
         <Card>
-          <UText v="overline" tone="muted" style={{ marginBottom: 12 }}>Destinataire</UText>
+          <UText v="overline" tone="muted" style={{ marginBottom: 12 }}>{t("send.recipient")}</UText>
 
           {recipient ? (
             <>
@@ -1119,15 +1117,15 @@ export default function SendMoneyScreen() {
                 {!!recipientFlag && <UText v="title">{recipientFlag}</UText>}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-                {mode === "WALLET" && isPlatformOnly && <Pill tone="info" icon="person-outline" label={`Membre ${branding.name}`} />}
+                {mode === "WALLET" && isPlatformOnly && <Pill tone="info" icon="person-outline" label={t("send.memberOf", { brand: branding.name })} />}
                 <Button
-                  label="Changer"
+                  label={t("send.change")}
                   kind="soft" small full={false}
                   onPress={mode === "WALLET" ? clearWalletRecipient : () => setShowRecipientSheet(true)}
                 />
                 {mode === "WALLET" && isPlatformOnly && (
                   <Button
-                    label="Enregistrer"
+                    label={t("common.save")}
                     icon="person-add-outline"
                     kind="outline" small full={false}
                     onPress={() => goCreateBeneficiary(detectedBeneficiary?.fullName, detectedBeneficiary?.phone ?? toE164(targetCountryData.dialCode, walletInputDigits))}
@@ -1143,7 +1141,7 @@ export default function SendMoneyScreen() {
                     <Pressable
                       onPress={() => setShowCountryModal(true)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Indicatif +${targetCountryData.dialCode}, changer de pays`}
+                      accessibilityLabel={t("send.dialA11y", { dial: targetCountryData.dialCode })}
                       style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, height: 56, borderRightWidth: 1, borderRightColor: C.line }}
                     >
                       <UText v="subheading">{targetCountryData.flag}</UText>
@@ -1154,18 +1152,18 @@ export default function SendMoneyScreen() {
                       style={{ flex: 1, minWidth: 0, height: 56, paddingHorizontal: 14, paddingVertical: 0, fontFamily: SANS, fontSize: 16, fontWeight: "600", color: C.ink }}
                       value={walletInput}
                       onChangeText={handlePhoneChange}
-                      placeholder="Numéro ou nom du destinataire"
+                      placeholder={t("send.inputPh")}
                       placeholderTextColor={C.faint}
                       keyboardType={walletInput.trim() === "" || isNumericLike(walletInput) ? "phone-pad" : "default"}
                       autoCapitalize="none"
                       autoCorrect={false}
                       underlineColorAndroid="transparent"
-                      accessibilityLabel="Numéro du destinataire, sans l'indicatif"
+                      accessibilityLabel={t("send.inputA11y")}
                     />
                     {lookingUp ? (
                       <ActivityIndicator size="small" color={C.ink} style={{ marginRight: 14 }} />
                     ) : walletInput.length > 0 ? (
-                      <Pressable onPress={() => { setWalletInput(""); setPickedId(null); }} hitSlop={10} accessibilityLabel="Effacer" style={{ paddingHorizontal: 14, height: 56, justifyContent: "center" }}>
+                      <Pressable onPress={() => { setWalletInput(""); setPickedId(null); }} hitSlop={10} accessibilityLabel={t("send.clear")} style={{ paddingHorizontal: 14, height: 56, justifyContent: "center" }}>
                         <Ionicons name="remove-circle" size={18} color={C.muted} />
                       </Pressable>
                     ) : null}
@@ -1193,18 +1191,18 @@ export default function SendMoneyScreen() {
                     <Notice
                       tone="warn"
                       icon="person-add-outline"
-                      action="Ajouter comme bénéficiaire"
+                      action={t("send.addAsBenef")}
                       onAction={() => goCreateBeneficiary(isTextQuery ? walletInput.trim() : undefined, isTextQuery ? undefined : toE164(targetCountryData.dialCode, walletInputDigits))}
                       style={{ marginTop: 10 }}
                     >
-                      {`Aucun compte pour ${isTextQuery ? `« ${walletInput.trim()} »` : formatPhone(toE164(targetCountryData.dialCode, walletInputDigits))}. Rien ne sera débité.`}
+                      {t("send.noAccountFor", { who: isTextQuery ? `« ${walletInput.trim()} »` : formatPhone(toE164(targetCountryData.dialCode, walletInputDigits)) })}
                     </Notice>
                   )}
                 </>
               )}
 
               <Button
-                label="Choisir un destinataire"
+                label={t("send.pickRecipient")}
                 icon="people-outline"
                 kind={mode === "WALLET" ? "soft" : "primary"}
                 onPress={() => setShowRecipientSheet(true)}
@@ -1216,7 +1214,7 @@ export default function SendMoneyScreen() {
 
         {/* ── Montant ── */}
         <Card>
-          <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>Montant</UText>
+          <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>{t("send.amount")}</UText>
           <View style={{ backgroundColor: C.field, borderRadius: R.lg }}>
             {renderAmountRow(swapped ? "RECEIVED" : "SEND")}
             <View style={{ height: 1, marginHorizontal: 14, backgroundColor: C.line }} />
@@ -1225,7 +1223,7 @@ export default function SendMoneyScreen() {
               onPress={handleSwap}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={swapped ? "Revenir à la saisie du montant à envoyer" : "Saisir le montant à la réception"}
+              accessibilityLabel={swapped ? t("send.swapBack") : t("send.swapToRecv")}
               style={({ pressed }) => ({
                 position: "absolute", right: 16, top: "50%", marginTop: -18, width: 36, height: 36, borderRadius: 18,
                 backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, alignItems: "center", justifyContent: "center",
@@ -1244,16 +1242,16 @@ export default function SendMoneyScreen() {
             ) : <View style={{ flex: 1 }} />}
             {feesAmt > 0 ? (
               <UText v="label" tone="warn" numberOfLines={1}>
-                Frais {fmt(feesAmt, userCurrency)} {userCurrency}{feeQuote.fees === null ? ` (~${cashFeeLabel} %)` : ""}
+                {t("send.feesLine", { amount: `${fmt(feesAmt, userCurrency)} ${userCurrency}`, approx: feeQuote.fees === null ? ` (~${cashFeeLabel} %)` : "" })}
               </UText>
             ) : (
-              <UText v="label" tone="pos">Sans frais</UText>
+              <UText v="label" tone="pos">{t("send.noFees")}</UText>
             )}
           </View>
 
           {rateMissing && (
             <Notice tone="warn" style={{ marginTop: 10 }}>
-              {`Taux ${userCurrency} → ${targetCurrency} indisponible : envoi impossible pour le moment.`}
+              {t("send.rateDown", { from: userCurrency, to: targetCurrency })}
             </Notice>
           )}
         </Card>
@@ -1271,10 +1269,10 @@ export default function SendMoneyScreen() {
                 : <Ionicons name="document-text-outline" size={19} color={C.ink} />}
             </View>
             <UText v="bodyStrong" tone={motif ? undefined : "muted"} style={{ flex: 1 }} numberOfLines={1}>
-              {motif ?? "Motif du transfert (facultatif)"}
+              {motif ? motifLabel(motif) : t("send.motifOptional")}
             </UText>
             {motif ? (
-              <Pressable onPress={() => setMotif(null)} hitSlop={10} accessibilityLabel="Retirer le motif">
+              <Pressable onPress={() => setMotif(null)} hitSlop={10} accessibilityLabel={t("send.motifRemove")}>
                 <Ionicons name="close-circle" size={20} color={C.muted} />
               </Pressable>
             ) : (
@@ -1286,18 +1284,18 @@ export default function SendMoneyScreen() {
         {/* ── Récapitulatif ── */}
         {sendAmount > 0 && (
           <Card>
-            <UText v="overline" tone="muted" style={{ marginBottom: 4 }}>Récapitulatif</UText>
-            <Line label="Montant envoyé" value={`${fmt(sendAmount, userCurrency)} ${userCurrency}`} />
+            <UText v="overline" tone="muted" style={{ marginBottom: 4 }}>{t("send.summary")}</UText>
+            <Line label={t("send.l.sent")} value={`${fmt(sendAmount, userCurrency)} ${userCurrency}`} />
             <Divider />
-            <Line label="Frais de transfert" value={feesAmt === 0 ? "Offerts" : `${fmt(feesAmt, userCurrency)} ${userCurrency}`} tone={feesAmt === 0 ? "pos" : undefined} />
+            <Line label={t("send.transferFees")} value={feesAmt === 0 ? t("send.offered") : `${fmt(feesAmt, userCurrency)} ${userCurrency}`} tone={feesAmt === 0 ? "pos" : undefined} />
             <Divider />
-            <Line label={`${beneficiaryLabel} reçoit`} value={`${fmt(receivedAmt, targetCurrency)} ${targetCurrency}`} tone="info" />
-            {!!motif && (<><Divider /><Line label="Motif" value={`${selectedMotif?.icon ?? ""} ${motif}`.trim()} /></>)}
+            <Line label={t("send.receivesLabel", { name: beneficiaryLabel })} value={`${fmt(receivedAmt, targetCurrency)} ${targetCurrency}`} tone="info" />
+            {!!motif && (<><Divider /><Line label={t("send.motif")} value={`${selectedMotif?.icon ?? ""} ${motifLabel(motif)}`.trim()} /></>)}
             <Divider />
-            <Line label="Total à payer" value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`} tone={insufficient ? "danger" : undefined} strong />
+            <Line label={t("send.totalToPay")} value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`} tone={insufficient ? "danger" : undefined} strong />
             {insufficient && (
               <Notice tone="warn" icon="wallet-outline" style={{ marginTop: 8 }}>
-                {`Il vous manque ${fmt(missingAmount, userCurrency)} ${userCurrency}.`}
+                {t("send.missing", { amount: `${fmt(missingAmount, userCurrency)} ${userCurrency}` })}
               </Notice>
             )}
           </Card>
@@ -1325,8 +1323,8 @@ export default function SendMoneyScreen() {
       <ChoiceSheet<CountryData>
         visible={showCountryModal}
         onClose={() => setShowCountryModal(false)}
-        title="Indicatif pays"
-        searchPlaceholder="Rechercher un pays ou un indicatif"
+        title={t("send.dialTitle")}
+        searchPlaceholder={t("send.dialSearch")}
         items={countriesList}
         getKey={(c) => c.code}
         getLabel={(c) => `${c.name} (+${c.dialCode})`}

@@ -60,6 +60,7 @@ import { api } from "../services/api";
 import { registerCurrentDeviceIfNeeded } from "../services/deviceRegistration";
 import { getCurrencyByCountry } from "../data/countries";
 import { isPlatformCode } from "../services/platformConfig";
+import { tr } from "../i18n/runtime";
 import { promptBiometrics, isBiometricsAvailable, getBiometricsEnabled } from "../hooks/useBiometrics"; // ✅ v6.2 / v7.2
 import type {
   AuthUser, LoginPayload, RegisterPayload, LoginResponse,
@@ -144,9 +145,7 @@ function extractTenantFromUrl(url: string): string | null {
 // ─── v7.0 : app réservée aux clients (rôle USER) ──────────
 const CLIENT_ROLE = "USER";
 
-const WEB_PORTAL_REQUIRED_MESSAGE =
-  "Ce compte est réservé au portail web. L'application mobile est réservée " +
-  "aux clients : connectez-vous depuis le portail web de votre société.";
+const webPortalRequiredMessage = () => tr("authp.webPortal");
 
 function isClientRole(u: unknown): boolean {
   return (u as { role?: string } | null | undefined)?.role === CLIENT_ROLE;
@@ -155,7 +154,7 @@ function isClientRole(u: unknown): boolean {
 class WebPortalRequiredError extends Error {
   readonly code = "USE_WEB_PORTAL";
   constructor() {
-    super(WEB_PORTAL_REQUIRED_MESSAGE);
+    super(webPortalRequiredMessage());
     this.name = "WebPortalRequiredError";
   }
 }
@@ -181,7 +180,7 @@ async function unlockStoredSession(): Promise<boolean> {
   try {
     if (!(await isBiometricsAvailable())) return false;
     if (!(await getBiometricsEnabled())) return false;
-    return await promptBiometrics("Déverrouillez l'application");
+    return await promptBiometrics(tr("authp.unlock"));
   } catch {
     return false;
   }
@@ -535,9 +534,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   //         on throw immédiatement, le token n'est jamais touché.
   const biometricLogin = useCallback(async () => {
     // ── Étape 1 : Déclencher le prompt natif Face ID / Touch ID ──
-    const ok = await promptBiometrics("Connectez-vous avec Face ID / Touch ID");
+    const ok = await promptBiometrics(tr("authp.bioLogin"));
     if (!ok) {
-      throw new Error("Authentification biométrique annulée ou échouée");
+      throw new Error(tr("authp.bioFailed"));
     }
 
     // ── Étape 2 : Biométrie validée → rafraîchir le token ──

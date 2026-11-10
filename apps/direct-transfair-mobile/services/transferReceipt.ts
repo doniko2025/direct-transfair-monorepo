@@ -12,6 +12,7 @@ import * as Sharing from "expo-sharing";
 import { Alert } from "react-native";
 import { api } from "./api";
 import { getApiBaseUrl } from "./serverConfig";
+import { tr, getLang, getLocale } from "../i18n/runtime";
 
 export type ReceiptTone = "ok" | "info" | "warn" | "bad";
 
@@ -70,7 +71,7 @@ export function esc(v: unknown): string {
 export function fmtAmount(n: number, currency: string): string {
   const zero = currency === "GNF" || currency === "XOF" || currency === "XAF";
   let s: string;
-  try { s = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: zero ? 0 : 2, maximumFractionDigits: zero ? 0 : 2 }).format(n); }
+  try { s = new Intl.NumberFormat(getLocale(), { minimumFractionDigits: zero ? 0 : 2, maximumFractionDigits: zero ? 0 : 2 }).format(n); }
   catch { s = n.toFixed(zero ? 0 : 2); }
   return `${s.replace(/[  ]/g, " ")} ${currency === "XOF" || currency === "XAF" ? "F CFA" : currency}`;
 }
@@ -79,19 +80,19 @@ export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(getLocale(), { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 /** Libellé de pays : « GN » → « Guinée » (repli : le code tel quel). */
 export function countryLabel(code: string | null | undefined): string {
   if (!code) return "";
-  try { return new Intl.DisplayNames(["fr"], { type: "region" }).of(code.toUpperCase()) ?? code; }
+  try { return new Intl.DisplayNames([getLang() === "pt" ? "pt-PT" : getLang()], { type: "region" }).of(code.toUpperCase()) ?? code; }
   catch { return code; }
 }
 
 const partyLines = (p: ReceiptParty, phoneHidden = false): string => {
   const place = [p.city, countryLabel(p.country)].filter(Boolean).join(", ");
-  return `<div class="pn">${esc(p.name)}</div>${p.phone ? `<div class="pl">${esc(p.phone)}</div>` : phoneHidden ? `<div class="pl">Téléphone masqué (contrôle au retrait)</div>` : ""}${place ? `<div class="pl">${esc(place)}</div>` : ""}`;
+  return `<div class="pn">${esc(p.name)}</div>${p.phone ? `<div class="pl">${esc(p.phone)}</div>` : phoneHidden ? `<div class="pl">${esc(tr("rcpt.phoneHidden"))}</div>` : ""}${place ? `<div class="pl">${esc(place)}</div>` : ""}`;
 };
 
 /** HTML du PDF / de l'impression. `qr` = image PNG (data-URL) du QR, indispensable : un reçu sans moyen de contrôle ne doit pas circuler. */
@@ -103,9 +104,9 @@ export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string): str
   const url = transferVerifyUrl(d.qr.code);
   const companyLines = [d.company.legalName && d.company.legalName !== d.company.name ? d.company.legalName : null, d.company.address, d.company.city, d.company.phone, d.company.email, d.company.website]
     .filter(Boolean).map((x) => esc(x)).join(" · ");
-  const legal = [d.company.licence, d.company.capital ? `Capital : ${d.company.capital}` : null].filter(Boolean).map((x) => esc(x)).join(" · ");
+  const legal = [d.company.licence, d.company.capital ? tr("rcpt.capital", { value: d.company.capital }) : null].filter(Boolean).map((x) => esc(x)).join(" · ");
 
-  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+  return `<!doctype html><html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
 *{box-sizing:border-box}body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#111;margin:0;padding:0;background:#fff}
 .page{max-width:720px;margin:0 auto}
 .top{padding:22px 26px 16px;border-bottom:4px solid ${accent};display:flex;align-items:center;gap:14px}
@@ -124,32 +125,32 @@ export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string): str
 .sig{display:flex;gap:14px;margin:18px 26px 0}.sig div{flex:1;border:1px solid #ccc;border-radius:10px;height:78px;padding:8px;font-size:10px;color:#777}
 .foot{margin:22px 26px 24px;border-top:1px solid #ddd;padding-top:10px;font-size:9.5px;color:#888;line-height:1.55;text-align:center}
 </style></head><body><div class="page">
-<div class="top">${d.company.logoUrl ? `<img class="logo" src="${esc(d.company.logoUrl)}"/>` : ""}<div class="co"><b>${esc(d.company.name)}</b><span>${companyLines}</span></div><div class="kind">Reçu<br/>${esc(d.title)}</div></div>
+<div class="top">${d.company.logoUrl ? `<img class="logo" src="${esc(d.company.logoUrl)}"/>` : ""}<div class="co"><b>${esc(d.company.name)}</b><span>${companyLines}</span></div><div class="kind">${esc(tr("rcpt.pdf.receipt"))}<br/>${esc(d.title)}</div></div>
 <div class="hero"><div class="hl">${esc(d.hero.label)}</div><div class="ha">${esc(fmtAmount(d.hero.amount, d.hero.currency))}</div><span class="badge">${esc(d.statusLabel)}</span></div>
-<div class="sec">${row("Référence", d.reference, true)}${row("Émis le", fmtDateTime(d.createdAt))}${d.paidAt ? row("Payé le", fmtDateTime(d.paidAt)) : ""}${d.expiresAt ? row("À retirer avant le", fmtDateTime(d.expiresAt)) : ""}${row("Mode de réception", d.payout.methodLabel)}</div>
-<div class="sec"><div class="st">Parties</div><div class="parties"><div class="party"><div class="pr">Expéditeur</div>${partyLines(d.sender)}</div><div class="party"><div class="pr">Bénéficiaire</div>${partyLines(d.recipient, d.recipientPhoneHidden)}</div></div></div>
-<div class="sec"><div class="st">Détail financier</div>${row("Montant envoyé", fmtAmount(a.sent, a.sentCurrency))}${row("Frais", fmtAmount(a.fees, a.sentCurrency))}${row("Total payé par l'expéditeur", fmtAmount(a.total, a.sentCurrency), true)}${a.rate && a.receivedCurrency ? row("Taux de change", `1 ${a.sentCurrency} = ${new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 6 }).format(a.rate)} ${a.receivedCurrency}`) : ""}${a.received && a.receivedCurrency ? row("Montant reçu par le bénéficiaire", fmtAmount(a.received, a.receivedCurrency), true) : ""}</div>
-${d.agency.originName || d.agency.payerName ? `<div class="sec"><div class="st">Agences</div>${d.agency.originName ? row("Envoi enregistré à", [d.agency.originName, d.agency.originCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerName ? row("Payé à", [d.agency.payerName, d.agency.payerCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerAgent ? row("Agent payeur", d.agency.payerAgent) : ""}</div>` : ""}
-${d.withdrawalCode ? `<div class="code"><div class="k">Code de retrait — à ne communiquer qu'au bénéficiaire</div><div class="v">${esc(d.withdrawalCode)}</div></div>` : ""}
-<div class="seal"><img src="${qr}"/><div><b>${d.qr.payable ? "QR code de paiement et de vérification" : "QR code de vérification"}</b><div class="m">${d.qr.payable ? "L'agent scanne ce QR (application ou scanette) pour contrôler le reçu et verser le montant, sans saisir le code. " : ""}N'importe quel téléphone peut le scanner pour vérifier que ce reçu est authentique : montant, bénéficiaire et statut proviennent du serveur.</div><div class="u">${esc(url)}</div></div></div>
-${d.showSignatures ? `<div class="sig"><div>Signature du bénéficiaire</div><div>Signature de l'agent / cachet</div></div>` : ""}
-<div class="foot">${legal ? legal + "<br/>" : ""}Ce reçu est une preuve de l'opération ${esc(d.reference)}. Toute modification du document est détectable par le QR code. En cas de doute, contactez ${esc(d.company.email || d.company.phone || d.company.name)}.</div>
+<div class="sec">${row(tr("rcpt.reference"), d.reference, true)}${row(tr("rcpt.issued"), fmtDateTime(d.createdAt))}${d.paidAt ? row(tr("rcpt.paidOn"), fmtDateTime(d.paidAt)) : ""}${d.expiresAt ? row(tr("rcpt.collectBefore"), fmtDateTime(d.expiresAt)) : ""}${row(tr("rcpt.payoutMode"), d.payout.methodLabel)}</div>
+<div class="sec"><div class="st">${esc(tr("rcpt.parties"))}</div><div class="parties"><div class="party"><div class="pr">${esc(tr("rcpt.sender"))}</div>${partyLines(d.sender)}</div><div class="party"><div class="pr">${esc(tr("rcpt.beneficiary"))}</div>${partyLines(d.recipient, d.recipientPhoneHidden)}</div></div></div>
+<div class="sec"><div class="st">${esc(tr("rcpt.financial"))}</div>${row(tr("rcpt.sent"), fmtAmount(a.sent, a.sentCurrency))}${row(tr("rcpt.fees"), fmtAmount(a.fees, a.sentCurrency))}${row(tr("rcpt.total"), fmtAmount(a.total, a.sentCurrency), true)}${a.rate && a.receivedCurrency ? row(tr("rcpt.rate"), `1 ${a.sentCurrency} = ${new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 6 }).format(a.rate)} ${a.receivedCurrency}`) : ""}${a.received && a.receivedCurrency ? row(tr("rcpt.receivedAmt"), fmtAmount(a.received, a.receivedCurrency), true) : ""}</div>
+${d.agency.originName || d.agency.payerName ? `<div class="sec"><div class="st">${esc(tr("rcpt.agencies"))}</div>${d.agency.originName ? row(tr("rcpt.originAt"), [d.agency.originName, d.agency.originCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerName ? row(tr("rcpt.paidAt"), [d.agency.payerName, d.agency.payerCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerAgent ? row(tr("rcpt.payerAgent"), d.agency.payerAgent) : ""}</div>` : ""}
+${d.withdrawalCode ? `<div class="code"><div class="k">${esc(tr("rcpt.pdf.code"))}</div><div class="v">${esc(d.withdrawalCode)}</div></div>` : ""}
+<div class="seal"><img src="${qr}"/><div><b>${esc(d.qr.payable ? tr("rcpt.pdf.qrPay") : tr("rcpt.pdf.qrVerify"))}</b><div class="m">${d.qr.payable ? esc(tr("rcpt.pdf.qrAgent")) : ""}${esc(tr("rcpt.pdf.qrAny"))}</div><div class="u">${esc(url)}</div></div></div>
+${d.showSignatures ? `<div class="sig"><div>${esc(tr("rcpt.pdf.sigBenef"))}</div><div>${esc(tr("rcpt.pdf.sigAgent"))}</div></div>` : ""}
+<div class="foot">${legal ? legal + "<br/>" : ""}${esc(tr("rcpt.pdf.foot", { ref: d.reference, contact: d.company.email || d.company.phone || d.company.name }))}</div>
 </div></body></html>`;
 }
 
 export async function shareTransferReceiptPdf(d: TransferReceiptDoc, qr: string): Promise<void> {
   try {
     const { uri } = await Print.printToFileAsync({ html: buildTransferReceiptHtml(d, qr) });
-    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf", dialogTitle: `Reçu ${d.reference}` });
-    else Alert.alert("Partage indisponible", "Le partage de fichiers n'est pas disponible sur cet appareil.");
+    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf", dialogTitle: tr("rcpt.shareTitle", { ref: d.reference }) });
+    else Alert.alert(tr("rcpt.shareUnavail"), tr("rcpt.shareUnavailMsg"));
   } catch {
-    Alert.alert("Erreur", "Impossible de générer le PDF. Réessayez.");
+    Alert.alert(tr("common.error"), tr("rcpt.pdfFail"));
   }
 }
 
 export async function printTransferReceipt(d: TransferReceiptDoc, qr: string): Promise<void> {
   try { await Print.printAsync({ html: buildTransferReceiptHtml(d, qr) }); }
-  catch { Alert.alert("Erreur", "Impossible d'imprimer le reçu."); }
+  catch { Alert.alert(tr("common.error"), tr("rcpt.printFail")); }
 }
 
 /** Ce que contient un QR/une saisie d'agent : code signé (TF…) ou adresse qui le contient. true si c'est un reçu signé. */

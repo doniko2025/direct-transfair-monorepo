@@ -11,11 +11,13 @@ import * as ImagePicker from "expo-image-picker";
 import { Notice, UText } from "../ui";
 import { ListRow, Sheet } from "../ui/Layout";
 import { useProfilePhotoActions } from "../../hooks/useProfilePhoto";
+import { useT } from "../../providers/I18nProvider";
 
 const MAX_BYTES = 1_900_000; // le serveur refuse au-delà de 2 Mo
 const MIN_BYTES = 2 * 1024;
 
 export function ProfilePhotoSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const t = useT();
   const { save, remove, busy, error, clearError, hasOwn } = useProfilePhotoActions();
   const [problem, setProblem] = useState<string | null>(null);
   const shown = problem ?? error;
@@ -25,10 +27,10 @@ export function ProfilePhotoSheet({ visible, onClose }: { visible: boolean; onCl
   const accept = async (res: ImagePicker.ImagePickerResult) => {
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    if (!a.base64) { setProblem("Photo illisible, réessayez."); return; }
+    if (!a.base64) { setProblem(t("photo.unreadable")); return; }
     const bytes = Math.floor((a.base64.length * 3) / 4);
-    if (bytes > MAX_BYTES) { setProblem("Photo trop lourde. Choisissez une photo moins grande."); return; }
-    if (bytes < MIN_BYTES) { setProblem("Photo trop petite ou vide, réessayez."); return; }
+    if (bytes > MAX_BYTES) { setProblem(t("photo.tooBig")); return; }
+    if (bytes < MIN_BYTES) { setProblem(t("photo.tooSmall")); return; }
     if (await save(a.base64, a.uri)) { setProblem(null); onClose(); }
   };
 
@@ -38,16 +40,16 @@ export function ProfilePhotoSheet({ visible, onClose }: { visible: boolean; onCl
     setProblem(null); clearError();
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { setProblem("Autorisez l'appareil photo dans les réglages de votre téléphone."); return; }
+      if (!perm.granted) { setProblem(t("photo.camDenied")); return; }
       await accept(await ImagePicker.launchCameraAsync({ ...options, cameraType: ImagePicker.CameraType.front }));
-    } catch { setProblem("Impossible d'ouvrir l'appareil photo."); }
+    } catch { setProblem(t("photo.camFail")); }
   };
 
   const library = async () => {
     setProblem(null); clearError();
     try {
       await accept(await ImagePicker.launchImageLibraryAsync(options));
-    } catch { setProblem("Impossible d'ouvrir la galerie."); }
+    } catch { setProblem(t("photo.libFail")); }
   };
 
   const drop = async () => {
@@ -56,13 +58,13 @@ export function ProfilePhotoSheet({ visible, onClose }: { visible: boolean; onCl
   };
 
   return (
-    <Sheet visible={visible} onClose={close} title="Photo de profil">
+    <Sheet visible={visible} onClose={close} title={t("photo.title")}>
       <View style={{ paddingBottom: 6 }}>
         {shown ? <Notice tone="danger" style={{ marginBottom: 8 }}>{shown}</Notice> : null}
-        {busy ? <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>Enregistrement en cours…</UText> : null}
-        {Platform.OS !== "web" && <ListRow icon="camera-outline" title="Prendre une photo" onPress={busy ? undefined : camera} chevron={false} />}
-        <ListRow icon="images-outline" title="Choisir dans la galerie" onPress={busy ? undefined : library} chevron={false} last={!hasOwn} />
-        {hasOwn ? <ListRow icon="trash-outline" title="Retirer la photo" danger onPress={busy ? undefined : drop} chevron={false} last /> : null}
+        {busy ? <UText v="caption" tone="muted" style={{ marginBottom: 8 }}>{t("photo.saving")}</UText> : null}
+        {Platform.OS !== "web" && <ListRow icon="camera-outline" title={t("photo.take")} onPress={busy ? undefined : camera} chevron={false} />}
+        <ListRow icon="images-outline" title={t("photo.choose")} onPress={busy ? undefined : library} chevron={false} last={!hasOwn} />
+        {hasOwn ? <ListRow icon="trash-outline" title={t("photo.remove")} danger onPress={busy ? undefined : drop} chevron={false} last /> : null}
       </View>
     </Sheet>
   );

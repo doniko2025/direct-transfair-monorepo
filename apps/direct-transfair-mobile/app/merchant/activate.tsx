@@ -25,12 +25,15 @@ import {
 } from "../../utils/businessInfo";
 import { RccmDocumentPicker, type RccmPick } from "../../components/merchant/RccmDocumentPicker";
 import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
+import { categoryLabel } from "../../components/merchant/merchantUi";
 import { accountCurrencyForCountry, fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 export default function ActivateMerchantScreen() {
   const router = useRouter();
   const { user, refreshUser } = useAuth();
   const { C } = useUI();
+  const t = useT();
   const [name, setName] = useState("");
   const [rccm, setRccm] = useState("");
   const [rccmDoc, setRccmDoc] = useState<RccmPick | null>(null);
@@ -48,25 +51,25 @@ export default function ActivateMerchantScreen() {
 
   const { data: me, status, error, reload } = useLoader(() => api.getMerchantMe());
 
-  if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title="Devenir marchand" />}><SkeletonRows rows={3} /></Screen>;
+  if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title={t("prof.becomeMerchant")} />}><SkeletonRows rows={3} /></Screen>;
   if (status === "error" || !me) {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Devenir marchand" />}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={<NavBar onBack={() => router.back()} title={t("prof.becomeMerchant")} />}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
   if (me.isMerchant) {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} title="Devenir marchand" />} footer={<Button label="Ouvrir mon espace marchand" onPress={() => router.replace("/merchant" as any)} />}>
-        <Notice tone="pos">Votre espace marchand est déjà actif.</Notice>
+      <Screen header={<NavBar onBack={() => router.back()} title={t("prof.becomeMerchant")} />} footer={<Button label={t("act.openSpace")} onPress={() => router.replace("/merchant" as any)} />}>
+        <Notice tone="pos">{t("act.alreadyActive")}</Notice>
       </Screen>
     );
   }
   if (!me.canActivate) {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Devenir marchand" />}><Notice tone="warn">Les comptes marchands ne sont pas disponibles pour le moment.</Notice></Screen>;
+    return <Screen header={<NavBar onBack={() => router.back()} title={t("prof.becomeMerchant")} />}><Notice tone="warn">{t("ment.unavailable")}</Notice></Screen>;
   }
 
   const categories = me.categories.length ? me.categories : MERCHANT_CATEGORIES;
-  const nameError = showErrors && name.trim().length < 2 ? "Saisissez le nom de votre commerce." : null;
+  const nameError = showErrors && name.trim().length < 2 ? t("act.nameRequired") : null;
   const rccmError = showErrors ? validateRccm(rccm) : null;
-  const catError = showErrors && !category ? "Choisissez une catégorie." : null;
+  const catError = showErrors && !category ? t("act.catRequired") : null;
   // Devise du compte : décide si Orange Money existe et quel numéro est exigé (GNF → guinéen, XOF → zone CFA, EUR… → aucun).
   const currency = me.currency ?? accountCurrencyForCountry(user?.country);
   const orangeAllowed = me.orangeMoneyAllowed ?? isOrangeMoneyCurrency(currency);
@@ -105,7 +108,7 @@ export default function ActivateMerchantScreen() {
       // Pièce justificative : envoyée une fois le compte créé. Un échec ne bloque pas l'activation (renvoi possible dans les réglages).
       if (rccmDoc) {
         try { await api.saveMerchantRccmDocument(rccmDoc.base64); }
-        catch { Alert.alert("Document non envoyé", "Votre espace marchand est activé, mais le document RCCM n'a pas pu être envoyé. Vous pourrez le renvoyer depuis les réglages du commerce."); }
+        catch { Alert.alert(t("act.docFailTitle"), t("act.docFailMsg")); }
       }
       try { await refreshUser?.(); } catch { /* sans incidence */ }
       router.replace("/merchant" as any);
@@ -121,22 +124,22 @@ export default function ActivateMerchantScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title="Devenir marchand" />}
-      footer={<Button label="Activer mon espace marchand" icon="storefront-outline" loading={busy} onPress={submit} testID="activate-merchant" />}
+      header={<NavBar onBack={() => router.back()} title={t("prof.becomeMerchant")} />}
+      footer={<Button label={t("act.submit")} icon="storefront-outline" loading={busy} onPress={submit} testID="activate-merchant" />}
     >
       <Rise>
         <UText v="body" tone="muted" style={{ marginBottom: 18 }}>
-          Encaissez vos clients par QR code ou par téléphone et retirez vos gains vers votre Orange Money. Votre portefeuille actuel est conservé.
+          {t("act.intro")}
         </UText>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 14 }}>{problem}</Notice>}
-        <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} error={nameError} />
+        <Field label={t("act.name")} icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} error={nameError} />
         <Field
-          label="Numéro RCCM" icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
+          label={t("act.rccm")} icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
           placeholder={RCCM_EXAMPLE} error={rccmError}
-          hint="Registre du Commerce et du Crédit Mobilier : obligatoire pour ouvrir un compte marchand."
+          hint={t("act.rccmHint")}
         />
         <RccmDocumentPicker value={rccmDoc} onChange={setRccmDoc} disabled={busy} />
-        <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" error={catError} />
+        <OptionPicker label={t("act.category")} title={t("act.categoryTitle")} icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: categoryLabel(c) }))} onChange={setCategory} placeholder={t("act.categoryPh")} error={catError} />
         <BusinessInfoFields value={info} onChange={patchInfo} errors={infoErrors} />
         {orangeAllowed ? (
           <PhoneField
@@ -145,13 +148,13 @@ export default function ActivateMerchantScreen() {
             value={phone}
             onChangeText={setPhone}
             error={phoneError}
-            hint={`Numéro où seront versés vos retraits. ${orangeHintFor(currency)}`}
+            hint={t("act.phoneHint", { hint: orangeHintFor(currency) })}
             accent={C.accent}
           />
         ) : (
           <Notice tone="warn" style={{ marginBottom: 14 }}>{ORANGE_NOT_AVAILABLE_TEXT(currency)}</Notice>
         )}
-        <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && pin.length !== 6 ? "Saisissez votre code secret à 6 chiffres." : null)} label="Code secret pour confirmer" />
+        <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && pin.length !== 6 ? t("act.pinRequired") : null)} label={t("act.pinLabel")} />
       </Rise>
     </Screen>
   );

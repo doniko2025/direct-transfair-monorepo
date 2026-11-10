@@ -42,6 +42,7 @@ import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 
 import { Text, TextInput } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
 type Step = 'IDENTIFIER' | 'CHANNEL' | 'RESET';
 type Channel = 'EMAIL' | 'PHONE';
 type NoticeState = { kind: 'error' | 'info' | 'success' | 'warning'; title?: string; message: string } | null;
@@ -54,6 +55,7 @@ export default function ForgotPasswordScreen() {
   const { channel: wanted } = useLocalSearchParams<{ channel?: string }>();
   const preset: Channel | null = wanted === 'EMAIL' || wanted === 'PHONE' ? wanted : null;
   const P = useAuthPalette();
+  const t = useT();
   const { status: serverStatus, retry: retryServer } = useServerStatus();
 
   const [step, setStep]       = useState<Step>('IDENTIFIER');
@@ -76,17 +78,17 @@ export default function ForgotPasswordScreen() {
 
   useEffect(() => {
     if (countdown <= 0) return;
-    const t = setTimeout(() => setCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
   }, [countdown]);
 
   const onServerRetry = (attempt: number) =>
-    setNotice({ kind: 'info', title: 'Le serveur démarre', message: `Nouvelle tentative automatique (${attempt}/2)…` });
+    setNotice({ kind: 'info', title: t('forgot.serverStarting'), message: t('forgot.autoRetry', { n: attempt }) });
 
   // ── 1. Retrouver le compte ────────────────────────────
   const findAccount = async () => {
     const raw = identifier.trim();
-    if (!raw) { setIdError('Saisissez votre email ou votre numéro de téléphone.'); return; }
+    if (!raw) { setIdError(t('forgot.idRequired')); return; }
     setIdError(null);
     setNotice(null);
     setLoading(true);
@@ -138,12 +140,12 @@ export default function ForgotPasswordScreen() {
   // un code que ce contrôle local accepte (réponse PIN_WEAK) — le motif est alors affiché sous le champ.
   const [serverPinError, setServerPinError] = useState<string | null>(null);
   const pwdError = serverPinError
-    ?? (password.length !== PIN_LENGTH ? `Le code doit contenir exactement ${PIN_LENGTH} chiffres.` : pinProblem(password));
-  const confirmError = !confirm ? 'Confirmez votre code secret.' : confirm !== password ? 'Les deux codes ne correspondent pas.' : null;
+    ?? (password.length !== PIN_LENGTH ? t('pinx.exactLen', { n: PIN_LENGTH }) : pinProblem(password));
+  const confirmError = !confirm ? t('forgot.confirmRequired') : confirm !== password ? t('forgot.mismatch') : null;
 
   const resetPassword = async () => {
     setShowErrors(true);
-    if (code.length < 6) { setCodeWrong(true); setNotice({ kind: 'error', message: 'Saisissez le code à 6 chiffres reçu.' }); return; }
+    if (code.length < 6) { setCodeWrong(true); setNotice({ kind: 'error', message: t('forgot.codeRequired') }); return; }
     if (pwdError || confirmError || !userId) return;
     setLoading(true);
     setNotice(null);
@@ -152,7 +154,7 @@ export default function ForgotPasswordScreen() {
       router.replace({ pathname: '/(auth)/login-v2', params: { reset: '1' } } as any);
     } catch (e: any) {
       if (e?.response?.data?.code === 'PIN_WEAK') {
-        setServerPinError(String(e.response.data.message ?? 'Ce code est trop prévisible.'));
+        setServerPinError(String(e.response.data.message ?? t('pin.tooPredictable')));
         return;
       }
       const info = describeAuthError(e, 'otp');
@@ -162,8 +164,8 @@ export default function ForgotPasswordScreen() {
         setCode('');
         setNotice({
           kind: 'error',
-          title: 'Code incorrect ou expiré',
-          message: 'Vérifiez le code reçu, ou demandez-en un nouveau avec « Renvoyer le code ».',
+          title: t('forgot.codeWrongTitle'),
+          message: t('forgot.codeWrongMsg'),
         });
       } else {
         setNotice({ kind: 'error', title: info.title, message: info.message });
@@ -190,29 +192,30 @@ export default function ForgotPasswordScreen() {
     return (
       <AuthShell
         compact
-        title="Mot de passe oublié"
-        subtitle="Pas de souci : nous vous envoyons un code pour en choisir un nouveau."
+        showLang
+        title={t('forgot.title')}
+        subtitle={t('forgot.subtitle')}
         onBack={back}
         headerRight={pill}
       >
         {notice ? <AuthNotice {...notice} /> : null}
         <AuthField
-          label="Email ou téléphone"
+          label={t('forgot.idLabel')}
           icon="person-outline"
           value={identifier}
-          onChangeText={(t) => { setIdentifier(t); if (idError) setIdError(null); }}
+          onChangeText={(v) => { setIdentifier(v); if (idError) setIdError(null); }}
           error={idError}
           keyboardType="email-address"
           autoComplete="email"
           textContentType="username"
           returnKeyType="go"
           onSubmitEditing={findAccount}
-          hint="Pour un téléphone, ajoutez l'indicatif : +33612345678."
+          hint={t('forgot.idHint')}
           accent={P.accent}
           autoFocus
         />
         <AuthButton
-          label="Recevoir un code"
+          label={t('forgot.receiveCode')}
           icon="paper-plane-outline"
           iconRight
           accent={P.action}
@@ -221,7 +224,7 @@ export default function ForgotPasswordScreen() {
           onPress={findAccount}
         />
         <View style={s.centerRow}>
-          <AuthButton label="Retour à la connexion" variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
+          <AuthButton label={t('forgot.backToLogin')} variant="link" accent={P.accent} onPress={() => router.replace('/(auth)/login-v2')} />
         </View>
       </AuthShell>
     );
@@ -232,11 +235,11 @@ export default function ForgotPasswordScreen() {
   // ═══════════════════════════════════════════════════════
   if (step === 'CHANNEL') {
     const opts: Array<{ ch: Channel; icon: keyof typeof Ionicons.glyphMap; title: string; sub: string }> = [
-      { ch: 'EMAIL', icon: 'mail-outline', title: 'Par email', sub: 'Recevoir le code dans votre boîte mail' },
-      { ch: 'PHONE', icon: 'chatbubble-ellipses-outline', title: 'Par SMS', sub: 'Recevoir le code sur votre téléphone' },
+      { ch: 'EMAIL', icon: 'mail-outline', title: t('modal.forgot.email'), sub: t('modal.forgot.emailSub') },
+      { ch: 'PHONE', icon: 'chatbubble-ellipses-outline', title: t('modal.forgot.sms'), sub: t('modal.forgot.smsSub') },
     ];
     return (
-      <AuthShell compact title="Où envoyer le code ?" subtitle="Choisissez comment recevoir votre code de sécurité." onBack={back} headerRight={pill}>
+      <AuthShell compact showLang title={t('forgot.channelTitle')} subtitle={t('forgot.channelSubtitle')} onBack={back} headerRight={pill}>
         {notice ? <AuthNotice {...notice} /> : null}
         <View style={{ gap: 12 }}>
           {opts.filter((o) => channels.includes(o.ch)).map((o) => {
@@ -263,7 +266,7 @@ export default function ForgotPasswordScreen() {
           })}
         </View>
         <View style={{ height: 22 }} />
-        <AuthButton label="Envoyer le code" icon="paper-plane-outline" iconRight accent={P.action} loading={loading} onPress={() => userId && sendCode(userId, channel)} />
+        <AuthButton label={t('otp.sendCode')} icon="paper-plane-outline" iconRight accent={P.action} loading={loading} onPress={() => userId && sendCode(userId, channel)} />
       </AuthShell>
     );
   }
@@ -274,14 +277,15 @@ export default function ForgotPasswordScreen() {
   return (
     <AuthShell
       compact
-      title="Nouveau code secret"
-      subtitle={channel === 'PHONE' ? 'Saisissez le code reçu par SMS, puis choisissez votre nouveau code secret à 6 chiffres.' : 'Saisissez le code reçu par email, puis choisissez votre nouveau code secret à 6 chiffres.'}
+      showLang
+      title={t('forgot.resetTitle')}
+      subtitle={channel === 'PHONE' ? t('forgot.resetSubSms') : t('forgot.resetSubEmail')}
       onBack={back}
       headerRight={pill}
     >
       {notice ? <AuthNotice {...notice} /> : null}
 
-      <Text style={s.label}>Code à 6 chiffres</Text>
+      <Text style={s.label}>{t('forgot.code6')}</Text>
       <OtpCodeInput
         value={code}
         onChange={(c) => { setCode(c); if (codeWrong) setCodeWrong(false); }}
@@ -291,14 +295,14 @@ export default function ForgotPasswordScreen() {
       />
       <View style={s.resendRow}>
         {countdown > 0 ? (
-          <Text style={s.hint}>Renvoyer le code dans {countdown} s</Text>
+          <Text style={s.hint}>{t('otp.resendIn', { seconds: countdown })}</Text>
         ) : (
-          <AuthButton label="Renvoyer le code" variant="link" accent={P.accent} disabled={loading} onPress={() => userId && sendCode(userId, channel)} />
+          <AuthButton label={t('otp.resend')} variant="link" accent={P.accent} disabled={loading} onPress={() => userId && sendCode(userId, channel)} />
         )}
       </View>
 
       <PinInput
-        label="Nouveau code secret (6 chiffres)"
+        label={t('pinx.newLabel')}
         value={password}
         onChange={(v) => { setPassword(v); if (serverPinError) setServerPinError(null); }}
         onComplete={() => confirmRef.current?.focus()}
@@ -308,7 +312,7 @@ export default function ForgotPasswordScreen() {
       />
       <PinGuide pin={password} />
       <PinInput
-        label="Confirmer le code secret"
+        label={t('pinx.confirmLabel')}
         value={confirm}
         onChange={setConfirm}
         accent={P.accent}
@@ -318,7 +322,7 @@ export default function ForgotPasswordScreen() {
         inputRef={confirmRef}
       />
 
-      <AuthButton label="Enregistrer mon code secret" icon="checkmark-circle" iconRight accent={P.action} loading={loading} onPress={resetPassword} />
+      <AuthButton label={t('forgot.save')} icon="checkmark-circle" iconRight accent={P.action} loading={loading} onPress={resetPassword} />
     </AuthShell>
   );
 }

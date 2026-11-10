@@ -26,6 +26,7 @@ import type { Agency } from "../../../services/types";
 import { useAuth } from "../../../providers/AuthProvider";
 import { useTenant } from "../../../providers/TenantProvider";
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {
   Card, EmptyView, ErrorView, NavBar, Pill, Screen, SectionHeader, SkeletonRows, SlowNote, StatusDot, UText, useUI,
@@ -55,6 +56,7 @@ async function openLink(url: string) {
 
 export default function LocationsScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const { branding } = useTenant();
   const router = useRouter();
   const { user } = useAuth();
@@ -81,12 +83,12 @@ export default function LocationsScreen() {
 
   const subtitle =
     status === "loading"
-      ? "Chargement…"
+      ? t("common.loading")
       : status === "error"
-        ? "Erreur de chargement"
+        ? t("loc.loadError")
         : agencies.length === 0
-          ? "Aucun point disponible pour le moment"
-          : `${agencies.length} point${agencies.length > 1 ? "s" : ""} ${branding.name}`;
+          ? t("loc.none")
+          : t("loc.count", { count: agencies.length, brand: branding.name });
 
   const chip = (icon: string, label: string, onPress: () => void) => (
     <Pressable
@@ -105,7 +107,7 @@ export default function LocationsScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Nos agences" subtitle={subtitle} onBack={() => router.back()} />}
+      header={<NavBar title={t("loc.title")} subtitle={subtitle} onBack={() => router.back()} />}
       refreshing={refreshing}
       onRefresh={() => void refresh()}
     >
@@ -115,16 +117,16 @@ export default function LocationsScreen() {
           <SkeletonRows rows={3} />
         </>
       ) : status === "error" ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+        <ErrorView title={error?.title ?? t("kycs.loadFail")} message={error?.message ?? t("kycs.retryLater")} onRetry={() => void reload()} />
       ) : agencies.length === 0 ? (
         <EmptyView
           icon="storefront-outline"
-          title="Aucune agence disponible"
-          message={`Les points ${branding.name} apparaîtront ici dès leur ouverture.`}
+          title={t("loc.noneTitle")}
+          message={t("loc.noneMsg", { brand: branding.name })}
         />
       ) : (
         <>
-          <SectionHeader title={role === "SUPER_ADMIN" ? "Toutes les agences" : "Points de service"} style={{ marginTop: 4, marginBottom: 12 }} />
+          <SectionHeader title={role === "SUPER_ADMIN" ? t("loc.all") : t("loc.points")} style={{ marginTop: 4, marginBottom: 12 }} />
           {agencies.map((item) => {
             const ag = item as any;
             // Champs contact — plusieurs noms possibles selon le backend
@@ -141,7 +143,7 @@ export default function LocationsScreen() {
                     <UText v="subheading" numberOfLines={1}>{item.name}</UText>
                     {!!address && <UText v="caption" tone="muted" numberOfLines={2} style={{ marginTop: 2 }}>{address}</UText>}
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-                      <StatusDot color={item.isActive ? C.pos : C.danger} label={item.isActive ? "Ouvert" : "Fermé"} />
+                      <StatusDot color={item.isActive ? C.pos : C.danger} label={item.isActive ? t("loc.open") : t("loc.closed")} />
                       {role === "SUPER_ADMIN" && ag.clientName ? <Pill label={String(ag.clientName)} tone="neutral" /> : null}
                     </View>
                   </View>

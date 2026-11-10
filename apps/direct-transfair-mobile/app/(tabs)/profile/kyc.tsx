@@ -25,6 +25,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "../../../components/ui/Icon";
 import { useLoader } from "../../../components/wallet/useLoader";
 import { KycStatusCard } from "../../../components/wallet/KycStatusCard";
+import { useT } from "../../../providers/I18nProvider";
 import { Button, Card, ErrorView, NavBar, Notice, Pill, Screen, SectionHeader, SkeletonRows, SlowNote, UText, useUI } from "../../../components/ui";
 import {
   KYC_ADDRESS_TYPES, KYC_DOC_LABEL, KYC_DOC_STATUS_LABEL, KYC_IDENTITY_TYPES, formatDay, kycApi, maskDocNumber,
@@ -67,20 +68,21 @@ function Step({
   index, title, subtitle, doc, state, onPress, optional, renew,
 }: { index: number; title: string; subtitle: string; doc: KycDocumentView | null; state: StepState; onPress?: () => void; optional?: boolean; renew?: boolean }) {
   const { C, R } = useUI();
+  const t = useT();
   const tone = ({ todo: "neutral", pending: "info", done: "pos", rejected: "danger", expired: "danger" } as const)[state];
-  const action = state === "todo" ? "Envoyer" : state === "rejected" || state === "expired" ? "Renvoyer" : renew && state === "done" ? "Renouveler" : null;
+  const action = state === "todo" ? t("kycs.send") : state === "rejected" || state === "expired" ? t("kycs.resend") : renew && state === "done" ? t("kycs.renew") : null;
   const iconColor = state === "done" ? C.pos : state === "rejected" || state === "expired" ? C.danger : state === "pending" ? C.info : C.muted;
   const iconBg = state === "done" ? C.posBg : state === "rejected" || state === "expired" ? C.dangerBg : state === "pending" ? C.infoBg : C.field;
   const icon = state === "done" ? "checkmark-circle" : state === "pending" ? "time" : state === "rejected" || state === "expired" ? "alert-circle" : "ellipse-outline";
-  const pillLabel = doc ? KYC_DOC_STATUS_LABEL[doc.status] : "À envoyer";
+  const pillLabel = doc ? KYC_DOC_STATUS_LABEL[doc.status] : t("kycs.toSend");
 
   const details: Array<{ label: string; value: string }> = [];
   if (doc && state !== "todo") {
-    details.push({ label: "Document", value: KYC_DOC_LABEL[doc.type] ?? doc.label });
-    if (doc.documentNumber) details.push({ label: "Numéro", value: maskDocNumber(doc.documentNumber) });
-    if (doc.expiryDate) details.push({ label: "Expire le", value: formatDay(doc.expiryDate) });
-    if (state === "done" && doc.reviewedAt) details.push({ label: "Validée le", value: formatDay(doc.reviewedAt.slice(0, 10)) });
-    else if (doc.createdAt) details.push({ label: "Envoyée le", value: formatDay(doc.createdAt.slice(0, 10)) });
+    details.push({ label: t("kycs.document"), value: KYC_DOC_LABEL[doc.type] ?? doc.label });
+    if (doc.documentNumber) details.push({ label: t("kycs.number"), value: maskDocNumber(doc.documentNumber) });
+    if (doc.expiryDate) details.push({ label: t("kycs.expiresOn"), value: formatDay(doc.expiryDate) });
+    if (state === "done" && doc.reviewedAt) details.push({ label: t("kycs.approvedOn"), value: formatDay(doc.reviewedAt.slice(0, 10)) });
+    else if (doc.createdAt) details.push({ label: t("kycs.sentOn"), value: formatDay(doc.createdAt.slice(0, 10)) });
   }
 
   return (
@@ -90,7 +92,7 @@ function Step({
           <Ionicons name={icon as any} size={24} color={iconColor} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <UText v="subheading">{index}. {title}{optional ? " (facultatif)" : ""}</UText>
+          <UText v="subheading">{index}. {title}{optional ? t("kycs.optional") : ""}</UText>
           <Pill label={pillLabel} tone={tone} style={{ marginTop: 6 }} />
         </View>
       </View>
@@ -104,10 +106,10 @@ function Step({
       ) : null}
 
       {state === "rejected" && doc?.rejectionReason ? (
-        <Notice tone="danger" title="Motif du refus" style={{ marginTop: 12 }}>{doc.rejectionReason}</Notice>
+        <Notice tone="danger" title={t("kycs.rejectReason")} style={{ marginTop: 12 }}>{doc.rejectionReason}</Notice>
       ) : null}
       {state === "expired" ? (
-        <Notice tone="danger" style={{ marginTop: 12 }}>Cette pièce a expiré. Envoyez-en une en cours de validité.</Notice>
+        <Notice tone="danger" style={{ marginTop: 12 }}>{t("kycs.expiredNotice")}</Notice>
       ) : null}
 
       {action && onPress ? (
@@ -127,12 +129,13 @@ function Step({
 /** Barre « x sur y étapes validées ». */
 function Progress({ done, total }: { done: number; total: number }) {
   const { C } = useUI();
+  const t = useT();
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   return (
     <View style={{ marginBottom: 14 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 6 }}>
-        <UText v="caption" tone="muted">Progression</UText>
-        <UText v="caption" style={{ fontWeight: "700" }}>{done} sur {total} étapes validées</UText>
+        <UText v="caption" tone="muted">{t("kycs.progress")}</UText>
+        <UText v="caption" style={{ fontWeight: "700" }}>{t("kycs.progressOf", { done, total })}</UText>
       </View>
       <View style={{ height: 8, borderRadius: 99, overflow: "hidden", backgroundColor: C.field }}>
         <View style={{ height: 8, borderRadius: 99, width: `${pct}%`, backgroundColor: done === total ? C.pos : C.accent }} />
@@ -142,6 +145,7 @@ function Progress({ done, total }: { done: number; total: number }) {
 }
 
 export default function KycScreen() {
+  const t = useT();
   const router = useRouter();
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<KycStatusView>(() => kycApi.me());
 
@@ -166,7 +170,7 @@ export default function KycScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Vérification d'identité" subtitle="Obligatoire pour envoyer de l'argent" onBack={() => router.back()} />}
+      header={<NavBar title={t("kycs.title")} subtitle={t("kycs.subtitle")} onBack={() => router.back()} />}
       refreshing={refreshing}
       onRefresh={() => void refresh()}
     >
@@ -176,7 +180,7 @@ export default function KycScreen() {
           <SkeletonRows rows={3} />
         </>
       ) : status === "error" || !data ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+        <ErrorView title={error?.title ?? t("kycs.loadFail")} message={error?.message ?? t("kycs.retryLater")} onRetry={() => void reload()} />
       ) : (
         <>
           <KycStatusCard
@@ -192,30 +196,30 @@ export default function KycScreen() {
 
           {expiring ? (
             <Notice tone={data.expiry!.daysLeft <= 7 ? "danger" : "warn"} icon="hourglass" style={{ marginTop: 14 }}>
-              Votre {data.expiry!.label.toLowerCase()} est valable jusqu'au {formatDay(data.expiry!.expiryDate)}. Après cette date, les envois, virements programmés et retraits seront bloqués tant qu'une nouvelle pièce n'est pas vérifiée : envoyez-la dès maintenant, votre accès reste ouvert pendant la vérification.
+              {t("kycs.expiringNotice", { doc: (KYC_DOC_LABEL[data.expiry!.type] ?? data.expiry!.label).toLowerCase(), date: formatDay(data.expiry!.expiryDate) })}
             </Notice>
           ) : data.expiry?.expired ? (
             <Notice tone="danger" icon="alert-circle" style={{ marginTop: 14 }}>
-              Votre {data.expiry.label.toLowerCase()} a expiré le {formatDay(data.expiry.expiryDate)}. Les envois, virements programmés et retraits sont bloqués jusqu'à la validation d'une nouvelle pièce.
+              {t("kycs.expiredNoticeFull", { doc: (KYC_DOC_LABEL[data.expiry.type] ?? data.expiry.label).toLowerCase(), date: formatDay(data.expiry.expiryDate) })}
             </Notice>
           ) : null}
 
           {data.status === "VERIFIED" ? (
             <Notice tone="pos" icon="shield-checkmark" style={{ marginTop: 14 }}>
-              {data.verifiedAt ? `Identité vérifiée le ${formatDay(data.verifiedAt.slice(0, 10))}. ` : ""}Vos envois, virements et retraits sont ouverts dans la limite de vos plafonds.
+              {data.verifiedAt ? t("kycs.verifiedOn", { date: formatDay(data.verifiedAt.slice(0, 10)) }) : ""}{t("kycs.openLimits")}
             </Notice>
           ) : (
             <Notice tone="info" style={{ marginTop: 14 }}>
-              Vos pièces sont lues uniquement par les équipes habilitées de votre société, pour respecter la réglementation contre le blanchiment d'argent. Photographiez-les de près, bien éclairées, sans reflet.
+              {t("kycs.privacy")}
             </Notice>
           )}
 
-          <SectionHeader title="Votre dossier" style={{ marginTop: 24, marginBottom: 12 }} />
+          <SectionHeader title={t("kycs.yourFile")} style={{ marginTop: 24, marginBottom: 12 }} />
           <Progress done={doneCount} total={2} />
           <Step
             index={1}
-            title="Pièce d'identité"
-            subtitle="Carte d'identité, passeport, permis ou titre de séjour en cours de validité."
+            title={t("kycs.idTitle")}
+            subtitle={t("kycs.idSub")}
             doc={identity}
             state={identityState}
             renew={expiring}
@@ -223,8 +227,8 @@ export default function KycScreen() {
           />
           <Step
             index={2}
-            title="Selfie"
-            subtitle="Une photo de votre visage, prise maintenant, pour la comparer à votre pièce."
+            title={t("kycs.selfieTitle")}
+            subtitle={t("kycs.selfieSub")}
             doc={selfie}
             state={selfieState}
             onPress={() => go("selfie")}
@@ -232,11 +236,11 @@ export default function KycScreen() {
 
           {data.verified ? (
             <>
-              <SectionHeader title="Aller plus loin" style={{ marginTop: 12, marginBottom: 12 }} />
+              <SectionHeader title={t("kycs.further")} style={{ marginTop: 12, marginBottom: 12 }} />
               <Step
                 index={3}
-                title="Justificatif de domicile"
-                subtitle="Facture de moins de 3 mois ou relevé bancaire. Relève vos plafonds d'envoi."
+                title={t("kycs.addressTitle")}
+                subtitle={t("kycs.addressSub")}
                 doc={address}
                 state={stateOf(address)}
                 optional
@@ -247,12 +251,12 @@ export default function KycScreen() {
 
           {data.history.length > data.documents.length ? (
             <>
-              <SectionHeader title="Historique" style={{ marginTop: 12, marginBottom: 8 }} />
+              <SectionHeader title={t("kycs.history")} style={{ marginTop: 12, marginBottom: 8 }} />
               {data.history.map((h) => (
                 <View key={h.id} style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 8, gap: 10 }}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <UText v="body" numberOfLines={1}>{KYC_DOC_LABEL[h.type]}</UText>
-                    <UText v="caption" tone="muted">Envoyée le {formatDay(h.createdAt.slice(0, 10))}</UText>
+                    <UText v="caption" tone="muted">{t("kycs.sentOn")} {formatDay(h.createdAt.slice(0, 10))}</UText>
                   </View>
                   <Pill label={KYC_DOC_STATUS_LABEL[h.status]} tone={h.status === "APPROVED" ? "pos" : h.status === "PENDING" ? "info" : "danger"} />
                 </View>

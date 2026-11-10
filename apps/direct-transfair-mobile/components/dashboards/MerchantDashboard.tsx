@@ -24,12 +24,14 @@ import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
 import { SpaceSwitch } from "../home/SpaceSwitch";
 import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, UText, initials, useUI } from "../ui";
 import { PAYMENT_STATUS_LABEL, money, shortDateTime } from "../merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
 
 function PaymentLine({ p, last, onPress }: { p: PaymentRequestView; last: boolean; onPress: () => void }) {
   const { C } = useUI();
-  const name = p.payer?.name ?? (p.method === "QR" ? "Paiement par QR" : p.payerPhone ?? "Client");
+  const t = useT();
+  const name = p.payer?.name ?? (p.method === "QR" ? t("mhome.qrPayment") : p.payerPhone ?? t("mhome.customer"));
   const when = shortDateTime(p.paidAt ?? p.createdAt);
-  const sub = p.status === "PAID" ? `${when} · ${p.method === "QR" ? "QR code" : "Orange"}` : `${PAYMENT_STATUS_LABEL[p.status]} · ${when}`;
+  const sub = p.status === "PAID" ? `${when} · ${p.method === "QR" ? t("mhome.viaQr") : "Orange"}` : `${PAYMENT_STATUS_LABEL[p.status]} · ${when}`;
   const paid = p.status === "PAID";
   return (
     <Pressable
@@ -54,6 +56,7 @@ function PaymentLine({ p, last, onPress }: { p: PaymentRequestView; last: boolea
 export default function MerchantDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const t = useT();
   const [hidden, toggleHidden] = useBalanceHidden();
 
   const { data, status, error, refreshing, reload, refresh } = useLoader(async () => {
@@ -71,7 +74,7 @@ export default function MerchantDashboard() {
   const currency = user?.primaryCurrency ?? shopWallets[0]?.currency ?? data?.summary?.total[0]?.currency ?? "XOF";
   const wallet = shopWallets.find((w) => w.currency === currency) ?? shopWallets[0];
   const balance = toNum(wallet?.available ?? 0);
-  const today = data?.summary?.today.find((t) => t.currency === currency) ?? data?.summary?.today[0];
+  const today = data?.summary?.today.find((x) => x.currency === currency) ?? data?.summary?.today[0];
   const profile = data?.me.profile ?? null;
   const suspended = profile?.status === "SUSPENDED";
   const { C } = useUI();
@@ -79,7 +82,7 @@ export default function MerchantDashboard() {
   if (status === "error" && !data) {
     return (
       <Screen tabSpace>
-        <ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} />
+        <ErrorView title={error?.title ?? t("state.error")} message={error?.message ?? t("state.loadFailed")} onRetry={reload} />
       </Screen>
     );
   }
@@ -87,17 +90,17 @@ export default function MerchantDashboard() {
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       <HomeTopBar
-        name={profile?.businessName ?? user?.firstName ?? "Mon commerce"}
+        name={profile?.businessName ?? user?.firstName ?? t("mhome.myShop")}
         onScan={() => router.push("/merchant/collect" as any)}
         scanIcon="qr-code-outline"
-        scanLabel="Encaisser"
+        scanLabel={t("mhome.collect")}
         onBell={() => router.push("/(tabs)/notifications")}
       />
 
       <SpaceSwitch style={{ marginTop: 4 }} />
 
       <BalanceBlock
-        label="Solde marchand"
+        label={t("mhome.balance")}
         amount={balance}
         currency={currency}
         countryName={(user as any)?.country}
@@ -107,33 +110,33 @@ export default function MerchantDashboard() {
       >
         {status !== "loading" && (
           <UText v="body" tone="muted" style={{ marginTop: 18 }}>
-            Aujourd'hui : <Text style={{ color: C.ink, fontWeight: "700" }}>{hidden ? "••••" : money(today?.net ?? 0, today?.currency ?? currency)}</Text>
-            {` · ${today?.count ?? 0} paiement${(today?.count ?? 0) > 1 ? "s" : ""}`}
-            {(today?.refundsCount ?? 0) > 0 ? ` · ${hidden ? "••" : today?.refundsCount} remboursé${(today?.refundsCount ?? 0) > 1 ? "s" : ""}` : ""}
+            {t("mhome.today")}<Text style={{ color: C.ink, fontWeight: "700" }}>{hidden ? "••••" : money(today?.net ?? 0, today?.currency ?? currency)}</Text>
+            {` · ${t("mhome.payments", { count: today?.count ?? 0 })}`}
+            {(today?.refundsCount ?? 0) > 0 ? ` · ${hidden ? "••" : t("mhome.refunded", { count: today?.refundsCount ?? 0 })}` : ""}
           </UText>
         )}
       </BalanceBlock>
 
       {suspended ? (
-        <Notice tone="danger" title="Encaissements suspendus" style={{ marginTop: 22 }}>
-          {profile?.suspendedReason ?? "Votre espace marchand est suspendu. Contactez l'assistance."}
+        <Notice tone="danger" title={t("mhome.suspendedTitle")} style={{ marginTop: 22 }}>
+          {profile?.suspendedReason ?? t("mhome.suspendedMsg")}
         </Notice>
       ) : null}
 
       <View style={{ gap: 12, marginTop: 30 }}>
-        <Button label="Encaisser" disabled={suspended} onPress={() => router.push("/merchant/collect" as any)} testID="home-collect" />
-        <Button label="Retirer mes gains" kind="outline" onPress={() => router.push("/merchant/payouts" as any)} testID="home-payout" />
+        <Button label={t("mhome.collect")} disabled={suspended} onPress={() => router.push("/merchant/collect" as any)} testID="home-collect" />
+        <Button label={t("mhome.payout")} kind="outline" onPress={() => router.push("/merchant/payouts" as any)} testID="home-payout" />
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}><Button label="QR de caisse" icon="qr-code-outline" kind="soft" small disabled={suspended} onPress={() => router.push("/merchant/qr" as any)} testID="home-static-qr" /></View>
-          <View style={{ flex: 1 }}><Button label="Clôture" icon="lock-closed-outline" kind="soft" small onPress={() => router.push("/merchant/closing" as any)} testID="home-closing" /></View>
+          <View style={{ flex: 1 }}><Button label={t("mhome.staticQr")} icon="qr-code-outline" kind="soft" small disabled={suspended} onPress={() => router.push("/merchant/qr" as any)} testID="home-static-qr" /></View>
+          <View style={{ flex: 1 }}><Button label={t("mhome.closing")} icon="lock-closed-outline" kind="soft" small onPress={() => router.push("/merchant/closing" as any)} testID="home-closing" /></View>
         </View>
       </View>
 
-      <SectionHeader title="Derniers paiements" action={data?.payments.length ? "Voir tout" : undefined} onAction={() => router.push("/merchant/payments" as any)} />
+      <SectionHeader title={t("mhome.lastPayments")} action={data?.payments.length ? t("home.seeAll") : undefined} onAction={() => router.push("/merchant/payments" as any)} />
       {status === "loading" ? (
         <SkeletonRows rows={2} />
       ) : data && data.payments.length === 0 ? (
-        <EmptyView icon="receipt-outline" title="Aucun paiement" message="Vos encaissements apparaîtront ici." />
+        <EmptyView icon="receipt-outline" title={t("mhome.noPayments")} message={t("mhome.noPaymentsMsg")} />
       ) : (
         data?.payments.map((p, i, all) => (
           <PaymentLine key={p.id} p={p} last={i === all.length - 1} onPress={() => router.push({ pathname: "/merchant/payment", params: { id: p.id } } as any)} />

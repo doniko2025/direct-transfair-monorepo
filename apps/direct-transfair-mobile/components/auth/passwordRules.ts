@@ -10,6 +10,8 @@
 // est une exigence de l'app, qui reste donc compatible avec l'existant.
 // =========================================================
 
+import { tr } from '../../i18n/runtime';
+
 export const PASSWORD_MIN = 10;
 export const PASSWORD_MAX = 35;
 
@@ -41,7 +43,7 @@ export function evaluatePassword(pw: string): PasswordReport {
     if (hasSymbol || pw.length >= 16) extras += 1;
     score = Math.min(4, 2 + (extras >= 2 ? 2 : extras >= 1 ? 1 : 0));
   }
-  const labels = ['', 'Trop court', 'Correct', 'Solide', 'Excellent'];
+  const labels = ['', tr('pw.tooShort'), tr('pw.fair'), tr('pw.good'), tr('pw.excellent')];
   return { lengthOk, hasLetter, hasDigit, hasMixCase, hasSymbol, score: score as PasswordReport['score'], label: labels[score]! };
 }
 

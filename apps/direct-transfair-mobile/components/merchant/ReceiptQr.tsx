@@ -12,6 +12,7 @@ import { Alert, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { receiptVerifyUrl, shareReceipt } from "../../services/merchantDocs";
 import type { PaymentRequestView } from "../../services/merchantTypes";
+import { tr } from "../../i18n/runtime";
 
 function toDataUrl(qr: any): Promise<string | null> {
   return new Promise((resolve) => {
@@ -34,12 +35,12 @@ export function useReceiptSharer(p: PaymentRequestView | null, side: "merchant" 
   const share = useCallback(async () => {
     if (!p) return;
     if (!code || !url) {
-      Alert.alert("Reçu indisponible", "Le code de vérification de ce paiement n'est pas disponible. Mettez l'application à jour puis réessayez.");
+      Alert.alert(tr("rcq.unavailTitle"), tr("rcq.unavailMsg"));
       return;
     }
     const qr = await toDataUrl(ref.current);
     if (!qr) {
-      Alert.alert("Erreur", "Impossible de générer le QR code de vérification du reçu. Réessayez.");
+      Alert.alert(tr("mx.error"), tr("rcq.qrFail"));
       return;
     }
     await shareReceipt(p, side, logo, { qr, url, code });

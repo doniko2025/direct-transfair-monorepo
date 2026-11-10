@@ -19,22 +19,24 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import { useAuth } from "../../../providers/AuthProvider";
 import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
+import { useT } from "../../../providers/I18nProvider";
 import { Avatar, Button, Group, ListRow, NavBar, Pill, Screen, UText } from "../../../components/ui";
 
 export default function AccountMenuScreen() {
+  const t = useT();
   const router = useRouter();
   const { user, logout } = useAuth();
   const photo = useProfilePhoto();
 
   const handleLogout = async () => {
     if (Platform.OS === "web") {
-      if (window.confirm("Voulez-vous vraiment vous déconnecter ?")) await logout();
+      if (window.confirm(t("accm.logoutConfirm"))) await logout();
       return;
     }
-    Alert.alert("Déconnexion", "Voulez-vous vraiment vous déconnecter ?", [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("accm.logoutTitle"), t("accm.logoutConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Oui",
+        text: t("accm.yes"),
         style: "destructive",
         onPress: async () => {
           await logout();
@@ -45,12 +47,12 @@ export default function AccountMenuScreen() {
     ]);
   };
 
-  const fullName = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || "Client";
+  const fullName = `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || t("accm.client");
 
   return (
     <Screen
-      header={<NavBar title="Mon compte" onBack={() => router.back()} />}
-      footer={<Button label="Me déconnecter" kind="danger" icon="log-out-outline" onPress={handleLogout} />}
+      header={<NavBar title={t("prof.myAccount")} onBack={() => router.back()} />}
+      footer={<Button label={t("accm.logoutBtn")} kind="danger" icon="log-out-outline" onPress={handleLogout} />}
     >
       {/* Identité */}
       <View style={{ alignItems: "center", paddingVertical: 10, gap: 10 }}>
@@ -63,17 +65,17 @@ export default function AccountMenuScreen() {
       <Group style={{ marginTop: 22 }}>
         <ListRow
           icon="person-outline"
-          title="Mes informations personnelles"
+          title={t("accm.personal")}
           onPress={() => router.push("/(tabs)/profile/personal-info")}
         />
         <ListRow
           icon="phone-portrait-outline"
-          title="Mes appareils"
+          title={t("accm.devices")}
           onPress={() => router.push("/(tabs)/profile/devices")}
         />
         <ListRow
           icon="keypad-outline"
-          title="Modifier mon code secret"
+          title={t("prof.changePin")}
           onPress={() => router.push("/(tabs)/profile/security")}
           last
         />
@@ -84,7 +86,7 @@ export default function AccountMenuScreen() {
         style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 20, opacity: pressed ? 0.6 : 1 })}
       >
         <Ionicons name="warning-outline" size={14} color="#8B887F" />
-        <UText v="caption" tone="muted">Supprimer mon compte</UText>
+        <UText v="caption" tone="muted">{t("prof.deleteAccount")}</UText>
       </Pressable>
     </Screen>
   );

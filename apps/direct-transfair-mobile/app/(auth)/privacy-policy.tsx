@@ -19,6 +19,8 @@ import { Ionicons } from '../../components/ui/Icon';
 import { Text } from '../../components/ui/Text';
 import { useTenant } from '../../providers/TenantProvider';
 import { getDpoEmail, getDataAuthority } from '../../services/platformConfig';
+import { useT } from '../../providers/I18nProvider';
+import { rich } from '../../utils/richText';
 const T = {
   bg:         "#FFFFFF",
   surface:    "#FFFFFF",
@@ -113,6 +115,7 @@ const rbS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function PrivacyPolicyScreen() {
+  const t = useT();
   // ✅ phase 7 : marque, raison sociale, régulateur, DPO et autorité de protection viennent du tenant / de la configuration.
   const { branding } = useTenant();
   const brandName = branding.name;
@@ -120,7 +123,7 @@ export default function PrivacyPolicyScreen() {
   const regulatorAcronym = branding.regulatorAcronym;
   const regulatorLabel = branding.regulatorName
     ? `${branding.regulatorName}${regulatorAcronym ? ` (${regulatorAcronym})` : ""}`
-    : "l'autorité de supervision compétente";
+    : t("pp.authorityDefault");
   const dpoEmail = getDpoEmail() || branding.contactEmail || branding.supportEmail || "";
   const authority = getDataAuthority();
   const router = useRouter();
@@ -137,14 +140,14 @@ export default function PrivacyPolicyScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>
-              Politique de confidentialité
+              {t("pp.title")}
             </Text>
             <Text style={[s.headerSub, { fontFamily: T.font.sans }]}>
-              Mise à jour : Juin 2025
+              {t("pp.updated")}
             </Text>
           </View>
           <View style={[s.gdprBadge]}>
-            <Text style={[s.gdprTxt, { fontFamily: T.font.sans }]}>RGPD</Text>
+            <Text style={[s.gdprTxt, { fontFamily: T.font.sans }]}>{t("pp.badge")}</Text>
           </View>
         </View>
 
@@ -156,88 +159,84 @@ export default function PrivacyPolicyScreen() {
           <View style={s.introBanner}>
             <Ionicons name="shield-checkmark" size={22} color={T.accent} />
             <Text style={[s.introTxt, { fontFamily: T.font.sans }]}>
-              {brandName} s'engage à protéger vos données personnelles conformément au Règlement Général sur la Protection des Données (RGPD — UE 2016/679) et à la loi Informatique et Libertés.
+              {t("pp.intro", { app: brandName })}
             </Text>
           </View>
 
           {/* 1. Responsable */}
-          <Section icon="business-outline" title="1. Responsable du traitement" color={T.accent} bgColor={T.accentSoft}>
-            <Para>
-              Le responsable du traitement de vos données personnelles est la société <Text style={{ fontWeight: "700", color: T.text }}>{legalName}</Text>, immatriculée au Registre du Commerce et des Sociétés.
-            </Para>
-            <Para>
-              En qualité d'établissement de paiement, {brandName} est soumis à la supervision de {regulatorLabel} et au respect des obligations LCB-FT (Lutte contre le Blanchiment de Capitaux et le Financement du Terrorisme).
-            </Para>
+          <Section icon="business-outline" title={t("pp.s1")} color={T.accent} bgColor={T.accentSoft}>
+            <Para>{rich(t("pp.s1p1", { legal: legalName }), T.text)}</Para>
+            <Para>{t("pp.s1p2", { app: brandName, regulator: regulatorLabel })}</Para>
           </Section>
 
           {/* 2. Données collectées */}
-          <Section icon="document-text-outline" title="2. Données collectées" color={T.blue} bgColor={T.blueSoft}>
-            <Para>Dans le cadre de nos services de transfert d'argent, nous collectons les catégories de données suivantes :</Para>
+          <Section icon="document-text-outline" title={t("pp.s2")} color={T.blue} bgColor={T.blueSoft}>
+            <Para>{t("pp.s2intro")}</Para>
 
-            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>Données d'identité (KYC)</Text>
-            <Bullet>Nom, prénom, date et lieu de naissance</Bullet>
-            <Bullet>Nationalité et pays de résidence</Bullet>
-            <Bullet>Pièces d'identité (CNI, passeport, titre de séjour)</Bullet>
-            <Bullet>Justificatif de domicile</Bullet>
-            <Bullet>Selfie de vérification biométrique</Bullet>
+            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>{t("pp.subId")}</Text>
+            <Bullet>{t("pp.id1")}</Bullet>
+            <Bullet>{t("pp.id2")}</Bullet>
+            <Bullet>{t("pp.id3")}</Bullet>
+            <Bullet>{t("pp.id4")}</Bullet>
+            <Bullet>{t("pp.id5")}</Bullet>
 
-            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>Données de contact</Text>
-            <Bullet>Adresse email et numéro de téléphone</Bullet>
-            <Bullet>Adresse postale complète</Bullet>
+            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>{t("pp.subContact")}</Text>
+            <Bullet>{t("pp.ct1")}</Bullet>
+            <Bullet>{t("pp.ct2")}</Bullet>
 
-            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>Données financières</Text>
-            <Bullet>Historique des transactions et virements</Bullet>
-            <Bullet>Coordonnées bancaires (IBAN, BIC)</Bullet>
-            <Bullet>Numéros de mobile money (Orange Money, Wave, etc.)</Bullet>
-            <Bullet>Montants, devises et bénéficiaires des transferts</Bullet>
+            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>{t("pp.subFin")}</Text>
+            <Bullet>{t("pp.fn1")}</Bullet>
+            <Bullet>{t("pp.fn2")}</Bullet>
+            <Bullet>{t("pp.fn3")}</Bullet>
+            <Bullet>{t("pp.fn4")}</Bullet>
 
-            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>Données techniques</Text>
-            <Bullet>Adresse IP et informations de connexion</Bullet>
-            <Bullet>Identifiant d'appareil et système d'exploitation</Bullet>
-            <Bullet>Journaux d'activité et cookies de session</Bullet>
+            <Text style={[s.subTitle, { fontFamily: T.font.sans }]}>{t("pp.subTech")}</Text>
+            <Bullet>{t("pp.tc1")}</Bullet>
+            <Bullet>{t("pp.tc2")}</Bullet>
+            <Bullet>{t("pp.tc3")}</Bullet>
           </Section>
 
           {/* 3. Finalités */}
-          <Section icon="analytics-outline" title="3. Finalités du traitement" color="#7C3AED" bgColor="#F5F3FF">
-            <Para>Vos données sont traitées pour les finalités suivantes, sur les bases légales indiquées :</Para>
-            <Bullet><Text style={{ fontWeight: "700" }}>Exécution du contrat :</Text> traitement des transferts, gestion de votre compte, service client</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Obligation légale :</Text> vérification d'identité (KYC), lutte contre le blanchiment (LCB-FT), déclaration de soupçon à Tracfin</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Intérêt légitime :</Text> prévention de la fraude, sécurité informatique, amélioration du service</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Consentement :</Text> notifications marketing, cookies non essentiels</Bullet>
+          <Section icon="analytics-outline" title={t("pp.s3")} color="#7C3AED" bgColor="#F5F3FF">
+            <Para>{t("pp.s3intro")}</Para>
+            <Bullet>{rich(t("pp.s3b1"))}</Bullet>
+            <Bullet>{rich(t("pp.s3b2"))}</Bullet>
+            <Bullet>{rich(t("pp.s3b3"))}</Bullet>
+            <Bullet>{rich(t("pp.s3b4"))}</Bullet>
           </Section>
 
           {/* 4. Partage */}
-          <Section icon="share-social-outline" title="4. Partage des données" color={T.amber} bgColor={T.amberSoft}>
-            <Para>Vos données peuvent être transmises aux catégories de destinataires suivantes :</Para>
-            <Bullet>Partenaires bancaires et établissements de paiement pour l'exécution des virements</Bullet>
-            <Bullet>Prestataires de vérification d'identité (KYC) et de scoring anti-fraude</Bullet>
-            <Bullet>Autorités réglementaires ({regulatorAcronym ? `${regulatorAcronym}, ` : ""}autorités de lutte contre le blanchiment, autorités judiciaires) sur réquisition légale</Bullet>
-            <Bullet>Prestataires techniques (hébergement, messagerie, push notifications) soumis à des accords de traitement</Bullet>
+          <Section icon="share-social-outline" title={t("pp.s4")} color={T.amber} bgColor={T.amberSoft}>
+            <Para>{t("pp.s4intro")}</Para>
+            <Bullet>{t("pp.s4b1")}</Bullet>
+            <Bullet>{t("pp.s4b2")}</Bullet>
+            <Bullet>{t("pp.s4b3", { acronym: regulatorAcronym ? `${regulatorAcronym}, ` : "" })}</Bullet>
+            <Bullet>{t("pp.s4b4")}</Bullet>
             <Para>
-            <Text style={{ fontWeight: "700", color: T.text, marginTop: 6 }}>Aucune donnée n'est vendue à des tiers à des fins publicitaires.</Text>
+            <Text style={{ fontWeight: "700", color: T.text, marginTop: 6 }}>{t("pp.s4none")}</Text>
             </Para>
           </Section>
 
           {/* 5. Conservation */}
-          <Section icon="time-outline" title="5. Durées de conservation" color="#0284C7" bgColor="#E0F2FE">
-            <Bullet><Text style={{ fontWeight: "700" }}>Données de transaction :</Text> 10 ans à compter de la date de l'opération (obligation LCB-FT)</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Documents KYC :</Text> 5 ans après la fin de la relation commerciale</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Données de connexion :</Text> 12 mois (LCEN)</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Données de compte actif :</Text> durée de la relation + 3 ans</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>Cookies :</Text> 13 mois maximum</Bullet>
+          <Section icon="time-outline" title={t("pp.s5")} color="#0284C7" bgColor="#E0F2FE">
+            <Bullet>{rich(t("pp.s5b1"))}</Bullet>
+            <Bullet>{rich(t("pp.s5b2"))}</Bullet>
+            <Bullet>{rich(t("pp.s5b3"))}</Bullet>
+            <Bullet>{rich(t("pp.s5b4"))}</Bullet>
+            <Bullet>{rich(t("pp.s5b5"))}</Bullet>
           </Section>
 
           {/* 6. Vos droits */}
-          <Section icon="person-circle-outline" title="6. Vos droits RGPD" color={T.accent} bgColor={T.accentSoft}>
-            <Para>Conformément au RGPD, vous disposez des droits suivants :</Para>
-            <RightBox icon="eye-outline"         title="Droit d'accès"       desc="Obtenir une copie de toutes vos données personnelles que nous détenons." />
-            <RightBox icon="pencil-outline"      title="Droit de rectification" desc="Corriger toute donnée inexacte ou incomplète vous concernant." />
-            <RightBox icon="trash-outline"       title="Droit à l'effacement" desc="Demander la suppression de vos données (sous réserve des obligations légales de conservation)." />
-            <RightBox icon="hand-left-outline"   title="Droit d'opposition"  desc="Vous opposer au traitement de vos données à des fins de marketing ou de profilage." />
-            <RightBox icon="download-outline"    title="Droit à la portabilité" desc="Recevoir vos données dans un format structuré et lisible par machine." />
-            <RightBox icon="pause-circle-outline" title="Droit à la limitation" desc="Demander la suspension du traitement dans certaines circonstances." />
+          <Section icon="person-circle-outline" title={t("pp.s6")} color={T.accent} bgColor={T.accentSoft}>
+            <Para>{t("pp.s6intro")}</Para>
+            <RightBox icon="eye-outline"         title={t("pp.r1t")} desc={t("pp.r1d")} />
+            <RightBox icon="pencil-outline"      title={t("pp.r2t")} desc={t("pp.r2d")} />
+            <RightBox icon="trash-outline"       title={t("pp.r3t")} desc={t("pp.r3d")} />
+            <RightBox icon="hand-left-outline"   title={t("pp.r4t")} desc={t("pp.r4d")} />
+            <RightBox icon="download-outline"    title={t("pp.r5t")} desc={t("pp.r5d")} />
+            <RightBox icon="pause-circle-outline" title={t("pp.r6t")} desc={t("pp.r6d")} />
             <Para>
-              Pour exercer vos droits, contactez notre Délégué à la Protection des Données :{"\n"}
+              {t("pp.exercise")}{"\n"}
               <Text
                 style={{ color: T.blue, fontWeight: "700", textDecorationLine: "underline" }}
                 onPress={() => Linking.openURL(`mailto:${dpoEmail}`)}
@@ -246,7 +245,7 @@ export default function PrivacyPolicyScreen() {
               </Text>
             </Para>
             <Para>
-              Vous pouvez également introduire une réclamation auprès de la <Text style={{ fontWeight: "700" }}>{authority.name}</Text> (Commission Nationale de l'Informatique et des Libertés) sur{" "}
+              {rich(t("pp.complaint", { authority: authority.name }))}
               <Text
                 style={{ color: T.blue, textDecorationLine: "underline" }}
                 onPress={() => Linking.openURL(authority.url)}
@@ -257,24 +256,24 @@ export default function PrivacyPolicyScreen() {
           </Section>
 
           {/* 7. Sécurité */}
-          <Section icon="lock-closed-outline" title="7. Sécurité des données" color="#DC2626" bgColor="#FEF2F2">
+          <Section icon="lock-closed-outline" title={t("pp.s7")} color="#DC2626" bgColor="#FEF2F2">
             <Para>
-              {brandName} met en œuvre des mesures techniques et organisationnelles appropriées pour protéger vos données contre tout accès non autorisé, perte, destruction ou divulgation :
+              {t("pp.s7intro", { app: brandName })}
             </Para>
-            <Bullet>Chiffrement TLS 1.3 pour toutes les communications</Bullet>
-            <Bullet>Authentification forte (MFA / biométrie)</Bullet>
-            <Bullet>Hébergement sur infrastructure certifiée ISO 27001</Bullet>
-            <Bullet>Journalisation et surveillance des accès 24h/24</Bullet>
-            <Bullet>Hachage irréversible des mots de passe (bcrypt)</Bullet>
+            <Bullet>{t("pp.s7b1")}</Bullet>
+            <Bullet>{t("pp.s7b2")}</Bullet>
+            <Bullet>{t("pp.s7b3")}</Bullet>
+            <Bullet>{t("pp.s7b4")}</Bullet>
+            <Bullet>{t("pp.s7b5")}</Bullet>
           </Section>
 
           {/* 8. Contact */}
           <View style={s.contactCard}>
             <Ionicons name="mail-outline" size={20} color={T.accent} />
             <View style={{ flex: 1 }}>
-              <Text style={[s.contactTitle, { fontFamily: T.font.sans }]}>Contact DPO</Text>
+              <Text style={[s.contactTitle, { fontFamily: T.font.sans }]}>{t("pp.contactTitle")}</Text>
               <Text style={[s.contactDesc,  { fontFamily: T.font.sans }]}>
-                Pour toute question relative à vos données personnelles :
+                {t("pp.contactDesc")}
               </Text>
               <Text
                 style={[s.contactLink, { fontFamily: T.font.mono }]}
@@ -286,7 +285,7 @@ export default function PrivacyPolicyScreen() {
           </View>
 
           <Text style={[s.version, { fontFamily: T.font.mono }]}>
-            Version 1.0 — Entrée en vigueur : 1er Juin 2025
+            {t("pp.version")}
           </Text>
 
           <View style={{ height: 40 }} />

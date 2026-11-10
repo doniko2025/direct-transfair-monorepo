@@ -17,12 +17,14 @@ import type { MerchantMe } from "../../services/merchantTypes";
 import { useLoader } from "../../components/wallet/useLoader";
 import { Button, Card, ErrorView, Field, NavBar, Notice, Screen, SectionHeader, SkeletonRows, Toggle, UText, useUI } from "../../components/ui";
 import { Group, ListRow } from "../../components/ui/Layout";
+import { LanguageRow } from "../../components/i18n/LanguageSwitcher";
+import { useT } from "../../providers/I18nProvider";
 import { ShopAvatar } from "../../components/merchant/ShopAvatar";
 import { ShopLogoSheet } from "../../components/merchant/ShopLogoSheet";
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { OptionPicker } from "../../components/ui/OptionPicker";
-import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, shortDateTime } from "../../components/merchant/merchantUi";
+import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, categoryLabel, shortDateTime } from "../../components/merchant/merchantUi";
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
 import { RccmDocumentCard } from "../../components/merchant/RccmDocumentPicker";
 import { BusinessInfoFields, type BusinessInfoValue } from "../../components/merchant/BusinessInfoFields";
@@ -32,6 +34,7 @@ import {
 import { fixedDialFor, isOrangeMoneyCurrency, orangeHintFor, ORANGE_NOT_AVAILABLE_TEXT, validateOrangeFor } from "../../services/orangeRules";
 
 function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
+  const t = useT();
   const profile = me.profile!;
   const [name, setName] = useState(profile.businessName);
   const [category, setCategory] = useState<string | null>(profile.category);
@@ -93,7 +96,7 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
     setMsg(null);
     try {
       await api.updateMerchantProfile(changed);
-      setMsg({ tone: "pos", text: "Informations du commerce enregistrées." });
+      setMsg({ tone: "pos", text: t("mset.saved") });
       onSaved();
     } catch (e) {
       setMsg({ tone: "danger", text: apiProblem(e).message });
@@ -107,28 +110,29 @@ function ProfileForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
       {!rccmLocked && (
         <Notice tone="warn" icon="document-text-outline" style={{ marginBottom: 14 }}>
-          Le numéro RCCM est désormais obligatoire pour les comptes marchands. Renseignez-le pour mettre votre fiche en règle.
+          {t("mset.rccmRequired")}
         </Notice>
       )}
       {addressMissing && (
         <Notice tone="warn" icon="location-outline" style={{ marginBottom: 14 }}>
-          Complétez l'adresse et la ville de votre commerce pour mettre votre fiche en règle.
+          {t("mset.addrMissing")}
         </Notice>
       )}
-      <Field label="Nom du commerce" icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
+      <Field label={t("mset.shopName")} icon="storefront-outline" value={name} onChangeText={setName} autoCapitalize="words" maxLength={80} />
       <Field
-        label="Numéro RCCM" icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
+        label={t("mset.rccm")} icon="document-text-outline" value={rccm} onChangeText={setRccm} autoCapitalize="characters" maxLength={40}
         editable={!rccmLocked} placeholder={RCCM_EXAMPLE} error={rccmError}
-        hint={rccmLocked ? "Pour modifier ce numéro, contactez le support." : "Registre du Commerce et du Crédit Mobilier."}
+        hint={rccmLocked ? t("mset.rccmLocked") : t("mset.rccmHint")}
       />
-      <OptionPicker label="Catégorie" title="Catégorie du commerce" icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: c }))} onChange={setCategory} placeholder="Choisir une catégorie" />
+      <OptionPicker label={t("mset.category")} title={t("mset.categoryTitle")} icon="pricetag-outline" value={category} options={categories.map((c) => ({ key: c, label: categoryLabel(c) }))} onChange={setCategory} placeholder={t("mset.categoryPh")} />
       <BusinessInfoFields value={info} onChange={patchInfo} errors={infoErrors} />
-      <Button label="Enregistrer" disabled={!dirty || name.trim().length < 2} loading={busy} onPress={save} />
+      <Button label={t("common.save")} disabled={!dirty || name.trim().length < 2} loading={busy} onPress={save} />
     </Card>
   );
 }
 
 function LogoCard({ me, onChanged }: { me: MerchantMe; onChanged: () => void }) {
+  const t = useT();
   const profile = me.profile!;
   const [open, setOpen] = useState(false);
   return (
@@ -136,17 +140,18 @@ function LogoCard({ me, onChanged }: { me: MerchantMe; onChanged: () => void }) 
       <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
         <ShopAvatar shopId={profile.shopId} version={profile.logoVersion} name={profile.businessName} size={64} />
         <View style={{ flex: 1 }}>
-          <UText v="bodyStrong">{profile.logoVersion ? "Logo du commerce" : "Aucun logo"}</UText>
-          <UText v="caption" tone="muted">Visible par vos clients au moment de payer, sur les reçus et sur l'affiche du QR de caisse.</UText>
+          <UText v="bodyStrong">{profile.logoVersion ? t("mset.logoTitle") : t("mset.noLogo")}</UText>
+          <UText v="caption" tone="muted">{t("mset.logoInfo")}</UText>
         </View>
       </View>
-      <Button label={profile.logoVersion ? "Changer le logo" : "Ajouter un logo"} icon="image-outline" kind="outline" small full={false} onPress={() => setOpen(true)} style={{ marginTop: 14 }} />
+      <Button label={profile.logoVersion ? t("mset.logoChange") : t("mset.logoAdd")} icon="image-outline" kind="outline" small full={false} onPress={() => setOpen(true)} style={{ marginTop: 14 }} />
       <ShopLogoSheet visible={open} onClose={() => setOpen(false)} shopId={profile.shopId} hasLogo={!!profile.logoVersion} onChanged={onChanged} />
     </Card>
   );
 }
 
 function AlertsCard({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
+  const t = useT();
   const profile = me.profile!;
   const currency = me.currency ?? "XOF";
   const [threshold, setThreshold] = useState(profile.alerts?.lowBalanceThreshold ? String(profile.alerts.lowBalanceThreshold) : "");
@@ -161,7 +166,7 @@ function AlertsCard({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
     try {
       const n = Number(threshold);
       await api.updateMerchantAlerts({ lowBalanceThreshold: threshold.trim() && n > 0 ? n : null, failureAlertsEnabled: failures });
-      setMsg({ tone: "pos", text: "Alertes enregistrées." });
+      setMsg({ tone: "pos", text: t("mset.alertsSaved") });
       onSaved();
     } catch (e) { setMsg({ tone: "danger", text: apiProblem(e).message }); }
     finally { setBusy(false); }
@@ -171,24 +176,25 @@ function AlertsCard({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
     <Card pad={20}>
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
       <Field
-        label={`Prévenez-moi si le solde disponible passe sous (${currency})`}
+        label={t("mset.lowBalance", { currency })}
         icon="notifications-outline" value={threshold} keyboardType="number-pad"
-        onChangeText={(t) => setThreshold(t.replace(/[^0-9]/g, ""))}
-        hint="Laissez vide pour désactiver. Une seule alerte, réarmée quand le solde remonte."
+        onChangeText={(v) => setThreshold(v.replace(/[^0-9]/g, ""))}
+        hint={t("mset.lowBalanceHint")}
       />
       <View style={{ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 4, marginBottom: 14 }}>
         <View style={{ flex: 1 }}>
-          <UText v="bodyStrong">Échecs de paiement répétés</UText>
-          <UText v="caption" tone="muted">Alerte si plusieurs paiements échouent en peu de temps (solde client insuffisant, code erroné…).</UText>
+          <UText v="bodyStrong">{t("mset.failures")}</UText>
+          <UText v="caption" tone="muted">{t("mset.failuresInfo")}</UText>
         </View>
         <Toggle value={failures} onValueChange={setFailures} />
       </View>
-      <Button label="Enregistrer les alertes" disabled={!dirty} loading={busy} onPress={save} />
+      <Button label={t("mset.saveAlerts")} disabled={!dirty} loading={busy} onPress={save} />
     </Card>
   );
 }
 
 function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
+  const t = useT();
   const { C } = useUI();
   const profile = me.profile!;
   const bankEnabled = me.settings.payoutMethods.includes("BANK_TRANSFER");
@@ -212,7 +218,7 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
   const wantsBank = bankEnabled && iban.trim().length > 0;
   const phoneProblem = (): string | null => (wantsPhone ? validatePhone(phone) ?? validateOrangeFor(fullPhone, currency) : null);
   const phoneError = showErrors ? phoneProblem() : null;
-  const holderError = showErrors && wantsBank && holder.trim().length < 2 ? "Saisissez le titulaire du compte." : null;
+  const holderError = showErrors && wantsBank && holder.trim().length < 2 ? t("mset.holderRequired") : null;
   const nothing = !wantsPhone && !wantsBank;
 
   const submit = async () => {
@@ -229,7 +235,7 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
       });
       setOpen(false);
       setPhone(""); setIban(""); setHolder(""); setBic(""); setPin(""); setShowErrors(false);
-      setMsg({ tone: "pos", text: "Destination de retrait mise à jour. Vous avez reçu une notification de confirmation." });
+      setMsg({ tone: "pos", text: t("mset.destSaved") });
       onSaved();
     } catch (e) {
       const pr = apiProblem(e);
@@ -246,7 +252,7 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
       {me.orangeNeedsUpdate && (
         <Notice tone="warn" style={{ marginBottom: 14 }}>
-          Votre numéro Orange Money ne correspond pas à la devise de votre compte ({currency}). Enregistrez un numéro valide pour pouvoir retirer vos gains{orangeAllowed ? "" : " — ou utilisez un compte bancaire (IBAN)"}.
+          {t("mset.orangeMismatch", { currency })}{orangeAllowed ? "" : t("mset.orInstead")}
         </Notice>
       )}
       {orangeAllowed ? (
@@ -259,20 +265,20 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
       )}
       {bankEnabled && (
         <>
-          <UText v="caption" tone="muted">Compte bancaire (virement)</UText>
-          <UText v="bodyStrong">{profile.bank ? `${profile.bank.holderName ?? ""} · ${profile.bank.ibanMasked}` : "Non renseigné"}</UText>
+          <UText v="caption" tone="muted">{t("mset.bankAccount")}</UText>
+          <UText v="bodyStrong">{profile.bank ? `${profile.bank.holderName ?? ""} · ${profile.bank.ibanMasked}` : t("mset.notSet")}</UText>
         </>
       )}
       {profile.destinationChangedAt && (
-        <UText v="caption" tone="muted" style={{ marginTop: 10 }}>Dernière modification : {shortDateTime(profile.destinationChangedAt)}</UText>
+        <UText v="caption" tone="muted" style={{ marginTop: 10 }}>{t("mset.lastChange", { date: shortDateTime(profile.destinationChangedAt) })}</UText>
       )}
 
       {!open ? (
-        <Button label="Modifier la destination" kind="outline" icon="create-outline" onPress={() => setOpen(true)} style={{ marginTop: 16 }} />
+        <Button label={t("mset.changeDest")} kind="outline" icon="create-outline" onPress={() => setOpen(true)} style={{ marginTop: 16 }} />
       ) : (
         <View style={{ marginTop: 18 }}>
           <Notice tone="warn" style={{ marginBottom: 16 }}>
-            Pour votre sécurité, votre code secret est demandé et les retraits sont suspendus {me.settings.payoutCooldownHours} h après le changement.
+            {t("mset.secNotice", { hours: me.settings.payoutCooldownHours })}
           </Notice>
           {orangeAllowed && (
             <PhoneField
@@ -281,21 +287,21 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
               value={phone}
               onChangeText={setPhone}
               error={phoneError}
-              hint={`Nouveau numéro Orange Money (laisser vide pour le conserver). ${orangeHintFor(currency)}`}
+              hint={t("mset.newOrange", { hint: orangeHintFor(currency) })}
               accent={C.accent}
             />
           )}
           {bankEnabled && (
             <>
-              <Field label="Titulaire du compte bancaire" icon="person-outline" value={holder} onChangeText={setHolder} autoCapitalize="words" error={holderError} />
-              <Field label="IBAN (laisser vide pour ne pas changer)" icon="business-outline" value={iban} onChangeText={(t) => setIban(t.toUpperCase())} autoCapitalize="characters" maxLength={42} />
-              <Field label="BIC (facultatif)" icon="card-outline" value={bic} onChangeText={(t) => setBic(t.toUpperCase())} autoCapitalize="characters" maxLength={11} />
+              <Field label={t("mset.holder")} icon="person-outline" value={holder} onChangeText={setHolder} autoCapitalize="words" error={holderError} />
+              <Field label={t("mset.iban")} icon="business-outline" value={iban} onChangeText={(v) => setIban(v.toUpperCase())} autoCapitalize="characters" maxLength={42} />
+              <Field label={t("mset.bic")} icon="card-outline" value={bic} onChangeText={(v) => setBic(v.toUpperCase())} autoCapitalize="characters" maxLength={11} />
             </>
           )}
-          <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && nothing ? (orangeAllowed ? "Renseignez au moins un nouveau numéro ou un IBAN." : "Renseignez votre IBAN.") : null)} label="Code secret pour confirmer" />
+          <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError ?? (showErrors && nothing ? (orangeAllowed ? t("mset.needOne") : t("mset.needIban")) : null)} label={t("mpo.pinLabel")} />
           <View style={{ gap: 10 }}>
-            <Button label="Confirmer le changement" loading={busy} disabled={pin.length !== 6} onPress={submit} />
-            <Button label="Annuler" kind="ghost" onPress={() => { setOpen(false); setPin(""); setShowErrors(false); }} />
+            <Button label={t("mset.confirmChange")} loading={busy} disabled={pin.length !== 6} onPress={submit} />
+            <Button label={t("common.cancel")} kind="ghost" onPress={() => { setOpen(false); setPin(""); setShowErrors(false); }} />
           </View>
         </View>
       )}
@@ -304,48 +310,55 @@ function DestinationForm({ me, onSaved }: { me: MerchantMe; onSaved: () => void 
 }
 
 export default function MerchantSettingsScreen() {
+  const t = useT();
   const router = useRouter();
   const { data: me, status, error, refreshing, reload, refresh } = useLoader(() => api.getMerchantMe());
   const go = (path: string) => router.push(path as any);
   // Un rechargement conserve les saisies : on ne remonte les formulaires qu'au changement de fiche.
   const [version, setVersion] = useState(0);
 
-  if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title="Réglages du commerce" />}><SkeletonRows rows={4} /></Screen>;
+  const hdr = <NavBar onBack={() => router.back()} title={t("mset.title")} />;
+  if (status === "loading") return <Screen header={hdr}><SkeletonRows rows={4} /></Screen>;
   if (status === "error" || !me) {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Réglages du commerce" />}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={hdr}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
   if (!me.isMerchant || !me.profile) {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Réglages du commerce" />}><Notice tone="warn">Activez d'abord votre espace marchand.</Notice></Screen>;
+    return <Screen header={hdr}><Notice tone="warn">{t("mset.activateFirst")}</Notice></Screen>;
   }
 
   return (
-    <Screen header={<NavBar onBack={() => router.back()} title="Réglages du commerce" />} refreshing={refreshing} onRefresh={refresh}>
+    <Screen header={hdr} refreshing={refreshing} onRefresh={refresh}>
       <Rise>
-        <SectionHeader title="Mon commerce" style={{ marginTop: 4 }} />
+        <SectionHeader title={t("mset.secMyShop")} style={{ marginTop: 4 }} />
         <ProfileForm key={`p-${me.profile.businessName}-${version}`} me={me} onSaved={() => { reload(); }} />
       </Rise>
       <Rise delay={40}>
-        <SectionHeader title="Pièce justificative" />
+        <SectionHeader title={t("mset.secProof")} />
         <RccmDocumentCard me={me} onChanged={reload} />
       </Rise>
       <Rise delay={60}>
-        <SectionHeader title="Logo" />
+        <SectionHeader title={t("mset.secLogo")} />
         <LogoCard me={me} onChanged={reload} />
       </Rise>
       <Rise delay={80}>
-        <SectionHeader title="Outils de caisse" />
+        <SectionHeader title={t('lang.title')} />
         <Group>
-          <ListRow icon="qr-code-outline" title="QR de caisse permanent" subtitle="À afficher ou imprimer au comptoir" onPress={() => go("/merchant/qr")} />
-          <ListRow icon="people-outline" title="Équipe de caisse" subtitle="Caissiers et droits (remboursement, plafond)" onPress={() => go("/merchant/staff")} />
-          <ListRow icon="lock-closed-outline" title="Clôture & exports" subtitle="Fin de journée, PDF et CSV" onPress={() => go("/merchant/closing")} last />
+          <LanguageRow last />
+        </Group>
+
+        <SectionHeader title={t("mset.secTools")} />
+        <Group>
+          <ListRow icon="qr-code-outline" title={t("mset.toolQr")} subtitle={t("mset.toolQrSub")} onPress={() => go("/merchant/qr")} />
+          <ListRow icon="people-outline" title={t("mset.toolStaff")} subtitle={t("mset.toolStaffSub")} onPress={() => go("/merchant/staff")} />
+          <ListRow icon="lock-closed-outline" title={t("mset.toolClosing")} subtitle={t("mset.toolClosingSub")} onPress={() => go("/merchant/closing")} last />
         </Group>
       </Rise>
       <Rise delay={90}>
-        <SectionHeader title="Alertes" />
+        <SectionHeader title={t("mset.secAlerts")} />
         <AlertsCard key={`a-${me.profile.alerts?.lowBalanceThreshold ?? "x"}-${me.profile.alerts?.failureAlertsEnabled ?? "y"}`} me={me} onSaved={reload} />
       </Rise>
       <Rise delay={100}>
-        <SectionHeader title="Destination des retraits" />
+        <SectionHeader title={t("mset.secDest")} />
         <DestinationForm key={`d-${me.profile.destinationChangedAt ?? "0"}`} me={me} onSaved={() => { setVersion((v) => v + 1); reload(); }} />
       </Rise>
     </Screen>

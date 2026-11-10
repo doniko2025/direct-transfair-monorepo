@@ -293,3 +293,18 @@ export interface PublicTransferCheck {
   /** Un agent peut encore le payer avec ce QR (la page propose alors d'ouvrir l'application). */
   payable: boolean;
 }
+
+/**
+ * Traduit les libellés du reçu (titre, statut, mode de réception, libellé du montant) dans la langue demandée par l'application.
+ * Les montants, noms, dates et la référence ne changent pas. `lang` absent ou « fr » : le document est rendu tel quel.
+ * Le dictionnaire est injecté (translate) pour garder ce fichier sans dépendance : voir transaction-receipts.controller.ts.
+ */
+export function translateReceiptLabels(doc: TransferReceiptDoc, translate: (text: string) => string): TransferReceiptDoc {
+  return {
+    ...doc,
+    title: translate(doc.title),
+    statusLabel: translate(doc.statusLabel),
+    payout: { ...doc.payout, methodLabel: translate(doc.payout.methodLabel) },
+    hero: { ...doc.hero, label: translate(doc.hero.label) },
+  };
+}

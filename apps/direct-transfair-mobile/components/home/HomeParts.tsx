@@ -15,6 +15,7 @@ import { Bone, UText, useUI } from "../ui";
 import { countriesList } from "../../data/countries";
 import { formatMoney } from "../wallet/walletTheme";
 import { useUnreadNotifications } from "../../hooks/useUnreadNotifications";
+import { useT } from "../../providers/I18nProvider";
 
 // ─── Solde masqué (mémorisé sur l'appareil) ──────────────
 const HIDE_KEY = "dt.balanceHidden";
@@ -62,11 +63,12 @@ export function CurrencyFlag({ currency, countryName, size = 28 }: { currency: s
 /** `badge` : nombre (pastille avec le chiffre, « 99+ » au-delà) ou `true` (simple point). 0 / faux : rien. */
 function RoundButton({ icon, label, onPress, badge }: { icon: string; label: string; onPress: () => void; badge?: boolean | number }) {
   const { C } = useUI();
+  const t = useT();
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={typeof badge === "number" && badge > 0 ? `${label} : ${badge} non lue${badge > 1 ? "s" : ""}` : label}
+      accessibilityLabel={typeof badge === "number" && badge > 0 ? t("home.notifUnread", { label, count: badge }) : label}
       hitSlop={6}
       style={({ pressed }) => ({ width: 42, height: 42, borderRadius: 21, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.7 : 1 })}
     >
@@ -87,9 +89,10 @@ function RoundButton({ icon, label, onPress, badge }: { icon: string; label: str
 }
 
 export function HomeTopBar({
-  greeting, name, onScan, onBell, unread, scanIcon = "scan-outline", scanLabel = "Payer avec un QR code",
+  greeting, name, onScan, onBell, unread, scanIcon = "scan-outline", scanLabel,
 }: { greeting?: string; name: string; onScan: () => void; onBell: () => void; unread?: boolean | number; scanIcon?: string; scanLabel?: string }) {
   const { C } = useUI();
+  const t = useT();
   // Nombre de notifications non lues, lu auprès du serveur (une valeur passée en `unread` reste prioritaire).
   const unreadCount = useUnreadNotifications();
   return (
@@ -99,8 +102,8 @@ export function HomeTopBar({
           {greeting ? `${greeting} ` : ""}<Text style={{ color: C.ink, fontWeight: "700" }}>{name}</Text>
         </Text>
       </View>
-      <RoundButton icon={scanIcon} label={scanLabel} onPress={onScan} />
-      <RoundButton icon="notifications-outline" label="Notifications" onPress={onBell} badge={unread ?? unreadCount} />
+      <RoundButton icon={scanIcon} label={scanLabel ?? t("home.scanPay")} onPress={onScan} />
+      <RoundButton icon="notifications-outline" label={t("home.notifications")} onPress={onBell} badge={unread ?? unreadCount} />
     </View>
   );
 }
@@ -118,6 +121,7 @@ export function BalanceBlock({
   hidden: boolean; onToggle: () => void; loading?: boolean; children?: React.ReactNode;
 }) {
   const { C } = useUI();
+  const t = useT();
   return (
     <View style={{ paddingTop: 56 }}>
       <UText v="body" color={C.muted}>{label}</UText>
@@ -127,7 +131,7 @@ export function BalanceBlock({
             <Bone width={200} height={50} radius={12} />
           ) : (
             <Text
-              accessibilityLabel={hidden ? "Solde masqué" : `Solde ${formatMoney(amount, currency)} ${currency}`}
+              accessibilityLabel={hidden ? t("home.balanceHidden") : t("home.balanceA11y", { amount: formatMoney(amount, currency), currency })}
               adjustsFontSizeToFit
               minimumFontScale={0.5}
               numberOfLines={1}
@@ -146,7 +150,7 @@ export function BalanceBlock({
           <Pressable
             onPress={onToggle}
             accessibilityRole="button"
-            accessibilityLabel={hidden ? "Afficher le solde" : "Masquer le solde"}
+            accessibilityLabel={hidden ? t("home.showBalance") : t("home.hideBalance")}
             hitSlop={10}
             style={({ pressed }) => ({
               flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, height: 34, borderRadius: 17,
@@ -154,7 +158,7 @@ export function BalanceBlock({
             })}
           >
             <Ionicons name={hidden ? "eye-outline" : "eye-off-outline"} size={18} color="#444444" />
-            <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "600", color: "#444444" }}>{hidden ? "Afficher" : "Masquer"}</Text>
+            <Text allowFontScaling={false} style={{ fontSize: 13, fontWeight: "600", color: "#444444" }}>{hidden ? t("home.show") : t("home.hide")}</Text>
           </Pressable>
         </View>
       </View>

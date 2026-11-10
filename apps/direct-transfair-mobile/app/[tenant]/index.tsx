@@ -16,11 +16,13 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { useTenant } from "../../providers/TenantProvider";
 import { Button, Pill, Screen, UText, useUI } from "../../components/ui";
+import { useT } from "../../providers/I18nProvider";
 
 export default function TenantRedirectScreen() {
   const { tenant }       = useLocalSearchParams<{ tenant: string }>();
   const { loadBranding, branding } = useTenant();
   const router           = useRouter();
+  const t                = useT();
 
 
   // ── États ───────────────────────────────────────────
@@ -52,10 +54,7 @@ export default function TenantRedirectScreen() {
         router.replace("/(auth)/login");
       } catch {
         setPhase("error");
-        setErrorMsg(
-          `Le code « ${code} » ne correspond à aucune société active.\n` +
-          `Vérifiez le lien reçu ou contactez votre administrateur.`,
-        );
+        setErrorMsg(t("tenant.badCode", { code }));
       }
     };
 
@@ -75,10 +74,10 @@ export default function TenantRedirectScreen() {
         <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: C.dangerBg, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
           <Ionicons name="alert-circle-outline" size={42} color={C.danger} />
         </View>
-        <UText v="title" align="center">Société introuvable</UText>
+        <UText v="title" align="center">{t("tenant.notFound")}</UText>
         <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>{errorMsg}</UText>
         <View style={{ alignSelf: "stretch", marginTop: 22 }}>
-          <Button label="Continuer sans code société" iconRight="arrow-forward" kind="dark" onPress={() => router.replace("/(auth)/login")} />
+          <Button label={t("tenant.continue")} iconRight="arrow-forward" kind="dark" onPress={() => router.replace("/(auth)/login")} />
         </View>
       </Screen>
     );
@@ -87,17 +86,17 @@ export default function TenantRedirectScreen() {
   // ── Rendu chargement / succès ─────────────────────────
   return (
     <Screen scroll={false} contentStyle={{ justifyContent: "center", alignItems: "center", gap: 14 }}>
-      <UText v="title" align="center">{phase === "success" ? branding.name : "Chargement…"}</UText>
+      <UText v="title" align="center">{phase === "success" ? branding.name : t("tenant.loading")}</UText>
       <Pill label={tenantLabel} tone={phase === "success" ? "pos" : "neutral"} icon={phase === "success" ? "checkmark-circle" : undefined} style={{ alignSelf: "center" }} />
       {phase === "loading" ? (
         <>
           <ActivityIndicator color={C.ink} size="large" style={{ marginTop: 18 }} />
-          <UText v="caption" tone="muted">Chargement de votre espace…</UText>
+          <UText v="caption" tone="muted">{t("tenant.loadingSpace")}</UText>
         </>
       ) : (
         <>
-          <UText v="bodyStrong" tone="pos">Espace {companyName || tenantLabel} configuré</UText>
-          <UText v="caption" tone="muted">Redirection en cours…</UText>
+          <UText v="bodyStrong" tone="pos">{t("tenant.ready", { name: companyName || tenantLabel })}</UText>
+          <UText v="caption" tone="muted">{t("tenant.redirecting")}</UText>
         </>
       )}
     </Screen>

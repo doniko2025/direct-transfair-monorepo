@@ -21,6 +21,7 @@ import { Ionicons } from '../ui/Icon';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
 import { Text, TextInput } from '../ui/Text';
+import { useT } from '../../providers/I18nProvider';
 type Props = {
   label: string;
   value: string;
@@ -56,6 +57,7 @@ export default function AuthField({
   autoCapitalize = 'none', autoComplete, textContentType, returnKeyType, onSubmitEditing,
   onBlur, inputRef, maxLength, editable = true, autoFocus, valid, dense = false, leftSlot, accent, testID,
 }: Props) {
+  const t = useT();
   const [focused, setFocused] = useState(false);
   const [reveal, setReveal] = useState(false);
   const hasError = !!error;
@@ -106,7 +108,7 @@ export default function AuthField({
             onPress={() => setReveal((v) => !v)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityRole="button"
-            accessibilityLabel={reveal ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+            accessibilityLabel={reveal ? t('field.hidePassword') : t('field.showPassword')}
           >
             <Ionicons name={reveal ? 'eye-outline' : 'eye-off-outline'} size={20} color={N.muted} />
           </TouchableOpacity>

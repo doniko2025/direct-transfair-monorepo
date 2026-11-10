@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/services/sessionLabel.ts
 // Libellé lisible d'une session (même logique que describeSession du package partagé, que le mobile n'importe pas).
+import { tr } from "../i18n/runtime";
 
 export type SessionKind = "mobile" | "desktop" | "unknown";
 
@@ -29,7 +30,7 @@ export function describeSession(s: Pick<UserSession, "device" | "userAgent">): {
 
   if (/okhttp|CFNetwork|Expo|ReactNative|Darwin/i.test(ua) || (!ua && device)) {
     const platform = os ?? (/ios/i.test(device) ? "iOS" : /android/i.test(device) ? "Android" : null);
-    return { title: platform ? `Application mobile (${platform})` : device || "Application mobile", kind: "mobile" };
+    return { title: platform ? tr("dev.mobileApp", { platform }) : device || tr("dev.mobileAppBare"), kind: "mobile" };
   }
 
   const browser =
@@ -41,7 +42,7 @@ export function describeSession(s: Pick<UserSession, "device" | "userAgent">): {
     : null;
 
   if (browser) {
-    return { title: os ? `${browser} sur ${os}` : browser, kind: os === "Android" || os === "iOS" ? "mobile" : "desktop" };
+    return { title: os ? tr("dev.browserOn", { browser, os }) : browser, kind: os === "Android" || os === "iOS" ? "mobile" : "desktop" };
   }
-  return { title: device || "Appareil inconnu", kind: "unknown" };
+  return { title: device || tr("dev.unknownDevice"), kind: "unknown" };
 }

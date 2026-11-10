@@ -13,8 +13,10 @@ import type { PaymentRequestView } from "../../services/merchantTypes";
 import PayCheckout from "../../components/merchant/PayCheckout";
 import { ErrorView, NavBar, Screen, SkeletonRows } from "../../components/ui";
 import { apiProblem } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
 
 export default function PayRequestScreen() {
+  const t = useT();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const [view, setView] = useState<PaymentRequestView | null>(null);
@@ -40,9 +42,9 @@ export default function PayRequestScreen() {
   const finish = () => router.replace("/pay/requests" as any);
 
   return (
-    <Screen header={<NavBar onBack={() => router.back()} title="Demande de paiement" />}>
+    <Screen header={<NavBar onBack={() => router.back()} title={t("prq.title")} />}>
       {error ? (
-        <ErrorView title="Demande introuvable" message={error} onRetry={load} />
+        <ErrorView title={t("prq.notFound")} message={error} onRetry={load} />
       ) : !view || view.isMine === "PAYEE" ? (
         <SkeletonRows rows={3} />
       ) : (

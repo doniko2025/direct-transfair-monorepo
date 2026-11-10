@@ -20,21 +20,23 @@ import { Ionicons } from '../ui/Icon';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
 import { Text, TextInput } from '../ui/Text';
+import { tr } from '../../i18n/runtime';
+import { useT } from '../../providers/I18nProvider';
 export type Dob = { day: string; month: string; year: string };
 
 /** Retourne un message d'erreur, ou null si la date est valide et l'âge suffisant. */
 export function validateBirthDate(d: Dob, minAge: number, today: Date = new Date()): string | null {
-  if (!d.day || !d.month || d.year.length < 4) return 'Saisissez votre date de naissance complète.';
+  if (!d.day || !d.month || d.year.length < 4) return tr('dob.incomplete');
   const day = Number(d.day), month = Number(d.month), year = Number(d.year);
   const date = new Date(year, month - 1, day);
   const real = date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
-  if (!real || year < 1900) return 'Cette date n’existe pas.';
-  if (date.getTime() > today.getTime()) return 'La date de naissance ne peut pas être dans le futur.';
+  if (!real || year < 1900) return tr('dob.notExist');
+  if (date.getTime() > today.getTime()) return tr('dob.future');
   let age = today.getFullYear() - year;
   const hadBirthday =
     today.getMonth() > month - 1 || (today.getMonth() === month - 1 && today.getDate() >= day);
   if (!hadBirthday) age -= 1;
-  if (age < minAge) return `Vous devez avoir au moins ${minAge} ans pour ouvrir un compte.`;
+  if (age < minAge) return tr('dob.tooYoung', { age: minAge });
   return null;
 }
 
@@ -52,6 +54,7 @@ type Props = {
 };
 
 export default function DateOfBirthField({ value, onChange, error, accent, onDone }: Props) {
+  const t = useT();
   const monthRef = useRef<TextInput>(null);
   const yearRef = useRef<TextInput>(null);
   const dayRef = useRef<TextInput>(null);
@@ -68,7 +71,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
 
   return (
     <View style={s.wrap}>
-      <Text style={[s.label, hasError && { color: N.danger }]}>Date de naissance</Text>
+      <Text style={[s.label, hasError && { color: N.danger }]}>{t('dob.label')}</Text>
       <View style={s.row}>
         <TextInput
           ref={dayRef}
@@ -86,7 +89,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
             onChange({ ...value, day });
             if (day.length === 2) monthRef.current?.focus();
           }}
-          accessibilityLabel="Jour de naissance"
+          accessibilityLabel={t('dob.day')}
           underlineColorAndroid="transparent"
         />
         <Text style={s.sep}>/</Text>
@@ -107,7 +110,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
             onChange({ ...value, month });
             if (month.length === 2) yearRef.current?.focus();
           }}
-          accessibilityLabel="Mois de naissance"
+          accessibilityLabel={t('dob.month')}
           underlineColorAndroid="transparent"
         />
         <Text style={s.sep}>/</Text>
@@ -126,7 +129,7 @@ export default function DateOfBirthField({ value, onChange, error, accent, onDon
           onChangeText={(t) => onChange({ ...value, year: digits(t, 4) })}
           onSubmitEditing={onDone}
           returnKeyType="next"
-          accessibilityLabel="Année de naissance"
+          accessibilityLabel={t('dob.year')}
           underlineColorAndroid="transparent"
         />
       </View>

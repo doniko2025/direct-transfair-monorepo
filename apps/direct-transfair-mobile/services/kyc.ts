@@ -10,6 +10,7 @@
 // =========================================================
 
 import { api } from "./api";
+import { fmtDate, lazyLabels } from "../i18n/runtime";
 
 export type KycDocType = "NATIONAL_ID" | "PASSPORT" | "DRIVER_LICENSE" | "RESIDENCE_PERMIT" | "SELFIE" | "PROOF_OF_ADDRESS" | "BANK_STATEMENT";
 export type KycDocStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED";
@@ -20,31 +21,32 @@ export const KYC_ADDRESS_TYPES: KycDocType[] = ["PROOF_OF_ADDRESS", "BANK_STATEM
 export const KYC_NEEDS_BACK: KycDocType[] = ["NATIONAL_ID", "DRIVER_LICENSE", "RESIDENCE_PERMIT"];
 export const KYC_NEEDS_EXPIRY: KycDocType[] = ["NATIONAL_ID", "PASSPORT", "DRIVER_LICENSE", "RESIDENCE_PERMIT"];
 
-export const KYC_DOC_LABEL: Record<KycDocType, string> = {
-  NATIONAL_ID: "Carte nationale d'identité",
-  PASSPORT: "Passeport",
-  DRIVER_LICENSE: "Permis de conduire",
-  RESIDENCE_PERMIT: "Titre de séjour",
-  SELFIE: "Selfie",
-  PROOF_OF_ADDRESS: "Justificatif de domicile",
-  BANK_STATEMENT: "Relevé bancaire",
-};
+// Tables « paresseuses » : chaque lecture (KYC_DOC_LABEL[type]) rend le texte dans la langue COURANTE.
+export const KYC_DOC_LABEL: Record<KycDocType, string> = lazyLabels<KycDocType>({
+  NATIONAL_ID: "kyc.doc.NATIONAL_ID",
+  PASSPORT: "kyc.doc.PASSPORT",
+  DRIVER_LICENSE: "kyc.doc.DRIVER_LICENSE",
+  RESIDENCE_PERMIT: "kyc.doc.RESIDENCE_PERMIT",
+  SELFIE: "kyc.doc.SELFIE",
+  PROOF_OF_ADDRESS: "kyc.doc.PROOF_OF_ADDRESS",
+  BANK_STATEMENT: "kyc.doc.BANK_STATEMENT",
+});
 
-export const KYC_STATUS_LABEL: Record<KycOverall, string> = {
-  NOT_SUBMITTED: "Identité à vérifier",
-  PENDING: "Vérification en cours",
-  PARTIAL: "Dossier incomplet",
-  REJECTED: "Pièce refusée",
-  EXPIRED: "Pièce expirée",
-  VERIFIED: "Identité vérifiée",
-};
+export const KYC_STATUS_LABEL: Record<KycOverall, string> = lazyLabels<KycOverall>({
+  NOT_SUBMITTED: "kyc.st.NOT_SUBMITTED",
+  PENDING: "kyc.st.PENDING",
+  PARTIAL: "kyc.st.PARTIAL",
+  REJECTED: "kyc.st.REJECTED",
+  EXPIRED: "kyc.st.EXPIRED",
+  VERIFIED: "kyc.st.VERIFIED",
+});
 
-export const KYC_DOC_STATUS_LABEL: Record<KycDocStatus, string> = {
-  PENDING: "En cours de vérification",
-  APPROVED: "Validée",
-  REJECTED: "Refusée",
-  EXPIRED: "Expirée",
-};
+export const KYC_DOC_STATUS_LABEL: Record<KycDocStatus, string> = lazyLabels<KycDocStatus>({
+  PENDING: "kyc.ds.PENDING",
+  APPROVED: "kyc.ds.APPROVED",
+  REJECTED: "kyc.ds.REJECTED",
+  EXPIRED: "kyc.ds.EXPIRED",
+});
 
 export interface KycDocumentView {
   id: string;
@@ -241,12 +243,11 @@ export function maskDocNumber(num: string | null | undefined): string {
   return `•••• ${n.slice(-4)}`;
 }
 
-/** « 12 mars 2031 » à partir de AAAA-MM-JJ (sans décalage de fuseau). */
+/** « 12 mars 2031 » / « 12 March 2031 » à partir de AAAA-MM-JJ (sans décalage de fuseau), dans la langue courante. */
 export function formatDay(day: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day ?? "");
   if (!m) return "";
-  const mois = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
-  return `${Number(m[3])} ${mois[Number(m[2]) - 1]} ${m[1]}`;
+  return fmtDate(new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12)), { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
 }
 
 /** Saisie « 12032031 » ou « 12/03/2031 » (JJ/MM/AAAA) → AAAA-MM-JJ ; null si invalide. */

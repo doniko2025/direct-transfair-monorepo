@@ -17,6 +17,8 @@ import { Ionicons } from '../ui/Icon';
 import CountryPickerSheet from './CountryPickerSheet';
 import type { AuthCountry } from './authCountries';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
+import { tr } from '../../i18n/runtime';
+import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../ui/Text';
 /** Garde les chiffres et retire les « 0 » de tête (préfixe national). */
@@ -27,8 +29,8 @@ export function normalizeNationalNumber(raw: string): string {
 /** Message d'erreur ou null. */
 export function validatePhone(national: string): string | null {
   const n = normalizeNationalNumber(national);
-  if (!n) return 'Saisissez votre numéro de téléphone.';
-  if (n.length < 6 || n.length > 13) return 'Ce numéro ne semble pas valide.';
+  if (!n) return tr('phone.required');
+  if (n.length < 6 || n.length > 13) return tr('phone.invalid');
   return null;
 }
 
@@ -49,19 +51,20 @@ type Props = {
 export default function PhoneField({
   country, onCountryChange, value, onChangeText, error, hint, accent, dense = false, onSubmitEditing, inputRef,
 }: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const hasError = !!error;
 
   return (
     <View style={[s.wrap, dense && { marginBottom: 12 }]}>
-      <Text style={[s.label, dense && { fontSize: 12, marginBottom: 5 }, hasError && { color: N.danger }]}>Numéro de téléphone</Text>
+      <Text style={[s.label, dense && { fontSize: 12, marginBottom: 5 }, hasError && { color: N.danger }]}>{t('phone.label')}</Text>
       <View style={[s.box, dense && { minHeight: 46 }, { borderColor: hasError ? N.danger : focused ? N.ink : N.border }]}>
         <TouchableOpacity
           onPress={() => setOpen(true)}
           style={[s.dial, dense && { minHeight: 46, paddingHorizontal: 9, gap: 4, marginRight: 9 }]}
           accessibilityRole="button"
-          accessibilityLabel={`Indicatif ${country.name} ${country.dial}. Appuyez pour changer.`}
+          accessibilityLabel={t('phone.dialA11y', { name: country.name, dial: country.dial })}
         >
           <Text style={[s.flag, dense && { fontSize: 18 }]}>{country.flag}</Text>
           <Text style={[s.code, dense && { fontSize: 14 }]}>{country.dial}</Text>
@@ -82,7 +85,7 @@ export default function PhoneField({
           onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          accessibilityLabel="Numéro de téléphone"
+          accessibilityLabel={t('phone.label')}
           underlineColorAndroid="transparent"
           selectionColor={accent}
         />
@@ -98,7 +101,7 @@ export default function PhoneField({
 
       <CountryPickerSheet
         visible={open}
-        title="Indicatif du pays"
+        title={t('phone.dialTitle')}
         selected={country.name}
         showDial
         accent={accent}

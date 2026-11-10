@@ -10,6 +10,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import * as SecureStore from "expo-secure-store";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { tr } from "../i18n/runtime";
 
 const BIO_PREF_KEY   = "dt_bio_enabled";
 const REFRESH_TOKEN_KEY = "refreshToken"; // même clé que STORAGE_KEYS.REFRESH_TOKEN dans api.ts
@@ -81,9 +82,9 @@ export async function promptBiometrics(reason?: string): Promise<boolean> {
   if (Platform.OS === "web") return false;
   try {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage:          reason ?? "Confirmez votre identité",
-      fallbackLabel:          "Utiliser le code",
-      cancelLabel:            "Annuler",
+      promptMessage:          reason ?? tr("bio.prompt"),
+      fallbackLabel:          tr("bio.useCode"),
+      cancelLabel:            tr("common.cancel"),
       disableDeviceFallback:  false,
     });
     return result.success;

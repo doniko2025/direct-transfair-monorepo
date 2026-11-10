@@ -56,6 +56,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 import { platform, escapeHtml } from '../common/platform.config';
+import { langOfUser, type Lang } from '../i18n/lang';
+import { translatePhrase } from '../i18n/phrase-book';
+import { translateHtml } from '../i18n/html';
+import '../i18n/phrases';
 
 // =========================================================
 // CURRENCY HELPERS (inchangés)
@@ -99,6 +103,8 @@ export interface SendEmailOptions {
   brandName?: string;
   /** ✅ v1.x (contrats) : pièces jointes (ex. contrat signé en PDF). */
   attachments?: MailAttachment[];
+  /** Langue du courriel (fr | en | pt). Absente : celle du compte du destinataire (User.preferredLanguage), sinon le français. */
+  lang?: Lang;
 }
 
 export interface MailAttachment {
@@ -347,6 +353,18 @@ export class MailService {
   // ENVOI GÉNÉRIQUE (avec log en base) — signature inchangée
   // ========================================================
 
+  /** Langue du destinataire : option explicite, sinon celle de son compte (par identifiant ou par adresse), sinon le français. Ne lève jamais. */
+  private async resolveLang(opts: SendEmailOptions): Promise<Lang> {
+    if (opts.lang) return opts.lang;
+    try {
+      const where = opts.userId ? { id: opts.userId } : { email: opts.to.trim().toLowerCase() };
+      const user = await this.prisma.user.findUnique({ where, select: { preferredLanguage: true } });
+      return langOfUser(user);
+    } catch {
+      return 'fr';
+    }
+  }
+
   async sendEmail(
     toOrOptions: string | SendEmailOptions,
     subject?: string,
@@ -392,14 +410,18 @@ export class MailService {
       this.logger.warn('[MAIL] CommunicationLog création échouée', e);
     }
 
+    // ✅ langues FR / EN / PT : objet et corps traduits d'après la langue du compte (le français reste inchangé).
+    const lang = await this.resolveLang(opts);
+    const localSubject = translatePhrase(opts.subject, lang);
+
     const result = await this.sendMail(
       {
         to:      opts.to,
-        subject: opts.subject,
-        html:    this.wrapHtml(opts.subject, opts.htmlContent, {
+        subject: localSubject,
+        html:    translateHtml(this.wrapHtml(localSubject, opts.htmlContent, {
           brandColor: opts.brandColor,
           brandName:  opts.brandName,
-        }),
+        }), lang),
         ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
       },
       opts.to,

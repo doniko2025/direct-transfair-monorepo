@@ -26,18 +26,20 @@ import {
   PAYOUT_METHOD_LABEL, PAYOUT_STATUS_LABEL, PAYOUT_STATUS_TONE, PinPrompt, Rise, apiProblem, money, shortDateTime,
 } from "../../components/merchant/merchantUi";
 import { decimalsFor, parseAmount, roundTo, toInputText } from "../../utils/amount";
+import { useT } from "../../providers/I18nProvider";
 import { accountCurrencyForCountry, isOrangeMoneyCurrency, ORANGE_NOT_AVAILABLE_TEXT } from "../../services/orangeRules";
 
 type Method = "ORANGE_MONEY" | "BANK_TRANSFER";
 
-const QUICK: { label: string; ratio: number }[] = [
-  { label: "25 %", ratio: 0.25 },
-  { label: "50 %", ratio: 0.5 },
-  { label: "75 %", ratio: 0.75 },
-  { label: "Tout", ratio: 1 },
+const QUICK: { key: string; ratio: number }[] = [
+  { key: "25 %", ratio: 0.25 },
+  { key: "50 %", ratio: 0.5 },
+  { key: "75 %", ratio: 0.75 },
+  { key: "mpo.all", ratio: 1 },
 ];
 
 export default function PayoutsScreen() {
+  const t = useT();
   const router = useRouter();
   const { user } = useAuth();
   const { C, R } = useUI();
@@ -53,19 +55,19 @@ export default function PayoutsScreen() {
     return { me, payouts: payouts.data, wallets: summary?.wallets ?? [] };
   });
 
-  const header = <NavBar onBack={() => router.back()} title="Retirer mes gains" />;
+  const header = <NavBar onBack={() => router.back()} title={t("mpo.title")} />;
   const payoutsList = data?.payouts;
 
   const history = useMemo(() => payoutsList ?? [], [payoutsList]);
 
   if (status === "loading") return <Screen header={header}><SkeletonRows rows={4} /></Screen>;
   if (status === "error" || !data) {
-    return <Screen header={header}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={header}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
   const { me, wallets } = data;
   const profile = me.profile;
   if (!me.isMerchant || !profile) {
-    return <Screen header={header}><Notice tone="warn">Activez d'abord votre espace marchand.</Notice></Screen>;
+    return <Screen header={header}><Notice tone="warn">{t("mpo.activateFirst")}</Notice></Screen>;
   }
 
   // La devise est celle du COMPTE (pays d'ouverture) : on ne se fie plus à une devise « par défaut » du profil.
@@ -85,8 +87,8 @@ export default function PayoutsScreen() {
   const suspended = profile.status === "SUSPENDED";
 
   const amountError =
-    amount > balance ? "Montant supérieur à votre solde disponible." :
-    amountText && minPayout && amount < minPayout ? `Retrait minimum : ${money(minPayout, currency)}.` : null;
+    amount > balance ? t("mpo.overBalance") :
+    amountText && minPayout && amount < minPayout ? t("mpo.minimum", { amount: money(minPayout, currency) }) : null;
   const canSend = !!chosen && amount > 0 && !amountError && pin.length === 6 && !lockedUntil && !suspended && !busy;
 
   const destinationLabel = (m: Method) => (m === "ORANGE_MONEY" ? profile.orangeMoneyMasked : profile.bank?.ibanMasked ?? "");
@@ -100,7 +102,7 @@ export default function PayoutsScreen() {
       await api.requestMerchantPayout({ pin, amount, method: chosen, currency });
       setAmountText("");
       setPin("");
-      setFeedback({ tone: "pos", text: "Demande de retrait envoyée. Vous serez prévenu par notification et par email dès qu'elle est traitée." });
+      setFeedback({ tone: "pos", text: t("mpo.sent") });
       reload();
     } catch (e) {
       const pr = apiProblem(e);
@@ -118,21 +120,21 @@ export default function PayoutsScreen() {
   const noDestination = (() => {
     if (methods.length > 0) return null;
     if (me.orangeNeedsUpdate) {
-      return { text: "Le numéro Orange Money enregistré ne correspond pas à la devise de votre compte. Corrigez-le pour pouvoir retirer vos gains.", action: "Corriger mon numéro" };
+      return { text: t("mpo.orangeMismatch"), action: t("mpo.fixNumber") };
     }
     if (!orangeAllowed) {
-      return { text: `${ORANGE_NOT_AVAILABLE_TEXT(currency)}`, action: "Ajouter mon IBAN" };
+      return { text: `${ORANGE_NOT_AVAILABLE_TEXT(currency)}`, action: t("mpo.addIban") };
     }
-    return { text: "Aucune destination de retrait n'est disponible pour le moment.", action: "Ajouter une destination" };
+    return { text: t("mpo.noDest"), action: t("mpo.addDest") };
   })();
 
   return (
     <Screen header={header} refreshing={refreshing} onRefresh={refresh}>
       {feedback && <Notice tone={feedback.tone} style={{ marginBottom: 14 }}>{feedback.text}</Notice>}
-      {suspended && <Notice tone="danger" title="Compte suspendu" style={{ marginBottom: 14 }}>Les retraits sont bloqués tant que votre espace marchand est suspendu.</Notice>}
+      {suspended && <Notice tone="danger" title={t("mpo.suspendedTitle")} style={{ marginBottom: 14 }}>{t("mpo.suspendedMsg")}</Notice>}
       {lockedUntil && (
-        <Notice tone="warn" title="Retraits suspendus par sécurité" style={{ marginBottom: 14 }}>
-          Vous avez changé votre destination de retrait. Les retraits reprennent le {shortDateTime(lockedUntil)}.
+        <Notice tone="warn" title={t("mpo.lockedTitle")} style={{ marginBottom: 14 }}>
+          {t("mpo.lockedMsg", { date: shortDateTime(lockedUntil) })}
         </Notice>
       )}
 
@@ -146,9 +148,9 @@ export default function PayoutsScreen() {
             <Text style={[st.heroLabel, { color: C.darkInk }]} numberOfLines={1}>{profile.businessName}</Text>
             <View style={st.curPill}><Text style={[st.curTxt, { color: C.darkInk }]}>{currency}</Text></View>
           </View>
-          <Text style={[st.heroCaption, { color: C.darkInk }]}>Disponible au retrait</Text>
+          <Text style={[st.heroCaption, { color: C.darkInk }]}>{t("mpo.available")}</Text>
           <Text style={[st.heroAmount, { color: C.darkInk }]} numberOfLines={1} adjustsFontSizeToFit>{money(balance, currency)}</Text>
-          {reserved > 0 && <Text style={[st.heroSub, { color: C.darkInk }]}>{money(reserved, currency)} en cours de traitement</Text>}
+          {reserved > 0 && <Text style={[st.heroSub, { color: C.darkInk }]}>{t("mpo.processing", { amount: money(reserved, currency) })}</Text>}
         </LinearGradient>
       </Rise>
 
@@ -160,7 +162,7 @@ export default function PayoutsScreen() {
         <>
           {/* ── Destination ── */}
           <Rise delay={80}>
-            <SectionHeader title="Verser sur" />
+            <SectionHeader title={t("mpo.payTo")} />
             <View style={{ gap: 10 }}>
               {methods.map((m) => {
                 const on = chosen === m;
@@ -187,29 +189,29 @@ export default function PayoutsScreen() {
               })}
             </View>
             <TouchableOpacity onPress={goSettings} hitSlop={8} style={{ alignSelf: "flex-start", marginTop: 10 }}>
-              <Text style={{ color: C.accentDeep, fontWeight: "700", fontSize: 13 }}>Modifier ma destination</Text>
+              <Text style={{ color: C.accentDeep, fontWeight: "700", fontSize: 13 }}>{t("mpo.changeDest")}</Text>
             </TouchableOpacity>
-            {!orangeAllowed && <UText v="caption" tone="muted" style={{ marginTop: 6 }}>Orange Money n'est pas proposé pour un compte en {currency}.</UText>}
+            {!orangeAllowed && <UText v="caption" tone="muted" style={{ marginTop: 6 }}>{t("mpo.noOrange", { currency })}</UText>}
           </Rise>
 
           {/* ── Montant ── */}
           <Rise delay={140}>
-            <SectionHeader title="Montant" />
+            <SectionHeader title={t("mpo.amount")} />
             <Card pad={20}>
-              <AmountInput label="Montant à retirer" value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} />
+              <AmountInput label={t("mpo.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} />
               <View style={st.quickRow}>
                 {QUICK.map((q) => {
                   const v = roundTo(balance * q.ratio, decimals);
                   const active = amount > 0 && Math.abs(amount - v) < 10 ** -decimals;
                   return (
                     <TouchableOpacity
-                      key={q.label}
+                      key={q.key}
                       activeOpacity={0.8}
                       disabled={balance <= 0}
                       onPress={() => setAmountText(toInputText(v, decimals))}
                       style={[st.quick, { borderRadius: R.pill, borderColor: active ? C.dark : C.line, backgroundColor: active ? C.dark : C.surface, opacity: balance <= 0 ? 0.45 : 1 }]}
                     >
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: active ? C.darkInk : C.dark }}>{q.label}</Text>
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: active ? C.darkInk : C.dark }}>{q.key.startsWith("mpo.") ? t(q.key as any) : q.key}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -217,31 +219,31 @@ export default function PayoutsScreen() {
 
               {amount > 0 && !amountError && (
                 <View style={[st.recap, { backgroundColor: C.field, borderRadius: R.md }]}>
-                  <RecapLine label="Montant demandé" value={money(amount, currency)} />
-                  <RecapLine label={feePct > 0 ? `Frais (${feePct} %)` : "Frais"} value={feePct > 0 ? `− ${money(fee, currency)}` : "Aucun"} />
+                  <RecapLine label={t("mpo.requested")} value={money(amount, currency)} />
+                  <RecapLine label={feePct > 0 ? t("mpo.feePct", { pct: feePct }) : t("mpo.feeLabel")} value={feePct > 0 ? `− ${money(fee, currency)}` : t("mpo.feeNone")} />
                   <View style={[st.sep, { backgroundColor: C.line }]} />
-                  <RecapLine label="Vous recevez" value={money(amount - fee, currency)} strong />
+                  <RecapLine label={t("mpo.youReceive")} value={money(amount - fee, currency)} strong />
                 </View>
               )}
-              {!!minPayout && <UText v="caption" tone="muted" style={{ marginTop: 10 }}>Retrait minimum : {money(minPayout, currency)}</UText>}
+              {!!minPayout && <UText v="caption" tone="muted" style={{ marginTop: 10 }}>{t("mpo.minimum", { amount: money(minPayout, currency) })}</UText>}
             </Card>
           </Rise>
 
           {/* ── Confirmation ── */}
           <Rise delay={200}>
-            <SectionHeader title="Confirmer" />
+            <SectionHeader title={t("mpo.confirm")} />
             <Card pad={20}>
-              <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label="Code secret pour confirmer" />
-              <Button label="Demander le retrait" icon="arrow-up-circle-outline" disabled={!canSend} loading={busy} onPress={send} testID="payout-send" />
+              <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label={t("mpo.pinLabel")} />
+              <Button label={t("mpo.request")} icon="arrow-up-circle-outline" disabled={!canSend} loading={busy} onPress={send} testID="payout-send" />
             </Card>
           </Rise>
         </>
       )}
 
       {/* ── Historique ── */}
-      <SectionHeader title="Mes retraits" />
+      <SectionHeader title={t("mpo.history")} />
       {history.length === 0 ? (
-        <EmptyView icon="cash-outline" title="Aucun retrait" message="Vos demandes de retrait apparaîtront ici." />
+        <EmptyView icon="cash-outline" title={t("mpo.none")} message={t("mpo.noneMsg")} />
       ) : history.map((p) => (
         <Card key={p.id} pad={16} style={{ marginBottom: 10 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>

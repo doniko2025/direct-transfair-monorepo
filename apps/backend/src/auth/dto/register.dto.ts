@@ -91,6 +91,11 @@ export class RegisterDto {
   @IsOptional()
   accountType?: 'PERSONAL' | 'MERCHANT';
 
+  /** Langue choisie à l'inscription (fr | en | pt) ; l'en-tête x-app-lang a priorité. */
+  @IsIn(['fr', 'en', 'pt'])
+  @IsOptional()
+  preferredLanguage?: 'fr' | 'en' | 'pt';
+
   @IsString()
   @IsOptional()
   businessName?: string;

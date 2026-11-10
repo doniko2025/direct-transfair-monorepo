@@ -37,6 +37,8 @@ export function accountCurrencyForCountry(country?: string | null): string {
 }
 
 /** Indicatifs (sans « + ») de la zone CFA. */
+import { tr } from "../i18n/runtime";
+
 const UEMOA_DIAL_CODES = ["221", "223", "225", "226", "227", "228", "229", "245"];
 
 /** Orange Money est-il proposé pour un compte dans cette devise ? */
@@ -47,13 +49,12 @@ export const fixedDialFor = (currency?: string | null): string | null => (curren
 
 /** Phrase d'aide à afficher sous le champ « numéro Orange Money ». */
 export function orangeHintFor(currency?: string | null): string {
-  if (currency === "GNF") return "Numéro Orange Money guinéen : +224 puis 9 chiffres commençant par 6, sans le 0 de tête.";
-  if (currency === "XOF") return "Numéro Orange Money d'un pays de la zone CFA (Sénégal, Mali, Côte d'Ivoire…), sans le 0 de tête.";
-  return "Numéro Orange Money, sans le 0 de tête.";
+  if (currency === "GNF") return tr('orange.hintGNF');
+  if (currency === "XOF") return tr('orange.hintXOF');
+  return tr('orange.hintOther');
 }
 
-export const ORANGE_NOT_AVAILABLE_TEXT = (currency: string): string =>
-  `Orange Money n'est pas disponible pour un compte en ${currency}. Les retraits se font par compte bancaire (IBAN) : vous le renseignerez dans les réglages de votre commerce.`;
+export const ORANGE_NOT_AVAILABLE_TEXT = (currency: string): string => tr('orange.notAvailable', { currency });
 
 /**
  * Message d'erreur (ou null si le numéro convient) pour un numéro complet (« +224620000000 ») et la devise du compte.
@@ -63,10 +64,10 @@ export function validateOrangeFor(fullNumber: string, currency?: string | null):
   if (!isOrangeMoneyCurrency(currency)) return ORANGE_NOT_AVAILABLE_TEXT(currency);
   const digits = fullNumber.replace(/[^\d]/g, "");
   if (currency === "GNF" && !/^2246\d{8}$/.test(digits)) {
-    return "Un compte en franc guinéen (GNF) exige un numéro Orange Money guinéen : +224 suivi de 9 chiffres commençant par 6.";
+    return tr('orange.mismatchGNF');
   }
   if (currency === "XOF" && !UEMOA_DIAL_CODES.some((d) => digits.startsWith(d))) {
-    return "Un compte en franc CFA (XOF) exige un numéro Orange Money d'un pays de la zone CFA (Sénégal, Mali, Côte d'Ivoire, Burkina Faso, Niger, Togo, Bénin, Guinée-Bissau).";
+    return tr('orange.mismatchXOF');
   }
   return null;
 }

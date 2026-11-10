@@ -15,21 +15,23 @@ import { Bone } from './Feedback';
 import { DotGrid } from './Corridor';
 import { Text } from './Text';
 import { currencySymbol, formatMoney } from '../wallet/walletTheme';
+import { useT } from "../../providers/I18nProvider";
 
 export default function BalanceCard({
-  currency, available, reserved = 0, hidden, onToggleHidden, loading, rateLabel, onPressRate, label = 'Solde disponible',
+  currency, available, reserved = 0, hidden, onToggleHidden, loading, rateLabel, onPressRate, label,
 }: {
   currency: string; available: number; reserved?: number; hidden: boolean; onToggleHidden: () => void;
   loading?: boolean; rateLabel?: string | null; onPressRate?: () => void; label?: string;
 }) {
   const { C, R, S } = useUI();
+  const t = useT();
   const soft = alpha('#FFFFFF', 0.7);
   return (
     <View style={[{ borderRadius: R.lg, backgroundColor: C.forest, overflow: 'hidden', padding: 22 }, S.md]}>
       <DotGrid />
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <UText v="caption" color={soft}>{label}</UText>
-        <Pressable onPress={onToggleHidden} hitSlop={10} accessibilityLabel={hidden ? 'Afficher le solde' : 'Masquer le solde'}>
+        <UText v="caption" color={soft}>{label ?? t('home.balance')}</UText>
+        <Pressable onPress={onToggleHidden} hitSlop={10} accessibilityLabel={hidden ? t('home.showBalance') : t('home.hideBalance')}>
           <Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={22} color="#FFFFFF" />
         </Pressable>
       </View>
@@ -48,7 +50,7 @@ export default function BalanceCard({
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 22, gap: 10 }}>
         <View style={{ flexShrink: 1 }}>
           <UText v="caption" color={soft}>
-            {reserved > 0 && !hidden ? `dont ${formatMoney(reserved, currency)} ${currencySymbol(currency)} réservé` : currency}
+            {reserved > 0 && !hidden ? t('state.reserved', { amount: formatMoney(reserved, currency), symbol: currencySymbol(currency) }) : currency}
           </UText>
         </View>
         {!!rateLabel && (

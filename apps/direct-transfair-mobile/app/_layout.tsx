@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/_layout.tsx
 // =========================================================
-// ROOT LAYOUT v7.0
+// ROOT LAYOUT v7.1
+// ✅ v7.1 : LANGUES FR / EN / PT — I18nProvider tout en haut (même l'écran de connexion est traduit) ; <LanguageSync /> envoie la langue au compte.
 // ✅ v7.0 : DESIGN « CORRIDOR » — chargement des polices Manrope + Fraunces (embarquées dans assets/fonts) avant
 //   l'affichage ; si le chargement échoue l'app démarre quand même (police système). Barre d'état sombre sur fond brume.
 // ✅ v5.1 : TenantProvider wrappe AuthProvider
@@ -25,6 +26,8 @@ import { FONT_FILES } from '../components/ui/fonts';                    // ✅ v
 import { buildColors } from '../components/ui/theme';
 import { useAuth } from '../providers/AuthProvider';
 import { usePushNavigation } from '../hooks/usePushNavigation';
+import { I18nProvider } from '../providers/I18nProvider';           // ✅ v7.1 : langues FR / EN / PT
+import LanguageSync from '../components/i18n/LanguageSync';
 
 /** Ouvre l'écran lié à une notification touchée (Lot 11) — placé sous AuthProvider pour connaître la session. */
 function PushNavigation() {
@@ -38,6 +41,7 @@ export default function RootLayout() {
   // Évite un flash de texte système : on attend les polices (ou leur échec) avant d'afficher.
   if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: buildColors().bg }} />;
   return (
+    <I18nProvider>
     <TenantProvider>
       <AuthProvider>
         {/* ✅ v6.0 : InactivityProvider entre AuthProvider et le Stack
@@ -45,6 +49,7 @@ export default function RootLayout() {
         <InactivityProvider>
           <StatusBar style="dark" />
           <PushNavigation />
+          <LanguageSync />
           <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="(auth)" />
@@ -57,6 +62,7 @@ export default function RootLayout() {
         </InactivityProvider>
       </AuthProvider>
     </TenantProvider>
+    </I18nProvider>
   );
 }
 

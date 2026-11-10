@@ -23,11 +23,13 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { apiProblem, money, Rise } from "../../components/merchant/merchantUi";
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
+import { useT } from "../../providers/I18nProvider";
 
 export default function CollectScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { C } = useUI();
+  const t = useT();
   const params = useLocalSearchParams<{ mode?: string; merchantId?: string; from?: string }>();
   const shopId = params.merchantId ? String(params.merchantId) : undefined;
   const [mode, setMode] = useState<"qr" | "phone">(params.mode === "phone" ? "phone" : "qr");
@@ -60,24 +62,24 @@ export default function CollectScreen() {
 
   const amountError = (() => {
     if (!showErrors) return null;
-    if (!(amount > 0)) return "Saisissez le montant à encaisser.";
-    if (min && amount < min) return `Montant minimum : ${money(min, currency)}.`;
-    if (max && amount > max) return `Montant maximum : ${money(max, currency)}.`;
+    if (!(amount > 0)) return t("col.amountRequired");
+    if (min && amount < min) return t("col.min", { amount: money(min, currency) });
+    if (max && amount > max) return t("col.max", { amount: money(max, currency) });
     return null;
   })();
   const phoneError = showErrors && mode === "phone" ? validatePhone(phone) : null;
 
-  if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}><SkeletonRows rows={3} /></Screen>;
+  if (status === "loading") return <Screen header={<NavBar onBack={() => router.back()} title={t("col.title")} />}><SkeletonRows rows={3} /></Screen>;
   if (status === "error" || !ctx) {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={<NavBar onBack={() => router.back()} title={t("col.title")} />}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
   if (shopId ? !staff || !staff.available : !me || !me.isMerchant || me.profile?.status !== "ACTIVE") {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} title="Encaisser" />}>
-        <Notice tone="warn" title="Encaissement indisponible">
+      <Screen header={<NavBar onBack={() => router.back()} title={t("col.title")} />}>
+        <Notice tone="warn" title={t("col.unavailable")}>
           {shopId
-            ? staff ? "Ce commerce ne peut pas encaisser pour le moment." : "Vous n'êtes plus caissier de ce commerce."
-            : me?.profile?.status === "SUSPENDED" ? "Votre espace marchand est suspendu." : "Activez d'abord votre espace marchand."}
+            ? staff ? t("col.shopCannot") : t("col.notCashier")
+            : me?.profile?.status === "SUSPENDED" ? t("col.suspended") : t("col.activateFirst")}
         </Notice>
       </Screen>
     );
@@ -105,23 +107,23 @@ export default function CollectScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title="Encaisser" subtitle={shopName} />}
-      footer={<Button label="Envoyer" icon="paper-plane-outline" loading={busy} onPress={submit} testID="collect-send" />}
+      header={<NavBar onBack={() => router.back()} title={t("col.title")} subtitle={shopName} />}
+      footer={<Button label={t("col.send")} icon="paper-plane-outline" loading={busy} onPress={submit} testID="collect-send" />}
     >
       <Rise>
         <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
-          <Chip label="QR code" icon="qr-code-outline" active={mode === "qr"} onPress={() => setMode("qr")} />
-          <Chip label="Téléphone Orange" icon="phone-portrait-outline" active={mode === "phone"} onPress={() => setMode("phone")} />
+          <Chip label={t("col.modeQr")} icon="qr-code-outline" active={mode === "qr"} onPress={() => setMode("qr")} />
+          <Chip label={t("col.modePhone")} icon="phone-portrait-outline" active={mode === "phone"} onPress={() => setMode("phone")} />
         </View>
       </Rise>
 
       {!!problem && <Notice tone="danger" style={{ marginBottom: 14 }}>{problem}</Notice>}
 
       <Card pad={20}>
-        <AmountInput label="Montant à encaisser" value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
+        <AmountInput label={t("col.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
         {amount > 0 && fee > 0 && !amountError ? (
           <UText v="caption" tone="muted" style={{ marginTop: 4 }}>
-            Frais de service {money(fee, currency)} · vous recevez {money(amount - fee, currency)}
+            {t("col.fee", { fee: money(fee, currency), net: money(amount - fee, currency) })}
           </UText>
         ) : null}
       </Card>
@@ -134,7 +136,7 @@ export default function CollectScreen() {
           value={phone}
           onChangeText={setPhone}
           error={phoneError}
-          hint="Numéro du compte de votre client (Orange Money). Sans le 0 de tête."
+          hint={t("col.phoneHint")}
           accent={C.accent}
           inputRef={phoneRef}
           onSubmitEditing={submit}
@@ -144,14 +146,14 @@ export default function CollectScreen() {
           <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
             <Ionicons name="qr-code-outline" size={26} color={C.accentDeep} />
             <UText v="caption" style={{ flex: 1 }}>
-              Un QR code à usage unique s'affiche pendant {validity} min. Votre client le scanne, vérifie le montant sur son téléphone et valide avec son code secret.
+              {t("col.qrInfo", { min: validity })}
             </UText>
           </View>
         </Card>
       )}
 
       <View style={{ height: 16 }} />
-      <Field label="Libellé (facultatif)" icon="create-outline" value={note} onChangeText={setNote} maxLength={140} autoCapitalize="sentences" />
+      <Field label={t("col.note")} icon="create-outline" value={note} onChangeText={setNote} maxLength={140} autoCapitalize="sentences" />
     </Screen>
   );
 }

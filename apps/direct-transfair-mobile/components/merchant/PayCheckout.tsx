@@ -16,7 +16,8 @@ import { api } from "../../services/api";
 import type { PaymentRequestView } from "../../services/merchantTypes";
 import { isKycRequired, kycRequiredMessage, KYC_SCREEN } from "../../utils/kycGate";
 import { Button, Card, Divider, Notice, Pill, UText } from "../ui";
-import { PinPrompt, Rise, StatusHero, apiProblem, mmss, money, shortDateTime, useCountdown } from "./merchantUi";
+import { PinPrompt, Rise, StatusHero, apiProblem, categoryLabel, mmss, money, shortDateTime, useCountdown } from "./merchantUi";
+import { useT } from "../../providers/I18nProvider";
 import { ShopAvatar } from "./ShopAvatar";
 import { useMerchantLogo } from "../../hooks/useMerchantLogo";
 import { useReceiptSharer } from "./ReceiptQr";
@@ -40,6 +41,7 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
 }
 
 export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props) {
+  const t = useT();
   const router = useRouter();
   const [current, setCurrent] = useState(view);
   const [pin, setPin] = useState("");
@@ -115,27 +117,27 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
     return (
       <View>
         {sharer.qrNode}
-        <StatusHero tone="pos" icon="checkmark-circle" title="Paiement effectué" message={`${money(current.amount, current.currency)} payés à ${current.merchant.businessName}.`} />
+        <StatusHero tone="pos" icon="checkmark-circle" title={t("pco.done")} message={t("pco.doneMsg", { amount: money(current.amount, current.currency), shop: current.merchant.businessName })} />
         <Card pad={18}>
-          <Line label="Commerce" value={current.merchant.businessName} />
-          <Line label="Montant débité" value={money(current.amount, current.currency)} strong />
+          <Line label={t("pco.shop")} value={current.merchant.businessName} />
+          <Line label={t("pco.debited")} value={money(current.amount, current.currency)} strong />
           <Divider />
-          <Line label="Référence" value={current.reference} />
-          <Line label="Date" value={shortDateTime(current.paidAt ?? current.createdAt)} />
+          <Line label={t("pco.reference")} value={current.reference} />
+          <Line label={t("pco.date")} value={shortDateTime(current.paidAt ?? current.createdAt)} />
         </Card>
-        <Button label="Reçu (PDF)" icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} style={{ marginTop: 18 }} />
-        <Button label="Terminer" onPress={onFinish} style={{ marginTop: 10 }} />
+        <Button label={t("pco.receipt")} icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} style={{ marginTop: 18 }} />
+        <Button label={t("pco.finish")} onPress={onFinish} style={{ marginTop: 10 }} />
       </View>
     );
   }
   if (current.status === "DECLINED" || finished === "declined") {
-    return <View><StatusHero tone="info" icon="close-circle" title="Demande refusée" message="Le marchand a été prévenu." /><Button label="Terminer" onPress={onFinish} /></View>;
+    return <View><StatusHero tone="info" icon="close-circle" title={t("pco.declined")} message={t("pco.declinedMsg")} /><Button label={t("pco.finish")} onPress={onFinish} /></View>;
   }
   if (current.status === "EXPIRED" || (current.status === "PENDING" && left === 0)) {
-    return <View><StatusHero tone="warn" icon="time-outline" title="Demande expirée" message="Ce paiement n'est plus valable. Demandez au marchand d'en créer un nouveau." /><Button label="Terminer" onPress={onFinish} /></View>;
+    return <View><StatusHero tone="warn" icon="time-outline" title={t("pco.expired")} message={t("pco.expiredMsg")} /><Button label={t("pco.finish")} onPress={onFinish} /></View>;
   }
   if (current.status === "CANCELLED") {
-    return <View><StatusHero tone="info" icon="ban-outline" title="Paiement annulé" message="Le marchand a annulé cette demande." /><Button label="Terminer" onPress={onFinish} /></View>;
+    return <View><StatusHero tone="info" icon="ban-outline" title={t("pco.cancelled")} message={t("pco.cancelledMsg")} /><Button label={t("pco.finish")} onPress={onFinish} /></View>;
   }
 
   // ── À payer ──
@@ -147,33 +149,33 @@ export default function PayCheckout({ view, onPay, onDecline, onFinish }: Props)
         </View>
         <UText v="heading" align="center" numberOfLines={2}>{current.merchant.businessName}</UText>
         {!!(current.merchant.category || current.merchant.city) && (
-          <UText v="caption" tone="muted" align="center">{[current.merchant.category, current.merchant.city].filter(Boolean).join(" · ")}</UText>
+          <UText v="caption" tone="muted" align="center">{[categoryLabel(current.merchant.category), current.merchant.city].filter(Boolean).join(" · ")}</UText>
         )}
         <UText v="hero" align="center" style={{ marginTop: 10 }}>{money(current.amount, current.currency)}</UText>
         {!!current.note && <UText v="body" tone="muted" align="center">{current.note}</UText>}
-        <Pill label={`Valable ${mmss(left)}`} tone={left <= 30 ? "danger" : "warn"} icon="time-outline" style={{ marginTop: 8 }} />
+        <Pill label={t("pco.validFor", { time: mmss(left) })} tone={left <= 30 ? "danger" : "warn"} icon="time-outline" style={{ marginTop: 8 }} />
       </Card>
 
       <Notice tone="info" style={{ marginTop: 14 }}>
-        Vérifiez que ce montant correspond à celui affiché sur le téléphone du marchand avant de confirmer.
+        {t("pco.check")}
       </Notice>
 
       {balance !== null && (
         <UText v="caption" tone={short ? "danger" : "muted"} align="center" style={{ marginTop: 12 }}>
-          {short ? `Solde insuffisant : ${money(balance, current.currency)} disponibles.` : `Votre solde : ${money(balance, current.currency)}`}
+          {short ? t("pco.short", { amount: money(balance, current.currency) }) : t("pco.balance", { amount: money(balance, current.currency) })}
         </UText>
       )}
 
       {problem && (
-        <Notice tone={problem.tone} style={{ marginTop: 14 }} action={problem.kyc ? "Vérifier mon identité" : undefined} onAction={problem.kyc ? () => router.push(KYC_SCREEN as any) : undefined}>
+        <Notice tone={problem.tone} style={{ marginTop: 14 }} action={problem.kyc ? t("pco.verifyId") : undefined} onAction={problem.kyc ? () => router.push(KYC_SCREEN as any) : undefined}>
           {problem.text}
         </Notice>
       )}
 
       <View style={{ height: 18 }} />
-      <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label="Code secret pour payer" autoFocus />
-      <Button label={`Payer ${money(current.amount, current.currency)}`} icon="lock-closed-outline" disabled={pin.length !== 6 || short} loading={busy} onPress={pay} testID="pay-confirm" />
-      {onDecline && <Button label="Refuser la demande" kind="ghost" disabled={busy} onPress={decline} style={{ marginTop: 8 }} />}
+      <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label={t("pco.pinLabel")} autoFocus />
+      <Button label={t("pco.pay", { amount: money(current.amount, current.currency) })} icon="lock-closed-outline" disabled={pin.length !== 6 || short} loading={busy} onPress={pay} testID="pay-confirm" />
+      {onDecline && <Button label={t("pco.decline")} kind="ghost" disabled={busy} onPress={decline} style={{ marginTop: 8 }} />}
     </Rise>
   );
 }

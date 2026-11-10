@@ -15,6 +15,7 @@ import { Ionicons } from '../ui/Icon';
 import { FONT, N, RADIUS } from './authTheme';
 
 import { Text } from '../ui/Text';
+import { useT } from '../../providers/I18nProvider';
 type Props = {
   label: string;
   value?: string;
@@ -28,6 +29,7 @@ type Props = {
 };
 
 export default function SelectField({ label, value, prefix, placeholder, icon, error, hint, onPress }: Props) {
+  const t = useT();
   const hasError = !!error;
   return (
     <View style={s.wrap}>
@@ -37,7 +39,7 @@ export default function SelectField({ label, value, prefix, placeholder, icon, e
         activeOpacity={0.8}
         style={[s.box, { borderColor: hasError ? N.danger : N.border }]}
         accessibilityRole="button"
-        accessibilityLabel={`${label} : ${value ?? 'non renseigné'}. Appuyez pour choisir.`}
+        accessibilityLabel={`${label} : ${value ?? t('field.notFilled')}. ${t('field.tapToChoose')}`}
       >
         {icon ? <Ionicons name={icon} size={19} color={hasError ? N.danger : N.muted} style={{ marginRight: 10 }} /> : null}
         {prefix ? <Text style={s.prefix}>{prefix}</Text> : null}

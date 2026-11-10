@@ -18,10 +18,12 @@ import { useMerchantLogo } from "../../hooks/useMerchantLogo";
 import { Button, Card, ErrorView, NavBar, Notice, Screen, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem } from "../../components/merchant/merchantUi";
 import { ShopAvatar } from "../../components/merchant/ShopAvatar";
+import { useT } from "../../providers/I18nProvider";
 
 export default function StaticQrScreen() {
   const router = useRouter();
   const { C, R, S } = useUI();
+  const t = useT();
   const { merchantId } = useLocalSearchParams<{ merchantId?: string }>();
   const asCashier = !!merchantId;
   const { data, status, error, reload } = useLoader(() => api.getStaticQr(merchantId ? String(merchantId) : undefined));
@@ -60,10 +62,10 @@ export default function StaticQrScreen() {
     }
   };
 
-  const header = <NavBar onBack={() => router.back()} title="QR de caisse" subtitle={data?.businessName} />;
+  const header = <NavBar onBack={() => router.back()} title={t("mqrs.title")} subtitle={data?.businessName} />;
   if (status === "loading") return <Screen header={header}><SkeletonRows rows={3} /></Screen>;
   if (status === "error" || !data) {
-    return <Screen header={header}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={header}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
 
   return (
@@ -71,12 +73,12 @@ export default function StaticQrScreen() {
       header={header}
       footer={
         <View style={{ gap: 10 }}>
-          <Button label="Partager l'affiche (PDF)" icon="share-social-outline" loading={busy === "share"} onPress={() => poster(false)} />
-          <Button label="Imprimer" icon="print-outline" kind="outline" loading={busy === "print"} onPress={() => poster(true)} />
+          <Button label={t("mqrs.share")} icon="share-social-outline" loading={busy === "share"} onPress={() => poster(false)} />
+          <Button label={t("mqrs.print")} icon="print-outline" kind="outline" loading={busy === "print"} onPress={() => poster(true)} />
         </View>
       }
     >
-      {done && <Notice tone="pos" style={{ marginBottom: 12 }}>Nouveau QR code activé. Remplacez les anciennes affiches : elles ne fonctionnent plus.</Notice>}
+      {done && <Notice tone="pos" style={{ marginBottom: 12 }}>{t("mqrs.renewed")}</Notice>}
       <Rise>
         <Card pad={22} style={[{ alignItems: "center", gap: 14, borderRadius: R.xl }, S.md]}>
           <ShopAvatar shopId={data.shopId} version={data.logoVersion} name={data.businessName} size={64} />
@@ -85,30 +87,30 @@ export default function StaticQrScreen() {
           <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: C.line }}>
             <QRCode value={data.payload} size={224} color="#111111" backgroundColor="#FFFFFF" ecl="M" getRef={(c: any) => { qrRef.current = c; }} />
           </View>
-          <UText v="bodyStrong" align="center">Scannez pour payer</UText>
+          <UText v="bodyStrong" align="center">{t("mqrs.scan")}</UText>
         </Card>
       </Rise>
 
       <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 14 }}>
-        Ce QR code est permanent. Le client saisit le montant sur son téléphone et valide avec son code secret : vous recevez une notification à chaque paiement.
+        {t("mqrs.info")}
       </Notice>
 
       {!asCashier && (
         <Card pad={16} style={{ marginTop: 14 }}>
-          <UText v="bodyStrong">QR code compromis ?</UText>
+          <UText v="bodyStrong">{t("mqrs.compromised")}</UText>
           <UText v="caption" tone="muted" style={{ marginTop: 4, marginBottom: 12 }}>
-            Affiche volée ou copiée : renouvelez le QR code. L'ancien cesse de fonctionner tout de suite.
+            {t("mqrs.compromisedMsg")}
           </UText>
-          <Button label="Renouveler le QR code" icon="refresh" kind="outline" small full={false} onPress={() => { setProblem(null); setPin(""); setRotateOpen(true); }} />
+          <Button label={t("mqrs.renew")} icon="refresh" kind="outline" small full={false} onPress={() => { setProblem(null); setPin(""); setRotateOpen(true); }} />
         </Card>
       )}
 
-      <Sheet visible={rotateOpen} onClose={() => setRotateOpen(false)} title="Renouveler le QR code">
-        <UText v="body" tone="muted" style={{ marginBottom: 14 }}>Confirmez avec votre code secret. Les affiches déjà imprimées devront être remplacées.</UText>
+      <Sheet visible={rotateOpen} onClose={() => setRotateOpen(false)} title={t("mqrs.renew")}>
+        <UText v="body" tone="muted" style={{ marginBottom: 14 }}>{t("mqrs.renewMsg")}</UText>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
         <PinPrompt value={pin} onChange={setPin} onComplete={rotate} autoFocus />
         <View style={{ height: 12 }} />
-        <Button label="Renouveler" loading={rotating} disabled={pin.length !== 6} onPress={() => rotate(pin)} />
+        <Button label={t("mqrs.renewBtn")} loading={rotating} disabled={pin.length !== 6} onPress={() => rotate(pin)} />
       </Sheet>
     </Screen>
   );

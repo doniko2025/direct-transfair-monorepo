@@ -993,6 +993,7 @@ export class V2AuthService {
       isPhoneVerified: user.isPhoneVerified,
       mfaEnabled:      user.mfaEnabled,
       mustChangePassword: Boolean(user.mustChangePassword),
+      preferredLanguage: user.preferredLanguage ?? 'fr', // ✅ langues FR / EN / PT
       country:         user.country,
       city:            user.city,
       client:          user.client,

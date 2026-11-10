@@ -6,6 +6,7 @@
 // =========================================================
 
 import { Alert, Platform } from "react-native";
+import { tr } from "../i18n/runtime";
 
 type Router = { push: (href: any) => void };
 
@@ -21,8 +22,8 @@ export function kycRequiredMessage(err: unknown): string {
   const data = (err as { response?: { data?: { message?: unknown; kycStatus?: string } } } | null)?.response?.data;
   if (typeof data?.message === "string" && data.message.trim()) return data.message;
   return data?.kycStatus === "PENDING"
-    ? "Votre pièce d'identité est en cours de vérification. Vous pourrez envoyer de l'argent dès qu'elle sera validée."
-    : "Pour envoyer de l'argent, vérifiez d'abord votre identité : une pièce d'identité et un selfie.";
+    ? tr("kycgate.pending")
+    : tr("kycgate.required");
 }
 
 /**
@@ -33,12 +34,12 @@ export function handleKycRequired(err: unknown, router: Router): boolean {
   if (!isKycRequired(err)) return false;
   const message = kycRequiredMessage(err);
   if (Platform.OS === "web") {
-    if (window.confirm(`Vérification d'identité requise\n\n${message}\n\nOuvrir la vérification maintenant ?`)) router.push(KYC_SCREEN);
+    if (window.confirm(`${tr("kycgate.title")}\n\n${message}\n\n${tr("kycgate.openNow")}`)) router.push(KYC_SCREEN);
     return true;
   }
-  Alert.alert("Vérification d'identité requise", message, [
-    { text: "Plus tard", style: "cancel" },
-    { text: "Vérifier maintenant", onPress: () => router.push(KYC_SCREEN) },
+  Alert.alert(tr("kycgate.title"), message, [
+    { text: tr("kycgate.later"), style: "cancel" },
+    { text: tr("kycgate.verify"), onPress: () => router.push(KYC_SCREEN) },
   ]);
   return true;
 }

@@ -8,6 +8,9 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationType } from '@prisma/client';
 import type { NotificationSpace } from './notification-space';
+import type { Lang } from '../i18n/lang';
+import { translatePhrase } from '../i18n/phrase-book';
+import '../i18n/phrases';
 
 @Injectable()
 export class NotificationsService {
@@ -32,12 +35,17 @@ export class NotificationsService {
   }
 
   // Récupérer les notifs d'un user
-  async findAll(userId: string, opts: { limit?: number; unreadOnly?: boolean; space?: NotificationSpace } = {}) {
-    return this.prisma.notification.findMany({
+  async findAll(userId: string, opts: { limit?: number; unreadOnly?: boolean; space?: NotificationSpace; lang?: Lang | null } = {}) {
+    const rows = await this.prisma.notification.findMany({
       where: { userId, ...(opts.space ? { space: opts.space } : {}), ...(opts.unreadOnly ? { isRead: false } : {}), ...this.alive() },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: opts.limit ?? 50, // 50 par défaut pour la perf
     });
+    // ✅ langues FR / EN / PT : la base garde le texte français ; il est traduit à la lecture d'après la langue de l'application
+    // (changer de langue retraduit donc aussi les anciennes notifications). Sans langue demandée : français, comme avant.
+    const lang = opts.lang;
+    if (!lang || lang === 'fr') return rows;
+    return rows.map((n) => ({ ...n, title: translatePhrase(n.title, lang), message: translatePhrase(n.message, lang) }));
   }
 
   /** `count` = non lues du compte demandé (ou de tous si aucun) ; `bySpace` = détail, pour signaler l'autre compte sur le sélecteur. */

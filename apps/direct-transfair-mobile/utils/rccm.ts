@@ -7,6 +7,8 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
+import { tr } from "../i18n/runtime";
+
 export const RCCM_EXAMPLE = "GN.TCC.2019.B.12345";
 
 /** Texte normalisé tel qu'envoyé au serveur : espaces simplifiés, majuscules. */
@@ -17,9 +19,9 @@ export function normalizeRccm(raw: string | null | undefined): string {
 /** Message d'erreur à afficher sous le champ, ou null si le numéro est acceptable. */
 export function validateRccm(raw: string | null | undefined): string | null {
   const v = normalizeRccm(raw);
-  if (!v) return "Le numéro RCCM est obligatoire.";
+  if (!v) return tr('rccm.required');
   if (v.length < 5 || v.length > 40 || !/^[A-Z0-9][A-Z0-9 ./-]*$/.test(v) || !/\d/.test(v)) {
-    return `Numéro RCCM invalide (exemple : ${RCCM_EXAMPLE}).`;
+    return tr('rccm.invalid', { example: RCCM_EXAMPLE });
   }
   return null;
 }

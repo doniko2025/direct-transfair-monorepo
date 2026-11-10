@@ -23,6 +23,7 @@ import { useKycStatus } from "../../hooks/useKycStatus";
 import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
 import { SpaceSwitch } from "../home/SpaceSwitch";
 import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow } from "../ui";
+import { useT } from "../../providers/I18nProvider";
 
 const COUNTRY_CURRENCY: Record<string, string> = {
   GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
@@ -30,14 +31,11 @@ const COUNTRY_CURRENCY: Record<string, string> = {
   GB: "GBP", US: "USD",
 };
 
-function greeting(): string {
-  const h = new Date().getHours();
-  return h < 5 || h >= 18 ? "Bonsoir," : "Bonjour,";
-}
 
 export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
+  const t = useT();
   const { status: kyc } = useKycStatus();
   const [hidden, toggleHidden] = useBalanceHidden();
 
@@ -61,8 +59,8 @@ export default function ClientDashboard() {
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       <HomeTopBar
-        greeting={greeting()}
-        name={user?.firstName ?? "Client"}
+        greeting={new Date().getHours() < 5 || new Date().getHours() >= 18 ? t("home.evening") : t("home.hello")}
+        name={user?.firstName ?? t("home.defaultName")}
         onScan={() => router.push("/pay/scan" as any)}
         onBell={() => router.push("/(tabs)/notifications")}
       />
@@ -70,7 +68,7 @@ export default function ClientDashboard() {
       <SpaceSwitch style={{ marginTop: 4 }} />
 
       <BalanceBlock
-        label="Solde disponible"
+        label={t("home.balance")}
         amount={available}
         currency={currency}
         countryName={(user as any)?.country}
@@ -79,35 +77,35 @@ export default function ClientDashboard() {
       />
 
       <View style={{ gap: 12, marginTop: 40 }}>
-        <Button label="Envoyer de l'argent" onPress={() => router.push("/(tabs)/send")} testID="home-send" />
-        <Button label="Recharger" kind="outline" onPress={() => router.push("/(tabs)/recharge")} testID="home-topup" />
+        <Button label={t("home.send")} onPress={() => router.push("/(tabs)/send")} testID="home-send" />
+        <Button label={t("home.topup")} kind="outline" onPress={() => router.push("/(tabs)/recharge")} testID="home-topup" />
       </View>
 
       {kyc && !kyc.verified ? (
         <Notice
           tone={kyc.status === "PENDING" ? "info" : "warn"}
           style={{ marginTop: 22 }}
-          action={kyc.status === "PENDING" ? undefined : kyc.status === "PARTIAL" ? "Compléter mon dossier" : "Vérifier mon identité"}
+          action={kyc.status === "PENDING" ? undefined : kyc.status === "PARTIAL" ? t("home.kycComplete") : t("home.kycVerify")}
           onAction={kyc.status === "PENDING" ? undefined : () => router.push("/(tabs)/profile/kyc" as any)}
         >
           {kyc.status === "PENDING"
-            ? "Votre dossier d'identité est en cours de vérification."
+            ? t("home.kycPending")
             : kyc.status === "PARTIAL"
-              ? "Il reste une pièce à envoyer pour finaliser la vérification de votre identité."
-              : "Vérifiez votre identité pour envoyer de l'argent."}
+              ? t("home.kycPartial")
+              : t("home.kycNone")}
         </Notice>
       ) : null}
 
-      <SectionHeader title="Activité récente" action={recent.length ? "Voir tout" : undefined} onAction={() => router.push("/(tabs)/transactions")} />
+      <SectionHeader title={t("home.recent")} action={recent.length ? t("home.seeAll") : undefined} onAction={() => router.push("/(tabs)/transactions")} />
       {status === "loading" ? (
         <>
           <SkeletonRows rows={2} />
           <SlowNote visible={slow} />
         </>
       ) : status === "error" ? (
-        <ErrorView compact title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} />
+        <ErrorView compact title={error?.title ?? t("state.error")} message={error?.message ?? t("state.loadFailed")} onRetry={reload} />
       ) : recent.length === 0 ? (
-        <EmptyView icon="receipt-outline" title="Aucune opération" message="Vos envois et réceptions apparaîtront ici." />
+        <EmptyView icon="receipt-outline" title={t("home.noTx")} message={t("home.noTxMsg")} />
       ) : (
         recent.map((tx, i) => (
           <TxRow key={tx.id ?? i} tx={tx} userId={user?.id} last={i === recent.length - 1} onPress={() => router.push(`/(tabs)/transactions/${tx.id}`)} />

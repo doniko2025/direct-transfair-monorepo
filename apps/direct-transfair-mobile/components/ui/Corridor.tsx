@@ -7,6 +7,7 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
+import { getLang } from '../../i18n/runtime';
 import React, { useMemo, useState } from 'react';
 import { View, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
@@ -52,6 +53,23 @@ const CAPITALS: Record<string, string> = {
   MA: 'Rabat', DZ: 'Alger', TN: 'Tunis', EG: 'Le Caire', MR: 'Nouakchott', GH: 'Accra', NG: 'Abuja', CV: 'Praia',
   TD: "N'Djamena", CF: 'Bangui', DJ: 'Djibouti', KM: 'Moroni', MG: 'Antananarivo', AO: 'Luanda',
 };
+/** Noms des capitales en anglais et en portugais (seules les villes qui s'écrivent autrement qu'en français). */
+const CAPITALS_EN: Record<string, string> = {
+  BE: 'Brussels', DE: 'Berlin', ES: 'Madrid', IT: 'Rome', PT: 'Lisbon', CH: 'Bern', GB: 'London', AT: 'Vienna', SE: 'Stockholm',
+  GN: 'Conakry', CI: 'Abidjan', BJ: 'Porto-Novo', GW: 'Bissau', CM: 'Yaoundé', DZ: 'Algiers', EG: 'Cairo', TD: "N'Djamena",
+};
+const CAPITALS_PT: Record<string, string> = {
+  BE: 'Bruxelas', DE: 'Berlim', ES: 'Madrid', IT: 'Roma', FR: 'Paris', PT: 'Lisboa', NL: 'Amesterdão', CH: 'Berna', GB: 'Londres',
+  IE: 'Dublin', US: 'Washington', LU: 'Luxemburgo', AT: 'Viena', SE: 'Estocolmo', NO: 'Oslo', GN: 'Conacri', SN: 'Dacar',
+  CI: 'Abidjão', ML: 'Bamaco', BF: 'Uagadugu', TG: 'Lomé', BJ: 'Porto Novo', NE: 'Niamei', GW: 'Bissau', GM: 'Banjul',
+  LR: 'Monróvia', SL: 'Freetown', CM: 'Iaundé', GA: 'Libreville', CG: 'Brazavile', CD: 'Quinxasa', MA: 'Rabat', DZ: 'Argel',
+  TN: 'Tunes', EG: 'Cairo', MR: 'Nouakchott', GH: 'Acra', NG: 'Abuja', CV: 'Praia', TD: 'Jamena', CF: 'Bangui', DJ: 'Jibuti',
+  KM: 'Moroni', MG: 'Antananarivo', AO: 'Luanda',
+};
 export function capitalOf(code?: string | null): string | undefined {
-  return code ? CAPITALS[code.toUpperCase()] : undefined;
+  if (!code) return undefined;
+  const k = code.toUpperCase();
+  const lang = getLang();
+  const table = lang === 'en' ? CAPITALS_EN : lang === 'pt' ? CAPITALS_PT : null;
+  return table?.[k] ?? CAPITALS[k];
 }

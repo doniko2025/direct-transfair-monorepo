@@ -13,6 +13,10 @@ import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { TransactionReceiptsService } from './transaction-receipts.service';
+import { translateReceiptLabels } from './transfer-receipt';
+import { DEFAULT_LANG, langFromRequest } from '../i18n/lang';
+import { translatePhrase } from '../i18n/phrase-book';
+import '../i18n/phrases';
 import { renderTransferCheckPage } from './transfer-check-page';
 
 @ApiTags('Reçus')
@@ -26,7 +30,10 @@ export class TransactionReceiptsController {
   async receipt(@Req() req: Request & { user?: { id?: string } }, @Param('id') id: string) {
     const userId = req.user?.id;
     if (!userId) throw new ForbiddenException('Non authentifié');
-    return this.receipts.forUser(id, userId);
+    const doc = await this.receipts.forUser(id, userId);
+    // ✅ langues FR / EN / PT : libellés du reçu traduits selon l'en-tête x-app-lang (français sans en-tête, comme avant).
+    const lang = langFromRequest(req) ?? DEFAULT_LANG;
+    return lang === 'fr' ? doc : translateReceiptLabels(doc, (text) => translatePhrase(text, lang));
   }
 }
 

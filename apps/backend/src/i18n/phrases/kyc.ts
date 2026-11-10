@@ -1,0 +1,75 @@
+// apps/backend/src/i18n/phrases/kyc.ts — vérification d'identité : messages d'erreur et notifications vus par le client.
+import { registerPhrases, type Phrase } from '../phrase-book';
+
+export const KYC_PHRASES: readonly Phrase[] = [
+  // ── pièces (insérées dans des phrases à trous ; majuscule ou minuscule selon la phrase) ──
+  ["Carte nationale d'identité", 'National identity card', "Cartão de cidadão / bilhete de identidade"],
+  ["carte nationale d'identité", 'national identity card', 'cartão de cidadão / bilhete de identidade'],
+  ['Passeport', 'Passport', 'Passaporte'],
+  ['passeport', 'passport', 'passaporte'],
+  ['Permis de conduire', "Driver's licence", 'Carta de condução'],
+  ['permis de conduire', "driver's licence", 'carta de condução'],
+  ['Titre de séjour', 'Residence permit', 'Título de residência'],
+  ['titre de séjour', 'residence permit', 'título de residência'],
+  ["Selfie avec la pièce d'identité", 'Selfie with the identity document', 'Selfie com o documento de identificação'],
+  ["selfie avec la pièce d'identité", 'selfie with the identity document', 'selfie com o documento de identificação'],
+  ['Justificatif de domicile', 'Proof of address', 'Comprovativo de morada'],
+  ['justificatif de domicile', 'proof of address', 'comprovativo de morada'],
+  ['Relevé bancaire', 'Bank statement', 'Extrato bancário'],
+  ['relevé bancaire', 'bank statement', 'extrato bancário'],
+  ["pièce d'identité", 'identity document', 'documento de identificação'],
+  ["Vérification d'identité", 'Identity verification', 'Verificação de identidade'],
+  ['votre selfie', 'your selfie', 'a sua selfie'],
+  ["votre pièce d'identité", 'your identity document', 'o seu documento de identificação'],
+  ['votre selfie et votre pièce d\'identité', 'your selfie and your identity document', 'a sua selfie e o seu documento de identificação'],
+  ['votre pièce d\'identité et votre selfie', 'your identity document and your selfie', 'o seu documento de identificação e a sua selfie'],
+  ['les pièces manquantes', 'the missing documents', 'os documentos em falta'],
+
+  // ── erreurs ──
+  ['Non authentifié', 'Not authenticated', 'Não autenticado'],
+  ['Fichier introuvable.', 'File not found.', 'Ficheiro não encontrado.'],
+  ['Dossier introuvable.', 'File not found.', 'Processo não encontrado.'],
+  ['Utilisateur introuvable.', 'User not found.', 'Utilizador não encontrado.'],
+  ['Client introuvable.', 'Customer not found.', 'Cliente não encontrado.'],
+  ["La vérification d'identité concerne les clients wallet.", 'Identity verification applies to wallet customers.', 'A verificação de identidade aplica-se aos clientes da carteira.'],
+  ['Type de pièce inconnu.', 'Unknown document type.', 'Tipo de documento desconhecido.'],
+  ["Indiquez la date d'expiration de la pièce (AAAA-MM-JJ).", 'Enter the expiry date of the document (YYYY-MM-DD).', 'Indique a data de validade do documento (AAAA-MM-JJ).'],
+  ['Cette pièce est expirée : envoyez une pièce en cours de validité.', 'This document has expired: send a valid document.', 'Este documento expirou: envie um documento válido.'],
+  ["La date d'expiration semble erronée.", 'The expiry date looks wrong.', 'A data de validade parece errada.'],
+  ['Indiquez le numéro de la pièce.', 'Enter the document number.', 'Indique o número do documento.'],
+  ['Photographiez aussi le verso : {1}.', 'Photograph the back as well: {1}.', 'Fotografe também o verso: {1}.'],
+  ['Le selfie doit être une photo.', 'The selfie must be a photo.', 'A selfie tem de ser uma fotografia.'],
+  ["Trop d'envois aujourd'hui. Réessayez demain ou contactez votre agence.", 'Too many uploads today. Try again tomorrow or contact your agency.', 'Demasiados envios hoje. Tente novamente amanhã ou contacte a sua agência.'],
+  ['Votre {1} est déjà validée.', 'Your {1} has already been approved.', 'O documento «{1}» já foi validado.'],
+  ['Pièce introuvable.', 'Document not found.', 'Documento não encontrado.'],
+  ['Statut inconnu.', 'Unknown status.', 'Estado desconhecido.'],
+  ['Cette pièce a déjà été traitée.', 'This document has already been processed.', 'Este documento já foi tratado.'],
+
+  // ── titres des notifications ──
+  ['Pièce reçue', 'Document received', 'Documento recebido'],
+  ['Pièce validée', 'Document approved', 'Documento validado'],
+  ['Identité vérifiée ✅', 'Identity verified ✅', 'Identidade verificada ✅'],
+  ["Pièce d'identité révoquée", 'Identity document revoked', 'Documento de identificação revogado'],
+  ["Pièce d'identité refusée", 'Identity document rejected', 'Documento de identificação recusado'],
+  ["Pièce d'identité à renvoyer", 'Identity document to resend', 'Documento de identificação a reenviar'],
+  ["Pièce d'identité expirée", 'Identity document expired', 'Documento de identificação expirado'],
+  ['Vérifiez votre identité', 'Verify your identity', 'Verifique a sua identidade'],
+  ["Votre pièce d'identité expire bientôt", 'Your identity document expires soon', 'O seu documento de identificação expira em breve'],
+  ["Votre pièce d'identité expire dans {1} jours", 'Your identity document expires in {1} days', 'O seu documento de identificação expira dentro de {1} dias'],
+  ["Votre pièce d'identité expire dans {1} jour", 'Your identity document expires in {1} day', 'O seu documento de identificação expira dentro de {1} dia'],
+
+  // ── corps des notifications ──
+  ['Votre {1} a bien été reçue. Un administrateur la vérifie : vous serez prévenu de la décision.', 'Your {1} has been received. An administrator is checking it: you will be notified of the decision.', 'Recebemos o documento «{1}». Um administrador está a verificá-lo: será informado da decisão.'],
+  ['Votre {1} est validée.', 'Your {1} has been approved.', 'O documento «{1}» foi validado.'],
+  ['Votre {1} est validée. Il reste à envoyer {2} pour finaliser la vérification.', 'Your {1} has been approved. You still need to send {2} to complete the verification.', 'O documento «{1}» foi validado. Falta enviar {2} para concluir a verificação.'],
+  ["Votre identité est vérifiée. Vous pouvez maintenant envoyer de l'argent, programmer des virements et retirer.", 'Your identity is verified. You can now send money, schedule transfers and withdraw.', 'A sua identidade está verificada. Já pode enviar dinheiro, agendar transferências e levantar.'],
+  ["Votre {1} n'a pas pu être retenue. Motif : {2}\nEnvoyez-en une nouvelle depuis Profil › Vérification d'identité.", "Your {1} could not be accepted. Reason: {2}\nSend a new one from Profile › Identity verification.", "Não foi possível aceitar o documento «{1}». Motivo: {2}\nEnvie um novo a partir de Perfil › Verificação de identidade."],
+  ["Votre dernière pièce a été refusée. Tant qu'une pièce valide n'est pas envoyée et vérifiée, vous ne pouvez ni envoyer d'argent, ni programmer de virement, ni retirer.", 'Your last document was rejected. Until a valid document is sent and verified, you cannot send money, schedule transfers or withdraw.', 'O seu último documento foi recusado. Enquanto não for enviado e verificado um documento válido, não pode enviar dinheiro, agendar transferências nem levantar.'],
+  ["Votre dernière pièce a été refusée ({1}). Tant qu'une pièce valide n'est pas envoyée et vérifiée, vous ne pouvez ni envoyer d'argent, ni programmer de virement, ni retirer.", 'Your last document was rejected ({1}). Until a valid document is sent and verified, you cannot send money, schedule transfers or withdraw.', 'O seu último documento foi recusado ({1}). Enquanto não for enviado e verificado um documento válido, não pode enviar dinheiro, agendar transferências nem levantar.'],
+  ["Votre pièce d'identité est expirée. Envoyez-en une nouvelle pour retrouver l'accès aux envois, virements et retraits.", 'Your identity document has expired. Send a new one to regain access to transfers, scheduled transfers and withdrawals.', 'O seu documento de identificação expirou. Envie um novo para recuperar o acesso a envios, transferências e levantamentos.'],
+  ["Envoyez votre pièce d'identité et un selfie pour pouvoir envoyer de l'argent, programmer des virements et retirer. Cela prend 2 minutes ; un administrateur valide ensuite votre dossier.", 'Send your identity document and a selfie so you can send money, schedule transfers and withdraw. It takes 2 minutes; an administrator then validates your file.', 'Envie o seu documento de identificação e uma selfie para poder enviar dinheiro, agendar transferências e levantar. Demora 2 minutos; um administrador valida depois o seu processo.'],
+  ["Votre {1} est valable jusqu'au {2} inclus (encore {3} jours). Envoyez dès maintenant une pièce en cours de validité : à l'expiration, les envois, virements programmés et retraits sont bloqués jusqu'à la validation de la nouvelle pièce.", 'Your {1} is valid until {2} inclusive ({3} days left). Send a valid document now: when it expires, transfers, scheduled transfers and withdrawals are blocked until the new document is approved.', 'O seu documento «{1}» é válido até {2} inclusive (faltam {3} dias). Envie já um documento válido: quando expirar, os envios, as transferências agendadas e os levantamentos ficam bloqueados até o novo documento ser validado.'],
+  ["Votre {1} est valable jusqu'au {2} inclus (encore {3} jour). Envoyez dès maintenant une pièce en cours de validité : à l'expiration, les envois, virements programmés et retraits sont bloqués jusqu'à la validation de la nouvelle pièce.", 'Your {1} is valid until {2} inclusive ({3} day left). Send a valid document now: when it expires, transfers, scheduled transfers and withdrawals are blocked until the new document is approved.', 'O seu documento «{1}» é válido até {2} inclusive (falta {3} dia). Envie já um documento válido: quando expirar, os envios, as transferências agendadas e os levantamentos ficam bloqueados até o novo documento ser validado.'],
+];
+
+registerPhrases(KYC_PHRASES);

@@ -12,6 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { FONT, RADIUS, SHADOW, alpha, currencySymbol, formatMoney, useWalletTheme } from './walletTheme';
 import { Skeleton } from './Skeleton';
+import { useT } from "../../providers/I18nProvider";
 
 type Props = {
   currency: string;
@@ -29,6 +30,7 @@ export default function BalanceCard({
   currency, available, reserved = 0, hidden, onToggleHidden, holder, loading, rateLabel, onPressRate,
 }: Props) {
   const { P, brandName } = useWalletTheme();
+  const t = useT();
   return (
     <View style={[s.shadow, SHADOW.card]}>
       <LinearGradient
@@ -44,12 +46,12 @@ export default function BalanceCard({
             <View style={s.chip}><Ionicons name="wallet-outline" size={15} color="#fff" /></View>
             <Text style={s.brand} numberOfLines={1}>{brandName || "Direct Transf'air"}</Text>
           </View>
-          <TouchableOpacity onPress={onToggleHidden} hitSlop={10} accessibilityLabel={hidden ? 'Afficher le solde' : 'Masquer le solde'}>
+          <TouchableOpacity onPress={onToggleHidden} hitSlop={10} accessibilityLabel={hidden ? t('home.showBalance') : t('home.hideBalance')}>
             <Ionicons name={hidden ? 'eye-off-outline' : 'eye-outline'} size={20} color="rgba(255,255,255,0.85)" />
           </TouchableOpacity>
         </View>
 
-        <Text style={s.label}>Solde disponible</Text>
+        <Text style={s.label}>{t('home.balance')}</Text>
         {loading ? (
           <Skeleton width={180} height={38} radius={10} style={{ backgroundColor: 'rgba(255,255,255,0.25)', marginTop: 6 }} />
         ) : (
@@ -66,7 +68,7 @@ export default function BalanceCard({
           {reserved > 0 && !hidden ? (
             <View style={s.reserved}>
               <Ionicons name="lock-closed-outline" size={11} color="rgba(255,255,255,0.85)" />
-              <Text style={s.reservedTxt}>Réservé {formatMoney(reserved, currency)}</Text>
+              <Text style={s.reservedTxt}>{t('state.reservedLabel')} {formatMoney(reserved, currency)}</Text>
             </View>
           ) : null}
         </View>

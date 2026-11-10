@@ -12,10 +12,12 @@ import { Ionicons } from '../ui/Icon';
 import { Text } from '../ui/Text';
 import { FONT, N } from './authTheme';
 import { pinStrength, type PinContext } from './pinRules';
+import { useT } from '../../providers/I18nProvider';
 
 const COLORS = [N.border, N.danger, '#D97706', '#2E8B57'];
 
 export default function PinGuide({ pin, context }: { pin: string; context?: PinContext }) {
+  const t = useT();   // abonne le composant au changement de langue (pinStrength lit la langue courante)
   const r = pinStrength(pin, context);
   const color = COLORS[r.level]!;
   return (
@@ -34,7 +36,7 @@ export default function PinGuide({ pin, context }: { pin: string; context?: PinC
           <Text style={[s.txt, { color: N.danger }]}>{r.problem}</Text>
         </View>
       ) : (
-        <Text style={s.hint}>6 chiffres. Évitez les suites (123456), les répétitions (121212), les dates de naissance et votre numéro de téléphone.</Text>
+        <Text style={s.hint}>{t('pinx.guide')}</Text>
       )}
     </View>
   );

@@ -16,6 +16,8 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
 import { useLoader } from "../../../components/wallet/useLoader";
+import { useT } from "../../../providers/I18nProvider";
+import { localizeCountry } from "../../../utils/countryNames";
 import {
   Avatar, Button, EmptyView, ErrorView, IconButton, ListRow, PageTitle, Screen, SearchPill, SkeletonRows, SlowNote, UText,
 } from "../../../components/ui";
@@ -24,6 +26,7 @@ type Group = { letter: string; items: any[] };
 
 export default function BeneficiariesScreen() {
   const router = useRouter();
+  const t = useT();
   const [q, setQ] = useState("");
 
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<any[]>(async () => {
@@ -58,24 +61,24 @@ export default function BeneficiariesScreen() {
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       <PageTitle
-        title="Contacts"
-        subtitle={status === "ready" ? `${count} bénéficiaire${count !== 1 ? "s" : ""} enregistré${count !== 1 ? "s" : ""}` : "Tes bénéficiaires"}
-        right={<IconButton icon="person-add-outline" label="Ajouter un contact" onPress={goCreate} />}
+        title={t("bn.title")}
+        subtitle={status === "ready" ? t("bn.count", { count }) : t("bn.sub")}
+        right={<IconButton icon="person-add-outline" label={t("bn.add")} onPress={goCreate} />}
       />
-      <SearchPill value={q} onChangeText={setQ} placeholder="Nom, téléphone, pays…" />
+      <SearchPill value={q} onChangeText={setQ} placeholder={t("bn.search")} />
 
       <SlowNote visible={slow && status === "loading"} />
 
       {status === "loading" ? (
         <View style={{ marginTop: 12 }}><SkeletonRows rows={6} /></View>
       ) : status === "error" ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? ""} onRetry={reload} />
+        <ErrorView title={error?.title ?? t("tx.loadFail")} message={error?.message ?? ""} onRetry={reload} />
       ) : groups.length === 0 ? (
         <EmptyView
           icon="people-outline"
-          title={q ? "Aucun résultat" : "Aucun contact"}
-          message={q ? "Modifie ta recherche." : "Ajoute un proche pour lui envoyer de l'argent en quelques secondes."}
-          actionLabel={q ? undefined : "Ajouter un contact"}
+          title={q ? t("bn.noResult") : t("bn.none")}
+          message={q ? t("bn.adjust") : t("bn.emptyMsg")}
+          actionLabel={q ? undefined : t("bn.add")}
           onAction={goCreate}
         />
       ) : (
@@ -83,13 +86,13 @@ export default function BeneficiariesScreen() {
           <View key={g.letter}>
             <UText v="overline" tone="muted" style={{ marginTop: 18, marginBottom: 2 }}>{g.letter}</UText>
             {g.items.map((b, i) => {
-              const place = [b.city, b.country].filter(Boolean).join(", ");
+              const place = [b.city, localizeCountry(b.country)].filter(Boolean).join(", ");
               return (
                 <ListRow
                   key={b.id}
                   left={<Avatar name={b.fullName || "?"} size={48} />}
                   title={b.fullName}
-                  subtitle={[place, b.phone].filter(Boolean).join(" · ") || "Aucune information"}
+                  subtitle={[place, b.phone].filter(Boolean).join(" · ") || t("bn.noInfo")}
                   onPress={() => router.push(`/(tabs)/beneficiaries/${b.id}`)}
                   last={i === g.items.length - 1}
                   right={
@@ -97,7 +100,7 @@ export default function BeneficiariesScreen() {
                       icon="paper-plane"
                       size={40}
                       kind="dark"
-                      label={`Envoyer de l'argent à ${b.fullName}`}
+                      label={t("bn.sendTo", { name: b.fullName })}
                       onPress={() => router.push({ pathname: "/(tabs)/send", params: { beneficiaryId: b.id } })}
                     />
                   }
@@ -109,7 +112,7 @@ export default function BeneficiariesScreen() {
       )}
 
       {status === "ready" && count > 0 && (
-        <Button label="Nouveau contact" icon="person-add-outline" kind="dark" onPress={goCreate} style={{ marginTop: 28 }} />
+        <Button label={t("bn.new")} icon="person-add-outline" kind="dark" onPress={goCreate} style={{ marginTop: 28 }} />
       )}
     </Screen>
   );

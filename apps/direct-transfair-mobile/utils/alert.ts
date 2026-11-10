@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/utils/alert.ts
 import { Alert, Platform } from "react-native";
+import { tr } from "../i18n/runtime";
 
 /**
  * Affiche une alerte simple (Info, Succès, Erreur)
@@ -16,7 +17,7 @@ export function showAlert(title: string, message: string, onOk?: () => void) {
     }, 100);
   } else {
     Alert.alert(title, message, [
-      { text: "OK", onPress: onOk }
+      { text: tr("common.ok"), onPress: onOk }
     ]);
   }
 }
@@ -37,9 +38,9 @@ export function showConfirm(title: string, message: string, onConfirm: () => voi
     }, 100);
   } else {
     Alert.alert(title, message, [
-      { text: "Annuler", style: "cancel" },
+      { text: tr("common.cancel"), style: "cancel" },
       { 
-        text: "Confirmer", 
+        text: tr("common.confirm"), 
         style: "destructive", 
         onPress: onConfirm 
       },

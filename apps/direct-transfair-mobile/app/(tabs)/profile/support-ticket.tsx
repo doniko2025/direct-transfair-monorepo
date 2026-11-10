@@ -9,16 +9,18 @@ import { View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api, type SupportTicketItem, type SupportTicketReplyItem } from "../../../services/api";
 import { useLoader } from "../../../components/wallet/useLoader";
+import { useT } from "../../../providers/I18nProvider";
+import { lazyLabels, tr } from "../../../i18n/runtime";
 import { Button, Card, ErrorView, Field, NavBar, Notice, Pill, Screen, SkeletonRows, UText, useUI } from "../../../components/ui";
 
-const OUTCOME_TEXT: Record<string, string> = {
-  ACCEPTED: "Litige accepté en votre faveur",
-  REJECTED: "Litige rejeté",
-  INFO: "Réponse du service client",
-};
+const OUTCOME_TEXT: Record<string, string> = lazyLabels<string>({
+  ACCEPTED: "supt.ACCEPTED",
+  REJECTED: "supt.REJECTED",
+  INFO: "supt.INFO",
+});
 
 function errorMessage(e: any): string {
-  const raw = e?.response?.data?.message || e?.message || "Une erreur est survenue.";
+  const raw = e?.response?.data?.message || e?.message || tr("sup.error");
   return Array.isArray(raw) ? String(raw[0]) : String(raw);
 }
 
@@ -26,6 +28,7 @@ type Thread = { ticket: SupportTicketItem; replies: SupportTicketReplyItem[] };
 
 export default function SupportTicketScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const ticketId = typeof id === "string" ? id : "";
@@ -36,9 +39,9 @@ export default function SupportTicketScreen() {
   const [override, setOverride] = useState<Thread | null>(null);
 
   const { data, status, error, refreshing, reload, refresh } = useLoader<Thread>(async () => {
-    const t = await api.getMyTicket(ticketId);
+    const loaded = await api.getMyTicket(ticketId);
     setOverride(null);
-    return t;
+    return loaded;
   });
   const thread = override ?? data;
   const closed = thread?.ticket.status === "CLOSED";
@@ -65,11 +68,11 @@ export default function SupportTicketScreen() {
       {status === "loading" && !thread ? (
         <SkeletonRows rows={4} />
       ) : status === "error" && !thread ? (
-        <ErrorView title={error?.title ?? "Demande introuvable"} message={error?.message ?? ""} onRetry={reload} />
+        <ErrorView title={error?.title ?? t("supt.notFound")} message={error?.message ?? ""} onRetry={reload} />
       ) : thread ? (
         <>
           <UText v="hero">{thread.ticket.subject}</UText>
-          {thread.ticket.isDispute ? <Pill label="Litige sur une opération" tone="warn" icon="alert-circle-outline" style={{ marginTop: 10 }} /> : null}
+          {thread.ticket.isDispute ? <Pill label={t("supt.disputeOnTx")} tone="warn" icon="alert-circle-outline" style={{ marginTop: 10 }} /> : null}
 
           {thread.ticket.outcome ? (
             <Notice tone={thread.ticket.outcome === "REJECTED" ? "danger" : "pos"} title={OUTCOME_TEXT[thread.ticket.outcome]} style={{ marginTop: 16 }}>
@@ -92,7 +95,7 @@ export default function SupportTicketScreen() {
                   backgroundColor: r.fromMe ? C.accentSoft : C.field,
                 }}
               >
-                {!r.fromMe ? <UText v="label" tone="muted" style={{ marginBottom: 4 }}>{r.author.isStaff ? "Service client" : r.author.name}</UText> : null}
+                {!r.fromMe ? <UText v="label" tone="muted" style={{ marginBottom: 4 }}>{r.author.isStaff ? t("supt.staff") : r.author.name}</UText> : null}
                 <UText v="body">{r.message}</UText>
               </View>
             ))}
@@ -100,13 +103,13 @@ export default function SupportTicketScreen() {
 
           {closed ? (
             <Card tone="sunken" style={{ marginTop: 24 }}>
-              <UText v="caption" tone="muted">Cette demande est clôturée. Ouvrez une nouvelle demande si besoin.</UText>
+              <UText v="caption" tone="muted">{t("supt.closed")}</UText>
             </Card>
           ) : (
             <View style={{ marginTop: 24 }}>
               {problem ? <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice> : null}
-              <Field label="Votre réponse" value={reply} onChangeText={setReply} multiline maxLength={2000} autoCapitalize="sentences" />
-              <Button label="Envoyer" icon="send-outline" onPress={send} loading={sending} disabled={reply.trim().length < 2 || sending} />
+              <Field label={t("supt.yourReply")} value={reply} onChangeText={setReply} multiline maxLength={2000} autoCapitalize="sentences" />
+              <Button label={t("sup.send")} icon="send-outline" onPress={send} loading={sending} disabled={reply.trim().length < 2 || sending} />
             </View>
           )}
         </>

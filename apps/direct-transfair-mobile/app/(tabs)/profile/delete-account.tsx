@@ -12,6 +12,8 @@ import React, { useMemo, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useRouter } from "expo-router";
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
+import { tr } from "../../../i18n/runtime";
 import { useAuth } from "../../../providers/AuthProvider";
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../../components/auth/PhoneField";
 import PinInput from "../../../components/auth/PinInput";
@@ -32,15 +34,16 @@ function explain(e: any): string {
   const data = e?.response?.data;
   const code = data?.code ?? data?.message?.code;
   const msg = Array.isArray(data?.message) ? data.message[0] : typeof data?.message === "string" ? data.message : null;
-  if (code === "PHONE_MISMATCH") return "Ce numéro ne correspond pas à celui de votre compte.";
-  if (code === "PIN_INVALID" || code === "PIN_LOCKED" || code === "BALANCE_NOT_EMPTY" || code === "PENDING_OPERATIONS") return msg ?? data?.message?.message ?? "Suppression impossible pour le moment.";
+  if (code === "PHONE_MISMATCH") return tr("del.phoneMismatch");
+  if (code === "PIN_INVALID" || code === "PIN_LOCKED" || code === "BALANCE_NOT_EMPTY" || code === "PENDING_OPERATIONS") return msg ?? data?.message?.message ?? tr("del.cannot");
   if (msg) return msg;
-  if (!e?.response) return "Connexion impossible : vérifiez votre réseau et réessayez.";
-  return "Suppression impossible pour le moment. Réessayez plus tard.";
+  if (!e?.response) return tr("del.offline");
+  return tr("del.later");
 }
 
 export default function DeleteAccountScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
   const { user, logout } = useAuth();
 
@@ -72,31 +75,30 @@ export default function DeleteAccountScreen() {
   return (
     <Screen
       header={<NavBar onBack={() => router.back()} />}
-      footer={<Button label="Supprimer définitivement mon compte" kind="danger" onPress={submit} loading={loading} disabled={!canSubmit} />}
+      footer={<Button label={t("del.submit")} kind="danger" onPress={submit} loading={loading} disabled={!canSubmit} />}
     >
-      <UText v="hero">Supprimer mon compte</UText>
+      <UText v="hero">{t("prof.deleteAccount")}</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 18 }}>
-        Cette action est définitive : vous ne pourrez plus vous connecter avec ce compte.
+        {t("del.intro")}
       </UText>
 
-      <Notice tone="warn" title="Avant de continuer" style={{ marginBottom: 18 }}>
-        Votre solde doit être à zéro (compte client et, le cas échéant, compte marchand) et aucun retrait ne doit être en cours. Retirez ou transférez
-        vos fonds d'abord : sinon la suppression sera refusée.
+      <Notice tone="warn" title={t("del.beforeTitle")} style={{ marginBottom: 18 }}>
+        {t("del.beforeMsg")}
       </Notice>
 
       {error ? <Notice tone="danger" style={{ marginBottom: 18 }}>{error}</Notice> : null}
 
-      <UText v="subheading" style={{ marginBottom: 4 }}>Pour confirmer</UText>
+      <UText v="subheading" style={{ marginBottom: 4 }}>{t("del.toConfirm")}</UText>
       <PhoneField
         country={country}
         onCountryChange={setCountry}
         value={phone}
-        onChangeText={(t) => { setPhone(t); if (error) setError(null); }}
+        onChangeText={(v) => { setPhone(v); if (error) setError(null); }}
         error={phoneError}
-        hint="Le numéro de téléphone de votre compte."
+        hint={t("del.phoneHint")}
         accent={C.accent}
       />
-      <PinInput label="Code secret" value={pin} onChange={(v) => { setPin(v); if (error) setError(null); }} accent={C.accent} disabled={loading} />
+      <PinInput label={t("del.pinLabel")} value={pin} onChange={(v) => { setPin(v); if (error) setError(null); }} accent={C.accent} disabled={loading} />
 
       <Pressable
         onPress={() => setSure((v) => !v)}
@@ -107,7 +109,7 @@ export default function DeleteAccountScreen() {
         <View style={{ width: 24, height: 24, borderRadius: 7, borderWidth: 2, borderColor: sure ? C.danger : C.lineStrong, backgroundColor: sure ? C.danger : "transparent", alignItems: "center", justifyContent: "center" }}>
           {sure ? <Ionicons name="checkmark" size={16} color="#FFFFFF" /> : null}
         </View>
-        <UText v="body" style={{ flex: 1 }}>Je comprends que la suppression de mon compte est irréversible.</UText>
+        <UText v="body" style={{ flex: 1 }}>{t("del.understand")}</UText>
       </Pressable>
     </Screen>
   );

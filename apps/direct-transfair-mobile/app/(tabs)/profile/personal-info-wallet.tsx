@@ -26,6 +26,8 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../../../providers/AuthProvider";
 import { useProfilePhoto } from "../../../hooks/useProfilePhoto";
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
+import { localizeCountry } from "../../../utils/countryNames";
 import { COUNTRIES } from "../../../utils/countries";
 import { citiesByCountry } from "../../../data/cities";
 import {
@@ -34,7 +36,7 @@ import {
 
 // ─── Sélecteur en feuille basse (pays / ville) ───────────
 function PickerSheet({
-  label, value, onChange, items, editable, placeholder, searchPlaceholder, icon, emptyText,
+  label, value, onChange, items, editable, placeholder, searchPlaceholder, icon, emptyText, labelOf,
 }: {
   label: string;
   value: string;
@@ -45,21 +47,24 @@ function PickerSheet({
   searchPlaceholder: string;
   icon?: string;
   emptyText: string;
+  /** Libellé affiché d'un élément (la valeur enregistrée reste inchangée) — ex. nom de pays traduit. */
+  labelOf?: (v: string) => string;
 }) {
   const { C } = useUI();
+  const show = labelOf ?? ((v: string) => v);
   const [visible, setVisible] = useState(false);
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return needle ? items.filter((c) => c.toLowerCase().includes(needle)) : items;
-  }, [q, items]);
+    return needle ? items.filter((c) => c.toLowerCase().includes(needle) || show(c).toLowerCase().includes(needle)) : items;
+  }, [q, items, show]);
 
   const close = () => { setVisible(false); setQ(""); };
 
   return (
     <>
       {editable ? (
-        <SelectRow label={label} value={value} placeholder={placeholder} icon={icon} onPress={() => setVisible(true)} />
+        <SelectRow label={label} value={value ? show(value) : value} placeholder={placeholder} icon={icon} onPress={() => setVisible(true)} />
       ) : (
         <Field label={label} value={value} onChangeText={() => {}} editable={false} placeholder="—" icon="lock-closed-outline" />
       )}
@@ -73,7 +78,7 @@ function PickerSheet({
           filtered.map((item, i) => (
             <ListRow
               key={item}
-              title={item}
+              title={show(item)}
               last={i === filtered.length - 1}
               chevron={false}
               right={value === item ? <UText v="bodyStrong" color={C.accentDeep}>✓</UText> : undefined}
@@ -88,6 +93,7 @@ function PickerSheet({
 
 // ─── Écran ───────────────────────────────────────────────
 export default function PersonalInfoWallet() {
+  const t = useT();
   const router = useRouter();
   const { C } = useUI();
   const { user, refreshUser } = useAuth();
@@ -156,11 +162,11 @@ export default function PersonalInfoWallet() {
 
   const save = async () => {
     if (!firstName.trim() || !lastName.trim() || !phone.trim() || !city.trim() || !country.trim()) {
-      Alert.alert("Champs requis", "Veuillez remplir tous les champs obligatoires (*).");
+      Alert.alert(t("pinfo.reqTitle"), t("pinfo.reqMsg"));
       return;
     }
     if (birthDate.length > 0 && birthDate.length !== 10) {
-      Alert.alert("Format invalide", "La date doit être au format JJ/MM/AAAA.");
+      Alert.alert(t("pinfo.fmtTitle"), t("pinfo.fmtMsg", { fmt: t("ksub.dateFmt") }));
       return;
     }
     try {
@@ -182,10 +188,10 @@ export default function PersonalInfoWallet() {
       });
       await refreshUser();
       setIsEditing(false);
-      Alert.alert("Succès", "Informations mises à jour avec succès.");
+      Alert.alert(t("common.success"), t("pinfo.saved"));
     } catch (e: any) {
-      const msg = e?.response?.data?.message || "Impossible d'enregistrer.";
-      Alert.alert("Erreur", Array.isArray(msg) ? msg[0] : msg);
+      const msg = e?.response?.data?.message || t("pinfo.saveFail");
+      Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
     } finally { setLoading(false); }
   };
 
@@ -199,47 +205,47 @@ export default function PersonalInfoWallet() {
       keyboard
       header={
         <NavBar
-          title="Mes informations"
-          subtitle="Profil & KYC"
+          title={t("pinfo.title")}
+          subtitle={t("pinfo.subtitle")}
           onBack={() => router.back()}
           right={
             <IconButton
               icon={isEditing ? "arrow-undo-outline" : "pencil"}
-              label={isEditing ? "Annuler la modification" : "Modifier mes informations"}
+              label={isEditing ? t("pinfo.cancelEdit") : t("pinfo.edit")}
               onPress={() => (isEditing ? cancelEdit() : setIsEditing(true))}
             />
           }
         />
       }
-      footer={isEditing ? <Button label="Enregistrer les modifications" icon="save-outline" onPress={save} loading={loading} disabled={loading} /> : undefined}
+      footer={isEditing ? <Button label={t("pinfo.saveChanges")} icon="save-outline" onPress={save} loading={loading} disabled={loading} /> : undefined}
     >
       {/* Identité visuelle */}
       <View style={{ alignItems: "center", paddingTop: 4, paddingBottom: 18 }}>
-        <Avatar name={fullName || "Client"} size={72} uri={photo} />
+        <Avatar name={fullName || t("pinfo.client")} size={72} uri={photo} />
         <UText v="title" align="center" style={{ marginTop: 12 }} numberOfLines={1}>{fullName || "—"}</UText>
         {!!email && <UText v="caption" tone="muted" align="center" style={{ marginTop: 2 }} numberOfLines={1}>{email}</UText>}
-        <Pill label="Client" tone="neutral" icon="wallet-outline" style={{ marginTop: 10 }} />
+        <Pill label={t("pinfo.client")} tone="neutral" icon="wallet-outline" style={{ marginTop: 10 }} />
       </View>
 
       {!isEditing && (
         <Notice tone="info" icon="create-outline" style={{ marginBottom: 6 }}>
-          Appuie sur le crayon en haut à droite pour modifier tes informations.
+          {t("pinfo.pencilHint")}
         </Notice>
       )}
 
       {/* Identité */}
-      <SectionHeader title="Identité" style={{ marginBottom: 14 }} />
+      <SectionHeader title={t("pinfo.identity")} style={{ marginBottom: 14 }} />
       <View style={{ flexDirection: "row", gap: 12 }}>
-        <Field label="Prénom *" value={firstName} onChangeText={setFirstName} editable={isEditing} autoCapitalize="words" placeholder="Prénom" style={{ flex: 1 }} />
-        <Field label="Nom *" value={lastName} onChangeText={setLastName} editable={isEditing} autoCapitalize="words" placeholder="Nom" style={{ flex: 1 }} />
+        <Field label={t("pinfo.first")} value={firstName} onChangeText={setFirstName} editable={isEditing} autoCapitalize="words" placeholder={t("pinfo.firstPh")} style={{ flex: 1 }} />
+        <Field label={t("pinfo.last")} value={lastName} onChangeText={setLastName} editable={isEditing} autoCapitalize="words" placeholder={t("pinfo.lastPh")} style={{ flex: 1 }} />
       </View>
-      <Field label="Téléphone *" icon="call-outline" value={phone} onChangeText={setPhone} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
-      <Field label="Adresse email" icon="lock-closed-outline" value={email} onChangeText={() => {}} editable={false} placeholder="—" hint={isEditing ? "L'email ne peut pas être modifié ici." : undefined} />
+      <Field label={t("pinfo.phone")} icon="call-outline" value={phone} onChangeText={setPhone} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
+      <Field label={t("pinfo.email")} icon="lock-closed-outline" value={email} onChangeText={() => {}} editable={false} placeholder="—" hint={isEditing ? t("pinfo.emailLocked") : undefined} />
 
       {/* État civil */}
-      <SectionHeader title="État civil" style={{ marginBottom: 14 }} />
+      <SectionHeader title={t("pinfo.civil")} style={{ marginBottom: 14 }} />
       <Field
-        label="Date de naissance (JJ/MM/AAAA)"
+        label={t("pinfo.birthDate", { fmt: t("ksub.dateFmt") })}
         icon="calendar-outline"
         value={birthDate}
         onChangeText={handleDateChange}
@@ -248,43 +254,44 @@ export default function PersonalInfoWallet() {
         maxLength={10}
         placeholder="15/06/1990"
       />
-      <Field label="Lieu de naissance" icon="location-outline" value={birthPlace} onChangeText={setBirthPlace} editable={isEditing} autoCapitalize="words" placeholder="Paris, France" />
+      <Field label={t("pinfo.birthPlace")} icon="location-outline" value={birthPlace} onChangeText={setBirthPlace} editable={isEditing} autoCapitalize="words" placeholder="Paris, France" />
       <PickerSheet
-        label="Nationalité"
+        label={t("pinfo.nationality")}
         value={nationality}
         onChange={setNationality}
         items={COUNTRIES as string[]}
         editable={isEditing}
-        placeholder="Sélectionner…"
-        searchPlaceholder="Rechercher un pays"
+        placeholder={t("pinfo.select")}
+        searchPlaceholder={t("pinfo.searchCountry")}
         icon="flag-outline"
-        emptyText="Aucun pays trouvé"
+        emptyText={t("pinfo.noCountry")}
+        labelOf={localizeCountry}
       />
 
       {/* Adresse de résidence */}
-      <SectionHeader title="Adresse de résidence" style={{ marginBottom: 14 }} />
-      <Field label="Adresse complète *" icon="home-outline" value={address} onChangeText={setAddress} editable={isEditing} autoCapitalize="sentences" placeholder="12 Rue des Lilas…" />
+      <SectionHeader title={t("pinfo.residence")} style={{ marginBottom: 14 }} />
+      <Field label={t("pinfo.address")} icon="home-outline" value={address} onChangeText={setAddress} editable={isEditing} autoCapitalize="sentences" placeholder="12 Rue des Lilas…" />
       <View style={{ flexDirection: "row", gap: 12 }}>
-        <Field label="Code postal" value={postalCode} onChangeText={setPostalCode} editable={isEditing} keyboardType="numeric" placeholder="75001" style={{ flex: 0.45 }} />
+        <Field label={t("pinfo.postal")} value={postalCode} onChangeText={setPostalCode} editable={isEditing} keyboardType="numeric" placeholder="75001" style={{ flex: 0.45 }} />
         <View style={{ flex: 1, minWidth: 0 }}>
           {showCityPicker ? (
             <PickerSheet
-              label="Ville *"
+              label={t("pinfo.city")}
               value={city}
               onChange={setCity}
               items={residenceCities}
               editable={isEditing}
-              placeholder="Sélectionner…"
-              searchPlaceholder="Rechercher une ville"
-              emptyText="Aucune ville disponible"
+              placeholder={t("pinfo.select")}
+              searchPlaceholder={t("pinfo.searchCity")}
+              emptyText={t("pinfo.noCity")}
             />
           ) : (
-            <Field label="Ville *" value={city} onChangeText={setCity} editable={isEditing} autoCapitalize="words" placeholder="Paris" />
+            <Field label={t("pinfo.city")} value={city} onChangeText={setCity} editable={isEditing} autoCapitalize="words" placeholder="Paris" />
           )}
         </View>
       </View>
       <PickerSheet
-        label="Pays de résidence *"
+        label={t("pinfo.country")}
         value={country}
         onChange={(newCountry: string) => {
           setCountry(newCountry);
@@ -293,10 +300,11 @@ export default function PersonalInfoWallet() {
         }}
         items={COUNTRIES as string[]}
         editable={isEditing}
-        placeholder="Sélectionner…"
-        searchPlaceholder="Rechercher un pays"
+        placeholder={t("pinfo.select")}
+        searchPlaceholder={t("pinfo.searchCountry")}
         icon="globe-outline"
-        emptyText="Aucun pays trouvé"
+        emptyText={t("pinfo.noCountry")}
+        labelOf={localizeCountry}
       />
       <View style={{ height: 8 }} />
     </Screen>

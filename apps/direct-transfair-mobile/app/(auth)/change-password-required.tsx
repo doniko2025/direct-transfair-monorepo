@@ -21,9 +21,11 @@ import AuthNotice from '../../components/auth/AuthNotice';
 import PinGuide from '../../components/auth/PinGuide';
 import PinInput from '../../components/auth/PinInput';
 import { PIN_LENGTH, pinProblem } from '../../components/auth/pinRules';
+import { useT } from '../../providers/I18nProvider';
 
 export default function ChangePasswordRequiredScreen() {
   const P = useAuthPalette();
+  const t = useT();
   const { user, refreshUser, logout } = useAuth();
   const confirmRef = useRef<RNTextInput | null>(null);
   const pinContext = { birthDate: (user as any)?.birthDate ?? null, phone: user?.phone ?? null };
@@ -38,14 +40,14 @@ export default function ChangePasswordRequiredScreen() {
   const submit = async () => {
     if (loading) return;
     const found: typeof errors = {};
-    if (!current) found.current = 'Saisissez votre mot de passe actuel (ou le mot de passe temporaire reçu).';
-    if (next.length !== PIN_LENGTH) found.next = `Le code doit contenir exactement ${PIN_LENGTH} chiffres.`;
-    else if (next === current) found.next = 'Le nouveau code doit être différent de l’ancien.';
+    if (!current) found.current = t('cpw.errCurrent');
+    if (next.length !== PIN_LENGTH) found.next = t('pinx.exactLen', { n: PIN_LENGTH });
+    else if (next === current) found.next = t('cpw.errSame');
     else {
       const weak = pinProblem(next, pinContext);
       if (weak) found.next = weak;
     }
-    if (confirm !== next) found.confirm = 'Les deux codes ne sont pas identiques.';
+    if (confirm !== next) found.confirm = t('cpw.errMismatch');
     setErrors(found);
     setFailure(null);
     if (Object.keys(found).length > 0) return;
@@ -56,10 +58,10 @@ export default function ChangePasswordRequiredScreen() {
       // Relit le profil : mustChangePassword passe à false, le garde de navigation ouvre alors l'accueil.
       await refreshUser();
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? 'Impossible de modifier le code secret.';
+      const raw = e?.response?.data?.message ?? e?.message ?? t('cpw.errGeneric');
       const msg = Array.isArray(raw) ? String(raw[0]) : String(raw);
       if (e?.response?.data?.code === 'PIN_WEAK') setErrors({ next: msg });
-      else if (/ancien|actuel|incorrect/i.test(msg)) setErrors({ current: 'Mot de passe actuel incorrect.' });
+      else if (/ancien|actuel|incorrect|current|old password|atual|antiga/i.test(msg)) setErrors({ current: t('cpw.errCurrentWrong') });
       else setFailure(msg);
     } finally {
       setLoading(false);
@@ -69,16 +71,17 @@ export default function ChangePasswordRequiredScreen() {
   return (
     <AuthShell
       compact
-      title="Choisissez votre code secret"
-      subtitle="Remplacez votre ancien mot de passe par un code à 6 chiffres que vous seul connaissez. Il protège votre portefeuille."
+      showLang
+      title={t('cpw.title')}
+      subtitle={t('cpw.subtitle')}
     >
       {failure ? <AuthNotice kind="error" message={failure} /> : null}
 
       <AuthField
-        label="Mot de passe actuel ou temporaire"
+        label={t('cpw.current')}
         icon="key-outline"
         value={current}
-        onChangeText={(t) => { setCurrent(t); if (errors.current) setErrors((e) => ({ ...e, current: undefined })); }}
+        onChangeText={(v) => { setCurrent(v); if (errors.current) setErrors((e) => ({ ...e, current: undefined })); }}
         error={errors.current}
         secure
         autoComplete="current-password"
@@ -88,7 +91,7 @@ export default function ChangePasswordRequiredScreen() {
         maxLength={128}
       />
       <PinInput
-        label="Nouveau code secret (6 chiffres)"
+        label={t('pinx.newLabel')}
         value={next}
         onChange={(v) => { setNext(v); if (errors.next) setErrors((e) => ({ ...e, next: undefined })); }}
         onComplete={() => confirmRef.current?.focus()}
@@ -98,7 +101,7 @@ export default function ChangePasswordRequiredScreen() {
       />
       <PinGuide pin={next} context={pinContext} />
       <PinInput
-        label="Confirmer le code secret"
+        label={t('pinx.confirmLabel')}
         value={confirm}
         onChange={(v) => { setConfirm(v); if (errors.confirm) setErrors((e) => ({ ...e, confirm: undefined })); }}
         accent={P.accent}
@@ -109,8 +112,8 @@ export default function ChangePasswordRequiredScreen() {
       />
 
       <View style={{ gap: 8, marginTop: 8 }}>
-        <AuthButton label="Enregistrer et continuer" loading={loading} onPress={() => void submit()} />
-        <AuthButton label="Se déconnecter" variant="link" accent={P.accent} disabled={loading} onPress={() => void logout()} />
+        <AuthButton label={t('cpw.save')} loading={loading} onPress={() => void submit()} />
+        <AuthButton label={t('cpw.logout')} variant="link" accent={P.accent} disabled={loading} onPress={() => void logout()} />
       </View>
     </AuthShell>
   );

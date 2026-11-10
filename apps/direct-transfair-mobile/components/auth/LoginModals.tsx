@@ -9,18 +9,20 @@
 import React from "react";
 import { View } from "react-native";
 import { ListRow, Sheet, UText } from "../ui";
+import { useT } from "../../providers/I18nProvider";
 
 export function ForgotCodeModal({
   visible, onClose, onPick,
 }: { visible: boolean; onClose: () => void; onPick: (channel: "EMAIL" | "PHONE") => void }) {
+  const t = useT();
   return (
-    <Sheet visible={visible} onClose={onClose} title="Code oublié ?">
+    <Sheet visible={visible} onClose={onClose} title={t('modal.forgot.title')}>
       <View style={{ paddingBottom: 6 }}>
         <UText v="body" tone="muted" style={{ marginBottom: 10 }}>
-          Choisissez comment recevoir votre code de vérification pour en définir un nouveau.
+          {t('modal.forgot.intro')}
         </UText>
-        <ListRow icon="mail-outline" title="Par email" subtitle="Recevoir le code dans votre boîte mail" chevron={false} onPress={() => onPick("EMAIL")} />
-        <ListRow icon="chatbubble-ellipses-outline" title="Par SMS" subtitle="Recevoir le code sur votre téléphone" chevron={false} last onPress={() => onPick("PHONE")} />
+        <ListRow icon="mail-outline" title={t('modal.forgot.email')} subtitle={t('modal.forgot.emailSub')} chevron={false} onPress={() => onPick("EMAIL")} />
+        <ListRow icon="chatbubble-ellipses-outline" title={t('modal.forgot.sms')} subtitle={t('modal.forgot.smsSub')} chevron={false} last onPress={() => onPick("PHONE")} />
       </View>
     </Sheet>
   );
@@ -38,14 +40,15 @@ export function LoginOptionsModal({
   onEmailCode: () => void;
   onSwitchMethod: () => void;
 }) {
+  const t = useT();
   return (
-    <Sheet visible={visible} onClose={onClose} title="Autres options de connexion">
+    <Sheet visible={visible} onClose={onClose} title={t('modal.options.title')}>
       <View style={{ paddingBottom: 6 }}>
         {biometricLabel ? <ListRow icon="finger-print-outline" title={biometricLabel} chevron={false} onPress={onBiometric} /> : null}
-        <ListRow icon="mail-open-outline" title="Code reçu par email" subtitle="Sans mot de passe : un code à 6 chiffres vous est envoyé" chevron={false} onPress={onEmailCode} />
+        <ListRow icon="mail-open-outline" title={t('modal.options.emailCode')} subtitle={t('modal.options.emailCodeSub')} chevron={false} onPress={onEmailCode} />
         <ListRow
           icon={method === "PHONE" ? "mail-outline" : "call-outline"}
-          title={method === "PHONE" ? "Email et mot de passe" : "Téléphone et code secret"}
+          title={method === "PHONE" ? t('modal.options.useEmail') : t('modal.options.usePhone')}
           chevron={false}
           last
           onPress={onSwitchMethod}

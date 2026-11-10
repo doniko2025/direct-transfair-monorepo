@@ -21,6 +21,8 @@ import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
+import { useT } from "../../../providers/I18nProvider";
+import { fmtNumber } from "../../../i18n/runtime";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {
   Button, Card, ErrorView, Field, NavBar, Notice, Pill, Screen, SectionHeader, Sheet, SkeletonRows, SlowNote, UText, useUI,
@@ -36,7 +38,7 @@ type LimitsData = {
 
 function fmt(n: number, currency = "EUR"): string {
   try {
-    return new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
+    return fmtNumber(n, { style: "currency", currency, maximumFractionDigits: 0 });
   } catch { return `${n} ${currency}`; }
 }
 
@@ -44,6 +46,7 @@ function LimitCard({ title, period, used, max, currency }: {
   title: string; period: string; used: number; max: number | null; currency: string;
 }) {
   const { C } = useUI();
+  const t = useT();
   const unlimited = max === null;
   const pct = !unlimited && max > 0 ? Math.min((used / max) * 100, 100) : 0;
   const remaining = unlimited ? 0 : Math.max(0, max - used);
@@ -62,7 +65,7 @@ function LimitCard({ title, period, used, max, currency }: {
       </View>
       <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <UText v="title" numberOfLines={1} adjustsFontSizeToFit style={{ flexShrink: 1 }}>{fmt(used, currency)}</UText>
-        <UText v="body" tone="muted">/ {unlimited ? "Sans limite" : fmt(max, currency)}</UText>
+        <UText v="body" tone="muted">/ {unlimited ? t("lim.unlimited") : fmt(max, currency)}</UText>
       </View>
       <View style={{ height: 8, borderRadius: 4, backgroundColor: C.line, overflow: "hidden", marginTop: 14, marginBottom: 12 }}>
         <View style={{ height: 8, borderRadius: 4, width: `${pct}%` as any, backgroundColor: barColor }} />
@@ -70,7 +73,7 @@ function LimitCard({ title, period, used, max, currency }: {
       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
         <Ionicons name={isDanger ? "alert-circle-outline" : "checkmark-circle-outline"} size={15} color={isDanger ? C.danger : C.muted} />
         <UText v="caption" color={isDanger ? C.danger : C.muted} style={{ flexShrink: 1 }}>
-          {unlimited ? "Aucun plafond sur cette période" : `${fmt(remaining, currency)} restant${isDanger ? " · limite presque atteinte" : ""}`}
+          {unlimited ? t("lim.noCap") : `${t("lim.remaining", { amount: fmt(remaining, currency) })}${isDanger ? t("lim.almost") : ""}`}
         </UText>
       </View>
     </Card>
@@ -79,6 +82,7 @@ function LimitCard({ title, period, used, max, currency }: {
 
 // ─── Feuille « demande d'augmentation » ──────────────────
 function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const t = useT();
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -87,13 +91,13 @@ function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: ()
   const handleClose = () => { setReason(""); setSuccess(false); setError(null); onClose(); };
 
   const handleSubmit = async () => {
-    if (!reason.trim()) { setError("Veuillez préciser la raison de votre demande."); return; }
+    if (!reason.trim()) { setError(t("lim.reqReason")); return; }
     try {
       setSubmitting(true); setError(null);
       await api.http.post("/limits/request", { reason: reason.trim() });
       setSuccess(true);
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Erreur lors de l'envoi";
+      const raw = e?.response?.data?.message ?? e?.message ?? t("lim.reqFail");
       setError(Array.isArray(raw) ? raw[0] : String(raw));
     } finally { setSubmitting(false); }
   };
@@ -102,12 +106,12 @@ function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: ()
     <Sheet
       visible={visible}
       onClose={handleClose}
-      title={success ? "Demande envoyée" : "Augmenter mes plafonds"}
+      title={success ? t("lim.reqSent") : t("lim.reqTitle")}
       footer={
         success ? (
-          <Button label="Fermer" onPress={handleClose} />
+          <Button label={t("common.close")} onPress={handleClose} />
         ) : (
-          <Button label="Envoyer la demande" icon="paper-plane-outline" onPress={handleSubmit} loading={submitting} disabled={submitting} />
+          <Button label={t("lim.reqSend")} icon="paper-plane-outline" onPress={handleSubmit} loading={submitting} disabled={submitting} />
         )
       }
     >
@@ -115,17 +119,17 @@ function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: ()
         <View style={{ alignItems: "center", paddingVertical: 24, gap: 10 }}>
           <Ionicons name="checkmark-circle" size={56} color="#2E8B57" />
           <UText v="body" tone="muted" align="center">
-            Ta demande a été transmise. Nous te répondrons dans les plus brefs délais.
+            {t("lim.reqDone")}
           </UText>
         </View>
       ) : (
         <View style={{ paddingTop: 8 }}>
-          <UText v="caption" tone="muted" style={{ marginBottom: 14 }}>Demande soumise à validation.</UText>
+          <UText v="caption" tone="muted" style={{ marginBottom: 14 }}>{t("lim.reqNote")}</UText>
           <Field
-            label="Motif de la demande"
+            label={t("lim.reqReasonLabel")}
             value={reason}
             onChangeText={setReason}
-            placeholder="Ex. : augmentation d'activité, virements professionnels réguliers…"
+            placeholder={t("lim.reqPh")}
             multiline
             maxLength={500}
             error={error}
@@ -139,6 +143,7 @@ function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: ()
 
 export default function LimitsScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
   const [showModal, setShowModal] = useState(false);
 
@@ -152,8 +157,8 @@ export default function LimitsScreen() {
 
   return (
     <Screen
-      header={<NavBar title="Mes plafonds" subtitle="Transferts & virements" onBack={() => router.back()} />}
-      footer={data?.limits ? <Button label="Demander une augmentation" icon="trending-up-outline" onPress={() => setShowModal(true)} /> : undefined}
+      header={<NavBar title={t("lim.title")} subtitle={t("lim.subtitle")} onBack={() => router.back()} />}
+      footer={data?.limits ? <Button label={t("lim.requestBtn")} icon="trending-up-outline" onPress={() => setShowModal(true)} /> : undefined}
       refreshing={refreshing}
       onRefresh={() => void refresh()}
     >
@@ -163,37 +168,37 @@ export default function LimitsScreen() {
           <SkeletonRows rows={3} />
         </>
       ) : status === "error" || !data?.limits ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? "Réessaie dans un instant."} onRetry={() => void reload()} />
+        <ErrorView title={error?.title ?? t("kycs.loadFail")} message={error?.message ?? t("kycs.retryLater")} onRetry={() => void reload()} />
       ) : (
         <>
           <Notice tone="info" icon="information-circle-outline">
-            Ces plafonds sont fixés pour ta sécurité et conformément à la réglementation en vigueur.
+            {t("lim.info")}
           </Notice>
 
           <Card tone="sunken" style={{ marginTop: 16 }}>
-            <UText v="overline" tone="muted">Niveau de vérification</UText>
+            <UText v="overline" tone="muted">{t("lim.level")}</UText>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 }}>
-              <Pill label={data.kycLabel} tone={kycTone(data.kycLevel)} icon="shield-checkmark-outline" />
+              <Pill label={(["LEVEL_0", "LEVEL_1", "LEVEL_2", "LEVEL_3"] as const).includes(data.kycLevel as any) ? t(`lim.lvl.${data.kycLevel as "LEVEL_0"}`) : data.kycLabel} tone={kycTone(data.kycLevel)} icon="shield-checkmark-outline" />
             </View>
             <UText v="caption" tone="muted" style={{ marginTop: 10 }}>
-              Complète ta vérification pour augmenter tes plafonds.
+              {t("lim.upgradeHint")}
             </UText>
             {data.kycLevel !== "LEVEL_3" ? (
               <View style={{ marginTop: 12 }}>
-                <Button label="Voir ma vérification d'identité" icon="shield-checkmark-outline" kind="soft" small onPress={() => router.push("/(tabs)/profile/kyc" as any)} />
+                <Button label={t("lim.seeKyc")} icon="shield-checkmark-outline" kind="soft" small onPress={() => router.push("/(tabs)/profile/kyc" as any)} />
               </View>
             ) : null}
           </Card>
 
-          <SectionHeader title="Plafonds actifs" style={{ marginTop: 26, marginBottom: 12 }} />
-          <LimitCard title="Plafond journalier" period="Aujourd'hui" {...data.limits.daily} currency={data.currency} />
-          <LimitCard title="Plafond mensuel" period="Ce mois" {...data.limits.monthly} currency={data.currency} />
-          <LimitCard title="Plafond annuel" period="Cette année" {...data.limits.yearly} currency={data.currency} />
+          <SectionHeader title={t("lim.active")} style={{ marginTop: 26, marginBottom: 12 }} />
+          <LimitCard title={t("lim.daily")} period={t("lim.today")} {...data.limits.daily} currency={data.currency} />
+          <LimitCard title={t("lim.monthly")} period={t("lim.thisMonth")} {...data.limits.monthly} currency={data.currency} />
+          <LimitCard title={t("lim.yearly")} period={t("lim.thisYear")} {...data.limits.yearly} currency={data.currency} />
 
           <UText v="caption" tone="muted" align="center" style={{ marginTop: 6 }}>
             {data.perTransaction === null || data.perTransaction === undefined
-              ? "Montant maximal par envoi : sans limite"
-              : `Montant maximal par envoi : ${fmt(data.perTransaction, data.currency)}`}
+              ? t("lim.perTxUnlimited")
+              : t("lim.perTx", { amount: fmt(data.perTransaction, data.currency) })}
           </UText>
         </>
       )}

@@ -26,6 +26,8 @@ import { Ionicons } from "../components/ui/Icon";
 import { useAuth } from "../providers/AuthProvider";
 import { api } from "../services/api";
 import { AmountInput, Button, Chip, Field, IconButton, Notice, Screen, Tabs, UText, useUI } from "../components/ui";
+import { useT } from "../providers/I18nProvider";
+import { tr, getLocale } from "../i18n/runtime";
 
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
@@ -44,7 +46,7 @@ function errMsg(e: any, fallback: string): string {
 }
 
 function fmt(n: number): string {
-  try { return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(n); }
+  try { return new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 2 }).format(n); }
   catch { return n.toString(); }
 }
 
@@ -52,6 +54,7 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export default function TopUpScreen() {
   const { C, R } = useUI();
+  const t = useT();
   const router = useRouter();
   const params = useLocalSearchParams<{ method?: string }>();
   const { user, refreshUser } = useAuth();
@@ -89,20 +92,20 @@ export default function TopUpScreen() {
       } catch (e) {
         if (!alive) return;
         setEnabled([]);
-        setOptionsError(errMsg(e, "Impossible de charger les moyens de recharge."));
+        setOptionsError(errMsg(e, tr("topup.loadFail")));
       }
     })();
     return () => { alive = false; };
   }, []);
 
   const tabItems = ([
-    { key: "CARD" as UiMethod, label: "Carte", icon: "card-outline" as const },
+    { key: "CARD" as UiMethod, label: t("rc.card"), icon: "card-outline" as const },
     { key: "OM" as UiMethod, label: "Orange Money", icon: "phone-portrait-outline" as const },
-  ]).filter((t) => (enabled ?? []).includes(SERVER_CODE[t.key]));
+  ]).filter((it) => (enabled ?? []).includes(SERVER_CODE[it.key]));
 
   // Si l'onglet courant n'est pas ouvert par la société, bascule sur le premier disponible.
   useEffect(() => {
-    if (tabItems.length > 0 && !tabItems.some((t) => t.key === method)) setMethod(tabItems[0].key);
+    if (tabItems.length > 0 && !tabItems.some((it) => it.key === method)) setMethod(tabItems[0].key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
@@ -123,11 +126,10 @@ export default function TopUpScreen() {
   };
 
   const handleTopUp = () => {
-    if (!canPay) { Alert.alert("Données manquantes", "Veuillez compléter tous les champs."); return; }
-    const label = method === "CARD" ? "par carte" : "par Orange Money";
-    Alert.alert("Confirmation", `Recharger ${fmt(numAmount)} ${currency} ${label} ?`, [
-      { text: "Annuler", style: "cancel" },
-      { text: "PAYER", onPress: () => void processPayment() },
+    if (!canPay) { Alert.alert(t("topup.missing"), t("topup.fillAll")); return; }
+    Alert.alert(t("common.confirm"), t(method === "CARD" ? "topup.confirmCard" : "topup.confirmOm", { amount: `${fmt(numAmount)} ${currency}` }), [
+      { text: t("common.cancel"), style: "cancel" },
+      { text: t("topup.payBtn"), onPress: () => void processPayment() },
     ]);
   };
 
@@ -167,20 +169,20 @@ export default function TopUpScreen() {
       if (!mounted.current) return;
 
       if (outcome === "PAID") {
-        Alert.alert("✅ Recharge effectuée", `Votre compte a été crédité de ${fmt(numAmount)} ${currency}.`, [
-          { text: "Super", onPress: handleClose },
+        Alert.alert(t("topup.doneTitle"), t("topup.doneMsg", { amount: `${fmt(numAmount)} ${currency}` }), [
+          { text: t("topup.great"), onPress: handleClose },
         ]);
       } else if (outcome === "PENDING") {
         Alert.alert(
-          "Recharge en cours",
-          "Le paiement n'est pas encore confirmé. Votre solde sera mis à jour dès la validation.",
+          t("topup.pendingTitle"),
+          t("topup.pendingMsg"),
           [{ text: "OK", onPress: handleClose }],
         );
       } else {
-        Alert.alert("Recharge refusée", "Le paiement n'a pas abouti. Aucun montant n'a été débité de votre compte.");
+        Alert.alert(t("topup.refusedTitle"), t("topup.refusedMsg"));
       }
     } catch (e) {
-      Alert.alert("Erreur", errMsg(e, "Le rechargement a échoué. Réessayez."));
+      Alert.alert(t("common.error"), errMsg(e, t("topup.failed")));
     } finally {
       if (mounted.current) setLoading(false);
     }
@@ -192,14 +194,14 @@ export default function TopUpScreen() {
     <Screen
       header={
         <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, minHeight: 64, gap: 12 }}>
-          <UText v="heading" style={{ flex: 1 }}>Recharger le compte</UText>
-          <IconButton icon="close" label="Fermer" onPress={handleClose} />
+          <UText v="heading" style={{ flex: 1 }}>{t("topup.title")}</UText>
+          <IconButton icon="close" label={t("common.close")} onPress={handleClose} />
         </View>
       }
       footer={
         tabItems.length > 0 ? (
           <Button
-            label={`Payer ${numAmount > 0 ? `${fmt(numAmount)} ${currency}` : ""} ${method === "CARD" ? "par carte" : "par Orange Money"}`.replace(/\s+/g, " ").trim()}
+            label={t(method === "CARD" ? "topup.payCard" : "topup.payOm", { amount: numAmount > 0 ? `${fmt(numAmount)} ${currency}` : "" }).replace(/\s+/g, " ").trim()}
             icon={method === "CARD" ? "card-outline" : "phone-portrait-outline"}
             onPress={handleTopUp}
             loading={loading}
@@ -217,13 +219,13 @@ export default function TopUpScreen() {
           {optionsError
             ? optionsError
             : blocked
-              ? "La recharge du compte n'est pas encore disponible."
-              : "Aucun moyen de recharge n'est ouvert par votre société pour le moment. Contactez votre agence."}
+              ? t("topup.notYet")
+              : t("topup.noMethod")}
         </Notice>
       ) : (
         <>
           {/* Montant */}
-          <AmountInput label="MONTANT À AJOUTER" value={amount} onChangeText={setAmount} currency={currency} />
+          <AmountInput label={t("topup.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
             {QUICK_AMOUNTS.map((v) => (
               <Chip key={v} label={`${v}`} active={numAmount === v} onPress={() => setAmount(String(v))} />
@@ -238,7 +240,7 @@ export default function TopUpScreen() {
           )}
 
           <Notice tone="info" icon="information-circle-outline">
-            Mode simulation : aucun vrai prélèvement n'est effectué, le compte est crédité à titre de test.
+            {t("topup.simulation")}
           </Notice>
           <View style={{ height: 16 }} />
 
@@ -253,15 +255,15 @@ export default function TopUpScreen() {
                 <UText v="subheading" color={C.accentInk} style={{ letterSpacing: 2 }} numberOfLines={1}>{previewNumber}</UText>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
                   <UText v="label" color={C.accentInk} style={{ textTransform: "uppercase", flex: 1, opacity: 0.85 }} numberOfLines={1}>
-                    {cardHolder || "Nom du titulaire"}
+                    {cardHolder || t("topup.holderName")}
                   </UText>
-                  <UText v="label" color={C.accentInk} style={{ opacity: 0.85 }}>{cardExpiry || "MM/AA"}</UText>
+                  <UText v="label" color={C.accentInk} style={{ opacity: 0.85 }}>{cardExpiry || t("rc.expiryPh")}</UText>
                 </View>
               </View>
 
-              <Field label="Nom du titulaire" value={cardHolder} onChangeText={setCardHolder} placeholder="Jean DUPONT" autoCapitalize="words" />
+              <Field label={t("topup.holderName")} value={cardHolder} onChangeText={setCardHolder} placeholder={t("topup.holderPh")} autoCapitalize="words" />
               <Field
-                label="Numéro de carte"
+                label={t("rc.cardNumber")}
                 icon="card-outline"
                 value={cardNumber}
                 onChangeText={(v: string) => setCardNumber(v.replace(/\D/g, "").slice(0, 19))}
@@ -269,20 +271,20 @@ export default function TopUpScreen() {
                 keyboardType="numeric"
                 maxLength={19}
               />
-              <Field label="Expiration" value={cardExpiry} onChangeText={onExpiryChange} placeholder="MM/AA" keyboardType="numeric" maxLength={5} />
+              <Field label={t("rc.expiry")} value={cardExpiry} onChangeText={onExpiryChange} placeholder={t("rc.expiryPh")} keyboardType="numeric" maxLength={5} />
             </>
           ) : (
             <>
               <Field
-                label="Numéro Orange Money"
+                label={t("rc.omNumber")}
                 icon="call-outline"
                 value={mobileNumber}
                 onChangeText={setMobileNumber}
-                placeholder="Numéro complet avec indicatif"
+                placeholder={t("topup.fullNumber")}
                 keyboardType="phone-pad"
               />
               <Notice tone="info" icon="information-circle-outline">
-                Tu recevras un SMS pour valider le paiement Orange Money.
+                {t("topup.omSms")}
               </Notice>
             </>
           )}

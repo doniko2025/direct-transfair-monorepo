@@ -10,24 +10,25 @@ import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, View } from "react-native";
 import { Ionicons } from "../ui/Icon";
 import { UText, useUI } from "../ui";
-import { KYC_STATUS_LABEL, formatDay, type KycExpiryView, type KycOverall } from "../../services/kyc";
+import { KYC_DOC_LABEL, KYC_STATUS_LABEL, formatDay, type KycExpiryView, type KycOverall } from "../../services/kyc";
+import { tr } from "../../i18n/runtime";
 
 type Look = { icon: string; tone: "warn" | "danger" | "info" | "pos"; title: string; text: string; cta: string };
 
 export function kycLook(status: KycOverall, hasRejection = false): Look {
   switch (status) {
     case "VERIFIED":
-      return { icon: "shield-checkmark", tone: "pos", title: KYC_STATUS_LABEL.VERIFIED, text: "Vous pouvez envoyer, virer et retirer de l'argent.", cta: "Voir mon dossier" };
+      return { icon: "shield-checkmark", tone: "pos", title: KYC_STATUS_LABEL.VERIFIED, text: tr("kcard.verifiedText"), cta: tr("kcard.verifiedCta") };
     case "PENDING":
-      return { icon: "time", tone: "info", title: KYC_STATUS_LABEL.PENDING, text: "Un administrateur examine vos pièces. Vous serez prévenu dès que c'est fait.", cta: "Suivre mon dossier" };
+      return { icon: "time", tone: "info", title: KYC_STATUS_LABEL.PENDING, text: tr("kcard.pendingText"), cta: tr("kcard.pendingCta") };
     case "PARTIAL":
-      return { icon: "shield-half", tone: "warn", title: KYC_STATUS_LABEL.PARTIAL, text: "Il manque encore une pièce pour finaliser la vérification.", cta: "Compléter mon dossier" };
+      return { icon: "shield-half", tone: "warn", title: KYC_STATUS_LABEL.PARTIAL, text: tr("kcard.partialText"), cta: tr("kcard.partialCta") };
     case "REJECTED":
-      return { icon: "close-circle", tone: "danger", title: KYC_STATUS_LABEL.REJECTED, text: hasRejection ? "Une de vos pièces n'a pas été retenue. Envoyez-la à nouveau." : "Envoyez de nouveau vos pièces.", cta: "Renvoyer ma pièce" };
+      return { icon: "close-circle", tone: "danger", title: KYC_STATUS_LABEL.REJECTED, text: hasRejection ? tr("kcard.rejectedText1") : tr("kcard.rejectedText2"), cta: tr("kcard.rejectedCta") };
     case "EXPIRED":
-      return { icon: "alert-circle", tone: "danger", title: KYC_STATUS_LABEL.EXPIRED, text: "Votre pièce d'identité a expiré. Envoyez-en une en cours de validité pour continuer à envoyer de l'argent.", cta: "Envoyer une nouvelle pièce" };
+      return { icon: "alert-circle", tone: "danger", title: KYC_STATUS_LABEL.EXPIRED, text: tr("kcard.expiredText"), cta: tr("kcard.expiredCta") };
     default:
-      return { icon: "id-card", tone: "warn", title: KYC_STATUS_LABEL.NOT_SUBMITTED, text: "Pour envoyer de l'argent, virer ou retirer, envoyez une pièce d'identité et un selfie. Cela prend 2 minutes.", cta: "Vérifier mon identité" };
+      return { icon: "id-card", tone: "warn", title: KYC_STATUS_LABEL.NOT_SUBMITTED, text: tr("kcard.newText"), cta: tr("kcard.newCta") };
   }
 }
 
@@ -37,9 +38,9 @@ export function kycExpiringLook(expiry: KycExpiryView): Look {
   return {
     icon: "hourglass",
     tone: d <= 7 ? "danger" : "warn",
-    title: d <= 7 ? `Pièce expirée dans ${d} jour${d > 1 ? "s" : ""}` : "Pièce bientôt expirée",
-    text: `Votre ${expiry.label.toLowerCase()} est valable jusqu'au ${formatDay(expiry.expiryDate)}. Envoyez-en une nouvelle pour ne pas être bloqué.`,
-    cta: "Renouveler ma pièce",
+    title: d <= 7 ? tr("kcard.expDays", { count: d }) : tr("kcard.expSoon"),
+    text: tr("kcard.expText", { doc: (KYC_DOC_LABEL[expiry.type] ?? expiry.label).toLowerCase(), date: formatDay(expiry.expiryDate) }),
+    cta: tr("kcard.expCta"),
   };
 }
 

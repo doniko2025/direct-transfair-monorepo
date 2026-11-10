@@ -25,6 +25,7 @@ import { useAuth } from "../../providers/AuthProvider";
 import { useProfilePhoto } from "../../hooks/useProfilePhoto";
 import { useTenant } from "../../providers/TenantProvider";
 import { Avatar, Button, Card, IconButton, NavBar, Pill, Screen, UText, useUI } from "../../components/ui";
+import { useT } from "../../providers/I18nProvider";
 
 // Scheme déclaré dans app.json ("scheme": "directtransfair")
 const DEEP_LINK_SCHEME = "directtransfair";
@@ -54,6 +55,7 @@ function QRFrame({ value, accent, ink }: { value: string | null; accent: string;
 }
 
 export default function QRCodeScreen() {
+  const t = useT();
   const { C } = useUI();
   const { branding } = useTenant();
   const router = useRouter();
@@ -62,7 +64,7 @@ export default function QRCodeScreen() {
 
   const [copied, setCopied] = useState(false);
 
-  const displayName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : "Client";
+  const displayName = user?.firstName ? `${user.firstName} ${user.lastName ?? ""}`.trim() : t("myqr.client");
   const userId = user?.id?.slice(0, 12).toUpperCase() ?? "—";
 
   // Lien de paiement encodé dans le QR
@@ -81,7 +83,7 @@ export default function QRCodeScreen() {
     if (!qrValue) return;
     try {
       await Share.share({
-        message: `Envoyez-moi de l'argent sur ${branding.name} 💸\n\n${displayName}\n${qrValue}`,
+        message: t("myqr.shareMsg", { app: branding.name, name: displayName, link: qrValue }),
       });
     } catch { /* noop */ }
   };
@@ -90,26 +92,26 @@ export default function QRCodeScreen() {
     <Screen
       header={
         <NavBar
-          title="Mon QR code"
+          title={t("myqr.title")}
           onBack={() => router.back()}
-          right={<IconButton icon="share-outline" label="Partager mon lien de paiement" onPress={handleShare} />}
+          right={<IconButton icon="share-outline" label={t("myqr.shareLink")} onPress={handleShare} />}
         />
       }
       footer={
         <View style={{ flexDirection: "row", gap: 12 }}>
           <Button
             style={{ flex: 1 }}
-            label={copied ? "Copié !" : "Copier l'ID"}
+            label={copied ? t("myqr.copied") : t("myqr.copyId")}
             kind="outline"
             icon={copied ? "checkmark" : "copy-outline"}
             onPress={handleCopyId}
           />
-          <Button style={{ flex: 1 }} label="Scanner" icon="scan-outline" onPress={() => router.push("/scan" as any)} />
+          <Button style={{ flex: 1 }} label={t("myqr.scan")} icon="scan-outline" onPress={() => router.push("/scan" as any)} />
         </View>
       }
     >
       <UText v="body" tone="muted" style={{ marginBottom: 18 }}>
-        Présente ce code pour recevoir de l'argent instantanément.
+        {t("myqr.intro")}
       </UText>
 
       <Card pad={0} style={{ overflow: "hidden" }}>
@@ -134,16 +136,16 @@ export default function QRCodeScreen() {
           </View>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: C.pos }} />
-            <UText v="overline" tone="muted">QR actif · {branding.name}</UText>
+            <UText v="overline" tone="muted">{t("myqr.active", { app: branding.name })}</UText>
           </View>
         </View>
 
         {/* Atouts */}
         <View style={{ flexDirection: "row", backgroundColor: C.sunken, paddingVertical: 14 }}>
           {[
-            { icon: "flash-outline", label: "Instantané" },
-            { icon: "shield-checkmark-outline", label: "Sécurisé" },
-            { icon: "lock-closed-outline", label: "Chiffré" },
+            { icon: "flash-outline", label: t("myqr.instant") },
+            { icon: "shield-checkmark-outline", label: t("myqr.secure") },
+            { icon: "lock-closed-outline", label: t("myqr.encrypted") },
           ].map((it, i) => (
             <View
               key={it.label}
@@ -157,7 +159,7 @@ export default function QRCodeScreen() {
       </Card>
 
       <UText v="caption" tone="muted" align="center" style={{ marginTop: 16 }}>
-        Code sécurisé · valide uniquement pour ton compte
+        {t("myqr.foot")}
       </UText>
     </Screen>
   );

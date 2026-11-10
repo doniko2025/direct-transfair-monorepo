@@ -22,6 +22,7 @@ import {
 import { ShopAvatar } from "../../components/merchant/ShopAvatar";
 import { useMerchantLogo } from "../../hooks/useMerchantLogo";
 import { useReceiptSharer } from "../../components/merchant/ReceiptQr";
+import { useT } from "../../providers/I18nProvider";
 
 const POLL_MS = 2000;
 
@@ -35,6 +36,7 @@ function Detail({ label, value, strong }: { label: string; value: string; strong
 }
 
 export default function MerchantPaymentScreen() {
+  const t = useT();
   const router = useRouter();
   const { C } = useUI();
   const { id, from, merchantId } = useLocalSearchParams<{ id?: string; from?: string; merchantId?: string }>();
@@ -69,8 +71,8 @@ export default function MerchantPaymentScreen() {
   useEffect(() => {
     alive.current = true;
     void load();
-    const t = setInterval(() => { if (!terminal.current) void load(); }, POLL_MS);
-    return () => { alive.current = false; clearInterval(t); };
+    const timer = setInterval(() => { if (!terminal.current) void load(); }, POLL_MS);
+    return () => { alive.current = false; clearInterval(timer); };
   }, [load]);
 
   // Une demande reçue (le marchand est le payeur) a sa propre page.
@@ -127,8 +129,8 @@ export default function MerchantPaymentScreen() {
 
   if (!p) {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} title="Encaissement" />}>
-        {loadError ? <ErrorView title="Paiement introuvable" message={loadError} onRetry={() => { setLoadError(null); void load(); }} /> : <SkeletonRows rows={3} />}
+      <Screen header={<NavBar onBack={() => router.back()} title={t("mpd.title")} />}>
+        {loadError ? <ErrorView title={t("mpd.notFound")} message={loadError} onRetry={() => { setLoadError(null); void load(); }} /> : <SkeletonRows rows={3} />}
       </Screen>
     );
   }
@@ -140,17 +142,17 @@ export default function MerchantPaymentScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={goHome} title={p.reference} subtitle={p.method === "QR" ? "Paiement par QR code" : "Paiement par téléphone"} />}
+      header={<NavBar onBack={goHome} title={p.reference} subtitle={p.method === "QR" ? t("mpd.viaQr") : t("mpd.viaPhone")} />}
       footer={
         done ? (
           <View style={{ gap: 10 }}>
-            <Button label="Nouvel encaissement" icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone", ...(merchantId ? { merchantId: String(merchantId), from: "cashier" } : {}) } } as any)} />
-            {p.status === "PAID" && <Button label="Reçu (PDF)" icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} />}
-            {canRefund && <Button label="Rembourser le client" icon="return-down-back-outline" kind="danger" onPress={() => { setRefundProblem(null); setPin(""); setRefundOpen(true); }} />}
-            <Button label="Terminer" kind="ghost" onPress={goHome} />
+            <Button label={t("mpd.newCollect")} icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone", ...(merchantId ? { merchantId: String(merchantId), from: "cashier" } : {}) } } as any)} />
+            {p.status === "PAID" && <Button label={t("pco.receipt")} icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} />}
+            {canRefund && <Button label={t("mpd.refundBtn")} icon="return-down-back-outline" kind="danger" onPress={() => { setRefundProblem(null); setPin(""); setRefundOpen(true); }} />}
+            <Button label={t("pco.finish")} kind="ghost" onPress={goHome} />
           </View>
         ) : (
-          <Button label="Annuler cet encaissement" kind="outline" loading={cancelling} onPress={cancel} />
+          <Button label={t("mpd.cancelBtn")} kind="outline" loading={cancelling} onPress={cancel} />
         )
       }
     >
@@ -161,7 +163,7 @@ export default function MerchantPaymentScreen() {
         <Rise>
           <MerchantQrCard payload={p.qrPayload} amountLabel={money(p.amount, p.currency)} secondsLeft={left} totalSeconds={total} businessName={p.merchant.businessName} />
           <Notice tone="info" icon="scan-outline" style={{ marginTop: 14 }}>
-            Demandez à votre client de choisir « Payer avec QR code » dans son application, de scanner ce code puis de confirmer avec son code secret.
+            {t("mpd.qrTip")}
           </Notice>
         </Rise>
       ) : null}
@@ -174,22 +176,22 @@ export default function MerchantPaymentScreen() {
             </View>
             <UText v="hero" align="center">{money(p.amount, p.currency)}</UText>
             <UText v="body" tone="muted" align="center">
-              Demande envoyée à {p.payer?.name ?? p.payerPhone ?? "votre client"}. Il doit la valider sur son téléphone avec son code secret.
+              {t("mpd.sentTo", { who: p.payer?.name ?? p.payerPhone ?? t("mpd.yourCustomer") })}
             </UText>
-            <UText v="bodyStrong" tone={left <= 30 ? "danger" : "warn"}>Expire dans {mmss(left)}</UText>
+            <UText v="bodyStrong" tone={left <= 30 ? "danger" : "warn"}>{t("mpd.expiresIn", { time: mmss(left) })}</UText>
           </Card>
         </Rise>
       ) : null}
 
       {p.status === "PAID" && !p.refunded ? (
-        <StatusHero tone="pos" icon="checkmark-circle" title="Paiement reçu" message={`${money(p.netAmount ?? p.amount, p.currency)} ajoutés au solde du commerce.`} />
+        <StatusHero tone="pos" icon="checkmark-circle" title={t("mpd.received")} message={t("mpd.receivedMsg", { amount: money(p.netAmount ?? p.amount, p.currency) })} />
       ) : null}
       {p.status === "PAID" && p.refunded ? (
-        <StatusHero tone="info" icon="return-down-back-outline" title="Paiement remboursé" message={`${money(p.amount, p.currency)} rendus au client${p.refundedAt ? ` le ${shortDateTime(p.refundedAt)}` : ""}.`} />
+        <StatusHero tone="info" icon="return-down-back-outline" title={t("mpd.refunded")} message={p.refundedAt ? t("mpd.refundedOn", { amount: money(p.amount, p.currency), date: shortDateTime(p.refundedAt) }) : t("mpd.refundedMsg", { amount: money(p.amount, p.currency) })} />
       ) : null}
-      {p.status === "DECLINED" ? <StatusHero tone="danger" icon="close-circle" title="Paiement refusé" message={p.failureReason ?? "Votre client a refusé la demande."} /> : null}
-      {p.status === "EXPIRED" ? <StatusHero tone="warn" icon="time-outline" title="Demande expirée" message="Le délai est dépassé. Créez un nouvel encaissement." /> : null}
-      {p.status === "CANCELLED" ? <StatusHero tone="info" icon="ban-outline" title="Encaissement annulé" /> : null}
+      {p.status === "DECLINED" ? <StatusHero tone="danger" icon="close-circle" title={t("mpd.declined")} message={p.failureReason ?? t("mpd.declinedMsg")} /> : null}
+      {p.status === "EXPIRED" ? <StatusHero tone="warn" icon="time-outline" title={t("mpd.expired")} message={t("mpd.expiredMsg")} /> : null}
+      {p.status === "CANCELLED" ? <StatusHero tone="info" icon="ban-outline" title={t("mpd.cancelled")} /> : null}
 
       <Card pad={18} style={{ marginTop: 16 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -197,34 +199,34 @@ export default function MerchantPaymentScreen() {
           <UText v="bodyStrong" numberOfLines={1} style={{ flex: 1 }}>{p.merchant.businessName}</UText>
         </View>
         <Divider />
-        <Detail label="Statut" value={p.refunded ? "Remboursé" : PAYMENT_STATUS_LABEL[p.status]} strong />
-        {p.viaStaticQr && <Detail label="Moyen" value="QR de caisse" />}
+        <Detail label={t("mpd.status")} value={p.refunded ? t("mst.refunded") : PAYMENT_STATUS_LABEL[p.status]} strong />
+        {p.viaStaticQr && <Detail label={t("mpd.means")} value={t("mpd.staticQr")} />}
         <Divider />
-        <Detail label="Montant payé par le client" value={money(p.amount, p.currency)} />
-        {p.fee !== undefined && <Detail label="Frais de service" value={money(p.fee, p.currency)} />}
-        {p.netAmount !== undefined && <Detail label="Vous recevez" value={money(p.netAmount, p.currency)} strong />}
+        <Detail label={t("mpd.paidByCustomer")} value={money(p.amount, p.currency)} />
+        {p.fee !== undefined && <Detail label={t("mpd.fee")} value={money(p.fee, p.currency)} />}
+        {p.netAmount !== undefined && <Detail label={t("mpd.youReceive")} value={money(p.netAmount, p.currency)} strong />}
         <Divider />
-        {p.payer && <Detail label="Client" value={p.payer.name} />}
-        {!p.payer && p.payerPhone ? <Detail label="Numéro du client" value={p.payerPhone} /> : null}
-        <Detail label="Référence" value={p.reference} />
-        <Detail label="Créé le" value={shortDateTime(p.createdAt)} />
-        {p.paidAt && <Detail label="Payé le" value={shortDateTime(p.paidAt)} />}
-        {!!p.note && <Detail label="Libellé" value={p.note} />}
-        {p.refunded && !!p.refundReason && <Detail label="Motif du remboursement" value={p.refundReason} />}
+        {p.payer && <Detail label={t("mpd.customer")} value={p.payer.name} />}
+        {!p.payer && p.payerPhone ? <Detail label={t("mpd.customerPhone")} value={p.payerPhone} /> : null}
+        <Detail label={t("pco.reference")} value={p.reference} />
+        <Detail label={t("mpd.createdOn")} value={shortDateTime(p.createdAt)} />
+        {p.paidAt && <Detail label={t("mpd.paidOn")} value={shortDateTime(p.paidAt)} />}
+        {!!p.note && <Detail label={t("mpd.label")} value={p.note} />}
+        {p.refunded && !!p.refundReason && <Detail label={t("mpd.refundReason")} value={p.refundReason} />}
       </Card>
 
-      <Sheet visible={refundOpen} onClose={() => setRefundOpen(false)} title="Rembourser le client">
+      <Sheet visible={refundOpen} onClose={() => setRefundOpen(false)} title={t("mpd.refundTitle")}>
         <Notice tone="warn" style={{ marginBottom: 12 }}>
-          Le client récupère {money(p.amount, p.currency)} (montant intégral).{" "}
+          {t("mpd.refundFull", { amount: money(p.amount, p.currency) })}{" "}
           {p.refundReturnsFee
-            ? `La commission de ${money(p.fee ?? 0, p.currency)} vous est rendue : votre solde baisse de ${money(p.netAmount ?? p.amount, p.currency)}.`
-            : `Ce montant est retiré du solde du commerce et la commission de ${money(p.fee ?? 0, p.currency)} n'est pas remboursée.`}
+            ? t("mpd.refundFeeBack", { fee: money(p.fee ?? 0, p.currency), net: money(p.netAmount ?? p.amount, p.currency) })
+            : t("mpd.refundFeeKept", { fee: money(p.fee ?? 0, p.currency) })}
         </Notice>
         {!!refundProblem && <Notice tone="danger" style={{ marginBottom: 12 }}>{refundProblem}</Notice>}
-        <Field label="Motif (facultatif)" icon="create-outline" value={reason} onChangeText={setReason} maxLength={140} autoCapitalize="sentences" />
+        <Field label={t("mpd.reasonOpt")} icon="create-outline" value={reason} onChangeText={setReason} maxLength={140} autoCapitalize="sentences" />
         <PinPrompt value={pin} onChange={setPin} onComplete={refund} />
         <View style={{ height: 12 }} />
-        <Button label="Confirmer le remboursement" kind="danger" loading={refunding} disabled={pin.length !== 6} onPress={() => refund(pin)} />
+        <Button label={t("mpd.confirmRefund")} kind="danger" loading={refunding} disabled={pin.length !== 6} onPress={() => refund(pin)} />
       </Sheet>
     </Screen>
   );

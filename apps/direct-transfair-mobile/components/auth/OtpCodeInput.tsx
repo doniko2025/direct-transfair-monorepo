@@ -15,6 +15,7 @@ import React, { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
+import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../ui/Text';
 type Props = {
@@ -31,6 +32,7 @@ type Props = {
 export default function OtpCodeInput({
   value, onChange, onComplete, accent, length = 6, error = false, disabled = false, autoFocus = true,
 }: Props) {
+  const t = useT();
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = React.useState(false);
 
@@ -87,7 +89,7 @@ export default function OtpCodeInput({
         autoCorrect={false}
         caretHidden
         style={[s.hidden, WEB_INPUT_RESET]}
-        accessibilityLabel={`Code à ${length} chiffres`}
+        accessibilityLabel={t('otp.a11y', { length })}
         underlineColorAndroid="transparent"
       />
     </Pressable>

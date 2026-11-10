@@ -240,6 +240,7 @@ import { matchesTestPin } from '../common/test-pin'; // ✅ lot 13
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
 import { platform } from '../common/platform.config';
+import { normalizeLang } from '../i18n/lang';
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
@@ -326,6 +327,8 @@ export type PublicUser = {
   mustChangePassword?: boolean;
   /** Lot 11 — PERSONAL (client) ou MERCHANT (commerçant). */
   accountType?: 'PERSONAL' | 'MERCHANT';
+  /** Langue du compte : fr | en | pt (emails, SMS, notifications). */
+  preferredLanguage?: string | null;
   // ✅ v5.2 : champs manquants ajoutés — voir toPublicUser() ci-dessous
   gender?: string | null;
   jobTitle?: string | null;
@@ -868,7 +871,7 @@ export class AuthService {
   // REGISTER ✅ v5.3 : user.create() + wallet.create() atomiques
   // ========================================================
 
-  async register(dto: RegisterDto, tenantFromHeader?: string | null) {
+  async register(dto: RegisterDto, tenantFromHeader?: string | null, lang?: string | null) {
     const email = normalizeEmail(dto.email);
     // ✅ v5.1 : normalizePhoneE164() centralisée — voir
     // common/utils/phone.util.ts pour le détail du bug de collision
@@ -958,6 +961,8 @@ export class AuthService {
           birthPlace:      dto.birthPlace,
           kycLevel:        KycLevel.LEVEL_0,
           referralCode:    generateReferralCode(dto.firstName, dto.lastName),
+          // ✅ langues FR / EN / PT : langue choisie dans l'application à l'inscription (en-tête x-app-lang) → emails et SMS de vérification.
+          preferredLanguage: normalizeLang(lang) ?? normalizeLang(dto.preferredLanguage) ?? 'fr',
         },
       });
 
@@ -1399,6 +1404,12 @@ export class AuthService {
     }
 
     if (updateData.phone) updateData.phone = normalizePhoneE164(updateData.phone); // ✅ v5.1
+    // ✅ langues FR / EN / PT : seule une langue gérée est enregistrée (« pt-BR » → « pt ») ; sinon la valeur est ignorée.
+    if ('preferredLanguage' in updateData) {
+      const lang = normalizeLang(updateData.preferredLanguage);
+      if (lang) updateData.preferredLanguage = lang;
+      else delete updateData.preferredLanguage;
+    }
     if (updateData.country) {
       const newCurrency: CurrencyCode = getCurrencyFromCountry(updateData.country);
       updateData.primaryCurrency = newCurrency;
@@ -1524,6 +1535,7 @@ export class AuthService {
       mfaEnabled: user.mfaEnabled,
       mustChangePassword: Boolean(user.mustChangePassword),
       accountType: user.accountType ?? 'PERSONAL', // ✅ lot 11
+      preferredLanguage: normalizeLang(user.preferredLanguage) ?? 'fr', // ✅ langues FR / EN / PT
       gender: user.gender, jobTitle: user.jobTitle, // ✅ v5.2
       birthDate: user.birthDate,
       birthPlace: user.birthPlace, nationality: user.nationality,

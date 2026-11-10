@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ListNotificationsQueryDto } from './dto/list-notifications.dto';
 import { DeleteNotificationsDto } from './dto/delete-notifications.dto';
 import { parseNotificationSpace } from './notification-space';
+import { langFromRequest } from '../i18n/lang';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -31,6 +32,7 @@ export class NotificationsController {
       limit: query.limit,
       unreadOnly: query.unreadOnly,
       space: parseNotificationSpace(query.space),
+      lang: langFromRequest(req),   // ✅ langues FR / EN / PT (en-tête x-app-lang)
     });
   }
 

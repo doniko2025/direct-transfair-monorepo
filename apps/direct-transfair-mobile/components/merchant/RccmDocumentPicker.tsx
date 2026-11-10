@@ -16,6 +16,8 @@ import { Button, Card, Notice, UText, useUI } from "../ui";
 import { api } from "../../services/api";
 import type { MerchantMe } from "../../services/merchantTypes";
 import { apiProblem } from "./merchantUi";
+import { fmtDate } from "../../i18n/runtime";
+import { useT } from "../../providers/I18nProvider";
 
 export interface RccmPick { uri: string; base64: string }
 
@@ -24,25 +26,22 @@ const MIN_BYTES = 8 * 1024;
 const OPTIONS = { mediaTypes: ["images"] as any, quality: 0.65, base64: true, allowsEditing: false, exif: false };
 
 /** Date « 10 nov. 2026 » à partir d'une date ISO. */
-const shortDate = (iso?: string | null): string => {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
-};
+const shortDate = (iso?: string | null): string => (iso ? fmtDate(iso, { day: "numeric", month: "short", year: "numeric" }) : "");
 
 export function RccmDocumentPicker({
-  value, onChange, uploadedAt, disabled, label = "Document RCCM",
+  value, onChange, uploadedAt, disabled, label,
 }: { value: RccmPick | null; onChange: (v: RccmPick | null) => void; uploadedAt?: string | null; disabled?: boolean; label?: string }) {
   const { C, R } = useUI();
+  const t = useT();
   const [problem, setProblem] = useState<string | null>(null);
 
   const accept = (res: ImagePicker.ImagePickerResult) => {
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
-    if (!a.base64) { setProblem("Image illisible, réessayez."); return; }
+    if (!a.base64) { setProblem(t('rccmDoc.unreadable')); return; }
     const bytes = Math.floor((a.base64.length * 3) / 4);
-    if (bytes > MAX_BYTES) { setProblem("Photo trop lourde (5 Mo maximum). Reprenez-la un peu plus loin ou choisissez une image plus légère."); return; }
-    if (bytes < MIN_BYTES) { setProblem("Photo trop petite ou vide, reprenez-la."); return; }
+    if (bytes > MAX_BYTES) { setProblem(t('rccmDoc.tooBig')); return; }
+    if (bytes < MIN_BYTES) { setProblem(t('rccmDoc.tooSmall')); return; }
     setProblem(null);
     onChange({ uri: a.uri, base64: a.base64 });
   };
@@ -51,15 +50,15 @@ export function RccmDocumentPicker({
     setProblem(null);
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) { setProblem("Autorisez l'appareil photo dans les réglages de votre téléphone."); return; }
+      if (!perm.granted) { setProblem(t('rccmDoc.cameraPerm')); return; }
       accept(await ImagePicker.launchCameraAsync(OPTIONS));
-    } catch { setProblem("Impossible d'ouvrir l'appareil photo."); }
+    } catch { setProblem(t('rccmDoc.cameraFail')); }
   };
 
   const library = async () => {
     setProblem(null);
     try { accept(await ImagePicker.launchImageLibraryAsync(OPTIONS)); }
-    catch { setProblem("Impossible d'ouvrir la galerie."); }
+    catch { setProblem(t('rccmDoc.galleryFail')); }
   };
 
   const Choice = ({ icon, text, onPress }: { icon: string; text: string; onPress: () => void }) => (
@@ -80,28 +79,28 @@ export function RccmDocumentPicker({
 
   return (
     <View style={{ marginBottom: 18 }}>
-      <UText v="label" tone="muted" style={{ marginBottom: 8 }}>{label}</UText>
+      <UText v="label" tone="muted" style={{ marginBottom: 8 }}>{label ?? t('rccmDoc.title')}</UText>
       {value ? (
         <View style={{ flexDirection: "row", alignItems: "center", gap: 14, padding: 12, borderRadius: R.lg, backgroundColor: C.field }}>
-          <Image source={{ uri: value.uri }} style={{ width: 64, height: 84, borderRadius: 10, backgroundColor: C.line }} resizeMode="cover" accessibilityLabel="Aperçu du document RCCM" />
+          <Image source={{ uri: value.uri }} style={{ width: 64, height: 84, borderRadius: 10, backgroundColor: C.line }} resizeMode="cover" accessibilityLabel={t('rccmDoc.preview')} />
           <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-            <UText v="bodyStrong">Document prêt à envoyer</UText>
-            <UText v="caption" tone="muted">Il sera transmis à l'administrateur avec votre numéro.</UText>
-            <Pressable onPress={() => onChange(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Retirer le document">
-              <Text style={{ fontSize: 13, fontWeight: "700", color: C.danger }}>Retirer</Text>
+            <UText v="bodyStrong">{t('rccmDoc.ready')}</UText>
+            <UText v="caption" tone="muted">{t('rccmDoc.readyHint')}</UText>
+            <Pressable onPress={() => onChange(null)} hitSlop={8} accessibilityRole="button" accessibilityLabel={t('rccmDoc.removeA11y')}>
+              <Text style={{ fontSize: 13, fontWeight: "700", color: C.danger }}>{t('rccmDoc.remove')}</Text>
             </Pressable>
           </View>
         </View>
       ) : (
         <>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            {Platform.OS !== "web" ? <Choice icon="camera-outline" text="Prendre en photo" onPress={camera} /> : null}
-            <Choice icon="images-outline" text="Galerie" onPress={library} />
+            {Platform.OS !== "web" ? <Choice icon="camera-outline" text={t('rccmDoc.camera')} onPress={camera} /> : null}
+            <Choice icon="images-outline" text={t('rccmDoc.gallery')} onPress={library} />
           </View>
           <UText v="caption" tone="muted" style={{ marginTop: 8 }}>
             {uploadedAt
-              ? `Document déjà envoyé le ${shortDate(uploadedAt)}. Choisissez une nouvelle photo pour le remplacer.`
-              : "Photo nette et complète de votre attestation RCCM. Elle accélère la vérification de votre commerce."}
+              ? t('rccmDoc.sentOn', { date: shortDate(uploadedAt) })
+              : t('rccmDoc.tip')}
           </UText>
         </>
       )}
@@ -112,6 +111,7 @@ export function RccmDocumentPicker({
 
 /** Carte des réglages : envoi / remplacement immédiat de la pièce. */
 export function RccmDocumentCard({ me, onChanged }: { me: MerchantMe; onChanged: () => void }) {
+  const t = useT();
   const doc = me.profile?.rccmDocument ?? null;
   const [pick, setPick] = useState<RccmPick | null>(null);
   const [busy, setBusy] = useState(false);
@@ -123,7 +123,7 @@ export function RccmDocumentCard({ me, onChanged }: { me: MerchantMe; onChanged:
     try {
       await api.saveMerchantRccmDocument(pick.base64);
       setPick(null);
-      setMsg({ tone: "pos", text: "Document envoyé. L'administrateur peut maintenant le consulter." });
+      setMsg({ tone: "pos", text: t('rccmDoc.sentOk') });
       onChanged();
     } catch (e) {
       setMsg({ tone: "danger", text: apiProblem(e).message });
@@ -132,15 +132,15 @@ export function RccmDocumentCard({ me, onChanged }: { me: MerchantMe; onChanged:
 
   return (
     <Card pad={20}>
-      <UText v="heading" style={{ marginBottom: 4 }}>Document RCCM</UText>
+      <UText v="heading" style={{ marginBottom: 4 }}>{t('rccmDoc.title')}</UText>
       {!doc && !pick ? (
         <Notice tone="warn" icon="document-attach-outline" style={{ marginBottom: 14 }}>
-          Aucun document joint. Envoyez la photo de votre attestation RCCM pour mettre votre fiche en règle.
+          {t('rccmDoc.missing')}
         </Notice>
       ) : null}
       {msg ? <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice> : null}
-      <RccmDocumentPicker value={pick} onChange={setPick} uploadedAt={doc?.uploadedAt} disabled={busy} label={doc ? "Remplacer le document" : "Joindre le document"} />
-      {pick ? <Button label="Envoyer le document" icon="cloud-upload-outline" loading={busy} onPress={send} /> : null}
+      <RccmDocumentPicker value={pick} onChange={setPick} uploadedAt={doc?.uploadedAt} disabled={busy} label={doc ? t('rccmDoc.replace') : t('rccmDoc.attach')} />
+      {pick ? <Button label={t('rccmDoc.send')} icon="cloud-upload-outline" loading={busy} onPress={send} /> : null}
     </Card>
   );
 }

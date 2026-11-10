@@ -14,6 +14,9 @@ import { Twilio } from 'twilio';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { platform } from '../common/platform.config';
+import { langOfUser, type Lang } from '../i18n/lang';
+import { translatePhrase } from '../i18n/phrase-book';
+import '../i18n/phrases';
 
 // =========================================================
 // TYPES
@@ -62,8 +65,38 @@ export class SmsService {
   // ENVOI PRINCIPAL (avec fallback stub)
   // ========================================================
 
+  /** Langue du destinataire (compte trouvé par identifiant, sinon par numéro) ; français si inconnue. Ne lève jamais. */
+  private async recipientLang(opts: SendSmsOptions): Promise<Lang> {
+    try {
+      const where = opts.userId ? { id: opts.userId } : { phone: opts.to };
+      const user = opts.userId
+        ? await this.prisma.user.findUnique({ where: { id: opts.userId }, select: { preferredLanguage: true } })
+        : await this.prisma.user.findFirst({ where, select: { preferredLanguage: true } });
+      return langOfUser(user);
+    } catch {
+      return 'fr';
+    }
+  }
+
+  /** Traduit le SMS ligne par ligne d'après la langue du compte ; le préfixe « [Nom] » et les lignes inconnues restent tels quels. */
+  private async localize(opts: SendSmsOptions): Promise<string> {
+    const lang = await this.recipientLang(opts);
+    if (lang === 'fr') return opts.message;
+    const tag = platform.smsTag;
+    return opts.message
+      .split('\n')
+      .map((line) => {
+        const hasTag = line.startsWith(tag);
+        const rest = hasTag ? line.slice(tag.length).trimStart() : line;
+        const out = translatePhrase(rest, lang);
+        return hasTag ? `${tag} ${out}` : out;
+      })
+      .join('\n');
+  }
+
   async send(opts: SendSmsOptions): Promise<SmsResult> {
-    const { to, message, userId, transactionId } = opts;
+    const { to, userId, transactionId } = opts;
+    const message = await this.localize(opts); // ✅ langues FR / EN / PT
 
     // ✅ CommunicationLog → PENDING
     let logId: string | null = null;

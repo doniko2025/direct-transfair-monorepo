@@ -19,20 +19,22 @@ import { useMerchantLogo } from "../../hooks/useMerchantLogo";
 import { Ionicons } from "../../components/ui/Icon";
 import { Button, Card, Divider, EmptyView, ErrorView, IconButton, NavBar, Notice, Pill, Screen, Segmented, SectionHeader, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem, money, shortDateTime } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
+import { getLocale, tr } from "../../i18n/runtime";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const addDays = (day: string, n: number) => { const [y, m, d] = day.split("-").map(Number); return ymd(new Date(y!, m! - 1, d! + n)); };
 const dayLabel = (day: string, today: string) => {
-  if (day === today) return "Aujourd'hui";
-  if (day === addDays(today, -1)) return "Hier";
+  if (day === today) return tr("mcl.today");
+  if (day === addDays(today, -1)) return tr("mcl.yesterday");
   const [y, m, d] = day.split("-").map(Number);
-  return new Date(y!, m! - 1, d!).toLocaleDateString("fr-FR", { weekday: "short", day: "2-digit", month: "long" });
+  return new Date(y!, m! - 1, d!).toLocaleDateString(getLocale(), { weekday: "short", day: "2-digit", month: "long" });
 };
 
 type Range = "today" | "7" | "30" | "month";
-const RANGES: { key: Range; label: string }[] = [
-  { key: "today", label: "Aujourd'hui" }, { key: "7", label: "7 jours" }, { key: "30", label: "30 jours" }, { key: "month", label: "Ce mois" },
+const rangeItems = (): { key: Range; label: string }[] => [
+  { key: "today", label: tr("mcl.today") }, { key: "7", label: tr("mcl.r7") }, { key: "30", label: tr("mcl.r30") }, { key: "month", label: tr("mcl.rMonth") },
 ];
 function rangeOf(r: Range, today: string): { from: string; to: string } {
   if (r === "today") return { from: today, to: today };
@@ -50,22 +52,23 @@ function Line({ label, value, strong, tone }: { label: string; value: string; st
   );
 }
 
-function TotalsCard({ t, closed }: { t: CurrencyTotalsView; closed: boolean }) {
+function TotalsCard({ tot, closed }: { tot: CurrencyTotalsView; closed: boolean }) {
+  const t = useT();
   const { C } = useUI();
-  const methods = [["Téléphone", t.byMethod.PHONE], ["QR code", t.byMethod.QR], ["QR de caisse", t.byMethod.STATIC_QR]] as const;
+  const methods = [[t("mcl.mPhone"), tot.byMethod.PHONE], [t("mcl.mQr"), tot.byMethod.QR], [t("mcl.mStatic"), tot.byMethod.STATIC_QR]] as const;
   return (
     <Card pad={18} style={{ marginBottom: 12 }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <UText v="caption" tone="muted">Variation du solde · {t.currency}</UText>
-        <Pill label={closed ? "Clôturée" : "En cours"} tone={closed ? "pos" : "warn"} icon={closed ? "lock-closed-outline" : "time-outline"} />
+        <UText v="caption" tone="muted">{t("mcl.balanceChange", { currency: tot.currency })}</UText>
+        <Pill label={closed ? t("mcl.closed") : t("mcl.open")} tone={closed ? "pos" : "warn"} icon={closed ? "lock-closed-outline" : "time-outline"} />
       </View>
-      <UText v="hero" style={{ marginVertical: 6 }}>{money(t.balanceChange, t.currency)}</UText>
+      <UText v="hero" style={{ marginVertical: 6 }}>{money(tot.balanceChange, tot.currency)}</UText>
       <Divider />
-      <Line label="Paiements encaissés" value={String(t.count)} />
-      <Line label="Payé par les clients" value={money(t.gross, t.currency)} />
-      <Line label="Commissions" value={`− ${money(t.fees, t.currency)}`} />
-      <Line label="Net encaissé" value={money(t.net, t.currency)} strong />
-      <Line label={`Remboursements (${t.refundsCount})`} value={`− ${money(t.refundsTotal, t.currency)}`} tone={t.refundsTotal > 0 ? "danger" : undefined} />
+      <Line label={t("mcl.count")} value={String(tot.count)} />
+      <Line label={t("mcl.gross")} value={money(tot.gross, tot.currency)} />
+      <Line label={t("mcl.fees")} value={`− ${money(tot.fees, tot.currency)}`} />
+      <Line label={t("mcl.net")} value={money(tot.net, tot.currency)} strong />
+      <Line label={t("mcl.refunds", { n: tot.refundsCount })} value={`− ${money(tot.refundsTotal, tot.currency)}`} tone={tot.refundsTotal > 0 ? "danger" : undefined} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
         {methods.map(([l, n]) => (
           <View key={l} style={{ paddingHorizontal: 12, height: 30, borderRadius: 15, backgroundColor: C.beige, justifyContent: "center" }}>
@@ -73,11 +76,11 @@ function TotalsCard({ t, closed }: { t: CurrencyTotalsView; closed: boolean }) {
           </View>
         ))}
       </View>
-      {t.byCashierNamed.length > 0 && (t.byCashierNamed.length > 1 || !!t.byCashierNamed[0]?.userId) ? (
+      {tot.byCashierNamed.length > 0 && (tot.byCashierNamed.length > 1 || !!tot.byCashierNamed[0]?.userId) ? (
         <View style={{ marginTop: 10 }}>
-          <UText v="caption" tone="muted" style={{ marginBottom: 2 }}>Par personne</UText>
-          {t.byCashierNamed.map((c) => (
-            <Line key={c.userId ?? "owner"} label={`${c.name} · ${c.count}`} value={money(c.gross, t.currency)} />
+          <UText v="caption" tone="muted" style={{ marginBottom: 2 }}>{t("mcl.byPerson")}</UText>
+          {tot.byCashierNamed.map((c) => (
+            <Line key={c.userId ?? "owner"} label={`${c.name} · ${c.count}`} value={money(c.gross, tot.currency)} />
           ))}
         </View>
       ) : null}
@@ -86,6 +89,7 @@ function TotalsCard({ t, closed }: { t: CurrencyTotalsView; closed: boolean }) {
 }
 
 export default function ClosingScreen() {
+  const t = useT();
   const router = useRouter();
   const { C } = useUI();
   const today = useMemo(() => ymd(new Date()), []);
@@ -109,7 +113,7 @@ export default function ClosingScreen() {
   const logo = useMerchantLogo(data?.me.profile?.shopId, data?.me.profile?.logoVersion);
 
   const closedCur = new Set((data?.d.closings ?? []).map((c) => c.currency));
-  const toClose = (data?.d.live ?? []).filter((t) => !closedCur.has(t.currency));
+  const toClose = (data?.d.live ?? []).filter((x) => !closedCur.has(x.currency));
   const canClose = !!data && data.d.day === day && toClose.length > 0 && day <= today;
 
   const doClose = async (code: string) => {
@@ -120,7 +124,7 @@ export default function ClosingScreen() {
       await api.closeMerchantDay({ day, pin: code });
       setCloseOpen(false);
       setPin("");
-      setNotice(`Journée du ${day} clôturée.`);
+      setNotice(t("mcl.dayClosed", { day }));
       reload();
     } catch (e) {
       setProblem(apiProblem(e).message);
@@ -144,49 +148,49 @@ export default function ClosingScreen() {
   };
   const dayPdf = async (d: DayView) => { setBusy("day"); try { await shareDayPdf(d, logo); } finally { setBusy(null); } };
 
-  const header = <NavBar onBack={() => router.back()} title="Clôture & exports" subtitle={data?.me.profile?.businessName} />;
+  const header = <NavBar onBack={() => router.back()} title={t("mcl.title")} subtitle={data?.me.profile?.businessName} />;
   if (status === "loading") return <Screen header={header}><SkeletonRows rows={4} /></Screen>;
   if (status === "error" || !data) {
-    return <Screen header={header}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={header}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
   const { d, h } = data;
   const stale = d.day !== day; // le jour affiché n'est pas encore celui demandé
 
   return (
-    <Screen header={header} footer={canClose ? <Button label="Clôturer la journée" icon="lock-closed-outline" onPress={() => { setProblem(null); setPin(""); setCloseOpen(true); }} /> : undefined}>
+    <Screen header={header} footer={canClose ? <Button label={t("mcl.closeDay")} icon="lock-closed-outline" onPress={() => { setProblem(null); setPin(""); setCloseOpen(true); }} /> : undefined}>
       {!!notice && <Notice tone="info" style={{ marginBottom: 12 }}>{notice}</Notice>}
 
       <Rise>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-          <IconButton icon="chevron-back" label="Jour précédent" onPress={() => { setNotice(null); setDay(addDays(day, -1)); }} />
+          <IconButton icon="chevron-back" label={t("mcl.prevDay")} onPress={() => { setNotice(null); setDay(addDays(day, -1)); }} />
           <UText v="subheading">{dayLabel(day, today)}</UText>
-          {day < today ? <IconButton icon="chevron-forward" label="Jour suivant" onPress={() => { setNotice(null); setDay(addDays(day, 1)); }} /> : <View style={{ width: 44, height: 44 }} />}
+          {day < today ? <IconButton icon="chevron-forward" label={t("mcl.nextDay")} onPress={() => { setNotice(null); setDay(addDays(day, 1)); }} /> : <View style={{ width: 44, height: 44 }} />}
         </View>
       </Rise>
 
-      {d.drift && <Notice tone="warn" style={{ marginBottom: 12 }}>Des mouvements (paiement tardif ou remboursement) sont arrivés après la clôture de cette journée. Les chiffres ci-dessous sont à jour ; la clôture archivée reste inchangée.</Notice>}
+      {d.drift && <Notice tone="warn" style={{ marginBottom: 12 }}>{t("mcl.drift")}</Notice>}
 
       {stale ? <SkeletonRows rows={2} /> : d.live.length === 0 ? (
-        <EmptyView icon="receipt-outline" title="Aucun encaissement" message="Aucun paiement ni remboursement ce jour-là." />
+        <EmptyView icon="receipt-outline" title={t("mcl.empty")} message={t("mcl.emptyMsg")} />
       ) : (
-        d.live.map((t) => <TotalsCard key={t.currency} t={t} closed={closedCur.has(t.currency)} />)
+        d.live.map((x) => <TotalsCard key={x.currency} tot={x} closed={closedCur.has(x.currency)} />)
       )}
 
-      {d.live.length > 0 && !stale && <Button label="Relevé du jour (PDF)" icon="document-text-outline" kind="outline" loading={busy === "day"} onPress={() => dayPdf(d)} />}
+      {d.live.length > 0 && !stale && <Button label={t("mcl.dayPdf")} icon="document-text-outline" kind="outline" loading={busy === "day"} onPress={() => dayPdf(d)} />}
 
-      <SectionHeader title="Exporter une période" />
+      <SectionHeader title={t("mcl.exportTitle")} />
       <Card pad={16}>
-        <Segmented<Range> items={RANGES} value={range} onChange={setRange} style={{ marginBottom: 14 }} />
+        <Segmented<Range> items={rangeItems()} value={range} onChange={setRange} style={{ marginBottom: 14 }} />
         <View style={{ flexDirection: "row", gap: 10 }}>
           <View style={{ flex: 1 }}><Button label="PDF" icon="document-text-outline" small loading={busy === "pdf"} onPress={exportPdf} /></View>
-          <View style={{ flex: 1 }}><Button label="CSV (Excel)" icon="download-outline" kind="outline" small loading={busy === "csv"} onPress={exportCsv} /></View>
+          <View style={{ flex: 1 }}><Button label={t("mcl.csv")} icon="download-outline" kind="outline" small loading={busy === "csv"} onPress={exportCsv} /></View>
         </View>
-        <UText v="caption" tone="muted" style={{ marginTop: 10 }}>Paiements et remboursements, avec commissions et caissiers. Les montants remboursés sont en négatif.</UText>
+        <UText v="caption" tone="muted" style={{ marginTop: 10 }}>{t("mcl.exportInfo")}</UText>
       </Card>
 
-      <SectionHeader title="Clôtures passées" />
+      <SectionHeader title={t("mcl.pastTitle")} />
       {h.length === 0 ? (
-        <UText v="body" tone="muted">Aucune clôture pour le moment.</UText>
+        <UText v="body" tone="muted">{t("mcl.pastNone")}</UText>
       ) : (
         <Card pad={4}>
           {h.slice(0, 30).map((c: ClosingView, i) => (
@@ -194,7 +198,7 @@ export default function ClosingScreen() {
               <Ionicons name="lock-closed-outline" size={18} color={C.muted} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <UText v="bodyStrong" numberOfLines={1}>{c.day} · {c.currency}</UText>
-                <UText v="caption" tone="muted" numberOfLines={1}>{c.count} paiement(s) · clôturée {shortDateTime(c.closedAt)}</UText>
+                <UText v="caption" tone="muted" numberOfLines={1}>{t("mcl.pastRow", { n: c.count, date: shortDateTime(c.closedAt) })}</UText>
               </View>
               <UText v="bodyStrong">{money(c.balanceChange, c.currency)}</UText>
             </View>
@@ -202,14 +206,14 @@ export default function ClosingScreen() {
         </Card>
       )}
 
-      <Sheet visible={closeOpen} onClose={() => setCloseOpen(false)} title={`Clôturer le ${day}`}>
+      <Sheet visible={closeOpen} onClose={() => setCloseOpen(false)} title={t("mcl.sheetTitle", { day })}>
         <UText v="body" tone="muted" style={{ marginBottom: 12 }}>
-          Les totaux de {toClose.map((t) => t.currency).join(", ")} seront figés dans l'historique. Cette action ne peut pas être refaite pour cette journée.
+          {t("mcl.sheetMsg", { currencies: toClose.map((x) => x.currency).join(", ") })}
         </UText>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
         <PinPrompt value={pin} onChange={setPin} onComplete={doClose} autoFocus />
         <View style={{ height: 12 }} />
-        <Button label="Clôturer" loading={closing} disabled={pin.length !== 6} onPress={() => doClose(pin)} />
+        <Button label={t("mcl.closeBtn")} loading={closing} disabled={pin.length !== 6} onPress={() => doClose(pin)} />
       </Sheet>
     </Screen>
   );

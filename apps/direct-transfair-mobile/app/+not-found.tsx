@@ -14,9 +14,11 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../components/ui/Icon';
 import { Button, Pill, Screen, UText, useUI } from "../components/ui";
 import { useTenant } from "../providers/TenantProvider";
+import { useT } from "../providers/I18nProvider";
 
 export default function NotFoundScreen() {
   const router = useRouter();
+  const t = useT();
   const { C } = useUI();
   const { branding } = useTenant();
 
@@ -25,15 +27,15 @@ export default function NotFoundScreen() {
       <View style={{ width: 96, height: 96, borderRadius: 48, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
         <Ionicons name="map-outline" size={42} color={C.ink} />
       </View>
-      <UText v="overline" tone="muted">Erreur 404</UText>
-      <UText v="title" align="center">Page introuvable</UText>
+      <UText v="overline" tone="muted">{t("nf.error")}</UText>
+      <UText v="title" align="center">{t("nf.title")}</UText>
       <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>
-        La page que vous cherchez n'existe pas ou a été déplacée.
+        {t("nf.text")}
       </UText>
 
       <View style={{ alignSelf: "stretch", gap: 12, marginTop: 24 }}>
-        <Button label="Retour à l'accueil" icon="home-outline" onPress={() => router.replace("/(tabs)/home")} />
-        <Button label="Page précédente" icon="arrow-back-outline" kind="outline" onPress={() => router.back()} />
+        <Button label={t("nf.home")} icon="home-outline" onPress={() => router.replace("/(tabs)/home")} />
+        <Button label={t("nf.back")} icon="arrow-back-outline" kind="outline" onPress={() => router.back()} />
       </View>
 
       <Pill label={branding.name} tone="neutral" icon="swap-horizontal-outline" style={{ marginTop: 22, alignSelf: "center" }} />

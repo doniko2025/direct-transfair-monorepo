@@ -27,6 +27,7 @@ import { Ionicons } from './Icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUI, SYSTEM_FONT, TAB_SPACE, type UIColors } from './theme';
 import { Avatar, IconButton, UText } from './Primitives';
+import { useT } from '../../providers/I18nProvider';
 import { describeTx, formatMoney, formatShortDate, currencySymbol } from '../wallet/walletTheme';
 
 import { Text } from './Text';
@@ -139,9 +140,10 @@ export function Screen({
 export function NavBar({
   title, onBack, right, subtitle, style,
 }: { title?: string; subtitle?: string; onBack?: () => void; right?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  const t = useT();
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 10, minHeight: 64 }, style]}>
-      {onBack ? <IconButton icon="chevron-back" onPress={onBack} label="Retour" /> : null}
+      {onBack ? <IconButton icon="chevron-back" onPress={onBack} label={t('common.back')} /> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         {!!title && <UText v="heading" numberOfLines={1}>{title}</UText>}
         {!!subtitle && <UText v="caption" tone="muted" numberOfLines={1}>{subtitle}</UText>}
@@ -250,6 +252,7 @@ export function TxRow({
   tx, userId, onPress, last, showStatus = true,
 }: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean }) {
   const { C } = useUI();
+  useT();   // se redessine au changement de langue (libellés d'opération et dates lus via tr/fmt)
   const v = describeTx(tx, userId);
   const col = statusColor(C, String(tx?.status ?? ''));
   const name = v.counterpart || v.title;
@@ -292,19 +295,20 @@ export function Sheet({
   visible, onClose, title, children, footer,
 }: { visible: boolean; onClose: () => void; title?: string; children: React.ReactNode; footer?: React.ReactNode }) {
   const { C, R } = useUI();
+  const t = useT();
   const insets = useSafeAreaInsets();
   const kbOpen = useKeyboardOpen();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <KeyboardAvoidingView style={{ flex: 1, justifyContent: 'flex-end' }} behavior="padding">
-        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]} onPress={onClose} accessibilityLabel="Fermer" />
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]} onPress={onClose} accessibilityLabel={t('common.close')} />
         <View style={{ backgroundColor: C.bg, borderTopLeftRadius: R.xl, borderTopRightRadius: R.xl, maxHeight: '88%', paddingBottom: kbOpen ? 12 : Math.max(insets.bottom, 12) + 8, width: '100%', maxWidth: 640, alignSelf: 'center' }}>
           <View style={{ alignItems: 'center', paddingTop: 10 }}>
             <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: C.lineStrong }} />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 }}>
             <UText v="title" style={{ flex: 1 }} numberOfLines={1}>{title ?? ''}</UText>
-            <IconButton icon="close" onPress={onClose} label="Fermer" size={40} />
+            <IconButton icon="close" onPress={onClose} label={t('common.close')} size={40} />
           </View>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 12 }}>
             {children}

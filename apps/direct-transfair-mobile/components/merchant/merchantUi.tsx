@@ -14,22 +14,25 @@ import { ShopAvatar } from "./ShopAvatar";
 import PinInput from "../auth/PinInput";
 import { formatMoney } from "../wallet/walletTheme";
 import type { PaymentRequestView, PaymentStatus, PayoutStatus } from "../../services/merchantTypes";
+import { fmtDate, fmtTime, lazyLabels, tr } from "../../i18n/runtime";
+import { useT } from "../../providers/I18nProvider";
+import type { MessageKey } from "../../i18n/catalog";
 
 // ─── Erreurs ─────────────────────────────────────────────
 export type ApiProblem = { message: string; code?: string; status?: number };
 
 export function apiProblem(e: any): ApiProblem {
   const data = e?.response?.data;
-  const raw = data?.message ?? e?.message ?? "Une erreur est survenue.";
+  const raw = data?.message ?? e?.message ?? tr("mapi.generic");
   const message = Array.isArray(raw) ? String(raw[0]) : String(raw);
   const code = typeof data?.code === "string" ? data.code : undefined;
   const status = typeof e?.response?.status === "number" ? e.response.status : undefined;
-  if (!e?.response) return { message: "Impossible de joindre le serveur. Vérifiez votre connexion puis réessayez.", code, status };
+  if (!e?.response) return { message: tr("mapi.offline"), code, status };
   // Route absente (serveur pas encore à jour) ou fichier refusé pour sa taille : un message clair plutôt que le texte brut d'Express.
   if (status === 404 && /^Cannot (GET|POST|PUT|PATCH|DELETE) \//i.test(message)) {
-    return { message: "Cette fonction n'est pas encore activée sur le serveur. Elle sera disponible après sa mise à jour.", code, status };
+    return { message: tr("mapi.notReady"), code, status };
   }
-  if (status === 413) return { message: "Le fichier envoyé est trop volumineux. Choisissez une image plus petite.", code, status };
+  if (status === 413) return { message: tr("mapi.tooBig"), code, status };
   return { message, code, status };
 }
 
@@ -45,23 +48,22 @@ export function parseMerchantQr(raw: string | null | undefined): string | null {
 }
 
 // ─── Libellés ────────────────────────────────────────────
-export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
-  PENDING: "En attente", PAID: "Payé", DECLINED: "Refusé", EXPIRED: "Expiré", CANCELLED: "Annulé",
-};
+export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = lazyLabels({
+  PENDING: "mst.pending", PAID: "mst.paid", DECLINED: "mst.declined", EXPIRED: "mst.expired", CANCELLED: "mst.cancelled",
+});
 export const PAYMENT_STATUS_TONE: Record<PaymentStatus, "warn" | "pos" | "danger" | "neutral"> = {
   PENDING: "warn", PAID: "pos", DECLINED: "danger", EXPIRED: "neutral", CANCELLED: "neutral",
 };
-export const PAYOUT_STATUS_LABEL: Record<PayoutStatus, string> = {
-  PENDING: "En cours", PAID: "Versé", REJECTED: "Refusé", FAILED: "Échoué",
-};
+export const PAYOUT_STATUS_LABEL: Record<PayoutStatus, string> = lazyLabels({
+  PENDING: "mst.payoutPending", PAID: "mst.payoutPaid", REJECTED: "mst.payoutRejected", FAILED: "mst.payoutFailed",
+});
 export const PAYOUT_STATUS_TONE: Record<PayoutStatus, "warn" | "pos" | "danger"> = {
   PENDING: "warn", PAID: "pos", REJECTED: "danger", FAILED: "danger",
 };
-export const PAYOUT_METHOD_LABEL: Record<string, string> = { ORANGE_MONEY: "Orange Money", BANK_TRANSFER: "Virement bancaire" };
+export const PAYOUT_METHOD_LABEL: Record<string, string> = lazyLabels({ ORANGE_MONEY: "mst.orange", BANK_TRANSFER: "mst.bank" });
 
 export function shortDateTime(iso: string): string {
-  const d = new Date(iso);
-  return `${d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })} · ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+  return `${fmtDate(iso, { day: "2-digit", month: "short" })} · ${fmtTime(iso)}`;
 }
 
 export function money(amount: number, currency: string): string {
@@ -108,6 +110,7 @@ export function MerchantQrCard({
   payload, amountLabel, secondsLeft, totalSeconds, businessName,
 }: { payload: string; amountLabel: string; secondsLeft: number; totalSeconds: number; businessName: string }) {
   const { C, R, S } = useUI();
+  const t = useT();
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -138,7 +141,7 @@ export function MerchantQrCard({
           <View style={{ height: 6, width: `${Math.round(ratio * 100)}%`, borderRadius: 3, backgroundColor: urgent ? C.danger : C.pos }} />
         </View>
         <UText v="caption" tone={urgent ? "danger" : "muted"} align="center">
-          {secondsLeft > 0 ? `Valable encore ${mmss(secondsLeft)}` : "Ce QR code a expiré"}
+          {secondsLeft > 0 ? t("mqr.validFor", { time: mmss(secondsLeft) }) : t("mqr.expired")}
         </UText>
       </View>
     </Card>
@@ -147,10 +150,11 @@ export function MerchantQrCard({
 
 // ─── Saisie du code secret ───────────────────────────────
 export function PinPrompt({
-  value, onChange, onComplete, error, label = "Code secret (6 chiffres)", autoFocus,
+  value, onChange, onComplete, error, label, autoFocus,
 }: { value: string; onChange: (v: string) => void; onComplete?: (v: string) => void; error?: string | null; label?: string; autoFocus?: boolean }) {
   const { C } = useUI();
-  return <PinInput label={label} value={value} onChange={onChange} onComplete={onComplete} accent={C.accent} error={error} noReveal autoFocus={autoFocus} />;
+  const t = useT();
+  return <PinInput label={label ?? t("pinx.label")} value={value} onChange={onChange} onComplete={onComplete} accent={C.accent} error={error} noReveal autoFocus={autoFocus} />;
 }
 
 // ─── Grande icône d'état ─────────────────────────────────
@@ -182,8 +186,9 @@ export function StatusHero({
 // ─── Ligne d'un paiement ─────────────────────────────────
 export function PaymentRow({ p, onPress }: { p: PaymentRequestView; onPress: () => void }) {
   const { C } = useUI();
+  const t = useT();
   const asPayee = p.isMine === "PAYEE";
-  const who = asPayee ? (p.payer?.name ?? (p.method === "QR" ? "Paiement par QR" : p.payerPhone ?? "Client")) : p.merchant.businessName;
+  const who = asPayee ? (p.payer?.name ?? (p.method === "QR" ? t("mhome.qrPayment") : p.payerPhone ?? t("mhome.customer"))) : p.merchant.businessName;
   return (
     <Card onPress={onPress} pad={16} style={{ marginBottom: 10 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
@@ -202,7 +207,7 @@ export function PaymentRow({ p, onPress }: { p: PaymentRequestView; onPress: () 
           <UText v="bodyStrong" tone={asPayee && p.status === "PAID" && !p.refunded ? "pos" : "ink"} style={p.refunded ? { textDecorationLine: "line-through" } : undefined}>
             {asPayee ? "+" : "−"}{money(asPayee ? (p.netAmount ?? p.amount) : p.amount, p.currency)}
           </UText>
-          <Pill label={p.refunded ? "Remboursé" : PAYMENT_STATUS_LABEL[p.status]} tone={p.refunded ? "info" : PAYMENT_STATUS_TONE[p.status]} />
+          <Pill label={p.refunded ? t("mst.refunded") : PAYMENT_STATUS_LABEL[p.status]} tone={p.refunded ? "info" : PAYMENT_STATUS_TONE[p.status]} />
         </View>
       </View>
     </Card>
@@ -213,3 +218,10 @@ export function PaymentRow({ p, onPress }: { p: PaymentRequestView; onPress: () 
 export const MERCHANT_CATEGORIES = [
   "Boutique / commerce", "Alimentation", "Restaurant / café", "Pharmacie / santé", "Mode / beauté", "Transport", "Services", "Autre",
 ] as const;
+
+/** Libellé affiché d'une catégorie (la valeur envoyée au serveur reste le texte français ci-dessus). */
+const CATEGORY_KEY: Record<string, MessageKey> = {
+  "Boutique / commerce": "cat.shop", "Alimentation": "cat.food", "Restaurant / café": "cat.restaurant", "Pharmacie / santé": "cat.pharmacy",
+  "Mode / beauté": "cat.fashion", "Transport": "cat.transport", "Services": "cat.services", "Autre": "cat.other",
+};
+export const categoryLabel = (c: string | null | undefined): string => (c && CATEGORY_KEY[c] ? tr(CATEGORY_KEY[c]) : (c ?? ""));

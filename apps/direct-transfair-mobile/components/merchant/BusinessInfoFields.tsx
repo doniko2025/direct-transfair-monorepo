@@ -12,6 +12,8 @@ import { View, useWindowDimensions } from "react-native";
 import { Field } from "../ui";
 import { OptionPicker } from "../ui/OptionPicker";
 import { AUTH_COUNTRIES } from "../auth/authCountries";
+import { useT } from "../../providers/I18nProvider";
+import { localizeCountry } from "../../utils/countryNames";
 
 export type BusinessInfoValue = {
   address: string;
@@ -29,7 +31,8 @@ export type BusinessInfoErrors = Partial<Record<keyof BusinessInfoValue, string 
 
 export const EMPTY_BUSINESS_INFO: BusinessInfoValue = { address: "", district: "", city: "", postalCode: "", country: null, phone: "", taxId: "" };
 
-const COUNTRY_OPTIONS = AUTH_COUNTRIES.map((c) => ({ key: c.name, label: `${c.flag}  ${c.name}` }));
+/** La valeur choisie reste le nom français (envoyé au serveur) ; seul le libellé suit la langue. */
+const countryOptions = () => AUTH_COUNTRIES.map((c) => ({ key: c.name, label: `${c.flag}  ${localizeCountry(c.name)}` }));
 
 export function BusinessInfoFields({ value, onChange, errors = {} }: {
   value: BusinessInfoValue;
@@ -37,32 +40,33 @@ export function BusinessInfoFields({ value, onChange, errors = {} }: {
   errors?: BusinessInfoErrors;
 }) {
   const { width } = useWindowDimensions();
+  const t = useT();
   // Sous ~380 px de large, deux champs côte à côte seraient trop étroits : ils s'empilent.
   const stacked = width < 380;
   return (
     <>
       <Field
-        label="Adresse du commerce" icon="location-outline" value={value.address} onChangeText={(t) => onChange({ address: t })}
+        label={t("binfo.address")} icon="location-outline" value={value.address} onChangeText={(v) => onChange({ address: v })}
         autoCapitalize="sentences" autoComplete="street-address" maxLength={160} error={errors.address}
-        hint="Rue, numéro, repère connu… tel que vos clients peuvent vous trouver."
+        hint={t("binfo.addressHint")}
       />
-      <Field label="Quartier / commune (facultatif)" icon="map-outline" value={value.district} onChangeText={(t) => onChange({ district: t })} autoCapitalize="words" maxLength={80} error={errors.district} />
+      <Field label={t("binfo.district")} icon="map-outline" value={value.district} onChangeText={(v) => onChange({ district: v })} autoCapitalize="words" maxLength={80} error={errors.district} />
       <View style={{ flexDirection: stacked ? "column" : "row", gap: stacked ? 0 : 12 }}>
-        <Field label="Ville" icon="business-outline" value={value.city} onChangeText={(t) => onChange({ city: t })} autoCapitalize="words" maxLength={80} error={errors.city} style={stacked ? undefined : { flex: 1 }} />
-        <Field label="Code postal (facultatif)" icon="mail-outline" value={value.postalCode} onChangeText={(t) => onChange({ postalCode: t.toUpperCase() })} autoCapitalize="characters" autoComplete="postal-code" maxLength={10} error={errors.postalCode} style={stacked ? undefined : { flex: 1 }} />
+        <Field label={t("binfo.city")} icon="business-outline" value={value.city} onChangeText={(v) => onChange({ city: v })} autoCapitalize="words" maxLength={80} error={errors.city} style={stacked ? undefined : { flex: 1 }} />
+        <Field label={t("binfo.postal")} icon="mail-outline" value={value.postalCode} onChangeText={(v) => onChange({ postalCode: v.toUpperCase() })} autoCapitalize="characters" autoComplete="postal-code" maxLength={10} error={errors.postalCode} style={stacked ? undefined : { flex: 1 }} />
       </View>
       <OptionPicker
-        label="Pays du commerce (facultatif)" title="Pays du commerce" icon="globe-outline" value={value.country}
-        options={COUNTRY_OPTIONS} onChange={(k) => onChange({ country: k })} placeholder="Choisir un pays" error={errors.country}
+        label={t("binfo.countryOpt")} title={t("binfo.country")} icon="globe-outline" value={value.country}
+        options={countryOptions()} onChange={(k) => onChange({ country: k })} placeholder={t("binfo.countryPh")} error={errors.country}
       />
       <Field
-        label="Téléphone du commerce (facultatif)" icon="call-outline" value={value.phone} onChangeText={(t) => onChange({ phone: t.replace(/[^\d+\s.-]/g, "") })}
+        label={t("binfo.phone")} icon="call-outline" value={value.phone} onChangeText={(v) => onChange({ phone: v.replace(/[^\d+\s.-]/g, "") })}
         keyboardType="phone-pad" maxLength={22} placeholder="+224 620 00 00 00" error={errors.phone}
-        hint="Avec l'indicatif du pays. Numéro du commerce, distinct de votre téléphone personnel."
+        hint={t("binfo.phoneHint")}
       />
       <Field
-        label="NIF / IFU (facultatif)" icon="receipt-outline" value={value.taxId} onChangeText={(t) => onChange({ taxId: t.toUpperCase() })}
-        autoCapitalize="characters" maxLength={30} error={errors.taxId} hint="Numéro d'identification fiscale de l'entreprise."
+        label={t("binfo.tax")} icon="receipt-outline" value={value.taxId} onChangeText={(v) => onChange({ taxId: v.toUpperCase() })}
+        autoCapitalize="characters" maxLength={30} error={errors.taxId} hint={t("binfo.taxHint")}
       />
     </>
   );

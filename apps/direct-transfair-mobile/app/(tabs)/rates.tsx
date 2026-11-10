@@ -28,13 +28,15 @@ import {
 } from "../../components/ui";
 
 import { Text, TextInput } from '../../components/ui/Text';
+import { useT } from "../../providers/I18nProvider";
+import { getLocale } from "../../i18n/runtime";
 // ─── 5 devises de l'application ──────────────────────────
 const APP_CURRENCIES = [
-  { code: "EUR", name: "Euro",             flag: "🇪🇺", symbol: "€"    },
-  { code: "USD", name: "Dollar américain", flag: "🇺🇸", symbol: "$"    },
-  { code: "GBP", name: "Livre sterling",   flag: "🇬🇧", symbol: "£"    },
-  { code: "XOF", name: "Franc CFA BCEAO",  flag: "🌍",  symbol: "FCFA" },
-  { code: "GNF", name: "Franc guinéen",    flag: "🇬🇳", symbol: "GNF"  },
+  { code: "EUR", flag: "🇪🇺", symbol: "€"    },
+  { code: "USD", flag: "🇺🇸", symbol: "$"    },
+  { code: "GBP", flag: "🇬🇧", symbol: "£"    },
+  { code: "XOF", flag: "🌍",  symbol: "FCFA" },
+  { code: "GNF", flag: "🇬🇳", symbol: "GNF"  },
 ] as const;
 
 function getCurrencyMeta(code: string) {
@@ -50,7 +52,7 @@ function fmt(n: number, cur = "XOF"): string {
   if (!isFinite(n)) return "—";
   const d = cur === "GNF" || cur === "XOF" ? 0 : 4;
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch {
     return n.toFixed(d);
   }
@@ -60,7 +62,7 @@ function fmtAmount(n: number, cur: string): string {
   if (!isFinite(n)) return "—";
   const d = cur === "GNF" || cur === "XOF" ? 0 : 2;
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch {
     return n.toFixed(d);
   }
@@ -70,12 +72,12 @@ function fmtRate(rate: number, toCur: string): string {
   if (!isFinite(rate)) return "—";
   if (rate < 0.001) {
     try {
-      return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(rate);
+      return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(rate);
     } catch { return rate.toFixed(6); }
   }
   const d = toCur === "GNF" || toCur === "XOF" ? 2 : 4;
   try {
-    return new Intl.NumberFormat("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }).format(rate);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(rate);
   } catch { return rate.toFixed(d); }
 }
 
@@ -101,27 +103,29 @@ function findRate(rates: any[], from: string, to: string): number | null {
 function CurrencySheet({
   visible, selectedCode, onSelect, onClose,
 }: { visible: boolean; selectedCode: string; onSelect: (code: string) => void; onClose: () => void }) {
+  const t = useT();
   const { C } = useUI();
+  const nameOf = (code: string) => t(`rt.cur.${code}` as any);
   const [search, setSearch] = useState("");
   const q = search.trim().toLowerCase();
   const filtered = q
-    ? APP_CURRENCIES.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
+    ? APP_CURRENCIES.filter((c) => nameOf(c.code).toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
     : [...APP_CURRENCIES];
 
   const close = () => { setSearch(""); onClose(); };
 
   return (
-    <Sheet visible={visible} onClose={close} title="Sélectionnez une devise">
-      <SearchPill value={search} onChangeText={setSearch} placeholder="Rechercher" style={{ marginTop: 6, marginBottom: 6 }} />
+    <Sheet visible={visible} onClose={close} title={t("rt.pick")}>
+      <SearchPill value={search} onChangeText={setSearch} placeholder={t("rt.search")} style={{ marginTop: 6, marginBottom: 6 }} />
       {filtered.length === 0 ? (
-        <EmptyView icon="search-outline" title="Aucune devise trouvée" />
+        <EmptyView icon="search-outline" title={t("rt.noCur")} />
       ) : (
         filtered.map((item, i) => {
           const on = item.code === selectedCode;
           return (
             <ListRow
               key={item.code}
-              title={item.name}
+              title={nameOf(item.code)}
               subtitle={item.code}
               last={i === filtered.length - 1}
               left={
@@ -141,6 +145,7 @@ function CurrencySheet({
 
 // ─── Convertisseur ───────────────────────────────────────
 function Converter({ rates }: { rates: any[] }) {
+  const t = useT();
   const { C, R } = useUI();
   const [fromCur, setFromCur] = useState("EUR");
   const [toCur, setToCur] = useState("XOF");
@@ -177,7 +182,7 @@ function Converter({ rates }: { rates: any[] }) {
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Devise ${meta.code}`}
+      accessibilityLabel={t("rt.curLabel", { code: meta.code })}
       style={({ pressed }) => ({
         flexDirection: "row", alignItems: "center", gap: 8, height: 44, paddingLeft: 6, paddingRight: 12,
         borderRadius: R.pill, backgroundColor: C.beige, opacity: pressed ? 0.7 : 1, flexShrink: 0,
@@ -195,7 +200,7 @@ function Converter({ rates }: { rates: any[] }) {
     <Card pad={0} style={{ overflow: "hidden" }}>
       {/* De */}
       <View style={{ padding: 20, paddingBottom: 26 }}>
-        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>Vous convertissez</UText>
+        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>{t("rt.youConvert")}</UText>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           {curBtn(fromMeta, () => setPick("from"))}
           <TextInput
@@ -207,7 +212,7 @@ function Converter({ rates }: { rates: any[] }) {
             placeholder="0"
             placeholderTextColor={C.faint}
             selectionColor={C.accent}
-            accessibilityLabel="Montant à convertir"
+            accessibilityLabel={t("rt.amountToConvert")}
             style={[
               { flex: 1, minWidth: 0, textAlign: "right", padding: 0, fontFamily: SYSTEM_FONT, fontWeight: "800", letterSpacing: -1, color: C.ink, fontSize: amountFont },
               { outlineStyle: "none", outlineWidth: 0, borderWidth: 0 } as any,
@@ -221,7 +226,7 @@ function Converter({ rates }: { rates: any[] }) {
         <Pressable
           onPress={handleSwap}
           accessibilityRole="button"
-          accessibilityLabel="Inverser les devises"
+          accessibilityLabel={t("rt.swap")}
           style={({ pressed }) => ({
             position: "absolute", right: 20, top: -20, width: 40, height: 40, borderRadius: 20,
             backgroundColor: C.dark, alignItems: "center", justifyContent: "center", opacity: pressed ? 0.8 : 1,
@@ -233,7 +238,7 @@ function Converter({ rates }: { rates: any[] }) {
 
       {/* Vers */}
       <View style={{ padding: 20, paddingTop: 26, backgroundColor: C.sunken }}>
-        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>Ils reçoivent environ</UText>
+        <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>{t("rt.theyGet")}</UText>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           {curBtn(toMeta, () => setPick("to"))}
           <Text
@@ -244,7 +249,7 @@ function Converter({ rates }: { rates: any[] }) {
           </Text>
         </View>
         <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 13, fontWeight: "500", color: C.muted, textAlign: "right", marginTop: 8 }}>
-          {rate !== null ? `1 ${fromCur} = ${fmtRate(rate, toCur)} ${toCur}` : `Taux ${fromCur}/${toCur} indisponible`}
+          {rate !== null ? `1 ${fromCur} = ${fmtRate(rate, toCur)} ${toCur}` : t("rt.unavailable", { pair: `${fromCur}/${toCur}` })}
         </Text>
       </View>
 
@@ -256,6 +261,7 @@ function Converter({ rates }: { rates: any[] }) {
 
 // ─── Écran principal ─────────────────────────────────────
 export default function RatesScreen() {
+  const t = useT();
   const router = useRouter();
   const { C } = useUI();
 
@@ -268,7 +274,7 @@ export default function RatesScreen() {
   const [stamp, setStamp] = useState("");
   React.useEffect(() => {
     if (status === "ready") {
-      setStamp(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+      setStamp(new Date().toLocaleTimeString(getLocale(), { hour: "2-digit", minute: "2-digit" }));
     }
   }, [data, status]);
 
@@ -288,10 +294,10 @@ export default function RatesScreen() {
     <Screen
       header={
         <NavBar
-          title="Taux du jour"
-          subtitle={stamp ? `Mis à jour à ${stamp}` : "Taux indicatifs du marché"}
+          title={t("rt.title")}
+          subtitle={stamp ? t("rt.updatedAt", { time: stamp }) : t("rt.indicative")}
           onBack={() => router.back()}
-          right={<IconButton icon="refresh" label="Actualiser les taux" onPress={() => void refresh()} />}
+          right={<IconButton icon="refresh" label={t("rt.refresh")} onPress={() => void refresh()} />}
         />
       }
       refreshing={refreshing}
@@ -303,7 +309,7 @@ export default function RatesScreen() {
           <SkeletonRows rows={4} />
         </>
       ) : status === "error" && rates.length === 0 ? (
-        <ErrorView title={error?.title ?? "Taux indisponibles"} message={error?.message ?? "Réessaie dans un instant."} onRetry={onRetry} />
+        <ErrorView title={error?.title ?? t("rt.errTitle")} message={error?.message ?? t("rt.errMsg")} onRetry={onRetry} />
       ) : (
         <>
           <View style={{ flexDirection: "row", gap: 10 }}>
@@ -317,11 +323,11 @@ export default function RatesScreen() {
             ))}
           </View>
 
-          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>Convertisseur</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>{t("rt.converter")}</UText>
           <Converter rates={rates} />
 
           <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 16 }}>
-            Taux de change moyen du marché, indicatif et non contractuel. Les taux réels peuvent légèrement varier au moment de l'exécution.
+            {t("rt.disclaimer")}
           </Notice>
         </>
       )}

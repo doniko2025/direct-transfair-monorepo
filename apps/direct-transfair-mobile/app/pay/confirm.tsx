@@ -18,13 +18,15 @@ import type { PaymentRequestView } from "../../services/merchantTypes";
 import PayCheckout from "../../components/merchant/PayCheckout";
 import { ShopAvatar } from "../../components/merchant/ShopAvatar";
 import { AmountInput, Button, Card, ErrorView, NavBar, Notice, Screen, SkeletonRows, UText } from "../../components/ui";
-import { Rise, apiProblem, money, parseMerchantQr } from "../../components/merchant/merchantUi";
+import { Rise, apiProblem, categoryLabel, money, parseMerchantQr } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
 
 /** Temps laissé au client pour saisir son code secret après avoir choisi le montant. */
 const STATIC_CHECKOUT_SECONDS = 180;
 
 export default function PayConfirmScreen() {
+  const t = useT();
   const router = useRouter();
   const { user } = useAuth();
   const { payload: raw } = useLocalSearchParams<{ payload?: string }>();
@@ -56,9 +58,9 @@ export default function PayConfirmScreen() {
   const max = view?.maxAmount ?? null;
   const amountError = (() => {
     if (!showErrors) return null;
-    if (!(amount > 0)) return "Saisissez le montant à payer.";
-    if (min && amount < min) return `Montant minimum : ${money(min, currency)}.`;
-    if (max && amount > max) return `Montant maximum : ${money(max, currency)}.`;
+    if (!(amount > 0)) return t("pcf.mustAmount");
+    if (min && amount < min) return t("pcf.min", { amount: money(min, currency) });
+    if (max && amount > max) return t("pcf.max", { amount: money(max, currency) });
     return null;
   })();
 
@@ -87,15 +89,15 @@ export default function PayConfirmScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={back} title="Payer avec QR code" />}
-      footer={view && isStatic && chosen === null ? <Button label="Continuer" icon="arrow-forward" onPress={next} testID="static-continue" /> : undefined}
+      header={<NavBar onBack={back} title={t("psc.title")} />}
+      footer={view && isStatic && chosen === null ? <Button label={t("common.continue")} icon="arrow-forward" onPress={next} testID="static-continue" /> : undefined}
     >
       {!payload ? (
-        <ErrorView title="QR code non reconnu" message="Ce code n'est pas un QR de paiement marchand." onRetry={() => router.replace("/pay/scan" as any)} />
+        <ErrorView title={t("pcf.notRecognized")} message={t("pcf.notMerchant")} onRetry={() => router.replace("/pay/scan" as any)} />
       ) : error ? (
         <>
-          <ErrorView title="Paiement impossible" message={error} onRetry={load} />
-          <Button label="Scanner un autre QR" kind="outline" onPress={() => router.replace("/pay/scan" as any)} />
+          <ErrorView title={t("pcf.impossible")} message={error} onRetry={load} />
+          <Button label={t("pcf.scanOther")} kind="outline" onPress={() => router.replace("/pay/scan" as any)} />
         </>
       ) : !view ? (
         <SkeletonRows rows={3} />
@@ -105,15 +107,15 @@ export default function PayConfirmScreen() {
             <ShopAvatar shopId={view.merchant.shopId} version={view.merchant.logoVersion} name={view.merchant.businessName} size={64} />
             <UText v="heading" align="center" numberOfLines={2}>{view.merchant.businessName}</UText>
             {!!(view.merchant.category || view.merchant.city) && (
-              <UText v="caption" tone="muted" align="center">{[view.merchant.category, view.merchant.city].filter(Boolean).join(" · ")}</UText>
+              <UText v="caption" tone="muted" align="center">{[categoryLabel(view.merchant.category), view.merchant.city].filter(Boolean).join(" · ")}</UText>
             )}
           </Card>
           <View style={{ height: 16 }} />
           <Card pad={20}>
-            <AmountInput label="Montant à payer" value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
+            <AmountInput label={t("pcf.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
           </Card>
           <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 14 }}>
-            Saisissez le montant demandé par le commerçant. Vous confirmerez ensuite avec votre code secret.
+            {t("pcf.amountInfo")}
           </Notice>
         </Rise>
       ) : isStatic && checkoutView ? (

@@ -18,9 +18,10 @@ import { UText } from "./Primitives";
 import { SearchPill } from "./Field";
 import { ListRow, Sheet } from "./Layout";
 import { EmptyView } from "./Feedback";
+import { useT } from "../../providers/I18nProvider";
 
 export function ChoiceSheet<T>({
-  visible, onClose, title, items, getKey, getLabel, getLeft, getRight, isSelected, onPick, searchPlaceholder = "Rechercher",
+  visible, onClose, title, items, getKey, getLabel, getLeft, getRight, isSelected, onPick, searchPlaceholder,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -35,6 +36,7 @@ export function ChoiceSheet<T>({
   searchPlaceholder?: string;
 }) {
   const { C } = useUI();
+  const t = useT();
   const [q, setQ] = useState("");
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -46,10 +48,10 @@ export function ChoiceSheet<T>({
   return (
     <Sheet visible={visible} onClose={close} title={title}>
       <View style={{ paddingTop: 8, paddingBottom: 6 }}>
-        <SearchPill value={q} onChangeText={setQ} placeholder={searchPlaceholder} autoFocus />
+        <SearchPill value={q} onChangeText={setQ} placeholder={searchPlaceholder ?? t('common.search')} autoFocus />
       </View>
       {filtered.length === 0 ? (
-        <EmptyView icon="search-outline" title="Aucun résultat" />
+        <EmptyView icon="search-outline" title={t('state.noResult')} />
       ) : (
         filtered.map((item, i) => (
           <ListRow

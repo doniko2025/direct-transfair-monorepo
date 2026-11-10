@@ -15,6 +15,7 @@
 // =========================================================
 
 import { api } from './api';
+import { tr } from '../i18n/runtime';
 
 // ─── Types de réponse ────────────────────────────────────
 
@@ -75,11 +76,11 @@ export type VerificationStatus = {
 
 // ─── Helper interne ───────────────────────────────────────
 function extractMessage(err: unknown): string {
-  if (typeof err !== 'object' || !err) return 'Erreur réseau';
+  if (typeof err !== 'object' || !err) return tr('err.network.title');
   const e = err as any;
   const data = e?.response?.data;
-  if (!data) return e?.message ?? 'Erreur réseau';
-  const msg = data?.message ?? data?.error ?? 'Erreur';
+  if (!data) return e?.message ?? tr('err.network.title');
+  const msg = data?.message ?? data?.error ?? tr('common.error');
   return Array.isArray(msg) ? msg[0] : String(msg);
 }
 

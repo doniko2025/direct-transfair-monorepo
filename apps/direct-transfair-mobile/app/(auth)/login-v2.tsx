@@ -133,6 +133,7 @@ import ServerStatusPill from '../../components/auth/ServerStatusPill';
 import { describeAuthError, type AuthErrorInfo } from '../../components/auth/authErrors';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
 import { ForgotCodeModal, LoginOptionsModal } from '../../components/auth/LoginModals';
+import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../../components/ui/Text';
 type View_ = 'PASSWORD' | 'OTP_REQUEST' | 'OTP_VERIFY';
@@ -150,6 +151,7 @@ export default function LoginV2Screen() {
   const { branding, loadBranding, clearBranding } = useTenant();
   const { applyLoginResult, biometricLogin } = useAuth();
   const router = useRouter();
+  const t = useT();
   const params = useLocalSearchParams<{ verified?: string; reset?: string }>();
   const P = useAuthPalette();
   const { status: serverStatus, retry: retryServer, markReady } = useServerStatus();
@@ -195,11 +197,11 @@ export default function LoginV2Screen() {
   // ── Message d'accueil (retour de vérification / réinitialisation) ──
   useEffect(() => {
     if (params.verified === '1') {
-      setNotice({ kind: 'success', title: 'Compte vérifié', message: 'Votre adresse est confirmée. Connectez-vous pour continuer.' });
+      setNotice({ kind: 'success', title: t('login.verified.title'), message: t('login.verified.msg') });
     } else if (params.reset === '1') {
-      setNotice({ kind: 'success', title: 'Mot de passe modifié', message: 'Connectez-vous avec votre nouveau mot de passe.' });
+      setNotice({ kind: 'success', title: t('login.reset.title'), message: t('login.reset.msg') });
     }
-  }, [params.verified, params.reset]);
+  }, [params.verified, params.reset, t]);
 
   // ── Compte à rebours du renvoi de code ────────────────
   useEffect(() => {
@@ -276,11 +278,11 @@ export default function LoginV2Screen() {
       if (!(await isBiometricsAvailable()) || (await getBiometricsEnabled())) return;
       await AsyncStorage.setItem(BIO_ASKED_KEY, '1');
       Alert.alert(
-        'Connexion plus rapide ?',
-        `Voulez-vous vous connecter avec ${bioLabel.toLowerCase()} la prochaine fois ? Vous pourrez le changer dans Profil.`,
+        t('login.bio.faster'),
+        t('login.bio.proposal', { method: bioLabel.toLowerCase() }),
         [
-          { text: 'Plus tard', style: 'cancel' },
-          { text: 'Activer', onPress: () => { void setBiometricsEnabled(true); } },
+          { text: t('common.later'), style: 'cancel' },
+          { text: t('common.enable'), onPress: () => { void setBiometricsEnabled(true); } },
         ],
       );
     } catch { /* proposition facultative */ }
@@ -289,8 +291,8 @@ export default function LoginV2Screen() {
   const onServerRetry = (attempt: number) =>
     setNotice({
       kind: 'info',
-      title: 'Le serveur démarre',
-      message: `Nouvelle tentative automatique (${attempt}/2)… Cela peut prendre une minute après une période d'inactivité.`,
+      title: t('login.server.wakingTitle'),
+      message: t('login.server.wakingMsg', { attempt }),
     });
 
   // ── Gestion des portails société (inchangée) ──────────
@@ -304,14 +306,14 @@ export default function LoginV2Screen() {
           ? `https://${customDomain}`
           : subdomain && getPortalBaseDomain() ? `https://${subdomain}.${getPortalBaseDomain()}` : null;
         if (targetUrl) {
-          setNotice({ kind: 'info', title: 'Redirection', message: `Ouverture de l'espace ${clientCode ?? 'de votre société'}…` });
+          setNotice({ kind: 'info', title: t('login.portal.redirectTitle'), message: t('login.portal.opening', { name: clientCode ?? t('login.portal.yourCompany') }) });
           window.location.href = targetUrl;
           return true;
         }
       }
       if (clientCode) {
         try { await loadBranding(clientCode); } catch { /* branding indisponible : on continue */ }
-        setNotice({ kind: 'info', message: `Espace « ${clientCode} » chargé — connexion en cours…` });
+        setNotice({ kind: 'info', message: t('login.portal.loaded', { code: clientCode }) });
         if (retryFn) await retryFn().catch(() => undefined);
         return true;
       }
@@ -320,7 +322,7 @@ export default function LoginV2Screen() {
 
     if (data?.code === 'USE_DEFAULT_PORTAL') {
       clearBranding();
-      setNotice({ kind: 'info', message: 'Portail principal chargé — connexion en cours…' });
+      setNotice({ kind: 'info', message: t('login.portal.default') });
       if (retryFn) await retryFn().catch(() => undefined);
       return true;
     }
@@ -343,7 +345,7 @@ export default function LoginV2Screen() {
       if (problem) { setPhoneErr(problem); return; }
       setPhoneErr(null);
     } else if (!EMAIL_RE.test(email.trim())) {
-      setEmailErr('Saisissez une adresse email valide.');
+      setEmailErr(t('login.emailInvalid'));
       return;
     } else {
       setEmailErr(null);
@@ -380,7 +382,7 @@ export default function LoginV2Screen() {
   // ─────────────────────────────────────────────────────
   const requestOtp = async (isRetry = false) => {
     const target = otpEmail.trim();
-    if (!EMAIL_RE.test(target)) { setEmailErr('Saisissez une adresse email valide.'); return; }
+    if (!EMAIL_RE.test(target)) { setEmailErr(t('login.emailInvalid')); return; }
     setEmailErr(null);
     setLoading(true);
     if (!isRetry) setNotice(null);
@@ -430,7 +432,7 @@ export default function LoginV2Screen() {
     } catch (e: any) {
       const msg = String(e?.message ?? '');
       if (!/annul|cancel/i.test(msg)) {
-        setNotice({ kind: 'error', title: 'Biométrie', message: msg || 'Authentification biométrique échouée.' });
+        setNotice({ kind: 'error', title: t('login.bio.title'), message: msg || t('login.bio.failed') });
       }
     } finally {
       setLoading(false);
@@ -450,20 +452,20 @@ export default function LoginV2Screen() {
   // ─────────────────────────────────────────────────────
   // RENDU
   // ─────────────────────────────────────────────────────
-  const bioLabel = Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Empreinte digitale';
+  const bioLabel = Platform.OS === 'ios' ? t('login.bio.ios') : t('login.bio.android');
 
   const legalFooter = (
     <View style={s.legal}>
       <TouchableOpacity onPress={() => router.push('/(auth)/assistance')} accessibilityRole="link">
-        <Text style={s.legalLink}>Assistance</Text>
+        <Text style={s.legalLink}>{t('login.legal.help')}</Text>
       </TouchableOpacity>
       <Text style={s.legalDot}>·</Text>
       <TouchableOpacity onPress={() => router.push('/(auth)/terms')} accessibilityRole="link">
-        <Text style={s.legalLink}>Conditions</Text>
+        <Text style={s.legalLink}>{t('login.legal.terms')}</Text>
       </TouchableOpacity>
       <Text style={s.legalDot}>·</Text>
       <TouchableOpacity onPress={() => router.push('/(auth)/privacy-policy')} accessibilityRole="link">
-        <Text style={s.legalLink}>Confidentialité</Text>
+        <Text style={s.legalLink}>{t('login.legal.privacy')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -472,9 +474,9 @@ export default function LoginV2Screen() {
   const signupBelow = (
     <View style={{ alignItems: 'center' }}>
       <View style={s.signup}>
-        <Text style={s.signupTxt}>Pas encore de compte ? </Text>
-        <TouchableOpacity onPress={() => router.push('/(auth)/account-type')} accessibilityRole="button" accessibilityLabel="Créer un compte" testID="login-register">
-          <Text style={s.signupLink}>Créer un compte</Text>
+        <Text style={s.signupTxt}>{t('login.noAccount')}</Text>
+        <TouchableOpacity onPress={() => router.push('/(auth)/account-type')} accessibilityRole="button" accessibilityLabel={t('login.createAccount')} testID="login-register">
+          <Text style={s.signupLink}>{t('login.createAccount')}</Text>
         </TouchableOpacity>
       </View>
       {legalFooter}
@@ -488,8 +490,8 @@ export default function LoginV2Screen() {
     return (
       <AuthShell
         compact
-        title="Saisissez le code"
-        subtitle={maskedRec ? `Un code à 6 chiffres a été envoyé à ${maskedRec}.` : 'Un code à 6 chiffres vient de vous être envoyé.'}
+        title={t('otp.enterCode')}
+        subtitle={maskedRec ? t('otp.sentTo', { to: maskedRec }) : t('otp.sentJustNow')}
         onBack={() => switchView('OTP_REQUEST')}
         headerRight={pill}
         below={legalFooter}
@@ -505,7 +507,7 @@ export default function LoginV2Screen() {
         />
         <View style={{ height: 22 }} />
         <AuthButton
-          label="Valider"
+          label={t('otp.validate')}
           accent={P.action}
           loading={loading}
           disabled={otpCode.length < 6}
@@ -513,9 +515,9 @@ export default function LoginV2Screen() {
         />
         <View style={s.centerRow}>
           {countdown > 0 ? (
-            <Text style={s.hint}>Renvoyer le code dans {countdown} s</Text>
+            <Text style={s.hint}>{t('otp.resendIn', { seconds: countdown })}</Text>
           ) : (
-            <AuthButton label="Renvoyer le code" variant="link" accent={P.accent} disabled={loading} onPress={() => requestOtp()} />
+            <AuthButton label={t('otp.resend')} variant="link" accent={P.accent} disabled={loading} onPress={() => requestOtp()} />
           )}
         </View>
       </AuthShell>
@@ -527,15 +529,15 @@ export default function LoginV2Screen() {
     return (
       <AuthShell
         compact
-        title="Connexion par code"
-        subtitle="Entrez votre email : nous vous envoyons un code à 6 chiffres, sans mot de passe."
+        title={t('otp.byCodeTitle')}
+        subtitle={t('otp.byCodeSubtitle')}
         onBack={() => switchView('PASSWORD')}
         headerRight={pill}
         below={legalFooter}
       >
         {notice ? <AuthNotice {...notice} /> : null}
         <AuthField
-          label="Adresse email"
+          label={t('login.email.label')}
           icon="mail-outline"
           value={otpEmail}
           onChangeText={(t) => { setOtpEmail(t); if (emailErr) setEmailErr(null); }}
@@ -549,7 +551,7 @@ export default function LoginV2Screen() {
           autoFocus
         />
         <AuthButton
-          label="Envoyer le code"
+          label={t('otp.sendCode')}
           icon="paper-plane-outline"
           iconRight
           accent={P.action}
@@ -574,7 +576,7 @@ export default function LoginV2Screen() {
   return (
     <AuthShell
       sea
-      title="Connexion"
+      title={t('login.title')}
       headerRight={pill}
       below={signupBelow}
       trust={false}
@@ -594,7 +596,7 @@ export default function LoginV2Screen() {
           />
           <PinInput
             dense
-            label="Code secret"
+            label={t('login.pin.label')}
             value={pin}
             onChange={setPin}
             onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else setPhoneErr(validatePhone(phone)); }}
@@ -606,7 +608,7 @@ export default function LoginV2Screen() {
       ) : (
         <>
           <AuthField
-            label="Adresse email"
+            label={t('login.email.label')}
             icon="mail-outline"
             value={email}
             onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
@@ -621,7 +623,7 @@ export default function LoginV2Screen() {
             testID="login-email"
           />
           <AuthField
-            label="Mot de passe"
+            label={t('login.password.label')}
             icon="lock-closed-outline"
             value={password}
             onChangeText={setPassword}
@@ -640,11 +642,11 @@ export default function LoginV2Screen() {
       )}
 
       <View style={s.forgotRow}>
-        <AuthButton label="Code oublié ?" variant="link" dense accent={P.accent} disabled={loading} onPress={() => setForgotOpen(true)} testID="login-forgot" />
+        <AuthButton label={t('login.forgot')} variant="link" dense accent={P.accent} disabled={loading} onPress={() => setForgotOpen(true)} testID="login-forgot" />
       </View>
 
       <AuthButton
-        label="Se connecter"
+        label={t('login.submit')}
         icon="arrow-forward"
         iconRight
         dense
@@ -657,7 +659,7 @@ export default function LoginV2Screen() {
 
       {/* Un seul lien : le détail des autres façons de se connecter s'ouvre dans une fenêtre. */}
       <View style={s.optionsBox}>
-        <AuthButton label="Autres options de connexion" variant="link" dense accent={P.accent} disabled={loading} onPress={() => setOptionsOpen(true)} testID="login-other-options" />
+        <AuthButton label={t('login.otherOptions')} variant="link" dense accent={P.accent} disabled={loading} onPress={() => setOptionsOpen(true)} testID="login-other-options" />
       </View>
 
       <ForgotCodeModal

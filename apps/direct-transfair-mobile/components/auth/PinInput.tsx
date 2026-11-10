@@ -13,6 +13,7 @@ import { Ionicons } from '../ui/Icon';
 import { Text, TextInput } from '../ui/Text';
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 import { PIN_LENGTH, sanitizePin } from './pinRules';
+import { useT } from '../../providers/I18nProvider';
 
 type Props = {
   value: string;
@@ -35,6 +36,7 @@ type Props = {
 export default function PinInput({
   value, onChange, onComplete, accent, label, error, disabled = false, autoFocus = false, noReveal = false, dense = false, testID, inputRef,
 }: Props) {
+  const t = useT();
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
   const [reveal, setReveal] = useState(false);
@@ -72,7 +74,7 @@ export default function PinInput({
         <View style={s.labelRow}>
           <Text style={[s.label, dense && { fontSize: 12 }, error ? { color: N.danger } : null]}>{label}</Text>
           {!noReveal ? (
-            <Pressable onPress={() => setReveal((r) => !r)} hitSlop={10} accessibilityRole="button" accessibilityLabel={reveal ? 'Masquer le code' : 'Afficher le code'}>
+            <Pressable onPress={() => setReveal((r) => !r)} hitSlop={10} accessibilityRole="button" accessibilityLabel={reveal ? t('pin.hide') : t('pin.show')}>
               <Ionicons name={reveal ? 'eye-outline' : 'eye-off-outline'} size={20} color={N.muted} />
             </Pressable>
           ) : null}
@@ -120,7 +122,7 @@ export default function PinInput({
           caretHidden
           contextMenuHidden
           style={[s.hidden, WEB_INPUT_RESET]}
-          accessibilityLabel={label ?? `Code secret à ${PIN_LENGTH} chiffres`}
+          accessibilityLabel={label ?? t('pin.a11y', { length: PIN_LENGTH })}
           underlineColorAndroid="transparent"
         />
       </Pressable>

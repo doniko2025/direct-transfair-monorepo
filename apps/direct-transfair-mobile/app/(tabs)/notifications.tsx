@@ -35,6 +35,8 @@ import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from 
 import {
   Button, Chip, EmptyView, ErrorView, IconButton, NavBar, Screen, SkeletonRows, SlowNote, UText, alpha, useUI,
 } from "../../components/ui";
+import { useT } from "../../providers/I18nProvider";
+import { getLocale, tr } from "../../i18n/runtime";
 
 interface NotificationItem {
   id: string; title: string; message: string;
@@ -47,10 +49,10 @@ interface NotificationItem {
 function fmtDate(iso: string): string {
   const d = new Date(iso), now = new Date();
   const diff = now.getTime() - d.getTime();
-  if (diff < 60000) return "À l'instant";
-  if (diff < 3600000) return `Il y a ${Math.round(diff / 60000)} min`;
-  if (diff < 86400000) return `Il y a ${Math.round(diff / 3600000)} h`;
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+  if (diff < 60000) return tr("ntf.now");
+  if (diff < 3600000) return tr("ntf.minAgo", { n: Math.round(diff / 60000) });
+  if (diff < 86400000) return tr("ntf.hourAgo", { n: Math.round(diff / 3600000) });
+  return d.toLocaleDateString(getLocale(), { day: "2-digit", month: "short" });
 }
 
 const TYPE_ICON: Record<string, string> = {
@@ -65,6 +67,7 @@ const TYPE_ICON: Record<string, string> = {
 };
 
 export default function NotificationsScreen() {
+  const t = useT();
   const { C } = useUI();
   const router = useRouter();
   // Comptes séparés : chaque compte a sa propre boîte de réception ; on recharge à chaque bascule.
@@ -181,14 +184,14 @@ export default function NotificationsScreen() {
       setNotifs((prev) => prev.filter((n) => !ids.includes(n.id)));
       setConfirmOpen(false);
       exitSelectMode();
-      showToast(ids.length > 1 ? `${ids.length} notifications supprimées` : "Notification supprimée");
+      showToast(ids.length > 1 ? t("ntf.deletedMany", { n: ids.length }) : t("ntf.deletedOne"));
       void fetchNotifs(); // fait remonter d'éventuelles notifications plus anciennes
     } catch (e) {
       setConfirmOpen(false);
       const status = (e as { response?: { status?: number } })?.response?.status;
       setDeleteError(
         status === 404
-          ? "La suppression n'est pas encore disponible sur le serveur. Réessaie un peu plus tard."
+          ? t("ntf.deleteSoon")
           : explainLoadError(e).message,
       );
       void fetchNotifs();
@@ -201,16 +204,16 @@ export default function NotificationsScreen() {
     <Screen
       header={
         <NavBar
-          title={selectMode ? (selectedIds.length === 0 ? "Sélectionner" : `${selectedIds.length} sélectionnée${selectedIds.length > 1 ? "s" : ""}`) : "Notifications"}
-          subtitle={!selectMode && unreadCount > 0 ? `${unreadCount} non lue${unreadCount > 1 ? "s" : ""}` : undefined}
+          title={selectMode ? (selectedIds.length === 0 ? t("ntf.select") : t("ntf.selected", { count: selectedIds.length })) : t("ntf.title")}
+          subtitle={!selectMode && unreadCount > 0 ? t("ntf.unread", { count: unreadCount }) : undefined}
           onBack={selectMode ? exitSelectMode : () => router.back()}
           right={
             selectMode ? (
-              <IconButton icon="arrow-undo-outline" label="Annuler la sélection" onPress={exitSelectMode} />
+              <IconButton icon="arrow-undo-outline" label={t("ntf.cancelSel")} onPress={exitSelectMode} />
             ) : (
               <View style={{ flexDirection: "row", gap: 8 }}>
-                {notifs.length > 0 && <IconButton icon="trash-outline" label="Supprimer des notifications" onPress={() => startSelecting()} />}
-                <IconButton icon="checkmark-done" label="Tout marquer comme lu" onPress={handleMarkAllAsRead} />
+                {notifs.length > 0 && <IconButton icon="trash-outline" label={t("ntf.deleteSome")} onPress={() => startSelecting()} />}
+                <IconButton icon="checkmark-done" label={t("ntf.markAll")} onPress={handleMarkAllAsRead} />
               </View>
             )
           }
@@ -221,8 +224,8 @@ export default function NotificationsScreen() {
     >
       <SpaceSwitch style={{ marginBottom: 10 }} />
       <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-        <Chip label="Toutes" active={filter === "ALL"} count={notifs.length} onPress={() => setFilter("ALL")} />
-        <Chip label="Non lues" active={filter === "UNREAD"} count={unreadCount} onPress={() => setFilter("UNREAD")} />
+        <Chip label={t("ntf.fAll")} active={filter === "ALL"} count={notifs.length} onPress={() => setFilter("ALL")} />
+        <Chip label={t("ntf.fUnread")} active={filter === "UNREAD"} count={unreadCount} onPress={() => setFilter("UNREAD")} />
       </View>
 
       {!!deleteError && (
@@ -247,10 +250,10 @@ export default function NotificationsScreen() {
             }}>
               {allFilteredSelected && <Ionicons name="checkmark" size={15} color={C.accentInk} />}
             </View>
-            <UText v="bodyStrong">{allFilteredSelected ? "Tout désélectionner" : "Tout sélectionner"}</UText>
+            <UText v="bodyStrong">{allFilteredSelected ? t("ntf.unselectAll") : t("ntf.selectAll")}</UText>
           </Pressable>
           <Button
-            label={selectedIds.length > 0 ? `Supprimer (${selectedIds.length})` : "Supprimer"}
+            label={selectedIds.length > 0 ? t("ntf.deleteN", { n: selectedIds.length }) : t("ntf.delete")}
             icon="trash-outline"
             kind="danger"
             small
@@ -271,12 +274,12 @@ export default function NotificationsScreen() {
       ) : filtered.length === 0 ? (
         <EmptyView
           icon="notifications-off-outline"
-          title="Aucune notification"
-          message={filter === "UNREAD" ? "Tu as tout lu ✓" : "Tes alertes apparaîtront ici."}
+          title={t("ntf.empty")}
+          message={filter === "UNREAD" ? t("ntf.allRead") : t("ntf.willAppear")}
         />
       ) : (
         filtered.map((item, i) => {
-          const t = tone(item.type);
+          const tn = tone(item.type);
           const checked = selectedIds.includes(item.id);
           return (
             <Pressable
@@ -309,8 +312,8 @@ export default function NotificationsScreen() {
                   {checked && <Ionicons name="checkmark" size={15} color={C.accentInk} />}
                 </View>
               )}
-              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: t.bg, alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name={(TYPE_ICON[item.type] ?? "notifications") as any} size={21} color={t.fg} />
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: tn.bg, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={(TYPE_ICON[item.type] ?? "notifications") as any} size={21} color={tn.fg} />
               </View>
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -337,7 +340,7 @@ export default function NotificationsScreen() {
           <Pressable
             style={[StyleSheet.absoluteFill, { backgroundColor: C.scrim }]}
             onPress={() => { if (!deleting) setConfirmOpen(false); }}
-            accessibilityLabel="Fermer"
+            accessibilityLabel={t("common.close")}
           />
           <View
             accessibilityRole="alert"
@@ -347,14 +350,14 @@ export default function NotificationsScreen() {
               <Ionicons name="trash-outline" size={24} color={C.danger} />
             </View>
             <UText v="title" align="center">
-              {selectedIds.length > 1 ? `Supprimer ${selectedIds.length} notifications ?` : "Supprimer cette notification ?"}
+              {selectedIds.length > 1 ? t("ntf.confirmMany", { n: selectedIds.length }) : t("ntf.confirmOne")}
             </UText>
             <UText v="body" tone="muted" align="center" style={{ marginBottom: 14 }}>
-              {selectedIds.length > 1 ? "Ces notifications seront supprimées définitivement." : "Cette notification sera supprimée définitivement."}
+              {selectedIds.length > 1 ? t("ntf.permMany") : t("ntf.permOne")}
             </UText>
             <View style={{ alignSelf: "stretch", gap: 10 }}>
-              <Button label="Supprimer" icon="trash-outline" kind="danger" loading={deleting} onPress={handleDeleteSelected} />
-              <Button label="Annuler" kind="outline" disabled={deleting} onPress={() => setConfirmOpen(false)} />
+              <Button label={t("ntf.delete")} icon="trash-outline" kind="danger" loading={deleting} onPress={handleDeleteSelected} />
+              <Button label={t("common.cancel")} kind="outline" disabled={deleting} onPress={() => setConfirmOpen(false)} />
             </View>
           </View>
         </View>

@@ -13,11 +13,12 @@ import { Ionicons } from "./Icon";
 import { useUI } from "./theme";
 import { SelectRow } from "./Field";
 import { ListRow, Sheet } from "./Layout";
+import { useT } from "../../providers/I18nProvider";
 
 export type PickerOption = { key: string; label: string; hint?: string };
 
 export function OptionPicker({
-  label, title, value, options, onChange, icon = "options-outline", placeholder = "Choisir", error, hint,
+  label, title, value, options, onChange, icon = "options-outline", placeholder, error, hint,
 }: {
   /** Libellé du champ (au-dessus). */
   label?: string;
@@ -33,12 +34,14 @@ export function OptionPicker({
   hint?: string;
 }) {
   const { C } = useUI();
+  const t = useT();
+  const ph = placeholder ?? t('state.choose');
   const [open, setOpen] = useState(false);
   const current = options.find((o) => o.key === (value ?? ""));
   return (
     <>
-      <SelectRow label={label} value={current?.label} placeholder={placeholder} icon={icon} error={error} hint={hint} onPress={() => setOpen(true)} />
-      <Sheet visible={open} onClose={() => setOpen(false)} title={title ?? label ?? placeholder}>
+      <SelectRow label={label} value={current?.label} placeholder={ph} icon={icon} error={error} hint={hint} onPress={() => setOpen(true)} />
+      <Sheet visible={open} onClose={() => setOpen(false)} title={title ?? label ?? ph}>
         <View style={{ paddingTop: 6 }}>
           {options.map((o, i) => {
             const on = o.key === (value ?? "");

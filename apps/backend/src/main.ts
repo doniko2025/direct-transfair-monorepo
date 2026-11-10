@@ -1,7 +1,9 @@
 // apps/backend/src/main.ts
 // =========================================================
 // ✅ v2.7 (phase 7) : titre et description Swagger lus dans la configuration plateforme (PLATFORM_NAME).
-// MAIN v2.7
+// MAIN v2.8
+// ✅ v2.8 : LANGUES FR / EN / PT (application mobile) — filtre global qui traduit les messages d'erreur d'après l'en-tête x-app-lang (absent = français,
+//   réponse identique à avant) ; l'en-tête est ajouté aux en-têtes CORS autorisés.
 // ✅ v2.6 : SÉCURITÉ — Swagger n'est plus public en production : désactivé par défaut quand NODE_ENV=production,
 //   réactivable avec SWAGGER_ENABLED=true (en développement il reste actif, SWAGGER_ENABLED=false le coupe).
 //   Avertissement au démarrage si, en production, CORS_ALLOWED_SUFFIXES n'est pas défini (le défaut historique
@@ -74,6 +76,7 @@ import { AppModule }     from './app.module';
 import { TenantGuard }   from './tenants/tenant.guard';
 import { platform } from './common/platform.config';
 import { PrismaService } from './prisma/prisma.service'; // ✅ v2.1
+import { I18nExceptionFilter } from './i18n/i18n.filter'; // ✅ v2.8 : messages d'erreur FR / EN / PT (application mobile)
 
 // =========================================================
 // ✅ v2.1 : CORS dynamique — domaines personnalisés clients
@@ -208,6 +211,9 @@ async function bootstrap(): Promise<void> {
   // =========================================================
   app.setGlobalPrefix('api');
 
+  // ✅ v2.8 : erreurs traduites (FR / EN / PT) — sans en-tête x-app-lang, réponse identique à celle de Nest par défaut
+  app.useGlobalFilters(new I18nExceptionFilter());
+
   // =========================================================
   // VALIDATION
   // =========================================================
@@ -263,6 +269,7 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: [
       'Origin', 'X-Requested-With', 'Content-Type',
       'Accept', 'Authorization', 'x-tenant-id',
+      'x-app-lang', // ✅ v2.8 : langue choisie dans l'application mobile (fr / en / pt)
       'x-app-client', // ✅ phase 5 : le portail web s'identifie (voir auth/app-client.policy.ts)
       'Idempotency-Key', // ✅ audit point 3 : clé d'idempotence des envois / dépôts / remises (transactions/idempotency.ts)
     ],

@@ -16,11 +16,13 @@ import { useLoader } from "../../components/wallet/useLoader";
 import { Ionicons } from "../../components/ui/Icon";
 import { Button, Card, ErrorView, NavBar, Screen, SkeletonRows, UText, useUI } from "../../components/ui";
 import { Rise } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
 
 export default function MerchantEntry() {
   const router = useRouter();
   const { user } = useAuth();
   const { C } = useUI();
+  const t = useT();
   const { data: me, status, error, reload } = useLoader(() => api.getMerchantMe());
 
   const isMerchant = user?.accountType === "MERCHANT" || !!me?.isMerchant;
@@ -29,30 +31,30 @@ export default function MerchantEntry() {
   }, [isMerchant, router]);
 
   if (isMerchant || status === "loading") {
-    return <Screen header={<NavBar onBack={() => router.back()} title="Espace marchand" />}><SkeletonRows rows={3} /></Screen>;
+    return <Screen header={<NavBar onBack={() => router.back()} title={t("mx.merchantSpace")} />}><SkeletonRows rows={3} /></Screen>;
   }
   if (status === "error" || !me) {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} title="Espace marchand" />}>
-        <ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} />
+      <Screen header={<NavBar onBack={() => router.back()} title={t("mx.merchantSpace")} />}>
+        <ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} />
       </Screen>
     );
   }
 
   return (
-    <Screen header={<NavBar onBack={() => router.back()} title="Espace marchand" />}>
+    <Screen header={<NavBar onBack={() => router.back()} title={t("mx.merchantSpace")} />}>
       <Rise>
         <Card pad={24} style={{ alignItems: "center", gap: 10 }}>
           <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
             <Ionicons name="storefront-outline" size={34} color={C.ink} />
           </View>
-          <UText v="title" align="center">Encaissez vos clients</UText>
+          <UText v="title" align="center">{t("ment.title")}</UText>
           <UText v="body" tone="muted" align="center">
             {me.canActivate
-              ? "Activez votre espace marchand en une minute : QR code, paiement par téléphone, solde et retraits vers votre Orange Money."
-              : "Les comptes marchands ne sont pas disponibles pour le moment."}
+              ? t("ment.canActivate")
+              : t("ment.unavailable")}
           </UText>
-          {me.canActivate && <Button label="Devenir marchand" onPress={() => router.push("/merchant/activate" as any)} style={{ marginTop: 10 }} />}
+          {me.canActivate && <Button label={t("prof.becomeMerchant")} onPress={() => router.push("/merchant/activate" as any)} style={{ marginTop: 10 }} />}
         </Card>
       </Rise>
     </Screen>

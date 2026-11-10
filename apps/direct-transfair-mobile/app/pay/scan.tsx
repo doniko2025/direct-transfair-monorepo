@@ -14,11 +14,13 @@ import { Ionicons } from "../../components/ui/Icon";
 import { useTenant } from "../../providers/TenantProvider";
 import { Button, IconButton, NavBar, Screen, UText, useUI } from "../../components/ui";
 import { parseMerchantQr } from "../../components/merchant/merchantUi";
+import { useT } from "../../providers/I18nProvider";
 
 const { width: SW } = Dimensions.get("window");
 const FRAME = Math.min(SW * 0.7, 270);
 
 export default function PayScanScreen() {
+  const t = useT();
   const { C, R } = useUI();
   const { branding } = useTenant();
   const router = useRouter();
@@ -48,14 +50,14 @@ export default function PayScanScreen() {
 
   if (!permission.granted) {
     return (
-      <Screen header={<NavBar onBack={() => router.back()} />} footer={<Button label="Autoriser la caméra" icon="camera-outline" onPress={requestPermission} />}>
+      <Screen header={<NavBar onBack={() => router.back()} />} footer={<Button label={t("pv.allowCam")} icon="camera-outline" onPress={requestPermission} />}>
         <View style={{ alignItems: "center", paddingTop: 36, gap: 10 }}>
           <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
             <Ionicons name="camera-outline" size={38} color={C.ink} />
           </View>
-          <UText v="title" align="center">Accès à la caméra requis</UText>
+          <UText v="title" align="center">{t("pv.camTitle")}</UText>
           <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>
-            {branding.name} utilise la caméra uniquement pour lire le QR code de paiement du marchand.
+            {t("psc.camMsg", { app: branding.name })}
           </UText>
         </View>
       </Screen>
@@ -75,9 +77,9 @@ export default function PayScanScreen() {
       />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.28)" }]} pointerEvents="box-none">
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 24) + 8 : 56 }}>
-          <IconButton icon="chevron-back" label="Retour" onPress={() => router.back()} />
+          <IconButton icon="chevron-back" label={t("common.back")} onPress={() => router.back()} />
           <View style={{ paddingHorizontal: 16, height: 40, borderRadius: R.pill, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
-            <UText v="bodyStrong">Payer avec QR code</UText>
+            <UText v="bodyStrong">{t("psc.title")}</UText>
           </View>
           <View style={{ width: 44 }} />
         </View>
@@ -91,7 +93,7 @@ export default function PayScanScreen() {
               {corner({ bottom: 0, right: 0, borderBottomWidth: 5, borderRightWidth: 5, borderBottomRightRadius: 24 })}
             </View>
             <View style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: R.pill, backgroundColor: C.surface, maxWidth: "88%" }}>
-              <UText v="caption" align="center">Placez le QR code du marchand dans le cadre</UText>
+              <UText v="caption" align="center">{t("psc.frame")}</UText>
             </View>
           </View>
         )}
@@ -103,9 +105,9 @@ export default function PayScanScreen() {
             <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: C.dangerBg, alignItems: "center", justifyContent: "center", marginBottom: 4 }}>
               <Ionicons name="close-circle-outline" size={30} color={C.danger} />
             </View>
-            <UText v="heading" align="center">QR code non reconnu</UText>
-            <UText v="body" tone="muted" align="center" style={{ marginBottom: 12 }}>Ce n'est pas un QR de paiement marchand de {branding.name}.</UText>
-            <Button label="Réessayer" kind="dark" icon="refresh" onPress={retry} />
+            <UText v="heading" align="center">{t("psc.invalid")}</UText>
+            <UText v="body" tone="muted" align="center" style={{ marginBottom: 12 }}>{t("psc.invalidMsg", { app: branding.name })}</UText>
+            <Button label={t("common.retry")} kind="dark" icon="refresh" onPress={retry} />
           </View>
         </View>
       )}

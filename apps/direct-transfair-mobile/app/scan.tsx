@@ -27,6 +27,7 @@ import { useTenant } from "../providers/TenantProvider";
 import { api } from "../services/api";
 import { parseMerchantQr } from "../components/merchant/merchantUi";
 import { Avatar, Button, IconButton, Screen, NavBar, UText, useUI } from "../components/ui";
+import { useT } from "../providers/I18nProvider";
 
 const { width: SW } = Dimensions.get("window");
 const DEEP_LINK_SCHEME = "directtransfair";
@@ -60,6 +61,7 @@ function extractUserId(raw: string): string | null {
 }
 
 export default function ScanScreen() {
+  const t = useT();
   const { C, R, S } = useUI();
   const { branding } = useTenant();
   const router = useRouter();
@@ -143,15 +145,15 @@ export default function ScanScreen() {
     return (
       <Screen
         header={<NavBar onBack={() => router.back()} />}
-        footer={<Button label="Autoriser la caméra" icon="camera-outline" onPress={requestPermission} />}
+        footer={<Button label={t("pv.allowCam")} icon="camera-outline" onPress={requestPermission} />}
       >
         <View style={{ alignItems: "center", paddingTop: 36, gap: 10 }}>
           <View style={{ width: 88, height: 88, borderRadius: 44, backgroundColor: C.beige, alignItems: "center", justifyContent: "center", marginBottom: 8 }}>
             <Ionicons name="camera-outline" size={38} color={C.ink} />
           </View>
-          <UText v="title" align="center">Accès à la caméra requis</UText>
+          <UText v="title" align="center">{t("pv.camTitle")}</UText>
           <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>
-            {branding.name} a besoin de la caméra pour scanner les QR codes de paiement.
+            {t("sc.camMsg", { app: branding.name })}
           </UText>
         </View>
       </Screen>
@@ -169,7 +171,7 @@ export default function ScanScreen() {
       </View>
       <UText v="heading" align="center">{title}</UText>
       <UText v="body" tone="muted" align="center" style={{ marginBottom: 12 }}>{message}</UText>
-      <Button label="Réessayer" kind="dark" icon="refresh" onPress={reset} />
+      <Button label={t("common.retry")} kind="dark" icon="refresh" onPress={reset} />
     </View>
   );
 
@@ -187,9 +189,9 @@ export default function ScanScreen() {
       {/* Barre du haut + viseur */}
       <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.18)" }]} pointerEvents="box-none">
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight ?? 24) + 8 : 56 }}>
-          <IconButton icon="chevron-back" label="Retour" onPress={() => router.back()} />
+          <IconButton icon="chevron-back" label={t("common.back")} onPress={() => router.back()} />
           <View style={{ paddingHorizontal: 16, height: 40, borderRadius: R.pill, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
-            <UText v="bodyStrong">Scanner un QR</UText>
+            <UText v="bodyStrong">{t("sc.title")}</UText>
           </View>
           <View style={{ width: 44 }} />
         </View>
@@ -203,7 +205,7 @@ export default function ScanScreen() {
               {corner({ bottom: 0, right: 0, borderBottomWidth: 5, borderRightWidth: 5, borderBottomRightRadius: 22 })}
             </View>
             <View style={{ paddingHorizontal: 18, paddingVertical: 10, borderRadius: R.pill, backgroundColor: C.surface }}>
-              <UText v="caption" align="center">Place le QR code de paiement dans le cadre</UText>
+              <UText v="caption" align="center">{t("sc.frame")}</UText>
             </View>
           </View>
         )}
@@ -220,7 +222,7 @@ export default function ScanScreen() {
           {state.kind === "resolving" && (
             <View style={{ alignItems: "center", gap: 14, paddingVertical: 12 }}>
               <ActivityIndicator color={C.ink} size="large" />
-              <UText v="body" tone="muted">Recherche du destinataire…</UText>
+              <UText v="body" tone="muted">{t("sc.searching")}</UText>
             </View>
           )}
 
@@ -230,7 +232,7 @@ export default function ScanScreen() {
                 <Avatar name={`${state.data.firstName ?? ""} ${state.data.lastName ?? ""}`.trim() || "?"} size={56} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <UText v="heading" numberOfLines={1}>
-                    {`${state.data.firstName ?? ""} ${state.data.lastName ?? ""}`.trim() || "Utilisateur"}
+                    {`${state.data.firstName ?? ""} ${state.data.lastName ?? ""}`.trim() || t("sc.user")}
                   </UText>
                   {!!state.data.phone && <UText v="caption" tone="muted">{state.data.phone}</UText>}
                 </View>
@@ -238,24 +240,24 @@ export default function ScanScreen() {
                   <Ionicons name="checkmark" size={18} color="#fff" />
                 </View>
               </View>
-              <Button label="Envoyer de l'argent" icon="paper-plane-outline" onPress={handleSendMoney} />
-              <Button label="Scanner un autre QR" kind="ghost" onPress={reset} />
+              <Button label={t("sc.sendMoney")} icon="paper-plane-outline" onPress={handleSendMoney} />
+              <Button label={t("sc.scanOther")} kind="ghost" onPress={reset} />
             </View>
           )}
 
           {state.kind === "self" &&
-            status("information-circle-outline", "warn", "C'est ton propre QR", "Présente ce code à quelqu'un d'autre pour recevoir un paiement.")}
+            status("information-circle-outline", "warn", t("sc.selfTitle"), t("sc.selfMsg"))}
 
           {(state.kind === "not-found" || state.kind === "invalid") &&
             status(
-              "close-circle-outline", "danger", "QR non reconnu",
+              "close-circle-outline", "danger", t("sc.invalidTitle"),
               state.kind === "not-found"
-                ? "Ce destinataire n'existe pas ou son compte est inactif."
-                : `Ce QR code ne provient pas de ${branding.name}.`,
+                ? t("sc.notFound")
+                : t("sc.foreign", { app: branding.name }),
             )}
 
           {state.kind === "forbidden" &&
-            status("lock-closed-outline", "danger", "Société différente", "Ce destinataire n'appartient pas à ta société et ne peut pas recevoir de paiement ici.")}
+            status("lock-closed-outline", "danger", t("sc.forbiddenTitle"), t("sc.forbiddenMsg"))}
         </View>
       )}
     </View>

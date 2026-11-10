@@ -20,6 +20,8 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Button, NavBar, Notice, Screen, Toggle, UText, useUI } from "../../../components/ui";
+import { useT } from "../../../providers/I18nProvider";
+import type { MessageKey } from "../../../i18n/catalog";
 
 const STORAGE_KEY = "dt_notif_prefs_v1";
 
@@ -39,12 +41,12 @@ const DEFAULT_PREFS: NotifPrefs = {
 };
 
 // ─── Définition des catégories ───────────────────────────
-const CATEGORIES: { key: NotifCategory; icon: string; label: string; desc: string }[] = [
-  { key: "b2b", icon: "swap-horizontal-outline", label: "Virements B2B", desc: "Déclarations, validations et rejets de virement" },
-  { key: "agencyRefill", icon: "storefront-outline", label: "Recharges agences", desc: "Transferts de fonds vers vos agences" },
-  { key: "lowBalance", icon: "alert-circle-outline", label: "Alerte solde faible", desc: "Quand le solde d'une agence est bas" },
-  { key: "security", icon: "shield-checkmark-outline", label: "Sécurité du compte", desc: "Connexions, changements de mot de passe" },
-  { key: "system", icon: "megaphone-outline", label: "Alertes système", desc: "Mises à jour et maintenances planifiées" },
+const CATEGORIES: { key: NotifCategory; icon: string; label: MessageKey; desc: MessageKey }[] = [
+  { key: "b2b", icon: "swap-horizontal-outline", label: "np.b2b", desc: "np.b2bDesc" },
+  { key: "agencyRefill", icon: "storefront-outline", label: "np.refill", desc: "np.refillDesc" },
+  { key: "lowBalance", icon: "alert-circle-outline", label: "np.low", desc: "np.lowDesc" },
+  { key: "security", icon: "shield-checkmark-outline", label: "np.security", desc: "np.securityDesc" },
+  { key: "system", icon: "megaphone-outline", label: "np.system", desc: "np.systemDesc" },
 ];
 
 /** Colonne de deux interrupteurs (Push | Email), largeur fixe pour aligner les lignes. */
@@ -52,6 +54,7 @@ const COL = 62;
 
 export default function NotificationsPrefsScreen() {
   const { C } = useUI();
+  const t = useT();
   const router = useRouter();
 
   const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_PREFS);
@@ -97,9 +100,9 @@ export default function NotificationsPrefsScreen() {
     setSaving(true);
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-      setSaved({ ok: true, message: "Tes préférences de notifications ont été mises à jour." });
+      setSaved({ ok: true, message: t("np.savedMsg") });
     } catch {
-      setSaved({ ok: false, message: "Impossible d'enregistrer les préférences." });
+      setSaved({ ok: false, message: t("np.saveFail") });
     } finally {
       setSaving(false);
       if (savedTimer.current) clearTimeout(savedTimer.current);
@@ -133,15 +136,15 @@ export default function NotificationsPrefsScreen() {
   return (
     <Screen
       header={<NavBar onBack={() => router.back()} />}
-      footer={<Button label="Enregistrer les préférences" icon="checkmark-done-outline" onPress={handleSave} loading={saving} disabled={saving} />}
+      footer={<Button label={t("np.save")} icon="checkmark-done-outline" onPress={handleSave} loading={saving} disabled={saving} />}
     >
-      <UText v="hero">Notifications</UText>
+      <UText v="hero">{t("np.title")}</UText>
       <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 20 }}>
-        Choisis comment tu souhaites être informé pour chaque type d'événement.
+        {t("np.intro")}
       </UText>
 
       {saved && (
-        <Notice tone={saved.ok ? "pos" : "danger"} title={saved.ok ? "Préférences sauvegardées" : "Erreur"} style={{ marginBottom: 16 }}>
+        <Notice tone={saved.ok ? "pos" : "danger"} title={saved.ok ? t("np.savedTitle") : t("common.error")} style={{ marginBottom: 16 }}>
           {saved.message}
         </Notice>
       )}
@@ -150,7 +153,7 @@ export default function NotificationsPrefsScreen() {
 
       {/* Tout activer */}
       <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 14, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.line }}>
-        <UText v="overline" tone="muted" style={{ flex: 1 }}>Tout activer</UText>
+        <UText v="overline" tone="muted" style={{ flex: 1 }}>{t("np.all")}</UText>
         <View style={{ width: COL, alignItems: "center" }}>
           <Toggle value={allPushOn} onValueChange={(v) => toggleAll("push", v)} />
         </View>
@@ -169,8 +172,8 @@ export default function NotificationsPrefsScreen() {
             <Ionicons name={cat.icon as any} size={20} color={C.ink} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <UText v="bodyStrong">{cat.label}</UText>
-            <UText v="caption" tone="muted" style={{ marginTop: 2 }}>{cat.desc}</UText>
+            <UText v="bodyStrong">{t(cat.label)}</UText>
+            <UText v="caption" tone="muted" style={{ marginTop: 2 }}>{t(cat.desc)}</UText>
           </View>
           <View style={{ width: COL, alignItems: "center" }}>
             <Toggle value={prefs.push[cat.key]} onValueChange={() => toggle(cat.key, "push")} />
@@ -182,7 +185,7 @@ export default function NotificationsPrefsScreen() {
       ))}
 
       <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 20 }}>
-        Les notifications push nécessitent que l'application soit installée sur ton appareil. Les notifications email sont envoyées à l'adresse associée à ton compte.
+        {t("np.footer")}
       </Notice>
     </Screen>
   );

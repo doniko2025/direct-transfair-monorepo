@@ -12,18 +12,19 @@ import type { PaymentRequestView } from "../../services/merchantTypes";
 import { Button, EmptyView, ErrorView, NavBar, Screen, SkeletonRows } from "../../components/ui";
 import { OptionPicker } from "../../components/ui/OptionPicker";
 import { PaymentRow, apiProblem } from "../../components/merchant/merchantUi";
-
-const FILTERS = [
-  { key: "", label: "Tous les paiements" },
-  { key: "PENDING", label: "En attente" },
-  { key: "PAID", label: "Payés" },
-  { key: "REFUNDED", label: "Remboursés" },
-  { key: "DECLINED", label: "Refusés" },
-  { key: "EXPIRED", label: "Expirés" },
-] as const;
+import { useT } from "../../providers/I18nProvider";
 
 export default function MerchantPaymentsScreen() {
+  const t = useT();
   const router = useRouter();
+  const FILTERS = [
+    { key: "", label: t("mpay.fAll") },
+    { key: "PENDING", label: t("mpay.fPending") },
+    { key: "PAID", label: t("mpay.fPaid") },
+    { key: "REFUNDED", label: t("mpay.fRefunded") },
+    { key: "DECLINED", label: t("mpay.fDeclined") },
+    { key: "EXPIRED", label: t("mpay.fExpired") },
+  ];
   // Lot 13 : un caissier arrive avec le commerce choisi (ses propres encaissements seulement).
   const { merchantId } = useLocalSearchParams<{ merchantId?: string }>();
   const shop = merchantId ? String(merchantId) : undefined;
@@ -60,19 +61,19 @@ export default function MerchantPaymentsScreen() {
   useEffect(() => () => { seq.current++; }, []);
 
   return (
-    <Screen header={<NavBar onBack={() => router.back()} title={shop ? "Mes encaissements" : "Paiements encaissés"} />} refreshing={refreshing} onRefresh={() => load(filter, 1, "pull")}>
-      <OptionPicker label="Filtrer par statut" title="Statut des paiements" value={filter} options={FILTERS} onChange={setFilter} />
+    <Screen header={<NavBar onBack={() => router.back()} title={shop ? t("mpay.titleCashier") : t("mpay.title")} />} refreshing={refreshing} onRefresh={() => load(filter, 1, "pull")}>
+      <OptionPicker label={t("mpay.filterLabel")} title={t("mpay.filterTitle")} value={filter} options={FILTERS} onChange={setFilter} />
 
       {loading ? <SkeletonRows rows={5} /> : error && items.length === 0 ? (
-        <ErrorView title="Chargement impossible" message={error} onRetry={() => load(filter, 1, "reset")} />
+        <ErrorView title={t("kycs.loadFail")} message={error} onRetry={() => load(filter, 1, "reset")} />
       ) : items.length === 0 ? (
-        <EmptyView icon="receipt-outline" title="Aucun paiement" message="Vos encaissements apparaîtront ici." />
+        <EmptyView icon="receipt-outline" title={t("mhome.noPayments")} message={t("mhome.noPaymentsMsg")} />
       ) : (
         <>
           {items.map((p) => (
             <PaymentRow key={p.id} p={p} onPress={() => router.push({ pathname: "/merchant/payment", params: { id: p.id, ...(shop ? { merchantId: shop, from: "cashier" } : {}) } } as any)} />
           ))}
-          {page < pages && <Button label="Voir plus" kind="outline" loading={more} onPress={() => load(filter, page + 1, "more")} />}
+          {page < pages && <Button label={t("mpay.more")} kind="outline" loading={more} onPress={() => load(filter, page + 1, "more")} />}
         </>
       )}
     </Screen>

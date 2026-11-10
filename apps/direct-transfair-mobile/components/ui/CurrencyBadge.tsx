@@ -13,6 +13,7 @@ import { View } from "react-native";
 import { countriesList } from "../../data/countries";
 import { useUI } from "./theme";
 import { Text } from "./Text";
+import { useT } from "../../providers/I18nProvider";
 
 const REFERENCE_FLAG: Record<string, string> = { EUR: "🇪🇺", USD: "🇺🇸", GBP: "🇬🇧", CAD: "🇨🇦", CHF: "🇨🇭" };
 
@@ -29,10 +30,11 @@ export function flagForCurrency(currency: string, country?: string | null): stri
 
 export function CurrencyBadge({ currency, country, size = 40 }: { currency: string; country?: string | null; size?: number }) {
   const { C } = useUI();
+  const t = useT();
   return (
     <View
       accessible
-      accessibilityLabel={`Devise ${currency}`}
+      accessibilityLabel={t('state.currency', { currency })}
       style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}
     >
       <Text style={{ fontSize: Math.round(size * 0.5), lineHeight: Math.round(size * 0.62) }}>{flagForCurrency(currency, country)}</Text>

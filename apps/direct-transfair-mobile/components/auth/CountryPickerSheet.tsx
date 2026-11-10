@@ -20,6 +20,7 @@ import { AUTH_COUNTRIES, fold, POPULAR_COUNTRIES, type AuthCountry } from './aut
 import { FONT, N, RADIUS, WEB_INPUT_RESET } from './authTheme';
 
 import { Text, TextInput } from '../ui/Text';
+import { useT } from '../../providers/I18nProvider';
 type Props = {
   visible: boolean;
   title: string;
@@ -33,6 +34,7 @@ type Props = {
 type Row = { kind: 'header'; label: string } | { kind: 'country'; country: AuthCountry };
 
 export default function CountryPickerSheet({ visible, title, selected, showDial = false, accent, onSelect, onClose }: Props) {
+  const t = useT();
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
 
@@ -47,12 +49,12 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
       .map((n) => AUTH_COUNTRIES.find((c) => c.name === n))
       .filter((c): c is AuthCountry => !!c);
     return [
-      { kind: 'header', label: 'Fréquents' } as Row,
+      { kind: 'header', label: t('country.frequent') } as Row,
       ...popular.map((country) => ({ kind: 'country', country }) as Row),
-      { kind: 'header', label: 'Tous les pays' } as Row,
+      { kind: 'header', label: t('country.all') } as Row,
       ...AUTH_COUNTRIES.map((country) => ({ kind: 'country', country }) as Row),
     ];
-  }, [query]);
+  }, [query, t]);
 
   const close = () => { setQuery(''); onClose(); };
 
@@ -61,7 +63,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
       <View style={[s.root, { paddingTop: Math.max(insets.top, 16) }]}>
         <View style={s.head}>
           <Text style={s.title}>{title}</Text>
-          <TouchableOpacity onPress={close} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel="Fermer">
+          <TouchableOpacity onPress={close} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel={t('common.close')}>
             <Ionicons name="close" size={26} color={N.ink} />
           </TouchableOpacity>
         </View>
@@ -72,12 +74,12 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
             style={[s.searchInput, WEB_INPUT_RESET]}
             value={query}
             onChangeText={setQuery}
-            placeholder="Rechercher un pays"
+            placeholder={t('country.search')}
             placeholderTextColor={N.faint}
             autoCorrect={false}
             autoCapitalize="none"
             underlineColorAndroid="transparent"
-            accessibilityLabel="Rechercher un pays"
+            accessibilityLabel={t('country.search')}
           />
           {query ? (
             <TouchableOpacity onPress={() => setQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -91,7 +93,7 @@ export default function CountryPickerSheet({ visible, title, selected, showDial 
           keyboardShouldPersistTaps="handled"
           keyExtractor={(r, i) => (r.kind === 'header' ? `h-${r.label}` : `c-${r.country.name}-${i}`)}
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
-          ListEmptyComponent={<Text style={s.empty}>Aucun pays ne correspond à « {query} ».</Text>}
+          ListEmptyComponent={<Text style={s.empty}>{t('country.none', { query })}</Text>}
           renderItem={({ item }) =>
             item.kind === 'header' ? (
               <Text style={s.section}>{item.label}</Text>

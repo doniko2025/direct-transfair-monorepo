@@ -21,6 +21,7 @@ import PhoneField, { normalizeNationalNumber, validatePhone } from "../../compon
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
 import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
+import { useT } from "../../providers/I18nProvider";
 
 function Setting({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -35,6 +36,7 @@ function Setting({ label, hint, value, onChange }: { label: string; hint?: strin
 }
 
 export default function StaffScreen() {
+  const t = useT();
   const router = useRouter();
   const { user } = useAuth();
   const { C } = useUI();
@@ -62,7 +64,7 @@ export default function StaffScreen() {
   const [problem, setProblem] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const parseMax = (t: string) => { const n = roundTo(parseAmount(t), decimalsFor(currency)); return n > 0 ? n : null; };
+  const parseMax = (v: string) => { const n = roundTo(parseAmount(v), decimalsFor(currency)); return n > 0 ? n : null; };
   const members = data?.data ?? [];
   const activeCount = useMemo(() => members.filter((m) => m.active).length, [members]);
   const full = !!data && activeCount >= data.max;
@@ -74,7 +76,7 @@ export default function StaffScreen() {
     setBusy(true); setProblem(null);
     try {
       const m = await api.addStaff({ pin: addPin, phone: `${country.dial}${normalizeNationalNumber(phone)}`, canRefund: addRefund, maxAmount: parseMax(addMaxText) });
-      setAddOpen(false); setNotice(`${m.name} peut maintenant encaisser pour votre commerce.`); reload();
+      setAddOpen(false); setNotice(t("mstf.added", { name: m.name })); reload();
     } catch (e) { setProblem(apiProblem(e).message); setAddPin(""); }
     finally { setBusy(false); }
   };
@@ -86,7 +88,7 @@ export default function StaffScreen() {
   const grantsRefund = !!edit && editRefund && !edit.canRefund;
   const submitEdit = async () => {
     if (!edit) return;
-    if (grantsRefund && editPin.length !== 6) { setProblem("Saisissez votre code secret pour autoriser les remboursements."); return; }
+    if (grantsRefund && editPin.length !== 6) { setProblem(t("mstf.pinForRefund")); return; }
     setBusy(true); setProblem(null);
     try {
       const max = parseMax(editMaxText);
@@ -96,41 +98,41 @@ export default function StaffScreen() {
         ...(max !== edit.maxAmount ? { maxAmount: max } : {}),
         ...(grantsRefund ? { pin: editPin } : {}),
       });
-      setEdit(null); setNotice("Droits mis à jour."); reload();
+      setEdit(null); setNotice(t("mstf.updated")); reload();
     } catch (e) { setProblem(apiProblem(e).message); setEditPin(""); }
     finally { setBusy(false); }
   };
 
   const remove = (m: StaffMember) => {
-    Alert.alert("Retirer ce caissier ?", `${m.name} ne pourra plus encaisser pour votre commerce. Ses demandes de paiement ouvertes seront fermées.`, [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("mstf.removeTitle"), t("mstf.removeMsg", { name: m.name }), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: "Retirer", style: "destructive",
+        text: t("mstf.remove"), style: "destructive",
         onPress: async () => {
-          try { await api.removeStaff(m.id); setEdit(null); setNotice(`${m.name} a été retiré.`); reload(); }
+          try { await api.removeStaff(m.id); setEdit(null); setNotice(t("mstf.removed", { name: m.name })); reload(); }
           catch (e) { setNotice(apiProblem(e).message); }
         },
       },
     ]);
   };
 
-  const header = <NavBar onBack={() => router.back()} title="Équipe de caisse" subtitle={data ? `${activeCount} / ${data.max} caissier(s) actif(s)` : undefined} />;
+  const header = <NavBar onBack={() => router.back()} title={t("mstf.title")} subtitle={data ? t("mstf.subtitle", { n: activeCount, max: data.max }) : undefined} />;
   if (status === "loading") return <Screen header={header}><SkeletonRows rows={3} /></Screen>;
   if (status === "error" || !data) {
-    return <Screen header={header}><ErrorView title={error?.title ?? "Erreur"} message={error?.message ?? "Chargement impossible."} onRetry={reload} /></Screen>;
+    return <Screen header={header}><ErrorView title={error?.title ?? t("mx.error")} message={error?.message ?? t("mx.loadFail")} onRetry={reload} /></Screen>;
   }
 
   return (
-    <Screen header={header} footer={<Button label="Ajouter un caissier" icon="add" disabled={full} onPress={openAdd} />}>
+    <Screen header={header} footer={<Button label={t("mstf.add")} icon="add" disabled={full} onPress={openAdd} />}>
       {!!notice && <Notice tone="info" style={{ marginBottom: 12 }}>{notice}</Notice>}
-      {full && <Notice tone="warn" style={{ marginBottom: 12 }}>Nombre maximum de caissiers atteint. Retirez-en un pour en ajouter.</Notice>}
+      {full && <Notice tone="warn" style={{ marginBottom: 12 }}>{t("mstf.full")}</Notice>}
 
       <Notice tone="info" icon="information-circle-outline" style={{ marginBottom: 14 }}>
-        Un caissier encaisse au nom de votre commerce depuis son propre téléphone (menu « Caisse »). L'argent arrive sur le solde du commerce ; il ne voit ni ce solde ni les retraits.
+        {t("mstf.info")}
       </Notice>
 
       {members.length === 0 ? (
-        <EmptyView icon="people-outline" title="Pas encore de caissier" message="Ajoutez une personne de confiance par son numéro de téléphone : elle doit déjà avoir un compte Direct Transf'air." />
+        <EmptyView icon="people-outline" title={t("mstf.empty")} message={t("mstf.emptyMsg")} />
       ) : (
         members.map((m, i) => (
           <Rise key={m.id} delay={i * 50}>
@@ -141,8 +143,8 @@ export default function StaffScreen() {
                   <UText v="bodyStrong" numberOfLines={1}>{m.name}</UText>
                   <UText v="caption" tone="muted" numberOfLines={1}>{m.phoneMasked}</UText>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
-                    <Pill label={m.active ? "Actif" : "Suspendu"} tone={m.active ? "pos" : "neutral"} />
-                    {m.canRefund && <Pill label="Rembourse" tone="info" />}
+                    <Pill label={m.active ? t("mstf.active") : t("mstf.suspended")} tone={m.active ? "pos" : "neutral"} />
+                    {m.canRefund && <Pill label={t("mstf.refunds")} tone="info" />}
                     {m.maxAmount ? <Pill label={`≤ ${money(m.maxAmount, currency)}`} tone="neutral" /> : null}
                   </View>
                 </View>
@@ -153,35 +155,35 @@ export default function StaffScreen() {
       )}
 
       {/* Ajout */}
-      <Sheet visible={addOpen} onClose={() => setAddOpen(false)} title="Nouveau caissier">
+      <Sheet visible={addOpen} onClose={() => setAddOpen(false)} title={t("mstf.newTitle")}>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
         <PhoneField
           country={country} onCountryChange={setCountry} value={phone} onChangeText={setPhone}
-          error={showErrors ? validatePhone(phone) : null} hint="Numéro du compte de la personne, sans le 0 de tête." accent={C.accent} inputRef={phoneRef}
+          error={showErrors ? validatePhone(phone) : null} hint={t("mstf.phoneHint")} accent={C.accent} inputRef={phoneRef}
         />
-        <Setting label="Peut rembourser" hint="Remboursement intégral d'un paiement de moins de 30 jours." value={addRefund} onChange={setAddRefund} />
-        <Field label={`Plafond par paiement en ${currency} (facultatif)`} value={addMaxText} onChangeText={(t) => setAddMaxText(t.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
+        <Setting label={t("mstf.canRefund")} hint={t("mstf.canRefundHint")} value={addRefund} onChange={setAddRefund} />
+        <Field label={t("mstf.capOpt", { currency })} value={addMaxText} onChangeText={(v) => setAddMaxText(v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
         <View style={{ height: 14 }} />
-        <PinPrompt value={addPin} onChange={setAddPin} label="Votre code secret" error={showErrors && addPin.length !== 6 ? "Code à 6 chiffres" : null} />
+        <PinPrompt value={addPin} onChange={setAddPin} label={t("mstf.yourPin")} error={showErrors && addPin.length !== 6 ? t("mstf.pin6") : null} />
         <View style={{ height: 14 }} />
-        <Button label="Ajouter" loading={busy} onPress={submitAdd} />
+        <Button label={t("mstf.addBtn")} loading={busy} onPress={submitAdd} />
       </Sheet>
 
       {/* Droits */}
       <Sheet visible={!!edit} onClose={() => setEdit(null)} title={edit?.name ?? ""}>
         {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
-        <Setting label="Actif" hint="Suspendu, il ne peut plus encaisser." value={editActive} onChange={setEditActive} />
-        <Setting label="Peut rembourser" value={editRefund} onChange={setEditRefund} />
-        <Field label={`Plafond par paiement en ${currency} (vide = aucun)`} value={editMaxText} onChangeText={(t) => setEditMaxText(t.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
+        <Setting label={t("mstf.activeLabel")} hint={t("mstf.activeHint")} value={editActive} onChange={setEditActive} />
+        <Setting label={t("mstf.canRefund")} value={editRefund} onChange={setEditRefund} />
+        <Field label={t("mstf.capEmpty", { currency })} value={editMaxText} onChangeText={(v) => setEditMaxText(v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
         {grantsRefund && (
           <View style={{ marginTop: 14 }}>
-            <PinPrompt value={editPin} onChange={setEditPin} label="Votre code secret (pour autoriser les remboursements)" />
+            <PinPrompt value={editPin} onChange={setEditPin} label={t("mstf.pinRefund")} />
           </View>
         )}
         <View style={{ height: 14 }} />
-        <Button label="Enregistrer" loading={busy} onPress={submitEdit} />
+        <Button label={t("common.save")} loading={busy} onPress={submitEdit} />
         <View style={{ height: 8 }} />
-        {edit && <Button label="Retirer ce caissier" kind="danger" onPress={() => remove(edit)} />}
+        {edit && <Button label={t("mstf.removeBtn")} kind="danger" onPress={() => remove(edit)} />}
       </Sheet>
     </Screen>
   );

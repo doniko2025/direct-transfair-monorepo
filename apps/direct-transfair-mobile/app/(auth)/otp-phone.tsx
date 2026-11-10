@@ -21,6 +21,7 @@ import { Field, OtpInput } from "../../components/ui";
 import { FONT, N } from "../../components/auth/authTheme";
 
 import { Text } from '../../components/ui/Text';
+import { useT } from '../../providers/I18nProvider';
 // ─── Durée du minuteur de renvoi ─────────────────────────
 const RESEND_DELAY_SECONDS = 60;
 
@@ -28,6 +29,7 @@ const RESEND_DELAY_SECONDS = 60;
 export default function OtpPhoneScreen() {
   const { loginWithPhoneOtp, isLoading } = useAuth();
   const router                           = useRouter();
+  const t                                = useT();
 
   // ── États globaux ──
   const [step, setStep] = useState<"phone" | "verify">("phone");
@@ -69,7 +71,7 @@ export default function OtpPhoneScreen() {
   const handleSendCode = async () => {
     const trimmed = phone.trim();
     if (!trimmed) {
-      return Alert.alert("Champ requis", "Veuillez saisir votre numéro de téléphone.");
+      return Alert.alert(t('otpPhone.required'), t('otpPhone.enterPhone'));
     }
 
     setPhoneSending(true);
@@ -82,11 +84,11 @@ export default function OtpPhoneScreen() {
       setStep("verify");
       startCountdown();
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Erreur réseau.";
+      const raw = e?.response?.data?.message ?? e?.message ?? t('otpPhone.network');
       const msg = Array.isArray(raw) ? raw[0] : raw;
       Platform.OS === "web"
         ? alert(msg)
-        : Alert.alert("Envoi impossible", msg);
+        : Alert.alert(t('otpPhone.sendFailed'), msg);
     } finally {
       setPhoneSending(false);
     }
@@ -98,7 +100,7 @@ export default function OtpPhoneScreen() {
   const handleVerifyOtp = async (codeOverride?: string) => {
     const code = codeOverride ?? otpCode;
     if (code.length < 4) {
-      return Alert.alert("Code incomplet", "Veuillez saisir les 4 chiffres du code.");
+      return Alert.alert(t('otpPhone.incomplete'), t('otpPhone.enter4'));
     }
     setVerifying(true);
     try {
@@ -106,11 +108,11 @@ export default function OtpPhoneScreen() {
       // le guard de navigation redirige automatiquement vers /(tabs)/home
       await loginWithPhoneOtp(userId, code);
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Code incorrect ou expiré.";
+      const raw = e?.response?.data?.message ?? e?.message ?? t('otpPhone.wrongCode');
       const msg = Array.isArray(raw) ? raw[0] : raw;
       Platform.OS === "web"
         ? alert(msg)
-        : Alert.alert("Code invalide", msg);
+        : Alert.alert(t('otpPhone.invalid'), msg);
       // Vider les cases pour une nouvelle saisie
       setOtpCode("");
     } finally {
@@ -132,9 +134,9 @@ export default function OtpPhoneScreen() {
       setMaskedPhone(result.maskedPhone);
       startCountdown();
     } catch (e: any) {
-      const raw = e?.response?.data?.message ?? e?.message ?? "Erreur réseau.";
+      const raw = e?.response?.data?.message ?? e?.message ?? t('otpPhone.network');
       const msg = Array.isArray(raw) ? raw[0] : raw;
-      Alert.alert("Renvoi impossible", msg);
+      Alert.alert(t('otpPhone.resendFailed'), msg);
     } finally {
       setPhoneSending(false);
     }
@@ -150,25 +152,26 @@ export default function OtpPhoneScreen() {
     return (
       <AuthShell
         compact
-        title="Connexion par téléphone"
-        subtitle="Recevez un code à 4 chiffres par SMS pour vous connecter sans mot de passe."
+        showLang
+        title={t('otpPhone.title')}
+        subtitle={t('otpPhone.subtitle')}
         onBack={() => router.back()}
       >
         <Field
-          label="Votre numéro"
+          label={t('otpPhone.yourNumber')}
           icon="call-outline"
           value={phone}
           onChangeText={setPhone}
           placeholder="+33 6 12 34 56 78"
-          hint="Format international requis."
+          hint={t('otpPhone.intlHint')}
           keyboardType="phone-pad"
           autoComplete="tel"
           returnKeyType="send"
           onSubmitEditing={handleSendCode}
         />
-        <AuthButton label="Recevoir le code" icon="arrow-forward" iconRight loading={phoneSending} onPress={handleSendCode} />
+        <AuthButton label={t('otpPhone.receive')} icon="arrow-forward" iconRight loading={phoneSending} onPress={handleSendCode} />
         <View style={{ alignItems: "center", marginTop: 14 }}>
-          <AuthButton label="Utiliser mon mot de passe" variant="link" onPress={() => router.replace("/(auth)/login-v2")} />
+          <AuthButton label={t('otpPhone.usePassword')} variant="link" onPress={() => router.replace("/(auth)/login-v2")} />
         </View>
       </AuthShell>
     );
@@ -177,18 +180,19 @@ export default function OtpPhoneScreen() {
   return (
     <AuthShell
       compact
-      title="Vérification"
-      subtitle={`Code envoyé au ${maskedPhone}. Saisissez-le ci-dessous.`}
+      showLang
+      title={t('otpPhone.verifyTitle')}
+      subtitle={t('otpPhone.sentTo', { phone: maskedPhone })}
       onBack={() => setStep("phone")}
     >
       <OtpInput value={otpCode} onChange={setOtpCode} onComplete={(c) => void handleVerifyOtp(c)} length={4} disabled={isSubmitting} />
       <View style={{ height: 22 }} />
-      <AuthButton label="Valider" loading={isSubmitting} disabled={!canVerify} onPress={() => void handleVerifyOtp()} />
+      <AuthButton label={t('common.validate')} loading={isSubmitting} disabled={!canVerify} onPress={() => void handleVerifyOtp()} />
       <View style={{ alignItems: "center", marginTop: 14 }}>
         {resendCountdown > 0 ? (
-          <Text style={{ fontFamily: FONT.body, fontSize: 13.5, color: N.muted }}>Renvoyer le code dans {resendCountdown} s</Text>
+          <Text style={{ fontFamily: FONT.body, fontSize: 13.5, color: N.muted }}>{t('otp.resendIn', { seconds: resendCountdown })}</Text>
         ) : (
-          <AuthButton label="Renvoyer le code" variant="link" disabled={phoneSending} onPress={handleResend} />
+          <AuthButton label={t('otp.resend')} variant="link" disabled={phoneSending} onPress={handleResend} />
         )}
       </View>
     </AuthShell>

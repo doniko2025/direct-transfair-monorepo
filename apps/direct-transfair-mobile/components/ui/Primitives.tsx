@@ -17,6 +17,7 @@ import { Ionicons } from './Icon';
 import { useUI, type TextVariant, SYSTEM_FONT } from './theme';
 
 import { Text } from './Text';
+import { useT } from '../../providers/I18nProvider';
 // ─── Texte ───────────────────────────────────────────────
 type UTextProps = TextProps & {
   v?: TextVariant;
@@ -232,6 +233,7 @@ export function Avatar({
   name, size = 48, icon, incoming, uri,
 }: { name?: string; size?: number; icon?: string; incoming?: boolean; uri?: string | null }) {
   const { C } = useUI();
+  const t = useT();
   const tone = AV[((name || '?').charCodeAt(0) || 0) % AV.length];
   const bg = incoming ? C.posBg : tone.bg;
   const fg = incoming ? C.pos : tone.fg;
@@ -245,7 +247,7 @@ export function Avatar({
           source={{ uri }}
           style={{ width: size, height: size }}
           resizeMode="cover"
-          accessibilityLabel={name ? `Photo de ${name}` : 'Photo'}
+          accessibilityLabel={name ? t('state.photoOf', { name }) : t('state.photo')}
           onError={() => setFailed(true)}
         />
       </View>

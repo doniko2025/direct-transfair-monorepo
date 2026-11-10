@@ -35,6 +35,9 @@ import { useRouter } from "expo-router";
 import { Ionicons } from '../../components/ui/Icon';
 import { useTenant } from "../../providers/TenantProvider";
 import { getLegalJurisdiction } from "../../services/platformConfig";
+import { useT } from "../../providers/I18nProvider";
+import { getLang, getLocale } from "../../i18n/runtime";
+import { rich } from "../../utils/richText";
 
 import { Text } from '../../components/ui/Text';
 const T = {
@@ -67,15 +70,16 @@ function formatTermsDateLong(iso: string | null): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   const day = d.getDate();
+  if (getLang() !== "fr") return d.toLocaleDateString(getLocale(), { day: "numeric", month: "long", year: "numeric" });
   const dayLabel = day === 1 ? "1er" : String(day);
-  const monthYear = d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  const monthYear = d.toLocaleDateString(getLocale(), { month: "long", year: "numeric" });
   return `${dayLabel} ${monthYear}`;
 }
 function formatTermsDateShort(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  return d.toLocaleDateString(getLocale(), { month: "long", year: "numeric" });
 }
 
 // ─── Section ──────────────────────────────────────────────
@@ -142,6 +146,7 @@ const ibS = StyleSheet.create({
 
 // ─── Main ─────────────────────────────────────────────────
 export default function TermsScreen() {
+  const t = useT();
   const router = useRouter();
   const { branding } = useTenant(); // ✅ v1.1 (nouveau)
 
@@ -167,10 +172,10 @@ export default function TermsScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={[s.headerTitle, { fontFamily: T.font.display }]}>
-              Conditions générales
+              {t("tm.title")}
             </Text>
             <Text style={[s.headerSub, { fontFamily: T.font.sans }]}>
-              Mise à jour : {formatTermsDateShort(branding.termsEffectiveDate) || "—"}
+              {t("tm.updated", { date: formatTermsDateShort(branding.termsEffectiveDate) || "—" })}
             </Text>
           </View>
           {/* ✅ v1.1 — badge masqué si aucun cadre réglementaire configuré */}
@@ -191,128 +196,110 @@ export default function TermsScreen() {
           <View style={s.introBanner}>
             <Ionicons name="document-text" size={20} color={T.accent} />
             <Text style={[s.introTxt, { fontFamily: T.font.sans }]}>
-              Les présentes Conditions Générales d'Utilisation régissent l'accès et l'utilisation de l'application {branding.name}. En utilisant notre service, vous acceptez sans réserve ces conditions.
+              {t("tm.intro", { app: branding.name })}
             </Text>
           </View>
 
           {/* 1. Objet */}
-          <Section icon="information-circle-outline" title="1. Objet et acceptation" color={T.accent} bgColor={T.accentSoft}>
+          <Section icon="information-circle-outline" title={t("tm.s1")} color={T.accent} bgColor={T.accentSoft}>
             <Para>
-              {branding.name} est une plateforme de transfert d'argent international opérée par{" "}
-              <Text style={{ fontWeight: "700", color: T.text }}>{legalName}</Text>
-              {branding.regulatorName
-                ? `, établissement de paiement agréé par ${branding.regulatorName}.`
-                : "."}
+              {rich(t("tm.s1p1", {
+                app: branding.name,
+                legal: legalName,
+                tail: branding.regulatorName ? t("tm.s1tail", { regulator: branding.regulatorName }) : ".",
+              }), T.text)}
             </Para>
-            <Para>
-              L'utilisation du service vaut acceptation des présentes CGU. {branding.name} se réserve le droit de les modifier à tout moment, avec notification préalable de 30 jours pour les modifications substantielles.
-            </Para>
+            <Para>{t("tm.s1p2", { app: branding.name })}</Para>
           </Section>
 
           {/* 2. Services */}
-          <Section icon="swap-horizontal-outline" title="2. Services proposés" color={T.green} bgColor={T.greenSoft}>
-            <Para>{branding.name} propose les services suivants :</Para>
-            <Bullet>Transferts d'argent internationaux vers l'Afrique de l'Ouest et le monde</Bullet>
-            <Bullet>Paiements en espèces via les agences partenaires (cash pickup)</Bullet>
-            <Bullet>Virements bancaires et dépôts sur comptes mobile money</Bullet>
-            <Bullet>Conversion de devises (EUR, XOF, GNF, USD, GBP)</Bullet>
-            <Bullet>Portefeuille électronique (wallet) et gestion de bénéficiaires</Bullet>
-            <Bullet>Virements programmés et récurrents</Bullet>
+          <Section icon="swap-horizontal-outline" title={t("tm.s2")} color={T.green} bgColor={T.greenSoft}>
+            <Para>{t("tm.s2intro", { app: branding.name })}</Para>
+            <Bullet>{t("tm.s2b1")}</Bullet>
+            <Bullet>{t("tm.s2b2")}</Bullet>
+            <Bullet>{t("tm.s2b3")}</Bullet>
+            <Bullet>{t("tm.s2b4")}</Bullet>
+            <Bullet>{t("tm.s2b5")}</Bullet>
+            <Bullet>{t("tm.s2b6")}</Bullet>
 
             <InfoBox icon="information-circle-outline" color={T.accent} bgColor={T.accentSoft}>
-              Les services sont soumis à disponibilité selon les pays destinataires et peuvent varier selon votre niveau de vérification KYC.
+              {t("tm.s2info")}
             </InfoBox>
           </Section>
 
           {/* 3. Conditions d'accès */}
-          <Section icon="person-outline" title="3. Conditions d'accès" color="#7C3AED" bgColor="#F5F3FF">
-            <Para>Pour utiliser {branding.name}, vous devez :</Para>
-            <Bullet>Être âgé d'au moins 18 ans</Bullet>
-            <Bullet>Résider dans un pays éligible au service</Bullet>
-            <Bullet>Fournir des informations d'identité exactes et à jour</Bullet>
-            <Bullet>Compléter la vérification d'identité (KYC) selon les niveaux requis</Bullet>
-            <Bullet>Ne pas utiliser le service à des fins illicites ou frauduleuses</Bullet>
+          <Section icon="person-outline" title={t("tm.s3")} color="#7C3AED" bgColor="#F5F3FF">
+            <Para>{t("tm.s3intro", { app: branding.name })}</Para>
+            <Bullet>{t("tm.s3b1")}</Bullet>
+            <Bullet>{t("tm.s3b2")}</Bullet>
+            <Bullet>{t("tm.s3b3")}</Bullet>
+            <Bullet>{t("tm.s3b4")}</Bullet>
+            <Bullet>{t("tm.s3b5")}</Bullet>
 
             <InfoBox icon="alert-circle-outline" color={T.amber} bgColor={T.amberSoft}>
-              Toute fausse déclaration ou tentative de fraude entraîne la suspension immédiate du compte et peut faire l'objet de poursuites judiciaires.
+              {t("tm.s3info")}
             </InfoBox>
           </Section>
 
           {/* 4. Tarifs */}
-          <Section icon="card-outline" title="4. Tarifs et frais" color={T.amber} bgColor={T.amberSoft}>
-            <Para>
-              Les frais applicables sont affichés <Text style={{ fontWeight: "700" }}>avant confirmation</Text> de chaque transaction. Vous acceptez explicitement les frais avant d'initier tout transfert.
-            </Para>
-            <Bullet>Les frais sont exprimés en montant fixe et/ou en pourcentage selon la destination</Bullet>
-            <Bullet>Les taux de change appliqués incluent une marge commerciale</Bullet>
-            <Bullet>Aucuns frais cachés ne sont prélevés après votre validation</Bullet>
-            <Bullet>Les promotions et réductions sont soumises à conditions et durées limitées</Bullet>
+          <Section icon="card-outline" title={t("tm.s4")} color={T.amber} bgColor={T.amberSoft}>
+            <Para>{rich(t("tm.s4p1"))}</Para>
+            <Bullet>{t("tm.s4b1")}</Bullet>
+            <Bullet>{t("tm.s4b2")}</Bullet>
+            <Bullet>{t("tm.s4b3")}</Bullet>
+            <Bullet>{t("tm.s4b4")}</Bullet>
 
             <InfoBox icon="checkmark-circle-outline" color={T.green} bgColor={T.greenSoft}>
-              Conformément à la DSP2, vous recevez une confirmation détaillée (montant, frais, taux, montant final) avant chaque paiement.
+              {t("tm.s4info")}
             </InfoBox>
           </Section>
 
           {/* 5. Annulation & remboursement */}
-          <Section icon="arrow-undo-outline" title="5. Annulation et remboursement" color="#0284C7" bgColor="#E0F2FE">
-            <Para>
-              <Text style={{ fontWeight: "700" }}>Droit de rétractation :</Text> Conformément à l'article L.221-28 du Code de la consommation, le droit de rétractation de 14 jours ne s'applique pas aux services de paiement dont l'exécution a commencé avec votre accord exprès.
-            </Para>
-            <Bullet>Un transfert peut être annulé tant qu'il est en statut "En attente" (PENDING)</Bullet>
-            <Bullet>Un transfert validé ou payé ne peut plus être annulé unilatéralement</Bullet>
-            <Bullet>En cas d'erreur avérée de notre part, le remboursement est effectué sous 5 jours ouvrés</Bullet>
-            <Bullet>Les réclamations doivent être soumises dans les 30 jours suivant la transaction</Bullet>
+          <Section icon="arrow-undo-outline" title={t("tm.s5")} color="#0284C7" bgColor="#E0F2FE">
+            <Para>{rich(t("tm.s5p1"))}</Para>
+            <Bullet>{t("tm.s5b1")}</Bullet>
+            <Bullet>{t("tm.s5b2")}</Bullet>
+            <Bullet>{t("tm.s5b3")}</Bullet>
+            <Bullet>{t("tm.s5b4")}</Bullet>
           </Section>
 
           {/* 6. Plafonds */}
-          <Section icon="speedometer-outline" title="6. Plafonds et limites" color={T.green} bgColor={T.greenSoft}>
-            <Para>
-              Les plafonds de transfert sont déterminés par votre niveau de vérification KYC et par la réglementation applicable :
-            </Para>
-            <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 0 :</Text> 150 € / jour — 600 € / mois</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 1 :</Text> 500 € / jour — 2 500 € / mois</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 2 :</Text> 2 000 € / jour — 10 000 € / mois</Bullet>
-            <Bullet><Text style={{ fontWeight: "700" }}>KYC Niveau 3 :</Text> Plafonds personnalisés sur demande</Bullet>
-            <Para>
-              Ces plafonds peuvent être ajustés par {branding.name} en fonction des exigences réglementaires LCB-FT.
-            </Para>
+          <Section icon="speedometer-outline" title={t("tm.s6")} color={T.green} bgColor={T.greenSoft}>
+            <Para>{t("tm.s6p1")}</Para>
+            <Bullet>{rich(t("tm.s6b0"))}</Bullet>
+            <Bullet>{rich(t("tm.s6b1"))}</Bullet>
+            <Bullet>{rich(t("tm.s6b2"))}</Bullet>
+            <Bullet>{rich(t("tm.s6b3"))}</Bullet>
+            <Para>{t("tm.s6p2", { app: branding.name })}</Para>
           </Section>
 
           {/* 7. Responsabilité */}
-          <Section icon="shield-outline" title="7. Responsabilité" color={T.red} bgColor={T.redSoft}>
-            <Para>
-              {branding.name} s'engage à exécuter les transferts dans les meilleurs délais, généralement entre quelques minutes et 3 jours ouvrés selon la destination et le mode de paiement.
-            </Para>
-            <Para>
-              Notre responsabilité est limitée aux dommages directs résultant d'une faute avérée de notre part. Elle est exclue en cas de :
-            </Para>
-            <Bullet>Force majeure ou événement hors de notre contrôle</Bullet>
-            <Bullet>Informations erronées fournies par l'utilisateur</Bullet>
-            <Bullet>Blocage par les autorités compétentes (compliance, LCB-FT)</Bullet>
-            <Bullet>Défaillance des systèmes bancaires correspondants</Bullet>
+          <Section icon="shield-outline" title={t("tm.s7")} color={T.red} bgColor={T.redSoft}>
+            <Para>{t("tm.s7p1", { app: branding.name })}</Para>
+            <Para>{t("tm.s7p2")}</Para>
+            <Bullet>{t("tm.s7b1")}</Bullet>
+            <Bullet>{t("tm.s7b2")}</Bullet>
+            <Bullet>{t("tm.s7b3")}</Bullet>
+            <Bullet>{t("tm.s7b4")}</Bullet>
           </Section>
 
           {/* 8. Suspension */}
-          <Section icon="ban-outline" title="8. Suspension et clôture" color={T.red} bgColor={T.redSoft}>
-            <Para>{branding.name} se réserve le droit de suspendre ou clôturer un compte dans les cas suivants :</Para>
-            <Bullet>Non-respect des présentes CGU</Bullet>
-            <Bullet>Suspicion de fraude, blanchiment ou financement du terrorisme</Bullet>
-            <Bullet>Fausse déclaration lors de la vérification d'identité</Bullet>
-            <Bullet>Inactivité prolongée (plus de 24 mois)</Bullet>
-            <Bullet>Demande de l'utilisateur</Bullet>
-            <Para>
-              En cas de solde positif, le montant est restitué après vérification de l'identité, déduction faite des éventuels frais dus.
-            </Para>
+          <Section icon="ban-outline" title={t("tm.s8")} color={T.red} bgColor={T.redSoft}>
+            <Para>{t("tm.s8intro", { app: branding.name })}</Para>
+            <Bullet>{t("tm.s8b1")}</Bullet>
+            <Bullet>{t("tm.s8b2")}</Bullet>
+            <Bullet>{t("tm.s8b3")}</Bullet>
+            <Bullet>{t("tm.s8b4")}</Bullet>
+            <Bullet>{t("tm.s8b5")}</Bullet>
+            <Para>{t("tm.s8p2")}</Para>
           </Section>
 
           {/* 9. Droit applicable */}
-          <Section icon="globe-outline" title="9. Droit applicable et litiges" color={T.accent} bgColor={T.accentSoft}>
-            <Para>
-              Les présentes CGU sont soumises au <Text style={{ fontWeight: "700" }}>droit français</Text>. En cas de litige, une solution amiable sera recherchée en priorité.
-            </Para>
+          <Section icon="globe-outline" title={t("tm.s9")} color={T.accent} bgColor={T.accentSoft}>
+            <Para>{rich(t("tm.s9p1"))}</Para>
             {!!(branding.mediatorName && branding.mediatorUrl) && (
               <Para>
-                Conformément aux articles L.616-1 et R.616-1 du Code de la consommation, vous pouvez recourir gratuitement au service de médiation :{"\n"}
+                {t("tm.s9med")}{"\n"}
                 <Text style={{ fontWeight: "700", color: T.text }}>{branding.mediatorName}</Text>{"\n"}
                 <Text
                   style={{ color: T.accent, textDecorationLine: "underline" }}
@@ -322,23 +309,21 @@ export default function TermsScreen() {
                 </Text>
               </Para>
             )}
-            <Para>
-              À défaut de résolution amiable, les litiges relèvent de {getLegalJurisdiction() ?? "la juridiction compétente"}.
-            </Para>
+            <Para>{t("tm.s9court", { court: getLegalJurisdiction() ?? t("tm.defaultCourt") })}</Para>
           </Section>
 
           {/* Mentions légales — ✅ v1.1 : chaque ligne se masque si la
               donnée correspondante n'est pas configurée pour ce tenant */}
           <View style={s.legalCard}>
-            <Text style={[s.legalTitle, { fontFamily: T.font.display }]}>Mentions légales</Text>
+            <Text style={[s.legalTitle, { fontFamily: T.font.display }]}>{t("tm.legalTitle")}</Text>
             <View style={s.legalRow}>
-              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Société</Text>
+              <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>{t("tm.company")}</Text>
               <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{legalName}</Text>
             </View>
             {!!(branding.regulatorAcronym || branding.regulatorLicenseNumber) && (
               <View style={s.legalRow}>
                 <Text style={[s.legalKey, { fontFamily: T.font.sans }]}>
-                  Agrément {branding.regulatorAcronym ?? ""}
+                  {t("tm.license", { acronym: branding.regulatorAcronym ?? "" })}
                 </Text>
                 <Text style={[s.legalValue, { fontFamily: T.font.mono }]}>
                   {[branding.regulatorLicenseNumber, branding.regulatorLicenseType].filter(Boolean).join(" — ")}
@@ -347,19 +332,19 @@ export default function TermsScreen() {
             )}
             {!!branding.capitalSocial && (
               <View style={s.legalRow}>
-                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Capital social</Text>
+                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>{t("tm.capital")}</Text>
                 <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{branding.capitalSocial}</Text>
               </View>
             )}
             {!!branding.address && (
               <View style={s.legalRow}>
-                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>Siège social</Text>
+                <Text style={[s.legalKey,   { fontFamily: T.font.sans }]}>{t("tm.hq")}</Text>
                 <Text style={[s.legalValue, { fontFamily: T.font.sans }]}>{branding.address}</Text>
               </View>
             )}
             {!!branding.contactEmail && (
               <View style={s.legalRow}>
-                <Text style={[s.legalKey, { fontFamily: T.font.sans }]}>Contact</Text>
+                <Text style={[s.legalKey, { fontFamily: T.font.sans }]}>{t("tm.contact")}</Text>
                 <Text
                   style={[s.legalValue, s.legalLink, { fontFamily: T.font.mono }]}
                   onPress={() => Linking.openURL(`mailto:${branding.contactEmail}`)}
@@ -371,7 +356,7 @@ export default function TermsScreen() {
           </View>
 
           <Text style={[s.version, { fontFamily: T.font.mono }]}>
-            Version {branding.termsVersion ?? "1.0"} — En vigueur depuis le {formatTermsDateLong(branding.termsEffectiveDate) || "—"}
+            {t("tm.version", { version: branding.termsVersion ?? "1.0", date: formatTermsDateLong(branding.termsEffectiveDate) || "—" })}
           </Text>
 
           <View style={{ height: 40 }} />

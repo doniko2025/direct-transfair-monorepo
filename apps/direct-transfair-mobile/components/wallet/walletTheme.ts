@@ -11,6 +11,8 @@
 // =========================================================
 
 import { useMemo } from 'react';
+import { fmtDate, fmtTime, getLocale, tr } from '../../i18n/runtime';
+import type { MessageKey } from '../../i18n/catalog';
 import { useTenant } from '../../providers/TenantProvider';
 import { setBrandPrimary } from './brand';
 import {
@@ -44,7 +46,7 @@ const ZERO_DECIMALS = new Set(['XOF', 'XAF', 'GNF', 'JPY']);
 export function formatMoney(n: number, currency = 'EUR'): string {
   const d = ZERO_DECIMALS.has(currency) ? 0 : 2;
   try {
-    return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
   } catch { return n.toFixed(d); }
 }
 
@@ -55,17 +57,17 @@ export function currencySymbol(currency: string): string { return SYMBOLS[curren
 export function formatDay(iso: string): string {
   const d = new Date(iso), now = new Date();
   const yest = new Date(now); yest.setDate(now.getDate() - 1);
-  if (d.toDateString() === now.toDateString()) return "Aujourd'hui";
-  if (d.toDateString() === yest.toDateString()) return 'Hier';
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+  if (d.toDateString() === now.toDateString()) return tr('date.today');
+  if (d.toDateString() === yest.toDateString()) return tr('date.yesterday');
+  return fmtDate(d, { day: '2-digit', month: 'long', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
 }
 export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return fmtTime(iso);
 }
 export function formatShortDate(iso: string): string {
   const d = new Date(iso), now = new Date();
   if (d.toDateString() === now.toDateString()) return formatTime(iso);
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' });
+  return fmtDate(d, { day: '2-digit', month: 'short' });
 }
 
 // ─── Identité visuelle d'un contact ──────────────────────
@@ -92,15 +94,23 @@ const TONE = {
   violet:  { fg: '#6941C6',  bg: '#F9F5FF', bd: '#E9D7FE' },
 };
 
+/** Teinte + icône + libellés (lus dans la langue COURANTE à chaque accès : `label` et `labelIncoming` sont des accesseurs). */
+const statusTone = (tone: { fg: string; bg: string; bd: string }, out: MessageKey, inc: MessageKey, icon: string): StatusTone => ({
+  ...tone,
+  get label() { return tr(out); },
+  get labelIncoming() { return tr(inc); },
+  icon,
+});
+
 export const TX_STATUS: Record<string, StatusTone> = {
-  PENDING:    { ...TONE.warn,    label: 'En attente', labelIncoming: 'En attente', icon: 'time-outline' },
-  VALIDATED:  { ...TONE.info,    label: 'Validé',     labelIncoming: 'Disponible', icon: 'shield-checkmark-outline' },
-  PAID:       { ...TONE.ok,      label: 'Payé',       labelIncoming: 'Reçu',       icon: 'checkmark-circle-outline' },
-  PROCESSING: { ...TONE.violet,  label: 'En cours',   labelIncoming: 'En cours',   icon: 'sync-outline' },
-  CANCELLED:  { ...TONE.neutral, label: 'Annulé',     labelIncoming: 'Annulé',     icon: 'close-circle-outline' },
-  FAILED:     { ...TONE.danger,  label: 'Échoué',     labelIncoming: 'Échoué',     icon: 'alert-circle-outline' },
-  REFUNDED:   { ...TONE.violet,  label: 'Remboursé',  labelIncoming: 'Remboursé',  icon: 'return-down-back-outline' },
-  EXPIRED:    { ...TONE.neutral, label: 'Expiré — remboursé', labelIncoming: 'Expiré', icon: 'timer-outline' },
+  PENDING:    statusTone(TONE.warn,    'txs.pending',   'txs.pending',   'time-outline'),
+  VALIDATED:  statusTone(TONE.info,    'txs.validated', 'txs.available', 'shield-checkmark-outline'),
+  PAID:       statusTone(TONE.ok,      'txs.paid',      'txs.received',  'checkmark-circle-outline'),
+  PROCESSING: statusTone(TONE.violet,  'txs.processing', 'txs.processing', 'sync-outline'),
+  CANCELLED:  statusTone(TONE.neutral, 'txs.cancelled', 'txs.cancelled', 'close-circle-outline'),
+  FAILED:     statusTone(TONE.danger,  'txs.failed',    'txs.failed',    'alert-circle-outline'),
+  REFUNDED:   statusTone(TONE.violet,  'txs.refunded',  'txs.refunded',  'return-down-back-outline'),
+  EXPIRED:    statusTone(TONE.neutral, 'txs.expiredRefunded', 'txs.expired', 'timer-outline'),
 };
 export function statusOf(status: string): StatusTone {
   return TX_STATUS[status] ?? { ...TONE.neutral, label: status || '—', labelIncoming: status || '—', icon: 'help-circle-outline' };
@@ -143,7 +153,7 @@ export function describeTx(tx: any, userId?: string): TxView {
     ? `${tx.sender.firstName} ${tx.sender.lastName ?? ''}`.trim()
     : tx?.senderFirstName ? `${tx.senderFirstName} ${tx.senderLastName ?? ''}`.trim() : '';
   const counterpart = isMerchantPayout
-    ? 'Retrait marchand'
+    ? tr('txt.payout')
     : incoming
       ? sender
       : (tx?.beneficiary?.fullName ?? tx?.recipient?.firstName ?? tx?.beneficiary?.phone ?? '');
@@ -152,12 +162,12 @@ export function describeTx(tx: any, userId?: string): TxView {
   return {
     incoming,
     title: isMerchantPayout
-      ? 'Retrait marchand'
+      ? tr('txt.payout')
       : isMerchantRefund
-        ? (incoming ? 'Remboursement reçu' : 'Remboursement client')
+        ? (incoming ? tr('txt.refundIn') : tr('txt.refundOut'))
         : isMerchantPayment
-        ? (incoming ? 'Paiement reçu' : 'Paiement marchand')
-        : incoming ? (isDeposit ? 'Dépôt' : 'Argent reçu') : "Envoi d'argent",
+        ? (incoming ? tr('txt.payIn') : tr('txt.payOut'))
+        : incoming ? (isDeposit ? tr('txt.deposit') : tr('txt.moneyIn')) : tr('txt.moneyOut'),
     counterpart,
     amount,
     currency,

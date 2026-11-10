@@ -27,15 +27,17 @@ import { useAccountSpace, type AccountSpace } from "../../../hooks/useAccountSpa
 import { SpaceSwitch } from "../../../components/home/SpaceSwitch";
 import { useLoader } from "../../../components/wallet/useLoader";
 import { formatDay } from "../../../components/wallet/walletTheme";
+import { useT } from "../../../providers/I18nProvider";
+import type { MessageKey } from "../../../i18n/catalog";
 import {
   Chip, EmptyView, ErrorView, Notice, PageTitle, Screen, SearchPill, SkeletonRows, SlowNote, TxRow, UText,
 } from "../../../components/ui";
 
 type FilterKey = "ALL" | "PENDING" | "VALIDATED" | "PAID" | "CANCELLED";
-const FILTER_LABELS: Record<FilterKey, string> = {
-  ALL: "Toutes", PENDING: "En attente", VALIDATED: "Validées", PAID: "Payées", CANCELLED: "Annulées",
+const FILTER_KEYS: Record<FilterKey, MessageKey> = {
+  ALL: "tx.f.all", PENDING: "tx.f.pending", VALIDATED: "tx.f.validated", PAID: "tx.f.paid", CANCELLED: "tx.f.cancelled",
 };
-const FILTERS = Object.keys(FILTER_LABELS) as FilterKey[];
+const FILTERS = Object.keys(FILTER_KEYS) as FilterKey[];
 
 type DayGroup = { key: string; title: string; items: any[] };
 
@@ -48,6 +50,7 @@ export default function TransactionsScreen() {
 
 function TransactionsContent({ space }: { space: AccountSpace }) {
   const router   = useRouter();
+  const t = useT();
   const { user } = useAuth();
   const isMerchant = space === "merchant";
 
@@ -91,24 +94,24 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { ALL: transactions.length };
-    for (const t of transactions) c[t.status] = (c[t.status] ?? 0) + 1;
+    for (const x of transactions) c[x.status] = (c[x.status] ?? 0) + 1;
     return c;
   }, [transactions]);
   const pendingCount = counts.PENDING ?? 0;
 
   const subtitle = status === "ready"
-    ? `${filtered.length} opération${filtered.length !== 1 ? "s" : ""}${pendingCount > 0 ? ` · ${pendingCount} en attente` : ""}`
-    : isMerchant ? "Encaissements et retraits de ta boutique" : "Tes envois et réceptions";
+    ? `${t("tx.count", { count: filtered.length })}${pendingCount > 0 ? t("tx.pendingSuffix", { count: pendingCount }) : ""}`
+    : isMerchant ? t("tx.subMerchant") : t("tx.subClient");
 
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
-      <PageTitle title={isMerchant ? "Paiements" : "Activité"} subtitle={subtitle} />
+      <PageTitle title={isMerchant ? t("tab.payments") : t("tab.activity")} subtitle={subtitle} />
       <SpaceSwitch style={{ marginBottom: 12 }} />
-      <SearchPill value={q} onChangeText={setQ} placeholder="Nom, téléphone, référence…" />
+      <SearchPill value={q} onChangeText={setQ} placeholder={t("tx.search")} />
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 14 }}>
         {FILTERS.map((f) => (
-          <Chip key={f} label={FILTER_LABELS[f]} active={filter === f} onPress={() => setFilter(f)} count={f === "ALL" ? undefined : counts[f]} />
+          <Chip key={f} label={t(FILTER_KEYS[f])} active={filter === f} onPress={() => setFilter(f)} count={f === "ALL" ? undefined : counts[f]} />
         ))}
       </ScrollView>
 
@@ -117,10 +120,10 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
       {status === "loading" ? (
         <SkeletonRows rows={6} />
       ) : status === "error" ? (
-        <ErrorView title={error?.title ?? "Chargement impossible"} message={error?.message ?? ""} onRetry={reload} />
+        <ErrorView title={error?.title ?? t("tx.loadFail")} message={error?.message ?? ""} onRetry={reload} />
       ) : (
         <View>
-          {error ? <Notice tone="warn" style={{ marginBottom: 12 }}>Actualisation impossible pour le moment. Tire pour réessayer.</Notice> : null}
+          {error ? <Notice tone="warn" style={{ marginBottom: 12 }}>{t("tx.refreshFail")}</Notice> : null}
           {groups.map((g) => (
             <View key={g.key} style={{ marginBottom: 8 }}>
               <UText v="overline" tone="muted" style={{ marginTop: 14, marginBottom: 2 }}>{g.title}</UText>
@@ -138,9 +141,9 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
           {groups.length === 0 && (
             <EmptyView
               icon="receipt-outline"
-              title={q || filter !== "ALL" ? "Aucun résultat" : "Aucune transaction"}
-              message={q || filter !== "ALL" ? "Modifie ta recherche ou ton filtre." : isMerchant ? "Les paiements encaissés par ta boutique apparaîtront ici." : "Tes envois et réceptions apparaîtront ici."}
-              actionLabel={q || filter !== "ALL" ? undefined : isMerchant ? "Encaisser un paiement" : "Envoyer de l'argent"}
+              title={q || filter !== "ALL" ? t("tx.noResult") : t("tx.none")}
+              message={q || filter !== "ALL" ? t("tx.adjust") : isMerchant ? t("tx.emptyMerchant") : t("tx.emptyClient")}
+              actionLabel={q || filter !== "ALL" ? undefined : isMerchant ? t("tx.ctaMerchant") : t("home.send")}
               onAction={() => router.push(isMerchant ? "/merchant/payment" : "/(tabs)/send")}
             />
           )}

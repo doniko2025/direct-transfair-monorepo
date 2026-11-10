@@ -10,6 +10,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { FONT, N, RADIUS, useWalletTheme } from './walletTheme';
+import { useT } from "../../providers/I18nProvider";
 
 export function EmptyState({
   icon = 'file-tray-outline', title, message, actionLabel, onAction,
@@ -35,6 +36,7 @@ export function ErrorState({
   title, message, onRetry, compact = false,
 }: { title: string; message: string; onRetry: () => void; compact?: boolean }) {
   const { P } = useWalletTheme();
+  const t = useT();
   return (
     <View style={[s.box, compact && { paddingVertical: 18 }]}>
       <View style={[s.iconWrap, { backgroundColor: N.warnBg, borderColor: N.warnBd }]}>
@@ -44,7 +46,7 @@ export function ErrorState({
       <Text style={s.msg}>{message}</Text>
       <TouchableOpacity style={[s.btn, { backgroundColor: P.action }]} onPress={onRetry} activeOpacity={0.85}>
         <Ionicons name="refresh" size={16} color="#fff" />
-        <Text style={s.btnTxt}>Réessayer</Text>
+        <Text style={s.btnTxt}>{t('state.retry')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -53,11 +55,12 @@ export function ErrorState({
 /** Bandeau discret affiché quand le chargement dure (serveur qui se réveille). */
 export function SlowHint({ visible }: { visible: boolean }) {
   const { P } = useWalletTheme();
+  const t = useT();
   if (!visible) return null;
   return (
     <View style={[s.hint, { backgroundColor: P.tint, borderColor: P.tintBorder }]}>
       <ActivityIndicator size="small" color={P.accent} />
-      <Text style={[s.hintTxt, { color: P.action }]}>Le serveur démarre, quelques secondes de plus…</Text>
+      <Text style={[s.hintTxt, { color: P.action }]}>{t('state.serverWaking')}</Text>
     </View>
   );
 }
