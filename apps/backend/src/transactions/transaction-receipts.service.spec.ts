@@ -40,3 +40,35 @@ describe('companyOf', () => {
     expect(c.email).toBe('s@x');
   });
 });
+
+describe('TransactionReceiptsService.forUser (document complet)', () => {
+  const dec = (v: string) => ({ toString: () => v });
+  const dbRow: any = {
+    id: 'cl1', reference: '482915370', type: 'TRANSFER', status: 'VALIDATED', payoutMethod: 'CASH_PICKUP', amount: dec('100'), fees: dec('3'), total: dec('103'),
+    currency: 'EUR', targetCurrency: 'GNF', exchangeRate: 10000, receivedAmount: dec('1000000'), createdAt: new Date('2026-11-01T10:00:00Z'), paidAt: null,
+    pickupExpiry: new Date('2099-01-01T00:00:00Z'), receiveCountry: 'GN', senderId: 'u1', recipientId: null, counterCustomerId: null, clientId: 1,
+    sender: { firstName: 'Awa', lastName: 'Camara', phone: '+33600000000', country: 'FR', city: 'Paris' }, recipient: null,
+    beneficiary: { fullName: 'Moustapha Diallo', phone: '+224611111111', country: 'GN', city: 'Labé' }, counterCustomer: null,
+    agency: { name: 'Agence Paris 18', city: 'Paris' }, withdrawal: { status: 'PENDING', expiresAt: new Date('2099-01-01T00:00:00Z'), processedAt: null, processedBy: null },
+  };
+  const client = { name: 'Flash Transfer', legalCompanyName: null, logoUrl: 'https://x.test/l.png', address: null, city: null, phone: null, email: null, website: null, supportEmail: null,
+    regulatorName: null, regulatorAcronym: null, regulatorLicenseNumber: null, regulatorLicenseType: null, capitalSocial: null, primaryColor: null };
+  const make2 = (role = 'USER', id = 'u1') => {
+    const transactions: any = { receiptSourceFor: jest.fn().mockResolvedValue({ tx: dbRow, viewer: { id, role, clientId: 1 } }) };
+    const prisma: any = { client: { findUnique: jest.fn().mockResolvedValue(client) } };
+    const settings: any = { forClient: jest.fn().mockResolvedValue({ pickup: { requireBeneficiaryPhoneCheck: false } }) };
+    return new TransactionReceiptsService(prisma, transactions, settings);
+  };
+
+  it('une ligne lue en base (Decimal, relations imbriquées) donne un reçu complet avec QR signé', async () => {
+    const d = await make2().forUser('cl1', 'u1');
+    expect(d.reference).toBe('482915370');
+    expect(d.sender.name).toBe('Awa Camara');
+    expect(d.recipient.name).toBe('Moustapha Diallo');
+    expect(d.company.logoUrl).toBe('https://x.test/l.png');
+    expect(d.hero).toMatchObject({ amount: 1000000, currency: 'GNF' });
+    expect(d.qr.code).toBe(transferReceiptCode(dbRow));
+    expect(d.qr.payable).toBe(true);
+    expect(d.withdrawalCode).toBe('482915370');
+  });
+});

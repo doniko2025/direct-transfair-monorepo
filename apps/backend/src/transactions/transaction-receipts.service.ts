@@ -63,7 +63,8 @@ export class TransactionReceiptsService {
     if (!client) throw new NotFoundException('Société introuvable');
     const company = await this.settings.forClient(tx.clientId);
     return buildTransferReceipt({
-      src: tx as never,
+      // La ligne lue en base porte ses relations : on les range dans la forme attendue par le constructeur de reçu.
+      src: { tx, sender: tx.sender, recipient: tx.recipient, beneficiary: tx.beneficiary, counterCustomer: tx.counterCustomer, agency: tx.agency, withdrawal: tx.withdrawal },
       company: companyOf(client),
       viewer,
       qrCode: transferReceiptCode({ id: tx.id, reference: tx.reference, amount: tx.amount, currency: tx.currency, createdAt: tx.createdAt }),

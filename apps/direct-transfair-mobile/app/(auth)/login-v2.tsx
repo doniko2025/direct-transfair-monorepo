@@ -573,6 +573,7 @@ export default function LoginV2Screen() {
 
   return (
     <AuthShell
+      sea
       title="Connexion"
       headerRight={pill}
       below={signupBelow}
@@ -589,8 +590,10 @@ export default function LoginV2Screen() {
             onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
             error={phoneErr}
             accent={P.accent}
+            dense
           />
           <PinInput
+            dense
             label="Code secret"
             value={pin}
             onChange={setPin}
@@ -685,12 +688,12 @@ const s = StyleSheet.create({
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
   legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  legalLink: { fontFamily: FONT.body, fontSize: 12.5, color: '#6B6B6B', fontWeight: '700', paddingVertical: 6 },
+  legalLink: { fontFamily: FONT.body, fontSize: 12, color: '#6B6B6B', fontWeight: '700', paddingVertical: 6 },
   legalDot:  { color: '#B5B5B5', fontSize: 12.5 },
   trust:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999,
                backgroundColor: '#F2F2F2', borderWidth: 1, borderColor: '#E8E8E8' },
   trustTxt:  { fontFamily: FONT.body, fontSize: 11.5, color: '#6B6B6B', fontWeight: '600' },
   signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' },
-  signupTxt: { fontFamily: FONT.body, fontSize: 14.5, color: '#6B6B6B' },
-  signupLink:{ fontFamily: FONT.body, fontSize: 14.5, fontWeight: '800', color: '#111111', textDecorationLine: 'underline', paddingVertical: 8 },
+  signupTxt: { fontFamily: FONT.body, fontSize: 13.5, color: '#6B6B6B' },
+  signupLink:{ fontFamily: FONT.body, fontSize: 13.5, fontWeight: '800', color: '#111111', textDecorationLine: 'underline', paddingVertical: 8 },
 });

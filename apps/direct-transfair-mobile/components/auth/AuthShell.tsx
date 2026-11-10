@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.8 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.9 — Direct Transf'air
+// ✅ v2.9 : variante `sea` (téléphone) — fond de MER claire et transparente avec de petits poissons bleus/verts (<SeaBackdrop />), emblème de la marque en bulle,
+//    puis UNE carte blanche centrée, plus étroite (≈ 76 % de la largeur), qui contient TOUT : pastille d'état, marque, titre, formulaire, pied de carte et
+//    contenu `below` (inscription, liens légaux). Désactivée par défaut : les autres écrans sont inchangés. Ordinateur et variante `hero` inchangés.
 // ✅ v2.8 : LOGO DE LA SOCIÉTÉ — quand la société (ou la plateforme) a un logo, il est affiché en grand, centré, sans tuile ni nom (comme une
 //    maquette « logo + retour ») ; sans logo ou si l'image ne charge pas : ancienne marque (tuile + nom). Nouvelle prop `trust` (défaut vrai) :
 //    `trust={false}` masque la ligne « Connexion chiffrée · Vos données restent protégées » (écran de connexion).
@@ -44,6 +47,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '../ui/Icon';
 import { TenantMark } from '../brand/BrandMark';
 import AuthBackdrop, { useReduceMotion } from './AuthBackdrop';
+import SeaBackdrop from './SeaBackdrop';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useTenant } from '../../providers/TenantProvider';
@@ -67,6 +71,8 @@ type Props = {
   headerRight?: React.ReactNode;
   /** Bandeau sombre avec la marque + carte flottante (ancien style). Lot 12 : désactivé par défaut — fond blanc pur. */
   hero?: boolean;
+  /** Variante « mer » : fond marin transparent + carte blanche étroite qui contient tout (y compris `below`). Téléphone seulement. */
+  sea?: boolean;
   /** Ligne rassurante « Connexion chiffrée · Vos données restent protégées » sous le formulaire (défaut : affichée). */
   trust?: boolean;
   children: React.ReactNode;
@@ -96,7 +102,7 @@ export function useAuthPalette(): AuthPalette {
 }
 
 export default function AuthShell({
-  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, trust = true, children,
+  title, subtitle, onBack, compact = false, footer, below, headerRight, hero = false, sea = false, trust = true, children,
 }: Props) {
   const { branding } = useTenant();
   // Logo de la société : si l'image ne charge pas, on retombe sur la marque (tuile + nom) tant que l'adresse ne change pas.
@@ -110,12 +116,14 @@ export default function AuthShell({
 
   // ── Animations de la variante « carte flottante » (hooks toujours appelés, démarrés seulement si la variante est affichée) ──
   const heroOn = hero && !wide;
+  const seaOn = sea && !wide && !heroOn;
+  const animOn = heroOn || seaOn;
   const reduce = useReduceMotion();
   const enter = useRef([new Animated.Value(0), new Animated.Value(0), new Animated.Value(0)]).current;
   const pulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!heroOn) return;
+    if (!animOn) return;
     if (reduce) { enter.forEach((v) => v.setValue(1)); pulse.setValue(0); return; }
     enter.forEach((v) => v.setValue(0));
     const delays = [60, 220, 520];
@@ -129,7 +137,7 @@ export default function AuthShell({
     const loop = Animated.loop(Animated.timing(pulse, { toValue: 1, duration: 2800, easing: Easing.out(Easing.quad), useNativeDriver: true }));
     loop.start();
     return () => { intro.stop(); loop.stop(); };
-  }, [heroOn, reduce]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [animOn, reduce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Variante « carte flottante sur dégradé » (téléphone) ──
   if (heroOn) {
@@ -219,6 +227,72 @@ export default function AuthShell({
               </Animated.View>
             ) : null}
           </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
+
+  // ── Variante « mer » (téléphone) : eau transparente, poissons bleus/verts, carte blanche étroite qui contient tout ──
+  if (seaOn) {
+    const tile = 60;
+    const ringSize = tile + 24;
+    const ink = darken(C.forest, 0.72);
+    return (
+      <KeyboardAvoidingView style={[s.root, { backgroundColor: '#D3ECF4' }]} behavior="padding">
+        <StatusBar barStyle="dark-content" backgroundColor="#EEF9FB" />
+        <SeaBackdrop />
+
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={[s.scroll, s.seaScroll, { paddingTop: topPad, paddingBottom: Math.max(insets.bottom, 14) + 16 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets
+        >
+          {onBack ? (
+            <Pressable onPress={onBack} style={s.seaBack} accessibilityRole="button" accessibilityLabel="Retour" hitSlop={8}>
+              <Ionicons name="chevron-back" size={22} color={ink} />
+            </Pressable>
+          ) : null}
+
+          {/* Emblème de la marque dans une bulle claire */}
+          <Animated.View
+            style={[
+              s.seaEmblem,
+              { opacity: enter[0], transform: [
+                { translateY: enter[0].interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) },
+                { scale: enter[0].interpolate({ inputRange: [0, 1], outputRange: [0.92, 1] }) },
+              ] },
+            ]}
+          >
+            <View style={[s.seaHalo, { width: ringSize + 22, height: ringSize + 22, borderRadius: (ringSize + 22) / 2 }]}>
+              <View style={[s.seaRing, { width: ringSize, height: ringSize, borderRadius: ringSize / 2 }]}>
+                <TenantMark size={tile} radius={Math.round(tile * 0.3)} background={ink} iconColor="#FFFFFF" logoScale={0.78} animated />
+              </View>
+            </View>
+          </Animated.View>
+
+          {/* Carte blanche centrée et étroite : TOUT le contenu y est */}
+          <Animated.View
+            style={[
+              s.seaCard,
+              { backgroundColor: C.surface, opacity: enter[1], transform: [{ translateY: enter[1].interpolate({ inputRange: [0, 1], outputRange: [30, 0] }) }] },
+            ]}
+          >
+            {headerRight ? <View style={s.seaPill}>{headerRight}</View> : null}
+            <View style={s.seaBrand}>
+              <TenantMark size={24} radius={8} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
+              <Text style={[s.seaBrandName, { color: ink }]} numberOfLines={1}>{branding.name}</Text>
+            </View>
+            {title ? <Text style={[s.seaTitle, { color: ink }]} accessibilityRole="header">{title}</Text> : null}
+            {subtitle ? <Text style={[s.cardSub, { color: C.muted }]}>{subtitle}</Text> : null}
+            <View style={{ height: 12 }} />
+            {children}
+            {footer}
+            {below ? (
+              <View style={[s.seaBelow, { borderTopColor: C.line }]}>{below}</View>
+            ) : null}
+          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     );
@@ -343,6 +417,23 @@ const s = StyleSheet.create({
   cardTitle: { fontFamily: SERIF, fontSize: 22, lineHeight: 28, fontWeight: '700', letterSpacing: -0.3, textAlign: 'center' },
   cardSub:   { fontFamily: FONT.body, fontSize: 13.5, lineHeight: 19, marginTop: 4, textAlign: 'center' },
   below:     { marginTop: 14, alignItems: 'center' },
+
+
+  // — Variante mer —
+  seaScroll: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
+  seaBack:   { position: 'absolute', top: 0, left: 16, width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center',
+               backgroundColor: 'rgba(255,255,255,0.7)', zIndex: 3 },
+  seaEmblem: { alignItems: 'center', marginBottom: -14, zIndex: 2 },
+  seaHalo:   { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.28)' },
+  seaRing:   { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.72)',
+               shadowColor: '#0F3A4D', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 },
+  seaCard:   { width: '76%', minWidth: 286, maxWidth: 360, borderRadius: 28, paddingHorizontal: 16, paddingTop: 22, paddingBottom: 12,
+               shadowColor: '#14466A', shadowOpacity: 0.26, shadowRadius: 26, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
+  seaPill:   { alignItems: 'center', marginBottom: 8 },
+  seaBrand:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  seaBrandName: { fontFamily: FONT.display, fontSize: 14, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
+  seaTitle:  { fontFamily: SERIF, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, textAlign: 'center', marginTop: 6 },
+  seaBelow:  { marginTop: 10, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, alignItems: 'center' },
 
   trust:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 26 },
   trustTxt: { fontFamily: FONT.body, fontSize: 11.5, color: N.muted },

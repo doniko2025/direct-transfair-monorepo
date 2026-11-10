@@ -25,13 +25,15 @@ type Props = {
   autoFocus?: boolean;
   /** Retire l'œil (confirmation, saisie sensible). */
   noReveal?: boolean;
+  /** Version compacte (cases plus basses, textes réduits) pour les cadres étroits. */
+  dense?: boolean;
   testID?: string;
   /** Pour donner le focus à ce champ depuis l'écran parent (ex. passer au champ de confirmation). */
   inputRef?: React.MutableRefObject<TextInput | null>;
 };
 
 export default function PinInput({
-  value, onChange, onComplete, accent, label, error, disabled = false, autoFocus = false, noReveal = false, testID, inputRef,
+  value, onChange, onComplete, accent, label, error, disabled = false, autoFocus = false, noReveal = false, dense = false, testID, inputRef,
 }: Props) {
   const ref = useRef<TextInput>(null);
   const [focused, setFocused] = useState(false);
@@ -65,10 +67,10 @@ export default function PinInput({
   const translateX = shake.interpolate({ inputRange: [-1, 1], outputRange: [-8, 8] });
 
   return (
-    <View style={s.wrap}>
+    <View style={[s.wrap, dense && { marginBottom: 8 }]}>
       {label ? (
         <View style={s.labelRow}>
-          <Text style={[s.label, error ? { color: N.danger } : null]}>{label}</Text>
+          <Text style={[s.label, dense && { fontSize: 12 }, error ? { color: N.danger } : null]}>{label}</Text>
           {!noReveal ? (
             <Pressable onPress={() => setReveal((r) => !r)} hitSlop={10} accessibilityRole="button" accessibilityLabel={reveal ? 'Masquer le code' : 'Afficher le code'}>
               <Ionicons name={reveal ? 'eye-outline' : 'eye-off-outline'} size={20} color={N.muted} />
@@ -78,7 +80,7 @@ export default function PinInput({
       ) : null}
 
       <Pressable onPress={() => ref.current?.focus()} accessibilityRole="none">
-        <Animated.View style={[s.row, { transform: [{ translateX }] }]} pointerEvents="none">
+        <Animated.View style={[s.row, dense && { gap: 6 }, { transform: [{ translateX }] }]} pointerEvents="none">
           {Array.from({ length: PIN_LENGTH }).map((_, i) => {
             const char = value[i] ?? '';
             const isActive = focused && i === active && !disabled;
@@ -87,13 +89,14 @@ export default function PinInput({
                 key={i}
                 style={[
                   s.box,
+                  dense && { minHeight: 42, maxHeight: 50 },
                   char ? { borderColor: error ? N.danger : accent, backgroundColor: N.surface } : null,
                   isActive && { borderColor: accent, borderWidth: 2 },
                   error && !char ? { borderColor: N.dangerBd } : null,
                 ]}
               >
                 {char ? (
-                  reveal ? <Text style={[s.digit, error ? { color: N.danger } : null]}>{char}</Text> : <View style={[s.dot, { backgroundColor: error ? N.danger : N.ink }]} />
+                  reveal ? <Text style={[s.digit, dense && { fontSize: 20 }, error ? { color: N.danger } : null]}>{char}</Text> : <View style={[s.dot, dense && { width: 10, height: 10, borderRadius: 5 }, { backgroundColor: error ? N.danger : N.ink }]} />
                 ) : null}
               </View>
             );

@@ -40,34 +40,36 @@ type Props = {
   error?: string | null;
   hint?: string;
   accent: string;
+  /** Version compacte (hauteur et textes réduits) pour les cadres étroits. */
+  dense?: boolean;
   onSubmitEditing?: () => void;
   inputRef?: React.Ref<TextInput>;
 };
 
 export default function PhoneField({
-  country, onCountryChange, value, onChangeText, error, hint, accent, onSubmitEditing, inputRef,
+  country, onCountryChange, value, onChangeText, error, hint, accent, dense = false, onSubmitEditing, inputRef,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const hasError = !!error;
 
   return (
-    <View style={s.wrap}>
-      <Text style={[s.label, hasError && { color: N.danger }]}>Numéro de téléphone</Text>
-      <View style={[s.box, { borderColor: hasError ? N.danger : focused ? N.ink : N.border }]}>
+    <View style={[s.wrap, dense && { marginBottom: 12 }]}>
+      <Text style={[s.label, dense && { fontSize: 12, marginBottom: 5 }, hasError && { color: N.danger }]}>Numéro de téléphone</Text>
+      <View style={[s.box, dense && { minHeight: 46 }, { borderColor: hasError ? N.danger : focused ? N.ink : N.border }]}>
         <TouchableOpacity
           onPress={() => setOpen(true)}
-          style={s.dial}
+          style={[s.dial, dense && { minHeight: 46, paddingHorizontal: 9, gap: 4, marginRight: 9 }]}
           accessibilityRole="button"
           accessibilityLabel={`Indicatif ${country.name} ${country.dial}. Appuyez pour changer.`}
         >
-          <Text style={s.flag}>{country.flag}</Text>
-          <Text style={s.code}>{country.dial}</Text>
+          <Text style={[s.flag, dense && { fontSize: 18 }]}>{country.flag}</Text>
+          <Text style={[s.code, dense && { fontSize: 14 }]}>{country.dial}</Text>
           <Ionicons name="chevron-down" size={14} color={N.muted} />
         </TouchableOpacity>
         <TextInput
           ref={inputRef}
-          style={[s.input, WEB_INPUT_RESET]}
+          style={[s.input, dense && { fontSize: 15, paddingVertical: 8 }, WEB_INPUT_RESET]}
           value={value}
           onChangeText={(t) => onChangeText(t.replace(/[^\d\s]/g, ''))}
           placeholder="6 12 34 56 78"
