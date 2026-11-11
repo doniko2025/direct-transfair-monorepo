@@ -1,0 +1,116 @@
+/* apps/web-admin/src/styles/mobile-fit.css */
+/* =========================================================
+   MOBILE — « rien de tronqué, pas de défilement horizontal »
+   Importé en dernier. Au-dessus de 640 px : aucun changement.
+   Sous 640 px :
+     • les noms, e-mails, domaines, libellés des cartes passent à la ligne au lieu de finir par « … » ;
+     • les onglets des réglages et les statistiques du tableau de bord tiennent dans la largeur (plus de défilement latéral).
+   Les éléments qui DOIVENT rester sur une ligne (barre du haut, menu, boutons, pastilles, montants, heures) ne sont pas touchés.
+   ========================================================= */
+
+@media (max-width: 640px) {
+  /* ─── Textes qui ne sont plus coupés ─── */
+  .ag-card__title strong,
+  .ag-card__title span,
+  .ag-card__manager span,
+  .ag-person__text strong,
+  .ag-person__text > span,
+  .company-card__id h2,
+  .company-card__domain,
+  .contract-card__id h2,
+  .pd-card__id h2,
+  .overview__name strong,
+  .overview__name span,
+  .dash-tx__main strong,
+  .dash-tx__main span,
+  .dash-agencies__main strong,
+  .dash-agencies__main span,
+  .dash-notifs__text strong,
+  .dash-notifs__text span,
+  .dash-notifs small,
+  .mc-card__text strong,
+  .mc-card__text span,
+  .wc-card__text strong,
+  .wc-card__text span,
+  .user-card__text strong,
+  .user-card__email,
+  .user-card__where,
+  .tx-card__company,
+  .tx-card__agency span,
+  .sp-staff__id strong,
+  .sp-staff__id span,
+  .set-group__text small,
+  .notif__title {
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* Aperçu d'une notification : 3 lignes au plus (au lieu d'une seule coupée). */
+  .notif__preview {
+    display: -webkit-box;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  /* Carte d'agence : le responsable et le nombre d'agents partagent la ligne sans se couper. */
+  .ag-card__foot {
+    gap: 4px 10px;
+  }
+
+  /* Carte société : statut et domaine sur la même ligne, le domaine passe à la ligne si besoin. */
+  .company-card__status {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .company-card__status > .pill {
+    flex: none;
+  }
+
+  .company-card__domain {
+    flex: 1 1 0;
+    padding-top: 2px;
+    line-height: 1.3;
+  }
+
+  /* ─── Réglages : les rubriques tiennent sur UNE ligne, sans défilement latéral ─── */
+  .set-tabs {
+    overflow: visible;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .set-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 6px;
+    font-size: 0.875rem;
+  }
+
+  /* ─── Tableau de bord : statistiques en grille 2 colonnes (au lieu d'une bande qui défile) ─── */
+  .dash-kpis.dash-kpis--stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    overflow: visible;
+    gap: 10px;
+    padding: 0;
+    scroll-snap-type: none;
+  }
+
+  /* Gros montants (trésorerie, paiements) : à la ligne plutôt que de dépasser de la carte. */
+  .balance-card__amount,
+  .pay-card__amount {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

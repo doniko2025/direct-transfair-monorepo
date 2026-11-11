@@ -152,6 +152,13 @@ export function EditableSection({
   }
 
   const headingId = `${id}-title`;
+  // Libellés des champs vides : sur mobile ils sont regroupés sur une ligne au lieu d'occuper chacun une rangée.
+  const emptyLabels = fields
+    .filter((f) => {
+      const raw = values[f.key];
+      return !(raw && String(raw).trim());
+    })
+    .map((f) => f.label);
 
   return (
     <Card as="section" aria-labelledby={headingId} className="section-card">
@@ -263,7 +270,10 @@ export function EditableSection({
                   ? (f.options?.find((o) => o.value === text)?.label ?? text)
                   : text;
               return (
-                <div className={(f.paired ?? f.half) ? 'kv__row kv__row--half' : 'kv__row'} key={f.key}>
+                <div
+                  className={`${(f.paired ?? f.half) ? 'kv__row kv__row--half' : 'kv__row'}${shown ? '' : ' kv__row--empty'}`}
+                  key={f.key}
+                >
                   <dt>{f.label}</dt>
                   <dd>
                     {shown ? (
@@ -288,6 +298,11 @@ export function EditableSection({
               );
             })}
           </dl>
+          {emptyLabels.length > 0 ? (
+            <p className="kv-empty-sum">
+              <strong>Non renseigné :</strong> {emptyLabels.join(' · ')}
+            </p>
+          ) : null}
           {extra ? <div className="section-card__extra">{extra(toDraft(fields, values), false)}</div> : null}
         </>
       )}
