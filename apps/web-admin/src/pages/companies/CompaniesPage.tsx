@@ -9,7 +9,7 @@ import { Icon } from '../../components/Icon';
 import { CompanyMark } from '../../components/CompanyMark';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
-import { formatAmount, isActiveStatus, safeColor, statusLabel, statusTone } from '../../lib/companyRules';
+import { isActiveStatus, safeColor, statusLabel, statusTone } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
@@ -33,7 +33,6 @@ function matches(c: CompanySummary, q: string): boolean {
 function CompanyCard({ company }: { company: CompanySummary }) {
   const users = company._count?.users ?? 0;
   const agencies = company._count?.agencies ?? 0;
-  const wallets = (company.wallets ?? []).filter((w) => Number(w.balance) !== 0).slice(0, 3);
   const domain = company.customDomain ?? (company.subdomain ? `${company.subdomain}` : null);
 
   return (
@@ -78,13 +77,6 @@ function CompanyCard({ company }: { company: CompanySummary }) {
           </div>
         </dl>
 
-        {wallets.length > 0 ? (
-          <ul className="company-card__wallets" aria-label="Soldes de la société">
-            {wallets.map((w) => (
-              <li key={String(w.id)}>{formatAmount(w.balance, w.currency)}</li>
-            ))}
-          </ul>
-        ) : null}
       </Link>
     </li>
   );
