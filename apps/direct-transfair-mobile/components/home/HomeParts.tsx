@@ -120,15 +120,18 @@ export function HomeTopBar({
   // Nombre de notifications non lues, lu auprès du serveur (une valeur passée en `unread` reste prioritaire).
   const unreadCount = useUnreadNotifications();
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", paddingTop: 12, gap: 10 }}>
-      <ProfileHero />
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={{ fontSize: 18, color: C.muted, fontWeight: "400" }}>
-          {greeting ? `${greeting} ` : ""}<Text style={{ color: C.ink, fontWeight: "700" }}>{name}</Text>
-        </Text>
+    <View style={{ paddingTop: 12 }}>
+      {/* Ligne 1 : photo à gauche, scan + notifications à droite. */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <ProfileHero />
+        <View style={{ flex: 1 }} />
+        <RoundButton icon={scanIcon} label={scanLabel ?? t("home.scanPay")} onPress={onScan} />
+        <RoundButton icon="notifications-outline" label={t("home.notifications")} onPress={onBell} badge={unread ?? unreadCount} />
       </View>
-      <RoundButton icon={scanIcon} label={scanLabel ?? t("home.scanPay")} onPress={onScan} />
-      <RoundButton icon="notifications-outline" label={t("home.notifications")} onPress={onBell} badge={unread ?? unreadCount} />
+      {/* Ligne 2 : la salutation a toute la largeur → le nom n'est plus coupé. */}
+      <Text numberOfLines={2} style={{ fontSize: 20, lineHeight: 26, color: C.muted, fontWeight: "400", marginTop: 12 }}>
+        {greeting ? `${greeting} ` : ""}<Text style={{ color: C.ink, fontWeight: "700" }}>{name}</Text>
+      </Text>
     </View>
   );
 }

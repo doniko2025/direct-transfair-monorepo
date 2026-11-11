@@ -96,7 +96,9 @@ const partyLines = (p: ReceiptParty, phoneHidden = false): string => {
 };
 
 /** HTML du PDF / de l'impression. `qr` = image PNG (data-URL) du QR, indispensable : un reçu sans moyen de contrôle ne doit pas circuler. */
-export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string): string {
+export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string, pdf = false): string {
+  // Le composant QR renvoie du base64 BRUT (sans « data:image/png;base64, ») : sans ce préfixe l'<img> est cassée (carré vide dans le PDF).
+  const qrSrc = qr.startsWith("data:") ? qr : `data:image/png;base64,${qr.replace(/\s+/g, "")}`;
   const accent = /^#[0-9a-f]{6}$/i.test(d.company.primaryColor ?? "") ? (d.company.primaryColor as string) : "#059669";
   const tone = TONE[d.statusTone];
   const a = d.amounts;
@@ -120,10 +122,11 @@ export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string): str
 .pn{font-size:14px;font-weight:800}.pl{font-size:11.5px;color:#555;margin-top:2px}
 .r{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #eee;font-size:13px}.r span{color:#666}.r b{text-align:right}.r b.s{font-size:15px}
 .code{margin:14px 26px 0;border:2px dashed ${accent};border-radius:14px;padding:12px 16px;text-align:center}.code .k{font-size:10.5px;color:#666;font-weight:800;text-transform:uppercase}.code .v{font-size:30px;font-weight:800;letter-spacing:5px;margin-top:4px;font-family:Menlo,Consolas,monospace}
-.seal{display:flex;gap:16px;align-items:center;margin:18px 26px 0;padding:14px;border:1.5px solid #111;border-radius:14px}.seal img{width:132px;height:132px;flex:none}
+.seal{display:flex;gap:16px;align-items:center;margin:18px 26px 0;padding:14px;border:1.5px solid #111;border-radius:14px}.seal img{width:150px;height:150px;flex:none;background:#fff;image-rendering:pixelated}
 .seal b{font-size:13px}.seal .m{font-size:11px;color:#555;margin-top:5px;line-height:1.45}.seal .u{font-family:Menlo,Consolas,monospace;font-size:9.5px;word-break:break-all;color:#333;margin-top:6px}
 .sig{display:flex;gap:14px;margin:18px 26px 0}.sig div{flex:1;border:1px solid #ccc;border-radius:10px;height:78px;padding:8px;font-size:10px;color:#777}
 .foot{margin:22px 26px 24px;border-top:1px solid #ddd;padding-top:10px;font-size:9.5px;color:#888;line-height:1.55;text-align:center}
+${pdf ? ".page{max-width:560px;margin:0 0 0 18px}.seal .u{font-size:8.5px}" : ""}
 </style></head><body><div class="page">
 <div class="top">${d.company.logoUrl ? `<img class="logo" src="${esc(d.company.logoUrl)}"/>` : ""}<div class="co"><b>${esc(d.company.name)}</b><span>${companyLines}</span></div><div class="kind">${esc(tr("rcpt.pdf.receipt"))}<br/>${esc(d.title)}</div></div>
 <div class="hero"><div class="hl">${esc(d.hero.label)}</div><div class="ha">${esc(fmtAmount(d.hero.amount, d.hero.currency))}</div><span class="badge">${esc(d.statusLabel)}</span></div>
@@ -132,7 +135,7 @@ export function buildTransferReceiptHtml(d: TransferReceiptDoc, qr: string): str
 <div class="sec"><div class="st">${esc(tr("rcpt.financial"))}</div>${row(tr("rcpt.sent"), fmtAmount(a.sent, a.sentCurrency))}${row(tr("rcpt.fees"), fmtAmount(a.fees, a.sentCurrency))}${row(tr("rcpt.total"), fmtAmount(a.total, a.sentCurrency), true)}${a.rate && a.receivedCurrency ? row(tr("rcpt.rate"), `1 ${a.sentCurrency} = ${new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 6 }).format(a.rate)} ${a.receivedCurrency}`) : ""}${a.received && a.receivedCurrency ? row(tr("rcpt.receivedAmt"), fmtAmount(a.received, a.receivedCurrency), true) : ""}</div>
 ${d.agency.originName || d.agency.payerName ? `<div class="sec"><div class="st">${esc(tr("rcpt.agencies"))}</div>${d.agency.originName ? row(tr("rcpt.originAt"), [d.agency.originName, d.agency.originCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerName ? row(tr("rcpt.paidAt"), [d.agency.payerName, d.agency.payerCity].filter(Boolean).join(" — ")) : ""}${d.agency.payerAgent ? row(tr("rcpt.payerAgent"), d.agency.payerAgent) : ""}</div>` : ""}
 ${d.withdrawalCode ? `<div class="code"><div class="k">${esc(tr("rcpt.pdf.code"))}</div><div class="v">${esc(d.withdrawalCode)}</div></div>` : ""}
-<div class="seal"><img src="${qr}"/><div><b>${esc(d.qr.payable ? tr("rcpt.pdf.qrPay") : tr("rcpt.pdf.qrVerify"))}</b><div class="m">${d.qr.payable ? esc(tr("rcpt.pdf.qrAgent")) : ""}${esc(tr("rcpt.pdf.qrAny"))}</div><div class="u">${esc(url)}</div></div></div>
+<div class="seal"><img src="${qrSrc}"/><div><b>${esc(d.qr.payable ? tr("rcpt.pdf.qrPay") : tr("rcpt.pdf.qrVerify"))}</b><div class="m">${d.qr.payable ? esc(tr("rcpt.pdf.qrAgent")) : ""}${esc(tr("rcpt.pdf.qrAny"))}</div><div class="u">${esc(url)}</div></div></div>
 ${d.showSignatures ? `<div class="sig"><div>${esc(tr("rcpt.pdf.sigBenef"))}</div><div>${esc(tr("rcpt.pdf.sigAgent"))}</div></div>` : ""}
 <div class="foot">${legal ? legal + "<br/>" : ""}${esc(tr("rcpt.pdf.foot", { ref: d.reference, contact: d.company.email || d.company.phone || d.company.name }))}</div>
 </div></body></html>`;
@@ -140,7 +143,7 @@ ${d.showSignatures ? `<div class="sig"><div>${esc(tr("rcpt.pdf.sigBenef"))}</div
 
 export async function shareTransferReceiptPdf(d: TransferReceiptDoc, qr: string): Promise<void> {
   try {
-    const { uri } = await Print.printToFileAsync({ html: buildTransferReceiptHtml(d, qr) });
+    const { uri } = await Print.printToFileAsync({ html: buildTransferReceiptHtml(d, qr, true) });
     if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf", dialogTitle: tr("rcpt.shareTitle", { ref: d.reference }) });
     else Alert.alert(tr("rcpt.shareUnavail"), tr("rcpt.shareUnavailMsg"));
   } catch {

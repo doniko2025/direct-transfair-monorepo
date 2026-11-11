@@ -458,15 +458,15 @@ export default function LoginV2Screen() {
   const legalFooter = (
     <View style={s.legal}>
       <TouchableOpacity onPress={() => router.push('/(auth)/assistance')} accessibilityRole="link">
-        <Text style={s.legalLink}>{t('login.legal.help')}</Text>
+        <Text style={s.legalLink} numberOfLines={1}>{t('login.legal.help')}</Text>
       </TouchableOpacity>
       <Text style={s.legalDot}>·</Text>
       <TouchableOpacity onPress={() => router.push('/(auth)/terms')} accessibilityRole="link">
-        <Text style={s.legalLink}>{t('login.legal.terms')}</Text>
+        <Text style={s.legalLink} numberOfLines={1}>{t('login.legal.terms')}</Text>
       </TouchableOpacity>
       <Text style={s.legalDot}>·</Text>
       <TouchableOpacity onPress={() => router.push('/(auth)/privacy-policy')} accessibilityRole="link">
-        <Text style={s.legalLink}>{t('login.legal.privacy')}</Text>
+        <Text style={s.legalLink} numberOfLines={1}>{t('login.legal.privacy')}</Text>
       </TouchableOpacity>
     </View>
   );
@@ -475,9 +475,9 @@ export default function LoginV2Screen() {
   const signupBelow = (
     <View style={{ alignItems: 'center' }}>
       <View style={s.signup}>
-        <Text style={s.signupTxt}>{t('login.noAccount')}</Text>
+        <Text style={s.signupTxt} numberOfLines={1}>{t('login.noAccount')}</Text>
         <TouchableOpacity onPress={() => router.push('/(auth)/account-type')} accessibilityRole="button" accessibilityLabel={t('login.createAccount')} testID="login-register">
-          <Text style={s.signupLink}>{t('login.createAccount')}</Text>
+          <Text style={s.signupLink} numberOfLines={1}>{t('login.createAccount')}</Text>
         </TouchableOpacity>
       </View>
       {legalFooter}
@@ -642,8 +642,14 @@ export default function LoginV2Screen() {
         </>
       )}
 
+      {/* Une seule ligne, sans soulignement : « Autres options de connexion » (le détail s'ouvre dans une fenêtre) à gauche, « Code oublié ? » à droite. */}
       <View style={s.forgotRow}>
-        <AuthButton label={t('login.forgot')} variant="link" dense accent={P.accent} disabled={loading} onPress={() => setForgotOpen(true)} testID="login-forgot" />
+        <TouchableOpacity onPress={() => setOptionsOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.otherOptions')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={[s.miniLink, { flexShrink: 1 }]} testID="login-other-options">
+          <Text style={s.miniTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('login.otherOptions')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setForgotOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.forgot')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={[s.miniLink, { flexShrink: 0 }]} testID="login-forgot">
+          <Text style={s.miniTxt} numberOfLines={1}>{t('login.forgot')}</Text>
+        </TouchableOpacity>
       </View>
 
       <AuthButton
@@ -657,11 +663,6 @@ export default function LoginV2Screen() {
         onPress={() => handleLogin()}
         testID="login-submit"
       />
-
-      {/* Un seul lien : le détail des autres façons de se connecter s'ouvre dans une fenêtre. */}
-      <View style={s.optionsBox}>
-        <AuthButton label={t('login.otherOptions')} variant="link" dense accent={P.accent} disabled={loading} onPress={() => setOptionsOpen(true)} testID="login-other-options" />
-      </View>
 
       <ForgotCodeModal
         visible={forgotOpen}
@@ -682,21 +683,22 @@ export default function LoginV2Screen() {
 }
 
 const s = themed(() => StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginTop: -4, marginBottom: 4 },
-  optionsBox:{ alignItems: 'center', marginTop: 10 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: -2, marginBottom: 8 },
+  miniLink:  { paddingVertical: 6 },
+  miniTxt:   { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.inkSub },
   optionBtn: { flexGrow: 1, flexBasis: '45%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: N.border, backgroundColor: N.field },
   optionTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '600', color: N.ink, textAlign: 'center', flexShrink: 1 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 
-  legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' },
-  legalLink: { fontFamily: FONT.body, fontSize: 12, color: N.muted, fontWeight: '700', paddingVertical: 6 },
-  legalDot:  { color: N.faint, fontSize: 12.5 },
+  legal:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'nowrap' },
+  legalLink: { fontFamily: FONT.body, fontSize: 11, color: N.muted, fontWeight: '700', paddingVertical: 4 },
+  legalDot:  { color: N.faint, fontSize: 11 },
   trust:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingVertical: 5, paddingHorizontal: 11, borderRadius: 999,
                backgroundColor: N.field, borderWidth: 1, borderColor: N.border },
   trustTxt:  { fontFamily: FONT.body, fontSize: 11.5, color: N.muted, fontWeight: '600' },
-  signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' },
-  signupTxt: { fontFamily: FONT.body, fontSize: 13.5, color: N.muted },
-  signupLink:{ fontFamily: FONT.body, fontSize: 13.5, fontWeight: '800', color: N.ink, textDecorationLine: 'underline', paddingVertical: 8 },
+  signup:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'nowrap', gap: 5 },
+  signupTxt: { fontFamily: FONT.body, fontSize: 12, color: N.muted, flexShrink: 1 },
+  signupLink:{ fontFamily: FONT.body, fontSize: 12, fontWeight: '800', color: N.ink, paddingVertical: 4 },
 }));

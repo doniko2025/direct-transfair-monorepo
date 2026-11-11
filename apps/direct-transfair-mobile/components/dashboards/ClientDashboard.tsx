@@ -65,7 +65,7 @@ export default function ClientDashboard() {
         onBell={() => router.push("/(tabs)/notifications")}
       />
 
-      <SpaceSwitch style={{ marginTop: 4 }} />
+      <SpaceSwitch style={{ marginTop: 14 }} />
 
       <BalanceBlock
         label={t("home.balance")}
