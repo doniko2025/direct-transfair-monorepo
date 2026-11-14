@@ -1,4 +1,10 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v5.0 : ÉCRAN PRINCIPAL ÉPURÉ « esprit Taptap Send » — nouveau cadre SimpleAuthShell (page blanche, retour et aide en pastilles rondes, grand titre
+//    « Se connecter »), éléments en cascade (Reveal), bouton « Connexion », séparateur « OU CONNECTEZ-VOUS AVEC » puis les autres façons de se
+//    connecter VISIBLES d'emblée (empreinte si activée, e-mail + mot de passe ↔ téléphone + code, code reçu par e-mail) : la fenêtre
+//    « Autres options de connexion » n'est plus utilisée ici. « Code oublié ? » reste le seul lien sous le code. La flèche de retour
+//    revient à l'accueil. Couleurs 100 % dynamiques (couleur principale / accent choisies par le super admin). Les écrans « code reçu »
+//    (OTP) gardent le cadre AuthShell. LOGIQUE DE CONNEXION, appels API et testID : inchangés.
 // ✅ v4.1 : ÉCRAN ÉPURÉ — plus de mention « Connexion chiffrée » (ni dans la carte ni sous elle) ; « Code oublié ? » est le seul lien sous le code
 //    (il ouvre une fenêtre : réception du code par email ou par SMS) ; les deux boutons « Empreinte digitale » / « Email et mot de passe » sont
 //    remplacés par un seul lien « Autres options de connexion » (fenêtre : empreinte, code reçu par email, email + mot de passe ↔ téléphone + code).
@@ -121,6 +127,8 @@ import {
 } from '../../hooks/useBiometrics';
 
 import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
+import SimpleAuthShell from '../../components/auth/SimpleAuthShell';
+import Reveal from '../../components/flow/Reveal';
 import AuthField        from '../../components/auth/AuthField';
 import PinInput from '../../components/auth/PinInput';
 import PhoneField, { normalizeNationalNumber, validatePhone } from '../../components/auth/PhoneField';
@@ -132,7 +140,7 @@ import OtpCodeInput     from '../../components/auth/OtpCodeInput';
 import ServerStatusPill from '../../components/auth/ServerStatusPill';
 import { describeAuthError, type AuthErrorInfo } from '../../components/auth/authErrors';
 import { FONT, N, RADIUS } from '../../components/auth/authTheme';
-import { ForgotCodeModal, LoginOptionsModal } from '../../components/auth/LoginModals';
+import { ForgotCodeModal } from '../../components/auth/LoginModals';
 import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../../components/ui/Text';
@@ -162,7 +170,6 @@ export default function LoginV2Screen() {
   const [notice, setNotice]   = useState<NoticeState>(null);
   const [bioReady, setBioReady] = useState(false);
   const [forgotOpen, setForgotOpen]   = useState(false);   // fenêtre « Code oublié ? »
-  const [optionsOpen, setOptionsOpen] = useState(false);   // fenêtre « Autres options de connexion »
 
   // ── Méthode de connexion : téléphone + code (défaut) ou email + mot de passe (option) ──
   const [method, setMethod]       = useState<Method>('PHONE');
@@ -575,120 +582,139 @@ export default function LoginV2Screen() {
   };
 
   return (
-    <AuthShell
-      sea
-      title={t('login.title')}
+    <SimpleAuthShell
+      title={t('login.submit')}
+      onBack={() => (router.canGoBack() ? router.back() : router.replace('/'))}
       headerRight={pill}
       below={signupBelow}
-      trust={false}
     >
       {notice ? <AuthNotice {...notice} /> : null}
 
       {method === 'PHONE' ? (
         <>
-          <PhoneField
-            country={country}
-            onCountryChange={setCountry}
-            value={phone}
-            onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
-            error={phoneErr}
-            accent={P.accent}
-            dense
-          />
-          <PinInput
-            dense
-            label={t('login.pin.label')}
-            value={pin}
-            onChange={setPin}
-            onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else setPhoneErr(validatePhone(phone)); }}
-            accent={P.accent}
-            disabled={loading}
-            testID="login-pin"
-          />
+          <Reveal delay={160}>
+            <PhoneField
+              country={country}
+              onCountryChange={setCountry}
+              value={phone}
+              onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
+              error={phoneErr}
+              accent={P.accent}
+            />
+          </Reveal>
+          <Reveal delay={230}>
+            <PinInput
+              label={t('login.pin.label')}
+              value={pin}
+              onChange={setPin}
+              onComplete={(code) => { if (validatePhone(phone) === null) void handleLogin(false, code); else setPhoneErr(validatePhone(phone)); }}
+              accent={P.accent}
+              disabled={loading}
+              testID="login-pin"
+            />
+          </Reveal>
         </>
       ) : (
         <>
-          <AuthField
-            label={t('login.email.label')}
-            icon="mail-outline"
-            value={email}
-            onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
-            error={emailErr}
-            keyboardType="email-address"
-            autoComplete="email"
-            textContentType="emailAddress"
-            returnKeyType="next"
-            onSubmitEditing={() => passRef.current?.focus()}
-            accent={P.accent}
-            dense
-            testID="login-email"
-          />
-          <AuthField
-            label={t('login.password.label')}
-            icon="lock-closed-outline"
-            value={password}
-            onChangeText={setPassword}
-            secure
-            autoComplete="current-password"
-            textContentType="password"
-            returnKeyType="go"
-            onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
-            inputRef={passRef}
-            accent={P.accent}
-            maxLength={128}
-            dense
-            testID="login-password"
-          />
+          <Reveal delay={160}>
+            <AuthField
+              label={t('login.email.label')}
+              icon="mail-outline"
+              value={email}
+              onChangeText={(t) => { setEmail(t); if (emailErr) setEmailErr(null); }}
+              error={emailErr}
+              keyboardType="email-address"
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="next"
+              onSubmitEditing={() => passRef.current?.focus()}
+              accent={P.accent}
+              testID="login-email"
+            />
+          </Reveal>
+          <Reveal delay={230}>
+            <AuthField
+              label={t('login.password.label')}
+              icon="lock-closed-outline"
+              value={password}
+              onChangeText={setPassword}
+              secure
+              autoComplete="current-password"
+              textContentType="password"
+              returnKeyType="go"
+              onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
+              inputRef={passRef}
+              accent={P.accent}
+              maxLength={128}
+              testID="login-password"
+            />
+          </Reveal>
         </>
       )}
 
-      {/* Une seule ligne, sans soulignement : « Autres options de connexion » (le détail s'ouvre dans une fenêtre) à gauche, « Code oublié ? » à droite. */}
-      <View style={s.forgotRow}>
-        <TouchableOpacity onPress={() => setOptionsOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.otherOptions')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={[s.miniLink, { flexShrink: 1 }]} testID="login-other-options">
-          <Text style={s.miniTxt} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t('login.otherOptions')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => setForgotOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.forgot')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={[s.miniLink, { flexShrink: 0 }]} testID="login-forgot">
-          <Text style={s.miniTxt} numberOfLines={1}>{t('login.forgot')}</Text>
-        </TouchableOpacity>
-      </View>
+      {/* « Code oublié ? » : seul lien sous le code (les autres façons de se connecter sont des boutons, plus bas). */}
+      <Reveal delay={290}>
+        <View style={s.forgotRow}>
+          <TouchableOpacity onPress={() => setForgotOpen(true)} disabled={loading} accessibilityRole="button" accessibilityLabel={t('login.forgot')} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }} style={s.miniLink} testID="login-forgot">
+            <Text style={[s.forgotTxt, { color: P.accent }]} numberOfLines={1}>{t('login.forgot')}</Text>
+          </TouchableOpacity>
+        </View>
+      </Reveal>
 
-      <AuthButton
-        label={t('login.submit')}
-        icon="arrow-forward"
-        iconRight
-        dense
-        accent={P.action}
-        loading={loading}
-        disabled={!canSubmit}
-        onPress={() => handleLogin()}
-        testID="login-submit"
-      />
+      <Reveal delay={340}>
+        <AuthButton
+          label={t('login.title')}
+          accent={P.action}
+          loading={loading}
+          disabled={!canSubmit}
+          onPress={() => handleLogin()}
+          testID="login-submit"
+        />
+      </Reveal>
+
+      <Reveal delay={400}>
+        <View style={s.orRow}>
+          <View style={s.orLine} />
+          <Text style={s.orTxt} numberOfLines={1}>{t('login.orWith')}</Text>
+          <View style={s.orLine} />
+        </View>
+      </Reveal>
+
+      {/* Les autres façons de se connecter, visibles d'emblée (avant : cachées dans une fenêtre « Autres options »). */}
+      <Reveal delay={450}>
+        <View style={{ gap: 10 }}>
+          {bioReady ? (
+            <AuthButton variant="outline" icon="finger-print-outline" label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
+          ) : null}
+          <AuthButton
+            variant="outline"
+            icon={method === 'PHONE' ? 'mail-outline' : 'call-outline'}
+            label={method === 'PHONE' ? t('modal.options.useEmail') : t('modal.options.usePhone')}
+            onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
+            disabled={loading}
+            testID="login-switch-method"
+          />
+          <AuthButton variant="outline" icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
+        </View>
+      </Reveal>
 
       <ForgotCodeModal
         visible={forgotOpen}
         onClose={() => setForgotOpen(false)}
         onPick={(channel) => { setForgotOpen(false); router.push({ pathname: '/(auth)/forgot-password', params: { channel } } as any); }}
       />
-      <LoginOptionsModal
-        visible={optionsOpen}
-        onClose={() => setOptionsOpen(false)}
-        method={method}
-        biometricLabel={bioReady ? bioLabel : null}
-        onBiometric={() => { setOptionsOpen(false); void handleBiometric(); }}
-        onEmailCode={() => { setOptionsOpen(false); switchView('OTP_REQUEST'); }}
-        onSwitchMethod={() => { setOptionsOpen(false); switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE'); }}
-      />
-    </AuthShell>
+    </SimpleAuthShell>
   );
 }
 
 const s = themed(() => StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginTop: -2, marginBottom: 8 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 14 },
+  forgotTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '700' },
+  orRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22, marginBottom: 16 },
+  orLine:    { flex: 1, height: 1, backgroundColor: N.border },
+  orTxt:     { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.muted, letterSpacing: 0.4 },
   miniLink:  { paddingVertical: 6 },
   miniTxt:   { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.inkSub },
-  optionBtn: { flexGrow: 1, flexBasis: '45%', minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-               paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: N.border, backgroundColor: N.field },
-  optionTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '600', color: N.ink, textAlign: 'center', flexShrink: 1 },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },
 

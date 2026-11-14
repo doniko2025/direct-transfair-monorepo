@@ -1,5 +1,6 @@
 // src/components/AppShell.tsx
 // Cadre de l'application : panneau latéral flottant (bureau) ou tiroir (mobile).
+// ✅ v2 : sur mobile, le logo (agrandi, cliquable) remplace le bouton burger de la barre du haut.
 
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -71,20 +72,18 @@ function ShellFrame() {
   return (
     <div className="shell">
       <header className="topbar">
+        {/* Mobile : le logo remplace le bouton burger — un appui ouvre le menu. Masqué sur ordinateur (le panneau latéral est déjà visible). */}
         <button
           type="button"
-          className="icon-btn topbar__menu"
+          className="topbar__brand"
           onClick={() => setOpen(true)}
-          aria-label="Ouvrir le menu"
+          aria-label={`Ouvrir le menu — ${branding.name}`}
           aria-expanded={open}
           aria-controls="sidebar"
         >
-          <Icon name="menu" />
-        </button>
-        <div className="topbar__brand">
-          <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={30} />
+          <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={42} />
           <span className="topbar__name">{branding.name}</span>
-        </div>
+        </button>
         <p className="topbar__title">{sectionTitle}</p>
         <div className="topbar__actions">
           <NotificationBell />

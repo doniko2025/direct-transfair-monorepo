@@ -92,10 +92,36 @@
     display: inline-grid;
   }
 
+  /* Le logo est un bouton : plus grand (42 px, cible tactile ≥ 44 px), il ouvre le menu à la place du burger. */
   .topbar__brand {
     display: flex;
     flex: none;
     align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 14px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 0.12s ease;
+  }
+
+  .topbar__brand .brand-mark {
+    box-shadow: var(--sh-1);
+  }
+
+  .topbar__brand:active {
+    transform: scale(0.93);
+  }
+
+  .topbar__brand:focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--brand) 55%, white);
+    outline-offset: 2px;
   }
 
   /* Sur mobile le nom de la société est déjà dans le menu : la barre montre le logo puis la section en cours. */

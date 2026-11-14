@@ -1,4 +1,6 @@
 // apps/web-admin/src/pages/LoginPage.tsx
+// ✅ v2 (mobile) : le héro disparaît sur mobile — logo dans une tuile arrondie + nom de la société centrés au-dessus du formulaire, page épurée qui tient
+//    sur un seul écran sans défilement. Sur ordinateur, le héro (rosace) est conservé tel quel.
 // ✅ « Mot de passe oublié ? » : lien sous le champ mot de passe → ForgotPasswordPanel (code par email puis nouveau mot de passe), retour à la connexion avec un message de succès.
 // ✅ phase 7 : message « compte client » avec le nom de marque du branding (plus de « Direct Transf'air » en dur).
 // Connexion à l'espace de gestion. À gauche l'identité de la société (ou de la
@@ -132,6 +134,14 @@ export default function LoginPage() {
       </aside>
 
       <main className="login__panel">
+        {/* Mobile uniquement (masqué sur ordinateur par login.css) : remplace le héro. */}
+        <div className="login__mbrand">
+          <span className="login__logo">
+            <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={68} />
+          </span>
+          <strong>{branding.name}</strong>
+        </div>
+
         <Card className="login__card">
           {forgot ? (
             <ForgotPasswordPanel initialEmail={email} onBack={backToLogin} onDone={onResetDone} />

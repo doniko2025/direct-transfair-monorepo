@@ -42,6 +42,7 @@ export const auth = {
   },
   'login.bio.android':      { fr: 'Empreinte digitale', en: 'Fingerprint', pt: 'Impressão digital' },
   'login.bio.ios':          { fr: 'Face ID / Touch ID', en: 'Face ID / Touch ID', pt: 'Face ID / Touch ID' },
+  'login.orWith':           { fr: 'OU CONNECTEZ-VOUS AVEC', en: 'OR SIGN IN WITH', pt: 'OU INICIE SESSÃO COM' },
 
   // ── Connexion par code reçu par email ──
   'otp.enterCode':          { fr: 'Saisissez le code', en: 'Enter the code', pt: 'Introduza o código' },
