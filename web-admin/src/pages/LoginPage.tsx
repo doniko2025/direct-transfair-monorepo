@@ -1,0 +1,242 @@
+// apps/web-admin/src/pages/LoginPage.tsx
+// ✅ v2 (mobile) : le héro disparaît sur mobile — logo dans une tuile arrondie + nom de la société centrés au-dessus du formulaire, page épurée qui tient
+//    sur un seul écran sans défilement. Sur ordinateur, le héro (rosace) est conservé tel quel.
+// ✅ « Mot de passe oublié ? » : lien sous le champ mot de passe → ForgotPasswordPanel (code par email puis nouveau mot de passe), retour à la connexion avec un message de succès.
+// ✅ phase 7 : message « compte client » avec le nom de marque du branding (plus de « Direct Transf'air » en dur).
+// Connexion à l'espace de gestion. À gauche l'identité de la société (ou de la
+// plateforme) sur un motif de guilloché ; à droite le formulaire.
+
+import { useState, type FormEvent } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import type { VerificationNeeded, VerifyContactResult } from '@direct-transfair/shared';
+import { BrandMark } from '../components/BrandMark';
+import { Icon } from '../components/Icon';
+import { Rosette } from '../components/Rosette';
+import { Button, Card, Field, LoadingScreen, Notice } from '../components/ui';
+import { describeError, type DescribedError } from '../lib/errors';
+import { useAuth, type LoginOutcome } from '../providers/AuthProvider';
+import { useTenant } from '../providers/TenantProvider';
+import { ForgotPasswordPanel } from './login/ForgotPasswordPanel';
+import { VerifyContactPanel } from './login/VerifyContactPanel';
+
+// ✅ phase 7 : le nom de l'application vient du branding (plus de « Direct Transf'air » en dur).
+const clientAccountMessage = (brandName: string): string =>
+  `Ce compte est un compte client. Utilisez l'application mobile ${brandName} pour vous connecter.`;
+
+export default function LoginPage() {
+  const { state, login, dismissNotice } = useAuth();
+  const { branding, isPlatform } = useTenant();
+  const location = useLocation();
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<DescribedError | null>(null);
+  const [pending, setPending] = useState<VerificationNeeded | null>(null);
+  const [autoSend, setAutoSend] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
+
+  const from = (location.state as { from?: string } | null)?.from ?? '/';
+
+  if (state.status === 'loading') return <LoadingScreen label="Vérification de votre session…" />;
+  if (state.status === 'authenticated') return <Navigate to={from} replace />;
+
+  const notice = state.notice;
+  const pitch =
+    branding.welcomeMessage ||
+    branding.tagline ||
+    (isPlatform
+      ? 'Pilotez les sociétés de transfert, les taux et la supervision de la plateforme.'
+      : 'Gérez vos agences, vos agents et vos transferts depuis un seul espace.');
+
+  function handleOutcome(outcome: LoginOutcome): void {
+    if (outcome.kind === 'verification') {
+      setPending(outcome.pending);
+      return;
+    }
+    if (outcome.kind === 'client-account') setError({ message: clientAccountMessage(branding.name) });
+    // « success » : l'état d'authentification change, <Navigate> prend le relais.
+  }
+
+  async function submit(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    dismissNotice();
+    try {
+      handleOutcome(await login(email, password));
+    } catch (err) {
+      setError(describeError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onVerified(result: VerifyContactResult): Promise<void> {
+    if (!pending) return;
+
+    if (!result.allVerified) {
+      // Il reste un contact à vérifier (le téléphone après l'email) : on enchaîne.
+      setPending({
+        ...pending,
+        emailVerified: result.emailVerified,
+        phoneVerified: result.phoneVerified,
+        hasPhone: result.hasPhone,
+      });
+      setAutoSend(true);
+      return;
+    }
+
+    // Tout est vérifié : on rejoue la connexion avec les identifiants saisis.
+    try {
+      const outcome = await login(email, password);
+      if (outcome.kind !== 'verification') setPending(null);
+      handleOutcome(outcome);
+    } catch (err) {
+      setPending(null);
+      setError(describeError(err));
+    }
+  }
+
+  function cancelVerification(): void {
+    setPending(null);
+    setAutoSend(false);
+    setPassword('');
+    setError(null);
+  }
+
+  function backToLogin(): void {
+    setForgot(false);
+    setError(null);
+  }
+
+  function onResetDone(address: string): void {
+    setEmail(address);
+    setPassword('');
+    setShowPassword(false);
+    setForgot(false);
+    setError(null);
+    setResetDone(true);
+  }
+
+  return (
+    <div className="login">
+      <aside className="login__brand">
+        <Rosette className="login__rosette" />
+        <div className="login__brand-inner">
+          <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={56} />
+          <h1>{branding.name}</h1>
+          <p>{pitch}</p>
+        </div>
+      </aside>
+
+      <main className="login__panel">
+        {/* Mobile uniquement (masqué sur ordinateur par login.css) : remplace le héro. */}
+        <div className="login__mbrand">
+          <span className="login__logo">
+            <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={68} />
+          </span>
+          <strong>{branding.name}</strong>
+        </div>
+
+        <Card className="login__card">
+          {forgot ? (
+            <ForgotPasswordPanel initialEmail={email} onBack={backToLogin} onDone={onResetDone} />
+          ) : pending ? (
+            <VerifyContactPanel
+              key={pending.emailVerified ? 'PHONE' : 'EMAIL'}
+              pending={pending}
+              autoSend={autoSend}
+              onVerified={onVerified}
+              onCancel={cancelVerification}
+            />
+          ) : (
+            <form className="login__form" onSubmit={(e) => void submit(e)} noValidate>
+              <div className="login__heading">
+                <h2>Connexion</h2>
+                <p>Entrez les identifiants de votre compte de gestion.</p>
+              </div>
+
+              {resetDone ? (
+                <Notice tone="ok">Mot de passe modifié. Connectez-vous avec votre nouveau mot de passe.</Notice>
+              ) : null}
+              {notice ? <Notice tone="info">{notice}</Notice> : null}
+              {error ? (
+                <Notice
+                  tone="error"
+                  action={
+                    error.companyUrl ? (
+                      <a className="link" href={error.companyUrl}>
+                        Ouvrir mon espace
+                      </a>
+                    ) : null
+                  }
+                >
+                  {error.message}
+                </Notice>
+              ) : null}
+
+              <Field
+                label="Adresse email"
+                type="email"
+                name="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="username"
+                inputMode="email"
+                placeholder="prenom.nom@societe.com"
+                autoFocus
+                required
+              />
+
+              <Field
+                label="Mot de passe"
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                autoFocus={resetDone}
+                required
+                trailing={
+                  <button
+                    type="button"
+                    className="icon-btn icon-btn--quiet"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    aria-pressed={showPassword}
+                  >
+                    <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} />
+                  </button>
+                }
+              />
+
+              <button
+                type="button"
+                className="link-btn login__forgot"
+                onClick={() => {
+                  setError(null);
+                  setResetDone(false);
+                  setForgot(true);
+                }}
+              >
+                Mot de passe oublié ?
+              </button>
+
+              <Button type="submit" block busy={busy} disabled={!email.trim() || !password}>
+                Se connecter
+              </Button>
+
+              <p className="login__footnote">
+                Vous êtes client ? Votre espace se trouve dans l'application mobile.
+              </p>
+            </form>
+          )}
+        </Card>
+      </main>
+    </div>
+  );
+}
