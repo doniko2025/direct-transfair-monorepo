@@ -468,6 +468,7 @@ export const profile = {
   'loc.noneMsg':         { fr: 'Les points {brand} apparaîtront ici dès leur ouverture.', en: '{brand} locations will appear here as soon as they open.', pt: 'Os pontos {brand} aparecerão aqui assim que abrirem.' },
   'loc.all':             { fr: 'Toutes les agences', en: 'All agencies', pt: 'Todas as agências' },
   'loc.points':          { fr: 'Points de service', en: 'Service points', pt: 'Pontos de serviço' },
+  'loc.directions':      { fr: 'Itinéraire', en: 'Directions', pt: 'Itinerário' },
   'loc.open':            { fr: 'Ouvert', en: 'Open', pt: 'Aberto' },
   'loc.closed':          { fr: 'Fermé', en: 'Closed', pt: 'Fechado' },
 } as const satisfies Record<string, Trio>;

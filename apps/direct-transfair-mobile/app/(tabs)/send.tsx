@@ -47,7 +47,7 @@ import type { Beneficiary, ExchangeRate, Transaction } from "../../services/type
 import { countriesList, CountryData } from "../../data/countries";
 import { useTenant } from "../../providers/TenantProvider";
 import {
-  Avatar, Button, Card, Chip, IconButton, ListRow, NavBar, Notice, Pill, Screen, SearchPill, Sheet, UText, useUI,
+  Avatar, Button, Card, Chip, IconButton, ListRow, NavBar, Notice, Screen, SearchPill, Sheet, UText, useUI,
 } from "../../components/ui";
 import Confetti from "../../components/flow/Confetti";
 import Reveal from "../../components/flow/Reveal";
@@ -445,7 +445,8 @@ export default function SendMoneyScreen() {
   const userCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
 
   const [mode,         setMode]        = useState<"WALLET" | "CASH">("WALLET");
-  const [chosenMode,   setChosenMode]  = useState<"WALLET" | "CASH" | null>(null);   // v7.1 — « Envoyer à nouveau » (derniers destinataires + même montant en un tap) et confettis sur la page de succès.
+  const [chosenMode,   setChosenMode]  = useState<"WALLET" | "CASH" | null>(null);   // v7.2 — carte destinataire : boutons sur une ligne, sans pastille « Membre » ; « Envoyer à nouveau » limité à 4.
+// v7.1 — « Envoyer à nouveau » (derniers destinataires + même montant en un tap) et confettis sur la page de succès.
 // v7.0 : choix fait sur la 1re page
   const [cashQ,        setCashQ]       = useState("");                              // v7.0 : recherche dans la liste Cash Pickup
   // ✅ v5.3 — `walletInput` ne contient QUE le numéro national (sans indicatif ni 0 de tête) : l'indicatif est
@@ -1115,7 +1116,7 @@ export default function SendMoneyScreen() {
       if (mode === "WALLET" && !b.phone) continue;
       seen.add(bid);
       out.push({ b, amount: Number(tx.amount) || 0, currency: String(tx.currency ?? "") });
-      if (out.length >= 6) break;
+      if (out.length >= 4) break;   // v7.2 : les 4 derniers envois seulement
     }
     return out;
   }, [recentTx, beneficiaries, mode]);
@@ -1170,20 +1171,24 @@ export default function SendMoneyScreen() {
         </View>
         {!!recipientFlag && <UText v="title">{recipientFlag}</UText>}
       </View>
-      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
-        {mode === "WALLET" && isPlatformOnly && <Pill tone="info" icon="person-outline" label={t("send.memberOf", { brand: branding.name })} />}
-        <Button
-          label={t("send.change")}
-          kind="soft" small full={false}
-          onPress={mode === "WALLET" ? clearWalletRecipient : () => setSelectedCashId(null)}
-        />
-        {mode === "WALLET" && isPlatformOnly && (
+      {/* v7.2 : « Changer » et « Enregistrer » sur la même ligne (la pastille « Membre … » est supprimée). */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 14 }}>
+        <View style={{ flex: 1 }}>
           <Button
-            label={t("common.save")}
-            icon="person-add-outline"
-            kind="outline" small full={false}
-            onPress={() => goCreateBeneficiary(detectedBeneficiary?.fullName, detectedBeneficiary?.phone ?? toE164(targetCountryData.dialCode, walletInputDigits))}
+            label={t("send.change")}
+            kind="soft" small
+            onPress={mode === "WALLET" ? clearWalletRecipient : () => setSelectedCashId(null)}
           />
+        </View>
+        {mode === "WALLET" && isPlatformOnly && (
+          <View style={{ flex: 1 }}>
+            <Button
+              label={t("common.save")}
+              icon="person-add-outline"
+              kind="outline" small
+              onPress={() => goCreateBeneficiary(detectedBeneficiary?.fullName, detectedBeneficiary?.phone ?? toE164(targetCountryData.dialCode, walletInputDigits))}
+            />
+          </View>
         )}
       </View>
     </Card>

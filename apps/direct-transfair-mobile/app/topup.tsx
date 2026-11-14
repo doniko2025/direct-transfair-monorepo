@@ -226,7 +226,7 @@ export default function TopUpScreen() {
         <>
           {/* Montant */}
           <AmountInput label={t("topup.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 2, paddingBottom: 4 }}>
             {QUICK_AMOUNTS.map((v) => (
               <Chip key={v} label={`${v}`} active={numAmount === v} onPress={() => setAmount(String(v))} />
             ))}

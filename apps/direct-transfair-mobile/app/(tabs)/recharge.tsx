@@ -252,7 +252,7 @@ export default function RechargeScreen() {
       {/* Montant */}
       <View style={{ marginTop: 26 }}>
         <AmountInput label={t("rc.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 4, paddingBottom: 2 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 2, paddingBottom: 4 }}>
           {quickAmounts.map((v) => (
             <Chip key={v} label={new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 0 }).format(v)} active={numAmount === v} onPress={() => setAmount(String(v))} />
           ))}

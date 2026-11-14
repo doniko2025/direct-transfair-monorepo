@@ -107,9 +107,9 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
       <PageTitle title={isMerchant ? t("tab.payments") : t("tab.activity")} subtitle={subtitle} />
       <SpaceSwitch style={{ marginBottom: 12 }} />
-      <SearchPill value={q} onChangeText={setQ} placeholder={t("tx.search")} />
+      <SearchPill style={{ marginTop: 14 }} value={q} onChangeText={setQ} placeholder={t("tx.search")} />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 14 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 18, paddingBottom: 14 }}>
         {FILTERS.map((f) => (
           <Chip key={f} label={t(FILTER_KEYS[f])} active={filter === f} onPress={() => setFilter(f)} count={f === "ALL" ? undefined : counts[f]} />
         ))}

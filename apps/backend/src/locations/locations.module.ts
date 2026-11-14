@@ -5,12 +5,13 @@
 
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AuthModule }   from '../auth/auth.module'; // JwtAuthGuard (GET /locations/contacts)
 
 import { LocationsController } from './locations.controller';
 import { LocationsService }    from './locations.service';
 
 @Module({
-  imports:     [PrismaModule],
+  imports:     [PrismaModule, AuthModule],
   controllers: [LocationsController],
   providers:   [LocationsService],
 })

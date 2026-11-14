@@ -2,7 +2,9 @@
 // =========================================================
 // THÈME CLAIR / SOMBRE — v1.0
 //  • Trois choix : Clair, Sombre, Automatique (suit le réglage du téléphone, en direct).
-//  • Le choix est mémorisé sur l'appareil (AsyncStorage) ; premier lancement = Automatique.
+//  • Le choix est mémorisé sur l'appareil (AsyncStorage) ; premier lancement = CLAIR (v1.1 : le thème clair est le thème par défaut ;
+//    « Automatique » reste proposé dans Préférences).
+//    Un choix déjà enregistré (clair, sombre ou automatique) est respecté tel quel.
 //  • `useTheme()` → { mode, scheme, isDark, setMode, ready } ; tout composant qui l'appelle (directement, ou via useUI(),
 //    useWalletTheme(), useAuthPalette()) se redessine au changement de thème.
 //  • Le thème appliqué est écrit dans ui/themeMode.ts AVANT le rendu des enfants : les couleurs « vivantes » (N, buildColors)
@@ -35,7 +37,7 @@ const isMode = (v: unknown): v is ThemeMode => v === 'light' || v === 'dark' || 
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const system = useColorScheme();
-  const [mode, setModeState] = useState<ThemeMode>('auto');
+  const [mode, setModeState] = useState<ThemeMode>('light');
   const [ready, setReady] = useState(false);
 
   // Lecture du choix mémorisé (une fois).

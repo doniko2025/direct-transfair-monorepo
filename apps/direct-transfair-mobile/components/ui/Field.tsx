@@ -334,7 +334,8 @@ export function AmountInput({
   return (
     <View style={{ gap: 6 }}>
       {!!label && <Text style={[st.label, { color: error ? C.danger : C.muted, marginBottom: 0 }]}>{label}</Text>}
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10 }}>
+      {/* v2 : marge verticale autour du montant (étiquette en haut, pastilles de montants rapides en bas) pour qu'il respire. */}
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingTop: 10, paddingBottom: 14 }}>
         <TextInput
           value={value}
           onChangeText={(t) => onChangeText(t.replace(',', '.').replace(/[^0-9.]/g, ''))}
