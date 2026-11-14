@@ -445,7 +445,8 @@ export default function SendMoneyScreen() {
   const userCurrency = (user as any)?.primaryCurrency || (user as any)?.currency || "XOF";
 
   const [mode,         setMode]        = useState<"WALLET" | "CASH">("WALLET");
-  const [chosenMode,   setChosenMode]  = useState<"WALLET" | "CASH" | null>(null);   // v7.2 — carte destinataire : boutons sur une ligne, sans pastille « Membre » ; « Envoyer à nouveau » limité à 4.
+  const [chosenMode,   setChosenMode]  = useState<"WALLET" | "CASH" | null>(null);   // v7.3 — montants rapides : 3 pastilles qui remplacent le montant (GNF : 100 000 / 300 000 / 500 000 ; autres devises : les 3 plus envoyés) ; « Comme la dernière fois » supprimé.
+// v7.2 — carte destinataire : boutons sur une ligne, sans pastille « Membre » ; « Envoyer à nouveau » limité à 4.
 // v7.1 — « Envoyer à nouveau » (derniers destinataires + même montant en un tap) et confettis sur la page de succès.
 // v7.0 : choix fait sur la 1re page
   const [cashQ,        setCashQ]       = useState("");                              // v7.0 : recherche dans la liste Cash Pickup
@@ -589,7 +590,6 @@ export default function SendMoneyScreen() {
   // ✅ v3.0 — taux + contacts : en parallèle, chacun borné, sans jamais
   // masquer l'écran. Un échec partiel garde ce qui a répondu.
   const [recentTx, setRecentTx] = useState<Transaction[]>([]);
-  const [lastHint, setLastHint] = useState<{ amount: number; currency: string } | null>(null);
   const initSeq = useRef(0);
   const loadData = useCallback(async () => {
     const id = ++initSeq.current;
@@ -598,7 +598,7 @@ export default function SendMoneyScreen() {
     const [r, b, tx] = await Promise.allSettled([
       withTimeout(api.getExchangeRates(), ms),
       withTimeout(api.getBeneficiaries(), ms),
-      withTimeout(api.getTransactions({ limit: 40, space: "client" }), ms),
+      withTimeout(api.getTransactions({ limit: 100, space: "client" }), ms),
     ]);
     if (id !== initSeq.current) return;
     if (r.status === "fulfilled") setAllRates(r.value);
@@ -1124,7 +1124,6 @@ export default function SendMoneyScreen() {
   const pickRecent = (id: string) => {
     const r = recents.find((x) => String(x.b.id) === id);
     if (!r) return;
-    setLastHint(r.amount > 0 ? { amount: r.amount, currency: r.currency } : null);
     if (mode === "CASH") { setSelectedCashId(String(r.b.id)); advanceSoon(2); }
     else handleSelectSuggestion(r.b);
   };
@@ -1146,12 +1145,36 @@ export default function SendMoneyScreen() {
     ? beneficiaries.filter((b) => (b.fullName ?? "").toLowerCase().includes(cashNeedle) || onlyDigits(b.phone).includes(onlyDigits(cashNeedle) || "§"))
     : beneficiaries;
 
-  // Montants rapides (s'ajoutent au montant saisi) : paliers adaptés aux devises sans décimales (XOF, GNF…) ou à décimales (EUR…).
-  const quickSteps = dS === 0 ? [10000, 50000, 100000] : [20, 50, 100];
-  const addQuick = (v: number) => {
+  // ── v7.3 — 3 montants rapides (ils REMPLACENT le montant saisi) ──
+  //   • GNF : 100 000, 300 000, 500 000.
+  //   • Autres devises : les 3 montants que la personne a le plus envoyés dans cette devise (égalité → le plus récent d'abord) ;
+  //     s'il y en a moins de 3, on complète avec des paliers usuels.
+  const quickAmounts = useMemo(() => {
+    if (userCurrency === "GNF") return [100000, 300000, 500000];
+    const defaults = dS === 0 ? [25000, 50000, 100000] : [50, 100, 200];
+    const stats = new Map<number, { n: number; last: string }>();
+    for (const tx of recentTx) {
+      const st = String(tx.status ?? "").toUpperCase();
+      if (st.includes("FAIL") || st.includes("CANCEL") || st.includes("REJECT")) continue;
+      if (String(tx.currency ?? "") !== userCurrency) continue;
+      if (tx.senderId && user?.id && String(tx.senderId) !== String(user.id)) continue;   // uniquement ce que j'ai envoyé
+      const a = roundTo(Number(tx.amount) || 0, dS);
+      if (!(a > 0)) continue;
+      const cur = stats.get(a);
+      const when = String(tx.createdAt ?? "");
+      stats.set(a, { n: (cur?.n ?? 0) + 1, last: cur && cur.last > when ? cur.last : when });
+    }
+    const top = [...stats.entries()]
+      .sort((x, y) => y[1].n - x[1].n || y[1].last.localeCompare(x[1].last))
+      .map(([a]) => a)
+      .slice(0, 3);
+    for (const d of defaults) { if (top.length >= 3) break; if (!top.includes(d)) top.push(d); }
+    return top.sort((x, y) => x - y);
+  }, [recentTx, userCurrency, dS, user?.id]);
+  const pickQuick = (v: number) => {
     setSwapped(false);
     setAmountSource("SEND");
-    setRawAmount(toInputText(roundTo(sendAmount + v, dS), dS));
+    setRawAmount(toInputText(roundTo(v, dS), dS));
   };
 
   const canContinueAmount = sendAmount > 0 && !rateMissing && !insufficient;
@@ -1458,15 +1481,8 @@ export default function SendMoneyScreen() {
 
             <Reveal delay={180} style={{ marginTop: 12 }}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                {!!lastHint && lastHint.currency === userCurrency && lastHint.amount > 0 && (
-                  <Chip
-                    label={t("send.sameAmount", { amount: `${fmt(lastHint.amount, lastHint.currency)} ${lastHint.currency}` })}
-                    active={Math.abs(sendAmount - lastHint.amount) < 0.005}
-                    onPress={() => { setSwapped(false); setAmountSource("SEND"); setRawAmount(toInputText(roundTo(lastHint.amount, dS), dS)); }}
-                  />
-                )}
-                {quickSteps.map((v) => (
-                  <Chip key={v} label={`+${fmt(v, userCurrency)}`} onPress={() => addQuick(v)} />
+                {quickAmounts.map((v) => (
+                  <Chip key={v} label={`${fmt(v, userCurrency)} ${userCurrency}`} active={Math.abs(sendAmount - v) < 0.005} onPress={() => pickQuick(v)} />
                 ))}
               </View>
             </Reveal>
