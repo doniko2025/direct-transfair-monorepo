@@ -80,7 +80,7 @@ export default function AccountTypeScreen() {
 
   const back = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(auth)/login-v2');
+    else router.replace('/');
   };
 
   return (

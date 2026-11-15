@@ -11,7 +11,7 @@ export function useAdminRoute() {
     if (loading) return;
 
     if (!user) {
-      router.replace("/(auth)/login");
+      router.replace("/"); // page d'accueil (avant toute connexion)
       return;
     }
 

@@ -11,7 +11,7 @@ export function useProtectedRoute() {
     if (loading) return;
 
     if (!isAuthenticated) {
-      router.replace("/(auth)/login");
+      router.replace("/"); // page d'accueil (avant toute connexion)
     }
   }, [loading, isAuthenticated, router]);
 }

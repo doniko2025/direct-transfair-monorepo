@@ -1,7 +1,8 @@
 // apps/direct-transfair-mobile/providers/AuthProvider.tsx
 // =========================================================
 // ✅ phase 7 : le code de la société système est lu dans services/platformConfig.ts (plus de « DONIKO » en dur).
-// AUTH PROVIDER v7.3 — Direct Transf'air
+// AUTH PROVIDER v7.4 — Direct Transf'air
+// ✅ v7.4 : la déconnexion ramène sur la page d'accueil (/) et non plus sur l'écran de connexion.
 // ✅ v7.3 : mot de passe temporaire. Si le profil porte `mustChangePassword`, la navigation est bloquée sur
 //   /(auth)/change-password-required jusqu'au changement (le serveur refuse de toute façon le reste de l'API).
 // ✅ v7.2 : 🔒 VERROU AU DÉMARRAGE. Avant, une session enregistrée sur le téléphone était restaurée sans aucune
@@ -255,7 +256,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await removeStorage(USER_KEY);
       // ✅ Le refresh token est intentionnellement conservé pour
       // permettre la reconnexion biométrique après logout.
-      router.replace("/(auth)/login-v2");
+      // ✅ v7.4 : après une déconnexion (volontaire, inactivité ou session expirée) on revient sur la PAGE D'ACCUEIL (simulateur de taux +
+      //    « Se connecter » / « S'inscrire »), pas directement sur la connexion.
+      router.replace("/");
     } catch (e) {
       console.error("Erreur logout", e);
     }
