@@ -92,13 +92,13 @@ describe('ContractsService', () => {
   const clientRow = {
     id: 7, name: 'Flash Transfer', legalCompanyName: null, address: '1 rue X', ownerAddress: null, city: 'Dakar', country: 'SN',
     email: 'patron@flash.sn', contactEmail: null, ownerFirstName: 'Aminata', ownerLastName: 'Diallo', representativeName: null,
-    subscriptionType: 'RENTAL', deletedAt: null,
+    subscriptionType: 'RENTAL', deletedAt: null, rccmNumber: 'SN.DKR.2020.B.1234',
   };
 
-  function make(overrides: { pending?: any; stored?: any } = {}) {
+  function make(overrides: { pending?: any; stored?: any; client?: any } = {}) {
     const store: { row: any } = { row: overrides.stored ?? null };
     const prisma: any = {
-      client: { findFirst: jest.fn().mockResolvedValue(clientRow) },
+      client: { findFirst: jest.fn().mockResolvedValue({ ...clientRow, ...(overrides.client ?? {}) }) },
       contract: {
         count: jest.fn().mockResolvedValue(0),
         findFirst: jest.fn().mockResolvedValue(overrides.pending ?? null),
@@ -141,6 +141,19 @@ describe('ContractsService', () => {
     expect(data.recipientEmail).toBe('patron@flash.sn');
     expect(mail.sendSignatureRequest).toHaveBeenCalledTimes(1);
     expect(mail.sendSignatureRequest.mock.calls[0][0].url).toBe(issued.signUrl);
+  });
+
+  it("le numéro RCCM de la société figure dans l'identité du Client du contrat", async () => {
+    const { service, prisma } = make();
+    await service.issue({ clientId: 7, terms, notify: false });
+    const content = prisma.contract.create.mock.calls[0][0].data.content;
+    expect(content.customer.lines).toContain('RCCM : n° SN.DKR.2020.B.1234');
+  });
+
+  it("sans numéro RCCM : contrat refusé (BadRequest), rien n'est créé", async () => {
+    const { service, prisma } = make({ client: { rccmNumber: null } });
+    await expect(service.issue({ clientId: 7, terms, notify: false })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.contract.create).not.toHaveBeenCalled();
   });
 
   it("notify=false : aucun e-mail (le lien est joint au courriel de bienvenue par ClientsService)", async () => {

@@ -9,6 +9,10 @@ export const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 export const SUBDOMAIN = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/;
 export const DOMAIN = /^(www\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z]{2,})+$/;
 export const COMPANY_CODE = /^[A-Z0-9]{3,12}$/;
+/** Numéro RCCM : mêmes bornes que le serveur (client-documents.rules.ts). */
+export const RCCM = /^[A-Za-z0-9][A-Za-z0-9 .\-/]{3,59}$/;
+export const RCCM_MESSAGE = 'Numéro RCCM invalide : 4 à 60 caractères (lettres, chiffres, espaces, points, tirets ou barres obliques).';
+
 export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Propose un code (A-Z, 0-9, 12 max) à partir du nom de la société. */

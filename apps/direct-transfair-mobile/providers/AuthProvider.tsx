@@ -360,8 +360,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isLegalScreen  = segments[1] === "terms" || segments[1] === "privacy-policy" || segments[1] === "assistance";
     const isVerifyScreen = segments[1] === "verify-contact";
 
-    if (!user && !inAuthGroup) {
-      router.replace("/(auth)/login-v2");
+    // ✅ v7.4 : la page d'accueil (racine, aucun segment) est la PREMIÈRE page de l'app pour un visiteur non connecté.
+    //    Avant, ce garde l'envoyait immédiatement vers la connexion : l'accueil n'apparaissait jamais. On n'ouvre la connexion /
+    //    l'inscription que sur un appui explicite (boutons « Se connecter » / « S'inscrire »).
+    const onWelcome = segments.length === 0;
+    if (!user && !inAuthGroup && !onWelcome) {
+      router.replace("/");
       return;
     }
 
@@ -393,7 +397,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // ✅ v7.2 : l'écran d'accueil (racine, aucun segment) n'a pas de sens pour un utilisateur connecté.
-    const onWelcome = segments.length === 0;
     if (user && (onWelcome || (inAuthGroup && !isLegalScreen && !isVerifyScreen))) {
       router.replace("/(tabs)/home");
     }

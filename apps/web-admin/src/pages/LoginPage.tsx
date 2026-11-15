@@ -1,4 +1,7 @@
 // apps/web-admin/src/pages/LoginPage.tsx
+// ✅ v3 : REFONTE moderne et responsive. Ordinateur : panneau marque en dégradé (couleurs du super admin) avec logo, pitch et trois atouts, carte de
+//    connexion flottante à droite. Mobile / tablette : bandeau en dégradé avec le logo, puis une FEUILLE arrondie qui porte le formulaire (tient sur un écran,
+//    clavier compris). Logo à ratio automatique (jamais déformé ni dans une tuile d'une autre forme), apparition en cascade, « Réduire les animations » respecté.
 // ✅ v2 (mobile) : le héro disparaît sur mobile — logo dans une tuile arrondie + nom de la société centrés au-dessus du formulaire, page épurée qui tient
 //    sur un seul écran sans défilement. Sur ordinateur, le héro (rosace) est conservé tel quel.
 // ✅ « Mot de passe oublié ? » : lien sous le champ mot de passe → ForgotPasswordPanel (code par email puis nouveau mot de passe), retour à la connexion avec un message de succès.
@@ -7,6 +10,7 @@
 // plateforme) sur un motif de guilloché ; à droite le formulaire.
 
 import { useState, type FormEvent } from 'react';
+import { PLATFORM_LOGO_URL } from '../config';
 import { Navigate, useLocation } from 'react-router-dom';
 import type { VerificationNeeded, VerifyContactResult } from '@direct-transfair/shared';
 import { BrandMark } from '../components/BrandMark';
@@ -22,6 +26,29 @@ import { VerifyContactPanel } from './login/VerifyContactPanel';
 // ✅ phase 7 : le nom de l'application vient du branding (plus de « Direct Transf'air » en dur).
 const clientAccountMessage = (brandName: string): string =>
   `Ce compte est un compte client. Utilisez l'application mobile ${brandName} pour vous connecter.`;
+
+/** Logo à ratio automatique : hauteur fixe, largeur déduite (plafonnée), jamais déformé ; repli sur le monogramme si l'image ne charge pas. */
+function LoginLogo({ name, logoUrl, size }: { name: string; logoUrl: string | null; size: number }) {
+  const [failed, setFailed] = useState(false);
+  if (!logoUrl || failed) return <BrandMark name={name} logoUrl={null} size={size} />;
+  const platform = logoUrl === PLATFORM_LOGO_URL;   // « t’ » : déjà une tuile arrondie
+  return (
+    <img
+      className={platform ? 'login-logo login-logo--tile' : 'login-logo'}
+      src={logoUrl}
+      alt=""
+      style={{ height: size, maxWidth: size * 2.4 }}
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+const PERKS: readonly { icon: 'shield' | 'swap' | 'building'; text: string }[] = [
+  { icon: 'shield', text: 'Connexion sécurisée' },
+  { icon: 'building', text: 'Un seul espace de gestion' },
+  { icon: 'swap', text: 'Suivi en temps réel' },
+];
 
 export default function LoginPage() {
   const { state, login, dismissNotice } = useAuth();
@@ -48,7 +75,7 @@ export default function LoginPage() {
     branding.welcomeMessage ||
     branding.tagline ||
     (isPlatform
-      ? 'Pilotez les sociétés de transfert, les taux et la supervision de la plateforme.'
+      ? 'Pilotez les sociétés de transfert, leurs contrats et la supervision de la plateforme.'
       : 'Gérez vos agences, vos agents et vos transferts depuis un seul espace.');
 
   function handleOutcome(outcome: LoginOutcome): void {
@@ -124,23 +151,36 @@ export default function LoginPage() {
 
   return (
     <div className="login">
+      {/* Ordinateur : panneau marque (masqué sur mobile par login.css). */}
       <aside className="login__brand">
+        <div className="login__glow login__glow--a" aria-hidden="true" />
+        <div className="login__glow login__glow--b" aria-hidden="true" />
         <Rosette className="login__rosette" />
         <div className="login__brand-inner">
-          <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={56} />
+          <span className="login__badge">
+            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={64} />
+          </span>
           <h1>{branding.name}</h1>
           <p>{pitch}</p>
+          <ul className="login__perks">
+            {PERKS.map((perk) => (
+              <li key={perk.text}>
+                <Icon name={perk.icon} size={16} />
+                <span>{perk.text}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       </aside>
 
       <main className="login__panel">
-        {/* Mobile uniquement (masqué sur ordinateur par login.css) : remplace le héro. */}
-        <div className="login__mbrand">
+        {/* Mobile / tablette : bandeau en dégradé avec le logo (masqué sur ordinateur). */}
+        <header className="login__mbrand">
           <span className="login__logo">
-            <BrandMark name={branding.name} logoUrl={branding.logoUrl} size={68} />
+            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={56} />
           </span>
           <strong>{branding.name}</strong>
-        </div>
+        </header>
 
         <Card className="login__card">
           {forgot ? (
@@ -231,7 +271,8 @@ export default function LoginPage() {
               </Button>
 
               <p className="login__footnote">
-                Vous êtes client ? Votre espace se trouve dans l'application mobile.
+                <Icon name="shield" size={14} />
+                <span>Vous êtes client ? Votre espace se trouve dans l'application mobile.</span>
               </p>
             </form>
           )}

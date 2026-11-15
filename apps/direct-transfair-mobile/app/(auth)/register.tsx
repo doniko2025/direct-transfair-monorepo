@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/(auth)/register.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// REGISTER v7.0 — Direct Transf'air
+// REGISTER v7.2 — Direct Transf'air
+// ✅ v7.2 : étape « identité » SCINDÉE EN DEUX PAGES — (1) prénom + nom, (2) date de naissance + nationalité (une idée par page, moins de champs sous le
+//    clavier) ; transitions animées à chaque étape (glissement droite/gauche selon le sens + champs en cascade, <StepTransition />) ; barre de progression
+//    animée (<StepProgress />) ; logo unique et repli du logo quand le clavier s'ouvre (AuthShell v3.0). Parcours : 5 étapes (client) / 6 (commerçant).
 // ✅ v7.1 : THÈME CLAIR — design clair via le kit components/auth v2.0 ; aucune logique modifiée.
 // ✅ v7.0 : REFONTE COMPLÈTE de l'inscription — Thierno Doniko (Grand Chef).
 //   PROBLÈMES CONSTATÉS :
@@ -93,6 +96,8 @@ import { api }       from '../../services/api';
 import { getMinimumAge } from '../../services/serverConfig';
 import { warmUpServer } from '../../services/serverWarmup';
 
+import StepTransition from '../../components/flow/StepTransition';
+import { StepProgress } from '../../components/send/FlowParts';
 import AuthShell, { useAuthPalette } from '../../components/auth/AuthShell';
 import AuthField   from '../../components/auth/AuthField';
 import AuthButton  from '../../components/auth/AuthButton';
@@ -120,18 +125,19 @@ import type { MessageKey } from '../../i18n/catalog';
 import { themed } from '../../components/wallet/brand';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-type StepKey = 'identity' | 'residence' | 'contact' | 'shop' | 'pin';
+type StepKey = 'name' | 'birth' | 'residence' | 'contact' | 'shop' | 'pin';
 
 const STEP_META: Record<StepKey, { title: MessageKey; subtitle: MessageKey }> = {
-  identity:  { title: 'reg.step.identity.title',  subtitle: 'reg.step.identity.sub' },
+  name:      { title: 'reg.step.name.title',      subtitle: 'reg.step.name.sub' },
+  birth:     { title: 'reg.step.birth.title',     subtitle: 'reg.step.birth.sub' },
   residence: { title: 'reg.step.residence.title', subtitle: 'reg.step.residence.sub' },
   contact:   { title: 'reg.step.contact.title',   subtitle: 'reg.step.contact.sub' },
   shop:      { title: 'reg.step.shop.title',      subtitle: 'reg.step.shop.sub' },
   pin:       { title: 'reg.step.pin.title',       subtitle: 'reg.step.pin.sub' },
 };
 
-const CLIENT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'pin'];
-const MERCHANT_STEPS: StepKey[] = ['identity', 'residence', 'contact', 'shop', 'pin'];
+const CLIENT_STEPS: StepKey[] = ['name', 'birth', 'residence', 'contact', 'pin'];
+const MERCHANT_STEPS: StepKey[] = ['name', 'birth', 'residence', 'contact', 'shop', 'pin'];
 
 type Errors = Partial<Record<
   'firstName' | 'lastName' | 'dob' | 'nationality' | 'country' | 'city' | 'email' | 'phone' | 'password' | 'confirm' | 'terms'
@@ -214,9 +220,10 @@ export default function RegisterScreen() {
   // ── Validation par étape ──────────────────────────────
   const validate = (key: StepKey): Errors => {
     const e: Errors = {};
-    if (key === 'identity') {
+    if (key === 'name') {
       if (!firstName.trim()) e.firstName = t('reg.err.firstName');
       if (!lastName.trim()) e.lastName = t('reg.err.lastName');
+    } else if (key === 'birth') {
       const d = validateBirthDate(dob, minAge);
       if (d) e.dob = d;
       if (!nationality) e.nationality = t('reg.err.nationality');
@@ -261,7 +268,7 @@ export default function RegisterScreen() {
     return e;
   };
 
-  const stepKey: StepKey = steps[step] ?? 'identity';
+  const stepKey: StepKey = steps[step] ?? 'name';
   const errors: Errors = showErrors ? { ...validate(stepKey), ...serverErrors } : serverErrors;
   const clearServer = (k: keyof Errors) => setServerErrors((s) => (s[k] ? { ...s, [k]: undefined } : s));
 
@@ -450,9 +457,7 @@ export default function RegisterScreen() {
     <AuthShell compact showLang title={t(meta.title)} subtitle={t(meta.subtitle)} onBack={goBack}>
       {/* ── Progression ── */}
       <View style={s.progress} accessibilityLabel={t('reg.progress', { n: step + 1, total: steps.length })}>
-        {steps.map((_, i) => (
-          <View key={i} style={[s.progSeg, { backgroundColor: i <= step ? P.action : N.border }]} />
-        ))}
+        <StepProgress count={steps.length} index={step} color={P.action} track={N.border} />
       </View>
       <Text style={s.progTxt}>{t('reg.progress', { n: step + 1, total: steps.length })}</Text>
 
@@ -467,18 +472,24 @@ export default function RegisterScreen() {
       ) : null}
       {waking ? <AuthNotice kind="info" title={t('reg.waking')} message={t('reg.wakingMsg')} /> : null}
 
-      {stepKey === 'identity' && (
+      <StepTransition stepKey={stepKey} index={step}>
+      {stepKey === 'name' && (
         <>
           <AuthField
             label={t('reg.firstName')} icon="person-outline" value={firstName} onChangeText={setFirstName}
             error={errors.firstName} autoCapitalize="words" autoComplete="given-name" textContentType="givenName"
-            returnKeyType="next" onSubmitEditing={() => lastNameRef.current?.focus()} accent={P.accent} autoFocus
+            returnKeyType="next" onSubmitEditing={() => lastNameRef.current?.focus()} accent={P.accent}
           />
           <AuthField
             label={t('reg.lastName')} icon="person-circle-outline" value={lastName} onChangeText={setLastName}
             error={errors.lastName} autoCapitalize="characters" autoComplete="family-name" textContentType="familyName"
-            returnKeyType="next" inputRef={lastNameRef} accent={P.accent}
+            returnKeyType="next" inputRef={lastNameRef} accent={P.accent} onSubmitEditing={goNext}
           />
+        </>
+      )}
+
+      {stepKey === 'birth' && (
+        <>
           <DateOfBirthField value={dob} onChange={setDob} error={errors.dob} accent={P.accent} />
           <SelectField
             label={t('reg.nationality')} icon="flag-outline" placeholder={t('reg.nationalityPh')}
@@ -682,6 +693,8 @@ export default function RegisterScreen() {
         </>
       )}
 
+      </StepTransition>
+
       <View style={{ height: 8 }} />
       <AuthButton
         label={isLast ? t('reg.create') : t('common.continue')}
@@ -720,7 +733,7 @@ export default function RegisterScreen() {
 }
 
 const s = themed(() => StyleSheet.create({
-  progress: { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  progress: { marginBottom: 8 },
   progSeg:  { flex: 1, height: 5, borderRadius: 99 },
   progTxt:  { fontFamily: FONT.medium, fontSize: 12, fontWeight: '700', color: N.muted, marginBottom: 18 },
 

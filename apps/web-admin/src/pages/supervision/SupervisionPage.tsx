@@ -84,7 +84,7 @@ export default function SupervisionPage() {
             Données du <time dateTime={data.generatedAt}>{fullDate(data.generatedAt)}</time>
           </p>
 
-          <AttentionSection items={data.attention} onGoToAlerts={scrollToAlerts} />
+          <AttentionSection items={data.attention} onGoToAlerts={scrollToAlerts} hideTransactions={data.scope === 'PLATFORM'} />
           <HealthSection health={data.health} />
           <ActivitySection overview={data} />
           <AlertsSection refreshKey={refreshKey} onResolved={overview.reload} />

@@ -1145,6 +1145,8 @@ export class TransactionsService {
     counter?: { relatedIds: string[]; notes: string[]; firstSeenAt: Date; firstName?: string; lastName?: string },
   ): Promise<void> {
     const since = new Date(Date.now() - 24 * 3_600_000);
+    // ✅ taux de la société de l'opération (chaque société fixe ses propres taux)
+    const txClientId = (await this.prisma.transaction.findUnique({ where: { id: transactionId }, select: { clientId: true } }))?.clientId ?? null;
     const [recent, subject] = await Promise.all([
       this.prisma.transaction.findMany({
         where: kind === 'DEPOSIT'
@@ -1164,7 +1166,7 @@ export class TransactionsService {
     // pas, il signale l'opération pour revue manuelle (voir aml-scoring.ts).
     const toXof = async (value: number, cur: string): Promise<number | null> => {
       if (cur.toUpperCase() === 'XOF') return value;
-      try { return await this.ratesService.convert(value, cur, 'XOF'); } catch { return null; }
+      try { return await this.ratesService.convert(value, cur, 'XOF', txClientId); } catch { return null; }
     };
     const amountXof = await toXof(amount, currency);
     const byCurrency = new Map<string, number>();
@@ -1469,7 +1471,7 @@ export class TransactionsService {
     // ✅ v4.29 (audit point 9) : le montant reçu est arrondi à la devise de réception (XOF / GNF : unités entières,
     // autres : 2 décimales) AVANT d'être stocké et crédité. Avant : 65 595,7 XOF stockés, alors que le cash remis est
     // en unités entières et que la caisse de l'agence était créditée de la fraction. Le taux enregistré reste le taux brut.
-    const rawConverted    = await this.ratesService.convert(Number(amount), currency, targetCurrency);
+    const rawConverted    = await this.ratesService.convert(Number(amount), currency, targetCurrency, user.clientId ?? null);
     const convertedAmount = roundToCurrency(rawConverted, targetCurrency);
     if (!(convertedAmount > 0)) {
       throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
@@ -2035,7 +2037,8 @@ export class TransactionsService {
     // TOUTES les vues liste/détail, quel que soit le rôle.
     const notDeleted: Prisma.TransactionWhereInput = { deletedAt: null };
 
-    if (user.role === 'SUPER_ADMIN') return { where: notDeleted, user };
+    // Super admin : uniquement les virements des sociétés (SERVICE_PAYMENT) ; les opérations des sociétés ne le concernent pas.
+    if (user.role === 'SUPER_ADMIN') return { where: { ...notDeleted, type: TransactionType.SERVICE_PAYMENT }, user };
 
     if (user.role === 'COMPANY_ADMIN') {
       return { where: { ...notDeleted, clientId: user.clientId ?? -1 }, user };
@@ -2157,7 +2160,7 @@ export class TransactionsService {
 
     if (admin?.role === 'SUPER_ADMIN') {
       transactions = await this.prisma.transaction.findMany({
-        where:   { deletedAt: null }, // ✅ v4.20
+        where:   { deletedAt: null, type: TransactionType.SERVICE_PAYMENT }, // ✅ v4.20 ; super admin : uniquement les virements des sociétés vers lui
         orderBy: { createdAt: 'desc' },
         include: { sender: { select: SAFE_USER_SELECT }, beneficiary: true, client: true, withdrawal: true, agency: { select: { id: true, name: true, city: true } } }, // ✅ v4.22 ; v4.31 : plus de ligne User complète (hash, OTP, MFA)
       });

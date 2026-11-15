@@ -1,12 +1,14 @@
 // apps/backend/src/rates-admin/rates-admin.service.ts
 // =========================================================
-// RATES ADMIN v1.0 — administration des taux de change (globaux à la plateforme)
+// RATES ADMIN v2.0 — administration des taux de change PAR SOCIÉTÉ
+// ✅ v2.0 : chaque société fixe ses propres taux, indépendamment des autres (clientId). L'administrateur de société les modifie ;
+//    le super admin les consulte en LECTURE SEULE (sélecteur de société) et n'en fixe aucun.
 //
 //   list     : une ligne par couple de devises, avec le taux appliqué (null tant qu'aucun taux n'est
 //              enregistré : la conversion est alors REFUSÉE, il n'existe plus de taux de secours en dur)
 //              et les incohérences éventuelles entre les deux sens.
 //   history  : historique d'une paire.
-//   set      : enregistre un taux (super admin) — en une transaction : taux, sens inverse
+//   set      : enregistre un taux (administrateur de la société) — en une transaction : taux, sens inverse
 //              s'il existe déjà en base, historique et journal d'audit.
 //
 // Remplace pour l'écriture les deux anciennes routes (POST /rates, PATCH /exchange-rates/:pair),
@@ -38,8 +40,8 @@ export class RatesAdminService {
   // Liste
   // ───────────────────────────────────────────────────────
 
-  async list() {
-    const rows = await this.prisma.exchangeRate.findMany();
+  async list(clientId: number) {
+    const rows = await this.prisma.exchangeRate.findMany({ where: { clientId } });
 
     // Anciennes lignes au format « EUR/XOF » : on les range sous la forme normalisée,
     // la forme avec underscore l'emportant si les deux existent.
@@ -104,10 +106,10 @@ export class RatesAdminService {
   // Historique
   // ───────────────────────────────────────────────────────
 
-  async history(rawPair: string, limit: number) {
+  async history(clientId: number, rawPair: string, limit: number) {
     const { base, quote, pair } = parseCanonicalPair(rawPair);
     const rows = await this.prisma.exchangeRateHistory.findMany({
-      where: { pair: { in: [pair, `${base}/${quote}`] } },
+      where: { pair: { in: [pair, `${base}/${quote}`] }, exchangeRate: { clientId } },
       orderBy: [{ recordedAt: 'desc' }, { id: 'desc' }],
       take: limit,
       select: { id: true, rate: true, source: true, recordedAt: true },
@@ -124,13 +126,13 @@ export class RatesAdminService {
   // Enregistrement
   // ───────────────────────────────────────────────────────
 
-  async set(user: AuthUserPayload, rawPair: string, dto: SetRateDto) {
+  async set(user: AuthUserPayload, clientId: number, rawPair: string, dto: SetRateDto) {
     const { base, quote, pair } = parseCanonicalPair(rawPair);
     const inversePair = `${quote}_${base}`;
     const rate = dto.rate;
 
     const rows = await this.prisma.exchangeRate.findMany({
-      where: { pair: { in: [pair, `${base}/${quote}`, inversePair, `${quote}/${base}`] } },
+      where: { clientId, pair: { in: [pair, `${base}/${quote}`, inversePair, `${quote}/${base}`] } },
     });
     const direct = rows.find((r) => r.pair === pair) ?? rows.find((r) => r.pair === `${base}/${quote}`);
     const inverse = rows.find((r) => r.pair === inversePair) ?? rows.find((r) => r.pair === `${quote}/${base}`);
@@ -170,7 +172,7 @@ export class RatesAdminService {
             },
           })
         : await tx.exchangeRate.create({
-            data: { pair, rate, inverseRate, previousRate: current, changePercent: change, updatedBy: user.id, source: 'manual' },
+            data: { clientId, pair, rate, inverseRate, previousRate: current, changePercent: change, updatedBy: user.id, source: 'manual' },
           });
       await tx.exchangeRateHistory.create({ data: { rateId: saved.id, pair, rate, source: 'manual' } });
 
@@ -196,7 +198,7 @@ export class RatesAdminService {
       await tx.auditLog.create({
         data: {
           userId: user.id,
-          clientId: user.clientId ?? null,
+          clientId,
           action: 'EXCHANGE_RATE_UPDATE',
           entity: 'ExchangeRate',
           entityId: saved.id,
@@ -206,7 +208,7 @@ export class RatesAdminService {
       });
     });
 
-    const { pairs } = await this.list();
+    const { pairs } = await this.list(clientId);
     return pairs.find((p) => p.pair === pair);
   }
 }

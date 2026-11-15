@@ -1,15 +1,17 @@
 // apps/web-admin/src/pages/rates/RatesPage.tsx
+// v2.0 : TAUX PAR SOCIÉTÉ. Chaque société fixe ses propres taux, indépendamment des autres.
+//   - Admin de société : fixe SES taux (le sens inverse se déduit) et consulte leur historique.
+//   - Super admin : LECTURE SEULE — il choisit une société et consulte ses taux, sans jamais en modifier.
 // v1.1 : filtre par devise en liste déroulante sur mobile (FilterTabs), rangé sur la même ligne que « Actualiser » ; cartes plus compactes
 //        (date et actions sur une seule ligne).
 // Taux de change : une carte par couple de devises.
-//   - Super admin : fixe les taux (le sens inverse se déduit) et consulte l'historique.
-//   - Admin de société : lecture seule, pour connaître les taux appliqués à ses clients.
 
 import { useCallback, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { RATE_CURRENCIES, type RateCurrency, type RatePair } from '@direct-transfair/shared';
 import { FilterTabs } from '../../components/FilterTabs';
 import { Icon } from '../../components/Icon';
+import { SelectField } from '../../components/form';
 import { RefreshButton } from '../../components/RefreshButton';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
@@ -33,7 +35,7 @@ import RateEditDialog from './RateEditDialog';
 
 type Filter = 'ALL' | RateCurrency;
 
-function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean; onEdit: (p: RatePair) => void }) {
+function RateCard({ pair, canEdit, onEdit, historyTo }: { pair: RatePair; canEdit: boolean; onEdit: (p: RatePair) => void; historyTo: string }) {
   const status = statusOf(pair);
   const view = STATUS_VIEW[status];
   const current = appliedRate(pair);
@@ -92,7 +94,7 @@ function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean;
             {pair.rate === null || pair.derived ? 'Fixer le taux' : 'Modifier'}
           </Button>
         ) : null}
-        <Link className="link" to={`/rates/${encodeURIComponent(pair.pair)}/history`}>
+        <Link className="link" to={historyTo}>
           Historique
         </Link>
       </div>
@@ -103,9 +105,18 @@ function RateCard({ pair, canEdit, onEdit }: { pair: RatePair; canEdit: boolean;
 
 export default function RatesPage() {
   const me = useCurrentUser();
-  const canEdit = me.role === 'SUPER_ADMIN';
+  const isSuper = me.role === 'SUPER_ADMIN';
+  const canEdit = !isSuper; // le super admin consulte seulement : chaque société fixe ses taux
 
-  const rates = useResource(() => api.rates.list(), []);
+  // Super admin : société consultée (portée par l'adresse pour garder le choix en revenant de l'historique)
+  const [search, setSearch] = useSearchParams();
+  const companies = useResource(async () => (isSuper ? (await api.fees.companies()).companies : []), [isSuper]);
+  const pickedId = Number(search.get('clientId')) || undefined;
+  const clientId = isSuper ? (pickedId ?? companies.data?.[0]?.id ?? undefined) : undefined;
+  const skip = isSuper && !clientId;
+  const companyName = (companies.data ?? []).find((c) => c.id === clientId)?.name;
+
+  const rates = useResource(async () => (skip ? { pairs: [] as RatePair[] } : api.rates.list(clientId)), [clientId, skip]);
   const [filter, setFilter] = useState<Filter>('ALL');
   const [editing, setEditing] = useState<RatePair | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -131,8 +142,8 @@ export default function RatesPage() {
         title="Taux de change"
         description={
           canEdit
-            ? 'Les taux appliqués à tous les clients de la plateforme. Vous fixez un sens, l’autre se calcule.'
-            : 'Les taux appliqués à vos clients. Ils sont fixés par la plateforme.'
+            ? 'Les taux appliqués aux clients de votre société, indépendamment des autres sociétés. Vous fixez un sens, l’autre se calcule.'
+            : `Taux fixés par ${companyName ?? 'la société choisie'} pour ses clients (lecture seule).`
         }
         actions={
           <div className="hide-mobile">
@@ -142,6 +153,20 @@ export default function RatesPage() {
           </div>
         }
       />
+
+      {isSuper ? (
+        <div className="toolbar toolbar--inline">
+          <SelectField
+            id="rates-company"
+            label="Société"
+            className="toolbar__select"
+            value={clientId ? String(clientId) : ''}
+            onChange={(e) => setSearch(e.target.value ? { clientId: e.target.value } : {}, { replace: true })}
+            options={(companies.data ?? []).map((c) => ({ value: String(c.id), label: c.name }))}
+          />
+          <Notice tone="info">Chaque société fixe librement ses taux : vous les consultez ici sans pouvoir les modifier.</Notice>
+        </div>
+      ) : null}
 
       <div className="stack stack--tight">
         {flash ? (
@@ -157,8 +182,8 @@ export default function RatesPage() {
         ) : null}
         {canEdit && unset > 0 ? (
           <Notice tone="error" title={`${unset} ${plural(unset, 'couple sans taux', 'couples sans taux')} : conversions refusées`}>
-            Aucun taux n’est intégré au serveur : tant qu’un couple n’est pas fixé, tout envoi ou dépôt qui en dépend est refusé.
-            Fixez ces taux avant la mise en service.
+            Aucun taux n’est intégré au serveur : tant qu’un couple n’est pas fixé par votre société, tout envoi ou dépôt qui en
+            dépend est refusé. Fixez ces taux avant la mise en service.
           </Notice>
         ) : null}
         {canEdit && mismatches > 0 ? (
@@ -169,7 +194,7 @@ export default function RatesPage() {
         ) : null}
       </div>
 
-      {rates.loading && !rates.data ? (
+      {(rates.loading && !rates.data) || (isSuper && companies.loading && !companies.data) ? (
         <div className="center-block">
           <Spinner label="Chargement des taux" />
         </div>
@@ -213,12 +238,18 @@ export default function RatesPage() {
                 <Icon name="swap" size={26} />
               </span>
               <h2>Aucun couple de devises</h2>
-              <p>Le serveur n’a renvoyé aucun taux. Actualisez la page.</p>
+              <p>{skip ? 'Aucune société n’est encore créée.' : 'Le serveur n’a renvoyé aucun taux. Actualisez la page.'}</p>
             </Card>
           ) : (
             <ul className="rate-grid">
               {shown.map((p) => (
-                <RateCard key={p.pair} pair={p} canEdit={canEdit} onEdit={setEditing} />
+                <RateCard
+                  key={p.pair}
+                  pair={p}
+                  canEdit={canEdit}
+                  onEdit={setEditing}
+                  historyTo={`/rates/${encodeURIComponent(p.pair)}/history${clientId ? `?clientId=${clientId}` : ''}`}
+                />
               ))}
             </ul>
           )}

@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/clients/edit.tsx
 // =========================================================
-// CLIENT EDIT v5.0 — Direct Transf'air
+// CLIENT EDIT v5.1 — Direct Transf'air
+// ✅ v5.1 : numéro RCCM modifiable (même règle que le serveur) — indispensable pour les sociétés créées avant son introduction.
 // ✅ Thème CLAIR — zéro dark/sombre
 // ✅ Données 100% API — aucune valeur en dur
 // =========================================================
@@ -176,6 +177,8 @@ export default function EditClientScreen() {
   const [contactEmail,    setContactEmail]    = useState("");
   const [contactPhone,    setContactPhone]    = useState("");
   const [contractType,    setContractType]    = useState<"RENTAL"|"PURCHASE">("RENTAL");
+  const [rccmNumber,      setRccmNumber]      = useState("");
+  const [hadRccm,         setHadRccm]         = useState(false);   // une société qui a déjà un RCCM ne peut plus l'effacer
   const [ownerFirstName,  setOwnerFirstName]  = useState("");
   const [ownerLastName,   setOwnerLastName]   = useState("");
   const [ownerBirthDate,  setOwnerBirthDate]  = useState("");
@@ -196,6 +199,8 @@ export default function EditClientScreen() {
         setContactEmail(data.contactEmail ?? data.email ?? "");
         setContactPhone(data.contactPhone ?? data.phone ?? "");
         setContractType((data.subscriptionType as any) === "PURCHASE" ? "PURCHASE" : "RENTAL");
+        setRccmNumber(data.rccmNumber ?? "");
+        setHadRccm(!!data.rccmNumber);
         setOwnerFirstName(data.ownerFirstName ?? "");
         setOwnerLastName(data.ownerLastName ?? "");
         setOwnerBirthDate(data.ownerBirthDate ?? "");
@@ -220,6 +225,13 @@ export default function EditClientScreen() {
 
   const handleUpdate = async () => {
     if (!name.trim()) { Alert.alert("Erreur", "Le nom de la société est obligatoire."); return; }
+    // RCCM : même règle que le serveur (4 à 60 caractères). Vide accepté seulement tant que la société n'en a jamais eu.
+    const rccm = rccmNumber.trim().replace(/\s+/g, " ");
+    if (!rccm && hadRccm) { Alert.alert("RCCM obligatoire", "Le numéro RCCM figure dans le contrat : il peut être corrigé, pas supprimé."); return; }
+    if (rccm && !/^[A-Za-z0-9][A-Za-z0-9 .\-/]{3,59}$/.test(rccm)) {
+      Alert.alert("RCCM invalide", "4 à 60 caractères : lettres, chiffres, espaces, points, tirets ou barres obliques.");
+      return;
+    }
     setUpdating(true);
     try {
       const fullAddress = [
@@ -234,6 +246,7 @@ export default function EditClientScreen() {
         contactEmail:    contactEmail.trim()     || undefined,
         contactPhone:    contactPhone.trim()     || undefined,
         subscriptionType: contractType,
+        rccmNumber:      rccm                    || undefined,
         ownerFirstName:  ownerFirstName.trim()   || undefined,
         ownerLastName:   ownerLastName.trim()    || undefined,
         ownerBirthDate:  ownerBirthDate.trim()   || undefined,
@@ -300,6 +313,7 @@ export default function EditClientScreen() {
           <View style={s.card}>
             <SectionHeader icon="business-outline" title="Société" color={T.blue} />
             <Field label="Nom de l'entreprise *" value={name} onChangeText={setName} placeholder="Flash Transfert International" editable={!updating} />
+            <Field label={hadRccm ? "Numéro RCCM *" : "Numéro RCCM (requis pour le contrat)"} value={rccmNumber} onChangeText={setRccmNumber} placeholder="Ex: GN.TCC.2021.A.12345" autoCapitalize="characters" editable={!updating} />
             <Field label="Secteur d'activité" value={activitySector} onChangeText={setActivitySector} placeholder="Transfert d'argent…" editable={!updating} />
             <Field label="Email de contact" value={contactEmail} onChangeText={setContactEmail} placeholder="contact@societe.com" keyboardType="email-address" autoCapitalize="none" editable={!updating} />
             <Field label="Téléphone de contact" value={contactPhone} onChangeText={setContactPhone} placeholder="+224 620 000 000" keyboardType="phone-pad" editable={!updating} />

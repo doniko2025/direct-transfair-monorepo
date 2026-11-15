@@ -1,5 +1,7 @@
 // apps/web-admin/src/pages/companies/CompaniesPage.tsx
 // Liste des sociétés de transfert (SUPER_ADMIN) : une carte par société, recherche et filtre par statut.
+// Chaque carte signale ce qui reste à régler (RCCM manquant, contrat à signer, lien expiré, aucun contrat) ;
+// l'onglet « À traiter » ne garde que ces sociétés. Mêmes règles que l'application mobile.
 
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -9,12 +11,13 @@ import { Icon } from '../../components/Icon';
 import { CompanyMark } from '../../components/CompanyMark';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
 import { api } from '../../lib/api';
+import { companyAlerts, groupContractsByCompany, type CompanyAlert } from '../../lib/companyAlerts';
 import { isActiveStatus, safeColor, statusLabel, statusTone } from '../../lib/companyRules';
 import { describeError } from '../../lib/errors';
 import { MOBILE_QUERY, useMediaQuery } from '../../lib/useMediaQuery';
 import { useResource } from '../../lib/useResource';
 
-type Filter = 'all' | 'active' | 'attention';
+type Filter = 'all' | 'active' | 'attention' | 'todo';
 
 interface ListState {
   deleted?: string;
@@ -30,7 +33,7 @@ function matches(c: CompanySummary, q: string): boolean {
   return hay.includes(q);
 }
 
-function CompanyCard({ company }: { company: CompanySummary }) {
+function CompanyCard({ company, alerts }: { company: CompanySummary; alerts: CompanyAlert[] }) {
   const users = company._count?.users ?? 0;
   const agencies = company._count?.agencies ?? 0;
   const domain = company.customDomain ?? (company.subdomain ? `${company.subdomain}` : null);
@@ -66,6 +69,16 @@ function CompanyCard({ company }: { company: CompanySummary }) {
           )}
         </div>
 
+        {alerts.length > 0 ? (
+          <div className="company-card__alerts" aria-label="À traiter">
+            {alerts.map((a) => (
+              <Pill key={a.key} tone={a.tone} icon={a.tone === 'neutral' ? 'file' : 'alert'}>
+                {a.label}
+              </Pill>
+            ))}
+          </div>
+        ) : null}
+
         <dl className="company-card__facts">
           <div>
             <dt>Utilisateurs</dt>
@@ -89,24 +102,41 @@ export default function CompaniesPage() {
   const flash = (location.state ?? null) as ListState | null;
 
   const { data, error, loading, reload } = useResource(() => api.companies.list(), []);
+  // Contrats de toutes les sociétés ; null = liste indisponible → aucune alerte de contrat (jamais de faux « Aucun contrat »).
+  const { data: contractsData } = useResource(() => api.contracts.list().catch(() => null), []);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [flashVisible, setFlashVisible] = useState(Boolean(flash?.deleted));
 
   const companies = data ?? [];
+
+  const alertsById = useMemo(() => {
+    const grouped = contractsData ? groupContractsByCompany(contractsData) : null;
+    const out = new Map<number, CompanyAlert[]>();
+    for (const c of data ?? []) out.set(c.id, companyAlerts(c, grouped ? (grouped.get(c.id) ?? []) : null));
+    return out;
+  }, [data, contractsData]);
+
   const counts = useMemo(() => {
     const active = companies.filter((c) => isActiveStatus(c.subscriptionStatus)).length;
-    return { all: companies.length, active, attention: companies.length - active };
-  }, [companies]);
+    const todo = companies.filter((c) => (alertsById.get(c.id)?.length ?? 0) > 0).length;
+    return { all: companies.length, active, attention: companies.length - active, todo };
+  }, [companies, alertsById]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return companies
       .filter((c) => matches(c, q))
       .filter((c) =>
-        filter === 'all' ? true : filter === 'active' ? isActiveStatus(c.subscriptionStatus) : !isActiveStatus(c.subscriptionStatus),
+        filter === 'all'
+          ? true
+          : filter === 'active'
+            ? isActiveStatus(c.subscriptionStatus)
+            : filter === 'todo'
+              ? (alertsById.get(c.id)?.length ?? 0) > 0
+              : !isActiveStatus(c.subscriptionStatus),
       );
-  }, [companies, query, filter]);
+  }, [companies, query, filter, alertsById]);
 
   function dismissFlash() {
     setFlashVisible(false);
@@ -117,6 +147,7 @@ export default function CompaniesPage() {
     { id: 'all', label: 'Toutes', count: counts.all },
     { id: 'active', label: 'Actives', count: counts.active },
     { id: 'attention', label: 'À surveiller', count: counts.attention },
+    ...(counts.todo > 0 || filter === 'todo' ? [{ id: 'todo' as const, label: 'À traiter', count: counts.todo }] : []),
   ];
 
   return (
@@ -218,7 +249,7 @@ export default function CompaniesPage() {
       ) : (
         <ul className="company-grid">
           {visible.map((c) => (
-            <CompanyCard key={c.id} company={c} />
+            <CompanyCard key={c.id} company={c} alerts={alertsById.get(c.id) ?? []} />
           ))}
         </ul>
       )}

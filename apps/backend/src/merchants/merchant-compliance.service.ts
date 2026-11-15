@@ -34,9 +34,10 @@ export class MerchantComplianceService {
     return this.limits.assertMerchantPaymentWithinLimits(db, { clientId: p.clientId, userId: p.payerId, currency: p.currency, amount: p.amount, excludeRequestId: p.requestId });
   }
 
-  private async toXof(value: number, currency: string): Promise<number | null> {
+  /** Conversion en XOF au taux de LA SOCIÉTÉ du paiement (chaque société fixe ses propres taux). */
+  private async toXof(value: number, currency: string, clientId: number | null): Promise<number | null> {
     if (currency.toUpperCase() === 'XOF') return value;
-    try { return await this.rates.convert(value, currency, 'XOF'); } catch { return null; }
+    try { return await this.rates.convert(value, currency, 'XOF', clientId); } catch { return null; }
   }
 
   /** Scoring AML non bloquant d'un paiement déjà réglé. */
@@ -52,12 +53,14 @@ export class MerchantComplianceService {
         this.prisma.user.findUnique({ where: { id: p.payerId }, select: { createdAt: true } }),
       ]);
 
-      const amountXof = await this.toXof(p.amount, p.currency);
+      const txn = await this.prisma.transaction.findUnique({ where: { id: p.transactionId }, select: { clientId: true } });
+      const clientId = txn?.clientId ?? null;
+      const amountXof = await this.toXof(p.amount, p.currency, clientId);
       const byCurrency = new Map<string, number>();
       for (const t of recent) byCurrency.set(String(t.currency), (byCurrency.get(String(t.currency)) ?? 0) + Number(t.amount));
       let recentSumXof24h: number | null = 0;
       for (const [cur, sum] of byCurrency) {
-        const x = await this.toXof(sum, cur);
+        const x = await this.toXof(sum, cur, clientId);
         if (x === null) { recentSumXof24h = null; break; }
         recentSumXof24h += x;
       }

@@ -139,7 +139,12 @@ function assertCanManage(
     throw new ForbiddenException('Vous ne pouvez pas suspendre ni supprimer votre propre compte.');
   }
 
-  if (admin.role === 'SUPER_ADMIN') return;
+  // Super admin : il ne gère QUE les administrateurs de sociétés (et son propre profil). Les agents et les clients d'une société
+  // sont l'affaire de cette société (404 : il n'a pas à les voir).
+  if (admin.role === 'SUPER_ADMIN') {
+    if (!isSelf && target.role !== Role.COMPANY_ADMIN) throw new NotFoundException('Utilisateur introuvable');
+    return;
+  }
 
   if (target.role === Role.SUPER_ADMIN) throw new NotFoundException('Utilisateur introuvable');
 
@@ -191,7 +196,7 @@ export class UsersController {
     const user = req.user;
     const whereClause =
       user?.role === 'SUPER_ADMIN'
-        ? { deletedAt: null }
+        ? { deletedAt: null, role: Role.COMPANY_ADMIN }   // le super admin ne voit que les administrateurs de sociétés
         : { clientId: user?.clientId, deletedAt: null, role: { not: Role.SUPER_ADMIN } };
     return this.usersService.findAll(whereClause);
   }
@@ -209,7 +214,10 @@ export class UsersController {
     const currentUser = req.user;
     const isSuper = currentUser?.role === 'SUPER_ADMIN';
 
-    const role = body.role ?? Role.AGENT;
+    const role = body.role ?? (isSuper ? Role.COMPANY_ADMIN : Role.AGENT);
+    if (isSuper && role !== Role.COMPANY_ADMIN) {
+      throw new ForbiddenException('Le super administrateur ne crée que des administrateurs de société ; les agents et les clients sont créés par chaque société.');
+    }
     // Lot 9 — un compte du service client se crée depuis « Service client » (mot de passe temporaire, délégations réglées par interrupteurs).
     if (role === Role.SUPPORT) {
       throw new ForbiddenException('Créez un compte service client depuis la rubrique « Service client » (délégations incluses).');
@@ -353,7 +361,9 @@ export class UsersController {
     const user = await this.usersService.findById(id);
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    if (req.user?.role !== 'SUPER_ADMIN') {
+    if (req.user?.role === 'SUPER_ADMIN') {
+      if (user.id !== req.user.id && user.role !== Role.COMPANY_ADMIN) throw new NotFoundException('Utilisateur introuvable');
+    } else {
       if (user.role === Role.SUPER_ADMIN) throw new NotFoundException('Utilisateur introuvable');
       if (user.clientId !== req.user?.clientId) throw new ForbiddenException('Accès refusé');
     }

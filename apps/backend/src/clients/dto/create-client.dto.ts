@@ -20,6 +20,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ContractTermsDto } from '../../contracts/dto/contract.dto';
+import { RCCM_PATTERN } from '../client-documents.rules';
 import { SubscriptionType, CurrencyCode } from '@prisma/client';
 
 export class CreateClientDto {
@@ -150,6 +151,10 @@ export class CreateClientDto {
 
   @IsOptional() @IsString() @MaxLength(80)
   capitalSocial?: string;
+
+  /** Numéro RCCM de la société : repris dans le contrat. Les pièces justificatives se déposent ensuite (POST /clients/:id/documents). */
+  @IsOptional() @IsString() @MaxLength(60) @Matches(RCCM_PATTERN, { message: 'Numéro RCCM invalide.' })
+  rccmNumber?: string;
 
   @IsOptional() @IsEmail()
   supportEmail?: string;

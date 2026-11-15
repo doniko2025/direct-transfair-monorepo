@@ -33,6 +33,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { api } from "../../services/api";
 import { useAuth } from "../../providers/AuthProvider";
 import CreateCompanyModal from "./CreateCompanyModal";
+import { companyAlerts, type CompanyAlert, type ContractSummary } from "../../services/contractTypes";
 
 const { width: SW } = Dimensions.get("window");
 
@@ -571,7 +572,7 @@ const agS = StyleSheet.create({
 });
 
 // ─── Client Card ──────────────────────────────────────────
-function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
+function ClientCard({ item, onPress, alerts = [] }: { item: any; onPress: () => void; alerts?: CompanyAlert[] }) {
   const statusKey   = item.subscriptionStatus?.toUpperCase() ?? "ACTIVE";
   const statusColor = T.statusColors[statusKey] ?? T.inkMuted;
   const statusBg    = T.statusBg[statusKey]    ?? T.pageBg;
@@ -596,9 +597,17 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
   };
 
   return (
-    <TouchableOpacity style={ccS.card} onPress={onPress} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={ccS.card}
+      onPress={onPress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}${alerts.length ? ` — à traiter : ${alerts.map((a) => a.label).join(", ")}` : ""}`}
+    >
       <View style={[ccS.statusBar, { backgroundColor: statusColor }]} />
 
+      <View style={{ flex: 1, minWidth: 0 }}>
+      <View style={ccS.main}>
       <View style={[ccS.avatar, { backgroundColor: avCfg.bg, borderColor: avCfg.border }]}>
         <Text style={[ccS.avatarTxt, { color: avCfg.text, fontFamily: T.font.display }]}>
           {nameChar}
@@ -620,12 +629,34 @@ function ClientCard({ item, onPress }: { item: any; onPress: () => void }) {
       </View>
 
       <Ionicons name="chevron-forward" size={13} color={T.borderMd} style={{ marginLeft: 4, marginRight: 12 }} />
+      </View>
+
+      {alerts.length > 0 && (
+        <View style={ccS.alertRow}>
+          {alerts.map((a) => {
+            const c = a.tone === "red"   ? { fg: T.red,    bg: T.redLt,   bd: `${T.red}35` }
+                    : a.tone === "amber" ? { fg: T.amber,  bg: T.amberLt, bd: `${T.amber}35` }
+                    :                      { fg: T.inkSub, bg: T.pageBg,  bd: T.border };
+            return (
+              <View key={a.key} style={[ccS.alertChip, { backgroundColor: c.bg, borderColor: c.bd }]}>
+                <Ionicons name={a.tone === "muted" ? "document-outline" : "alert-circle"} size={10} color={c.fg} />
+                <Text style={[ccS.alertTxt, { color: c.fg, fontFamily: T.font.sans }]} numberOfLines={1}>{a.label}</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+      </View>
     </TouchableOpacity>
   );
 }
 
 const ccS = StyleSheet.create({
-  card:      { flexDirection: "row", alignItems: "center", backgroundColor: T.surface, borderRadius: T.radius.md, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
+  card:      { flexDirection: "row", alignItems: "stretch", backgroundColor: T.surface, borderRadius: T.radius.md, marginBottom: 10, borderWidth: 1, borderColor: T.border, overflow: "hidden", ...T.shadow.card },
+  main:      { flexDirection: "row", alignItems: "center", paddingVertical: 10 },
+  alertRow:  { flexDirection: "row", flexWrap: "wrap", gap: 6, paddingHorizontal: 12, paddingBottom: 10, marginTop: -2 },
+  alertChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: T.radius.full, borderWidth: 1, maxWidth: "100%" },
+  alertTxt:  { fontSize: 9, fontWeight: "800" },
   statusBar: { width: 4, alignSelf: "stretch" },
   avatar:    { width: 40, height: 40, borderRadius: T.radius.sm, justifyContent: "center", alignItems: "center", borderWidth: 1, marginLeft: 12, marginRight: 10, flexShrink: 0 },
   avatarTxt: { fontSize: 16, fontWeight: "700" },
@@ -676,6 +707,9 @@ export default function SuperAdminDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [q,          setQ]          = useState("");
   const [createOpen, setCreateOpen] = useState(false);
+  // Contrats de toutes les sociétés (null = liste indisponible → aucune alerte de contrat, pour ne pas afficher de faux « Aucun contrat »).
+  const [contracts,  setContracts]  = useState<ContractSummary[] | null>(null);
+  const [todoOnly,   setTodoOnly]   = useState(false);
 
   const headerAnim  = useRef(new Animated.Value(0)).current;
   const contentAnim = useRef(new Animated.Value(0)).current;
@@ -691,10 +725,12 @@ export default function SuperAdminDashboard() {
     if (mode === "refresh") setRefreshing(true);
     else setLoading(true);
     try {
-      const [rawClients, rawWallets] = await Promise.all([
+      const [rawClients, rawWallets, rawContracts] = await Promise.all([
         api.getClients().catch(() => []),
         api.getMyWallets?.().catch(() => []) ?? Promise.resolve([]),
+        api.listContracts().catch(() => null),
       ]);
+      setContracts(rawContracts);
       const list = Array.isArray(rawClients)
         ? rawClients
         : ((rawClients as any)?.data ?? []);
@@ -729,13 +765,30 @@ export default function SuperAdminDashboard() {
     }, [loadData, runEntrance])
   );
 
+  // Alertes par société : RCCM manquant, contrat à signer / lien expiré, aucun contrat.
+  const alertsById = useMemo(() => {
+    const byClient = new Map<string, ContractSummary[]>();
+    for (const ct of contracts ?? []) {
+      const key = String(ct.client?.id ?? "");
+      if (!key) continue;
+      const arr = byClient.get(key) ?? [];
+      arr.push(ct);
+      byClient.set(key, arr);
+    }
+    const out: Record<string, CompanyAlert[]> = {};
+    for (const c of clients) out[c.id] = companyAlerts(c, contracts ? (byClient.get(String(c.id)) ?? []) : null);
+    return out;
+  }, [clients, contracts]);
+
+  const todoCount = useMemo(() => clients.filter((c) => (alertsById[c.id]?.length ?? 0) > 0).length, [clients, alertsById]);
+
   const filtered = useMemo(() => {
     const n = q.trim().toLowerCase();
-    if (!n) return clients;
     return clients.filter((c) =>
-      `${c.name} ${c.code} ${c.subscriptionStatus}`.toLowerCase().includes(n)
+      (!todoOnly || (alertsById[c.id]?.length ?? 0) > 0) &&
+      (!n || `${c.name} ${c.code} ${c.subscriptionStatus}`.toLowerCase().includes(n))
     );
-  }, [clients, q]);
+  }, [clients, q, todoOnly, alertsById]);
 
   const stats = useMemo(() => ({
     total:    clients.length,
@@ -771,6 +824,7 @@ export default function SuperAdminDashboard() {
           renderItem={({ item }) => (
             <ClientCard
               item={item}
+              alerts={alertsById[item.id]}
               onPress={() =>
                 router.push({
                   pathname: "/(tabs)/admin/clients/details",
@@ -836,6 +890,27 @@ export default function SuperAdminDashboard() {
                   </TouchableOpacity>
                 )}
               </View>
+
+              {/* ── Filtre « À traiter » : sociétés avec RCCM manquant, contrat à signer, lien expiré ou sans contrat ── */}
+              {(todoCount > 0 || todoOnly) && (
+                <View style={s.filterRow}>
+                  {([
+                    { on: !todoOnly, label: `Toutes (${clients.length})`, set: false },
+                    { on: todoOnly,  label: `À traiter (${todoCount})`,   set: true  },
+                  ] as const).map((f) => (
+                    <TouchableOpacity
+                      key={f.label}
+                      style={[s.filterChip, f.on && s.filterChipOn]}
+                      onPress={() => setTodoOnly(f.set)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: f.on }}
+                    >
+                      {f.set && <Ionicons name="alert-circle" size={12} color={f.on ? T.white : T.amber} />}
+                      <Text style={[s.filterTxt, { fontFamily: T.font.sans }, f.on && { color: T.white }]}>{f.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               {/* ── Header liste clients ── */}
               <SH
@@ -911,6 +986,11 @@ const s = StyleSheet.create({
     backgroundColor: T.pageBg, justifyContent: "center", alignItems: "center",
     borderWidth: 1, borderColor: T.border,
   },
+
+  filterRow:    { flexDirection: "row", gap: 8, marginBottom: 14 },
+  filterChip:   { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: T.radius.full, backgroundColor: T.surface, borderWidth: 1, borderColor: T.border },
+  filterChipOn: { backgroundColor: T.brand, borderColor: T.brand },
+  filterTxt:    { fontSize: 12, fontWeight: "800", color: T.inkSub },
 
   addBtn: {
     width: 30, height: 30, borderRadius: T.radius.sm,

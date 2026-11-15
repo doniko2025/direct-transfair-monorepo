@@ -471,4 +471,12 @@ export const profile = {
   'loc.directions':      { fr: 'Itinéraire', en: 'Directions', pt: 'Itinerário' },
   'loc.open':            { fr: 'Ouvert', en: 'Open', pt: 'Aberto' },
   'loc.closed':          { fr: 'Fermé', en: 'Closed', pt: 'Fechado' },
+  'loc.search':          { fr: 'Rechercher une agence', en: 'Search an agency', pt: 'Pesquisar uma agência' },
+  'loc.allCountries':    { fr: 'Tous les pays', en: 'All countries', pt: 'Todos os países' },
+  'loc.pickCountry':     { fr: 'Filtrer par pays', en: 'Filter by country', pt: 'Filtrar por país' },
+  'loc.country':         { fr: 'Pays', en: 'Country', pt: 'País' },
+  'loc.address':         { fr: 'Adresse', en: 'Address', pt: 'Morada' },
+  'loc.phone':           { fr: 'Téléphone', en: 'Phone', pt: 'Telefone' },
+  'loc.email':           { fr: 'Email', en: 'Email', pt: 'Email' },
+  'loc.company':         { fr: 'Société', en: 'Company', pt: 'Empresa' },
 } as const satisfies Record<string, Trio>;

@@ -200,6 +200,12 @@
   white-space: nowrap;
 }
 
+.company-card__alerts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .company-card__domain--none {
   color: var(--ink-3);
 }
@@ -636,5 +642,116 @@
 
   .danger-zone .btn {
     width: 100%;
+  }
+}
+
+/* ── Documents légaux d'une société (création + fiche) ─────────────────────────────────────────────── */
+.doc-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.doc-picker__row--filled {
+  border-style: solid;
+  border-color: var(--brand-mid);
+  background: var(--brand-soft);
+}
+
+.doc-picker__icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--brand-soft);
+  color: var(--brand-deep);
+}
+
+.doc-picker__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-picker__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.doc-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.doc-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--card);
+}
+
+.doc-item__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.doc-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.doc-item__main strong {
+  overflow-wrap: anywhere;
+}
+
+.doc-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .doc-picker__row {
+    flex-wrap: wrap;
+  }
+
+  .doc-picker__actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .doc-item__head {
+    flex-wrap: wrap;
+  }
+
+  .doc-item__actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

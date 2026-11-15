@@ -538,7 +538,7 @@ export class WithdrawalsService {
       feesInPayoutCurrency = rawFees * storedRate;
     } else if (rawFees > 0 && tx.currency !== payoutCurrency) {
       try {
-        feesInPayoutCurrency = await this.ratesService.convert(rawFees, tx.currency, payoutCurrency);
+        feesInPayoutCurrency = await this.ratesService.convert(rawFees, tx.currency, payoutCurrency, tx.clientId);
       } catch (e) {
         this.logger.error(
           `Conversion des frais impossible (${tx.currency}→${payoutCurrency}) pour le code ${cleanCode} : ${(e as Error)?.message}`,

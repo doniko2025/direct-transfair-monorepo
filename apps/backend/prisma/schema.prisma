@@ -555,6 +555,9 @@ model Client {
   representativeName String?
   representativeDocs String?
 
+  // ── Immatriculation (RCCM) — figure dans le contrat de la société ; les pièces justificatives sont dans ClientDocument
+  rccmNumber String?
+
   // ── Mentions légales publiques (écrans CGU / Assistance mobile) ✅ v5.2
   // Distinctes de ownerFirstName/ownerLastName (propriétaire interne,
   // jamais affiché publiquement) — ce sont ici les infos affichées à
@@ -637,6 +640,8 @@ model Client {
   treasurySnapshots  TreasurySnapshot[]
   supportTickets     SupportTicket[]
   complianceCases    ComplianceCase[]
+  exchangeRates      ExchangeRate[]
+  documents          ClientDocument[]
 
   @@index([tenantId])
   @@index([subscriptionStatus])
@@ -1837,9 +1842,14 @@ model WebhookDelivery {
 model ExchangeRate {
   id String @id @default(cuid())
 
+  // ✅ Taux PAR SOCIÉTÉ : chaque société fixe ses propres taux, indépendamment des autres (clientId).
+  //    clientId NULL = anciens taux « plateforme » conservés tels quels (plus modifiables : seuls les administrateurs de société fixent des taux).
+  clientId Int?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
   // Paire de devises (toujours BASE_QUOTE)
   // Ex: "EUR_GNF", "EUR_XOF", "USD_GNF", "GBP_GNF", "GBP_EUR"
-  pair String @unique
+  pair String
 
   rate        Float
   inverseRate Float?       // Calculé automatiquement (1/rate)
@@ -1866,8 +1876,10 @@ model ExchangeRate {
 
   history ExchangeRateHistory[]
 
+  @@unique([clientId, pair])
   @@index([pair])
   @@index([pair, isActive])
+  @@index([clientId, isActive])
   @@map("exchange_rates")
 }
 
@@ -2699,6 +2711,26 @@ model MerchantLogo {
   updatedAt  DateTime        @updatedAt
 
   @@map("merchant_logos")
+}
+
+/// Document légal d'une SOCIÉTÉ cliente, fourni à la création (RCCM, pièce d'identité du représentant, statuts, agrément…).
+/// Image JPEG/PNG/WebP ou PDF, stockée comme le logo (octets en base). Lu par le super administrateur uniquement.
+model ClientDocument {
+  id           String   @id @default(cuid())
+  clientId     Int
+  client       Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  /// RCCM | IDENTITY | TAX | STATUTES | LICENSE | OTHER (liste contrôlée par le code : voir client-documents.rules.ts)
+  kind         String
+  label        String?
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  data         Bytes
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  @@index([clientId, kind])
+  @@map("client_documents")
 }
 
 /// Pièce justificative du RCCM d'un commerce (image JPEG/PNG/WebP ou PDF), stockée comme le logo (octets en base).

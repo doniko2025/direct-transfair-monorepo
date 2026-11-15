@@ -182,6 +182,7 @@ export class RateAlertsService {
             phone: true,
             firstName: true,
             lastName: true,
+            clientId: true,
           },
         },
       },
@@ -195,11 +196,13 @@ export class RateAlertsService {
       const [base, quote] = a.pair.split('_');
       for (const p of candidatePairs(base, quote)) wanted.add(p);
     }
-    const rows = await this.prisma.exchangeRate.findMany({
+    const allRows = await this.prisma.exchangeRate.findMany({
       where: { pair: { in: [...wanted] } },
     });
 
     for (const alert of activeAlerts) {
+      // ✅ taux PAR SOCIÉTÉ : l'alerte se compare aux taux de la société de son propriétaire, jamais à ceux d'une autre
+      const rows = allRows.filter((r) => r.clientId === (alert.user.clientId ?? null));
       const currentRate = currentRateOf(alert.pair, rows);
       if (currentRate === null) continue;
 

@@ -198,7 +198,7 @@ export class AgentDeskService {
 
     let received: number;
     try {
-      received = await this.rates.convert(amount, currency, target);
+      received = await this.rates.convert(amount, currency, target, agent.clientId);
     } catch (err) {
       this.logger.warn(`Taux indisponible ${currency}→${target} : ${(err as Error).message}`);
       throw new BadRequestException(`Aucun taux de change disponible pour ${currency} → ${target}.`);

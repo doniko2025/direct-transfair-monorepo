@@ -68,6 +68,7 @@
 // =========================================================
 
 import type { UserSession } from "./sessionLabel";
+import type { ContractSummary, IssueContractInput, IssueContractResult, ResendLinkResult } from "./contractTypes";
 import axios, {
   AxiosHeaders,
   type AxiosInstance,
@@ -444,6 +445,17 @@ async function secureDelete(key: string): Promise<void> {
 
 // ── Assistance : demandes et litiges du client ────────────────────────
 export type SupportTicketStatus = "OPEN" | "IN_PROGRESS" | "WAITING_USER" | "RESOLVED" | "CLOSED";
+/** Pièce légale d'une société (GET /clients/:id/documents) — sans le contenu, qui se lit via readClientDocument. */
+export interface ClientDocumentView {
+  id: string;
+  kind: "RCCM" | "IDENTITY" | "TAX" | "STATUTES" | "LICENSE" | "OTHER";
+  kindLabel: string;
+  label: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
 export interface SupportTicketItem {
   id: string;
   subject: string;
@@ -1192,11 +1204,13 @@ class API {
   // TAUX DE CHANGE
   // ============================================================
 
-  // GET /exchange-rates (public) — taux publiés par la plateforme. Aucun taux de secours : en cas d'échec la liste est
+  // ✅ TAUX PAR SOCIÉTÉ : chaque société fixe ses propres taux. Les lectures publiques désignent la société par son code (le même
+  // que l'en-tête x-tenant-id : api.getTenant()).
+  // GET /exchange-rates?code=… (public) — taux publiés par la société. Aucun taux de secours : en cas d'échec la liste est
   // vide et les écrans n'affichent aucune estimation (jamais un taux inventé sur une app d'argent).
   async getExchangeRates(): Promise<ExchangeRate[]> {
     try {
-      const res = await this.http.get<unknown>("/exchange-rates");
+      const res = await this.http.get<unknown>("/exchange-rates", { params: { code: this.getTenant() } });
       const list = unwrapArray<unknown>(res.data).map(normalizeExchangeRate);
       if (list.length > 0) return list;
       throw new Error("Réponse vide");
@@ -1212,7 +1226,7 @@ class API {
     params?: { from?: string; to?: string; limit?: number },
   ): Promise<ExchangeRateHistory[]> {
     try {
-      const res = await this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params });
+      const res = await this.http.get<unknown>(`/exchange-rates/${pair}/history`, { params: { ...params, code: this.getTenant() } });
       return unwrapArray<ExchangeRateHistory>(res.data);
     } catch {
       return [];
@@ -1231,7 +1245,7 @@ class API {
       amount: number;
       rate: number;
       convertedAmount: number;
-    }>("/exchange-rates/convert", { amount, from, to });
+    }>("/exchange-rates/convert", { amount, from, to }, { params: { code: this.getTenant() } });
     return res.data;
   }
 
@@ -1414,6 +1428,75 @@ class API {
     return res.data;
   }
 
+  // POST /clients/:id/documents (SUPER_ADMIN) — pièce légale de la société (RCCM, identité du gérant…).
+  // `file` : data URL base64 (JPEG, PNG, WebP ou PDF, 6 Mo au plus) ; le serveur vérifie le format réel et la taille.
+  async addClientDocument(
+    clientId: number | string,
+    input: { kind: "RCCM" | "IDENTITY" | "TAX" | "STATUTES" | "LICENSE" | "OTHER"; label?: string; file: string },
+  ): Promise<ClientDocumentView> {
+    const res = await this.http.post<ClientDocumentView>(`/clients/${clientId}/documents`, input);
+    return res.data;
+  }
+
+  // GET /clients/:id/documents — liste des pièces (SUPER_ADMIN), les plus récentes d'abord.
+  async listClientDocuments(clientId: number | string): Promise<ClientDocumentView[]> {
+    const res = await this.http.get<{ documents?: ClientDocumentView[] }>(`/clients/${clientId}/documents`);
+    return Array.isArray(res.data?.documents) ? res.data.documents : [];
+  }
+
+  // GET /clients/:id/documents/:docId/file — octets de la pièce (authentifié), 6 Mo au plus.
+  async readClientDocument(clientId: number | string, docId: string): Promise<ArrayBuffer> {
+    const res = await this.http.get<ArrayBuffer>(`/clients/${clientId}/documents/${encodeURIComponent(docId)}/file`, {
+      responseType: "arraybuffer",
+    });
+    return res.data;
+  }
+
+  // DELETE /clients/:id/documents/:docId — supprime la pièce (journalisé côté serveur).
+  async removeClientDocument(clientId: number | string, docId: string): Promise<void> {
+    await this.http.delete<unknown>(`/clients/${clientId}/documents/${encodeURIComponent(docId)}`);
+  }
+
+  // ── Contrats de location / achat de l'application (SUPER_ADMIN) ──
+  // GET /contracts[?clientId=] — contrats d'une société (ou de toutes, 500 au plus), les plus récents d'abord ;
+  // statut EXPIRED calculé par le serveur.
+  async listContracts(clientId?: number | string): Promise<ContractSummary[]> {
+    const res = await this.http.get<unknown>("/contracts", { params: clientId !== undefined ? { clientId } : undefined });
+    return unwrapArray<ContractSummary>(res.data);
+  }
+
+  // POST /contracts — émet le contrat et envoie le lien de signature par e-mail (sauf notify:false).
+  async issueContract(input: IssueContractInput): Promise<IssueContractResult> {
+    const res = await this.http.post<IssueContractResult>("/contracts", input);
+    return res.data;
+  }
+
+  // POST /contracts/:id/resend — nouveau lien de signature (l'ancien cesse de fonctionner) + e-mail.
+  async resendContractLink(id: string): Promise<ResendLinkResult> {
+    const res = await this.http.post<ResendLinkResult>(`/contracts/${encodeURIComponent(id)}/resend`, {});
+    return res.data;
+  }
+
+  // POST /contracts/:id/resend-signed — renvoie par e-mail le contrat signé.
+  async resendSignedContract(id: string): Promise<{ ok: boolean; recipientEmail: string }> {
+    const res = await this.http.post<{ ok: boolean; recipientEmail: string }>(`/contracts/${encodeURIComponent(id)}/resend-signed`, {});
+    return res.data;
+  }
+
+  // POST /contracts/:id/cancel — annule un contrat non signé.
+  async cancelContract(id: string, reason?: string): Promise<void> {
+    await this.http.post<unknown>(`/contracts/${encodeURIComponent(id)}/cancel`, { reason: reason?.trim() || undefined });
+  }
+
+  // GET /contracts/:id/pdf — PDF du contrat (signé s'il l'est, sinon aperçu).
+  async readContractPdf(id: string): Promise<ArrayBuffer> {
+    const res = await this.http.get<ArrayBuffer>(`/contracts/${encodeURIComponent(id)}/pdf`, {
+      responseType: "arraybuffer",
+      headers: { Accept: "application/pdf" },
+    });
+    return res.data;
+  }
+
   async updateClient(id: number, data: Record<string, unknown>): Promise<Client> {
     const res = await this.http.patch<Client>(`/clients/${id}`, data);
     return res.data;
@@ -1499,8 +1582,8 @@ class API {
 
   // ============================================================
   // TAUX DE CHANGE (admin) — ✅ v6.2 (reconstruit)
-  // POST /rates { pair, rate } — Super Admin uniquement (route conservée pour l'app mobile ; l'historique et le garde-fou
-  // de variation sont dans /rates-admin, utilisé par le back-office web).
+  // POST /rates { pair, rate } — administrateur de SA société uniquement (route conservée pour l'app mobile ; chaque société
+  // fixe ses propres taux ; l'historique et le garde-fou de variation sont dans /rates-admin, utilisé par le back-office web).
   // ============================================================
 
   async updateExchangeRate(pair: string, rate: number): Promise<unknown> {

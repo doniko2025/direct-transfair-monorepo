@@ -69,6 +69,8 @@ export interface CustomerInfo {
   country?: string | null;
   email: string;
   representativeName: string;
+  /** Numéro RCCM de la société (registre du commerce) : imprimé dans l'identité du Client. */
+  rccmNumber?: string | null;
 }
 
 const PERIOD_LABEL: Record<BillingPeriod, { adj: string; per: string; noun: string }> = {
@@ -116,6 +118,7 @@ function customerBlock(c: CustomerInfo): PartyBlock {
   const place = [c.city, countryName(c.country)].filter(Boolean).join(', ');
   const lines = [
     c.legalName && c.legalName !== c.name ? `Nom commercial : ${c.name}` : '',
+    c.rccmNumber ? `RCCM : n° ${c.rccmNumber}` : '',
     c.address ? `Adresse : ${c.address}` : '',
     place ? `Localisation : ${place}` : '',
     `E-mail : ${c.email}`,

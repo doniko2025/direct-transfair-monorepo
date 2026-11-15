@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/AuthShell.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CADRE DES ÉCRANS D'AUTHENTIFICATION v2.9 — Direct Transf'air
+// CADRE DES ÉCRANS D'AUTHENTIFICATION v3.0 — Direct Transf'air
+// ✅ v3.0 : (1) LOGO UNIQUE <BrandLogo /> (80 px, ratio automatique, sans tuile) : même taille que sur l'accueil, sur tous les écrans d'inscription / codes ;
+//    (2) CLAVIER : à l'ouverture du clavier, le logo, le sous-titre et la ligne « Connexion chiffrée » se replient en douceur (LayoutAnimation) et
+//    reviennent à la fermeture : le formulaire n'est plus masqué ; (3) marge haute sûre (`safeTop`) : l'en-tête ne passe plus sous la barre d'état.
 // ✅ v2.9 : variante `sea` (téléphone) — fond de MER claire et transparente avec de petits poissons bleus/verts (<SeaBackdrop />), emblème de la marque en bulle,
 //    puis UNE carte blanche centrée, plus étroite (≈ 76 % de la largeur), qui contient TOUT : pastille d'état, marque, titre, formulaire, pied de carte et
 //    contenu `below` (inscription, liens légaux). Désactivée par défaut : les autres écrans sont inchangés. Ordinateur et variante `hero` inchangés.
@@ -44,8 +47,10 @@ import { ThemePill } from '../theme/ThemeSwitcher';
 import { useT } from '../../providers/I18nProvider';
 import { useTheme } from '../../providers/ThemeProvider';
 import React, { useEffect, useRef, useState } from 'react';
+import BrandLogo from '../brand/BrandLogo';
+import { safeTop } from '../../utils/safeArea';
 import {
-  Animated, Easing, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
+  Animated, Easing, Keyboard, KeyboardAvoidingView, LayoutAnimation, Platform, Pressable, ScrollView, StatusBar, StyleSheet, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '../ui/Icon';
@@ -103,6 +108,23 @@ function useBrowserWidth(): number {
   return w;
 }
 
+/** Vrai tant que le clavier est ouvert ; chaque changement est animé (les éléments repliés glissent au lieu de disparaître d'un coup). */
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const ios = Platform.OS === 'ios';
+    const set = (v: boolean) => {
+      LayoutAnimation.configureNext(LayoutAnimation.create(220, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
+      setOpen(v);
+    };
+    const a = Keyboard.addListener(ios ? 'keyboardWillShow' : 'keyboardDidShow', () => set(true));
+    const b = Keyboard.addListener(ios ? 'keyboardWillHide' : 'keyboardDidHide', () => set(false));
+    return () => { a.remove(); b.remove(); };
+  }, []);
+  return open;
+}
+
 export function useAuthPalette(): AuthPalette {
   const { branding } = useTenant();
   const { scheme } = useTheme();   // se redessine au changement de thème
@@ -114,15 +136,13 @@ export default function AuthShell({
 }: Props) {
   const { branding } = useTenant();
   const t = useT();
-  // Logo de la société : si l'image ne charge pas, on retombe sur la marque (tuile + nom) tant que l'adresse ne change pas.
-  const [logoFailed, setLogoFailed] = useState<string | null>(null);
-  const logo = branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) && branding.logoUrl !== logoFailed ? branding.logoUrl : null;
+  const kbOpen = useKeyboardOpen();
   const { isDark, scheme } = useTheme();   // thème clair / sombre : l'écran se redessine au changement
   const C = React.useMemo(() => buildColors(branding.primaryColor, branding.secondaryColor, scheme), [branding.primaryColor, branding.secondaryColor, scheme]);
   const insets = useSafeAreaInsets();
   const winW = useBrowserWidth();
   const wide = Platform.OS === 'web' && winW >= 900;
-  const topPad = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 6;
+  const topPad = safeTop(insets.top) + 6;
 
   // ── Animations de la variante « carte flottante » (hooks toujours appelés, démarrés seulement si la variante est affichée) ──
   const heroOn = hero && !wide;
@@ -151,7 +171,7 @@ export default function AuthShell({
 
   // ── Variante « carte flottante sur dégradé » (téléphone) ──
   if (heroOn) {
-    const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 8;
+    const top = safeTop(insets.top) + 8;
     const dark = darken('#111111', 0.72);   // en-tête toujours très sombre (texte blanc dessus), quel que soit le thème
     const mid = darken('#111111', 0.45);
     const tile = compact ? 64 : 80;
@@ -356,30 +376,20 @@ export default function AuthShell({
 
           {/* ── Marque du tenant ── */}
           {wide && !onBack && headerRight ? <View style={s.floatRight}>{headerRight}</View> : null}
-          {logo ? (
+          {/* Logo unique, même taille partout ; replié pendant la saisie pour laisser toute la place au formulaire. */}
+          {!kbOpen ? (
             <View style={[s.logoWrap, compact && { marginTop: 6 }, wide && !onBack && { marginTop: 0 }]}>
-              <Image
-                source={{ uri: logo }}
-                onError={() => setLogoFailed(logo)}
-                style={{ width: '100%', maxWidth: 240, height: compact ? 44 : 58 }}
-                resizeMode="contain"
-                accessibilityLabel={branding.name}
-              />
+              <BrandLogo />
             </View>
-          ) : (
-            <View style={[s.brand, compact && { marginTop: 10 }, wide && !onBack && { marginTop: 0 }]}>
-              <TenantMark size={34} radius={11} background={C.accent} iconColor={C.accentInk} logoScale={0.78} />
-              <Text style={[s.brandName, { color: C.ink }]} numberOfLines={1}>{branding.name}</Text>
-            </View>
-          )}
+          ) : null}
 
           {/* ── Titre ── */}
-          <Text style={[s.title, { color: C.ink }, wide && { fontSize: 30, lineHeight: 36, marginTop: 18 }]} accessibilityRole="header">{title}</Text>
-          {subtitle ? <Text style={[s.subtitle, { color: C.muted }]}>{subtitle}</Text> : null}
+          <Text style={[s.title, { color: C.ink }, kbOpen && { fontSize: 26, lineHeight: 32, marginTop: 10 }, wide && { fontSize: 30, lineHeight: 36, marginTop: 18 }]} accessibilityRole="header">{title}</Text>
+          {subtitle && !kbOpen ? <Text style={[s.subtitle, { color: C.muted }]}>{subtitle}</Text> : null}
 
-          <View style={[s.body, wide && { marginTop: 22, flexGrow: 0 }]}>{children}</View>
+          <View style={[s.body, kbOpen && { marginTop: 14 }, wide && { marginTop: 22, flexGrow: 0 }]}>{children}</View>
 
-          {trust ? (
+          {trust && !kbOpen ? (
             <View style={s.trust}>
               <Ionicons name="lock-closed" size={12} color={N.muted} />
               <Text style={s.trustTxt}>{t('shell.trust')}</Text>

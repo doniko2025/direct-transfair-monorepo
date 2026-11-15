@@ -23,9 +23,10 @@ import { countryName } from '../../lib/countries';
 import { describeError } from '../../lib/errors';
 import { useResource } from '../../lib/useResource';
 import { ROLE_LABEL } from '../../navigation';
-import { APPEARANCE_FIELDS, IDENTITY_FIELDS, LEGAL_FIELDS, PORTAL_FIELDS } from './companyFields';
+import { APPEARANCE_FIELDS, IDENTITY_FIELDS, LEGAL_FIELDS, PORTAL_FIELDS, REGISTRATION_FIELDS } from './companyFields';
 import { AppearancePreview } from './AppearancePreview';
 import { CompanyContracts } from './CompanyContracts';
+import { CompanyDocuments } from './CompanyDocuments';
 import { EditableSection } from './EditableSection';
 
 const PERSON_ROLE: Record<string, string> = {
@@ -247,6 +248,19 @@ export default function CompanyDetailPage() {
             values={company as unknown as Record<string, string | null | undefined>}
             onSave={save}
           />
+        </div>
+
+        <div className="detail-grid">
+          <EditableSection
+            id="registration"
+            title="Immatriculation (RCCM)"
+            icon="file"
+            description="Le numéro RCCM figure dans le contrat de la société ; il est obligatoire pour l'émettre."
+            fields={REGISTRATION_FIELDS}
+            values={company as unknown as Record<string, string | null | undefined>}
+            onSave={save}
+          />
+          <CompanyDocuments companyId={company.id} />
         </div>
 
         <CompanyContracts

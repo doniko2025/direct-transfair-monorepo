@@ -1,4 +1,7 @@
 // src/navigation.ts
+// v2 (super admin simplifié) : le super admin ne gère QUE les sociétés et leurs administrateurs. Il n'a plus Utilisateurs (→ « Administrateurs »),
+//   Transactions (→ « Virements » = ce que les sociétés lui versent) ni la trésorerie des sociétés ; ses vérifications KYC ne concernent que
+//   les représentants des sociétés ; frais, taux et réglages des sociétés restent consultables en lecture seule.
 // Lot C : + « Domaines » (super admin) → /portal-domains.
 // =========================================================
 // MENU PAR RÔLE — source unique de vérité
@@ -24,8 +27,6 @@ export interface NavItem {
 }
 
 const ALL = WEB_ROLES;
-/** Rôles du personnel opérationnel (tout sauf le service client, qui a son propre espace). */
-const OPS: readonly WebRole[] = ['SUPER_ADMIN', 'COMPANY_ADMIN', 'AGENT'];
 const SUPPORT: readonly WebRole[] = ['SUPPORT'];
 const COMPANY_SUPPORT: readonly WebRole[] = ['COMPANY_ADMIN', 'SUPPORT'];
 const SUPER: readonly WebRole[] = ['SUPER_ADMIN'];
@@ -38,6 +39,7 @@ export const NAV: readonly NavItem[] = [
 
   // Super admin
   { id: 'companies', label: 'Sociétés', icon: 'building', path: '/companies', roles: SUPER, ready: true },
+  { id: 'admins', label: 'Administrateurs', icon: 'users', path: '/users', roles: SUPER, ready: true },
   { id: 'contracts', label: 'Contrats', icon: 'file', path: '/contracts', roles: SUPER, ready: true },
   { id: 'portal-domains', label: 'Domaines', icon: 'globe', path: '/portal-domains', roles: SUPER, ready: true },
   { id: 'supervision', label: 'Supervision', icon: 'eye', path: '/supervision', roles: SUPER, ready: true },
@@ -65,15 +67,19 @@ export const NAV: readonly NavItem[] = [
   { id: 'remit', label: "Remise à l'administrateur", icon: 'vault', path: '/remit', roles: AGENT, ready: true },
 
   // Communs à plusieurs rôles
-  { id: 'users', label: 'Utilisateurs', icon: 'users', path: '/users', roles: ADMINS, ready: true },
-  { id: 'transactions', label: 'Transactions', icon: 'list', path: '/transactions', roles: OPS, ready: true },
-  { id: 'treasury', label: 'Trésorerie', icon: 'vault', path: '/treasury', roles: ADMINS, ready: true },
+  { id: 'users', label: 'Utilisateurs', icon: 'users', path: '/users', roles: COMPANY, ready: true },
+  { id: 'transactions', label: 'Transactions', icon: 'list', path: '/transactions', roles: ['COMPANY_ADMIN', 'AGENT'], ready: true },
+  { id: 'treasury', label: 'Trésorerie', icon: 'vault', path: '/treasury', roles: COMPANY, ready: true },
+  { id: 'transfers', label: 'Virements', icon: 'vault', path: '/treasury', roles: SUPER, ready: true },
   { id: 'commissions', label: 'Commissions', icon: 'percent', path: '/commissions', roles: ['COMPANY_ADMIN', 'AGENT'], ready: true },
-  { id: 'rates', label: 'Taux de change', icon: 'swap', path: '/rates', roles: ADMINS, ready: true },
-  { id: 'fees', label: 'Frais', icon: 'percent', path: '/fees', roles: ADMINS, ready: true },
+  { id: 'rates', label: 'Taux de change', icon: 'swap', path: '/rates', roles: COMPANY, ready: true },
+  { id: 'rates-view', label: 'Taux des sociétés', icon: 'swap', path: '/rates', roles: SUPER, ready: true },
+  { id: 'fees', label: 'Frais', icon: 'percent', path: '/fees', roles: COMPANY, ready: true },
+  { id: 'fees-view', label: 'Frais des sociétés', icon: 'percent', path: '/fees', roles: SUPER, ready: true },
   { id: 'agency-withdrawals', label: "Retraits d'agence", icon: 'withdraw', path: '/agency-withdrawals', roles: COMPANY, ready: true },
   { id: 'notifications', label: 'Notifications', icon: 'bell', path: '/notifications', roles: ALL, ready: true },
-  { id: 'settings', label: 'Réglages', icon: 'cog', path: '/settings', roles: ADMINS, ready: true },
+  { id: 'settings', label: 'Réglages', icon: 'cog', path: '/settings', roles: COMPANY, ready: true },
+  { id: 'settings-view', label: 'Réglages des sociétés', icon: 'cog', path: '/settings', roles: SUPER, ready: true },
 
   { id: 'account', label: 'Mon compte', icon: 'user', path: '/account', roles: ALL, ready: true },
 ];

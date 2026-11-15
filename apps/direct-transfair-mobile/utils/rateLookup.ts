@@ -1,5 +1,5 @@
 // utils/rateLookup.ts
-// Taux de change pour l'AFFICHAGE : uniquement ceux publiés par la plateforme (GET /exchange-rates).
+// Taux de change pour l'AFFICHAGE : uniquement ceux publiés par la société (GET /exchange-rates?code=…, taux par société).
 // Aucun taux écrit en dur : si le couple n'est pas publié, on renvoie null et l'écran n'affiche aucune estimation.
 // Le montant réellement reçu est toujours calculé par le serveur avec le taux enregistré.
 

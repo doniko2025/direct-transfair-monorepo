@@ -17,7 +17,16 @@ export class SetRateDto {
   confirmLargeChange?: boolean;
 }
 
-export class RateHistoryQueryDto {
+/** Société consultée — utilisé par le SUPER ADMIN (lecture seule) ; ignoré pour un administrateur de société (toujours SA société). */
+export class RatesScopeQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  clientId?: number;
+}
+
+export class RateHistoryQueryDto extends RatesScopeQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()

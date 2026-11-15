@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/clients/details.tsx
 // =========================================================
-// CLIENT DETAILS v6.1 — Direct Transf'air
+// CLIENT DETAILS v6.3 — Direct Transf'air
+// ✅ v6.3 : carte « Contrats » (SUPER_ADMIN) : liste, émission location / achat avec lien de signature, PDF, renvoi, annulation.
+// ✅ v6.2 : carte « Immatriculation » (numéro RCCM — figure dans le contrat ; alerte s'il manque sur une société existante)
+//           et carte « Documents » (SUPER_ADMIN) : consulter, ajouter (photo / galerie / PDF) et supprimer les pièces légales.
 // ✅ v6.0 : Section "Agences" ajoutée
 // ✅ v6.1 : Suppression du bouton "+ Ajouter" agences
 //           et du lien "Créer la première agence →"
@@ -23,6 +26,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "../../../../services/api";
 import { useAuth } from "../../../../providers/AuthProvider";
+import CompanyDocumentsCard from "../../../../components/dashboards/CompanyDocumentsCard";
+import CompanyContractsCard from "../../../../components/dashboards/CompanyContractsCard";
 
 const T = {
   pageBg:   "#F2F4F8",
@@ -481,6 +486,54 @@ export default function ClientDetailsScreen() {
           <InfoRow label="Devise principale"    value={client.defaultCurrency || ""}               icon="cash-outline"      accent={T.blue} />
         </View>
 
+        {/* ── Immatriculation (RCCM) ── */}
+        <View style={s.card}>
+          <SH dot={T.purple} label="Immatriculation" />
+          {client.rccmNumber ? (
+            <InfoRow label="Numéro RCCM" value={client.rccmNumber} icon="ribbon-outline" accent={T.purple} />
+          ) : (
+            <TouchableOpacity
+              style={s.rccmWarn}
+              onPress={() => router.push({ pathname: "/(tabs)/admin/clients/edit", params: { id: client.id } })}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Renseigner le numéro RCCM"
+            >
+              <Ionicons name="alert-circle-outline" size={20} color={T.amber} />
+              <View style={{ flex: 1 }}>
+                <Text style={[s.rccmWarnTitle, { fontFamily: T.font.sans }]}>Numéro RCCM non renseigné</Text>
+                <Text style={[s.rccmWarnTxt, { fontFamily: T.font.sans }]}>
+                  Obligatoire pour émettre le contrat de la société. Touchez pour le saisir.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={T.amber} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* ── Documents légaux (SUPER_ADMIN : l'API leur est réservée) ── */}
+        {user?.role === "SUPER_ADMIN" && (
+          <View style={s.card}>
+            <SH dot={T.teal} label="Documents" />
+            <CompanyDocumentsCard clientId={client.id} />
+          </View>
+        )}
+
+        {/* ── Contrats (SUPER_ADMIN) : location / achat de l'application, signature en ligne ── */}
+        {user?.role === "SUPER_ADMIN" && (
+          <View style={s.card}>
+            <SH dot={T.blue} label="Contrats" />
+            <CompanyContractsCard
+              clientId={client.id}
+              defaultKind={client.subscriptionType === "PURCHASE" ? "PURCHASE" : "RENTAL"}
+              defaultEmail={client.email || client.contactEmail || null}
+              defaultCurrency={client.defaultCurrency ?? null}
+              hasRccm={!!String(client.rccmNumber ?? "").trim()}
+              onEditRccm={() => router.push({ pathname: "/(tabs)/admin/clients/edit", params: { id: client.id } })}
+            />
+          </View>
+        )}
+
         {/* ── Gérant ── */}
         <View style={s.card}>
           <SH dot={T.amber} label="Gérant" />
@@ -614,6 +667,9 @@ const s = StyleSheet.create({
   counterLbl:       { fontSize: 10, color: T.inkSub, fontWeight: "600", marginTop: 2 },
 
   card:      { backgroundColor: T.surface, borderRadius: T.radius.lg, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: T.border, ...T.shadow.soft },
+  rccmWarn:      { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderRadius: T.radius.md, backgroundColor: T.amberLt, borderWidth: 1, borderColor: T.amber + "40" },
+  rccmWarnTitle: { fontSize: 13, fontWeight: "800", color: T.amber },
+  rccmWarnTxt:   { fontSize: 11, fontWeight: "600", color: T.inkSub, marginTop: 2, lineHeight: 15 },
   addrBox:   { flexDirection: "row", gap: 12 },
   addrLine:  { fontSize: 14, fontWeight: "700", color: T.ink, marginBottom: 2 },
   actionsRow:{ flexDirection: "row", gap: 10 },

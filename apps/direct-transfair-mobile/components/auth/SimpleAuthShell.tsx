@@ -8,7 +8,7 @@
 // =========================================================
 
 import React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StatusBar, View } from 'react-native';
+import { KeyboardAvoidingView, Pressable, ScrollView, StatusBar, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '../ui/Icon';
@@ -18,6 +18,7 @@ import { useT } from '../../providers/I18nProvider';
 import { LanguagePill } from '../i18n/LanguageSwitcher';
 import { ThemePill } from '../theme/ThemeSwitcher';
 import Reveal from '../flow/Reveal';
+import { safeTop } from '../../utils/safeArea';
 
 type Props = {
   title: string;
@@ -55,7 +56,7 @@ export default function SimpleAuthShell({ title, subtitle, onBack, headerRight, 
   const t = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const top = Math.max(insets.top, Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 12) + 8;
+  const top = safeTop(insets.top) + 8;   // jamais sous la barre d'état (Android edge-to-edge : insets.top peut valoir 0)
   const bottom = Math.max(insets.bottom, 14) + 18;
 
   return (

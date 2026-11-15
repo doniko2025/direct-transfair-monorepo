@@ -522,6 +522,7 @@ export interface Client {
   ownerFirstName?: string | null;
   ownerLastName?: string | null;
   activitySector?: string | null;
+  rccmNumber?: string | null;   // n° RCCM de la société — figure dans son contrat
   contactEmail?: string | null;
   contactPhone?: string | null;
   ownerBirthDate?: ISODate | null;

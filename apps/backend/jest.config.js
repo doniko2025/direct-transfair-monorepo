@@ -9,4 +9,6 @@ module.exports = {
   },
   moduleFileExtensions: ['ts', 'js', 'json'],
   testEnvironment: 'node',
+  // Neutralise les variables d'environnement du terminal (KYC_ENFORCEMENT, RATE_MAX_AGE_HOURS) pour des tests reproductibles.
+  setupFiles: ['<rootDir>/test/jest.setup.js'],
 };

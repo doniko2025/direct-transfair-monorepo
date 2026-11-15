@@ -102,7 +102,7 @@ describe('WithdrawalsService — code de retrait', () => {
 describe('WithdrawalsService.agentProcessPayment — commissions (v4.13)', () => {
   const agentWallets = [{ id: 'w-agence', currency: 'XOF', balance: 0 }];
   const baseTx = (over: any = {}) => ({
-    id: 't1', status: TransactionStatus.VALIDATED, currency: 'XOF', targetCurrency: null, payoutMethod: 'CASH_PICKUP',
+    id: 't1', clientId: 7, status: TransactionStatus.VALIDATED, currency: 'XOF', targetCurrency: null, payoutMethod: 'CASH_PICKUP',
     amount: 100_000, receivedAmount: null, fees: 1_001, agencyId: 'a-envoi', senderId: null,
     sender: { id: 's1', agencyId: 'a-envoi', firstName: 'S', lastName: 'T' }, withdrawal: null, beneficiary: null, ...over,
   });
@@ -158,7 +158,7 @@ describe('WithdrawalsService.agentProcessPayment — commissions (v4.13)', () =>
       wallets: agentWallets, convert,
     });
     const r: any = await run(m);
-    expect(convert).toHaveBeenCalledWith(2, 'EUR', 'XOF');
+    expect(convert).toHaveBeenCalledWith(2, 'EUR', 'XOF', 7); // taux de LA société de l'envoi
     expect(r.feesConverted).toBe(1400);
   });
 

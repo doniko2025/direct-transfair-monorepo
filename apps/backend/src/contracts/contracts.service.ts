@@ -113,6 +113,11 @@ export class ContractsService {
     const client = await this.prisma.client.findFirst({ where: { id: input.clientId, deletedAt: null } });
     if (!client) throw new NotFoundException('Société introuvable.');
 
+    // ✅ Le numéro RCCM du Client figure dans le contrat : sans lui, le contrat serait incomplet.
+    if (!client.rccmNumber?.trim()) {
+      throw new BadRequestException("Renseignez d'abord le numéro RCCM de la société (fiche de la société, rubrique « Immatriculation ») : il figure dans le contrat.");
+    }
+
     const kind: ContractKind = input.kind ?? (client.subscriptionType === 'PURCHASE' ? 'PURCHASE' : 'RENTAL');
     const amount = Number(input.terms.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -155,6 +160,7 @@ export class ContractsService {
           country: client.country,
           email: recipientEmail,
           representativeName: recipientName || client.name,
+          rccmNumber: client.rccmNumber,
         },
       });
       const contentHash = sha256Hex(stableStringify({ reference, kind, version: CONTRACT_TEMPLATE_VERSION, terms, content }));

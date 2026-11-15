@@ -10,6 +10,7 @@ function build(opts: { recent?: Array<{ amount: number; currency: string }>; con
   const prisma: any = {
     transaction: {
       findMany: jest.fn().mockResolvedValue(opts.recent ?? []),
+      findUnique: jest.fn().mockResolvedValue({ clientId: 9 }), // société de l'opération (taux par société)
       update: jest.fn().mockImplementation(async (a: any) => { updates.push(a); return a; }),
     },
     user: { findUnique: jest.fn().mockResolvedValue({ createdAt: opts.userCreatedAt ?? new Date('2020-01-01') }) },
@@ -50,7 +51,7 @@ describe('scoreAml — dépôt en agence', () => {
   it('un montant en EUR est converti avec le taux enregistré (5 000 € ≈ 3,28 M XOF > seuil)', async () => {
     const { service, rates, updates } = build();
     await service.scoreAml('dep1', 'client1', 5_000, 'EUR', 'DEPOSIT');
-    expect(rates.convert).toHaveBeenCalledWith(5_000, 'EUR', 'XOF');
+    expect(rates.convert).toHaveBeenCalledWith(5_000, 'EUR', 'XOF', 9); // taux de LA société de l'opération
     expect(updates[0].data.riskScore).toBeGreaterThanOrEqual(40);
   });
 

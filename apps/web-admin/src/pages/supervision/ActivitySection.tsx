@@ -1,5 +1,7 @@
 // src/pages/supervision/ActivitySection.tsx
 // Chiffres des dernières 24 heures : activité, sécurité et (super admin) parc de sociétés.
+// Le super admin ne voit PAS les compteurs d'activité des sociétés (transactions) : ils appartiennent aux sociétés. Il garde la
+// sécurité de la plateforme et le parc de sociétés (abonnements).
 
 import type { ReactNode } from 'react';
 import type { SupervisionOverview } from '@direct-transfair/shared';
@@ -36,15 +38,17 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
 export default function ActivitySection({ overview }: { overview: SupervisionOverview }) {
   const { last24h, security, companies } = overview;
   const success = last24h.transactions - last24h.failedTransactions;
+  const isPlatform = overview.scope === 'PLATFORM';
 
   return (
     <section aria-labelledby="sv-activity-title" className="sv-section">
       <div className="sv-section__head">
         <h2 id="sv-activity-title">Dernières 24 heures</h2>
-        <p>L’activité et la sécurité de la plateforme sur la journée écoulée.</p>
+        <p>{isPlatform ? 'La sécurité de la plateforme et le parc de sociétés.' : 'L’activité et la sécurité de votre société sur la journée écoulée.'}</p>
       </div>
 
       <div className="sv-groups">
+        {isPlatform ? null : (
         <Group title="Activité">
           <Stat
             label={plural(last24h.transactions, 'Transaction créée', 'Transactions créées')}
@@ -53,6 +57,7 @@ export default function ActivitySection({ overview }: { overview: SupervisionOve
           />
           <Stat label={plural(last24h.failedTransactions, 'Transaction en échec', 'Transactions en échec')} value={last24h.failedTransactions} alert="danger" />
         </Group>
+        )}
 
         <Group title="Sécurité">
           <Stat label={plural(security.failedOtp24h, 'Code de vérification refusé', 'Codes de vérification refusés')} value={security.failedOtp24h} alert="warn" />

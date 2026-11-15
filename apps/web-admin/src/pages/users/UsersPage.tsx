@@ -139,10 +139,10 @@ export default function UsersPage() {
   return (
     <>
       <PageHeader
-        title="Utilisateurs"
+        title={isSuper ? 'Administrateurs' : 'Utilisateurs'}
         description={
           isSuper
-            ? 'Tous les comptes de la plateforme : administrateurs, agents et clients wallet.'
+            ? 'Les administrateurs de vos sociétés. Les agents et les clients sont gérés par chaque société.'
             : 'Les comptes de votre société : administrateurs, agents et clients wallet.'
         }
         actions={
@@ -185,7 +185,7 @@ export default function UsersPage() {
               setQuery(e.target.value);
               setLimit(PAGE_SIZE);
             }}
-            placeholder={mobile ? 'Rechercher' : 'Nom, email, téléphone ou société'}
+            placeholder={mobile ? 'Rechercher' : isSuper ? 'Nom, email ou société' : 'Nom, email, téléphone ou société'}
             aria-label="Rechercher un utilisateur"
           />
         </div>
@@ -217,6 +217,7 @@ export default function UsersPage() {
             <span className="hide-mobile">Suspendus ou désactivés</span>
             <span className="show-mobile">Suspendus</span>
           </button>
+          {!isSuper ? (
           <FilterTabs
             id="users-profile"
             label="Filtrer par profil"
@@ -228,6 +229,7 @@ export default function UsersPage() {
             }}
             options={tabs}
           />
+          ) : null}
         </div>
       </div>
 
@@ -254,8 +256,8 @@ export default function UsersPage() {
           <span className="empty__icon">
             <Icon name="users" size={26} />
           </span>
-          <h2>Aucun utilisateur pour l'instant</h2>
-          <p>Les comptes apparaissent ici dès qu'ils sont créés ou qu'un client s'inscrit.</p>
+          <h2>{isSuper ? "Aucun administrateur pour l'instant" : "Aucun utilisateur pour l'instant"}</h2>
+          <p>{isSuper ? "Créez une société, puis son administrateur." : "Les comptes apparaissent ici dès qu'ils sont créés ou qu'un client s'inscrit."}</p>
         </Card>
       ) : visible.length === 0 ? (
         <Card className="empty">

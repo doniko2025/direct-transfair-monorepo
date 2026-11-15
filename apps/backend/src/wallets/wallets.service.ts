@@ -581,14 +581,17 @@ export class WalletsService {
     // la prise des verrous (la devise d'un wallet ne change jamais) pour ne pas garder un verrou pendant une requête de taux.
     const pre = await tx.wallet.findMany({
       where:  { id: { in: [fromWalletId, toWalletId] } },
-      select: { id: true, currency: true },
+      // société propriétaire : directe (wallet société), sinon celle de l'agence ou de l'utilisateur propriétaire
+      select: { id: true, currency: true, clientId: true, agency: { select: { clientId: true } }, user: { select: { clientId: true } } },
     });
     const preFrom = pre.find((w) => w.id === fromWalletId);
     const preTo   = pre.find((w) => w.id === toWalletId);
     if (!preFrom || !preTo) throw new NotFoundException('Wallet introuvable');
     const rawConverted = preFrom.currency === preTo.currency
       ? amount
-      : await this.rates.convert(amount, preFrom.currency, preTo.currency);
+      : await this.rates.convert(amount, preFrom.currency, preTo.currency, [preFrom, preTo]
+            .map((w) => w.clientId ?? w.agency?.clientId ?? w.user?.clientId ?? null)
+            .find((c): c is number => c !== null) ?? null);
 
     const ids = [fromWalletId, toWalletId].sort();
     await this.lockWallet(tx, ids[0]);

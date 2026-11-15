@@ -11,7 +11,7 @@ describe('ExchangeRatesService', () => {
   const mockPrisma = {
     exchangeRate: {
       findMany:   jest.fn().mockResolvedValue([]),
-      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst:  jest.fn().mockResolvedValue(null),
       upsert:     jest.fn().mockResolvedValue({ id: 'cuid1', pair: 'EUR_XOF', rate: 655.957 }),
     },
     exchangeRateHistory: {
@@ -36,32 +36,61 @@ describe('ExchangeRatesService', () => {
     expect(service).toBeDefined();
   });
 
-  it('findAll() filtre sur isActive:true', async () => {
-    await service.findAll();
+  const CO = 7; // société de test
+
+  it('findAll() filtre sur la société ET sur isActive:true', async () => {
+    await service.findAll(CO);
     expect(mockPrisma.exchangeRate.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { isActive: true } }),
+      expect.objectContaining({ where: { clientId: CO, isActive: true } }),
     );
   });
 
+  it('findAll() sans société : aucun taux publié, aucune requête', async () => {
+    await expect(service.findAll(null)).resolves.toEqual([]);
+    expect(mockPrisma.exchangeRate.findMany).not.toHaveBeenCalled();
+  });
+
   it('findByPair() lève NotFoundException si absent', async () => {
-    mockPrisma.exchangeRate.findUnique.mockResolvedValue(null);
-    await expect(service.findByPair('EUR_UNKNOWN')).rejects.toThrow(NotFoundException);
+    mockPrisma.exchangeRate.findFirst.mockResolvedValue(null);
+    await expect(service.findByPair('EUR_UNKNOWN', CO)).rejects.toThrow(NotFoundException);
+  });
+
+  it('findByPair() cherche dans les taux de la société uniquement', async () => {
+    mockPrisma.exchangeRate.findFirst.mockResolvedValue({ pair: 'EUR_XOF', rate: 655.957 });
+    await service.findByPair('eur_xof', CO);
+    expect(mockPrisma.exchangeRate.findFirst).toHaveBeenCalledWith({ where: { clientId: CO, pair: 'EUR_XOF' } });
   });
 
   it('convert() retourne rate=1 si from === to', async () => {
-    const result = await service.convert(100, 'XOF', 'XOF');
+    const result = await service.convert(100, 'XOF', 'XOF', CO);
     expect(result).toEqual({ amount: 100, rate: 1, convertedAmount: 100 });
-    expect(mockPrisma.exchangeRate.findUnique).not.toHaveBeenCalled();
+    expect(mockPrisma.exchangeRate.findFirst).not.toHaveBeenCalled();
   });
 
-  it('convert() utilise la paire directe', async () => {
-    mockPrisma.exchangeRate.findUnique.mockResolvedValue({ pair: 'EUR_XOF', rate: 655.957 });
-    const result = await service.convert(1, 'EUR', 'XOF');
+  it('convert() utilise la paire directe de la société', async () => {
+    mockPrisma.exchangeRate.findFirst.mockResolvedValue({ pair: 'EUR_XOF', rate: 655.957 });
+    const result = await service.convert(1, 'EUR', 'XOF', CO);
     expect(result.rate).toBeCloseTo(655.957);
+    expect(mockPrisma.exchangeRate.findFirst).toHaveBeenCalledWith({ where: { clientId: CO, pair: 'EUR_XOF' } });
+  });
+
+  it('convert() sans société : aucun taux, NotFoundException', async () => {
+    await expect(service.convert(1, 'EUR', 'XOF', null)).rejects.toThrow(NotFoundException);
+    expect(mockPrisma.exchangeRate.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('upsert() écrit le taux de LA société (clé société + paire)', async () => {
+    await service.upsert(CO, 'EUR_XOF', 660);
+    expect(mockPrisma.exchangeRate.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { clientId_pair: { clientId: CO, pair: 'EUR_XOF' } },
+        create: expect.objectContaining({ clientId: CO, pair: 'EUR_XOF', rate: 660 }),
+      }),
+    );
   });
 
   it('upsert() crée un historique lié au taux (rateId)', async () => {
-    await service.upsert('EUR_XOF', 660);
+    await service.upsert(CO, 'EUR_XOF', 660);
     expect(mockPrisma.exchangeRateHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ rateId: 'cuid1', pair: 'EUR_XOF', rate: 660 }),

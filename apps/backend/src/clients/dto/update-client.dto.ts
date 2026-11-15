@@ -12,6 +12,7 @@
 import { Transform } from 'class-transformer';
 import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, ValidateIf } from 'class-validator';
 import { SubscriptionStatus, SubscriptionType } from '@prisma/client';
+import { RCCM_PATTERN } from '../client-documents.rules';
 
 const HEX = /^#[0-9A-Fa-f]{6}$/;
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -109,6 +110,9 @@ export class UpdateClientDto {
 
   @IsOptional() @Transform(emptyToNull) @IsString() @MaxLength(80)
   capitalSocial?: string | null;
+
+  @IsOptional() @Transform(emptyToNull) @IsString() @MaxLength(60) @Matches(RCCM_PATTERN, { message: 'Numéro RCCM invalide.' })
+  rccmNumber?: string | null;
 
   @IsOptional() @Transform(emptyToNull) @IsEmail()
   supportEmail?: string | null;

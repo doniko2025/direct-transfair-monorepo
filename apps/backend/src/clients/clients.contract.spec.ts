@@ -1,6 +1,7 @@
 // apps/backend/src/clients/clients.contract.spec.ts
 // Création de société : le contrat est émis et son lien de signature est joint au courriel de bienvenue.
 import 'reflect-metadata';
+import { BadRequestException } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 
 function make(contractsService: any) {
@@ -20,7 +21,7 @@ function make(contractsService: any) {
 
 const dto: any = {
   code: 'FLASH', name: 'Flash', adminEmail: 'patron@flash.sn', adminFirstName: 'Aminata', adminLastName: 'Diallo',
-  adminPassword: 'Secret-pass-123', ownerCountry: 'SN', subscriptionType: 'RENTAL',
+  adminPassword: 'Secret-pass-123', ownerCountry: 'SN', subscriptionType: 'RENTAL', rccmNumber: 'SN.DKR.2020.B.1234',
 };
 
 describe('ClientsService.create — contrat', () => {
@@ -39,6 +40,15 @@ describe('ClientsService.create — contrat', () => {
     expect(sent.temporaryPassword).toBe('Secret-pass-123');
     expect(sent.signature).toMatchObject({ url: 'https://app/signature/T', reference: 'CT-2026-0001' });
     expect(contracts.markSent).toHaveBeenCalledWith('c1');
+  });
+
+  it("le contrat exige le numéro RCCM : refusé AVANT toute création, rien n'est écrit", async () => {
+    const contracts: any = { issue: jest.fn(), markSent: jest.fn() };
+    const { service } = make(contracts);
+    const { rccmNumber, ...noRccm } = dto;
+    void rccmNumber;
+    await expect(service.create({ ...noRccm, contract: { amount: 149, currency: 'EUR' } })).rejects.toBeInstanceOf(BadRequestException);
+    expect(contracts.issue).not.toHaveBeenCalled();
   });
 
   it("sans conditions de contrat : aucun contrat, courriel de bienvenue classique", async () => {

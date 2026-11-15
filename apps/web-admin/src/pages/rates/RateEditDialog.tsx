@@ -1,5 +1,5 @@
 // src/pages/rates/RateEditDialog.tsx
-// Fixer le taux d'un couple de devises (super admin). Le sens inverse se déduit automatiquement.
+// Fixer le taux d'un couple de devises (administrateur de la société). Le sens inverse se déduit automatiquement.
 
 import { useState, type FormEvent } from 'react';
 import { ApiError, type RatePair } from '@direct-transfair/shared';

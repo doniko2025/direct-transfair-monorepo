@@ -3,7 +3,7 @@
 // avec la variation par rapport à l'enregistrement précédent.
 
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError, type RateHistoryEntry } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
 import { Button, Card, Notice, PageHeader, Pill, Spinner } from '../../components/ui';
@@ -18,11 +18,14 @@ const MAX = 100;
 
 export default function RateHistoryPage() {
   const { pair = '' } = useParams();
+  // Super admin : la société consultée est portée par l'adresse (?clientId=) ; un admin de société voit toujours la sienne.
+  const [search] = useSearchParams();
+  const clientIdParam = Number(search.get('clientId')) || undefined;
   const [limit, setLimit] = useState(STEP);
-  const history = useResource(() => api.rates.history(pair, limit), [pair, limit]);
+  const history = useResource(() => api.rates.history(pair, limit, clientIdParam), [pair, limit, clientIdParam]);
 
   const back = (
-    <Link to="/rates" className="btn btn--secondary">
+    <Link to={clientIdParam ? `/rates?clientId=${clientIdParam}` : '/rates'} className="btn btn--secondary">
       <Icon name="arrowLeft" size={18} />
       <span>Taux de change</span>
     </Link>

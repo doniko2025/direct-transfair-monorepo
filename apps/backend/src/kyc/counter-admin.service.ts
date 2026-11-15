@@ -25,7 +25,8 @@ export class CounterAdminService {
   constructor(private readonly prisma: PrismaService) {}
 
   private scope(admin: AuthUserPayload, clientId?: number): { clientId?: number } {
-    if (admin.role === 'SUPER_ADMIN') return clientId ? { clientId } : {};
+    // Les clients de passage sont ceux des sociétés : le super admin n'y a aucun accès.
+    if (admin.role === 'SUPER_ADMIN') throw new ForbiddenException('Les clients de passage relèvent de chaque société.');
     if (admin.role === 'SUPPORT') {
       if (!hasPermission(admin, 'KYC_COUNTER')) throw new ForbiddenException(SUPPORT_NOT_DELEGATED); // lot 9
     } else if (admin.role !== 'COMPANY_ADMIN') throw new ForbiddenException('Réservé aux administrateurs.');

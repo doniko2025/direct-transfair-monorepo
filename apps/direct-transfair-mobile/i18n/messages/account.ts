@@ -100,8 +100,10 @@ export const account = {
   'otpPhone.resendFailed': { fr: 'Renvoi impossible', en: 'Could not resend', pt: 'Reenvio impossível' },
 
   // ── Inscription ──
-  'reg.step.identity.title':  { fr: 'Faisons connaissance', en: "Let's get to know you", pt: 'Vamos conhecer-nos' },
-  'reg.step.identity.sub':    { fr: 'Vos informations d’identité, telles qu’elles figurent sur votre pièce d’identité.', en: 'Your identity details, exactly as they appear on your identity document.', pt: 'Os seus dados de identidade, tal como constam do seu documento de identificação.' },
+  'reg.step.name.title':      { fr: 'Faisons connaissance', en: "Let's get to know you", pt: 'Vamos conhecer-nos' },
+  'reg.step.name.sub':        { fr: 'Votre prénom et votre nom, tels qu’ils figurent sur votre pièce d’identité.', en: 'Your first and last name, exactly as on your identity document.', pt: 'O seu nome próprio e apelido, tal como constam do seu documento de identificação.' },
+  'reg.step.birth.title':     { fr: 'Quelle est votre date de naissance ?', en: 'What is your date of birth?', pt: 'Qual é a sua data de nascimento?' },
+  'reg.step.birth.sub':       { fr: 'Ainsi que votre nationalité, comme sur votre pièce d’identité.', en: 'And your nationality, as on your identity document.', pt: 'E a sua nacionalidade, tal como no seu documento de identificação.' },
   'reg.step.residence.title': { fr: 'Où résidez-vous ?', en: 'Where do you live?', pt: 'Onde reside?' },
   'reg.step.residence.sub':   { fr: 'Votre pays de résidence détermine la devise de votre portefeuille.', en: 'Your country of residence determines the currency of your wallet.', pt: 'O seu país de residência determina a moeda da sua carteira.' },
   'reg.step.contact.title':   { fr: 'Comment vous joindre ?', en: 'How can we reach you?', pt: 'Como o podemos contactar?' },

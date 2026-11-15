@@ -49,8 +49,9 @@ describe('CounterAdminService', () => {
     expect(JSON.stringify(r)).not.toContain('AB123456');
     expect(prisma.counterCustomer.findMany.mock.calls[0][0].where).toMatchObject({ clientId: 7 });
     await expect(service.list(agent, {})).rejects.toBeInstanceOf(ForbiddenException);
-    await service.list(superAdmin, { clientId: 9 });
-    expect(prisma.counterCustomer.findMany.mock.calls[1][0].where).toMatchObject({ clientId: 9 });
+    // Les clients de passage sont ceux des sociétés : le super administrateur n'y a pas accès.
+    await expect(service.list(superAdmin, { clientId: 9 })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.counterCustomer.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('fiche détaillée : numéro complet + consultation journalisée KYC_VIEW', async () => {

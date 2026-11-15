@@ -56,6 +56,7 @@ import { CompanyMailService } from '../mail/channels/company-mail.service';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { platform } from '../common/platform.config';
 import { normalizeLogoUrl } from './logo-rules';
+import { normalizeRccm } from './client-documents.rules';
 import { ContractsService } from '../contracts/contracts.service';
 import type { ContractTerms } from '../contracts/contract-templates';
 
@@ -270,6 +271,17 @@ export class ClientsService {
         throw new ConflictException(`Le domaine "${dto.customDomain}" est déjà utilisé.`);
     }
 
+    // ✅ RCCM : repris dans le contrat de la société. Le contrat ne peut pas être émis sans.
+    let rccmNumber: string | null;
+    try {
+      rccmNumber = normalizeRccm(dto.rccmNumber);
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    if (dto.contract && !rccmNumber) {
+      throw new BadRequestException('Le numéro RCCM de la société est obligatoire pour émettre son contrat.');
+    }
+
     const plainPassword   = String(dto.adminPassword);
     const hashedPassword  = await bcrypt.hash(plainPassword, 10);
     const ownerCountryCode = dto.ownerCountry?.toUpperCase().substring(0, 2);
@@ -324,6 +336,7 @@ export class ClientsService {
           regulatorLicenseType:     dto.regulatorLicenseType?.trim()     || null,
           regulatorLicenseNumber:   dto.regulatorLicenseNumber?.trim()   || null,
           capitalSocial:            dto.capitalSocial?.trim()            || null,
+          rccmNumber:               rccmNumber,
           supportEmail:             dto.supportEmail?.trim()             || null,
           whatsappNumber:           dto.whatsappNumber?.trim()           || null,
           mediatorName:             dto.mediatorName?.trim()             || null,
@@ -537,6 +550,14 @@ export class ClientsService {
     delete updateData.id;
 
     if ('logoUrl' in updateData) updateData.logoUrl = normalizeLogoUrl(updateData.logoUrl); // ✅ v4.15
+
+    if ('rccmNumber' in updateData) {
+      try {
+        updateData.rccmNumber = normalizeRccm(updateData.rccmNumber);
+      } catch (e) {
+        throw new BadRequestException((e as Error).message);
+      }
+    }
 
     if (updateData.status) {
       updateData.subscriptionStatus = updateData.status;

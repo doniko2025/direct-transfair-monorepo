@@ -50,6 +50,17 @@ describe('ClientsService.create — champs complets', () => {
     });
   });
 
+  it('enregistre le numéro RCCM (espaces nettoyés) ; absent → NULL ; invalide → 400', async () => {
+    const a = make();
+    await a.service.create({ ...base, rccmNumber: '  GN.TCC.2021.A.12345  ' } as any);
+    expect(a.created.client.rccmNumber).toBe('GN.TCC.2021.A.12345');
+    const b = make();
+    await b.service.create({ ...base } as any);
+    expect(b.created.client.rccmNumber).toBeNull();
+    const c = make();
+    await expect(c.service.create({ ...base, rccmNumber: '!!' } as any)).rejects.toThrow(/RCCM/);
+  });
+
   it('champs vides ou absents → NULL (jamais une chaîne vide)', async () => {
     const { service, created } = make();
     await service.create({ ...base, city: '   ', legalCompanyName: '', supportEmail: '' } as any);

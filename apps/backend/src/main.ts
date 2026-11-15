@@ -159,6 +159,8 @@ async function bootstrap(): Promise<void> {
   app.use('/api/merchants/me/logo', json({ limit: '3mb' }));
   // Pièce justificative du RCCM (photo ou PDF ≤ 6 Mo une fois décodée ≈ 8,1 Mo en base64).
   app.use('/api/merchants/me/rccm-document', json({ limit: '9mb' }));
+  // Documents légaux d'une société (RCCM, pièce d'identité du représentant… ≤ 6 Mo décodés ≈ 8,1 Mo en base64) : POST /api/clients/:id/documents.
+  app.use(/^\/api\/clients\/\d+\/documents\/?$/, json({ limit: '9mb' }));
   // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
   app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
     req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),

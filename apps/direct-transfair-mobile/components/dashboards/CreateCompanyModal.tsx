@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/components/dashboards/CreateCompanyModal.tsx
 // =========================================================
-// CREATE COMPANY MODAL v7.1 — Direct Transf'air
+// CREATE COMPANY MODAL v7.2 — Direct Transf'air
+// ✅ v7.3 — Section 06 « Contrat » : émission du contrat de location / d'achat à la création (comme le web) — conditions
+//   commerciales contrôlées avant la création ; le lien de signature part par e-mail et peut être copié à la fin.
+// ✅ v7.2 — Numéro RCCM obligatoire (figure dans le contrat) + section 05 « Pièces justificatives » :
+//   photo, galerie ou fichier PDF pour RCCM, identité du gérant, NIF, statuts, agrément, autre (nom exigé) ; envoyées une par une après la création
+//   (POST /clients/:id/documents) — un échec d'envoi est signalé sans annuler la création.
 // ✅ v7.0 conservé intégralement
 // ✅ v7.1 — Suppression du champ "Complément" (section 04 ADRESSE)
 //   BUG : Le champ "Complément" utilisait `addrLabel` comme state,
@@ -17,11 +22,21 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   Alert, Modal, KeyboardAvoidingView, Platform, ScrollView,
-  ActivityIndicator, Image, Animated, Dimensions,
+  ActivityIndicator, Image, Animated, Dimensions, Switch,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Clipboard from "expo-clipboard";
 import { api } from "../../services/api";
+import {
+  DOC_SLOTS, pickCompanyDoc, fmtBytes,
+  type DocKind, type DocSource, type DocPicks,
+} from "./companyDocs";
+import ContractTermsFields from "./ContractTermsFields";
+import {
+  initialTermsForm, toTermsInput, validateTerms,
+  type ContractTermsForm,
+} from "../../services/contractTypes";
 import {
   normalizeUpperAlnum, isEmailLike, onlyDigits,
   generateTenantCode7, generateTempPassword6,
@@ -553,6 +568,144 @@ const lpS = StyleSheet.create({
   urlInput:   { paddingHorizontal: 13, paddingVertical: 11, fontSize: 12, color: T.inkSub, fontWeight: "600" },
 });
 
+// ─── Pièces justificatives de la société ──────────────────
+// Logique (types, contrôles, sources photo / galerie / fichier PDF) : ./companyDocs. Ici, seulement l'affichage.
+// L'envoi se fait après la création de la société, une requête par pièce.
+function CompanyDocsPicker({ value, onChange, disabled }: {
+  value: DocPicks; onChange: (next: DocPicks) => void; disabled?: boolean;
+}) {
+  const [problems, setProblems] = useState<Partial<Record<DocKind, string>>>({});
+  const [busyKind, setBusyKind] = useState<DocKind | null>(null);
+
+  const setProblem = (kind: DocKind, msg: string | null) =>
+    setProblems((p) => { const n = { ...p }; if (msg) n[kind] = msg; else delete n[kind]; return n; });
+
+  const pick = async (kind: DocKind, source: DocSource) => {
+    setProblem(kind, null);
+    setBusyKind(kind);
+    const out = await pickCompanyDoc(source);
+    setBusyKind(null);
+    if (out.status === "error") return setProblem(kind, out.message);
+    if (out.status === "ok") onChange({ ...value, [kind]: { ...out.pick, label: value[kind]?.label } });
+  };
+
+  const remove = (kind: DocKind) => {
+    const next = { ...value }; delete next[kind];
+    setProblem(kind, null);
+    onChange(next);
+  };
+
+  const setLabel = (kind: DocKind, label: string) => {
+    const cur = value[kind];
+    if (cur) onChange({ ...value, [kind]: { ...cur, label } });
+  };
+
+  const attached = DOC_SLOTS.filter((d) => value[d.kind]).length;
+
+  const SourceBtn = ({ kind, source, icon, a11y }: { kind: DocKind; source: DocSource; icon: string; a11y: string }) => (
+    <TouchableOpacity
+      style={[dpS.iconBtn, (disabled || busyKind !== null) && { opacity: 0.5 }]}
+      onPress={() => pick(kind, source)}
+      disabled={disabled || busyKind !== null}
+      accessibilityRole="button"
+      accessibilityLabel={a11y}
+    >
+      <Ionicons name={icon as any} size={18} color={T.teal} />
+    </TouchableOpacity>
+  );
+
+  return (
+    <View>
+      <Text style={[dpS.intro, { fontFamily: T.font.sans }]}>
+        Joignez les pièces de la société : photo, galerie ou fichier PDF (5 Mo maximum). Elles sont conservées sur la fiche société, réservées au Super Admin.
+      </Text>
+
+      {DOC_SLOTS.map((d) => {
+        const p = value[d.kind];
+        const problem = problems[d.kind];
+        const busy = busyKind === d.kind;
+        return (
+          <View key={d.kind} style={[dpS.row, !!p && dpS.rowDone, !!problem && dpS.rowError]}>
+            <View style={dpS.rowMain}>
+              <View style={dpS.thumb}>
+                {busy
+                  ? <ActivityIndicator size="small" color={T.teal} />
+                  : p && !p.isPdf
+                    ? <Image source={{ uri: p.uri }} style={dpS.thumbImg} resizeMode="cover" />
+                    : <Ionicons name={(p?.isPdf ? "document-text" : d.icon) as any} size={20} color={p?.isPdf ? T.red : T.teal} />}
+              </View>
+
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[dpS.label, { fontFamily: T.font.sans }]} numberOfLines={2}>{d.label}</Text>
+                <Text style={[dpS.hint, { fontFamily: T.font.sans }, !!p && { color: T.green }, !!problem && { color: T.red }]} numberOfLines={3}>
+                  {problem ?? (p ? `${p.isPdf ? "PDF" : "Image"} · ${fmtBytes(p.sizeBytes)} · prêt à l'envoi` : d.hint)}
+                </Text>
+              </View>
+
+              {p ? (
+                <TouchableOpacity
+                  style={[dpS.iconBtn, { backgroundColor: T.redLt, borderColor: T.red + "30" }, disabled && { opacity: 0.5 }]}
+                  onPress={() => remove(d.kind)}
+                  disabled={disabled}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Retirer : ${d.label}`}
+                >
+                  <Ionicons name="trash-outline" size={17} color={T.red} />
+                </TouchableOpacity>
+              ) : (
+                <View style={dpS.actions}>
+                  {Platform.OS !== "web" && <SourceBtn kind={d.kind} source="camera"  icon="camera-outline"        a11y={`Photographier : ${d.label}`} />}
+                  <SourceBtn kind={d.kind} source="gallery" icon="images-outline"       a11y={`Choisir dans la galerie : ${d.label}`} />
+                  {Platform.OS !== "web" && <SourceBtn kind={d.kind} source="file"     icon="document-attach-outline" a11y={`Choisir un fichier PDF : ${d.label}`} />}
+                </View>
+              )}
+            </View>
+
+            {/* « Autre document » : le serveur exige un nom */}
+            {d.kind === "OTHER" && !!p && (
+              <TextInput
+                style={[dpS.labelInput, { fontFamily: T.font.sans }, Platform.OS === "web" && ({ outlineStyle: "none" } as any)]}
+                value={p.label ?? ""}
+                onChangeText={(v) => setLabel("OTHER", v.slice(0, 120))}
+                placeholder="Nom du document (obligatoire)"
+                placeholderTextColor={T.inkMuted}
+                editable={!disabled}
+                maxLength={120}
+                underlineColorAndroid="transparent"
+              />
+            )}
+          </View>
+        );
+      })}
+
+      <Text style={[dpS.count, { fontFamily: T.font.sans }]}>
+        {attached === 0 ? "Aucune pièce jointe pour l'instant" : `${attached} pièce${attached > 1 ? "s" : ""} jointe${attached > 1 ? "s" : ""}`}
+      </Text>
+    </View>
+  );
+}
+const dpS = StyleSheet.create({
+  intro:      { fontSize: 12, fontWeight: "500", color: T.inkSub, lineHeight: 17, marginBottom: 12 },
+  row:        { padding: 10, marginBottom: 8, borderRadius: T.radius.md, backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border },
+  rowMain:    { flexDirection: "row", alignItems: "center", gap: 10 },
+  rowDone:    { backgroundColor: T.greenLt + "80", borderColor: T.green + "40" },
+  rowError:   { backgroundColor: T.redLt + "70", borderColor: T.red + "40" },
+  thumb:      { width: 44, height: 52, borderRadius: 10, backgroundColor: T.tealLt, justifyContent: "center", alignItems: "center", overflow: "hidden" },
+  thumbImg:   { width: 44, height: 52 },
+  label:      { fontSize: 13, fontWeight: "800", color: T.ink },
+  hint:       { fontSize: 11, fontWeight: "600", color: T.inkMuted, marginTop: 2 },
+  actions:    { flexDirection: "row", gap: 6 },
+  iconBtn:    { width: 38, height: 40, borderRadius: T.radius.md, backgroundColor: T.tealLt, borderWidth: 1.5, borderColor: T.teal + "30", justifyContent: "center", alignItems: "center" },
+  labelInput: { marginTop: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 13, fontWeight: "600", color: T.ink, backgroundColor: T.surface, borderWidth: 1.5, borderColor: T.border, borderRadius: T.radius.md },
+  count:      { fontSize: 11, fontWeight: "700", color: T.inkMuted, textAlign: "center", marginTop: 4 },
+});
+
+const ctS = StyleSheet.create({
+  switchRow:   { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  switchTitle: { fontSize: 14, fontWeight: "800", color: T.ink },
+  switchHint:  { fontSize: 11, fontWeight: "500", color: T.inkSub, lineHeight: 16, marginTop: 3 },
+});
+
 function BrandingPreview({ companyName, logoUrl, primaryColor, tagline, fontFamily: ff }: {
   companyName: string; logoUrl: string; primaryColor: string;
   tagline: string; fontFamily: string;
@@ -633,6 +786,12 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
   const [defaultCurrency,setDefaultCurrency]= useState("XOF");
   const [contractType,   setContractType]   = useState<"RENTAL" | "PURCHASE">("RENTAL");
   const [ownerCountry,   setOwnerCountry]   = useState("");
+  const [rccmNumber,     setRccmNumber]     = useState("");   // RCCM : figure dans le contrat de la société
+  const [docs,           setDocs]           = useState<DocPicks>({});   // pièces jointes, envoyées après la création
+  const [uploadStep,     setUploadStep]     = useState("");            // « Envoi des pièces 2/3… »
+  const [contractOn,     setContractOn]     = useState(true);          // émettre le contrat à la création (défaut comme le web)
+  const [terms,          setTerms]          = useState<ContractTermsForm>(() => initialTermsForm());
+  const [termsErrors,    setTermsErrors]    = useState<Record<string, string | undefined>>({});
 
   // ── Branding ──
   const [logoUrl,        setLogoUrl]        = useState("");
@@ -662,7 +821,9 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
 
   const resetForm = useCallback(() => {
     setCompanyName(""); setAdminEmail(""); setContractType("RENTAL");
-    setActivitySector(""); setOwnerCountry(""); setDefaultCurrency("XOF");
+    setActivitySector(""); setOwnerCountry(""); setDefaultCurrency("XOF"); setRccmNumber("");
+    setDocs({}); setUploadStep("");
+    setContractOn(true); setTerms(initialTermsForm()); setTermsErrors({});
     setLogoUrl(""); setPrimaryColor("#1956F0"); setSecondaryColor("#EEF2FF");
     setTagline(""); setWelcomeMessage(""); setSplashBgColor("#064E3B"); setFontFamily("Georgia");
     setManagerFirstName(""); setManagerLastName(""); setManagerPhone("");
@@ -715,20 +876,36 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
     if (!isEmailLike(email)) return showAlert("Email invalide", "Vérifiez l'email administrateur.");
     if (!managerFirstName.trim() || !managerLastName.trim())
       return showAlert("Champs manquants", "Prénom et nom du gérant obligatoires.");
+    // ✅ RCCM obligatoire (même règle que le back-office web et le serveur) : il figure dans le contrat de la société.
+    const rccm = rccmNumber.trim().replace(/\s+/g, " ");
+    if (!rccm) return showAlert("Champs manquants", "Le numéro RCCM est obligatoire : il figure dans le contrat de la société.");
+    if (!/^[A-Za-z0-9][A-Za-z0-9 .\-/]{3,59}$/.test(rccm))
+      return showAlert("RCCM invalide", "4 à 60 caractères : lettres, chiffres, espaces, points, tirets ou barres obliques.");
     if (primaryColor && !/^#[0-9A-Fa-f]{6}$/.test(primaryColor))
       return showAlert("Couleur invalide", "La couleur primaire doit être au format #RRGGBB.");
+    // Conditions du contrat : contrôlées AVANT la création, avec les mêmes règles que le serveur et le web.
+    if (contractOn) {
+      const te = validateTerms(terms, contractType);
+      setTermsErrors(te);
+      const first = Object.values(te)[0];
+      if (first) return showAlert("Contrat", `${first}\n\nCorrigez la section « 06 Contrat » ou désactivez l'émission du contrat.`);
+    }
+    // Le serveur exige un nom pour « Autre document » : on le contrôle AVANT de créer la société (pas de création à moitié refusée).
+    if (docs.OTHER && !docs.OTHER.label?.trim())
+      return showAlert("Nom du document", "Précisez le nom de l'« Autre document », ou retirez-le de la liste.");
 
     setCreating(true);
     try {
       const fullAddress = [addrNumber, addrLabel, addrPostalCode, addrCity, addrCountry]
         .map(s => s.trim()).filter(Boolean).join(", ");
 
-      await api.createClient({
+      const created: any = await api.createClient({
         name,
         code,
         adminEmail:       email,
         adminPassword,
         subscriptionType: contractType,
+        rccmNumber:       rccm,
         activitySector:   activitySector.trim() || undefined,
         defaultCurrency:  defaultCurrency || undefined,
         adminFirstName:   managerFirstName.trim(),
@@ -748,18 +925,64 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
         welcomeMessage:   welcomeMessage.trim()|| undefined,
         splashBgColor:    splashBgColor        || undefined,
         fontFamily:       fontFamily           || undefined,
+        contract:         contractOn ? toTermsInput(terms, contractType) : undefined,
       });
 
-      showAlert(
-        "✅ Société créée",
-        `${name}\nCode: ${code}\nAdmin: ${email}\nMot de passe: ${adminPassword}`,
-        () => { onSuccess(); onClose(); },
-      );
+      // ── Pièces justificatives : une requête par pièce, après la création (la société existe déjà). ──
+      // Un échec d'envoi ne défait jamais la création : on le signale, la pièce s'ajoute ensuite depuis la fiche société.
+      const newId = created?.client?.id ?? created?.id;
+      const queue = DOC_SLOTS.filter((d) => docs[d.kind]);
+      let sent = 0;
+      const failed: string[] = [];
+      for (let i = 0; i < queue.length; i++) {
+        const d = queue[i];
+        if (newId === undefined || newId === null) { failed.push(d.label); continue; }
+        setUploadStep(`Envoi des pièces ${i + 1}/${queue.length}…`);
+        try {
+          await api.addClientDocument(newId, {
+            kind: d.kind,
+            file: docs[d.kind]!.dataUrl,
+            label: d.kind === "OTHER" ? docs.OTHER?.label?.trim() : undefined,
+          });
+          sent++;
+        } catch {
+          failed.push(d.label);
+        }
+      }
+      setUploadStep("");
+
+      const docsLine =
+        queue.length === 0 ? "" :
+        failed.length === 0 ? `\nPièces envoyées : ${sent}` :
+        `\nPièces envoyées : ${sent}/${queue.length}\n⚠️ Non envoyées : ${failed.join(", ")} — à ajouter depuis la fiche de la société (back-office web).`;
+
+      // ── Contrat : émis par le serveur à la création, son lien de signature est joint à l'e-mail de bienvenue. ──
+      const contract = created?.contract as { reference?: string; signUrl?: string | null } | null | undefined;
+      const contractError = typeof created?.contractError === "string" ? created.contractError : "";
+      const signUrl = contract?.signUrl || null;
+      const contractLine =
+        contract?.reference ? `\nContrat ${contract.reference} envoyé pour signature à ${email}.` :
+        contractError ? `\n⚠️ Contrat non émis : ${contractError} Émettez-le depuis la fiche de la société, rubrique « Contrats ».` : "";
+
+      const title = failed.length || contractError ? "⚠️ Société créée (à compléter)" : "✅ Société créée";
+      const body = `${name}\nCode: ${code}\nAdmin: ${email}\nMot de passe: ${adminPassword}${docsLine}${contractLine}`;
+      const finish = () => { onSuccess(); onClose(); };
+
+      if (signUrl && Platform.OS !== "web") {
+        // La création est faite : « Copier le lien » donne le lien de signature au cas où l'e-mail n'arrive pas.
+        Alert.alert(title, body, [
+          { text: "Copier le lien de signature", onPress: () => { Clipboard.setStringAsync(signUrl).catch(() => {}).finally(finish); } },
+          { text: "OK", onPress: finish },
+        ], { cancelable: false });
+      } else {
+        showAlert(title, signUrl ? `${body}\nLien de signature : ${signUrl}` : body, finish);
+      }
     } catch (e: any) {
       const msg = e?.response?.data?.message || e?.message || "Création impossible.";
       showAlert("Erreur", Array.isArray(msg) ? msg[0] : JSON.stringify(msg));
     } finally {
       setCreating(false);
+      setUploadStep("");
     }
   };
 
@@ -875,6 +1098,17 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                   value={contractType}
                   onChange={(v) => setContractType(v as "RENTAL" | "PURCHASE")}
                   options={[{ k: "RENTAL", label: "Location" }, { k: "PURCHASE", label: "Achat" }]}
+                  accent={T.blue}
+                />
+
+                <Field
+                  label="Numéro RCCM"
+                  value={rccmNumber}
+                  onChangeText={setRccmNumber}
+                  placeholder="Ex: GN.TCC.2021.A.12345"
+                  autoCapitalize="characters"
+                  required
+                  editable={!creating}
                   accent={T.blue}
                 />
               </View>
@@ -1036,6 +1270,50 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                 />
               </View>
 
+              {/* ══ 5. PIÈCES JUSTIFICATIVES ══ */}
+              <View style={s.card}>
+                <SectionHeader icon="documents-outline" title="Pièces justificatives" color={T.teal} badge="05" />
+                <CompanyDocsPicker value={docs} onChange={setDocs} disabled={creating} />
+              </View>
+
+              {/* ══ 6. CONTRAT ══ */}
+              <View style={s.card}>
+                <SectionHeader icon="document-text-outline" title="Contrat" color={T.blue} badge="06" />
+
+                <View style={ctS.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[ctS.switchTitle, { fontFamily: T.font.sans }]}>
+                      {contractType === "RENTAL" ? "Émettre le contrat de location" : "Émettre le contrat d'achat"}
+                    </Text>
+                    <Text style={[ctS.switchHint, { fontFamily: T.font.sans }]}>
+                      Le lien de signature est envoyé à l'administrateur avec ses identifiants. Le numéro RCCM y figure.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={contractOn}
+                    onValueChange={(v) => { setContractOn(v); if (!v) setTermsErrors({}); }}
+                    disabled={creating}
+                    trackColor={{ false: T.border, true: T.blueMd }}
+                    thumbColor={contractOn ? T.blue : T.inkMuted}
+                  />
+                </View>
+
+                {contractOn ? (
+                  <ContractTermsFields
+                    kind={contractType}
+                    value={terms}
+                    errors={termsErrors}
+                    onChange={(patch) => setTerms((t) => ({ ...t, ...patch }))}
+                    disabled={creating}
+                    accent={T.blue}
+                  />
+                ) : (
+                  <Text style={[ctS.switchHint, { fontFamily: T.font.sans }]}>
+                    Aucun contrat ne sera émis. Vous pourrez l'émettre plus tard depuis la fiche de la société, rubrique « Contrats ».
+                  </Text>
+                )}
+              </View>
+
               {/* ══ CTA ══ */}
               <TouchableOpacity
                 style={[s.primaryBtn, creating && { opacity: 0.7 }]}
@@ -1049,7 +1327,12 @@ export default function CreateCompanyModal({ visible, onClose, onSuccess, isSupe
                   style={s.primaryGrad}
                 >
                   {creating ? (
-                    <ActivityIndicator color={T.white} />
+                    <>
+                      <ActivityIndicator color={T.white} />
+                      {!!uploadStep && (
+                        <Text style={[s.primaryTxt, { fontFamily: T.font.sans, fontSize: 13 }]}>{uploadStep}</Text>
+                      )}
+                    </>
                   ) : (
                     <>
                       <View style={s.primaryIconBox}>

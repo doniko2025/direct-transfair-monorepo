@@ -67,7 +67,7 @@ describe('FeeScheduleService.quote — réglages de la société (v1.2)', () => 
   it('frais fixe du tarif plat en devise de la société → converti dans la devise de l\'envoi', async () => {
     const convert = jest.fn(async (v: number) => v / 10); // 1 EUR-société = 10 unités… ici : 200 GNF → 20 XOF
     const q = await make({ feeRate: 1, fixedFee: 200 }, defaultSettings(), convert, 'GNF').quote({ ...base, payoutMethod: 'CASH_PICKUP' });
-    expect(convert).toHaveBeenCalledWith(200, 'GNF', 'XOF');
+    expect(convert).toHaveBeenCalledWith(200, 'GNF', 'XOF', 1); // 4e argument : société dont on applique les taux (base.clientId = 1)
     expect(q.fixedFee).toBe(20);
     expect(q.fixedFeeOriginal).toEqual({ amount: 200, currency: 'GNF' });
     expect(q.fees).toBe(120); // 1 % de 10 000 + 20

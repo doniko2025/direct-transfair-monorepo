@@ -176,7 +176,9 @@ describe('KycService.approve', () => {
     await expect(service.approve({ id: 'u1', role: 'USER', clientId: 7 } as any, 'd1')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(service.approve({ id: 'ag', role: 'AGENT', clientId: 7 } as any, 'd1')).rejects.toBeInstanceOf(ForbiddenException);
     expect(docs[0].status).toBe('PENDING');
-    await expect(service.approve(superAdmin, 'd1')).resolves.toBeDefined();
+    // Le super administrateur ne décide pas sur la pièce d'un client de société (404) : il ne traite que celles des représentants.
+    await expect(service.approve(superAdmin, 'd1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(docs[0].status).toBe('PENDING');
   });
 });
 
@@ -216,9 +218,10 @@ describe('KycService.getFile — qui peut relire une pièce', () => {
     s.files.push({ documentId: 'd1', kind: 'FRONT', mimeType: 'image/jpeg', sha256: 'x', data: Buffer.from('img') });
     return s;
   }
-  it('le propriétaire, l\'administrateur de sa société et le super administrateur : oui', async () => {
+  it('le propriétaire et l\'administrateur de sa société : oui ; le super administrateur : non (404), ce sont des clients de société', async () => {
     const { service } = await withFile();
-    for (const who of [{ id: 'u1', role: 'USER', clientId: 7 }, admin, superAdmin]) {
+    await expect(service.getFile(superAdmin, 'd1', 'front')).rejects.toBeInstanceOf(NotFoundException);
+    for (const who of [{ id: 'u1', role: 'USER', clientId: 7 }, admin]) {
       await expect(service.getFile(who as any, 'd1', 'front')).resolves.toMatchObject({ mimeType: 'image/jpeg' });
     }
   });
@@ -273,9 +276,9 @@ describe('journalisation des consultations (lot 8)', () => {
     const { service, audits } = await withFiles();
     await service.getFile(admin, 'd1', 'front');
     await service.getFile(admin, 'd1', 'front');
-    await service.getFile(superAdmin, 'd1', 'front'); // un autre administrateur, lui, est journalisé
+    await service.getFile({ id: 'adm2', role: 'COMPANY_ADMIN', clientId: 7 } as any, 'd1', 'front'); // un autre administrateur, lui, est journalisé
     expect(views(audits)).toHaveLength(2);
-    expect(views(audits).map((v) => v.userId)).toEqual(['adm', 'sa']);
+    expect(views(audits).map((v) => v.userId)).toEqual(['adm', 'adm2']);
   });
 
   it('le client qui relit sa propre pièce n\'est pas journalisé ; un refus (404) non plus', async () => {

@@ -117,7 +117,7 @@ export default function TreasuryPage() {
   return (
     <>
       <PageHeader
-        title="Trésorerie"
+        title={isSuper ? 'Virements' : 'Trésorerie'}
         description={
           isSuper
             ? 'Vos soldes par devise et les virements que les sociétés vous déclarent.'

@@ -1,8 +1,13 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
-// ACCUEIL v6.0 — Direct Transf'air (white-label)
+// ACCUEIL v6.2 — Direct Transf'air (white-label)
+// ✅ v6.2 : (1) l'accueil est enfin la page PAR DÉFAUT (le garde de navigation d'AuthProvider ne renvoie plus vers la connexion : il faut un appui sur
+//    « Se connecter » / « S'inscrire ») ; (2) boutons EMPILÉS pleine largeur : « Se connecter » n'est plus tronqué ; (3) le montant « Ils reçoivent »
+//    est SAISISSABLE (calcul dans les deux sens : on tape l'un, l'autre se met à jour) ; (4) le taux vient de la table que l'admin de la société met à jour (taux par société)
+//    (GET /exchange-rates) et se rafraîchit tout seul (toutes les 60 s et au retour dans l'app) ; (5) logo via <BrandLogo /> : taille standard, ratio
+//    automatique, sans tuile d'une autre forme ; (6) marge haute sûre (jamais sous la barre d'état).
 // ✅ v6.0 : REFONTE « esprit Taptap Send » — le logo de la société en haut, une carte avec un SIMULATEUR de taux (vous envoyez / ils
-//    reçoivent, calculé avec les taux publiés par la plateforme : GET /exchange-rates, public), puis une carte d'actions
+//    reçoivent, calculé avec les taux publiés par la société : GET /exchange-rates?code=…, public), puis une carte d'actions
 //    « Se connecter » / « S'inscrire ». Le haut de l'écran est teinté par l'accent de la société, le bas porte la couleur d'accent pleine.
 //    COULEURS : 100 % dynamiques — aucune couleur écrite en dur. Tout vient de useUI(), donc de la couleur principale et de la couleur
 //    d'accent choisies par le super admin pour la société (et du thème clair / sombre).
@@ -16,21 +21,22 @@
 // =========================================================
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Platform, Pressable, ScrollView, StatusBar, View } from "react-native";
+import { AppState, Platform, Pressable, ScrollView, StatusBar, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUI, SYSTEM_FONT } from "../components/ui/theme";
 import { Button } from "../components/ui/Primitives";
 import { ChoiceSheet } from "../components/ui/ChoiceSheet";
 import { Ionicons } from "../components/ui/Icon";
-import { TenantMark } from "../components/brand/BrandMark";
+import BrandLogo from "../components/brand/BrandLogo";
+import { safeTop } from "../utils/safeArea";
 import { CurrencyFlag } from "../components/home/HomeParts";
 import Reveal from "../components/flow/Reveal";
 import { useTenant } from "../providers/TenantProvider";
 import { api } from "../services/api";
 import type { ExchangeRate } from "../services/types";
 import { lookupRate } from "../utils/rateLookup";
-import { decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput } from "../utils/amount";
+import { decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../utils/amount";
 
 import { Text, TextInput } from "../components/ui/Text";
 import { useT } from "../providers/I18nProvider";
@@ -63,21 +69,34 @@ export default function Index() {
   const insets = useSafeAreaInsets();
 
   const [rates, setRates] = useState<ExchangeRate[] | null>(null);   // null = chargement
-  const [raw, setRaw] = useState("1");
+  const [raw, setRaw] = useState("1");                 // montant tapé dans « Vous envoyez »
+  const [rawRecv, setRawRecv] = useState("");            // montant tapé dans « Ils reçoivent »
+  const [source, setSource] = useState<"SEND" | "RECV">("SEND");   // quel champ la personne est en train de saisir
   const [to, setTo] = useState<string>(PREFERRED_TARGET);
   const [pickOpen, setPickOpen] = useState(false);
 
+  // Taux = ceux que la société publie (GET /exchange-rates?code=…, taux PAR SOCIÉTÉ). On les relit toutes les 60 s et au retour dans l'app : un changement
+  // fait côté admin apparaît ici sans relancer l'application. Un échec ponctuel ne vide pas un taux déjà affiché.
   useEffect(() => {
     let alive = true;
-    api.getExchangeRates().then((list) => { if (alive) setRates(list); }).catch(() => { if (alive) setRates([]); });
-    return () => { alive = false; };
+    const load = () => api.getExchangeRates()
+      .then((list) => { if (alive) setRates((prev) => (list.length > 0 || prev === null ? list : prev)); })
+      .catch(() => { if (alive) setRates((prev) => prev ?? []); });
+    void load();
+    const timer = setInterval(() => void load(), 60_000);
+    const sub = AppState.addEventListener("change", (st) => { if (st === "active") void load(); });
+    return () => { alive = false; clearInterval(timer); sub.remove(); };
   }, []);
 
   const targets = useMemo(() => (rates ? targetsFrom(rates) : []), [rates]);
   // Devise de réception : celle choisie si elle est publiée, sinon la préférée, sinon la première disponible.
   const target = targets.includes(to) ? to : targets.includes(PREFERRED_TARGET) ? PREFERRED_TARGET : (targets[0] ?? to);
   const rate = rates ? lookupRate(rates, FROM, target) : null;
-  const amount = parseAmount(raw);
+  const dRecv = decimalsFor(target);
+  // Le champ saisi fait foi ; l'autre est calculé avec le taux publié.
+  const amount = source === "SEND"
+    ? parseAmount(raw)
+    : (rate ? roundTo(parseAmount(rawRecv) / rate, decimalsFor(FROM)) : 0);
 
   // ── Frais estimés (public) ──
   const [feeEst, setFeeEst] = useState<FeeEst | null>(null);
@@ -102,9 +121,12 @@ export default function Index() {
     }, 450);
     return () => { alive = false; clearTimeout(timer); };
   }, [amount, rate, target, branding.code]);
-  const received = rate !== null ? roundTo(amount * rate, decimalsFor(target)) : 0;
+  const received = source === "RECV" ? parseAmount(rawRecv) : (rate !== null ? roundTo(amount * rate, dRecv) : 0);
+  // Texte affiché dans chaque champ : celui qu'on saisit reste tel quel (pas de reformatage pendant la frappe), l'autre est calculé.
+  const sendText = source === "SEND" ? raw : (rate && amount > 0 ? toInputText(amount, decimalsFor(FROM)) : "");
+  const recvText = source === "RECV" ? rawRecv : (rate && received > 0 ? toInputText(received, dRecv) : "");
 
-  const top = Math.max(insets.top, Platform.OS === "android" ? (StatusBar.currentHeight ?? 24) : 12) + 16;
+  const top = safeTop(insets.top) + 16;
   const bottom = Math.max(insets.bottom, 16) + 12;
 
   const rateText = rates === null
@@ -149,9 +171,7 @@ export default function Index() {
           {/* ── Marque ── */}
           <Reveal delay={0} distance={-12}>
             <View style={{ alignItems: "center", gap: 10 }}>
-              <View style={{ width: 76, height: 76, borderRadius: 24, ...S.sm }}>
-                <TenantMark size={76} radius={24} background={C.accent} iconColor={C.accentInk} logoScale={0.78} animated />
-              </View>
+              <BrandLogo />
               <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 28, lineHeight: 34, fontWeight: "800", letterSpacing: -0.6, color: C.accentDeep }} numberOfLines={1}>
                 {branding.name}
               </Text>
@@ -170,8 +190,8 @@ export default function Index() {
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
                 <TextInput
                   style={{ flex: 1, minWidth: 0, height: 54, padding: 0, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", color: C.ink }}
-                  value={raw}
-                  onChangeText={(v) => setRaw(sanitizeAmountInput(v, decimalsFor(FROM)))}
+                  value={sendText}
+                  onChangeText={(v) => { setSource("SEND"); setRaw(sanitizeAmountInput(v, decimalsFor(FROM))); }}
                   keyboardType="decimal-pad"
                   placeholder="0"
                   placeholderTextColor={C.faint}
@@ -184,14 +204,18 @@ export default function Index() {
 
               <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 13, color: C.muted, marginTop: 14 }}>{t("land.theyReceive")}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
-                <Text
-                  style={{ flex: 1, minWidth: 0, height: 54, lineHeight: 54, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", color: rate === null ? C.faint : C.ink }}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.6}
-                >
-                  {rate === null ? "—" : fmtMoney(received, target)}
-                </Text>
+                <TextInput
+                  style={{ flex: 1, minWidth: 0, height: 54, padding: 0, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", color: rate === null ? C.faint : C.ink }}
+                  value={rate === null ? "" : recvText}
+                  onChangeText={(v) => { setSource("RECV"); setRawRecv(sanitizeAmountInput(v, dRecv)); }}
+                  keyboardType="decimal-pad"
+                  placeholder={rate === null ? "—" : "0"}
+                  placeholderTextColor={C.faint}
+                  editable={rate !== null}
+                  underlineColorAndroid="transparent"
+                  selectTextOnFocus
+                  accessibilityLabel={t("land.theyReceive")}
+                />
                 {currencyChip(target, targets.length > 1 ? () => setPickOpen(true) : undefined)}
               </View>
 
@@ -224,14 +248,9 @@ export default function Index() {
           {/* ── Actions ── */}
           <Reveal delay={300} style={{ marginTop: 22 }}>
             <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 16, gap: 12 }, S.md]}>
-              <View style={{ flexDirection: "row", gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Button label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Button label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
-                </View>
-              </View>
+              {/* Empilés, pleine largeur : les libellés ne sont jamais tronqués (quelle que soit la langue ou la taille de police). */}
+              <Button label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
+              <Button label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
             </View>
           </Reveal>
 

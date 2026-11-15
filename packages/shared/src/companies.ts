@@ -70,6 +70,8 @@ export interface Company {
   regulatorLicenseNumber?: string | null;
   regulatorLicenseType?: string | null;
   capitalSocial?: string | null;
+  /** Numéro RCCM : repris dans le contrat de la société (jamais affiché aux clients). */
+  rccmNumber?: string | null;
   supportEmail?: string | null;
   whatsappNumber?: string | null;
   mediatorName?: string | null;
@@ -132,6 +134,8 @@ export interface CreateCompanyInput {
   regulatorLicenseType?: string;
   regulatorLicenseNumber?: string;
   capitalSocial?: string;
+  /** Numéro RCCM de la société : obligatoire pour émettre son contrat, où il figure. */
+  rccmNumber?: string;
   supportEmail?: string;
   whatsappNumber?: string;
   mediatorName?: string;
@@ -151,6 +155,40 @@ export interface CreateCompanyResult {
   /** Contrat émis à la création (null si aucun ou en échec — voir contractError). */
   contract?: { id: string; reference: string; signUrl: string | null; expiresAt: string } | null;
   contractError?: string;
+}
+
+// ── Documents légaux de la société (RCCM, pièce d'identité du représentant…) — SUPER_ADMIN ──────────────────────
+//   GET    /clients/:id/documents              { documents }
+//   POST   /clients/:id/documents              { kind, label?, file } — file : data URL base64 (JPEG, PNG, WebP ou PDF, 6 Mo au plus)
+//   GET    /clients/:id/documents/:docId/file  octets du document
+//   DELETE /clients/:id/documents/:docId
+export const COMPANY_DOC_KINDS = ['RCCM', 'IDENTITY', 'TAX', 'STATUTES', 'LICENSE', 'OTHER'] as const;
+export type CompanyDocKind = (typeof COMPANY_DOC_KINDS)[number];
+
+export const COMPANY_DOC_LABEL: Record<CompanyDocKind, string> = {
+  RCCM: 'Extrait RCCM (registre du commerce)',
+  IDENTITY: "Pièce d'identité du représentant",
+  TAX: 'Attestation fiscale (NIF)',
+  STATUTES: 'Statuts de la société',
+  LICENSE: 'Agrément / licence',
+  OTHER: 'Autre document',
+};
+
+export interface CompanyDocument {
+  id: string;
+  kind: CompanyDocKind;
+  kindLabel: string;
+  label: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface AddCompanyDocumentInput {
+  kind: CompanyDocKind;
+  label?: string;
+  /** Data URL base64 du fichier. */
+  file: string;
 }
 
 export type UpdateCompanyInput = Partial<
@@ -192,5 +230,17 @@ export function createCompaniesApi(http: HttpClient) {
       http.patch<CompanyDetail>(`/clients/${id}/status`, { status }),
 
     remove: (id: number) => http.delete<DeleteCompanyResult>(`/clients/${id}`),
+
+    documents: (id: number) => http.get<{ documents: CompanyDocument[] }>(`/clients/${id}/documents`),
+
+    addDocument: (id: number, input: AddCompanyDocumentInput) =>
+      http.post<CompanyDocument>(`/clients/${id}/documents`, input),
+
+    /** Octets du document, avec l'authentification du super admin. */
+    documentFile: (id: number, docId: string) =>
+      http.request<Blob>(`/clients/${id}/documents/${encodeURIComponent(docId)}/file`, { responseType: 'blob' }),
+
+    removeDocument: (id: number, docId: string) =>
+      http.delete<{ id: string }>(`/clients/${id}/documents/${encodeURIComponent(docId)}`),
   };
 }

@@ -34,6 +34,7 @@ import {
   ForbiddenException,
   BadRequestException,
   Req,
+  Res,
   CanActivate,
   ExecutionContext,
   Injectable,
@@ -43,7 +44,9 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { Reflector } from '@nestjs/core';
 import { Role } from '@prisma/client';
 
+import type { Response } from 'express';
 import { ClientsService } from './clients.service';
+import { ClientDocumentsService } from './client-documents.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto, UpdateClientStatusDto } from './dto/update-client.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -75,7 +78,10 @@ class RolesGuard implements CanActivate {
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('clients')
 export class ClientsController {
-  constructor(private readonly clientsService: ClientsService) {}
+  constructor(
+    private readonly clientsService: ClientsService,
+    private readonly documents: ClientDocumentsService,
+  ) {}
 
   @Post()
   @Roles(Role.SUPER_ADMIN)
@@ -126,6 +132,46 @@ export class ClientsController {
       );
     }
     return this.clientsService.findOne(id);
+  }
+
+  // ── Documents légaux de la société (RCCM, pièce d'identité du représentant…) — SUPER_ADMIN ──
+  @Get(':id/documents')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: "Documents légaux d'une société" })
+  listDocuments(@Param('id', ParseIntPipe) id: number) {
+    return this.documents.list(id);
+  }
+
+  @Post(':id/documents')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Ajouter un document légal (kind, label?, file en base64)' })
+  addDocument(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { kind?: unknown; label?: unknown; file?: unknown },
+    @Req() req: { user?: AuthUserPayload },
+  ) {
+    return this.documents.add(req.user?.id ?? null, id, body ?? {});
+  }
+
+  @Get(':id/documents/:docId/file')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: "Télécharger un document légal" })
+  async documentFile(@Param('id', ParseIntPipe) id: number, @Param('docId') docId: string, @Res() res: Response) {
+    const f = await this.documents.read(id, docId.slice(0, 40));
+    // Document privé : jamais mis en cache partagé, jamais interprété comme autre chose que son type réel.
+    res.setHeader('Content-Type', f.mimeType);
+    res.setHeader('Content-Length', String(f.buffer.length));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Disposition', `inline; filename="${f.fileName}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.end(f.buffer);
+  }
+
+  @Delete(':id/documents/:docId')
+  @Roles(Role.SUPER_ADMIN)
+  @ApiOperation({ summary: 'Supprimer un document légal' })
+  removeDocument(@Param('id', ParseIntPipe) id: number, @Param('docId') docId: string, @Req() req: { user?: AuthUserPayload }) {
+    return this.documents.remove(req.user?.id ?? null, id, docId.slice(0, 40));
   }
 
   @Patch(':id')

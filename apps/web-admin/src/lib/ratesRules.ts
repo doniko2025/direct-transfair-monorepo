@@ -51,7 +51,7 @@ export function statusOf(p: Pick<RatePair, 'rate' | 'derived'>): RateStatus {
 }
 
 export const STATUS_VIEW: Record<RateStatus, { label: string; tone: Tone; hint: string }> = {
-  set: { label: 'Enregistré', tone: 'ok', hint: 'Ce taux a été fixé par un super administrateur.' },
+  set: { label: 'Enregistré', tone: 'ok', hint: 'Ce taux a été fixé par l’administrateur de la société.' },
   derived: {
     label: 'Calculé',
     tone: 'brand',

@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/app/(tabs)/admin/rates.tsx
 // =========================================================
-// RATES v5.0 — Direct Transf'air · Thème CLAIR
+// RATES v5.1 — Direct Transf'air · Thème CLAIR
+// ✅ v5.1 : TAUX PAR SOCIÉTÉ — chaque société fixe ses propres taux (indépendamment des autres). L'admin de société les modifie ;
+//    le super admin ne fait que consulter (aucun bouton de modification). Plus de « taux marché par défaut » : un taux non fixé
+//    = conversions refusées.
 // =========================================================
 
 import React, { useState, useCallback, useRef } from "react";
@@ -50,7 +53,7 @@ const STANDARD_PAIRS = [
   { pair: "GBP_USD", label: "Livre → Dollar",          from: "GBP", to: "USD", color: "#DC2626", bgColor: "#FEE2E2" },
 ];
 
-function RateCard({ item, accent, onEdit }: { item: any; accent: string; onEdit: () => void }) {
+function RateCard({ item, accent, canEdit, onEdit }: { item: any; accent: string; canEdit: boolean; onEdit: () => void }) {
   const scale    = useRef(new Animated.Value(1)).current;
   const hasRate  = item.rate > 0;
 
@@ -58,7 +61,8 @@ function RateCard({ item, accent, onEdit }: { item: any; accent: string; onEdit:
     <Animated.View style={{ transform: [{ scale }] }}>
       <TouchableOpacity
         style={rcS.card}
-        onPress={onEdit}
+        onPress={canEdit ? onEdit : undefined}
+        disabled={!canEdit}
         onPressIn={() => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, speed: 50 }).start()}
         onPressOut={() => Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 30 }).start()}
         activeOpacity={1}
@@ -88,9 +92,11 @@ function RateCard({ item, accent, onEdit }: { item: any; accent: string; onEdit:
           <Text style={[rcS.rate, { color: hasRate ? T.ink : T.inkMuted, fontFamily: T.font.display }]}>
             {hasRate ? item.rate.toLocaleString("fr-FR", { maximumFractionDigits: 4 }) : "—"}
           </Text>
-          <View style={[rcS.editBtn, { backgroundColor: `${accent}12`, borderColor: `${accent}25` }]}>
-            <Ionicons name="pencil" size={13} color={accent} />
-          </View>
+          {canEdit ? (
+            <View style={[rcS.editBtn, { backgroundColor: `${accent}12`, borderColor: `${accent}25` }]}>
+              <Ionicons name="pencil" size={13} color={accent} />
+            </View>
+          ) : null}
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -118,6 +124,7 @@ export default function AdminRatesScreen() {
   const router   = useRouter();
   const { user } = useAuth();
   const accent   = user?.role === "SUPER_ADMIN" ? T.blue : T.green;
+  const canEdit  = user?.role !== "SUPER_ADMIN"; // chaque société fixe ses taux : le super admin consulte seulement
 
   const [rates,        setRates]        = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
@@ -142,7 +149,7 @@ export default function AdminRatesScreen() {
 
   useFocusEffect(useCallback(() => { void loadRates(); }, [loadRates]));
 
-  const handleEdit = (item: any) => { setSelectedPair(item); setNewRate(item.rate > 0 ? String(item.rate) : ""); };
+  const handleEdit = (item: any) => { if (!canEdit) return; setSelectedPair(item); setNewRate(item.rate > 0 ? String(item.rate) : ""); };
 
   const saveRate = async () => {
     if (!selectedPair) return;
@@ -191,11 +198,13 @@ export default function AdminRatesScreen() {
             <View style={[rS.noticeBox, { borderColor: `${accent}25`, backgroundColor: `${accent}08` }]}>
               <Ionicons name="information-circle-outline" size={16} color={accent} />
               <Text style={[rS.noticeTxt, { color: accent, fontFamily: T.font.sans }]}>
-                Un taux à 0 utilise le taux marché par défaut. Appuyez sur une paire pour modifier.
+                {canEdit
+                  ? "Ces taux sont ceux de votre société, indépendants des autres sociétés. Tant qu'un taux n'est pas fixé, les conversions de ce couple sont refusées. Appuyez sur une paire pour modifier."
+                  : "Chaque société fixe librement ses taux : vous les consultez ici sans pouvoir les modifier."}
               </Text>
             </View>
           }
-          renderItem={({ item }) => <RateCard item={item} accent={accent} onEdit={() => handleEdit(item)} />}
+          renderItem={({ item }) => <RateCard item={item} accent={accent} canEdit={canEdit} onEdit={() => handleEdit(item)} />}
           ListFooterComponent={<View style={{ height: 100 }} />}
         />
       )}

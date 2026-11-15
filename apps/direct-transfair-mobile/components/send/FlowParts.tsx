@@ -17,7 +17,7 @@ import { Avatar } from '../ui/Primitives';
 import Reveal from '../flow/Reveal';
 
 // ─── Barre de progression ────────────────────────────────
-export function StepProgress({ count, index }: { count: number; index: number }) {
+export function StepProgress({ count, index, color, track }: { count: number; index: number; color?: string; track?: string }) {
   const { C } = useUI();
   const vals = useRef<Animated.Value[]>([]).current;
   while (vals.length < count) vals.push(new Animated.Value(0));
@@ -36,9 +36,9 @@ export function StepProgress({ count, index }: { count: number; index: number })
       accessibilityValue={{ min: 0, max: count, now: Math.min(index + 1, count) }}
     >
       {vals.slice(0, count).map((v, i) => (
-        <View key={i} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: C.line, overflow: 'hidden' }}>
+        <View key={i} style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: track ?? C.line, overflow: 'hidden' }}>
           <Animated.View
-            style={{ height: 5, borderRadius: 3, backgroundColor: C.sun, width: v.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }}
+            style={{ height: 5, borderRadius: 3, backgroundColor: color ?? C.sun, width: v.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }}
           />
         </View>
       ))}

@@ -1,4 +1,6 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v5.1 : « Connexion » + empreinte (icône seule, ronde) sur UNE ligne ; les deux autres façons (« Email et mot de passe » / « Code reçu par email »)
+//    sur UNE seule ligne, côte à côte, icône au-dessus du libellé ; en-tête jamais sous la barre d'état (SimpleAuthShell).
 // ✅ v5.0 : ÉCRAN PRINCIPAL ÉPURÉ « esprit Taptap Send » — nouveau cadre SimpleAuthShell (page blanche, retour et aide en pastilles rondes, grand titre
 //    « Se connecter »), éléments en cascade (Reveal), bouton « Connexion », séparateur « OU CONNECTEZ-VOUS AVEC » puis les autres façons de se
 //    connecter VISIBLES d'emblée (empreinte si activée, e-mail + mot de passe ↔ téléphone + code, code reçu par e-mail) : la fenêtre
@@ -662,14 +664,21 @@ export default function LoginV2Screen() {
       </Reveal>
 
       <Reveal delay={340}>
-        <AuthButton
-          label={t('login.title')}
-          accent={P.action}
-          loading={loading}
-          disabled={!canSubmit}
-          onPress={() => handleLogin()}
-          testID="login-submit"
-        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AuthButton
+              label={t('login.title')}
+              accent={P.action}
+              loading={loading}
+              disabled={!canSubmit}
+              onPress={() => handleLogin()}
+              testID="login-submit"
+            />
+          </View>
+          {bioReady ? (
+            <AuthButton variant="outline" icon="finger-print-outline" iconOnly label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
+          ) : null}
+        </View>
       </Reveal>
 
       <Reveal delay={400}>
@@ -682,19 +691,21 @@ export default function LoginV2Screen() {
 
       {/* Les autres façons de se connecter, visibles d'emblée (avant : cachées dans une fenêtre « Autres options »). */}
       <Reveal delay={450}>
-        <View style={{ gap: 10 }}>
-          {bioReady ? (
-            <AuthButton variant="outline" icon="finger-print-outline" label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
-          ) : null}
-          <AuthButton
-            variant="outline"
-            icon={method === 'PHONE' ? 'mail-outline' : 'call-outline'}
-            label={method === 'PHONE' ? t('modal.options.useEmail') : t('modal.options.usePhone')}
-            onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
-            disabled={loading}
-            testID="login-switch-method"
-          />
-          <AuthButton variant="outline" icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AuthButton
+              variant="outline"
+              stacked
+              icon={method === 'PHONE' ? 'mail-outline' : 'call-outline'}
+              label={method === 'PHONE' ? t('modal.options.useEmail') : t('modal.options.usePhone')}
+              onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
+              disabled={loading}
+              testID="login-switch-method"
+            />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <AuthButton variant="outline" stacked icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
+          </View>
         </View>
       </Reveal>
 

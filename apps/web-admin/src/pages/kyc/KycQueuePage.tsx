@@ -101,11 +101,15 @@ export default function KycQueuePage() {
   return (
     <>
       <PageHeader
-        title="Vérifications d'identité"
-        description="Les clients ne peuvent envoyer, virer ni retirer qu'une fois leur identité validée ici. Traitez d'abord les dossiers les plus anciens."
+        title={user.role === 'SUPER_ADMIN' ? 'Vérifications des représentants' : "Vérifications d'identité"}
+        description={
+          user.role === 'SUPER_ADMIN'
+            ? "Les pièces d'identité et les documents (RCCM…) des représentants de vos sociétés. Les clients de chaque société sont vérifiés par la société elle-même."
+            : "Les clients ne peuvent envoyer, virer ni retirer qu'une fois leur identité validée ici. Traitez d'abord les dossiers les plus anciens."
+        }
         actions={
           <>
-            {can(user, 'KYC_COUNTER') ? (
+            {user.role !== 'SUPER_ADMIN' && can(user, 'KYC_COUNTER') ? (
               <Link className="btn btn--secondary" to="/kyc/passage">
                 <Icon name="users" size={18} />
                 <span>Clients de passage</span>

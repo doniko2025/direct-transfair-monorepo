@@ -219,7 +219,8 @@ export class FeeScheduleService {
       return done(0, { feeRatePct: 0, fixedFee: 0, fixedFeeOriginal: null, source: 'FREE', rule: null });
     }
 
-    const convert = (amount: number, from: string, to: string) => this.rates.convert(amount, from, to);
+    // ✅ taux de LA société qui tarifie (chaque société fixe ses propres taux)
+    const convert = (amount: number, from: string, to: string) => this.rates.convert(amount, from, to, p.clientId);
 
     const rules = await this.activeRules(p.clientId);
     if (rules.length > 0) {

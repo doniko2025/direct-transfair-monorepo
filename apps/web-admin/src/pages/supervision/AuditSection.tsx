@@ -132,11 +132,13 @@ export default function AuditSection({ refreshKey, canFilterCompany }: Props) {
         </Card>
       ) : (
         <>
-          <p className="sv-count" aria-live="polite">
-            <strong>
-              {list.total.toLocaleString('fr-FR')} entrée{list.total > 1 ? 's' : ''}
-            </strong>
-          </p>
+          {canFilterCompany ? null : (
+            <p className="sv-count" aria-live="polite">
+              <strong>
+                {list.total.toLocaleString('fr-FR')} entrée{list.total > 1 ? 's' : ''}
+              </strong>
+            </p>
+          )}
           <ul className="sv-audit-grid">
             {list.items.map((e) => {
               const view = auditView(e.action);
@@ -180,7 +182,7 @@ export default function AuditSection({ refreshKey, canFilterCompany }: Props) {
           {list.hasMore ? (
             <div className="more">
               <Button variant="secondary" busy={list.loadingMore} onClick={list.loadMore}>
-                Afficher plus ({Math.max(0, list.total - list.items.length).toLocaleString('fr-FR')} restantes)
+                {canFilterCompany ? 'Afficher plus' : `Afficher plus (${Math.max(0, list.total - list.items.length).toLocaleString('fr-FR')} restantes)`}
               </Button>
             </div>
           ) : null}

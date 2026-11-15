@@ -10,9 +10,14 @@ import { ATTENTION } from '../../lib/supervisionRules';
 interface Props {
   items: readonly AttentionItem[];
   onGoToAlerts: () => void;
+  /** Super admin : les transactions des sociétés ne sont pas les siennes — pas de compteur d'activité les concernant. */
+  hideTransactions?: boolean;
 }
 
-export default function AttentionSection({ items, onGoToAlerts }: Props) {
+const TRANSACTION_KINDS: readonly string[] = ['STUCK_TRANSACTIONS', 'ON_HOLD_TRANSACTIONS'];
+
+export default function AttentionSection({ items: allItems, onGoToAlerts, hideTransactions = false }: Props) {
+  const items = hideTransactions ? allItems.filter((i) => !TRANSACTION_KINDS.includes(i.kind)) : allItems;
   return (
     <section aria-labelledby="sv-attention-title" className="sv-section">
       <div className="sv-section__head">
@@ -26,7 +31,7 @@ export default function AttentionSection({ items, onGoToAlerts }: Props) {
             <Icon name="check" size={26} />
           </span>
           <h3>Rien à signaler</h3>
-          <p>Aucune transaction bloquée, aucun compte verrouillé et aucun abonnement à surveiller.</p>
+          <p>{hideTransactions ? 'Aucun compte verrouillé et aucun abonnement à surveiller.' : 'Aucune transaction bloquée, aucun compte verrouillé et aucun abonnement à surveiller.'}</p>
         </Card>
       ) : (
         <ul className="sv-attn-grid">

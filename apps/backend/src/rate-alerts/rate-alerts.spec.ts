@@ -1,5 +1,6 @@
 // apps/backend/src/rate-alerts/rate-alerts.spec.ts
 // Phase 6, passe 3 — alertes de taux : corps validé, sens inverse, déclenchement unique, pannes d'envoi isolées.
+// v2.0 : taux PAR SOCIÉTÉ — une alerte n'est comparée qu'aux taux de la société de son propriétaire (ici la société 7 par défaut).
 import 'reflect-metadata';
 import { BadRequestException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
@@ -45,7 +46,8 @@ function make(opts: { alerts?: any[]; rates?: any[]; claim?: number[]; active?: 
       findMany: jest.fn().mockResolvedValue(opts.alerts ?? []),
       updateMany: jest.fn(async () => ({ count: claims.length ? claims.shift()! : 1 })),
     },
-    exchangeRate: { findMany: jest.fn().mockResolvedValue(opts.rates ?? []) },
+    // chaque taux appartient à la société 7 sauf indication contraire (clientId explicite, ou null = ancien taux « plateforme »)
+    exchangeRate: { findMany: jest.fn().mockResolvedValue((opts.rates ?? []).map((r) => ({ clientId: 7, ...r }))) },
     notification: { create: jest.fn().mockResolvedValue({}) },
   };
   const push: any = { notifyRateAlert: jest.fn().mockResolvedValue(undefined) };
@@ -56,7 +58,7 @@ function make(opts: { alerts?: any[]; rates?: any[]; claim?: number[]; active?: 
 
 const alert = (over: any = {}) => ({
   id: 'a1', userId: 'u1', pair: 'EUR_XOF', direction: 'ABOVE', threshold: 650, notifiedVia: ['PUSH', 'EMAIL'],
-  user: { id: 'u1', email: 'a@x.com', phone: '+33600000000', firstName: '<b>Al</b>', lastName: 'D' }, ...over,
+  user: { id: 'u1', clientId: 7, email: 'a@x.com', phone: '+33600000000', firstName: '<b>Al</b>', lastName: 'D' }, ...over,
 });
 
 describe('RateAlertsService.create', () => {
@@ -96,6 +98,16 @@ describe('RateAlertsService.checkAlerts', () => {
     expect(b.prisma.rateAlert.updateMany).not.toHaveBeenCalled();
   });
 
+  it('isolation : le taux d’une autre société (ou un ancien taux sans société) ne déclenche jamais l’alerte', async () => {
+    const a = make({ alerts: [alert()], rates: [{ pair: 'EUR_XOF', rate: 655.957, clientId: 8 }] });
+    await a.service.checkAlerts();
+    expect(a.push.notifyRateAlert).not.toHaveBeenCalled();
+    expect(a.prisma.rateAlert.updateMany).not.toHaveBeenCalled();
+    const b = make({ alerts: [alert()], rates: [{ pair: 'EUR_XOF', rate: 655.957, clientId: null }] });
+    await b.service.checkAlerts();
+    expect(b.push.notifyRateAlert).not.toHaveBeenCalled();
+  });
+
   it('un autre passage a déjà réservé l’alerte : aucun envoi', async () => {
     const { service, push, mail, prisma } = make({ alerts: [alert()], rates: [{ pair: 'EUR_XOF', rate: 655.957 }], claim: [0] });
     await service.checkAlerts();
@@ -106,7 +118,7 @@ describe('RateAlertsService.checkAlerts', () => {
 
   it('une panne d’email n’empêche ni la notification in-app ni l’alerte suivante', async () => {
     const { service, mail, prisma } = make({
-      alerts: [alert(), alert({ id: 'a2', userId: 'u2', user: { id: 'u2', email: 'b@x.com', phone: null, firstName: 'B', lastName: 'C' } })],
+      alerts: [alert(), alert({ id: 'a2', userId: 'u2', user: { id: 'u2', clientId: 7, email: 'b@x.com', phone: null, firstName: 'B', lastName: 'C' } })],
       rates: [{ pair: 'EUR_XOF', rate: 655.957 }],
     });
     mail.sendEmail.mockRejectedValue(new Error('smtp'));

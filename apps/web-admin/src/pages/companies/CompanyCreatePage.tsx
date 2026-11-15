@@ -3,14 +3,18 @@
 // Le formulaire propose TOUS les champs de la fiche société (coordonnées, portail, apparence avec logo, slogan, message
 // d'accueil et police, mentions légales) : plus besoin de créer la société puis de revenir la compléter. Les champs
 // supplémentaires sont pilotés par companyFields.ts, la même définition que la fiche : un champ ajouté là apparaît ici.
+// Immatriculation : le numéro RCCM est obligatoire (il figure dans le contrat) ; les pièces justificatives (extrait RCCM, pièce
+// d'identité du représentant, statuts, attestation fiscale, agrément) se joignent dans le même formulaire : elles sont envoyées une
+// à une juste après la création, et un échec d'envoi n'annule pas la société (il est signalé, et rattrapable depuis sa fiche).
 // Le mot de passe temporaire est généré ici (tirage cryptographique) et n'est affiché
 // qu'une seule fois, à l'écran de confirmation : il n'est ni stocké ni relisible ensuite.
 
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { CreateCompanyInput, CreateCompanyResult, SubscriptionType } from '@direct-transfair/shared';
+import { COMPANY_DOC_LABEL, type CompanyDocKind, type CreateCompanyInput, type CreateCompanyResult, type SubscriptionType } from '@direct-transfair/shared';
 import { Icon } from '../../components/Icon';
 import { ContractTermsFields } from '../../components/ContractTermsFields';
+import { DocumentPicker, type PickedDocument } from '../../components/DocumentPicker';
 import { LogoUploader } from '../../components/LogoUploader';
 import { ColorField, CopyButton, SelectField, TextAreaField } from '../../components/form';
 import { Button, Card, Field, Notice, PageHeader } from '../../components/ui';
@@ -20,6 +24,8 @@ import {
   DOMAIN,
   EMAIL,
   HEX_COLOR,
+  RCCM,
+  RCCM_MESSAGE,
   SUBDOMAIN,
   TYPE_LABEL,
   suggestCode,
@@ -36,6 +42,7 @@ interface Form {
   name: string;
   code: string;
   activitySector: string;
+  rccmNumber: string;
   ownerCountry: string;
   subscriptionType: SubscriptionType;
   adminFirstName: string;
@@ -58,6 +65,16 @@ const BRAND_KEYS = ['tagline', 'welcomeMessage', 'logoUrl', 'fontFamily'];
 const CONTACT_FIELDS: readonly FieldDef[] = IDENTITY_FIELDS.filter((f) => CONTACT_KEYS.includes(f.key));
 const BRAND_FIELDS: readonly FieldDef[] = APPEARANCE_FIELDS.filter((f) => BRAND_KEYS.includes(f.key));
 const EXTRA_DEFS: readonly FieldDef[] = [...CONTACT_FIELDS, ...BRAND_FIELDS, ...LEGAL_FIELDS];
+
+// Pièces à joindre à la création : une case par type (l'extrait RCCM et la pièce d'identité du représentant sont les plus utiles).
+const DOC_SLOTS: readonly { kind: CompanyDocKind; label: string; hint: string }[] = [
+  { kind: 'RCCM', label: COMPANY_DOC_LABEL.RCCM, hint: 'Photo ou PDF de l’extrait du registre du commerce.' },
+  { kind: 'IDENTITY', label: COMPANY_DOC_LABEL.IDENTITY, hint: 'Carte nationale d’identité ou passeport du dirigeant (photo ou PDF).' },
+  { kind: 'STATUTES', label: COMPANY_DOC_LABEL.STATUTES, hint: 'Facultatif.' },
+  { kind: 'TAX', label: COMPANY_DOC_LABEL.TAX, hint: 'Facultatif.' },
+  { kind: 'LICENSE', label: COMPANY_DOC_LABEL.LICENSE, hint: 'Agrément de l’autorité de contrôle, si la société en a un. Facultatif.' },
+];
+type Docs = Partial<Record<CompanyDocKind, PickedDocument>>;
 type Extra = Record<string, string>;
 
 const COUNTRY_OPTIONS = COUNTRIES.map((c) => ({ value: c.code, label: `${c.name} (${c.currency})` }));
@@ -68,6 +85,7 @@ function initialForm(): Form {
     name: '',
     code: '',
     activitySector: '',
+    rccmNumber: '',
     ownerCountry: '',
     subscriptionType: 'RENTAL',
     adminFirstName: '',
@@ -99,6 +117,8 @@ function validate(f: Form): Errors {
   const e: Errors = {};
   if (!f.name.trim()) e.name = 'Le nom est obligatoire.';
   if (!COMPANY_CODE.test(f.code)) e.code = 'Le code doit faire 3 à 12 caractères : lettres majuscules et chiffres.';
+  if (!f.rccmNumber.trim()) e.rccmNumber = 'Le numéro RCCM est obligatoire : il figure dans le contrat.';
+  else if (!RCCM.test(f.rccmNumber.trim().replace(/\s+/g, ' '))) e.rccmNumber = RCCM_MESSAGE;
   if (!f.ownerCountry) e.ownerCountry = 'Choisissez le pays : il détermine la devise par défaut.';
   if (!f.adminFirstName.trim()) e.adminFirstName = 'Le prénom est obligatoire.';
   if (!f.adminLastName.trim()) e.adminLastName = 'Le nom est obligatoire.';
@@ -123,6 +143,7 @@ function toInput(f: Form, x: Extra, contract: ContractTermsForm | null): CreateC
     adminPassword: f.adminPassword,
     ownerCountry: f.ownerCountry,
     subscriptionType: f.subscriptionType,
+    rccmNumber: f.rccmNumber.trim().replace(/\s+/g, ' '),
     primaryColor: f.primaryColor,
     secondaryColor: f.secondaryColor,
   };
@@ -142,6 +163,9 @@ function toInput(f: Form, x: Extra, contract: ContractTermsForm | null): CreateC
 }
 
 interface Created {
+  /** Pièces dont l'envoi a échoué (la société, elle, est créée) : à redéposer depuis sa fiche. */
+  docFailures: { label: string; message: string }[];
+  docsSent: number;
   result: CreateCompanyResult;
   email: string;
   password: string;
@@ -207,6 +231,30 @@ function CreatedView({ created, onAnother }: { created: Created; onAnother: () =
           </Notice>
         </Card>
 
+        {created.docsSent > 0 || created.docFailures.length > 0 ? (
+          <Card className="credentials">
+            <header className="credentials__head">
+              <span className="section-card__icon">
+                <Icon name="file" size={20} />
+              </span>
+              <div>
+                <h2>Documents légaux</h2>
+                <p>
+                  {created.docsSent > 0
+                    ? `${created.docsSent} document${created.docsSent > 1 ? 's' : ''} enregistré${created.docsSent > 1 ? 's' : ''} dans la fiche de la société.`
+                    : 'Aucun document n’a pu être enregistré.'}
+                </p>
+              </div>
+            </header>
+            {created.docFailures.length > 0 ? (
+              <Notice tone="error" title="Certains documents n’ont pas pu être envoyés">
+                {created.docFailures.map((d) => `${d.label} : ${d.message}`).join(' · ')} Redéposez-les depuis la fiche de la société,
+                rubrique « Documents légaux ».
+              </Notice>
+            ) : null}
+          </Card>
+        ) : null}
+
         {created.result.contract ? (
           <Card className="credentials">
             <header className="credentials__head">
@@ -261,6 +309,7 @@ function CreatedView({ created, onAnother }: { created: Created; onAnother: () =
 export default function CompanyCreatePage() {
   const [form, setForm] = useState<Form>(initialForm);
   const [extra, setExtra] = useState<Extra>({});
+  const [docs, setDocs] = useState<Docs>({});
   const [contractOn, setContractOn] = useState(true);
   const [terms, setTerms] = useState<ContractTermsForm>(() => initialTermsForm());
   const [termErrors, setTermErrors] = useState<Record<string, string | undefined>>({});
@@ -342,7 +391,22 @@ export default function CompanyCreatePage() {
     setFormError(null);
     try {
       const result = await api.companies.create(toInput(form, extra, contractOn ? terms : null));
+      // Pièces justificatives : envoyées une à une (chacune a sa propre limite de taille). Un échec n'annule pas la société.
+      const docFailures: Created['docFailures'] = [];
+      let docsSent = 0;
+      for (const slot of DOC_SLOTS) {
+        const doc = docs[slot.kind];
+        if (!doc) continue;
+        try {
+          await api.companies.addDocument(result.client.id, { kind: slot.kind, file: doc.dataUrl });
+          docsSent += 1;
+        } catch (err) {
+          docFailures.push({ label: slot.label, message: describeError(err).message });
+        }
+      }
       setCreated({
+        docFailures,
+        docsSent,
         result,
         email: form.adminEmail.trim(),
         password: form.adminPassword,
@@ -358,6 +422,7 @@ export default function CompanyCreatePage() {
   function reset() {
     setForm(initialForm());
     setExtra({});
+    setDocs({});
     setContractOn(true);
     setTerms(initialTermsForm());
     setTermErrors({});
@@ -451,6 +516,54 @@ export default function CompanyCreatePage() {
               options={TYPE_OPTIONS}
             />
             {CONTACT_FIELDS.map(extraField)}
+          </div>
+        </Card>
+
+        <Card className="section-card">
+          <header className="section-card__head">
+            <span className="section-card__icon">
+              <Icon name="file" size={20} />
+            </span>
+            <div className="section-card__title">
+              <h2>Immatriculation et documents</h2>
+              <p>
+                Le numéro RCCM figure dans le contrat. Joignez dès maintenant l’extrait RCCM et la pièce d’identité du représentant :
+                vous pourrez en ajouter d’autres depuis la fiche de la société.
+              </p>
+            </div>
+          </header>
+          <div className="form-grid">
+            <div className="form-grid__wide">
+              <Field
+                id="c-rccm"
+                label="Numéro RCCM"
+                value={form.rccmNumber}
+                onChange={(e) => set('rccmNumber', e.target.value)}
+                error={errors.rccmNumber}
+                hint="Registre du commerce et du crédit mobilier, exemple : GN.TCC.2021.A.12345."
+                maxLength={60}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+            {DOC_SLOTS.map((slot) => (
+              <div key={slot.kind} className="form-grid__wide">
+                <DocumentPicker
+                  id={`c-doc-${slot.kind.toLowerCase()}`}
+                  label={slot.label}
+                  hint={slot.hint}
+                  value={docs[slot.kind] ?? null}
+                  onChange={(v) =>
+                    setDocs((d) => {
+                      const next = { ...d };
+                      if (v) next[slot.kind] = v;
+                      else delete next[slot.kind];
+                      return next;
+                    })
+                  }
+                />
+              </div>
+            ))}
           </div>
         </Card>
 

@@ -265,10 +265,11 @@ async function main() {
   // ── 6. Taux de change ───────────────────────────────────
   console.log('💱 Insertion taux de change...');
   for (const r of EXCHANGE_RATES) {
+    // ✅ taux PAR SOCIÉTÉ : ceux de démonstration sont rattachés à la société DONIKO
     await prisma.exchangeRate.upsert({
-      where:  { pair: r.pair },
+      where:  { clientId_pair: { clientId: doniko.id, pair: r.pair } },
       update: { rate: r.rate, inverseRate: r.inverseRate },
-      create: { pair: r.pair, rate: r.rate, inverseRate: r.inverseRate, source: 'manual' },
+      create: { clientId: doniko.id, pair: r.pair, rate: r.rate, inverseRate: r.inverseRate, source: 'manual' },
     });
   }
   console.log(`   ✅ ${EXCHANGE_RATES.length} paires créées\n`);

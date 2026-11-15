@@ -103,7 +103,8 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/users/:id', roles: ADMINS, element: <UserDetailPage /> },
 
   // Phase 2c — Transactions (super admin : tout ; admin de société : sa société ; agent : ses opérations)
-  { path: '/transactions', roles: OPS, element: <TransactionsPage /> },
+  // Super admin : plus de liste des transactions des sociétés ; il ne voit que le détail d'un virement (depuis « Virements »).
+  { path: '/transactions', roles: COMPANY_AGENT, element: <TransactionsPage /> },
   { path: '/transactions/:id', roles: OPS, element: <TransactionDetailPage /> },
 
   // Phase 2d — Trésorerie (super admin : ses soldes et les virements à valider ; admin de société : sa société)
@@ -113,7 +114,7 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   // Phase 2e — Supervision (super admin ; la page s'adapte déjà à un admin de société, ouverte en phase 3)
   { path: '/supervision', roles: SUPER, element: <SupervisionPage /> },
 
-  // Phase 2f — Taux de change (super admin : fixe les taux ; admin de société : lecture seule)
+  // Phase 2f — Taux de change (admin de société : fixe SES taux ; super admin : lecture seule, par société)
   { path: '/rates', roles: ADMINS, element: <RatesPage /> },
   { path: '/rates/:pair/history', roles: ADMINS, element: <RateHistoryPage /> },
 
@@ -141,8 +142,9 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   // Lot 7 — Vérification d'identité des clients wallet (file de validation + dossier)
   // Lot 9 — ouverte au service client selon les délégations KYC_REVIEW (dossiers) et KYC_COUNTER (clients de passage)
   { path: '/kyc', roles: ADMINS_SUPPORT, permission: ['KYC_REVIEW'], element: <KycQueuePage /> },
-  { path: '/kyc/passage', roles: ADMINS_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomersPage /> },
-  { path: '/kyc/passage/:id', roles: ADMINS_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomerPage /> },
+  // Clients de passage : propres à chaque société (le super admin n'y a pas accès).
+  { path: '/kyc/passage', roles: COMPANY_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomersPage /> },
+  { path: '/kyc/passage/:id', roles: COMPANY_SUPPORT, permission: ['KYC_COUNTER'], element: <CounterCustomerPage /> },
   { path: '/kyc/:userId', roles: ADMINS_SUPPORT, permission: ['KYC_REVIEW'], element: <KycReviewPage /> },
 
   // Lot 9 — Service client : comptes et délégations (admin de société), puis l'espace du support

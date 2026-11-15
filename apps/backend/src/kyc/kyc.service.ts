@@ -322,12 +322,12 @@ export class KycService {
   async getFile(requester: AuthUserPayload, documentId: string, kind: FileKind) {
     const doc = await this.prisma.kycDocument.findUnique({
       where: { id: documentId },
-      select: { id: true, userId: true, type: true, user: { select: { clientId: true } } },
+      select: { id: true, userId: true, type: true, user: { select: { clientId: true, role: true } } },
     });
     if (!doc) throw new NotFoundException('Pièce introuvable.');
     const own = doc.userId === requester.id;
     const adminOk =
-      requester.role === 'SUPER_ADMIN' ||
+      (requester.role === 'SUPER_ADMIN' && doc.user.role === 'COMPANY_ADMIN') ||
       ((requester.role === 'COMPANY_ADMIN' || (requester.role === 'SUPPORT' && hasPermission(requester, 'KYC_REVIEW'))) &&
         !!requester.clientId &&
         requester.clientId === doc.user.clientId);
@@ -350,8 +350,12 @@ export class KycService {
   // ═══════════════════════════════════════════════════════
   private scopeWhere(admin: AuthUserPayload, clientId?: number): Prisma.UserWhereInput {
     this.assertIsAdmin(admin);
+    // Super admin : UNIQUEMENT les représentants des sociétés (administrateurs) ; jamais les clients d'une société.
+    if (admin.role === 'SUPER_ADMIN') {
+      const reps: Prisma.UserWhereInput = { role: 'COMPANY_ADMIN', deletedAt: null };
+      return clientId ? { ...reps, clientId } : reps;
+    }
     const base: Prisma.UserWhereInput = { role: 'USER', deletedAt: null };
-    if (admin.role === 'SUPER_ADMIN') return clientId ? { ...base, clientId } : base;
     if (!admin.clientId) throw new ForbiddenException('Compte non rattaché à une société.');
     return { ...base, clientId: admin.clientId };
   }
@@ -458,7 +462,7 @@ export class KycService {
   async adminDossier(admin: AuthUserPayload, userId: string) {
     this.assertIsAdmin(admin);
     const user = await this.prisma.user.findFirst({
-      where: { id: userId, role: 'USER', deletedAt: null },
+      where: { id: userId, role: admin.role === 'SUPER_ADMIN' ? 'COMPANY_ADMIN' : 'USER', deletedAt: null },
       select: {
         id: true, firstName: true, lastName: true, email: true, phone: true, country: true, city: true, addressStreet: true, postalCode: true, birthDate: true, nationality: true, birthPlace: true,
         kycLevel: true, kycVerifiedAt: true, createdAt: true, clientId: true, isSuspended: true, kycLastReminderAt: true, kycReminderCount: true,
@@ -467,7 +471,7 @@ export class KycService {
     if (!user) throw new NotFoundException('Client introuvable.');
     this.assertAdminScope(admin, user);
     await recordView(this.prisma, { actorId: admin.id, clientId: user.clientId, entity: 'KycDossier', entityId: user.id, what: 'dossier', subjectId: user.id });
-    const status = await this.statusOf({ id: user.id, role: 'USER', kycLevel: user.kycLevel, kycVerifiedAt: user.kycVerifiedAt });
+    const status = await this.statusOf({ id: user.id, role: admin.role === 'SUPER_ADMIN' ? 'COMPANY_ADMIN' : 'USER', kycLevel: user.kycLevel, kycVerifiedAt: user.kycVerifiedAt });
     return {
       user: {
         id: user.id, name: fullName(user), firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.phone,
@@ -484,9 +488,11 @@ export class KycService {
     this.assertIsAdmin(admin);
     const doc = await this.prisma.kycDocument.findUnique({
       where: { id: documentId },
-      select: { ...DOC_SELECT, user: { select: { id: true, clientId: true, kycLevel: true, firstName: true, lastName: true, email: true } } },
+      select: { ...DOC_SELECT, user: { select: { id: true, role: true, clientId: true, kycLevel: true, firstName: true, lastName: true, email: true } } },
     });
     if (!doc) throw new NotFoundException('Pièce introuvable.');
+    // Le super admin ne décide que sur les pièces des représentants de sociétés, jamais sur celles de leurs clients.
+    if (admin.role === 'SUPER_ADMIN' && doc.user.role !== 'COMPANY_ADMIN') throw new NotFoundException('Pièce introuvable.');
     this.assertAdminScope(admin, doc.user);
     return doc;
   }
@@ -590,7 +596,7 @@ export class KycService {
   async adminRemind(admin: AuthUserPayload, userId: string) {
     this.assertIsAdmin(admin);
     const user = await this.prisma.user.findFirst({
-      where: { id: userId, role: 'USER', deletedAt: null },
+      where: { id: userId, role: admin.role === 'SUPER_ADMIN' ? 'COMPANY_ADMIN' : 'USER', deletedAt: null },
       select: { id: true, clientId: true, email: true, firstName: true, kycLevel: true, kycLastReminderAt: true, kycReminderCount: true },
     });
     if (!user) throw new NotFoundException('Client introuvable.');

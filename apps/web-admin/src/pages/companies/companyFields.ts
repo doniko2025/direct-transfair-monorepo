@@ -5,7 +5,7 @@
 // le code société (identifiant de portail) et les champs du propriétaire légal.
 
 import { isDisplayableLogo } from '../../lib/logoImage';
-import { DOMAIN, EMAIL, HEX_COLOR, SUBDOMAIN, TYPE_LABEL } from '../../lib/companyRules';
+import { DOMAIN, EMAIL, HEX_COLOR, RCCM, RCCM_MESSAGE, SUBDOMAIN, TYPE_LABEL } from '../../lib/companyRules';
 import type { FieldDef } from './EditableSection';
 
 const emailRule = (v: string) => (EMAIL.test(v) ? null : 'Adresse email invalide.');
@@ -76,6 +76,19 @@ export const APPEARANCE_FIELDS: readonly FieldDef[] = [
   { key: 'welcomeMessage', label: "Message d'accueil", kind: 'textarea', maxLength: 400 },
   { key: 'logoUrl', label: 'Logo', kind: 'image', validate: logoRule, wide: true },
   { key: 'fontFamily', label: 'Police', maxLength: 60, hint: 'Nom d’une police Google Fonts, exemple : Poppins.' },
+];
+
+/** Immatriculation : le numéro RCCM figure dans le contrat de la société (il n'est jamais affiché aux clients). */
+export const REGISTRATION_FIELDS: readonly FieldDef[] = [
+  {
+    key: 'rccmNumber',
+    label: 'Numéro RCCM',
+    maxLength: 60,
+    placeholder: 'GN.TCC.2021.A.12345',
+    hint: 'Registre du commerce et du crédit mobilier. Imprimé dans le contrat de la société.',
+    wide: true,
+    validate: (v) => (RCCM.test(v) ? null : RCCM_MESSAGE),
+  },
 ];
 
 export const LEGAL_FIELDS: readonly FieldDef[] = [
