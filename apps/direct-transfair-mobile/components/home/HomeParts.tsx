@@ -163,7 +163,7 @@ export function BalanceBlock({
               adjustsFontSizeToFit
               minimumFontScale={0.5}
               numberOfLines={1}
-              style={{ fontSize: 44, lineHeight: 54, fontWeight: "800", letterSpacing: -1.5, color: C.ink }}
+              style={{ fontSize: 44, lineHeight: 54, fontWeight: "800", letterSpacing: -0.5, color: C.ink }}
             >
               {hidden ? "••••••" : formatMoney(amount, currency)}
             </Text>

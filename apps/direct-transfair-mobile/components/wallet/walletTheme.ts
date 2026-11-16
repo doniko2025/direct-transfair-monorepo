@@ -46,10 +46,15 @@ export function toNum(v: unknown): number {
 
 const ZERO_DECIMALS = new Set(['XOF', 'XAF', 'GNF', 'JPY']);
 
+/**
+ * Séparateur de milliers : en français, Intl produit une espace fine insécable (U+202F), très étroite. Avec les grandes
+ * polices grasses de l'accueil, elle se « colle » aux chiffres (11150507 au lieu de 11 150 507). On la remplace par
+ * une espace insécable normale (U+00A0) : même rôle (le nombre ne se coupe jamais en fin de ligne), largeur lisible.
+ */
 export function formatMoney(n: number, currency = 'EUR'): string {
   const d = ZERO_DECIMALS.has(currency) ? 0 : 2;
   try {
-    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+    return new Intl.NumberFormat(getLocale(), { minimumFractionDigits: d, maximumFractionDigits: d }).format(n).replace(/\u202F/g, '\u00A0');
   } catch { return n.toFixed(d); }
 }
 
