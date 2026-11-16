@@ -1,17 +1,12 @@
 //apps/backend/src/rates/rates.module.ts
+// ✅ v2.1 : plus de contrôleur — l'ancienne route POST /rates (jamais appelée) est supprimée ; l'administration des taux
+//   passe par /rates-admin (historique, audit, garde-fou de variation). Ce module ne fournit plus que RatesService.
 import { Module } from '@nestjs/common';
 import { RatesService } from './rates.service';
-import { RatesController } from './rates.controller';
 import { PrismaModule } from '../prisma/prisma.module';
-// ✅ 1. Import du module Auth
-import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    PrismaModule, 
-    AuthModule // ✅ 2. Ajout ici pour que le Guard fonctionne
-  ],
-  controllers: [RatesController],
+  imports: [PrismaModule],
   providers: [RatesService],
   exports: [RatesService],
 })

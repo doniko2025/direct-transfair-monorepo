@@ -240,28 +240,17 @@ import { matchesTestPin } from '../common/test-pin'; // ✅ lot 13
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v5.7
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v5.9
 import { platform } from '../common/platform.config';
+import { phonePending } from './verification-policy'; // ✅ v5.1
 import { normalizeLang } from '../i18n/lang';
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
+import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
 
 // =========================================================
 // CURRENCY MAP
 // =========================================================
 
-const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
-  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
-  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
-  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
-  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
-  SI: CurrencyCode.EUR, SK: CurrencyCode.EUR, EE: CurrencyCode.EUR,
-  LT: CurrencyCode.EUR, LV: CurrencyCode.EUR, MT: CurrencyCode.EUR, CY: CurrencyCode.EUR,
-  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
-  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
-  GN: CurrencyCode.GNF,
-  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
-  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
-};
 
 // =========================================================
 // CONSTANTES SÉCURITÉ ✅ v5.0
@@ -539,7 +528,10 @@ export class AuthService {
         403,
       );
     }
-    if (user.phone && !user.isPhoneVerified) {
+    // ✅ v5.1 : règle unique avec v2 (verification-policy.ts) — le téléphone
+    // n'est exigé que si PHONE_VERIFICATION_REQUIRED=true. Avant, v1 l'exigeait
+    // toujours alors que v2 le contournait : deux règles selon le chemin.
+    if (phonePending(user)) {
       throw new HttpException(
         {
           statusCode:           403,
@@ -549,6 +541,7 @@ export class AuthService {
           emailVerified:        true,
           phoneVerified:        false,
           hasPhone:             true,
+          phoneRequired:        true,
           message:              'Téléphone non vérifié. Vérifiez votre numéro avant de vous connecter.',
         },
         403,

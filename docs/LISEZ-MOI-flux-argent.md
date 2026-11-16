@@ -5,7 +5,7 @@ Fichiers livrés en entier, aux mêmes chemins que dans le dépôt : il suffit d
 ## À faire au déploiement (dans cet ordre)
 
 1. **Appliquer la migration** : `cd apps/backend && npx prisma migrate deploy`
-   (nouvelle migration `20261118090000_transaction_commission_split` : une colonne facultative `commissionSplit`, idempotente).
+   (nouvelle migration `20261115120000_transaction_commission_split` : une colonne facultative `commissionSplit`, idempotente).
 2. `npx prisma generate` (le schéma a changé), puis redémarrer le backend.
 3. **Vérifier que les taux de change sont à jour AVANT la mise en production** (voir point 3 ci-dessous).
 

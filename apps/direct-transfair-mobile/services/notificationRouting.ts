@@ -10,6 +10,8 @@ const ALLOWED = [
   "/merchant", "/merchant/payment", "/merchant/payments", "/merchant/payouts", "/merchant/settings", "/pay/request", "/pay/requests",
   // Lot 13 : QR de caisse, clôture, équipe, et l'espace « Caisse » d'un caissier.
   "/merchant/qr", "/merchant/closing", "/merchant/staff", "/cashier",
+  // Lot 14 : paiement de factures (compte client).
+  "/bills", "/bills/payment", "/bills/schedules",
 ];
 
 export type AppTarget = { pathname: string; params?: Record<string, string> };
@@ -27,7 +29,7 @@ export function resolveActionUrl(raw: unknown): AppTarget | null {
     const [k, v = ""] = part.split("=");
     if (k === "id" && /^[A-Za-z0-9_-]{1,64}$/.test(decodeURIComponent(v))) params.id = decodeURIComponent(v);
   }
-  if ((path === "/merchant/payment" || path === "/pay/request") && !params.id) return null;
+  if ((path === "/merchant/payment" || path === "/pay/request" || path === "/bills/payment") && !params.id) return null;
   return Object.keys(params).length ? { pathname: path, params } : { pathname: path };
 }
 

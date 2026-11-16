@@ -150,6 +150,10 @@ import type {
   ReceiptCheck,
   StaticQrView,
 } from "./merchantTypes";
+import type {
+  BillerView, BillLookupResult, BillOptions, BillPaymentView, BillQuote, PayBillInput, SavedBillView,
+  BillScheduleList, BillScheduleView, CreateBillScheduleInput, UpdateBillScheduleInput,
+} from "./billTypes";
 
 // ============================================================
 // TYPE HELPERS
@@ -1581,17 +1585,6 @@ class API {
   }
 
   // ============================================================
-  // TAUX DE CHANGE (admin) — ✅ v6.2 (reconstruit)
-  // POST /rates { pair, rate } — administrateur de SA société uniquement (route conservée pour l'app mobile ; chaque société
-  // fixe ses propres taux ; l'historique et le garde-fou de variation sont dans /rates-admin, utilisé par le back-office web).
-  // ============================================================
-
-  async updateExchangeRate(pair: string, rate: number): Promise<unknown> {
-    const res = await this.http.post<unknown>("/rates", { pair, rate });
-    return res.data;
-  }
-
-  // ============================================================
   // PROFIL ADMIN — ✅ v5.7 (reconstruit)
   // PATCH /clients/me/company-name — l'admin société corrige le nom de sa propre société.
   // ============================================================
@@ -1689,6 +1682,94 @@ class API {
   /** Rembourse le client (montant intégral ; la commission reste acquise à la plateforme). */
   async refundPayment(id: string, input: { pin: string; reason?: string }): Promise<PaymentRequestView> {
     return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/refund`, input)).data;
+  }
+
+  // ── Paiement de factures (lot 14) ─────────────────────────
+  async getBillOptions(): Promise<BillOptions> {
+    return (await this.http.get<BillOptions>("/bills/options")).data;
+  }
+
+  async listBillers(params: { category?: string; q?: string } = {}): Promise<BillerView[]> {
+    const q = new URLSearchParams();
+    if (params.category) q.set("category", params.category);
+    if (params.q) q.set("q", params.q);
+    const qs = q.toString();
+    return (await this.http.get<BillerView[]>(`/bills/billers${qs ? `?${qs}` : ""}`)).data;
+  }
+
+  async getBiller(id: string): Promise<BillerView> {
+    return (await this.http.get<BillerView>(`/bills/billers/${encodeURIComponent(id)}`)).data;
+  }
+
+  async lookupBill(billerId: string, input: { reference: string; fields?: Record<string, string> }): Promise<BillLookupResult> {
+    return (await this.http.post<BillLookupResult>(`/bills/billers/${encodeURIComponent(billerId)}/lookup`, input)).data;
+  }
+
+  async quoteBill(billerId: string, input: { reference: string; fields?: Record<string, string>; amount: number; walletCurrency?: string }): Promise<BillQuote> {
+    return (await this.http.post<BillQuote>(`/bills/billers/${encodeURIComponent(billerId)}/quote`, input)).data;
+  }
+
+  async payBill(billerId: string, input: PayBillInput): Promise<BillPaymentView> {
+    return (await this.http.post<BillPaymentView>(`/bills/billers/${encodeURIComponent(billerId)}/pay`, input)).data;
+  }
+
+  async listMyBills(params: { status?: string; page?: number } = {}): Promise<Paged<BillPaymentView> | { data: BillPaymentView[]; total: number; page: number; limit: number }> {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.page) q.set("page", String(params.page));
+    const qs = q.toString();
+    return (await this.http.get(`/bills/payments${qs ? `?${qs}` : ""}`)).data as never;
+  }
+
+  async getBillPayment(id: string): Promise<BillPaymentView> {
+    return (await this.http.get<BillPaymentView>(`/bills/payments/${encodeURIComponent(id)}`)).data;
+  }
+
+  async listSavedBills(): Promise<SavedBillView[]> {
+    return (await this.http.get<SavedBillView[]>("/bills/saved")).data;
+  }
+
+  async saveBill(input: { label: string; billerId: string; reference: string; fields?: Record<string, string>; customerName?: string }): Promise<void> {
+    await this.http.post("/bills/saved", input);
+  }
+
+  async removeSavedBill(id: string): Promise<void> {
+    await this.http.delete(`/bills/saved/${encodeURIComponent(id)}`);
+  }
+
+  // ── Lot 14b : reçu PDF et factures récurrentes ──
+
+  /** GET /bills/payments/:id/receipt.pdf — reçu PDF d'une facture réglée (payeur uniquement). */
+  async downloadBillReceiptPdf(id: string): Promise<ArrayBuffer> {
+    const res = await this.http.get<ArrayBuffer>(`/bills/payments/${encodeURIComponent(id)}/receipt.pdf`, {
+      responseType: "arraybuffer",
+      headers: { Accept: "application/pdf" },
+    });
+    return res.data;
+  }
+
+  async listBillSchedules(): Promise<BillScheduleList> {
+    return (await this.http.get<BillScheduleList>("/bills/schedules")).data;
+  }
+
+  async createBillSchedule(input: CreateBillScheduleInput): Promise<BillScheduleView> {
+    return (await this.http.post<BillScheduleView>("/bills/schedules", input)).data;
+  }
+
+  async updateBillSchedule(id: string, input: UpdateBillScheduleInput): Promise<BillScheduleView> {
+    return (await this.http.patch<BillScheduleView>(`/bills/schedules/${encodeURIComponent(id)}`, input)).data;
+  }
+
+  async pauseBillSchedule(id: string): Promise<BillScheduleView> {
+    return (await this.http.post<BillScheduleView>(`/bills/schedules/${encodeURIComponent(id)}/pause`, {})).data;
+  }
+
+  async resumeBillSchedule(id: string, pin?: string): Promise<BillScheduleView> {
+    return (await this.http.post<BillScheduleView>(`/bills/schedules/${encodeURIComponent(id)}/resume`, pin ? { pin } : {})).data;
+  }
+
+  async removeBillSchedule(id: string): Promise<void> {
+    await this.http.delete(`/bills/schedules/${encodeURIComponent(id)}`);
   }
 
   async getStaticQr(merchantId?: string): Promise<StaticQrView> {

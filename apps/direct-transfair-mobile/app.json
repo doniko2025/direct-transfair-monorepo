@@ -31,9 +31,11 @@
       },
       "package": "com.doniko.directtransfair",
       "permissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA",
-        "android.permission.READ_CONTACTS",
+        "android.permission.READ_CONTACTS"
+      ],
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO",
         "android.permission.WRITE_CONTACTS"
       ]
     },
@@ -63,7 +65,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement et photographier votre pièce d'identité."
+          "cameraPermission": "Direct Transf'air a besoin de la caméra pour scanner les QR codes de paiement et photographier votre pièce d'identité.",
+          "recordAudioAndroid": false
         }
       ],
       [

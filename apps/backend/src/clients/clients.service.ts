@@ -59,6 +59,7 @@ import { normalizeLogoUrl } from './logo-rules';
 import { normalizeRccm } from './client-documents.rules';
 import { ContractsService } from '../contracts/contracts.service';
 import type { ContractTerms } from '../contracts/contract-templates';
+import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
 
 // ─── Constantes ──────────────────────────────────────────
 const SUPPORTED_CURRENCIES: CurrencyCode[] = [
@@ -69,17 +70,6 @@ const SUPPORTED_CURRENCIES: CurrencyCode[] = [
   CurrencyCode.GBP,
 ];
 
-const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
-  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
-  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
-  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
-  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
-  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
-  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
-  GN: CurrencyCode.GNF,
-  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
-  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
-};
 
 // ─── Helpers ─────────────────────────────────────────────
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {

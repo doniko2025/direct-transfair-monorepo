@@ -8,5 +8,6 @@ _to_delete/
 
 .vercel
 .pnpm-store
-.vercel
 .env*
+# Les modèles de configuration, eux, sont versionnés (backend, web-admin, mobile).
+!.env.example

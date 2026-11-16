@@ -11,7 +11,7 @@
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // =========================================================
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
@@ -22,7 +22,9 @@ import { toNum } from "../wallet/walletTheme";
 import { useKycStatus } from "../../hooks/useKycStatus";
 import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
 import { SpaceSwitch } from "../home/SpaceSwitch";
-import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow } from "../ui";
+import { Button, Card, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow, UText, useUI } from "../ui";
+import { Ionicons } from "../ui/Icon";
+import { Rise } from "../merchant/merchantUi";
 import { useT } from "../../providers/I18nProvider";
 
 const COUNTRY_CURRENCY: Record<string, string> = {
@@ -36,8 +38,16 @@ export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const t = useT();
+  const { C } = useUI();
   const { status: kyc } = useKycStatus();
   const [hidden, toggleHidden] = useBalanceHidden();
+  // Lot 14 : « Payer mes factures » n'apparaît que si la société l'a ouvert (et si le serveur est à jour).
+  const [billsOpen, setBillsOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.getBillOptions().then((o) => { if (alive) setBillsOpen(!!o.enabled); }).catch(() => { if (alive) setBillsOpen(false); });
+    return () => { alive = false; };
+  }, []);
 
   const rawCountry = ((user as any)?.country ?? "").trim().toUpperCase().substring(0, 2);
   const currency: string = (user as any)?.primaryCurrency || COUNTRY_CURRENCY[rawCountry] || "XOF";
@@ -80,6 +90,21 @@ export default function ClientDashboard() {
         <Button label={t("home.send")} onPress={() => router.push("/(tabs)/send")} testID="home-send" />
         <Button label={t("home.topup")} kind="outline" onPress={() => router.push("/(tabs)/recharge")} testID="home-topup" />
       </View>
+
+      {billsOpen ? (
+        <Rise delay={120}>
+          <Card tone="accent" pad={16} onPress={() => router.push("/bills" as any)} style={{ marginTop: 18, flexDirection: "row", alignItems: "center", gap: 14 }}>
+            <View style={{ width: 46, height: 46, borderRadius: 16, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
+              <Ionicons name={"receipt-outline" as any} size={23} color={C.accentDeep} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <UText v="bodyStrong" numberOfLines={1}>{t("bill.homeTitle")}</UText>
+              <UText v="caption" tone="muted" numberOfLines={2}>{t("bill.homeSub")}</UText>
+            </View>
+            <Ionicons name={"chevron-forward" as any} size={18} color={C.faint} />
+          </Card>
+        </Rise>
+      ) : null}
 
       {kyc && !kyc.verified ? (
         <Notice

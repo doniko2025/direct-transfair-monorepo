@@ -27,3 +27,4 @@ export * from './sessions';
 export * from './kyc';
 export * from './support';
 export * from './merchants';
+export * from './bills';

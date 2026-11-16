@@ -2,7 +2,7 @@
 // =========================================================
 // ACCOUNT VERIFIED GUARD
 // Usage : @UseGuards(JwtAuthGuard, AccountVerifiedGuard)
-// Bloque toute route protégée si email ou téléphone non vérifiés.
+// Bloque toute route protégée si email (ou téléphone, si exigé) non vérifiés.
 // ─────────────────────────────────────────────────────────
 // Exemption : @SkipVerification() sur un handler ou un controller
 // =========================================================
@@ -17,6 +17,7 @@ import {
 import { Reflector } from '@nestjs/core';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { isFullyVerified, phonePending } from '../verification-policy';
 
 export const SKIP_VERIFICATION_KEY = 'skipVerification';
 
@@ -64,16 +65,16 @@ export class AccountVerifiedGuard implements CanActivate {
 
     if (!user) return true;
 
-    const emailOk = user.isEmailVerified;
-    const phoneOk = !user.phone || user.isPhoneVerified;
-
-    if (!emailOk || !phoneOk) {
+    // Règle unique (verification-policy.ts) : téléphone exigé seulement
+    // si PHONE_VERIFICATION_REQUIRED=true.
+    if (!isFullyVerified(user)) {
       throw new ForbiddenException({
         code:          'VERIFICATION_REQUIRED',
         message:       'Vérifiez votre email et votre téléphone avant de continuer.',
         emailVerified: user.isEmailVerified,
         phoneVerified: user.isPhoneVerified,
         hasPhone:      !!user.phone,
+        phoneRequired: phonePending(user),
       });
     }
 

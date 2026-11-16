@@ -11,6 +11,7 @@ import { profile } from './messages/profile';
 import { merchant } from './messages/merchant';
 import { legal } from './messages/legal';
 import { theme } from './messages/theme';
+import { bills } from './messages/bills';
 
-export const CATALOG = { ...common, ...auth, ...account, ...home, ...transfer, ...activity, ...profile, ...merchant, ...legal, ...theme } as const satisfies Record<string, Trio>;
+export const CATALOG = { ...common, ...auth, ...account, ...home, ...transfer, ...activity, ...profile, ...merchant, ...legal, ...theme, ...bills } as const satisfies Record<string, Trio>;
 export type MessageKey = keyof typeof CATALOG;

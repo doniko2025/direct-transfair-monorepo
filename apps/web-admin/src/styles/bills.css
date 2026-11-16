@@ -1,0 +1,100 @@
+/* apps/web-admin/src/styles/bills.css */
+/* =========================================================
+   FACTURES (lot 14) — facturiers, factures à régler.
+   Mobile d'abord : tout s'empile, rien ne déborde, jamais de tableau.
+   ========================================================= */
+
+.bl-h2 { margin: 0 0 6px; font-size: 1.05rem; }
+.bl-h3 { margin: 18px 0 4px; font-size: 0.95rem; }
+.bl-note { margin: 4px 0 0; font-size: 0.85rem; line-height: 1.45; }
+.bl-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+
+.bl-settings { display: grid; gap: 12px; margin-bottom: 16px; }
+.bl-limits { border-top: 1px solid var(--line); padding-top: 10px; }
+.bl-limits > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.bl-limits__grid { display: grid; gap: 14px; margin-top: 10px; }
+.bl-limits__row { display: grid; gap: 8px; grid-template-columns: 1fr; }
+.bl-limits__row > strong { font-size: 0.95rem; }
+
+.bl-card {
+  display: grid; gap: 10px; padding: 16px; min-width: 0;
+  border-radius: var(--r-lg); background: var(--card); box-shadow: var(--sh-1);
+  animation: bl-rise 0.35s ease both;
+}
+.bl-card--late { outline: 2px solid var(--danger, #b42318); outline-offset: -2px; }
+.bl-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.bl-card__who { display: grid; min-width: 0; overflow-wrap: anywhere; }
+.bl-card__pills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.bl-stats { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 12px; }
+.bl-stat {
+  display: grid; gap: 2px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--card); box-shadow: var(--sh-1); text-align: center;
+}
+.bl-stat strong { font-size: 1.6rem; letter-spacing: -0.01em; }
+.bl-stat span { color: var(--muted, #667085); font-size: 0.85rem; }
+.bl-stat--alert strong { color: var(--danger, #b42318); }
+
+.bl-owed { display: grid; gap: 8px; margin-bottom: 12px; padding: 14px; }
+.bl-owed ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bl-owed li { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+.bl-search { display: grid; gap: 8px; grid-template-columns: 1fr; align-items: end; margin-bottom: 14px; }
+
+/* Formulaire d'un facturier : défile dans la boîte de dialogue, une colonne sur mobile. */
+.bl-form { max-height: 70vh; overflow-y: auto; padding-right: 4px; }
+.bl-row { display: grid; gap: 10px; grid-template-columns: 1fr; }
+.bl-fields { display: grid; gap: 12px; }
+.bl-fields__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bl-field { display: grid; gap: 8px; padding: 12px; border-radius: var(--r-md, 12px); background: var(--bg-soft, rgba(0, 0, 0, 0.03)); }
+
+@media (min-width: 640px) {
+  .bl-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .bl-row { grid-template-columns: 1fr 1fr; }
+  .bl-limits__row { grid-template-columns: 90px 1fr 1fr; align-items: end; }
+  .bl-search { grid-template-columns: 1fr auto; }
+}
+
+@keyframes bl-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bl-card { animation: none; }
+}
+
+/* ─── Rapprochement (lot 14b) : cartes, une colonne sur mobile ─── */
+.bl-rc-form { display: grid; gap: 14px; margin-bottom: 14px; }
+.bl-rc-file { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bl-rc-options { display: grid; gap: 10px; grid-template-columns: 1fr; padding-top: 8px; }
+.bl-rc-map { display: grid; gap: 12px; margin-bottom: 14px; }
+.bl-rc-sample { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-md, 12px); background: var(--bg-soft, rgba(0, 0, 0, 0.03)); overflow-x: auto; }
+.bl-rc-sample ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.85rem; white-space: nowrap; }
+.bl-rc-stats { margin-top: 4px; }
+
+.bl-rc-tabs { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 10px; -webkit-overflow-scrolling: touch; scrollbar-width: thin; }
+.bl-rc-tab { flex: 0 0 auto; border: 1px solid var(--line, rgba(0, 0, 0, 0.12)); background: transparent; color: inherit; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 0.88rem; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.bl-rc-tab.is-active { background: var(--brand, #0b6b4f); border-color: var(--brand, #0b6b4f); color: #fff; }
+.bl-rc-help { margin: 0 0 10px; }
+
+.bl-rc-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 10px; }
+.bl-rc-row { display: grid; gap: 10px; padding: 14px; border-radius: var(--r-lg, 16px); border: 1px solid var(--line, rgba(0, 0, 0, 0.1)); border-left-width: 4px; background: var(--surface, #fff); animation: bl-rise 0.3s ease both; min-width: 0; }
+.bl-rc-row--ok { border-left-color: var(--ok, #12b76a); }
+.bl-rc-row--warn { border-left-color: var(--warn, #f79009); }
+.bl-rc-row--danger { border-left-color: var(--danger, #b42318); }
+.bl-rc-row__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bl-rc-row__diff { margin-left: auto; }
+.bl-rc-row__body { display: grid; gap: 10px; grid-template-columns: 1fr; margin: 0; }
+.bl-rc-row__body dt { font-size: 0.78rem; color: var(--muted, #667085); margin-bottom: 2px; }
+.bl-rc-row__body dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; overflow-wrap: anywhere; }
+
+@media (min-width: 640px) {
+  .bl-rc-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bl-rc-row__body { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 960px) {
+  .bl-rc-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bl-rc-row { animation: none; }
+}

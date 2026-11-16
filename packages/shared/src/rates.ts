@@ -4,7 +4,7 @@
 // Écriture : COMPANY_ADMIN (ses taux uniquement). Lecture : COMPANY_ADMIN (les siens) et SUPER_ADMIN (LECTURE SEULE, ?clientId=).
 //
 // Contrat : apps/backend/src/rates-admin/ (module créé avec cette phase). Les anciennes routes
-// (POST /rates, PATCH /exchange-rates/:pair) n'ont ni historique ni audit : le web ne les utilise pas.
+// d'écriture (POST /rates, PATCH /exchange-rates/:pair) ont été supprimées : /rates-admin est le seul point d'écriture.
 //   GET   /rates-admin[?clientId]                       un couple par paire (EUR_XOF…), taux enregistré (null tant qu'aucun n'est fixé)
 //   GET   /rates-admin/:pair/history?limit[&clientId]   historique, le plus récent d'abord
 //   PATCH /rates-admin/:pair                            { rate, confirmLargeChange? } — le sens inverse se déduit (COMPANY_ADMIN)

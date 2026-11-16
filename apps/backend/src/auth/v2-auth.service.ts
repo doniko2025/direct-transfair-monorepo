@@ -57,6 +57,15 @@
 //     pour que les deux logiques de vérification restent synchronisées
 //     et basculent ensemble vers la prod le jour venu.
 //
+// ✅ v2.10 : fin du « DEV bypass » téléphone (livré en production)
+//     Les quatre blocs en dur (verifyContact, getVerificationStatus,
+//     buildVerificationNeeded, dispatchVerificationOtps) passent par
+//     verification-policy.ts, pilotée par PHONE_VERIFICATION_REQUIRED
+//     (défaut false = comportement inchangé). Les résultats exposent
+//     désormais phoneRequired pour que l'app affiche l'étape SMS
+//     uniquement quand le serveur l'exige. Activer sur Render seulement
+//     après avoir confirmé que Twilio envoie bien les SMS.
+//
 // ✅ v2.4 : séparation web / mobile (phase 5)
 //     Les rôles SUPER_ADMIN, COMPANY_ADMIN et AGENT ne peuvent plus
 //     ouvrir de session (mot de passe, OTP) ni recevoir d'OTP de
@@ -103,6 +112,7 @@ import { SmsService } from '../sms/sms.service'; // ✅ SMS OTP réels (plus de 
 import { normalizePhoneE164 } from '../common/utils/phone.util'; // ✅ v2.2
 import { matchesTestPin } from '../common/test-pin';            // ✅ lot 13 (code de test, désactivé par défaut)
 import { assertAppClientAllowed } from './app-client.policy';     // ✅ v2.4
+import { isFullyVerified, phonePending } from './verification-policy'; // ✅ v2.10
 import { generateRefreshToken, hashRefreshToken } from './refresh-token.util'; // ✅ v2.5
 import { platform, escapeHtml } from '../common/platform.config';
 
@@ -153,6 +163,8 @@ export type VerificationNeededResult = {
   emailVerified:        boolean;
   phoneVerified:        boolean;
   hasPhone:             boolean;
+  /** v2.10 : le téléphone doit-il être vérifié (PHONE_VERIFICATION_REQUIRED) ? */
+  phoneRequired:        boolean;
   message:              string;
 };
 
@@ -161,6 +173,7 @@ export type VerifyContactResult = {
   emailVerified: boolean;
   phoneVerified: boolean;
   hasPhone:      boolean;
+  phoneRequired: boolean;
   allVerified:   boolean;
 };
 
@@ -168,6 +181,7 @@ export type VerificationStatus = {
   emailVerified:   boolean;
   phoneVerified:   boolean;
   hasPhone:        boolean;
+  phoneRequired:   boolean;
   maskedEmail:     string;
   maskedPhone:     string | null;
   allVerified:     boolean;
@@ -611,24 +625,17 @@ export class V2AuthService {
       channel: dto.channel,
     });
 
-    // ✅ v2.3 — FIX : même bascule DEV/PROD que buildVerificationNeeded()
-    // (plus bas dans ce fichier). Avant, allVerified exigeait TOUJOURS
-    // isPhoneVerified dès que le compte avait un téléphone, alors que
-    // verify-contact.tsx (mobile) ne propose jamais cette étape en DEV.
-    // Tout compte avec téléphone (quasi tous, l'inscription en exige un)
-    // recevait donc allVerified=false en boucle après avoir vérifié son
-    // email, sans qu'aucune étape supplémentaire ne soit jamais proposée
-    // côté UI → écran bloqué indéfiniment. Voir verify-contact.tsx v1.4.
-    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
-    // const hasPhone    = !!updated.phone;
-    // const allVerified = updated.isEmailVerified && (!hasPhone || updated.isPhoneVerified);
-    const allVerified = updated.isEmailVerified; // DEV bypass — synchronisé avec buildVerificationNeeded()
+    // ✅ v2.10 — règle unique (verification-policy.ts), pilotée par
+    // PHONE_VERIFICATION_REQUIRED. Même règle que buildVerificationNeeded()
+    // et getVerificationStatus() : les trois restent synchronisées.
+    const allVerified = isFullyVerified(updated);
 
     return {
       success:       true,
       emailVerified: updated.isEmailVerified,
       phoneVerified: updated.isPhoneVerified,
       hasPhone:      !!updated.phone,
+      phoneRequired: phonePending(updated),
       allVerified,
     };
   }
@@ -648,17 +655,14 @@ export class V2AuthService {
 
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    // ✅ v2.3 — même bascule DEV/PROD que buildVerificationNeeded() et
-    // verifyContact() ci-dessus, pour rester cohérent partout où
-    // allVerified est calculé dans ce fichier.
-    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
-    // const allVerified = user.isEmailVerified && (!user.phone || user.isPhoneVerified);
-    const allVerified = user.isEmailVerified; // DEV bypass
+    // ✅ v2.10 — règle unique (verification-policy.ts).
+    const allVerified = isFullyVerified(user);
 
     return {
       emailVerified: user.isEmailVerified,
       phoneVerified: user.isPhoneVerified,
       hasPhone:      !!user.phone,
+      phoneRequired: phonePending(user),
       maskedEmail:   maskEmail(user.email),
       maskedPhone:   user.phone ? maskPhone(user.phone) : null,
       allVerified,
@@ -737,14 +741,12 @@ export class V2AuthService {
   // ═══════════════════════════════════════════════════════
 
   private buildVerificationNeeded(user: any): VerificationNeededResult | null {
-    const emailOk  = user.isEmailVerified;
-    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
-    // const hasPhone = !!user.phone;
-    // const phoneOk  = !hasPhone || user.isPhoneVerified;
-    const hasPhone = false; // DEV bypass
-    const phoneOk  = true;  // DEV bypass
+    const emailOk  = !!user.isEmailVerified;
+    // ✅ v2.10 — plus de bypass en dur : la règle suit PHONE_VERIFICATION_REQUIRED.
+    const phoneRequired = phonePending(user);
+    const hasPhone      = !!user.phone;
 
-    if (emailOk && phoneOk) return null;
+    if (isFullyVerified(user)) return null;
 
     return {
       requiresVerification: true,
@@ -752,6 +754,7 @@ export class V2AuthService {
       emailVerified:        emailOk,
       phoneVerified:        user.isPhoneVerified,
       hasPhone,
+      phoneRequired,
       message: !emailOk
         ? 'Vérifiez votre adresse email avant de vous connecter.'
         : 'Vérifiez votre numéro de téléphone avant de vous connecter.',
@@ -795,19 +798,36 @@ export class V2AuthService {
       }
     }
 
-    // ── DEV : dispatch SMS commenté — décommenter pour la prod ──
-    // if (user.phone && !user.isPhoneVerified) {
-    //   const hasRecent = await this.prisma.otpLog.count({ ... });
-    //   if (!hasRecent) {
-    //     tasks.push(
-    //       this.sendOtpInternal(
-    //         user.id, CommsType.SMS, OtpPurpose.PHONE_VERIFICATION, user.phone,
-    //       ).catch((e) => {
-    //         this.logger.warn(`[dispatch] SMS OTP failed: ${e?.message}`);
-    //       }),
-    //     );
-    //   }
-    // }
+    // ✅ v2.10 — SMS de vérification renvoyé uniquement si exigé
+    // (PHONE_VERIFICATION_REQUIRED=true), avec la même protection
+    // anti-accumulation que l'email.
+    if (phonePending(user)) {
+      const hasRecentSms = await this.prisma.otpLog.count({
+        where: {
+          userId:    user.id,
+          purpose:   OtpPurpose.PHONE_VERIFICATION,
+          channel:   CommsType.SMS,
+          isUsed:    false,
+          isExpired: false,
+          expiresAt: { gte: new Date() },
+          createdAt: { gte: recentCutoff },
+        },
+      });
+
+      if (!hasRecentSms) {
+        tasks.push(
+          this.sendOtpInternal(
+            user.id, CommsType.SMS, OtpPurpose.PHONE_VERIFICATION, user.phone,
+          ).catch((e) => {
+            this.logger.warn(`[dispatch] SMS OTP failed: ${e?.message}`);
+          }),
+        );
+      } else {
+        this.logger.log(
+          `[dispatch] OTP PHONE_VERIFICATION récent trouvé pour ${user.id} — renvoi ignoré`,
+        );
+      }
+    }
 
     await Promise.allSettled(tasks);
   }

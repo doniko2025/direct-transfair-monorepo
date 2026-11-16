@@ -1,7 +1,10 @@
 // apps/backend/src/main.ts
 // =========================================================
 // ✅ v2.7 (phase 7) : titre et description Swagger lus dans la configuration plateforme (PLATFORM_NAME).
-// MAIN v2.8
+// MAIN v2.10
+// ✅ v2.10 : avertissement au démarrage si PHONE_VERIFICATION_REQUIRED=true alors que Twilio n'est pas configuré (aucun SMS ne partirait : inscriptions bloquées).
+// ✅ v2.9 : CORS — « .railway.app » retiré du défaut de CORS_ALLOWED_SUFFIXES (Railway est abandonné). Le défaut devient « .vercel.app » seul ;
+//   pour l'ÉTEINDRE aussi (recommandé en production) : CORS_ORIGINS / FRONTEND_URL = adresses exactes des portails et CORS_ALLOWED_SUFFIXES= (vide).
 // ✅ v2.8 : LANGUES FR / EN / PT (application mobile) — filtre global qui traduit les messages d'erreur d'après l'en-tête x-app-lang (absent = français,
 //   réponse identique à avant) ; l'en-tête est ajouté aux en-têtes CORS autorisés.
 // ✅ v2.6 : SÉCURITÉ — Swagger n'est plus public en production : désactivé par défaut quand NODE_ENV=production,
@@ -77,6 +80,7 @@ import { TenantGuard }   from './tenants/tenant.guard';
 import { platform } from './common/platform.config';
 import { PrismaService } from './prisma/prisma.service'; // ✅ v2.1
 import { I18nExceptionFilter } from './i18n/i18n.filter'; // ✅ v2.8 : messages d'erreur FR / EN / PT (application mobile)
+import { phoneVerificationRequired } from './auth/verification-policy'; // ✅ v2.10
 
 // =========================================================
 // ✅ v2.1 : CORS dynamique — domaines personnalisés clients
@@ -157,6 +161,10 @@ async function bootstrap(): Promise<void> {
   // de 100 Ko faisait répondre « request entity too large » avant même que le serveur ne lise le logo. Le service rend ensuite
   // un message clair si l'image dépasse 1 Mo.
   app.use('/api/merchants/me/logo', json({ limit: '3mb' }));
+  // ✅ lot 14b — relevé CSV d'un facturier à rapprocher (≤ 5 000 lignes, texte ≈ 1 Mo) : POST /api/bills-admin/reconcile et /reconcile/export.csv.
+  app.use(/^\/api\/bills-admin\/reconcile(\/export\.csv)?\/?$/, json({ limit: '3mb' }));
+  // ✅ lot 14b — confirmation asynchrone d'un facturier : la signature HMAC porte sur le corps BRUT, conservé dans req.rawBody avant l'analyse JSON.
+  app.use('/api/bills/webhook', json({ limit: '100kb', verify: (req, _res, buf) => { (req as Request & { rawBody?: Buffer }).rawBody = buf; } }));
   // Pièce justificative du RCCM (photo ou PDF ≤ 6 Mo une fois décodée ≈ 8,1 Mo en base64).
   app.use('/api/merchants/me/rccm-document', json({ limit: '9mb' }));
   // Documents légaux d'une société (RCCM, pièce d'identité du représentant… ≤ 6 Mo décodés ≈ 8,1 Mo en base64) : POST /api/clients/:id/documents.
@@ -248,7 +256,7 @@ async function bootstrap(): Promise<void> {
       const allowedOrigins = [...listEnv(process.env.CORS_ORIGINS), ...listEnv(process.env.FRONTEND_URL)];
       const allowedSuffixes =
         process.env.CORS_ALLOWED_SUFFIXES === undefined
-          ? ['.vercel.app', '.railway.app'] // comportement historique, à restreindre en production
+          ? ['.vercel.app'] // comportement historique, à restreindre en production (.railway.app retiré en v2.9 : hébergeur abandonné)
           : listEnv(process.env.CORS_ALLOWED_SUFFIXES);
       const allowLocalhost = (process.env.CORS_ALLOW_LOCALHOST ?? 'true').trim().toLowerCase() !== 'false';
 
@@ -292,8 +300,20 @@ async function bootstrap(): Promise<void> {
 
   if (isProduction && process.env.CORS_ALLOWED_SUFFIXES === undefined) {
     console.warn(
-      "⚠️  [CORS] CORS_ALLOWED_SUFFIXES n'est pas défini : « .vercel.app » et « .railway.app » restent autorisés (tout site hébergé là). " +
-      'Définis CORS_ORIGINS / FRONTEND_URL puis CORS_ALLOWED_SUFFIXES= (vide) pour restreindre.',
+      "⚠️  [CORS] CORS_ALLOWED_SUFFIXES n'est pas défini : « .vercel.app » reste autorisé (n'importe quel site hébergé chez Vercel peut appeler l'API, " +
+      'y compris pour renouveler une session par cookie). Définis CORS_ORIGINS / FRONTEND_URL avec les adresses exactes de tes portails, ' +
+      'puis CORS_ALLOWED_SUFFIXES= (vide) pour restreindre.',
+    );
+  }
+
+  if (
+    phoneVerificationRequired() &&
+    !(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER)
+  ) {
+    console.warn(
+      '⚠️  [VÉRIF] PHONE_VERIFICATION_REQUIRED=true mais Twilio n\'est pas entièrement configuré ' +
+      '(TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER) : aucun SMS de vérification ne sera envoyé ' +
+      'et les comptes avec téléphone resteront bloqués. Configure Twilio ou remets PHONE_VERIFICATION_REQUIRED=false.',
     );
   }
 

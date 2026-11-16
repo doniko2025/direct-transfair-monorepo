@@ -52,6 +52,8 @@ export type VerificationNeededResult = {
   emailVerified:        boolean;
   phoneVerified:        boolean;
   hasPhone:             boolean;
+  /** Le serveur exige la vérification du téléphone (PHONE_VERIFICATION_REQUIRED). Absent = non. */
+  phoneRequired?:       boolean;
   message:              string;
 };
 
@@ -62,6 +64,7 @@ export type VerifyContactResult = {
   emailVerified: boolean;
   phoneVerified: boolean;
   hasPhone:      boolean;
+  phoneRequired?: boolean;
   allVerified:   boolean;
 };
 
@@ -69,6 +72,7 @@ export type VerificationStatus = {
   emailVerified: boolean;
   phoneVerified: boolean;
   hasPhone:      boolean;
+  phoneRequired?: boolean;
   maskedEmail:   string;
   maskedPhone:   string | null;
   allVerified:   boolean;

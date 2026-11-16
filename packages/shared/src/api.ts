@@ -22,6 +22,7 @@ import { createFeesApi } from './fees';
 import { createKycApi } from './kyc';
 import { createSupportApi } from './support';
 import { createMerchantApi } from './merchants';
+import { createBillsApi } from './bills';
 import type { HttpClient } from './http';
 import { createNotificationsApi } from './notifications';
 import { createPortalDomainsApi } from './portalDomains';
@@ -74,6 +75,7 @@ export function createApi(http: HttpClient) {
     kyc: createKycApi(http),
     support: createSupportApi(http),
     merchants: createMerchantApi(http),
+    bills: createBillsApi(http),
 
     branding: {
       byHost: (host: string) =>

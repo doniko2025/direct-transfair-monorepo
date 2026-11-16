@@ -6,7 +6,7 @@ Fichiers complets, chemins relatifs à la racine du dépôt. Rien n'a été comm
 ## À faire après copie des fichiers
 
 1. Base de données : `cd apps/backend && npx prisma migrate deploy && npx prisma generate`
-   (nouvelle migration `20261119090000_merchant_rccm_document` ; la migration `20261118090000_transaction_commission_split` du lot précédent doit aussi être appliquée si ce n'est pas fait).
+   (nouvelle migration `20261115130000_merchant_rccm_document` ; la migration `20261115120000_transaction_commission_split` du lot précédent doit aussi être appliquée si ce n'est pas fait).
 2. Redémarrer le backend. Aucune nouvelle dépendance npm (mobile : `expo-camera`, `react-native-qrcode-svg`, `expo-print`, `expo-sharing` étaient déjà présents).
 3. Variable `RECEIPT_SIGNING_SECRET` (à défaut `JWT_SECRET`) : elle signe les QR des reçus. **La changer invalide tous les QR déjà imprimés** (ils s'afficheront « non reconnu » et ne pourront plus servir à payer). Définissez-la une fois pour toutes en production.
 4. Application mobile : nouveau build (nouveaux écrans, deep-link `directtransfair://agent/withdraw?code=…`).

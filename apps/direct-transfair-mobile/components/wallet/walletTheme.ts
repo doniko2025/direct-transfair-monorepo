@@ -147,7 +147,14 @@ export function describeTx(tx: any, userId?: string): TxView {
   const isMerchantPayout = type === 'MERCHANT_PAYOUT';
   // Lot 13 : remboursement d'un paiement — reçu par le client, versé par le commerce.
   const isMerchantRefund = type === 'MERCHANT_REFUND';
-  const incoming = isMerchantPayout
+  // Lot 14 : facture payée depuis le portefeuille / remboursée si le facturier n'a pas pu être réglé.
+  const isBillPay = type === 'BILL_PAYMENT';
+  const isBillRefund = type === 'BILL_REFUND';
+  const incoming = isBillPay
+    ? false
+    : isBillRefund
+      ? true
+      : isMerchantPayout
     ? false
     : isMerchantPayment
       ? tx?.recipientId === userId
@@ -156,13 +163,16 @@ export function describeTx(tx: any, userId?: string): TxView {
   const hasConversion =
     !!tx?.targetCurrency && tx.targetCurrency !== tx.currency && toNum(tx.receivedAmount) > 0;
 
-  const amount = incoming && hasConversion ? toNum(tx.receivedAmount) : toNum(tx?.amount);
+  // Une facture se lit au montant réellement débité (facture + frais), pas au seul montant de la facture.
+  const amount = isBillPay && toNum(tx?.total) > 0 ? toNum(tx.total) : incoming && hasConversion ? toNum(tx.receivedAmount) : toNum(tx?.amount);
   const currency = String(incoming && hasConversion ? tx.targetCurrency : tx?.currency ?? '');
 
   const sender = tx?.sender?.firstName
     ? `${tx.sender.firstName} ${tx.sender.lastName ?? ''}`.trim()
     : tx?.senderFirstName ? `${tx.senderFirstName} ${tx.senderLastName ?? ''}`.trim() : '';
-  const counterpart = isMerchantPayout
+  const counterpart = isBillPay || isBillRefund
+    ? String(tx?.note ?? '').replace(/^(Facture|Remboursement facture)\s+/i, '')
+    : isMerchantPayout
     ? tr('txt.payout')
     : incoming
       ? sender
@@ -171,7 +181,11 @@ export function describeTx(tx: any, userId?: string): TxView {
   const status = statusOf(String(tx?.status ?? ''));
   return {
     incoming,
-    title: isMerchantPayout
+    title: isBillPay
+      ? tr('txt.billPay')
+      : isBillRefund
+        ? tr('txt.billRefund')
+        : isMerchantPayout
       ? tr('txt.payout')
       : isMerchantRefund
         ? (incoming ? tr('txt.refundIn') : tr('txt.refundOut'))
@@ -184,6 +198,6 @@ export function describeTx(tx: any, userId?: string): TxView {
     converted: !incoming && hasConversion ? { amount: toNum(tx.receivedAmount), currency: String(tx.targetCurrency) } : null,
     status,
     statusLabel: incoming ? status.labelIncoming : status.label,
-    icon: isMerchantPayout ? 'cash-outline' : isMerchantRefund ? 'return-down-back-outline' : isMerchantPayment ? 'storefront-outline' : incoming ? 'arrow-down' : 'arrow-up',
+    icon: isBillPay ? 'receipt-outline' : isBillRefund ? 'return-down-back-outline' : isMerchantPayout ? 'cash-outline' : isMerchantRefund ? 'return-down-back-outline' : isMerchantPayment ? 'storefront-outline' : incoming ? 'arrow-down' : 'arrow-up',
   };
 }

@@ -148,3 +148,45 @@ describe('remboursements et rappels', () => {
     expect(mergeSettings({ refunds: { returnMerchantCommission: 'x', recallWindowDays: 999 } }).refunds).toEqual(defaultSettings().refunds);
   });
 });
+
+describe('company-settings.logic — factures (lot 14)', () => {
+  it('défauts : fermé par défaut, frais remboursés en cas d\'échec, plafonds par devise', () => {
+    const d = defaultSettings();
+    expect(d.bills.enabled).toBe(false);
+    expect(d.bills.refundFeeOnFailure).toBe(true);
+    expect(d.bills.maxPerPayment.XOF).toBeGreaterThan(0);
+    expect(d.bills.maxPerDay.XOF).toBeGreaterThanOrEqual(d.bills.maxPerPayment.XOF!);
+  });
+
+  it('fusion : surcharges valides appliquées, plafond négatif ou devise inconnue ignorés', () => {
+    const m = mergeSettings({ bills: { enabled: true, maxPerPayment: { XOF: 500_000, ZZZ: 5, EUR: -1 } } });
+    expect(m.bills.enabled).toBe(true);
+    expect(m.bills.maxPerPayment.XOF).toBe(500_000);
+    expect(m.bills.maxPerPayment.EUR).toBe(3000);
+    expect((m.bills.maxPerPayment as Record<string, number>).ZZZ).toBeUndefined();
+  });
+
+  it('modification stricte : activation acceptée, valeur invalide refusée, plafond par facture > plafond par jour refusé', () => {
+    const base = defaultSettings();
+    const next = applyPatch(base, { bills: { enabled: true } });
+    expect(next.bills?.enabled).toBe(true);
+    expect(() => applyPatch(base, { bills: { enabled: 'oui' as never } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch(base, { bills: { maxPerPayment: { XOF: 9_000_000 }, maxPerDay: { XOF: 1_000_000 } } })).toThrow(SettingsValidationError);
+  });
+
+  it('factures récurrentes : rappels ouverts, prélèvement automatique fermé par défaut', () => {
+    expect(defaultSettings().bills.recurring).toEqual({ enabled: true, autoDebitEnabled: false, maxPerClient: 10, remindDaysBefore: 2, maxFailures: 3 });
+  });
+
+  it('factures récurrentes : fusion tolérante (valeurs invalides ignorées) et modification stricte', () => {
+    const m = mergeSettings({ bills: { recurring: { autoDebitEnabled: true, maxPerClient: 5, remindDaysBefore: 99, maxFailures: 'x' } } }).bills.recurring;
+    expect(m).toMatchObject({ autoDebitEnabled: true, maxPerClient: 5, remindDaysBefore: 2, maxFailures: 3 });
+    const next = applyPatch({}, { bills: { recurring: { autoDebitEnabled: true, remindDaysBefore: 5 } } });
+    expect(next.bills?.recurring).toEqual({ autoDebitEnabled: true, remindDaysBefore: 5 });
+    expect(() => applyPatch({}, { bills: { recurring: { autoDebitEnabled: 'oui' as never } } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { bills: { recurring: { maxPerClient: 0 } } })).toThrow(/entre 1 et 50/);
+    expect(() => applyPatch({}, { bills: { recurring: { remindDaysBefore: 15 } } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { bills: { recurring: { maxFailures: 2.5 } } })).toThrow(SettingsValidationError);
+    expect(() => applyPatch({}, { bills: { recurring: 'x' as never } })).toThrow(SettingsValidationError);
+  });
+});

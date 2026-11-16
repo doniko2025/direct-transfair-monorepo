@@ -80,6 +80,8 @@ export interface VerificationNeeded {
   emailVerified: boolean;
   phoneVerified: boolean;
   hasPhone: boolean;
+  /** Le serveur exige aussi le téléphone (PHONE_VERIFICATION_REQUIRED). Absent = non. */
+  phoneRequired?: boolean;
   message: string;
 }
 
@@ -98,6 +100,7 @@ export interface VerifyContactResult {
   emailVerified: boolean;
   phoneVerified: boolean;
   hasPhone: boolean;
+  phoneRequired?: boolean;
   allVerified: boolean;
 }
 

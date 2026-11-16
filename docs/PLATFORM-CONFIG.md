@@ -31,7 +31,7 @@ Sans variable, les valeurs par défaut reproduisent le comportement précédent 
 `EXPO_PUBLIC_PLATFORM_HOSTS`, `EXPO_PUBLIC_SUPPORT_EMAIL`, `EXPO_PUBLIC_SUPPORT_PHONE`, `EXPO_PUBLIC_DPO_EMAIL`,
 `EXPO_PUBLIC_DATA_AUTHORITY_NAME` / `_URL` (défaut CNIL), `EXPO_PUBLIC_LEGAL_JURISDICTION`,
 `EXPO_PUBLIC_LEGAL_*` (valeurs de secours des mentions légales — les vraies viennent de la fiche société via l'API),
-`EXPO_PUBLIC_FALLBACK_RATES` (JSON, ex. `{"EUR_XOF":655.957}` — vide par défaut), `EXPO_PUBLIC_SENDWAVE_URL`.
+`EXPO_PUBLIC_SENDWAVE_URL`. Aucun taux de change de secours n'existe dans l'app : les taux viennent uniquement de la société (voir `apps/direct-transfair-mobile/.env.example` pour la liste complète des variables).
 
 ## Web-admin (Vercel) — `apps/web-admin`
 

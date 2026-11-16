@@ -15,7 +15,7 @@
 
 ## Mise en production
 1. Appliquer le zip.
-2. `cd apps/backend && npx prisma migrate deploy && npx prisma generate` — migration `20261117090000_merchant_address_details` (5 colonnes facultatives, idempotente).
+2. `cd apps/backend && npx prisma migrate deploy && npx prisma generate` — migration `20261115110000_merchant_address_details` (5 colonnes facultatives, idempotente).
 3. Redémarrer le backend, puis relancer Expo avec `npx expo start -c`.
 
 ⚠️ L'erreur « Service momentanément indisponible » sur « Devenir marchand » vient très probablement de migrations marchand non appliquées sur la base du serveur (`npx prisma migrate status` pour le confirmer).

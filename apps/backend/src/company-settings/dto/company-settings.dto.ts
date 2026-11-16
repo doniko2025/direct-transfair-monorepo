@@ -21,6 +21,17 @@ export class UpdateCompanySettingsDto {
 
   @IsOptional() @IsObject()
   recharge?: Record<string, unknown>;
+
+  // ✅ Lot 14 : ces trois sections manquaient — avec `whitelist: true`, le serveur supprimait en silence « merchant » et « refunds »
+  // (les réglages marchands et de remboursement modifiés depuis le portail n'étaient jamais enregistrés). « bills » = paiement de factures.
+  @IsOptional() @IsObject()
+  merchant?: Record<string, unknown>;
+
+  @IsOptional() @IsObject()
+  refunds?: Record<string, unknown>;
+
+  @IsOptional() @IsObject()
+  bills?: Record<string, unknown>;
 }
 
 export class SettingsQueryDto {

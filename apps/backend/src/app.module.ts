@@ -1,6 +1,7 @@
 // apps/backend/src/app.module.ts
 // =========================================================
-// APP MODULE v5.7
+// APP MODULE v5.8
+// ✅ v5.8 : ExchangeRatesModule importé (au lieu de déclarer son contrôleur et son service ici) ; l'ancien RatesController (POST /rates) n'existe plus.
 // ✅ v5.7 : GET /api/health (HealthController) — point de contrôle public pour garder le serveur éveillé (workflow keep-alive) et surveiller la base.
 // APP MODULE v5.3
 // ✅ v5.6 : PortalDomainsModule — /portal-domains (domaine du portail de chaque société : Cloudflare + Vercel, suivi de statut).
@@ -84,6 +85,7 @@ import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // 
 import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
 import { SupportModule }            from './support/support.module'; // lot 9 — service client
 import { MerchantsModule }          from './merchants/merchants.module'; // lot 11 — comptes marchands
+import { BillsModule }              from './bills/bills.module'; // lot 14 — paiement de factures
 import { ProfilePhotoModule }       from './profile-photo/profile-photo.module'; // photo de profil du client
 import { AccountDeletionModule }    from './account-deletion/account-deletion.module'; // suppression de son propre compte
 import { FeeScheduleModule }        from './fee-schedule/fee-schedule.module'; // ✅ v5.2
@@ -95,9 +97,8 @@ import { TransferLimitsModule } from './transfer-limits/transfer-limits.module';
 
 import { THROTTLERS }              from './common/throttle.config'; // ✅ v4.7
 import { TenantMiddleware }        from './tenants/tenant.middleware';
-import { ExchangeRatesController } from './exchange-rates/exchange-rates.controller';
+import { ExchangeRatesModule }     from './exchange-rates/exchange-rates.module'; // ✅ v5.8 : remplace le contrôleur/service déclarés ici
 import { HealthController }        from './health/health.controller'; // ✅ v5.7
-import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service';
 
 @Module({
   imports: [
@@ -127,6 +128,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     PaymentsModule,
     WithdrawalsModule,
     RatesModule,
+    ExchangeRatesModule, // ✅ v5.8 — GET/POST /exchange-rates (lecture publique des taux, conversion)
     AgenciesModule,
     CommissionsModule,
     WalletsModule,
@@ -142,6 +144,7 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     AgentsAdminModule, // ✅ v5.1 — /agents-admin/* (agents rattachés à une agence)
     SupportModule,     // lot 9 — /support-staff, /support-desk, /support/tickets
     MerchantsModule,   // lot 11 — /merchants, /merchant-payments, /merchants-admin
+    BillsModule,       // lot 14 — /bills, /bills-admin (paiement de factures)
     ProfilePhotoModule, // photo de profil — /profile-photo
     AccountDeletionModule, // « Supprimer mon compte » — POST /account/delete
     FeeScheduleModule, // ✅ v5.2 — /fees-admin/rules, /fees-admin/quote (barème de frais)
@@ -153,10 +156,9 @@ import { ExchangeRatesService }    from './exchange-rates/exchange-rates.service
     CompanySettingsModule, // ✅ v5.7 — /company-settings (paramètres métier de chaque société, global)
   ],
 
-  controllers: [ExchangeRatesController, HealthController],
+  controllers: [HealthController],
 
   providers: [
-    ExchangeRatesService,
     // ✅ v4.5 : ThrottlerGuard appliqué globalement sur toutes les routes
     {
       provide:  APP_GUARD,

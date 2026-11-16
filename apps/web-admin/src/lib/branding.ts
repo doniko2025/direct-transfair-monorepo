@@ -6,7 +6,7 @@
 
 import { PLATFORM_TENANT, type TenantBranding } from '@direct-transfair/shared';
 import {
-  CONSOLE_EMBEDDED, PLATFORM_LOGO_URL, PLATFORM_NAME, PLATFORM_TAGLINE, BRAND_PRIMARY, BRAND_SECONDARY,
+  BASE_PATH, CONSOLE_EMBEDDED, PLATFORM_LOGO_URL, PLATFORM_NAME, PLATFORM_TAGLINE, BRAND_PRIMARY, BRAND_SECONDARY,
   CONSOLE_PORTAL_NAME, CONSOLE_PORTAL_TAGLINE,
 } from '../config';
 import { parseHex, readableOn } from './colors';
@@ -67,6 +67,57 @@ function applyFont(family: string | null): void {
   );
 }
 
+/**
+ * Icône et nom d'installation du portail (onglet, « Ajouter à l'écran d'accueil »).
+ *   • société avec logo → son logo (adresse https, ou image importée servie par /api/icon) ;
+ *   • plateforme (Grand Chef), société sans logo → « t’ ».
+ * Le manifeste d'installation est fabriqué par /api/manifest selon l'adresse du portail (voir api/_branding.js) ; il n'est
+ * branché qu'à la racine du site (sous un chemin « /transfert » derrière la console, le fichier statique reste utilisé).
+ */
+function setLink(rel: string, href: string): void {
+  let el = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!el) {
+    el = document.createElement('link');
+    el.rel = rel;
+    document.head.appendChild(el);
+  }
+  el.removeAttribute('type');
+  el.removeAttribute('sizes');
+  el.href = href;
+}
+
+export function installIconOf(branding: TenantBranding): string | null {
+  const logo = (branding.logoUrl ?? '').trim();
+  if (/^https:\/\/\S+$/i.test(logo)) return logo;
+  // Image importée : servie par la fonction /api/icon, qui n'existe qu'à la racine du site.
+  if (BASE_PATH === '' && /^data:image\/(png|jpeg|webp|gif);base64,/i.test(logo)) return '/api/icon';
+  return null;
+}
+
+function applyInstallIdentity(branding: TenantBranding): void {
+  const isPlatform = branding.code === DEFAULT_BRANDING.code;
+  const icon = isPlatform ? null : installIconOf(branding);
+  if (icon) {
+    // Un favicon « svg » de la plateforme resterait prioritaire : on retire les icônes déclarées pour ne garder que celle de la société.
+    document.head.querySelectorAll('link[rel="icon"]').forEach((el) => el.remove());
+    setLink('icon', icon);
+    setLink('apple-touch-icon', icon);
+  }
+  const shortName = isPlatform ? 'Gestion' : branding.name.slice(0, 12);
+  document.head.querySelector('meta[name="application-name"]')?.setAttribute('content', isPlatform ? 'Espace de gestion' : branding.name);
+  let title = document.head.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+  if (!title) {
+    title = document.createElement('meta');
+    title.name = 'apple-mobile-web-app-title';
+    document.head.appendChild(title);
+  }
+  title.content = shortName;
+  if (BASE_PATH === '' && !isPlatform) {
+    const manifest = document.head.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (manifest) manifest.href = '/api/manifest';
+  }
+}
+
 export function applyBranding(branding: TenantBranding): void {
   const root = document.documentElement;
 
@@ -81,4 +132,5 @@ export function applyBranding(branding: TenantBranding): void {
   applyFont(branding.fontFamily);
 
   document.title = `Espace de gestion — ${branding.name}`;
+  applyInstallIdentity(branding);
 }

@@ -127,6 +127,8 @@ enum TransactionType {
   MERCHANT_PAYMENT // lot 11 — paiement d'un client à un marchand (téléphone ou QR code)
   MERCHANT_PAYOUT  // lot 11 — retrait du solde d'un marchand vers Orange Money ou son compte bancaire
   MERCHANT_REFUND  // lot 13 — remboursement d'un paiement par le marchand (le client est recrédité)
+  BILL_PAYMENT     // lot 14 — paiement d'une facture (électricité, eau, assurance, scolarité, loyer…) depuis le portefeuille
+  BILL_REFUND      // lot 14 — facture non réglée par la société : le client est recrédité
 }
 
 enum PayoutMethod {
@@ -318,6 +320,12 @@ enum AuditAction {
   MERCHANT_STAFF               // lot 13 — caissier ajouté, modifié ou retiré
   MERCHANT_CLOSING             // lot 13 — journée de caisse clôturée
   MERCHANT_QR_ROTATE           // lot 13 — QR permanent du commerce renouvelé
+  BILLER_CREATE                // lot 14 — facturier ajouté au catalogue de la société
+  BILLER_UPDATE                // lot 14 — facturier modifié (frais, statut, partenariat…)
+  BILL_PAYMENT                 // lot 14 — facture payée par un client
+  BILL_PAYMENT_PROCESS         // lot 14 — facture réglée au facturier, ou refusée et remboursée, par la société
+  BILL_SCHEDULE                // lot 14b — facture récurrente programmée, modifiée, mise en pause ou supprimée par le client
+  BILL_RECONCILE               // lot 14b — rapprochement du fichier d'un facturier lancé par la société
 }
 
 enum AlertType {
@@ -642,6 +650,7 @@ model Client {
   complianceCases    ComplianceCase[]
   exchangeRates      ExchangeRate[]
   documents          ClientDocument[]
+  billers            Biller[]
 
   @@index([tenantId])
   @@index([subscriptionStatus])
@@ -951,6 +960,11 @@ model User {
   paymentsMade     PaymentRequest[]  @relation("PaymentPayer")
   merchantPayouts  MerchantPayout[]
   merchantStaffOf  MerchantStaff[]   @relation("MerchantStaffUser")
+
+  // Lot 14 — paiement de factures
+  billPayments     BillPayment[]
+  savedBills       SavedBill[]
+  billSchedules    BillSchedule[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2796,4 +2810,226 @@ model MerchantClosing {
   @@unique([merchantId, day, currency])
   @@index([merchantId, day])
   @@map("merchant_closings")
+}
+
+
+// =========================================================
+// LOT 14 — PAIEMENT DE FACTURES (électricité, eau, assurance auto / moto, scolarité, loyer…)
+// Chaque société tient SON catalogue de facturiers (c'est elle qui négocie les partenariats) et SES frais.
+// Le client paie depuis son portefeuille ; la société règle ensuite le facturier (à la main ou par un connecteur API).
+// =========================================================
+
+enum BillerStatus {
+  DRAFT // en préparation : invisible des clients (partenariat en cours de négociation)
+  ACTIVE // visible et payable
+  SUSPENDED // retiré temporairement (facturier injoignable, litige…)
+}
+
+enum BillPaymentStatus {
+  SUBMITTED // le client a payé, la société doit encore régler le facturier
+  PROCESSING // pris en charge par la société / envoyé au facturier, réponse attendue
+  COMPLETED // le facturier est réglé, reçu disponible
+  REFUNDED // non réglé : le client a été recrédité
+}
+
+model Biller {
+  id       String @id @default(cuid())
+  clientId Int
+  client   Client @relation(fields: [clientId], references: [id])
+
+  name        String
+  /// ELECTRICITY, WATER, INSURANCE_AUTO, INSURANCE_MOTO, SCHOOL_FEES, RENT… (liste dans bills.rules.ts ; texte libre = aucune migration pour en ajouter).
+  category    String
+  /// Pays du facturier (ISO-2), informatif.
+  country     String?
+  currency    CurrencyCode
+  description String?
+  status      BillerStatus @default(DRAFT)
+
+  /// Comment la société règle ce facturier : « manual » (à la main, file de règlement) ou la clé d'un connecteur API (bills.connectors.ts).
+  connectorKey String @default("manual")
+
+  /// Ce que le client doit saisir : intitulé du champ principal (« N° de compteur », « N° de police »…), aide, motif de validation facultatif.
+  referenceLabel   String  @default("Numéro de référence")
+  referenceHint    String?
+  referencePattern String?
+  /// Champs supplémentaires [{ key, label, type: text|number|select, required, pattern?, options? }] (nom de l'élève, classe, plaque…).
+  fields           Json?
+
+  /// FREE : le client saisit le montant · FROM_LOOKUP : le montant vient de la recherche de facture (connecteur).
+  amountMode String   @default("FREE")
+  minAmount  Decimal? @db.Decimal(18, 4)
+  maxAmount  Decimal? @db.Decimal(18, 4)
+
+  /// Frais payés par le client EN PLUS du montant de la facture : fixe + pourcentage (exprimés dans la devise du facturier).
+  feeFixed Decimal @default(0) @db.Decimal(18, 4)
+  feePct   Decimal @default(0) @db.Decimal(7, 4)
+
+  /// Suivi interne de la négociation : NONE · NEGOTIATING · SIGNED (jamais montré aux clients).
+  partnershipStatus    String  @default("NONE")
+  /// Coordonnées de règlement du facturier (compte bancaire, numéro Orange Money…) : réservé à la société.
+  settlementInfo       String?
+  /// Délai annoncé au client pour le règlement, en heures (alerte « en retard » côté société quand il est dépassé).
+  settlementDelayHours Int     @default(24)
+  internalNote         String?
+  sortOrder            Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  payments   BillPayment[]
+  savedBills SavedBill[]
+  schedules  BillSchedule[]
+
+  @@unique([clientId, name])
+  @@index([clientId, status, category])
+  @@map("billers")
+}
+
+model BillPayment {
+  id        String @id @default(cuid())
+  reference String @unique
+  clientId  Int
+
+  billerId String
+  biller   Biller @relation(fields: [billerId], references: [id])
+  payerId  String
+  payer    User   @relation(fields: [payerId], references: [id])
+
+  /// Ce que le client a saisi : référence du compteur / de la police / de l'élève, champs supplémentaires, nom reconnu par la recherche.
+  accountRef   String
+  fields       Json?
+  customerName String?
+
+  /// Montant versé au facturier, dans SA devise, et frais (même devise).
+  amount         Decimal      @db.Decimal(18, 4)
+  fee            Decimal      @default(0) @db.Decimal(18, 4)
+  currency       CurrencyCode
+  /// Débit réel du portefeuille du client (devise du portefeuille ; taux de la société si elle diffère de celle du facturier).
+  walletCurrency CurrencyCode
+  rate           Decimal      @default(1) @db.Decimal(18, 8)
+  amountCharged  Decimal      @db.Decimal(18, 4)
+  feeCharged     Decimal      @default(0) @db.Decimal(18, 4)
+  totalCharged   Decimal      @db.Decimal(18, 4)
+
+  status        BillPaymentStatus @default(SUBMITTED)
+  failureReason String?
+  connectorKey  String            @default("manual")
+
+  /// Reçu / numéro d'opération donné par le facturier, jeton de compteur prépayé, note de la société.
+  providerRef String?
+  token       String?
+  receiptNote String?
+
+  /// Clé fournie par l'application : rejouer la même demande ne débite pas deux fois.
+  idempotencyKey String?
+  /// Lot 14b — programmation récurrente à l'origine de ce paiement (null = paiement manuel).
+  scheduleId     String?
+
+  transactionId       String?
+  refundTransactionId String?
+  processedById       String?
+  processedAt         DateTime?
+  completedAt         DateTime?
+  refundedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payerId, idempotencyKey])
+  @@index([clientId, status, createdAt])
+  @@index([payerId, createdAt])
+  @@index([billerId, status])
+  @@index([scheduleId])
+  @@map("bill_payments")
+}
+
+/// Factures enregistrées par un client (« Compteur maison Conakry », « Scolarité Fatou ») : repaiement en deux touchers.
+model SavedBill {
+  id       String @id @default(cuid())
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  billerId String
+  biller   Biller @relation(fields: [billerId], references: [id], onDelete: Cascade)
+
+  label        String
+  accountRef   String
+  fields       Json?
+  customerName String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, billerId, accountRef])
+  @@index([userId, createdAt])
+  @@map("saved_bills")
+}
+
+// =========================================================
+// LOT 14b — FACTURES RÉCURRENTES (loyer, abonnements, scolarité mensuelle) ET RAPPELS D'ÉCHÉANCE
+// REMIND : le client reçoit un rappel et paie lui-même (code secret à chaque paiement).
+// AUTO   : le client confirme UNE fois avec son code secret ; chaque échéance est ensuite payée seule, avec les mêmes contrôles
+//          qu'un paiement manuel (KYC, plafonds, solde) — et la société doit avoir ouvert le prélèvement automatique.
+// =========================================================
+
+enum BillScheduleStatus {
+  ACTIVE
+  PAUSED // arrêtée par le client, ou mise en pause après trop d'échecs de prélèvement
+  ENDED // date de fin dépassée
+}
+
+enum BillScheduleFrequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+model BillSchedule {
+  id       String @id @default(cuid())
+  clientId Int
+  userId   String
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  billerId String
+  biller   Biller @relation(fields: [billerId], references: [id], onDelete: Cascade)
+
+  /// Nom donné par le client (« Loyer appartement », « Scolarité Fatou »).
+  label        String
+  accountRef   String
+  fields       Json?
+  customerName String?
+
+  /// Montant fixe de l'échéance (devise du facturier). Null si le facturier fournit le montant (amountMode FROM_LOOKUP).
+  amount         Decimal?      @db.Decimal(18, 4)
+  walletCurrency CurrencyCode?
+
+  frequency BillScheduleFrequency @default(MONTHLY)
+  /// Jour d'ancrage (1–31) : un loyer du 31 retombe sur le dernier jour des mois courts puis revient au 31 (pas de dérive).
+  anchorDay Int                   @default(1)
+  /// REMIND ou AUTO.
+  mode      String                @default("REMIND")
+  status    BillScheduleStatus    @default(ACTIVE)
+
+  /// Prochaine échéance (jour de paiement) et fin facultative.
+  nextRunAt DateTime
+  endAt     DateTime?
+
+  /// Dernier rappel envoyé POUR l'échéance nextRunAt (évite les doublons) ; prochaine tentative après un échec.
+  remindedFor DateTime?
+  retryAt     DateTime?
+
+  failureCount  Int       @default(0)
+  lastError     String?
+  lastRunAt     DateTime?
+  lastPaymentId String?
+  runsCount     Int       @default(0)
+  /// AUTO : moment où le client a confirmé le prélèvement avec son code secret.
+  consentAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, nextRunAt])
+  @@index([userId, status])
+  @@index([billerId])
+  @@map("bill_schedules")
 }

@@ -92,6 +92,21 @@ jobs:
       DATABASE_URL_PLATFORM: postgresql://ci:ci@localhost:5432/ci?schema=platform
     steps:
       - uses: actions/checkout@v4
+
+      # Garde-fou sur les NOMS de migrations : « AAAAMMJJHHMMSS_nom ». Une migration datée dans le futur est triée
+      # APRÈS celles que Prisma créera ensuite : l'ordre d'application est alors faux sur une base neuve et « prisma migrate dev »
+      # réclame un reset. Tolérance de 12 h (horodatage saisi à la main en heure locale).
+      - name: Vérifier les noms des migrations
+        run: |
+          limit=$(date -u -d '+12 hours' +%Y%m%d%H%M%S)
+          bad=0
+          for d in apps/backend/prisma/migrations/*/ apps/backend/prisma-platform/migrations/*/; do
+            n=$(basename "$d")
+            if ! [[ "$n" =~ ^[0-9]{14}_[a-z0-9_]+$ ]]; then echo "::error::Nom de migration invalide : $n"; bad=1; continue; fi
+            if [ "${n:0:14}" -gt "$limit" ]; then echo "::error::Migration datée dans le futur : $n"; bad=1; fi
+          done
+          exit $bad
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

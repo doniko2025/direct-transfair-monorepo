@@ -10,6 +10,6 @@ LOT 14e — Clavier, filtres sur une ligne, RCCM obligatoire
  - components/ui/Segmented.tsx (nouveau, exporté dans index.ts) ; app/merchant/closing.tsx l'utilise.
 
 3) RCCM OBLIGATOIRE (compte marchand)
- Backend : migration 20261116090000_merchant_rccm  =>  npx prisma migrate deploy && npx prisma generate && build && redeploiement.
+ Backend : migration 20261115100000_merchant_rccm  =>  npx prisma migrate deploy && npx prisma generate && build && redeploiement.
  Inscription marchand, activation, Réglages marchand (verrouillé une fois saisi), fiche admin web (RCCM affiché + recherche).
  Les marchands existants sans RCCM ne sont pas bloqués : rappel dans Réglages.

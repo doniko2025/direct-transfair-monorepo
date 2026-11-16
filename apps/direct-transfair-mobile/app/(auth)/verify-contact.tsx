@@ -1,4 +1,8 @@
 // apps/direct-transfair-mobile/app/(auth)/verify-contact.tsx
+// ✅ v2.2 : l'étape SMS (téléphone) n'est plus bloquée en dur — elle apparaît quand le serveur l'exige (PHONE_VERIFICATION_REQUIRED
+//   côté backend → champ phoneRequired) : dès l'ouverture de l'écran (paramètre phoneRequired venant de la connexion) ou juste après
+//   la vérification de l'email (réponse du serveur). Le code SMS est envoyé automatiquement à l'arrivée sur l'étape.
+//   Avec le réglage par défaut du serveur (téléphone non exigé), l'écran se comporte exactement comme avant.
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // VERIFY CONTACT v2.0 — Direct Transf'air
@@ -106,19 +110,26 @@ export default function VerifyContactScreen() {
     emailVerified: string;
     phoneVerified: string;
     hasPhone:      string;
+    phoneRequired?: string;
   }>();
 
   const userId        = params.userId        ?? '';
   const emailVerified = params.emailVerified === '1';
+  const phoneVerified = params.phoneVerified === '1';
+  const hasPhone      = params.hasPhone      === '1';
+
+  // Étape SMS : demandée d'emblée par le serveur (connexion) ou ajoutée après l'email (voir handleVerify).
+  const [phoneStep, setPhoneStep] = useState(
+    params.phoneRequired === '1' && hasPhone && !phoneVerified,
+  );
 
   // ── Étapes requises ──────────────────────────────────────
   const stepsRequired = useMemo<Step[]>(() => {
     const steps: Step[] = [];
     if (!emailVerified) steps.push('email');
-    // ── DEV : vérification téléphone commentée — décommenter pour la prod ──
-    // if (!phoneVerified && hasPhone) steps.push('phone');
+    if (phoneStep)      steps.push('phone');
     return steps;
-  }, [emailVerified]);
+  }, [emailVerified, phoneStep]);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const currentStep: Step | 'done' =
@@ -214,6 +225,7 @@ export default function VerifyContactScreen() {
     setSendError(null);
     setVerifyError(null);
     checkScale.setValue(0);
+    hasSentRef.current = false;   // v2.2 : l'étape suivante (SMS) envoie son propre code automatiquement
     setCurrentStepIndex((i) => i + 1);
   };
 
@@ -236,6 +248,8 @@ export default function VerifyContactScreen() {
         setTimeout(() => setCurrentStepIndex(stepsRequired.length), 700);
         return;
       }
+      // v2.2 : le serveur exige aussi le téléphone → on ajoute l'étape SMS après l'email.
+      if (res.phoneRequired && res.hasPhone && !res.phoneVerified) setPhoneStep(true);
       moveToNextStep();
       animateSuccess();
     } catch (e: any) {

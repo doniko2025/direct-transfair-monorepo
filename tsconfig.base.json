@@ -5,12 +5,6 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@ui/*": ["packages/ui/*"],
-      "@config/*": ["packages/config/*"],
-      "@utils/*": ["packages/utils/*"]
-    }
+    "forceConsistentCasingInFileNames": true
   }
 }

@@ -269,6 +269,7 @@ export default function LoginV2Screen() {
         emailVerified: res.emailVerified ? '1' : '0',
         phoneVerified: res.phoneVerified ? '1' : '0',
         hasPhone:      res.hasPhone      ? '1' : '0',
+        phoneRequired: res.phoneRequired ? '1' : '0',   // v2.10 : étape SMS seulement si le serveur l'exige
       },
     });
   };

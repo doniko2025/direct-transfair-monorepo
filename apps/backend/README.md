@@ -1,98 +1,67 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Direct Transf'air — backend (NestJS)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API de la plateforme : NestJS 10, Prisma 5 (PostgreSQL), multi-sociétés (tenants), authentification JWT + refresh token,
+trésorerie, transferts, wallets, KYC, comptes marchands, contrats, domaines de portail.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Ce dossier fait partie du monorepo pnpm (`apps/backend`, `apps/web-admin`, `apps/direct-transfair-mobile`, `packages/shared`).
+Les commandes ci-dessous se lancent **depuis la racine du dépôt** (ou avec `pnpm --filter direct-transfair-backend <script>`).
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Démarrage local
 
 ```bash
-$ pnpm install
+pnpm install                       # lance aussi « prisma generate » (client principal + client plateforme)
+pnpm db:up                         # PostgreSQL 16 en Docker (docker-compose.yml)
+cp apps/backend/.env.example apps/backend/.env   # puis renseigner DATABASE_URL, DIRECT_URL, DATABASE_URL_PLATFORM, JWT_SECRET…
+pnpm prisma:migrate                # applique les migrations (base principale)
+pnpm prisma:seed                   # jeu de données initial (voir SEED_* dans .env.example)
+pnpm dev:backend                   # http://localhost:3000/api   (Swagger : /swagger hors production)
 ```
 
-## Compile and run the project
+Contrôle de santé : `GET /api/health`.
 
-```bash
-# development
-$ pnpm run start
+## Scripts (`apps/backend/package.json`)
 
-# watch mode
-$ pnpm run start:dev
+| Script | Rôle |
+|---|---|
+| `dev` / `dev:watch` | démarrage de développement (ts-node / tsx) |
+| `build` | compile dans `dist/` et copie le client Prisma « plateforme » généré |
+| `start:prod` | `node dist/main.js` |
+| `test` / `test:ci` | tests unitaires Jest (aucune base de données requise) |
+| `prisma:generate`, `prisma:platform:generate` | régénère les clients Prisma |
+| `prisma:migrate`, `prisma:deploy` | migrations de la base principale (dev / production) |
+| `prisma:platform:migrate`, `prisma:platform:deploy` | migrations de la base « plateforme » |
+| `prisma:seed`, `prisma:reset`, `prisma:studio` | jeu de données, remise à zéro (dev), interface graphique |
 
-# production mode
-$ pnpm run start:prod
-```
+## Deux bases de données
 
-## Run tests
+- **Base principale** (`DATABASE_URL`, `DIRECT_URL`) — `prisma/schema.prisma`, migrations dans `prisma/migrations/`.
+- **Base plateforme** (`DATABASE_URL_PLATFORM`) — `prisma-platform/schema.prisma`, migrations dans `prisma-platform/migrations/`.
+  Son client est généré dans `src/platform/generated/` (dossier ignoré par git : ne jamais le committer).
 
-```bash
-# unit tests
-$ pnpm run test
+## Déploiement (Render)
 
-# e2e tests
-$ pnpm run test:e2e
+1. Commandes attendues côté Render : build `pnpm install && pnpm build:backend`, démarrage `pnpm start:backend:prod` (scripts de la racine).
+2. **Appliquer les migrations avant (ou juste après) la mise en ligne du code qui en dépend** — elles ne sont pas lancées
+   automatiquement au démarrage :
+   ```bash
+   cd apps/backend
+   npx prisma migrate deploy                                            # base principale
+   npx prisma migrate deploy --schema prisma-platform/schema.prisma     # base plateforme, si une migration plateforme est livrée
+   ```
+3. Variables d'environnement : voir `.env.example` (chaque variable y est documentée, avec sa valeur par défaut).
+   Au minimum : `DATABASE_URL`, `DIRECT_URL`, `DATABASE_URL_PLATFORM`, `JWT_SECRET` (32 caractères), `NODE_ENV=production`,
+   `CORS_ORIGINS` / `FRONTEND_URL`, `CORS_ALLOWED_SUFFIXES=` (vide), `TZ=Africa/Conakry`.
 
-# test coverage
-$ pnpm run test:cov
-```
+## Migrations : règles
 
-## Deployment
+- Nom du dossier : `AAAAMMJJHHMMSS_description_en_minuscules`. **Jamais de date future** : une migration datée dans le futur est
+  triée après celles que Prisma créera ensuite. La CI (`.github/workflows/ci.yml`) refuse les noms invalides ou datés de plus de 12 h dans le futur.
+- Ne jamais renommer ni modifier une migration déjà appliquée en production. Si un renommage est inévitable, il faut aussi
+  mettre à jour la colonne `migration_name` de la table `_prisma_migrations` (voir `renommer-migrations-prod.sql` livré avec le lot d'audit).
+- La CI rejoue toutes les migrations sur une base PostgreSQL vide à chaque push.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Tâches planifiées et plusieurs instances
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Les tâches `@nestjs/schedule` (expiration des codes de retrait, des demandes marchandes, vérification des domaines, snapshot de trésorerie)
+tournent sur **chaque** instance. Avec plusieurs instances, couper les doublons : `PICKUP_EXPIRY_CRON=false`, `MERCHANT_EXPIRY_CRON=false`,
+`PORTAL_DOMAINS_CRON=false` sur toutes sauf une.

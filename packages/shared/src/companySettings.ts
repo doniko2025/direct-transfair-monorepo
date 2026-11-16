@@ -39,6 +39,34 @@ export interface CompanySettings {
   merchant: CompanyMerchantSettings;
   /** Remboursements et rappels d'envois. */
   refunds: CompanyRefundSettings;
+  /** Paiement de factures (électricité, eau, assurance, scolarité, loyer…). */
+  bills: CompanyBillSettings;
+}
+
+export interface CompanyBillSettings {
+  /** Paiement de factures ouvert aux clients de la société (fermé par défaut). */
+  enabled: boolean;
+  /** Facture non réglée : les frais payés par le client lui sont rendus avec le montant. */
+  refundFeeOnFailure: boolean;
+  /** Par devise du facturier : plus grosse facture payable en une fois. */
+  maxPerPayment: Record<string, number>;
+  /** Par devise du facturier : total payable par un même client sur 24 h glissantes. */
+  maxPerDay: Record<string, number>;
+  /** Factures récurrentes et rappels d'échéance. */
+  recurring: CompanyBillRecurringSettings;
+}
+
+export interface CompanyBillRecurringSettings {
+  /** Le client peut programmer des factures récurrentes. */
+  enabled: boolean;
+  /** Prélèvement automatique autorisé (fermé par défaut). */
+  autoDebitEnabled: boolean;
+  /** Nombre maximum de factures programmées actives par client. */
+  maxPerClient: number;
+  /** Rappel envoyé N jours avant l'échéance. */
+  remindDaysBefore: number;
+  /** Échecs consécutifs avant mise en pause. */
+  maxFailures: number;
 }
 
 export interface CompanyRefundSettings {
@@ -90,6 +118,14 @@ export interface CompanySettingsPatch {
     minPayout?: Record<string, number | null>;
   };
   refunds?: Partial<CompanyRefundSettings>;
+  bills?: {
+    enabled?: boolean;
+    refundFeeOnFailure?: boolean;
+    /** `null` retire la surcharge de la devise (retour au défaut). */
+    maxPerPayment?: Record<string, number | null>;
+    maxPerDay?: Record<string, number | null>;
+    recurring?: Partial<CompanyBillRecurringSettings>;
+  };
 }
 
 export interface CompanySettingsView {

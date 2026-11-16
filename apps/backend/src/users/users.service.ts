@@ -79,24 +79,12 @@ import * as crypto from 'crypto';
 
 import { PrismaService } from '../prisma/prisma.service';
 import { normalizePhoneE164, normalizePhoneStrict, PHONE_INVALID_MESSAGE } from '../common/utils/phone.util';
+import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
 
 // =========================================================
 // HELPERS (inchangés depuis v4.2)
 // =========================================================
 
-const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
-  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, IT: CurrencyCode.EUR,
-  ES: CurrencyCode.EUR, BE: CurrencyCode.EUR, PT: CurrencyCode.EUR,
-  NL: CurrencyCode.EUR, AT: CurrencyCode.EUR, FI: CurrencyCode.EUR,
-  IE: CurrencyCode.EUR, LU: CurrencyCode.EUR, GR: CurrencyCode.EUR,
-  SI: CurrencyCode.EUR, SK: CurrencyCode.EUR, EE: CurrencyCode.EUR,
-  LT: CurrencyCode.EUR, LV: CurrencyCode.EUR, MT: CurrencyCode.EUR, CY: CurrencyCode.EUR,
-  GB: CurrencyCode.GBP, GG: CurrencyCode.GBP, JE: CurrencyCode.GBP, IM: CurrencyCode.GBP,
-  US: CurrencyCode.USD, SV: CurrencyCode.USD, PA: CurrencyCode.USD, EC: CurrencyCode.USD,
-  GN: CurrencyCode.GNF,
-  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF, BF: CurrencyCode.XOF,
-  BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF, NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
-};
 
 function getCurrencyFromCountry(country?: string | null): CurrencyCode {
   if (!country) return CurrencyCode.XOF;

@@ -327,6 +327,7 @@ import { assertSelfFundingAllowed } from '../treasury/self-funding';
 import { amlFlagScore, computeRiskScore } from './aml-scoring';
 import { buildCommissionSnapshot } from '../commission-rules/commission-snapshot';
 import { assessRecall, type RecallAssessment } from './recall-rules';
+import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
 
 // ── Constantes ────────────────────────────────────────────
 
@@ -347,16 +348,6 @@ const CANCELLABLE_TX: TransactionStatus[] = [
 /** Types dont l'expéditeur a été débité de `total` à la création : seuls ceux-là se remboursent. */
 const REFUNDABLE_TYPES: TransactionType[] = [TransactionType.TRANSFER, TransactionType.SCHEDULED];
 
-const COUNTRY_TO_CURRENCY: Record<string, CurrencyCode> = {
-  GN: CurrencyCode.GNF,
-  SN: CurrencyCode.XOF, CI: CurrencyCode.XOF, ML: CurrencyCode.XOF,
-  BF: CurrencyCode.XOF, BJ: CurrencyCode.XOF, TG: CurrencyCode.XOF,
-  NE: CurrencyCode.XOF, GW: CurrencyCode.XOF,
-  FR: CurrencyCode.EUR, DE: CurrencyCode.EUR, BE: CurrencyCode.EUR,
-  PT: CurrencyCode.EUR, ES: CurrencyCode.EUR,
-  GB: CurrencyCode.GBP,
-  US: CurrencyCode.USD,
-};
 
 function getCurrencyFromCountryOrText(raw?: string | null): CurrencyCode {
   if (!raw) return CurrencyCode.XOF;

@@ -3,7 +3,7 @@
 # GARDER LE SERVEUR ÉVEILLÉ — Direct Transf'air
 #
 # Render (plan gratuit) endort le serveur après ~15 min sans requête ; le réveil prend 30 à 60 s (« Le serveur démarre… » dans l'app).
-# Ce workflow appelle GET /api/health toutes les 10 minutes pendant la journée : le serveur (et la base) restent éveillés.
+# Il vise à appeler GET /api/health toutes les 10 minutes pendant la journée (voir l’avertissement plus bas : en pratique GitHub ne le lance que quelques fois par jour).
 #
 # RÉGLAGES
 #   • URL du serveur : variable de dépôt API_URL (Settings → Secrets and variables → Actions → Variables) ;
@@ -12,10 +12,20 @@
 #     Pour couvrir 24 h/24, remplacez par  '*/10 * * * *'.
 #   • Lancement manuel : onglet Actions → « Keep API awake » → Run workflow.
 #
-# LIMITES À CONNAÎTRE
-#   • GitHub peut retarder une exécution planifiée de plusieurs minutes quand ses serveurs sont chargés : une pause > 15 min est donc possible de temps en temps.
-#   • Dépôt PRIVÉ : GitHub offre 2 000 minutes/mois ; ce workflow en consomme ≈ 3 300 (1 minute facturée par exécution). Dépôt public : gratuit et illimité.
-#     Si votre dépôt est privé, préférez un service de ping gratuit (cron-job.org, UptimeRobot) sur la même URL, ou réduisez la plage horaire.
+# INTERRUPTEUR (sans modifier ce fichier)
+#   • Variable de dépôt KEEP_ALIVE_ENABLED=false  → les exécutions planifiées sont ignorées (le job est « skipped », 0 minute facturée).
+#     Supprimez la variable (ou mettez true) pour reprendre. Le lancement manuel (Run workflow) fonctionne toujours.
+#
+# ⚠️ CE WORKFLOW NE GARDE PAS RÉELLEMENT LE SERVEUR ÉVEILLÉ — À LIRE
+#   • Constat mesuré sur ce dépôt (privé) : GitHub ne lance cette planification que 3 à 4 fois par jour, au lieu des ~108 prévues
+#     (toutes les 10 min, 18 h/jour). GitHub retarde ou saute les exécutions planifiées des dépôts à faible activité ; le serveur
+#     Render gratuit se rendort donc entre deux appels (réveil de 30 à 60 s au premier usage).
+#   • Ne comptez pas sur lui pour la disponibilité. Solution fiable : un service de ping gratuit (cron-job.org ou UptimeRobot) sur
+#     https://<votre-serveur>/api/health toutes les 10 min, puis KEEP_ALIVE_ENABLED=false ici. Un plan Render payant supprime le besoin.
+#   • Coût : si GitHub exécutait vraiment tout, ce serait ≈ 3 240 minutes/mois pour 2 000 offertes (dépôt privé). C'est une raison de
+#     plus de passer par un ping externe plutôt que de « réparer » ce workflow.
+#
+# AUTRES LIMITES
 #   • Render gratuit : 750 h d'instance par mois pour TOUS les services gratuits du compte. Un service éveillé 24 h/24 ≈ 744 h : deux services ne tiennent pas.
 # =========================================================
 name: Keep API awake
@@ -33,6 +43,8 @@ concurrency:
 
 jobs:
   ping:
+    # Les exécutions planifiées s'arrêtent si la variable KEEP_ALIVE_ENABLED vaut « false » ; le lancement manuel passe toujours.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.KEEP_ALIVE_ENABLED != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:

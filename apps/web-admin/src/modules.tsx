@@ -49,6 +49,9 @@ import WalletLedgerPage from './pages/treasury/WalletLedgerPage';
 import MerchantPage from './pages/merchants/MerchantPage';
 import MerchantPayoutsPage from './pages/merchants/MerchantPayoutsPage';
 import MerchantsPage from './pages/merchants/MerchantsPage';
+import BillersPage from './pages/bills/BillersPage';
+import BillPaymentsPage from './pages/bills/BillPaymentsPage';
+import BillReconcilePage from './pages/bills/BillReconcilePage';
 import SupportClientPage from './pages/support/SupportClientPage';
 import SupportClientsPage from './pages/support/SupportClientsPage';
 import SupportRefundsPage from './pages/support/SupportRefundsPage';
@@ -151,6 +154,10 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/merchants', roles: COMPANY, element: <MerchantsPage /> },
   { path: '/merchants/payouts', roles: COMPANY, element: <MerchantPayoutsPage /> },
   { path: '/merchants/:userId', roles: COMPANY, element: <MerchantPage /> },
+  // Lot 14 — paiement de factures : réservé à l'administrateur de la société (le super admin ne voit rien de ses opérations).
+  { path: '/bills', roles: COMPANY, element: <BillersPage /> },
+  { path: '/bills/payments', roles: COMPANY, element: <BillPaymentsPage /> },
+  { path: '/bills/reconcile', roles: COMPANY, element: <BillReconcilePage /> },
   { path: '/support-staff', roles: COMPANY, element: <SupportStaffPage /> },
   { path: '/support/clients', roles: SUPPORT, permission: ['CLIENTS_VIEW'], element: <SupportClientsPage /> },
   { path: '/support/clients/:id', roles: SUPPORT, permission: ['CLIENTS_VIEW'], element: <SupportClientPage /> },

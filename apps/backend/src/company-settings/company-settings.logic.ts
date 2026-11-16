@@ -67,6 +67,33 @@ export interface RefundSettings {
   recallWindowDays: number;
 }
 
+/** Lot 14 — paiement de factures (électricité, eau, assurance, scolarité, loyer…). */
+export interface BillSettings {
+  /** Le paiement de factures est-il ouvert aux clients de la société ? (fermé tant que l'admin ne l'ouvre pas.) */
+  enabled: boolean;
+  /** Facture non réglée au facturier : les frais payés par le client lui sont-ils rendus avec le montant ? */
+  refundFeeOnFailure: boolean;
+  /** Par devise du facturier : plus grosse facture payable en une fois. */
+  maxPerPayment: Record<string, number>;
+  /** Par devise du facturier : total de factures payables par un même client sur 24 h glissantes. */
+  maxPerDay: Record<string, number>;
+  /** Lot 14b — factures récurrentes (loyer, abonnements, scolarité mensuelle) et rappels d'échéance. */
+  recurring: BillRecurringSettings;
+}
+
+export interface BillRecurringSettings {
+  /** Le client peut programmer des factures récurrentes (rappel ou prélèvement). */
+  enabled: boolean;
+  /** Prélèvement automatique autorisé (le client confirme UNE fois, avec son code secret, puis les échéances sont payées seules). Fermé par défaut. */
+  autoDebitEnabled: boolean;
+  /** Nombre maximum de factures programmées actives par client. */
+  maxPerClient: number;
+  /** Rappel envoyé N jours avant l'échéance (0 = le jour même seulement). */
+  remindDaysBefore: number;
+  /** Échecs de prélèvement consécutifs (solde insuffisant…) avant mise en pause de la programmation. */
+  maxFailures: number;
+}
+
 export interface CompanySettings {
   fees: {
     /** Modes d'envoi sans frais (clés de FEE_METHOD_KEYS). Par défaut : uniquement WALLET (wallet → wallet). */
@@ -102,6 +129,8 @@ export interface CompanySettings {
   merchant: MerchantSettings;
   /** Remboursements et rappels. */
   refunds: RefundSettings;
+  /** Lot 14 — paiement de factures. */
+  bills: BillSettings;
 }
 
 /** Surcharges enregistrées : même forme, tout est optionnel. */
@@ -133,6 +162,14 @@ export interface CompanySettingsPatch {
     minPayout?: Record<string, number | null>;
   };
   refunds?: { returnMerchantCommission?: boolean; returnFeesOnRecall?: boolean; recallWindowDays?: number };
+  bills?: {
+    enabled?: boolean;
+    refundFeeOnFailure?: boolean;
+    /** Une valeur `null` retire la surcharge de la devise (retour au défaut). */
+    maxPerPayment?: Record<string, number | null>;
+    maxPerDay?: Record<string, number | null>;
+    recurring?: Partial<BillRecurringSettings>;
+  };
 }
 
 // ─── Bornes ─────────────────────────────────────────────
@@ -149,6 +186,10 @@ export const LIMITS = {
   payoutCooldownHours: { min: 0, max: 168 },
   merchantAmount: { min: 0, max: 1_000_000_000_000 },
   recallWindowDays: { min: 0, max: 365 },
+  billAmount: { min: 0, max: 1_000_000_000_000 },
+  billSchedulesPerClient: { min: 1, max: 50 },
+  billRemindDays: { min: 0, max: 14 },
+  billMaxFailures: { min: 1, max: 10 },
 } as const;
 
 export const CURRENCIES = Object.values(CurrencyCode) as string[];
@@ -195,6 +236,15 @@ export function defaultSettings(): CompanySettings {
     // Comportement actuel conservé pour la commission marchand (non rendue). Le rappel d'un envoi wallet est ouvert 30 jours,
     // frais rendus : il n'a lieu que sur décision d'un deuxième membre du service client (règle des quatre yeux).
     refunds: { returnMerchantCommission: false, returnFeesOnRecall: true, recallWindowDays: 30 },
+    // Paiement de factures : FERMÉ tant que l'administrateur de la société ne l'ouvre pas (il faut d'abord des facturiers et des accords).
+    bills: {
+      enabled: false,
+      refundFeeOnFailure: true,
+      maxPerPayment: { XOF: 2_000_000, GNF: 20_000_000, EUR: 3_000, USD: 3_000, GBP: 3_000 },
+      maxPerDay: { XOF: 5_000_000, GNF: 50_000_000, EUR: 5_000, USD: 5_000, GBP: 5_000 },
+      // Rappels ouverts ; prélèvement automatique FERMÉ (la société doit l'autoriser explicitement).
+      recurring: { enabled: true, autoDebitEnabled: false, maxPerClient: 10, remindDaysBefore: 2, maxFailures: 3 },
+    },
   };
 }
 
@@ -284,6 +334,27 @@ export function mergeSettings(raw: unknown): CompanySettings {
     if (typeof r.returnMerchantCommission === 'boolean') out.refunds.returnMerchantCommission = r.returnMerchantCommission;
     if (typeof r.returnFeesOnRecall === 'boolean') out.refunds.returnFeesOnRecall = r.returnFeesOnRecall;
     if (isIntIn(r.recallWindowDays, LIMITS.recallWindowDays)) out.refunds.recallWindowDays = r.recallWindowDays;
+  }
+
+  if (isRecord(raw.bills)) {
+    const b = raw.bills;
+    if (typeof b.enabled === 'boolean') out.bills.enabled = b.enabled;
+    if (typeof b.refundFeeOnFailure === 'boolean') out.bills.refundFeeOnFailure = b.refundFeeOnFailure;
+    for (const key of ['maxPerPayment', 'maxPerDay'] as const) {
+      const map = b[key];
+      if (!isRecord(map)) continue;
+      for (const [cur, v] of Object.entries(map)) {
+        if (CURRENCIES.includes(cur) && isNum(v) && v >= LIMITS.billAmount.min && v <= LIMITS.billAmount.max) out.bills[key][cur] = v;
+      }
+    }
+    if (isRecord(b.recurring)) {
+      const r = b.recurring;
+      if (typeof r.enabled === 'boolean') out.bills.recurring.enabled = r.enabled;
+      if (typeof r.autoDebitEnabled === 'boolean') out.bills.recurring.autoDebitEnabled = r.autoDebitEnabled;
+      if (isIntIn(r.maxPerClient, LIMITS.billSchedulesPerClient)) out.bills.recurring.maxPerClient = r.maxPerClient;
+      if (isIntIn(r.remindDaysBefore, LIMITS.billRemindDays)) out.bills.recurring.remindDaysBefore = r.remindDaysBefore;
+      if (isIntIn(r.maxFailures, LIMITS.billMaxFailures)) out.bills.recurring.maxFailures = r.maxFailures;
+    }
   }
   return out;
 }
@@ -507,6 +578,66 @@ export function applyPatch(stored: unknown, patch: unknown): CompanySettingsPatc
       cur.recallWindowDays = r.recallWindowDays;
     }
     next.refunds = cur;
+  }
+
+  if (patch.bills !== undefined) {
+    if (!isRecord(patch.bills)) throw new SettingsValidationError('« bills » invalide.');
+    const b = patch.bills;
+    const cur: NonNullable<CompanySettingsPatch['bills']> = { ...(next.bills ?? {}) };
+    if (b.enabled !== undefined) {
+      if (typeof b.enabled !== 'boolean') throw new SettingsValidationError('Paiement de factures : ouvert ou fermé.');
+      cur.enabled = b.enabled;
+    }
+    if (b.refundFeeOnFailure !== undefined) {
+      if (typeof b.refundFeeOnFailure !== 'boolean') throw new SettingsValidationError('Frais de facture rendus en cas d\'échec : oui ou non.');
+      cur.refundFeeOnFailure = b.refundFeeOnFailure;
+    }
+    for (const [key, label] of [['maxPerPayment', 'Facture maximum'], ['maxPerDay', 'Total maximum par jour']] as const) {
+      const map = b[key];
+      if (map === undefined) continue;
+      if (!isRecord(map)) throw new SettingsValidationError(`${label} : valeurs par devise attendues.`);
+      const current: Record<string, number | null> = { ...(cur[key] ?? {}) };
+      for (const [rawCur, v] of Object.entries(map)) {
+        const code = rawCur.toUpperCase();
+        if (!CURRENCIES.includes(code)) throw new SettingsValidationError(`Devise inconnue : « ${rawCur} ».`);
+        if (v === null) {
+          delete current[code];
+          continue;
+        }
+        if (!isNum(v) || v < LIMITS.billAmount.min || v > LIMITS.billAmount.max) throw new SettingsValidationError(`${label} ${code} : montant invalide.`);
+        if (!hasAtMostTwoDecimals(v)) throw new SettingsValidationError(`${label} ${code} : deux décimales au maximum.`);
+        current[code] = v;
+      }
+      cur[key] = current;
+    }
+    if (b.recurring !== undefined) {
+      if (!isRecord(b.recurring)) throw new SettingsValidationError('Factures récurrentes : réglages invalides.');
+      const r = b.recurring;
+      const rc: Partial<BillRecurringSettings> = { ...(cur.recurring ?? {}) };
+      for (const [key, label] of [['enabled', 'Factures récurrentes'], ['autoDebitEnabled', 'Prélèvement automatique']] as const) {
+        if (r[key] === undefined) continue;
+        if (typeof r[key] !== 'boolean') throw new SettingsValidationError(`${label} : ouvert ou fermé.`);
+        rc[key] = r[key] as boolean;
+      }
+      for (const [key, label, range] of [
+        ['maxPerClient', 'Factures programmées par client', LIMITS.billSchedulesPerClient],
+        ['remindDaysBefore', 'Jours de rappel avant l\'échéance', LIMITS.billRemindDays],
+        ['maxFailures', 'Échecs avant mise en pause', LIMITS.billMaxFailures],
+      ] as const) {
+        if (r[key] === undefined) continue;
+        if (!isIntIn(r[key], range)) throw new SettingsValidationError(`${label} : entier entre ${range.min} et ${range.max}.`);
+        rc[key] = r[key] as number;
+      }
+      cur.recurring = rc;
+    }
+    // Cohérence : le plafond d'une facture ne dépasse pas le plafond journalier.
+    const applied = mergeSettings({ bills: cur }).bills;
+    for (const code of CURRENCIES) {
+      if ((applied.maxPerPayment[code] ?? 0) > (applied.maxPerDay[code] ?? Infinity)) {
+        throw new SettingsValidationError(`${code} : la facture maximum dépasse le total maximum par jour.`);
+      }
+    }
+    next.bills = cur;
   }
 
   return next;
