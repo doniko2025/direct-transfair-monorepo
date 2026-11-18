@@ -37,12 +37,18 @@
   box-shadow: var(--sh-1);
 }
 
+.notif {
+  display: flex;
+  align-items: center;
+}
+
 .notif__open {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  padding: 10px 14px;
+  padding: 10px 6px 10px 14px;
   border: 0;
   border-radius: inherit;
   background: transparent;
@@ -261,5 +267,54 @@
 
   .notif-bar__actions .btn {
     flex: 1;
+  }
+}
+
+/* Corbeille de chaque carte : toujours visible, zone de toucher 44 px sur mobile */
+.notif__delete {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.notif__delete:hover,
+.notif__delete:focus-visible {
+  background: color-mix(in oklab, var(--danger) 10%, white);
+  color: var(--danger);
+}
+
+.notif__detail-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--danger);
+}
+
+/* Mobile : « Supprimer » est un vrai bouton, à côté de « Tout marquer comme lu » */
+@media (max-width: 640px) {
+  .notif-summary .notif-summary__links.show-mobile {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .notif-summary__links .btn {
+    min-height: 40px;
+    padding: 0 14px;
+  }
+
+  .notif__delete {
+    width: 44px;
+    height: 44px;
   }
 }

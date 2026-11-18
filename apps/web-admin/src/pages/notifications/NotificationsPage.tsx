@@ -1,4 +1,6 @@
 // apps/web-admin/src/pages/notifications/NotificationsPage.tsx
+// v2.1 : suppression plus visible — corbeille sur chaque carte, bouton « Supprimer » (pas un simple lien) sur mobile,
+//        « Sélectionner les lues », suppression depuis la fenêtre de lecture.
 // v2.0 : SUPPRESSION — « Supprimer » ouvre le mode sélection (cases à cocher, « Tout sélectionner », « Supprimer (N) »),
 //        confirmation dans une fenêtre puis toast de succès centré. Appelle POST /notifications/delete.
 // Boîte de réception : une carte par notification, les plus récentes d'abord. Chaque utilisateur ne voit que les siennes.
@@ -38,6 +40,7 @@ function NotificationCard({
   selectMode,
   checked,
   onToggle,
+  onDelete,
 }: {
   n: AppNotification;
   read: boolean;
@@ -46,6 +49,8 @@ function NotificationCard({
   selectMode: boolean;
   checked: boolean;
   onToggle: (id: string) => void;
+  /** Corbeille de la carte : supprime cette seule notification (après confirmation). */
+  onDelete: (id: string) => void;
 }) {
   const view = viewOf(n.type);
   return (
@@ -76,6 +81,17 @@ function NotificationCard({
           {when(n.createdAt)}
         </time>
       </button>
+      {selectMode ? null : (
+        <button
+          type="button"
+          className="notif__delete"
+          aria-label={`Supprimer la notification « ${n.title} »`}
+          title="Supprimer"
+          onClick={() => onDelete(n.id)}
+        >
+          <Icon name="trash" size={17} />
+        </button>
+      )}
     </li>
   );
 }
@@ -116,6 +132,8 @@ export default function NotificationsPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // Suppression d'une seule notification (corbeille d'une carte ou fenêtre de lecture)
+  const [singleId, setSingleId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!toast) return;
@@ -175,6 +193,8 @@ export default function NotificationsPage() {
     }
   }
 
+  const readShownCount = shown.filter((n) => isRead(n)).length;
+
   // Seules les notifications visibles ET cochées sont supprimées : jamais une carte masquée par le filtre de type.
   const selectedShown = shown.filter((n) => selected.has(n.id));
   const allSelected = shown.length > 0 && selectedShown.length === shown.length;
@@ -200,23 +220,36 @@ export default function NotificationsPage() {
     });
   }
 
+  function selectRead() {
+    setSelected(new Set(shown.filter((n) => isRead(n)).map((n) => n.id)));
+  }
+
+  function askDelete(id: string) {
+    setFailure(null);
+    setSingleId(id);
+    setConfirmOpen(true);
+  }
+
   function toggleAll() {
     setSelected(allSelected ? new Set() : new Set(shown.map((n) => n.id)));
   }
 
   async function removeSelected() {
-    const ids = selectedShown.map((n) => n.id);
+    const ids = singleId ? [singleId] : selectedShown.map((n) => n.id);
     if (ids.length === 0 || deleting) return;
     setDeleting(true);
     setFailure(null);
     try {
       await deleteNotifications(ids);
       stopSelecting();
+      setSingleId(null);
+      setOpened((o) => (o && ids.includes(o.id) ? null : o));
       refresh();
       list.reload();
       setToast(ids.length > 1 ? `${ids.length} notifications supprimées` : 'Notification supprimée');
     } catch (err) {
       setConfirmOpen(false);
+      setSingleId(null);
       setFailure(describeDeleteError(err));
     } finally {
       setDeleting(false);
@@ -239,7 +272,7 @@ export default function NotificationsPage() {
             <Button variant="secondary" onClick={markAll} busy={allBusy} disabled={unread === 0 && unreadShown === 0}>
               Tout marquer comme lu
             </Button>
-            <Button variant="secondary" icon="trash" onClick={startSelecting} disabled={selectMode || items.length === 0}>
+            <Button variant="secondary" icon="trash" className="btn--danger-outline" onClick={startSelecting} disabled={selectMode || items.length === 0}>
               Supprimer
             </Button>
             <Button variant="secondary" onClick={() => { list.reload(); refresh(); }} busy={list.loading && list.data !== null}>
@@ -335,6 +368,11 @@ export default function NotificationsPage() {
                 <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                 <span>{allSelected ? 'Tout désélectionner' : 'Tout sélectionner'}</span>
               </label>
+              {readShownCount > 0 ? (
+                <button type="button" className="link-btn" onClick={selectRead} disabled={deleting}>
+                  Sélectionner les lues ({readShownCount})
+                </button>
+              ) : null}
               <span className="notif-bar__count muted">
                 {selectedShown.length} {plural(selectedShown.length, 'sélectionnée', 'sélectionnées')}
               </span>
@@ -366,9 +404,9 @@ export default function NotificationsPage() {
                     Tout marquer comme lu
                   </button>
                 ) : null}
-                <button type="button" className="link-btn" onClick={startSelecting}>
+                <Button variant="secondary" icon="trash" className="btn--danger-outline" onClick={startSelecting}>
                   Supprimer
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -382,6 +420,7 @@ export default function NotificationsPage() {
                 selectMode={selectMode}
                 checked={selected.has(n.id)}
                 onToggle={toggle}
+                onDelete={askDelete}
               />
             ))}
           </ul>
@@ -406,19 +445,35 @@ export default function NotificationsPage() {
         onCancel={() => setOpened(null)}
       >
         {opened ? <NotificationDetail n={opened} onNavigate={() => setOpened(null)} /> : null}
+        {opened ? (
+          <button
+            type="button"
+            className="link-btn notif__detail-delete"
+            onClick={() => {
+              const id = opened.id;
+              setOpened(null);
+              askDelete(id);
+            }}
+          >
+            <Icon name="trash" size={15} /> Supprimer cette notification
+          </button>
+        ) : null}
       </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmOpen}
-        title={selectedShown.length > 1 ? `Supprimer ${selectedShown.length} notifications ?` : 'Supprimer cette notification ?'}
+        title={!singleId && selectedShown.length > 1 ? `Supprimer ${selectedShown.length} notifications ?` : 'Supprimer cette notification ?'}
         confirmLabel="Supprimer"
         tone="danger"
         busy={deleting}
         onConfirm={() => void removeSelected()}
-        onCancel={() => setConfirmOpen(false)}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setSingleId(null);
+        }}
       >
         <p>
-          {selectedShown.length > 1
+          {!singleId && selectedShown.length > 1
             ? 'Ces notifications seront supprimées définitivement.'
             : 'Cette notification sera supprimée définitivement.'}
         </p>

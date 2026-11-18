@@ -1,0 +1,10 @@
+Notifications web : suppression plus visible
+- Corbeille sur chaque carte (confirmation avant suppression)
+- Bouton « Supprimer » (vrai bouton) sur mobile et en haut de page sur ordinateur
+- « Sélectionner les lues » dans le mode sélection
+- « Supprimer cette notification » dans la fenêtre de lecture
+Fichiers à copier (mêmes chemins) :
+  apps/web-admin/src/pages/notifications/NotificationsPage.tsx
+  apps/web-admin/src/styles/notifications.css
+Backend et package partagé : aucun changement (POST /notifications/delete existe déjà).
+Puis redéployer le web sur Vercel (build web-admin).
