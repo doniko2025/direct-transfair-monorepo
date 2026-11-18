@@ -64,7 +64,11 @@ const typeOfUrl = (u) => {
   return ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
 };
 
-/** Manifeste de la plateforme : identique au fichier statique public/manifest.webmanifest (adresses relatives). */
+/**
+ * Manifeste de la plateforme, servi par /api/manifest (donc à la racine du site).
+ * ⚠️ Adresses ABSOLUES : une adresse relative (« ./ ») serait résolue par rapport à /api/manifest, c'est-à-dire /api/ — le portail
+ * installé s'ouvrirait sur une page qui n'existe pas et les icônes seraient introuvables.
+ */
 export function platformManifest() {
   return {
     name: 'Espace de gestion',
@@ -72,18 +76,18 @@ export function platformManifest() {
     description: 'Back-office : agences, agents, clients, vérifications et trésorerie.',
     lang: 'fr',
     dir: 'ltr',
-    start_url: './',
-    scope: './',
-    id: './',
+    start_url: '/',
+    scope: '/',
+    id: '/',
     display: 'standalone',
     display_override: ['standalone', 'minimal-ui'],
     orientation: 'any',
     background_color: COLOR,
     theme_color: COLOR,
     icons: [
-      { src: 'brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: 'brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      { src: 'favicon.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
+      { src: '/brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/favicon.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
     ],
   };
 }

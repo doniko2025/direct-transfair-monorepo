@@ -36,6 +36,7 @@ export function RequireRole({
   children: ReactNode;
 }) {
   const { user, logout } = useAuth();
+  const location = useLocation();
 
   const roleOk = !!user && isWebRole(user.role) && roles.includes(user.role);
   const delegated = !permission || permission.length === 0 || (user ? can(user, ...permission) : false);
@@ -47,6 +48,10 @@ export function RequireRole({
       </ScreenState>
     );
   }
+
+  // Adresse non permise pour ce profil (lien ou favori d'un autre compte, ancien onglet…) : retour au tableau de bord plutôt
+  // qu'une impasse. L'écran « Accès non autorisé » ne reste que sur « / » (profil qui n'est pas un profil web).
+  if (!roleOk && location.pathname !== '/') return <Navigate to="/" replace />;
 
   if (!roleOk) {
     return (

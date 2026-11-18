@@ -95,3 +95,11 @@ code {
     stroke-dashoffset: 0 !important;
   }
 }
+
+/* Saisie au clavier (téléphone) : marge au-dessus et au-dessous d'un champ ramené à l'écran, pour qu'il ne se colle pas
+   à la barre du haut ni au clavier (voir lib/keyboardFit.ts). */
+input,
+textarea,
+select {
+  scroll-margin-block: 96px 120px;
+}
