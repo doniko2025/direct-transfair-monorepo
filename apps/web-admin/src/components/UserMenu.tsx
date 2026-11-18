@@ -19,7 +19,7 @@ function initials(name: string): string {
 export function UserMenu() {
   const user = useCurrentUser();
   const { logout } = useAuth();
-  const { canInstall, install } = useInstallPrompt();
+  const { canInstall, showHowTo, install } = useInstallPrompt();
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -75,6 +75,11 @@ export function UserMenu() {
               <Icon name="download" size={18} />
               <span>Installer l'application</span>
             </button>
+          ) : null}
+          {showHowTo ? (
+            <p className="umenu__hint">
+              Pour l'ouvrir comme une vraie application (sans barre d'adresse) : menu ⋮ du navigateur → « Installer l'application » (et non « Ajouter à l'écran d'accueil »).
+            </p>
           ) : null}
           <button type="button" className="umenu__item umenu__item--danger" role="menuitem" onClick={() => void logout()}>
             <Icon name="logout" size={18} />

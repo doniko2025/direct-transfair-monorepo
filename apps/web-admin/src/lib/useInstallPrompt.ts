@@ -15,7 +15,19 @@ export function isStandaloneDisplay(): boolean {
   return window.matchMedia?.('(display-mode: standalone)').matches === true || nav.standalone === true;
 }
 
-export function useInstallPrompt(): { canInstall: boolean; installed: boolean; install: () => Promise<void> } {
+/** Téléphone ou tablette : c'est là que l'installation a un sens (sur ordinateur, le navigateur reste le bon outil). */
+function isTouchDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+export function useInstallPrompt(): {
+  canInstall: boolean;
+  installed: boolean;
+  /** Pas de proposition automatique du navigateur : on affiche la marche à suivre manuelle. */
+  showHowTo: boolean;
+  install: () => Promise<void>;
+} {
   const [event, setEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState<boolean>(isStandaloneDisplay);
 
@@ -44,5 +56,6 @@ export function useInstallPrompt(): { canInstall: boolean; installed: boolean; i
     setEvent(null);
   }, [event]);
 
-  return { canInstall: !installed && event !== null, installed, install };
+  const canInstall = !installed && event !== null;
+  return { canInstall, installed, showHowTo: !installed && !canInstall && isTouchDevice(), install };
 }

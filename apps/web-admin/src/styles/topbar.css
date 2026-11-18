@@ -389,6 +389,16 @@
   font-size: 0.8125rem;
 }
 
+.umenu__hint {
+  margin: 4px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg, #f2f5f3);
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
 .umenu__item {
   display: flex;
   align-items: center;

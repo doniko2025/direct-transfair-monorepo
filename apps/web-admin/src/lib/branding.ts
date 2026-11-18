@@ -71,8 +71,8 @@ function applyFont(family: string | null): void {
  * Icône et nom d'installation du portail (onglet, « Ajouter à l'écran d'accueil »).
  *   • société avec logo → son logo (adresse https, ou image importée servie par /api/icon) ;
  *   • plateforme (Grand Chef), société sans logo → « t’ ».
- * Le manifeste d'installation est fabriqué par /api/manifest selon l'adresse du portail (voir api/_branding.js) ; il n'est
- * branché qu'à la racine du site (sous un chemin « /transfert » derrière la console, le fichier statique reste utilisé).
+ * Le manifeste d'installation est fabriqué par /api/manifest selon l'adresse du portail (voir api/_branding.js) ; il est branché dans
+ * index.html au build, à la racine du site seulement (sous un chemin « /transfert » derrière la console, le fichier statique reste utilisé).
  */
 function setLink(rel: string, href: string): void {
   let el = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
@@ -112,10 +112,8 @@ function applyInstallIdentity(branding: TenantBranding): void {
     document.head.appendChild(title);
   }
   title.content = shortName;
-  if (BASE_PATH === '' && !isPlatform) {
-    const manifest = document.head.querySelector<HTMLLinkElement>('link[rel="manifest"]');
-    if (manifest) manifest.href = '/api/manifest';
-  }
+  // Le manifeste (/api/manifest) est déjà branché dans index.html au build : surtout pas de remplacement ici. Changer le lien
+  // du manifeste après le chargement perturbe l'installation sur Android (simple raccourci avec barre du lien au lieu de l'application).
 }
 
 export function applyBranding(branding: TenantBranding): void {

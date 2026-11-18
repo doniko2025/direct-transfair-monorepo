@@ -79,17 +79,30 @@ export function platformManifest() {
     start_url: '/',
     scope: '/',
     id: '/',
+    // « standalone » d'abord : plein écran, sans barre d'adresse ni titre du navigateur. « minimal-ui » (qui AFFICHE le lien du site)
+    // n'est qu'un repli pour un navigateur qui ne connaîtrait pas « standalone » : on ne le propose plus en premier choix.
     display: 'standalone',
-    display_override: ['standalone', 'minimal-ui'],
+    display_override: ['standalone'],
     orientation: 'any',
     background_color: COLOR,
     theme_color: COLOR,
+    prefer_related_applications: false,
+    launch_handler: { client_mode: 'navigate-existing' },
+    // Chrome exige une icône 192 et une 512 pour fabriquer une vraie application installée (sinon : simple raccourci, avec barre du lien).
     icons: [
+      { src: '/brand/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/brand/logo-mark.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      { src: '/favicon.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
+      { src: '/brand/icon-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
   };
+}
+
+/** Dimensions réelles d'un PNG (lues dans son en-tête) ; null si ce n'est pas un PNG lisible. */
+export function pngSize(bytes) {
+  if (!bytes || bytes.length < 24 || bytes.readUInt32BE(0) !== 0x89504e47) return null;
+  const w = bytes.readUInt32BE(16);
+  const h = bytes.readUInt32BE(20);
+  return w > 0 && h > 0 ? { w, h } : null;
 }
 
 const clip = (s, n) => (s.length <= n ? s : `${s.slice(0, n - 1).trimEnd()}…`);
@@ -100,7 +113,11 @@ export function companyManifest(branding) {
   const base = platformManifest();
   const icon = iconSourceOf(branding);
   if (!icon) return { ...base, name: clip(`Espace de gestion — ${name}`, 45), short_name: clip(name, 12) };
-  const type = icon.kind === 'url' ? typeOfUrl(icon.src) : (decodeDataLogo(branding.logoUrl)?.type ?? undefined);
+  const data = icon.kind === 'data' ? decodeDataLogo(branding.logoUrl) : null;
+  const type = icon.kind === 'url' ? typeOfUrl(icon.src) : (data?.type ?? undefined);
   const entry = (sizes) => ({ src: icon.src, sizes, ...(type ? { type } : {}), purpose: 'any' });
-  return { ...base, name: clip(`Espace de gestion — ${name}`, 45), short_name: clip(name, 12), icons: [entry('192x192'), entry('512x512')] };
+  // Logo importé en PNG : on annonce sa vraie taille (annoncer 512 pour une image de 256 fait refuser l'installation « application »).
+  const real = data ? pngSize(data.bytes) : null;
+  const icons = real && real.w >= 144 ? [entry(`${real.w}x${real.h}`)] : [entry('192x192'), entry('512x512')];
+  return { ...base, name: clip(`Espace de gestion — ${name}`, 45), short_name: clip(name, 12), icons };
 }
