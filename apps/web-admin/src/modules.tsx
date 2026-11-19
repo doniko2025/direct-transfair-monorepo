@@ -29,6 +29,7 @@ import DashboardPage from './pages/DashboardPage';
 import DepositPage from './pages/desk/DepositPage';
 import RemitPage from './pages/desk/RemitPage';
 import SendCashPage from './pages/desk/SendCashPage';
+import StatsPage from './pages/desk/StatsPage';
 import WithdrawPage from './pages/desk/WithdrawPage';
 import FeeSchedulePage from './pages/fees/FeeSchedulePage';
 import FeesPage from './pages/fees/FeesPage';
@@ -176,4 +177,5 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/withdraw', roles: AGENT, element: <WithdrawPage /> },
   { path: '/send-cash', roles: AGENT, element: <SendCashPage /> },
   { path: '/remit', roles: AGENT, element: <RemitPage /> },
+  { path: '/stats', roles: AGENT, element: <StatsPage /> },
 ];

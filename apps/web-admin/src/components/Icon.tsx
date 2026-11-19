@@ -42,6 +42,11 @@ const PATHS = {
       <circle cx="17" cy="17" r="2.5" />
     </>
   ),
+  chart: (
+    <>
+      <path d="M5 20V10M12 20V4M19 20v-7" />
+    </>
+  ),
   vault: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="3" />

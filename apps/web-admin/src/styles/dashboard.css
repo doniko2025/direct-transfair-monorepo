@@ -197,6 +197,21 @@ a.dash-kpi:hover {
   --kpi-tint: var(--ink-2);
 }
 
+/* Page « Statistiques du jour » : 2 colonnes sur téléphone (pas de défilement horizontal), 4 sur grand écran. */
+.dash-kpis.dash-kpis--stats.dash-kpis--grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-flow: row;
+  grid-auto-columns: auto;
+  overflow: visible;
+  padding: 0;
+}
+
+@media (min-width: 961px) {
+  .dash-kpis.dash-kpis--stats.dash-kpis--grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
 /* ─── Raccourcis ───────────────────────────────────────── */
 .dash-shortcuts {
   display: flex;
@@ -484,8 +499,8 @@ a.dash-kpi:hover {
 /* Boutons d'action : pleins, colorés, centrés — nettement distincts des cartes de statistiques. */
 .dash-actions {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .dash-action {
@@ -615,23 +630,27 @@ a.dash-kpi:hover {
     scroll-snap-align: start;
   }
 
-  /* Opérations : quatre boutons sur une seule ligne, icône + libellé. */
+  /* Opérations : trois grands boutons sur une seule ligne, icône + libellé. */
   .dash-actions {
-    gap: 8px;
+    gap: 12px;
   }
 
   .dash-action {
-    padding: 12px 4px 10px;
+    align-content: center;
+    min-height: 160px;
+    padding: 16px 6px;
+    border-radius: 24px;
   }
 
   .dash-action__icon {
-    width: 40px;
-    height: 40px;
-    margin-bottom: 4px;
+    width: 58px;
+    height: 58px;
+    margin-bottom: 12px;
   }
 
   .dash-action strong {
-    font-size: 0.8125rem;
+    font-size: 1.0625rem;
+    line-height: 1.15;
   }
 
   .dash-action small {

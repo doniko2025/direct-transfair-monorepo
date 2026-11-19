@@ -37,10 +37,9 @@
   padding: 8px 10px 8px 22px;
   border: 1px solid color-mix(in oklab, var(--line) 60%, white);
   border-radius: var(--r-lg);
-  background: color-mix(in oklab, var(--card) 82%, transparent);
+  border-color: var(--topbar-line);
+  background: var(--topbar-bg);
   box-shadow: var(--sh-1);
-  -webkit-backdrop-filter: blur(14px) saturate(1.4);
-  backdrop-filter: blur(14px) saturate(1.4);
 }
 
 .topbar__menu,
@@ -82,10 +81,12 @@
     margin: 0;
     padding: 8px 10px;
     border: 0;
-    border-bottom: 1px solid var(--line-soft);
+    border-bottom: 1px solid var(--topbar-line);
     border-radius: 0;
-    background: color-mix(in oklab, var(--paper) 78%, transparent);
-    box-shadow: none;
+    background: var(--topbar-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 2px 10px rgba(20, 40, 30, 0.1);
   }
 
   .topbar__menu {

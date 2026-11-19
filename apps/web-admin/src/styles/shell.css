@@ -186,9 +186,9 @@ a.nav-item:hover {
     align-items: center;
     gap: 6px;
     padding: 10px 12px;
-    background: color-mix(in oklab, var(--paper) 88%, white);
-    border-bottom: 1px solid var(--line-soft);
-    backdrop-filter: blur(10px);
+    background: var(--topbar-bg);
+    border-bottom: 1px solid var(--topbar-line);
+    box-shadow: 0 2px 10px rgba(20, 40, 30, 0.1);
   }
 
   .topbar__brand {

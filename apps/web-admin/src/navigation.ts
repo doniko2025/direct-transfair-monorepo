@@ -68,6 +68,7 @@ export const NAV: readonly NavItem[] = [
   { id: 'withdraw', label: 'Retrait', icon: 'withdraw', path: '/withdraw', roles: AGENT, ready: true },
   { id: 'send-cash', label: 'Envoi cash', icon: 'send', path: '/send-cash', roles: AGENT, ready: true },
   { id: 'remit', label: "Remise à l'administrateur", icon: 'vault', path: '/remit', roles: AGENT, ready: true },
+  { id: 'agent-stats', label: 'Statistiques du jour', icon: 'chart', path: '/stats', roles: AGENT, ready: true },
 
   // Communs à plusieurs rôles
   { id: 'users', label: 'Utilisateurs', icon: 'users', path: '/users', roles: COMPANY, ready: true },

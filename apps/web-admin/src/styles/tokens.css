@@ -26,6 +26,10 @@
   --line: #d9e1dc;
   --line-soft: #e8eeea;
 
+  /* Barre du haut : vert sauge opaque (plus visible que l'ancien fond translucide, sans être agressif). */
+  --topbar-bg: #d3e4d6;
+  --topbar-line: #b4cfb9;
+
   /* États */
   --ok: #12683f;
   --warn: #7a4b00;
