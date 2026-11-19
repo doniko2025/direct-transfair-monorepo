@@ -43,16 +43,19 @@ export default function MovementDialog({ mode, wallets, currency: initial, onClo
         await api.treasury.inject({ currency, amount: value, ...(text ? { description: text } : {}) });
         return `${formatAmount(value, currency)} ajoutés à votre portefeuille.`;
       }
-      await api.treasury.withdraw({ currency, amount: value, ...(text ? { reason: text } : {}) });
-      return `${formatAmount(value, currency)} retirés de votre portefeuille.`;
+      const res = await api.treasury.withdraw({ currency, amount: value, ...(text ? { reason: text } : {}) });
+      // Audit argent I4 : rien n'est débité tant qu'un autre administrateur n'a pas validé.
+      return res.soloAdmin
+        ? `Demande de retrait de ${formatAmount(value, currency)} enregistrée. Vous êtes le seul administrateur : la plateforme doit la valider.`
+        : `Demande de retrait de ${formatAmount(value, currency)} envoyée. Un autre administrateur doit la valider avant que l’argent ne parte.`;
     });
   }
 
   return (
     <ConfirmDialog
       open
-      title={inject ? 'Alimenter mon portefeuille' : 'Retirer de mon portefeuille'}
-      confirmLabel={inject ? 'Ajouter au solde' : 'Retirer du solde'}
+      title={inject ? 'Alimenter mon portefeuille' : 'Demander un retrait'}
+      confirmLabel={inject ? 'Ajouter au solde' : 'Envoyer la demande'}
       busy={busy}
       confirmDisabled={!valid}
       onConfirm={submit}
@@ -71,7 +74,11 @@ export default function MovementDialog({ mode, wallets, currency: initial, onClo
             Le montant est ajouté à votre solde sans virement bancaire associé : n’alimentez que des fonds réellement
             disponibles.
           </Notice>
-        ) : null}
+        ) : (
+          <Notice tone="info">
+            Par sécurité, un retrait doit être validé par un autre administrateur de votre société. Rien n’est débité avant sa validation.
+          </Notice>
+        )}
         <SelectField
           id="mv-currency"
           label="Devise"

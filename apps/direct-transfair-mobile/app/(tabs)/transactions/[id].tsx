@@ -26,6 +26,7 @@ import { useT } from "../../../providers/I18nProvider";
 import { fmtDateTime, getLocale } from "../../../i18n/runtime";
 import { fmtMoney } from "../../../utils/amount";
 import { motifLabel } from "../../../utils/motifs";
+import { ReceiptPdfActions } from "../../../components/receipt/ReceiptPdfActions";
 
 function toNum(v: unknown): number {
   if (typeof v === "number" && isFinite(v)) return v;
@@ -237,7 +238,7 @@ export default function TransactionDetailScreen() {
     ?? (transaction.recipientId ? t("txd.internalWallet") : "—");
 
   const showUserCancel   = isPending;
-  const showShareReceipt = isPaid;
+  const showShareReceipt = !!transaction.id; // le reçu PDF existe à tous les statuts (le statut du moment y figure)
   const showCopyCode     = !isDeposit && (isPending || isValidated);
 
   const hasConversion = !!transaction.targetCurrency && transaction.targetCurrency !== transaction.currency;
@@ -317,9 +318,16 @@ export default function TransactionDetailScreen() {
         <DetailRow label={totalLabel} value={`${fmt(totalValue, totalCur)} ${totalCur}`} bold color={amountColor} last />
       </Card>
 
+      {/* ── Reçu PDF (télécharger / envoyer par WhatsApp ou e-mail) ── */}
+      {showShareReceipt && (
+        <View style={{ marginTop: 16 }}>
+          <ReceiptPdfActions transactionId={String(transaction.id)} status={transaction.status} />
+        </View>
+      )}
+
       {/* ── Actions ── */}
       <View style={{ marginTop: 22, gap: 12 }}>
-        {showShareReceipt && <Button label={t("txd.viewReceipt")} icon="document-text-outline" onPress={handleShare} />}
+        {showShareReceipt && <Button label={t("txd.viewReceipt")} icon="eye-outline" kind="ghost" onPress={handleShare} />}
         {showUserCancel && <Button label={t("txd.cancelTx")} kind="danger" loading={processing} onPress={handleCancel} />}
         {!isIncoming && (
           <Button

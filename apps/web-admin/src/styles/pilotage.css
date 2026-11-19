@@ -1,0 +1,94 @@
+/* =========================================================
+   PILOTAGE (lot 15) — clôture de caisse, liquidité, rentabilité, objectifs des agents
+   Mobile d'abord : une colonne de cartes qui apparaissent en cascade ; deux colonnes dès 760 px.
+   ========================================================= */
+
+.pil-page { display: grid; gap: 14px; }
+
+/* ── Barre d'outils : puces de période défilables, sélecteur de mois ── */
+.pil-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pil-chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 6px; margin: 0 -2px; scrollbar-width: none; flex: 1 1 100%; }
+.pil-chips::-webkit-scrollbar { display: none; }
+.pil-chip {
+  flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); color: var(--ink-2);
+  border-radius: 999px; padding: 8px 14px; font: inherit; font-size: var(--t-sm); font-weight: 600; cursor: pointer;
+  transition: background .18s, color .18s, border-color .18s, transform .18s;
+}
+.pil-chip:active { transform: scale(.96); }
+.pil-chip[aria-pressed='true'] { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+
+.pil-month { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 1 1 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 6px; }
+.pil-month strong { font-size: var(--t-md); text-align: center; flex: 1; }
+.pil-month button { border: 0; background: var(--brand-soft); color: var(--brand-deep); width: 40px; height: 40px; border-radius: 12px; font-size: 1.1rem; cursor: pointer; }
+.pil-month button:disabled { opacity: .4; cursor: default; }
+
+.pil-date { flex: 1 1 100%; }
+.pil-date input { width: 100%; }
+
+.pil-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ── Cartes en cascade ── */
+.pil-list { display: grid; gap: 12px; }
+.pil-card {
+  position: relative; display: grid; gap: 12px; padding: 16px; border-radius: var(--r-lg);
+  background: var(--card); border: 1px solid var(--line-soft); box-shadow: var(--sh-1);
+  animation: pil-rise .5s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 55ms);
+  overflow: hidden;
+}
+.pil-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 5px; background: var(--edge, var(--brand-mid)); }
+.pil-card[data-tone='ok'] { --edge: #2f9e6b; }
+.pil-card[data-tone='warn'] { --edge: #e0a100; }
+.pil-card[data-tone='danger'] { --edge: #c4372e; }
+@keyframes pil-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+
+.pil-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.pil-title { margin: 0; font-size: var(--t-lg); font-weight: 650; line-height: 1.2; }
+.pil-sub { margin: 2px 0 0; color: var(--ink-3); font-size: var(--t-sm); }
+
+.pil-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pil-fig { display: grid; gap: 2px; min-width: 0; }
+.pil-fig span { color: var(--ink-3); font-size: .78rem; }
+.pil-fig strong { font-size: var(--t-md); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pil-fig--big strong { font-size: var(--t-xl); letter-spacing: -.01em; }
+.pil-fig--wide { grid-column: 1 / -1; }
+
+.pil-note { margin: 0; padding: 9px 12px; border-radius: var(--r-sm); background: var(--brand-soft); color: var(--ink-2); font-size: var(--t-sm); overflow-wrap: anywhere; }
+
+/* ── Jauge de liquidité : le seuil est un repère à 50 % ── */
+.pil-gauge { position: relative; height: 12px; border-radius: 999px; background: var(--line-soft); overflow: visible; }
+.pil-gauge__fill { height: 100%; border-radius: 999px; background: var(--edge, #2f9e6b); transform-origin: left; animation: pil-fill .8s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 55ms + 120ms); }
+.pil-gauge__mark { position: absolute; left: 50%; top: -4px; bottom: -4px; width: 2px; background: var(--ink-2); border-radius: 2px; opacity: .55; }
+@keyframes pil-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ── Barre de couloir / d'objectif ── */
+.pil-bar { height: 10px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.pil-bar__fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--brand), color-mix(in oklab, var(--brand) 60%, #7fd6a8)); transform-origin: left; animation: pil-fill .8s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--i, 0) * 55ms + 120ms); }
+.pil-bar__fill[data-done='true'] { background: linear-gradient(90deg, #2f9e6b, #62c996); }
+
+/* ── Classement ── */
+.pil-rank { display: grid; place-items: center; flex: 0 0 auto; width: 44px; height: 44px; border-radius: 14px; background: var(--brand-soft); color: var(--brand-deep); font-weight: 700; font-size: 1.15rem; }
+.pil-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pil-who > div { min-width: 0; }
+.pil-who .pil-title { overflow-wrap: anywhere; }
+
+/* ── Formulaire de clôture ── */
+.pil-form { display: grid; gap: 10px; }
+.pil-form .field { margin: 0; }
+
+.pil-empty { text-align: center; color: var(--ink-3); padding: 22px 12px; }
+.pil-section { margin: 6px 0 0; font-size: var(--t-md); font-weight: 650; color: var(--ink-2); }
+.pil-foot { color: var(--ink-3); font-size: .78rem; margin: 0; }
+
+@media (min-width: 760px) {
+  .pil-toolbar .pil-chips, .pil-month, .pil-date { flex: 0 1 auto; }
+  .pil-month { min-width: 300px; }
+  .pil-list { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .pil-figs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pil-figs--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 1180px) { .pil-list--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pil-card, .pil-gauge__fill, .pil-bar__fill { animation: none; }
+  .pil-chip { transition: none; }
+}

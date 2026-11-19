@@ -248,7 +248,10 @@ export class WalletsService {
     if (!wallet) throw new NotFoundException('Wallet introuvable');
 
     const ownedByUserId  = wallet.userId === userId;
-    const ownedByClient  = !!user?.clientId && wallet.clientId === user.clientId;
+    // ✅ audit argent : les wallets de la SOCIÉTÉ (clientId) ne se consultent que par ses administrateurs. Avant, n'importe quel
+    // client (rôle USER) de la société qui connaissait l'identifiant du wallet pouvait en lire le solde et le journal.
+    const ownedByClient  = !!user?.clientId && wallet.clientId === user.clientId
+      && (user.role === 'COMPANY_ADMIN' || user.role === 'SUPER_ADMIN');
 
     if (!ownedByUserId && !ownedByClient) {
       throw new ForbiddenException('Accès non autorisé à ce wallet');
@@ -321,11 +324,13 @@ export class WalletsService {
   }
 
   /** ✅ v5.7 : un wallet gelé (conformité / LCB-FT) ne reçoit ni ne sort d'argent. */
-  private assertNotFrozen(wallet: { isFrozen?: boolean | null; frozenReason?: string | null }): void {
+  private assertNotFrozen(wallet: { isFrozen?: boolean | null }): void {
     if (wallet.isFrozen) {
       throw new ForbiddenException({
         code: 'WALLET_FROZEN',
-        message: `Ce wallet est gelé${wallet.frozenReason ? ` (${wallet.frozenReason})` : ''} : opération refusée.`,
+        // Le motif du gel (LCB-FT) n'est JAMAIS renvoyé : l'erreur peut être lue par l'expéditeur d'un envoi vers ce wallet, ou par
+        // le titulaire lui-même (devoir de discrétion). Le motif reste consultable par l'administration (écrans de supervision).
+        message: 'Ce wallet est temporairement indisponible : opération refusée. Contactez le support.',
       });
     }
   }

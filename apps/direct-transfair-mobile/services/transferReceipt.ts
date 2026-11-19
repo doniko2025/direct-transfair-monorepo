@@ -10,6 +10,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert } from "react-native";
+import { File, Paths } from "expo-file-system";
 import { api } from "./api";
 import { getApiBaseUrl } from "./serverConfig";
 import { tr, getLang, getLocale } from "../i18n/runtime";
@@ -141,14 +142,45 @@ ${d.showSignatures ? `<div class="sig"><div>${esc(tr("rcpt.pdf.sigBenef"))}</div
 </div></body></html>`;
 }
 
-export async function shareTransferReceiptPdf(d: TransferReceiptDoc, qr: string): Promise<void> {
+/** Nom de fichier du PDF : « Recu-<référence>.pdf » (c'est ce que verra le destinataire sur WhatsApp ou dans sa messagerie). */
+export const transferReceiptFileName = (reference: string): string => `Recu-${String(reference).replace(/[^A-Za-z0-9-]+/g, "-")}.pdf`;
+
+/** Convertit le QR dessiné à l'écran (react-native-qrcode-svg, `getRef`) en image pour le PDF. null si le QR n'est pas prêt. */
+export function qrToDataUrl(qr: any): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!qr?.toDataURL) { resolve(null); return; }
+    const timer = setTimeout(() => resolve(null), 3000);
+    try { qr.toDataURL((data: string) => { clearTimeout(timer); resolve(data || null); }); }
+    catch { clearTimeout(timer); resolve(null); }
+  });
+}
+
+/** Génère le PDF et le range sous un nom lisible (« Recu-TF….pdf ») ; en cas d'échec du renommage, le fichier d'origine reste utilisable. */
+export async function createTransferReceiptPdfFile(d: TransferReceiptDoc, qr: string): Promise<string> {
+  const { uri } = await Print.printToFileAsync({ html: buildTransferReceiptHtml(d, qr, true) });
   try {
-    const { uri } = await Print.printToFileAsync({ html: buildTransferReceiptHtml(d, qr, true) });
-    if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { UTI: ".pdf", mimeType: "application/pdf", dialogTitle: tr("rcpt.shareTitle", { ref: d.reference }) });
-    else Alert.alert(tr("rcpt.shareUnavail"), tr("rcpt.shareUnavailMsg"));
+    const dest = new File(Paths.cache, transferReceiptFileName(d.reference));
+    if (dest.exists) dest.delete();
+    new File(uri).move(dest);
+    return dest.uri;
+  } catch {
+    return uri;
+  }
+}
+
+/** Génère le PDF puis ouvre la feuille de partage du téléphone (WhatsApp, e-mail, Enregistrer dans Fichiers/Drive…). true si la feuille s'est ouverte. */
+export async function shareTransferReceiptPdf(d: TransferReceiptDoc, qr: string): Promise<boolean> {
+  try {
+    const uri = await createTransferReceiptPdfFile(d, qr);
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, { UTI: "com.adobe.pdf", mimeType: "application/pdf", dialogTitle: tr("rcpt.shareTitle", { ref: d.reference }) });
+      return true;
+    }
+    Alert.alert(tr("rcpt.shareUnavail"), tr("rcpt.shareUnavailMsg"));
   } catch {
     Alert.alert(tr("common.error"), tr("rcpt.pdfFail"));
   }
+  return false;
 }
 
 export async function printTransferReceipt(d: TransferReceiptDoc, qr: string): Promise<void> {

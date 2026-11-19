@@ -13,16 +13,7 @@ import { Button, ErrorView, NavBar, Screen, useUI } from "../../components/ui";
 import { useT } from "../../providers/I18nProvider";
 import { tr } from "../../i18n/runtime";
 import { TransferReceiptCard } from "../../components/receipt/TransferReceiptCard";
-import { fetchTransferReceipt, printTransferReceipt, shareTransferReceiptPdf, type TransferReceiptDoc } from "../../services/transferReceipt";
-
-function toDataUrl(qr: any): Promise<string | null> {
-  return new Promise((resolve) => {
-    if (!qr?.toDataURL) { resolve(null); return; }
-    const timer = setTimeout(() => resolve(null), 3000);
-    try { qr.toDataURL((data: string) => { clearTimeout(timer); resolve(data || null); }); }
-    catch { clearTimeout(timer); resolve(null); }
-  });
-}
+import { fetchTransferReceipt, printTransferReceipt, qrToDataUrl, shareTransferReceiptPdf, type TransferReceiptDoc } from "../../services/transferReceipt";
 
 export default function TransferReceiptScreen() {
   const { C } = useUI();
@@ -49,7 +40,7 @@ export default function TransferReceiptScreen() {
     if (!doc || busy) return;
     setBusy(true);
     try {
-      const qr = await toDataUrl(qrRef.current);
+      const qr = await qrToDataUrl(qrRef.current);
       if (!qr) { Alert.alert(tr("common.error"), tr("rcpt.qrFail")); return; }
       await action(doc, qr);
     } finally { setBusy(false); }
@@ -60,7 +51,7 @@ export default function TransferReceiptScreen() {
       header={<NavBar onBack={() => router.back()} title={t("cr.title")} subtitle={doc?.reference} />}
       footer={doc ? (
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <Button label={t("cr.sharePdf")} icon="share-outline" loading={busy} onPress={() => withQr(shareTransferReceiptPdf)} style={{ flex: 1 }} />
+          <Button label={t("cr.sharePdf")} icon="share-outline" loading={busy} onPress={() => withQr(async (d, q) => { await shareTransferReceiptPdf(d, q); })} style={{ flex: 1 }} />
           <Button label={t("cr.print")} icon="print-outline" kind="dark" disabled={busy} onPress={() => withQr(printTransferReceipt)} style={{ flex: 1 }} />
         </View>
       ) : undefined}

@@ -320,11 +320,15 @@ import { TransferLimitsService } from '../transfer-limits/transfer-limits.servic
 import { KycGuardService } from '../kyc/kyc-guard.service'; // lot 7 — pas d'opération sortante sans identité vérifiée
 import { CounterCustomersService, type ResolvedCounterCustomer } from '../kyc/counter-customers.service'; // lot 7 — expéditeur de passage
 import { roundToCurrency } from '../fee-schedule/fee-engine';
+import { consumeRateLock, consumeWaiver, findUsableWaiver, resolveRateLock, rewardReferrerOnFirstTransfer, type LockedRate, type UsableReward } from '../growth/growth.core'; // lot 16 — garantie de taux + parrainage
 import { findIdempotent, isIdempotencyConflict } from './idempotency';
 import { addMonths, pickupExpiryFrom, pickupValidityMonths } from './pickup-rules';
 import { CompanySettingsService } from '../company-settings/company-settings.service';
 import { assertSelfFundingAllowed } from '../treasury/self-funding';
-import { amlFlagScore, computeRiskScore } from './aml-scoring';
+import { assertAmountFitsCurrency } from '../wallets/money'; // audit argent : montant remis tel quel dans sa devise
+import { amlFlagScore, amlThresholdXof, computeRiskScore } from './aml-scoring';
+import { evaluateExtraRules } from '../compliance/aml-rules'; // lot 17 — règles AML étendues par société
+import { countNearThreshold, loadComplianceSettings, openAmlCase, otherSendersToRecipient, preScreenSend, PRESEND_BLOCK_MESSAGE, screenTransaction } from '../compliance/compliance.core'; // lot 17 — filtrage des listes de surveillance
 import { buildCommissionSnapshot } from '../commission-rules/commission-snapshot';
 import { assessRecall, type RecallAssessment } from './recall-rules';
 import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
@@ -825,6 +829,8 @@ export class TransactionsService {
     tx: Transaction,
     target: typeof TransactionStatus.CANCELLED | typeof TransactionStatus.FAILED | typeof TransactionStatus.EXPIRED = TransactionStatus.CANCELLED,
     withdrawalStatus?: WithdrawalStatus,
+    /** ✅ lot 17 — statuts de départ autorisés (par défaut ceux d'une annulation ordinaire ; ON_HOLD pour le rejet par la conformité). */
+    allowedFrom: TransactionStatus[] = CANCELLABLE_TX,
   ): Promise<Transaction> {
     const refund = await this.refundTargetFor(tx);
     const failed  = target === TransactionStatus.FAILED;
@@ -832,7 +838,7 @@ export class TransactionsService {
 
     return this.prisma.$transaction(async (prismaTx) => {
       const claimed = await prismaTx.transaction.updateMany({
-        where: { id: tx.id, status: { in: CANCELLABLE_TX } },
+        where: { id: tx.id, status: { in: allowedFrom } },
         data: failed
           ? {
               status:         TransactionStatus.FAILED,
@@ -866,6 +872,37 @@ export class TransactionsService {
 
       return prismaTx.transaction.findUniqueOrThrow({ where: { id: tx.id } });
     });
+  }
+
+  /**
+   * ✅ lot 17 — décision de la conformité sur un envoi BLOQUÉ (ON_HOLD) par un filtrage de listes de surveillance.
+   *   • release : l'envoi reprend son statut d'avant le blocage (PENDING / VALIDATED), atomiquement ;
+   *   • reject  : l'envoi est annulé et l'expéditeur remboursé (même chemin que toute annulation).
+   * Dans les deux cas, la décision est tracée. Aucun message n'est envoyé à l'expéditeur (devoir de discrétion).
+   */
+  async releaseHeld(clientId: number, adminId: string, transactionId: string, restoreTo: TransactionStatus): Promise<Transaction> {
+    if (restoreTo !== TransactionStatus.PENDING && restoreTo !== TransactionStatus.VALIDATED) {
+      throw new BadRequestException('Statut de reprise invalide.');
+    }
+    const released = await this.prisma.transaction.updateMany({
+      where: { id: transactionId, clientId, status: TransactionStatus.ON_HOLD },
+      data:  { status: restoreTo },
+    });
+    if (released.count !== 1) throw new ConflictException("Cet envoi n'est plus bloqué.");
+    await this.audit(adminId, clientId, 'TRANSACTION_UPDATE', transactionId, { from: TransactionStatus.ON_HOLD, to: restoreTo, via: 'conformité : envoi débloqué' });
+    return this.prisma.transaction.findUniqueOrThrow({ where: { id: transactionId } });
+  }
+
+  async rejectHeld(clientId: number, adminId: string, transactionId: string): Promise<Transaction> {
+    const tx = await this.prisma.transaction.findFirst({ where: { id: transactionId, clientId } });
+    if (!tx) throw new NotFoundException('Transaction introuvable');
+    if (tx.status !== TransactionStatus.ON_HOLD) throw new ConflictException("Cet envoi n'est plus bloqué.");
+    const closed = await this.cancelWithRefund(tx, TransactionStatus.CANCELLED, undefined, [TransactionStatus.ON_HOLD]);
+    await this.audit(adminId, clientId, 'TRANSACTION_CANCEL', tx.id, {
+      from: tx.status, to: TransactionStatus.CANCELLED, via: 'conformité : envoi rejeté', refunded: REFUNDABLE_TYPES.includes(tx.type) ? Number(tx.total) : 0, currency: tx.currency,
+    });
+    if (REFUNDABLE_TYPES.includes(tx.type)) await this.traceCounterCashReturn(tx, adminId, 'rejet par la conformité');
+    return closed;
   }
 
   /**
@@ -1137,7 +1174,13 @@ export class TransactionsService {
   ): Promise<void> {
     const since = new Date(Date.now() - 24 * 3_600_000);
     // ✅ taux de la société de l'opération (chaque société fixe ses propres taux)
-    const txClientId = (await this.prisma.transaction.findUnique({ where: { id: transactionId }, select: { clientId: true } }))?.clientId ?? null;
+    const txInfo = await this.prisma.transaction.findUnique({
+      where: { id: transactionId },
+      select: { clientId: true, reference: true, recipientId: true, beneficiary: { select: { country: true, phone: true } } },
+    });
+    const txClientId = txInfo?.clientId ?? null;
+    // ✅ lot 17 — réglages AML de la société (seuil, score de signalement, pays à risque…) ; défauts de la plateforme sinon.
+    const settings = txClientId !== null ? await loadComplianceSettings(this.prisma, txClientId) : null;
     const [recent, subject] = await Promise.all([
       this.prisma.transaction.findMany({
         where: kind === 'DEPOSIT'
@@ -1169,18 +1212,46 @@ export class TransactionsService {
       recentSumXof24h += x;
     }
 
+    const amlConfig = { threshold: settings?.amlThresholdXof ?? null, flagScore: settings?.amlFlagScore ?? null };
     const result = computeRiskScore({
       amountXof: recentSumXof24h === null ? null : amountXof,
       recentCount24h:  recent.length,
       recentSumXof24h: recentSumXof24h ?? 0,
       accountCreatedAt: subject?.createdAt ?? null,
-    });
+    }, amlConfig);
+    const flagScore = amlConfig.flagScore && amlConfig.flagScore >= 1 && amlConfig.flagScore <= 100 ? amlConfig.flagScore : amlFlagScore();
+
+    // ✅ lot 17 — règles étendues réglables par société : pays à risque, fractionnement, regroupement de fonds (envois seulement).
+    let extraRules: string[] = [];
+    if (settings && kind !== 'DEPOSIT') {
+      try {
+        const threshold = amlConfig.threshold && amlConfig.threshold > 0 ? amlConfig.threshold : amlThresholdXof();
+        const extra = evaluateExtraRules(settings, {
+          destinationCountry: txInfo?.beneficiary?.country ?? null,
+          amountXof: recentSumXof24h === null ? null : amountXof,
+          threshold,
+          nearThresholdCount24h: await countNearThreshold(recent, threshold, toXof),
+          otherSendersToRecipient24h: kind === 'SEND' && txClientId !== null
+            ? await otherSendersToRecipient(this.prisma, { id: transactionId, clientId: txClientId, senderId: subjectUserId, recipientId: txInfo?.recipientId ?? null, beneficiaryPhone: txInfo?.beneficiary?.phone ?? null }, since)
+            : 0,
+        });
+        if (extra.points > 0) {
+          result.score = Math.min(100, result.score + extra.points);
+          result.reasons.push(...extra.reasons);
+          result.flagged = result.score >= flagScore;
+          extraRules = extra.rules;
+        }
+      } catch (err) {
+        this.logger.warn(`Règles AML étendues non évaluées (${transactionId}) : ${(err as Error)?.message}`);
+      }
+    }
+
     // Anomalies d'identité relevées à l'enregistrement du client de passage : toujours signalées à la conformité.
     const notes = kind === 'COUNTER' ? (counter?.notes ?? []) : [];
     if (notes.length) {
       result.reasons.push(...notes);
       result.flagged = true;
-      result.score = Math.max(result.score, amlFlagScore());
+      result.score = Math.max(result.score, flagScore);
     }
 
     await this.prisma.transaction.update({
@@ -1197,6 +1268,13 @@ export class TransactionsService {
         },
       });
       this.logger.warn(`🚩 AML — ${kind === 'DEPOSIT' ? 'dépôt' : 'envoi'} ${transactionId} signalé (score ${result.score}) : ${result.reasons.join(' ; ')}`);
+      // ✅ lot 17 — le signalement devient un dossier que la conformité peut examiner, assigner et clore.
+      if (txClientId !== null) {
+        await openAmlCase(this.prisma, {
+          transactionId, clientId: txClientId, userId: subjectUserId, reference: txInfo?.reference ?? null,
+          score: result.score, reasons: result.reasons, rules: extraRules, amount, currency,
+        });
+      }
     }
   }
 
@@ -1378,6 +1456,7 @@ export class TransactionsService {
     //   réception, mode) ; sinon tarif plat du mode de retrait (ancien comportement v4.16-B, isActive
     //   volontairement ignoré) ; sinon 1,5 %. Le frais fixe d'une règle est converti dans la devise
     //   de l'envoi. Voir fee-schedule/fee-schedule.service.ts.
+    assertAmountFitsCurrency(dto.amount, currency); // audit argent : XOF / GNF entiers, autres devises 2 décimales
     const amount = new Prisma.Decimal(dto.amount);
 
     // v4.26 — plafonds du client (sans effet pour un agent : l'expéditeur de passage n'a pas de niveau KYC).
@@ -1402,7 +1481,14 @@ export class TransactionsService {
       currency,
       receiveCountry,
     });
-    const fees   = new Prisma.Decimal(feeQuote.fees);
+    let fees     = new Prisma.Decimal(feeQuote.fees);
+    // ✅ lot 16 — parrainage : un envoi sans frais offert (récompense valide) annule les frais de CET envoi. Jamais pour un envoi
+    // au comptoir (l'expéditeur de passage n'a pas de compte) ni pour un envoi planifié.
+    let waiver: UsableReward | null = null;
+    if (!counter && !options.scheduledTransferId && fees.gt(0)) {
+      waiver = await findUsableWaiver(this.prisma, senderId).catch(() => null);
+      if (waiver) fees = new Prisma.Decimal(0);
+    }
     const total  = amount.plus(fees);
 
     // ✅ FIX v4.16-A : vérification solde sur walletToDebit (agence ou personnel)
@@ -1442,6 +1528,16 @@ export class TransactionsService {
       throw new BadRequestException("Un envoi vers un compte de votre propre agence n'est pas autorisé. Le compte n'a pas été débité.");
     }
 
+    // ✅ audit argent (I2) — envoi vers un portefeuille : crédité (donc PAID) tout de suite, impossible à retenir après coup.
+    // Si la société bloque sur correspondance forte, on filtre les noms AVANT le débit et on refuse sans rien bouger.
+    if (recipientUser) {
+      const pre = await preScreenSend(this.prisma, {
+        clientId, senderId, amount: Number(dto.amount), currency,
+        sender: user, recipient: recipientUser, beneficiaryName: beneficiary?.fullName ?? null,
+      });
+      if (pre.blocked) throw new ForbiddenException({ statusCode: 403, code: 'TRANSFER_NOT_ALLOWED', message: PRESEND_BLOCK_MESSAGE });
+    }
+
     // ✅ v4.19 — FIX (PROBLÈME 3) : priorité à Beneficiary.expectedCurrency
     // (champ dédié du schéma, jamais lu jusqu'ici) sur la déduction
     // texte-vers-devise depuis .country, qui reste le repli si absent.
@@ -1462,8 +1558,17 @@ export class TransactionsService {
     // ✅ v4.29 (audit point 9) : le montant reçu est arrondi à la devise de réception (XOF / GNF : unités entières,
     // autres : 2 décimales) AVANT d'être stocké et crédité. Avant : 65 595,7 XOF stockés, alors que le cash remis est
     // en unités entières et que la caisse de l'agence était créditée de la fraction. Le taux enregistré reste le taux brut.
-    const rawConverted    = await this.ratesService.convert(Number(amount), currency, targetCurrency, user.clientId ?? null);
-    const convertedAmount = roundToCurrency(rawConverted, targetCurrency);
+    // ✅ lot 16 — garantie de taux : si le client présente un taux garanti encore valable pour CE montant et CES devises, c'est
+    // le montant garanti qui est crédité (le taux du marché n'est pas relu) ; sinon refus clair AVANT tout débit.
+    let lockedRate: LockedRate | null = null;
+    const rateLockId = (dto as { rateLockId?: string }).rateLockId;
+    if (rateLockId) {
+      lockedRate = await resolveRateLock(this.prisma, { lockId: rateLockId, userId: senderId, currency, targetCurrency, amount: Number(amount) });
+    }
+    const rawConverted    = lockedRate
+      ? lockedRate.rate * Number(amount)
+      : await this.ratesService.convert(Number(amount), currency, targetCurrency, user.clientId ?? null);
+    const convertedAmount = lockedRate ? lockedRate.receivedAmount : roundToCurrency(rawConverted, targetCurrency);
     if (!(convertedAmount > 0)) {
       throw new BadRequestException('Montant trop faible : le montant reçu serait nul après conversion.');
     }
@@ -1544,6 +1649,10 @@ export class TransactionsService {
         },
       });
 
+      // ✅ lot 16 — la garantie de taux et l'envoi sans frais sont consommés DANS la transaction : si l'envoi échoue, ils restent intacts.
+      if (lockedRate) await consumeRateLock(tx, lockedRate.id, created.id);
+      if (waiver) await consumeWaiver(tx, waiver.id, created.id);
+
       // ✅ FIX v4.16-A : débit sur walletToDebit (wallet agence si agent). Le débit prend le verrou du wallet :
       // deux envois simultanés du même client sont donc traités l'un après l'autre.
       await this.walletsService.debitInTx(tx, walletToDebit.id, Number(total), `Envoi ${transactionRef}`, created.id);
@@ -1601,7 +1710,20 @@ export class TransactionsService {
     });
 
     // ✅ v4.30 — scoring AML : jamais bloquant, jamais attendu.
-    this.fireAndForget('Scoring AML', () => this.scoreAml(transaction.id, senderId, Number(amount), currency, counter ? 'COUNTER' : 'SEND', counter ?? undefined));
+    // ✅ lot 17 — puis filtrage des listes de surveillance (après le score : celui-ci réécrit isFlagged / riskScore).
+    this.fireAndForget('Scoring AML et listes de surveillance', async () => {
+      try {
+        await this.scoreAml(transaction.id, senderId, Number(amount), currency, counter ? 'COUNTER' : 'SEND', counter ?? undefined);
+      } catch (err) {
+        this.logger.warn(`Scoring AML en échec (${transaction.id}) : ${(err as Error)?.message}`);
+      }
+      await screenTransaction(this.prisma, transaction.id);
+    });
+
+    // ✅ lot 16 — premier envoi d'un filleul : son parrain gagne un envoi sans frais (jamais bloquant, jamais attendu).
+    if (!counter && txType === TransactionType.TRANSFER) {
+      this.fireAndForget('Récompense parrain', () => rewardReferrerOnFirstTransfer(this.prisma, { clientId, senderId, transactionId: transaction.id, amount: Number(amount) }));
+    }
 
     // ✅ v4.19 — nom du destinataire direct en repli si pas de Beneficiary
     const earlyRecipientLabel = beneficiary?.fullName
@@ -1700,6 +1822,7 @@ export class TransactionsService {
     const agencyWallet = agencyWallets.find((w) => w.isDefault) ?? agencyWallets[0];
     if (!agencyWallet) throw new ForbiddenException('Wallet agence introuvable');
 
+    assertAmountFitsCurrency(dto.amount, agencyWallet.currency);
     const amountDec = new Prisma.Decimal(dto.amount);
     const available = Number(agencyWallet.balance) - Number(agencyWallet.reservedBalance);
     if (available < Number(amountDec)) throw new ForbiddenException('Solde agence insuffisant');
@@ -1891,6 +2014,7 @@ export class TransactionsService {
     if (!companyClientId) throw new ForbiddenException("Cette agence n'est rattachée à aucune société");
 
     const currencyCode   = currency.toUpperCase() as CurrencyCode;
+    assertAmountFitsCurrency(amount, currencyCode);
     const adminWalletRef = await this.walletsService.getOrCreateWallet({
       clientId: companyClientId,
       currency: currencyCode,

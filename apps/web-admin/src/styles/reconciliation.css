@@ -1,0 +1,31 @@
+/* =========================================================
+   RÉCONCILIATION (audit argent I3) — cartes mobile d'abord, deux colonnes dès 760 px
+   ========================================================= */
+.rc-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rc-head > div { flex: 1 1 260px; min-width: 0; }
+.rc-grid { grid-template-columns: 1fr; }
+@media (min-width: 760px) { .rc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.rc-card[data-tone='danger'] { --edge: #d64545; box-shadow: var(--sh-1), 0 0 0 1px rgba(214, 69, 69, .22); }
+.rc-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.rc-card__head h3 { font-size: var(--t-xl); letter-spacing: .02em; }
+.rc-card__head p { margin: 2px 0 0; font-size: var(--t-sm); }
+
+.rc-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
+.rc-figures > div { background: var(--brand-soft); border-radius: var(--r-md); padding: 10px 12px; min-width: 0; }
+.rc-figures > div[data-bad] { background: rgba(214, 69, 69, .1); }
+.rc-figures dt { font-size: var(--t-xs, .75rem); color: var(--ink-3, #6b7280); margin-bottom: 2px; }
+.rc-figures dd { margin: 0; font-weight: 700; font-size: var(--t-md); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+
+.rc-flags { margin: 0; padding-left: 18px; display: grid; gap: 4px; color: #b42323; font-size: var(--t-sm); font-weight: 600; }
+
+.rc-wallets { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.rc-wallets li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); font-size: var(--t-sm); animation: pil-rise .35s both; }
+.rc-wallets__top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.rc-wallets code { font-size: .72rem; opacity: .7; overflow-wrap: anywhere; text-align: right; }
+
+.rc-history { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding: 4px 2px; }
+.rc-history__dot { width: 14px; height: 14px; border-radius: 50%; background: #2f9e6b; }
+.rc-history__dot[data-bad] { background: #d64545; }
+
+@media (prefers-reduced-motion: reduce) { .rc-wallets li { animation: none; } }

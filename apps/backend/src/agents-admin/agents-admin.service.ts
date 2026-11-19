@@ -304,7 +304,7 @@ export class AgentsAdminService {
     // tant que le refresh token n'expire pas) ; l'agent se reconnecte avec le mot de passe temporaire.
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { password: hash, mustChangePassword: true } }),
-      this.prisma.userSession.deleteMany({ where: { userId: id } }),
+      this.prisma.userSession.updateMany({ where: { userId: id, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }),
     ]);
 
     await this.audit(user, clientId, 'PASSWORD_CHANGE', id, { kind: 'AGENT_RESET_BY_ADMIN' });

@@ -1,6 +1,12 @@
 // apps/direct-transfair-mobile/app/(tabs)/recharge.tsx
 // =========================================================
 // ✅ phase 7 : URL Sendwave lue dans services/platformConfig.ts. Logique de recharge (y compris simulée) inchangée.
+// RECHARGE WALLET v3.0 — page redessinée (logique métier STRICTEMENT inchangée : mêmes appels API, même polling, même validation) :
+//   • bandeau solde en dégradé aux couleurs du moyen choisi, avec aperçu « après la recharge » en direct ;
+//   • choix du moyen en trois grosses tuiles animées (Carte · Orange Money · Sendwave) à la place des onglets ;
+//   • montants rapides en grille (plus de défilement coupé), bouton « Recharger 50 000 GNF » qui rappelle le montant ;
+//   • carte bancaire : aperçu visuel de la carte qui se remplit pendant la saisie ; Orange Money / Sendwave : étapes en 3 temps ;
+//   • apparition animée à chaque changement de moyen.
 // RECHARGE WALLET v2.0 — Direct Transf'air
 // ✅ v2.0 : REFONTE THÈME CLAIR — fond crème, grand montant, onglets de méthode
 //    soulignés, champs arrondis et bouton pilule pleine largeur ; toutes les
@@ -27,7 +33,8 @@
 // =========================================================
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Linking, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Easing, Linking, Pressable, StyleSheet, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../providers/AuthProvider";
 import { api } from "../../services/api";
@@ -36,8 +43,12 @@ import { useT } from "../../providers/I18nProvider";
 import { tr, getLocale } from "../../i18n/runtime";
 import type { MessageKey } from "../../i18n/catalog";
 import {
-  AmountInput, Button, Card, Chip, Field, NavBar, Notice, Screen, Tabs, UText, useUI,
+  AmountInput, Button, Card, Field, NavBar, Notice, Screen, UText, useUI,
 } from "../../components/ui";
+import { Ionicons } from "../../components/ui/Icon";
+import { Text } from "../../components/ui/Text";
+import { TintCard, alpha, shade } from "../../components/ui/Tint";
+import { Rise } from "../../components/merchant/merchantUi";
 
 const SENDWAVE_URL = getSendwaveUrl(); // ✅ phase 7 : modifiable (EXPO_PUBLIC_SENDWAVE_URL)
 
@@ -70,11 +81,117 @@ function formatExpiry(text: string): string {
 
 type Method = "CARD" | "ORANGE_MONEY" | "SENDWAVE";
 
-const METHODS: Array<{ key: Method; label: MessageKey | null; name?: string; icon: string }> = [
-  { key: "CARD", label: "rc.card", icon: "card-outline" },
-  { key: "ORANGE_MONEY", label: null, name: "Orange Money", icon: "phone-portrait-outline" },
-  { key: "SENDWAVE", label: null, name: "Sendwave", icon: "swap-horizontal-outline" },
+const METHODS: Array<{ key: Method; label: MessageKey | null; name?: string; icon: string; hue: string }> = [
+  { key: "CARD", label: "rc.card", icon: "card-outline", hue: "#4F46E5" },
+  { key: "ORANGE_MONEY", label: null, name: "Orange Money", icon: "phone-portrait-outline", hue: "#FF7900" },
+  { key: "SENDWAVE", label: null, name: "Sendwave", icon: "swap-horizontal-outline", hue: "#0EA5E9" },
 ];
+
+/** Tuile d'un moyen de recharge : pleine couleur quand elle est choisie, ressort au toucher. */
+function MethodTile({ icon, label, hue, on, onPress }: { icon: string; label: string; hue: string; on: boolean; onPress: () => void }) {
+  const { C } = useUI();
+  const scale = useRef(new Animated.Value(1)).current;
+  const lift = useRef(new Animated.Value(on ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(lift, { toValue: on ? 1 : 0, useNativeDriver: true, speed: 18, bounciness: 8 }).start();
+  }, [on, lift]);
+  const to = (v: number) => Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 5 }).start();
+  return (
+    <Animated.View style={{ flex: 1, minWidth: 0, transform: [{ scale }, { translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }] }}>
+      <Pressable onPress={onPress} onPressIn={() => to(0.96)} onPressOut={() => to(1)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={label}>
+        <View style={{ height: 88, borderRadius: 22, overflow: "hidden", borderWidth: 1.5, borderColor: on ? hue : C.line, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", gap: 7, paddingHorizontal: 4,
+          ...(on ? { shadowColor: hue, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 } : null) }}>
+          {on && <LinearGradient colors={[hue, shade(hue, 0.3)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: on ? "rgba(255,255,255,0.22)" : alpha(hue, 0.14), alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={icon as any} size={19} color={on ? "#FFFFFF" : hue} />
+          </View>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12.5, fontWeight: "800", color: on ? "#FFFFFF" : C.text, maxWidth: "92%" }}>{label}</Text>
+          {on && <View style={{ position: "absolute", top: 7, right: 7, width: 18, height: 18, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.28)", alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={"checkmark" as any} size={12} color="#FFFFFF" />
+          </View>}
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Montant rapide : pastille pleine quand elle correspond au montant saisi. */
+function QuickAmount({ label, active, hue, onPress }: { label: string; active: boolean; hue: string; onPress: () => void }) {
+  const { C } = useUI();
+  const scale = useRef(new Animated.Value(1)).current;
+  const to = (v: number) => Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
+  return (
+    <Animated.View style={{ width: "31.5%", flexGrow: 1, transform: [{ scale }] }}>
+      <Pressable onPress={onPress} onPressIn={() => to(0.94)} onPressOut={() => to(1)} accessibilityRole="button">
+        <View style={{ height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: active ? hue : C.lineStrong, backgroundColor: active ? hue : C.field }}>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 14, fontWeight: "800", color: active ? "#FFFFFF" : C.text, maxWidth: "90%" }}>{label}</Text>
+        </View>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/** Aperçu de la carte bancaire : se remplit pendant la saisie (numéro, titulaire, expiration). */
+function CardPreview({ number, name, expiry, holderPh }: { number: string; name: string; expiry: string; holderPh: string }) {
+  const digits = number.replace(/\s/g, "");
+  const brand = digits.startsWith("4") ? "VISA" : /^(5[1-5]|2[2-7])/.test(digits) ? "MASTERCARD" : "";
+  const groups = [0, 1, 2, 3].map((i) => {
+    const g = digits.slice(i * 4, i * 4 + 4);
+    return g.padEnd(4, "•");
+  });
+  return (
+    <View style={{ borderRadius: 22, overflow: "hidden", shadowColor: "#4338CA", shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
+      <LinearGradient colors={["#1E1B4B", "#4338CA", "#6D28D9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <View pointerEvents="none" style={{ position: "absolute", right: -40, top: -50, width: 170, height: 170, borderRadius: 85, backgroundColor: "rgba(255,255,255,0.09)" }} />
+      <View pointerEvents="none" style={{ position: "absolute", right: 40, bottom: -70, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.06)" }} />
+      <View style={{ padding: 18, gap: 16 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <View style={{ width: 40, height: 30, borderRadius: 7, backgroundColor: "rgba(250,204,21,0.9)" }} />
+          <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14, letterSpacing: 1, fontStyle: "italic" }}>{brand}</Text>
+        </View>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: "#FFFFFF", fontSize: 21, fontWeight: "700", letterSpacing: 2.5, fontVariant: ["tabular-nums"] }}>{groups.join("  ")}</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
+          <Text numberOfLines={1} style={{ flex: 1, color: name ? "#FFFFFF" : "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8 }}>{name || holderPh}</Text>
+          <Text style={{ color: expiry ? "#FFFFFF" : "rgba(255,255,255,0.5)", fontSize: 14, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{expiry || "MM/AA"}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** Étapes numérotées (Orange Money / Sendwave) : on comprend d'un coup d'œil ce qui va se passer. */
+function Steps({ hue, items }: { hue: string; items: string[] }) {
+  return (
+    <View style={{ gap: 10 }}>
+      {items.map((txt, i) => (
+        <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: hue, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>{i + 1}</Text>
+          </View>
+          <UText v="body" style={{ flex: 1 }}>{txt}</UText>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/** Anneau qui pulse pendant l'attente de confirmation. */
+function PulseRing({ hue }: { hue: string }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1500, easing: Easing.out(Easing.quad), useNativeDriver: true }));
+    loop.start();
+    return () => loop.stop();
+  }, [v]);
+  return (
+    <View style={{ width: 64, height: 64, alignItems: "center", justifyContent: "center" }}>
+      <Animated.View style={{ position: "absolute", width: 64, height: 64, borderRadius: 32, backgroundColor: alpha(hue, 0.25), opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }), transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.4] }) }] }} />
+      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: hue, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color="#FFFFFF" />
+      </View>
+    </View>
+  );
+}
 
 export default function RechargeScreen() {
   const { C } = useUI();
@@ -214,12 +331,17 @@ export default function RechargeScreen() {
     if (pollRef.current) clearInterval(pollRef.current);
   };
 
+  const meth = METHODS.find((m) => m.key === method) ?? METHODS[0];
+  const hue = meth.hue;
+  const ctaLabel = numAmount > 0 ? `${t("rc.cta")} ${fmt(numAmount, currency)} ${currency}` : t("rc.cta");
+  const userPhone = ((user as any)?.phone ?? "") as string;
+
   return (
     <Screen
       header={<NavBar title={t("rc.title")} onBack={() => router.back()} />}
       footer={
         <Button
-          label={t("rc.cta")}
+          label={ctaLabel}
           icon="add-circle-outline"
           onPress={handleSubmit}
           loading={submitting}
@@ -227,125 +349,172 @@ export default function RechargeScreen() {
         />
       }
     >
-      {/* Solde actuel */}
-      <UText v="overline" tone="muted" style={{ marginTop: 4 }}>{t("rc.balance")}</UText>
-      <UText v="title" style={{ marginTop: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-        {balance === null ? "—" : `${fmt(balance, currency)} ${currency}`}
-      </UText>
-
-      {/* Méthode */}
-      <Tabs
-        style={{ marginTop: 22 }}
-        items={METHODS.map((m) => ({ key: m.key, label: m.label ? t(m.label) : (m.name ?? "") }))}
-        value={method}
-        onChange={changeMethod}
-      />
-
-      {(method === "ORANGE_MONEY" || method === "SENDWAVE") && (
-        <Notice tone="warn" style={{ marginTop: 16 }}>
-          {method === "ORANGE_MONEY"
-            ? t("rc.omNote")
-            : t("rc.swNote")}
-        </Notice>
-      )}
-
-      {/* Montant */}
-      <View style={{ marginTop: 26 }}>
-        <AmountInput label={t("rc.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 2, paddingBottom: 4 }}>
-          {quickAmounts.map((v) => (
-            <Chip key={v} label={new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 0 }).format(v)} active={numAmount === v} onPress={() => setAmount(String(v))} />
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Orange Money : compte débité */}
-      {method === "ORANGE_MONEY" && (
-        <View style={{ marginTop: 26 }}>
-          <Field
-            label={t("rc.omNumber")}
-            icon="call-outline"
-            value={momoPhone}
-            onChangeText={setMomoPhone}
-            placeholder="+224 6XX XX XX XX"
-            keyboardType="phone-pad"
-            hint={t("rc.omHint")}
-          />
-        </View>
-      )}
-
-      {/* Sendwave : paiement externe pour le moment */}
-      {method === "SENDWAVE" && (
-        <View style={{ marginTop: 20 }}>
-          <Button label={t("rc.openSw")} kind="outline" icon="open-outline" onPress={handleOpenSendwave} />
-        </View>
-      )}
-
-      {/* Carte bancaire */}
-      {method === "CARD" && (
-        <View style={{ marginTop: 26 }}>
-          <UText v="overline" tone="muted" style={{ marginBottom: 12 }}>{t("send.card")}</UText>
-          <Field
-            label={t("rc.holder")}
-            value={cardName}
-            onChangeText={setCardName}
-            placeholder={t("rc.holderPh")}
-            autoCapitalize="characters"
-          />
-          <Field
-            label={t("rc.cardNumber")}
-            icon="card-outline"
-            value={cardNumber}
-            onChangeText={(t) => setCardNumber(formatCardNumber(t))}
-            placeholder="0000 0000 0000 0000"
-            keyboardType="numeric"
-            maxLength={19}
-          />
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <View style={{ flex: 1 }}>
-              <Field
-                label={t("rc.expiry")}
-                value={cardExpiry}
-                onChangeText={(t) => setCardExpiry(formatExpiry(t))}
-                placeholder={t("rc.expiryPh")}
-                keyboardType="numeric"
-                maxLength={5}
-              />
+      {/* ── Bandeau solde : suit la couleur du moyen choisi, montre le solde APRÈS la recharge ── */}
+      <Rise>
+        <View style={{ borderRadius: 26, overflow: "hidden", marginTop: 2, shadowColor: hue, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 5 }}>
+          <LinearGradient colors={["#0B1220", shade(hue, 0.45), hue]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View pointerEvents="none" style={{ position: "absolute", right: -34, top: -44, width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(255,255,255,0.10)" }} />
+          <View pointerEvents="none" style={{ position: "absolute", left: 30, bottom: -60, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,255,255,0.06)" }} />
+          <View style={{ padding: 18, gap: 4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={"wallet-outline" as any} size={14} color="#FFFFFF" />
+              </View>
+              <Text style={{ color: "#FFFFFF", opacity: 0.8, fontSize: 12.5, fontWeight: "700" }}>{t("rc.balance")}</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Field
-                label="CVV"
-                value={cardCvv}
-                onChangeText={(t) => setCardCvv(t.replace(/\D/g, "").slice(0, 4))}
-                placeholder="•••"
-                keyboardType="numeric"
-                maxLength={4}
-                secure
-              />
-            </View>
+            <Text style={{ color: "#FFFFFF", fontSize: 30, fontWeight: "800", letterSpacing: -0.6 }} numberOfLines={1} adjustsFontSizeToFit>
+              {balance === null ? "—" : `${fmt(balance, currency)} ${currency}`}
+            </Text>
+            {numAmount > 0 && balance !== null && (
+              <Rise key={String(numAmount > 0)}>
+                <View style={{ alignSelf: "flex-start", marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Ionicons name={"trending-up-outline" as any} size={14} color="#FFFFFF" />
+                  <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "700" }} numberOfLines={1}>{t("rc.after", { amount: `${fmt(balance + numAmount, currency)} ${currency}` })}</Text>
+                </View>
+              </Rise>
+            )}
           </View>
-          <UText v="caption" tone="muted">{t("rc.cvvNote")}</UText>
         </View>
-      )}
+      </Rise>
+
+      {/* ── Moyen de recharge ── */}
+      <Rise delay={70}>
+        <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 10 }}>{t("rc.pickMethod")}</UText>
+        <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 10 }}>
+          {METHODS.map((m) => (
+            <MethodTile key={m.key} icon={m.icon} hue={m.hue} label={m.label ? t(m.label) : (m.name ?? "")} on={method === m.key} onPress={() => changeMethod(m.key)} />
+          ))}
+        </View>
+      </Rise>
+
+      {/* ── Contenu du moyen choisi (réapparaît en douceur à chaque changement) ── */}
+      <Rise key={method}>
+        {(method === "ORANGE_MONEY" || method === "SENDWAVE") && (
+          <Notice tone="warn" style={{ marginTop: 16 }}>
+            {method === "ORANGE_MONEY" ? t("rc.omNote") : t("rc.swNote")}
+          </Notice>
+        )}
+
+        {/* Montant + montants rapides */}
+        <Card pad={16} style={{ marginTop: 16 }}>
+          <AmountInput compact label={t("rc.amountLabel")} value={amount} onChangeText={setAmount} currency={currency} />
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+            {quickAmounts.map((v) => (
+              <QuickAmount key={v} hue={hue} label={new Intl.NumberFormat(getLocale(), { maximumFractionDigits: 0 }).format(v)} active={numAmount === v} onPress={() => setAmount(String(v))} />
+            ))}
+          </View>
+        </Card>
+
+        {/* Orange Money : compte débité */}
+        {method === "ORANGE_MONEY" && (
+          <TintCard hue={hue} mark="phone-portrait-outline" pad={16} style={{ marginTop: 14 }}>
+            <Steps hue={hue} items={[t("rc.omStep1"), t("rc.omStep2"), t("rc.omStep3")]} />
+            <View style={{ height: 14 }} />
+            <Field
+              label={t("rc.omNumber")}
+              icon="call-outline"
+              value={momoPhone}
+              onChangeText={setMomoPhone}
+              placeholder="+224 6XX XX XX XX"
+              keyboardType="phone-pad"
+              hint={t("rc.omHint")}
+            />
+            {!!userPhone && momoPhone.trim() !== userPhone && (
+              <Pressable onPress={() => setMomoPhone(userPhone)} accessibilityRole="button" style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: alpha(hue, 0.15), borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, marginTop: -4 }}>
+                <Ionicons name={"person-outline" as any} size={14} color={C.text} />
+                <Text style={{ color: C.text, fontSize: 12.5, fontWeight: "700" }}>{t("rc.useMyNumber")}</Text>
+              </Pressable>
+            )}
+          </TintCard>
+        )}
+
+        {/* Sendwave : paiement externe pour le moment */}
+        {method === "SENDWAVE" && (
+          <TintCard hue={hue} mark="swap-horizontal-outline" pad={16} style={{ marginTop: 14 }}>
+            <Steps hue={hue} items={[t("rc.swStep1"), t("rc.swStep2"), t("rc.swStep3")]} />
+            <View style={{ height: 14 }} />
+            <Button label={t("rc.openSw")} kind="outline" icon="open-outline" onPress={handleOpenSendwave} />
+          </TintCard>
+        )}
+
+        {/* Carte bancaire */}
+        {method === "CARD" && (
+          <View style={{ marginTop: 16, gap: 14 }}>
+            <CardPreview number={cardNumber} name={cardName} expiry={cardExpiry} holderPh={t("rc.holderPh")} />
+            <Card pad={16}>
+              <Field
+                label={t("rc.holder")}
+                value={cardName}
+                onChangeText={setCardName}
+                placeholder={t("rc.holderPh")}
+                autoCapitalize="characters"
+              />
+              <Field
+                label={t("rc.cardNumber")}
+                icon="card-outline"
+                value={cardNumber}
+                onChangeText={(t) => setCardNumber(formatCardNumber(t))}
+                placeholder="0000 0000 0000 0000"
+                keyboardType="numeric"
+                maxLength={19}
+              />
+              <View style={{ flexDirection: "row", gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label={t("rc.expiry")}
+                    value={cardExpiry}
+                    onChangeText={(t) => setCardExpiry(formatExpiry(t))}
+                    placeholder={t("rc.expiryPh")}
+                    keyboardType="numeric"
+                    maxLength={5}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="CVV"
+                    value={cardCvv}
+                    onChangeText={(t) => setCardCvv(t.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="•••"
+                    keyboardType="numeric"
+                    maxLength={4}
+                    secure
+                  />
+                </View>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name={"lock-closed-outline" as any} size={14} color={C.muted} />
+                <UText v="caption" tone="muted" style={{ flex: 1 }}>{t("rc.cvvNote")}</UText>
+              </View>
+            </Card>
+          </View>
+        )}
+      </Rise>
 
       {/* Recharge en attente (Orange Money / Sendwave) */}
       {pending && (
-        <Card tone="outline" style={{ marginTop: 22, alignItems: "center", gap: 10 }}>
-          {pending.method === "ORANGE_MONEY" ? (
-            <>
-              <ActivityIndicator color={C.ink} />
-              <UText v="bodyStrong" align="center">{t("rc.omWaiting")}</UText>
-            </>
-          ) : (
-            <>
-              <UText v="bodyStrong" align="center">{t("rc.swWaiting")}</UText>
-              <UText v="caption" tone="muted" align="center">
-                {t("rc.reference", { ref: pending.transactionId.slice(0, 8).toUpperCase() })}
-              </UText>
-              <Button label={t("rc.checkStatus")} kind="soft" small full={false} loading={checkingStatus} onPress={handleCheckSendwave} />
-            </>
-          )}
-        </Card>
+        <Rise>
+          <TintCard hue={hue} pad={20} style={{ marginTop: 18 }}>
+            <View style={{ alignItems: "center", gap: 10 }}>
+              {pending.method === "ORANGE_MONEY" ? (
+                <>
+                  <PulseRing hue={hue} />
+                  <UText v="bodyStrong" align="center">{t("rc.omWaiting")}</UText>
+                </>
+              ) : (
+                <>
+                  <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: alpha(hue, 0.18), alignItems: "center", justifyContent: "center" }}>
+                    <Ionicons name={"time-outline" as any} size={26} color={hue} />
+                  </View>
+                  <UText v="bodyStrong" align="center">{t("rc.swWaiting")}</UText>
+                  <UText v="caption" tone="muted" align="center">
+                    {t("rc.reference", { ref: pending.transactionId.slice(0, 8).toUpperCase() })}
+                  </UText>
+                  <Button label={t("rc.checkStatus")} kind="soft" small full={false} loading={checkingStatus} onPress={handleCheckSendwave} />
+                </>
+              )}
+            </View>
+          </TintCard>
+        </Rise>
       )}
     </Screen>
   );

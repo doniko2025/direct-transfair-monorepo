@@ -126,6 +126,7 @@ export const TX_STATUS: Record<string, StatusTone> = {
   FAILED:     statusTone('danger',  'txs.failed',    'txs.failed',    'alert-circle-outline'),
   REFUNDED:   statusTone('violet',  'txs.refunded',  'txs.refunded',  'return-down-back-outline'),
   EXPIRED:    statusTone('neutral', 'txs.expiredRefunded', 'txs.expired', 'timer-outline'),
+  ON_HOLD:    statusTone('warn',    'txs.verification', 'txs.verification', 'time-outline'), // lot 17 — libellé neutre
 };
 export function statusOf(status: string): StatusTone {
   return TX_STATUS[status] ?? { ...TONE.neutral, label: status || '—', labelIncoming: status || '—', icon: 'help-circle-outline' };

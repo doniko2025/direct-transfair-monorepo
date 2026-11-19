@@ -68,6 +68,7 @@
 // =========================================================
 
 import type { UserSession } from "./sessionLabel";
+import type { MoneyRequestsOverview, MoneyRequestView, MyReferral, RateLock } from "./growthTypes";
 import type { ContractSummary, IssueContractInput, IssueContractResult, ResendLinkResult } from "./contractTypes";
 import axios, {
   AxiosHeaders,
@@ -1682,6 +1683,32 @@ class API {
   /** Rembourse le client (montant intégral ; la commission reste acquise à la plateforme). */
   async refundPayment(id: string, input: { pin: string; reason?: string }): Promise<PaymentRequestView> {
     return (await this.http.post<PaymentRequestView>(`/merchant-payments/${encodeURIComponent(id)}/refund`, input)).data;
+  }
+
+  // ── Croissance (lot 16) : taux garanti, demandes d'argent, parrainage ─────────────────────────
+  /** Garantit le taux quelques minutes pour CE montant : à joindre à l'envoi (rateLockId). */
+  async quoteRateLock(input: { amount: number; currency: string; targetCurrency: string }): Promise<RateLock> {
+    return (await this.http.post<RateLock>("/rate-locks", input)).data;
+  }
+
+  async getMoneyRequests(): Promise<MoneyRequestsOverview> {
+    return (await this.http.get<MoneyRequestsOverview>("/money-requests")).data;
+  }
+
+  async createMoneyRequest(input: { payerPhone: string; amount: number; currency: string; note?: string }): Promise<MoneyRequestView> {
+    return (await this.http.post<MoneyRequestView>("/money-requests", input)).data;
+  }
+
+  async declineMoneyRequest(id: string): Promise<{ id: string; status: string }> {
+    return (await this.http.patch(`/money-requests/${encodeURIComponent(id)}/decline`, {})).data as { id: string; status: string };
+  }
+
+  async cancelMoneyRequest(id: string): Promise<{ id: string; status: string }> {
+    return (await this.http.patch(`/money-requests/${encodeURIComponent(id)}/cancel`, {})).data as { id: string; status: string };
+  }
+
+  async getMyReferral(): Promise<MyReferral> {
+    return (await this.http.get<MyReferral>("/referrals/me")).data;
   }
 
   // ── Paiement de factures (lot 14) ─────────────────────────

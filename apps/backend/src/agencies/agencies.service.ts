@@ -179,6 +179,7 @@
 //   CORRECTIF : isSuspended:true ajouté à la même écriture.
 // =========================================================
 
+import { assertNoFunds } from '../common/balance-guard'; // audit argent I5
 import {
   BadRequestException,
   ConflictException,
@@ -565,42 +566,28 @@ export class AgenciesService {
 
     const agentIds = agency.agents.map((a) => a.id);
 
-    // ✅ v4.5 — Avertissements NON BLOQUANTS sur les soldes restants.
-    // Ne bloquent jamais la désactivation : un agent/une agence
-    // compromis(e) doit pouvoir être coupé(e) immédiatement même avec
-    // un solde non nul ; la réconciliation se fait séparément.
+    // ✅ audit argent (I5) — REFUS (409 BALANCE_NOT_EMPTY) tant que la caisse de l'agence ou le portefeuille d'un de ses agents
+    // détient de l'argent : désactivés, ces portefeuilles seraient bloqués pour de bon. Avant, on se contentait d'un avertissement.
+    // Pour couper l'accès immédiatement (agence ou agent compromis), on suspend : la suspension ne touche pas aux soldes.
     const warnings: string[] = [];
 
-    const agencyBalance = agency.wallets.reduce((sum, w) => sum + Number(w.balance), 0);
-    if (agencyBalance !== 0) {
-      warnings.push(
-        `Le wallet de l'agence conservait un solde de ${agencyBalance} au moment de la désactivation — à réconcilier séparément.`,
-      );
-    }
-
-    if (agentIds.length > 0) {
-      const agentWallets = await this.prisma.wallet.findMany({
-        where: { userId: { in: agentIds }, isActive: true },
-        select: { balance: true },
-      });
-      const agentsBalance = agentWallets.reduce((sum, w) => sum + Number(w.balance), 0);
-      if (agentsBalance !== 0) {
-        warnings.push(
-          `Les wallets personnels des agents conservaient un solde total de ${agentsBalance} — à réconcilier séparément.`,
-        );
-      }
-    }
-
     const updatedAgency = await this.prisma.$transaction(async (tx) => {
+      // Contrôle dans la transaction : il lit l'état au plus près de la désactivation (un refus annule tout).
+      const funds = await tx.wallet.findMany({
+        where: { OR: [{ agencyId: id }, ...(agentIds.length ? [{ userId: { in: agentIds } }] : [])] },
+        select: { currency: true, balance: true, reservedBalance: true },
+      });
+      assertNoFunds(funds, "Cette agence (ou le portefeuille d'un de ses agents)", 'Pour couper l’accès tout de suite, suspendez l’agence ou l’agent concerné : la suspension ne touche pas aux soldes.');
+
       if (agentIds.length > 0) {
-        // Sessions/appareils/OTP : seuls éléments encore supprimés
+        // Appareils/OTP : seuls éléments encore supprimés (les sessions sont RÉVOQUÉES, jeton d'accès coupé tout de suite)
         // DÉFINITIVEMENT — non financiers, aucune valeur d'audit à
         // long terme, et il faut au contraire couper l'accès
         // immédiatement (un agent désactivé ne doit garder aucune
         // session active).
         try { await tx.otpLog.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
         try { await tx.userDevice.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
-        try { await tx.userSession.deleteMany({ where: { userId: { in: agentIds } } }); } catch (_) {}
+        try { await tx.userSession.updateMany({ where: { userId: { in: agentIds }, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }); } catch (_) {}
 
         // Wallets personnels : désactivés, JAMAIS supprimés — solde
         // et historique de ledger conservés intacts.

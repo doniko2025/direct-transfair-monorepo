@@ -69,11 +69,22 @@ export const NAV: readonly NavItem[] = [
   { id: 'send-cash', label: 'Envoi cash', icon: 'send', path: '/send-cash', roles: AGENT, ready: true },
   { id: 'remit', label: "Remise à l'administrateur", icon: 'vault', path: '/remit', roles: AGENT, ready: true },
   { id: 'agent-stats', label: 'Statistiques du jour', icon: 'chart', path: '/stats', roles: AGENT, ready: true },
+  { id: 'agent-closing', label: 'Clôture de caisse', icon: 'vault', path: '/closing', roles: AGENT, ready: true },
 
   // Communs à plusieurs rôles
   { id: 'users', label: 'Utilisateurs', icon: 'users', path: '/users', roles: COMPANY, ready: true },
   { id: 'transactions', label: 'Transactions', icon: 'list', path: '/transactions', roles: ['COMPANY_ADMIN', 'AGENT'], ready: true },
   { id: 'treasury', label: 'Trésorerie', icon: 'vault', path: '/treasury', roles: COMPANY, ready: true },
+  // Lot 15 — pilotage
+  { id: 'pilotage-closings', label: 'Caisses', icon: 'list', path: '/pilotage/caisses', roles: COMPANY, ready: true },
+  { id: 'pilotage-liquidity', label: 'Liquidité', icon: 'wallet', path: '/pilotage/liquidite', roles: COMPANY, ready: true },
+  { id: 'pilotage-profit', label: 'Rentabilité', icon: 'chart', path: '/pilotage/rentabilite', roles: COMPANY, ready: true },
+  { id: 'pilotage-agents', label: 'Objectifs agents', icon: 'users', path: '/pilotage/agents', roles: COMPANY, ready: true },
+  { id: 'pilotage-reconciliation', label: 'Réconciliation', icon: 'shield', path: '/pilotage/reconciliation', roles: COMPANY, ready: true }, // audit argent I3
+  // Lot 16 — croissance
+  { id: 'referral', label: 'Parrainage', icon: 'users', path: '/parrainage', roles: COMPANY, ready: true },
+  { id: 'compliance', label: 'Conformité', icon: 'shield', path: '/conformite', roles: COMPANY, ready: true },
+  { id: 'webhooks', label: 'Webhooks', icon: 'external', path: '/webhooks', roles: COMPANY, ready: true },
   { id: 'transfers', label: 'Virements', icon: 'vault', path: '/treasury', roles: SUPER, ready: true },
   { id: 'commissions', label: 'Commissions', icon: 'percent', path: '/commissions', roles: ['COMPANY_ADMIN', 'AGENT'], ready: true },
   { id: 'rates', label: 'Taux de change', icon: 'swap', path: '/rates', roles: COMPANY, ready: true },

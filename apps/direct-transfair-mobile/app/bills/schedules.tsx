@@ -12,7 +12,7 @@ import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { BillScheduleList, BillScheduleView } from "../../services/billTypes";
 import { useLoader } from "../../components/wallet/useLoader";
-import { CategoryBadge, billCategoryLabel } from "../../components/bills/billsUi";
+import { CategoryBadge, TintCard, billCategoryLabel, categoryHue, categoryIcon } from "../../components/bills/billsUi";
 import { Button, Card, EmptyView, ErrorView, NavBar, Notice, Pill, Screen, SkeletonRows, SlowNote, UText } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
 import { fmtDate } from "../../i18n/runtime";
@@ -108,7 +108,7 @@ export default function BillSchedulesScreen() {
           {full ? <Notice tone="warn" style={{ marginBottom: 12 }}>{t("bill.sch.limit", { n: String(data.maxPerClient) })}</Notice> : null}
           {data.data.map((s, i) => (
             <Rise key={s.id} delay={i * 60}>
-              <Card pad={16} style={{ marginBottom: 12, opacity: s.status === "ENDED" ? 0.7 : 1 }}>
+              <TintCard hue={categoryHue(s.biller.category)} mark={categoryIcon(s.biller.category)} pad={16} dim={s.status === "ENDED"} style={{ marginBottom: 12 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
                   <CategoryBadge category={s.biller.category} size={46} />
                   <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
@@ -156,7 +156,7 @@ export default function BillSchedulesScreen() {
                     <Button small full={false} kind="ghost" icon="trash-outline" label={t("bill.sch.delete")} onPress={() => remove(s)} />
                   </View>
                 )}
-              </Card>
+              </TintCard>
             </Rise>
           ))}
           <Notice tone="info" icon="notifications-outline" style={{ marginTop: 4 }}>{t("bill.sch.remindInfo", { days: String(data.remindDaysBefore) })}</Notice>

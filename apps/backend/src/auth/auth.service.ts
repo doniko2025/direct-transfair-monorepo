@@ -245,6 +245,7 @@ import { normalizeLang } from '../i18n/lang';
 
 import { RegisterDto }                      from './dto/register.dto';
 import { LoginDto, VerifyLoginOtpDto }      from './dto/login.dto';
+import { attachReferral } from '../growth/growth.core'; // lot 16 — parrainage
 import { COUNTRY_TO_CURRENCY } from '../common/utils/country-currency-map'; // ✅ table unique
 
 // =========================================================
@@ -980,6 +981,9 @@ export class AuthService {
 
       return created;
     });
+
+    // ✅ lot 16 — parrainage : rattache le parrain et offre l'accueil au filleul (jamais bloquant : un code inconnu est ignoré).
+    if (!merchantInput) await attachReferral(this.prisma, { clientId: client.id, newUserId: user.id, rawCode: dto.referralCode });
 
     await this.audit(user.id, client.id, AuditAction.USER_CREATE, { country: dto.country, currency: primaryCurrency, accountType: merchantInput ? 'MERCHANT' : 'PERSONAL' });
     if (merchantInput) await this.audit(user.id, client.id, AuditAction.MERCHANT_CREATE, { via: 'register', businessName: merchantInput.businessName });

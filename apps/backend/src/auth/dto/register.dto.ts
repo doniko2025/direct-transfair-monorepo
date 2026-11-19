@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -141,4 +142,10 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   orangeMoneyPhone?: string;
+
+  /** Lot 16 — code de parrainage d'un client de la même société (facultatif ; un code inconnu n'empêche pas l'inscription). */
+  @IsString()
+  @IsOptional()
+  @MaxLength(40)
+  referralCode?: string;
 }

@@ -42,7 +42,11 @@ import { Ionicons } from "../../components/ui/Icon";
 import { api } from "../../services/api";
 import { runOnce } from "../../services/idempotency";
 import { useFeeQuote } from "../../hooks/useFeeQuote";
+import { useRateLock } from "../../hooks/useRateLock"; // lot 16 — taux garanti
+import { useMyReferral } from "../../hooks/useMyReferral"; // lot 16 — envois sans frais offerts
+import RateLockBadge from "../../components/send/RateLockBadge";
 import { useAuth } from "../../providers/AuthProvider";
+import { PinPrompt } from "../../components/merchant/merchantUi"; // audit argent I1 — code secret avant un envoi
 import type { Beneficiary, ExchangeRate, Transaction } from "../../services/types";
 import { countriesList, CountryData } from "../../data/countries";
 import { useTenant } from "../../providers/TenantProvider";
@@ -434,6 +438,10 @@ export default function SendMoneyScreen() {
   const [showBalance,      setShowBalance]      = useState(true);
   const [showCountryModal, setShowCountryModal] = useState(false);
   const [showFallback,     setShowFallback]     = useState(false);
+  // audit argent (I1) — code secret demandé avant l'envoi
+  const [showPin,          setShowPin]          = useState(false);
+  const [pin,              setPin]              = useState("");
+  const [pinError,         setPinError]         = useState<string | null>(null);
   const [walletBalance,    setWalletBalance]    = useState(0);
   const [loadingWallet,    setLoadingWallet]    = useState(true);
 
@@ -869,7 +877,11 @@ export default function SendMoneyScreen() {
     enabled:        sendAmount > 0,
   });
   const feesRate    = mode === "WALLET" ? walletFeeRate : cashFeeRate;
-  const feesAmt     = feeQuote.fees !== null ? roundTo(feeQuote.fees, dS) : roundTo(sendAmount * feesRate, dS);
+  // ✅ lot 16 — parrainage : un envoi sans frais offert annule les frais de CET envoi (le serveur applique la même règle et reste juge).
+  const referral    = useMyReferral((user as any)?.id, (user as any)?.role === "USER");
+  const freeLeft    = referral.data?.freeTransfersLeft ?? 0;
+  const feesWaived  = freeLeft > 0 && sendAmount > 0 && (feeQuote.fees === null || feeQuote.fees > 0);
+  const feesAmt     = feesWaived ? 0 : feeQuote.fees !== null ? roundTo(feeQuote.fees, dS) : roundTo(sendAmount * feesRate, dS);
   const totalAmt    = roundTo(sendAmount + feesAmt, dS);
   const insufficient   = totalAmt > roundTo(walletBalance, dS) && sendAmount > 0;
   const missingAmount  = Math.max(0, roundTo(totalAmt - walletBalance, dS));
@@ -879,6 +891,16 @@ export default function SendMoneyScreen() {
   // d'envoyer (avant : l'envoi partait sans destinataire et l'expéditeur était débité pour rien).
   const recipientReady = mode === "WALLET" ? !!detectedBeneficiary : !!selectedCashId;
   const canSend = sendAmount > 0 && !insufficient && recipientReady && !rateMissing;
+
+  // ✅ lot 16 — taux garanti : demandé sur l'écran de confirmation, pour ce montant exactement. Après deux refus du serveur
+  // (garantie incompatible avec cet envoi), on n'insiste plus : l'envoi se fait au taux du moment, comme avant.
+  const [lockStrikes, setLockStrikes] = useState(0);
+  const rateLock = useRateLock({
+    amount: sendAmount, currency: userCurrency, targetCurrency,
+    enabled: step === 4 && canSend && !rateMissing && lockStrikes < 2,
+  });
+  useEffect(() => { setLockStrikes(0); }, [sendAmount, targetCurrency, userCurrency]);
+  const shownReceived = rateLock.lock ? rateLock.lock.receivedAmount : receivedAmt;
 
 
   // ── Choix du destinataire (feuille) ──
@@ -916,11 +938,30 @@ export default function SendMoneyScreen() {
     setWalletInput(""); setPickedId(null); setDetectedBeneficiary(null);
   };
 
-  const handleAction = async () => {
+  // ✅ audit argent (I1) — le bouton ne lance plus l'envoi : il ouvre la saisie du code secret, et c'est la saisie du code
+  // qui déclenche l'envoi (performSend). Les contrôles de saisie restent AVANT, pour ne demander le code que si l'envoi est possible.
+  const handleAction = () => {
     if (insufficient) { setShowFallback(true); return; }
     if (rateMissing) return Alert.alert(t("send.rateUnavailTitle"), t("send.rateUnavailMsg", { from: userCurrency, to: targetCurrency }));
     if (sendAmount <= 0) return Alert.alert(t("send.invalidAmount"), t("send.invalidAmountMsg"));
+    if (mode === "WALLET" && !detectedBeneficiary) {
+      return Alert.alert(
+        t("send.notFound"),
+        walletInputDigits.length >= MIN_FULL_NUMBER ? t("send.noAccountMsg") : t("send.shortNumberMsg"),
+      );
+    }
+    if (mode !== "WALLET" && !selectedCashId) return Alert.alert(t("common.error"), t("send.selectBenef"));
+    setPin("");
+    setPinError(null);
+    setShowPin(true);
+  };
+
+  const performSend = async (confirmedPin: string) => {
+    if (sending || confirmedPin.length !== 6) return;
     setSending(true);
+    setPinError(null);
+    // ✅ lot 16 — garantie jointe seulement si elle est encore valable à cet instant (sinon : taux du moment, comme avant).
+    const lockIdToSend = rateLock.isLive() ? rateLock.lock?.id : undefined;
     try {
       if (mode === "WALLET") {
         // ✅ v2.14 — FIX 1/2 : chiffres uniquement, même condition que canSend ci-dessus.
@@ -938,8 +979,10 @@ export default function SendMoneyScreen() {
           payoutMethod:    "MOBILE_MONEY" as const,
           note:            motif ?? undefined,
         };
+        // Le taux garanti n'entre PAS dans la signature d'idempotence : un renouvellement de garantie pendant une coupure
+        // réseau ne doit jamais produire une seconde clé (donc un second envoi).
         const tx: any = await runOnce(JSON.stringify(walletPayload), (idempotencyKey) =>
-          api.createTransaction({ ...walletPayload, idempotencyKey }));
+          api.createTransaction({ ...walletPayload, idempotencyKey, pin: confirmedPin, ...(lockIdToSend ? { rateLockId: lockIdToSend } : {}) }));
         // ✅ "id" confirmé comme champ de référence (utilisé par cancelTransaction/getTransaction dans api.ts)
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
         // ✅ v2.13 — FIX : si le backend n'a pas pu créditer immédiatement un wallet (aucun recipientId résolu —
@@ -979,7 +1022,7 @@ export default function SendMoneyScreen() {
           note:          motif ?? undefined,
         };
         const tx: any = await runOnce(JSON.stringify(cashPayload), (idempotencyKey) =>
-          api.createTransaction({ ...cashPayload, idempotencyKey }));
+          api.createTransaction({ ...cashPayload, idempotencyKey, pin: confirmedPin, ...(lockIdToSend ? { rateLockId: lockIdToSend } : {}) }));
         const reference = tx?.reference ?? tx?.id ?? `TX-${Date.now()}`;
         // ✅ Confirmé via transactions.service.ts : storedRef (providerRef)
         // == transactionRef (reference) tant que senderFirstName n'est pas
@@ -1004,12 +1047,25 @@ export default function SendMoneyScreen() {
           date: new Date(),
         });
       }
+      setShowPin(false);
+      setPin("");
       void fetchWalletBalance();
       go(5);
     } catch (e: any) {
+      // Code secret faux ou bloqué : on reste sur la saisie du code, avec le message (essais restants / durée du blocage).
+      const apiCode = e.response?.data?.code;
+      if (apiCode === "PIN_INVALID" || apiCode === "PIN_LOCKED" || apiCode === "PIN_REQUIRED") {
+        setPin("");
+        setPinError(String(e.response?.data?.message ?? t("send.genericError")));
+        return;
+      }
+      setShowPin(false);
+      setPin("");
       // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
       if (handleKycRequired(e, router)) return;
       const msg = e.response?.data?.message || t("send.genericError");
+      // ✅ lot 16 — refus avec garantie jointe : on en demande une nouvelle (montant reçu réaffiché) ; après deux refus on n'insiste plus.
+      if (lockIdToSend && e.response?.status === 400) { setLockStrikes((n) => n + 1); rateLock.renewNow(); }
       Alert.alert(t("common.error"), Array.isArray(msg) ? msg[0] : msg);
     } finally { setSending(false); }
   };
@@ -1537,12 +1593,29 @@ export default function SendMoneyScreen() {
                 <Divider />
                 <Line label={t("send.transferFees")} value={feesAmt === 0 ? t("send.offered") : `${fmt(feesAmt, userCurrency)} ${userCurrency}`} tone={feesAmt === 0 ? "pos" : undefined} />
                 <Divider />
-                <Line label={t("send.receivesLabel", { name: beneficiaryLabel })} value={`${fmt(receivedAmt, targetCurrency)} ${targetCurrency}`} tone="info" />
+                <Line label={t("send.receivesLabel", { name: beneficiaryLabel })} value={`${fmt(shownReceived, targetCurrency)} ${targetCurrency}`} tone="info" />
                 {!!motif && (<><Divider /><Line label={t("send.motif")} value={`${selectedMotif?.icon ?? ""} ${motifLabel(motif)}`.trim()} /></>)}
                 <Divider />
                 <Line label={t("send.totalToPay")} value={`${fmt(totalAmt, userCurrency)} ${userCurrency}`} tone={insufficient ? "danger" : undefined} strong />
               </Card>
             </Reveal>
+            {rateLock.lock && (
+              <Reveal delay={140}>
+                <View style={{ marginTop: 12 }}>
+                  <RateLockBadge expiresAtMs={rateLock.expiresAtMs} totalSeconds={Math.max(60, rateLock.lock.secondsLeft)} />
+                </View>
+              </Reveal>
+            )}
+            {rateLock.updated && (
+              <Notice tone="info" icon="refresh-outline" style={{ marginTop: 12 }} action={t("common.close")} onAction={rateLock.dismissUpdate}>
+                {t("grw.rate.updated", { name: beneficiaryLabel, amount: `${fmt(rateLock.updated.to, targetCurrency)} ${targetCurrency}` })}
+              </Notice>
+            )}
+            {feesWaived && (
+              <Notice tone="pos" icon="gift-outline" style={{ marginTop: 12 }}>
+                {`${t("grw.free.notice")} ${t("grw.free.left", { count: freeLeft })}`}
+              </Notice>
+            )}
             {insufficient && (
               <Notice tone="warn" icon="wallet-outline" style={{ marginTop: 12 }}>
                 {t("send.missing", { amount: `${fmt(missingAmount, userCurrency)} ${userCurrency}` })}
@@ -1587,6 +1660,29 @@ export default function SendMoneyScreen() {
           setPickedId(null);
         }}
       />
+
+      <Sheet visible={showPin} onClose={() => { if (!sending) { setShowPin(false); setPin(""); setPinError(null); } }} title={t("send.pinTitle")}>
+        <UText v="body" tone="muted" style={{ marginBottom: 14 }}>
+          {t("send.pinHint", { amount: `${fmt(sendAmount, userCurrency)} ${userCurrency}` })}
+        </UText>
+        <PinPrompt
+          value={pin}
+          onChange={(v) => { setPin(v); setPinError(null); }}
+          onComplete={(v) => { void performSend(v); }}
+          error={pinError}
+          label={t("pinx.label")}
+          autoFocus
+        />
+        <View style={{ height: 14 }} />
+        <Button
+          label={t("send.pinConfirm")}
+          icon="lock-closed-outline"
+          onPress={() => { void performSend(pin); }}
+          loading={sending}
+          disabled={sending || pin.length !== 6}
+        />
+        <View style={{ height: 10 }} />
+      </Sheet>
 
       <FallbackSheet
         visible={showFallback} missing={missingAmount} currency={userCurrency}

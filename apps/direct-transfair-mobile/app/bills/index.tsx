@@ -11,11 +11,9 @@ import { useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { BillOptions, BillPaymentView, BillScheduleView, SavedBillView } from "../../services/billTypes";
 import { useLoader } from "../../components/wallet/useLoader";
-import { BillPaymentRow, CategoryTile, SavedBillCard } from "../../components/bills/billsUi";
-import { EmptyView, ErrorView, NavBar, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, UText, Card, useUI } from "../../components/ui";
-import { Ionicons } from "../../components/ui/Icon";
+import { BillPaymentRow, BillsHero, CategoryTile, EmptyPayments, SavedBillCard, ScheduleEntryCard } from "../../components/bills/billsUi";
+import { EmptyView, ErrorView, NavBar, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, UText } from "../../components/ui";
 import { fmtDate } from "../../i18n/runtime";
-import { Rise } from "../../components/merchant/merchantUi";
 import { useT } from "../../providers/I18nProvider";
 
 interface HomeData {
@@ -29,7 +27,6 @@ interface HomeData {
 export default function BillsHomeScreen() {
   const t = useT();
   const router = useRouter();
-  const { C } = useUI();
 
   const { data, status, error, refreshing, slow, reload, refresh } = useLoader<HomeData>(async () => {
     const options = await api.getBillOptions();
@@ -67,23 +64,27 @@ export default function BillsHomeScreen() {
         <EmptyView icon="receipt-outline" title={t("bill.disabledTitle")} message={t("bill.disabledMsg")} />
       ) : (
         <>
-          <Rise>
-            <UText v="subheading" style={{ marginTop: 6, marginBottom: 12 }}>{t("bill.categories")}</UText>
-          </Rise>
+          <BillsHero />
+          <SectionHeader title={t("bill.chooseCat")} />
           {data.options.categories.length === 0 ? (
             <EmptyView icon="receipt-outline" title={t("bill.noBillers")} />
           ) : (
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-              {data.options.categories.map((c, i) => (
-                <View key={c.category} style={{ width: "31.5%", flexGrow: 1, minWidth: 96 }}>
-                  <CategoryTile
-                    category={c.category}
-                    count={c.count}
-                    delay={i * 45}
-                    onPress={() => router.push({ pathname: "/bills/billers", params: { category: c.category } } as any)}
-                  />
-                </View>
-              ))}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+              {data.options.categories.map((c, i, all) => {
+                // Une seule catégorie, ou dernière tuile d'une rangée impaire : pleine largeur (pas de trou dans la grille).
+                const wide = all.length === 1 || (i === all.length - 1 && all.length % 2 === 1);
+                return (
+                  <View key={c.category} style={{ width: wide ? "100%" : "47.5%", flexGrow: 1 }}>
+                    <CategoryTile
+                      category={c.category}
+                      count={c.count}
+                      wide={wide}
+                      delay={i * 50}
+                      onPress={() => router.push({ pathname: "/bills/billers", params: { category: c.category } } as any)}
+                    />
+                  </View>
+                );
+              })}
             </View>
           )}
 
@@ -91,20 +92,12 @@ export default function BillsHomeScreen() {
             const active = data.schedules.filter((s) => s.status === "ACTIVE");
             const next = [...active].sort((a, b) => a.nextRunAt.localeCompare(b.nextRunAt))[0];
             return (
-              <Rise delay={120}>
-                <Card tone="accent" pad={16} onPress={() => router.push("/bills/schedules" as any)} style={{ marginTop: 18, flexDirection: "row", alignItems: "center", gap: 14 }}>
-                  <View style={{ width: 46, height: 46, borderRadius: 19, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
-                    <Ionicons name={"calendar-outline" as any} size={22} color={C.accentDeep} />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                    <UText v="bodyStrong">{t("bill.sch.entry")}</UText>
-                    <UText v="caption" tone="muted" numberOfLines={2}>
-                      {next ? t("bill.sch.entryCount", { n: String(active.length), date: fmtDate(next.nextRunAt) }) : t("bill.sch.entrySub")}
-                    </UText>
-                  </View>
-                  <Ionicons name={"chevron-forward" as any} size={18} color={C.faint} />
-                </Card>
-              </Rise>
+              <ScheduleEntryCard
+                delay={120}
+                title={t("bill.sch.entry")}
+                subtitle={next ? t("bill.sch.entryCount", { n: String(active.length), date: fmtDate(next.nextRunAt) }) : t("bill.sch.entrySub")}
+                onPress={() => router.push("/bills/schedules" as any)}
+              />
             );
           })()}
 
@@ -122,7 +115,7 @@ export default function BillsHomeScreen() {
 
           <SectionHeader title={t("bill.recent")} action={data.recent.length ? t("bill.seeAll") : undefined} onAction={() => router.push("/bills/history" as any)} />
           {data.recent.length === 0 ? (
-            <UText v="body" tone="muted">{t("bill.none")}</UText>
+            <EmptyPayments />
           ) : (
             data.recent.map((p, i) => (
               <BillPaymentRow key={p.id} p={p} delay={i * 60} onPress={() => router.push({ pathname: "/bills/payment", params: { id: p.id } } as any)} />

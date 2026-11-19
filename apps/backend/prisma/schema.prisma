@@ -326,6 +326,14 @@ enum AuditAction {
   BILL_PAYMENT_PROCESS         // lot 14 — facture réglée au facturier, ou refusée et remboursée, par la société
   BILL_SCHEDULE                // lot 14b — facture récurrente programmée, modifiée, mise en pause ou supprimée par le client
   BILL_RECONCILE               // lot 14b — rapprochement du fichier d'un facturier lancé par la société
+  CASH_CLOSING    // lot 15 — clôture de caisse
+  LIQUIDITY_RULE  // lot 15 — seuil de liquidité créé / modifié / supprimé
+  AGENT_TARGET    // lot 15 — objectif mensuel d'un agent
+  REFERRAL_CONFIG // lot 16 — réglage du parrainage
+  WATCHLIST_CHANGE    // lot 17 — liste de surveillance modifiée
+  COMPLIANCE_CASE     // lot 17 — dossier de conformité traité
+  COMPLIANCE_SETTINGS // lot 17 — réglages de conformité
+  WEBHOOK_CHANGE      // lot 17 — webhook créé, modifié, rejoué ou supprimé
 }
 
 enum AlertType {
@@ -339,6 +347,11 @@ enum AlertType {
   RATE_ALERT_TRIGGERED
   SCHEDULED_TRANSFER_FAILED
   DEVICE_NEW_LOGIN
+  CASH_VARIANCE // lot 15 — écart constaté à la clôture de caisse d'une agence
+  SANCTION_MATCH // lot 17 — correspondance avec une liste de surveillance
+  AML_RULE       // lot 17 — règle anti-blanchiment déclenchée
+  WEBHOOK_FAILING // lot 17 — webhook en échec répété, désactivé
+  RECONCILIATION_GAP // audit argent — soldes et journal des portefeuilles ne concordent plus
 }
 
 enum AlertSeverity {
@@ -1332,6 +1345,14 @@ model ComplianceCase {
   resolvedAt DateTime?
   resolution String?
 
+  /// Lot 17 — origine du dossier : SANCTION_MATCH | AML_RULE | MANUAL.
+  kind       String               @default("MANUAL")
+  severity   AlertSeverity        @default(MEDIUM)
+  /// Détail explicable (correspondances, règles déclenchées, montants).
+  details    Json?
+  /// Anti-doublon : un même motif sur la même opération ne crée qu'un dossier.
+  dedupeKey  String?              @unique
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1820,6 +1841,14 @@ model WebhookEndpoint {
   maxRetries   Int @default(3)
   retryDelayMs Int @default(5000)
 
+  /// Lot 17
+  description         String?
+  consecutiveFailures Int       @default(0)
+  disabledAt          DateTime?
+  disabledReason      String?
+  /// Curseur de l'envoi des événements « transaction.* » (dernier updatedAt de transaction traité).
+  scanCursor          DateTime?
+
   deliveries WebhookDelivery[]
 
   createdAt DateTime @default(now())
@@ -1843,9 +1872,17 @@ model WebhookDelivery {
   nextRetryAt DateTime?
   lastAttemptAt DateTime?
 
+  /// Lot 17 — clé d'unicité d'un événement pour un point de réception (jamais deux fois le même changement d'état).
+  eventKey   String?
+  durationMs Int?
+  /// Rejeu manuel : identifiant de l'envoi d'origine.
+  replayOf   String?
+
   createdAt DateTime @default(now())
 
+  @@unique([endpointId, eventKey])
   @@index([endpointId, status])
+  @@index([status, nextRetryAt])
   @@map("webhook_deliveries")
 }
 
@@ -3032,4 +3069,358 @@ model BillSchedule {
   @@index([userId, status])
   @@index([billerId])
   @@map("bill_schedules")
+}
+
+
+// =========================================================
+// LOT 15 — PILOTAGE (clôture de caisse, liquidité, objectifs des agents)
+// Pas de relations Prisma : les identifiants sont filtrés par société (clientId) côté service.
+// =========================================================
+
+/// Clôture de caisse d'une agence pour un jour et une devise : espèces comptées par l'agent contre solde théorique de la caisse.
+model CashClosing {
+  id          String       @id @default(cuid())
+  clientId    Int
+  agencyId    String
+  agentId     String
+  /// Jour local « AAAA-MM-JJ » (fuseau de l'appareil au moment de la clôture).
+  day         String
+  tzOffsetMin Int          @default(0)
+  currency    CurrencyCode
+
+  /// Solde théorique de la caisse (wallet de l'agence) au moment de la clôture.
+  expectedAmount Decimal @db.Decimal(18, 4)
+  /// Espèces réellement comptées par l'agent.
+  countedAmount  Decimal @db.Decimal(18, 4)
+  /// counted − expected (négatif = manque, positif = excédent).
+  variance       Decimal @db.Decimal(18, 4)
+  opsCount       Int     @default(0)
+  note           String?
+  details        Json?
+
+  /// Écart examiné par l'administrateur : plus modifiable par l'agent.
+  reviewedAt   DateTime?
+  reviewedById String?
+  reviewNote   String?
+
+  closedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([agencyId, day, currency])
+  @@index([clientId, day])
+  @@index([clientId, reviewedAt])
+  @@map("cash_closings")
+}
+
+/// Seuil minimal de liquidité : alerte quand la caisse d'une agence passe sous `minBalance` (agencyId nul = toutes les agences de la société).
+model LiquidityRule {
+  id          String       @id @default(cuid())
+  clientId    Int
+  agencyId    String?
+  currency    CurrencyCode
+  minBalance  Decimal      @db.Decimal(18, 4)
+  isActive    Boolean      @default(true)
+  /// Dernière alerte émise (anti-répétition : une alerte ouverte par agence et devise).
+  lastAlertAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([clientId, isActive])
+  @@map("liquidity_rules")
+}
+
+/// Objectif mensuel d'un agent : volume (dans la devise indiquée) et nombre d'opérations.
+model AgentTarget {
+  id               String       @id @default(cuid())
+  clientId         Int
+  agentId          String
+  /// Mois « AAAA-MM ».
+  month            String
+  currency         CurrencyCode
+  targetAmount     Decimal      @default(0) @db.Decimal(18, 4)
+  targetOperations Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  @@unique([agentId, month])
+  @@index([clientId, month])
+  @@map("agent_targets")
+}
+
+
+// =========================================================
+// LOT 16 — CROISSANCE (garantie de taux, demandes d'argent, parrainage)
+// Pas de relations Prisma : les identifiants sont filtrés par société (clientId) côté service.
+// =========================================================
+
+enum MoneyRequestStatus {
+  PENDING
+  PAID
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+enum ReferralRewardStatus {
+  AVAILABLE
+  USED
+  EXPIRED
+}
+
+/// Taux garanti quelques minutes : le client voit « 1 000 EUR = X GNF » et ce montant lui est tenu à la validation de l'envoi.
+model RateLock {
+  id             String       @id @default(cuid())
+  clientId       Int
+  userId         String
+  currency       CurrencyCode
+  targetCurrency CurrencyCode
+  amount         Decimal      @db.Decimal(18, 4)
+  /// Taux brut (montant converti / montant envoyé), comme Transaction.exchangeRate.
+  rate           Float
+  receivedAmount Decimal      @db.Decimal(18, 4)
+  expiresAt      DateTime
+  consumedAt     DateTime?
+  transactionId  String?
+  createdAt      DateTime     @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([clientId, createdAt])
+  @@map("rate_locks")
+}
+
+/// Demande d'argent : « payez-moi X ». Le payeur règle avec un envoi wallet normal, puis la demande est rapprochée de cet envoi.
+model MoneyRequest {
+  id                String             @id @default(cuid())
+  clientId          Int
+  requesterId       String
+  payerId           String
+  amount            Decimal            @db.Decimal(18, 4)
+  currency          CurrencyCode
+  note              String?
+  status            MoneyRequestStatus @default(PENDING)
+  expiresAt         DateTime
+  respondedAt       DateTime?
+  paidTransactionId String?            @unique
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([payerId, status])
+  @@index([requesterId, status])
+  @@index([clientId, createdAt])
+  @@map("money_requests")
+}
+
+/// Réglage du parrainage par société (désactivé tant que l'administrateur ne l'a pas activé).
+model ReferralConfig {
+  id                    String   @id @default(cuid())
+  clientId              Int      @unique
+  isActive              Boolean  @default(false)
+  /// Envois sans frais offerts au filleul à son inscription.
+  refereeWaivers        Int      @default(1)
+  /// Envois sans frais offerts au parrain quand son filleul fait son premier envoi.
+  referrerWaivers       Int      @default(1)
+  /// Montant minimal (dans la devise du filleul) du premier envoi pour récompenser le parrain.
+  minFirstTransfer      Decimal  @default(0) @db.Decimal(18, 4)
+  rewardValidityDays    Int      @default(30)
+  /// Plafond de récompenses « parrain » par mois et par parrain (anti-abus).
+  maxRewardsPerMonth    Int      @default(10)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("referral_configs")
+}
+
+/// Un envoi sans frais gagné grâce au parrainage. Consommé à la création d'un envoi (atomiquement avec lui).
+model ReferralReward {
+  id            String               @id @default(cuid())
+  clientId      Int
+  userId        String
+  /// REFEREE_WELCOME (filleul) ou REFERRER_BONUS (parrain).
+  kind          String
+  /// L'autre partie : le parrain pour un filleul, le filleul pour un parrain.
+  sourceUserId  String
+  status        ReferralRewardStatus @default(AVAILABLE)
+  /// Envois sans frais encore utilisables (1 par défaut ; la société peut en offrir plusieurs).
+  remaining     Int                  @default(1)
+  expiresAt     DateTime
+  /// Dernière utilisation (et dernier envoi concerné).
+  usedAt        DateTime?
+  transactionId String?
+  createdAt     DateTime             @default(now())
+
+  @@unique([userId, kind, sourceUserId])
+  @@index([userId, status])
+  @@index([clientId, createdAt])
+  @@map("referral_rewards")
+}
+
+
+// =========================================================
+// LOT 17 — CONFORMITÉ : listes de surveillance et réglages AML par société
+// =========================================================
+
+enum WatchlistKind {
+  SANCTION // personne ou entité sous sanction
+  PEP      // personne politiquement exposée
+  INTERNAL // liste interne de la société (fraudeurs connus, refus…)
+}
+
+model WatchlistEntry {
+  id        String        @id @default(cuid())
+  clientId  Int
+  kind      WatchlistKind @default(SANCTION)
+  fullName  String
+  aliases   String[]
+  country   String?
+  birthYear Int?
+  /// Identifiant dans la liste d'origine (ex. numéro de fiche), pour la traçabilité.
+  reference String?
+  notes     String?
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([clientId, isActive])
+  @@map("watchlist_entries")
+}
+
+model ComplianceSettings {
+  id                  String   @id @default(cuid())
+  clientId            Int      @unique
+  sanctionsEnabled    Boolean  @default(true)
+  /// Similarité minimale (en %) pour ouvrir un dossier.
+  matchThreshold      Int      @default(88)
+  /// Similarité (en %) à partir de laquelle l'envoi en attente est bloqué si holdOnStrongMatch.
+  strongMatchThreshold Int     @default(96)
+  holdOnStrongMatch   Boolean  @default(false)
+  /// Seuil de contrôle AML en XOF (vide = valeur de la plateforme) et score de signalement.
+  amlThresholdXof     Float?
+  amlFlagScore        Int?
+  /// Pays (ISO-2) à risque : un envoi vers l'un d'eux ajoute des points au score.
+  highRiskCountries   String[]
+  /// Nombre d'envois « juste sous le seuil » en 24 h qui évoque un fractionnement.
+  structuringCount    Int      @default(3)
+  /// Nombre d'expéditeurs différents vers un même bénéficiaire en 24 h qui évoque un regroupement de fonds.
+  fanInSenders        Int      @default(3)
+  /// Lot 17b — listes officielles suivies par la société : UN, OFAC, EU.
+  officialLists       String[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("compliance_settings")
+}
+
+// =========================================================
+// LOT 17b — LISTES OFFICIELLES (ONU, OFAC, UE) : base PARTAGÉE, mise à jour automatique
+// Une seule copie pour toute la plateforme ; chaque société choisit celles qu'elle suit (ComplianceSettings.officialLists).
+// =========================================================
+
+model OfficialListEntry {
+  id         String   @id @default(cuid())
+  provider   String   // UN | OFAC | EU
+  externalId String   // identifiant dans la liste d'origine
+  fullName   String
+  aliases    String[]
+  country    String?
+  birthYear  Int?
+  reference  String?
+  programs   String[]
+  /// false = retirée de la liste officielle (conservée pour l'historique, plus utilisée).
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([provider, externalId])
+  @@index([provider, isActive])
+  @@map("official_list_entries")
+}
+
+model OfficialListSync {
+  provider      String    @id
+  sourceUrl     String?
+  lastRunAt     DateTime?
+  lastSuccessAt DateTime?
+  /// NEVER | OK | UNCHANGED | ERROR
+  status        String    @default("NEVER")
+  error         String?
+  entryCount    Int       @default(0)
+  added         Int       @default(0)
+  updated       Int       @default(0)
+  removed       Int       @default(0)
+  contentHash   String?
+  updatedAt     DateTime  @updatedAt
+
+  @@map("official_list_syncs")
+}
+
+
+// =========================================================
+// RÉCONCILIATION QUOTIDIENNE (audit argent I3)
+// Un instantané par jour, par société (clientId 0 = plateforme) et par devise : somme des soldes, somme du journal, écarts,
+// soldes négatifs, réservé incohérent, argent en route. Voir src/reconciliation.
+// =========================================================
+model ReconciliationReport {
+  id String @id @default(cuid())
+
+  /// Jour du contrôle (UTC, à minuit). Un seul rapport par jour, société et devise : relancer le contrôle le met à jour.
+  runDate  DateTime @db.Date
+  /// 0 = portefeuilles rattachés à aucune société.
+  clientId Int      @default(0)
+  currency String
+
+  walletsCount    Int
+  walletsBalance  Decimal @db.Decimal(20, 4)
+  ledgerNet       Decimal @db.Decimal(20, 4)
+  drift           Decimal @db.Decimal(20, 4)
+  driftWallets    Int     @default(0)
+  negativeWallets Int     @default(0)
+  reservedIssues  Int     @default(0)
+  inTransitCount  Int     @default(0)
+  inTransitAmount Decimal @default(0) @db.Decimal(20, 4)
+
+  /// OK | ALERT
+  status   String @default("OK")
+  /// Portefeuilles en cause (au plus 20 par ligne).
+  problems Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([runDate, clientId, currency])
+  @@index([clientId, runDate])
+  @@index([status, runDate])
+  @@map("reconciliation_reports")
+}
+
+
+// =========================================================
+// DOUBLE VALIDATION DES RETRAITS DE TRÉSORERIE (audit argent I4)
+// Un administrateur de société demande un retrait ; un AUTRE administrateur de la même société (ou le super admin) l'approuve.
+// L'argent ne bouge qu'à l'approbation. Voir src/treasury/treasury-withdrawals.service.ts.
+// =========================================================
+model TreasuryWithdrawalRequest {
+  id String @id @default(cuid())
+
+  clientId Int
+  currency String
+  amount   Decimal @db.Decimal(18, 4)
+  reason   String?
+
+  /// PENDING | APPROVED | REJECTED | CANCELLED | EXPIRED
+  status String @default("PENDING")
+
+  requestedBy String
+  requestedAt DateTime @default(now())
+  /// Au-delà, la demande ne peut plus être approuvée (elle passe EXPIRED).
+  expiresAt   DateTime
+
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
+  /// Dernier échec d'exécution à l'approbation (ex. solde insuffisant) : la demande reste PENDING.
+  failureReason String?
+
+  @@index([clientId, status])
+  @@index([status, expiresAt])
+  @@map("treasury_withdrawal_requests")
 }

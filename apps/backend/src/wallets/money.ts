@@ -32,3 +32,29 @@ export function toMoney(amount: number | string | Prisma.Decimal): Prisma.Decima
   if (rounded.lte(0)) throw new BadRequestException('Montant invalide');
   return rounded;
 }
+
+/** Devises sans centimes (XOF, GNF) : un montant doit être un entier ; les autres : 2 décimales au plus. */
+const ZERO_DECIMAL = ['XOF', 'GNF'];
+
+/**
+ * Refuse un montant qu'on ne peut pas remettre tel quel dans sa devise (ex. 1000,5 XOF, ou 10,005 EUR).
+ * Avant : le montant était accepté puis arrondi PLUS TARD à la devise de réception, et la fraction (jusqu'à 0,5 XOF par envoi)
+ * n'apparaissait plus dans aucun portefeuille : un écart de comptabilité impossible à rapprocher.
+ */
+export function assertAmountFitsCurrency(amount: number | string | Prisma.Decimal, currency: string): void {
+  let value: Prisma.Decimal;
+  try {
+    value = new Prisma.Decimal(amount as any);
+  } catch {
+    throw new BadRequestException('Montant invalide');
+  }
+  if (!value.isFinite()) throw new BadRequestException('Montant invalide');
+  const digits = ZERO_DECIMAL.includes(String(currency).toUpperCase()) ? 0 : 2;
+  if (!value.toDecimalPlaces(digits, Prisma.Decimal.ROUND_HALF_UP).equals(value)) {
+    throw new BadRequestException(
+      digits === 0
+        ? `Le montant en ${String(currency).toUpperCase()} doit être un nombre entier (pas de centimes).`
+        : `Le montant en ${String(currency).toUpperCase()} ne peut pas avoir plus de 2 décimales.`,
+    );
+  }
+}

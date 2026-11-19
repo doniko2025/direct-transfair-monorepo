@@ -174,7 +174,7 @@ export class SupportDeskService {
     if (row.isSuspended) throw new ConflictException('Ce compte est déjà suspendu.');
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { isSuspended: true, suspendedAt: new Date(), suspendedReason: why.slice(0, 300) } }),
-      this.prisma.userSession.deleteMany({ where: { userId: id } }),
+      this.prisma.userSession.updateMany({ where: { userId: id, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }),
     ]);
     await this.audit(user, row.clientId, 'USER_SUSPEND', id, { reason: why.slice(0, 300), by: user.role });
     await this.notifier.notifyUser(row, {

@@ -20,6 +20,10 @@
 @import './support.css';
 @import './merchants.css';
 @import './bills.css';
+@import './pilotage.css';
+@import './reconciliation.css';
+@import './growth.css';
+@import './compliance.css';
 @import './kyc.css';
 @import './fee-schedule.css';
 @import './commissions.css';

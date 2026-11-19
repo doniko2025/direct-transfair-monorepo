@@ -40,7 +40,8 @@ export const isZeroDecimal = (currency: string): boolean => ZERO_DECIMAL_CURRENC
 export function roundForCurrency(value: number, currency: string): number {
   const digits = isZeroDecimal(currency) ? 0 : 2;
   const factor = 10 ** digits;
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  // audit argent (M1) : 15 chiffres significatifs pour effacer le bruit binaire (10.075 → 10.08), puis demi vers le haut.
+  return Math.round(Number((value * factor).toPrecision(15))) / factor;
 }
 
 /** Commission et net du marchand. La commission n'est jamais supérieure au montant ni négative. */

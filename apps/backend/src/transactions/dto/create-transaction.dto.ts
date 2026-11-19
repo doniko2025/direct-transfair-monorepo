@@ -62,6 +62,12 @@ export class CreateTransactionDto {
   @IsString()
   senderLastName?: string;
 
+  /** Lot 16 — identifiant d'un taux garanti obtenu par POST /rate-locks (valable quelques minutes pour ce montant et ces devises). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  rateLockId?: string;
+
   @IsOptional()
   @IsString()
   senderPhone?: string;
@@ -110,6 +116,16 @@ export class CreateTransactionDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  /**
+   * ✅ audit argent (I1) — code secret à 6 chiffres du client, exigé AVANT tout envoi (contrôlé par le contrôleur, jamais
+   * enregistré). Les comptes web (agent, admin) n'ont pas de code à 6 chiffres : ils en sont dispensés.
+   * Déclaré ici pour que le ValidationPipe (whitelist) ne le supprime pas.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(12)
+  pin?: string;
 
   // ✅ v1.2 (audit point 3) — clé d'idempotence en alternative à l'en-tête Idempotency-Key (l'en-tête est prioritaire).
   // Utile aux clients dont la couche réseau ne permet pas d'ajouter un en-tête par appel. Même format que l'en-tête.

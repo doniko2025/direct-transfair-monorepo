@@ -22,6 +22,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateScheduledTransferDto } from './dto/create-scheduled-transfer.dto';
 import { Role } from '@prisma/client';
+import { PinVerifierService } from '../merchants/pin-verifier.service';
+import { assertSendPin } from '../transactions/send-pin';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 
 @ApiTags('Scheduled Transfers')
@@ -30,15 +32,21 @@ import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 @Roles(Role.USER)
 @Controller('scheduled-transfers')
 export class ScheduledTransfersController {
-  constructor(private readonly service: ScheduledTransfersService) {}
+  constructor(
+    private readonly service: ScheduledTransfersService,
+    private readonly pins: PinVerifierService, // audit argent I1
+  ) {}
 
   @Post()
-  create(
+  async create(
     @Req() req: Request & { user?: AuthUserPayload },
     @Body() body: CreateScheduledTransferDto,
   ) {
     if (!req.user) throw new ForbiddenException('Non authentifié');
-    return this.service.create(req.user.id, body);
+    // Audit argent (I1) : programmer un envoi l'autorise à l'avance (les exécutions ne redemandent pas le code) → on le demande ici.
+    await assertSendPin(this.pins, req.user, body.pin);
+    const { pin: _pin, ...data } = body;
+    return this.service.create(req.user.id, data as CreateScheduledTransferDto);
   }
 
   @Get()

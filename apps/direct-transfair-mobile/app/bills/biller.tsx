@@ -13,7 +13,7 @@ import { Pressable, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { api } from "../../services/api";
 import type { BillerView, BillLookupResult, BillQuote } from "../../services/billTypes";
-import { CategoryBadge, billCategoryLabel } from "../../components/bills/billsUi";
+import { CategoryBadge, TintCard, billCategoryLabel, categoryHue, categoryIcon } from "../../components/bills/billsUi";
 import { AmountInput, Button, Card, Chip, Divider, ErrorView, Field, NavBar, Notice, Screen, SkeletonRows, Toggle, UText } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
 import { isKycRequired, kycRequiredMessage, KYC_SCREEN } from "../../utils/kycGate";
@@ -212,13 +212,15 @@ export default function PayBillScreen() {
         <SkeletonRows rows={3} />
       ) : step === "form" ? (
         <Rise>
-          <Card pad={18} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <CategoryBadge category={biller.category} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <UText v="heading" numberOfLines={2}>{biller.name}</UText>
-              <UText v="caption" tone="muted">{billCategoryLabel(biller.category)}</UText>
+          <TintCard hue={categoryHue(biller.category)} mark={categoryIcon(biller.category)} pad={18}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <CategoryBadge category={biller.category} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <UText v="heading" numberOfLines={2}>{biller.name}</UText>
+                <UText v="caption" tone="muted">{billCategoryLabel(biller.category)}</UText>
+              </View>
             </View>
-          </Card>
+          </TintCard>
           {biller.simulated ? <Notice tone="warn" style={{ marginTop: 12 }}>{t("bill.simulated")}</Notice> : null}
 
           <View style={{ height: 16 }} />
@@ -300,12 +302,14 @@ export default function PayBillScreen() {
         </Rise>
       ) : quote ? (
         <Rise>
-          <Card pad={22} style={{ alignItems: "center", gap: 6 }}>
-            <CategoryBadge category={biller.category} size={56} />
-            <UText v="heading" align="center" numberOfLines={2}>{biller.name}</UText>
-            <UText v="hero" align="center" style={{ marginTop: 6 }}>{money(quote.totalCharged, quote.walletCurrency)}</UText>
-            <UText v="caption" tone="muted" align="center">{t("bill.lTotal")}</UText>
-          </Card>
+          <TintCard hue={categoryHue(biller.category)} mark={categoryIcon(biller.category)} pad={22}>
+            <View style={{ alignItems: "center", gap: 6 }}>
+              <CategoryBadge category={biller.category} size={60} />
+              <UText v="heading" align="center" numberOfLines={2}>{biller.name}</UText>
+              <UText v="hero" align="center" style={{ marginTop: 6 }}>{money(quote.totalCharged, quote.walletCurrency)}</UText>
+              <UText v="caption" tone="muted" align="center">{t("bill.lTotal")}</UText>
+            </View>
+          </TintCard>
 
           <Card pad={18} style={{ marginTop: 14 }}>
             <Line label={t("bill.lBill")} value={reference.trim()} />

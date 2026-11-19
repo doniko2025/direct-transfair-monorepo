@@ -30,7 +30,10 @@ export function parseAmount(text: string): number {
 /** Arrondi à `d` décimales (au plus proche, comme le serveur). */
 export function roundTo(value: number, d: number): number {
   const f = 10 ** d;
-  return Math.round((value + Number.EPSILON) * f) / f;
+  // audit argent (M1) : même méthode que le serveur — 15 chiffres significatifs pour effacer le bruit binaire (10,075 → 10,08).
+  const scaled = Number((Math.abs(value) * f).toPrecision(15));
+  const r = Math.round(scaled) / f;
+  return value < 0 ? -r : r;
 }
 
 /** Arrondi à `d` décimales vers le HAUT (tolérance d'1e-9 : 7,6 reste 7,6 malgré les erreurs de virgule flottante). */

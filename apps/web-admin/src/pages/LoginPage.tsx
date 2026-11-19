@@ -1,4 +1,5 @@
 // apps/web-admin/src/pages/LoginPage.tsx
+// ✅ v4 : design plus sobre et professionnel (panneau marque à points, atouts détaillés, formulaire plat aux champs plus grands, bouton gradient) + carte « Installer l'application » dès la connexion.
 // ✅ v3 : REFONTE moderne et responsive. Ordinateur : panneau marque en dégradé (couleurs du super admin) avec logo, pitch et trois atouts, carte de
 //    connexion flottante à droite. Mobile / tablette : bandeau en dégradé avec le logo, puis une FEUILLE arrondie qui porte le formulaire (tient sur un écran,
 //    clavier compris). Logo à ratio automatique (jamais déformé ni dans une tuile d'une autre forme), apparition en cascade, « Réduire les animations » respecté.
@@ -15,9 +16,9 @@ import { Navigate, useLocation } from 'react-router-dom';
 import type { VerificationNeeded, VerifyContactResult } from '@direct-transfair/shared';
 import { BrandMark } from '../components/BrandMark';
 import { Icon } from '../components/Icon';
-import { Rosette } from '../components/Rosette';
 import { Button, Card, Field, LoadingScreen, Notice } from '../components/ui';
 import { describeError, type DescribedError } from '../lib/errors';
+import { useInstallPrompt } from '../lib/useInstallPrompt';
 import { useAuth, type LoginOutcome } from '../providers/AuthProvider';
 import { useTenant } from '../providers/TenantProvider';
 import { ForgotPasswordPanel } from './login/ForgotPasswordPanel';
@@ -44,11 +45,37 @@ function LoginLogo({ name, logoUrl, size }: { name: string; logoUrl: string | nu
   );
 }
 
-const PERKS: readonly { icon: 'shield' | 'swap' | 'building'; text: string }[] = [
-  { icon: 'shield', text: 'Connexion sécurisée' },
-  { icon: 'building', text: 'Un seul espace de gestion' },
-  { icon: 'swap', text: 'Suivi en temps réel' },
+const PERKS: readonly { icon: 'shield' | 'swap' | 'building'; title: string; text: string }[] = [
+  { icon: 'shield', title: 'Connexion sécurisée', text: 'Vos accès sont protégés et vérifiés.' },
+  { icon: 'building', title: 'Un seul espace de gestion', text: 'Agences, agents, clients et trésorerie réunis.' },
+  { icon: 'swap', title: 'Suivi en temps réel', text: 'Chaque opération est visible dès son enregistrement.' },
 ];
+
+/** Installation de l'application (écran d'accueil, plein écran) : proposée dès la page de connexion, avant même d'avoir un compte ouvert. */
+function InstallCard() {
+  const { canInstall, showHowTo, install } = useInstallPrompt();
+  if (!canInstall && !showHowTo) return null;
+  return (
+    <div className="login__install">
+      <span className="login__install-icon" aria-hidden="true">
+        <Icon name="download" size={20} />
+      </span>
+      <div className="login__install-text">
+        <strong>Installer l'application</strong>
+        {canInstall ? (
+          <span>Accès direct depuis l'écran d'accueil, en plein écran.</span>
+        ) : (
+          <span>Menu ⋮ du navigateur → « Installer l'application » (et non « Ajouter à l'écran d'accueil »).</span>
+        )}
+      </div>
+      {canInstall ? (
+        <Button variant="secondary" onClick={() => void install()}>
+          Installer
+        </Button>
+      ) : null}
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const { state, login, dismissNotice } = useAuth();
@@ -155,29 +182,37 @@ export default function LoginPage() {
       <aside className="login__brand">
         <div className="login__glow login__glow--a" aria-hidden="true" />
         <div className="login__glow login__glow--b" aria-hidden="true" />
-        <Rosette className="login__rosette" />
         <div className="login__brand-inner">
           <span className="login__badge">
-            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={64} />
+            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={56} />
           </span>
-          <h1>{branding.name}</h1>
-          <p>{pitch}</p>
+          <div className="login__brand-copy">
+            <span className="login__eyebrow login__eyebrow--light">Espace de gestion</span>
+            <h1>{branding.name}</h1>
+            <p>{pitch}</p>
+          </div>
           <ul className="login__perks">
             {PERKS.map((perk) => (
-              <li key={perk.text}>
-                <Icon name={perk.icon} size={16} />
-                <span>{perk.text}</span>
+              <li key={perk.title}>
+                <span className="login__perk-icon" aria-hidden="true">
+                  <Icon name={perk.icon} size={18} />
+                </span>
+                <span className="login__perk-text">
+                  <strong>{perk.title}</strong>
+                  <small>{perk.text}</small>
+                </span>
               </li>
             ))}
           </ul>
         </div>
+        <p className="login__brand-foot">© {new Date().getFullYear()} {branding.name}</p>
       </aside>
 
       <main className="login__panel">
         {/* Mobile / tablette : bandeau en dégradé avec le logo (masqué sur ordinateur). */}
         <header className="login__mbrand">
           <span className="login__logo">
-            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={56} />
+            <LoginLogo name={branding.name} logoUrl={branding.logoUrl} size={64} />
           </span>
           <strong>{branding.name}</strong>
         </header>
@@ -196,6 +231,7 @@ export default function LoginPage() {
           ) : (
             <form className="login__form" onSubmit={(e) => void submit(e)} noValidate>
               <div className="login__heading">
+                <span className="login__eyebrow">Espace de gestion</span>
                 <h2>Connexion</h2>
                 <p>Entrez les identifiants de votre compte de gestion.</p>
               </div>
@@ -274,6 +310,8 @@ export default function LoginPage() {
                 <Icon name="shield" size={14} />
                 <span>Vous êtes client ? Votre espace se trouve dans l'application mobile.</span>
               </p>
+
+              <InstallCard />
             </form>
           )}
         </Card>

@@ -17,6 +17,7 @@ import {
   type PublicTransferCheck, type ReceiptCompany, type TransferReceiptDoc,
 } from './transfer-receipt';
 import { extractTransferReceiptCode, transferReceiptCode, verifyTransferSeal } from './transfer-receipt-seal';
+import { buildTrackingSteps, isFinalStatus } from './transfer-tracking';
 
 type ClientRow = {
   name: string; legalCompanyName: string | null; logoUrl: string | null; address: string | null; city: string | null; phone: string | null;
@@ -80,7 +81,7 @@ export class TransactionReceiptsService {
       where: { reference: parsed.reference },
       select: {
         id: true, reference: true, type: true, status: true, payoutMethod: true, amount: true, currency: true, targetCurrency: true,
-        receivedAmount: true, createdAt: true, paidAt: true, pickupExpiry: true, deletedAt: true,
+        receivedAmount: true, createdAt: true, paidAt: true, validatedAt: true, cancelledAt: true, failedAt: true, pickupExpiry: true, deletedAt: true,
         sender: { select: { firstName: true, lastName: true } },
         counterCustomer: { select: { firstName: true, lastName: true } },
         recipient: { select: { firstName: true, lastName: true } },
@@ -114,6 +115,8 @@ export class TransactionReceiptsService {
       sender: maskName(senderName),
       recipient: maskName(recipientName),
       payable: isPayableNow(tx, tx.withdrawal?.status, new Date()),
+      steps: buildTrackingSteps({ kind, status: tx.status, createdAt: tx.createdAt, validatedAt: tx.validatedAt, paidAt: tx.paidAt, cancelledAt: tx.cancelledAt, failedAt: tx.failedAt }),
+      final: isFinalStatus(tx.status),
     };
   }
 }

@@ -26,6 +26,7 @@ import { Button, Card, EmptyView, ErrorView, Notice, Screen, SectionHeader, Skel
 import { Ionicons } from "../ui/Icon";
 import { Rise } from "../merchant/merchantUi";
 import { useT } from "../../providers/I18nProvider";
+import GrowthCards from "../home/GrowthCards"; // lot 16
 
 const COUNTRY_CURRENCY: Record<string, string> = {
   GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
@@ -105,6 +106,9 @@ export default function ClientDashboard() {
           </Card>
         </Rise>
       ) : null}
+
+      {/* Lot 16 — croissance : demandes d'argent + parrainage */}
+      <GrowthCards />
 
       {kyc && !kyc.verified ? (
         <Notice

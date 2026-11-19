@@ -154,7 +154,7 @@ export default function RegisterScreen() {
   const t = useT();
   const P = useAuthPalette();
   const minAge = useMemo(() => getMinimumAge(), []);
-  const params = useLocalSearchParams<{ type?: string }>();
+  const params = useLocalSearchParams<{ type?: string; ref?: string }>();
   const isMerchant = params.type === 'merchant';
   const steps = isMerchant ? MERCHANT_STEPS : CLIENT_STEPS;
   const stepIndex = (k: StepKey) => Math.max(0, steps.indexOf(k));
@@ -180,6 +180,8 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [terms, setTerms] = useState(false);
+  // ✅ lot 16 — code de parrainage : prérempli par le lien d'invitation (?ref=CODE), modifiable ; facultatif, jamais bloquant.
+  const [referralCode, setReferralCode] = useState(() => String(Array.isArray(params.ref) ? params.ref[0] : params.ref ?? '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 24));
   const [picker, setPicker] = useState<null | 'country' | 'nationality'>(null);
 
   // ── Commerce (marchands) ──────────────────────────────
@@ -322,6 +324,7 @@ export default function RegisterScreen() {
         city: city.trim(),
         nationality: nationality ?? '',
         birthDate: formatBirthDate(dob),
+        ...(!isMerchant && referralCode.trim().length >= 4 ? { referralCode: referralCode.trim() } : {}),
         ...(isMerchant
           ? {
               accountType: 'MERCHANT' as const,
@@ -534,6 +537,14 @@ export default function RegisterScreen() {
             inputRef={phoneRef}
             onSubmitEditing={goNext}
           />
+          {!isMerchant ? (
+            <AuthField
+              label={t('grw.reg.code')} icon="gift-outline" value={referralCode}
+              onChangeText={(v) => setReferralCode(v.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
+              autoCapitalize="characters" accent={P.accent} maxLength={24} returnKeyType="done"
+              hint={t('grw.reg.codeHint')}
+            />
+          ) : null}
         </>
       )}
 

@@ -80,6 +80,11 @@ import { KycModule }                from './kyc/kyc.module'; // lot 7 — vérif
 import { LimitsModule }             from './limits/limits.module';
 import { LocationsModule }          from './locations/locations.module';
 import { SupervisionModule }        from './supervision/supervision.module'; // ✅ v4.8
+import { ReconciliationModule }     from './reconciliation/reconciliation.module'; // audit argent I3
+import { PilotageModule }           from './pilotage/pilotage.module'; // ✅ lot 15
+import { GrowthModule }             from './growth/growth.module';     // ✅ lot 16
+import { ComplianceModule }         from './compliance/compliance.module'; // ✅ lot 17
+import { WebhooksModule }           from './webhooks/webhooks.module';     // ✅ lot 17
 import { RatesAdminModule }         from './rates-admin/rates-admin.module'; // ✅ v4.9
 import { FeesAdminModule }          from './fees-admin/fees-admin.module';   // ✅ v5.0
 import { AgentsAdminModule }        from './agents-admin/agents-admin.module'; // ✅ v5.1
@@ -139,6 +144,11 @@ import { HealthController }        from './health/health.controller'; // ✅ v5.
     LimitsModule,
     LocationsModule,
     SupervisionModule, // ✅ v4.8 — /supervision/* (audit, alertes, santé)
+    ReconciliationModule, // audit argent I3 — /reconciliation (contrôle quotidien solde ↔ journal)
+    PilotageModule, // ✅ lot 15 — /pilotage/* (clôture de caisse, liquidité, rentabilité, objectifs, exports)
+    GrowthModule,   // ✅ lot 16 — /rate-locks, /money-requests, /referrals*
+    ComplianceModule, // ✅ lot 17 — /compliance-admin/* (listes de surveillance, dossiers, règles AML)
+    WebhooksModule,   // ✅ lot 17 — /webhooks-admin/* (webhooks sortants fiables : reprises, rejeu, signature)
     RatesAdminModule,  // ✅ v4.9 — /rates-admin/* (administration des taux)
     FeesAdminModule,   // ✅ v5.0 — /fees-admin/* (frais d'envoi par société)
     AgentsAdminModule, // ✅ v5.1 — /agents-admin/* (agents rattachés à une agence)

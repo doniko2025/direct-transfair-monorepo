@@ -45,6 +45,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery } from '@nestjs/swagger'
 import type { Request } from 'express';
 
 import { TreasuryService } from './treasury.service';
+import { TreasuryWithdrawalsService } from './treasury-withdrawals.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { IDEMPOTENCY_HEADER, parseIdempotencyKey } from '../transactions/idempotency';
 import { assertSelfFundingAllowed } from './self-funding';
@@ -63,7 +64,10 @@ import {
 @UseGuards(JwtAuthGuard)
 @Controller('treasury')
 export class TreasuryController {
-  constructor(private readonly treasuryService: TreasuryService) {}
+  constructor(
+    private readonly treasuryService: TreasuryService,
+    private readonly withdrawals: TreasuryWithdrawalsService, // audit argent I4 — double validation des retraits
+  ) {}
 
   // ========================================================
   // VUE D'ENSEMBLE — Super Admin ou Company Admin
@@ -266,8 +270,10 @@ export class TreasuryController {
   @Post('admin/withdraw')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Retrait du portefeuille (Company Admin)',
-    description: 'Débite le portefeuille de la société admin.',
+    summary: 'Demande de retrait du portefeuille (Company Admin) — à valider par un autre administrateur',
+    description:
+      'Audit argent I4 : un retrait ne part plus sur la décision d\'une seule personne. Cette route crée une DEMANDE (aucun montant débité) ; ' +
+      'un autre administrateur de la société, ou le super admin, l\'approuve via POST /treasury/withdrawals/:id/approve.',
   })
   async withdrawFunds(
     @Req() req: Request & { user?: AuthUserPayload },
@@ -288,19 +294,10 @@ export class TreasuryController {
     }
     const idemKey = parseIdempotencyKey(req.headers?.[IDEMPOTENCY_HEADER]);
 
-    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_WITHDRAW', async () => {
-      const result = await this.treasuryService.withdrawFunds({
-        clientId: user.clientId!,
-        currency: body.currency,
-        amount:   parsedAmount,
-        reason:   body.reason || 'Retrait admin',
-      });
-      await this.treasuryService.audit(user, 'TREASURY_WITHDRAW', {
-        currency: body.currency.toUpperCase(),
-        amount: parsedAmount,
-      });
-      return result;
-    });
+    // La demande est créée (et tracée dans le journal d'audit) par le service ; l'argent ne bouge qu'à l'approbation.
+    return this.treasuryService.runIdempotent(user.id, idemKey, 'TREASURY_WITHDRAW', () =>
+      this.withdrawals.request(user, { currency: body.currency, amount: parsedAmount, reason: body.reason || 'Retrait admin' }),
+    );
   }
 
   // ========================================================

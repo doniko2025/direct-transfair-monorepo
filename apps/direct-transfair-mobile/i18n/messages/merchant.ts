@@ -50,7 +50,7 @@ export const merchant = {
   'col.fee':             { fr: 'Frais de service {fee} · vous recevez {net}', en: 'Service fee {fee} · you receive {net}', pt: 'Taxa de serviço {fee} · recebe {net}' },
   'col.phoneHint':       { fr: 'Numéro du compte de votre client (Orange Money). Sans le 0 de tête.', en: "Your customer's account number (Orange Money). Without the leading 0.", pt: 'Número da conta do seu cliente (Orange Money). Sem o 0 inicial.' },
   'col.qrInfo':          { fr: "Un QR code à usage unique s'affiche pendant {min} min. Votre client le scanne, vérifie le montant sur son téléphone et valide avec son code secret.", en: 'A single-use QR code is displayed for {min} min. Your customer scans it, checks the amount on their phone and confirms with their secret code.', pt: 'É apresentado um código QR de utilização única durante {min} min. O seu cliente lê-o, verifica o montante no telemóvel e confirma com o seu código secreto.' },
-  'col.note':            { fr: 'Libellé (facultatif)', en: 'Label (optional)', pt: 'Descrição (facultativo)' },
+  'col.note':            { fr: 'Article / libellé (facultatif) — ex. 2 sacs de riz', en: 'Item / label (optional) — e.g. 2 bags of rice', pt: 'Artigo / descrição (facultativo) — ex. 2 sacos de arroz' },
 
   // ── Liste des paiements (payments.tsx) ──
   'mpay.fAll':           { fr: 'Tous les paiements', en: 'All payments', pt: 'Todos os pagamentos' },
@@ -128,6 +128,22 @@ export const merchant = {
   'pco.decline':         { fr: 'Refuser la demande', en: 'Decline the request', pt: 'Recusar o pedido' },
 
   // ── Détail d'un encaissement (merchant/payment.tsx) ──
+  'mpd.addedToBalance':  { fr: 'ajoutés au solde du commerce', en: 'added to the shop balance', pt: 'adicionados ao saldo do comércio' },
+  'mpd.refundedCaption': { fr: 'rendus au client', en: 'returned to the customer', pt: 'devolvidos ao cliente' },
+  'mpd.purchase':        { fr: 'Achat', en: 'Purchase', pt: 'Compra' },
+  'mpd.item':            { fr: 'Article / libellé', en: 'Item / label', pt: 'Artigo / descrição' },
+  'mpd.noItem':          { fr: 'Aucun libellé saisi', en: 'No label entered', pt: 'Nenhuma descrição' },
+  'mpd.amounts':         { fr: 'Détail du paiement', en: 'Payment breakdown', pt: 'Detalhe do pagamento' },
+  'mpd.infos':           { fr: 'Informations', en: 'Information', pt: 'Informações' },
+  'mpd.date':            { fr: 'Date', en: 'Date', pt: 'Data' },
+  'mpd.time':            { fr: 'Heure', en: 'Time', pt: 'Hora' },
+  'mpd.settledIn':       { fr: 'Réglé en', en: 'Settled in', pt: 'Liquidado em' },
+  'mpd.refCopied':       { fr: 'Référence copiée', en: 'Reference copied', pt: 'Referência copiada' },
+  'mpd.timeline':        { fr: 'Suivi', en: 'Timeline', pt: 'Acompanhamento' },
+  'mpd.tlCreated':       { fr: 'Encaissement créé', en: 'Collection created', pt: 'Cobrança criada' },
+  'mpd.tlPaid':          { fr: 'Paiement reçu', en: 'Payment received', pt: 'Pagamento recebido' },
+  'mpd.tlRefunded':      { fr: 'Client remboursé', en: 'Customer refunded', pt: 'Cliente reembolsado' },
+  'mpd.failureReason':   { fr: 'Motif', en: 'Reason', pt: 'Motivo' },
   'mpd.title':           { fr: 'Encaissement', en: 'Collection', pt: 'Cobrança' },
   'mpd.notFound':        { fr: 'Paiement introuvable', en: 'Payment not found', pt: 'Pagamento não encontrado' },
   'mpd.viaQr':           { fr: 'Paiement par QR code', en: 'QR code payment', pt: 'Pagamento por código QR' },

@@ -341,3 +341,8 @@
     flex: 1 1 100%;
   }
 }
+
+/* ── Retraits à valider (audit argent I4) ── */
+.wr-card__pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.wr-card[data-status='PENDING'] { box-shadow: var(--sh-1), 0 0 0 1px rgba(224, 161, 0, .35); }
+.wr-card[data-status='REJECTED'], .wr-card[data-status='EXPIRED'], .wr-card[data-status='CANCELLED'] { opacity: .8; }

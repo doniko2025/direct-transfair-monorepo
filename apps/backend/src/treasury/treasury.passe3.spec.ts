@@ -14,7 +14,8 @@ const req = (role: string, clientId: number | undefined = 7): any => ({ user: { 
 
 describe('TreasuryController — rôles', () => {
   const svc: any = { runIdempotent: jest.fn((_u: string, _k: string | null, _s: string, job: () => Promise<unknown>) => job()), getSnapshots: jest.fn().mockResolvedValue([]), audit: jest.fn(), injectFunds: jest.fn().mockResolvedValue({ ok: true }), withdrawFunds: jest.fn().mockResolvedValue({ ok: true }), selfFundAll: jest.fn().mockResolvedValue({ results: [{ currency: 'EUR', credited: 10, walletId: 'w' }] }), transferBetweenWallets: jest.fn().mockResolvedValue({ ok: true }) };
-  const ctrl = new TreasuryController(svc);
+  const wd: any = { request: jest.fn().mockResolvedValue({ id: 'r1', status: 'PENDING' }) };
+  const ctrl = new TreasuryController(svc, wd);
 
   it('GET /treasury/snapshots : refusé à un client et à un agent', async () => {
     for (const role of ['USER', 'AGENT']) {
@@ -35,7 +36,10 @@ describe('TreasuryController — rôles', () => {
     await ctrl.injectAll(req('COMPANY_ADMIN'), { amounts: { EUR: 10 } } as any);
     await ctrl.withdrawFunds(req('COMPANY_ADMIN'), { currency: 'EUR', amount: 5 } as any);
     await ctrl.transferBetweenWallets(req('SUPER_ADMIN'), { fromWalletId: 'a', toWalletId: 'b', amount: 3 } as any);
-    expect(svc.audit.mock.calls.map((c: any[]) => c[1])).toEqual(['TREASURY_INJECT', 'TREASURY_SELF_FUND', 'TREASURY_WITHDRAW', 'TREASURY_TRANSFER']);
+    // I4 : le retrait n'est plus exécuté ici — il devient une demande (tracée par le service de double validation).
+    expect(svc.audit.mock.calls.map((c: any[]) => c[1])).toEqual(['TREASURY_INJECT', 'TREASURY_SELF_FUND', 'TREASURY_TRANSFER']);
+    expect(wd.request).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1' }), expect.objectContaining({ currency: 'EUR', amount: 5 }));
+    expect(svc.withdrawFunds).not.toHaveBeenCalled();
     expect(svc.audit.mock.calls[0][2]).toEqual({ currency: 'EUR', amount: 50 });
   });
 

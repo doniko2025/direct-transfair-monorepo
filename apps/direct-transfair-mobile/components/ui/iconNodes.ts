@@ -9,6 +9,7 @@
 export type IconNode = ReadonlyArray<readonly [string, Readonly<Record<string, string>>]>;
 
 export const LUCIDE: Record<string, IconNode> = {
+  "gift": [["rect",{"x":"3","y":"8","width":"18","height":"4","rx":"1"}],["path",{"d":"M12 8v13"}],["path",{"d":"M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"}],["path",{"d":"M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"}]],
   "sun": [["circle",{"cx":"12","cy":"12","r":"4"}],["path",{"d":"M12 2v2"}],["path",{"d":"M12 20v2"}],["path",{"d":"m4.93 4.93 1.41 1.41"}],["path",{"d":"m17.66 17.66 1.41 1.41"}],["path",{"d":"M2 12h2"}],["path",{"d":"M20 12h2"}],["path",{"d":"m6.34 17.66-1.41 1.41"}],["path",{"d":"m19.07 4.93-1.41 1.41"}]],
   "moon": [["path",{"d":"M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"}]],
   "contrast": [["circle",{"cx":"12","cy":"12","r":"10"}],["path",{"d":"M12 18a6 6 0 0 0 0-12v12z"}]],
@@ -203,6 +204,8 @@ export const ION_TO_LUCIDE: Record<string, string> = {
   "hand-left-outline": "hand",
   "headset-outline": "headset",
   "help-circle-outline": "circle-question-mark",
+  "gift": "gift",
+  "gift-outline": "gift",
   "home": "house",
   "home-outline": "house",
   "hourglass-outline": "hourglass",
@@ -250,6 +253,7 @@ export const ION_TO_LUCIDE: Record<string, string> = {
   "radio-button-on": "circle-dot",
   "receipt-outline": "receipt",
   "refresh": "refresh-cw",
+  "refresh-outline": "refresh-cw",
   "resize": "maximize-2",
   "return-down-back": "corner-down-left",
   "return-down-back-outline": "corner-down-left",

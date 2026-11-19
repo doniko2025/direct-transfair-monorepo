@@ -16,6 +16,7 @@ import AlertsSection from './AlertsSection';
 import AttentionSection from './AttentionSection';
 import AuditSection from './AuditSection';
 import HealthSection from './HealthSection';
+import ReconciliationSection from './ReconciliationSection';
 
 function scrollToAlerts() {
   const el = document.getElementById('alerts');
@@ -87,6 +88,7 @@ export default function SupervisionPage() {
           <AttentionSection items={data.attention} onGoToAlerts={scrollToAlerts} hideTransactions={data.scope === 'PLATFORM'} />
           <HealthSection health={data.health} />
           <ActivitySection overview={data} />
+          <ReconciliationSection canRun={me.role === 'SUPER_ADMIN'} showCompany={data.scope === 'PLATFORM'} />
           <AlertsSection refreshKey={refreshKey} onResolved={overview.reload} />
           <AuditSection refreshKey={refreshKey} canFilterCompany={data.scope === 'PLATFORM'} />
         </div>

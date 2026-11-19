@@ -40,8 +40,14 @@ export const ZERO_DECIMAL_CURRENCIES: readonly string[] = ['XOF', 'GNF'];
 export function roundToCurrency(value: number, currency: string): number {
   const digits = ZERO_DECIMAL_CURRENCIES.includes(currency) ? 0 : 2;
   const factor = 10 ** digits;
-  // + Number.EPSILON : 1.005 doit donner 1.01, pas 1.00.
-  return Math.round((value + Number.EPSILON) * factor) / factor;
+  if (!Number.isFinite(value)) return value;
+  // ✅ audit argent (M1) : l'ancien « + Number.EPSILON » ne corrigeait que les très petits nombres (1.005 → 1.01) mais pas 10.075,
+  // 100.005 ou 2.675 (l'erreur de représentation binaire dépasse EPSILON dès que le nombre dépasse ~4). On ramène d'abord le produit
+  // à 15 chiffres significatifs — la précision réelle d'un double — ce qui efface le bruit binaire, puis on arrondit « demi vers
+  // l'extérieur » (comme un arrondi comptable : 0,5 → 1, jamais vers le pair).
+  const scaled = Number((Math.abs(value) * factor).toPrecision(15));
+  const rounded = Math.round(scaled) / factor;
+  return value < 0 ? -rounded : rounded;
 }
 
 export function specificity(rule: Pick<FeeRuleLike, 'payoutMethod' | 'sendCountry' | 'receiveCountry'>): number {

@@ -324,10 +324,12 @@ export function OtpInput({
 
 // ─── Gros champ de montant (écran Envoyer / Recharge) ────
 export function AmountInput({
-  value, onChangeText, currency, error, autoFocus, label, onCurrencyPress, editable = true,
+  value, onChangeText, currency, error, autoFocus, label, onCurrencyPress, editable = true, compact,
 }: {
   value: string; onChangeText: (t: string) => void; currency: string; error?: string | null; autoFocus?: boolean;
   label?: string; onCurrencyPress?: () => void; editable?: boolean;
+  /** Version resserrée (montant 34 pt, devise en pastille à droite) pour les écrans denses. */
+  compact?: boolean;
 }) {
   const { C } = useUI();
   const t = useT();
@@ -335,7 +337,9 @@ export function AmountInput({
     <View style={{ gap: 6 }}>
       {!!label && <Text style={[st.label, { color: error ? C.danger : C.muted, marginBottom: 0 }]}>{label}</Text>}
       {/* v2 : marge verticale autour du montant (étiquette en haut, pastilles de montants rapides en bas) pour qu'il respire. */}
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingTop: 10, paddingBottom: 14 }}>
+      <View style={compact
+        ? { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 2, paddingBottom: 6 }
+        : { flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingTop: 10, paddingBottom: 14 }}>
         <TextInput
           value={value}
           onChangeText={(t) => onChangeText(t.replace(',', '.').replace(/[^0-9.]/g, ''))}
@@ -344,13 +348,13 @@ export function AmountInput({
           placeholderTextColor={C.faint}
           autoFocus={autoFocus}
           editable={editable}
-          style={[{ flexShrink: 1, minWidth: 60, fontFamily: SYSTEM_FONT, fontSize: 48, fontWeight: '800', letterSpacing: -1.5, color: error ? C.danger : C.ink, padding: 0 }, webReset('transparent', C.ink)]}
+          style={[{ flexShrink: 1, minWidth: 60, ...(compact ? { flex: 1 } : null), fontFamily: SYSTEM_FONT, fontSize: compact ? 34 : 48, fontWeight: '800', letterSpacing: compact ? -1 : -1.5, color: error ? C.danger : C.ink, padding: 0 }, webReset('transparent', C.ink)]}
           underlineColorAndroid="transparent"
           selectionColor={C.accent}
           accessibilityLabel={label ?? t('field.amount')}
         />
-        <Pressable disabled={!onCurrencyPress} onPress={onCurrencyPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 20, fontWeight: '800', color: C.muted }}>{currency}</Text>
+        <Pressable disabled={!onCurrencyPress} onPress={onCurrencyPress} style={[{ flexDirection: 'row', alignItems: 'center', gap: 4 }, compact ? { backgroundColor: C.field, borderRadius: 999, paddingHorizontal: 12, height: 34 } : null]}>
+          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 15 : 20, fontWeight: '800', color: C.muted }}>{currency}</Text>
           {!!onCurrencyPress && <Ionicons name="chevron-down" size={16} color={C.muted} />}
         </Pressable>
       </View>

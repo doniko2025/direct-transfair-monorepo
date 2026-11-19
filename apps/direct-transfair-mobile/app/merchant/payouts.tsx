@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/app/merchant/payouts.tsx
 // =========================================================
-// RETRAITS DU MARCHAND v2.0 — page entièrement reprise
+// RETRAITS DU MARCHAND v2.1 — page compacte et plus moderne (25 % · 50 % · 75 % · Tout sur UNE seule ligne, solde plus bas, « Modifier » dans l'en-tête)
 // ✅ v2.0 : • carte « solde » en dégradé (devise = celle du COMPTE, plus jamais un « EUR » avec un numéro Orange guinéen) ;
 //           • destinations en cartes sélectionnables (Orange Money / virement) avec numéro masqué ;
 //           • montants rapides (25 % · 50 % · 75 % · Tout) ; récapitulatif clair (frais, vous recevez, délai) ;
@@ -138,19 +138,30 @@ export default function PayoutsScreen() {
         </Notice>
       )}
 
-      {/* ── Carte solde ── */}
+      {/* ── Carte solde (compacte) ── */}
       <Rise>
         <LinearGradient colors={[C.dark, C.accentDeep]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[st.hero, { borderRadius: R.lg }]}>
+          <View pointerEvents="none" style={st.heroBubbleA} />
+          <View pointerEvents="none" style={st.heroBubbleB} />
           <View style={st.heroTop}>
             <View style={st.heroIcon}>
-              <Ionicons name={"storefront-outline" as any} size={18} color={C.darkInk} />
+              <Ionicons name={"storefront-outline" as any} size={16} color={C.darkInk} />
             </View>
             <Text style={[st.heroLabel, { color: C.darkInk }]} numberOfLines={1}>{profile.businessName}</Text>
             <View style={st.curPill}><Text style={[st.curTxt, { color: C.darkInk }]}>{currency}</Text></View>
           </View>
-          <Text style={[st.heroCaption, { color: C.darkInk }]}>{t("mpo.available")}</Text>
-          <Text style={[st.heroAmount, { color: C.darkInk }]} numberOfLines={1} adjustsFontSizeToFit>{money(balance, currency)}</Text>
-          {reserved > 0 && <Text style={[st.heroSub, { color: C.darkInk }]}>{t("mpo.processing", { amount: money(reserved, currency) })}</Text>}
+          <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 10 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[st.heroCaption, { color: C.darkInk }]}>{t("mpo.available")}</Text>
+              <Text style={[st.heroAmount, { color: C.darkInk }]} numberOfLines={1} adjustsFontSizeToFit>{money(balance, currency)}</Text>
+            </View>
+            {reserved > 0 && (
+              <View style={st.reservedPill}>
+                <Ionicons name={"time-outline" as any} size={13} color={C.darkInk} />
+                <Text style={[st.reservedTxt, { color: C.darkInk }]} numberOfLines={1}>{money(reserved, currency)}</Text>
+              </View>
+            )}
+          </View>
         </LinearGradient>
       </Rise>
 
@@ -162,8 +173,8 @@ export default function PayoutsScreen() {
         <>
           {/* ── Destination ── */}
           <Rise delay={80}>
-            <SectionHeader title={t("mpo.payTo")} />
-            <View style={{ gap: 10 }}>
+            <SectionHeader title={t("mpo.payTo")} action={t("mpo.changeDest")} onAction={goSettings} style={{ marginTop: 18 }} />
+            <View style={{ gap: 8 }}>
               {methods.map((m) => {
                 const on = chosen === m;
                 return (
@@ -177,7 +188,7 @@ export default function PayoutsScreen() {
                     style={[st.dest, { borderRadius: R.md, borderColor: on ? C.accent : C.line, backgroundColor: on ? C.accentSoft : C.surface }]}
                   >
                     <View style={[st.destIcon, { backgroundColor: on ? C.accent : C.beige }]}>
-                      <Ionicons name={(m === "ORANGE_MONEY" ? "phone-portrait-outline" : "business-outline") as any} size={20} color={on ? C.accentInk : C.ink} />
+                      <Ionicons name={(m === "ORANGE_MONEY" ? "phone-portrait-outline" : "business-outline") as any} size={19} color={on ? C.accentInk : C.ink} />
                     </View>
                     <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
                       <UText v="bodyStrong" numberOfLines={1}>{PAYOUT_METHOD_LABEL[m] ?? m}</UText>
@@ -188,17 +199,14 @@ export default function PayoutsScreen() {
                 );
               })}
             </View>
-            <TouchableOpacity onPress={goSettings} hitSlop={8} style={{ alignSelf: "flex-start", marginTop: 10 }}>
-              <Text style={{ color: C.accentDeep, fontWeight: "700", fontSize: 13 }}>{t("mpo.changeDest")}</Text>
-            </TouchableOpacity>
             {!orangeAllowed && <UText v="caption" tone="muted" style={{ marginTop: 6 }}>{t("mpo.noOrange", { currency })}</UText>}
           </Rise>
 
           {/* ── Montant ── */}
           <Rise delay={140}>
-            <SectionHeader title={t("mpo.amount")} />
-            <Card pad={20}>
-              <AmountInput label={t("mpo.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} />
+            <SectionHeader title={t("mpo.amount")} style={{ marginTop: 18 }} />
+            <Card pad={16}>
+              <AmountInput compact label={t("mpo.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} />
               <View style={st.quickRow}>
                 {QUICK.map((q) => {
                   const v = roundTo(balance * q.ratio, decimals);
@@ -209,7 +217,7 @@ export default function PayoutsScreen() {
                       activeOpacity={0.8}
                       disabled={balance <= 0}
                       onPress={() => setAmountText(toInputText(v, decimals))}
-                      style={[st.quick, { borderRadius: R.pill, borderColor: active ? C.dark : C.line, backgroundColor: active ? C.dark : C.surface, opacity: balance <= 0 ? 0.45 : 1 }]}
+                      style={[st.quick, { borderRadius: R.pill, borderColor: active ? C.dark : C.lineStrong, backgroundColor: active ? C.dark : C.field, opacity: balance <= 0 ? 0.45 : 1 }]}
                     >
                       <Text style={{ fontSize: 13, fontWeight: "700", color: active ? C.darkInk : C.dark }}>{q.key.startsWith("mpo.") ? t(q.key as any) : q.key}</Text>
                     </TouchableOpacity>
@@ -225,15 +233,15 @@ export default function PayoutsScreen() {
                   <RecapLine label={t("mpo.youReceive")} value={money(amount - fee, currency)} strong />
                 </View>
               )}
-              {!!minPayout && <UText v="caption" tone="muted" style={{ marginTop: 10 }}>{t("mpo.minimum", { amount: money(minPayout, currency) })}</UText>}
+              {!!minPayout && <UText v="caption" tone="muted" style={{ marginTop: 8 }}>{t("mpo.minimum", { amount: money(minPayout, currency) })}</UText>}
             </Card>
           </Rise>
 
           {/* ── Confirmation ── */}
           <Rise delay={200}>
-            <SectionHeader title={t("mpo.confirm")} />
-            <Card pad={20}>
-              <PinPrompt value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label={t("mpo.pinLabel")} />
+            <SectionHeader title={t("mpo.confirm")} style={{ marginTop: 18 }} />
+            <Card pad={16}>
+              <PinPrompt dense value={pin} onChange={(v) => { setPin(v); setPinError(null); }} error={pinError} label={t("mpo.pinLabel")} />
               <Button label={t("mpo.request")} icon="arrow-up-circle-outline" disabled={!canSend} loading={busy} onPress={send} testID="payout-send" />
             </Card>
           </Rise>
@@ -241,11 +249,11 @@ export default function PayoutsScreen() {
       )}
 
       {/* ── Historique ── */}
-      <SectionHeader title={t("mpo.history")} />
+      <SectionHeader title={t("mpo.history")} style={{ marginTop: 22 }} />
       {history.length === 0 ? (
         <EmptyView icon="cash-outline" title={t("mpo.none")} message={t("mpo.noneMsg")} />
       ) : history.map((p) => (
-        <Card key={p.id} pad={16} style={{ marginBottom: 10 }}>
+        <Card key={p.id} pad={14} style={{ marginBottom: 8 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
             <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
               <Ionicons name={(p.method === "ORANGE_MONEY" ? "phone-portrait-outline" : "business-outline") as any} size={20} color={C.ink} />
@@ -276,20 +284,24 @@ function RecapLine({ label, value, strong }: { label: string; value: string; str
 }
 
 const st = StyleSheet.create({
-  hero: { padding: 22, overflow: "hidden" },
-  heroTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 22 },
-  heroIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
-  heroLabel: { flex: 1, fontSize: 14, fontWeight: "700", opacity: 0.95 },
-  curPill: { paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
-  curTxt: { fontSize: 12, fontWeight: "800", letterSpacing: 0.5 },
-  heroCaption: { fontSize: 13, opacity: 0.75 },
-  heroAmount: { fontSize: 36, fontWeight: "800", marginTop: 4, letterSpacing: -0.5 },
-  heroSub: { fontSize: 12.5, opacity: 0.75, marginTop: 8 },
-  dest: { flexDirection: "row", alignItems: "center", gap: 14, padding: 14, borderWidth: 1.5 },
-  destIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14 },
-  quick: { paddingHorizontal: 16, height: 36, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  recap: { marginTop: 16, padding: 14, gap: 8 },
+  hero: { padding: 16, overflow: "hidden" },
+  heroBubbleA: { position: "absolute", right: -30, top: -40, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.10)" },
+  heroBubbleB: { position: "absolute", right: 40, bottom: -50, width: 90, height: 90, borderRadius: 45, backgroundColor: "rgba(255,255,255,0.07)" },
+  heroTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  heroIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  heroLabel: { flex: 1, fontSize: 13.5, fontWeight: "700", opacity: 0.95 },
+  curPill: { paddingHorizontal: 10, height: 24, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
+  curTxt: { fontSize: 11.5, fontWeight: "800", letterSpacing: 0.5 },
+  heroCaption: { fontSize: 12.5, opacity: 0.75 },
+  heroAmount: { fontSize: 30, fontWeight: "800", marginTop: 2, letterSpacing: -0.5 },
+  reservedPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)", maxWidth: "48%" },
+  reservedTxt: { fontSize: 12, fontWeight: "700" },
+  dest: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderWidth: 1.5 },
+  destIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  // 25 % · 50 % · 75 % · Tout : quatre pastilles de même largeur sur UNE seule ligne
+  quickRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  quick: { flex: 1, minWidth: 0, height: 38, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  recap: { marginTop: 12, padding: 12, gap: 6 },
   recapLine: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
   sep: { height: StyleSheet.hairlineWidth },
 });

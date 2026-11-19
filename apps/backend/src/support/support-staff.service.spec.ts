@@ -20,7 +20,7 @@ function setup(perms: string[] = ['KYC_REVIEW']) {
       create: jest.fn(async ({ data }: J) => ({ id: 'new' , ...data })),
       update: jest.fn(async ({ data }: J) => Object.assign(row, data)),
     },
-    userSession: { deleteMany: jest.fn(async () => ({ count: 2 })) },
+    userSession: { updateMany: jest.fn(async () => ({ count: 2 })) },
     auditLog: { create: jest.fn(async ({ data }: J) => { audits.push(data); return data; }) },
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   };
@@ -77,7 +77,7 @@ describe('SupportStaffService', () => {
   it('suspension : compte gelé ET sessions fermées ; réactivation : levée', async () => {
     const { service, prisma } = setup();
     await service.setActive(admin, 'sp1', false);
-    expect(prisma.userSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'sp1' } });
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith({ where: { userId: 'sp1', status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: expect.any(Date) } });
     expect(prisma.user.update.mock.calls[0][0].data).toMatchObject({ isSuspended: true });
     await service.setActive(admin, 'sp1', true);
     expect(prisma.user.update.mock.calls[1][0].data).toMatchObject({ isSuspended: false, suspendedReason: null });

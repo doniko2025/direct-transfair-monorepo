@@ -7,7 +7,9 @@
 //   GET  /wallets/:id/ledger?page&limit       mouvements d'un portefeuille (paginé, plus récent d'abord)
 //   GET  /treasury/overview                   activité du jour par devise (5 devises)
 //   POST /treasury/admin/inject               COMPANY_ADMIN : crédite son portefeuille  { currency, amount, description? }
-//   POST /treasury/admin/withdraw             COMPANY_ADMIN : débite son portefeuille   { currency, amount, reason? }
+//   POST /treasury/admin/withdraw             COMPANY_ADMIN : DEMANDE un retrait { currency, amount, reason? } — rien n'est débité (audit argent I4)
+//   GET  /treasury/withdrawals?status         demandes de retrait ; POST /treasury/withdrawals/:id/(approve|reject|cancel)
+//                                             l'approbation (par UN AUTRE admin de la société ou le super admin) exécute le retrait
 //   POST /treasury/transfer                   SUPER_ADMIN   : convertit entre portefeuilles { fromWalletId, toWalletId, amount, description? }
 //   GET  /agencies                            agences (société de l'admin, ou toutes pour le super admin)
 //   POST /transactions/admin/refill-agency    COMPANY_ADMIN : portefeuille société → agence { agencyId, amount, currency }
@@ -97,6 +99,37 @@ export interface RefillAgencyResult {
   agencyWalletId: string;
 }
 
+export type TreasuryWithdrawalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
+
+export interface TreasuryWithdrawalRequest {
+  id: string;
+  clientId: number;
+  currency: TreasuryCurrency;
+  amount: number;
+  reason: string | null;
+  status: TreasuryWithdrawalStatus;
+  requestedBy: string;
+  requestedByName: string | null;
+  requestedAt: string;
+  expiresAt: string;
+  decidedBy: string | null;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** Dernier échec à l'approbation (ex. solde insuffisant) : la demande reste en attente. */
+  failureReason: string | null;
+  /** Calculé côté serveur pour l'utilisateur courant : jamais le demandeur lui-même. */
+  canDecide: boolean;
+  canCancel: boolean;
+}
+
+export interface TreasuryWithdrawalRequested {
+  id: string;
+  status: 'PENDING';
+  /** Vrai quand la société n'a aucun autre administrateur : seul le super admin pourra valider. */
+  soloAdmin: boolean;
+}
+
 export interface ConvertResult {
   from: TreasuryWallet;
   to: TreasuryWallet;
@@ -132,7 +165,13 @@ export function createTreasuryApi(http: HttpClient) {
       http.post<unknown>('/treasury/admin/inject', input),
 
     withdraw: (input: { currency: TreasuryCurrency; amount: number; reason?: string }) =>
-      http.post<unknown>('/treasury/admin/withdraw', input),
+      postOnce<TreasuryWithdrawalRequested>('/treasury/admin/withdraw', input),
+
+    withdrawalRequests: async (status?: TreasuryWithdrawalStatus): Promise<TreasuryWithdrawalRequest[]> =>
+      asList<TreasuryWithdrawalRequest>(await http.get<unknown>(`/treasury/withdrawals${status ? `?status=${status}` : ''}`)),
+    approveWithdrawal: (id: string) => http.post<{ id: string; status: 'APPROVED' }>(`/treasury/withdrawals/${enc(id)}/approve`, {}),
+    rejectWithdrawal: (id: string, note?: string) => http.post<{ id: string; status: 'REJECTED' }>(`/treasury/withdrawals/${enc(id)}/reject`, { note }),
+    cancelWithdrawal: (id: string) => http.post<{ id: string; status: 'CANCELLED' }>(`/treasury/withdrawals/${enc(id)}/cancel`, {}),
 
     convert: (input: { fromWalletId: string; toWalletId: string; amount: number; description?: string }) =>
       http.post<ConvertResult>('/treasury/transfer', input),

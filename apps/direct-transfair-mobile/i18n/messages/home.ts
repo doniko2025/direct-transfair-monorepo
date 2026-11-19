@@ -95,6 +95,8 @@ export const home = {
   'txs.cancelled':      { fr: 'Annulé', en: 'Cancelled', pt: 'Cancelado' },
   'txs.failed':         { fr: 'Échoué', en: 'Failed', pt: 'Falhado' },
   'txs.refunded':       { fr: 'Remboursé', en: 'Refunded', pt: 'Reembolsado' },
+  // Lot 17 — envoi suspendu pour vérification : libellé volontairement neutre (aucune raison n'est donnée au client).
+  'txs.verification':   { fr: 'Vérification en cours', en: 'Being verified', pt: 'Em verificação' },
   'txs.expiredRefunded': { fr: 'Expiré — remboursé', en: 'Expired — refunded', pt: 'Expirado — reembolsado' },
   'txs.expired':        { fr: 'Expiré', en: 'Expired', pt: 'Expirado' },
 

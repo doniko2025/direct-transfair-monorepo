@@ -25,6 +25,11 @@ import { createMerchantApi } from './merchants';
 import { createBillsApi } from './bills';
 import type { HttpClient } from './http';
 import { createNotificationsApi } from './notifications';
+import { createPilotageApi } from './pilotage';
+import { createReconciliationApi } from './reconciliation';
+import { createGrowthApi } from './growth';
+import { createComplianceApi } from './compliance';
+import { createWebhooksApi } from './webhooks';
 import { createPortalDomainsApi } from './portalDomains';
 import { createRatesApi } from './rates';
 import { createSupervisionApi } from './supervision';
@@ -76,6 +81,11 @@ export function createApi(http: HttpClient) {
     support: createSupportApi(http),
     merchants: createMerchantApi(http),
     bills: createBillsApi(http),
+    pilotage: createPilotageApi(http),
+    reconciliation: createReconciliationApi(http), // audit argent I3
+    growth: createGrowthApi(http),
+    compliance: createComplianceApi(http),
+    webhooks: createWebhooksApi(http),
 
     branding: {
       byHost: (host: string) =>

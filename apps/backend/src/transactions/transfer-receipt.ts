@@ -7,6 +7,8 @@
 // Rien de confidentiel : ni commissions, ni scores de risque, ni soldes, ni pièces d'identité.
 // =========================================================
 
+import type { TrackingStep } from './transfer-tracking';
+
 export const RECEIPT_VERSION = 1;
 
 export type ReceiptKind = 'CASH_TRANSFER' | 'WALLET_TRANSFER' | 'MOBILE_MONEY_TRANSFER' | 'BANK_TRANSFER' | 'DEPOSIT' | 'WITHDRAWAL' | 'OTHER';
@@ -292,6 +294,10 @@ export interface PublicTransferCheck {
   recipient: string;
   /** Un agent peut encore le payer avec ce QR (la page propose alors d'ouvrir l'application). */
   payable: boolean;
+  /** Lot 16 — frise de suivi (vide pour un dépôt ou un retrait). */
+  steps?: TrackingStep[];
+  /** Lot 16 — le suivi n'évoluera plus (la page cesse de se rafraîchir). */
+  final?: boolean;
 }
 
 /**

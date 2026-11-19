@@ -12,6 +12,8 @@ const ALLOWED = [
   "/merchant/qr", "/merchant/closing", "/merchant/staff", "/cashier",
   // Lot 14 : paiement de factures (compte client).
   "/bills", "/bills/payment", "/bills/schedules",
+  // Lot 16 : demandes d'argent et parrainage (compte client).
+  "/money-requests", "/referral",
 ];
 
 export type AppTarget = { pathname: string; params?: Record<string, string> };

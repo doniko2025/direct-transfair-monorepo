@@ -34,6 +34,7 @@ import { useAuth } from "../providers/AuthProvider";
 import { useT } from "../providers/I18nProvider";
 import { countryName, localizeCountry } from "../utils/countryNames";
 import { api } from "../services/api";
+import { PinPrompt } from "../components/merchant/merchantUi"; // audit argent I1 — code secret avant un envoi
 import {
   Avatar, BalanceCard, Button, Card, Chip, IconButton, ListRow, Notice, Pill, Screen, Sheet, UText, SYSTEM_FONT, useUI,
 } from "../components/ui";
@@ -112,6 +113,10 @@ export default function WalletTransferScreen() {
   const [convRate,        setConvRate]        = useState<number | null>(null);
   const [lookupResult,    setLookupResult]    = useState<LookupResult | null>(null);
   const [showBalance,     setShowBalance]     = useState(true);
+  // audit argent (I1) — code secret demandé avant l'envoi
+  const [showPin,  setShowPin]  = useState(false);
+  const [pin,      setPin]      = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
 
   const [wallet, setWallet] = useState<{
     currency: string; balance: number; loaded: boolean;
@@ -220,13 +225,15 @@ export default function WalletTransferScreen() {
       t("wt.confirmMsg", { amount: `${fmt(numAmount, senderCurrency)} ${senderCurrency}`, name: recipientName, received: receivedDisplay }),
       [
         { text: t("common.cancel"), style: "cancel" },
-        { text: t("wt.confirmBtn"), onPress: () => void processTransfer() },
+        { text: t("wt.confirmBtn"), onPress: () => { setPin(""); setPinError(null); setShowPin(true); } },
       ],
     );
   };
 
-  const processTransfer = async () => {
+  const processTransfer = async (confirmedPin: string) => {
+    if (loading || confirmedPin.length !== 6) return;
     setLoading(true);
+    setPinError(null);
     try {
       if (!lookupResult?.found) {
         Alert.alert(t("wt.notRegisteredTitle"), t("wt.notRegisteredMsg"));
@@ -256,8 +263,11 @@ export default function WalletTransferScreen() {
         payoutMethod: "WALLET", beneficiaryId,
         senderFirstName: (user as any)?.firstName,
         senderLastName:  (user as any)?.lastName,
+        pin: confirmedPin,
       } as any);
 
+      setShowPin(false);
+      setPin("");
       await refreshUser?.();
 
       const recipientName = lookupResult.fullName || `${lookupResult.firstName ?? ""} ${lookupResult.lastName ?? ""}`.trim() || phone.trim();
@@ -268,6 +278,15 @@ export default function WalletTransferScreen() {
         [{ text: t("wt.great"), onPress: () => router.back() }],
       );
     } catch (e: any) {
+      // Code secret faux ou bloqué : on reste sur la saisie du code avec le message du serveur.
+      const apiCode = e?.response?.data?.code;
+      if (apiCode === "PIN_INVALID" || apiCode === "PIN_LOCKED" || apiCode === "PIN_REQUIRED") {
+        setPin("");
+        setPinError(String(e?.response?.data?.message ?? t("wt.failed")));
+        return;
+      }
+      setShowPin(false);
+      setPin("");
       // Identité non vérifiée : on oriente vers l'écran de vérification au lieu d'une erreur sèche.
       if (handleKycRequired(e, router)) return;
       const msg = e?.response?.data?.message ?? t("wt.failed");
@@ -448,6 +467,24 @@ export default function WalletTransferScreen() {
       <UText v="caption" tone="muted" align="center" style={{ marginTop: 22 }}>
         {t("wt.secure")}
       </UText>
+
+      {/* Code secret avant l'envoi (audit argent I1) */}
+      <Sheet visible={showPin} onClose={() => { if (!loading) { setShowPin(false); setPin(""); setPinError(null); } }} title={t("send.pinTitle")}>
+        <UText v="body" tone="muted" style={{ marginBottom: 14 }}>
+          {t("send.pinHint", { amount: `${fmt(numAmount, senderCurrency)} ${senderCurrency}` })}
+        </UText>
+        <PinPrompt
+          value={pin}
+          onChange={(v) => { setPin(v); setPinError(null); }}
+          onComplete={(v) => { void processTransfer(v); }}
+          error={pinError}
+          label={t("pinx.label")}
+          autoFocus
+        />
+        <View style={{ height: 14 }} />
+        <Button label={t("send.pinConfirm")} icon="lock-closed-outline" onPress={() => { void processTransfer(pin); }} loading={loading} disabled={loading || pin.length !== 6} />
+        <View style={{ height: 10 }} />
+      </Sheet>
 
       {/* Indicatifs pays */}
       <Sheet visible={showPicker} onClose={() => setShowPicker(false)} title={t("wt.dialSheet")}>

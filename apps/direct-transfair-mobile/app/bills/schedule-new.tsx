@@ -12,7 +12,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "../../components/ui/Icon";
 import { api } from "../../services/api";
 import type { BillerView, BillScheduleFrequency, BillScheduleList, BillScheduleMode } from "../../services/billTypes";
-import { BillerRow, CategoryBadge, billCategoryLabel } from "../../components/bills/billsUi";
+import { BillerRow, CategoryBadge, TintCard, billCategoryLabel, categoryHue, categoryIcon } from "../../components/bills/billsUi";
 import { AmountInput, Button, Card, Chip, ErrorView, Field, NavBar, Notice, Screen, SkeletonRows, UText, useUI } from "../../components/ui";
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
 import { isKycRequired, kycRequiredMessage, KYC_SCREEN } from "../../utils/kycGate";
@@ -166,14 +166,16 @@ export default function ScheduleNewScreen() {
         )
       ) : (
         <Rise>
-          <Card pad={16} style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <CategoryBadge category={biller.category} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <UText v="bodyStrong" numberOfLines={2}>{biller.name}</UText>
-              <UText v="caption" tone="muted">{billCategoryLabel(biller.category)}</UText>
+          <TintCard hue={categoryHue(biller.category)} mark={categoryIcon(biller.category)} pad={16}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+              <CategoryBadge category={biller.category} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <UText v="bodyStrong" numberOfLines={2}>{biller.name}</UText>
+                <UText v="caption" tone="muted">{billCategoryLabel(biller.category)}</UText>
+              </View>
+              {!params.id && <Button small full={false} kind="ghost" label={t("bill.sch.change")} onPress={() => setBiller(null)} />}
             </View>
-            {!params.id && <Button small full={false} kind="ghost" label={t("bill.sch.change")} onPress={() => setBiller(null)} />}
-          </Card>
+          </TintCard>
 
           <Field style={{ marginTop: 16 }} label={t("bill.sch.label")} value={label} onChangeText={setLabel} maxLength={60} autoCapitalize="sentences" error={showErrors && !label.trim() ? t("bill.sch.labelRequired") : null} />
           <Field style={{ marginTop: 12 }} label={biller.referenceLabel} value={reference} onChangeText={setReference} hint={biller.referenceHint ?? undefined} autoCapitalize="characters" error={showErrors && !reference.trim() ? t("bill.refRequired") : null} />

@@ -45,8 +45,15 @@ export interface AmlResult {
   reasons: string[];
 }
 
-export function computeRiskScore(input: AmlInput): AmlResult {
-  const threshold = amlThresholdXof();
+/** ✅ lot 17 — réglages de la société (conformité) ; à défaut, les valeurs de la plateforme (variables d'environnement). */
+export interface AmlConfig {
+  threshold?: number | null;
+  flagScore?: number | null;
+}
+
+export function computeRiskScore(input: AmlInput, config: AmlConfig = {}): AmlResult {
+  const threshold = config.threshold && config.threshold > 0 ? config.threshold : amlThresholdXof();
+  const flagScore = config.flagScore && Number.isInteger(config.flagScore) && config.flagScore >= 1 && config.flagScore <= 100 ? config.flagScore : amlFlagScore();
   const reasons: string[] = [];
   let score = 0;
 
@@ -55,7 +62,7 @@ export function computeRiskScore(input: AmlInput): AmlResult {
     reasons.push('Taux de change indisponible : montant non évalué, revue manuelle requise');
     const vel = input.recentCount24h >= 5 ? 20 : 0;
     if (vel) reasons.push(`${input.recentCount24h + 1} opérations en 24 h`);
-    return { score: Math.max(amlFlagScore(), vel), flagged: true, reasons };
+    return { score: Math.max(flagScore, vel), flagged: true, reasons };
   }
   const amountXof = input.amountXof;
 
@@ -79,5 +86,5 @@ export function computeRiskScore(input: AmlInput): AmlResult {
   }
 
   score = Math.min(100, score);
-  return { score, flagged: score >= amlFlagScore(), reasons };
+  return { score, flagged: score >= flagScore, reasons };
 }

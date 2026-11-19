@@ -82,3 +82,25 @@ describe('WalletsService — montant normalisé avant écriture', () => {
     expect(state.balance.toString()).toBe('100');
   });
 });
+
+describe('assertAmountFitsCurrency', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { assertAmountFitsCurrency } = require('./money');
+  it('XOF / GNF : entiers seulement', () => {
+    expect(() => assertAmountFitsCurrency(1000, 'XOF')).not.toThrow();
+    expect(() => assertAmountFitsCurrency('50000', 'gnf')).not.toThrow();
+    expect(() => assertAmountFitsCurrency(1000.5, 'XOF')).toThrow(/nombre entier/);
+    expect(() => assertAmountFitsCurrency(0.4, 'GNF')).toThrow(/nombre entier/);
+  });
+  it('EUR / USD / GBP : 2 décimales au plus', () => {
+    expect(() => assertAmountFitsCurrency(10.25, 'EUR')).not.toThrow();
+    expect(() => assertAmountFitsCurrency(10, 'USD')).not.toThrow();
+    expect(() => assertAmountFitsCurrency(10.005, 'EUR')).toThrow(/2 décimales/);
+    expect(() => assertAmountFitsCurrency(0.1 + 0.2, 'GBP')).toThrow(/2 décimales/);
+  });
+  it('refuse NaN, infini et texte', () => {
+    expect(() => assertAmountFitsCurrency(NaN, 'XOF')).toThrow(/invalide/);
+    expect(() => assertAmountFitsCurrency(Infinity, 'EUR')).toThrow(/invalide/);
+    expect(() => assertAmountFitsCurrency('abc', 'EUR')).toThrow(/invalide/);
+  });
+});

@@ -39,6 +39,7 @@
 // ✅ v4.10 : 🐛 FIX — erreur de compilation TS2322 sur remove()
 // =========================================================
 
+import { assertNoFunds } from '../common/balance-guard'; // audit argent I5
 import {
   Injectable,
   ConflictException,
@@ -632,47 +633,27 @@ export class ClientsService {
     });
     const agencyIds = agencies.map((a) => a.id);
 
+    // ✅ audit argent (I5) — le contrôle des soldes est fait dans la transaction ci-dessous : REFUS (409 BALANCE_NOT_EMPTY) tant
+    // que la société, une de ses agences, un de ses clients ou un de ses commerces détient de l'argent.
     const warnings: string[] = [];
 
-    const clientBalance = client.wallets.reduce((sum, w) => sum + Number(w.balance), 0);
-    if (clientBalance !== 0) {
-      warnings.push(
-        `Le wallet de la société conservait un solde de ${clientBalance} au moment de la désactivation — à réconcilier séparément.`,
-      );
-    }
-
-    if (userIds.length > 0) {
-      const userWallets = await this.prisma.wallet.findMany({
-        // + portefeuilles des commerces (compte marchand) de ces utilisateurs
-        where: { OR: [{ userId: { in: userIds } }, { merchant: { userId: { in: userIds } } }], isActive: true },
-        select: { balance: true },
-      });
-      const usersBalance = userWallets.reduce((sum, w) => sum + Number(w.balance), 0);
-      if (usersBalance !== 0) {
-        warnings.push(
-          `Les wallets des ${userIds.length} utilisateur(s) conservaient un solde total de ${usersBalance} — à réconcilier séparément.`,
-        );
-      }
-    }
-
-    if (agencyIds.length > 0) {
-      const agencyWallets = await this.prisma.wallet.findMany({
-        where: { agencyId: { in: agencyIds }, isActive: true },
-        select: { balance: true },
-      });
-      const agenciesBalance = agencyWallets.reduce((sum, w) => sum + Number(w.balance), 0);
-      if (agenciesBalance !== 0) {
-        warnings.push(
-          `Les wallets des ${agencyIds.length} agence(s) conservaient un solde total de ${agenciesBalance} — à réconcilier séparément.`,
-        );
-      }
-    }
-
     const updatedClient = await this.prisma.$transaction(async (tx) => {
+      const funds = await tx.wallet.findMany({
+        where: {
+          OR: [
+            { clientId: id },
+            ...(agencyIds.length ? [{ agencyId: { in: agencyIds } }] : []),
+            ...(userIds.length ? [{ userId: { in: userIds } }, { merchant: { userId: { in: userIds } } }] : []),
+          ],
+        },
+        select: { currency: true, balance: true, reservedBalance: true },
+      });
+      assertNoFunds(funds, 'Cette société (portefeuille, agences, clients ou commerces)', 'Pour la couper tout de suite, suspendez-la (statut) : la suspension ne touche pas aux soldes.');
+
       if (userIds.length > 0) {
         try { await tx.otpLog.deleteMany({ where: { userId: { in: userIds } } }); } catch (_) {}
         try { await tx.userDevice.deleteMany({ where: { userId: { in: userIds } } }); } catch (_) {}
-        try { await tx.userSession.deleteMany({ where: { userId: { in: userIds } } }); } catch (_) {}
+        try { await tx.userSession.updateMany({ where: { userId: { in: userIds }, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }); } catch (_) {}
 
         await tx.wallet.updateMany({
           where: { userId: { in: userIds }, isActive: true },

@@ -1,4 +1,5 @@
 /* apps/web-admin/src/styles/login.css */
+/* v4 : design plus sobre et professionnel — panneau marque à points, atouts détaillés, formulaire plat (champs 54 px), bouton gradient. */
 /* ─── Connexion v3 ─────────────────────────────────────────
    Ordinateur : panneau marque en dégradé (couleurs choisies par le super admin : --brand / --accent) + carte flottante.
    Mobile / tablette : bandeau en dégradé avec le logo, puis une feuille arrondie qui porte le formulaire.
@@ -14,10 +15,13 @@
 .login__brand {
   position: relative;
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
   padding: clamp(40px, 5vw, 72px);
   overflow: hidden;
   background:
+    radial-gradient(rgba(255, 255, 255, 0.11) 1.2px, transparent 1.4px) 0 0 / 26px 26px,
     radial-gradient(120% 90% at 100% 0%, color-mix(in oklab, var(--brand) 78%, white) 0%, transparent 60%),
     linear-gradient(160deg, var(--brand) 0%, var(--brand-deep) 100%);
   color: #fff;
@@ -87,8 +91,10 @@
 .login__brand-inner {
   position: relative;
   display: grid;
-  gap: 20px;
-  max-width: 32rem;
+  flex: 1;
+  align-content: center;
+  gap: 36px;
+  max-width: 34rem;
   animation: login-rise 0.7s cubic-bezier(0.22, 0.7, 0.2, 1) both;
 }
 
@@ -106,7 +112,7 @@
 }
 
 .login__brand h1 {
-  font-size: clamp(2.2rem, 4.2vw, 3.5rem);
+  font-size: clamp(2.1rem, 3.8vw, 3.1rem);
   font-weight: 750;
   line-height: 1.04;
   letter-spacing: -0.02em;
@@ -119,25 +125,69 @@
   opacity: 0.88;
 }
 
+.login__brand-copy {
+  display: grid;
+  gap: 14px;
+}
+
+.login__eyebrow {
+  color: var(--brand);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.login__eyebrow--light {
+  color: rgba(255, 255, 255, 0.78);
+}
+
 .login__perks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 4px 0 0;
-  padding: 0;
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 22px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
   list-style: none;
 }
 
 .login__perks li {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  gap: 14px;
+}
+
+.login__perk-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.login__perk-text {
+  display: grid;
+  gap: 1px;
+}
+
+.login__perk-text strong {
+  font-size: var(--t-md);
+  font-weight: 650;
+}
+
+.login__perk-text small {
+  color: inherit;
   font-size: var(--t-sm);
-  font-weight: 600;
+  opacity: 0.8;
+}
+
+.login__brand-foot {
+  position: relative;
+  font-size: var(--t-sm);
+  opacity: 0.65;
 }
 
 /* ── Logo (ratio automatique) ── */
@@ -167,11 +217,11 @@
 }
 
 .login__card {
-  width: min(100%, 440px);
-  padding: 38px 34px;
+  width: min(100%, 460px);
+  padding: 40px 36px;
   border: 1px solid var(--line-soft);
-  border-radius: 28px;
-  box-shadow: var(--sh-2);
+  border-radius: 24px;
+  box-shadow: 0 24px 60px -32px rgba(20, 40, 30, 0.28), 0 2px 6px rgba(20, 40, 30, 0.05);
   animation: login-rise 0.7s 0.12s cubic-bezier(0.22, 0.7, 0.2, 1) both;
 }
 
@@ -180,14 +230,82 @@
   gap: 18px;
 }
 
+.login__heading {
+  display: grid;
+  gap: 6px;
+}
+
 .login__heading h2 {
-  font-size: 1.85rem;
+  font-size: 1.9rem;
   letter-spacing: -0.02em;
 }
 
 .login__heading p {
-  margin-top: 6px;
   color: var(--ink-2);
+}
+
+/* Champs et bouton plus grands, plus nets (cible tactile confortable). */
+.login .field input {
+  height: 54px;
+  border-radius: 14px;
+  font-size: 1rem;
+}
+
+.login .btn--block {
+  min-height: 54px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--brand), var(--brand-deep));
+  font-size: 1.0625rem;
+  letter-spacing: 0.01em;
+}
+
+.login .btn--block:disabled {
+  background: color-mix(in oklab, var(--brand) 45%, white);
+}
+
+/* Carte « Installer l'application » */
+.login__install {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px dashed color-mix(in oklab, var(--brand) 40%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--brand) 6%, white);
+}
+
+.login__install-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--brand) 14%, white);
+  color: var(--brand);
+}
+
+.login__install-text {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.login__install-text strong {
+  font-size: var(--t-md);
+}
+
+.login__install-text span {
+  color: var(--ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.35;
+}
+
+.login__install .btn {
+  min-height: 40px;
+  padding: 0 14px;
+  flex: none;
 }
 
 .login__forgot {
@@ -228,6 +346,7 @@
     display: block;
     min-height: 100dvh;
     background:
+      radial-gradient(rgba(255, 255, 255, 0.1) 1.2px, transparent 1.4px) 0 0 / 24px 24px,
       radial-gradient(120% 80% at 100% 0%, color-mix(in oklab, var(--brand) 78%, white) 0%, transparent 60%),
       linear-gradient(165deg, var(--brand) 0%, var(--brand-deep) 100%);
   }
@@ -302,7 +421,7 @@
   }
 
   .login__heading h2 {
-    font-size: 1.5rem;
+    font-size: 1.6rem;
   }
 
   .login__heading p {

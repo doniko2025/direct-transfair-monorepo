@@ -70,7 +70,10 @@ export type AlertType =
   | 'AML_FLAG'
   | 'RATE_ALERT_TRIGGERED'
   | 'SCHEDULED_TRANSFER_FAILED'
-  | 'DEVICE_NEW_LOGIN';
+  | 'DEVICE_NEW_LOGIN'
+  | 'SANCTION_MATCH'
+  | 'AML_RULE'
+  | 'WEBHOOK_FAILING';
 
 export interface AlertCompanyRef {
   id: number;

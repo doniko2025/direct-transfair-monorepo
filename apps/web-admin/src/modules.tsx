@@ -53,6 +53,17 @@ import MerchantsPage from './pages/merchants/MerchantsPage';
 import BillersPage from './pages/bills/BillersPage';
 import BillPaymentsPage from './pages/bills/BillPaymentsPage';
 import BillReconcilePage from './pages/bills/BillReconcilePage';
+import AgentsBoardPage from './pages/pilotage/AgentsBoardPage';
+import ReferralPage from './pages/growth/ReferralPage';
+import CompliancePage from './pages/compliance/CompliancePage';
+import RulesPage from './pages/compliance/RulesPage';
+import WatchlistPage from './pages/compliance/WatchlistPage';
+import WebhooksPage from './pages/webhooks/WebhooksPage';
+import CashClosingPage from './pages/pilotage/CashClosingPage';
+import ClosingsPage from './pages/pilotage/ClosingsPage';
+import LiquidityPage from './pages/pilotage/LiquidityPage';
+import ProfitabilityPage from './pages/pilotage/ProfitabilityPage';
+import ReconciliationPage from './pages/pilotage/ReconciliationPage'; // audit argent I3
 import SupportClientPage from './pages/support/SupportClientPage';
 import SupportClientsPage from './pages/support/SupportClientsPage';
 import SupportRefundsPage from './pages/support/SupportRefundsPage';
@@ -178,4 +189,19 @@ export const MODULE_ROUTES: readonly ModuleRoute[] = [
   { path: '/send-cash', roles: AGENT, element: <SendCashPage /> },
   { path: '/remit', roles: AGENT, element: <RemitPage /> },
   { path: '/stats', roles: AGENT, element: <StatsPage /> },
+  { path: '/closing', roles: AGENT, element: <CashClosingPage /> },
+
+  // Lot 15 — Pilotage (administrateur de société) : caisses, liquidité, rentabilité, objectifs des agents
+  { path: '/pilotage/caisses', roles: COMPANY, element: <ClosingsPage /> },
+  { path: '/pilotage/liquidite', roles: COMPANY, element: <LiquidityPage /> },
+  { path: '/pilotage/rentabilite', roles: COMPANY, element: <ProfitabilityPage /> },
+  { path: '/pilotage/agents', roles: COMPANY, element: <AgentsBoardPage /> },
+  { path: '/pilotage/reconciliation', roles: COMPANY, element: <ReconciliationPage /> },
+  // Lot 16 — croissance : programme de parrainage
+  { path: '/parrainage', roles: COMPANY, element: <ReferralPage /> },
+  // Lot 17 — conformité et robustesse : dossiers, listes de surveillance, règles AML, webhooks fiables
+  { path: '/conformite', roles: COMPANY, element: <CompliancePage /> },
+  { path: '/conformite/listes', roles: COMPANY, element: <WatchlistPage /> },
+  { path: '/conformite/regles', roles: COMPANY, element: <RulesPage /> },
+  { path: '/webhooks', roles: COMPANY, element: <WebhooksPage /> },
 ];

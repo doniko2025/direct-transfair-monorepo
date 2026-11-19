@@ -106,6 +106,12 @@ export const bills = {
   'bill.history':         { fr: 'Mes paiements de factures', en: 'My bill payments', pt: 'Os meus pagamentos de faturas' },
   'bill.removeSaved':     { fr: 'Retirer', en: 'Remove', pt: 'Remover' },
   'bill.unavailable':     { fr: 'Indisponible', en: 'Unavailable', pt: 'Indisponível' },
+  'bill.chooseCat':       { fr: 'Choisissez une catégorie', en: 'Choose a category', pt: 'Escolha uma categoria' },
+  'bill.heroSub':         { fr: 'Électricité, eau, internet, scolarité… réglez vos factures en quelques secondes depuis votre portefeuille.', en: 'Electricity, water, internet, school fees… pay your bills in seconds from your wallet.', pt: 'Eletricidade, água, internet, propinas… pague as suas faturas em segundos a partir da carteira.' },
+  'bill.heroChipInstant': { fr: 'Paiement immédiat', en: 'Instant payment', pt: 'Pagamento imediato' },
+  'bill.heroChipRefund':  { fr: 'Remboursé si refusé', en: 'Refunded if refused', pt: 'Reembolsado se recusado' },
+  'bill.billersCount':    { fr: '{n} facturier(s)', en: '{n} biller(s)', pt: '{n} faturador(es)' },
+  'bill.noneHint':        { fr: 'Vos paiements apparaîtront ici, avec leur reçu.', en: 'Your payments will appear here, with their receipt.', pt: 'Os seus pagamentos aparecerão aqui, com o recibo.' },
   'bill.help':            { fr: 'Le paiement est débité tout de suite de votre portefeuille. Si le facturier refuse, vous êtes remboursé.', en: 'The payment is debited from your wallet right away. If the biller refuses, you are refunded.', pt: 'O pagamento é debitado de imediato da sua carteira. Se o faturador recusar, é reembolsado.' },
 
   // ── Historique des opérations (activité) ──

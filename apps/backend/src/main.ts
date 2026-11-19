@@ -1,7 +1,9 @@
 // apps/backend/src/main.ts
 // =========================================================
 // ✅ v2.7 (phase 7) : titre et description Swagger lus dans la configuration plateforme (PLATFORM_NAME).
-// MAIN v2.10
+// MAIN v2.11
+// ✅ v2.11 (audit sécurité) : (1) limites de corps relevées (3 à 18 Mo) seulement pour un jeton à signature valide, sinon 100 Ko — plus de lecture de 18 Mo par un anonyme ;
+//   (2) CORS : en production, plus aucun suffixe ouvert par défaut (« .vercel.app » ne l'est plus tant que CORS_ALLOWED_SUFFIXES n'est pas défini).
 // ✅ v2.10 : avertissement au démarrage si PHONE_VERIFICATION_REQUIRED=true alors que Twilio n'est pas configuré (aucun SMS ne partirait : inscriptions bloquées).
 // ✅ v2.9 : CORS — « .railway.app » retiré du défaut de CORS_ALLOWED_SUFFIXES (Railway est abandonné). Le défaut devient « .vercel.app » seul ;
 //   pour l'ÉTEINDRE aussi (recommandé en production) : CORS_ORIGINS / FRONTEND_URL = adresses exactes des portails et CORS_ALLOWED_SUFFIXES= (vide).
@@ -69,10 +71,12 @@
 //      bloquant) plutôt que de vider la liste des domaines autorisés.
 // =========================================================
 
+import { enforceProductionReadiness } from './common/production-readiness';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory }    from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet'; // ✅ v2.0 — npm install helmet
+import { JwtService } from '@nestjs/jwt'; // ✅ audit sécu — limite de corps relevée seulement pour un jeton valide
 import { json, urlencoded, type NextFunction, type Request, type Response } from 'express'; // ✅ lot 7 — limite de corps propre à l'envoi des pièces KYC
 
 import { AppModule }     from './app.module';
@@ -154,24 +158,50 @@ async function bootstrap(): Promise<void> {
   // ✅ lot 7 — l'envoi d'une pièce d'identité (photos en base64) dépasse les 100 Ko par défaut : limite relevée sur cette SEULE route
   // (/api/kyc/documents, 2 photos de 6 Mo au plus), le reste de l'API garde la limite d'origine de 100 Ko.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
-  app.use('/api/kyc/documents', json({ limit: '18mb' }));
+
+  // ✅ audit sécu — les limites relevées (jusqu'à 18 Mo) étaient appliquées AVANT l'authentification : un anonyme pouvait faire lire
+  // 18 Mo par requête à l'API. Désormais, la limite relevée ne s'applique que si la requête porte un jeton d'accès valide
+  // (signature vérifiée, sans accès base) ; sinon la limite d'origine de 100 Ko reste en vigueur.
+  // Toutes ces routes sont de toute façon protégées par JwtAuthGuard : aucun usage légitime n'est touché.
+  const jwtForBodyLimit = app.get(JwtService, { strict: false });
+  const hasValidAccessToken = (req: Request): boolean => {
+    const header = req.headers.authorization;
+    if (typeof header !== 'string' || !/^Bearer\s+\S+$/i.test(header)) return false;
+    try {
+      // ignoreExpiration : un jeton expiré (mais à signature valide) passe, pour que l'app reçoive un 401 et renouvelle sa session au lieu d'un 413.
+      jwtForBodyLimit.verify(header.replace(/^Bearer\s+/i, ''), { ignoreExpiration: true });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const authedJson = (limit: string) => {
+    const big = json({ limit });
+    const small = json({ limit: '100kb' });
+    return (req: Request, res: Response, next: NextFunction) =>
+      hasValidAccessToken(req) ? big(req, res, next) : small(req, res, next);
+  };
+
+  // ✅ lot 7 — l'envoi d'une pièce d'identité (photos en base64) dépasse les 100 Ko par défaut : limite relevée sur cette SEULE route
+  // (/api/kyc/documents, 2 photos de 6 Mo au plus), le reste de l'API garde la limite d'origine de 100 Ko.
+  app.use('/api/kyc/documents', authedJson('18mb'));
   // Photo de profil (image en base64, 2 Mo au plus une fois décodée ≈ 2,8 Mo en base64) : limite relevée sur cette seule route.
-  app.use('/api/profile-photo', json({ limit: '4mb' }));
+  app.use('/api/profile-photo', authedJson('4mb'));
   // ✅ lot 13 — logo du commerce (image ≤ 1 Mo une fois décodée ≈ 1,4 Mo en base64) : sans cette limite relevée, la limite d'origine
   // de 100 Ko faisait répondre « request entity too large » avant même que le serveur ne lise le logo. Le service rend ensuite
   // un message clair si l'image dépasse 1 Mo.
-  app.use('/api/merchants/me/logo', json({ limit: '3mb' }));
+  app.use('/api/merchants/me/logo', authedJson('3mb'));
   // ✅ lot 14b — relevé CSV d'un facturier à rapprocher (≤ 5 000 lignes, texte ≈ 1 Mo) : POST /api/bills-admin/reconcile et /reconcile/export.csv.
-  app.use(/^\/api\/bills-admin\/reconcile(\/export\.csv)?\/?$/, json({ limit: '3mb' }));
+  app.use(/^\/api\/bills-admin\/reconcile(\/export\.csv)?\/?$/, authedJson('3mb'));
   // ✅ lot 14b — confirmation asynchrone d'un facturier : la signature HMAC porte sur le corps BRUT, conservé dans req.rawBody avant l'analyse JSON.
   app.use('/api/bills/webhook', json({ limit: '100kb', verify: (req, _res, buf) => { (req as Request & { rawBody?: Buffer }).rawBody = buf; } }));
   // Pièce justificative du RCCM (photo ou PDF ≤ 6 Mo une fois décodée ≈ 8,1 Mo en base64).
-  app.use('/api/merchants/me/rccm-document', json({ limit: '9mb' }));
+  app.use('/api/merchants/me/rccm-document', authedJson('9mb'));
   // Documents légaux d'une société (RCCM, pièce d'identité du représentant… ≤ 6 Mo décodés ≈ 8,1 Mo en base64) : POST /api/clients/:id/documents.
-  app.use(/^\/api\/clients\/\d+\/documents\/?$/, json({ limit: '9mb' }));
+  app.use(/^\/api\/clients\/\d+\/documents\/?$/, authedJson('9mb'));
   // ✅ lot 8 — l'envoi au comptoir peut porter les photos recto/verso de la pièce du client de passage : même limite, sur POST /api/transactions seulement.
   app.use('/api/transactions', (req: Request, res: Response, next: NextFunction) =>
-    req.method === 'POST' && (req.path === '/' || req.path === '') ? json({ limit: '18mb' })(req, res, next) : next(),
+    req.method === 'POST' && (req.path === '/' || req.path === '') ? authedJson('18mb')(req, res, next) : next(),
   );
   app.use(json({ limit: '100kb' }));
   app.use(urlencoded({ extended: true, limit: '100kb' }));
@@ -256,7 +286,10 @@ async function bootstrap(): Promise<void> {
       const allowedOrigins = [...listEnv(process.env.CORS_ORIGINS), ...listEnv(process.env.FRONTEND_URL)];
       const allowedSuffixes =
         process.env.CORS_ALLOWED_SUFFIXES === undefined
-          ? ['.vercel.app'] // comportement historique, à restreindre en production (.railway.app retiré en v2.9 : hébergeur abandonné)
+          // ✅ audit sécu — sûr par défaut : en production, AUCUN suffixe n'est ouvert tant que CORS_ALLOWED_SUFFIXES n'est pas défini
+          // explicitement (« .vercel.app » laissait n'importe quel site Vercel appeler l'API avec le cookie de session).
+          // Hors production (développement, aperçus) le comportement historique « .vercel.app » est conservé.
+          ? (process.env.NODE_ENV === 'production' ? [] : ['.vercel.app'])
           : listEnv(process.env.CORS_ALLOWED_SUFFIXES);
       const allowLocalhost = (process.env.CORS_ALLOW_LOCALHOST ?? 'true').trim().toLowerCase() !== 'false';
 
@@ -298,11 +331,14 @@ async function bootstrap(): Promise<void> {
   const swaggerFlag = (process.env.SWAGGER_ENABLED ?? '').trim().toLowerCase();
   const swaggerEnabled = swaggerFlag ? swaggerFlag === 'true' : !isProduction;
 
+  // Audit argent : interrupteurs de développement encore ouverts en production (journalisé ; refus de démarrer si STRICT_PRODUCTION=true).
+  enforceProductionReadiness();
+
   if (isProduction && process.env.CORS_ALLOWED_SUFFIXES === undefined) {
     console.warn(
-      "⚠️  [CORS] CORS_ALLOWED_SUFFIXES n'est pas défini : « .vercel.app » reste autorisé (n'importe quel site hébergé chez Vercel peut appeler l'API, " +
-      'y compris pour renouveler une session par cookie). Définis CORS_ORIGINS / FRONTEND_URL avec les adresses exactes de tes portails, ' +
-      'puis CORS_ALLOWED_SUFFIXES= (vide) pour restreindre.',
+      "ℹ️  [CORS] CORS_ALLOWED_SUFFIXES n'est pas défini : en production aucun suffixe n'est autorisé (« .vercel.app » n'est plus ouvert par défaut). " +
+      'Seules CORS_ORIGINS / FRONTEND_URL, les domaines personnalisés connus et STATIC_KNOWN_HOSTNAMES passent. ' +
+      'Si un portail est servi depuis une adresse *.vercel.app, ajoute-la à CORS_ORIGINS (ou définis CORS_ALLOWED_SUFFIXES=.vercel.app pour rouvrir).',
     );
   }
 

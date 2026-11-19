@@ -39,6 +39,8 @@ import {
 } from '@nestjs/common';
 
 import { TransactionsService } from './transactions.service';
+import { PinVerifierService } from '../merchants/pin-verifier.service';
+import { assertSendPin } from './send-pin';
 import {
   CreateTransactionDto,
   CreateDepositDto,
@@ -64,7 +66,10 @@ function assertAmountBounds(n: number): void {
 @UseGuards(JwtAuthGuard)
 @Controller('transactions')
 export class TransactionsController {
-  constructor(private readonly transactionsService: TransactionsService) {}
+  constructor(
+    private readonly transactionsService: TransactionsService,
+    private readonly pins: PinVerifierService, // audit argent I1 — code secret avant un envoi
+  ) {}
 
   private getUserId(req: AuthedRequest): string {
     const user = req.user;
@@ -254,6 +259,9 @@ export class TransactionsController {
     @Headers(IDEMPOTENCY_HEADER) idempotencyKey?: string,
   ) {
     const userId = this.getUserId(req);
+    // ✅ audit argent (I1) : un client (USER) confirme chaque envoi par son code secret. Contrôle fait ici, donc propre à l'appel
+    // d'un humain : les envois programmés (planificateur) appellent le service directement et n'ont pas à le saisir.
+    await assertSendPin(this.pins, req.user, dto.pin);
     return this.transactionsService.create(userId, dto, parseIdempotencyKey(idempotencyKey ?? dto.idempotencyKey));
   }
 

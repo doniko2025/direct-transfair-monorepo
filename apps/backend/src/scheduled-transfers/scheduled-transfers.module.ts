@@ -12,6 +12,7 @@ import { PushModule } from '../push/push.module';
 import { MailModule } from '../mail/mail.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { KycModule } from '../kyc/kyc.module';
+import { MerchantsModule } from '../merchants/merchants.module'; // audit argent I1 — PinVerifierService
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { KycModule } from '../kyc/kyc.module';
     AuthModule,
     PushModule,
     MailModule,
+    MerchantsModule,            // audit argent I1 — code secret à la création
     KycModule,                  // lot 7 — garde KYC à la création d'un virement programmé
     TransactionsModule,         // TransactionsService.create() : tout l'envoi (frais, seuil, plafonds, code, AML)
   ],

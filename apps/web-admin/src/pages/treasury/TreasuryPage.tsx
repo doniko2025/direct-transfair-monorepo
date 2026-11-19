@@ -20,6 +20,7 @@ import ConvertDialog from './ConvertDialog';
 import DeclareDialog from './DeclareDialog';
 import MovementDialog, { type MovementMode } from './MovementDialog';
 import PendingPayments from './PendingPayments';
+import WithdrawalRequests from './WithdrawalRequests'; // audit argent I4
 
 type Dialog =
   | { kind: 'movement'; mode: MovementMode; currency?: TreasuryCurrency }
@@ -93,11 +94,13 @@ export default function TreasuryPage() {
 
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0); // recharge aussi la liste des demandes de retrait
 
   const reloadAll = useCallback(() => {
     wallets.reload();
     overview.reload();
     agencies.reload();
+    setReloadTick((n) => n + 1);
   }, [wallets, overview, agencies]);
 
   const done = useCallback(
@@ -239,6 +242,8 @@ export default function TreasuryPage() {
             )}
           </ul>
         </section>
+
+        <WithdrawalRequests onDecided={done} refreshKey={reloadTick} />
 
         {isSuper ? (
           <PendingPayments onDecided={done} />

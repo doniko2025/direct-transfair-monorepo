@@ -223,7 +223,7 @@ export class SupportStaffService {
     } else {
       await this.prisma.$transaction([
         this.prisma.user.update({ where: { id }, data: { isSuspended: true, suspendedAt: new Date(), suspendedReason: 'Suspendu par l\'administrateur' } }),
-        this.prisma.userSession.deleteMany({ where: { userId: id } }),
+        this.prisma.userSession.updateMany({ where: { userId: id, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }),
       ]);
     }
     await this.audit(user, clientId, 'USER_UPDATE', id, { kind: active ? 'SUPPORT_STAFF_REACTIVATE' : 'SUPPORT_STAFF_SUSPEND' });
@@ -237,7 +237,7 @@ export class SupportStaffService {
     const hash = await bcrypt.hash(password, 10);
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id }, data: { password: hash, mustChangePassword: true } }),
-      this.prisma.userSession.deleteMany({ where: { userId: id } }),
+      this.prisma.userSession.updateMany({ where: { userId: id, status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: new Date() } }),
     ]);
     await this.audit(user, clientId, 'PASSWORD_CHANGE', id, { kind: 'SUPPORT_STAFF_RESET_BY_ADMIN' });
     this.sendPassword(staff.email, staff.firstName, password, `Nouveau mot de passe ${platform.name}`, 'Votre administrateur a réinitialisé votre mot de passe.');

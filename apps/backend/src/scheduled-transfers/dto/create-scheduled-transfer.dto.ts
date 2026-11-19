@@ -42,4 +42,8 @@ export class CreateScheduledTransferDto {
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(1000)
   maxExecutions?: number;
+
+  /** Audit argent (I1) — code secret à 6 chiffres : programmer un envoi, c'est l'autoriser à l'avance. Jamais enregistré. */
+  @IsOptional() @IsString() @MaxLength(12)
+  pin?: string;
 }

@@ -379,6 +379,8 @@ export interface CreateTransactionPayload {
   payoutMethod: PayoutMethod;
   note?: string;
   promoCode?: string;
+  /** Code secret à 6 chiffres du client (obligatoire pour un envoi — audit argent I1). */
+  pin?: string;
   [key: string]: unknown;
 }
 

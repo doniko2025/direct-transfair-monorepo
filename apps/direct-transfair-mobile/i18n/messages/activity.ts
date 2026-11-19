@@ -153,6 +153,12 @@ export const activity = {
   'rcpt.shareTitle': { fr: 'Reçu {ref}', en: 'Receipt {ref}', pt: 'Recibo {ref}' },
   'rcpt.shareUnavail': { fr: 'Partage indisponible', en: 'Sharing unavailable', pt: 'Partilha indisponível' },
   'rcpt.shareUnavailMsg': { fr: "Le partage de fichiers n'est pas disponible sur cet appareil.", en: 'File sharing is not available on this device.', pt: 'A partilha de ficheiros não está disponível neste dispositivo.' },
+  'rcpt.pdfCardTitle': { fr: 'Reçu PDF officiel', en: 'Official PDF receipt', pt: 'Recibo PDF oficial' },
+  'rcpt.pdfCardHint':  { fr: 'Préparation du reçu…', en: 'Preparing the receipt…', pt: 'A preparar o recibo…' },
+  'rcpt.pdfCardStatus': { fr: 'Statut sur le reçu : {status}', en: 'Status on the receipt: {status}', pt: 'Estado no recibo: {status}' },
+  'rcpt.pdfDownload': { fr: 'Télécharger', en: 'Download', pt: 'Transferir' },
+  'rcpt.pdfSend':     { fr: 'WhatsApp / e-mail', en: 'WhatsApp / email', pt: 'WhatsApp / e-mail' },
+  'rcpt.pdfSendHint': { fr: 'Le PDF (avec QR de vérification) est joint à votre message : choisissez WhatsApp, Gmail, Drive ou Fichiers.', en: 'The PDF (with verification QR) is attached to your message: choose WhatsApp, Gmail, Drive or Files.', pt: 'O PDF (com QR de verificação) é anexado à sua mensagem: escolha WhatsApp, Gmail, Drive ou Ficheiros.' },
   'rcpt.pdfFail':    { fr: 'Impossible de générer le PDF. Réessayez.', en: 'Unable to generate the PDF. Please try again.', pt: 'Não foi possível gerar o PDF. Tente novamente.' },
   'rcpt.printFail':  { fr: "Impossible d'imprimer le reçu.", en: 'Unable to print the receipt.', pt: 'Não foi possível imprimir o recibo.' },
 

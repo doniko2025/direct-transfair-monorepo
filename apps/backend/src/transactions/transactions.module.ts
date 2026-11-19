@@ -26,6 +26,7 @@ import { NotificationsModule }    from '../notifications/notifications.module'; 
 import { ValidationThresholdsModule } from '../validation-thresholds/validation-thresholds.module'; // ✅ v4.2 (phase 6)
 import { TransferLimitsModule } from '../transfer-limits/transfer-limits.module'; // phase 6 — plafonds d'envoi
 import { KycModule } from '../kyc/kyc.module'; // lot 7 — identité vérifiée / client de passage
+import { MerchantsModule } from '../merchants/merchants.module'; // audit argent I1 — PinVerifierService
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { KycModule } from '../kyc/kyc.module'; // lot 7 — identité vérifiée
     ValidationThresholdsModule, // seuil de validation réglé par l'admin société
     TransferLimitsModule, // plafonds d'envoi par niveau KYC
     KycModule,            // lot 7 — garde KYC + fiche du client de passage
+    MerchantsModule,      // audit argent I1 — code secret avant un envoi
   ],
   controllers: [TransactionsController, TransactionReceiptsController, TransferVerifyController],
   providers:   [TransactionsService, PickupExpiryService, TransactionReceiptsService],

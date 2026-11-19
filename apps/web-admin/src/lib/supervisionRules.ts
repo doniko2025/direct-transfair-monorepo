@@ -127,6 +127,9 @@ export const ALERT_TYPE_LABEL: Record<AlertType, string> = {
   RATE_ALERT_TRIGGERED: 'Alerte de taux déclenchée',
   SCHEDULED_TRANSFER_FAILED: 'Virement programmé en échec',
   DEVICE_NEW_LOGIN: 'Connexion depuis un nouvel appareil',
+  SANCTION_MATCH: 'Correspondance avec une liste de surveillance',
+  AML_RULE: 'Règle anti-blanchiment déclenchée',
+  WEBHOOK_FAILING: 'Webhook désactivé (échecs répétés)',
 };
 
 export type AlertTab = 'open' | 'resolved' | 'all';

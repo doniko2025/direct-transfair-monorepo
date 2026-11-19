@@ -99,6 +99,9 @@ export const transfer = {
   'send.noAccountMsg': { fr: "Aucun compte n'existe avec ce numéro. Rien n'a été débité. Vérifiez le numéro (indicatif du pays compris) ou choisissez le retrait en agence.", en: 'No account exists with this number. Nothing was charged. Check the number (including the country code) or choose agency pickup.', pt: 'Não existe nenhuma conta com este número. Nada foi debitado. Verifique o número (incluindo o indicativo do país) ou escolha o levantamento em agência.' },
   'send.shortNumberMsg': { fr: "Numéro trop court ou contact introuvable. Rien n'a été débité.", en: 'Number too short or contact not found. Nothing was charged.', pt: 'Número demasiado curto ou contacto não encontrado. Nada foi debitado.' },
   'send.selectBenef': { fr: 'Sélectionnez un bénéficiaire.', en: 'Select a beneficiary.', pt: 'Selecione um beneficiário.' },
+  'send.pinTitle':  { fr: 'Confirmez avec votre code secret', en: 'Confirm with your secret code', pt: 'Confirme com o seu código secreto' },
+  'send.pinHint':   { fr: 'Pour votre sécurité, saisissez votre code à 6 chiffres afin d’envoyer {amount}.', en: 'For your security, enter your 6-digit code to send {amount}.', pt: 'Para a sua segurança, introduza o seu código de 6 dígitos para enviar {amount}.' },
+  'send.pinConfirm': { fr: 'Valider et envoyer', en: 'Confirm and send', pt: 'Validar e enviar' },
   'send.genericError': { fr: 'Une erreur est survenue.', en: 'Something went wrong.', pt: 'Ocorreu um erro.' },
 
   // ── Écran ──
@@ -161,6 +164,15 @@ export const transfer = {
   'send.successCash': { fr: 'Communiquez ce code à {name} pour le retrait.', en: 'Give this code to {name} for the pickup.', pt: 'Comunique este código a {name} para o levantamento.' },
 
   // ── Recharge du wallet ──
+  'rc.pickMethod':  { fr: 'Comment voulez-vous recharger ?', en: 'How do you want to top up?', pt: 'Como quer carregar?' },
+  'rc.after':       { fr: 'Après la recharge : {amount}', en: 'After the top-up: {amount}', pt: 'Após o carregamento: {amount}' },
+  'rc.useMyNumber': { fr: 'Utiliser mon numéro', en: 'Use my number', pt: 'Usar o meu número' },
+  'rc.omStep1':     { fr: 'Saisissez le numéro Orange Money à débiter', en: 'Enter the Orange Money number to charge', pt: 'Introduza o número Orange Money a debitar' },
+  'rc.omStep2':     { fr: 'Validez le paiement sur votre téléphone', en: 'Approve the payment on your phone', pt: 'Valide o pagamento no seu telemóvel' },
+  'rc.omStep3':     { fr: 'Votre wallet est crédité automatiquement', en: 'Your wallet is credited automatically', pt: 'A sua wallet é creditada automaticamente' },
+  'rc.swStep1':     { fr: 'Ouvrez Sendwave et envoyez le montant', en: 'Open Sendwave and send the amount', pt: 'Abra o Sendwave e envie o montante' },
+  'rc.swStep2':     { fr: 'Revenez ici et touchez « Vérifier le statut »', en: 'Come back here and tap “Check status”', pt: 'Volte aqui e toque em «Verificar o estado»' },
+  'rc.swStep3':     { fr: 'Votre wallet est crédité dès la confirmation', en: 'Your wallet is credited once confirmed', pt: 'A sua wallet é creditada após a confirmação' },
   'rc.card':        { fr: 'Carte', en: 'Card', pt: 'Cartão' },
   'rc.successTitle': { fr: '✅ Recharge réussie', en: '✅ Top-up successful', pt: '✅ Carregamento concluído' },
   'rc.successMsg':  { fr: '{amount} a bien été créditée sur votre wallet.', en: '{amount} has been credited to your wallet.', pt: '{amount} foi creditado na sua wallet.' },

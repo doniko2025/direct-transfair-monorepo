@@ -150,11 +150,11 @@ export function MerchantQrCard({
 
 // ─── Saisie du code secret ───────────────────────────────
 export function PinPrompt({
-  value, onChange, onComplete, error, label, autoFocus,
-}: { value: string; onChange: (v: string) => void; onComplete?: (v: string) => void; error?: string | null; label?: string; autoFocus?: boolean }) {
+  value, onChange, onComplete, error, label, autoFocus, dense,
+}: { value: string; onChange: (v: string) => void; onComplete?: (v: string) => void; error?: string | null; label?: string; autoFocus?: boolean; dense?: boolean }) {
   const { C } = useUI();
   const t = useT();
-  return <PinInput label={label ?? t("pinx.label")} value={value} onChange={onChange} onComplete={onComplete} accent={C.accent} error={error} noReveal autoFocus={autoFocus} />;
+  return <PinInput label={label ?? t("pinx.label")} value={value} onChange={onChange} onComplete={onComplete} accent={C.accent} error={error} noReveal autoFocus={autoFocus} dense={dense} />;
 }
 
 // ─── Grande icône d'état ─────────────────────────────────

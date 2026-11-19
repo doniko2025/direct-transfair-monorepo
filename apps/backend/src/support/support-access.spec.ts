@@ -113,7 +113,7 @@ function desk(over: { target?: J | null } = {}) {
   const target = over.target === undefined ? { id: 'c1', role: 'USER', clientId: 7, email: 'c@x.fr', firstName: 'Awa', lastName: 'Diop', isSuspended: false, createdAt: new Date(), kycLevel: 'LEVEL_1' } : over.target;
   const prisma: J = {
     user: { findFirst: jest.fn(async () => target), update: jest.fn(async () => target), count: jest.fn(async () => 0), findMany: jest.fn(async () => []) },
-    userSession: { deleteMany: jest.fn(async () => ({ count: 1 })) },
+    userSession: { updateMany: jest.fn(async () => ({ count: 1 })) },
     transaction: { findMany: jest.fn(async () => []) },
     supportTicket: { count: jest.fn(async () => 0) },
     refundRequest: { count: jest.fn(async () => 0) },
@@ -130,7 +130,7 @@ describe('SupportDeskService', () => {
     const { service, prisma, audits, notifier } = desk();
     await expect(service.suspend(sup(['ACCOUNT_SUSPEND']), 'c1', ' ')).rejects.toBeInstanceOf(BadRequestException);
     await service.suspend(sup(['ACCOUNT_SUSPEND']), 'c1', 'Activité suspecte signalée');
-    expect(prisma.userSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'c1' } });
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith({ where: { userId: 'c1', status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: expect.any(Date) } });
     expect(audits[0]).toMatchObject({ action: 'USER_SUSPEND', entityId: 'c1', userId: 'sp1' });
     expect(notifier.notifyUser).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ kind: 'ACCOUNT_SUSPENDED' }));
   });

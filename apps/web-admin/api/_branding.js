@@ -8,6 +8,7 @@
 
 const PLATFORM_CODE = (process.env.VITE_PLATFORM_CODE || 'DONIKO').trim().toUpperCase();
 const COLOR = '#F2F5F3';
+const THEME = '#D3E4D6'; // vert sauge de la barre du haut
 
 /** Hôte réellement demandé par le visiteur (Vercel place l'original dans x-forwarded-host). */
 export function hostOf(req) {
@@ -85,7 +86,7 @@ export function platformManifest() {
     display_override: ['standalone'],
     orientation: 'any',
     background_color: COLOR,
-    theme_color: COLOR,
+    theme_color: THEME,
     prefer_related_applications: false,
     launch_handler: { client_mode: 'navigate-existing' },
     // Chrome exige une icône 192 et une 512 pour fabriquer une vraie application installée (sinon : simple raccourci, avec barre du lien).

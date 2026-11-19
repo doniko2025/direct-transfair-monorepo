@@ -10,7 +10,7 @@ function make(found: any) {
       findFirst: jest.fn().mockResolvedValue(found),
       update: jest.fn().mockReturnValue('update-op'),
     },
-    userSession: { deleteMany: jest.fn().mockReturnValue('delete-op') },
+    userSession: { updateMany: jest.fn().mockReturnValue('revoke-op') },
     auditLog: { create: jest.fn().mockResolvedValue({}) },
     $transaction: jest.fn().mockResolvedValue([]),
   };
@@ -21,12 +21,12 @@ function make(found: any) {
 const admin: any = { id: 'adm', role: 'COMPANY_ADMIN', clientId: 5 };
 
 describe('AgentsAdminService.resetPassword', () => {
-  it('change le mot de passe ET supprime les sessions, dans la même transaction', async () => {
+  it('change le mot de passe ET révoque les sessions, dans la même transaction', async () => {
     const { service, prisma } = make({ id: 'ag1', email: 'a@x.com', firstName: 'A' });
     const r = await service.resetPassword(admin, 'ag1');
     expect(r.generatedPassword).toHaveLength(24);
-    expect(prisma.$transaction).toHaveBeenCalledWith(['update-op', 'delete-op']);
-    expect(prisma.userSession.deleteMany).toHaveBeenCalledWith({ where: { userId: 'ag1' } });
+    expect(prisma.$transaction).toHaveBeenCalledWith(['update-op', 'revoke-op']);
+    expect(prisma.userSession.updateMany).toHaveBeenCalledWith({ where: { userId: 'ag1', status: 'ACTIVE' }, data: { status: 'REVOKED', revokedAt: expect.any(Date) } });
     expect(prisma.user.findFirst.mock.calls[0][0].where).toMatchObject({ id: 'ag1', clientId: 5, role: 'AGENT' });
   });
 
