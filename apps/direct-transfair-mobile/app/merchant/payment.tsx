@@ -6,6 +6,8 @@
 // sur « Payé » (ou refusé / expiré / annulé). Le marchand et le client reçoivent aussi une notification.
 // Lot 13 : reçu PDF, remboursement intégral (propriétaire ou caissier autorisé, code secret), retour vers l'espace « Caisse »
 // quand l'encaissement vient d'un caissier.
+// v1.2 : « petit ménage » — UN seul vert (celui de la marque), une seule grande action en bas (Nouvel encaissement), Reçu / Rembourser / Accueil
+//        en petites tuiles sous le bandeau, et des cartes COMPACTES (montants en 3 colonnes, informations en grille, suivi en frise horizontale).
 // v1.1 : page « Paiement reçu » refaite — montant + devise sur UNE ligne, achat (libellé), date et heure séparées, mode de paiement,
 //        délai de règlement, référence copiable, suivi en trois temps (créé → payé → remboursé).
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
@@ -22,6 +24,7 @@ import { Ionicons } from "../../components/ui/Icon";
 import { Button, Card, Divider, ErrorView, Field, NavBar, Notice, Pill, Screen, Sheet, SkeletonRows, UText, useUI } from "../../components/ui";
 import { Text } from "../../components/ui/Text";
 import { fmtDateTime } from "../../i18n/runtime";
+import { alpha, shade } from "../../components/ui/Tint";
 import {
   MerchantQrCard, PAYMENT_STATUS_LABEL, PinPrompt, Rise, StatusHero, apiProblem, mmss, money, shortDateTime, useCountdown,
 } from "../../components/merchant/merchantUi";
@@ -44,60 +47,72 @@ function elapsed(fromIso: string, toIso: string): string {
   return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min ${String(sec % 60).padStart(2, "0")} s`;
 }
 
-/** Ligne libellé / valeur : le libellé passe à la ligne si besoin, la valeur (montant, date…) reste entière sur une ligne. */
-function Detail({ label, value, strong, nowrap = true, icon, onPress }: { label: string; value: string; strong?: boolean; nowrap?: boolean; icon?: string; onPress?: () => void }) {
+/** Date courte (« 15 nov. 2026 »). */
+const dateShort = (iso: string) => fmtDateTime(iso, { day: "numeric", month: "short", year: "numeric" });
+
+/** Carte compacte : même gabarit pour tous les blocs de la page. */
+function MiniCard({ children, delay = 0, pad = 12 }: { children: React.ReactNode; delay?: number; pad?: number }) {
+  return (
+    <Rise delay={delay}>
+      <Card pad={pad} style={{ marginTop: 10 }}>{children}</Card>
+    </Rise>
+  );
+}
+
+/** Case « libellé au-dessus, valeur dessous » (grille d'informations). */
+function Cell({ label, value, icon, onPress, wide, accent }: { label: string; value: string; icon?: string; onPress?: () => void; wide?: boolean; accent?: boolean }) {
   const { C } = useUI();
-  const row = (
-    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, paddingVertical: 10 }}>
-      <UText v="body" tone="muted" style={{ flexShrink: 1 }}>{label}</UText>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: nowrap ? 0 : 1, maxWidth: "70%" }}>
-        <UText v={strong ? "bodyStrong" : "body"} numberOfLines={nowrap ? 1 : 3} style={{ textAlign: "right", flexShrink: 1, fontWeight: strong ? "800" : "600" }}>{nowrap ? nb(value) : value}</UText>
-        {!!icon && <Ionicons name={icon as any} size={15} color={C.muted} />}
+  const body = (
+    <View style={{ gap: 2 }}>
+      <UText v="caption" tone="muted" numberOfLines={1}>{label}</UText>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+        <UText v="bodyStrong" numberOfLines={wide ? 3 : 1} style={{ fontSize: 14, flexShrink: 1, color: accent ? C.accentDeep : undefined }}>{value}</UText>
+        {!!icon && <Ionicons name={icon as any} size={14} color={C.muted} />}
       </View>
     </View>
   );
-  return onPress ? <Pressable onPress={onPress} accessibilityRole="button">{row}</Pressable> : row;
-}
-
-/** Carte à titre (icône + titre en tête) : même gabarit pour tous les blocs de la page. */
-function Block({ icon, title, children, delay = 0 }: { icon: string; title: string; children: React.ReactNode; delay?: number }) {
-  const { C } = useUI();
   return (
-    <Rise delay={delay}>
-      <Card pad={16} style={{ marginTop: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <View style={{ width: 26, height: 26, borderRadius: 9, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={icon as any} size={14} color={C.accentDeep} />
-          </View>
-          <UText v="overline" tone="muted">{title}</UText>
-        </View>
-        {children}
-      </Card>
-    </Rise>
+    <View style={{ width: wide ? "100%" : "48%", flexGrow: wide ? 0 : 1, minWidth: 0 }}>
+      {onPress ? <Pressable onPress={onPress} accessibilityRole="button">{body}</Pressable> : body}
+    </View>
   );
 }
 
-/** Bandeau « Paiement reçu » : montant et devise sur une même ligne, statut, date et heure. */
+/** Petite tuile d'action (icône ronde + libellé) : remplace les gros boutons empilés. */
+function ActionTile({ icon, label, onPress, tone = "neutral", loading }: { icon: string; label: string; onPress: () => void; tone?: "neutral" | "danger"; loading?: boolean }) {
+  const { C } = useUI();
+  const col = tone === "danger" ? C.danger : C.text;
+  return (
+    <Pressable onPress={onPress} disabled={loading} accessibilityRole="button" style={({ pressed }) => ({ flex: 1, minWidth: 0, opacity: pressed || loading ? 0.65 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] })}>
+      <View style={{ borderRadius: 18, borderWidth: 1, borderColor: tone === "danger" ? alpha(C.danger, 0.35) : C.line, backgroundColor: tone === "danger" ? alpha(C.danger, 0.07) : C.surface, paddingVertical: 10, alignItems: "center", gap: 6 }}>
+        <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: tone === "danger" ? alpha(C.danger, 0.14) : C.sunken, alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name={icon as any} size={18} color={col} />
+        </View>
+        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "700", color: col, maxWidth: "92%" }}>{label}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+/** Bandeau « Paiement reçu » compact : UN seul vert (couleur de la marque, comme le bouton), montant et devise sur une ligne. */
 function PaidHero({ p, title, amountLabel, caption, refunded }: { p: PaymentRequestView; title: string; amountLabel: string; caption: string; refunded: boolean }) {
   const { C } = useUI();
-  const colors: [string, string] = refunded ? [C.info, C.infoLine] : ["#15803D", "#0F5F2E"];
+  const base = refunded ? C.info : C.accent;
+  const ink = refunded ? "#FFFFFF" : C.accentInk;
   const at = refunded && p.refundedAt ? p.refundedAt : p.paidAt ?? p.createdAt;
   return (
     <Rise>
-      <View style={{ borderRadius: 26, overflow: "hidden", marginTop: 4 }}>
-        <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-        <View pointerEvents="none" style={{ position: "absolute", right: -30, top: -40, width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(255,255,255,0.10)" }} />
-        <View pointerEvents="none" style={{ position: "absolute", left: -20, bottom: -50, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,255,255,0.07)" }} />
-        <View style={{ padding: 20, alignItems: "center", gap: 6 }}>
-          <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={(refunded ? "return-down-back-outline" : "checkmark") as any} size={28} color="#FFFFFF" />
+      <View style={{ borderRadius: 22, overflow: "hidden", marginTop: 2 }}>
+        <LinearGradient colors={[base, shade(base, 0.28)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+        <View pointerEvents="none" style={{ position: "absolute", right: -26, top: -34, width: 120, height: 120, borderRadius: 60, backgroundColor: alpha(ink, 0.1) }} />
+        <View style={{ paddingVertical: 14, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <View style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: alpha(ink, 0.2), alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={(refunded ? "return-down-back-outline" : "checkmark") as any} size={24} color={ink} />
           </View>
-          <Text style={{ color: "#FFFFFF", fontSize: 15, fontWeight: "700", opacity: 0.92 }}>{title}</Text>
-          <Text style={{ color: "#FFFFFF", fontSize: 34, fontWeight: "800", letterSpacing: -0.8, textAlign: "center", maxWidth: "100%" }} numberOfLines={1} adjustsFontSizeToFit>{nb(amountLabel)}</Text>
-          <Text style={{ color: "#FFFFFF", fontSize: 13, opacity: 0.85, textAlign: "center" }}>{caption}</Text>
-          <View style={{ marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
-            <Ionicons name={"calendar-outline" as any} size={13} color="#FFFFFF" />
-            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "700" }} numberOfLines={1}>{nb(shortDateTime(at))}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ color: ink, fontSize: 13, fontWeight: "700", opacity: 0.9 }} numberOfLines={1}>{title} · {nb(shortDateTime(at))}</Text>
+            <Text style={{ color: ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.6 }} numberOfLines={1} adjustsFontSizeToFit>{nb(amountLabel)}</Text>
+            <Text style={{ color: ink, fontSize: 12, opacity: 0.8 }} numberOfLines={1}>{caption}</Text>
           </View>
         </View>
       </View>
@@ -105,23 +120,22 @@ function PaidHero({ p, title, amountLabel, caption, refunded }: { p: PaymentRequ
   );
 }
 
-/** Suivi en trois temps : créé → payé → remboursé (seuls les temps atteints sont affichés). */
-function Timeline({ steps }: { steps: { key: string; label: string; at: string; tone: "pos" | "info" | "muted" }[] }) {
+/** Suivi horizontal : créé → payé → remboursé, avec l'heure sous chaque étape. */
+function Stepper({ steps }: { steps: { key: string; label: string; at: string; tone: "pos" | "info" | "muted" }[] }) {
   const { C } = useUI();
   return (
-    <View style={{ paddingTop: 6 }}>
+    <View style={{ flexDirection: "row" }}>
       {steps.map((st, i) => {
-        const dot = st.tone === "pos" ? C.pos : st.tone === "info" ? C.info : C.faint;
+        const dot = st.tone === "pos" ? C.accent : st.tone === "info" ? C.info : C.faint;
         return (
-          <View key={st.key} style={{ flexDirection: "row", gap: 12 }}>
-            <View style={{ alignItems: "center", width: 18 }}>
-              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: dot, marginTop: 3, borderWidth: 3, borderColor: C.surface, shadowColor: dot, shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }} />
-              {i < steps.length - 1 && <View style={{ flex: 1, width: 2, backgroundColor: C.line, marginVertical: 2 }} />}
+          <View key={st.key} style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", width: "100%" }}>
+              <View style={{ flex: 1, height: 2, backgroundColor: i === 0 ? "transparent" : C.line }} />
+              <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: dot, borderWidth: 3, borderColor: C.surface, shadowColor: dot, shadowOpacity: 0.5, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } }} />
+              <View style={{ flex: 1, height: 2, backgroundColor: i === steps.length - 1 ? "transparent" : C.line }} />
             </View>
-            <View style={{ flex: 1, paddingBottom: i < steps.length - 1 ? 14 : 2 }}>
-              <UText v="bodyStrong">{st.label}</UText>
-              <UText v="caption" tone="muted">{nb(`${dateLong(st.at)} · ${timeLong(st.at)}`)}</UText>
-            </View>
+            <UText v="caption" style={{ fontWeight: "700", marginTop: 4 }} numberOfLines={1}>{st.label}</UText>
+            <UText v="caption" tone="muted" numberOfLines={1}>{nb(timeLong(st.at))}</UText>
           </View>
         );
       })}
@@ -240,12 +254,7 @@ export default function MerchantPaymentScreen() {
       header={<NavBar onBack={goHome} title={p.reference} subtitle={p.method === "QR" ? t("mpd.viaQr") : t("mpd.viaPhone")} />}
       footer={
         done ? (
-          <View style={{ gap: 10 }}>
-            <Button label={t("mpd.newCollect")} icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone", ...(merchantId ? { merchantId: String(merchantId), from: "cashier" } : {}) } } as any)} />
-            {p.status === "PAID" && <Button label={t("pco.receipt")} icon="document-text-outline" kind="outline" loading={sharing} onPress={receipt} />}
-            {canRefund && <Button label={t("mpd.refundBtn")} icon="return-down-back-outline" kind="danger" onPress={() => { setRefundProblem(null); setPin(""); setRefundOpen(true); }} />}
-            <Button label={t("pco.finish")} kind="ghost" onPress={goHome} />
-          </View>
+          <Button label={t("mpd.newCollect")} icon="add" onPress={() => router.replace({ pathname: "/merchant/collect", params: { mode: p.method === "QR" ? "qr" : "phone", ...(merchantId ? { merchantId: String(merchantId), from: "cashier" } : {}) } } as any)} />
         ) : (
           <Button label={t("mpd.cancelBtn")} kind="outline" loading={cancelling} onPress={cancel} />
         )
@@ -291,62 +300,81 @@ export default function MerchantPaymentScreen() {
       {p.status === "EXPIRED" ? <StatusHero tone="warn" icon="time-outline" title={t("mpd.expired")} message={t("mpd.expiredMsg")} /> : null}
       {p.status === "CANCELLED" ? <StatusHero tone="info" icon="ban-outline" title={t("mpd.cancelled")} /> : null}
 
-      {/* ── Achat : le produit / libellé saisi à l'encaissement ── */}
-      <Block icon="bag-handle-outline" title={t("mpd.purchase")} delay={80}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingTop: 6, paddingBottom: 4 }}>
-          <ShopAvatar shopId={p.merchant.shopId} version={p.merchant.logoVersion} name={p.merchant.businessName} size={40} />
+      {/* ── Actions : trois petites tuiles au lieu de trois gros boutons ── */}
+      {done && (
+        <Rise delay={60}>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+            {p.status === "PAID" && <ActionTile icon="document-text-outline" label={t("mpd.actReceipt")} loading={sharing} onPress={receipt} />}
+            {canRefund && <ActionTile icon="return-down-back-outline" label={t("mpd.actRefund")} tone="danger" onPress={() => { setRefundProblem(null); setPin(""); setRefundOpen(true); }} />}
+            <ActionTile icon="home-outline" label={t("mpd.actHome")} onPress={goHome} />
+          </View>
+        </Rise>
+      )}
+
+      {/* ── Achat : commerce, statut et article ── */}
+      <MiniCard delay={100}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <ShopAvatar shopId={p.merchant.shopId} version={p.merchant.logoVersion} name={p.merchant.businessName} size={36} />
           <View style={{ flex: 1, minWidth: 0 }}>
             <UText v="bodyStrong" numberOfLines={1}>{p.merchant.businessName}</UText>
             {!!(p.merchant.address || p.merchant.city) && <UText v="caption" tone="muted" numberOfLines={1}>{[p.merchant.address, p.merchant.city].filter(Boolean).join(", ")}</UText>}
           </View>
           <Pill label={p.refunded ? t("mst.refunded") : PAYMENT_STATUS_LABEL[p.status]} tone={p.refunded ? "info" : p.status === "PAID" ? "pos" : p.status === "PENDING" ? "warn" : p.status === "DECLINED" ? "danger" : "neutral"} />
         </View>
-        <Divider />
-        <Detail label={t("mpd.item")} value={p.note?.trim() ? p.note.trim() : t("mpd.noItem")} strong={!!p.note?.trim()} nowrap={false} />
-      </Block>
+        <View style={{ marginTop: 10, flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.accentSoft, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8 }}>
+          <Ionicons name={"bag-handle-outline" as any} size={16} color={C.accentDeep} />
+          <UText v="caption" tone="muted">{t("mpd.item")}</UText>
+          <UText v="bodyStrong" numberOfLines={2} style={{ flex: 1, textAlign: "right", fontSize: 14 }}>{p.note?.trim() ? p.note.trim() : t("mpd.noItem")}</UText>
+        </View>
+      </MiniCard>
 
-      {/* ── Détail des montants ── */}
-      <Block icon="cash-outline" title={t("mpd.amounts")} delay={140}>
-        <Detail label={t("mpd.paidByCustomer")} value={money(p.amount, p.currency)} />
-        {p.fee !== undefined && <Detail label={t("mpd.fee")} value={`− ${money(p.fee, p.currency)}`} />}
-        {p.netAmount !== undefined && (
-          <View style={{ marginTop: 6, backgroundColor: C.posBg, borderRadius: 14, paddingHorizontal: 12 }}>
-            <Detail label={t("mpd.youReceive")} value={money(p.netAmount, p.currency)} strong />
-          </View>
-        )}
-      </Block>
+      {/* ── Montants : trois colonnes ── */}
+      <MiniCard delay={140} pad={0}>
+        <View style={{ flexDirection: "row" }}>
+          {([
+            { k: "paid", label: t("mpd.paidByCustomer"), value: money(p.amount, p.currency), strong: false },
+            ...(p.fee !== undefined ? [{ k: "fee", label: t("mpd.fee"), value: `− ${money(p.fee, p.currency)}`, strong: false }] : []),
+            ...(p.netAmount !== undefined ? [{ k: "net", label: t("mpd.youReceive"), value: money(p.netAmount, p.currency), strong: true }] : []),
+          ] as { k: string; label: string; value: string; strong: boolean }[]).map((c, i) => (
+            <View key={c.k} style={{ flex: 1, minWidth: 0, paddingVertical: 12, paddingHorizontal: 10, borderLeftWidth: i === 0 ? 0 : 1, borderLeftColor: C.line, backgroundColor: c.strong ? C.accentSoft : "transparent", borderTopRightRadius: c.strong ? 20 : 0, borderBottomRightRadius: c.strong ? 20 : 0 }}>
+              <UText v="caption" tone="muted" numberOfLines={2}>{c.label}</UText>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={{ marginTop: 4, fontSize: 15, fontWeight: "800", color: c.strong ? C.accentDeep : C.text }}>{nb(c.value)}</Text>
+            </View>
+          ))}
+        </View>
+      </MiniCard>
 
-      {/* ── Informations ── */}
-      <Block icon="information-circle-outline" title={t("mpd.infos")} delay={200}>
-        {p.payer && <Detail label={t("mpd.customer")} value={p.payer.name} nowrap={false} />}
-        {!p.payer && p.payerPhone ? <Detail label={t("mpd.customerPhone")} value={p.payerPhone} /> : null}
-        <Detail label={t("mpd.means")} value={p.viaStaticQr ? t("mpd.staticQr") : p.method === "QR" ? t("mpd.viaQr") : t("mpd.viaPhone")} nowrap={false} />
-        <Detail
-          label={t("pco.reference")}
-          value={p.reference}
-          icon="copy-outline"
-          onPress={async () => { await Clipboard.setStringAsync(p.reference); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
-        />
-        {copied && <UText v="caption" tone="pos" align="right">{t("mpd.refCopied")}</UText>}
-        <Divider />
-        <Detail label={t("mpd.date")} value={dateLong(p.paidAt ?? p.createdAt)} />
-        <Detail label={t("mpd.time")} value={timeLong(p.paidAt ?? p.createdAt)} />
-        {p.paidAt && <Detail label={t("mpd.settledIn")} value={elapsed(p.createdAt, p.paidAt)} />}
-        {p.refunded && !!p.refundReason && <Detail label={t("mpd.refundReason")} value={p.refundReason} nowrap={false} />}
-        {!!p.failureReason && p.status !== "PAID" && <Detail label={t("mpd.failureReason")} value={p.failureReason} nowrap={false} />}
-      </Block>
+      {/* ── Informations : grille de petites cases ── */}
+      <MiniCard delay={180}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 12, columnGap: 10 }}>
+          {p.payer ? <Cell label={t("mpd.customer")} value={p.payer.name} /> : p.payerPhone ? <Cell label={t("mpd.customerPhone")} value={p.payerPhone} /> : null}
+          <Cell label={t("mpd.means")} value={p.viaStaticQr ? t("mpd.staticQr") : p.method === "QR" ? t("mpd.viaQr") : t("mpd.viaPhone")} />
+          <Cell
+            label={copied ? t("mpd.refCopied") : t("pco.reference")}
+            value={p.reference}
+            icon="copy-outline"
+            accent={copied}
+            onPress={async () => { await Clipboard.setStringAsync(p.reference); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+          />
+          <Cell label={t("mpd.date")} value={dateShort(p.paidAt ?? p.createdAt)} />
+          <Cell label={t("mpd.time")} value={timeLong(p.paidAt ?? p.createdAt)} />
+          {p.paidAt ? <Cell label={t("mpd.settledIn")} value={elapsed(p.createdAt, p.paidAt)} /> : null}
+          {p.refunded && !!p.refundReason && <Cell wide label={t("mpd.refundReason")} value={p.refundReason} />}
+          {!!p.failureReason && p.status !== "PAID" && <Cell wide label={t("mpd.failureReason")} value={p.failureReason} />}
+        </View>
+      </MiniCard>
 
       {/* ── Suivi ── */}
       {p.status === "PAID" && (
-        <Block icon="git-commit-outline" title={t("mpd.timeline")} delay={260}>
-          <Timeline
+        <MiniCard delay={220}>
+          <Stepper
             steps={[
               { key: "c", label: t("mpd.tlCreated"), at: p.createdAt, tone: "muted" },
               ...(p.paidAt ? [{ key: "p", label: t("mpd.tlPaid"), at: p.paidAt, tone: "pos" as const }] : []),
               ...(p.refunded && p.refundedAt ? [{ key: "r", label: t("mpd.tlRefunded"), at: p.refundedAt, tone: "info" as const }] : []),
             ]}
           />
-        </Block>
+        </MiniCard>
       )}
 
       <Sheet visible={refundOpen} onClose={() => setRefundOpen(false)} title={t("mpd.refundTitle")}>

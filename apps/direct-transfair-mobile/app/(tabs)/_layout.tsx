@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/_layout.tsx
 // =========================================================
-// TAB LAYOUT v12.0 — Clients wallet uniquement (rôle USER)
+// TAB LAYOUT v12.1 — Clients wallet uniquement (rôle USER)
+//
+// ✅ v12.1 : CORRECTIF « Activité n'affiche que le détail » — ouvrir une opération depuis l'accueil laissait seule la page
+//   Détail dans la pile de l'onglet Activité ; toucher l'onglet rouvrait donc ce détail au lieu de la liste. Désormais,
+//   toucher un onglet dont la pile n'est pas sur sa page racine remet d'abord cette pile sur sa liste (Activité, Compte…).
 //
 // ✅ v12.0 : DESIGN « CORRIDOR » — barre à 4 onglets (Accueil, Activité, Contacts, Compte) comme la maquette :
 //   fond blanc, filet vert pâle, icônes Lucide, onglet actif vert forêt coiffé d'une languette jaune.
@@ -35,8 +39,8 @@ import { useT } from '../../providers/I18nProvider';
 import type { MessageKey } from '../../i18n/catalog';
 // Type local — évite l'incompatibilité de version avec expo-router
 type BottomTabBarProps = {
-  state: { index: number; routes: Array<{ name: string; key: string }> };
-  navigation: { navigate: (name: string, params?: object) => void };
+  state: { index: number; routes: Array<{ name: string; key: string; state?: { key?: string; routes?: Array<{ name: string }> } }> };
+  navigation: { navigate: (name: string, params?: object) => void; dispatch: (action: object) => void };
   descriptors: Record<string, unknown>;
 };
 
@@ -71,8 +75,15 @@ function CustomTabBar({ state, navigation }: { state: BottomTabBarProps["state"]
 
   const go = (name: string) => {
     const idx = state.routes.findIndex((r) => r.name === name);
-    if (idx >= 0) navigation.navigate(state.routes[idx].name);
-    else router.push(`/(tabs)/${name}` as any);
+    if (idx < 0) { router.push(`/(tabs)/${name}` as any); return; }
+    // La pile interne de l'onglet (Activité, Compte…) se souvient de la dernière page ouverte (ex. un Détail ouvert depuis l'accueil) :
+    // on la remet sur sa liste « index » avant d'afficher l'onglet, pour qu'un appui sur l'onglet montre toujours sa page principale.
+    const nested = state.routes[idx].state;
+    const top = nested?.routes?.[nested.routes.length - 1]?.name;
+    if (nested?.key && top && top !== "index") {
+      navigation.dispatch({ type: "RESET", payload: { index: 0, routes: [{ name: "index" }] }, target: nested.key });
+    }
+    navigation.navigate(state.routes[idx].name);
   };
 
   return (
@@ -125,7 +136,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{ headerShown: false }}
-      tabBar={(props) => <CustomTabBar state={props.state} navigation={props.navigation} />}
+      tabBar={(props) => <CustomTabBar state={props.state as any} navigation={props.navigation as any} />}
     >
       <Tabs.Screen name="home" />
       <Tabs.Screen name="transactions" />

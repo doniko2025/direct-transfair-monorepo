@@ -154,7 +154,7 @@ export class MerchantPaymentsService {
       currency: r.currency,
       note: r.note,
       merchant: { id: r.payee.id, shopId: shop?.id ?? null, businessName: this.businessOf(r), city: shop?.city ?? null, category: shop?.category ?? null, address: shop?.address ?? null, logoVersion: shop?.logo?.sha256 ?? null },
-      payer: r.payer ? { id: r.payer.id, name: isPayee ? personName(r.payer) : 'Vous' } : null,
+      payer: r.payer ? { id: r.payer.id, name: personName(r.payer) } : null,
       payerPhone: isPayee ? r.payerPhone : undefined,
       qrPayload: isPayee && r.method === 'QR' && pending && r.qrToken ? buildQrPayload(r.qrToken) : undefined,
       expiresAt: r.expiresAt.toISOString(),

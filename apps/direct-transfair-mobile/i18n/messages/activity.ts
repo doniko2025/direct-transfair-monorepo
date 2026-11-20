@@ -157,6 +157,8 @@ export const activity = {
   'rcpt.pdfCardHint':  { fr: 'Préparation du reçu…', en: 'Preparing the receipt…', pt: 'A preparar o recibo…' },
   'rcpt.pdfCardStatus': { fr: 'Statut sur le reçu : {status}', en: 'Status on the receipt: {status}', pt: 'Estado no recibo: {status}' },
   'rcpt.pdfDownload': { fr: 'Télécharger', en: 'Download', pt: 'Transferir' },
+  'rcpt.pdfSendShort': { fr: 'Envoyer', en: 'Send', pt: 'Enviar' },
+  'rcpt.pdfViewShort': { fr: 'Voir', en: 'View', pt: 'Ver' },
   'rcpt.pdfSend':     { fr: 'WhatsApp / e-mail', en: 'WhatsApp / email', pt: 'WhatsApp / e-mail' },
   'rcpt.pdfSendHint': { fr: 'Le PDF (avec QR de vérification) est joint à votre message : choisissez WhatsApp, Gmail, Drive ou Fichiers.', en: 'The PDF (with verification QR) is attached to your message: choose WhatsApp, Gmail, Drive or Files.', pt: 'O PDF (com QR de verificação) é anexado à sua mensagem: escolha WhatsApp, Gmail, Drive ou Ficheiros.' },
   'rcpt.pdfFail':    { fr: 'Impossible de générer le PDF. Réessayez.', en: 'Unable to generate the PDF. Please try again.', pt: 'Não foi possível gerar o PDF. Tente novamente.' },

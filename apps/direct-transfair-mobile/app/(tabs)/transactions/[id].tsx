@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// TRANSACTION DETAIL v8.0
+// TRANSACTION DETAIL v8.1
+// ✅ v8.1 : REDESIGN — « Vous » remplacé par le VRAI nom et prénom (expéditeur et destinataire), carte « De → Vers » façon Wise / Western
+//    Union (avatars, noms, téléphone et pays du bénéficiaire), référence copiable en un appui, détails compacts, reçu PDF en trois petites
+//    tuiles (Télécharger · Envoyer · Voir), « Signaler un problème » en petite pastille. Données, annulation et reçu INCHANGÉS.
 // ✅ v8.0 : 🔥 REFONTE TOTALE en thème clair : retour + titre, montant géant signé (vert reçu / noir envoyé),
 //    pastille de statut, carte « code de retrait » à l'accent de la société, lignes de détail à filets,
 //    bloc financier, actions (voir le reçu en pilule d'accent, annuler en rouge doux). Design system
@@ -14,6 +17,8 @@
 
 import React, { useState, useEffect } from "react";
 import { View, Alert, Pressable } from "react-native";
+import { Text } from "../../../components/ui/Text";
+import { Rise } from "../../../components/merchant/merchantUi";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from '../../../components/ui/Icon';
 import * as Clipboard from "expo-clipboard";
@@ -114,8 +119,8 @@ export default function TransactionDetailScreen() {
       total:               toNum(transaction.total ?? transaction.amount),
       heroDisplayAmount,
       heroDisplayCurrency,
-      senderName:          isIncoming ? senderName : t("txd.you"),
-      recipientName:       isIncoming ? t("txd.you") : recipientName,
+      senderName:          isIncoming ? senderName : meName,
+      recipientName:       isIncoming ? meName : recipientName,
       recipientPhone:      transaction.beneficiary?.phone ?? undefined,
       recipientCountry:    transaction.beneficiary?.country ?? undefined,
     };
@@ -133,6 +138,13 @@ export default function TransactionDetailScreen() {
   const handleCopyCode = async () => {
     if (transaction?.reference) {
       await Clipboard.setStringAsync(transaction.reference);
+      Alert.alert(t("txd.copied"), t("txd.refCopied"));
+    }
+  };
+
+  const handleCopyRef = async () => {
+    if (transaction?.reference) {
+      await Clipboard.setStringAsync(String(transaction.reference));
       Alert.alert(t("txd.copied"), t("txd.refCopied"));
     }
   };
@@ -227,6 +239,9 @@ export default function TransactionDetailScreen() {
   };
   const status = getStatusInfo();
 
+  // Nom réel de l'utilisateur connecté (jamais « Vous » : un reçu doit porter le vrai nom et prénom).
+  const meName = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || t("txd.you");
+
   const senderName = transaction.sender?.firstName
     ? `${transaction.sender.firstName} ${transaction.sender.lastName ?? ""}`.trim()
     : transaction.senderFirstName
@@ -242,7 +257,7 @@ export default function TransactionDetailScreen() {
   const showCopyCode     = !isDeposit && (isPending || isValidated);
 
   const hasConversion = !!transaction.targetCurrency && transaction.targetCurrency !== transaction.currency;
-  const dateLabel = fmtDateTime(transaction.createdAt, { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const dateLabel = fmtDateTime(transaction.createdAt, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   const totalLabel = isIncoming ? t("txd.totalCredited") : t("txd.totalDebited");
   // total absent ou nul (ancien backend) : montant + frais
   const totalOrSum = toNum(transaction.total) > 0 ? toNum(transaction.total) : toNum(transaction.amount) + toNum(transaction.fees);
@@ -289,51 +304,74 @@ export default function TransactionDetailScreen() {
         </Card>
       )}
 
-      {/* ── Détails ── */}
-      <Card pad={18} style={{ marginBottom: 14 }}>
-        <DetailRow label={t("txd.date")} value={dateLabel} />
-        <DetailRow label={t("txd.reference")} value={transaction.reference ?? "—"} />
-        {!!transaction.note && <DetailRow label={t("txd.motif")} value={motifLabel(transaction.note)} />}
-        {isDeposit ? (
-          <>
-            <DetailRow label={t("txd.agent")} value={senderName} />
-            <DetailRow label={t("txd.beneficiary")} value={t("txd.yourWallet")} last />
-          </>
-        ) : (
-          <>
-            <DetailRow label={t("txd.sender")} value={isIncoming ? senderName : t("txd.you")} />
-            <DetailRow label={t("txd.recipient")} value={isIncoming ? t("txd.you") : recipientName} last={!transaction.beneficiary?.phone} />
-            {!!transaction.beneficiary?.phone && <DetailRow label={t("txd.phone")} value={transaction.beneficiary.phone} last />}
-          </>
-        )}
-      </Card>
-
-      {/* ── Détail financier ── */}
-      <Card tone="sunken" pad={18}>
-        <UText v="overline" tone="muted" style={{ marginBottom: 6 }}>{t("txd.financial")}</UText>
-        <DetailRow label={t("txd.mainAmount")} value={`${fmt(toNum(transaction.amount), transaction.currency)} ${transaction.currency}`} />
-        {toNum(transaction.fees) > 0 && (
-          <DetailRow label={t("txd.fees")} value={`${fmt(toNum(transaction.fees), transaction.currency)} ${transaction.currency}`} />
-        )}
-        <DetailRow label={totalLabel} value={`${fmt(totalValue, totalCur)} ${totalCur}`} bold color={amountColor} last />
-      </Card>
-
-      {/* ── Reçu PDF (télécharger / envoyer par WhatsApp ou e-mail) ── */}
-      {showShareReceipt && (
-        <View style={{ marginTop: 16 }}>
-          <ReceiptPdfActions transactionId={String(transaction.id)} status={transaction.status} />
-        </View>
+      {/* ── De → Vers (façon Wise / Western Union) ── */}
+      {!isDeposit ? (
+        <Rise>
+          <Card pad={14} style={{ marginBottom: 12 }}>
+            <Party role={t("txd.sender")} name={isIncoming ? senderName : meName} />
+            <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 4, marginLeft: 17 }}>
+              <View style={{ width: 2, height: 22, borderRadius: 1, backgroundColor: C.lineStrong }} />
+              <View style={{ marginLeft: 10, width: 22, height: 22, borderRadius: 11, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={"arrow-down" as any} size={13} color={C.accentDeep} />
+              </View>
+            </View>
+            <Party
+              role={t("txd.recipient")}
+              name={isIncoming ? meName : recipientName}
+              sub={[transaction.beneficiary?.phone, transaction.beneficiary?.country].filter(Boolean).join(" · ") || undefined}
+              strong
+            />
+          </Card>
+        </Rise>
+      ) : (
+        <Rise>
+          <Card pad={14} style={{ marginBottom: 12 }}>
+            <Party role={t("txd.agent")} name={senderName} />
+          </Card>
+        </Rise>
       )}
 
-      {/* ── Actions ── */}
-      <View style={{ marginTop: 22, gap: 12 }}>
-        {showShareReceipt && <Button label={t("txd.viewReceipt")} icon="eye-outline" kind="ghost" onPress={handleShare} />}
-        {showUserCancel && <Button label={t("txd.cancelTx")} kind="danger" loading={processing} onPress={handleCancel} />}
+      {/* ── Informations ── */}
+      <Rise delay={60}>
+        <Card pad={16} style={{ marginBottom: 12 }}>
+          <DetailRow label={t("txd.date")} value={dateLabel} />
+          <Pressable onPress={handleCopyRef} accessibilityRole="button" accessibilityLabel={t("txd.copyA11y")}>
+            <DetailRow label={t("txd.reference")} value={transaction.reference ?? "—"} copy last={!transaction.note} />
+          </Pressable>
+          {!!transaction.note && <DetailRow label={t("txd.motif")} value={motifLabel(transaction.note)} last />}
+        </Card>
+      </Rise>
+
+      {/* ── Détail financier ── */}
+      <Rise delay={120}>
+        <Card tone="sunken" pad={16}>
+          <UText v="overline" tone="muted" style={{ marginBottom: 2 }}>{t("txd.financial")}</UText>
+          <DetailRow label={t("txd.mainAmount")} value={`${fmt(toNum(transaction.amount), transaction.currency)} ${transaction.currency}`} />
+          {toNum(transaction.fees) > 0 && (
+            <DetailRow label={t("txd.fees")} value={`${fmt(toNum(transaction.fees), transaction.currency)} ${transaction.currency}`} />
+          )}
+          <DetailRow label={totalLabel} value={`${fmt(totalValue, totalCur)} ${totalCur}`} bold color={amountColor} last />
+        </Card>
+      </Rise>
+
+      {/* ── Reçu PDF : Télécharger · Envoyer · Voir ── */}
+      {showShareReceipt && (
+        <Rise delay={180}>
+          <View style={{ marginTop: 12 }}>
+            <ReceiptPdfActions transactionId={String(transaction.id)} status={transaction.status} onView={handleShare} />
+          </View>
+        </Rise>
+      )}
+
+      {/* ── Actions secondaires, discrètes ── */}
+      <View style={{ marginTop: 14, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10 }}>
+        {showUserCancel && <Button label={t("txd.cancelTx")} kind="danger" small loading={processing} onPress={handleCancel} />}
         {!isIncoming && (
           <Button
             label={t("txd.report")}
             icon="alert-circle-outline"
-            kind="ghost"
+            kind="soft"
+            small
             onPress={() => router.push({ pathname: "/(tabs)/profile/support", params: { transactionId: String(transaction.id), reference: transaction.reference ?? "" } } as any)}
           />
         )}
@@ -342,12 +380,33 @@ export default function TransactionDetailScreen() {
   );
 }
 
-function DetailRow({ label, value, bold, color, last }: { label: string; value: string; bold?: boolean; color?: string; last?: boolean }) {
+/** Une personne de l'opération : avatar à initiales, rôle au-dessus, nom complet, précision dessous. */
+function Party({ role, name, sub, strong }: { role: string; name: string; sub?: string; strong?: boolean }) {
+  const { C } = useUI();
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "•";
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: strong ? C.accent : C.sunken, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontSize: 13, fontWeight: "800", color: strong ? C.accentInk : C.text }}>{initials}</Text>
+      </View>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <UText v="caption" tone="muted">{role}</UText>
+        <UText v="bodyStrong" numberOfLines={2}>{name}</UText>
+        {!!sub && <UText v="caption" tone="muted" numberOfLines={1}>{sub}</UText>}
+      </View>
+    </View>
+  );
+}
+
+function DetailRow({ label, value, bold, color, last, copy }: { label: string; value: string; bold?: boolean; color?: string; last?: boolean; copy?: boolean }) {
   const { C } = useUI();
   return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 16, paddingVertical: 12, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
       <UText v="caption" tone="muted">{label}</UText>
-      <UText v={bold ? "subheading" : "bodyStrong"} color={color} style={{ maxWidth: "62%", textAlign: "right", fontWeight: bold ? "800" : "600" }}>{value}</UText>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "68%" }}>
+        <UText v={bold ? "subheading" : "bodyStrong"} color={color} numberOfLines={2} style={{ textAlign: "right", flexShrink: 1, fontWeight: bold ? "800" : "600" }}>{value}</UText>
+        {copy ? <Ionicons name={"copy-outline" as any} size={15} color={C.muted} /> : null}
+      </View>
     </View>
   );
 }
