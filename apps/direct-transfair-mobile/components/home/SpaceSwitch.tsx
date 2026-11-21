@@ -1,6 +1,6 @@
 // apps/direct-transfair-mobile/components/home/SpaceSwitch.tsx
 // =========================================================
-// BASCULE DE COMPTE v1.1 (très visible : segment actif plein + ombre, piste contrastée, texte foncé sur l'inactif) — « Compte client | Compte marchand » (deux comptes séparés : solde, opérations et menus propres).
+// BASCULE DE COMPTE v1.2 (plus compacte : 36 px, texte 13) · v1.1 (très visible : segment actif plein + ombre, piste contrastée, texte foncé sur l'inactif) — « Compte client | Compte marchand » (deux comptes séparés : solde, opérations et menus propres).
 // Un point signale des notifications non lues dans l'AUTRE compte (chaque compte a sa propre boîte de réception).
 // Affichée seulement quand la personne a les deux comptes. Segments larges (zone de toucher confortable sur mobile).
 // =========================================================
@@ -29,7 +29,7 @@ export function SpaceSwitch({ style }: { style?: StyleProp<ViewStyle> }) {
   return (
     <View
       accessibilityRole="tablist"
-      style={[{ flexDirection: "row", backgroundColor: C.lineStrong, borderWidth: 1, borderColor: C.line, borderRadius: 999, padding: 4, gap: 4 }, style]}
+      style={[{ flexDirection: "row", backgroundColor: C.lineStrong, borderWidth: 1, borderColor: C.line, borderRadius: 999, padding: 3, gap: 3 }, style]}
     >
       {ITEMS.map((it) => {
         const on = space === it.key;
@@ -41,14 +41,14 @@ export function SpaceSwitch({ style }: { style?: StyleProp<ViewStyle> }) {
             accessibilityState={{ selected: on }}
             accessibilityLabel={!on && otherUnread > 0 ? t("space.unread", { label: t(it.label), count: otherUnread }) : t(it.label)}
             style={({ pressed }) => ({
-              flex: 1, minWidth: 0, height: 44, borderRadius: 999, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+              flex: 1, minWidth: 0, height: 36, borderRadius: 999, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
               paddingHorizontal: 8, backgroundColor: on ? C.ink : "transparent", opacity: pressed ? 0.85 : 1,
               ...(on ? { shadowColor: "#000", shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 3 }, elevation: 4 } : null),
             })}
           >
-            <Ionicons name={it.icon as any} size={18} color={on ? C.bg : C.text} />
-            <Text numberOfLines={1} allowFontScaling={false} style={{ fontSize: 14, fontWeight: "700", color: on ? C.bg : C.text }}>{t(it.label)}</Text>
-            {!on && otherUnread > 0 ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: C.danger }} /> : null}
+            <Ionicons name={it.icon as any} size={16} color={on ? C.bg : C.text} />
+            <Text numberOfLines={1} allowFontScaling={false} style={{ fontSize: 13, fontWeight: "700", color: on ? C.bg : C.text }}>{t(it.label)}</Text>
+            {!on && otherUnread > 0 ? <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: C.danger }} /> : null}
           </Pressable>
         );
       })}

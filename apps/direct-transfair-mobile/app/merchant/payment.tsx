@@ -6,6 +6,7 @@
 // sur « Payé » (ou refusé / expiré / annulé). Le marchand et le client reçoivent aussi une notification.
 // Lot 13 : reçu PDF, remboursement intégral (propriétaire ou caissier autorisé, code secret), retour vers l'espace « Caisse »
 // quand l'encaissement vient d'un caissier.
+// v1.3 : sans id dans l'URL, redirection vers /merchant/collect (plus de squelettes infinis).
 // v1.2 : « petit ménage » — UN seul vert (celui de la marque), une seule grande action en bas (Nouvel encaissement), Reçu / Rembourser / Accueil
 //        en petites tuiles sous le bandeau, et des cartes COMPACTES (montants en 3 colonnes, informations en grille, suivi en frise horizontale).
 // v1.1 : page « Paiement reçu » refaite — montant + devise sur UNE ligne, achat (libellé), date et heure séparées, mode de paiement,
@@ -183,6 +184,12 @@ export default function MerchantPaymentScreen() {
     const timer = setInterval(() => { if (!terminal.current) void load(); }, POLL_MS);
     return () => { alive.current = false; clearInterval(timer); };
   }, [load]);
+
+  // Garde-fou : cette page suit UN encaissement précis. Sans id (lien incomplet), on renvoie vers « Nouvel encaissement »
+  // au lieu de laisser des squelettes à l'infini.
+  useEffect(() => {
+    if (!id) router.replace({ pathname: "/merchant/collect", params: merchantId ? { merchantId: String(merchantId), from: "cashier" } : {} } as any);
+  }, [id, merchantId, router]);
 
   // Une demande reçue (le marchand est le payeur) a sa propre page.
   useEffect(() => {

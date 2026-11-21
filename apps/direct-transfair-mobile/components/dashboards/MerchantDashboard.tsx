@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/components/dashboards/MerchantDashboard.tsx
 // =========================================================
+// ACCUEIL MARCHAND v2.1 — même design que l'accueil client (carte de solde à la couleur de marque, polices réduites, boutons compacts)
+// ✅ v2.1 : HomeParts v2.0 (barre du haut sur une ligne, carte de solde), HomeButton (48 px), bascule plus espacée, activité compacte. LOGIQUE INCHANGÉE.
 // ACCUEIL MARCHAND v2.0 — compte SÉPARÉ du compte client
 // ✅ v2.0 : le solde affiché est celui du COMMERCE (portefeuille marchand propre, renvoyé par le résumé marchand) — plus jamais le solde du
 //    compte client. Un commerce neuf affiche 0 et aucun paiement. Bascule « Compte client | Compte marchand » sous la barre du haut.
@@ -20,9 +22,9 @@ import type { PaymentRequestView } from "../../services/merchantTypes";
 import { useLoader } from "../wallet/useLoader";
 import { toNum } from "../wallet/walletTheme";
 import { Text } from "../ui/Text";
-import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
+import { BalanceBlock, HomeButton, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
 import { SpaceSwitch } from "../home/SpaceSwitch";
-import { Button, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, UText, initials, useUI } from "../ui";
+import { EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, UText, initials, useUI } from "../ui";
 import { PAYMENT_STATUS_LABEL, money, shortDateTime } from "../merchant/merchantUi";
 import { useT } from "../../providers/I18nProvider";
 
@@ -37,16 +39,16 @@ function PaymentLine({ p, last, onPress }: { p: PaymentRequestView; last: boolea
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 14, paddingVertical: 14, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1 })}
     >
-      <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontSize: 15, fontWeight: "700", color: "#444444" }}>{initials(name)}</Text>
+      <View style={{ width: 38, height: 38, borderRadius: 19, backgroundColor: C.beige, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: "#444444" }}>{initials(name)}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <UText v="bodyStrong" numberOfLines={1}>{name}</UText>
-        <UText v="caption" tone="muted" numberOfLines={1}>{sub}</UText>
+        <UText v="bodyStrong" numberOfLines={1} style={{ fontSize: 13.5, lineHeight: 18 }}>{name}</UText>
+        <UText v="caption" tone="muted" numberOfLines={1} style={{ fontSize: 12, lineHeight: 16 }}>{sub}</UText>
       </View>
-      <UText v="bodyStrong" color={paid ? C.pos : C.muted} numberOfLines={1}>
+      <UText v="bodyStrong" color={paid ? C.pos : C.muted} numberOfLines={1} style={{ fontSize: 13.5, lineHeight: 18 }}>
         {paid ? "+" : ""}{money(p.netAmount ?? p.amount, p.currency)}
       </UText>
     </Pressable>
@@ -97,7 +99,7 @@ export default function MerchantDashboard() {
         onBell={() => router.push("/(tabs)/notifications")}
       />
 
-      <SpaceSwitch style={{ marginTop: 14 }} />
+      <SpaceSwitch style={{ marginTop: 22 }} />
 
       <BalanceBlock
         label={t("mhome.balance")}
@@ -109,7 +111,7 @@ export default function MerchantDashboard() {
         loading={status === "loading"}
       >
         {status !== "loading" && (
-          <UText v="body" tone="muted" style={{ marginTop: 18 }}>
+          <UText v="caption" tone="muted" style={{ marginTop: 14, fontSize: 13 }}>
             {t("mhome.today")}<Text style={{ color: C.ink, fontWeight: "700" }}>{hidden ? "••••" : money(today?.net ?? 0, today?.currency ?? currency)}</Text>
             {` · ${t("mhome.payments", { count: today?.count ?? 0 })}`}
             {(today?.refundsCount ?? 0) > 0 ? ` · ${hidden ? "••" : t("mhome.refunded", { count: today?.refundsCount ?? 0 })}` : ""}
@@ -123,16 +125,16 @@ export default function MerchantDashboard() {
         </Notice>
       ) : null}
 
-      <View style={{ gap: 12, marginTop: 30 }}>
-        <Button label={t("mhome.collect")} disabled={suspended} onPress={() => router.push("/merchant/collect" as any)} testID="home-collect" />
-        <Button label={t("mhome.payout")} kind="outline" onPress={() => router.push("/merchant/payouts" as any)} testID="home-payout" />
+      <View style={{ gap: 10, marginTop: 20 }}>
+        <HomeButton label={t("mhome.collect")} disabled={suspended} onPress={() => router.push("/merchant/collect" as any)} testID="home-collect" />
+        <HomeButton label={t("mhome.payout")} kind="outline" onPress={() => router.push("/merchant/payouts" as any)} testID="home-payout" />
         <View style={{ flexDirection: "row", gap: 10 }}>
-          <View style={{ flex: 1 }}><Button label={t("mhome.staticQr")} icon="qr-code-outline" kind="soft" small disabled={suspended} onPress={() => router.push("/merchant/qr" as any)} testID="home-static-qr" /></View>
-          <View style={{ flex: 1 }}><Button label={t("mhome.closing")} icon="lock-closed-outline" kind="soft" small onPress={() => router.push("/merchant/closing" as any)} testID="home-closing" /></View>
+          <View style={{ flex: 1 }}><HomeButton label={t("mhome.staticQr")} icon="qr-code-outline" kind="soft" disabled={suspended} onPress={() => router.push("/merchant/qr" as any)} testID="home-static-qr" /></View>
+          <View style={{ flex: 1 }}><HomeButton label={t("mhome.closing")} icon="lock-closed-outline" kind="soft" onPress={() => router.push("/merchant/closing" as any)} testID="home-closing" /></View>
         </View>
       </View>
 
-      <SectionHeader title={t("mhome.lastPayments")} action={data?.payments.length ? t("home.seeAll") : undefined} onAction={() => router.push("/merchant/payments" as any)} />
+      <SectionHeader compact title={t("mhome.lastPayments")} action={data?.payments.length ? t("home.seeAll") : undefined} onAction={() => router.push("/merchant/payments" as any)} />
       {status === "loading" ? (
         <SkeletonRows rows={2} />
       ) : data && data.payments.length === 0 ? (

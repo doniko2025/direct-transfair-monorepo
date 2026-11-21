@@ -2,6 +2,7 @@
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
 // TRANSACTIONS HISTORY v8.1 — Direct Transf'air
+// ✅ v8.3 : correctif — le bouton « Encaisser un paiement » (état vide marchand) ouvre /merchant/collect (nouvel encaissement) et non /merchant/payment (suivi d'UN encaissement, qui exige un id).
 // ✅ v8.2 : séparation garantie aussi sur l'appareil (services/accountSpace.ts) ; état vide marchand → « Encaisser un paiement ».
 // ✅ v8.1 : COMPTES SÉPARÉS — l'écran suit le compte actif (client / marchand) : il demande au serveur uniquement les opérations de ce compte
 //    (space=client|merchant) et se recrée à chaque bascule, donc jamais de données de l'autre compte (ni en cache à l'écran).
@@ -144,7 +145,7 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
               title={q || filter !== "ALL" ? t("tx.noResult") : t("tx.none")}
               message={q || filter !== "ALL" ? t("tx.adjust") : isMerchant ? t("tx.emptyMerchant") : t("tx.emptyClient")}
               actionLabel={q || filter !== "ALL" ? undefined : isMerchant ? t("tx.ctaMerchant") : t("home.send")}
-              onAction={() => router.push(isMerchant ? "/merchant/payment" : "/(tabs)/send")}
+              onAction={() => router.push(isMerchant ? "/merchant/collect" : "/(tabs)/send")}
             />
           )}
         </View>

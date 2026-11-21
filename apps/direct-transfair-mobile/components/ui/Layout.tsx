@@ -167,15 +167,17 @@ export function PageTitle({ title, subtitle, right, style }: { title: string; su
 }
 
 export function SectionHeader({
-  title, action, onAction, style,
-}: { title: string; action?: string; onAction?: () => void; style?: StyleProp<ViewStyle> }) {
+  title, action, onAction, style, compact,
+}: { title: string; action?: string; onAction?: () => void; style?: StyleProp<ViewStyle>; compact?: boolean }) {
   const { C } = useUI();
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, marginBottom: 6 }, style]}>
-      <UText v="subheading" color={C.dark}>{title}</UText>
+    <View style={[{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: compact ? 18 : 28, marginBottom: compact ? 2 : 6 }, style]}>
+      {compact
+        ? <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 15, lineHeight: 20, fontWeight: '700', color: C.dark }}>{title}</Text>
+        : <UText v="subheading" color={C.dark}>{title}</UText>}
       {!!action && (
         <Pressable onPress={onAction} hitSlop={8}>
-          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '800', color: C.accent }}>{action}</Text>
+          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 12.5 : 14, fontWeight: compact ? '700' : '800', color: C.accent }}>{action}</Text>
         </Pressable>
       )}
     </View>
@@ -249,8 +251,8 @@ export function statusColor(C: UIColors, status: string): string {
 
 // ─── Ligne de transaction (maquette « Activité ») ────────
 export function TxRow({
-  tx, userId, onPress, last, showStatus = true,
-}: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean }) {
+  tx, userId, onPress, last, showStatus = true, compact,
+}: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean; compact?: boolean }) {
   const { C } = useUI();
   useT();   // se redessine au changement de langue (libellés d'opération et dates lus via tr/fmt)
   const v = describeTx(tx, userId);
@@ -262,26 +264,26 @@ export function TxRow({
       onPress={onPress}
       accessibilityRole="button"
       style={({ pressed }) => [{
-        flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14,
+        flexDirection: 'row', alignItems: 'center', gap: compact ? 12 : 14, paddingVertical: compact ? 10 : 14,
         borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line, opacity: pressed ? 0.6 : 1,
       }]}
     >
-      <Avatar name={name} incoming={v.incoming} icon={v.counterpart ? undefined : v.icon} />
+      <Avatar name={name} incoming={v.incoming} icon={v.counterpart ? undefined : v.icon} size={compact ? 38 : 48} />
       <View style={{ flex: 1, minWidth: 0 }}>
-        <UText v="bodyStrong" numberOfLines={1}>{name}</UText>
+        <UText v="bodyStrong" numberOfLines={1} style={compact ? { fontSize: 13.5, lineHeight: 18 } : undefined}>{name}</UText>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           {showStatus && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: col }} />}
-          <UText v="caption" tone="muted" numberOfLines={1} style={{ flexShrink: 1 }}>
+          <UText v="caption" tone="muted" numberOfLines={1} style={[{ flexShrink: 1 }, compact ? { fontSize: 12, lineHeight: 16 } : null]}>
             {showStatus ? `${v.statusLabel} · ${date}` : date}
           </UText>
         </View>
       </View>
       <View style={{ alignItems: 'flex-end' }}>
-        <UText v="bodyStrong" style={{ color: v.incoming ? C.pos : C.ink, fontWeight: '800' }} numberOfLines={1}>
+        <UText v="bodyStrong" style={[{ color: v.incoming ? C.pos : C.ink, fontWeight: '800' }, compact ? { fontSize: 13.5, lineHeight: 18 } : null]} numberOfLines={1}>
           {v.incoming ? '+' : '−'}{formatMoney(v.amount, v.currency)} {currencySymbol(v.currency)}
         </UText>
         {!!v.converted && (
-          <UText v="caption" tone="muted" numberOfLines={1}>
+          <UText v="caption" tone="muted" numberOfLines={1} style={compact ? { fontSize: 12, lineHeight: 16 } : undefined}>
             {formatMoney(v.converted.amount, v.converted.currency)} {currencySymbol(v.converted.currency)}
           </UText>
         )}

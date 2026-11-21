@@ -1,6 +1,11 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
-// ACCUEIL CLIENT v13.1 — Lot 12 : « le plus simple possible »
+// ACCUEIL CLIENT v14.0 — design « E » : carte de solde à la couleur de marque + carte « Envoyer de l'argent » qui la chevauche
+// ✅ v14.0 : polices réduites (voir HomeParts v2.0), prénom qui rétrécit au lieu d'être coupé, bascule client/marchand plus espacée sous la barre du haut,
+//    carte d'envoi (montant → « Ils reçoivent » au taux du jour → Continuer vers l'écran d'envoi, montant pré-rempli), raccourcis ronds
+//    Recharger · Demander · Parrainer · Factures (GrowthCards v2.0), activité récente compacte. LOGIQUE CONSERVÉE : refreshUser +
+//    getTransactions bornés (useLoader), solde disponible = solde − réservé, comptes séparés, KYC, factures ouvertes par la société.
+// (v13.1) ACCUEIL CLIENT — Lot 12 : « le plus simple possible »
 // ✅ v13.1 : COMPTES SÉPARÉS — « Activité récente » ne liste que les opérations du compte client (space=client) ; bascule
 //    « Compte client | Compte marchand » affichée sous la barre du haut quand la personne a aussi un compte marchand.
 // Fond blanc pur. Salutation + scan QR + notifications, solde en grand avec le drapeau de la devise et
@@ -22,11 +27,10 @@ import { toNum } from "../wallet/walletTheme";
 import { useKycStatus } from "../../hooks/useKycStatus";
 import { BalanceBlock, HomeTopBar, useBalanceHidden } from "../home/HomeParts";
 import { SpaceSwitch } from "../home/SpaceSwitch";
-import { Button, Card, EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow, UText, useUI } from "../ui";
-import { Ionicons } from "../ui/Icon";
-import { Rise } from "../merchant/merchantUi";
+import { EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, SlowNote, TxRow } from "../ui";
 import { useT } from "../../providers/I18nProvider";
-import GrowthCards from "../home/GrowthCards"; // lot 16
+import GrowthCards from "../home/GrowthCards"; // lot 16 — raccourcis ronds (v2.0)
+import ExpressSendCard from "../home/ExpressSendCard"; // design E
 
 const COUNTRY_CURRENCY: Record<string, string> = {
   GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
@@ -39,7 +43,6 @@ export default function ClientDashboard() {
   const { user, refreshUser } = useAuth();
   const router = useRouter();
   const t = useT();
-  const { C } = useUI();
   const { status: kyc } = useKycStatus();
   const [hidden, toggleHidden] = useBalanceHidden();
   // Lot 14 : « Payer mes factures » n'apparaît que si la société l'a ouvert (et si le serveur est à jour).
@@ -76,7 +79,8 @@ export default function ClientDashboard() {
         onBell={() => router.push("/(tabs)/notifications")}
       />
 
-      <SpaceSwitch style={{ marginTop: 14 }} />
+      {/* Bascule plus bas sous le prénom (22 px) : elle ne colle plus à la salutation. */}
+      <SpaceSwitch style={{ marginTop: 22 }} />
 
       <BalanceBlock
         label={t("home.balance")}
@@ -85,35 +89,18 @@ export default function ClientDashboard() {
         countryName={(user as any)?.country}
         hidden={hidden}
         onToggle={toggleHidden}
+        overlap
       />
 
-      <View style={{ gap: 12, marginTop: 60 }}>
-        <Button label={t("home.send")} onPress={() => router.push("/(tabs)/send")} testID="home-send" />
-        <Button label={t("home.topup")} kind="outline" onPress={() => router.push("/(tabs)/recharge")} testID="home-topup" />
-      </View>
+      {/* La carte d'envoi chevauche le bas de la carte de solde. */}
+      <ExpressSendCard currency={currency} countryName={(user as any)?.country} style={{ marginTop: -30, marginHorizontal: 10 }} />
 
-      {billsOpen ? (
-        <Rise delay={120}>
-          <Card tone="accent" pad={16} onPress={() => router.push("/bills" as any)} style={{ marginTop: 18, flexDirection: "row", alignItems: "center", gap: 14 }}>
-            <View style={{ width: 46, height: 46, borderRadius: 16, backgroundColor: C.surface, alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name={"receipt-outline" as any} size={23} color={C.accentDeep} />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <UText v="bodyStrong" numberOfLines={1}>{t("bill.homeTitle")}</UText>
-              <UText v="caption" tone="muted" numberOfLines={2}>{t("bill.homeSub")}</UText>
-            </View>
-            <Ionicons name={"chevron-forward" as any} size={18} color={C.faint} />
-          </Card>
-        </Rise>
-      ) : null}
-
-      {/* Lot 16 — croissance : demandes d'argent + parrainage */}
-      <GrowthCards />
+      <GrowthCards billsOpen={billsOpen} onTopup={() => router.push("/(tabs)/recharge")} />
 
       {kyc && !kyc.verified ? (
         <Notice
           tone={kyc.status === "PENDING" ? "info" : "warn"}
-          style={{ marginTop: 22 }}
+          style={{ marginTop: 18 }}
           action={kyc.status === "PENDING" ? undefined : kyc.status === "PARTIAL" ? t("home.kycComplete") : t("home.kycVerify")}
           onAction={kyc.status === "PENDING" ? undefined : () => router.push("/(tabs)/profile/kyc" as any)}
         >
@@ -125,7 +112,7 @@ export default function ClientDashboard() {
         </Notice>
       ) : null}
 
-      <SectionHeader title={t("home.recent")} action={recent.length ? t("home.seeAll") : undefined} onAction={() => router.push("/(tabs)/transactions")} />
+      <SectionHeader compact title={t("home.recent")} action={recent.length ? t("home.seeAll") : undefined} onAction={() => router.push("/(tabs)/transactions")} />
       {status === "loading" ? (
         <>
           <SkeletonRows rows={2} />
@@ -137,7 +124,7 @@ export default function ClientDashboard() {
         <EmptyView icon="receipt-outline" title={t("home.noTx")} message={t("home.noTxMsg")} />
       ) : (
         recent.map((tx, i) => (
-          <TxRow key={tx.id ?? i} tx={tx} userId={user?.id} last={i === recent.length - 1} onPress={() => router.push(`/(tabs)/transactions/${tx.id}`)} />
+          <TxRow compact key={tx.id ?? i} tx={tx} userId={user?.id} last={i === recent.length - 1} onPress={() => router.push(`/(tabs)/transactions/${tx.id}`)} />
         ))
       )}
     </Screen>
