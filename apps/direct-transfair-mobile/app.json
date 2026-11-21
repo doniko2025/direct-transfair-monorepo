@@ -83,10 +83,8 @@
       "router": {
         "origin": "https://directtransfair.app"
       },
-      "eas": {
-        "projectId": "f81aeef1-be76-410b-a59f-57e39130bd53"
-      }
+      "eas": {}
     },
-    "owner": "keneris-team"
+    "owner": "dftransfer"
   }
 }
