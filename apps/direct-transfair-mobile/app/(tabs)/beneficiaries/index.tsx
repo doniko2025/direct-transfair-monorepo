@@ -112,7 +112,7 @@ export default function BeneficiariesScreen() {
       )}
 
       {status === "ready" && count > 0 && (
-        <Button label={t("bn.new")} icon="person-add-outline" kind="dark" onPress={goCreate} style={{ marginTop: 28 }} />
+        <Button label={t("bn.new")} icon="person-add-outline" kind="dark" onPress={goCreate} style={{ marginTop: 18 }} />
       )}
     </Screen>
   );

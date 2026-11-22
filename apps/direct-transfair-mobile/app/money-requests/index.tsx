@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/money-requests/index.tsx
 // =========================================================
 // DEMANDES D'ARGENT — liste (lot 16)
+// ✅ v1.1 : montants réduits (22 au lieu de 30), carte et avatar resserrés, barre du haut et bouton compacts (échelle de l'accueil).
 // Onglets « Reçues » / « Envoyées ». Une demande reçue se règle en un geste : « Payer » ouvre l'envoi avec le destinataire
 // (et le montant, si la devise est la vôtre) déjà remplis ; la demande passe seule à « Réglée » une fois l'envoi abouti.
 // Refuser (payeur) et annuler (demandeur) demandent une confirmation. Les demandes échues expirent côté serveur.
@@ -32,24 +33,24 @@ function RequestCard({ r, index, busy, onPay, onClose }: { r: MoneyRequestView; 
   const pending = r.status === "PENDING";
   return (
     <Rise delay={Math.min(index, 6) * 60}>
-      <Card style={{ marginBottom: 12 }} pad={16}>
+      <Card style={{ marginBottom: 10 }} pad={14}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <Avatar name={r.counterpartName} size={46} />
+          <Avatar name={r.counterpartName} size={40} />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <UText v="bodyStrong" numberOfLines={1}>{received ? t("grw.mr.from", { name: r.counterpartName }) : t("grw.mr.to", { name: r.counterpartName })}</UText>
+            <UText v="bodyStrong" style={{ fontSize: 14 }} numberOfLines={1}>{received ? t("grw.mr.from", { name: r.counterpartName }) : t("grw.mr.to", { name: r.counterpartName })}</UText>
             <UText v="caption" tone="muted" numberOfLines={1}>{fmtDate(r.createdAt)}</UText>
           </View>
           <Pill label={t(`grw.mr.st.${r.status}` as MessageKey)} tone={TONE[r.status]} />
         </View>
 
-        <UText v="display" style={{ marginTop: 14, fontSize: 30 }} color={received && pending ? C.accentDeep : undefined} numberOfLines={1} adjustsFontSizeToFit>
+        <UText v="display" style={{ marginTop: 10, fontSize: 22, lineHeight: 28 }} color={received && pending ? C.accentDeep : undefined} numberOfLines={1} adjustsFontSizeToFit>
           {`${fmtMoney(r.amount, r.currency)} ${r.currency}`}
         </UText>
         {!!r.note && <UText v="body" tone="muted" style={{ marginTop: 4 }} numberOfLines={3}>{`« ${r.note} »`}</UText>}
         {pending && <UText v="caption" tone="muted" style={{ marginTop: 8 }}>{t("grw.mr.expires", { date: fmtDate(r.expiresAt) })}</UText>}
 
         {pending && (
-          <View style={{ flexDirection: "row", gap: 10, marginTop: 14 }}>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
             {received ? (
               <>
                 <View style={{ flex: 1 }}><Button label={t("grw.mr.pay")} icon="send" onPress={onPay} small disabled={busy} /></View>
@@ -112,8 +113,8 @@ export default function MoneyRequestsScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title={t("grw.mr.title")} />}
-      footer={<Button label={t("grw.mr.new")} icon="add" onPress={() => router.push("/money-requests/new" as any)} />}
+      header={<NavBar compact onBack={() => router.back()} title={t("grw.mr.title")} />}
+      footer={<Button compact label={t("grw.mr.new")} icon="add" onPress={() => router.push("/money-requests/new" as any)} />}
       refreshing={refreshing}
       onRefresh={refresh}
     >

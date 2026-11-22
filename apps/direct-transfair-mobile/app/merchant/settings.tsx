@@ -28,6 +28,7 @@ import { MERCHANT_CATEGORIES, PinPrompt, Rise, apiProblem, categoryLabel, shortD
 import { RCCM_EXAMPLE, normalizeRccm, validateRccm } from "../../utils/rccm";
 import { RccmDocumentCard } from "../../components/merchant/RccmDocumentPicker";
 import { BusinessInfoFields, type BusinessInfoValue } from "../../components/merchant/BusinessInfoFields";
+import { groupAmount } from "../../utils/amount";
 import {
   cleanText, normalizeBusinessPhone, validateBusinessAddress, validateBusinessCity, validateBusinessPhone, validatePostalCode, validateTaxId,
 } from "../../utils/businessInfo";
@@ -177,7 +178,7 @@ function AlertsCard({ me, onSaved }: { me: MerchantMe; onSaved: () => void }) {
       {msg && <Notice tone={msg.tone} style={{ marginBottom: 14 }}>{msg.text}</Notice>}
       <Field
         label={t("mset.lowBalance", { currency })}
-        icon="notifications-outline" value={threshold} keyboardType="number-pad"
+        icon="notifications-outline" value={threshold} keyboardType="number-pad" formatInput={groupAmount}
         onChangeText={(v) => setThreshold(v.replace(/[^0-9]/g, ""))}
         hint={t("mset.lowBalanceHint")}
       />

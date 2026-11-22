@@ -214,7 +214,7 @@ export default function KycScreen() {
             </Notice>
           )}
 
-          <SectionHeader title={t("kycs.yourFile")} style={{ marginTop: 24, marginBottom: 12 }} />
+          <SectionHeader title={t("kycs.yourFile")} style={{ marginTop: 16, marginBottom: 8 }} />
           <Progress done={doneCount} total={2} />
           <Step
             index={1}

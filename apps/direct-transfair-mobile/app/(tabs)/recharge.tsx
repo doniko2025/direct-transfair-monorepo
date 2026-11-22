@@ -1,5 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/recharge.tsx
 // =========================================================
+// ✅ v3.1 : PALETTE ALLÉGÉE — bandeau de solde et carte bancaire à la couleur de l'app (plus de bleu / violet) ; Orange Money = orange, Sendwave = jaune
+//    (texte noir ou blanc choisi selon la teinte) ; solde à 34 (taille de référence de l'accueil) ; chips et marges resserrés.
 // ✅ phase 7 : URL Sendwave lue dans services/platformConfig.ts. Logique de recharge (y compris simulée) inchangée.
 // RECHARGE WALLET v3.0 — page redessinée (logique métier STRICTEMENT inchangée : mêmes appels API, même polling, même validation) :
 //   • bandeau solde en dégradé aux couleurs du moyen choisi, avec aperçu « après la recharge » en direct ;
@@ -49,6 +51,8 @@ import { Ionicons } from "../../components/ui/Icon";
 import { Text } from "../../components/ui/Text";
 import { TintCard, alpha, shade } from "../../components/ui/Tint";
 import { Rise } from "../../components/merchant/merchantUi";
+import { formatInternationalInput } from "../../utils/phone";
+import { inkOn } from "../../components/ui/theme";
 
 const SENDWAVE_URL = getSendwaveUrl(); // ✅ phase 7 : modifiable (EXPO_PUBLIC_SENDWAVE_URL)
 
@@ -81,15 +85,19 @@ function formatExpiry(text: string): string {
 
 type Method = "CARD" | "ORANGE_MONEY" | "SENDWAVE";
 
-const METHODS: Array<{ key: Method; label: MessageKey | null; name?: string; icon: string; hue: string }> = [
-  { key: "CARD", label: "rc.card", icon: "card-outline", hue: "#4F46E5" },
-  { key: "ORANGE_MONEY", label: null, name: "Orange Money", icon: "phone-portrait-outline", hue: "#FF7900" },
-  { key: "SENDWAVE", label: null, name: "Sendwave", icon: "swap-horizontal-outline", hue: "#0EA5E9" },
+// Couleurs : la carte suit la couleur de l'app (hue = null → C.accent) ; Orange Money = orange, Sendwave = jaune (leurs couleurs de marque). Plus de bleu ni de violet.
+const ORANGE = "#FF7900";
+const SENDWAVE_YELLOW = "#FFC400";
+const METHODS: Array<{ key: Method; label: MessageKey | null; name?: string; icon: string; hue: string | null }> = [
+  { key: "CARD", label: "rc.card", icon: "card-outline", hue: null },
+  { key: "ORANGE_MONEY", label: null, name: "Orange Money", icon: "phone-portrait-outline", hue: ORANGE },
+  { key: "SENDWAVE", label: null, name: "Sendwave", icon: "swap-horizontal-outline", hue: SENDWAVE_YELLOW },
 ];
 
 /** Tuile d'un moyen de recharge : pleine couleur quand elle est choisie, ressort au toucher. */
 function MethodTile({ icon, label, hue, on, onPress }: { icon: string; label: string; hue: string; on: boolean; onPress: () => void }) {
   const { C } = useUI();
+  const fg = inkOn(hue);   // texte lisible sur la couleur du moyen (noir sur le jaune, blanc sur l'orange)
   const scale = useRef(new Animated.Value(1)).current;
   const lift = useRef(new Animated.Value(on ? 1 : 0)).current;
   useEffect(() => {
@@ -101,13 +109,13 @@ function MethodTile({ icon, label, hue, on, onPress }: { icon: string; label: st
       <Pressable onPress={onPress} onPressIn={() => to(0.96)} onPressOut={() => to(1)} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={label}>
         <View style={{ height: 88, borderRadius: 22, overflow: "hidden", borderWidth: 1.5, borderColor: on ? hue : C.line, backgroundColor: C.surface, alignItems: "center", justifyContent: "center", gap: 7, paddingHorizontal: 4,
           ...(on ? { shadowColor: hue, shadowOpacity: 0.4, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5 } : null) }}>
-          {on && <LinearGradient colors={[hue, shade(hue, 0.3)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
-          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: on ? "rgba(255,255,255,0.22)" : alpha(hue, 0.14), alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={icon as any} size={19} color={on ? "#FFFFFF" : hue} />
+          {on && <LinearGradient colors={[hue, shade(hue, 0.12)]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />}
+          <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: on ? alpha(fg, 0.16) : alpha(hue, 0.16), alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={icon as any} size={19} color={on ? fg : C.ink} />
           </View>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12.5, fontWeight: "800", color: on ? "#FFFFFF" : C.text, maxWidth: "92%" }}>{label}</Text>
-          {on && <View style={{ position: "absolute", top: 7, right: 7, width: 18, height: 18, borderRadius: 9, backgroundColor: "rgba(255,255,255,0.28)", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={"checkmark" as any} size={12} color="#FFFFFF" />
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 12.5, fontWeight: "800", color: on ? fg : C.text, maxWidth: "92%" }}>{label}</Text>
+          {on && <View style={{ position: "absolute", top: 7, right: 7, width: 18, height: 18, borderRadius: 9, backgroundColor: alpha(fg, 0.2), alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={"checkmark" as any} size={12} color={fg} />
           </View>}
         </View>
       </Pressable>
@@ -118,13 +126,14 @@ function MethodTile({ icon, label, hue, on, onPress }: { icon: string; label: st
 /** Montant rapide : pastille pleine quand elle correspond au montant saisi. */
 function QuickAmount({ label, active, hue, onPress }: { label: string; active: boolean; hue: string; onPress: () => void }) {
   const { C } = useUI();
+  const fg = inkOn(hue);
   const scale = useRef(new Animated.Value(1)).current;
   const to = (v: number) => Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 6 }).start();
   return (
     <Animated.View style={{ width: "31.5%", flexGrow: 1, transform: [{ scale }] }}>
       <Pressable onPress={onPress} onPressIn={() => to(0.94)} onPressOut={() => to(1)} accessibilityRole="button">
         <View style={{ height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: active ? hue : C.lineStrong, backgroundColor: active ? hue : C.field }}>
-          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 14, fontWeight: "800", color: active ? "#FFFFFF" : C.text, maxWidth: "90%" }}>{label}</Text>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 14, fontWeight: "800", color: active ? fg : C.text, maxWidth: "90%" }}>{label}</Text>
         </View>
       </Pressable>
     </Animated.View>
@@ -133,6 +142,8 @@ function QuickAmount({ label, active, hue, onPress }: { label: string; active: b
 
 /** Aperçu de la carte bancaire : se remplit pendant la saisie (numéro, titulaire, expiration). */
 function CardPreview({ number, name, expiry, holderPh }: { number: string; name: string; expiry: string; holderPh: string }) {
+  const { C } = useUI();
+  const fg = inkOn(C.accent);
   const digits = number.replace(/\s/g, "");
   const brand = digits.startsWith("4") ? "VISA" : /^(5[1-5]|2[2-7])/.test(digits) ? "MASTERCARD" : "";
   const groups = [0, 1, 2, 3].map((i) => {
@@ -140,19 +151,19 @@ function CardPreview({ number, name, expiry, holderPh }: { number: string; name:
     return g.padEnd(4, "•");
   });
   return (
-    <View style={{ borderRadius: 22, overflow: "hidden", shadowColor: "#4338CA", shadowOpacity: 0.35, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
-      <LinearGradient colors={["#1E1B4B", "#4338CA", "#6D28D9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-      <View pointerEvents="none" style={{ position: "absolute", right: -40, top: -50, width: 170, height: 170, borderRadius: 85, backgroundColor: "rgba(255,255,255,0.09)" }} />
-      <View pointerEvents="none" style={{ position: "absolute", right: 40, bottom: -70, width: 130, height: 130, borderRadius: 65, backgroundColor: "rgba(255,255,255,0.06)" }} />
+    <View style={{ borderRadius: 22, overflow: "hidden", shadowColor: C.accent, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 6 }}>
+      <LinearGradient colors={[shade(C.accent, 0.35), C.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <View pointerEvents="none" style={{ position: "absolute", right: -40, top: -50, width: 170, height: 170, borderRadius: 85, backgroundColor: alpha(fg, 0.1) }} />
+      <View pointerEvents="none" style={{ position: "absolute", right: 40, bottom: -70, width: 130, height: 130, borderRadius: 65, backgroundColor: alpha(fg, 0.07) }} />
       <View style={{ padding: 18, gap: 16 }}>
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <View style={{ width: 40, height: 30, borderRadius: 7, backgroundColor: "rgba(250,204,21,0.9)" }} />
-          <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14, letterSpacing: 1, fontStyle: "italic" }}>{brand}</Text>
+          <View style={{ width: 40, height: 30, borderRadius: 7, backgroundColor: alpha(fg, 0.28) }} />
+          <Text style={{ color: fg, fontWeight: "800", fontSize: 13, letterSpacing: 1, fontStyle: "italic" }}>{brand}</Text>
         </View>
-        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: "#FFFFFF", fontSize: 21, fontWeight: "700", letterSpacing: 2.5, fontVariant: ["tabular-nums"] }}>{groups.join("  ")}</Text>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: fg, fontSize: 20, fontWeight: "700", letterSpacing: 2.5, fontVariant: ["tabular-nums"] }}>{groups.join("  ")}</Text>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
-          <Text numberOfLines={1} style={{ flex: 1, color: name ? "#FFFFFF" : "rgba(255,255,255,0.5)", fontSize: 13.5, fontWeight: "700", letterSpacing: 0.8 }}>{name || holderPh}</Text>
-          <Text style={{ color: expiry ? "#FFFFFF" : "rgba(255,255,255,0.5)", fontSize: 14, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{expiry || "MM/AA"}</Text>
+          <Text numberOfLines={1} style={{ flex: 1, color: name ? fg : alpha(fg, 0.55), fontSize: 13, fontWeight: "700", letterSpacing: 0.8 }}>{name || holderPh}</Text>
+          <Text style={{ color: expiry ? fg : alpha(fg, 0.55), fontSize: 13, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{expiry || "MM/AA"}</Text>
         </View>
       </View>
     </View>
@@ -161,12 +172,13 @@ function CardPreview({ number, name, expiry, holderPh }: { number: string; name:
 
 /** Étapes numérotées (Orange Money / Sendwave) : on comprend d'un coup d'œil ce qui va se passer. */
 function Steps({ hue, items }: { hue: string; items: string[] }) {
+  const fg = inkOn(hue);
   return (
     <View style={{ gap: 10 }}>
       {items.map((txt, i) => (
         <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: hue, alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "800" }}>{i + 1}</Text>
+            <Text style={{ color: fg, fontSize: 12.5, fontWeight: "800" }}>{i + 1}</Text>
           </View>
           <UText v="body" style={{ flex: 1 }}>{txt}</UText>
         </View>
@@ -177,6 +189,7 @@ function Steps({ hue, items }: { hue: string; items: string[] }) {
 
 /** Anneau qui pulse pendant l'attente de confirmation. */
 function PulseRing({ hue }: { hue: string }) {
+  const fg = inkOn(hue);
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(Animated.timing(v, { toValue: 1, duration: 1500, easing: Easing.out(Easing.quad), useNativeDriver: true }));
@@ -187,7 +200,7 @@ function PulseRing({ hue }: { hue: string }) {
     <View style={{ width: 64, height: 64, alignItems: "center", justifyContent: "center" }}>
       <Animated.View style={{ position: "absolute", width: 64, height: 64, borderRadius: 32, backgroundColor: alpha(hue, 0.25), opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }), transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1.4] }) }] }} />
       <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: hue, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color="#FFFFFF" />
+        <ActivityIndicator color={fg} />
       </View>
     </View>
   );
@@ -198,6 +211,7 @@ export default function RechargeScreen() {
   const t = useT();
   const router = useRouter();
   const { user, refreshUser } = useAuth();
+  const bannerFg = inkOn(C.accent);
 
   const currency = ((user as any)?.primaryCurrency ?? "XOF") as string;
   const quickAmounts = QUICK_AMOUNTS[currency] ?? QUICK_AMOUNTS.XOF;
@@ -310,7 +324,7 @@ export default function RechargeScreen() {
         resetCardForm();
         await handleSuccess(`${fmt(numAmount, currency)} ${currency}`);
       } else if (method === "ORANGE_MONEY") {
-        const res = await api.rechargeByOrangeMoney(numAmount, currency, momoPhone.trim());
+        const res = await api.rechargeByOrangeMoney(numAmount, currency, momoPhone.replace(/\s/g, ""));
         setPending({ transactionId: res.transactionId, method: "ORANGE_MONEY" });
         pollOrangeMoney(res.transactionId);
       } else {
@@ -332,7 +346,8 @@ export default function RechargeScreen() {
   };
 
   const meth = METHODS.find((m) => m.key === method) ?? METHODS[0];
-  const hue = meth.hue;
+  const hueOf = (m: { hue: string | null }) => m.hue ?? C.accent;
+  const hue = hueOf(meth);
   const ctaLabel = numAmount > 0 ? `${t("rc.cta")} ${fmt(numAmount, currency)} ${currency}` : t("rc.cta");
   const userPhone = ((user as any)?.phone ?? "") as string;
 
@@ -351,25 +366,25 @@ export default function RechargeScreen() {
     >
       {/* ── Bandeau solde : suit la couleur du moyen choisi, montre le solde APRÈS la recharge ── */}
       <Rise>
-        <View style={{ borderRadius: 26, overflow: "hidden", marginTop: 2, shadowColor: hue, shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 5 }}>
-          <LinearGradient colors={["#0B1220", shade(hue, 0.45), hue]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-          <View pointerEvents="none" style={{ position: "absolute", right: -34, top: -44, width: 160, height: 160, borderRadius: 80, backgroundColor: "rgba(255,255,255,0.10)" }} />
-          <View pointerEvents="none" style={{ position: "absolute", left: 30, bottom: -60, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(255,255,255,0.06)" }} />
-          <View style={{ padding: 18, gap: 4 }}>
+        <View style={{ borderRadius: 26, overflow: "hidden", marginTop: 2, shadowColor: C.accent, shadowOpacity: 0.25, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 4 }}>
+          <LinearGradient colors={[shade(C.accent, 0.35), C.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+          <View pointerEvents="none" style={{ position: "absolute", right: -34, top: -44, width: 160, height: 160, borderRadius: 80, backgroundColor: alpha(bannerFg, 0.1) }} />
+          <View pointerEvents="none" style={{ position: "absolute", left: 30, bottom: -60, width: 110, height: 110, borderRadius: 55, backgroundColor: alpha(bannerFg, 0.06) }} />
+          <View style={{ padding: 16, gap: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center" }}>
-                <Ionicons name={"wallet-outline" as any} size={14} color="#FFFFFF" />
+              <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: alpha(bannerFg, 0.2), alignItems: "center", justifyContent: "center" }}>
+                <Ionicons name={"wallet-outline" as any} size={14} color={bannerFg} />
               </View>
-              <Text style={{ color: "#FFFFFF", opacity: 0.8, fontSize: 12.5, fontWeight: "700" }}>{t("rc.balance")}</Text>
+              <Text style={{ color: bannerFg, opacity: 0.8, fontSize: 12, fontWeight: "700" }}>{t("rc.balance")}</Text>
             </View>
-            <Text style={{ color: "#FFFFFF", fontSize: 30, fontWeight: "800", letterSpacing: -0.6 }} numberOfLines={1} adjustsFontSizeToFit>
+            <Text style={{ color: bannerFg, fontSize: 34, fontWeight: "800", letterSpacing: -0.8 }} numberOfLines={1} adjustsFontSizeToFit>
               {balance === null ? "—" : `${fmt(balance, currency)} ${currency}`}
             </Text>
             {numAmount > 0 && balance !== null && (
               <Rise key={String(numAmount > 0)}>
-                <View style={{ alignSelf: "flex-start", marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.18)", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
-                  <Ionicons name={"trending-up-outline" as any} size={14} color="#FFFFFF" />
-                  <Text style={{ color: "#FFFFFF", fontSize: 12.5, fontWeight: "700" }} numberOfLines={1}>{t("rc.after", { amount: `${fmt(balance + numAmount, currency)} ${currency}` })}</Text>
+                <View style={{ alignSelf: "flex-start", marginTop: 6, flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: alpha(bannerFg, 0.18), borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Ionicons name={"trending-up-outline" as any} size={14} color={bannerFg} />
+                  <Text style={{ color: bannerFg, fontSize: 12, fontWeight: "700" }} numberOfLines={1}>{t("rc.after", { amount: `${fmt(balance + numAmount, currency)} ${currency}` })}</Text>
                 </View>
               </Rise>
             )}
@@ -382,7 +397,7 @@ export default function RechargeScreen() {
         <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 10 }}>{t("rc.pickMethod")}</UText>
         <View accessibilityRole="radiogroup" style={{ flexDirection: "row", gap: 10 }}>
           {METHODS.map((m) => (
-            <MethodTile key={m.key} icon={m.icon} hue={m.hue} label={m.label ? t(m.label) : (m.name ?? "")} on={method === m.key} onPress={() => changeMethod(m.key)} />
+            <MethodTile key={m.key} icon={m.icon} hue={hueOf(m)} label={m.label ? t(m.label) : (m.name ?? "")} on={method === m.key} onPress={() => changeMethod(m.key)} />
           ))}
         </View>
       </Rise>
@@ -415,11 +430,12 @@ export default function RechargeScreen() {
               icon="call-outline"
               value={momoPhone}
               onChangeText={setMomoPhone}
+              formatInput={formatInternationalInput}
               placeholder="+224 6XX XX XX XX"
               keyboardType="phone-pad"
               hint={t("rc.omHint")}
             />
-            {!!userPhone && momoPhone.trim() !== userPhone && (
+            {!!userPhone && momoPhone.replace(/\s/g, "") !== userPhone && (
               <Pressable onPress={() => setMomoPhone(userPhone)} accessibilityRole="button" style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: alpha(hue, 0.15), borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, marginTop: -4 }}>
                 <Ionicons name={"person-outline" as any} size={14} color={C.text} />
                 <Text style={{ color: C.text, fontSize: 12.5, fontWeight: "700" }}>{t("rc.useMyNumber")}</Text>

@@ -79,8 +79,8 @@ const T = themed(() => ({
   greenText:  brand("#111111"),
   red:        "#DC2626",
   redBg:      "#FEE2E2",
-  blue:       "#2563EB",
-  blueBg:     "#EFF6FF",
+  blue:       "#1B8A4B",
+  blueBg:     "#E8F5ED",
   amber:      "#D97706",
   amberBg:    "#FEF3C7",
   font: {
@@ -421,7 +421,7 @@ export default function ClientReceiptScreen() {
       </Card>
 
       {/* ── Pied de reçu ── */}
-      <View style={{ alignItems: "center", paddingVertical: 24, gap: 6 }}>
+      <View style={{ alignItems: "center", paddingVertical: 16, gap: 6 }}>
         <UText v="label" style={{ letterSpacing: 2 }}>{branding.name.toUpperCase()}</UText>
         {!!tagline && <UText v="caption" tone="muted" align="center">{tagline}</UText>}
         <UText v="caption" tone="faint" align="center" style={{ marginTop: 6 }}>

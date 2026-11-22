@@ -35,7 +35,7 @@ type Props = {
 };
 
 export default function PinInput({
-  value, onChange, onComplete, accent, label, error, disabled = false, autoFocus = false, noReveal = false, dense = false, testID, inputRef,
+  value, onChange, onComplete, accent, label, error, disabled = false, autoFocus = false, noReveal = false, dense = true, testID, inputRef,
 }: Props) {
   const t = useT();
   const ref = useRef<TextInput>(null);

@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/index.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
+// ✅ v8.4 : page COMPACTE — titre 24, recherche 42, puces 36, lignes 38 pt (échelle de l'accueil), moins d'espaces vides entre les blocs.
 // TRANSACTIONS HISTORY v8.1 — Direct Transf'air
 // ✅ v8.3 : correctif — le bouton « Encaisser un paiement » (état vide marchand) ouvre /merchant/collect (nouvel encaissement) et non /merchant/payment (suivi d'UN encaissement, qui exige un id).
 // ✅ v8.2 : séparation garantie aussi sur l'appareil (services/accountSpace.ts) ; état vide marchand → « Encaisser un paiement ».
@@ -106,13 +107,13 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
 
   return (
     <Screen tabSpace refreshing={refreshing} onRefresh={refresh}>
-      <PageTitle title={isMerchant ? t("tab.payments") : t("tab.activity")} subtitle={subtitle} />
-      <SpaceSwitch style={{ marginBottom: 12 }} />
-      <SearchPill style={{ marginTop: 14 }} value={q} onChangeText={setQ} placeholder={t("tx.search")} />
+      <PageTitle compact title={isMerchant ? t("tab.payments") : t("tab.activity")} subtitle={subtitle} />
+      <SpaceSwitch style={{ marginBottom: 8 }} />
+      <SearchPill compact style={{ marginTop: 6 }} value={q} onChangeText={setQ} placeholder={t("tx.search")} />
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingTop: 18, paddingBottom: 14 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6, paddingTop: 10, paddingBottom: 4 }}>
         {FILTERS.map((f) => (
-          <Chip key={f} label={t(FILTER_KEYS[f])} active={filter === f} onPress={() => setFilter(f)} count={f === "ALL" ? undefined : counts[f]} />
+          <Chip compact key={f} label={t(FILTER_KEYS[f])} active={filter === f} onPress={() => setFilter(f)} count={f === "ALL" ? undefined : counts[f]} />
         ))}
       </ScrollView>
 
@@ -126,10 +127,11 @@ function TransactionsContent({ space }: { space: AccountSpace }) {
         <View>
           {error ? <Notice tone="warn" style={{ marginBottom: 12 }}>{t("tx.refreshFail")}</Notice> : null}
           {groups.map((g) => (
-            <View key={g.key} style={{ marginBottom: 8 }}>
-              <UText v="overline" tone="muted" style={{ marginTop: 14, marginBottom: 2 }}>{g.title}</UText>
+            <View key={g.key} style={{ marginBottom: 2 }}>
+              <UText v="overline" tone="muted" style={{ marginTop: 10, marginBottom: 0, fontSize: 11 }}>{g.title}</UText>
               {g.items.map((tx, i) => (
                 <TxRow
+                  compact
                   key={tx.id ?? `${g.key}-${i}`}
                   tx={tx}
                   userId={user?.id}

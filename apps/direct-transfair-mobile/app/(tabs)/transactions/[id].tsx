@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/app/(tabs)/transactions/[id].tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
+// ✅ v8.2 : page COMPACTE — montant à 34 (taille de l'accueil), cartes et lignes resserrées, polices 12–14, référence sur UNE ligne (rétrécie au besoin).
 // TRANSACTION DETAIL v8.1
 // ✅ v8.1 : REDESIGN — « Vous » remplacé par le VRAI nom et prénom (expéditeur et destinataire), carte « De → Vers » façon Wise / Western
 //    Union (avatars, noms, téléphone et pays du bénéficiaire), référence copiable en un appui, détails compacts, reçu PDF en trois petites
@@ -265,24 +266,24 @@ export default function TransactionDetailScreen() {
   const totalCur = isIncoming ? heroDisplayCurrency : transaction.currency;
 
   return (
-    <Screen header={<NavBar onBack={() => router.back()} title={t("txd.detail")} subtitle={transaction.reference ?? undefined} />}>
+    <Screen header={<NavBar compact onBack={() => router.back()} title={t("txd.detail")} subtitle={transaction.reference ?? undefined} />}>
       {/* ── Montant géant ── */}
-      <View style={{ alignItems: "center", paddingTop: 10, paddingBottom: 18, gap: 10 }}>
+      <View style={{ alignItems: "center", paddingTop: 0, paddingBottom: 12, gap: 4 }}>
         <Pill label={status.label} tone={status.tone} icon={status.icon} style={{ alignSelf: "center" }} />
-        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-          <UText v="display" color={amountColor} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} style={{ flexShrink: 1 }}>
+        <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6, marginTop: 2 }}>
+          <UText v="display" color={amountColor} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.5} style={{ flexShrink: 1, fontSize: 34, lineHeight: 40, letterSpacing: -0.8 }}>
             {amountSign}{fmt(heroDisplayAmount, heroDisplayCurrency)}
           </UText>
-          <UText v="heading" tone="muted">{heroDisplayCurrency}</UText>
+          <UText v="heading" tone="muted" style={{ fontSize: 15, lineHeight: 20 }}>{heroDisplayCurrency}</UText>
         </View>
-        <UText v="bodyStrong" tone="muted">{getTxLabel()}</UText>
+        <UText v="bodyStrong" tone="muted" style={{ fontSize: 13 }}>{getTxLabel()}</UText>
       </View>
 
       {showCopyCode && (
-        <Card tone="accent" style={{ alignItems: "center", marginBottom: 14 }}>
+        <Card tone="accent" pad={12} style={{ alignItems: "center", marginBottom: 10 }}>
           <UText v="overline" tone="muted">{t("txd.withdrawCode")}</UText>
-          <Pressable onPress={handleCopyCode} style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 8 }} accessibilityLabel={t("txd.copyA11y")}>
-            <UText v="title" style={[{ letterSpacing: 2 }, transaction.status === "CANCELLED" && { textDecorationLine: "line-through", color: C.faint }]}>
+          <Pressable onPress={handleCopyCode} style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 4 }} accessibilityLabel={t("txd.copyA11y")}>
+            <UText v="title" style={[{ letterSpacing: 2, fontSize: 20, lineHeight: 26 }, transaction.status === "CANCELLED" && { textDecorationLine: "line-through", color: C.faint }]}>
               {transaction.reference}
             </UText>
             <Ionicons name="copy-outline" size={20} color={C.ink} />
@@ -291,15 +292,15 @@ export default function TransactionDetailScreen() {
       )}
 
       {hasConversion && (
-        <Card pad={16} style={{ marginBottom: 14, flexDirection: "row", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <Ionicons name="swap-horizontal-outline" size={18} color={C.ink} />
-          <UText v="bodyStrong" style={{ flexShrink: 1 }}>
+        <Card pad={12} style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <Ionicons name="swap-horizontal-outline" size={16} color={C.ink} />
+          <UText v="bodyStrong" style={{ flexShrink: 1, fontSize: 13.5, lineHeight: 18 }}>
             {isConversionIncoming
               ? t("txd.sentLine", { amount: `${fmt(toNum(transaction.amount), transaction.currency)} ${transaction.currency}` })
               : t("txd.receivesLine", { amount: `${fmt(toNum(transaction.receivedAmount), transaction.targetCurrency)} ${transaction.targetCurrency}` })}
           </UText>
           {toNum(transaction.exchangeRate) > 0 && (
-            <UText v="caption" tone="muted">{t("txd.rate", { rate: toNum(transaction.exchangeRate).toFixed(4) })}</UText>
+            <UText v="caption" tone="muted" style={{ fontSize: 12 }}>{t("txd.rate", { rate: toNum(transaction.exchangeRate).toFixed(4) })}</UText>
           )}
         </Card>
       )}
@@ -307,11 +308,11 @@ export default function TransactionDetailScreen() {
       {/* ── De → Vers (façon Wise / Western Union) ── */}
       {!isDeposit ? (
         <Rise>
-          <Card pad={14} style={{ marginBottom: 12 }}>
+          <Card pad={12} style={{ marginBottom: 10 }}>
             <Party role={t("txd.sender")} name={isIncoming ? senderName : meName} />
-            <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 4, marginLeft: 17 }}>
-              <View style={{ width: 2, height: 22, borderRadius: 1, backgroundColor: C.lineStrong }} />
-              <View style={{ marginLeft: 10, width: 22, height: 22, borderRadius: 11, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 2, marginLeft: 15 }}>
+              <View style={{ width: 2, height: 14, borderRadius: 1, backgroundColor: C.lineStrong }} />
+              <View style={{ marginLeft: 10, width: 20, height: 20, borderRadius: 10, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
                 <Ionicons name={"arrow-down" as any} size={13} color={C.accentDeep} />
               </View>
             </View>
@@ -325,7 +326,7 @@ export default function TransactionDetailScreen() {
         </Rise>
       ) : (
         <Rise>
-          <Card pad={14} style={{ marginBottom: 12 }}>
+          <Card pad={12} style={{ marginBottom: 10 }}>
             <Party role={t("txd.agent")} name={senderName} />
           </Card>
         </Rise>
@@ -333,7 +334,7 @@ export default function TransactionDetailScreen() {
 
       {/* ── Informations ── */}
       <Rise delay={60}>
-        <Card pad={16} style={{ marginBottom: 12 }}>
+        <Card pad={12} style={{ marginBottom: 10 }}>
           <DetailRow label={t("txd.date")} value={dateLabel} />
           <Pressable onPress={handleCopyRef} accessibilityRole="button" accessibilityLabel={t("txd.copyA11y")}>
             <DetailRow label={t("txd.reference")} value={transaction.reference ?? "—"} copy last={!transaction.note} />
@@ -344,8 +345,8 @@ export default function TransactionDetailScreen() {
 
       {/* ── Détail financier ── */}
       <Rise delay={120}>
-        <Card tone="sunken" pad={16}>
-          <UText v="overline" tone="muted" style={{ marginBottom: 2 }}>{t("txd.financial")}</UText>
+        <Card tone="sunken" pad={12}>
+          <UText v="overline" tone="muted" style={{ marginBottom: 0, fontSize: 11 }}>{t("txd.financial")}</UText>
           <DetailRow label={t("txd.mainAmount")} value={`${fmt(toNum(transaction.amount), transaction.currency)} ${transaction.currency}`} />
           {toNum(transaction.fees) > 0 && (
             <DetailRow label={t("txd.fees")} value={`${fmt(toNum(transaction.fees), transaction.currency)} ${transaction.currency}`} />
@@ -357,14 +358,14 @@ export default function TransactionDetailScreen() {
       {/* ── Reçu PDF : Télécharger · Envoyer · Voir ── */}
       {showShareReceipt && (
         <Rise delay={180}>
-          <View style={{ marginTop: 12 }}>
+          <View style={{ marginTop: 10 }}>
             <ReceiptPdfActions transactionId={String(transaction.id)} status={transaction.status} onView={handleShare} />
           </View>
         </Rise>
       )}
 
       {/* ── Actions secondaires, discrètes ── */}
-      <View style={{ marginTop: 14, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 10 }}>
+      <View style={{ marginTop: 10, flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
         {showUserCancel && <Button label={t("txd.cancelTx")} kind="danger" small loading={processing} onPress={handleCancel} />}
         {!isIncoming && (
           <Button
@@ -385,14 +386,14 @@ function Party({ role, name, sub, strong }: { role: string; name: string; sub?: 
   const { C } = useUI();
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "•";
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: strong ? C.accent : C.sunken, alignItems: "center", justifyContent: "center" }}>
-        <Text style={{ fontSize: 13, fontWeight: "800", color: strong ? C.accentInk : C.text }}>{initials}</Text>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: strong ? C.accent : C.sunken, alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontSize: 12, fontWeight: "800", color: strong ? C.accentInk : C.text }}>{initials}</Text>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <UText v="caption" tone="muted">{role}</UText>
-        <UText v="bodyStrong" numberOfLines={2}>{name}</UText>
-        {!!sub && <UText v="caption" tone="muted" numberOfLines={1}>{sub}</UText>}
+        <UText v="caption" tone="muted" style={{ fontSize: 11.5, lineHeight: 15 }}>{role}</UText>
+        <UText v="bodyStrong" numberOfLines={2} style={{ fontSize: 14, lineHeight: 19 }}>{name}</UText>
+        {!!sub && <UText v="caption" tone="muted" numberOfLines={1} style={{ fontSize: 12, lineHeight: 16 }}>{sub}</UText>}
       </View>
     </View>
   );
@@ -401,10 +402,10 @@ function Party({ role, name, sub, strong }: { role: string; name: string; sub?: 
 function DetailRow({ label, value, bold, color, last, copy }: { label: string; value: string; bold?: boolean; color?: string; last?: boolean; copy?: boolean }) {
   const { C } = useUI();
   return (
-    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12, paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
-      <UText v="caption" tone="muted">{label}</UText>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "68%" }}>
-        <UText v={bold ? "subheading" : "bodyStrong"} color={color} numberOfLines={2} style={{ textAlign: "right", flexShrink: 1, fontWeight: bold ? "800" : "600" }}>{value}</UText>
+    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10, paddingVertical: 7, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
+      <UText v="caption" tone="muted" style={{ fontSize: 12.5 }}>{label}</UText>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "72%" }}>
+        <UText v={bold ? "subheading" : "bodyStrong"} color={color} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={{ textAlign: "right", flexShrink: 1, fontWeight: bold ? "800" : "600", fontSize: bold ? 15 : 13.5, lineHeight: bold ? 20 : 18 }}>{value}</UText>
         {copy ? <Ionicons name={"copy-outline" as any} size={15} color={C.muted} /> : null}
       </View>
     </View>

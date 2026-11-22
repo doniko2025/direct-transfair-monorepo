@@ -27,8 +27,8 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
 import { useRouter } from "expo-router";
 import { handleKycRequired } from "../utils/kycGate";
-import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLegacyDoubled } from "../utils/phone";
-import { decimalsFor, fmtMoney, fmtRate, parseAmount, sanitizeAmountInput } from "../utils/amount";
+import { stripDial, parseInternational, isNumericLike, onlyDigits, toE164, toLegacyDoubled, formatNationalInput, keepsLeadingZero } from "../utils/phone";
+import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, sanitizeAmountInput } from "../utils/amount";
 import { Ionicons } from '../components/ui/Icon';
 import { useAuth } from "../providers/AuthProvider";
 import { useT } from "../providers/I18nProvider";
@@ -145,14 +145,14 @@ export default function WalletTransferScreen() {
   const numAmount      = parseAmount(amount);
   const targetCurrency = lookupResult?.primaryCurrency ?? selectedCode.currency;
   const isSameCurrency = targetCurrency === senderCurrency;
-  const national       = onlyDigits(phone);
+  const national       = onlyDigits(phone).replace(/^0+/, "");   // v7.2 : le 0 national toléré (France) n'est jamais compté ni envoyé
   const canSend        = national.length >= 6 && numAmount > 0 && !insufficient && lookupResult?.found === true;
   const showSummary    = numAmount > 0 && lookupResult?.found === true;
   const quickAmounts   = QUICK_AMOUNTS[senderCurrency] ?? QUICK_AMOUNTS.XOF;
 
   const lookupDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const cleanPhone = onlyDigits(phone);   // ✅ v7.1 — numéro national (l'indicatif n'est jamais dans le champ)
+    const cleanPhone = onlyDigits(phone).replace(/^0+/, "");   // ✅ v7.1 — numéro national (l'indicatif n'est jamais dans le champ) ; v7.2 : sans 0 de tête
     if (cleanPhone.length < 6) { setLookupResult(null); setLookupLoading(false); return; }
     if (lookupDebounce.current) clearTimeout(lookupDebounce.current);
     let cancelled = false;
@@ -211,8 +211,12 @@ export default function WalletTransferScreen() {
     }
     const trimmed = v.trim();
     if (trimmed.startsWith("+") || trimmed.startsWith("00")) { setPhone(v); return; }   // indicatif en cours de frappe
-    setPhone(stripDial(onlyDigits(v), dialOf(selectedCode)));
+    // v7.2 : le 0 national est toléré (France : 07 66…) ; il est retiré au moment de la recherche / de l'envoi (onlyDigits + toE164 côté serveur).
+    setPhone(stripDial(onlyDigits(v), dialOf(selectedCode), keepsLeadingZero(dialOf(selectedCode))));
   };
+  // Numéro affiché avec les espaces du pays (622 53 42 17, 77 509 99 91, 07 66 73 62 27) ; « +… » / « 00… » en cours de frappe : tel quel.
+  const phoneTrim = phone.trim();
+  const phoneShown = phoneTrim.startsWith("+") || phoneTrim.startsWith("00") ? phone : formatNationalInput(phone, dialOf(selectedCode));
 
   const handleTransfer = () => {
     if (!canSend) return;
@@ -296,7 +300,7 @@ export default function WalletTransferScreen() {
 
   const foundName =
     lookupResult?.fullName || `${lookupResult?.firstName ?? ""} ${lookupResult?.lastName ?? ""}`.trim() || `${selectedCode.flag} ${selectedCode.code} ${phone.trim()}`;
-  const cleanLen = onlyDigits(phone).length;
+  const cleanLen = onlyDigits(phone).replace(/^0+/, "").length;
 
   const ctaLabel = insufficient
     ? t("send.insufTitle")
@@ -307,7 +311,7 @@ export default function WalletTransferScreen() {
   return (
     <Screen
       header={
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, minHeight: 64, gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 6, minHeight: 52, gap: 10 }}>
           <IconButton icon="chevron-back" label={t("common.back")} onPress={() => router.back()} />
           <View style={{ flex: 1 }}>
             <UText v="heading">{t("wt.title")}</UText>
@@ -333,7 +337,7 @@ export default function WalletTransferScreen() {
 
       {/* Destinataire */}
       <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>{t("send.recipient")}</UText>
-      <View style={{ flexDirection: "row", alignItems: "center", minHeight: 56, borderRadius: R.md, backgroundColor: C.field, paddingLeft: 6, paddingRight: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", minHeight: 48, borderRadius: R.md, backgroundColor: C.field, paddingLeft: 6, paddingRight: 10 }}>
         <Pressable
           onPress={() => setShowPicker(true)}
           accessibilityRole="button"
@@ -349,7 +353,7 @@ export default function WalletTransferScreen() {
             { flex: 1, minWidth: 0, fontFamily: SYSTEM_FONT, fontSize: 16, fontWeight: "600", color: C.ink, paddingHorizontal: 12, paddingVertical: 14 },
             { outlineStyle: "none", outlineWidth: 0 } as any,
           ]}
-          value={phone}
+          value={phoneShown}
           onChangeText={handlePhoneChange}
           placeholder={t("wt.phonePh")}
           placeholderTextColor={C.faint}
@@ -406,10 +410,10 @@ export default function WalletTransferScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 2 }}>
                 <TextInput
                   style={[
-                    { flex: 1, minWidth: 0, padding: 0, height: 40, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", letterSpacing: -0.8, color: insufficient ? C.warn : C.ink },
+                    { flex: 1, minWidth: 0, padding: 0, height: 40, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(amount), 28), fontWeight: "800", letterSpacing: -0.8, color: insufficient ? C.warn : C.ink },
                     { outlineStyle: "none", outlineWidth: 0, borderWidth: 0 } as any,
                   ]}
-                  value={amount}
+                  value={groupAmount(amount)}
                   onChangeText={(v) => setAmount(sanitizeAmountInput(v, decimalsFor(senderCurrency)))}
                   placeholder={decimalsFor(senderCurrency) > 0 ? "0,00" : "0"}
                   placeholderTextColor={C.faint}

@@ -216,19 +216,19 @@ export type TextVariant =
   | 'display' | 'hero' | 'title' | 'heading' | 'subheading' | 'body' | 'bodyStrong'
   | 'caption' | 'label' | 'overline' | 'button';
 
-/** Échelle de la maquette « Envoyer de l'argent » : titre 28 gras, libellé 16 normal, valeur 24 gras, bouton 18 semi-gras. */
+/** Échelle ALIGNÉE SUR L'ACCUEIL (v2) : solde 34, titre d'écran 24, texte 14,5, légende 12,5, bouton 15. Les anciennes tailles (46/30/24/19/16/14/18) étaient trop grandes. */
 export const T: Record<TextVariant, TextStyle> = {
-  display:    { fontFamily: SANS, fontSize: 46, lineHeight: 52, fontWeight: '800', letterSpacing: -1.5 },
-  hero:       { fontFamily: SANS, fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.6 },
-  title:      { fontFamily: SANS, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4 },
-  heading:    { fontFamily: SANS, fontSize: 19, lineHeight: 25, fontWeight: '700', letterSpacing: -0.2 },
-  subheading: { fontFamily: SANS, fontSize: 17, lineHeight: 23, fontWeight: '600', letterSpacing: -0.1 },
-  body:       { fontFamily: SANS, fontSize: 16, lineHeight: 23, fontWeight: '400' },
-  bodyStrong: { fontFamily: SANS, fontSize: 16, lineHeight: 23, fontWeight: '600' },
-  caption:    { fontFamily: SANS, fontSize: 14, lineHeight: 19, fontWeight: '400' },
-  label:      { fontFamily: SANS, fontSize: 13, lineHeight: 17, fontWeight: '600', letterSpacing: 0 },
-  overline:   { fontFamily: SANS, fontSize: 13, lineHeight: 18, fontWeight: '600', letterSpacing: 0 },
-  button:     { fontFamily: SANS, fontSize: 18, lineHeight: 23, fontWeight: '600', letterSpacing: -0.1 },
+  display:    { fontFamily: SANS, fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -1 },   // = solde de l'accueil (référence)
+  hero:       { fontFamily: SANS, fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.5 },
+  title:      { fontFamily: SANS, fontSize: 20, lineHeight: 26, fontWeight: '700', letterSpacing: -0.3 },
+  heading:    { fontFamily: SANS, fontSize: 17, lineHeight: 23, fontWeight: '700', letterSpacing: -0.2 },
+  subheading: { fontFamily: SANS, fontSize: 15, lineHeight: 21, fontWeight: '700', letterSpacing: -0.1 },
+  body:       { fontFamily: SANS, fontSize: 14.5, lineHeight: 21, fontWeight: '400' },
+  bodyStrong: { fontFamily: SANS, fontSize: 14.5, lineHeight: 21, fontWeight: '600' },
+  caption:    { fontFamily: SANS, fontSize: 12.5, lineHeight: 17, fontWeight: '400' },
+  label:      { fontFamily: SANS, fontSize: 12, lineHeight: 16, fontWeight: '600', letterSpacing: 0 },
+  overline:   { fontFamily: SANS, fontSize: 11.5, lineHeight: 16, fontWeight: '600', letterSpacing: 0 },
+  button:     { fontFamily: SANS, fontSize: 15, lineHeight: 20, fontWeight: '600', letterSpacing: -0.1 },
 };
 
 /** Espace à réserver en bas des écrans pour la barre d'onglets (80 + marge). */

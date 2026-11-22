@@ -56,7 +56,7 @@ type Props = {
 export default function AuthField({
   label, value, onChangeText, icon, placeholder, error, hint, secure, keyboardType,
   autoCapitalize = 'none', autoComplete, textContentType, returnKeyType, onSubmitEditing,
-  onBlur, inputRef, maxLength, editable = true, autoFocus, valid, dense = false, leftSlot, accent, testID,
+  onBlur, inputRef, maxLength, editable = true, autoFocus, valid, dense = true, leftSlot, accent, testID,
 }: Props) {
   const t = useT();
   const [focused, setFocused] = useState(false);

@@ -1,7 +1,11 @@
 // apps/direct-transfair-mobile/components/ui/Field.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// CHAMPS DE SAISIE v2.2 — Direct Transf'air (thème clair, white-label)
+// CHAMPS DE SAISIE v2.3 — Direct Transf'air (thème clair, white-label)
+// ✅ v2.3 : ESPACES AUTOMATIQUES. `Field` accepte `formatInput` (ex. formatNationalInput) : le texte affiché et mémorisé est
+//    toujours mis en forme au fil de la frappe. `PhoneInput` groupe le numéro selon le pays (622 53 42 17, 77 509 99 91,
+//    07 66 73 62 27…). `AmountInput` affiche les milliers séparés (1 000 000 000) sans changer la valeur brute rendue à
+//    l'écran appelant ; `compact` est la taille de l'accueil (34 pt) et le montant rétrécit quand il s'allonge.
 // ✅ v2.2 : (web uniquement) le texte d'exemple (placeholder) s'affichait aussi foncé qu'une vraie
 //    saisie : `WebkitTextFillColor` (anti-teinte d'auto-remplissage) écrasait placeholderTextColor.
 //    Le remplissage n'est désormais forcé en couleur d'encre que lorsque le champ contient du texte ;
@@ -27,6 +31,8 @@ import type { AuthCountry } from '../auth/authCountries';
 
 import { Text, TextInput } from './Text';
 import { useT } from "../../providers/I18nProvider";
+import { amountFontFor, groupAmount } from '../../utils/amount';
+import { formatNationalInput } from '../../utils/phone';
 export { normalizeNationalNumber, validatePhone } from '../auth/PhoneField';
 
 /** Supprime le halo du navigateur et la teinte d'auto-remplissage (web). */
@@ -77,12 +83,14 @@ type FieldProps = {
   rightSlot?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
   testID?: string;
+  /** Mise en forme au fil de la frappe (idempotente) : appliquée à l'affichage ET au texte rendu à `onChangeText`. */
+  formatInput?: (text: string) => string;
 };
 
 export function Field({
   label, value, onChangeText, icon, placeholder, error, hint, secure, keyboardType, autoCapitalize = 'none',
   autoComplete, textContentType, returnKeyType, onSubmitEditing, onBlur, inputRef, maxLength,
-  editable = true, autoFocus, multiline, valid, leftSlot, rightSlot, style, testID,
+  editable = true, autoFocus, multiline, valid, leftSlot, rightSlot, style, testID, formatInput,
 }: FieldProps) {
   const { C, R } = useUI();
   const [focused, setFocused] = useState(false);
@@ -105,8 +113,8 @@ export function Field({
           ref={inputRef}
           testID={testID}
           style={[st.input, { color: C.ink }, multiline && { textAlignVertical: 'top', paddingTop: 14, minHeight: 90 }, webReset(C.field, C.ink, C.faint, !value)]}
-          value={value}
-          onChangeText={onChangeText}
+          value={formatInput ? formatInput(value) : value}
+          onChangeText={formatInput ? (txt: string) => onChangeText(formatInput(txt)) : onChangeText}
           placeholder={placeholder}
           placeholderTextColor={C.faint}
           secureTextEntry={secure && !reveal}
@@ -143,14 +151,14 @@ export function Field({
 
 // ─── Barre de recherche (pilule beige) ───────────────────
 export function SearchPill({
-  value, onChangeText, placeholder, style, autoFocus,
-}: { value: string; onChangeText: (t: string) => void; placeholder?: string; style?: StyleProp<ViewStyle>; autoFocus?: boolean }) {
+  value, onChangeText, placeholder, style, autoFocus, compact = true,
+}: { value: string; onChangeText: (t: string) => void; placeholder?: string; style?: StyleProp<ViewStyle>; autoFocus?: boolean; /** Version basse : 42 pt, texte 14. */ compact?: boolean }) {
   const { C, R } = useUI();
   const t = useT();
   const ph = placeholder ?? t('common.search');
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, height: 50, borderRadius: R.pill, paddingHorizontal: 18, backgroundColor: C.beige }, style]}>
-      <Ionicons name="search" size={18} color={C.muted} />
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, height: compact ? 42 : 50, borderRadius: R.pill, paddingHorizontal: compact ? 16 : 18, backgroundColor: C.beige }, style]}>
+      <Ionicons name="search" size={compact ? 16 : 18} color={C.muted} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -159,7 +167,7 @@ export function SearchPill({
         autoFocus={autoFocus}
         autoCorrect={false}
         autoCapitalize="none"
-        style={[{ flex: 1, fontFamily: SYSTEM_FONT, fontSize: 16, color: C.ink, paddingVertical: 10 }, webReset(C.beige, C.ink, C.muted, !value)]}
+        style={[{ flex: 1, fontFamily: SYSTEM_FONT, fontSize: compact ? 14 : 16, color: C.ink, paddingVertical: compact ? 6 : 10 }, webReset(C.beige, C.ink, C.muted, !value)]}
         underlineColorAndroid="transparent"
         accessibilityLabel={ph}
         selectionColor={C.accent}
@@ -203,14 +211,14 @@ export function PhoneInput({
         <TextInput
           ref={inputRef}
           style={[st.input, { color: C.ink }, webReset(C.field, C.ink, C.faint, !value)]}
-          value={value}
-          onChangeText={(t) => onChangeText(t.replace(/[^\d\s]/g, ''))}
+          value={formatNationalInput(value, country.dial)}
+          onChangeText={(txt) => onChangeText(formatNationalInput(txt, country.dial))}
           placeholder="6 12 34 56 78"
           placeholderTextColor={C.faint}
           keyboardType="phone-pad"
           autoComplete="tel-national"
           textContentType="telephoneNumber"
-          maxLength={18}
+          maxLength={22}
           returnKeyType="next"
           onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}
@@ -296,7 +304,7 @@ export function OtpInput({
                 borderColor: error ? C.danger : on ? C.ink : ch ? C.lineStrong : 'transparent',
               }}
             >
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 26, fontWeight: '800', color: error ? C.danger : C.ink }}>{ch}</Text>
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 22, fontWeight: '800', color: error ? C.danger : C.ink }}>{ch}</Text>
             </View>
           );
         })}
@@ -324,15 +332,18 @@ export function OtpInput({
 
 // ─── Gros champ de montant (écran Envoyer / Recharge) ────
 export function AmountInput({
-  value, onChangeText, currency, error, autoFocus, label, onCurrencyPress, editable = true, compact,
+  value, onChangeText, currency, error, autoFocus, label, onCurrencyPress, editable = true, compact = true,
 }: {
   value: string; onChangeText: (t: string) => void; currency: string; error?: string | null; autoFocus?: boolean;
   label?: string; onCurrencyPress?: () => void; editable?: boolean;
-  /** Version resserrée (montant 34 pt, devise en pastille à droite) pour les écrans denses. */
+  /** Version resserrée (montant 34 pt comme le solde de l'accueil, devise en pastille à droite) pour les écrans denses. */
   compact?: boolean;
 }) {
   const { C } = useUI();
   const t = useT();
+  // Affichage avec espaces de milliers (1 000 000 000) ; la valeur rendue à l'écran appelant reste brute (« 1000000000 », point décimal).
+  const shown = groupAmount(value);
+  const base = compact ? 34 : 48;
   return (
     <View style={{ gap: 6 }}>
       {!!label && <Text style={[st.label, { color: error ? C.danger : C.muted, marginBottom: 0 }]}>{label}</Text>}
@@ -341,14 +352,14 @@ export function AmountInput({
         ? { flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 2, paddingBottom: 6 }
         : { flexDirection: 'row', alignItems: 'baseline', gap: 10, paddingTop: 10, paddingBottom: 14 }}>
         <TextInput
-          value={value}
-          onChangeText={(t) => onChangeText(t.replace(',', '.').replace(/[^0-9.]/g, ''))}
+          value={shown}
+          onChangeText={(txt) => onChangeText(txt.replace(/[\s\u00A0\u202F]/g, '').replace(',', '.').replace(/[^0-9.]/g, ''))}
           keyboardType="decimal-pad"
           placeholder="0"
           placeholderTextColor={C.faint}
           autoFocus={autoFocus}
           editable={editable}
-          style={[{ flexShrink: 1, minWidth: 60, ...(compact ? { flex: 1 } : null), fontFamily: SYSTEM_FONT, fontSize: compact ? 34 : 48, fontWeight: '800', letterSpacing: compact ? -1 : -1.5, color: error ? C.danger : C.ink, padding: 0 }, webReset('transparent', C.ink)]}
+          style={[{ flexShrink: 1, minWidth: 60, ...(compact ? { flex: 1 } : null), fontFamily: SYSTEM_FONT, fontSize: amountFontFor(shown, base), fontWeight: '800', letterSpacing: compact ? -1 : -1.5, color: error ? C.danger : C.ink, padding: 0 }, webReset('transparent', C.ink)]}
           underlineColorAndroid="transparent"
           selectionColor={C.accent}
           accessibilityLabel={label ?? t('field.amount')}
@@ -364,10 +375,10 @@ export function AmountInput({
 }
 
 const st = StyleSheet.create({
-  wrap: { marginBottom: 16 },
-  label: { fontFamily: SYSTEM_FONT, fontSize: 12.5, fontWeight: '700', marginBottom: 7, letterSpacing: 0.2 },
-  box: { flexDirection: 'row', alignItems: 'center', minHeight: 56, borderWidth: 1.5, paddingHorizontal: 16 },
-  input: { flex: 1, minWidth: 0, fontFamily: SYSTEM_FONT, fontSize: 16, fontWeight: '600', paddingVertical: 14 },
+  wrap: { marginBottom: 12 },
+  label: { fontFamily: SYSTEM_FONT, fontSize: 12, fontWeight: '700', marginBottom: 5, letterSpacing: 0.2 },
+  box: { flexDirection: 'row', alignItems: 'center', minHeight: 48, borderWidth: 1.5, paddingHorizontal: 14 },
+  input: { flex: 1, minWidth: 0, fontFamily: SYSTEM_FONT, fontSize: 15, fontWeight: '600', paddingVertical: 11 },
   msgRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
   msg: { fontFamily: SYSTEM_FONT, fontSize: 12.5, lineHeight: 17, flexShrink: 1 },
 });

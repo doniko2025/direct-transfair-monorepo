@@ -293,7 +293,7 @@ const st = StyleSheet.create({
   curPill: { paddingHorizontal: 10, height: 24, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.18)", alignItems: "center", justifyContent: "center" },
   curTxt: { fontSize: 11.5, fontWeight: "800", letterSpacing: 0.5 },
   heroCaption: { fontSize: 12.5, opacity: 0.75 },
-  heroAmount: { fontSize: 30, fontWeight: "800", marginTop: 2, letterSpacing: -0.5 },
+  heroAmount: { fontSize: 34, fontWeight: "800", marginTop: 2, letterSpacing: -0.5 },
   reservedPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: "rgba(255,255,255,0.18)", maxWidth: "48%" },
   reservedTxt: { fontSize: 12, fontWeight: "700" },
   dest: { flexDirection: "row", alignItems: "center", gap: 12, padding: 12, borderWidth: 1.5 },

@@ -13,6 +13,7 @@ import {
   BILLING_PERIODS, CONTRACT_CURRENCIES, todayLocal,
   type ContractKind, type ContractTermsForm,
 } from "../../services/contractTypes";
+import { groupAmount } from "../../utils/amount";
 
 const T = {
   surface: "#FFFFFF", border: "#E2E8F0", ink: "#0F172A", inkSub: "#6B7280", inkMuted: "#9CA3AF",
@@ -29,8 +30,10 @@ function Err({ msg }: { msg?: string }) {
   return msg ? <Text style={[s.err, { fontFamily: T.font.sans }]}>{msg}</Text> : null;
 }
 
-function Input({ label, value, onChangeText, placeholder, keyboardType, editable, error, hint, accent, maxLength }: {
+function Input({ label, value, onChangeText, placeholder, keyboardType, editable, error, hint, accent, maxLength, group }: {
   label: string; value: string; onChangeText: (v: string) => void; placeholder?: string;
+  /** Montant : espaces de milliers affichés (1 000 000) ; la valeur rendue reste sans espace. */
+  group?: boolean;
   keyboardType?: "default" | "decimal-pad" | "number-pad" | "numbers-and-punctuation";
   editable?: boolean; error?: string; hint?: string; accent: string; maxLength?: number;
 }) {
@@ -44,8 +47,8 @@ function Input({ label, value, onChangeText, placeholder, keyboardType, editable
           editable === false && { opacity: 0.6 },
           Platform.OS === "web" && ({ outlineStyle: "none" } as any),
         ]}
-        value={value}
-        onChangeText={onChangeText}
+        value={group ? groupAmount(value) : value}
+        onChangeText={group ? (v) => onChangeText(v.replace(/[\s\u00A0\u202F]/g, "")) : onChangeText}
         placeholder={placeholder}
         placeholderTextColor={T.inkMuted}
         keyboardType={keyboardType}
@@ -105,6 +108,7 @@ export default function ContractTermsFields({ kind, value, errors, onChange, dis
         value={value.amount}
         onChangeText={(v) => onChange({ amount: v })}
         placeholder={rental ? "ex. 149" : "ex. 4900"}
+        group
         keyboardType="decimal-pad"
         editable={!disabled}
         error={errors.amount}
@@ -132,6 +136,7 @@ export default function ContractTermsFields({ kind, value, errors, onChange, dis
           label="Maintenance et hébergement par an (facultatif)"
           value={value.maintenanceFeeYearly}
           onChangeText={(v) => onChange({ maintenanceFeeYearly: v })}
+          group
           keyboardType="decimal-pad"
           editable={!disabled}
           error={errors.maintenanceFeeYearly}

@@ -30,6 +30,7 @@ import {
 import { Text, TextInput } from '../../components/ui/Text';
 import { useT } from "../../providers/I18nProvider";
 import { getLocale } from "../../i18n/runtime";
+import { groupAmount } from "../../utils/amount";
 // ─── 5 devises de l'application ──────────────────────────
 const APP_CURRENCIES = [
   { code: "EUR", flag: "🇪🇺", symbol: "€"    },
@@ -159,7 +160,7 @@ function Converter({ rates }: { rates: any[] }) {
   const fromMeta = getCurrencyMeta(fromCur);
   const toMeta = getCurrencyMeta(toCur);
 
-  const amountFont = dynamicFontSize((amount || "0").length);
+  const amountFont = dynamicFontSize(groupAmount(amount || "0").length);
   const resultText = converted !== null ? fmtAmount(converted, toCur) : "—";
   const resultFont = dynamicFontSize(resultText.length);
 
@@ -204,8 +205,8 @@ function Converter({ rates }: { rates: any[] }) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           {curBtn(fromMeta, () => setPick("from"))}
           <TextInput
-            value={amount}
-            onChangeText={setAmount}
+            value={groupAmount(amount)}
+            onChangeText={(v) => setAmount(v.replace(/[\s\u00A0\u202F]/g, "").replace(/[^\d.,]/g, ""))}
             keyboardType="decimal-pad"
             selectTextOnFocus
             underlineColorAndroid="transparent"
@@ -237,7 +238,7 @@ function Converter({ rates }: { rates: any[] }) {
       </View>
 
       {/* Vers */}
-      <View style={{ padding: 20, paddingTop: 26, backgroundColor: C.sunken }}>
+      <View style={{ padding: 16, paddingTop: 18, backgroundColor: C.sunken }}>
         <UText v="overline" tone="muted" style={{ marginBottom: 10 }}>{t("rt.theyGet")}</UText>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           {curBtn(toMeta, () => setPick("to"))}
@@ -323,7 +324,7 @@ export default function RatesScreen() {
             ))}
           </View>
 
-          <UText v="overline" tone="muted" style={{ marginTop: 28, marginBottom: 10 }}>{t("rt.converter")}</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 18, marginBottom: 8 }}>{t("rt.converter")}</UText>
           <Converter rates={rates} />
 
           <Notice tone="info" icon="information-circle-outline" style={{ marginTop: 16 }}>

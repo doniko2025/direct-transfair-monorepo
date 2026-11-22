@@ -81,7 +81,7 @@ function TotalsCard({ tot, closed }: { tot: CurrencyTotalsView; closed: boolean 
         </View>
         <Pill label={closed ? t("mcl.closed") : t("mcl.open")} tone={closed ? "pos" : "warn"} icon={closed ? "lock-closed-outline" : "time-outline"} />
       </View>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 28, fontWeight: "800", letterSpacing: -0.6, marginTop: 8, color: C.text }}>{money(tot.balanceChange, tot.currency).replace(/\s/g, "\u00A0")}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={{ fontSize: 34, fontWeight: "800", letterSpacing: -0.8, marginTop: 6, color: C.text }}>{money(tot.balanceChange, tot.currency).replace(/\s/g, "\u00A0")}</Text>
       <View style={{ height: 1, backgroundColor: C.line, marginVertical: 12 }} />
       <View style={{ flexDirection: "row", flexWrap: "wrap", rowGap: 12, columnGap: 10 }}>
         <Stat label={t("mcl.count")} value={String(tot.count)} />

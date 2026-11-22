@@ -34,7 +34,7 @@ import { api } from "../../../services/api";
 import type { Beneficiary, CreateBeneficiaryPayload } from "../../../services/types";
 import { showAlert, showConfirm } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
-import { nationalOf, parseInternational, toE164 } from "../../../utils/phone";
+import { formatNationalInput, nationalOf, parseInternational, toE164 } from "../../../utils/phone";
 import { citiesByCountry } from "../../../data/cities";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../../components/wallet/useLoader";
 import {
@@ -232,14 +232,14 @@ export default function BeneficiaireDetailScreen() {
               onPress={() => setShowPhoneCodeModal(true)}
               accessibilityRole="button"
               accessibilityLabel={t("bn.c.dialA11y", { dial: phoneCountry.dialCode })}
-              style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 56, paddingHorizontal: 14, borderRadius: R.md, backgroundColor: C.field }}
+              style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 48, paddingHorizontal: 12, borderRadius: R.md, backgroundColor: C.field }}
             >
               <UText v="subheading">{phoneCountry.flag}</UText>
               <UText v="bodyStrong">{phoneCountry.dialCode}</UText>
               <Ionicons name="chevron-down" size={16} color={C.muted} />
             </Pressable>
             <Field
-              value={phoneNumber}
+              value={/^\s*(\+|00)/.test(phoneNumber) ? phoneNumber : formatNationalInput(phoneNumber, phoneCountry.dialCode)}
               onChangeText={(v) => {
                 const intl = parseInternational(v);
                 if (intl) { setPhoneCountry(intl.country); setPhoneNumber(intl.national); } else setPhoneNumber(v);
@@ -254,7 +254,7 @@ export default function BeneficiaireDetailScreen() {
       )}
 
       {/* Zone dangereuse */}
-      <SectionHeader title={t("bn.d.danger")} style={{ marginTop: 28 }} />
+      <SectionHeader title={t("bn.d.danger")} style={{ marginTop: 18 }} />
       <ListRow
         icon="trash-outline"
         title={deleting ? t("bn.d.deleting") : t("bn.d.delTitle")}

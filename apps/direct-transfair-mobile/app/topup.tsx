@@ -28,6 +28,7 @@ import { api } from "../services/api";
 import { AmountInput, Button, Chip, Field, IconButton, Notice, Screen, Tabs, UText, useUI } from "../components/ui";
 import { useT } from "../providers/I18nProvider";
 import { tr, getLocale } from "../i18n/runtime";
+import { formatInternationalInput } from "../utils/phone";
 
 const QUICK_AMOUNTS = [10, 20, 50, 100, 200, 500];
 
@@ -161,7 +162,7 @@ export default function TopUpScreen() {
         const st = String((tx as any)?.status ?? "").toUpperCase();
         outcome = st === "PAID" ? "PAID" : st === "FAILED" || st === "CANCELLED" ? "FAILED" : "PENDING";
       } else {
-        const started = await api.rechargeByOrangeMoney(numAmount, currency, mobileNumber.trim());
+        const started = await api.rechargeByOrangeMoney(numAmount, currency, mobileNumber.replace(/\s/g, ""));
         outcome = await waitForSettlement(started.transactionId);
       }
 
@@ -193,7 +194,7 @@ export default function TopUpScreen() {
   return (
     <Screen
       header={
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 10, minHeight: 64, gap: 12 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 6, minHeight: 52, gap: 10 }}>
           <UText v="heading" style={{ flex: 1 }}>{t("topup.title")}</UText>
           <IconButton icon="close" label={t("common.close")} onPress={handleClose} />
         </View>
@@ -234,7 +235,7 @@ export default function TopUpScreen() {
 
           {/* Méthode (un seul moyen ouvert → pas d'onglets) */}
           {tabItems.length > 1 ? (
-            <Tabs style={{ marginTop: 26, marginBottom: 22 }} items={tabItems} value={method} onChange={setMethod} />
+            <Tabs style={{ marginTop: 16, marginBottom: 14 }} items={tabItems} value={method} onChange={setMethod} />
           ) : (
             <View style={{ height: 22 }} />
           )}
@@ -280,6 +281,7 @@ export default function TopUpScreen() {
                 icon="call-outline"
                 value={mobileNumber}
                 onChangeText={setMobileNumber}
+                formatInput={formatInternationalInput}
                 placeholder={t("topup.fullNumber")}
                 keyboardType="phone-pad"
               />

@@ -72,7 +72,7 @@ export default function SecurityScreen() {
       footer={<Button label={t("sec.update")} onPress={handleSave} loading={loading} disabled={!canSave || loading} />}
     >
       <UText v="hero">{t("sec.title")}</UText>
-      <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 24 }}>
+      <UText v="body" tone="muted" style={{ marginTop: 4, marginBottom: 14 }}>
         {t("sec.intro")}
       </UText>
 

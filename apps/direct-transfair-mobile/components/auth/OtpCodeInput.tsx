@@ -105,7 +105,7 @@ const s = themed(() => StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: N.field, borderRadius: RADIUS.md, borderWidth: 1.5, borderColor: N.border,
   },
-  digit:  { fontFamily: FONT.display, fontSize: 26, fontWeight: '800', color: N.ink },
+  digit:  { fontFamily: FONT.display, fontSize: 22, fontWeight: '800', color: N.ink },
   // Le vrai champ couvre toute la zone, invisible mais touchable / collable.
   hidden: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.01, color: 'transparent' },
 }));

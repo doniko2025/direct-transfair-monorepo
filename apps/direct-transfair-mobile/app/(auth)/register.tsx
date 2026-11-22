@@ -104,6 +104,7 @@ import AuthButton  from '../../components/auth/AuthButton';
 import AuthNotice  from '../../components/auth/AuthNotice';
 import SelectField from '../../components/auth/SelectField';
 import PhoneField, { normalizeNationalNumber, validatePhone } from '../../components/auth/PhoneField';
+import { formatInternationalInput } from '../../utils/phone';
 import DateOfBirthField, { formatBirthDate, validateBirthDate, type Dob } from '../../components/auth/DateOfBirthField';
 import PinGuide from '../../components/auth/PinGuide';
 import PinInput from '../../components/auth/PinInput';
@@ -609,7 +610,7 @@ export default function RegisterScreen() {
           />
           <AuthField
             label={t('reg.businessPhone')} icon="call-outline" value={businessPhone}
-            onChangeText={(v) => setBusinessPhone(v.replace(/[^\d+\s.-]/g, ''))} error={errors.businessPhone}
+            onChangeText={(v) => setBusinessPhone(formatInternationalInput(v))} error={errors.businessPhone}
             keyboardType="phone-pad" accent={P.accent} maxLength={22} returnKeyType="next" placeholder="+224 620 00 00 00"
             hint={t('reg.businessPhoneHint')}
           />

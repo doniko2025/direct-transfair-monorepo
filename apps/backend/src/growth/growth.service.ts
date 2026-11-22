@@ -13,7 +13,10 @@ import { CurrencyCode, Prisma } from '@prisma/client';
 import type { AuthUserPayload } from '../auth/types/auth-user-payload.type';
 import { normalizePhoneE164 } from '../common/utils/phone.util';
 import { roundToCurrency } from '../fee-schedule/fee-engine';
+import { MailService } from '../mail/mail.service';
 import { PushService } from '../push/push.service';
+import { SmsService } from '../sms/sms.service';
+import { escapeHtml, platform } from '../common/platform.config';
 import { PrismaService } from '../prisma/prisma.service';
 import { RatesService } from '../rates/rates.service';
 import { loadReferralSettings } from './growth.core';
@@ -34,7 +37,53 @@ export class GrowthService {
     private readonly prisma: PrismaService,
     private readonly rates: RatesService,
     private readonly push: PushService,
+    private readonly mail: MailService,
+    private readonly sms: SmsService,
   ) {}
+
+  /**
+   * Invitation à se connecter : e-mail (si le compte en a un) + SMS (sauf MONEY_REQUEST_SMS=false).
+   * Complète la notification dans l'application et le push. Ne lève jamais : un envoi raté ne bloque pas la demande.
+   */
+  private async inviteToLogin(
+    payer: { id: string; firstName?: string | null; email?: string | null; phone?: string | null },
+    requesterName: string, amount: number, currency: string, note: string | null,
+  ): Promise<void> {
+    const amountText = `${amount.toLocaleString('fr-FR')} ${currency}`;
+    const link = platform.appUrl;
+    if (payer.email) {
+      try {
+        const noteHtml = note ? `<p style="margin:12px 0;padding:10px 14px;background:#FAFAF7;border-radius:8px;color:#444;">« ${escapeHtml(note)} »</p>` : '';
+        const cta = link
+          ? `<p style="margin:22px 0;text-align:center;"><a href="${escapeHtml(link)}" style="display:inline-block;padding:13px 26px;border-radius:999px;background:#111;color:#fff;text-decoration:none;font-weight:600;">Ouvrir l’application</a></p>`
+          : '<p>Ouvrez l’application pour répondre à cette demande.</p>';
+        await this.mail.sendEmail({
+          to: payer.email,
+          userId: payer.id,
+          subject: `${requesterName} vous demande ${amountText}`,
+          htmlContent:
+            `<p>Bonjour <strong>${escapeHtml(payer.firstName?.trim() || '')}</strong>,</p>` +
+            `<p><strong>${escapeHtml(requesterName)}</strong> vous demande <strong>${escapeHtml(amountText)}</strong>.</p>` +
+            noteHtml +
+            '<p>Connectez-vous pour la régler en un geste ou la refuser : la demande vous attend sur votre page d’accueil.</p>' +
+            cta,
+        });
+      } catch (e) {
+        this.logger.warn(`Demande d'argent : e-mail non envoyé (${(e as Error).message})`);
+      }
+    }
+    if (payer.phone && (process.env.MONEY_REQUEST_SMS ?? '').trim().toLowerCase() !== 'false') {
+      try {
+        await this.sms.send({
+          to: payer.phone,
+          userId: payer.id,
+          message: `${platform.smsTag} ${requesterName} vous demande ${amountText}. Connectez-vous pour répondre${link ? ` : ${link}` : '.'}`,
+        });
+      } catch (e) {
+        this.logger.warn(`Demande d'argent : SMS non envoyé (${(e as Error).message})`);
+      }
+    }
+  }
 
   /** Notification dans l'application (+ push) qui ouvre l'écran voulu. Ne lève jamais. */
   private async notify(userId: string, title: string, body: string, kind: string, actionUrl: string): Promise<void> {
@@ -116,7 +165,7 @@ export class GrowthService {
     if (!phone) throw new BadRequestException('Numéro de téléphone invalide (indicatif du pays compris).');
     const payer = await this.prisma.user.findFirst({
       where: { clientId, phone, isActive: true, deletedAt: null, role: 'USER' },
-      select: { id: true, firstName: true, lastName: true, phone: true },
+      select: { id: true, firstName: true, lastName: true, phone: true, email: true },
     });
     if (!payer) throw new NotFoundException('Aucun client avec ce numéro. Il doit avoir un compte pour recevoir votre demande.');
     if (payer.id === user.id) throw new BadRequestException('Vous ne pouvez pas vous adresser une demande.');
@@ -134,6 +183,7 @@ export class GrowthService {
 
     const requester = await this.prisma.user.findUnique({ where: { id: user.id }, select: { firstName: true, lastName: true } });
     void this.notify(payer.id, 'Demande d’argent', `${fullName(requester)} vous demande ${amount.toLocaleString('fr-FR')} ${currency}${row.note ? ` — « ${row.note} »` : ''}.`, 'MONEY_REQUEST', '/money-requests');
+    void this.inviteToLogin(payer, fullName(requester), amount, currency, row.note);
 
     return this.requestView(row, 'SENT', { firstName: payer.firstName, lastName: payer.lastName, phone: payer.phone });
   }

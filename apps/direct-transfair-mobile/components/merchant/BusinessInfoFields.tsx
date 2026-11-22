@@ -10,6 +10,7 @@
 import React from "react";
 import { View, useWindowDimensions } from "react-native";
 import { Field } from "../ui";
+import { formatInternationalInput } from "../../utils/phone";
 import { OptionPicker } from "../ui/OptionPicker";
 import { AUTH_COUNTRIES } from "../auth/authCountries";
 import { useT } from "../../providers/I18nProvider";
@@ -60,7 +61,7 @@ export function BusinessInfoFields({ value, onChange, errors = {} }: {
         options={countryOptions()} onChange={(k) => onChange({ country: k })} placeholder={t("binfo.countryPh")} error={errors.country}
       />
       <Field
-        label={t("binfo.phone")} icon="call-outline" value={value.phone} onChangeText={(v) => onChange({ phone: v.replace(/[^\d+\s.-]/g, "") })}
+        label={t("binfo.phone")} icon="call-outline" value={value.phone} onChangeText={(v) => onChange({ phone: formatInternationalInput(v) })}
         keyboardType="phone-pad" maxLength={22} placeholder="+224 620 00 00 00" error={errors.phone}
         hint={t("binfo.phoneHint")}
       />

@@ -73,7 +73,7 @@ export function TransferReceiptCard({ doc, qrRef }: { doc: TransferReceiptDoc; q
       <View style={{ padding: 16, gap: 6 }}>
         <UText v="caption" tone="muted">{doc.title.toUpperCase()}</UText>
         <UText v="caption" tone="muted">{doc.hero.label}</UText>
-        <UText v="display" style={{ fontSize: 32, lineHeight: 40 }} adjustsFontSizeToFit numberOfLines={1}>{fmtAmount(doc.hero.amount, doc.hero.currency)}</UText>
+        <UText v="display" style={{ fontSize: 34, lineHeight: 40 }} adjustsFontSizeToFit numberOfLines={1}>{fmtAmount(doc.hero.amount, doc.hero.currency)}</UText>
         <View style={{ alignSelf: "flex-start", backgroundColor: tone.bg, borderRadius: R.pill, paddingHorizontal: 12, paddingVertical: 6, marginTop: 4 }}>
           <UText v="caption" style={{ color: tone.fg, fontWeight: "800" }}>{doc.statusLabel}</UText>
         </View>
@@ -120,7 +120,7 @@ export function TransferReceiptCard({ doc, qrRef }: { doc: TransferReceiptDoc; q
       {!!doc.withdrawalCode && (
         <View style={{ margin: 16, marginBottom: 0, borderWidth: 2, borderStyle: "dashed", borderColor: C.accent, borderRadius: R.md, padding: 14, alignItems: "center", gap: 4 }}>
           <UText v="caption" tone="muted" align="center">{t("rcpt.codeWarn")}</UText>
-          <UText v="display" style={{ letterSpacing: 5, fontSize: 28 }} selectable>{doc.withdrawalCode}</UText>
+          <UText v="display" style={{ letterSpacing: 4, fontSize: 24, lineHeight: 30 }} selectable>{doc.withdrawalCode}</UText>
         </View>
       )}
 

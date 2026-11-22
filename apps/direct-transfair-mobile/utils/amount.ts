@@ -1,6 +1,9 @@
 // apps/direct-transfair-mobile/utils/amount.ts
 // =========================================================
-// MONTANTS — saisie, arrondi et affichage — v1.0
+// MONTANTS — saisie, arrondi et affichage — v1.1
+//
+// ✅ v1.1 : `groupAmount()` — espaces de milliers AUTOMATIQUES pendant la saisie, pour toutes les devises (1000000000 → 1 000 000 000).
+//   Affichage uniquement : l'état des écrans garde le texte brut (sanitizeAmountInput / parseAmount retirent déjà les espaces).
 //
 // POURQUOI CE FICHIER
 //   L'écran d'envoi arrondissait chaque conversion à l'entier : 5 000 XOF → « 8 EUR » (au lieu de 7,63), et le champ
@@ -58,6 +61,30 @@ export function sanitizeAmountInput(text: string, decimals: number): string {
   t = t.replace(/^0+(?=\d)/, "");
   if (t.startsWith(",")) t = `0${t}`;
   return t;
+}
+
+/**
+ * Saisie → affichage avec espaces de milliers, au fil de la frappe : « 1000000000 » → « 1 000 000 000 », « 2500,5 » → « 2 500,5 ».
+ * Seule la partie entière est groupée ; le séparateur décimal (virgule ou point) et les décimales restent tels que saisis,
+ * et une virgule finale en cours de frappe (« 12, ») est conservée. Idempotent : groupAmount(groupAmount(x)) === groupAmount(x).
+ * Texte non numérique : renvoyé tel quel (sans espaces).
+ */
+export function groupAmount(text: string | number | null | undefined): string {
+  const t = String(text ?? "").replace(/[\s\u00A0\u202F]/g, "");
+  if (!t) return "";
+  const m = /^(\d*)([.,]?)(\d*)$/.exec(t);
+  if (!m) return t;
+  const [, int = "", sep = "", dec = ""] = m;
+  return int.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + sep + dec;
+}
+
+/** Taille de police d'un montant saisi : réduite quand le nombre s'allonge (affichage groupé compris), pour qu'il reste lisible. */
+export function amountFontFor(shown: string, base: number): number {
+  const n = shown.length;
+  if (n <= 10) return base;
+  if (n <= 13) return Math.round(base * 0.85);
+  if (n <= 16) return Math.round(base * 0.72);
+  return Math.round(base * 0.6);
 }
 
 /** Nombre calculé → texte du champ : « 7,63 », « 5000 », « » si nul. */

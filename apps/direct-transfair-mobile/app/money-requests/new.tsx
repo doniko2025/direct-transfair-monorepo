@@ -2,7 +2,8 @@
 // =========================================================
 // NOUVELLE DEMANDE D'ARGENT (lot 16)
 // Téléphone du client (compte de la même société) + montant dans VOTRE devise + motif facultatif.
-// Le serveur vérifie que la personne existe, la prévient (notification + push) et fait expirer la demande après quelques jours.
+// Le serveur vérifie que la personne existe, la prévient (notification + push + e-mail + SMS d'invitation à se connecter) et fait expirer la demande après quelques jours.
+// ✅ v1.1 : montant à 34 (taille du solde de l'accueil) au lieu de 48 ; barre du haut et boutons compacts.
 // =========================================================
 
 import React, { useRef, useState } from "react";
@@ -62,8 +63,8 @@ export default function NewMoneyRequestScreen() {
   if (doneName) {
     return (
       <Screen
-        header={<NavBar onBack={() => router.back()} title={t("grw.mr.newTitle")} />}
-        footer={<Button label={t("grw.mr.title")} onPress={() => router.replace("/money-requests" as any)} />}
+        header={<NavBar compact onBack={() => router.back()} title={t("grw.mr.newTitle")} />}
+        footer={<Button compact label={t("grw.mr.title")} onPress={() => router.replace("/money-requests" as any)} />}
       >
         <Rise>
           <View style={{ alignItems: "center", paddingTop: 40, gap: 10 }}>
@@ -72,6 +73,7 @@ export default function NewMoneyRequestScreen() {
             </View>
             <UText v="heading" align="center">{t("grw.mr.doneTitle")}</UText>
             <UText v="body" tone="muted" align="center" style={{ maxWidth: 320 }}>{t("grw.mr.doneMsg", { name: doneName })}</UText>
+            <UText v="caption" tone="muted" align="center" style={{ maxWidth: 320 }}>{t("grw.mr.doneMsg2")}</UText>
           </View>
         </Rise>
       </Screen>
@@ -80,8 +82,8 @@ export default function NewMoneyRequestScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title={t("grw.mr.newTitle")} />}
-      footer={<Button label={t("grw.mr.send")} icon="paper-plane" onPress={submit} loading={busy} />}
+      header={<NavBar compact onBack={() => router.back()} title={t("grw.mr.newTitle")} />}
+      footer={<Button compact label={t("grw.mr.send")} icon="paper-plane" onPress={submit} loading={busy} />}
     >
       <Notice tone="info" style={{ marginBottom: 18 }}>{t("grw.mr.newIntro")}</Notice>
 
@@ -97,6 +99,7 @@ export default function NewMoneyRequestScreen() {
             hint={t("grw.mr.phoneHint")}
           />
           <AmountInput
+            compact
             label={t("grw.mr.amount")}
             value={rawAmount}
             onChangeText={(v) => { setRawAmount(sanitizeAmountInput(v, d)); setErrors((e) => ({ ...e, amount: undefined })); }}

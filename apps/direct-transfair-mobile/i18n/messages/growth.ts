@@ -54,6 +54,15 @@ export const growth = {
   'grw.mr.send':           { fr: 'Envoyer la demande', en: 'Send request', pt: 'Enviar pedido' },
   'grw.mr.errPhone':       { fr: 'Saisissez le numéro complet, avec l’indicatif du pays.', en: 'Enter the full number, with the country code.', pt: 'Indique o número completo, com o indicativo do país.' },
   'grw.mr.errAmount':      { fr: 'Saisissez un montant supérieur à zéro.', en: 'Enter an amount above zero.', pt: 'Indique um montante superior a zero.' },
+  'grw.mr.doneMsg2':       { fr: 'Elle reçoit une notification, un e-mail et un SMS qui l’invitent à se connecter ; une enveloppe l’attendra sur son accueil.', en: 'They get a notification, an e-mail and an SMS inviting them to log in; an envelope will be waiting on their home screen.', pt: 'Recebe uma notificação, um e-mail e um SMS a convidá-la a entrar; um envelope esperá-la-á no ecrã inicial.' },
+  // ── Enveloppe de l'accueil ──
+  'grw.env.title':         { fr: 'Demande de {name}', en: 'Request from {name}', pt: 'Pedido de {name}' },
+  'grw.env.tap':           { fr: 'Touchez pour ouvrir l’enveloppe', en: 'Tap to open the envelope', pt: 'Toque para abrir o envelope' },
+  'grw.env.opened':        { fr: 'Une demande d’argent vous attend', en: 'A money request is waiting for you', pt: 'Um pedido de dinheiro espera por si' },
+  'grw.env.asks':          { fr: '{name} vous demande', en: '{name} is asking you for', pt: '{name} pede-lhe' },
+  'grw.env.later':         { fr: 'Plus tard', en: 'Later', pt: 'Mais tarde' },
+  'grw.env.seeAll':        { fr: 'Voir mes demandes', en: 'See my requests', pt: 'Ver os meus pedidos' },
+  'grw.env.others':        { fr: '1 autre demande à voir|{count} autres demandes à voir', en: '1 more request to see|{count} more requests to see', pt: 'Mais 1 pedido para ver|Mais {count} pedidos para ver' },
   'grw.mr.doneTitle':      { fr: 'Demande envoyée', en: 'Request sent', pt: 'Pedido enviado' },
   'grw.mr.doneMsg':        { fr: '{name} a été prévenu(e). Vous serez notifié(e) dès que la demande sera réglée.', en: '{name} has been notified. You will be notified once it is paid.', pt: '{name} foi avisado(a). Será notificado(a) quando o pedido for pago.' },
 

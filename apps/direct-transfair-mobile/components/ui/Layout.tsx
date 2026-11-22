@@ -138,15 +138,19 @@ export function Screen({
 
 // ─── Barre de navigation ─────────────────────────────────
 export function NavBar({
-  title, onBack, right, subtitle, style,
-}: { title?: string; subtitle?: string; onBack?: () => void; right?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+  title, onBack, right, subtitle, style, compact = true,
+}: {
+  title?: string; subtitle?: string; onBack?: () => void; right?: React.ReactNode; style?: StyleProp<ViewStyle>;
+  /** Taille de l'accueil : titre 16, sous-titre 12, bouton retour 38 pt. */
+  compact?: boolean;
+}) {
   const t = useT();
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 20, paddingVertical: 10, minHeight: 64 }, style]}>
-      {onBack ? <IconButton icon="chevron-back" onPress={onBack} label={t('common.back')} /> : null}
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: compact ? 10 : 12, paddingHorizontal: 20, paddingVertical: compact ? 6 : 10, minHeight: compact ? 52 : 64 }, style]}>
+      {onBack ? <IconButton icon="chevron-back" size={compact ? 38 : 44} onPress={onBack} label={t('common.back')} /> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
-        {!!title && <UText v="heading" numberOfLines={1}>{title}</UText>}
-        {!!subtitle && <UText v="caption" tone="muted" numberOfLines={1}>{subtitle}</UText>}
+        {!!title && <UText v="heading" numberOfLines={1} style={compact ? { fontSize: 16, lineHeight: 21 } : undefined}>{title}</UText>}
+        {!!subtitle && <UText v="caption" tone="muted" numberOfLines={1} style={compact ? { fontSize: 12, lineHeight: 16 } : undefined}>{subtitle}</UText>}
       </View>
       {right}
     </View>
@@ -154,12 +158,14 @@ export function NavBar({
 }
 
 /** Gros titre de page + sous-titre (maquettes : « Transfert », « Activité »). */
-export function PageTitle({ title, subtitle, right, style }: { title: string; subtitle?: string; right?: React.ReactNode; style?: StyleProp<ViewStyle> }) {
+export function PageTitle({ title, subtitle, right, style, compact = true }: { title: string; subtitle?: string; right?: React.ReactNode; style?: StyleProp<ViewStyle>; compact?: boolean }) {
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingTop: 8, paddingBottom: 18 }, style]}>
+    <View style={[{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingTop: compact ? 2 : 8, paddingBottom: compact ? 10 : 18 }, style]}>
       <View style={{ flex: 1 }}>
-        <UText v="hero">{title}</UText>
-        {!!subtitle && <UText v="body" tone="muted" style={{ marginTop: 4 }}>{subtitle}</UText>}
+        {compact
+          ? <UText v="title" style={{ fontSize: 24, lineHeight: 30, fontWeight: '800', letterSpacing: -0.5 }}>{title}</UText>
+          : <UText v="hero">{title}</UText>}
+        {!!subtitle && <UText v="body" tone="muted" style={compact ? { marginTop: 1, fontSize: 12.5, lineHeight: 17 } : { marginTop: 4 }}>{subtitle}</UText>}
       </View>
       {right}
     </View>
@@ -167,7 +173,7 @@ export function PageTitle({ title, subtitle, right, style }: { title: string; su
 }
 
 export function SectionHeader({
-  title, action, onAction, style, compact,
+  title, action, onAction, style, compact = true,
 }: { title: string; action?: string; onAction?: () => void; style?: StyleProp<ViewStyle>; compact?: boolean }) {
   const { C } = useUI();
   return (
@@ -251,7 +257,7 @@ export function statusColor(C: UIColors, status: string): string {
 
 // ─── Ligne de transaction (maquette « Activité ») ────────
 export function TxRow({
-  tx, userId, onPress, last, showStatus = true, compact,
+  tx, userId, onPress, last, showStatus = true, compact = true,
 }: { tx: any; userId?: string; onPress?: () => void; last?: boolean; showStatus?: boolean; compact?: boolean }) {
   const { C } = useUI();
   useT();   // se redessine au changement de langue (libellés d'opération et dates lus via tr/fmt)

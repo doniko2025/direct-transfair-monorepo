@@ -130,7 +130,7 @@ export default function QRCodeScreen() {
         <View style={{ height: 1, backgroundColor: C.line, marginHorizontal: 20 }} />
 
         {/* QR */}
-        <View style={{ alignItems: "center", paddingVertical: 28, gap: 18 }}>
+        <View style={{ alignItems: "center", paddingVertical: 16, gap: 12 }}>
           <View style={{ padding: 16, borderRadius: 24, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: C.line }}>
             <QRFrame value={qrValue} accent={C.accent} ink={C.ink} />
           </View>

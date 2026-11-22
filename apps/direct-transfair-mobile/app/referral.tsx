@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/app/referral.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
+// ✅ v7.1 : page compacte — titre dans la barre du haut (plus de grand titre), code à 24 avec « Copier » sur la même ligne sans chevauchement, compteurs à 26,
+//    marges réduites, SMS et message d'info à la couleur de l'app (plus de bleu).
 // ✅ v7.0 (lot 16) : le code affiché est maintenant le VRAI code de parrainage du compte (GET /referrals/me). Avant, il était
 //    fabriqué sur l'appareil (3 lettres du prénom + début de l'identifiant) et ne correspondait à aucun code connu du serveur :
 //    un filleul qui le saisissait n'était jamais rattaché. Ajouts : envois sans frais restants, amis parrainés, règle du
@@ -34,18 +36,18 @@ import { fmtMoney } from "../utils/amount";
 import type { MessageKey } from "../i18n/catalog";
 
 // Couleurs de marque des canaux de partage (identité de WhatsApp, etc. — pas du tenant)
-const CHANNELS = { whatsapp: "#25D366", sms: "#2563EB", email: "#64748B" } as const;
+const CHANNELS = { whatsapp: "#25D366", email: "#64748B" } as const;   // SMS : couleur de l'app (plus de bleu)
 
 function Step({ n, title, desc, last }: { n: string; title: string; desc: string; last?: boolean }) {
   const { C } = useUI();
   return (
-    <View style={{ flexDirection: "row", gap: 14, paddingVertical: 14, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
-      <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: C.dark, alignItems: "center", justifyContent: "center" }}>
-        <UText v="bodyStrong" color={C.darkInk}>{n}</UText>
+    <View style={{ flexDirection: "row", gap: 14, paddingVertical: 10, borderBottomWidth: last ? 0 : 1, borderBottomColor: C.line }}>
+      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: C.dark, alignItems: "center", justifyContent: "center" }}>
+        <UText v="bodyStrong" color={C.darkInk} style={{ fontSize: 13 }}>{n}</UText>
       </View>
       <View style={{ flex: 1 }}>
-        <UText v="bodyStrong">{title}</UText>
-        <UText v="caption" tone="muted" style={{ marginTop: 2, lineHeight: 19 }}>{desc}</UText>
+        <UText v="bodyStrong" style={{ fontSize: 14 }}>{title}</UText>
+        <UText v="caption" tone="muted" style={{ marginTop: 1, lineHeight: 17, fontSize: 12 }}>{desc}</UText>
       </View>
     </View>
   );
@@ -58,12 +60,12 @@ function Channel({ icon, label, color, onPress }: { icon: React.ReactNode; label
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => ({ flex: 1, alignItems: "center", gap: 8, opacity: pressed ? 0.6 : 1 })}
+      style={({ pressed }) => ({ flex: 1, alignItems: "center", gap: 6, opacity: pressed ? 0.6 : 1 })}
     >
-      <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: alpha(color, 0.12), alignItems: "center", justifyContent: "center" }}>
+      <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: alpha(color, 0.14), alignItems: "center", justifyContent: "center" }}>
         {icon}
       </View>
-      <UText v="label" style={{ color: C.text }}>{label}</UText>
+      <UText v="label" style={{ color: C.text, fontSize: 12 }}>{label}</UText>
     </Pressable>
   );
 }
@@ -133,25 +135,26 @@ export default function ReferralScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} />}
-      footer={<Button label={t("ref.shareBtn")} icon="share-social-outline" onPress={handleSystemShare} disabled={!referralCode} />}
+      header={<NavBar compact onBack={() => router.back()} title={t("ref.title")} />}
+      footer={<Button compact label={t("ref.shareBtn")} icon="share-social-outline" onPress={handleSystemShare} disabled={!referralCode} />}
     >
-      <UText v="hero">{t("ref.title")}</UText>
-      <UText v="body" tone="muted" style={{ marginTop: 6, marginBottom: 22 }}>
+      <UText v="caption" tone="muted" style={{ marginBottom: 14, fontSize: 13, lineHeight: 19 }}>
         {t("ref.intro", { app: brandName, bonus })}
       </UText>
 
-      {/* Code */}
+      {/* Code : taille raisonnable, « Copier » sur la même ligne sans jamais mordre sur le code */}
       <Pressable onPress={handleCopy} accessibilityRole="button" accessibilityLabel={t("ref.copyCode")}>
-        <View style={{ backgroundColor: C.accent, borderRadius: R.lg, padding: 22 }}>
-          <UText v="overline" color={C.accentInk} style={{ opacity: 0.7 }}>{t("ref.yourCode")}</UText>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 10 }}>
-            <UText v="display" color={C.accentInk} style={{ letterSpacing: 3, fontSize: 36 }} numberOfLines={1} adjustsFontSizeToFit>
-              {referralCode || "••••••"}
-            </UText>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, height: 38, borderRadius: R.pill, backgroundColor: C.accentInk }}>
-              <Ionicons name="copy-outline" size={15} color={C.accent} />
-              <UText v="label" color={C.accent}>{t("ref.copy")}</UText>
+        <View style={{ backgroundColor: C.accent, borderRadius: R.lg, paddingVertical: 14, paddingHorizontal: 16 }}>
+          <UText v="overline" color={C.accentInk} style={{ opacity: 0.75, fontSize: 11 }}>{t("ref.yourCode")}</UText>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <UText v="display" color={C.accentInk} style={{ letterSpacing: 2, fontSize: 24, lineHeight: 30 }} numberOfLines={1} adjustsFontSizeToFit>
+                {referralCode || "••••••"}
+              </UText>
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, height: 34, borderRadius: R.pill, backgroundColor: C.accentInk }}>
+              <Ionicons name="copy-outline" size={14} color={C.accent} />
+              <UText v="label" color={C.accent} style={{ fontSize: 12.5 }}>{t("ref.copy")}</UText>
             </View>
           </View>
         </View>
@@ -162,39 +165,39 @@ export default function ReferralScreen() {
       {/* Mes envois sans frais + amis parrainés (lot 16) */}
       {info ? (
         <>
-          <View style={{ flexDirection: "row", gap: 12, marginTop: 18 }}>
-            <Card pad={16} style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+            <Card pad={14} style={{ flex: 1 }}>
               <UText v="overline" tone="muted">{t("grw.ref.left")}</UText>
-              <UText v="display" style={{ fontSize: 34, marginTop: 4 }} color={info.freeTransfersLeft > 0 ? C.pos : undefined}>{info.freeTransfersLeft}</UText>
+              <UText v="display" style={{ fontSize: 26, lineHeight: 32, marginTop: 2 }} color={info.freeTransfersLeft > 0 ? C.pos : undefined}>{info.freeTransfersLeft}</UText>
               <UText v="caption" tone="muted" numberOfLines={2}>
                 {info.freeTransfersLeft > 0 && info.nextExpiry ? t("grw.ref.leftSub", { date: fmtDate(info.nextExpiry) }) : t("grw.ref.none")}
               </UText>
             </Card>
-            <Card pad={16} style={{ flex: 1 }}>
+            <Card pad={14} style={{ flex: 1 }}>
               <UText v="overline" tone="muted">{t("grw.ref.friends")}</UText>
-              <UText v="display" style={{ fontSize: 34, marginTop: 4 }}>{info.referredCount}</UText>
+              <UText v="display" style={{ fontSize: 26, lineHeight: 32, marginTop: 2 }}>{info.referredCount}</UText>
             </Card>
           </View>
           {bonusText ? (
-            <Notice tone="accent" style={{ marginTop: 12 }}>
+            <Notice tone="accent" style={{ marginTop: 10 }}>
               {program && program.minFirstTransfer > 0 ? `${bonusText} ${t("grw.ref.ruleMin", { amount: `${fmtMoney(program.minFirstTransfer, (user as any)?.primaryCurrency)} ${(user as any)?.primaryCurrency ?? ""}`.trim() })}` : bonusText}
             </Notice>
           ) : (
-            <Notice tone="info" style={{ marginTop: 12 }}>{t("grw.ref.inactive")}</Notice>
+            <Notice tone="accent" style={{ marginTop: 10 }}>{t("grw.ref.inactive")}</Notice>
           )}
         </>
       ) : null}
 
       {/* Canaux */}
-      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 16 }}>{t("ref.shareVia")}</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 10 }}>{t("ref.shareVia")}</UText>
       <View style={{ flexDirection: "row", gap: 8 }}>
-        <Channel icon={<FontAwesome name="whatsapp" size={28} color={CHANNELS.whatsapp} />} label="WhatsApp" color={CHANNELS.whatsapp} onPress={handleWhatsApp} />
-        <Channel icon={<Ionicons name="chatbubble-ellipses" size={26} color={CHANNELS.sms} />} label="SMS" color={CHANNELS.sms} onPress={handleSMS} />
-        <Channel icon={<Ionicons name="mail" size={26} color={CHANNELS.email} />} label="Email" color={CHANNELS.email} onPress={handleEmail} />
+        <Channel icon={<FontAwesome name="whatsapp" size={26} color={CHANNELS.whatsapp} />} label="WhatsApp" color={CHANNELS.whatsapp} onPress={handleWhatsApp} />
+        <Channel icon={<Ionicons name="chatbubble-ellipses" size={24} color={C.accent} />} label="SMS" color={C.accent} onPress={handleSMS} />
+        <Channel icon={<Ionicons name="mail" size={24} color={CHANNELS.email} />} label="Email" color={CHANNELS.email} onPress={handleEmail} />
       </View>
 
       {/* Étapes */}
-      <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 4 }}>{t("ref.how")}</UText>
+      <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 2 }}>{t("ref.how")}</UText>
       <Card pad={0} tone="outline" style={{ paddingHorizontal: 16, borderWidth: 0, backgroundColor: "transparent" }}>
         <Step n="1" title={t("ref.s1")} desc={t("ref.s1d")} />
         <Step n="2" title={t("ref.s2")} desc={t("ref.s2d", { app: brandName })} />
@@ -204,7 +207,7 @@ export default function ReferralScreen() {
       {/* Récompenses (lot 16) */}
       {info && info.rewards.length > 0 ? (
         <>
-          <UText v="overline" tone="muted" style={{ marginTop: 30, marginBottom: 10 }}>{t("grw.ref.rewards")}</UText>
+          <UText v="overline" tone="muted" style={{ marginTop: 20, marginBottom: 8 }}>{t("grw.ref.rewards")}</UText>
           {info.rewards.map((r) => (
             <Card key={r.id} pad={14} style={{ marginBottom: 10, flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={{ flex: 1, minWidth: 0 }}>

@@ -20,7 +20,7 @@ import { Avatar, Button, Card, EmptyView, ErrorView, Field, NavBar, Notice, Pill
 import PhoneField, { normalizeNationalNumber, validatePhone } from "../../components/auth/PhoneField";
 import { AUTH_COUNTRIES, findCountry, type AuthCountry } from "../../components/auth/authCountries";
 import { PinPrompt, Rise, apiProblem, money } from "../../components/merchant/merchantUi";
-import { decimalsFor, parseAmount, roundTo } from "../../utils/amount";
+import { decimalsFor, groupAmount, parseAmount, roundTo } from "../../utils/amount";
 import { useT } from "../../providers/I18nProvider";
 
 function Setting({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
@@ -162,7 +162,7 @@ export default function StaffScreen() {
           error={showErrors ? validatePhone(phone) : null} hint={t("mstf.phoneHint")} accent={C.accent} inputRef={phoneRef}
         />
         <Setting label={t("mstf.canRefund")} hint={t("mstf.canRefundHint")} value={addRefund} onChange={setAddRefund} />
-        <Field label={t("mstf.capOpt", { currency })} value={addMaxText} onChangeText={(v) => setAddMaxText(v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
+        <Field label={t("mstf.capOpt", { currency })} value={addMaxText} onChangeText={(v) => setAddMaxText(v.replace(/[^0-9.]/g, ""))} formatInput={groupAmount} keyboardType="decimal-pad" icon="cash-outline" />
         <View style={{ height: 14 }} />
         <PinPrompt value={addPin} onChange={setAddPin} label={t("mstf.yourPin")} error={showErrors && addPin.length !== 6 ? t("mstf.pin6") : null} />
         <View style={{ height: 14 }} />
@@ -174,7 +174,7 @@ export default function StaffScreen() {
         {!!problem && <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice>}
         <Setting label={t("mstf.activeLabel")} hint={t("mstf.activeHint")} value={editActive} onChange={setEditActive} />
         <Setting label={t("mstf.canRefund")} value={editRefund} onChange={setEditRefund} />
-        <Field label={t("mstf.capEmpty", { currency })} value={editMaxText} onChangeText={(v) => setEditMaxText(v.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" icon="cash-outline" />
+        <Field label={t("mstf.capEmpty", { currency })} value={editMaxText} onChangeText={(v) => setEditMaxText(v.replace(/[^0-9.]/g, ""))} formatInput={groupAmount} keyboardType="decimal-pad" icon="cash-outline" />
         {grantsRefund && (
           <View style={{ marginTop: 14 }}>
             <PinPrompt value={editPin} onChange={setEditPin} label={t("mstf.pinRefund")} />

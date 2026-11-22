@@ -30,10 +30,12 @@ type Props = {
   showLang?: boolean;
   /** Contenu sous le formulaire (inscription, liens légaux). */
   below?: React.ReactNode;
+  /** Version resserrée (titre 24, marges réduites) : l'écran tient sans défilement. Défaut : oui. */
+  compact?: boolean;
   children: React.ReactNode;
 };
 
-function RoundButton({ icon, label, onPress }: { icon: string; label: string; onPress: () => void }) {
+function RoundButton({ icon, label, onPress, size = 44 }: { icon: string; label: string; onPress: () => void; size?: number }) {
   const { C } = useUI();
   return (
     <Pressable
@@ -42,22 +44,23 @@ function RoundButton({ icon, label, onPress }: { icon: string; label: string; on
       accessibilityLabel={label}
       hitSlop={8}
       style={({ pressed }) => ({
-        width: 44, height: 44, borderRadius: 22, backgroundColor: C.beige,
+        width: size, height: size, borderRadius: size / 2, backgroundColor: C.beige,
         alignItems: 'center', justifyContent: 'center', opacity: pressed ? 0.7 : 1,
       })}
     >
-      <Ionicons name={icon as any} size={22} color={C.ink} />
+      <Ionicons name={icon as any} size={size >= 44 ? 22 : 19} color={C.ink} />
     </Pressable>
   );
 }
 
-export default function SimpleAuthShell({ title, subtitle, onBack, headerRight, showLang = true, below, children }: Props) {
+export default function SimpleAuthShell({ title, subtitle, onBack, headerRight, showLang = true, below, compact = true, children }: Props) {
   const { C } = useUI();
   const t = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const top = safeTop(insets.top) + 8;   // jamais sous la barre d'état (Android edge-to-edge : insets.top peut valoir 0)
-  const bottom = Math.max(insets.bottom, 14) + 18;
+  const top = safeTop(insets.top) + (compact ? 4 : 8);   // jamais sous la barre d'état (Android edge-to-edge : insets.top peut valoir 0)
+  const bottom = Math.max(insets.bottom, 10) + (compact ? 8 : 18);
+  const btn = compact ? 38 : 44;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior="padding">
@@ -72,31 +75,31 @@ export default function SimpleAuthShell({ title, subtitle, onBack, headerRight, 
         <View style={{ width: '100%', maxWidth: 480, alignSelf: 'center', paddingHorizontal: 20, flexGrow: 1 }}>
           {/* Rangée du haut : retour · (état serveur, thème, langue) · aide */}
           <Reveal delay={0} distance={-8} duration={380}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
-              {onBack ? <RoundButton icon="arrow-back" label={t('common.back')} onPress={onBack} /> : <View style={{ width: 0 }} />}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: btn }}>
+              {onBack ? <RoundButton size={btn} icon="arrow-back" label={t('common.back')} onPress={onBack} /> : <View style={{ width: 0 }} />}
               <View style={{ flex: 1 }} />
               {headerRight}
               {showLang ? <ThemePill /> : null}
               {showLang ? <LanguagePill /> : null}
-              <RoundButton icon="help-circle-outline" label={t('login.legal.help')} onPress={() => router.push('/(auth)/assistance')} />
+              <RoundButton size={btn} icon="help-circle-outline" label={t('login.legal.help')} onPress={() => router.push('/(auth)/assistance')} />
             </View>
           </Reveal>
 
           <Reveal delay={90}>
             <Text
               accessibilityRole="header"
-              style={{ fontFamily: SYSTEM_FONT, fontSize: 32, lineHeight: 38, fontWeight: '800', letterSpacing: -0.8, color: C.ink, marginTop: 28 }}
+              style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 24 : 32, lineHeight: compact ? 30 : 38, fontWeight: '800', letterSpacing: -0.6, color: C.ink, marginTop: compact ? 12 : 28 }}
             >
               {title}
             </Text>
             {subtitle ? (
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 15, lineHeight: 22, color: C.muted, marginTop: 6 }}>{subtitle}</Text>
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 13.5 : 15, lineHeight: compact ? 19 : 22, color: C.muted, marginTop: 4 }}>{subtitle}</Text>
             ) : null}
           </Reveal>
 
-          <View style={{ marginTop: 22, gap: 2 }}>{children}</View>
+          <View style={{ marginTop: compact ? 14 : 22, gap: 2 }}>{children}</View>
 
-          {below ? <View style={{ marginTop: 'auto', paddingTop: 22 }}>{below}</View> : null}
+          {below ? <View style={{ marginTop: 'auto', paddingTop: compact ? 12 : 22 }}>{below}</View> : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

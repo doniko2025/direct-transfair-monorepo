@@ -52,18 +52,18 @@ export type RecapChip = { key: string; icon: string; label: string };
 export function RecapChips({ chips }: { chips: RecapChip[] }) {
   const { C, R } = useUI();
   return (
-    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, minHeight: 34 }}>
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, minHeight: 30 }}>
       {chips.map((c) => (
         // key = clé de la puce : elle ne rejoue son apparition que lorsqu'elle apparaît pour la première fois.
         <Reveal key={c.key} pop delay={60}>
           <View
             style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6, height: 32, paddingHorizontal: 12, borderRadius: R.pill,
+              flexDirection: 'row', alignItems: 'center', gap: 5, height: 28, paddingHorizontal: 10, borderRadius: R.pill,
               backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, maxWidth: 220,
             }}
           >
-            <Ionicons name={c.icon as any} size={14} color={C.accentDeep} />
-            <UText v="label" color={C.accentDeep} numberOfLines={1} style={{ flexShrink: 1 }}>{c.label}</UText>
+            <Ionicons name={c.icon as any} size={13} color={C.accentDeep} />
+            <UText v="label" color={C.accentDeep} numberOfLines={1} style={{ flexShrink: 1, fontSize: 12, lineHeight: 16 }}>{c.label}</UText>
           </View>
         </Reveal>
       ))}

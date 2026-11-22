@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/components/dashboards/ClientDashboard.tsx
 // =========================================================
+// ✅ v14.1 : enveloppe animée des demandes d'argent reçues (RequestEnvelope) juste sous la barre du haut.
 // ACCUEIL CLIENT v14.0 — design « E » : carte de solde à la couleur de marque + carte « Envoyer de l'argent » qui la chevauche
 // ✅ v14.0 : polices réduites (voir HomeParts v2.0), prénom qui rétrécit au lieu d'être coupé, bascule client/marchand plus espacée sous la barre du haut,
 //    carte d'envoi (montant → « Ils reçoivent » au taux du jour → Continuer vers l'écran d'envoi, montant pré-rempli), raccourcis ronds
@@ -31,6 +32,7 @@ import { EmptyView, ErrorView, Notice, Screen, SectionHeader, SkeletonRows, Slow
 import { useT } from "../../providers/I18nProvider";
 import GrowthCards from "../home/GrowthCards"; // lot 16 — raccourcis ronds (v2.0)
 import ExpressSendCard from "../home/ExpressSendCard"; // design E
+import RequestEnvelope from "../home/RequestEnvelope"; // enveloppe animée : demande d'argent reçue
 
 const COUNTRY_CURRENCY: Record<string, string> = {
   GN: "GNF", SN: "XOF", ML: "XOF", CI: "XOF", BF: "XOF", BJ: "XOF",
@@ -81,6 +83,9 @@ export default function ClientDashboard() {
 
       {/* Bascule plus bas sous le prénom (22 px) : elle ne colle plus à la salutation. */}
       <SpaceSwitch style={{ marginTop: 22 }} />
+
+      {/* Quelqu'un vous a demandé de l'argent : l'enveloppe s'ouvre dès l'arrivée sur l'accueil (rien si aucune demande). */}
+      <RequestEnvelope />
 
       <BalanceBlock
         label={t("home.balance")}

@@ -1,4 +1,5 @@
 // apps/direct-transfair-mobile/app/(auth)/login-v2.tsx
+// ✅ v5.2 : écran COMPACT sans défilement (même avec le clavier) — titre 24, champs / boutons `dense`, marges réduites, polices alignées sur l'accueil.
 // ✅ v5.1 : « Connexion » + empreinte (icône seule, ronde) sur UNE ligne ; les deux autres façons (« Email et mot de passe » / « Code reçu par email »)
 //    sur UNE seule ligne, côte à côte, icône au-dessus du libellé ; en-tête jamais sous la barre d'état (SimpleAuthShell).
 // ✅ v5.0 : ÉCRAN PRINCIPAL ÉPURÉ « esprit Taptap Send » — nouveau cadre SimpleAuthShell (page blanche, retour et aide en pastilles rondes, grand titre
@@ -603,10 +604,12 @@ export default function LoginV2Screen() {
               onChangeText={(t) => { setPhone(t); if (phoneErr) setPhoneErr(null); }}
               error={phoneErr}
               accent={P.accent}
+              dense
             />
           </Reveal>
           <Reveal delay={230}>
             <PinInput
+              dense
               label={t('login.pin.label')}
               value={pin}
               onChange={setPin}
@@ -632,6 +635,7 @@ export default function LoginV2Screen() {
               returnKeyType="next"
               onSubmitEditing={() => passRef.current?.focus()}
               accent={P.accent}
+              dense
               testID="login-email"
             />
           </Reveal>
@@ -648,6 +652,7 @@ export default function LoginV2Screen() {
               onSubmitEditing={canSubmit ? () => handleLogin() : undefined}
               inputRef={passRef}
               accent={P.accent}
+              dense
               maxLength={128}
               testID="login-password"
             />
@@ -670,6 +675,7 @@ export default function LoginV2Screen() {
             <AuthButton
               label={t('login.title')}
               accent={P.action}
+              dense
               loading={loading}
               disabled={!canSubmit}
               onPress={() => handleLogin()}
@@ -677,7 +683,7 @@ export default function LoginV2Screen() {
             />
           </View>
           {bioReady ? (
-            <AuthButton variant="outline" icon="finger-print-outline" iconOnly label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
+            <AuthButton dense variant="outline" icon="finger-print-outline" iconOnly label={bioLabel} onPress={() => void handleBiometric()} disabled={loading} testID="login-biometric" />
           ) : null}
         </View>
       </Reveal>
@@ -697,6 +703,7 @@ export default function LoginV2Screen() {
             <AuthButton
               variant="outline"
               stacked
+              dense
               icon={method === 'PHONE' ? 'mail-outline' : 'call-outline'}
               label={method === 'PHONE' ? t('modal.options.useEmail') : t('modal.options.usePhone')}
               onPress={() => switchMethod(method === 'PHONE' ? 'EMAIL' : 'PHONE')}
@@ -705,7 +712,7 @@ export default function LoginV2Screen() {
             />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <AuthButton variant="outline" stacked icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
+            <AuthButton dense variant="outline" stacked icon="mail-open-outline" label={t('modal.options.emailCode')} onPress={() => switchView('OTP_REQUEST')} disabled={loading} testID="login-email-code" />
           </View>
         </View>
       </Reveal>
@@ -720,12 +727,12 @@ export default function LoginV2Screen() {
 }
 
 const s = themed(() => StyleSheet.create({
-  forgotRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 14 },
-  forgotTxt: { fontFamily: FONT.body, fontSize: 14, fontWeight: '700' },
-  orRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 22, marginBottom: 16 },
+  forgotRow: { flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'center', gap: 8, marginTop: 0, marginBottom: 8 },
+  forgotTxt: { fontFamily: FONT.body, fontSize: 13, fontWeight: '700' },
+  orRow:     { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12, marginBottom: 10 },
   orLine:    { flex: 1, height: 1, backgroundColor: N.border },
-  orTxt:     { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.muted, letterSpacing: 0.4 },
-  miniLink:  { paddingVertical: 6 },
+  orTxt:     { fontFamily: FONT.body, fontSize: 11, fontWeight: '700', color: N.muted, letterSpacing: 0.4 },
+  miniLink:  { paddingVertical: 4 },
   miniTxt:   { fontFamily: FONT.body, fontSize: 12, fontWeight: '700', color: N.inkSub },
   centerRow: { alignItems: 'center', marginTop: 14 },
   hint:      { fontFamily: FONT.body, fontSize: 13.5, color: N.muted, paddingVertical: 12 },

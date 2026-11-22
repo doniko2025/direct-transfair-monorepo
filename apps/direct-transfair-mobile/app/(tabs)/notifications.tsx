@@ -295,7 +295,7 @@ export default function NotificationsScreen() {
               accessibilityRole={selectMode ? "checkbox" : "button"}
               accessibilityState={selectMode ? { checked } : undefined}
               style={({ pressed }) => ({
-                flexDirection: "row", alignItems: "flex-start", gap: 14, paddingVertical: 16,
+                flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 12,
                 paddingHorizontal: selectMode ? 8 : 0, borderRadius: selectMode ? 14 : 0,
                 backgroundColor: checked ? C.accentSoft : "transparent",
                 borderBottomWidth: i === filtered.length - 1 || selectMode ? 0 : 1, borderBottomColor: C.line,

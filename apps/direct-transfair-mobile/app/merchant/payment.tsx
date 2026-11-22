@@ -112,7 +112,7 @@ function PaidHero({ p, title, amountLabel, caption, refunded }: { p: PaymentRequ
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={{ color: ink, fontSize: 13, fontWeight: "700", opacity: 0.9 }} numberOfLines={1}>{title} · {nb(shortDateTime(at))}</Text>
-            <Text style={{ color: ink, fontSize: 28, fontWeight: "800", letterSpacing: -0.6 }} numberOfLines={1} adjustsFontSizeToFit>{nb(amountLabel)}</Text>
+            <Text style={{ color: ink, fontSize: 34, fontWeight: "800", letterSpacing: -0.8 }} numberOfLines={1} adjustsFontSizeToFit>{nb(amountLabel)}</Text>
             <Text style={{ color: ink, fontSize: 12, opacity: 0.8 }} numberOfLines={1}>{caption}</Text>
           </View>
         </View>

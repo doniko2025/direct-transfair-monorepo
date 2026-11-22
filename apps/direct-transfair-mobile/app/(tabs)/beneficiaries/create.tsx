@@ -40,7 +40,7 @@ import * as Contacts from "expo-contacts/legacy";
 import { api } from "../../../services/api";
 import { showAlert } from "../../../utils/alert";
 import { countriesList, CountryData } from "../../../data/countries";
-import { nationalOf, parseInternational, toE164 } from "../../../utils/phone";
+import { formatNationalInput, nationalOf, parseInternational, toE164 } from "../../../utils/phone";
 import { citiesByCountry } from "../../../data/cities";
 import {
   Avatar, Button, Card, EmptyView, Field, ListRow, NavBar, Screen, SearchPill, SectionHeader, SelectRow, Sheet, UText, useUI,
@@ -243,14 +243,14 @@ export default function BeneficiaryCreateScreen() {
           onPress={() => setShowPhoneCodeModal(true)}
           accessibilityRole="button"
           accessibilityLabel={t("bn.c.dialA11y", { dial: phoneCountry.dialCode })}
-          style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 56, paddingHorizontal: 14, borderRadius: R.md, backgroundColor: C.field }}
+          style={{ flexDirection: "row", alignItems: "center", gap: 6, height: 48, paddingHorizontal: 12, borderRadius: R.md, backgroundColor: C.field }}
         >
           <UText v="subheading">{phoneCountry.flag}</UText>
           <UText v="bodyStrong">{phoneCountry.dialCode}</UText>
           <Ionicons name="chevron-down" size={16} color={C.muted} />
         </Pressable>
         <Field
-          value={phoneNumber}
+          value={/^\s*(\+|00)/.test(phoneNumber) ? phoneNumber : formatNationalInput(phoneNumber, phoneCountry.dialCode)}
           onChangeText={applyPhoneText}
           placeholder="620 000 000"
           keyboardType="phone-pad"

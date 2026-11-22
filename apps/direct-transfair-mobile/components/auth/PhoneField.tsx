@@ -1,7 +1,10 @@
 // apps/direct-transfair-mobile/components/auth/PhoneField.tsx
 // ✅ Design « Corridor » : polices Manrope/Fraunces (composant Text) et icônes Lucide (composant Icon) — imports uniquement, logique inchangée.
 // =========================================================
-// TÉLÉPHONE v2.0 — Direct Transf'air
+// TÉLÉPHONE v2.1 — Direct Transf'air
+// ✅ v2.1 : ESPACES AUTOMATIQUES selon le pays (Guinée 622 53 42 17, Sénégal 77 509 99 91, France 07 66 73 62 27…) — voir
+//    utils/phone.ts. Le « 0 » national est toléré en France (et pays voisins de règle) : normalizeNationalNumber() le retire
+//    toujours avant l'envoi, les espaces aussi.
 // ✅ v2.0 : THÈME CLAIR — contour noir au focus.
 // Développé par Thierno Doniko (Grand Chef) — Doniko Digital.
 // Indicatif (drapeau + code, sélecteur de tous les pays) + numéro national.
@@ -22,6 +25,7 @@ import { useT } from '../../providers/I18nProvider';
 
 import { Text, TextInput } from '../ui/Text';
 import { themed } from '../wallet/brand';
+import { formatNationalInput } from '../../utils/phone';
 /** Garde les chiffres et retire les « 0 » de tête (préfixe national). */
 export function normalizeNationalNumber(raw: string): string {
   return raw.replace(/\D/g, '').replace(/^0+/, '');
@@ -50,7 +54,7 @@ type Props = {
 };
 
 export default function PhoneField({
-  country, onCountryChange, value, onChangeText, error, hint, accent, dense = false, onSubmitEditing, inputRef,
+  country, onCountryChange, value, onChangeText, error, hint, accent, dense = true, onSubmitEditing, inputRef,
 }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -74,14 +78,14 @@ export default function PhoneField({
         <TextInput
           ref={inputRef}
           style={[s.input, dense && { fontSize: 15, paddingVertical: 8 }, WEB_INPUT_RESET]}
-          value={value}
-          onChangeText={(t) => onChangeText(t.replace(/[^\d\s]/g, ''))}
+          value={formatNationalInput(value, country.dial)}
+          onChangeText={(txt) => onChangeText(formatNationalInput(txt, country.dial))}
           placeholder="6 12 34 56 78"
           placeholderTextColor={N.faint}
           keyboardType="phone-pad"
           autoComplete="tel-national"
           textContentType="telephoneNumber"
-          maxLength={18}
+          maxLength={22}
           returnKeyType="next"
           onSubmitEditing={onSubmitEditing}
           onFocus={() => setFocused(true)}

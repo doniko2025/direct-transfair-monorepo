@@ -38,8 +38,8 @@ const T = themed(() => ({
   textDim:    dk("#6B6B6B", "#9CA3AF"),
   border:     dk("#E0E0E0", "#2B3038"),
   borderGreen:dk("#E0E0E0", "#2B3038"),
-  blue:       dk("#1D4ED8", "#6AA2FF"),
-  blueSoft:   dk("#DBEAFE", "#14233F"),
+  blue:       dk("#1B8A4B", "#46D483"),
+  blueSoft:   dk("#E8F5ED", "#12301F"),
   amber:      dk("#D97706", "#F2B24C"),
   amberSoft:  dk("#FEF3C7", "#3A2D12"),
   radius: { sm: 10, md: 14, lg: 18, xl: 24 },
@@ -204,7 +204,7 @@ export default function PrivacyPolicyScreen() {
           </Section>
 
           {/* 3. Finalités */}
-          <Section icon="analytics-outline" title={t("pp.s3")} color={dk("#7C3AED", "#A78BFA")} bgColor={dk("#F5F3FF", "#241B3D")}>
+          <Section icon="analytics-outline" title={t("pp.s3")} color={dk("#0F766E", "#5EEAD4")} bgColor={dk("#F0FDFA", "#10302D")}>
             <Para>{t("pp.s3intro")}</Para>
             <Bullet>{rich(t("pp.s3b1"))}</Bullet>
             <Bullet>{rich(t("pp.s3b2"))}</Bullet>
@@ -225,7 +225,7 @@ export default function PrivacyPolicyScreen() {
           </Section>
 
           {/* 5. Conservation */}
-          <Section icon="time-outline" title={t("pp.s5")} color={dk("#0284C7", "#5CC2F2")} bgColor={dk("#E0F2FE", "#10283A")}>
+          <Section icon="time-outline" title={t("pp.s5")} color={dk("#0F766E", "#5EEAD4")} bgColor={dk("#F0FDFA", "#10302D")}>
             <Bullet>{rich(t("pp.s5b1"))}</Bullet>
             <Bullet>{rich(t("pp.s5b2"))}</Bullet>
             <Bullet>{rich(t("pp.s5b3"))}</Bullet>

@@ -49,12 +49,14 @@ type ButtonProps = {
   loading?: boolean;
   disabled?: boolean;
   small?: boolean;
+  /** Taille de l'accueil : 48 pt de haut, texte 15 (au lieu de 58 pt / 18). Les autres écrans restent inchangés. */
+  compact?: boolean;
   full?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
 export function Button({
-  label, onPress, kind = 'primary', icon, iconRight, loading, disabled, small, full = true, style, testID,
+  label, onPress, kind = 'primary', icon, iconRight, loading, disabled, small, compact = true, full = true, style, testID,
 }: ButtonProps) {
   const { C, R, T } = useUI();
   const palette: Record<ButtonKind, { bg: string; fg: string; bd?: string }> = {
@@ -75,8 +77,8 @@ export function Button({
       onPress={off ? undefined : onPress}
       style={({ pressed }) => [
         {
-          height: small ? 42 : 58,
-          paddingHorizontal: small ? 18 : 24,
+          height: small ? 42 : compact ? 48 : 58,
+          paddingHorizontal: small ? 18 : compact ? 20 : 24,
           borderRadius: R.pill,
           backgroundColor: p.bg,
           borderWidth: p.bd ? 1.5 : 0,
@@ -96,9 +98,9 @@ export function Button({
         <ActivityIndicator size="small" color={p.fg} />
       ) : (
         <>
-          {!!icon && <Ionicons name={icon as any} size={small ? 16 : 19} color={p.fg} />}
-          <Text style={[{ fontFamily: SYSTEM_FONT }, T.button, small && { fontSize: 14 }, { color: p.fg }]} numberOfLines={1}>{label}</Text>
-          {!!iconRight && <Ionicons name={iconRight as any} size={small ? 16 : 19} color={p.fg} />}
+          {!!icon && <Ionicons name={icon as any} size={small ? 16 : compact ? 17 : 19} color={p.fg} />}
+          <Text style={[{ fontFamily: SYSTEM_FONT }, T.button, small && { fontSize: 14 }, !compact && { fontSize: 18, lineHeight: 23 }, { color: p.fg }]} numberOfLines={1}>{label}</Text>
+          {!!iconRight && <Ionicons name={iconRight as any} size={small ? 16 : compact ? 17 : 19} color={p.fg} />}
         </>
       )}
     </Pressable>
@@ -146,8 +148,12 @@ export function IconButton({
 
 // ─── Puce (filtre / choix) : forêt quand sélectionnée ────
 export function Chip({
-  label, active, onPress, icon, count, style,
-}: { label: string; active?: boolean; onPress?: () => void; icon?: string; count?: number; style?: StyleProp<ViewStyle> }) {
+  label, active, onPress, icon, count, style, compact = true,
+}: {
+  label: string; active?: boolean; onPress?: () => void; icon?: string; count?: number; style?: StyleProp<ViewStyle>;
+  /** Taille de l'accueil : 36 pt de haut, texte 13, texte centré et réduit au besoin pour tenir sur UNE ligne. */
+  compact?: boolean;
+}) {
   const { C, R } = useUI();
   return (
     <Pressable
@@ -155,13 +161,19 @@ export function Chip({
       accessibilityState={{ selected: !!active }}
       onPress={onPress}
       style={({ pressed }) => [{
-        height: 42, paddingHorizontal: 16, borderRadius: R.pill, flexDirection: 'row', alignItems: 'center', gap: 6,
+        height: compact ? 36 : 42, paddingHorizontal: compact ? 10 : 16, borderRadius: R.pill, flexDirection: 'row', alignItems: 'center', gap: 6,
+        justifyContent: compact ? 'center' : undefined,
         backgroundColor: active ? C.dark : C.surface, borderWidth: 1.5, borderColor: active ? C.dark : C.line,
         opacity: pressed ? 0.85 : 1,
       }, style]}
     >
       {!!icon && <Ionicons name={icon as any} size={15} color={active ? C.darkInk : C.ink} />}
-      <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: '700', color: active ? C.darkInk : C.dark }}>{label}</Text>
+      <Text
+        numberOfLines={compact ? 1 : undefined}
+        adjustsFontSizeToFit={compact}
+        minimumFontScale={compact ? 0.75 : undefined}
+        style={{ fontFamily: SYSTEM_FONT, fontSize: compact ? 13 : 14, fontWeight: '700', color: active ? C.darkInk : C.dark, ...(compact ? { flexShrink: 1 } : null) }}
+      >{label}</Text>
       {count !== undefined && count > 0 && (
         <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, fontWeight: '700', color: active ? C.darkInk : C.muted, opacity: 0.8 }}>{count}</Text>
       )}
@@ -184,10 +196,10 @@ export function Tabs<K extends string>({
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
             onPress={() => onChange(it.key)}
-            style={{ flex: 1, alignItems: 'center', paddingVertical: 14, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
+            style={{ flex: 1, alignItems: 'center', paddingVertical: 10, flexDirection: 'row', justifyContent: 'center', gap: 6 }}
           >
             {!!it.icon && <Ionicons name={it.icon as any} size={16} color={on ? C.dark : C.muted} />}
-            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 15, fontWeight: on ? '800' : '600', color: on ? C.dark : C.muted }}>{it.label}</Text>
+            <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, fontWeight: on ? '800' : '600', color: on ? C.dark : C.muted }}>{it.label}</Text>
             <View style={{ position: 'absolute', left: 16, right: 16, bottom: -1, height: 4, borderRadius: 2, backgroundColor: on ? C.sun : 'transparent' }} />
           </Pressable>
         );
@@ -198,7 +210,7 @@ export function Tabs<K extends string>({
 
 // ─── Carte blanche ───────────────────────────────────────
 export function Card({
-  children, style, pad = 20, onPress, tone = 'surface',
+  children, style, pad = 16, onPress, tone = 'surface',
 }: { children?: React.ReactNode; style?: StyleProp<ViewStyle>; pad?: number; onPress?: () => void; tone?: 'surface' | 'sunken' | 'accent' | 'outline' }) {
   const { C, R, S } = useUI();
   const base: ViewStyle = {

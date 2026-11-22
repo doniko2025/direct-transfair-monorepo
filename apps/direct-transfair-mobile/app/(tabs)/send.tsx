@@ -1,6 +1,10 @@
 // apps/direct-transfair-mobile/app/(tabs)/send.tsx
 // =========================================================
-// SEND MONEY v7.0 — Direct Transf'air
+// SEND MONEY v7.4 — Direct Transf'air
+// ✅ v7.4 : MÊME ÉCHELLE DE POLICES QUE L'ACCUEIL (en-tête 16/12, titre d'étape 20, libellés 11,5, montants 22, boutons 48 pt / 15) ;
+//   montants rapides (100 000 · 300 000 · 500 000) toujours sur UNE ligne ; ESPACES AUTOMATIQUES : montants (1 000 000 000) et
+//   numéro du destinataire selon le pays (Guinée 622 53 42 17, Sénégal 77 509 99 91, France 07 66 73 62 27 — le 0 est toléré).
+//   Logique métier inchangée : l'état garde le texte brut, seul l'affichage est groupé.
 // ✅ v7.0 : ENVOI ÉTAPE PAR ÉTAPE (esprit « Taptap Send ») — au lieu d'une seule page avec onglets Wallet / Cash, on avance page après page :
 //  1) Wallet ou Cash Pickup (ignoré quand l'écran est ouvert avec ?mode=… : on part directement au destinataire) ;
 //  2) Destinataire (Wallet : numéro / nom avec suggestions ; Cash Pickup : liste des bénéficiaires enregistrés + recherche) ;
@@ -61,10 +65,10 @@ import { ChoiceSheet } from "../../components/ui/ChoiceSheet";
 import { CurrencyFlag } from "../../components/home/HomeParts";
 import { withTimeout, explainLoadError, defaultTimeoutMs, type LoadError } from "../../components/wallet/useLoader";
 import {
-  MIN_FULL_NUMBER, countryOfPhone, formatPhone, isNumericLike, nationalOf, onlyDigits, parseInternational, stripDial, toE164, toLegacyDoubled,
+  MIN_FULL_NUMBER, countryOfPhone, formatNationalInput, formatPhone, isNumericLike, keepsLeadingZero, nationalOf, onlyDigits, parseInternational, stripDial, toE164, toLegacyDoubled,
 } from "../../utils/phone";
 import {
-  ceilTo, decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText,
+  amountFontFor, ceilTo, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, roundTo, sanitizeAmountInput, toInputText,
 } from "../../utils/amount";
 import { lookupRate } from "../../utils/rateLookup";
 import { Text, TextInput } from "../../components/ui/Text";
@@ -93,14 +97,6 @@ const getCountryData = (countryName: string): CountryData => {
     countriesList.find((c) => c.name.toLowerCase().includes(normalized)) ||
     countriesList.find((c) => c.code === "SN")!
   );
-};
-
-// Taille des chiffres d'un montant : réduite quand le nombre s'allonge, pour qu'il reste lisible.
-const amountFontSize = (text: string, base: number): number => {
-  const n = text.length;
-  if (n <= 9) return base;
-  if (n <= 12) return Math.round(base * 0.8);
-  return Math.round(base * 0.62);
 };
 
 // Formatage des montants centralisé (utils/amount.ts) : 2 décimales pour EUR/USD…, entiers pour XOF/GNF.
@@ -210,7 +206,7 @@ function SuccessStep({ data, onDone }: { data: ReceiptData; onDone: () => void }
         <Reveal delay={320} style={{ marginTop: 20 }}>
           <Card tone="accent" style={{ alignItems: "center" }}>
             <UText v="overline" tone="accent">{t("send.codeLabel")}</UText>
-            <UText v="display" style={{ fontSize: 34, lineHeight: 42, letterSpacing: 4, marginVertical: 8 }}>{data.code}</UText>
+            <UText v="display" style={{ fontSize: 28, lineHeight: 34, letterSpacing: 4, marginVertical: 6 }}>{data.code}</UText>
             <Button
               label={copied ? t("send.copied") : t("send.copyCode")}
               icon={copied ? "checkmark" : "copy-outline"}
@@ -816,7 +812,8 @@ export default function SendMoneyScreen() {
     }
     const trimmed = v.trim();
     if (trimmed.startsWith("+") || trimmed.startsWith("00")) { setWalletInput(v); return; } // indicatif en cours de frappe
-    setWalletInput(stripDial(onlyDigits(v), targetCountryData.dialCode));
+    // v7.4 : le 0 national est toléré (France : 07 66…) ; nationalOf() le retire avant toute recherche / tout envoi.
+    setWalletInput(stripDial(onlyDigits(v), targetCountryData.dialCode, keepsLeadingZero(targetCountryData.dialCode)));
   };
 
   // ✅ v5.3 — montants (voir utils/amount.ts) :
@@ -1091,8 +1088,13 @@ export default function SendMoneyScreen() {
   const showNoAccount = mode === "WALLET" && !detectedBeneficiary && suggestions.length === 0 && !lookingUp &&
     (isTextQuery ? walletInput.trim().length >= 3 : walletInputDigits.length >= MIN_FULL_NUMBER);
   const userCountry = String((user as any)?.country ?? "");
+  // v7.4 : numéro affiché avec les espaces du pays ; un nom / e-mail ou un « +… » / « 00… » en cours de frappe reste tel quel.
+  const walletTrim = walletInput.trim();
+  const walletShown = isTextQuery || walletTrim.startsWith("+") || walletTrim.startsWith("00")
+    ? walletInput
+    : formatNationalInput(walletInput, targetCountryData.dialCode);
 
-  // ── Une ligne de montant (envoi / réception) : le montant, puis le drapeau + le code de la devise À DROITE (comme le solde de l'accueil) ──
+  // ── Une ligne de montant (envoi / réception) : le montant, puis le drapeau + le code de la devise À DROITE (comme la carte de l'accueil) ──
   const renderAmountRow = (kind: "SEND" | "RECEIVED") => {
     const isSend  = kind === "SEND";
     const text    = isSend ? sendText : receivedText;
@@ -1100,24 +1102,25 @@ export default function SendMoneyScreen() {
     const dec     = isSend ? dS : dR;
     const derived = amountSource !== kind;
     const focused = focusedField === kind;
+    const shown   = groupAmount(text);   // v7.4 : espaces de milliers automatiques (1 000 000 000) — l'état garde le texte brut
     return (
       <View
         key={kind}
         style={{
-          paddingHorizontal: 14, paddingVertical: 10,
+          paddingHorizontal: 14, paddingVertical: 8,
           borderRadius: R.lg, borderWidth: 1.5, borderColor: focused ? C.accent : "transparent",
           backgroundColor: focused ? C.surface : "transparent",
         }}
       >
-        <UText v="label" tone="muted" numberOfLines={1}>{isSend ? t("send.youSend") : t("send.receivesLabel", { name: beneficiaryLabel })}</UText>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, marginTop: 2 }}>
+        <Text numberOfLines={1} style={{ fontSize: 11.5, lineHeight: 14, fontWeight: "500", color: C.muted }}>{isSend ? t("send.youSend") : t("send.receivesLabel", { name: beneficiaryLabel })}</Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, minWidth: 0, marginTop: 2 }}>
           <TextInput
             ref={isSend ? sendRef : recvRef}
             style={{
-              flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SANS, fontWeight: "800", letterSpacing: -0.6,
-              fontSize: amountFontSize(text, 30), color: derived ? C.muted : C.ink,
+              flex: 1, minWidth: 0, height: 36, padding: 0, fontFamily: SANS, fontWeight: "700", letterSpacing: -0.4,
+              fontSize: amountFontFor(shown, 22), color: derived ? C.muted : C.ink,
             }}
-            value={text}
+            value={shown}
             onChangeText={isSend ? onSendChange : onRecvChange}
             onFocus={() => setFocusedField(kind)}
             onBlur={() => setFocusedField((f) => (f === kind ? null : f))}
@@ -1128,10 +1131,10 @@ export default function SendMoneyScreen() {
             selectTextOnFocus
             accessibilityLabel={isSend ? t("send.a11ySendAmt", { cur }) : t("send.a11yRecvAmt", { cur })}
           />
-          {/* Pastille de devise : drapeau + code en gris très foncé (toujours lisible, même quand le montant est calculé) */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 }} accessible accessibilityLabel={t("send.a11yCur", { cur })}>
-            <CurrencyFlag currency={cur} countryName={isSend ? userCountry : targetCountryData.name} size={26} />
-            <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 20, fontWeight: "700", color: C.text }}>{cur}</Text>
+          {/* Pastille de devise : drapeau + code (comme « Vous envoyez » de l'accueil) — toujours lisible, même quand le montant est calculé */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 0, height: 30, paddingHorizontal: 10, borderRadius: 15, backgroundColor: C.surface }} accessible accessibilityLabel={t("send.a11yCur", { cur })}>
+            <CurrencyFlag currency={cur} countryName={isSend ? userCountry : targetCountryData.name} size={18} />
+            <Text allowFontScaling={false} style={{ fontFamily: SANS, fontSize: 13, fontWeight: "700", color: C.ink }}>{cur}</Text>
           </View>
         </View>
       </View>
@@ -1236,7 +1239,7 @@ export default function SendMoneyScreen() {
   const canContinueAmount = sendAmount > 0 && !rateMissing && !insufficient;
 
   const title = (key: "send.step.type" | "send.step.recipient" | "send.step.amount" | "send.step.motif" | "send.step.confirm") => (
-    <Reveal distance={10}><UText v="title" style={{ marginBottom: 16 }}>{t(key)}</UText></Reveal>
+    <Reveal distance={10}><UText v="title" style={{ fontSize: 20, lineHeight: 26, marginBottom: 12 }}>{t(key)}</UText></Reveal>
   );
 
   // Bloc « destinataire choisi » (Wallet détecté ou Cash Pickup sélectionné)
@@ -1277,33 +1280,34 @@ export default function SendMoneyScreen() {
   const footer =
     step === 1 ? (
       <View>
-        <Button label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(2)} disabled={!recipientReady} />
+        <Button compact label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(2)} disabled={!recipientReady} />
         <View style={{ height: 14 }} />
       </View>
     ) : step === 2 ? (
       <View>
         {sendAmount > 0 && !insufficient && (
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-            <UText v="caption" tone="muted">{t("send.totalToPay")}</UText>
-            <UText v="bodyStrong">{fmt(totalAmt, userCurrency)} {userCurrency}</UText>
+            <UText v="caption" tone="muted" style={{ fontSize: 12.5, lineHeight: 17 }}>{t("send.totalToPay")}</UText>
+            <UText v="bodyStrong" style={{ fontSize: 14, lineHeight: 19 }}>{fmt(totalAmt, userCurrency)} {userCurrency}</UText>
           </View>
         )}
         {insufficient ? (
-          <Button label={t("send.topUp")} icon="options-outline" kind="dark" onPress={() => setShowFallback(true)} />
+          <Button compact label={t("send.topUp")} icon="options-outline" kind="dark" onPress={() => setShowFallback(true)} />
         ) : (
-          <Button label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(3)} disabled={!canContinueAmount} />
+          <Button compact label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(3)} disabled={!canContinueAmount} />
         )}
         <View style={{ height: 14 }} />
       </View>
     ) : step === 3 ? (
       <View>
-        <Button label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(4)} />
-        <Button label={t("send.skip")} kind="ghost" onPress={() => { setMotif(null); go(4); }} />
+        <Button compact label={t("send.continue")} iconRight="arrow-forward" onPress={() => go(4)} />
+        <Button compact label={t("send.skip")} kind="ghost" onPress={() => { setMotif(null); go(4); }} />
         <View style={{ height: 10 }} />
       </View>
     ) : step === 4 ? (
       <View>
         <Button
+          compact
           label={ctaLabel}
           icon={insufficient ? "options-outline" : mode === "WALLET" ? "phone-portrait-outline" : "cash-outline"}
           kind={insufficient ? "dark" : "primary"}
@@ -1323,6 +1327,7 @@ export default function SendMoneyScreen() {
       header={
         <View>
           <NavBar
+            compact
             title={step === 0 || mode === "CASH" ? t("send.titleCash") : t("send.titleWallet")}
             subtitle={step === 5 ? t("send.stepDone") : t("send.stepOf", { n: stepIdx + 1, total: stepsList.length })}
             onBack={onBack}
@@ -1385,7 +1390,7 @@ export default function SendMoneyScreen() {
                   </Pressable>
                   <TextInput
                     style={{ flex: 1, minWidth: 0, height: 56, paddingHorizontal: 14, paddingVertical: 0, fontFamily: SANS, fontSize: 16, fontWeight: "600", color: C.ink }}
-                    value={walletInput}
+                    value={walletShown}
                     onChangeText={handlePhoneChange}
                     placeholder={t("send.inputPh")}
                     placeholderTextColor={C.faint}
@@ -1480,10 +1485,11 @@ export default function SendMoneyScreen() {
             {title("send.step.amount")}
             <Reveal delay={60} style={{ marginBottom: 12 }}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <UText v="caption" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
+                <UText v="caption" tone="muted" style={{ flex: 1, fontSize: 12.5, lineHeight: 17 }} numberOfLines={1}>
                   {loadingWallet ? t("send.balanceLoading") : showBalance ? t("send.balanceLine", { amount: `${fmt(walletBalance, userCurrency)} ${userCurrency}` }) : t("home.balanceHidden")}
                 </UText>
                 <IconButton
+                  size={36}
                   icon={showBalance ? "eye-outline" : "eye-off-outline"}
                   onPress={() => setShowBalance(!showBalance)}
                   label={showBalance ? t("home.hideBalance") : t("home.showBalance")}
@@ -1514,16 +1520,16 @@ export default function SendMoneyScreen() {
 
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 10 }}>
                   {rateVisible ? (
-                    <UText v="label" tone="muted" style={{ flex: 1 }} numberOfLines={1}>
+                    <UText v="label" tone="muted" style={{ flex: 1, fontSize: 12, lineHeight: 16 }} numberOfLines={1}>
                       1 {userCurrency} = {fmtRate(rate ?? 0)} {targetCurrency}
                     </UText>
                   ) : <View style={{ flex: 1 }} />}
                   {feesAmt > 0 ? (
-                    <UText v="label" tone="warn" numberOfLines={1}>
+                    <UText v="label" tone="warn" numberOfLines={1} style={{ fontSize: 12, lineHeight: 16 }}>
                       {t("send.feesLine", { amount: `${fmt(feesAmt, userCurrency)} ${userCurrency}`, approx: feeQuote.fees === null ? ` (~${cashFeeLabel} %)` : "" })}
                     </UText>
                   ) : (
-                    <UText v="label" tone="pos">{t("send.noFees")}</UText>
+                    <UText v="label" tone="pos" style={{ fontSize: 12, lineHeight: 16 }}>{t("send.noFees")}</UText>
                   )}
                 </View>
 
@@ -1536,9 +1542,10 @@ export default function SendMoneyScreen() {
             </Reveal>
 
             <Reveal delay={180} style={{ marginTop: 12 }}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              {/* v7.4 : les 3 montants rapides tiennent TOUJOURS sur une seule ligne (largeurs égales, texte réduit si besoin) */}
+              <View style={{ flexDirection: "row", flexWrap: "nowrap", gap: 8 }}>
                 {quickAmounts.map((v) => (
-                  <Chip key={v} label={`${fmt(v, userCurrency)} ${userCurrency}`} active={Math.abs(sendAmount - v) < 0.005} onPress={() => pickQuick(v)} />
+                  <Chip compact key={v} style={{ flex: 1, minWidth: 0 }} label={`${fmt(v, userCurrency)} ${userCurrency}`} active={Math.abs(sendAmount - v) < 0.005} onPress={() => pickQuick(v)} />
                 ))}
               </View>
             </Reveal>

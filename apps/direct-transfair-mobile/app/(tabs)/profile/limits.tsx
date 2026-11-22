@@ -134,7 +134,7 @@ function HeroBand({ data }: { data: LimitsData }) {
           <Ionicons name={"flash-outline" as any} size={14} color={ink} />
           <Text style={{ color: ink, opacity: 0.85, fontSize: 12, fontWeight: "700" }}>{t("lim.availNow")}</Text>
         </View>
-        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: ink, fontSize: 32, fontWeight: "800", letterSpacing: -0.8, marginTop: 4 }}>
+        <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: ink, fontSize: 34, fontWeight: "800", letterSpacing: -0.8, marginTop: 4 }}>
           {(tight ? fmt(tight.left, data.currency) : t("lim.unlimited")).replace(/\s/g, "\u00A0")}
         </Text>
         <Text style={{ color: ink, opacity: 0.8, fontSize: 12, marginTop: 2 }}>
@@ -218,7 +218,7 @@ function RequestLimitSheet({ visible, onClose }: { visible: boolean; onClose: ()
       }
     >
       {success ? (
-        <View style={{ alignItems: "center", paddingVertical: 24, gap: 10 }}>
+        <View style={{ alignItems: "center", paddingVertical: 16, gap: 8 }}>
           <Ionicons name="checkmark-circle" size={56} color="#2E8B57" />
           <UText v="body" tone="muted" align="center">
             {t("lim.reqDone")}

@@ -30,13 +30,13 @@ function Tile({ icon, label, onPress, loading, disabled, primary }: { icon: stri
   const fg = primary ? C.accentInk : C.text;
   return (
     <Pressable onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label} style={({ pressed }) => ({ flex: 1, minWidth: 0, opacity: disabled && !loading ? 0.5 : pressed ? 0.85 : 1 })}>
-      <View style={{ height: 64, borderRadius: 16, alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: primary ? C.accent : C.sunken, borderWidth: primary ? 0 : 1, borderColor: C.line }}>
+      <View style={{ height: 54, borderRadius: 14, alignItems: "center", justifyContent: "center", gap: 3, backgroundColor: primary ? C.accent : C.sunken, borderWidth: primary ? 0 : 1, borderColor: C.line }}>
         {loading ? <ActivityIndicator size="small" color={fg} /> : (
-          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: primary ? alpha(C.accentInk, 0.2) : C.accentSoft, alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={icon as any} size={16} color={primary ? C.accentInk : C.accentDeep} />
+          <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: primary ? alpha(C.accentInk, 0.2) : C.accentSoft, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={icon as any} size={14} color={primary ? C.accentInk : C.accentDeep} />
           </View>
         )}
-        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: "800", color: fg }}>{label}</Text>
+        <Text numberOfLines={1} style={{ fontSize: 11.5, fontWeight: "800", color: fg }}>{label}</Text>
       </View>
     </Pressable>
   );
@@ -70,14 +70,14 @@ export function ReceiptPdfActions({ transactionId, status, onView }: { transacti
   };
 
   return (
-    <Card pad={14} style={{ gap: 12 }}>
+    <Card pad={12} style={{ gap: 8 }}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-        <View style={{ width: 36, height: 36, borderRadius: R.md, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
-          <Ionicons name="document-text-outline" size={19} color={C.accentDeep} />
+        <View style={{ width: 32, height: 32, borderRadius: R.md, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
+          <Ionicons name="document-text-outline" size={17} color={C.accentDeep} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <UText v="bodyStrong" numberOfLines={1}>{t("rcpt.pdfCardTitle")}</UText>
-          <UText v="caption" tone="muted" numberOfLines={1}>{doc ? t("rcpt.pdfCardStatus", { status: doc.statusLabel }) : t("rcpt.pdfCardHint")}</UText>
+          <UText v="bodyStrong" numberOfLines={1} style={{ fontSize: 14, lineHeight: 19 }}>{t("rcpt.pdfCardTitle")}</UText>
+          <UText v="caption" tone="muted" numberOfLines={1} style={{ fontSize: 12, lineHeight: 16 }}>{doc ? t("rcpt.pdfCardStatus", { status: doc.statusLabel }) : t("rcpt.pdfCardHint")}</UText>
         </View>
       </View>
 
@@ -95,7 +95,7 @@ export function ReceiptPdfActions({ transactionId, status, onView }: { transacti
           {onView ? <Tile icon="eye-outline" label={t("rcpt.pdfViewShort")} onPress={onView} /> : null}
         </View>
       )}
-      {!!doc && <UText v="caption" tone="muted">{t("rcpt.pdfSendHint")}</UText>}
+      {!!doc && <UText v="caption" tone="muted" style={{ fontSize: 11.5, lineHeight: 16 }}>{t("rcpt.pdfSendHint")}</UText>}
 
       {/* QR hors écran : sert uniquement à fabriquer l'image intégrée au PDF */}
       {!!doc && (

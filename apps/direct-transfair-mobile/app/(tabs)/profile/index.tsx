@@ -283,7 +283,7 @@ export default function ProfileScreen() {
       <ProfilePhotoSheet visible={photoSheet} onClose={() => setPhotoSheet(false)} />
 
       {/* ── Session ── */}
-      <Button label={t("prof.logout")} icon="log-out-outline" kind="danger" onPress={handleLogout} style={{ marginTop: 28 }} />
+      <Button label={t("prof.logout")} icon="log-out-outline" kind="danger" onPress={handleLogout} style={{ marginTop: 18 }} />
 
       <Pressable
         style={{ alignItems: "center", paddingVertical: 16 }}

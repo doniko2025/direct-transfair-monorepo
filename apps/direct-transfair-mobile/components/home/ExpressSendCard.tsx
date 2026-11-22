@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/home/ExpressSendCard.tsx
 // =========================================================
-// CARTE « ENVOYER DE L'ARGENT » v1.0 — accueil client (design E)
+// CARTE « ENVOYER DE L'ARGENT » v1.1 — accueil client (design E)
+// ✅ v1.1 : espaces de milliers automatiques dans « Vous envoyez » (1 000 000 000), l'état garde le texte brut.
 // Deux champs façon Ria / Wise : « Vous envoyez » (saisie) et « Ils reçoivent » (calculé au taux du jour), un seul bouton
 // « Continuer ». Le bouton ouvre l'écran d'envoi habituel avec le montant déjà rempli (?amount=, déjà géré par send.tsx) :
 // la logique d'envoi (destinataire, frais du serveur, taux garanti, code secret, KYC) reste ENTIÈREMENT dans send.tsx.
@@ -24,7 +25,7 @@ import { Ionicons } from "../ui/Icon";
 import { ChoiceSheet } from "../ui/ChoiceSheet";
 import { useUI } from "../ui";
 import { CurrencyFlag, HomeButton } from "./HomeParts";
-import { decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../../utils/amount";
+import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../../utils/amount";
 import { useT } from "../../providers/I18nProvider";
 
 const TARGET_KEY = "dt.homeTarget";
@@ -118,7 +119,7 @@ export default function ExpressSendCard({ currency, countryName, style }: { curr
             <Text style={{ fontSize: 11.5, lineHeight: 14, fontWeight: "500", color: C.muted }}>{t("home.youSend")}</Text>
             <TextInput
               ref={inputRef}
-              value={raw}
+              value={groupAmount(raw)}
               onChangeText={(v: string) => setRaw(sanitizeAmountInput(v, dS))}
               placeholder="0"
               placeholderTextColor={C.faint}
@@ -126,8 +127,8 @@ export default function ExpressSendCard({ currency, countryName, style }: { curr
               returnKeyType="done"
               onSubmitEditing={goSend}
               accessibilityLabel={t("home.amountField")}
-              maxLength={12}
-              style={{ fontSize: 20, lineHeight: 26, fontWeight: "700", color: C.ink, padding: 0, marginTop: 2 }}
+              maxLength={24}
+              style={{ fontSize: amountFontFor(groupAmount(raw), 20), lineHeight: 26, fontWeight: "700", color: C.ink, padding: 0, marginTop: 2 }}
             />
           </View>
           <View style={chip}>

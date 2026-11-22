@@ -102,11 +102,11 @@ export default function SupportTicketScreen() {
           </View>
 
           {closed ? (
-            <Card tone="sunken" style={{ marginTop: 24 }}>
+            <Card tone="sunken" style={{ marginTop: 16 }}>
               <UText v="caption" tone="muted">{t("supt.closed")}</UText>
             </Card>
           ) : (
-            <View style={{ marginTop: 24 }}>
+            <View style={{ marginTop: 16 }}>
               {problem ? <Notice tone="danger" style={{ marginBottom: 12 }}>{problem}</Notice> : null}
               <Field label={t("supt.yourReply")} value={reply} onChangeText={setReply} multiline maxLength={2000} autoCapitalize="sentences" />
               <Button label={t("sup.send")} icon="send-outline" onPress={send} loading={sending} disabled={reply.trim().length < 2 || sending} />

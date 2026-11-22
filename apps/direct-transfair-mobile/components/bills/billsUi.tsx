@@ -1,5 +1,6 @@
 // apps/direct-transfair-mobile/components/bills/billsUi.tsx
 // =========================================================
+// ✅ v1.1 : héro en carte blanche ombrée (plus de bleu) ; « Factures programmées » en vert léger ; palette des catégories sans bleu / indigo / violet.
 // PAIEMENT DE FACTURES (lot 14) — briques communes : icône et nom de catégorie, pastille de statut, ligne de facturier,
 // carte « facture enregistrée », ligne de paiement. Cartes animées (apparition en cascade), thème clair / sombre.
 // =========================================================
@@ -39,12 +40,12 @@ export const categoryIcon = (category: string): string => CATEGORY_ICON[category
 
 // ── Identité de couleur par catégorie (teinte vive, lisible en thème clair comme sombre : on n'utilise que des transparences) ──
 const CATEGORY_HUE: Record<string, string> = {
-  ELECTRICITY: "#F59E0B", WATER: "#0EA5E9", GAS: "#F97316", INTERNET_TV: "#8B5CF6", TELECOM: "#14B8A6",
-  INSURANCE_AUTO: "#6366F1", INSURANCE_MOTO: "#7C3AED", INSURANCE_HOME: "#4F46E5", INSURANCE_HEALTH: "#EC4899",
+  ELECTRICITY: "#F59E0B", WATER: "#14B8A6", GAS: "#F97316", INTERNET_TV: "#0D9488", TELECOM: "#14B8A6",
+  INSURANCE_AUTO: "#22A06B", INSURANCE_MOTO: "#16A34A", INSURANCE_HOME: "#22A06B", INSURANCE_HEALTH: "#EC4899",
   SCHOOL_FEES: "#22C55E", UNIVERSITY_FEES: "#16A34A", RENT: "#E11D74", TAXES: "#64748B", HEALTH: "#EF4444",
-  TRANSPORT: "#06B6D4", OTHER: "#94A3B8",
+  TRANSPORT: "#0D9488", OTHER: "#94A3B8",
 };
-const FALLBACK_HUES = ["#6366F1", "#14B8A6", "#F59E0B", "#EC4899", "#0EA5E9", "#22C55E", "#F97316", "#8B5CF6"];
+const FALLBACK_HUES = ["#22A06B", "#14B8A6", "#F59E0B", "#EC4899", "#0D9488", "#22C55E", "#F97316", "#16A34A"];
 
 /** Teinte d'une catégorie ; une catégorie inventée par la société reçoit toujours la même couleur (calculée sur son nom). */
 export function categoryHue(category: string): string {
@@ -121,28 +122,27 @@ export function CategoryTile({ category, count, onPress, delay = 0, wide }: { ca
   );
 }
 
-/** Bandeau d'accueil des factures : la question, deux garanties, un décor discret. */
+/** Bandeau d'accueil des factures : carte BLANCHE ombrée (couleur de l'app pour l'icône et les pastilles, aucun bleu). */
 export function BillsHero() {
   const t = useT();
+  const { C, S } = useUI();
   return (
     <Rise>
-      <View style={{ borderRadius: 26, overflow: "hidden", marginTop: 4, shadowColor: "#1E3A8A", shadowOpacity: 0.3, shadowRadius: 16, shadowOffset: { width: 0, height: 8 }, elevation: 4 }}>
-        <LinearGradient colors={["#0B1220", "#16306B", "#1D4ED8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-        <View pointerEvents="none" style={{ position: "absolute", right: -18, top: -22, transform: [{ rotate: "12deg" }] }}>
-          <Ionicons name={"receipt-outline" as any} size={150} color="rgba(255,255,255,0.08)" />
+      <View style={[{ borderRadius: 24, overflow: "hidden", marginTop: 4, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }, S.md]}>
+        <View pointerEvents="none" style={{ position: "absolute", right: -14, top: -16, transform: [{ rotate: "12deg" }] }}>
+          <Ionicons name={"receipt-outline" as any} size={130} color={alpha(C.accent, 0.07)} />
         </View>
-        <View pointerEvents="none" style={{ position: "absolute", right: 28, bottom: -40, width: 110, height: 110, borderRadius: 55, backgroundColor: "rgba(96,165,250,0.18)" }} />
-        <View style={{ padding: 20, gap: 10 }}>
-          <View style={{ width: 44, height: 44, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.16)", alignItems: "center", justifyContent: "center" }}>
-            <Ionicons name={"flash-outline" as any} size={22} color="#FFFFFF" />
+        <View style={{ padding: 16, gap: 8 }}>
+          <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: C.accentSoft, alignItems: "center", justifyContent: "center" }}>
+            <Ionicons name={"flash-outline" as any} size={20} color={C.accentDeep} />
           </View>
-          <UText v="title" color="#FFFFFF" style={{ fontWeight: "800" }}>{t("bill.categories")}</UText>
-          <UText v="caption" color="rgba(255,255,255,0.78)">{t("bill.heroSub")}</UText>
+          <UText v="subheading" style={{ fontWeight: "800", fontSize: 17, lineHeight: 22 }}>{t("bill.categories")}</UText>
+          <UText v="caption" tone="muted" style={{ fontSize: 12.5, lineHeight: 18 }}>{t("bill.heroSub")}</UText>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 2 }}>
             {([["flash-outline", "bill.heroChipInstant"], ["shield-checkmark-outline", "bill.heroChipRefund"]] as const).map(([icon, key]) => (
-              <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 6 }}>
-                <Ionicons name={icon as any} size={14} color="#FFFFFF" />
-                <UText v="caption" color="#FFFFFF" style={{ fontWeight: "700" }}>{t(key)}</UText>
+              <View key={key} style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.accentSoft, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }}>
+                <Ionicons name={icon as any} size={13} color={C.accentDeep} />
+                <UText v="caption" color={C.accentDeep} style={{ fontWeight: "700", fontSize: 12 }}>{t(key)}</UText>
               </View>
             ))}
           </View>
@@ -152,10 +152,10 @@ export function BillsHero() {
   );
 }
 
-/** Entrée « Factures programmées » : carte teintée indigo (le texte n'est plus tronqué). */
+/** Entrée « Factures programmées » : carte teintée VERT léger (le texte n'est plus tronqué). */
 export function ScheduleEntryCard({ title, subtitle, onPress, delay = 0 }: { title: string; subtitle: string; onPress: () => void; delay?: number }) {
   const { C } = useUI();
-  const hue = "#6366F1";
+  const hue = "#22A06B";
   return (
     <Rise delay={delay}>
       <TintCard hue={hue} mark="calendar-outline" onPress={onPress} pad={16} style={{ marginTop: 14 }}>

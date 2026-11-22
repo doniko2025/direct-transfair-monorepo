@@ -30,7 +30,7 @@ const T = {
   surface: "#FFFFFF", pageBg: "#F2F4F8", border: "#E4E9F0", ink: "#0F172A", inkSub: "#64748B", inkMuted: "#94A3B8",
   blue: "#1956F0", blueLt: "#EEF2FF", blueMd: "#C7D5FF",
   green: "#16A34A", greenLt: "#DCFCE7", red: "#DC2626", redLt: "#FEE2E2",
-  amber: "#D97706", amberLt: "#FEF3C7", purple: "#7C3AED", purpleLt: "#EDE9FE", white: "#FFFFFF",
+  amber: "#D97706", amberLt: "#FEF3C7", purple: "#0F766E", purpleLt: "#CCFBF1", white: "#FFFFFF",
   radius: { sm: 8, md: 12 },
   font: {
     sans: Platform.select({ ios: "Avenir Next", android: "sans-serif-medium", default: "sans-serif" }),

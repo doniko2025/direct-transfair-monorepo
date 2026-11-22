@@ -30,6 +30,7 @@ import { useT } from "../../../providers/I18nProvider";
 import { localizeCountry } from "../../../utils/countryNames";
 import { COUNTRIES } from "../../../utils/countries";
 import { citiesByCountry } from "../../../data/cities";
+import { formatInternationalInput } from "../../../utils/phone";
 import {
   Avatar, Button, EmptyView, Field, IconButton, ListRow, NavBar, Notice, Pill, Screen, SearchPill, SectionHeader, SelectRow, Sheet, UText, useUI,
 } from "../../../components/ui";
@@ -177,7 +178,7 @@ export default function PersonalInfoWallet() {
       await api.updateProfile({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        phone: phone.trim(),
+        phone: phone.replace(/\s/g, ""),
         birthDate: parsedDate,
         birthPlace: birthPlace.trim(),
         nationality,
@@ -239,7 +240,7 @@ export default function PersonalInfoWallet() {
         <Field label={t("pinfo.first")} value={firstName} onChangeText={setFirstName} editable={isEditing} autoCapitalize="words" placeholder={t("pinfo.firstPh")} style={{ flex: 1 }} />
         <Field label={t("pinfo.last")} value={lastName} onChangeText={setLastName} editable={isEditing} autoCapitalize="words" placeholder={t("pinfo.lastPh")} style={{ flex: 1 }} />
       </View>
-      <Field label={t("pinfo.phone")} icon="call-outline" value={phone} onChangeText={setPhone} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
+      <Field label={t("pinfo.phone")} icon="call-outline" value={phone} onChangeText={setPhone} formatInput={formatInternationalInput} editable={isEditing} keyboardType="phone-pad" placeholder="+33 6 00 00 00 00" />
       <Field label={t("pinfo.email")} icon="lock-closed-outline" value={email} onChangeText={() => {}} editable={false} placeholder="—" hint={isEditing ? t("pinfo.emailLocked") : undefined} />
 
       {/* État civil */}

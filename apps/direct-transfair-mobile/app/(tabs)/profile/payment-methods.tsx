@@ -26,6 +26,7 @@ import { Ionicons } from '../../../components/ui/Icon';
 import { api } from "../../../services/api";
 import { useT } from "../../../providers/I18nProvider";
 import { tr } from "../../../i18n/runtime";
+import { formatInternationalInput } from "../../../utils/phone";
 import { useLoader } from "../../../components/wallet/useLoader";
 import {
   Button, EmptyView, ErrorView, Field, IconButton, ListRow, NavBar, Pill, Screen, SectionHeader, Sheet, SkeletonRows, SlowNote, StatusDot, UText, useUI,
@@ -190,7 +191,7 @@ export default function PaymentMethodsScreen() {
     if (newPhone.trim().length < 8) { Alert.alert(t("common.error"), t("pm.numInvalid")); return; }
     try {
       setSaving(true);
-      await api.http.patch("/payments/mobile-wallet", { provider: selectedProvider, number: newPhone.trim() });
+      await api.http.patch("/payments/mobile-wallet", { provider: selectedProvider, number: newPhone.replace(/\s/g, "") });
       setShowPhoneModal(false);
       setNewPhone("");
       await refresh();
@@ -341,6 +342,7 @@ export default function PaymentMethodsScreen() {
             icon="call-outline"
             value={newPhone}
             onChangeText={setNewPhone}
+            formatInput={formatInternationalInput}
             placeholder="+224 6XX XX XX XX"
             keyboardType="phone-pad"
             autoFocus

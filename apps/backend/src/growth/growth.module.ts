@@ -6,7 +6,7 @@ import { RatesModule } from '../rates/rates.module';
 import { GrowthController } from './growth.controller';
 import { GrowthService } from './growth.service';
 
-// PrismaModule et NotificationsModule sont globaux ; AuthModule fournit le JwtService de JwtAuthGuard.
+// PrismaModule, NotificationsModule, MailModule et SmsModule sont globaux ; AuthModule fournit le JwtService de JwtAuthGuard.
 @Module({
   imports: [AuthModule, RatesModule],
   controllers: [GrowthController],

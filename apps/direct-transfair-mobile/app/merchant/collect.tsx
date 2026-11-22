@@ -1,6 +1,8 @@
 // apps/direct-transfair-mobile/app/merchant/collect.tsx
 // =========================================================
-// ENCAISSER v1.0 — Lot 11
+// ENCAISSER v1.1 — Lot 11
+// ✅ v1.1 : même échelle de polices que l'accueil (en-tête 16/12, montant 34, boutons 48 pt / 15) ; montant avec espaces de milliers
+//   automatiques (1 000 000) et numéro du client groupé selon le pays (Guinée 622 53 42 17, France 07 66 73 62 27…).
 // Le marchand choisit « QR code » ou « Téléphone Orange », saisit le montant puis appuie sur « Envoyer ».
 //  • QR : un QR code à usage unique s'affiche, le client le scanne avec la caméra de son application.
 //  • Téléphone : une demande arrive dans l'application du client (numéro du compte), qui valide avec son code secret.
@@ -107,22 +109,22 @@ export default function CollectScreen() {
 
   return (
     <Screen
-      header={<NavBar onBack={() => router.back()} title={t("col.title")} subtitle={shopName} />}
-      footer={<Button label={t("col.send")} icon="paper-plane-outline" loading={busy} onPress={submit} testID="collect-send" />}
+      header={<NavBar compact onBack={() => router.back()} title={t("col.title")} subtitle={shopName} />}
+      footer={<Button compact label={t("col.send")} icon="paper-plane-outline" loading={busy} onPress={submit} testID="collect-send" />}
     >
       <Rise>
         <View style={{ flexDirection: "row", gap: 10, marginBottom: 20 }}>
-          <Chip label={t("col.modeQr")} icon="qr-code-outline" active={mode === "qr"} onPress={() => setMode("qr")} />
-          <Chip label={t("col.modePhone")} icon="phone-portrait-outline" active={mode === "phone"} onPress={() => setMode("phone")} />
+          <Chip compact label={t("col.modeQr")} icon="qr-code-outline" active={mode === "qr"} onPress={() => setMode("qr")} />
+          <Chip compact label={t("col.modePhone")} icon="phone-portrait-outline" active={mode === "phone"} onPress={() => setMode("phone")} />
         </View>
       </Rise>
 
       {!!problem && <Notice tone="danger" style={{ marginBottom: 14 }}>{problem}</Notice>}
 
       <Card pad={20}>
-        <AmountInput label={t("col.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
+        <AmountInput compact label={t("col.amountLabel")} value={amountText} onChangeText={setAmountText} currency={currency} error={amountError} autoFocus />
         {amount > 0 && fee > 0 && !amountError ? (
-          <UText v="caption" tone="muted" style={{ marginTop: 4 }}>
+          <UText v="caption" tone="muted" style={{ marginTop: 4, fontSize: 12.5, lineHeight: 17 }}>
             {t("col.fee", { fee: money(fee, currency), net: money(amount - fee, currency) })}
           </UText>
         ) : null}
@@ -145,7 +147,7 @@ export default function CollectScreen() {
         <Card tone="accent" pad={16}>
           <View style={{ flexDirection: "row", gap: 12, alignItems: "center" }}>
             <Ionicons name="qr-code-outline" size={26} color={C.accentDeep} />
-            <UText v="caption" style={{ flex: 1 }}>
+            <UText v="caption" style={{ flex: 1, fontSize: 12.5, lineHeight: 17 }}>
               {t("col.qrInfo", { min: validity })}
             </UText>
           </View>

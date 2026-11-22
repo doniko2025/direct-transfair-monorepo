@@ -235,7 +235,7 @@ export default function TermsScreen() {
           </Section>
 
           {/* 3. Conditions d'accès */}
-          <Section icon="person-outline" title={t("tm.s3")} color={dk("#7C3AED", "#A78BFA")} bgColor={dk("#F5F3FF", "#241B3D")}>
+          <Section icon="person-outline" title={t("tm.s3")} color={dk("#0F766E", "#5EEAD4")} bgColor={dk("#F0FDFA", "#10302D")}>
             <Para>{t("tm.s3intro", { app: branding.name })}</Para>
             <Bullet>{t("tm.s3b1")}</Bullet>
             <Bullet>{t("tm.s3b2")}</Bullet>
@@ -262,7 +262,7 @@ export default function TermsScreen() {
           </Section>
 
           {/* 5. Annulation & remboursement */}
-          <Section icon="arrow-undo-outline" title={t("tm.s5")} color={dk("#0284C7", "#5CC2F2")} bgColor={dk("#E0F2FE", "#10283A")}>
+          <Section icon="arrow-undo-outline" title={t("tm.s5")} color={dk("#0F766E", "#5EEAD4")} bgColor={dk("#F0FDFA", "#10302D")}>
             <Para>{rich(t("tm.s5p1"))}</Para>
             <Bullet>{t("tm.s5b1")}</Bullet>
             <Bullet>{t("tm.s5b2")}</Bullet>

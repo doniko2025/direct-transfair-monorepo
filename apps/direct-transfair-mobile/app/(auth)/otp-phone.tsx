@@ -23,6 +23,7 @@ import { FONT, N } from "../../components/auth/authTheme";
 
 import { Text } from '../../components/ui/Text';
 import { useT } from '../../providers/I18nProvider';
+import { formatInternationalInput } from '../../utils/phone';
 // ─── Durée du minuteur de renvoi ─────────────────────────
 const RESEND_DELAY_SECONDS = 60;
 
@@ -71,7 +72,7 @@ export default function OtpPhoneScreen() {
   // ÉTAPE 1 — Envoi du code par SMS
   // ────────────────────────────────────────────────────────
   const handleSendCode = async () => {
-    const trimmed = phone.trim();
+    const trimmed = phone.replace(/\s/g, "");
     if (!trimmed) {
       return Alert.alert(t('otpPhone.required'), t('otpPhone.enterPhone'));
     }
@@ -131,7 +132,7 @@ export default function OtpPhoneScreen() {
     setPhoneSending(true);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (api as any).loginByPhone(phone.trim());
+      const result = await (api as any).loginByPhone(phone.replace(/\s/g, ""));
       setUserId(result.userId);
       setMaskedPhone(result.maskedPhone);
       startCountdown();
@@ -164,6 +165,7 @@ export default function OtpPhoneScreen() {
           icon="call-outline"
           value={phone}
           onChangeText={setPhone}
+          formatInput={formatInternationalInput}
           placeholder="+33 6 12 34 56 78"
           hint={t('otpPhone.intlHint')}
           keyboardType="phone-pad"

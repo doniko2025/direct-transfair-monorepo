@@ -1,10 +1,11 @@
 // apps/direct-transfair-mobile/app/index.tsx
 // =========================================================
 // ACCUEIL v6.2 — Direct Transf'air (white-label)
+// ✅ v6.3 : page COMPACTE sans défilement — marque 20, montants 22 (comme les cartes de l'accueil), pastilles et boutons `compact` (48), marges réduites.
 // ✅ v6.2 : (1) l'accueil est enfin la page PAR DÉFAUT (le garde de navigation d'AuthProvider ne renvoie plus vers la connexion : il faut un appui sur
 //    « Se connecter » / « S'inscrire ») ; (2) boutons EMPILÉS pleine largeur : « Se connecter » n'est plus tronqué ; (3) le montant « Ils reçoivent »
 //    est SAISISSABLE (calcul dans les deux sens : on tape l'un, l'autre se met à jour) ; (4) le taux vient de la table que l'admin de la société met à jour (taux par société)
-//    (GET /exchange-rates) et se rafraîchit tout seul (toutes les 60 s et au retour dans l'app) ; (5) logo via <BrandLogo /> : taille standard, ratio
+//    (GET /exchange-rates) et se rafraîchit tout seul (toutes les 60 s et au retour dans l'app) ; (5) logo via <BrandLogo size={56} /> : taille standard, ratio
 //    automatique, sans tuile d'une autre forme ; (6) marge haute sûre (jamais sous la barre d'état).
 // ✅ v6.0 : REFONTE « esprit Taptap Send » — le logo de la société en haut, une carte avec un SIMULATEUR de taux (vous envoyez / ils
 //    reçoivent, calculé avec les taux publiés par la société : GET /exchange-rates?code=…, public), puis une carte d'actions
@@ -36,7 +37,7 @@ import { useTenant } from "../providers/TenantProvider";
 import { api } from "../services/api";
 import type { ExchangeRate } from "../services/types";
 import { lookupRate } from "../utils/rateLookup";
-import { decimalsFor, fmtMoney, fmtRate, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../utils/amount";
+import { amountFontFor, decimalsFor, fmtMoney, fmtRate, groupAmount, parseAmount, roundTo, sanitizeAmountInput, toInputText } from "../utils/amount";
 
 import { Text, TextInput } from "../components/ui/Text";
 import { useT } from "../providers/I18nProvider";
@@ -126,8 +127,8 @@ export default function Index() {
   const sendText = source === "SEND" ? raw : (rate && amount > 0 ? toInputText(amount, decimalsFor(FROM)) : "");
   const recvText = source === "RECV" ? rawRecv : (rate && received > 0 ? toInputText(received, dRecv) : "");
 
-  const top = safeTop(insets.top) + 16;
-  const bottom = Math.max(insets.bottom, 16) + 12;
+  const top = safeTop(insets.top) + 6;
+  const bottom = Math.max(insets.bottom, 10) + 8;
 
   const rateText = rates === null
     ? t("land.rateLoading")
@@ -138,10 +139,10 @@ export default function Index() {
   // Ligne de montant : valeur à gauche, pastille de devise (drapeau + code) à droite.
   const currencyChip = (cur: string, onPress?: () => void) => {
     const body = (
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-        <CurrencyFlag currency={cur} size={26} />
-        <Text allowFontScaling={false} style={{ fontFamily: SYSTEM_FONT, fontSize: 18, fontWeight: "700", color: C.text }}>{cur}</Text>
-        {onPress ? <Ionicons name="chevron-down" size={18} color={C.muted} /> : null}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <CurrencyFlag currency={cur} size={22} />
+        <Text allowFontScaling={false} style={{ fontFamily: SYSTEM_FONT, fontSize: 15, fontWeight: "700", color: C.text }}>{cur}</Text>
+        {onPress ? <Ionicons name="chevron-down" size={16} color={C.muted} /> : null}
       </View>
     );
     return onPress ? (
@@ -170,13 +171,13 @@ export default function Index() {
         <View style={{ flexGrow: 1, width: "100%", maxWidth: 480, alignSelf: "center", paddingHorizontal: 20, paddingTop: top, paddingBottom: bottom }}>
           {/* ── Marque ── */}
           <Reveal delay={0} distance={-12}>
-            <View style={{ alignItems: "center", gap: 10 }}>
-              <BrandLogo />
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 28, lineHeight: 34, fontWeight: "800", letterSpacing: -0.6, color: C.accentDeep }} numberOfLines={1}>
+            <View style={{ alignItems: "center", gap: 6 }}>
+              <BrandLogo size={56} />
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 20, lineHeight: 25, fontWeight: "800", letterSpacing: -0.4, color: C.accentDeep }} numberOfLines={1}>
                 {branding.name}
               </Text>
               {!!branding.tagline && (
-                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, lineHeight: 20, color: C.muted, textAlign: "center" }} numberOfLines={2}>
+                <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, lineHeight: 16, color: C.muted, textAlign: "center" }} numberOfLines={2}>
                   {branding.tagline}
                 </Text>
               )}
@@ -184,13 +185,13 @@ export default function Index() {
           </Reveal>
 
           {/* ── Simulateur ── */}
-          <Reveal delay={140} style={{ marginTop: 22 }}>
-            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 20 }, S.md]}>
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 13, color: C.muted }}>{t("land.youSend")}</Text>
+          <Reveal delay={140} style={{ marginTop: 12 }}>
+            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 16 }, S.md]}>
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted }}>{t("land.youSend")}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
                 <TextInput
-                  style={{ flex: 1, minWidth: 0, height: 54, padding: 0, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", color: C.ink }}
-                  value={sendText}
+                  style={{ flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(sendText), 22), fontWeight: "800", color: C.ink }}
+                  value={groupAmount(sendText)}
                   onChangeText={(v) => { setSource("SEND"); setRaw(sanitizeAmountInput(v, decimalsFor(FROM))); }}
                   keyboardType="decimal-pad"
                   placeholder="0"
@@ -202,11 +203,11 @@ export default function Index() {
                 {currencyChip(FROM)}
               </View>
 
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 13, color: C.muted, marginTop: 14 }}>{t("land.theyReceive")}</Text>
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12, color: C.muted, marginTop: 10 }}>{t("land.theyReceive")}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
                 <TextInput
-                  style={{ flex: 1, minWidth: 0, height: 54, padding: 0, fontFamily: SYSTEM_FONT, fontSize: 28, fontWeight: "800", color: rate === null ? C.faint : C.ink }}
-                  value={rate === null ? "" : recvText}
+                  style={{ flex: 1, minWidth: 0, height: 44, padding: 0, fontFamily: SYSTEM_FONT, fontSize: amountFontFor(groupAmount(recvText), 22), fontWeight: "800", color: rate === null ? C.faint : C.ink }}
+                  value={rate === null ? "" : groupAmount(recvText)}
                   onChangeText={(v) => { setSource("RECV"); setRawRecv(sanitizeAmountInput(v, dRecv)); }}
                   keyboardType="decimal-pad"
                   placeholder={rate === null ? "—" : "0"}
@@ -219,43 +220,43 @@ export default function Index() {
                 {currencyChip(target, targets.length > 1 ? () => setPickOpen(true) : undefined)}
               </View>
 
-              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 14, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: 16 }}>{rateText}</Text>
+              <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, color: C.accentDeep, fontWeight: "600", textAlign: "center", marginTop: 10 }}>{rateText}</Text>
 
               {feeEst && (
-                <Reveal pop style={{ marginTop: 12 }}>
+                <Reveal pop style={{ marginTop: 8 }}>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
                     {([["WALLET", "send.wallet", "phone-portrait-outline"], ["CASH_PICKUP", "send.cash", "cash-outline"]] as const).map(([k, label, icon]) => {
                       const f = feeEst[k];
                       if (f === null) return null;
                       return (
-                        <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
+                        <View key={k} style={{ flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: R.pill ?? 999, backgroundColor: f === 0 ? C.posBg : C.accentSoft, borderWidth: 1, borderColor: f === 0 ? C.posLine : C.accentLine }}>
                           <Ionicons name={icon} size={14} color={f === 0 ? C.pos : C.accentDeep} />
-                          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 12.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
+                          <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11.5, fontWeight: "700", color: f === 0 ? C.pos : C.accentDeep }}>
                             {t(label)} · {f === 0 ? t("land.feesFree") : t("land.feesAmount", { amount: fmtMoney(f, FROM) })}
                           </Text>
                         </View>
                       );
                     })}
                   </View>
-                  <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 11, color: C.muted, textAlign: "center", marginTop: 8 }}>{t("land.feesNote")}</Text>
+                  <Text style={{ fontFamily: SYSTEM_FONT, fontSize: 10.5, color: C.muted, textAlign: "center", marginTop: 6 }}>{t("land.feesNote")}</Text>
                 </Reveal>
               )}
             </View>
           </Reveal>
 
-          <View style={{ flexGrow: 1, minHeight: 24 }} />
+          <View style={{ flexGrow: 1, minHeight: 10 }} />
 
           {/* ── Actions ── */}
-          <Reveal delay={300} style={{ marginTop: 22 }}>
-            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 16, gap: 12 }, S.md]}>
+          <Reveal delay={300} style={{ marginTop: 12 }}>
+            <View style={[{ backgroundColor: C.surface, borderRadius: R.xl, padding: 12, gap: 8 }, S.md]}>
               {/* Empilés, pleine largeur : les libellés ne sont jamais tronqués (quelle que soit la langue ou la taille de police). */}
-              <Button label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
-              <Button label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
+              <Button compact label={t("land.signUp")} onPress={() => router.push("/(auth)/account-type")} testID="land-signup" />
+              <Button compact label={t("land.signIn")} kind="outline" onPress={() => router.push("/(auth)/login-v2")} testID="land-signin" />
             </View>
           </Reveal>
 
-          <Reveal delay={400} distance={8} style={{ marginTop: 16 }}>
-            <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11.5, color: C.accentInk, lineHeight: 17 }}>
+          <Reveal delay={400} distance={8} style={{ marginTop: 10 }}>
+            <Text style={{ textAlign: "center", fontFamily: SYSTEM_FONT, fontSize: 11, color: C.accentInk, lineHeight: 15 }}>
               {t("land.byContinuing")}
               <Text style={{ color: C.accentInk, fontWeight: "700", textDecorationLine: "underline" }} onPress={() => router.push("/(auth)/terms")}>
                 {t("land.terms")}

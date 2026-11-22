@@ -384,7 +384,7 @@ export default function AuthShell({
           ) : null}
 
           {/* ── Titre ── */}
-          <Text style={[s.title, { color: C.ink }, kbOpen && { fontSize: 26, lineHeight: 32, marginTop: 10 }, wide && { fontSize: 30, lineHeight: 36, marginTop: 18 }]} accessibilityRole="header">{title}</Text>
+          <Text style={[s.title, { color: C.ink }, kbOpen && { fontSize: 22, lineHeight: 28, marginTop: 6 }, wide && { fontSize: 26, lineHeight: 32, marginTop: 14 }]} accessibilityRole="header">{title}</Text>
           {subtitle && !kbOpen ? <Text style={[s.subtitle, { color: C.muted }]}>{subtitle}</Text> : null}
 
           <View style={[s.body, kbOpen && { marginTop: 14 }, wide && { marginTop: 22, flexGrow: 0 }]}>{children}</View>
@@ -424,7 +424,7 @@ const s = themed(() => StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 22 },
   brandName: { fontFamily: FONT.display, fontSize: 15, fontWeight: '800', letterSpacing: -0.2, flexShrink: 1 },
 
-  title:    { fontFamily: SERIF, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -0.5, marginTop: 22 },
+  title:    { fontFamily: SERIF, fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.4, marginTop: 14 },
   subtitle: { fontFamily: FONT.body, fontSize: 16, lineHeight: 23, marginTop: 8 },
   body:     { marginTop: 26, flexGrow: 1 },
 

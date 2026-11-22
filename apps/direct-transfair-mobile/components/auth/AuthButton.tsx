@@ -1,6 +1,7 @@
 // apps/direct-transfair-mobile/components/auth/AuthButton.tsx
 // =========================================================
 // BOUTON v3.3 — Direct Transf'air
+// ✅ v3.4 : `dense` agit aussi sur les boutons `stacked` (64 px) et `iconOnly` (50 px) — écran de connexion sans défilement.
 // ✅ v3.3 : `iconOnly` — bouton rond 56×56 avec la seule icône (le libellé reste lu par les lecteurs d'écran) ; `stacked` — icône AU-DESSUS d'un libellé
 //    centré sur 2 lignes (pour deux boutons côte à côte sans troncature). Sans ces props : rendu inchangé.
 // ✅ v3.2 : prop `dense` — bouton resserré (hauteur 50, texte 16 ; lien 36) pour les cartes compactes. Sans elle : rendu inchangé.
@@ -43,7 +44,7 @@ type Props = {
 
 export default function AuthButton({
   label, onPress, variant = 'primary', loading = false, disabled = false,
-  icon, iconRight = false, dense = false, iconOnly = false, stacked = false, testID,
+  icon, iconRight = false, dense = true, iconOnly = false, stacked = false, testID,
 }: Props) {
   const { C } = useUI();
   const off = disabled || loading;
@@ -53,11 +54,11 @@ export default function AuthButton({
   const content = loading ? (
     <ActivityIndicator color={fg} />
   ) : square ? (
-    <Ionicons name={icon!} size={26} color={fg} />
+    <Ionicons name={icon!} size={dense ? 23 : 26} color={fg} />
   ) : stacked ? (
     <View style={s.col}>
-      {icon ? <Ionicons name={icon} size={22} color={fg} /> : null}
-      <Text numberOfLines={2} style={[s.label, s.labelStacked, { color: fg }]}>{label}</Text>
+      {icon ? <Ionicons name={icon} size={dense ? 19 : 22} color={fg} /> : null}
+      <Text numberOfLines={2} style={[s.label, s.labelStacked, dense && s.labelStackedDense, { color: fg }]}>{label}</Text>
     </View>
   ) : (
     <View style={s.row}>
@@ -84,6 +85,8 @@ export default function AuthButton({
         dense && (variant === 'link' ? s.linkDense : s.baseDense),
         square && s.square,
         stacked && !square && s.baseStacked,
+        stacked && !square && dense && s.baseStackedDense,
+        square && dense && s.squareDense,
         off && !loading && { opacity: 0.45 },
         pressed && !off && { transform: [{ scale: 0.985 }], opacity: 0.9 },
       ]}
@@ -101,6 +104,9 @@ const s = themed(() => StyleSheet.create({
   labelDense: { fontSize: 16 },
   square: { width: 56, height: 56, minHeight: 56, paddingHorizontal: 0, borderRadius: 28 },
   baseStacked: { minHeight: 84, borderRadius: 24, paddingHorizontal: 10, paddingVertical: 10 },
+  baseStackedDense: { minHeight: 64, borderRadius: 20, paddingVertical: 8 },
+  labelStackedDense: { fontSize: 12.5, lineHeight: 15 },
+  squareDense: { width: 50, height: 50, minHeight: 50, borderRadius: 25 },
   col: { alignItems: 'center', justifyContent: 'center', gap: 6 },
   labelStacked: { fontSize: 13.5, lineHeight: 17, textAlign: 'center', fontWeight: '700' },
   row:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9 },
